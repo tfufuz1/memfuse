@@ -1,0 +1,23 @@
+[package]
+name = "memfuse-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "LSM-Tree storage engine for MemFuse"
+
+[dependencies]
+memfuse-core = { workspace = true }
+bytes = { workspace = true }
+blake3 = { workspace = true }
+crc32fast = { workspace = true }
+parking_lot = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+async-stream = { workspace = true }
+tokio-stream = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
+tempfile = { workspace = true }

@@ -1,0 +1,233 @@
+name: WP Pipeline — Event-Driven Cascade
+
+# Triggert den nächsten Work Package Jules-Task erst NACH erfolgreichem Merge.
+# Kein Cron-Timing-Risiko mehr. Kein Credit-Verschwendung für "Stoppe wenn PR noch offen".
+
+on:
+  pull_request:
+    types: [closed]   # merged oder rejected
+    branches: [dev]
+
+  # Manueller Trigger für den Feuertaufe-Modus (WP-1.1 as first task)
+  workflow_dispatch:
+    inputs:
+      start_wp:
+        description: 'Welches WP starten? (z.B. WP-1.1)'
+        required: true
+        default: 'WP-1.1'
+
+jobs:
+  # ─────────────────────────────────────────────
+  # JOB 1: Validator — Pre-Zertifizierung bevor Mensch reviewed
+  # ─────────────────────────────────────────────
+  validator:
+    name: Validator Agent (Account 07 equivalent)
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    outputs:
+      wp_name: ${{ steps.detect.outputs.wp_name }}
+      next_wp: ${{ steps.detect.outputs.next_wp }}
+      validated: ${{ steps.validate.outputs.validated }}
+      report: ${{ steps.validate.outputs.report }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Detect merged WP
+        id: detect
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          echo "Merged branch: $BRANCH"
+          
+          # WP-Reihenfolge für Event-Driven Cascade
+          declare -A NEXT_WP=(
+            ["jules/wp-0.0-debt"]="jules/wp-1.1-compaction"
+            ["jules/wp-1.1-compaction"]="jules/wp-1.2-collections"
+            ["jules/wp-1.2-collections"]="jules/wp-2.1-hybrid-search"
+            ["jules/wp-2.1-hybrid-search"]="jules/wp-2.2-quantization"
+            ["jules/wp-2.2-quantization"]="jules/wp-3.1-python-bindings"
+            ["jules/wp-1.1-compaction"]="jules/wp-3.2-encryption"
+            ["jules/wp-3.1-python-bindings"]="jules/wp-4.2-filtering"
+            ["jules/wp-3.2-encryption"]="jules/wp-4.1-mmap"
+            ["jules/wp-4.1-mmap"]="jules/wp-4.3-diskann"
+          )
+          
+          WP_NAME=$(echo "$BRANCH" | sed 's|jules/||')
+          NEXT="${NEXT_WP[$BRANCH]:-}"
+          
+          echo "wp_name=$WP_NAME" >> "$GITHUB_OUTPUT"
+          echo "next_wp=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "Next WP to trigger: $NEXT"
+
+      - name: Validator — Triple-Test Gate
+        id: validate
+        run: |
+          REPORT=""
+          FAIL=0
+          
+          echo "=== [1/5] Format Check ==="
+          if cargo fmt --all -- --check 2>&1; then
+            REPORT+="✅ Format OK\n"
+          else
+            REPORT+="❌ Format FAILED\n"; FAIL=1
+          fi
+
+          echo "=== [2/5] Clippy (0 warnings) ==="
+          if cargo clippy --all-targets --workspace -- -D warnings 2>&1; then
+            REPORT+="✅ Clippy OK\n"
+          else
+            REPORT+="❌ Clippy FAILED\n"; FAIL=1
+          fi
+
+          echo "=== [3/5] Zero-Unwrap Guard ==="
+          UNWRAP=$(grep -rn "\.unwrap()" crates/ --include="*.rs" \
+            | grep -v "/tests/" | grep -v "#\[cfg(test)\]" || true)
+          if [ -n "$UNWRAP" ]; then
+            REPORT+="❌ UNWRAP VIOLATIONS:\n$UNWRAP\n"; FAIL=1
+          else
+            REPORT+="✅ Zero-.unwrap() OK\n"
+          fi
+
+          echo "=== [4/5] Triple-Test Gate ==="
+          for RUN in 1 2 3; do
+            if cargo test --workspace 2>&1; then
+              REPORT+="✅ Test Run $RUN/3 OK\n"
+            else
+              REPORT+="❌ Test Run $RUN/3 FAILED\n"; FAIL=1; break
+            fi
+          done
+
+          echo "=== [5/5] Dependency Audit ==="
+          if cargo audit 2>&1; then
+            REPORT+="✅ Audit OK\n"
+          else
+            REPORT+="⚠️ Audit WARNING (non-blocking)\n"
+          fi
+
+          echo "validated=$([ $FAIL -eq 0 ] && echo 'true' || echo 'false')" >> "$GITHUB_OUTPUT"
+          {
+            echo "report<<EOF"
+            echo -e "$REPORT"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          exit $FAIL
+
+  # ─────────────────────────────────────────────
+  # JOB 2: Dynamic Context Snapshot (für nächsten Jules-Task)
+  # ─────────────────────────────────────────────
+  snapshot-context:
+    name: Snapshot Public API Context
+    runs-on: ubuntu-latest
+    needs: validator
+    if: needs.validator.outputs.validated == 'true' && needs.validator.outputs.next_wp != ''
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Extract current pub API signatures
+        run: |
+          bash .agent/jules/scripts/inject-context.sh > .agent/jules/context/CURRENT_API.md
+          echo "=== Generated CURRENT_API.md ==="
+          cat .agent/jules/context/CURRENT_API.md
+
+      - name: Commit context snapshot
+        run: |
+          git config user.name "Jules Pipeline Bot"
+          git config user.email "bot@memfuse.dev"
+          git add .agent/jules/context/CURRENT_API.md
+          git diff --staged --quiet || git commit -m "chore: snapshot API context for ${{ needs.validator.outputs.next_wp }}"
+          git push
+
+  # ─────────────────────────────────────────────
+  # JOB 3: Pr-Approval Comment (für menschliche Review)
+  # ─────────────────────────────────────────────
+  notify-review:
+    name: Notify Human for Final Review
+    runs-on: ubuntu-latest
+    needs: [validator, snapshot-context]
+    if: needs.validator.outputs.validated == 'true'
+
+    steps:
+      - name: Comment on PR — Pre-Certified
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const report = `${{ needs.validator.outputs.report }}`;
+            const nextWp = `${{ needs.validator.outputs.next_wp }}`;
+            const body = [
+              '## 🤖 Validator Agent Report — PRE-CERTIFIED',
+              '',
+              '```',
+              report,
+              '```',
+              '',
+              '**Alle 5 Validator-Checks grün.** Dieser PR ist zur finalen Merge-Freigabe bereit.',
+              '',
+              nextWp ? `Nach Merge wird automatisch **${nextWp}** getriggert.` : '_Keine weiteren abhängigen WPs._',
+              '',
+              '> ⏱️ Schätzung: 5-Minuten-Review ausreichend (Triple-Test bereits bestanden).',
+            ].join('\n');
+            
+            if (context.payload.pull_request) {
+              github.rest.issues.createComment({
+                issue_number: context.payload.pull_request.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body,
+              });
+            }
+
+  # ─────────────────────────────────────────────
+  # JOB 4: Fail-Comment wenn Validator failed
+  # ─────────────────────────────────────────────
+  notify-failure:
+    name: Notify — Validation Failed (Jules muss fixen)
+    runs-on: ubuntu-latest
+    needs: validator
+    if: needs.validator.outputs.validated == 'false'
+
+    steps:
+      - name: Comment on PR — Rejected
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const report = `${{ needs.validator.outputs.report }}`;
+            const body = [
+              '## 🔴 Validator Agent Report — REJECTED',
+              '',
+              '```',
+              report,
+              '```',
+              '',
+              '**Dieser PR wurde vom Validator abgelehnt.** Jules muss die Violations beheben.',
+              'Der Mensch muss diesen PR NICHT reviewen bis alle Checks grün sind.',
+            ].join('\n');
+            
+            if (context.payload.pull_request) {
+              github.rest.issues.createComment({
+                issue_number: context.payload.pull_request.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body,
+              });
+            }

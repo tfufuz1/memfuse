@@ -1,0 +1,67 @@
+//! Error types for MemFuse.
+
+use thiserror::Error;
+
+/// Convenience alias for `Result<T, MemFuseError>`.
+pub type Result<T> = std::result::Result<T, MemFuseError>;
+
+/// Unified error type for all MemFuse operations.
+#[derive(Error, Debug)]
+pub enum MemFuseError {
+    // ═══ Storage ═══
+    #[error("Storage error: {0}")]
+    Storage(String),
+
+    #[error("WAL corruption detected at offset {offset}: {reason}")]
+    WalCorruption { offset: u64, reason: String },
+
+    #[error("Checksum mismatch: file={path}, block={block_id}")]
+    ChecksumMismatch { path: String, block_id: u64 },
+
+    // ═══ Index ═══
+    #[error("Index error: {0}")]
+    Index(String),
+
+    #[error("HNSW graph connectivity degraded: {deleted_ratio:.1}% deleted nodes")]
+    HnswConnectivityDegraded { deleted_ratio: f64 },
+
+    // ═══ Transaction ═══
+    #[error("Transaction error: {0}")]
+    Transaction(String),
+
+    #[error("Transaction {tx_id} timed out after {elapsed_ms}ms")]
+    TransactionTimeout { tx_id: u64, elapsed_ms: u64 },
+
+    // ═══ Resource ═══
+    #[error("Memory budget exceeded: {used_mb}MB / {limit_mb}MB")]
+    MemoryBudgetExceeded { used_mb: u64, limit_mb: u64 },
+
+    // ═══ Input ═══
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
+    #[error("Not found: {0}")]
+    NotFound(String),
+
+    // ═══ Serialization ═══
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    // ═══ I/O ═══
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    // ═══ Internal ═══
+    #[error("Internal error: {0}")]
+    Internal(String),
+}
+
+impl MemFuseError {
+    /// Creates an `InvalidInput` error from any displayable value.
+    pub fn invalid_input(msg: impl Into<String>) -> Self {
+        Self::InvalidInput(msg.into())
+    }
+}

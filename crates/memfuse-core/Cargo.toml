@@ -1,0 +1,22 @@
+[package]
+name = "memfuse-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Core types, traits, and error handling for MemFuse"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+parking_lot = { workspace = true }
+ahash = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+bincode = { workspace = true }
+blake3 = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }

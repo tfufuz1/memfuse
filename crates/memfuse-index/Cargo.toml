@@ -1,0 +1,21 @@
+[package]
+name = "memfuse-index"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "HNSW vector index with SIMD distance computation for MemFuse"
+
+[dependencies]
+memfuse-core = { workspace = true }
+ahash = { workspace = true }
+parking_lot = { workspace = true }
+rand = { workspace = true }
+roaring = { workspace = true }
+bincode = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }

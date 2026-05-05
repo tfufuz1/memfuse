@@ -1,0 +1,578 @@
+//! SSTable (Sorted String Table) implementation.
+//!
+//! SSTables are persistent, immutable files containing sorted key-value pairs.
+//! They consist of multiple data blocks and an index block at the end.
+
+use bytes::{BufMut, Bytes, BytesMut};
+use memfuse_core::{MemFuseError, Result};
+use std::path::Path;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
+
+/// Block size for SSTable data blocks (4KB).
+const BLOCK_SIZE: usize = 4096;
+
+/// A builder for SSTable data blocks.
+pub struct BlockBuilder {
+    data: BytesMut,
+    offsets: Vec<u16>,
+    block_size: usize,
+}
+
+impl BlockBuilder {
+    pub fn new(block_size: usize) -> Self {
+        Self {
+            data: BytesMut::new(),
+            offsets: Vec::new(),
+            block_size,
+        }
+    }
+
+    pub fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64) -> bool {
+        // size: key_len(2) + key + seq_no(8) + val_len(2) + value + offset metadata in builder
+        if !self.data.is_empty()
+            && self.current_size() + key.len() + value.len() + 12 > self.block_size
+        {
+            return false;
+        }
+
+        self.offsets.push(self.data.len() as u16);
+        self.data.put_u16_le(key.len() as u16);
+        self.data.put_slice(key);
+        self.data.put_u64_le(seq_no);
+        self.data.put_u16_le(value.len() as u16);
+        self.data.put_slice(value);
+        true
+    }
+
+    pub fn current_size(&self) -> usize {
+        // data + offsets + offset count (2 bytes)
+        self.data.len() + self.offsets.len() * 2 + 2
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.offsets.is_empty()
+    }
+
+    /// Finalizes the block and returns the bytes.
+    pub fn build(mut self) -> Bytes {
+        for &offset in &self.offsets {
+            self.data.put_u16_le(offset);
+        }
+        self.data.put_u16_le(self.offsets.len() as u16);
+        self.data.freeze()
+    }
+}
+
+/// Metadata for an SSTable.
+pub struct SstableMetadata {
+    pub first_key: Bytes,
+    pub last_key: Bytes,
+    pub file_size: u64,
+}
+
+/// A builder for creating new SSTables.
+pub struct SstableBuilder {
+    file: File,
+    block_builder: BlockBuilder,
+    index: Vec<(Bytes, u64)>, // (last_key, offset)
+    first_key: Option<Bytes>,
+    last_key: Option<Bytes>,
+    offset: u64,
+}
+
+impl SstableBuilder {
+    pub async fn create(path: impl AsRef<Path>) -> Result<Self> {
+        let file = File::create(path)
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("Failed to create SSTable: {}", e)))?;
+
+        Ok(Self {
+            file,
+            block_builder: BlockBuilder::new(BLOCK_SIZE),
+            index: Vec::new(),
+            first_key: None,
+            last_key: None,
+            offset: 0,
+        })
+    }
+
+    /// Adds a key-value pair to the SSTable.
+    pub async fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64) -> Result<()> {
+        if self.first_key.is_none() {
+            self.first_key = Some(Bytes::copy_from_slice(key));
+        }
+
+        if !self.block_builder.add(key, value, seq_no) {
+            self.flush_block().await?;
+            let _ = self.block_builder.add(key, value, seq_no);
+        }
+
+        self.last_key = Some(Bytes::copy_from_slice(key));
+        Ok(())
+    }
+
+    async fn flush_block(&mut self) -> Result<()> {
+        if self.block_builder.is_empty() {
+            return Ok(());
+        }
+
+        let last_key = self.last_key.clone().unwrap();
+        let block =
+            std::mem::replace(&mut self.block_builder, BlockBuilder::new(BLOCK_SIZE)).build();
+        let block_len = block.len() as u64;
+
+        self.file
+            .write_all(&block)
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("SSTable block write failed: {}", e)))?;
+
+        self.index.push((last_key, self.offset));
+        self.offset += block_len;
+        Ok(())
+    }
+
+    /// Finalizes the SSTable and returns metadata.
+    pub async fn finish(mut self) -> Result<SstableMetadata> {
+        self.flush_block().await?;
+
+        let index_offset = self.offset;
+        let mut index_builder = BytesMut::new();
+
+        for (key, offset) in &self.index {
+            index_builder.put_u16_le(key.len() as u16);
+            index_builder.put_slice(key);
+            index_builder.put_u64_le(*offset);
+        }
+
+        let index_bytes = index_builder.freeze();
+        self.file
+            .write_all(&index_bytes)
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("SSTable index write failed: {}", e)))?;
+
+        // Write index offset and magic number
+        self.file
+            .write_u64_le(index_offset)
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        self.file
+            .write_u32_le(0x4D465354)
+            .await // "MFST" in hex
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        self.file
+            .sync_all()
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        let file_size = self
+            .file
+            .metadata()
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?
+            .len();
+
+        Ok(SstableMetadata {
+            first_key: self.first_key.unwrap_or_default(),
+            last_key: self.last_key.unwrap_or_default(),
+            file_size,
+        })
+    }
+}
+
+/// A reader for existing SSTables.
+pub struct SstableReader {
+    file: std::fs::File,
+    index: Vec<(Bytes, u64)>,
+    metadata: SstableMetadata,
+    /// Byte offset where the index data begins (= end of last block).
+    index_offset: u64,
+    /// File path of this SSTable (for compaction cleanup).
+    file_path: std::path::PathBuf,
+}
+
+impl SstableReader {
+    pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let mut file = tokio::fs::File::open(&path)
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("Failed to open SSTable: {}", e)))?;
+
+        let metadata = file
+            .metadata()
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let file_size = metadata.len();
+
+        if file_size < 12 {
+            return Err(MemFuseError::Storage("SSTable file too small".into()));
+        }
+
+        // Read index offset and magic
+        use tokio::io::{AsyncReadExt, AsyncSeekExt};
+        file.seek(std::io::SeekFrom::End(-12))
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        let index_offset = file
+            .read_u64_le()
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let magic = file
+            .read_u32_le()
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        if magic != 0x4D465354 {
+            return Err(MemFuseError::Storage("Invalid SSTable magic number".into()));
+        }
+
+        // Read index
+        file.seek(std::io::SeekFrom::Start(index_offset))
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        let mut index_data = vec![0u8; (file_size - 12 - index_offset) as usize];
+        file.read_exact(&mut index_data)
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        let mut index = Vec::new();
+        let mut pos = 0;
+
+        while pos + 10 <= index_data.len() {
+            let key_len = u16::from_le_bytes(index_data[pos..pos + 2].try_into().unwrap()) as usize;
+            pos += 2;
+            let key = Bytes::copy_from_slice(&index_data[pos..pos + key_len]);
+            pos += key_len;
+            let offset = u64::from_le_bytes(index_data[pos..pos + 8].try_into().unwrap());
+            pos += 8;
+            index.push((key, offset));
+        }
+
+        let last_key = index.last().map(|(k, _)| k.clone()).unwrap_or_default();
+
+        // Read the actual first key from the first data block header
+        // (index stores last_key per block, NOT first_key)
+        let sync_file = std::fs::File::open(&path)
+            .map_err(|e| MemFuseError::Storage(format!("Failed to open SSTable: {}", e)))?;
+        let first_key = if !index.is_empty() {
+            use std::io::{Read, Seek};
+            let mut f = &sync_file;
+            f.seek(std::io::SeekFrom::Start(index[0].1))?;
+            let mut hdr = [0u8; 2];
+            f.read_exact(&mut hdr)?;
+            let k_len = u16::from_le_bytes(hdr) as usize;
+            let mut k_buf = vec![0u8; k_len];
+            f.read_exact(&mut k_buf)?;
+            Bytes::from(k_buf)
+        } else {
+            Bytes::new()
+        };
+
+        Ok(Self {
+            file: sync_file,
+            index,
+            metadata: SstableMetadata {
+                first_key,
+                last_key,
+                file_size,
+            },
+            index_offset,
+            file_path: path.as_ref().to_path_buf(),
+        })
+    }
+
+    pub fn get(&self, key: &[u8]) -> Result<Option<(Bytes, u64)>> {
+        if key < self.metadata.first_key || key > self.metadata.last_key {
+            return Ok(None);
+        }
+
+        let idx = match self.index.binary_search_by(|(k, _)| k.as_ref().cmp(key)) {
+            Ok(i) => i,
+            Err(i) => {
+                if i >= self.index.len() {
+                    return Ok(None);
+                }
+                i
+            }
+        };
+
+        let offset = self.index[idx].1;
+        let next_offset = if idx + 1 < self.index.len() {
+            self.index[idx + 1].1
+        } else {
+            self.index_offset
+        };
+
+        use std::os::unix::fs::FileExt;
+        let mut block_data = vec![0u8; (next_offset - offset) as usize];
+        self.file
+            .read_exact_at(&mut block_data, offset)
+            .map_err(|e| MemFuseError::Storage(format!("SSTable read failed: {}", e)))?;
+
+        let n = block_data.len();
+        if n < 2 {
+            return Ok(None);
+        }
+
+        let num_offsets = u16::from_le_bytes(block_data[n - 2..n].try_into().unwrap()) as usize;
+        let offsets_start = n - 2 - num_offsets * 2;
+
+        for i in 0..num_offsets {
+            let off_pos = offsets_start + i * 2;
+            let entry_off =
+                u16::from_le_bytes(block_data[off_pos..off_pos + 2].try_into().unwrap()) as usize;
+
+            let mut ep = entry_off;
+            let k_len = u16::from_le_bytes(block_data[ep..ep + 2].try_into().unwrap()) as usize;
+            ep += 2;
+            let entry_key = &block_data[ep..ep + k_len];
+            ep += k_len;
+
+            if entry_key == key {
+                let seq_no = u64::from_le_bytes(block_data[ep..ep + 8].try_into().unwrap());
+                ep += 8;
+                let v_len = u16::from_le_bytes(block_data[ep..ep + 2].try_into().unwrap()) as usize;
+                ep += 2;
+                return Ok(Some((
+                    Bytes::copy_from_slice(&block_data[ep..ep + v_len]),
+                    seq_no,
+                )));
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn metadata(&self) -> &SstableMetadata {
+        &self.metadata
+    }
+
+    /// Iterates over all entries in sorted key order.
+    ///
+    /// Returns `(key, value, seq_no)` triples for every entry in the SSTable,
+    /// including tombstones. Used by compaction for multi-way merge.
+    pub fn iter(&self) -> Result<Vec<(Bytes, Bytes, u64)>> {
+        let mut results = Vec::new();
+        if self.index.is_empty() {
+            return Ok(results);
+        }
+
+        use std::os::unix::fs::FileExt;
+
+        for idx in 0..self.index.len() {
+            let offset = self.index[idx].1;
+            let next_offset = if idx + 1 < self.index.len() {
+                self.index[idx + 1].1
+            } else {
+                self.index_offset
+            };
+
+            let mut block_data = vec![0u8; (next_offset - offset) as usize];
+            self.file
+                .read_exact_at(&mut block_data, offset)
+                .map_err(|e| MemFuseError::Storage(format!("SSTable iter read failed: {}", e)))?;
+
+            let n = block_data.len();
+            if n < 2 {
+                continue;
+            }
+
+            let num_offsets = u16::from_le_bytes(block_data[n - 2..n].try_into().unwrap()) as usize;
+            let offsets_start = n - 2 - num_offsets * 2;
+
+            for i in 0..num_offsets {
+                let off_pos = offsets_start + i * 2;
+                let entry_off =
+                    u16::from_le_bytes(block_data[off_pos..off_pos + 2].try_into().unwrap())
+                        as usize;
+
+                let mut ep = entry_off;
+                let k_len = u16::from_le_bytes(block_data[ep..ep + 2].try_into().unwrap()) as usize;
+                ep += 2;
+                let entry_key = &block_data[ep..ep + k_len];
+                ep += k_len;
+
+                let seq_no = u64::from_le_bytes(block_data[ep..ep + 8].try_into().unwrap());
+                ep += 8;
+                let v_len = u16::from_le_bytes(block_data[ep..ep + 2].try_into().unwrap()) as usize;
+                ep += 2;
+                let entry_val = &block_data[ep..ep + v_len];
+
+                results.push((
+                    Bytes::copy_from_slice(entry_key),
+                    Bytes::copy_from_slice(entry_val),
+                    seq_no,
+                ));
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Returns the file path of this SSTable.
+    pub fn file_path(&self) -> &std::path::Path {
+        &self.file_path
+    }
+
+    pub fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Bytes, Bytes, u64)>> {
+        let mut results = Vec::new();
+
+        use std::os::unix::fs::FileExt;
+
+        let start_idx = match self.index.binary_search_by(|(k, _)| k.as_ref().cmp(prefix)) {
+            Ok(i) => i,
+            Err(i) => {
+                if i > 0 {
+                    i - 1
+                } else {
+                    0
+                }
+            }
+        };
+
+        for idx in start_idx..self.index.len() {
+            let offset = self.index[idx].1;
+            let next_offset = if idx + 1 < self.index.len() {
+                self.index[idx + 1].1
+            } else {
+                self.index_offset
+            };
+
+            let mut block_data = vec![0u8; (next_offset - offset) as usize];
+            self.file
+                .read_exact_at(&mut block_data, offset)
+                .map_err(|e| MemFuseError::Storage(format!("SSTable scan read failed: {}", e)))?;
+
+            let n = block_data.len();
+            if n < 2 {
+                continue;
+            }
+
+            let num_offsets = u16::from_le_bytes(block_data[n - 2..n].try_into().unwrap()) as usize;
+            let offsets_start = n - 2 - num_offsets * 2;
+
+            let mut broke = false;
+            for i in 0..num_offsets {
+                let off_pos = offsets_start + i * 2;
+                let entry_off =
+                    u16::from_le_bytes(block_data[off_pos..off_pos + 2].try_into().unwrap())
+                        as usize;
+
+                let mut ep = entry_off;
+                let k_len = u16::from_le_bytes(block_data[ep..ep + 2].try_into().unwrap()) as usize;
+                ep += 2;
+                let entry_key = &block_data[ep..ep + k_len];
+                ep += k_len;
+
+                if !entry_key.starts_with(prefix) && entry_key > prefix {
+                    broke = true;
+                    break; // Passed prefix lexicographically
+                }
+
+                if entry_key.starts_with(prefix) {
+                    let seq_no = u64::from_le_bytes(block_data[ep..ep + 8].try_into().unwrap());
+                    ep += 8;
+                    let v_len =
+                        u16::from_le_bytes(block_data[ep..ep + 2].try_into().unwrap()) as usize;
+                    ep += 2;
+                    let entry_val = &block_data[ep..ep + v_len];
+                    results.push((
+                        Bytes::copy_from_slice(entry_key),
+                        Bytes::copy_from_slice(entry_val),
+                        seq_no,
+                    ));
+                }
+            }
+            if broke {
+                break;
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Scans all entries within a key range.
+    pub fn scan_range(
+        &self,
+        start: std::ops::Bound<&[u8]>,
+        end: std::ops::Bound<&[u8]>,
+    ) -> Result<Vec<(Bytes, Bytes, u64)>> {
+        use std::ops::Bound;
+
+        let mut results = Vec::new();
+        if self.index.is_empty() {
+            return Ok(results);
+        }
+
+        use std::os::unix::fs::FileExt;
+
+        for idx in 0..self.index.len() {
+            let offset = self.index[idx].1;
+            let next_offset = if idx + 1 < self.index.len() {
+                self.index[idx + 1].1
+            } else {
+                self.index_offset
+            };
+
+            let mut block_data = vec![0u8; (next_offset - offset) as usize];
+            self.file
+                .read_exact_at(&mut block_data, offset)
+                .map_err(|e| MemFuseError::Storage(format!("SSTable range read failed: {}", e)))?;
+
+            let n = block_data.len();
+            if n < 2 {
+                continue;
+            }
+
+            let num_offsets = u16::from_le_bytes(block_data[n - 2..n].try_into().unwrap()) as usize;
+            let offsets_start = n - 2 - num_offsets * 2;
+
+            for i in 0..num_offsets {
+                let off_pos = offsets_start + i * 2;
+                let entry_off =
+                    u16::from_le_bytes(block_data[off_pos..off_pos + 2].try_into().unwrap())
+                        as usize;
+
+                let mut ep = entry_off;
+                let k_len = u16::from_le_bytes(block_data[ep..ep + 2].try_into().unwrap()) as usize;
+                ep += 2;
+                let entry_key = &block_data[ep..ep + k_len];
+                ep += k_len;
+
+                // Check start bound
+                let after_start = match start {
+                    Bound::Included(s) => entry_key >= s,
+                    Bound::Excluded(s) => entry_key > s,
+                    Bound::Unbounded => true,
+                };
+                if !after_start {
+                    continue;
+                }
+
+                // Check end bound
+                let before_end = match end {
+                    Bound::Included(e) => entry_key <= e,
+                    Bound::Excluded(e) => entry_key < e,
+                    Bound::Unbounded => true,
+                };
+                if !before_end {
+                    return Ok(results); // Past the range, done
+                }
+
+                let seq_no = u64::from_le_bytes(block_data[ep..ep + 8].try_into().unwrap());
+                ep += 8;
+                let v_len = u16::from_le_bytes(block_data[ep..ep + 2].try_into().unwrap()) as usize;
+                ep += 2;
+                let entry_val = &block_data[ep..ep + v_len];
+                results.push((
+                    Bytes::copy_from_slice(entry_key),
+                    Bytes::copy_from_slice(entry_val),
+                    seq_no,
+                ));
+            }
+        }
+
+        Ok(results)
+    }
+}
