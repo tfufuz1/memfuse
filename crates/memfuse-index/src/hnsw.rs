@@ -181,10 +181,11 @@ impl HnswIndexCore {
         }
 
         while let Some(Reverse(current)) = candidates.pop() {
-            if let Some(worst_result) = results.peek() {
-                if current.distance > worst_result.distance && results.len() >= ef {
-                    break;
-                }
+            if let Some(worst_result) = results.peek()
+                && current.distance > worst_result.distance
+                && results.len() >= ef
+            {
+                break;
             }
 
             if layer < nodes[current.index].connections.len() {
@@ -293,14 +294,14 @@ impl HnswIndexCore {
 
         let mut ep = vec![ep_idx];
         for layer in (new_layer + 1..=current_max_layer).rev() {
-            let best = self.search_layer(&vector, &ep, 1, layer)?;
+            let best = self.search_layer(vector, &ep, 1, layer)?;
             if !best.is_empty() {
                 ep = vec![best[0].index];
             }
         }
 
         for layer in (0..=new_layer.min(current_max_layer)).rev() {
-            let neighbors = self.search_layer(&vector, &ep, self.config.ef_construction, layer)?;
+            let neighbors = self.search_layer(vector, &ep, self.config.ef_construction, layer)?;
             let selected = {
                 let nodes = self.nodes.read();
                 self.select_neighbors_heuristic(&nodes, &neighbors, self.config.m)?
@@ -547,10 +548,10 @@ impl VectorIndex for HnswIndex {
                 continue;
             }
             let doc_id = nodes[c.index].doc_id;
-            if let Some(f) = filter {
-                if !f(doc_id) {
-                    continue;
-                }
+            if let Some(f) = filter
+                && !f(doc_id)
+            {
+                continue;
             }
             let score = match self.config.distance_metric {
                 DistanceMetric::Cosine => 1.0 - c.distance,

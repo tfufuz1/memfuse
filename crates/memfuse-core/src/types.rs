@@ -101,7 +101,7 @@ impl std::fmt::Display for TxId {
 }
 
 /// Distance metric for vector comparison.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 pub enum DistanceMetric {
     /// Cosine distance (1 - cosine similarity).
     #[default]
@@ -149,7 +149,7 @@ impl Embedding {
 }
 
 /// A scored search result.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ScoredDocument {
     pub doc_id: DocId,
     pub score: f32,
@@ -200,7 +200,7 @@ impl Edge {
 }
 
 /// Resource budget for memory management.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ResourceBudget {
     pub memory_limit: u64,
 }

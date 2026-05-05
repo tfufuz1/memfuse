@@ -212,8 +212,8 @@ unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
 
     while i + 8 <= n {
         unsafe {
-            let va = _mm256_loadu_ps(a.as_ptr().offset(i as isize));
-            let vb = _mm256_loadu_ps(b.as_ptr().offset(i as isize));
+            let va = _mm256_loadu_ps(a.as_ptr().add(i));
+            let vb = _mm256_loadu_ps(b.as_ptr().add(i));
             sum_v = _mm256_fmadd_ps(va, vb, sum_v);
         }
         i += 8;
@@ -241,8 +241,8 @@ unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
 
     while i + 8 <= n {
         unsafe {
-            let va = _mm256_loadu_ps(a.as_ptr().offset(i as isize));
-            let vb = _mm256_loadu_ps(b.as_ptr().offset(i as isize));
+            let va = _mm256_loadu_ps(a.as_ptr().add(i));
+            let vb = _mm256_loadu_ps(b.as_ptr().add(i));
 
             dot_v = _mm256_fmadd_ps(va, vb, dot_v);
             norm_a_v = _mm256_fmadd_ps(va, va, norm_a_v);
@@ -281,8 +281,8 @@ unsafe fn euclidean_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
 
     while i + 8 <= n {
         unsafe {
-            let va = _mm256_loadu_ps(a.as_ptr().offset(i as isize));
-            let vb = _mm256_loadu_ps(b.as_ptr().offset(i as isize));
+            let va = _mm256_loadu_ps(a.as_ptr().add(i));
+            let vb = _mm256_loadu_ps(b.as_ptr().add(i));
             let diff = _mm256_sub_ps(va, vb);
             sum_v = _mm256_fmadd_ps(diff, diff, sum_v);
         }
@@ -325,8 +325,8 @@ unsafe fn dot_product_avx512(a: &[f32], b: &[f32]) -> f32 {
 
     while i + 16 <= n {
         unsafe {
-            let va = _mm512_loadu_ps(a.as_ptr().offset(i as isize));
-            let vb = _mm512_loadu_ps(b.as_ptr().offset(i as isize));
+            let va = _mm512_loadu_ps(a.as_ptr().add(i));
+            let vb = _mm512_loadu_ps(b.as_ptr().add(i));
             sum_v = _mm512_fmadd_ps(va, vb, sum_v);
         }
         i += 16;
@@ -353,8 +353,8 @@ unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
 
     while i + 16 <= n {
         unsafe {
-            let va = _mm512_loadu_ps(a.as_ptr().offset(i as isize));
-            let vb = _mm512_loadu_ps(b.as_ptr().offset(i as isize));
+            let va = _mm512_loadu_ps(a.as_ptr().add(i));
+            let vb = _mm512_loadu_ps(b.as_ptr().add(i));
 
             dot_v = _mm512_fmadd_ps(va, vb, dot_v);
             norm_a_v = _mm512_fmadd_ps(va, va, norm_a_v);
@@ -392,8 +392,8 @@ unsafe fn euclidean_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
 
     while i + 16 <= n {
         unsafe {
-            let va = _mm512_loadu_ps(a.as_ptr().offset(i as isize));
-            let vb = _mm512_loadu_ps(b.as_ptr().offset(i as isize));
+            let va = _mm512_loadu_ps(a.as_ptr().add(i));
+            let vb = _mm512_loadu_ps(b.as_ptr().add(i));
             let diff = _mm512_sub_ps(va, vb);
             sum_v = _mm512_fmadd_ps(diff, diff, sum_v);
         }
