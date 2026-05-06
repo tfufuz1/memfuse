@@ -38,13 +38,13 @@
 
 #![forbid(unsafe_code)]
 
-use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId, VectorIndex};
+use memfuse_core::{DocId, Result, StorageEngine};
 use memfuse_index::{HnswConfig, HnswIndex};
 use memfuse_store::LsmStorage;
 use serde_json::Value;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 
 pub mod collection;
 pub use collection::Collection;
@@ -124,13 +124,6 @@ impl MemFuse {
     pub async fn open_with_config(path: impl AsRef<Path>, config: MemFuseConfig) -> Result<Self> {
         let lsm_config = memfuse_store::LsmConfig {
             path: path.as_ref().to_path_buf(),
-            ..Default::default()
-        };
-
-        let hnsw_config = memfuse_index::HnswConfig {
-            dimension: config.dimension,
-            max_elements: config.max_elements,
-            distance_metric: config.distance_metric,
             ..Default::default()
         };
 
@@ -251,11 +244,11 @@ impl MemFuse {
     }
 
     /// Performs semantic k-NN search with an optional filter function over documents.
-    pub async fn search_filtered<'a>(
+    pub async fn search_filtered(
         &self,
         query: &[f32],
         k: usize,
-        filter: Option<&'a (dyn Fn(DocId) -> bool + Send + Sync)>,
+        filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<SearchResult>> {
         self.default_col()
             .await

@@ -5,7 +5,7 @@
 //! - Its own HNSW vector index (can have different dimensions/metrics)
 //! - A unique key prefix in the shared LSM-Tree storage (`__col:{name}:`)
 
-use crate::{Document, MemFuseConfig, SearchResult};
+use crate::{Document, SearchResult};
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;
@@ -133,14 +133,14 @@ impl Collection {
         let mut results = Vec::with_capacity(neighbors.len());
         for neighbor in neighbors {
             let docid_key = self.prefix_docid(neighbor.doc_id);
-            if let Some(record_bytes) = self.storage.get(&docid_key).await? {
-                if let Ok(doc) = serde_json::from_slice::<Document>(&record_bytes) {
-                    results.push(SearchResult {
-                        id: doc.id,
-                        score: neighbor.score,
-                        metadata: doc.metadata,
-                    });
-                }
+            if let Some(record_bytes) = self.storage.get(&docid_key).await?
+                && let Ok(doc) = serde_json::from_slice::<Document>(&record_bytes)
+            {
+                results.push(SearchResult {
+                    id: doc.id,
+                    score: neighbor.score,
+                    metadata: doc.metadata,
+                });
             }
         }
 
@@ -148,11 +148,11 @@ impl Collection {
     }
 
     /// Performs semantic k-NN search with an optional filter function over documents.
-    pub async fn search_filtered<'a>(
+    pub async fn search_filtered(
         &self,
         query: &[f32],
         k: usize,
-        filter: Option<&'a (dyn Fn(DocId) -> bool + Send + Sync)>,
+        filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<SearchResult>> {
         if query.len() != self.dimension {
             return Err(memfuse_core::MemFuseError::invalid_input(format!(
@@ -167,14 +167,14 @@ impl Collection {
         let mut results = Vec::with_capacity(neighbors.len());
         for neighbor in neighbors {
             let docid_key = self.prefix_docid(neighbor.doc_id);
-            if let Some(record_bytes) = self.storage.get(&docid_key).await? {
-                if let Ok(doc) = serde_json::from_slice::<Document>(&record_bytes) {
-                    results.push(SearchResult {
-                        id: doc.id,
-                        score: neighbor.score,
-                        metadata: doc.metadata,
-                    });
-                }
+            if let Some(record_bytes) = self.storage.get(&docid_key).await?
+                && let Ok(doc) = serde_json::from_slice::<Document>(&record_bytes)
+            {
+                results.push(SearchResult {
+                    id: doc.id,
+                    score: neighbor.score,
+                    metadata: doc.metadata,
+                });
             }
         }
 
@@ -205,7 +205,7 @@ impl Collection {
         let db_key = self.prefix_key(id);
 
         // Find doc_id first so we can remove from vector index
-        if let Some(_) = self.storage.get(&db_key).await? {
+        if self.storage.get(&db_key).await?.is_some() {
             let doc_id = {
                 let hash = blake3::hash(id.as_bytes());
                 let mut bytes = [0u8; 8];
@@ -258,12 +258,12 @@ impl Collection {
 
         let mut results = Vec::with_capacity(entries.len());
         for (k_bytes, value) in entries {
-            if let Some(unprefixed) = self.strip_prefix(&k_bytes) {
-                if let Ok(k_str) = String::from_utf8(unprefixed.to_vec()) {
-                    let val_json: Value = serde_json::from_slice(&value)
-                        .unwrap_or(Value::String(String::from_utf8_lossy(&value).to_string()));
-                    results.push((k_str, val_json));
-                }
+            if let Some(unprefixed) = self.strip_prefix(&k_bytes)
+                && let Ok(k_str) = String::from_utf8(unprefixed.to_vec())
+            {
+                let val_json: Value = serde_json::from_slice(&value)
+                    .unwrap_or(Value::String(String::from_utf8_lossy(&value).to_string()));
+                results.push((k_str, val_json));
             }
         }
 
@@ -293,13 +293,10 @@ impl Collection {
                     Bound::Unbounded => true,
                 };
 
-                if in_range {
-                    if let Ok(key) = String::from_utf8(unprefixed.to_vec()) {
-                        let value: Value = serde_json::from_slice(&v_bytes).unwrap_or(
-                            Value::String(String::from_utf8_lossy(&v_bytes).to_string()),
-                        );
-                        results.push((key, value));
-                    }
+                if in_range && let Ok(key) = String::from_utf8(unprefixed.to_vec()) {
+                    let value: Value = serde_json::from_slice(&v_bytes)
+                        .unwrap_or(Value::String(String::from_utf8_lossy(&v_bytes).to_string()));
+                    results.push((key, value));
                 }
             }
         }

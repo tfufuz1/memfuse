@@ -517,7 +517,7 @@ mod tests {
                 let key = format!("doc-{:04}", key_idx);
 
                 // Randomly perform get or scan to test stability during swaps
-                if rng % 2 == 0 {
+                if rng.is_multiple_of(2) {
                     let _ = storage_clone.get(key.as_bytes()).await;
                 } else {
                     let _ = storage_clone.scan_prefix(b"doc-").await;
