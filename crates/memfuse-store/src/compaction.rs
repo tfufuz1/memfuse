@@ -1,3 +1,9 @@
+// ANCHOR:ARCH:COMPACT-001 — Background Compaction (STCS — Size-Tiered Compaction Strategy).
+// ALGORITHMUS: Gruppiere SSTables nach Größenklasse → Merge wenn >= min_sstables_per_tier.
+// TOMBSTONE-GC: Tombstones werden NUR gelöscht wenn seq < min_active_seqno (MVCC-SAFE).
+// ATOMARER SWAP: Merge unter read-lock, SSTable-Liste swap unter write-lock.
+// INVARIANTE: Während Compaction sind alte SSTables noch lesbar (readers halten Arc).
+// LIFECYCLE: run_loop() -> maybe_compact() -> select_candidates() -> merge_sstables()
 //! Background compaction engine for the LSM-Tree.
 //!
 //! Implements a Size-Tiered Compaction Strategy (STCS):

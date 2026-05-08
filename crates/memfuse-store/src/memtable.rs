@@ -1,3 +1,8 @@
+// ANCHOR:ARCH:MEMTABLE-001 — In-Memory Sortierter Puffer (hot writes).
+// DESIGN: BTreeMap<Bytes, (Bytes, u64)> — Key sortiert für geordneten SSTable-Flush.
+// SIZE-TRACKING: AtomicUsize zählt Bytes, LsmStorage flusht bei > memtable_size_limit.
+// LIFECYCLE: Active MemTable → Immutable MemTable → Flushed to SSTable → Dropped.
+// BENANNT als "SkipList" im Doc-Comment, aber BTreeMap-backed (historischer Name).
 //! In-memory SkipList-based MemTable.
 
 use bytes::Bytes;

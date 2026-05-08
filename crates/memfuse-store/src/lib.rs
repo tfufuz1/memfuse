@@ -1,3 +1,7 @@
+// ANCHOR:ARCH:STORE-001 — LSM-Tree Storage Engine (Triebwerk — Layer 1).
+// DATEN-PFAD: Client → TxBuffer → WAL → MemTable → SSTable → Compaction
+// INVARIANTE: Alle Disk-I/O via tokio::fs (zero std::fs imports).
+// MODUL-HIERARCHIE: lsm.rs orchestriert, memtable/wal/sstable sind Bausteine.
 //! MemFuse Store — LSM-Tree based storage engine.
 //!
 //! Provides persistent key-value storage with WAL, MemTable,

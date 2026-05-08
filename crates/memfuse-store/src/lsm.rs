@@ -1,3 +1,10 @@
+// ANCHOR:ARCH:LSM-001 — Zentraler Storage-Engine-Orchestrator des Triebwerks.
+// IMPLEMENTS: StorageEngine Trait (memfuse-core/src/traits.rs)
+// READ-PATH:  get() → Active MemTable → Immutable MemTables → SSTables (newest first)
+// WRITE-PATH: put()/delete() → TxBuffer → commit() → WAL + MemTable
+// FLUSH:      MemTable > size_limit → rotate → SSTable schreiben → cleanup
+// BACKGROUND: CompactionEngine läuft als tokio::spawn loop
+// INVARIANTE: WAL Replay bei Neustart stellt MemTable deterministisch wieder her.
 //! LSM-Tree storage engine.
 //!
 //! Provides a persistent key-value store with:
@@ -154,6 +161,23 @@ impl LsmStorage {
     /// Returns the last committed sequence number.
     pub fn last_seq_no(&self) -> u64 {
         self.next_seq_no.load(Ordering::Acquire).saturating_sub(1)
+    }
+
+    /// Pins a sequence number to prevent premature GC (SAOS Checkpoint).
+    pub async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
+        self.snapshot_registry.pin(seq_no);
+        Ok(())
+    }
+
+    /// Unpins a sequence number.
+    pub async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
+        self.snapshot_registry.unpin(seq_no);
+        Ok(())
+    }
+
+    /// Forces a flush (to be used by CheckpointManager or tests).
+    pub async fn force_flush(&self) -> Result<()> {
+        self.flush().await
     }
 }
 

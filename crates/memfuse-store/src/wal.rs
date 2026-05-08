@@ -1,3 +1,9 @@
+// ANCHOR:ARCH:WAL-001 — Write-Ahead Log für Crash Recovery.
+// FORMAT: [u32 len][u64 seq_no][u32 crc32][u8 op_type][payload...]
+// INVARIANTE: Jeder Eintrag wird ERST in WAL geschrieben, DANN in MemTable übernommen.
+// REPLAY: Bei Neustart wird WAL komplett in MemTable replayed (lsm.rs::new()).
+// ROTATION: Beim Flush wird alte WAL archiviert, neue geöffnet.
+// TODO:WP-3.2 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
 //! Write-Ahead Log with HMAC integrity.
 
 use memfuse_core::{MemFuseError, Result, TxId};

@@ -1,3 +1,8 @@
+// ANCHOR:TODO:SAOS-CHECKPOINT — Time-Travel Debugging ist aktuell ein STUB.
+// Nur Datenstrukturen existieren, kein funktionaler Rollback.
+// PLAN: WAL bis checkpoint.tx_id replayed → deterministischer State-Restore.
+// ABHAENGIGKEIT: Braucht WAL-Ref (aktuell auskommentiert: `wal: Arc<Wal>`).
+// SPEC: docs/specs/SPEC-20260505-WP-4.x-Scale.md (State Checkpointing Sektion)
 //! Native State Checkpointing (Time-Travel Debugging)
 //!
 //! Enables exact state reconstruction of an SAOS database at any given transaction ID

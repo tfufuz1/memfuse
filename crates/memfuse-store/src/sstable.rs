@@ -1,3 +1,10 @@
+// ANCHOR:ARCH:SST-001 — Immutable persistente Datendateien.
+// FORMAT: [DataBlock 0..N][IndexBlock][u64 index_offset][u32 MAGIC=0x4D465354 "MFST"]
+// BLOCK-FORMAT: [entries...][u16 offsets...][u16 num_offsets]
+// ENTRY-FORMAT: [u16 key_len][key][u64 seq_no][u16 val_len][value]
+// LOOKUP: Binary Search über Index (last_key pro Block) → Block lesen → Linear Scan.
+// VERWENDET IN: LsmStorage::get() (point lookup), CompactionEngine::merge_sstables() (full scan).
+// TODO:WP-4.1 — Bloom Filter pro Block für schnellere Negative Lookups.
 //! SSTable (Sorted String Table) implementation.
 //!
 //! SSTables are persistent, immutable files containing sorted key-value pairs.
