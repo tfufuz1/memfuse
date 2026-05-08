@@ -1,3 +1,9 @@
+// ANCHOR:ARCH:MVCC-001 — Snapshot-Registry schützt Reads vor Compaction-GC.
+// INVARIANTE: Solange ein SnapshotGuard lebt, werden Tombstones mit
+//   seq >= guard.seq_no NICHT garbage-collected.
+// VERWENDET IN: CompactionEngine::merge_sstables() prüft min_active_seqno()
+// RAII-PATTERN: SnapshotGuard deregistriert sich automatisch via Drop.
+// ACHTUNG: unwrap_or(u64::MAX) in update_min() ist KORREKT — u64::MAX = "keine Snapshots aktiv"
 //! SnapshotRegistry for MVCC-safe reads.
 //!
 //! Manages active read snapshots and computes the minimum active
@@ -46,6 +52,18 @@ impl SnapshotRegistry {
     #[inline]
     pub fn min_active_seqno(&self) -> u64 {
         self.min_active_seqno.load(Ordering::Acquire)
+    }
+
+    /// Persistent pin of a sequence number to prevent GC (SAOS Checkpoint).
+    pub fn pin(&self, seq_no: u64) {
+        let mut active = self.active.lock();
+        *active.entry(seq_no).or_default() += 1;
+        self.update_min(&active);
+    }
+
+    /// Removes a persistent pin.
+    pub fn unpin(&self, seq_no: u64) {
+        self.release(seq_no);
     }
 
     pub(crate) fn release(&self, seq_no: u64) {

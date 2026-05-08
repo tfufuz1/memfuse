@@ -1,3 +1,8 @@
+// ANCHOR:ARCH:TXBUF-001 — Sharded Transaction Buffer für lock-freie Concurrency.
+// DESIGN: 64 Shards (Default) → TxId % 64 bestimmt den Shard.
+// VERWENDET IN: LsmStorage (16 Shards), HnswIndex (16 Shards)
+// LIFECYCLE: stage() → drain() (commit) ODER discard() (rollback)
+// ORPHAN-REAPER: Background-Task räumt Tx > timeout (Default 30s) automatisch ab.
 //! Transactional buffer for staging index operations.
 //!
 //! Sharded into sub-buffers to reduce lock contention.
@@ -178,6 +183,9 @@ impl<T: Clone> Default for TxBuffer<T> {
     }
 }
 
+// ANCHOR:IMPL:REAPER-001 — Background Tokio-Task für verwaiste Transaktionen.
+// WARNUNG: Endlos-Loop — läuft bis zum Prozess-Shutdown.
+// Fehlende Graceful-Shutdown-Logik ist akzeptiert (Tokio runtime drop killt den Task).
 /// Starts a background task to periodically clean up orphan transactions.
 pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
     buffer: Arc<TxBuffer<T>>,

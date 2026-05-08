@@ -1,3 +1,7 @@
+// ANCHOR:ARCH:ERR-001 — Einzige Error-Enum für den gesamten Workspace.
+// Neue Varianten nur ANHÄNGEN (niemals umsortieren) → binäre Kompatibilität.
+// Jede neue Variante braucht strukturierte Felder für Observability (kein reines String).
+// DOWNSTREAM: memfuse-store, memfuse-index, memfuse-db konvertieren via `?` und `From`.
 //! Error types for MemFuse.
 
 use thiserror::Error;
@@ -53,6 +57,13 @@ pub enum MemFuseError {
     // ═══ I/O ═══
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+
+    // ═══ Checkpointing (SAOS) ═══
+    #[error("Checkpoint not found")]
+    CheckpointNotFound,
+
+    #[error("Invalid sequence number: {0}")]
+    InvalidSequenceNumber(u64),
 
     // ═══ Internal ═══
     #[error("Internal error: {0}")]
