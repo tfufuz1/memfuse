@@ -1,3 +1,7 @@
+// ANCHOR:ARCH:DB-001 — Orchestrator Facade (Getriebe — Layer 2).
+// ROLLE: Verbindet memfuse-core (Traits), memfuse-store (LSM) und memfuse-index (HNSW).
+// DESIGN: Zero-Boilerplate API für Nutzer. Intern wird alles über die Collection-Abstraktion geroutet.
+// ABWÄRTSKOMPATIBILITÄT: Bietet weiterhin top-level insert/search an, die intern auf die "default" Collection leiten.
 //! # MemFuse — Embedded Hybrid-Search for AI Agents
 //!
 //! MemFuse is a zero-boilerplate embedded database for AI agent memory.

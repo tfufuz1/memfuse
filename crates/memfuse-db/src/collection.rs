@@ -1,3 +1,7 @@
+// ANCHOR:ARCH:COLLECTION-001 — Logische Isolation (Namespaces).
+// DESIGN: Eigener HNSW-Index pro Collection, GEMEINSAMER LSM-Storage.
+// PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:`.
+// STATUS: Dies ist die Teilimplementierung für WP-1.2.
 //! Logically isolated Collections inside the MemFuse database.
 
 use memfuse_index::HnswIndex;
