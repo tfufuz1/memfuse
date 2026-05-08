@@ -1,0 +1,15 @@
+[package]
+name = "memfuse-checkpoint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+memfuse-core = { workspace = true }
+memfuse-store = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
