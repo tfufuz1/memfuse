@@ -1,3 +1,10 @@
+// ANCHOR:ARCH:HNSW-001 — Hierarchical Navigable Small World Index.
+// IMPLEMENTS: VectorIndex Trait (memfuse-core/traits.rs)
+// CONSTRUCT: Greedyensuche + Heuristik für Diversitätsauswahl der Nachbarn.
+// SEARCH: Layer Descent (von max_layer bis 0), dann EF-Search in Layer 0.
+// DELETE: Soft-Delete (Tombstone via deleted_nodes Roaring Bitmap).
+// REBUILD-LOGIK: Wenn >20% gelöscht → async trigger_rebuild_async() -> Atomic Swap.
+// TRANSAKTIONEN: Nutzt memfuse_core::TxBuffer zur Staging-Isolation.
 //! HNSW (Hierarchical Navigable Small World) vector index.
 //!
 //! Provides approximate nearest neighbor search with:

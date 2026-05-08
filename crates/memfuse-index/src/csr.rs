@@ -1,3 +1,7 @@
+// ANCHOR:ARCH:CSR-001 — Compressed Sparse Row (CSR) Graph für Memory-optimierte Relationen.
+// ZIEL: Extrem schnelle, cache-lokale Multi-Hop-Traversierung für SAOS Agents.
+// DESIGN: Static Graph (wird via `build_from_dynamic` ge-freezed).
+// VERWENDET FÜR: Agent-Interaction-Graphs, Task-Hierarchien.
 //! Compressed Sparse Row (CSR) Graph for relation tracking.
 
 use std::collections::HashMap;

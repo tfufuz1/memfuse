@@ -6,6 +6,10 @@
 // RISIKO: Release-Blocker — undokumentiertes unsafe verhindert qualifiziertes Review
 // MASSNAHME: SAFETY: Kommentare für alle 12 unsafe fn + 30 unsafe-Blöcke hinzufügen
 // AGENT:saos-audit DATE:2026-05-08 STATUS:OPEN
+//
+// ANCHOR:ARCH:SIMD-001 — Hardware-beschleunigte Distanzberechnung.
+// PRECEDENCE: AVX-512 > AVX2 > portable_simd > scalar.
+// INVARIANTE: Caller (hnsw.rs) validiert Vektor-Dimensionen VOR dem Aufruf.
 //!
 //! Distance computation functions.
 //!
