@@ -14,11 +14,11 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use memfuse_core::{
     DocId, IndexOp, MemFuseError, ResourceBudget, ResourceTracker, Result, SnapshotRegistry,
-    StorageEngine, TOMBSTONE_BIT, TxBuffer, TxId,
+    StorageEngine, TxBuffer, TxId, TOMBSTONE_BIT,
 };
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
@@ -180,7 +180,7 @@ impl StorageEngine for LsmStorage {
 
         let sstables = self.sstables.read().await;
         for sst in sstables.iter().rev() {
-            if let Some((val, seq)) = sst.get(key)? {
+            if let Some((val, seq)) = sst.get(key).await? {
                 if (seq & TOMBSTONE_BIT) != 0 {
                     return Ok(None);
                 }
@@ -301,7 +301,7 @@ impl StorageEngine for LsmStorage {
 
         let flush_id = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .map_err(|e| MemFuseError::Storage(format!("Time error: {}", e)))?
             .as_micros();
         let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
         let new_wal = Wal::open(wal_path).await?;
@@ -374,7 +374,7 @@ impl StorageEngine for LsmStorage {
         let sstables = self.sstables.read().await;
 
         for sst in sstables.iter() {
-            let entries = sst.scan_prefix(prefix)?;
+            let entries = sst.scan_prefix(prefix).await?;
             for (k, v, seq) in entries {
                 map.insert(k.to_vec(), (v.to_vec(), seq));
             }
@@ -417,7 +417,7 @@ impl StorageEngine for LsmStorage {
 
         // 1. SSTables (oldest first → newer entries overwrite)
         for sst in sstables.iter() {
-            let entries = sst.scan_range(start.map(|s| s), end.map(|e| e))?;
+            let entries = sst.scan_range(start.map(|s| s), end.map(|e| e)).await?;
             for (k, v, seq) in entries {
                 let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                 if seq > entry.1 {

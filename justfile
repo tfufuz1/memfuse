@@ -5,13 +5,13 @@ default:
 
 # Runs the TDD Validation Loop (Red -> Green -> Refactor)
 test: check
-    cargo nextest run --workspace || cargo test --workspace
+    nix develop -c cargo nextest run --workspace || nix develop -c cargo test --workspace
 
 # Runs formatting, clippy and checks compilation
 check:
-    cargo fmt --all -- --check
-    cargo clippy --all-targets -- -D warnings
-    cargo check --all-targets --workspace
+    nix develop -c cargo fmt --all -- --check
+    nix develop -c cargo clippy --all-targets -- -D warnings
+    nix develop -c cargo check --all-targets --workspace
 
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)
 triple-test: check
@@ -20,7 +20,7 @@ triple-test: check
     echo "=== Triple-Test-Gate ==="
     for RUN in 1 2 3; do
         echo "--- Run $RUN/3 ---"
-        if ! cargo test --workspace; then
+        if ! nix develop -c cargo test --workspace; then
             echo "❌ FAILED on run $RUN/3. Fix all failures before this WP is DONE."
             exit 1
         fi

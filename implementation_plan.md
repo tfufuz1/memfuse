@@ -1,19 +1,21 @@
-# MemFuse — Strategic Product Roadmap & Implementation Specifications
+# MemFuse — Strategic Product Roadmap & SAOS Specifications
 
 > **Autor:** Lead Architect  
-> **Datum:** 2026-05-05  
-> **Scope:** Vom gehärteten MVP zum „SQLite für KI-Agenten"
+> **Datum:** 2026-05-08  
+> **Scope:** Vom embedded MVP zur **Sovereign Agentic Operating System (SAOS)**-Gesamtlösung.
 
 ---
 
 ## Executive Summary
 
-MemFuse ist ein **hochperformantes, gehärtetes, eingebettetes Hybrid-Search-System** mit 4 Crates (~4k LoC Rust), das aus ChimeraDB extrahiert wurde. Die technologische Basis (HNSW + LSM-Tree + SIMD + Zero-Panic) ist solide. Um den **Goldstandard** zu erreichen, muss MemFuse vom Spezialisten zum „Schweizer Taschenmesser" werden.
+MemFuse wächst von einer passiven Hybrid-Search-Engine ("SQLite für KI-Agenten") in die ultimative Gesamtlösung: das **Sovereign Agentic Operating System (SAOS)**. 
+Das bedeutet die Verschmelzung der passiven Datenbank (Triebwerk) mit einer aktiven Workflow-Orchestrierung (Cockpit) und einer sicheren WASM-Laufzeitumgebung (Getriebe). 
 
-### Architektonische Entscheidung: Fokus auf Stabilität & DX
+### Architektonische Entscheidung: Der Goldstandard für LLMs
 
 > [!IMPORTANT]
-> **Strategische Priorität:** MemFuse wird NICHT gegen Pinecone (Cloud-Native) positioniert. MemFuse wird das **„SQLite für KI-Agenten"** — lokal, souverän, zero-boilerplate. Jede Architekturentscheidung wird durch dieses Prisma bewertet.
+> **Strategische Priorität:** MemFuse ist nicht mehr nur der Speicher, den der Agent befragt – MemFuse **ist** die Laufzeitumgebung, in der der Agent existiert. 
+> Ein Entwickler installiert `pip install memfuse` und erhält eine Foundation mit 4-Signal-Fusion (HNSW + BM25 + CSR-Graph + LSM), native Time-Travel State Checkpoints, isolate WASM-Tool-Umgebungen und deklarierte StateGraph Agenten.
 
 ### Status Quo
 

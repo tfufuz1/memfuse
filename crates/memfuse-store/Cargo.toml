@@ -14,8 +14,6 @@ crc32fast = { workspace = true }
 parking_lot = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
-async-stream = { workspace = true }
-tokio-stream = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

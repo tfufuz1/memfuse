@@ -108,13 +108,13 @@ impl<T: Clone> TxBuffer<T> {
         let shard_idx = self.shard_idx(tx);
         let shard = self.shards[shard_idx].read();
 
-        if let Some((ops, _)) = shard.ops.get(&tx)
-            && ops.is_empty()
-        {
-            return Err(MemFuseError::Transaction(format!(
-                "Transaction {} was registered but has no pending operations",
-                tx
-            )));
+        if let Some((ops, _)) = shard.ops.get(&tx) {
+            if ops.is_empty() {
+                return Err(MemFuseError::Transaction(format!(
+                    "Transaction {} was registered but has no pending operations",
+                    tx
+                )));
+            }
         }
         Ok(())
     }

@@ -12,7 +12,6 @@ ahash = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
 roaring = { workspace = true }
-bincode = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }

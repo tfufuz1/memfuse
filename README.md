@@ -1,49 +1,53 @@
 # MemFuse
 
-**Embedded Hybrid-Search for AI Agents**
+**Sovereign Agentic Operating System (SAOS)**
 
-> "SQLite for Vector + Metadata + Graph search — in one crate."
+> "The ultimate runtime for AI Agents: Database, Saftey Layer, and Orchestrator in one crate."
 
 ## Quick Start
 
-```rust
-use memfuse_db::MemFuse;
+```python
+# MemFuse provides a zero-setup Python experience
+import memfuse
 
-#[tokio::main]
-async fn main() -> memfuse_core::Result<()> {
-    let db = MemFuse::open("./my_agent_memory").await?;
+# Initializes the full SAOS (LSM-Tree, HNSW, WASM Sandbox, Orchestrator)
+agent = memfuse.Agent("./my_agent_memory")
 
-    // Insert a document with embedding + metadata
-    let embedding = vec![0.1, 0.2, 0.3, 0.4];
-    db.insert("doc-1", &embedding, Some(serde_json::json!({
-        "topic": "rust",
-        "source": "docs"
-    }))).await?;
+# Declarative StateGraph (Cockpit Layer)
+agent.add_node("research", "Research the topic using tools")
+agent.add_node("code", "Generate code safely via WASM")
+agent.add_edge("research", "code")
 
-    // Semantic search
-    let results = db.search(&[0.1, 0.2, 0.3, 0.4], 5).await?;
-    for r in &results {
-        println!("{}: score={:.3}", r.id, r.score);
-    }
-
-    // Create relationships (Phase 2: backed by CSR graph)
-    db.relate("doc-1", "doc-2", "references").await?;
-
-    // Delete
-    db.delete("doc-1").await?;
-
-    Ok(())
-}
+# Autonomously run the workflow in an isolated environment
+result = agent.run("Erstelle ein Rust-Programm", isolation_mode="wasm")
+print(result)
 ```
 
-## Architecture
+## Architecture: The 3 SAOS Layers
 
+MemFuse is no longer just a vector database, it is the runtime environment in which the agent exists.
+
+1. **Das Triebwerk (Data & Memory Foundation)**
 ```
-memfuse-db          ← User-facing API (insert, search, delete, relate)
-  ├── memfuse-store ← LSM-Tree + WAL (persistent key-value storage)
-  ├── memfuse-index ← HNSW + SIMD distance (vector search)
-  └── memfuse-core  ← Types, traits, errors, tx-buffer
+memfuse-core   ← Core Types, WAL, Transactions, State Checkpoints
+memfuse-store  ← LSM-Tree Persistence
+memfuse-index  ← HNSW + SIMD Vector Search + CSR Graph (Multi-Hop)
+memfuse-text   ← Inverted Index + BM25 Scoring
 ```
+*Provides 4-Signal-Fusion (Dense, Sparse, Graph, Meta) at edge latency.*
+
+2. **Das Getriebe (Execution & Safety Layer)**
+```
+memfuse-runtime ← WASM Sandboxing & Native Tool Execution
+```
+*Provides guaranteed host-safety and native state checkpointing (Time-Travel).*
+
+3. **Das Cockpit (Agentic Workflow Orchestration)**
+```
+memfuse-orchestrator ← Rust-native Declarative StateGraphs
+memfuse-py           ← PyO3 bindings (`pip install memfuse`)
+```
+*Autonomously injects context, controls execution flow, and enforces isolation.*
 
 ## Features
 

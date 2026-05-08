@@ -1,3 +1,12 @@
+// ANCHOR:WARN:SAOS-020 — Undokumentierte unsafe-Blöcke in SIMD-Zone
+// GEFUNDEN: 42 unsafe-Blöcke (AVX2 + AVX-512) ohne SAFETY: Kommentare
+// ERWARTET: Jeder unsafe-Block braucht SAFETY: Kommentar mit:
+//   1. Warum die Operation sicher ist (Slice-Bounds, Alignment)
+//   2. Welche Invarianten vom Caller garantiert werden
+// RISIKO: Release-Blocker — undokumentiertes unsafe verhindert qualifiziertes Review
+// MASSNAHME: SAFETY: Kommentare für alle 12 unsafe fn + 30 unsafe-Blöcke hinzufügen
+// AGENT:saos-audit DATE:2026-05-08 STATUS:OPEN
+//!
 //! Distance computation functions.
 //!
 //! This module provides distance metrics for vector comparison.
@@ -442,18 +451,18 @@ mod tests {
 
         // Dot product
         let dot_scalar = dot_product_scalar(&a, &b);
-        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).unwrap();
+        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test");
         let dot_simd = -d;
         assert!((dot_scalar - dot_simd).abs() < 1e-3);
 
         // Euclidean
         let euc_scalar = euclidean_distance_scalar(&a, &b);
-        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).unwrap();
+        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test");
         assert!((euc_scalar - euc_simd).abs() < 1e-3);
 
         // Cosine
         let cos_scalar = cosine_distance_scalar(&a, &b);
-        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).unwrap();
+        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test");
         assert!((cos_scalar - cos_simd).abs() < 1e-3);
     }
 

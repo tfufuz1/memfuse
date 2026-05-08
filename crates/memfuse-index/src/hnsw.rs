@@ -181,11 +181,10 @@ impl HnswIndexCore {
         }
 
         while let Some(Reverse(current)) = candidates.pop() {
-            if let Some(worst_result) = results.peek()
-                && current.distance > worst_result.distance
-                && results.len() >= ef
-            {
-                break;
+            if let Some(worst_result) = results.peek() {
+                if current.distance > worst_result.distance && results.len() >= ef {
+                    break;
+                }
             }
 
             if layer < nodes[current.index].connections.len() {
@@ -548,10 +547,10 @@ impl VectorIndex for HnswIndex {
                 continue;
             }
             let doc_id = nodes[c.index].doc_id;
-            if let Some(f) = filter
-                && !f(doc_id)
-            {
-                continue;
+            if let Some(f) = filter {
+                if !f(doc_id) {
+                    continue;
+                }
             }
             let score = match self.config.distance_metric {
                 DistanceMetric::Cosine => 1.0 - c.distance,
@@ -747,16 +746,16 @@ mod tests {
         index
             .insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
             .await
-            .unwrap();
+            .expect("test");
         index
             .insert(tx, DocId::new(2), &[0.9, 0.1, 0.0, 0.0])
             .await
-            .unwrap();
+            .expect("test");
         index
             .insert(tx, DocId::new(3), &[0.8, 0.2, 0.0, 0.0])
             .await
-            .unwrap();
-        index.commit(tx).await.unwrap();
+            .expect("test");
+        index.commit(tx).await.expect("test");
 
         // Filtered: exclude DocId 1
         let filter_fn = |doc: DocId| doc.inner() != 1;
@@ -764,7 +763,7 @@ mod tests {
         let filtered = index
             .search_filtered(&[1.0, 0.0, 0.0, 0.0], 2, Some(filter_ref))
             .await
-            .unwrap();
+            .expect("test");
         assert_eq!(filtered.len(), 2);
         assert!(filtered.iter().all(|r| r.doc_id != DocId::new(1)));
     }
@@ -783,9 +782,9 @@ mod tests {
             index
                 .insert(tx, DocId::new(i), &[i as f32, 0.0])
                 .await
-                .unwrap();
+                .expect("test");
         }
-        index.commit(tx).await.unwrap();
+        index.commit(tx).await.expect("test");
 
         assert_eq!(index.len().await, 5);
         assert!((index.connectivity_score() - 1.0).abs() < f64::EPSILON);
@@ -793,29 +792,29 @@ mod tests {
 
         // Delete 2 nodes → 40% deleted, connectivity = 0.6
         let tx2 = TxId::new(2);
-        index.delete(tx2, DocId::new(2)).await.unwrap();
-        index.delete(tx2, DocId::new(4)).await.unwrap();
-        index.commit(tx2).await.unwrap();
+        index.delete(tx2, DocId::new(2)).await.expect("test");
+        index.delete(tx2, DocId::new(4)).await.expect("test");
+        index.commit(tx2).await.expect("test");
 
         assert_eq!(index.len().await, 3);
         assert!(index.connectivity_score() < 0.8);
         assert!(index.is_rebuild_required());
 
-        let stats_pre = index.stats().await.unwrap();
+        let stats_pre = index.stats().await.expect("test");
         assert_eq!(stats_pre.num_vectors, 3);
 
         // Rebuild
-        index.rebuild().await.unwrap();
+        index.rebuild().await.expect("test");
 
         assert_eq!(index.len().await, 3);
         assert!((index.connectivity_score() - 1.0).abs() < f64::EPSILON);
         assert!(!index.is_rebuild_required());
 
-        let stats_post = index.stats().await.unwrap();
+        let stats_post = index.stats().await.expect("test");
         assert_eq!(stats_post.num_vectors, 3);
 
         // Ensure rebuilt index still works
-        let results = index.search(&[1.0, 0.0], 1).await.unwrap();
+        let results = index.search(&[1.0, 0.0], 1).await.expect("test");
         assert_eq!(results[0].doc_id, DocId::new(1));
     }
 

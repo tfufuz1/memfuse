@@ -11,7 +11,7 @@
 | Crate | Rolle | LoC | Status |
 |:------|:------|:----|:-------|
 | **`memfuse-core`** | Grundlegende Typen, TxBuffer, MemBank, Error, Snapshots | ~280 | ✅ Stabil |
-| **`memfuse-store`** | LSM-Storage, MemTables, WAL, Compaction | ~1400 | ⚠️ WP-1.1 offen |
+| **`memfuse-store`** | LSM-Storage, MemTables, WAL, Compaction | ~1400 | ✅ Stabil |
 | **`memfuse-index`** | HNSW-Graphen, SIMD Vektor-Distanz, Quantization | ~1300 | ✅ Stabil |
 | **`memfuse-db`** | Orchestrierung, Hybrid-Search Facade, Collections | ~700 | ✅ Stabil |
 | **`memfuse-text`** | BM25, Inverted Index, Tokenizer | — | 🔵 WP-2.1 geplant |
@@ -77,8 +77,8 @@ just spec WP-X.Y-NAME
 
 | WP | Name | Priorität | Status | Spec |
 |---|---|---|---|---|
-| **WP-0.0** | Dependency Audit & Tech Debt | 🔴 KRITISCH | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-0.0-DependencyAudit.md) |
-| **WP-1.1** | Background Compaction | 🔴 KRITISCH | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-1.1-Compaction.md) |
+| **WP-0.0** | Dependency Audit & Tech Debt | 🔴 KRITISCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-0.0-DependencyAudit.md) |
+| **WP-1.1** | Background Compaction | 🔴 KRITISCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-1.1-Compaction.md) |
 | **WP-1.2** | Collections / Namespaces | 🟠 HOCH | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-1.2-Collections.md) |
 | **WP-2.1** | Hybrid Search (BM25+RRF) | 🟠 HOCH | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-2.1-HybridSearch.md) |
 | **WP-2.2** | Scalar Quantization (SQ8) | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-2.2-Quantization.md) |
@@ -90,22 +90,27 @@ just spec WP-X.Y-NAME
 
 ---
 
-## Jules Account Matrix
+## Jules Account Matrix (13 Accounts × 15 Tasks/Tag)
 
-| Account | Crate/Rolle | Scheduled Tasks |
-|---|---|---|
-| 01 | `memfuse-core` | WP-0.0 Tech Debt |
-| 02 | `memfuse-store` | WP-1.1, WP-4.1 |
-| 03 | `memfuse-index` | WP-2.2, WP-4.3 |
-| 04 | `memfuse-db` | WP-1.2, WP-4.2 |
-| 05 | `memfuse-text` | WP-2.1 |
-| 06 | `memfuse-py` | WP-3.1 |
-| 07 | QA Cross-Crate | Täglich 20:00 UTC |
-| 08 | Docs & Specs | Wöchentlich Mo |
-| 09 | Benchmarks | Täglich 22:00 UTC |
-| 10 | Security/Crypto | WP-3.2 |
+| # | Rolle | Crate/Fokus | WPs | Cadence |
+|---|---|---|---|---|
+| 01 | Core Guardian | `memfuse-core` | WP-0.0 | Daily 06:00 UTC |
+| 02 | Store Engineer | `memfuse-store` | WP-1.1, WP-4.1 | Daily 07:00 UTC |
+| 03 | Index Engineer | `memfuse-index` | WP-2.2, WP-4.3 | Daily 08:00 UTC |
+| 04 | DB Orchestrator | `memfuse-db` | WP-1.2, WP-4.2 | Daily 09:00 UTC |
+| 05 | Text Engine | `memfuse-text` | WP-2.1 | Daily 10:00 UTC |
+| 06 | Python Bindings | `memfuse-py` | WP-3.1 | Daily 11:00 UTC |
+| 07 | QA Cross-Crate | Alle (read+fix) | Regression | Daily 20:00 UTC |
+| 08 | Docs & Specs | `docs/`, README | Documentation | Weekly Mo 08:00 |
+| 09 | Benchmarks | `benches/` | Performance | Daily 22:00 UTC |
+| 10 | Security | `crypto.rs` | WP-3.2 | Daily 12:00 UTC |
+| 11 | CI/DevOps | `.github/`, `justfile` | Workflows | Weekly Mo 10:00 |
+| 12 | Integration Tester | Workspace-wide | E2E Tests | Daily 21:00 UTC |
+| 13 | Debt Hunter | Alle Crates | Tech Debt | Daily 05:00 UTC |
 
-**Prompts:** `.agent/jules/prompts/`  
+**Prompts:** `.agent/jules/prompts/accounts/XX-name.md`
+**Schedule:** `.agent/jules/SCHEDULE.md`
+**Prompt-Generator:** `bash .agent/jules/scripts/generate-jules-prompt.sh <ACCOUNT> [WP]`
 **CI:** `.github/workflows/jules-quality-gate.yml`
 
 ---

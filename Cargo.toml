@@ -4,12 +4,12 @@ members = [
     "crates/memfuse-core",
     "crates/memfuse-store",
     "crates/memfuse-index",
-    "crates/memfuse-db",
+    "crates/memfuse-db", "crates/memfuse-text", "crates/memfuse-runtime", "crates/memfuse-orchestrator", "crates/memfuse-py",
 ]
 
 [workspace.package]
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 license = "MIT OR Apache-2.0"
 rust-version = "1.89"
 

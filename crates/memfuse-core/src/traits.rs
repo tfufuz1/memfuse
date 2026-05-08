@@ -3,8 +3,8 @@
 //! These traits define the abstract interfaces that concrete implementations
 //! must fulfill, enabling modularity and testability.
 
-use crate::Result;
 use crate::types::*;
+use crate::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 

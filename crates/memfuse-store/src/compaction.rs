@@ -205,7 +205,7 @@ impl CompactionEngine {
         // 1. Collect all entries from all input SSTables
         let mut all_entries: Vec<(Vec<u8>, Vec<u8>, u64)> = Vec::new();
         for sst in inputs {
-            let entries = sst.iter()?;
+            let entries = sst.iter().await?;
             for (k, v, seq) in entries {
                 all_entries.push((k.to_vec(), v.to_vec(), seq));
             }
@@ -331,7 +331,7 @@ mod tests {
             .expect("merge");
 
         let reader = SstableReader::open(&output).await.expect("open merged");
-        let entries = reader.iter().expect("iter");
+        let entries = reader.iter().await.expect("iter");
 
         // key-a should have the newer value (seq=3)
         assert_eq!(entries.len(), 3); // key-a, key-b, key-c
@@ -363,7 +363,7 @@ mod tests {
             .expect("merge");
 
         let reader = SstableReader::open(&output).await.expect("open");
-        let entries = reader.iter().expect("iter");
+        let entries = reader.iter().await.expect("iter");
 
         assert_eq!(entries.len(), 1); // Only "alive" remains
         assert_eq!(entries[0].0.as_ref(), b"alive");
@@ -392,7 +392,7 @@ mod tests {
             .expect("merge");
 
         let reader = SstableReader::open(&output).await.expect("open");
-        let entries = reader.iter().expect("iter");
+        let entries = reader.iter().await.expect("iter");
 
         assert_eq!(entries.len(), 2); // Both preserved
     }
@@ -450,7 +450,7 @@ mod tests {
 
         // Verify all data is present in the compacted result
         let last_sst = &ssts[ssts.len() - 1];
-        let entries = last_sst.iter().expect("iter");
+        let entries = last_sst.iter().await.expect("iter");
         assert_eq!(entries.len(), 6); // 3 SSTables × 2 entries each
     }
 

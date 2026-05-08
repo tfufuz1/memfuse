@@ -15,7 +15,6 @@ ahash = { workspace = true }
 tracing = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
-bincode = { workspace = true }
 blake3 = { workspace = true }
 
 [dev-dependencies]
