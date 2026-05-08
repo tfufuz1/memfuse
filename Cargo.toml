@@ -4,7 +4,7 @@ members = [
     "crates/memfuse-core",
     "crates/memfuse-store",
     "crates/memfuse-index",
-    "crates/memfuse-db", "crates/memfuse-text", "crates/memfuse-runtime", "crates/memfuse-orchestrator", "crates/memfuse-py",
+    "crates/memfuse-db", "crates/memfuse-text", "crates/memfuse-runtime", "crates/memfuse-orchestrator", "crates/memfuse-py", "crates/memfuse-checkpoint",
 ]
 
 [workspace.package]

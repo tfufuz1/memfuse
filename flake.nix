@@ -29,7 +29,7 @@
       in {
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            (rust-bin.stable.latest.default.override {
+            (rust-bin.nightly.latest.default.override {
               extensions = ["rust-src" "rust-analyzer" "clippy" "rustfmt"];
             })
             cargo-watch
