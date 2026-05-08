@@ -1,3 +1,5 @@
+// ANCHOR:ARCH:GRAPH-001 — Deklarativer StateGraph.
+// DESIGN: Hashmaps für Knoten, einfache Tuple-Listen für Edges.
 //! Declarative StateGraph definition for Agent Workflows.
 
 use std::collections::HashMap;

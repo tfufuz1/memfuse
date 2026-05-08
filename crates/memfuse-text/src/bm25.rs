@@ -1,3 +1,5 @@
+// ANCHOR:ARCH:BM25-001 — BM25 Scoring-Engine (Standard Okapi BM25).
+// INVARIANTE: Default-Parameter: k1=1.5, b=0.75.
 //! BM25 Scoring utility.
 
 use std::collections::HashMap;

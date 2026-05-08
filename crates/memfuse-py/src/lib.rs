@@ -1,3 +1,8 @@
+// ANCHOR:ARCH:PY-001 — Python Bindings (Cockpit — Layer 3).
+// DESIGN: PyO3 mit rust-numpy für Zero-Copy Array Transfer.
+// INVARIANTE: GIL wird während async-I/O gehalten (block_on). Dies ist akzeptabel,
+//   da SAOS primär Single-Threaded-LLM-Agents bedient.
+// TODO:WP-3.1 — pyo3-asyncio evaluieren für echten async/await Support in Python.
 //! Zero-Copy Python Bridge for MemFuse (SAOS)
 
 #![allow(unsafe_op_in_unsafe_fn)]

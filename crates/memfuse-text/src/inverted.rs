@@ -1,3 +1,5 @@
+// ANCHOR:ARCH:INVERTED-001 — Inverted Index Data Structures.
+// DESIGN: Term (String) -> RoaringBitmap von DocIDs für schnelle Set-Intersection.
 //! Inverted Index backend mapping terms to Roaring Bitmaps.
 
 use roaring::RoaringBitmap;

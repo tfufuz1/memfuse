@@ -1,3 +1,5 @@
+// ANCHOR:ARCH:SANDBOX-001 — Isolierte WASM-Ausführungsumgebung.
+// DEFAULT-LIMS: 64MB Memory, 500ms Timeout, Netzwerk OFF.
 //! WebAssembly Sandboxing for safe agent tool execution.
 
 use std::time::Duration;
