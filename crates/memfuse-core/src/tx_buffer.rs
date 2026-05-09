@@ -1,13 +1,14 @@
-// ANCHOR:ARCH:TXBUF-001 — Sharded Transaction Buffer für lock-freie Concurrency.
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
-// DESIGN: 64 Shards → TxId % 64. LIFECYCLE: stage() → drain()/discard().
 //! Transactional buffer for staging index operations.
 //!
 //! Sharded into sub-buffers to reduce lock contention.
 //! Each shard is independently locked, allowing concurrent writers
 //! to different transactions.
+
+// ANCHOR:ARCH:TXBUF-001 — Sharded Transaction Buffer für lock-freie Concurrency.
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// DESIGN: 64 Shards → TxId % 64. LIFECYCLE: stage() → drain()/discard().
 
 use crate::error::{MemFuseError, Result};
 use crate::types::{DocId, TxId};
@@ -55,6 +56,12 @@ impl<T: Clone> TxShard<T> {
 /// Buffers index operations until commit or rollback.
 ///
 /// Sharded into sub-buffers to reduce lock contention.
+///
+/// ### Locking Strategy
+/// Each shard is protected by an independent `parking_lot::RwLock`.
+/// Standard acquisition order: Read-lock for queries, Write-lock for mutations.
+/// To avoid deadlocks, cross-shard operations must never acquire more than
+/// one shard lock simultaneously.
 #[derive(Debug)]
 pub struct TxBuffer<T: Clone> {
     shards: Vec<RwLock<TxShard<T>>>,
@@ -106,6 +113,9 @@ impl<T: Clone> TxBuffer<T> {
     }
 
     /// Stages an operation for the given transaction.
+    ///
+    /// If the transaction has not been explicitly started with `begin`,
+    /// it will be implicitly created on the first `stage` call.
     pub fn stage(&self, tx: TxId, op: IndexOp<T>) {
         let shard_idx = self.shard_idx(tx);
         let mut shard = self.shards[shard_idx].write();
@@ -133,6 +143,9 @@ impl<T: Clone> TxBuffer<T> {
     }
 
     /// Drains and returns all buffered operations for a transaction.
+    ///
+    /// Returns an empty vector if the transaction does not exist or has no operations.
+    /// This operation is atomic per shard.
     pub fn drain(&self, tx: TxId) -> Vec<IndexOp<T>> {
         let shard_idx = self.shard_idx(tx);
         let mut shard = self.shards[shard_idx].write();

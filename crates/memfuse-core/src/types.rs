@@ -1,12 +1,13 @@
+//! Core type definitions for MemFuse.
+//!
+//! Simplified from ChimeraDB — no rkyv, no namespaces, string-based IDs.
+
 // ANCHOR:ARCH:TYPES-001 — Zentrale Datentypen für den gesamten Workspace.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
 // INVARIANTEN: DocId=#[repr(transparent)] u64 via blake3, TOMBSTONE_BIT=Bit63 in SeqNo.
 // ACHTUNG: Änderungen an DocId::from_key() brechen ALLE bestehenden Datenbanken!
-//! Core type definitions for MemFuse.
-//!
-//! Simplified from ChimeraDB — no rkyv, no namespaces, string-based IDs.
 
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
@@ -28,11 +29,13 @@ impl DocId {
     pub const MAX: Self = Self(u64::MAX);
     pub const MIN: Self = Self(0);
 
+    /// Creates a new DocId from a raw u64.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
+    /// Returns the raw u64 value.
     #[inline]
     pub const fn inner(self) -> u64 {
         self.0
@@ -65,11 +68,13 @@ impl std::fmt::Display for DocId {
 pub struct EntityId(pub u64);
 
 impl EntityId {
+    /// Creates a new EntityId from a raw u64.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
+    /// Returns the raw u64 value.
     #[inline]
     pub const fn inner(self) -> u64 {
         self.0
@@ -94,11 +99,13 @@ impl std::fmt::Display for EntityId {
 pub struct TxId(pub u64);
 
 impl TxId {
+    /// Creates a new TxId from a raw u64.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
+    /// Returns the raw u64 value.
     #[inline]
     pub const fn inner(self) -> u64 {
         self.0
@@ -126,19 +133,23 @@ pub enum DistanceMetric {
 /// Vector embedding representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Embedding {
+    /// Raw vector data.
     pub data: Vec<f32>,
 }
 
 impl Embedding {
+    /// Creates a new Embedding from a vector of floats.
     pub fn new(data: Vec<f32>) -> Self {
         Self { data }
     }
 
+    /// Returns the dimension of the embedding.
     #[inline]
     pub fn dim(&self) -> usize {
         self.data.len()
     }
 
+    /// Returns the data as a slice.
     #[inline]
     pub fn as_slice(&self) -> &[f32] {
         &self.data
@@ -162,11 +173,14 @@ impl Embedding {
 /// A scored search result.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ScoredDocument {
+    /// The document identifier.
     pub doc_id: DocId,
+    /// The similarity score.
     pub score: f32,
 }
 
 impl ScoredDocument {
+    /// Creates a new ScoredDocument.
     pub fn new(doc_id: DocId, score: f32) -> Self {
         Self { doc_id, score }
     }
@@ -175,12 +189,16 @@ impl ScoredDocument {
 /// Graph entity (node) representing a concept.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
+    /// Unique identifier for the entity.
     pub id: EntityId,
+    /// Human-readable name of the entity.
     pub name: String,
+    /// Type categorization of the entity.
     pub entity_type: String,
 }
 
 impl Entity {
+    /// Creates a new Entity.
     pub fn new(id: EntityId, name: impl Into<String>, entity_type: impl Into<String>) -> Self {
         Self {
             id,
@@ -193,13 +211,18 @@ impl Entity {
 /// Graph edge (relation) between two entities.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Edge {
+    /// Source entity identifier.
     pub from: EntityId,
+    /// Target entity identifier.
     pub to: EntityId,
+    /// Relationship label.
     pub label: String,
+    /// Strength or weight of the relationship.
     pub weight: f32,
 }
 
 impl Edge {
+    /// Creates a new Edge with default weight 1.0.
     pub fn new(from: EntityId, to: EntityId, label: impl Into<String>) -> Self {
         Self {
             from,
@@ -223,6 +246,7 @@ impl Edge {
 /// Resource budget for memory management.
 #[derive(Debug, Clone, Copy)]
 pub struct ResourceBudget {
+    /// Maximum allowed memory usage in bytes.
     pub memory_limit: u64,
 }
 
@@ -237,11 +261,14 @@ impl Default for ResourceBudget {
 /// Tracks resource usage against a budget.
 #[derive(Debug)]
 pub struct ResourceTracker {
+    /// The configured budget.
     budget: ResourceBudget,
+    /// Current memory usage in bytes.
     memory_used: std::sync::atomic::AtomicU64,
 }
 
 impl ResourceTracker {
+    /// Creates a new ResourceTracker with the given budget.
     pub fn new(budget: ResourceBudget) -> Self {
         Self {
             budget,

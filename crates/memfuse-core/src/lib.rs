@@ -1,9 +1,3 @@
-// ANCHOR:ARCH:CORE-001 — Triebwerk-Fundament: Alle anderen Crates hängen von memfuse-core ab.
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
-// INVARIANTE: Kein I/O, kein async, kein Netzwerk — reine Datentypen + Traits.
-// Vor jeder Änderung: `cargo check -p memfuse-db` um Downstream-Bruch zu erkennen.
 //! MemFuse Core — Types, traits, and error handling.
 //!
 //! This crate provides the foundational building blocks for the MemFuse
@@ -18,6 +12,13 @@
 //! - **Error**: [`MemFuseError`] — unified error enum, zero-panic via `?` propagation
 //! - **TxBuffer**: Sharded transaction staging with orphan reaper
 //! - **Snapshots**: MVCC read isolation via [`SnapshotRegistry`]
+
+// ANCHOR:ARCH:CORE-001 — Triebwerk-Fundament: Alle anderen Crates hängen von memfuse-core ab.
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// INVARIANTE: Kein I/O, kein async, kein Netzwerk — reine Datentypen + Traits.
+// Vor jeder Änderung: `cargo check -p memfuse-db` um Downstream-Bruch zu erkennen.
 
 #![forbid(unsafe_code)]
 
