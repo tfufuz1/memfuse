@@ -25,6 +25,7 @@ use roaring::RoaringTreemap;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// HNSW index configuration.
@@ -64,7 +65,7 @@ impl Default for HnswConfig {
 #[derive(Debug)]
 struct HnswNode {
     doc_id: DocId,
-    vector: Vec<f32>,
+    vector: Arc<[f32]>,
     connections: Vec<Vec<usize>>,
     _max_layer: usize,
 }
@@ -98,7 +99,7 @@ impl Ord for Candidate {
 }
 
 pub struct HnswIndex {
-    inner: std::sync::Arc<HnswIndexCore>,
+    inner: Arc<HnswIndexCore>,
 }
 
 impl std::ops::Deref for HnswIndex {
@@ -127,7 +128,7 @@ impl HnswIndex {
     pub fn new(config: HnswConfig) -> Self {
         let ml = 1.0 / (config.m as f64).ln();
         Self {
-            inner: std::sync::Arc::new(HnswIndexCore {
+            inner: Arc::new(HnswIndexCore {
                 config,
                 nodes: RwLock::new(Vec::new()),
                 doc_to_node: RwLock::new(AHashMap::new()),
@@ -146,7 +147,7 @@ impl HnswIndex {
     /// Triggers an async rebuild if the deletion threshold is exceeded.
     pub fn trigger_rebuild_async(&self) {
         if self.is_rebuild_required() {
-            let inner = std::sync::Arc::clone(&self.inner);
+            let inner = Arc::clone(&self.inner);
             tokio::spawn(async move {
                 if let Err(e) = inner.rebuild().await {
                     tracing::error!("Failed to rebuild HNSW index: {}", e);
@@ -171,9 +172,9 @@ impl HnswIndexCore {
         layer: usize,
     ) -> Result<Vec<Candidate>> {
         let nodes = self.nodes.read();
-        let mut visited = AHashSet::new();
+        let mut visited = AHashSet::with_capacity(ef);
         let mut candidates = BinaryHeap::new();
-        let mut results = BinaryHeap::new();
+        let mut results = BinaryHeap::with_capacity(ef);
 
         for &ep in entry_points {
             if visited.insert(ep) {
@@ -280,7 +281,7 @@ impl HnswIndexCore {
             let idx = nodes.len();
             nodes.push(HnswNode {
                 doc_id: id,
-                vector: vector.to_vec(),
+                vector: Arc::from(vector),
                 connections: vec![vec![]; new_layer + 1],
                 _max_layer: new_layer,
             });
@@ -320,7 +321,7 @@ impl HnswIndexCore {
                     if layer < nodes[neighbor_idx].connections.len() {
                         nodes[neighbor_idx].connections[layer].push(new_idx);
                         if nodes[neighbor_idx].connections[layer].len() > self.config.m * 2 {
-                            let node_vec = nodes[neighbor_idx].vector.clone();
+                            let node_vec = Arc::clone(&nodes[neighbor_idx].vector);
                             let mut conn_cands =
                                 Vec::with_capacity(nodes[neighbor_idx].connections[layer].len());
                             for &idx in &nodes[neighbor_idx].connections[layer] {
@@ -401,7 +402,7 @@ impl HnswIndexCore {
             );
             for (idx, node) in nodes.iter().enumerate() {
                 if !deleted_nodes.contains(idx as u64) {
-                    active.push((node.doc_id, node.vector.clone()));
+                    active.push((node.doc_id, Arc::clone(&node.vector)));
                 }
             }
             (active, self.config.clone())

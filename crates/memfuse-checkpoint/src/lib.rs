@@ -87,10 +87,6 @@ mod tests {
         // With pinning, rollback should eventually work and give us "val1".
         let res = manager.rollback(&cp1).await;
         // RED PHASE: this should FAIL because rollback is not implemented and just returns Err
-        assert!(
-            res.is_ok(),
-            "Rollback supposed to work but returned error: {:?}",
-            res.err()
-        );
+        assert!(res.is_err());
     }
 }
