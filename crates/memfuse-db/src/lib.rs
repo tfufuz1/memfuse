@@ -643,7 +643,9 @@ mod tests {
         let res_a = col_a.get("k1").await.expect("get a").expect("exists");
         let res_b = col_b.get("k1").await.expect("get b").expect("exists");
 
+        // // unwrap
         assert_eq!(res_a.metadata.unwrap()["val"], "a");
+        // // unwrap
         assert_eq!(res_b.metadata.unwrap()["val"], "b");
 
         let search_a = col_a
@@ -652,6 +654,7 @@ mod tests {
             .expect("search a");
         assert_eq!(search_a.len(), 1);
         assert_eq!(search_a[0].id, "k1");
+        // // unwrap
         assert_eq!(search_a[0].metadata.as_ref().unwrap()["val"], "a");
     }
 

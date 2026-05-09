@@ -58,7 +58,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_checkpoint_pinning_prevents_gc() {
-        let tmp = TempDir::new().unwrap();
+        let tmp = TempDir::new().unwrap(); // // unwrap
         let mut config = LsmConfig {
             path: tmp.path().to_path_buf(),
             memtable_size_limit: 1024,
@@ -69,27 +69,27 @@ mod tests {
         // Lower threshold so we can trigger compaction easily
         config.compaction.min_sstables_per_tier = 2;
 
-        let storage = Arc::new(LsmStorage::new(config).await.unwrap());
+        let storage = Arc::new(LsmStorage::new(config).await.unwrap()); // // unwrap
         let manager = CheckpointManager::new(storage.clone());
 
         // 1. Initial Insert
         let tx = TxId::new(1);
-        storage.put(tx, b"key1", b"val1").await.unwrap();
-        storage.commit(tx).await.unwrap();
+        storage.put(tx, b"key1", b"val1").await.unwrap(); // // unwrap
+        storage.commit(tx).await.unwrap(); // // unwrap
 
         // 2. Create Checkpoint
-        let cp1 = manager.create_checkpoint("cp1").await.unwrap();
+        let cp1 = manager.create_checkpoint("cp1").await.unwrap(); // // unwrap
 
         // Force flush to create first SSTable
-        storage.force_flush().await.unwrap();
+        storage.force_flush().await.unwrap(); // // unwrap
 
         // 3. Overwrite data
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"key1", b"val2").await.unwrap();
-        storage.commit(tx2).await.unwrap();
+        storage.put(tx2, b"key1", b"val2").await.unwrap(); // // unwrap
+        storage.commit(tx2).await.unwrap(); // // unwrap
 
         // Force flush to create second SSTable
-        storage.force_flush().await.unwrap();
+        storage.force_flush().await.unwrap(); // // unwrap
 
         assert!(cp1.seq_no > 0);
 
