@@ -92,12 +92,14 @@ impl Collection {
             match key_type {
                 0 => key.to_vec(),
                 1 => {
-                    let mut k = b"__docid:".to_vec();
+                    let mut k = Vec::with_capacity(8 + key.len());
+                    k.extend_from_slice(b"__docid:");
                     k.extend_from_slice(key);
                     k
                 }
                 2 => {
-                    let mut k = b"__rel:".to_vec();
+                    let mut k = Vec::with_capacity(6 + key.len());
+                    k.extend_from_slice(b"__rel:");
                     k.extend_from_slice(key);
                     k
                 }
@@ -109,7 +111,8 @@ impl Collection {
                 _ => key.to_vec(),
             }
         } else {
-            let mut k = self.prefix.clone();
+            let mut k = Vec::with_capacity(self.prefix.len() + 1 + key.len());
+            k.extend_from_slice(&self.prefix);
             k.push(key_type);
             k.extend_from_slice(key);
             k
