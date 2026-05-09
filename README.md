@@ -49,6 +49,20 @@ memfuse-py           ← PyO3 bindings (`pip install memfuse`)
 ```
 *Autonomously injects context, controls execution flow, and enforces isolation.*
 
+## 4. The Jules Squad: 13 Autonomous Agents
+
+MemFuse is developed using a revolutionary **Multi-Agent Orchestration** system. 13 autonomous Jules agents work in a staggered 24-hour cycle to provide 24/7 development and maintenance without human intervention.
+
+- **Infinite Free-Tier Mastery**: Orchestration of 13 Google Jules accounts to bypass rate limits.
+- **Triple-Test-Gate**: Every PR is validated 3 times and checked for `Zero-Panic` invariants before auto-merging.
+- **Proactive Scaling**: Dynamic dispatcher triggers the next agent in the queue immediately after a successful merge.
+- **AI-Architect Supervision**: Gemini-CLI automated architectural reviews on every contribution.
+
+```bash
+# Monitor the squad in real-time
+bash .agent/scripts/jules-dashboard.sh
+```
+
 ## Features
 
 - **Zero Boilerplate** — String IDs, auto-commit, no configuration needed
@@ -57,6 +71,7 @@ memfuse-py           ← PyO3 bindings (`pip install memfuse`)
 - **LSM-Tree Persistence** — WAL + MemTable with crash recovery
 - **Transactional** — Sharded TxBuffer with orphan-reaping
 - **Relationship Tracking** — `relate()` API for graph-aware retrieval
+- **Deterministic Checkpointing** — Native state pinning for "Time-Travel" debugging
 
 ## Building
 
