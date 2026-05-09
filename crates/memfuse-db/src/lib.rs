@@ -45,12 +45,12 @@
 
 #![forbid(unsafe_code)]
 
-use memfuse_core::{DocId, Result, StorageEngine};
+use memfuse_core::{DocId, Result, StorageEngine, TxId};
 use memfuse_index::{HnswConfig, HnswIndex};
 use memfuse_store::LsmStorage;
 use serde_json::Value;
 use std::path::Path;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub mod collection;
@@ -147,10 +147,25 @@ impl MemFuse {
             collections: tokio::sync::RwLock::new(std::collections::HashMap::new()),
         };
 
+        // Initialize already existing collections from storage
+        db.initialize_collections().await?;
+
         // Initialize the default collection backwards compatibility
         let _ = db.collection("default").await?;
 
         Ok(db)
+    }
+
+    async fn initialize_collections(&self) -> Result<()> {
+        let col_idx_prefix = b"__col_idx:\x00";
+        let entries = self.storage.scan_prefix(col_idx_prefix).await?;
+        for (k, _) in entries {
+            let name_bytes = &k[col_idx_prefix.len()..];
+            if let Ok(name) = String::from_utf8(name_bytes.to_vec()) {
+                let _ = self.collection(&name).await?;
+            }
+        }
+        Ok(())
     }
 
     /// Returns the next transaction ID (auto-incremented).
@@ -166,6 +181,21 @@ impl MemFuse {
     // AGENT:jules-04 DATE:2026-05-09 SPRINT:1
     // CREATED:2026-05-09 DEADLINE:NONE
     pub async fn collection(&self, name: &str) -> Result<Collection> {
+        // Validation
+        if name.len() > 64 {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Collection name too long (max 64)",
+            ));
+        }
+        if !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Invalid characters in collection name",
+            ));
+        }
+
         let read_guard = self.collections.read().await;
         if let Some(col) = read_guard.get(name) {
             return Ok(col.clone());
@@ -178,7 +208,7 @@ impl MemFuse {
         }
 
         let hnsw_config = HnswConfig {
-            dimension: self.dimension, // Assume same dimension, or allow config override later
+            dimension: self.dimension,
             ..Default::default()
         };
         let index = Arc::new(HnswIndex::new(hnsw_config));
@@ -190,6 +220,18 @@ impl MemFuse {
             Arc::clone(&self.next_tx),
             self.dimension,
         );
+
+        // Register in storage if not default
+        if name != "default" {
+            let col_idx_key = [b"__col_idx:\x00", name.as_bytes()].concat();
+            let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+            self.storage.put(tx, &col_idx_key, b"{}").await?;
+            self.storage.commit(tx).await?;
+        }
+
+        // Load existing data into HNSW
+        col.load_index().await?;
+
         write_guard.insert(name.to_string(), col.clone());
 
         Ok(col)
@@ -207,7 +249,9 @@ impl MemFuse {
     // CREATED:2026-05-09 DEADLINE:NONE
     pub async fn list_collections(&self) -> Result<Vec<String>> {
         let guard = self.collections.read().await;
-        Ok(guard.keys().cloned().collect())
+        let mut names: Vec<String> = guard.keys().cloned().collect();
+        names.sort();
+        Ok(names)
     }
 
     /// Drops a collection, removing all its data from storage.
@@ -221,9 +265,21 @@ impl MemFuse {
     // AGENT:jules-04 DATE:2026-05-09 SPRINT:1
     // CREATED:2026-05-09 DEADLINE:NONE
     pub async fn drop_collection(&self, name: &str) -> Result<()> {
+        if name == "default" {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Cannot drop default collection",
+            ));
+        }
+
         let mut guard = self.collections.write().await;
         if let Some(col) = guard.remove(name) {
             col.drop_collection().await?;
+
+            // Remove from index
+            let col_idx_key = [b"__col_idx:\x00", name.as_bytes()].concat();
+            let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+            self.storage.delete(tx, &col_idx_key).await?;
+            self.storage.commit(tx).await?;
         }
         Ok(())
     }
@@ -235,15 +291,6 @@ impl MemFuse {
     }
 
     /// Inserts a document with an embedding and optional metadata.
-    ///
-    /// Stores both:
-    /// - User key → record (for `get()`)
-    /// - `__docid:{hash}` → record (for reverse lookup after vector search)
-    ///
-    /// # Arguments
-    /// * `id` — Unique string identifier for the document.
-    /// * `embedding` — Dense vector (must match configured dimension).
-    /// * `metadata` — Optional JSON metadata for filtering.
     pub async fn insert(&self, id: &str, embedding: &[f32], metadata: Option<Value>) -> Result<()> {
         self.default_col()
             .await?
@@ -252,15 +299,11 @@ impl MemFuse {
     }
 
     /// Retrieves a document by its string key.
-    ///
-    /// Returns `None` if the document does not exist.
     pub async fn get(&self, id: &str) -> Result<Option<Document>> {
         self.default_col().await?.get(id).await
     }
 
     /// Updates a document's embedding and/or metadata.
-    ///
-    /// Equivalent to delete + insert, but uses fewer transactions.
     pub async fn update(&self, id: &str, embedding: &[f32], metadata: Option<Value>) -> Result<()> {
         self.default_col()
             .await?
@@ -269,13 +312,6 @@ impl MemFuse {
     }
 
     /// Performs semantic k-NN search over stored embeddings.
-    ///
-    /// # Arguments
-    /// * `query` — Query vector (must match configured dimension).
-    /// * `k` — Number of nearest neighbors to return.
-    ///
-    /// # Returns
-    /// A vector of [`SearchResult`] sorted by relevance (highest score first).
     pub async fn search(&self, query: &[f32], k: usize) -> Result<Vec<SearchResult>> {
         self.default_col().await?.search(query, k).await
     }
@@ -309,23 +345,13 @@ impl MemFuse {
     }
 
     /// Creates a bidirectional relationship between two documents.
-    ///
-    /// Stores the relationship in the KV store for fast prefix scanning.
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
         self.default_col().await?.relate(from, to, label).await?;
         self.default_col().await?.relate(to, from, label).await?;
-        tracing::debug!(
-            "Created bidirectional relation: {} <==[{}]==> {}",
-            from,
-            label,
-            to
-        );
         Ok(())
     }
 
     /// Scans storage for key-value pairs matching a prefix.
-    ///
-    /// Useful for fetching all relations of a document by passing `__rel:doc_id:`.
     pub async fn scan_prefix(&self, prefix: &str) -> Result<Vec<(String, Value)>> {
         self.default_col().await?.scan_prefix(prefix).await
     }
@@ -341,12 +367,6 @@ impl MemFuse {
     }
 
     /// Scans a range of keys, returning key-value pairs.
-    ///
-    /// Useful for range queries over the underlying KV store.
-    ///
-    /// # Arguments
-    /// * `start` — Lower bound of the key range.
-    /// * `end` — Upper bound of the key range.
     pub async fn scan(
         &self,
         start: std::ops::Bound<&[u8]>,
@@ -387,7 +407,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "WP-1.2 (Collections) not yet implemented"]
     async fn test_insert_search_roundtrip() {
         let (db, _tmp) = test_db(4).await;
 
@@ -418,7 +437,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "WP-1.2 (Collections) not yet implemented"]
     async fn test_insert_search_returns_metadata() {
         let (db, _tmp) = test_db(4).await;
 
@@ -439,7 +457,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "WP-1.2 (Collections) not yet implemented"]
     async fn test_get_by_key() {
         let (db, _tmp) = test_db(4).await;
 
@@ -460,7 +477,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "WP-1.2 (Collections) not yet implemented"]
     async fn test_update() {
         let (db, _tmp) = test_db(4).await;
 
@@ -483,7 +499,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "WP-1.2 (Collections) not yet implemented"]
     async fn test_delete() {
         let (db, _tmp) = test_db(4).await;
 
@@ -501,7 +516,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "WP-1.2 (Collections) not yet implemented"]
     async fn test_relate() {
         let (db, _tmp) = test_db(4).await;
 
@@ -519,7 +533,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "WP-1.2 (Collections) not yet implemented"]
     async fn test_dimension_mismatch() {
         let (db, _tmp) = test_db(4).await;
         let result = db.insert("doc-1", &[1.0, 0.0], None).await;
@@ -527,7 +540,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "WP-1.2 (Collections) not yet implemented"]
     async fn test_empty_search() {
         let (db, _tmp) = test_db(4).await;
         let results = db.search(&[1.0, 0.0, 0.0, 0.0], 5).await.expect("search");
@@ -535,7 +547,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "WP-1.2 (Collections) not yet implemented"]
     async fn test_relate_and_scan_prefix() {
         let (db, _tmp) = test_db(4).await;
 
@@ -580,7 +591,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "WP-1.2 (Collections) not yet implemented"]
     async fn test_stats_aggregation() {
         let (db, _tmp) = test_db(4).await;
 
@@ -594,7 +604,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "WP-1.2 (Collections) not yet implemented"]
     async fn test_integration_end_to_end() {
         let (db, _tmp) = test_db(4).await;
 
@@ -657,5 +666,79 @@ mod tests {
         let get_agent = db.get("agent-1").await.expect("get");
         assert!(get_agent.is_none());
         assert_eq!(db.len().await.expect("len"), 2); // 3 inserted, 1 deleted
+    }
+
+    #[tokio::test]
+    async fn test_collections_are_isolated() {
+        let (db, _tmp) = test_db(4).await;
+        let col_a = db.collection("a").await.expect("col a");
+        let col_b = db.collection("b").await.expect("col b");
+
+        col_a
+            .insert("k1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"val": "a"})))
+            .await
+            .expect("ins a");
+        col_b
+            .insert("k1", &[0.0, 1.0, 0.0, 0.0], Some(json!({"val": "b"})))
+            .await
+            .expect("ins b");
+
+        let res_a = col_a.get("k1").await.expect("get a").expect("exists");
+        let res_b = col_b.get("k1").await.expect("get b").expect("exists");
+
+        assert_eq!(res_a.metadata.unwrap()["val"], "a");
+        assert_eq!(res_b.metadata.unwrap()["val"], "b");
+
+        let search_a = col_a
+            .search(&[1.0, 0.0, 0.0, 0.0], 1)
+            .await
+            .expect("search a");
+        assert_eq!(search_a.len(), 1);
+        assert_eq!(search_a[0].id, "k1");
+        assert_eq!(search_a[0].metadata.as_ref().unwrap()["val"], "a");
+    }
+
+    #[tokio::test]
+    async fn test_drop_removes_all_data() {
+        let (db, _tmp) = test_db(4).await;
+        let col = db.collection("drop-me").await.expect("col");
+        col.insert("k1", &[1.0, 0.0, 0.0, 0.0], None)
+            .await
+            .expect("ins");
+
+        db.drop_collection("drop-me").await.expect("drop");
+
+        let col2 = db.collection("drop-me").await.expect("re-create");
+        assert_eq!(col2.len().await, 0);
+        assert!(col2.get("k1").await.expect("get").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_default_collection_compat() {
+        let (db, _tmp) = test_db(4).await;
+        db.insert("k", &[1.0, 0.0, 0.0, 0.0], Some(json!({"v": 1})))
+            .await
+            .expect("ins");
+
+        let doc = db.get("k").await.expect("get").expect("exists");
+        assert_eq!(doc.id, "k");
+
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+        assert_eq!(results[0].id, "k");
+    }
+
+    #[tokio::test]
+    async fn test_list_collections() {
+        let (db, _tmp) = test_db(4).await;
+        db.collection("c1").await.expect("c1");
+        db.collection("c2").await.expect("c2");
+        db.collection("c3").await.expect("c3");
+
+        let list = db.list_collections().await.expect("list");
+        assert!(list.contains(&"default".to_string()));
+        assert!(list.contains(&"c1".to_string()));
+        assert!(list.contains(&"c2".to_string()));
+        assert!(list.contains(&"c3".to_string()));
+        assert_eq!(list.len(), 4);
     }
 }

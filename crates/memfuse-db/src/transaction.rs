@@ -62,7 +62,7 @@ impl<'a> DbTransaction<'a> {
     pub async fn commit(self) -> Result<()> {
         let intent_key = self
             .collection
-            .namespaced_key(&format!("__tx_intent:{}::\x00", self.tx_id.inner()));
+            .namespaced_key(&self.tx_id.inner().to_le_bytes(), 3);
 
         // 1. Prepare phase: Write intent marker
         self.collection
