@@ -643,8 +643,8 @@ mod tests {
         let res_a = col_a.get("k1").await.expect("get a").expect("exists");
         let res_b = col_b.get("k1").await.expect("get b").expect("exists");
 
-        assert_eq!(res_a.metadata.unwrap()["val"], "a");
-        assert_eq!(res_b.metadata.unwrap()["val"], "b");
+        assert_eq!(res_a.metadata.expect("test")["val"], "a");
+        assert_eq!(res_b.metadata.expect("test")["val"], "b");
 
         let search_a = col_a
             .search(&[1.0, 0.0, 0.0, 0.0], 1)
@@ -652,7 +652,7 @@ mod tests {
             .expect("search a");
         assert_eq!(search_a.len(), 1);
         assert_eq!(search_a[0].id, "k1");
-        assert_eq!(search_a[0].metadata.as_ref().unwrap()["val"], "a");
+        assert_eq!(search_a[0].metadata.as_ref().expect("test")["val"], "a");
     }
 
     #[tokio::test]
