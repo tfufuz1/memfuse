@@ -1,3 +1,4 @@
+# AGENT:11
 name: DAG Integrity Check
 
 on:
@@ -18,22 +19,37 @@ jobs:
         run: |
           set -e
           echo "Verifying memfuse-core imports no internal crates..."
-          if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py"; then
+          if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator"; then
             echo "ERROR: memfuse-core imports forbidden crates."
             exit 1
           fi
 
-      - name: Check L2 peer isolation (store, index must not import peers)
+      - name: Check L2 peer isolation (store, index, text must not import each other or higher layers)
         run: |
           set -e
-          echo "Verifying memfuse-store does not import L2 peers..."
-          if cargo tree -p memfuse-store --edges no-dev | grep -q "memfuse-db\|memfuse-index\|memfuse-text"; then
-            echo "ERROR: memfuse-store imports L2 peers."
+          echo "Verifying memfuse-store does not import peers or higher layers..."
+          if cargo tree -p memfuse-store --edges no-dev | grep -q "memfuse-db\|memfuse-index\|memfuse-text\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator"; then
+            echo "ERROR: memfuse-store imports forbidden crates."
             exit 1
           fi
-          echo "Verifying memfuse-index does not import L2 peers..."
-          if cargo tree -p memfuse-index --edges no-dev | grep -q "memfuse-db\|memfuse-store\|memfuse-text"; then
-            echo "ERROR: memfuse-index imports L2 peers."
+          echo "Verifying memfuse-index does not import peers or higher layers..."
+          if cargo tree -p memfuse-index --edges no-dev | grep -q "memfuse-db\|memfuse-store\|memfuse-text\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator"; then
+            echo "ERROR: memfuse-index imports forbidden crates."
+            exit 1
+          fi
+          echo "Verifying memfuse-text does not import peers or higher layers (excluding store via DAG-001)..."
+          # memfuse-text is allowed to import store for now (DAG-001)
+          if cargo tree -p memfuse-text --edges no-dev | grep -q "memfuse-db\|memfuse-index\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator"; then
+            echo "ERROR: memfuse-text imports forbidden crates."
+            exit 1
+          fi
+
+      - name: Check L1 orchestration isolation (db, runtime, orchestrator)
+        run: |
+          set -e
+          echo "Verifying memfuse-db does not import higher layers..."
+          if cargo tree -p memfuse-db --edges no-dev | grep -q "memfuse-py\|memfuse-runtime\|memfuse-orchestrator"; then
+            echo "ERROR: memfuse-db imports higher layers."
             exit 1
           fi
 
@@ -52,4 +68,10 @@ jobs:
             echo "⚠️  DAG-002 still present (memfuse-checkpoint → memfuse-store)"
           else
             echo "✅ DAG-002 resolved"
+          fi
+          echo "--- DAG-003: memfuse-py → memfuse-db ---"
+          if cargo tree -p memfuse-py --edges no-dev | grep -q "memfuse-db"; then
+            echo "⚠️  DAG-003 still present (memfuse-py → memfuse-db)"
+          else
+            echo "✅ DAG-003 resolved"
           fi

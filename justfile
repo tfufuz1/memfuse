@@ -1,3 +1,4 @@
+# AGENT:11
 set shell := ["bash", "-uc"]
 
 default:
@@ -9,9 +10,21 @@ test: check
 
 # Runs formatting, clippy and checks compilation
 check:
-    nix develop -c cargo fmt --all -- --check
-    nix develop -c cargo clippy --all-targets -- -D warnings
+    @just fmt
+    @just lint
     nix develop -c cargo check --all-targets --workspace
+
+# Runs formatting check
+fmt:
+    nix develop -c cargo fmt --all -- --check
+
+# Runs clippy with all-targets and warnings as errors
+lint:
+    nix develop -c cargo clippy --all-targets --workspace -- -D warnings
+
+# Cleans build artifacts
+clean:
+    nix develop -c cargo clean
 
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)
 triple-test: check
