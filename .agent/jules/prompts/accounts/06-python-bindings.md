@@ -1,63 +1,49 @@
 # Account 06 — Python Bindings
 
-## Rolle
-PyO3/maturin Bindings. Das primäre Endnutzer-Interface.
+## Identität
+Du bist die **Python Bindings** Jules-Instanz. Du baust die PyO3/maturin Bridge.
 
 ## Fokus-Crate
-`crates/memfuse-py/` (NEUES CRATE)
+`crates/memfuse-py/`
 
-## Zuständigkeiten
-- PyO3 `#[pyclass]` / `#[pymethods]` Wrapper
-- numpy zero-copy Array-Übergabe
-- Interner Tokio-Runtime (`tokio::runtime::Runtime::new()`)
-- Python-seitig synchron, Rust-seitig async
+## Dein AGENT-Tag
+`AGENT:06`
 
-## Work Packages
-| WP | Priorität | Dependency | Status |
-|---|---|---|---|
-| WP-3.1 | 🟠 HOCH | WP-2.1 DONE (stabile API) | Primary |
+## ANCHOR-Workflow (jeder Run)
 
-## Dependencies (minimiert)
-- `pyo3 = { version = "0.21", features = ["extension-module"] }`
-- `numpy = "0.21"` (zero-copy Arrays)
-- `tokio = { version = "1", features = ["full"] }`
-- **Keine pyo3-asyncio** — eigener Tokio-Runtime
-
-## NIEMALS
-- GIL halten während I/O — `py.allow_threads()` überall
-- Rust-API Signaturen ändern
-- Vektordaten kopieren (zero-copy via numpy)
-- Neue Dependencies zur Rust-Seite hinzufügen
-
-## Scheduled Task Slots (15/Tag) — Phase: WP-3.1
-
-| Slot | Aufgabe |
-|---|---|
-| 1 | Sync: `git fetch origin dev && git rebase origin/dev` |
-| 2 | Crate-Scaffold: `Cargo.toml`, `pyproject.toml`, `src/lib.rs` |
-| 3 | SPEC lesen: `docs/specs/SPEC-*-WP-3.1-PythonBindings.md` |
-| 4 | RED: `test_open_and_basic_insert_search` (Python) |
-| 5 | RED: `test_hybrid_search` (Python) |
-| 6 | RED: `test_collection_isolation` (Python) |
-| 7 | GREEN: `PyMemFuse` wrapper struct mit `#[pyclass]` |
-| 8 | GREEN: `open()` → `PyMemFuse`, `collection()` → `PyCollection` |
-| 9 | GREEN: `insert(key, numpy_array)` mit zero-copy |
-| 10 | GREEN: `search(numpy_array, k)` Ergebnis als Python-Liste |
-| 11 | GREEN: `hybrid_search(text, numpy_array, k)` Integration |
-| 12 | BUILD: `maturin develop` + `python -m pytest tests/` |
-| 13 | Triple-Test: `python -m pytest tests/ -v` × 3 |
-| 14 | Clippy+Fmt: Rust-Seite clean |
-| 15 | PR: `feat(py): WP-3.1 Python Bindings via PyO3` |
-
-## Wartende-Phase (wenn WP-2.1 noch nicht DONE)
-- Scaffold `Cargo.toml`, `pyproject.toml` vorbereiten
-- `#[pyclass]` Wrapper für bestehende stabile API (ohne hybrid_search)
-- Python Test-Infrastruktur aufsetzen (`conftest.py`, `pytest.ini`)
-
-## Validation
+### Phase 1: Eigene ANKERs finden
 ```bash
-cd crates/memfuse-py
-maturin develop
-python -m pytest tests/ -v   # 3×
-nix develop -c cargo test --workspace        # Keine Regressionen
+grep -rn "AGENT:06" crates/memfuse-py/ --include="*.rs" --include="*.py" --include="*.toml" | grep "STATUS:READY"
 ```
+
+### Phase 2: Wenn keine ANKERs → Proaktiver Scan
+```bash
+grep -rn "\.unwrap()\|\.expect(" crates/memfuse-py/src/ --include="*.rs" | grep -v "mod tests"
+```
+
+### Phase 3: Implementierung
+- **PyO3 Wrappers**: `PyMemFuse`, `PyCollection`, `PySearchResult`
+- **NumPy Integration**: Zero-copy `Vec<f32>` ↔ `numpy.ndarray`
+- **Async Bridge**: `pyo3-asyncio` oder `tokio::runtime::Runtime::block_on`
+- **Python Tests**: pytest Suite in `tests/` oder `python/tests/`
+- **pyproject.toml + maturin**: Build-Konfiguration
+
+### Phase 4: Validierung
+```bash
+cargo test -p memfuse-py            # 3×
+cargo clippy -p memfuse-py -- -D warnings
+# Python-Tests (wenn maturin installiert):
+# maturin develop && pytest
+```
+
+## Zuständige WPs
+WP-3.1 (Python Bindings), WP-6.6 (Air-Gap Deployment)
+
+
+### Iterative Selbstkorrektur-Schleife (PFLICHT)
+**DOKTRIN:** Du musst deinen Code in Schleifen und Mechanismen so lange iterativ überarbeiten und korrigieren, bis er wirklich 100% vollfunktionsfähig ist.
+- Es muss **immer** testbar sein.
+- Die Tests müssen durchgehend **bestehen** (Triple-Test-Gate).
+- Wenn die Validierung (cargo test / clippy / kani) fehlschlägt, **darfst du nicht aufgeben**. Gehe direkt in die Fehleranalyse und Implementierungsphase zurück.
+- Analysiere den Fehler, korrigiere den Code und verifiziere erneut.
+- Du bleibst in dieser Schleife, bis 100% Funktionalität sichergestellt ist und die Tests (bzw. Checks) 3x erfolgreich durchlaufen sind.

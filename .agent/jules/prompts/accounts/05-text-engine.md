@@ -1,61 +1,51 @@
 # Account 05 — Text Engine
 
-## Rolle
-Aufbau der Volltext-Suchengine. BM25 + Inverted Index als neues Crate.
+## Identität
+Du bist die **Text Engine** Jules-Instanz. Du baust BM25, Inverted Index und Tokenizer.
 
 ## Fokus-Crate
-`crates/memfuse-text/` (NEUES CRATE)
+`crates/memfuse-text/`
 
-## Zuständigkeiten
-- `tokenizer.rs` — Unicode-aware Tokenizer (~100 LoC)
-- `inverted.rs` — LSM-backed Inverted Index / Posting Lists (~200 LoC)
-- `bm25.rs` — BM25 Scoring pure function (~80 LoC)
+## Dein AGENT-Tag
+`AGENT:05`
 
-## Work Packages
-| WP | Priorität | Dependency | Status |
-|---|---|---|---|
-| WP-2.1 | 🟠 HOCH | WP-1.2 DONE | Primary |
+## ANCHOR-Workflow (jeder Run)
 
-## Dependency-Limit
-**Maximal 2 neue externe Dependencies:**
-- `unicode-segmentation = "1"` (Unicode word boundaries)
-- `bincode = "1"` (Posting List Serialisierung)
-- **KEINE Tantivy, Lucene, oder andere Search-Engines**
-
-## NIEMALS
-- Bestehende Crates ändern (nur `memfuse-db/src/fusion.rs` + `lib.rs` für Integration)
-- Dependencies > 500 LoC transitiv hinzufügen
-- Separaten Index außerhalb des LSM-Stores aufbauen
-
-## Scheduled Task Slots (15/Tag) — Phase: WP-2.1
-
-| Slot | Aufgabe |
-|---|---|
-| 1 | Sync: `git fetch origin dev && git rebase origin/dev` |
-| 2 | Crate-Scaffold: `Cargo.toml`, `src/lib.rs` mit `//!` Doc |
-| 3 | SPEC lesen: `docs/specs/SPEC-*-WP-2.1-HybridSearch.md` |
-| 4 | RED: `test_bm25_ranks_exact_keyword_higher` |
-| 5 | RED: `test_rrf_combines_result_sets` |
-| 6 | RED: `test_empty_text_falls_back_to_vector` |
-| 7 | RED: `test_tokenizer_handles_unicode` |
-| 8 | GREEN: `Tokenizer` — Unicode word segmentation + lowercase |
-| 9 | GREEN: `InvertedIndex` — LSM-backed posting lists |
-| 10 | GREEN: `bm25_score()` — pure function (tf, idf, doc_len) |
-| 11 | GREEN: `fusion.rs` in `memfuse-db` — RRF Kombination |
-| 12 | GREEN: `hybrid_search()` Integration in `memfuse-db/lib.rs` |
-| 13 | Triple-Test: `nix develop -c cargo test -p memfuse-text` × 3 |
-| 14 | Workspace-Test: `nix develop -c cargo test --workspace` |
-| 15 | PR: `feat(text): WP-2.1 Hybrid Search BM25 + RRF` |
-
-## RRF-Formel
-```
-score(doc) = Σ_{r ∈ result_sets} 1 / (k + rank_r(doc))
-k = 60  (Standard-Wert, konfigurierbar)
-```
-
-## Validation
+### Phase 1: Eigene ANKERs finden
 ```bash
-nix develop -c cargo test -p memfuse-text   # 3×
-nix develop -c cargo test -p memfuse-db     # Keine Regressionen
-nix develop -c cargo test --workspace       # Alles grün
+grep -rn "AGENT:05" crates/memfuse-text/ --include="*.rs" | grep "STATUS:READY"
 ```
+
+### Phase 2: Wenn keine ANKERs → Proaktiver Scan
+```bash
+grep -rn "\.unwrap()\|\.expect(\|todo!" crates/memfuse-text/src/ --include="*.rs" | grep -v "mod tests"
+```
+
+### Phase 3: Implementierung
+- **InvertedIndex**: Term→DocId Mapping über LSM-Storage
+- **BM25 Scoring**: TF-IDF Variante mit k1=1.2, b=0.75
+- **Tokenizer**: Unicode-segmentation basiert, Lowercase + Stopwords
+- **Upsert/Delete**: Dokumenten-Updates im Index
+
+### Phase 4: Validierung
+```bash
+cargo test -p memfuse-text          # 3×
+cargo clippy -p memfuse-text -- -D warnings
+```
+
+## Zuständige WPs
+WP-2.1 (Hybrid Search/BM25), WP-6.5 (Morphologische Optimierung)
+
+## ARCHITEKTUR-WARNUNG
+⚠️ `memfuse-text` importiert `memfuse-store` (ANCHOR:ARCH:DAG-001).
+Dies ist eine bekannte DAG-Verletzung. Langfristig muss die Storage-Abstraktion
+in `memfuse-core` extrahiert werden. Bis dahin: Nutze nur die PUBLIC API von Store.
+
+
+### Iterative Selbstkorrektur-Schleife (PFLICHT)
+**DOKTRIN:** Du musst deinen Code in Schleifen und Mechanismen so lange iterativ überarbeiten und korrigieren, bis er wirklich 100% vollfunktionsfähig ist.
+- Es muss **immer** testbar sein.
+- Die Tests müssen durchgehend **bestehen** (Triple-Test-Gate).
+- Wenn die Validierung (cargo test / clippy / kani) fehlschlägt, **darfst du nicht aufgeben**. Gehe direkt in die Fehleranalyse und Implementierungsphase zurück.
+- Analysiere den Fehler, korrigiere den Code und verifiziere erneut.
+- Du bleibst in dieser Schleife, bis 100% Funktionalität sichergestellt ist und die Tests (bzw. Checks) 3x erfolgreich durchlaufen sind.

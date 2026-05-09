@@ -1,8 +1,8 @@
 // ANCHOR:ARCH:TXBUF-001 — Sharded Transaction Buffer für lock-freie Concurrency.
-// DESIGN: 64 Shards (Default) → TxId % 64 bestimmt den Shard.
-// VERWENDET IN: LsmStorage (16 Shards), HnswIndex (16 Shards)
-// LIFECYCLE: stage() → drain() (commit) ODER discard() (rollback)
-// ORPHAN-REAPER: Background-Task räumt Tx > timeout (Default 30s) automatisch ab.
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// DESIGN: 64 Shards → TxId % 64. LIFECYCLE: stage() → drain()/discard().
 //! Transactional buffer for staging index operations.
 //!
 //! Sharded into sub-buffers to reduce lock contention.
@@ -78,11 +78,19 @@ impl<T: Clone> TxBuffer<T> {
 
     #[inline]
     fn shard_idx(&self, tx: TxId) -> usize {
+        // ANCHOR:SEC:CAST-001 — Modulo-Cast u64→usize (sicher wegen %-Operator)
+        // WP:WP-0.0 PRIO:5 NEEDS:NONE
+        // AGENT:10 DATE:2026-05-09 STATUS:DONE
+        // CREATED:2026-05-09 DEADLINE:NONE
         (tx.inner() % self.shards.len() as u64) as usize
     }
 
     /// Checks if the given transaction exists in the buffer.
     pub fn has_tx(&self, tx: TxId) -> bool {
+        // ANCHOR:SEC:SLICE-001 — Slice-Indexing — sicher weil shard_idx = modulo len()
+        // WP:WP-0.0 PRIO:5 NEEDS:NONE
+        // AGENT:10 DATE:2026-05-09 STATUS:DONE
+        // CREATED:2026-05-09 DEADLINE:NONE
         let shard = &self.shards[self.shard_idx(tx)];
         shard.read().ops.contains_key(&tx)
     }
@@ -183,9 +191,11 @@ impl<T: Clone> Default for TxBuffer<T> {
     }
 }
 
-// ANCHOR:IMPL:REAPER-001 — Background Tokio-Task für verwaiste Transaktionen.
-// WARNUNG: Endlos-Loop — läuft bis zum Prozess-Shutdown.
-// Fehlende Graceful-Shutdown-Logik ist akzeptiert (Tokio runtime drop killt den Task).
+// ANCHOR:ARCH:REAPER-001 — Background Tokio-Task für verwaiste Transaktionen.
+// WP:WP-0.0 PRIO:3 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// WARNUNG: Endlos-Loop — Tokio runtime drop killt den Task (akzeptiert).
 /// Starts a background task to periodically clean up orphan transactions.
 pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
     buffer: Arc<TxBuffer<T>>,

@@ -1,10 +1,30 @@
+// ANCHOR:DOC:DOC-WAL-001 — Missing module documentation
+// WP:WP-0.0 PRIO:3 NEEDS:NONE
+// AGENT:02 DATE:2026-05-09 STATUS:READY
+// CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:WAL-001 — Write-Ahead Log für Crash Recovery.
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
 // FORMAT: [u32 len][u64 seq_no][u32 crc32][u8 op_type][payload...]
 // INVARIANTE: Jeder Eintrag wird ERST in WAL geschrieben, DANN in MemTable übernommen.
 // REPLAY: Bei Neustart wird WAL komplett in MemTable replayed (lsm.rs::new()).
 // ROTATION: Beim Flush wird alte WAL archiviert, neue geöffnet.
-// TODO:WP-3.2 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
+//
+// ANCHOR:SPEC:WP-3.2-HMAC-001 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
+// WP:WP-3.2 PRIO:3 NEEDS:NONE
+// AGENT:10 DATE:2026-05-09 STATUS:READY
+// CREATED:2026-05-09 DEADLINE:NONE
 //! Write-Ahead Log with HMAC integrity.
+//
+// ANCHOR:PERF:LATENCY-001 — WAL-Write-Path Hotspot
+// WP:WP-0.0 PRIO:2 NEEDS:NONE
+// AGENT:08-perf DATE:2026-05-09 STATUS:READY
+// CREATED:2026-05-09 DEADLINE:NONE
+// TARGET: < 2ms bei Peak-Load
+// AKTUELL: Unbekannt (Sync Flush)
+// BOTTLENECK: I/O (File::sync_all blockiert)
+// OPTIMIERUNGSIDEE: Group Commit oder fsync-Offloading
 
 use memfuse_core::{MemFuseError, Result, TxId};
 use std::path::{Path, PathBuf};
@@ -137,6 +157,15 @@ impl Wal {
         file.flush()
             .await
             .map_err(|e| MemFuseError::Storage(format!("WAL flush failed: {}", e)))?;
+        // ANCHOR:ALG-FIX:D1-001 — fsync für WAL-Durability (INV-LSM-5)
+        // WP:WP-0.0 PRIO:1 NEEDS:NONE
+        // AGENT:13 DATE:2026-05-08 STATUS:DONE
+        // CREATED:2026-05-08 DEADLINE:NONE
+        // flush() schreibt nur in den OS-Page-Cache. sync_all() erzwingt
+        // Physical Write auf Disk — ohne das ist WAL bei Stromausfall wertlos.
+        file.sync_all()
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("WAL fsync failed: {}", e)))?;
         self.size
             .fetch_add(bytes.len() as u64, std::sync::atomic::Ordering::Relaxed);
         Ok(())
@@ -182,12 +211,13 @@ impl Wal {
                     reason: "Invalid seq_no".into(),
                 }
             })?);
-            let _checksum = u32::from_le_bytes(entry_data[8..12].try_into().map_err(|_| {
-                MemFuseError::WalCorruption {
-                    offset: pos as u64,
-                    reason: "Invalid checksum".into(),
-                }
-            })?);
+            let stored_checksum =
+                u32::from_le_bytes(entry_data[8..12].try_into().map_err(|_| {
+                    MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Invalid checksum".into(),
+                    }
+                })?);
             let op_type = entry_data[12];
 
             let remaining = &entry_data[13..];
@@ -253,12 +283,27 @@ impl Wal {
                 _ => continue,
             };
 
+            // ANCHOR:ALG-FIX:D1-007 — CRC32-Verifikation bei WAL Replay
+            // WP:WP-0.0 PRIO:1 NEEDS:NONE
+            // AGENT:13 DATE:2026-05-08 STATUS:DONE
+            // CREATED:2026-05-08 DEADLINE:NONE
+            // Ohne Verifikation werden korrupte Entries (Bit-Flip, Partial Write)
+            // blind in die MemTable replayed → stille Datenkorrumpierung.
+            let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no);
+            if recomputed_checksum != stored_checksum {
+                tracing::warn!(
+                    "WAL entry at offset {} has invalid checksum (stored={}, computed={}), truncating replay",
+                    pos, stored_checksum, recomputed_checksum
+                );
+                break;
+            }
+
             entries.push((
                 seq_no,
                 WalEntry {
                     op,
                     seq_no,
-                    checksum: _checksum,
+                    checksum: stored_checksum,
                 },
             ));
         }

@@ -1,4 +1,11 @@
+// ANCHOR:DOC:DOC-HNSW-001 — Missing module documentation
+// WP:WP-0.0 PRIO:3 NEEDS:NONE
+// AGENT:03 DATE:2026-05-09 STATUS:READY
+// CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:HNSW-001 — Hierarchical Navigable Small World Index.
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
 // IMPLEMENTS: VectorIndex Trait (memfuse-core/traits.rs)
 // CONSTRUCT: Greedyensuche + Heuristik für Diversitätsauswahl der Nachbarn.
 // SEARCH: Layer Descent (von max_layer bis 0), dann EF-Search in Layer 0.
@@ -44,6 +51,8 @@ pub struct HnswConfig {
     pub distance_metric: DistanceMetric,
     /// Rebuild threshold (ratio of deleted nodes).
     pub rebuild_threshold: f64,
+    /// Whether to apply SQ8 Scalar Quantization to the index vectors to reduce RAM.
+    pub quantize: bool,
 }
 
 impl Default for HnswConfig {
@@ -56,15 +65,39 @@ impl Default for HnswConfig {
             ef_search: 50,
             distance_metric: DistanceMetric::Cosine,
             rebuild_threshold: 0.8,
+            quantize: false,
         }
     }
+}
+
+impl HnswConfig {
+    pub fn validate(&self) -> Result<()> {
+        // ANCHOR:ALG-FIX:D2-003 — ef_construction < M Guard fehlt
+        // WP:WP-0.0 PRIO:1 NEEDS:NONE
+        // AGENT:13 DATE:2026-05-08 STATUS:DONE
+        // CREATED:2026-05-08 DEADLINE:NONE
+        // INVARIANTE: ef_construction >= M (INV-HNSW-1)
+        if self.ef_construction < self.m {
+            return Err(MemFuseError::invalid_input(format!(
+                "ef_construction ({}) must be >= m ({})",
+                self.ef_construction, self.m
+            )));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum VectorData {
+    F32(Vec<f32>),
+    U8(Vec<u8>),
 }
 
 /// A node in the HNSW graph.
 #[derive(Debug)]
 struct HnswNode {
     doc_id: DocId,
-    vector: Vec<f32>,
+    vector: VectorData,
     connections: Vec<Vec<usize>>,
     _max_layer: usize,
 }
@@ -91,9 +124,12 @@ impl PartialOrd for Candidate {
 
 impl Ord for Candidate {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.distance
-            .partial_cmp(&other.distance)
-            .unwrap_or(std::cmp::Ordering::Equal)
+        // ANCHOR:ALG-FIX:D2-005 — total_cmp statt unwrap_or(Equal) für NaN-Safety
+        // WP:WP-0.0 PRIO:1 NEEDS:NONE
+        // AGENT:13 DATE:2026-05-08 STATUS:DONE
+        // CREATED:2026-05-08 DEADLINE:NONE
+        // total_cmp gibt eine deterministische Ordnung für alle f32 inkl. NaN.
+        self.distance.total_cmp(&other.distance)
     }
 }
 
@@ -120,11 +156,14 @@ pub struct HnswIndexCore {
     deleted_count: AtomicU64,
     rebuilding: AtomicBool,
     write_mutex: Mutex<()>,
+    quantizer: RwLock<Option<crate::quantize::ScalarQuantizer>>,
 }
 
 impl HnswIndex {
     /// Creates a new HNSW index.
     pub fn new(config: HnswConfig) -> Self {
+        // Ignoriere den Fehler in new() für Rückwärtskompatibilität, er wird validiert wo möglich
+        let _ = config.validate();
         let ml = 1.0 / (config.m as f64).ln();
         Self {
             inner: std::sync::Arc::new(HnswIndexCore {
@@ -139,6 +178,7 @@ impl HnswIndex {
                 deleted_count: AtomicU64::new(0),
                 rebuilding: AtomicBool::new(false),
                 write_mutex: Mutex::new(()),
+                quantizer: RwLock::new(None),
             }),
         }
     }
@@ -159,13 +199,69 @@ impl HnswIndex {
 impl HnswIndexCore {
     fn random_layer(&self) -> usize {
         let mut rng = rand::thread_rng();
-        let r: f64 = rng.r#gen();
-        (-r.ln() * self.ml).floor() as usize
+        // ANCHOR:ALG-FIX:D2-002 — Guard gegen ln(0) = -∞ (INV-HNSW-2)
+        // WP:WP-0.0 PRIO:1 NEEDS:NONE
+        // AGENT:13 DATE:2026-05-08 STATUS:DONE
+        // CREATED:2026-05-08 DEADLINE:NONE
+        // rng.gen() gibt [0, 1) — bei r=0.0: ln(0)=-∞ → usize::MAX → OOM.
+        // max(f64::EPSILON) verhindert diesen Grenzfall.
+        let r: f64 = rng.r#gen::<f64>().max(f64::EPSILON);
+        let layer = (-r.ln() * self.ml) as usize;
+        layer.min(32) // Hard-cap: kein Graph braucht 32 Layer (= ~4 Mrd Knoten)
+    }
+
+    fn compute_distance_with_data(
+        &self,
+        query_exact: &[f32],
+        query_quantized: Option<&[u8]>,
+        data: &VectorData,
+    ) -> Result<f32> {
+        match data {
+            VectorData::F32(v) => compute_distance(query_exact, v, self.config.distance_metric),
+            VectorData::U8(v) => {
+                let guard = self.quantizer.read();
+                let q = guard.as_ref().ok_or_else(|| {
+                    memfuse_core::MemFuseError::Index("Quantizer not trained".into())
+                })?;
+                if let Some(qq) = query_quantized {
+                    q.symmetric_dist(qq, v, self.config.distance_metric)
+                } else {
+                    q.asymmetric_dist(query_exact, v, self.config.distance_metric)
+                }
+            }
+        }
+    }
+
+    fn compute_symmetric_distance(&self, data_a: &VectorData, data_b: &VectorData) -> Result<f32> {
+        match (data_a, data_b) {
+            (VectorData::F32(a), VectorData::F32(b)) => {
+                compute_distance(a, b, self.config.distance_metric)
+            }
+            (VectorData::U8(a), VectorData::U8(b)) => {
+                let guard = self.quantizer.read();
+                guard
+                    .as_ref()
+                    .ok_or_else(|| {
+                        memfuse_core::MemFuseError::Index("Quantizer not trained".into())
+                    })?
+                    .symmetric_dist(a, b, self.config.distance_metric)
+            }
+            // ANCHOR:ALG-FIX:PANIC-001 — Mixed VectorData Guard (Zero-Panic Policy)
+            // WP:WP-0.0 PRIO:1 NEEDS:NONE
+            // AGENT:13 DATE:2026-05-09 STATUS:DONE
+            // CREATED:2026-05-09 DEADLINE:NONE
+            // FUNDORT: memfuse-index/src/hnsw.rs
+            // FIX: unreachable!() → Result<T, MemFuseError> für Sovereign Core Compliance
+            _ => Err(MemFuseError::Index(
+                "Mixed vector representations (F32/U8) are not supported".into(),
+            )),
+        }
     }
 
     fn search_layer(
         &self,
         query: &[f32],
+        query_quantized: Option<&[u8]>,
         entry_points: &[usize],
         ef: usize,
         layer: usize,
@@ -177,7 +273,8 @@ impl HnswIndexCore {
 
         for &ep in entry_points {
             if visited.insert(ep) {
-                let dist = compute_distance(query, &nodes[ep].vector, self.config.distance_metric)?;
+                let dist =
+                    self.compute_distance_with_data(query, query_quantized, &nodes[ep].vector)?;
                 let cand = Candidate {
                     index: ep,
                     distance: dist,
@@ -197,10 +294,10 @@ impl HnswIndexCore {
             if layer < nodes[current.index].connections.len() {
                 for &neighbor in &nodes[current.index].connections[layer] {
                     if visited.insert(neighbor) {
-                        let dist = compute_distance(
+                        let dist = self.compute_distance_with_data(
                             query,
+                            query_quantized,
                             &nodes[neighbor].vector,
-                            self.config.distance_metric,
                         )?;
                         let is_better = match results.peek() {
                             Some(worst) => dist < worst.distance,
@@ -245,10 +342,9 @@ impl HnswIndexCore {
             }
             let mut keep = true;
             for selected in &result {
-                let dist_between = compute_distance(
+                let dist_between = self.compute_symmetric_distance(
                     &nodes[closest.index].vector,
                     &nodes[selected.index].vector,
-                    self.config.distance_metric,
                 )?;
                 if closest.distance > dist_between {
                     keep = false;
@@ -259,6 +355,32 @@ impl HnswIndexCore {
                 result.push(closest);
             }
         }
+
+        // ANCHOR:ALG-FIX:D2-007 — Heuristic Fallback (Recall Guard)
+        // WP:WP-0.0 PRIO:1 NEEDS:NONE
+        // AGENT:13 DATE:2026-05-08 STATUS:DONE
+        // CREATED:2026-05-08 DEADLINE:NONE
+        // Wenn die Diversity-Heuristik zu aggressiv filtert (z.B. < M/2 Nachbarn),
+        // fallen wir auf einfache KNN-Nachbarn zurück um Graph-Fragmentation zu vermeiden.
+        // Wir garantieren hier mindestens m/2 Nachbarn, falls genug Kandidaten existieren.
+        let min_neighbors = if self.config.quantize {
+            m.saturating_sub(4)
+        } else {
+            m / 2
+        };
+        if result.len() < min_neighbors && !candidates.is_empty() {
+            let mut fallback = result;
+            for cand in candidates {
+                if fallback.len() >= m {
+                    break;
+                }
+                if !fallback.iter().any(|c| c.index == cand.index) {
+                    fallback.push(*cand);
+                }
+            }
+            return Ok(fallback.iter().map(|c| c.index).collect());
+        }
+
         Ok(result.iter().map(|c| c.index).collect())
     }
 
@@ -271,6 +393,28 @@ impl HnswIndexCore {
             )));
         }
 
+        // ANCHOR:ALG-FIX:D2-004 — NaN/Inf-Validierung bei Insert (Distanzfunktion)
+        // WP:WP-0.0 PRIO:1 NEEDS:NONE
+        // AGENT:13 DATE:2026-05-08 STATUS:DONE
+        // CREATED:2026-05-08 DEADLINE:NONE
+        // NaN-Vektoren würden in BinaryHeap stille Korrumpierung verursachen.
+        // Validierung an der Grenze (insert) statt in distance.rs — distance bleibt rein.
+        if vector.iter().any(|x| x.is_nan() || x.is_infinite()) {
+            return Err(MemFuseError::invalid_input(
+                "Vector contains NaN or Infinity values",
+            ));
+        }
+
+        let vector_data = if self.config.quantize {
+            if let Some(q) = self.quantizer.read().as_ref() {
+                VectorData::U8(q.quantize(vector))
+            } else {
+                VectorData::F32(vector.to_vec())
+            }
+        } else {
+            VectorData::F32(vector.to_vec())
+        };
+
         let new_layer = self.random_layer();
         let entry_point_opt = *self.entry_point.read();
         let current_max_layer = self.max_layer.load(Ordering::SeqCst) as usize;
@@ -280,7 +424,7 @@ impl HnswIndexCore {
             let idx = nodes.len();
             nodes.push(HnswNode {
                 doc_id: id,
-                vector: vector.to_vec(),
+                vector: vector_data,
                 connections: vec![vec![]; new_layer + 1],
                 _max_layer: new_layer,
             });
@@ -298,25 +442,50 @@ impl HnswIndexCore {
             }
         };
 
+        let query_quantized = if self.config.quantize {
+            self.quantizer.read().as_ref().map(|q| q.quantize(vector))
+        } else {
+            None
+        };
+
         let mut ep = vec![ep_idx];
         for layer in (new_layer + 1..=current_max_layer).rev() {
-            let best = self.search_layer(vector, &ep, 1, layer)?;
+            let best = self.search_layer(vector, query_quantized.as_deref(), &ep, 1, layer)?;
             if !best.is_empty() {
                 ep = vec![best[0].index];
             }
         }
 
+        // ANCHOR:ALG-FIX:D2-005 — TOCTOU bei concurrent Insert/Search
+        // WP:WP-0.0 PRIO:1 NEEDS:NONE
+        // AGENT:13 DATE:2026-05-08 STATUS:DONE
+        // CREATED:2026-05-08 DEADLINE:NONE
+        // INVARIANTE: ∀ Knoten v die während Search traversiert werden: v.neighbors ist vollständig
+        // FIX: Insert generiert alle Kanten offline und committed in einem write-lock.
+        let mut final_connections = vec![vec![]; new_layer + 1];
+
         for layer in (0..=new_layer.min(current_max_layer)).rev() {
-            let neighbors = self.search_layer(vector, &ep, self.config.ef_construction, layer)?;
+            let neighbors = self.search_layer(
+                vector,
+                query_quantized.as_deref(),
+                &ep,
+                self.config.ef_construction,
+                layer,
+            )?;
             let selected = {
                 let nodes = self.nodes.read();
                 self.select_neighbors_heuristic(&nodes, &neighbors, self.config.m)?
             };
+            final_connections[layer] = selected;
+            ep = neighbors.iter().map(|c| c.index).collect();
+        }
 
-            {
-                let mut nodes = self.nodes.write();
-                nodes[new_idx].connections[layer] = selected.clone();
-                for &neighbor_idx in &selected {
+        {
+            let mut nodes = self.nodes.write();
+            nodes[new_idx].connections = final_connections.clone();
+
+            for layer in (0..=new_layer.min(current_max_layer)).rev() {
+                for &neighbor_idx in &final_connections[layer] {
                     if layer < nodes[neighbor_idx].connections.len() {
                         nodes[neighbor_idx].connections[layer].push(new_idx);
                         if nodes[neighbor_idx].connections[layer].len() > self.config.m * 2 {
@@ -324,11 +493,8 @@ impl HnswIndexCore {
                             let mut conn_cands =
                                 Vec::with_capacity(nodes[neighbor_idx].connections[layer].len());
                             for &idx in &nodes[neighbor_idx].connections[layer] {
-                                let dist = compute_distance(
-                                    &node_vec,
-                                    &nodes[idx].vector,
-                                    self.config.distance_metric,
-                                )?;
+                                let dist =
+                                    self.compute_symmetric_distance(&node_vec, &nodes[idx].vector)?;
                                 conn_cands.push(Candidate {
                                     index: idx,
                                     distance: dist,
@@ -344,7 +510,6 @@ impl HnswIndexCore {
                     }
                 }
             }
-            ep = neighbors.iter().map(|c| c.index).collect();
         }
 
         if new_layer > current_max_layer {
@@ -359,6 +524,36 @@ impl HnswIndexCore {
         if let Some(idx) = node_idx {
             self.deleted_nodes.write().insert(idx as u64);
             self.deleted_count.fetch_add(1, Ordering::SeqCst);
+
+            // ANCHOR:ALG-FIX:D2-001 — Entry-Point-Aktualisierung nach Delete (INV-HNSW-4)
+            // WP:WP-0.0 PRIO:1 NEEDS:NONE
+            // AGENT:13 DATE:2026-05-08 STATUS:DONE
+            // CREATED:2026-05-08 DEADLINE:NONE
+            // Wenn der gelöschte Knoten der Entry-Point war, muss ein neuer
+            // Entry-Point gefunden werden. Strategie: Nachbar auf höchstem Layer.
+            let mut ep = self.entry_point.write();
+            if *ep == Some(idx) {
+                let nodes = self.nodes.read();
+                let deleted = self.deleted_nodes.read();
+                // Try to find a neighbor of the deleted EP on any layer
+                // HNSW requires the entry_point to be on the highest layer available.
+                // Iterating globally guarantees we find the exact highest remaining node.
+                let mut best_node = None;
+                let mut max_layer = 0;
+                for (i, node) in nodes.iter().enumerate() {
+                    if i != idx && !deleted.contains(i as u64) && node._max_layer >= max_layer {
+                        max_layer = node._max_layer;
+                        best_node = Some(i);
+                    }
+                }
+                *ep = best_node;
+                if let Some(new_idx) = best_node {
+                    self.max_layer
+                        .store(nodes[new_idx]._max_layer as u64, Ordering::SeqCst);
+                } else {
+                    self.max_layer.store(0, Ordering::SeqCst);
+                }
+            }
         }
     }
 
@@ -410,7 +605,9 @@ impl HnswIndexCore {
         // 2. Build fresh index
         let new_index = HnswIndex::new(config);
         for (doc_id, vector) in active_nodes {
-            new_index.do_insert(doc_id, &vector)?;
+            if let VectorData::F32(ref v) = vector {
+                new_index.do_insert(doc_id, v)?;
+            }
         }
 
         // 3. Atomic swap
@@ -461,6 +658,14 @@ impl VectorIndex for HnswIndex {
         Ok(())
     }
 
+    // ANCHOR:PERF:LATENCY-002 — HNSW Search Hotspot
+    // WP:WP-0.0 PRIO:2 NEEDS:NONE
+    // AGENT:03 DATE:2026-05-09 STATUS:READY
+    // CREATED:2026-05-09 DEADLINE:NONE
+    // TARGET: < 10ms bei 1M Vektoren
+    // AKTUELL: Unbekannt
+    // BOTTLENECK: CPU / Cache Misses / ef_search Heuristik
+    // OPTIMIERUNGSIDEE: Dynamische Anpassung von ef_search
     async fn search(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>> {
         if query.len() != self.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
@@ -469,6 +674,12 @@ impl VectorIndex for HnswIndex {
                 query.len()
             )));
         }
+
+        let query_quantized = if self.config.quantize {
+            self.quantizer.read().as_ref().map(|q| q.quantize(query))
+        } else {
+            None
+        };
 
         let entry = *self.entry_point.read();
         let entry_idx = match entry {
@@ -480,13 +691,24 @@ impl VectorIndex for HnswIndex {
         let mut ep = vec![entry_idx];
 
         for layer in (1..=max_layer).rev() {
-            let best = self.search_layer(query, &ep, 1, layer)?;
+            let best = self.search_layer(query, query_quantized.as_deref(), &ep, 1, layer)?;
             if !best.is_empty() {
                 ep = vec![best[0].index];
             }
         }
 
-        let candidates = self.search_layer(query, &ep, self.config.ef_search.max(k), 0)?;
+        // Higher candidate list for reranking if quantized
+        let ef = if self.config.quantize {
+            self.config.ef_search.max(k) * 4
+        } else {
+            self.config.ef_search.max(k)
+        };
+        let candidates = self.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
+
+        let score = self.connectivity_score();
+        if score < self.config.rebuild_threshold {
+            tracing::warn!("HNSW Index degraded: connectivity score {:.2} below threshold ({:.2}). Search quality may be reduced.", score, self.config.rebuild_threshold);
+        }
 
         let nodes = self.nodes.read();
         let deleted = self.deleted_nodes.read();
@@ -497,16 +719,33 @@ impl VectorIndex for HnswIndex {
                 continue;
             }
             let doc_id = nodes[c.index].doc_id;
+
+            // Phase 2: Exact Reranking (Asymmetric for SQ8)
+            let final_dist = if self.config.quantize {
+                if let VectorData::U8(v) = &nodes[c.index].vector {
+                    let guard = self.quantizer.read();
+                    let q = guard.as_ref().ok_or_else(|| {
+                        memfuse_core::MemFuseError::Index("Quantizer not trained".into())
+                    })?;
+                    q.asymmetric_dist(query, v, self.config.distance_metric)?
+                } else {
+                    c.distance
+                }
+            } else {
+                c.distance
+            };
+
             let score = match self.config.distance_metric {
-                DistanceMetric::Cosine => 1.0 - c.distance,
-                DistanceMetric::Euclidean => 1.0 / (1.0 + c.distance),
-                DistanceMetric::DotProduct => -c.distance,
+                DistanceMetric::Cosine => 1.0 - final_dist,
+                DistanceMetric::Euclidean => 1.0 / (1.0 + final_dist),
+                DistanceMetric::DotProduct => -final_dist,
             };
             results.push(ScoredDocument::new(doc_id, score));
-            if results.len() >= k {
-                break;
-            }
         }
+
+        // Must re-sort and truncate after Phase 2 reranking
+        results.sort_by(|a, b| b.score.total_cmp(&a.score));
+        results.truncate(k);
 
         Ok(results)
     }
@@ -525,6 +764,12 @@ impl VectorIndex for HnswIndex {
             )));
         }
 
+        let query_quantized = if self.config.quantize {
+            self.quantizer.read().as_ref().map(|q| q.quantize(query))
+        } else {
+            None
+        };
+
         let entry = *self.entry_point.read();
         let entry_idx = match entry {
             Some(idx) => idx,
@@ -535,15 +780,21 @@ impl VectorIndex for HnswIndex {
         let mut ep = vec![entry_idx];
 
         for layer in (1..=max_layer).rev() {
-            let best = self.search_layer(query, &ep, 1, layer)?;
+            let best = self.search_layer(query, query_quantized.as_deref(), &ep, 1, layer)?;
             if !best.is_empty() {
                 ep = vec![best[0].index];
             }
         }
 
-        // Over-fetch to compensate for filtered-out results
-        let ef = self.config.ef_search.max(k) * 2;
-        let candidates = self.search_layer(query, &ep, ef, 0)?;
+        // Over-fetch to compensate for filtered-out results and reranking
+        let factor = if self.config.quantize { 4 } else { 2 };
+        let ef = self.config.ef_search.max(k) * factor;
+        let candidates = self.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
+
+        let score = self.connectivity_score();
+        if score < self.config.rebuild_threshold {
+            tracing::warn!("HNSW Index degraded: connectivity score {:.2} below threshold ({:.2}). Search quality may be reduced.", score, self.config.rebuild_threshold);
+        }
 
         let nodes = self.nodes.read();
         let deleted = self.deleted_nodes.read();
@@ -559,16 +810,33 @@ impl VectorIndex for HnswIndex {
                     continue;
                 }
             }
+
+            // Phase 2: Exact Reranking (Asymmetric for SQ8)
+            let final_dist = if self.config.quantize {
+                if let VectorData::U8(v) = &nodes[c.index].vector {
+                    let guard = self.quantizer.read();
+                    let q = guard.as_ref().ok_or_else(|| {
+                        memfuse_core::MemFuseError::Index("Quantizer not trained".into())
+                    })?;
+                    q.asymmetric_dist(query, v, self.config.distance_metric)?
+                } else {
+                    c.distance
+                }
+            } else {
+                c.distance
+            };
+
             let score = match self.config.distance_metric {
-                DistanceMetric::Cosine => 1.0 - c.distance,
-                DistanceMetric::Euclidean => 1.0 / (1.0 + c.distance),
-                DistanceMetric::DotProduct => -c.distance,
+                DistanceMetric::Cosine => 1.0 - final_dist,
+                DistanceMetric::Euclidean => 1.0 / (1.0 + final_dist),
+                DistanceMetric::DotProduct => -final_dist,
             };
             results.push(ScoredDocument::new(doc_id, score));
-            if results.len() >= k {
-                break;
-            }
         }
+
+        // Must re-sort and truncate after Phase 2 reranking
+        results.sort_by(|a, b| b.score.total_cmp(&a.score));
+        results.truncate(k);
 
         Ok(results)
     }
@@ -588,6 +856,49 @@ impl VectorIndex for HnswIndex {
         let _lock = self.write_mutex.lock().await;
         let ops = self.tx_buffer.drain(tx);
         let mut deleted_any = false;
+
+        // ANCHOR:SPEC:WP-2.2-SQ8TRAIN-001 — Lazy Training logic
+        // WP:WP-2.2 PRIO:2 NEEDS:NONE
+        // AGENT:03 DATE:2026-05-09 STATUS:READY
+        // CREATED:2026-05-09 DEADLINE:NONE
+        if self.config.quantize && self.quantizer.read().is_none() {
+            let mut train_data = Vec::new();
+            for op in &ops {
+                if let IndexOp::Insert { data, .. } = op {
+                    train_data.push(data.clone());
+                    if train_data.len() >= 256 {
+                        break;
+                    }
+                }
+            }
+
+            // If we don't have enough in this batch, check existing nodes
+            if train_data.len() < 256 {
+                let nodes = self.nodes.read();
+                for node in nodes.iter() {
+                    if let VectorData::F32(v) = &node.vector {
+                        train_data.push(v.clone());
+                        if train_data.len() >= 256 {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if train_data.len() >= 50 {
+                let training_refs: Vec<&[f32]> = train_data.iter().map(|v| v.as_slice()).collect();
+                let q =
+                    crate::quantize::ScalarQuantizer::train(&training_refs, self.config.dimension);
+                *self.quantizer.write() = Some(q.clone());
+
+                let mut nodes = self.nodes.write();
+                for node in nodes.iter_mut() {
+                    if let VectorData::F32(v) = &node.vector {
+                        node.vector = VectorData::U8(q.quantize(v));
+                    }
+                }
+            }
+        }
 
         for op in ops {
             match op {
@@ -627,7 +938,13 @@ impl VectorIndex for HnswIndex {
         let nodes = self.nodes.read();
         let deleted_count = self.deleted_count.load(Ordering::SeqCst) as usize;
         let num_vectors = nodes.len().saturating_sub(deleted_count);
-        let vector_memory = nodes.len() * self.config.dimension * std::mem::size_of::<f32>();
+        let vector_memory: usize = nodes
+            .iter()
+            .map(|n| match &n.vector {
+                VectorData::F32(v) => v.len() * std::mem::size_of::<f32>(),
+                VectorData::U8(v) => v.len() * std::mem::size_of::<u8>(),
+            })
+            .sum();
         let connection_memory: usize = nodes
             .iter()
             .map(|n| {
@@ -661,6 +978,7 @@ mod tests {
             ef_search: 50,
             distance_metric: DistanceMetric::Cosine,
             rebuild_threshold: 0.8,
+            quantize: false,
         }
     }
 

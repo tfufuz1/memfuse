@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# ANCHOR:ARCH:SCRIPT-VALIDATE-001 — Validierung der Jules Prompt-Dateien auf Sovereign Doctrine Einhaltung
+# WP:WP-0.0 PRIO:2 NEEDS:NONE
+# AGENT:11-ci-devops DATE:2026-05-09 STATUS:DONE
+# CREATED:2026-05-09 DEADLINE:NONE
+#
+# JULES-INFO: CI/CD Pipeline Script zur Absicherung, dass keine Prompt-Drift entsteht.
+#             Es stellt sicher, dass alle 13 Agents korrekt konfiguriert bleiben.
 # validate-prompts.sh — Validiert alle Jules-Prompt-Dateien
 #
 # Prüft:
@@ -25,6 +32,7 @@ echo ""
 # ──────────────────────────────────────────────
 # 1. Präambel-Check
 # ──────────────────────────────────────────────
+# JULES-INFO: Prüft Präsenz der Sovereign Doctrine (Regelwerk für Zero-Panic).
 echo "--- [1/5] Präambel ---"
 PREAMBLE="${PROMPTS_DIR}/00-PREAMBLE.md"
 if [ ! -f "$PREAMBLE" ]; then
@@ -42,6 +50,8 @@ fi
 # ──────────────────────────────────────────────
 # 2. Account-Dateien (01-13)
 # ──────────────────────────────────────────────
+# JULES-INFO: Stellt sicher, dass jeder der 13 Jules-Accounts seine Pflichtfelder hat
+#             wie "Rolle", "NIEMALS" (Boundaries) und "Validation" / "Erfolgs-Metrik".
 echo "--- [2/5] Account-Dateien ---"
 for i in $(seq -w 1 13); do
     ACCOUNT_FILE=$(ls "${ACCOUNTS_DIR}/${i}-"*.md 2>/dev/null | head -1)
@@ -70,6 +80,8 @@ done
 # ──────────────────────────────────────────────
 # 3. SPEC-Referenzen
 # ──────────────────────────────────────────────
+# JULES-INFO: Validiert, dass jedes Work Package mindestens einem Account zugewiesen ist,
+#             damit keine Spec (WP-X.Y) unverarbeitet bleibt.
 echo "--- [3/5] SPEC-Referenzen ---"
 SPEC_COUNT=$(ls "${REPO_ROOT}/docs/specs/SPEC-"*.md 2>/dev/null | grep -v TEMPLATE | grep -v MASTER | wc -l)
 echo "   Gefundene SPECs: ${SPEC_COUNT}"
@@ -96,6 +108,8 @@ done
 # ──────────────────────────────────────────────
 # 4. Boundary-Checks
 # ──────────────────────────────────────────────
+# JULES-INFO: Prüft auf harte Sicherheitsgrenzen: Agent 08 darf z.B. keinen Code ändern, 
+#             Agent 09 nur Benchmarks.
 echo "--- [4/5] Boundary-Checks ---"
 
 # Account 08 (Docs) darf keinen .rs Code ändern
@@ -120,6 +134,8 @@ echo "✅ Boundary-Checks abgeschlossen"
 # ──────────────────────────────────────────────
 # 5. Prompt-Generator Test
 # ──────────────────────────────────────────────
+# JULES-INFO: Dry-Run des Promptgenerators um sicherzustellen, dass die Layer
+#             (Doctrine + Spec) korrekt eingefügt werden.
 echo "--- [5/5] Prompt-Generator ---"
 GENERATOR="${SCRIPT_DIR}/generate-jules-prompt.sh"
 if [ ! -x "$GENERATOR" ]; then

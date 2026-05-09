@@ -1,4 +1,7 @@
 // ANCHOR:ARCH:CSR-001 — Compressed Sparse Row (CSR) Graph für Memory-optimierte Relationen.
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
 // ZIEL: Extrem schnelle, cache-lokale Multi-Hop-Traversierung für SAOS Agents.
 // DESIGN: Static Graph (wird via `build_from_dynamic` ge-freezed).
 // VERWENDET FÜR: Agent-Interaction-Graphs, Task-Hierarchien.

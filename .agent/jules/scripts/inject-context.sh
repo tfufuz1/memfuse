@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# ANCHOR:ARCH:SCRIPT-INJECT-001 — Kontext-Injektion für Jules Agenten zur Vermeidung von Halluzinationen
+# WP:WP-0.0 PRIO:2 NEEDS:NONE
+# AGENT:11-ci-devops DATE:2026-05-09 STATUS:DONE
+# CREATED:2026-05-09 DEADLINE:NONE
+#
+# JULES-INFO: Liest Crate-Signaturen aus, um sicherzustellen, dass du gegen 
+#             tatsächliche aktuelle struct/enum/fn Definitionen programmierst.
 # inject-context.sh — Extrahiert aktuelle pub-Signaturen aller Crates
 # Wird vor jedem Jules-Task ausgeführt um Kontext-Erosion zu verhindern.
 # Output: Markdown-Dokument mit aktuellem API-State
@@ -15,6 +22,7 @@ cat <<EOF
 
 EOF
 
+# JULES-INFO: Iteriert über definierte Workspace-Crates und zieht public-APIs raus.
 for CRATE in "${CRATES[@]}"; do
     SRC="crates/${CRATE}/src"
     if [ ! -d "$SRC" ]; then
@@ -26,6 +34,8 @@ for CRATE in "${CRATES[@]}"; do
     echo ""
     echo "\`\`\`rust"
 
+    # JULES-INFO: Greps fokussieren sich auf public structs und Funktionen, 
+    # da du vor allem interne APIs konsumierst und erweiterst.
     # Extrahiere alle pub struct, pub fn, pub trait, pub enum Definitionen
     grep -rh \
         -e "^pub struct " \

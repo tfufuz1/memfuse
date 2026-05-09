@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# ANCHOR:ARCH:SCRIPT-GEN-001 — Skript-Einstiegspunkt für Prompt-Generierung
+# WP:WP-0.0 PRIO:2 NEEDS:NONE
+# AGENT:11-ci-devops DATE:2026-05-09 STATUS:DONE
+# CREATED:2026-05-09 DEADLINE:NONE
+#
+# JULES-INFO: Dieses Skript baut deinen System-Prompt aus verschiedenen Schichten (Layern) zusammen.
 # generate-jules-prompt.sh — Generiert vollständigen Jules-Task-Prompt mit 3-Layer-System
 #
 # VERWENDUNG:
@@ -39,6 +45,9 @@ ACCOUNTS_DIR="${PROMPTS_DIR}/accounts"
 # ═══════════════════════════════════════════════════════════════
 # Layer 0: Dynamic Repository State
 # ═══════════════════════════════════════════════════════════════
+# JULES-INFO: In Layer 0 wird dein dynamischer Kontext generiert.
+#             Dies geschieht über inject-context.sh, wodurch du immer
+#             aktuelle pub-Signaturen aus dem Code kennst.
 echo "═══════════════════════════════════════════════════════════════"
 echo "  CURRENT REPOSITORY STATE (auto-generated $(date -u +%Y-%m-%dT%H:%M:%SZ))"
 echo "═══════════════════════════════════════════════════════════════"
@@ -52,6 +61,9 @@ echo ""
 # ═══════════════════════════════════════════════════════════════
 # Layer 1: Standard-Präambel (Sovereign Doctrine)
 # ═══════════════════════════════════════════════════════════════
+# JULES-INFO: In Layer 1 wird die 00-PREAMBLE.md geladen.
+#             Sie enthält die globalen Sovereign Core Prinzipien (Zero-Panic, Triple-Test-Gate),
+#             an die du dich zwingend halten musst.
 echo "═══════════════════════════════════════════════════════════════"
 echo "  LAYER 1: SOVEREIGN CORE DOCTRINE & TRIPLE-TEST-GATE"
 echo "═══════════════════════════════════════════════════════════════"
@@ -69,6 +81,8 @@ echo ""
 # ═══════════════════════════════════════════════════════════════
 # Layer 2: Account-Kontext
 # ═══════════════════════════════════════════════════════════════
+# JULES-INFO: Hier wird dein spezifischer Account-Prompt geladen (z.B. 01-core-guardian.md).
+#             Dieser definiert deine Rolle, Focus und spezifischen Code-Boundaries.
 ACCOUNT_FILE=$(ls "${ACCOUNTS_DIR}/${ACCOUNT}-"*.md 2>/dev/null | head -1)
 
 if [ -n "${ACCOUNT_FILE:-}" ] && [ -f "$ACCOUNT_FILE" ]; then
@@ -87,6 +101,8 @@ fi
 # ═══════════════════════════════════════════════════════════════
 # Layer 3: WP Specification (falls angegeben)
 # ═══════════════════════════════════════════════════════════════
+# JULES-INFO: In Layer 3 wird die Atomic Spec deines aktuellen Work-Packages (WP) injiziert.
+#             Sämtliche Akzeptanzkriterien für den Task kommen aus dieser Datei.
 if [ -n "$WP" ]; then
     WP_SPEC=$(ls "${REPO_ROOT}/docs/specs/SPEC-"*"-${WP}-"*.md 2>/dev/null | head -1)
     # Fallback: versuche mit WP ohne Bindestrich-Trenner
@@ -111,6 +127,8 @@ fi
 # ═══════════════════════════════════════════════════════════════
 # Done-Definition (immer am Ende)
 # ═══════════════════════════════════════════════════════════════
+# JULES-INFO: Das Triple-Test-Gate! Präge dir diese Definition von "DONE" gut ein,
+#             sie entscheidet darüber, ob dein Pull Request akzeptiert wird.
 echo "═══════════════════════════════════════════════════════════════"
 echo "  DONE-DEFINITION"
 echo "═══════════════════════════════════════════════════════════════"

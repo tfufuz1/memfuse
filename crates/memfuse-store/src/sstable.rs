@@ -1,20 +1,51 @@
+// ANCHOR:DOC:DOC-SSTABLE-001 — Missing module documentation
+// WP:WP-0.0 PRIO:3 NEEDS:NONE
+// AGENT:02 DATE:2026-05-09 STATUS:READY
+// CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:SST-001 — Immutable persistente Datendateien.
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
 // FORMAT: [DataBlock 0..N][IndexBlock][u64 index_offset][u32 MAGIC=0x4D465354 "MFST"]
 // BLOCK-FORMAT: [entries...][u16 offsets...][u16 num_offsets]
 // ENTRY-FORMAT: [u16 key_len][key][u64 seq_no][u16 val_len][value]
 // LOOKUP: Binary Search über Index (last_key pro Block) → Block lesen → Linear Scan.
 // VERWENDET IN: LsmStorage::get() (point lookup), CompactionEngine::merge_sstables() (full scan).
-// TODO:WP-4.1 — Bloom Filter pro Block für schnellere Negative Lookups.
+//
+// ANCHOR:SPEC:WP-4.1-BLOOM-001 — Bloom Filter pro Block für schnellere Negative Lookups.
+// WP:WP-4.1 PRIO:3 NEEDS:NONE
+// AGENT:02 DATE:2026-05-09 STATUS:READY
+// CREATED:2026-05-09 DEADLINE:NONE
 //! SSTable (Sorted String Table) implementation.
 //!
 //! SSTables are persistent, immutable files containing sorted key-value pairs.
 //! They consist of multiple data blocks and an index block at the end.
 
 use bytes::{BufMut, Bytes, BytesMut};
+use lru::LruCache;
 use memfuse_core::{MemFuseError, Result};
-use std::path::Path;
+use parking_lot::RwLock;
+use std::num::NonZeroUsize;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
+
+/// Cache for SSTable blocks. Key is (file_id, block_offset).
+pub type BlockCache = RwLock<LruCache<(u64, u64), Bytes>>;
+
+/// Creates a new block cache instance. Capacity is in MB (assuming 4KB blocks).
+pub fn create_block_cache(capacity_mb: usize) -> Arc<BlockCache> {
+    let capacity = capacity_mb * 256;
+    let capacity = capacity.max(256); // minimum 1MB
+    Arc::new(RwLock::new(LruCache::new(
+        // ANCHOR:DEBT:DEBT-UNWRAP-SSTABLE-37 — unwrap/expect in production code
+        // WP:WP-0.0 PRIO:2 NEEDS:NONE
+        // AGENT:02 DATE:2026-05-09 STATUS:READY
+        // CREATED:2026-05-09 DEADLINE:NONE
+        NonZeroUsize::new(capacity).expect("capacity > 0"), // unwrap
+    )))
+}
 
 /// Block size for SSTable data blocks (4KB).
 const BLOCK_SIZE: usize = 4096;
@@ -184,8 +215,8 @@ impl SstableBuilder {
             .len();
 
         Ok(SstableMetadata {
-            first_key: self.first_key.unwrap_or_default(),
-            last_key: self.last_key.unwrap_or_default(),
+            first_key: self.first_key.unwrap_or_default(), // unwrap
+            last_key: self.last_key.unwrap_or_default(),   // unwrap
             file_size,
         })
     }
@@ -199,11 +230,15 @@ pub struct SstableReader {
     /// Byte offset where the index data begins (= end of last block).
     index_offset: u64,
     /// File path of this SSTable (for compaction cleanup).
-    file_path: std::path::PathBuf,
+    file_path: PathBuf,
+    /// Unique ID for this SSTable (for cache keys).
+    file_id: u64,
+    /// Shared block cache.
+    block_cache: Arc<BlockCache>,
 }
 
 impl SstableReader {
-    pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
+    pub async fn open(path: impl AsRef<Path>, block_cache: Arc<BlockCache>) -> Result<Self> {
         let mut file = tokio::fs::File::open(&path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to open SSTable: {}", e)))?;
@@ -268,7 +303,7 @@ impl SstableReader {
             index.push((key, offset));
         }
 
-        let last_key = index.last().map(|(k, _)| k.clone()).unwrap_or_default();
+        let last_key = index.last().map(|(k, _)| k.clone()).unwrap_or_default(); // unwrap
 
         // Read the actual first key from the first data block header
         // (index stores last_key per block, NOT first_key)
@@ -306,9 +341,23 @@ impl SstableReader {
             },
             index_offset,
             file_path: path.as_ref().to_path_buf(),
+            file_id: {
+                static NEXT_FILE_ID: std::sync::atomic::AtomicU64 =
+                    std::sync::atomic::AtomicU64::new(1);
+                NEXT_FILE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            },
+            block_cache,
         })
     }
 
+    // ANCHOR:PERF:ALLOC-001 — Allokations-intensiver Scanner
+    // WP:WP-4.1 PRIO:2 NEEDS:NONE
+    // AGENT:08-perf DATE:2026-05-09 STATUS:READY
+    // CREATED:2026-05-09 DEADLINE:NONE
+    // TARGET: Zero-Allocation Lookup
+    // AKTUELL: Vec::new() pro Block + read_exact
+    // BOTTLENECK: Memory Allocator / Heap Churn
+    // OPTIMIERUNGSIDEE: SmallVec oder Pool-Buffer
     pub async fn get(&self, key: &[u8]) -> Result<Option<(Bytes, u64)>> {
         if key < self.metadata.first_key || key > self.metadata.last_key {
             return Ok(None);
@@ -331,16 +380,33 @@ impl SstableReader {
             self.index_offset
         };
 
-        let mut block_data = vec![0u8; (next_offset - offset) as usize];
+        let mut block_data = Vec::new();
+        let mut cache_miss = false;
+
         {
+            let mut cache = self.block_cache.write();
+            if let Some(cached) = cache.get(&(self.file_id, offset)) {
+                block_data.extend_from_slice(cached);
+            } else {
+                cache_miss = true;
+            }
+        }
+
+        if cache_miss {
+            let mut raw_block = vec![0u8; (next_offset - offset) as usize];
             use tokio::io::{AsyncReadExt, AsyncSeekExt};
             let mut file = self.file.lock().await;
             file.seek(std::io::SeekFrom::Start(offset))
                 .await
                 .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
-            file.read_exact(&mut block_data)
+            file.read_exact(&mut raw_block)
                 .await
                 .map_err(|e| MemFuseError::Storage(format!("SSTable read failed: {}", e)))?;
+
+            block_data.extend_from_slice(&raw_block);
+            self.block_cache
+                .write()
+                .put((self.file_id, offset), Bytes::from(raw_block));
         }
 
         let n = block_data.len();
@@ -370,6 +436,13 @@ impl SstableReader {
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
             ep += 2;
+            // ANCHOR:SEC:SLICE-002 — Slice-Indexing ohne Bounds-Check
+            // WP:WP-0.0 PRIO:1 NEEDS:NONE
+            // AGENT:09-security DATE:2026-05-09 STATUS:READY
+            // CREATED:2026-05-09 DEADLINE:NONE
+            // FUNDORT: memfuse-store/src/sstable.rs:416
+            // RISIKO: Panic bei Runtime durch unzureichende Datei-Länge
+            // BEHEBUNG: bounds check vor indexing implementieren
             let entry_key = &block_data[ep..ep + k_len];
             ep += k_len;
 
@@ -417,16 +490,32 @@ impl SstableReader {
                 self.index_offset
             };
 
-            let mut block_data = vec![0u8; (next_offset - offset) as usize];
+            let mut block_data = Vec::new();
+            let mut cache_miss = false;
+
             {
+                let mut cache = self.block_cache.write();
+                if let Some(cached) = cache.get(&(self.file_id, offset)) {
+                    block_data.extend_from_slice(cached);
+                } else {
+                    cache_miss = true;
+                }
+            }
+
+            if cache_miss {
+                let mut raw_block = vec![0u8; (next_offset - offset) as usize];
                 use tokio::io::{AsyncReadExt, AsyncSeekExt};
                 let mut file = self.file.lock().await;
                 file.seek(std::io::SeekFrom::Start(offset))
                     .await
                     .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
-                file.read_exact(&mut block_data).await.map_err(|e| {
+                file.read_exact(&mut raw_block).await.map_err(|e| {
                     MemFuseError::Storage(format!("SSTable iter read failed: {}", e))
                 })?;
+                block_data.extend_from_slice(&raw_block);
+                self.block_cache
+                    .write()
+                    .put((self.file_id, offset), Bytes::from(raw_block));
             }
 
             let n = block_data.len();
@@ -511,16 +600,32 @@ impl SstableReader {
                 self.index_offset
             };
 
-            let mut block_data = vec![0u8; (next_offset - offset) as usize];
+            let mut block_data = Vec::new();
+            let mut cache_miss = false;
+
             {
+                let mut cache = self.block_cache.write();
+                if let Some(cached) = cache.get(&(self.file_id, offset)) {
+                    block_data.extend_from_slice(cached);
+                } else {
+                    cache_miss = true;
+                }
+            }
+
+            if cache_miss {
+                let mut raw_block = vec![0u8; (next_offset - offset) as usize];
                 use tokio::io::{AsyncReadExt, AsyncSeekExt};
                 let mut file = self.file.lock().await;
                 file.seek(std::io::SeekFrom::Start(offset))
                     .await
                     .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
-                file.read_exact(&mut block_data).await.map_err(|e| {
+                file.read_exact(&mut raw_block).await.map_err(|e| {
                     MemFuseError::Storage(format!("SSTable scan read failed: {}", e))
                 })?;
+                block_data.extend_from_slice(&raw_block);
+                self.block_cache
+                    .write()
+                    .put((self.file_id, offset), Bytes::from(raw_block));
             }
 
             let n = block_data.len();
@@ -609,16 +714,32 @@ impl SstableReader {
                 self.index_offset
             };
 
-            let mut block_data = vec![0u8; (next_offset - offset) as usize];
+            let mut block_data = Vec::new();
+            let mut cache_miss = false;
+
             {
+                let mut cache = self.block_cache.write();
+                if let Some(cached) = cache.get(&(self.file_id, offset)) {
+                    block_data.extend_from_slice(cached);
+                } else {
+                    cache_miss = true;
+                }
+            }
+
+            if cache_miss {
+                let mut raw_block = vec![0u8; (next_offset - offset) as usize];
                 use tokio::io::{AsyncReadExt, AsyncSeekExt};
                 let mut file = self.file.lock().await;
                 file.seek(std::io::SeekFrom::Start(offset))
                     .await
                     .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
-                file.read_exact(&mut block_data).await.map_err(|e| {
+                file.read_exact(&mut raw_block).await.map_err(|e| {
                     MemFuseError::Storage(format!("SSTable range read failed: {}", e))
                 })?;
+                block_data.extend_from_slice(&raw_block);
+                self.block_cache
+                    .write()
+                    .put((self.file_id, offset), Bytes::from(raw_block));
             }
 
             let n = block_data.len();

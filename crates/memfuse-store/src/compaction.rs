@@ -1,4 +1,7 @@
 // ANCHOR:ARCH:COMPACT-001 — Background Compaction (STCS — Size-Tiered Compaction Strategy).
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
 // ALGORITHMUS: Gruppiere SSTables nach Größenklasse → Merge wenn >= min_sstables_per_tier.
 // TOMBSTONE-GC: Tombstones werden NUR gelöscht wenn seq < min_active_seqno (MVCC-SAFE).
 // ATOMARER SWAP: Merge unter read-lock, SSTable-Liste swap unter write-lock.
@@ -11,7 +14,7 @@
 //! Tombstones are garbage-collected during merge when no active snapshot
 //! references them.
 
-use crate::sstable::{SstableBuilder, SstableReader};
+use crate::sstable::{BlockCache, SstableBuilder, SstableReader};
 use memfuse_core::{Result, SnapshotRegistry, TOMBSTONE_BIT};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -47,14 +50,20 @@ impl Default for CompactionConfig {
 pub struct CompactionEngine {
     config: CompactionConfig,
     snapshot_registry: Arc<SnapshotRegistry>,
+    block_cache: Arc<BlockCache>,
 }
 
 impl CompactionEngine {
     /// Creates a new compaction engine.
-    pub fn new(config: CompactionConfig, snapshot_registry: Arc<SnapshotRegistry>) -> Self {
+    pub fn new(
+        config: CompactionConfig,
+        snapshot_registry: Arc<SnapshotRegistry>,
+        block_cache: Arc<BlockCache>,
+    ) -> Self {
         Self {
             config,
             snapshot_registry,
+            block_cache,
         }
     }
 
@@ -96,7 +105,8 @@ impl CompactionEngine {
             .await?;
 
         // 4. Open the new SSTable
-        let new_reader = Arc::new(SstableReader::open(&output_path).await?);
+        let new_reader =
+            Arc::new(SstableReader::open(&output_path, Arc::clone(&self.block_cache)).await?);
 
         // 5. Atomic swap under write-lock
         let old_paths: Vec<PathBuf> = {
@@ -291,7 +301,7 @@ impl CompactionEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sstable::SstableBuilder;
+    use crate::sstable::{create_block_cache, SstableBuilder};
     use memfuse_core::StorageEngine;
     use tempfile::TempDir;
 
@@ -299,6 +309,7 @@ mod tests {
         dir: &std::path::Path,
         name: &str,
         entries: &[(&[u8], &[u8], u64)],
+        bc: Arc<BlockCache>,
     ) -> Arc<SstableReader> {
         let path = dir.join(name);
         let mut builder = SstableBuilder::create(&path).await.expect("create sst");
@@ -306,20 +317,22 @@ mod tests {
             builder.add(k, v, *seq).await.expect("add entry");
         }
         builder.finish().await.expect("finish sst");
-        Arc::new(SstableReader::open(&path).await.expect("open sst"))
+        Arc::new(SstableReader::open(&path, bc).await.expect("open sst"))
     }
 
     #[tokio::test]
     async fn test_merge_deduplication() {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
-        let engine = CompactionEngine::new(CompactionConfig::default(), registry);
+        let bc = create_block_cache(1);
+        let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
 
         // Two SSTables with overlapping keys
         let sst1 = create_test_sstable(
             tmp.path(),
             "sst1.sst",
             &[(b"key-a", b"val-1", 1), (b"key-b", b"val-2", 2)],
+            Arc::clone(&bc),
         )
         .await;
 
@@ -327,6 +340,7 @@ mod tests {
             tmp.path(),
             "sst2.sst",
             &[(b"key-a", b"val-3", 3), (b"key-c", b"val-4", 4)],
+            Arc::clone(&bc),
         )
         .await;
 
@@ -336,7 +350,9 @@ mod tests {
             .await
             .expect("merge");
 
-        let reader = SstableReader::open(&output).await.expect("open merged");
+        let reader = SstableReader::open(&output, Arc::clone(&bc))
+            .await
+            .expect("open merged");
         let entries = reader.iter().await.expect("iter");
 
         // key-a should have the newer value (seq=3)
@@ -350,13 +366,15 @@ mod tests {
     async fn test_tombstone_gc() {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
-        let engine = CompactionEngine::new(CompactionConfig::default(), registry);
+        let bc = create_block_cache(1);
+        let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
 
         let tombstone_seq = 5 | TOMBSTONE_BIT;
         let sst1 = create_test_sstable(
             tmp.path(),
             "sst1.sst",
             &[(b"alive", b"val", 10), (b"dead", b"", tombstone_seq)],
+            Arc::clone(&bc),
         )
         .await;
 
@@ -368,7 +386,9 @@ mod tests {
             .await
             .expect("merge");
 
-        let reader = SstableReader::open(&output).await.expect("open");
+        let reader = SstableReader::open(&output, Arc::clone(&bc))
+            .await
+            .expect("open");
         let entries = reader.iter().await.expect("iter");
 
         assert_eq!(entries.len(), 1); // Only "alive" remains
@@ -379,13 +399,15 @@ mod tests {
     async fn test_tombstone_preserved_with_active_snapshot() {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
-        let engine = CompactionEngine::new(CompactionConfig::default(), registry);
+        let bc = create_block_cache(1);
+        let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
 
         let tombstone_seq = 5 | TOMBSTONE_BIT;
         let sst1 = create_test_sstable(
             tmp.path(),
             "sst1.sst",
             &[(b"alive", b"val", 10), (b"dead", b"", tombstone_seq)],
+            Arc::clone(&bc),
         )
         .await;
 
@@ -397,7 +419,9 @@ mod tests {
             .await
             .expect("merge");
 
-        let reader = SstableReader::open(&output).await.expect("open");
+        let reader = SstableReader::open(&output, Arc::clone(&bc))
+            .await
+            .expect("open");
         let entries = reader.iter().await.expect("iter");
 
         assert_eq!(entries.len(), 2); // Both preserved
@@ -407,12 +431,13 @@ mod tests {
     async fn test_maybe_compact_full_cycle() {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
+        let bc = create_block_cache(1);
         let config = CompactionConfig {
             min_sstables_per_tier: 2, // Low threshold for testing
             size_ratio: 4.0,
             check_interval: Duration::from_secs(30),
         };
-        let engine = CompactionEngine::new(config, registry);
+        let engine = CompactionEngine::new(config, registry, Arc::clone(&bc));
 
         // Create 3 small SSTables of similar size
         let sstables = Arc::new(RwLock::new(Vec::new()));
@@ -432,6 +457,7 @@ mod tests {
                         (i as u64) * 2 + 2,
                     ),
                 ],
+                Arc::clone(&bc),
             )
             .await;
             sstables.write().await.push(sst);
@@ -464,12 +490,13 @@ mod tests {
     async fn test_no_compaction_below_threshold() {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
+        let bc = create_block_cache(1);
         let config = CompactionConfig {
             min_sstables_per_tier: 4,
             size_ratio: 4.0,
             check_interval: Duration::from_secs(30),
         };
-        let engine = CompactionEngine::new(config, registry);
+        let engine = CompactionEngine::new(config, registry, Arc::clone(&bc));
 
         let sstables = Arc::new(RwLock::new(Vec::new()));
         for i in 0..2u8 {
@@ -477,6 +504,7 @@ mod tests {
                 tmp.path(),
                 &format!("sst-{}.sst", i),
                 &[(format!("key-{}", i).as_bytes(), b"val", i as u64 + 1)],
+                Arc::clone(&bc),
             )
             .await;
             sstables.write().await.push(sst);

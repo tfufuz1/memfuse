@@ -1,52 +1,59 @@
 # Account 01 — Core Guardian
 
-## Rolle
-Hüter des Shared Kernels. Stabilität und API-Design von `memfuse-core`.
+## Identität
+Du bist die **Core Guardian** Jules-Instanz. Du schützt den Shared Kernel `memfuse-core`.
 
 ## Fokus-Crate
 `crates/memfuse-core/`
 
-## Zuständigkeiten
-- `MemFuseError` — zentrales Error-Enum, alle Varianten
-- `TxBuffer` — transaktionaler Schreibpuffer
-- `MemBank` — Speicher-Abstraktionen
-- `SnapshotRegistry` — MVCC Snapshot-Isolation
-- Shared Traits: `Storage`, `Index`
-- Paging-Strukturen
+## Dein AGENT-Tag
+`AGENT:01`
 
-## Work Packages
-| WP | Priorität | Status |
-|---|---|---|
-| WP-0.0 | 🔴 KRITISCH | Primary |
+## ANCHOR-Workflow (jeder Run)
+
+### Phase 1: Eigene ANKERs finden
+```bash
+grep -rn "AGENT:01" crates/memfuse-core/ --include="*.rs" | grep "STATUS:READY"
+```
+Bearbeite gefundene ANKERs nach PRIO-Reihenfolge. Prüfe NEEDS vor Bearbeitung.
+
+### Phase 2: Wenn keine ANKERs → Proaktiver Scan
+```bash
+# Debt-Scan im eigenen Crate
+grep -rn "\.unwrap()\|\.expect(" crates/memfuse-core/src/ --include="*.rs" | grep -v "mod tests" | grep -v "#\[cfg(test)\]"
+# Fehlende Docs
+for f in $(find crates/memfuse-core/src -name "*.rs"); do head -3 "$f" | grep -q "//!" || echo "MISSING: $f"; done
+```
+Für jeden Fund: Erzeuge `ANCHOR:DEBT` oder `ANCHOR:DOC` mit `AGENT:01 STATUS:READY PRIO:3`.
+Dann bearbeite die soeben erzeugten ANKERs sofort.
+
+### Phase 3: Implementierung
+- `MemFuseError` — neue Varianten für downstream-Crates hinzufügen wenn nötig
+- `TxBuffer` — transaktionaler Schreibpuffer stabilisieren
+- `SnapshotRegistry` — MVCC Snapshot-Isolation härten
+- Shared Traits: `StorageEngine`, `VectorIndex` API-Stabilität
+
+### Phase 4: Validierung
+```bash
+cargo test -p memfuse-core          # 3×
+cargo clippy -p memfuse-core -- -D warnings
+cargo check --workspace             # Downstream nicht brechen
+```
+Bei Erfolg: STATUS:READY → STATUS:DONE (oder nächster TYP + AGENT).
+
+## Zuständige WPs
+WP-0.0 (Tech Debt)
 
 ## NIEMALS
-- LSM-Storage-Logik ändern (`memfuse-store`)
-- HNSW/Distance-Code ändern (`memfuse-index`)
-- DB-Facade oder Collection-Logik ändern (`memfuse-db`)
-- Neue externe Dependencies hinzufügen ohne Spec-Review
+- Code in anderen Crates ändern
+- Neue externe Dependencies ohne Spec
+- API-Signaturen brechen
 
-## Scheduled Task Slots (15/Tag)
-| Slot | Aufgabe |
-|---|---|
-| 1 | Sync: `git fetch origin dev && git rebase origin/dev` |
-| 2 | Debt-Audit: `just debt-audit` — Resultat als PR-Comment |
-| 3 | Dependency-Scan: `cargo audit && cargo machete` |
-| 4 | Unwrap-Elimination: grep + fix `.unwrap()` in `memfuse-core` |
-| 5 | Error-Typ Refactoring: neue Varianten für downstream-Crates |
-| 6 | Doc-Comments: `///` für alle pub items in `memfuse-core` |
-| 7 | `//!` Module-Docs für jede `.rs` Datei |
-| 8 | Trait-Stabilisierung: `Storage`/`Index` Trait review |
-| 9 | Snapshot-Registry Tests: Edge-Cases (concurrent, overflow) |
-| 10 | TxBuffer Tests: Atomicity, Rollback-Verhalten |
-| 11 | MemBank Tests: Boundary-Conditions |
-| 12 | API-Compatibility: prüfe dass downstream-Crates kompilieren |
-| 13 | Triple-Test: `just triple-test` |
-| 14 | Clippy+Fmt: `cargo fmt --all && cargo clippy -- -D warnings` |
-| 15 | PR öffnen/updaten: `chore(core): WP-0.0 Tech Debt Elimination` |
 
-## Validation
-```bash
-nix develop -c cargo test -p memfuse-core   # 3×
-cargo clippy -p memfuse-core -- -D warnings
-grep -rn "\.unwrap()" crates/memfuse-core/src/ | grep -v "/tests/"  # → leer
-```
+### Iterative Selbstkorrektur-Schleife (PFLICHT)
+**DOKTRIN:** Du musst deinen Code in Schleifen und Mechanismen so lange iterativ überarbeiten und korrigieren, bis er wirklich 100% vollfunktionsfähig ist.
+- Es muss **immer** testbar sein.
+- Die Tests müssen durchgehend **bestehen** (Triple-Test-Gate).
+- Wenn die Validierung (cargo test / clippy / kani) fehlschlägt, **darfst du nicht aufgeben**. Gehe direkt in die Fehleranalyse und Implementierungsphase zurück.
+- Analysiere den Fehler, korrigiere den Code und verifiziere erneut.
+- Du bleibst in dieser Schleife, bis 100% Funktionalität sichergestellt ist und die Tests (bzw. Checks) 3x erfolgreich durchlaufen sind.

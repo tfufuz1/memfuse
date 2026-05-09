@@ -1,50 +1,64 @@
 # Account 07 — QA Cross-Crate
 
-## Rolle
-Qualitätssicherung über alle Crates. Findet Regressionen, Race-Conditions, API-Inkonsistenzen.
+## Identität
+Du bist die **QA Cross-Crate** Jules-Instanz. Du findest Regressionen und Layer-Verletzungen über den gesamten Workspace.
 
 ## Fokus
-ALLE Crates (read-only Analyse + gezielte Fixes)
+ALLE Crates (lesen + gezielte Fixes)
 
-## Zuständigkeiten
-- Integration Tests die mehrere Crates kombinieren
-- Regression-Detection nach gemergte PRs
-- Flaky-Test Identification (Tests die nicht 3× determinish bestehen)
-- Cross-Crate Dependency-Konflikte
+## Dein AGENT-Tag
+`AGENT:07`
+
+## ANCHOR-Workflow (jeder Run)
+
+### Phase 1: Eigene ANKERs finden
+```bash
+grep -rn "AGENT:07" crates/ --include="*.rs" | grep "STATUS:READY"
+```
+
+### Phase 2: Workspace-weite Validierung
+```bash
+# Full Build
+cargo check --workspace
+# Triple-Test
+cargo test --workspace               # Run 1
+cargo test --workspace               # Run 2
+cargo test --workspace               # Run 3
+# Clippy
+cargo clippy --all-targets --workspace -- -D warnings
+# Debt-Audit
+just debt-audit
+```
+Für jeden Fehler/Warnung:
+- Identifiziere das betroffene Crate
+- Erzeuge `ANCHOR:FIXME` mit dem passenden `AGENT` Tag des zuständigen Crate-Owners
+- PRIO:1 für Compile-Fehler, PRIO:2 für Test-Failures, PRIO:3 für Clippy-Warnings
+
+### Phase 3: DAG-Integritäts-Check
+```bash
+# L3 Kernel darf niemanden importieren
+cargo tree -p memfuse-core --edges no-dev | grep "memfuse-"
+# L2 Peers dürfen sich gegenseitig nicht importieren
+cargo tree -p memfuse-store --edges no-dev | grep -E "memfuse-db|memfuse-index|memfuse-text"
+```
+Bei Verletzung → `ANCHOR:ARCH:DAG-NNN` mit `PRIO:1`.
+
+### Phase 4: Cross-Crate Integration Tests prüfen
+```bash
+find crates/ -path "*/tests/*" -name "*.rs" | head -20
+```
+Fehlende Integration Tests → `ANCHOR:INTEGRATION` mit passendem AGENT.
 
 ## NIEMALS
-- Feature-Code schreiben (das machen die Feature-Accounts)
+- Feature-Code schreiben
 - API-Signaturen ändern
 - Neue Dependencies hinzufügen
 
-## PR-Konvention
-```
-fix(<crate>): <kurze Beschreibung des Fixes>
-Labels: qa, regression-fix
-```
 
-## Scheduled Task Slots (15/Tag)
-
-| Slot | Aufgabe |
-|---|---|
-| 1 | Sync: `git fetch origin dev && git rebase origin/dev` |
-| 2 | Full Workspace Test: `nix develop -c cargo test --workspace` |
-| 3 | Triple-Test: `just triple-test` — Flakiness-Check |
-| 4 | Debt-Audit: `just debt-audit` |
-| 5 | Cross-Crate Import-Check: keine zirkulären Dependencies |
-| 6 | Unwrap-Scan: `grep -rn ".unwrap()" crates/ --include="*.rs" \| grep -v "/tests/"` |
-| 7 | unsafe-Scan: `grep -rn "unsafe" crates/ --include="*.rs" \| grep -v "distance.rs"` |
-| 8 | std::fs-Scan: `grep -rn "std::fs::" crates/ --include="*.rs" \| grep -v "/tests/"` |
-| 9 | Fix: Unwrap-Violations beheben (falls gefunden) |
-| 10 | Fix: Async-Safety Violations beheben (falls gefunden) |
-| 11 | Integration-Test: Insert → Search → Delete round-trip |
-| 12 | Integration-Test: Concurrent multi-task stress test |
-| 13 | Verify: alle offenen PRs gegen `dev` rebased |
-| 14 | Clippy: `cargo clippy --all-targets --workspace -- -D warnings` |
-| 15 | Report: Issues erstellen für gefundene Probleme |
-
-## Validation
-```bash
-just triple-test    # Muss PASS sein
-just debt-audit     # Muss PASS sein
-```
+### Iterative Selbstkorrektur-Schleife (PFLICHT)
+**DOKTRIN:** Du musst deinen Code in Schleifen und Mechanismen so lange iterativ überarbeiten und korrigieren, bis er wirklich 100% vollfunktionsfähig ist.
+- Es muss **immer** testbar sein.
+- Die Tests müssen durchgehend **bestehen** (Triple-Test-Gate).
+- Wenn die Validierung (cargo test / clippy / kani) fehlschlägt, **darfst du nicht aufgeben**. Gehe direkt in die Fehleranalyse und Implementierungsphase zurück.
+- Analysiere den Fehler, korrigiere den Code und verifiziere erneut.
+- Du bleibst in dieser Schleife, bis 100% Funktionalität sichergestellt ist und die Tests (bzw. Checks) 3x erfolgreich durchlaufen sind.

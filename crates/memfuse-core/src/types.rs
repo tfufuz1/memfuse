@@ -1,8 +1,8 @@
 // ANCHOR:ARCH:TYPES-001 — Zentrale Datentypen für den gesamten Workspace.
-// INVARIANTEN:
-//   - DocId: #[repr(transparent)] u64, abgeleitet via blake3 aus User-String-Keys
-//   - TOMBSTONE_BIT (Bit 63): Markiert gelöschte Einträge in SeqNo, NICHT in DocId
-//   - ResourceTracker: AtomicU64 mit SeqCst für Memory-Budgeting
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// INVARIANTEN: DocId=#[repr(transparent)] u64 via blake3, TOMBSTONE_BIT=Bit63 in SeqNo.
 // ACHTUNG: Änderungen an DocId::from_key() brechen ALLE bestehenden Datenbanken!
 //! Core type definitions for MemFuse.
 //!
@@ -11,9 +11,11 @@
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
-// ANCHOR:IMPL:TOMBSTONE-001 — Bit 63 der SeqNo markiert Tombstones.
-// Verwendet in: lsm.rs (commit/delete), compaction.rs (GC), lsm.rs (get/scan).
-// INVARIANTE: Raw-SeqNo = seq & !TOMBSTONE_BIT, Tombstone-Check = (seq & TOMBSTONE_BIT) != 0
+// ANCHOR:ARCH:TOMBSTONE-001 — Bit 63 der SeqNo markiert Tombstones.
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// Verwendet in: lsm.rs, compaction.rs. Raw-SeqNo = seq & !TOMBSTONE_BIT.
 /// Bit mask for identifying tombstones in sequence numbers.
 pub const TOMBSTONE_BIT: u64 = 1 << 63;
 
@@ -209,9 +211,15 @@ impl Edge {
 }
 
 // ANCHOR:ARCH:BUDGET-001 — Memory-Budgeting verhindert OOM in Produktionsumgebungen.
-// LsmStorage und HnswIndex teilen sich ein Budget über Arc<ResourceTracker>.
-// Backpressure: >80% → 5ms Sleep pro Operation, >95% → harter Fehler.
-// TODO:WP-4.1 — Auf Memory-Mapped I/O umstellen für zero-copy Zugriff.
+// WP:WP-0.0 PRIO:2 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// Backpressure: >80% → 5ms Sleep, >95% → MemFuseError::MemoryBudgetExceeded.
+//
+// ANCHOR:SPEC:WP-4.1-MMAP-001 — Auf Memory-Mapped I/O umstellen für zero-copy Zugriff.
+// WP:WP-4.1 PRIO:4 NEEDS:NONE
+// AGENT:02 DATE:2026-05-09 STATUS:READY
+// CREATED:2026-05-09 DEADLINE:NONE
 /// Resource budget for memory management.
 #[derive(Debug, Clone, Copy)]
 pub struct ResourceBudget {

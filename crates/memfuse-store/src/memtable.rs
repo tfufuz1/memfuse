@@ -1,4 +1,7 @@
 // ANCHOR:ARCH:MEMTABLE-001 — In-Memory Sortierter Puffer (hot writes).
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
 // DESIGN: BTreeMap<Bytes, (Bytes, u64)> — Key sortiert für geordneten SSTable-Flush.
 // SIZE-TRACKING: AtomicUsize zählt Bytes, LsmStorage flusht bei > memtable_size_limit.
 // LIFECYCLE: Active MemTable → Immutable MemTable → Flushed to SSTable → Dropped.

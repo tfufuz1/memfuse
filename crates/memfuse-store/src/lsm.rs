@@ -1,4 +1,11 @@
+// ANCHOR:DOC:DOC-LSM-001 — Missing module documentation
+// WP:WP-0.0 PRIO:3 NEEDS:NONE
+// AGENT:02 DATE:2026-05-09 STATUS:READY
+// CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:LSM-001 — Zentraler Storage-Engine-Orchestrator des Triebwerks.
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
 // IMPLEMENTS: StorageEngine Trait (memfuse-core/src/traits.rs)
 // READ-PATH:  get() → Active MemTable → Immutable MemTables → SSTables (newest first)
 // WRITE-PATH: put()/delete() → TxBuffer → commit() → WAL + MemTable
@@ -15,7 +22,7 @@
 
 use crate::compaction::{CompactionConfig, CompactionEngine};
 use crate::memtable::MemTable;
-use crate::sstable::{SstableBuilder, SstableReader};
+use crate::sstable::{create_block_cache, BlockCache, SstableBuilder, SstableReader};
 use crate::wal::{Wal, WalEntry, WalOp};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -30,6 +37,15 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 
 /// LSM storage configuration.
+// ⬡ @JULES-10 | P1 | TODO:SEC-001
+// WHY:  WP-3.2 Encryption at Rest benötigt AES-256-GCM für SSTables und WAL.
+// WHAT: Erweitere LsmConfig um `encryption_passphrase: Option<String>` und reiche diese an WAL/SSTables weiter.
+// TEST: cargo test -p memfuse-store test_encrypted_db_unreadable_without_key
+// DONE: LsmConfig akzeptiert Passphrase, AES-256 wird für Disk-I/O verwendet.
+// DEPS: COL-001
+// EST:  M | STATUS:OPEN
+// AGENT:jules-10 DATE:2026-05-09 SPRINT:1
+// CREATED:2026-05-09 DEADLINE:NONE
 #[derive(Clone, Debug)]
 pub struct LsmConfig {
     pub path: PathBuf,
@@ -65,8 +81,11 @@ pub struct LsmStorage {
     sstables: Arc<RwLock<Vec<Arc<SstableReader>>>>,
     tx_buffer: TxBuffer<(Vec<u8>, Vec<u8>)>,
     budget: Arc<ResourceTracker>,
+    block_cache: Arc<BlockCache>,
     pub snapshot_registry: Arc<SnapshotRegistry>,
     next_seq_no: AtomicU64,
+    /// Mutex to serialize commits and prevent snapshot inversion (parallel seq_no holes).
+    commit_mutex: tokio::sync::Mutex<()>,
 }
 
 impl LsmStorage {
@@ -121,9 +140,11 @@ impl LsmStorage {
         }
         sst_files.sort();
 
+        let block_cache = create_block_cache(64); // 64MB block cache for SSTables
+
         let mut sstables = Vec::new();
         for path in sst_files {
-            if let Ok(reader) = SstableReader::open(path).await {
+            if let Ok(reader) = SstableReader::open(path, Arc::clone(&block_cache)).await {
                 sstables.push(Arc::new(reader));
             }
         }
@@ -131,9 +152,19 @@ impl LsmStorage {
         let snapshot_registry = Arc::new(SnapshotRegistry::new());
 
         // Spawn background compaction task
+        // ⬡ @JULES-02 | P0 | TODO:COMP-001
+        // WHY:  WP-1.1 Background Compaction muss SSTables zusammenführen ohne Deadlocks.
+        // WHAT: Implementiere `CompactionEngine::run_loop`, Size-Tiered K-Way Merge Logic under concurrent load.
+        // TEST: cargo test -p memfuse-store test_concurrent_reads_during_compaction
+        // DONE: Triple-Test grün, keine Deadlocks in tokio::spawn.
+        // DEPS: NONE
+        // EST:  L | STATUS:OPEN
+        // AGENT:jules-02 DATE:2026-05-09 SPRINT:1
+        // CREATED:2026-05-09 DEADLINE:NONE
         let compaction_engine = Arc::new(CompactionEngine::new(
             config.compaction.clone(),
             Arc::clone(&snapshot_registry),
+            Arc::clone(&block_cache),
         ));
         let compaction_sstables = Arc::clone(&sstables);
         let compaction_path = config.path.clone();
@@ -153,8 +184,10 @@ impl LsmStorage {
             sstables,
             tx_buffer,
             budget: resource_tracker,
+            block_cache,
             snapshot_registry,
             next_seq_no: AtomicU64::new(max_seq + 1),
+            commit_mutex: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -260,6 +293,15 @@ impl StorageEngine for LsmStorage {
         if !self.budget.has_memory_capacity() {
             return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
         }
+
+        // ANCHOR:ALG-FIX:D6-001 — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
+        // WP:WP-0.0 PRIO:1 NEEDS:NONE
+        // AGENT:13 DATE:2026-05-08 STATUS:DONE
+        // CREATED:2026-05-08 DEADLINE:NONE
+        // FIX: Commit-Mutex serialisiert fetch_add + memtable.put.
+        // Ohne Mutex könnte seq=11 vor seq=10 fertig sein → Reader seq=11 sieht Lücke bei 10.
+        let _commit_lock = self.commit_mutex.lock().await;
+
         let ops = self.tx_buffer.drain(tx_id);
         let state = self.state.read().await;
 
@@ -331,10 +373,22 @@ impl StorageEngine for LsmStorage {
         let new_wal = Wal::open(wal_path).await?;
 
         let old_memtable = std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));
-        let _old_wal = std::mem::replace(&mut state.wal, new_wal);
+        let old_wal = std::mem::replace(&mut state.wal, new_wal);
         state.immutable_memtables.push(old_memtable.clone());
 
+        // ANCHOR:ALG-FIX:D1-011 — Stale WAL-Dateien löschen nach Flush
+        // WP:WP-0.0 PRIO:1 NEEDS:NONE
+        // AGENT:13 DATE:2026-05-08 STATUS:DONE
+        // CREATED:2026-05-08 DEADLINE:NONE
+        // Ohne Cleanup wächst die Disk-Usage unbegrenzt (eine WAL pro Flush).
+        let old_wal_path = old_wal.path().to_path_buf();
+        drop(old_wal);
         drop(state);
+
+        // Best-effort delete of old WAL (non-critical if it fails)
+        if let Err(e) = tokio::fs::remove_file(&old_wal_path).await {
+            tracing::debug!("Could not delete old WAL {:?}: {}", old_wal_path, e);
+        }
 
         let sst_path = {
             static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -350,7 +404,7 @@ impl StorageEngine for LsmStorage {
         }
         builder.finish().await?;
 
-        let reader = SstableReader::open(&sst_path).await?;
+        let reader = SstableReader::open(&sst_path, Arc::clone(&self.block_cache)).await?;
 
         // Atomic transition: remove from immutable memtables and add to SSTables
         let mut state = self.state.write().await;
@@ -399,19 +453,38 @@ impl StorageEngine for LsmStorage {
 
         for sst in sstables.iter() {
             let entries = sst.scan_prefix(prefix).await?;
+            // ANCHOR:ALG-FIX:D1-002 — seq_no-Vergleich bei scan_prefix (INV-LSM-2)
+            // WP:WP-0.0 PRIO:1 NEEDS:NONE
+            // AGENT:13 DATE:2026-05-08 STATUS:DONE
+            // CREATED:2026-05-08 DEADLINE:NONE
+            // Ohne seq_no-Vergleich kann eine ältere SSTable einen neueren Wert
+            // überschreiben wenn die SSTable-Reihenfolge nicht strikt chronologisch ist.
             for (k, v, seq) in entries {
-                map.insert(k.to_vec(), (v.to_vec(), seq));
-            }
-        }
-
-        for mt in &state.immutable_memtables {
-            for (k, v, seq) in mt.iter() {
-                if k.starts_with(prefix) {
-                    map.insert(k.to_vec(), (v.to_vec(), seq));
+                let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
+                if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                    *entry = (v.to_vec(), seq);
                 }
             }
         }
 
+        // ANCHOR:ALG-FIX:D1-008 — seq_no-Vergleich für MemTable-Entries in scan_prefix
+        // WP:WP-0.0 PRIO:1 NEEDS:NONE
+        // AGENT:13 DATE:2026-05-08 STATUS:DONE
+        // CREATED:2026-05-08 DEADLINE:NONE
+        // Immutable MemTables können ältere Versionen eines Keys enthalten
+        // als SSTables falls Flush-Reihenfolge abweicht.
+        for mt in &state.immutable_memtables {
+            for (k, v, seq) in mt.iter() {
+                if k.starts_with(prefix) {
+                    let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
+                    if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                        *entry = (v.to_vec(), seq);
+                    }
+                }
+            }
+        }
+
+        // Active memtable always has the newest data (commit_mutex serializes writes)
         for (k, v, seq) in state.memtable.iter() {
             if k.starts_with(prefix) {
                 map.insert(k.to_vec(), (v.to_vec(), seq));
@@ -444,7 +517,7 @@ impl StorageEngine for LsmStorage {
             let entries = sst.scan_range(start.map(|s| s), end.map(|e| e)).await?;
             for (k, v, seq) in entries {
                 let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
-                if seq > entry.1 {
+                if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                     *entry = (v.to_vec(), seq);
                 }
             }
@@ -464,7 +537,7 @@ impl StorageEngine for LsmStorage {
                 };
                 if in_range {
                     let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
-                    if seq > entry.1 {
+                    if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                         *entry = (v.to_vec(), seq);
                     }
                 }

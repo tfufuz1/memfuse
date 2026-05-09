@@ -1,6 +1,8 @@
 // ANCHOR:ARCH:ERR-001 — Einzige Error-Enum für den gesamten Workspace.
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
 // Neue Varianten nur ANHÄNGEN (niemals umsortieren) → binäre Kompatibilität.
-// Jede neue Variante braucht strukturierte Felder für Observability (kein reines String).
 // DOWNSTREAM: memfuse-store, memfuse-index, memfuse-db konvertieren via `?` und `From`.
 //! Error types for MemFuse.
 

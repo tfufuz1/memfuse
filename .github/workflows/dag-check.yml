@@ -1,0 +1,55 @@
+name: DAG Integrity Check
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+
+jobs:
+  verify-dag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        
+      - name: Check memfuse-core (L3 Kernel — imports NOBODY)
+        run: |
+          set -e
+          echo "Verifying memfuse-core imports no internal crates..."
+          if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py"; then
+            echo "ERROR: memfuse-core imports forbidden crates."
+            exit 1
+          fi
+
+      - name: Check L2 peer isolation (store, index must not import peers)
+        run: |
+          set -e
+          echo "Verifying memfuse-store does not import L2 peers..."
+          if cargo tree -p memfuse-store --edges no-dev | grep -q "memfuse-db\|memfuse-index\|memfuse-text"; then
+            echo "ERROR: memfuse-store imports L2 peers."
+            exit 1
+          fi
+          echo "Verifying memfuse-index does not import L2 peers..."
+          if cargo tree -p memfuse-index --edges no-dev | grep -q "memfuse-db\|memfuse-store\|memfuse-text"; then
+            echo "ERROR: memfuse-index imports L2 peers."
+            exit 1
+          fi
+
+      - name: Check known DAG violations (tracking)
+        run: |
+          set -e
+          echo "=== Known DAG Violations (tracked via ANKERs) ==="
+          echo "--- DAG-001: memfuse-text → memfuse-store ---"
+          if cargo tree -p memfuse-text --edges no-dev | grep -q "memfuse-store"; then
+            echo "⚠️  DAG-001 still present (memfuse-text → memfuse-store)"
+          else
+            echo "✅ DAG-001 resolved"
+          fi
+          echo "--- DAG-002: memfuse-checkpoint → memfuse-store ---"
+          if cargo tree -p memfuse-checkpoint --edges no-dev | grep -q "memfuse-store"; then
+            echo "⚠️  DAG-002 still present (memfuse-checkpoint → memfuse-store)"
+          else
+            echo "✅ DAG-002 resolved"
+          fi

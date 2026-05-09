@@ -1,98 +1,177 @@
-// ANCHOR:ARCH:PY-001 — Python Bindings (Cockpit — Layer 3).
-// DESIGN: PyO3 mit rust-numpy für Zero-Copy Array Transfer.
-// INVARIANTE: GIL wird während async-I/O gehalten (block_on). Dies ist akzeptabel,
-//   da SAOS primär Single-Threaded-LLM-Agents bedient.
-// TODO:WP-3.1 — pyo3-asyncio evaluieren für echten async/await Support in Python.
-//! Zero-Copy Python Bridge for MemFuse (SAOS)
+// ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
+// WP:WP-0.0 PRIO:3 NEEDS:NONE
+// AGENT:06 DATE:2026-05-09 STATUS:READY
+// CREATED:2026-05-09 DEADLINE:NONE
+// ⬡ @JULES-06 | P1 | TODO:PY-001
+// WHY:  WP-3.1 Python Bindings (PyO3 + maturin) werden für KI-Entwickler benötigt.
+// WHAT: Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist und GIL-Locks freigegeben werden.
+// TEST: cd crates/memfuse-py && python -m pytest tests/ -v
+// DONE: pip install . funktioniert, keine Deadlocks in tokio-Runtime.
+// DEPS: SEARCH-001
+// EST:  M | STATUS:OPEN
+// AGENT:jules-06 DATE:2026-05-09 SPRINT:1
+// CREATED:2026-05-09 DEADLINE:NONE
+#![forbid(unsafe_code)]
 
-#![allow(unsafe_op_in_unsafe_fn)]
-#![allow(non_local_definitions)]
-use memfuse_db::{Collection as DbCollection, MemFuse};
+use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
 use numpy::PyReadonlyArray1;
-use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use tokio::runtime::Runtime;
 
-#[pyclass]
+fn runtime() -> &'static Runtime {
+    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            // ANCHOR:DEBT:DEBT-UNWRAP-LIB-25 — unwrap/expect in production code
+            // WP:WP-0.0 PRIO:2 NEEDS:NONE
+            // AGENT:06 DATE:2026-05-09 STATUS:READY
+            // CREATED:2026-05-09 DEADLINE:NONE
+            .expect("Failed to create tokio runtime for memfuse-py")
+    })
+}
+
+#[pyclass(unsendable)]
+pub struct Db {
+    inner: Arc<MemFuse>,
+}
+
+#[pymethods]
+impl Db {
+    pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<Collection> {
+        let col = py
+            .allow_threads(|| runtime().block_on(self.inner.collection(name)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        Ok(Collection {
+            inner: Arc::new(col),
+        })
+    }
+}
+
+#[pyclass(unsendable)]
 pub struct Collection {
-    inner: DbCollection,
-    rt: Arc<Runtime>,
+    inner: Arc<MemFuseCollection>,
 }
 
 #[pymethods]
 impl Collection {
-    pub fn insert(
+    #[pyo3(signature = (id, vector, metadata=None))]
+    pub fn insert<'py>(
         &self,
+        py: Python<'py>,
         id: &str,
-        embedding: PyReadonlyArray1<f32>,
-        metadata: Option<String>,
+        vector: PyReadonlyArray1<'py, f32>,
+        metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
     ) -> PyResult<()> {
-        let vec = embedding
+        let vec_owned = vector
             .as_slice()
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        let meta = metadata.and_then(|m| serde_json::from_str(&m).ok());
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+            })?
+            .to_vec();
 
-        self.rt
-            .block_on(async { self.inner.insert(id, vec, meta).await })
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        let meta_val = if let Some(d) = metadata {
+            let json_str = py.import("json")?.call_method1("dumps", (d,))?;
+            let s: String = json_str.extract()?;
+            serde_json::from_str(&s).ok()
+        } else {
+            None
+        };
+        let id_string = id.to_string();
+
+        py.allow_threads(move || {
+            runtime().block_on(self.inner.insert(&id_string, &vec_owned, meta_val))
+        })
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
     }
 
+    #[pyo3(signature = (vector, k))]
     pub fn search<'py>(
         &self,
-        _py: Python<'py>,
-        query: PyReadonlyArray1<f32>,
+        py: Python<'py>,
+        vector: PyReadonlyArray1<'py, f32>,
         k: usize,
-    ) -> PyResult<Vec<(String, f32)>> {
-        let vec = query
+    ) -> PyResult<Vec<PyObject>> {
+        let vec_owned = vector
             .as_slice()
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        let results = self
-            .rt
-            .block_on(async { self.inner.search(vec, k).await })
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+            })?
+            .to_vec();
 
-        Ok(results.into_iter().map(|r| (r.id, r.score)).collect())
+        let results = py
+            .allow_threads(move || runtime().block_on(self.inner.search(&vec_owned, k)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut py_res = Vec::new();
+        for r in results {
+            let dict = PyDict::new(py);
+            dict.set_item("id", r.id)?;
+            dict.set_item("score", r.score)?;
+            py_res.push(dict.into());
+        }
+        Ok(py_res)
+    }
+
+    #[pyo3(signature = (text, vector, k))]
+    pub fn hybrid_search<'py>(
+        &self,
+        py: Python<'py>,
+        text: &str,
+        vector: PyReadonlyArray1<'py, f32>,
+        k: usize,
+    ) -> PyResult<Vec<PyObject>> {
+        let vec_owned = vector
+            .as_slice()
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+            })?
+            .to_vec();
+        let text_owned = text.to_string();
+
+        let results = py
+            .allow_threads(move || {
+                runtime().block_on(self.inner.hybrid_search(&text_owned, &vec_owned, k))
+            })
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut py_res = Vec::new();
+        for r in results {
+            let dict = PyDict::new(py);
+            dict.set_item("id", r.id)?;
+            dict.set_item("score", r.score)?;
+            py_res.push(dict.into());
+        }
+        Ok(py_res)
     }
 }
 
-#[pyclass]
-pub struct Agent {
-    db: Arc<MemFuse>,
-    rt: Arc<Runtime>,
-}
+#[pyfunction]
+#[pyo3(signature = (path, dimension=1536))]
+fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<Db> {
+    let config = MemFuseConfig {
+        dimension,
+        ..Default::default()
+    };
+    let path_string = path.to_string();
+    let db = py
+        .allow_threads(|| runtime().block_on(MemFuse::open_with_config(path_string, config)))
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-#[pymethods]
-impl Agent {
-    #[new]
-    pub fn new(path: &str) -> PyResult<Self> {
-        let rt = Arc::new(Runtime::new().map_err(|e| PyRuntimeError::new_err(e.to_string()))?);
-        let db = rt
-            .block_on(async { MemFuse::open(path).await })
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-
-        Ok(Self {
-            db: Arc::new(db),
-            rt,
-        })
-    }
-
-    pub fn collection(&self, name: &str) -> PyResult<Collection> {
-        let col = self
-            .rt
-            .block_on(async { self.db.collection(name).await })
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-
-        Ok(Collection {
-            inner: col,
-            rt: Arc::clone(&self.rt),
-        })
-    }
+    Ok(Db {
+        inner: Arc::new(db),
+    })
 }
 
 #[pymodule]
-fn memfuse(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<Agent>()?;
+fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(open, m)?)?;
+    m.add_class::<Db>()?;
     m.add_class::<Collection>()?;
     Ok(())
 }

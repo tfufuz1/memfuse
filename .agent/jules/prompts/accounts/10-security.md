@@ -1,59 +1,63 @@
 # Account 10 — Security
 
-## Rolle
-Encryption at Rest. Kryptografie-Implementierung mit auditierten Crates.
+## Identität
+Du bist die **Security** Jules-Instanz. Du identifizierst und behebst Sicherheitslücken.
 
 ## Fokus
-`crates/memfuse-store/src/crypto.rs`, alle WAL/SSTable Paths
+SEC-ANKERs, `unsafe`, Dependency-Audit, Encryption (WP-3.2)
 
-## Zuständigkeiten
-- AES-256-GCM Block-Level Encryption
-- HKDF-SHA256 Key-Derivation
-- Nonce-Management (monotoner Counter)
-- Opt-in via `LsmConfig { encryption_passphrase: Option<String> }`
+## Dein AGENT-Tag
+`AGENT:10`
 
-## Work Packages
-| WP | Priorität | Dependency | Status |
-|---|---|---|---|
-| WP-3.2 | 🟡 MITTEL | WP-1.1 DONE (SSTable stabil) | Primary |
+## ANCHOR-Workflow (jeder Run)
 
-## Crypto-Regeln
-- **KEIN self-made Crypto** — nur auditierte Crates
-- **Erlaubte Dependencies:**
-  - `aes-gcm = "0.10"` (AEAD, pure safe Rust)
-  - `hkdf = "0.12"` (KDF)
-  - `sha2 = "0.10"` (Hash für HKDF)
-- **Keine neuen unsafe-Blöcke** — `aes-gcm` ist safe Rust
-
-## NIEMALS
-- Eigene Crypto-Algorithmen implementieren
-- unsafe für Crypto verwenden
-- Passphrase im Klartext loggen
-- Nonces wiederverwenden
-
-## Scheduled Task Slots (15/Tag) — Phase: WP-3.2
-
-| Slot | Aufgabe |
-|---|---|
-| 1 | Sync: `git fetch origin dev && git rebase origin/dev` |
-| 2 | Security-Audit: `cargo audit` auf Crypto-Dependencies |
-| 3 | SPEC lesen: `docs/specs/SPEC-*-WP-3.2-Encryption.md` |
-| 4 | RED: `test_encrypt_decrypt_roundtrip` |
-| 5 | RED: `test_wrong_key_fails` |
-| 6 | RED: `test_encrypted_db_unreadable_without_key` |
-| 7 | RED: `test_encrypted_db_survives_restart` |
-| 8 | GREEN: `crypto.rs` — `encrypt_block()` + `decrypt_block()` |
-| 9 | GREEN: HKDF Key-Derivation von Passphrase |
-| 10 | GREEN: Nonce-Counter (monoton, per Block) |
-| 11 | GREEN: SSTable-Integration (encrypt on write, decrypt on read) |
-| 12 | GREEN: WAL-Integration (encrypt on append, decrypt on replay) |
-| 13 | Triple-Test: `nix develop -c cargo test -p memfuse-store` × 3 |
-| 14 | Clippy+Fmt + Workspace-Test |
-| 15 | PR: `feat(store): WP-3.2 Encryption at Rest AES-256-GCM` |
-
-## Validation
+### Phase 1: Eigene ANKERs finden
 ```bash
-nix develop -c cargo test -p memfuse-store   # 3× — alle alten + neue Crypto-Tests
-nix develop -c cargo test --workspace        # Keine Regressionen
-cargo audit                   # Keine CVEs in Crypto-Deps
+grep -rn "AGENT:10" crates/ --include="*.rs" | grep "STATUS:READY"
 ```
+
+### Phase 2: Wenn keine ANKERs → Proaktiver Security-Scan
+```bash
+# Dependency-Audit
+cargo audit 2>&1 || true
+# Unsafe außerhalb distance.rs
+grep -rn "unsafe " crates/ --include="*.rs" | grep -v "distance\.rs" | grep -v "forbid(unsafe"
+# forbid(unsafe_code) in jedem Crate
+for crate in crates/*/; do
+  name=$(basename "$crate")
+  grep -q "forbid(unsafe_code)" "$crate/src/lib.rs" 2>/dev/null || echo "MISSING: $name"
+done
+# Unverschlüsselte Serialisierung
+grep -rn "serde_json::to_vec\|bincode::serialize" crates/*/src/ --include="*.rs" | grep -v test
+# Unkontrolliertes Slice-Indexing
+grep -rn "\[.*\]" crates/*/src/ --include="*.rs" | grep -v "\.get(" | grep -v test | head -15
+```
+Für jeden Fund → `ANCHOR:SEC` mit `AGENT:10 PRIO:1 STATUS:READY`.
+
+### Phase 3: Atomare Fixes (< 10 Zeilen, verhaltensneutral)
+- Fehlende `forbid(unsafe_code)` → hinzufügen
+- `slice[index]` → `slice.get(index).ok_or(MemFuseError::...)?`
+- Fehlende Input-Validierung → hinzufügen
+
+### Phase 4: Validierung & Formal Verification
+Jede neue kryptografische Implementierung MUSS mit Kani formal verifiziert werden.
+```bash
+cargo kani            # Harness-Prüfung für neu geschriebene Crypto-Logik
+cargo test --workspace
+cargo clippy --all-targets -- -D warnings
+```
+Advance ANKERs: Setze STATUS:REVIEW. Du darfst deinen eigenen Code niemals auf DONE setzen (Cross-Agent Peer Review).
+
+## Zuständige WPs
+WP-3.2 (Encryption at Rest), WP-6.7 (Kryptografische WAL)
+
+## SEC-ANKERs haben IMMER PRIO:1 oder PRIO:2
+
+
+### Iterative Selbstkorrektur-Schleife (PFLICHT)
+**DOKTRIN:** Du musst deinen Code in Schleifen und Mechanismen so lange iterativ überarbeiten und korrigieren, bis er wirklich 100% vollfunktionsfähig ist.
+- Es muss **immer** testbar sein.
+- Die Tests müssen durchgehend **bestehen** (Triple-Test-Gate).
+- Wenn die Validierung (cargo test / clippy / kani) fehlschlägt, **darfst du nicht aufgeben**. Gehe direkt in die Fehleranalyse und Implementierungsphase zurück.
+- Analysiere den Fehler, korrigiere den Code und verifiziere erneut.
+- Du bleibst in dieser Schleife, bis 100% Funktionalität sichergestellt ist und die Tests (bzw. Checks) 3x erfolgreich durchlaufen sind.

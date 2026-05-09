@@ -1,4 +1,7 @@
 // ANCHOR:ARCH:DB-001 — Orchestrator Facade (Getriebe — Layer 2).
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
 // ROLLE: Verbindet memfuse-core (Traits), memfuse-store (LSM) und memfuse-index (HNSW).
 // DESIGN: Zero-Boilerplate API für Nutzer. Intern wird alles über die Collection-Abstraktion geroutet.
 // ABWÄRTSKOMPATIBILITÄT: Bietet weiterhin top-level insert/search an, die intern auf die "default" Collection leiten.
@@ -51,6 +54,9 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 pub mod collection;
+pub mod fusion;
+pub mod transaction;
+
 pub use collection::Collection;
 
 /// User-facing search result.
@@ -150,6 +156,15 @@ impl MemFuse {
     /// Returns the next transaction ID (auto-incremented).
     /// Returns a specific collection (namespace).
     /// Creates the collection if it does not already exist.
+    // ⬡ @JULES-04 | P1 | TODO:COL-001
+    // WHY:  WP-1.2 Collections erfordert Isolation der Datensätze.
+    // WHAT: Implementiere vollständige Persistenz und Isolation für `collection()`.
+    // TEST: cargo test -p memfuse-db test_collections_are_isolated
+    // DONE: `collection()` ist wal-gesichert, Isolation ist korrekt.
+    // DEPS: NONE
+    // EST:  M | STATUS:OPEN
+    // AGENT:jules-04 DATE:2026-05-09 SPRINT:1
+    // CREATED:2026-05-09 DEADLINE:NONE
     pub async fn collection(&self, name: &str) -> Result<Collection> {
         let read_guard = self.collections.read().await;
         if let Some(col) = read_guard.get(name) {
@@ -181,12 +196,30 @@ impl MemFuse {
     }
 
     /// Lists all existing collection names (those currently active in memory).
+    // ⬡ @JULES-04 | P1 | TODO:COL-002
+    // WHY:  WP-1.2 Collections Liste muss persistent geladen werden.
+    // WHAT: Erweitere `list_collections` so, dass es aus dem LSM-Store/Metadata ließt.
+    // TEST: cargo test -p memfuse-db test_list_collections
+    // DONE: list_collections gibt persistierte Collections zurück.
+    // DEPS: COL-001
+    // EST:  S | STATUS:OPEN
+    // AGENT:jules-04 DATE:2026-05-09 SPRINT:1
+    // CREATED:2026-05-09 DEADLINE:NONE
     pub async fn list_collections(&self) -> Result<Vec<String>> {
         let guard = self.collections.read().await;
         Ok(guard.keys().cloned().collect())
     }
 
     /// Drops a collection, removing all its data from storage.
+    // ⬡ @JULES-04 | P1 | TODO:COL-003
+    // WHY:  WP-1.2 fordert dass drop_collection komplette Daten entfernt.
+    // WHAT: Löschen der Collection-Keys aus LSM und des HNSW Graphen.
+    // TEST: cargo test -p memfuse-db test_drop_removes_all_data
+    // DONE: Alle Daten getilgt, re-öffnen führt zu leerer DB.
+    // DEPS: COL-001
+    // EST:  M | STATUS:OPEN
+    // AGENT:jules-04 DATE:2026-05-09 SPRINT:1
+    // CREATED:2026-05-09 DEADLINE:NONE
     pub async fn drop_collection(&self, name: &str) -> Result<()> {
         let mut guard = self.collections.write().await;
         if let Some(col) = guard.remove(name) {
@@ -259,6 +292,16 @@ impl MemFuse {
             .search_filtered(query, k, filter)
             .await
     }
+
+    // ⬡ @JULES-05 | P1 | TODO:SEARCH-001
+    // WHY:  WP-2.1 Hybrid Search benötigt eine API-Facade.
+    // WHAT: Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection::hybrid_search.
+    // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
+    // DONE: Funktion existiert und delegiert richtig.
+    // DEPS: COL-001
+    // EST:  S | STATUS:OPEN
+    // AGENT:jules-05 DATE:2026-05-09 SPRINT:1
+    // CREATED:2026-05-09 DEADLINE:NONE
 
     /// Deletes a document by its string ID.
     pub async fn delete(&self, id: &str) -> Result<()> {

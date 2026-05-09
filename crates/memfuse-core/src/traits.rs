@@ -1,8 +1,8 @@
 // ANCHOR:ARCH:TRAITS-001 — Trait-Contracts sind das API-Rückgrat des Workspace.
-// StorageEngine → implementiert von LsmStorage (memfuse-store)
-// VectorIndex  → implementiert von HnswIndex  (memfuse-index)
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
 // REGEL: Neue Methoden MÜSSEN Default-Impl haben (backward compat).
-// REGEL: Alle async-Methoden via async_trait — kein manueller Pin<Box<Future>>.
 //! Core trait definitions for MemFuse subsystems.
 //!
 //! These traits define the abstract interfaces that concrete implementations
@@ -35,9 +35,11 @@ pub struct StorageStats {
     pub memtable_size_bytes: u64,
 }
 
-// ANCHOR:CONTRACT:STORAGE-001 — Implementor: LsmStorage (memfuse-store/src/lsm.rs)
-// Transaktions-Lifecycle: put/delete → commit/rollback → flush (background)
-// get() durchsucht: MemTable → Immutable MemTables → SSTables (newest first)
+// ANCHOR:ARCH:CONTRACT-STORAGE-001 — Implementor: LsmStorage (memfuse-store/src/lsm.rs)
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// Lifecycle: put/delete → commit/rollback → flush(background).
 /// Storage engine trait — abstracts over the LSM-Tree implementation.
 #[async_trait]
 pub trait StorageEngine: Send + Sync {
@@ -79,10 +81,11 @@ pub trait StorageEngine: Send + Sync {
     }
 }
 
-// ANCHOR:CONTRACT:INDEX-001 — Implementor: HnswIndex (memfuse-index/src/hnsw.rs)
-// Transaktions-Lifecycle: insert/delete → commit/rollback
-// search() + search_filtered(): Greedy Layer Descent → Layer-0 ef-Search
-// Rebuild: Automatisch bei >20% gelöschten Nodes (konfigurierbar via rebuild_threshold)
+// ANCHOR:ARCH:CONTRACT-INDEX-001 — Implementor: HnswIndex (memfuse-index/src/hnsw.rs)
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// Rebuild: Automatisch bei >20% gelöschten Nodes.
 /// Vector index trait — abstracts over the HNSW implementation.
 #[async_trait]
 pub trait VectorIndex: Send + Sync {

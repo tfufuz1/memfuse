@@ -13,57 +13,77 @@ Basis-Branch: dev
 Feature-Branch: jules/[ACCOUNT]-[TASK-NAME] (Jules erstellt diesen automatisch)
 
 ═══════════════════════════════════════════════════════════════
-  DIE 4 KERNSÄULEN DES SYSTEMS - WORKFLOW
+  ANCHOR v2 — INLINE-ZUSTANDSPROTOKOLL (PFLICHT-LEKTÜRE)
 ═══════════════════════════════════════════════════════════════
 
-1. SPEC-DRIVEN DEVELOPMENT (Das Blackboard-Prinzip)
-   - Die `docs/specs/*.md` ist das "schwarze Brett". Niemals Code schreiben, der nicht von Specs abgedeckt ist.
-   - Agent liest Invarianten aus, und aktualisiert am Ende den Status in der Spec.
+Du arbeitest mit dem ANCHOR v2 State-Machine-System.
+Die ANCHOR-Kommentare im Code SIND deine Arbeitsaufträge.
+Du findest, bearbeitest und erzeugst ANKERs — das ist der
+primäre Koordinationsmechanismus zwischen allen Jules-Instanzen.
 
-2. SOVEREIGN CORE TDD-LOOP (Red -> Green -> Refactor)
-   - RED: Test für Invariante / AC schreiben (muss failen).
-   - GREEN: Minimale Implementierung schreiben.
-   - TRIPLE-TEST-GATE: Flaky tests verhindern. Führe `just triple-test` (oder 3x nix develop -c cargo test) aus. Muss 3x grün sein.
+ANCHOR-SYNTAX:
+  // ANCHOR:[TYP]:[ID] — [Beschreibung]
+  // WP:[work-package] PRIO:[1-5] NEEDS:[dependency-id|NONE]
+  // AGENT:[deine-account-nr] DATE:[YYYY-MM-DD] STATUS:[STATUS]
 
-3. COMMENT-ANCHOR KOMMUNIKATION
-   - Globale Audit- und Log-Zentrale im Code: `// ANCHOR:[TYP]:[COMP-ID] — [Grund/Status]`
-   - Typen: TODO, FIXME, IMPL, TEST, SAFETY (Audit-Pflicht bei unsafe!).
+STATUS-LIFECYCLE:
+  PLANNING → READY → ACTIVE → VERIFY → DONE
 
-4. GITHUB-GATES
-   - Gate 1: Lokaler Commit (Clippy, Tests, Format).
-   - Gate 2: PR Open (Mapping zur Spec in der PR Description).
-   - Gate 3: Merge (durch Lead Architect).
+DEIN WORKFLOW (jeder Run, immer gleich):
+
+  1. SCAN: Finde alle ANKERs die deinen AGENT-Tag tragen
+     grep -rn "AGENT:[DEINE-NR]" crates/ --include="*.rs" | grep "STATUS:READY"
+
+  2. PLAN: Für jeden gefundenen ANCHOR erstelle einen
+     internen Implementierungsplan (in deinem Kopf, nicht als Datei)
+
+  3. IMPLEMENT: Bearbeite den ANCHOR — schreibe Code, Tests, oder Docs
+     Ändere STATUS:READY → STATUS:ACTIVE während du arbeitest
+
+  4. VERIFY: Führe Tests aus
+     cargo test --workspace
+     cargo clippy --all-targets -- -D warnings
+
+  5. ADVANCE: Wenn Tests grün → ändere TYP und AGENT zum nächsten Schritt:
+     SPEC→RED (AGENT:03) → GREEN (AGENT:04) → REFACTOR (AGENT:05) →
+     INTEGRATION (AGENT:06) → DONE
+     Wenn Tests rot → setze STATUS:BLOCKED mit Grund
+
+  6. ERZEUGEN: Wenn du neue Arbeit findest (z.B. Tech-Debt, fehlende
+     Docs, Security-Issues), erzeuge neue ANKERs mit dem passenden
+     AGENT-Tag für den zuständigen Account.
+
+REGELN:
+  - Bearbeite NUR ANKERs die DEINEN AGENT-Tag tragen und STATUS:READY haben
+  - Prüfe NEEDS vor Bearbeitung — wenn Dependency nicht DONE → STATUS:BLOCKED
+  - Maximal 5 ANKERs pro Run bearbeiten
+  - Wenn KEINE ANKERs für dich existieren → Fallback-Aufgaben (siehe Account-Prompt)
 
 ═══════════════════════════════════════════════════════════════
   SOVEREIGN CORE DOCTRINE — ABSOLUT VERBINDLICH & ZERO-PANIC
 ═══════════════════════════════════════════════════════════════
 
-1. ZERO-PANIC POLICY: Produktionscode darf NIEMALS .unwrap() / .expect() enthalten!
-   → Nutze den `?` Operator, propagiere Fehler über das `MemFuseError` (oder ähnliche Enum) System.
+1. ZERO-PANIC: Kein .unwrap() / .expect() im Produktionscode.
+   → ? Operator + MemFuseError Propagation.
 
-2. ASYNC ONLY I/O (Asynchrone Integrität): 
-   → KEIN blockierendes `std::fs` in async Funktionen. Das wird als schwerer Architekturfehler (Bottleneck) behandelt!
-   → Nutze ausschließlich `tokio::fs`.
+2. ASYNC-I/O: Kein std::fs in async Kontexten → tokio::fs.
 
-3. ZERO UNSAFE: #![forbid(unsafe_code)] in jedem Crate.
-   → Ausnahme: distance.rs (SIMD) -- muss zwingend ein SAFETY ANCHOR haben.
+3. ZERO-UNSAFE: #![forbid(unsafe_code)] in jedem Crate.
+   Ausnahme: distance.rs (SIMD) mit SAFETY ANCHOR.
 
-4. WARNINGS = ERRORS: `cargo clippy -- -D warnings` muss SAUBER sein.
+4. WARNINGS=ERRORS: cargo clippy -- -D warnings muss sauber sein.
 
-5. DOC PFLICHT: jede pub struct/fn braucht /// Doc-Comment.
+5. DOC-PFLICHT: Jede pub struct/fn braucht /// Doc-Comment.
 
-6. BACKWARD COMPAT CHECK: Bestehende API-Signaturen dürfen NICHT gebrochen werden, es sei denn in Spec explizit verlangt.
+6. BACKWARD-COMPAT: Keine API-Signatur-Breaks ohne Spec.
 
 ═══════════════════════════════════════════════════════════════
-  TECH-DEBT GUARD & START DES WORKFLOWS (WP-0.0)
+  DONE-DEFINITION (Triple-Test-Gate)
 ═══════════════════════════════════════════════════════════════
 
-Tech-Debt Scans (Säuberungs-Gates):
-Voraussetzung für alle weiteren WPs ist das bestehen von WP-0.0!
-
-Führe aus: `just debt-audit` (falls vorhanden)
-
-Oder manuell prüfen (Zero-Tolerance für Ausgaben):
-grep -rn "\.unwrap()" crates/ --include="*.rs" | grep -v "/tests/"
-grep -rn "std::fs::" crates/ --include="*.rs" | grep -v "/tests/"
+Ein ANCHOR ist DONE wenn:
+  1. Zugehörige Tests bestehen 3× hintereinander ohne Änderung
+  2. cargo clippy -- -D warnings ist grün
+  3. Keine bestehenden Tests sind neu rot
+  4. ANCHOR-STATUS ist auf DONE gesetzt
 ```

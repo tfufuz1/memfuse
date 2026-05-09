@@ -25,6 +25,8 @@
           with ps; [
             pip
             virtualenv
+            numpy
+            pytest
           ]);
       in {
         devShells.default = pkgs.mkShell {

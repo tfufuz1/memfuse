@@ -1,58 +1,47 @@
-// ANCHOR:ARCH:BM25-001 — BM25 Scoring-Engine (Standard Okapi BM25).
-// INVARIANTE: Default-Parameter: k1=1.5, b=0.75.
-//! BM25 Scoring utility.
+//! Pure BM25 scoring functions.
 
-use std::collections::HashMap;
+/// Calculates the BM25 score for a single term in a document.
+///
+/// # Arguments
+/// * `tf` - Term frequency in the document
+/// * `doc_len` - Length of the document (number of tokens)
+/// * `avg_doc_len` - Average document length in the collection
+/// * `df` - Document frequency (number of documents containing the term)
+/// * `n` - Total number of documents in the collection
+pub fn score_term(tf: u32, doc_len: u32, avg_doc_len: f32, df: u32, n: u32) -> f32 {
+    // Constant parameters for BM25
+    let k1 = 1.2;
+    let b = 0.75;
 
-/// Provides BM25 scoring for an inverted index query.
-#[derive(Debug)]
-pub struct Bm25Scorer {
-    k1: f32,
-    b: f32,
-    avg_doc_len: f32,
-    total_docs: f32,
-    /// Store df for terms
-    doc_freqs: HashMap<String, u32>,
+    let tf = tf as f32;
+    let doc_len = doc_len as f32;
+    let df = df as f32;
+    let n = n as f32;
+
+    // Standard IDF formula, ensure we don't return negative IDF
+    // If a term appears in more than half of the documents, the raw IDF formula can be negative.
+    // We cap it at 0.01 to ensure terms always have some positive weight.
+    let idf = f32::max(0.01, ((n - df + 0.5) / (df + 0.5)).ln());
+
+    let norm_doc_len = if avg_doc_len > 0.0 {
+        doc_len / avg_doc_len
+    } else {
+        1.0
+    };
+
+    let tf_numerator = tf * (k1 + 1.0);
+    let tf_denominator = tf + k1 * (1.0 - b + b * norm_doc_len);
+
+    idf * (tf_numerator / tf_denominator)
 }
 
-impl Default for Bm25Scorer {
-    fn default() -> Self {
-        Self::new(1.5, 0.75, 0.0, 0.0)
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl Bm25Scorer {
-    pub fn new(k1: f32, b: f32, avg_doc_len: f32, total_docs: f32) -> Self {
-        Self {
-            k1,
-            b,
-            avg_doc_len,
-            total_docs,
-            doc_freqs: HashMap::new(),
-        }
-    }
-
-    pub fn add_doc_freq(&mut self, term: &str, df: u32) {
-        self.doc_freqs.insert(term.to_string(), df);
-    }
-
-    /// Computes BM25 score for a specific term and document.
-    pub fn score_term(&self, term: &str, tf: u32, doc_len: f32) -> f32 {
-        let df = *self.doc_freqs.get(term).unwrap_or(&0) as f32;
-        if df == 0.0 {
-            return 0.0;
-        }
-
-        // IDF variant typically used in BM25
-        let idf = ((self.total_docs - df + 0.5) / (df + 0.5) + 1.0).ln();
-        if idf <= 0.0 {
-            return 0.0; // avoid negative weights
-        }
-
-        let tf_f32 = tf as f32;
-        let numerator = tf_f32 * (self.k1 + 1.0);
-        let denominator = tf_f32 + self.k1 * (1.0 - self.b + self.b * (doc_len / self.avg_doc_len));
-
-        idf * (numerator / denominator)
+    #[test]
+    fn test_bm25_score() {
+        let score = score_term(2, 100, 150.0, 10, 1000);
+        assert!(score > 0.0);
     }
 }

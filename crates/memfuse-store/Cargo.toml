@@ -15,6 +15,7 @@ parking_lot = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
+lru = "0.13"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
