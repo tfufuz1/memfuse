@@ -33,6 +33,7 @@ bytes = "1"
 ahash = "0.8"
 parking_lot = "0.12"
 roaring = "0.10"
+unicode-segmentation = "1"
 
 # Crypto & hashing
 blake3 = "1"
