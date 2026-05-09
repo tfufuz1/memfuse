@@ -15,7 +15,7 @@ use std::sync::Mutex;
 //
 // ANCHOR:GREEN:WP-1.2-TX-001 — Isolation-Tests für DbTransaction::rollback unter Contention.
 // WP:WP-1.2 PRIO:2 NEEDS:NONE
-// AGENT:12 DATE:2026-05-09 STATUS:READY
+// AGENT:12 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 /// A transaction wrapper that ensures atomic multi-index commits across LSM-Store and HNSW-Index.
 pub struct DbTransaction<'a> {
