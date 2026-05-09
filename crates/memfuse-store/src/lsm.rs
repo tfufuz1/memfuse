@@ -1,6 +1,6 @@
 // ANCHOR:DOC:DOC-LSM-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:READY
+// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:LSM-001 — Zentraler Storage-Engine-Orchestrator des Triebwerks.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -12,13 +12,33 @@
 // FLUSH:      MemTable > size_limit → rotate → SSTable schreiben → cleanup
 // BACKGROUND: CompactionEngine läuft als tokio::spawn loop
 // INVARIANTE: WAL Replay bei Neustart stellt MemTable deterministisch wieder her.
-//! LSM-Tree storage engine.
+//! LSM-Tree (Log-Structured Merge-Tree) storage engine.
 //!
-//! Provides a persistent key-value store with:
-//! - MemTable (in-memory sorted buffer)
-//! - WAL (crash recovery)
-//! - Transactional writes via TxBuffer
-//! - Background compaction (Size-Tiered)
+//! The `LsmStorage` engine provides a high-performance, persistent key-value store
+//! implementing the `StorageEngine` trait.
+//!
+//! ## Architecture
+//! - **MemTable**: An in-memory sorted buffer (`BTreeMap`) that absorbs all writes.
+//!   Once it reaches a size threshold, it is frozen (becoming an immutable MemTable)
+//!   and eventually flushed to disk as an SSTable.
+//! - **WAL (Write-Ahead Log)**: Ensures durability by logging all operations before
+//!   they are applied to the MemTable.
+//! - **SSTables (Sorted String Tables)**: Persistent, immutable files on disk.
+//!   They are organized into tiers by the Compaction Engine.
+//! - **Compaction**: A background process that merges multiple SSTables into one,
+//!   deduplicating keys and garbage-collecting tombstones.
+//! - **MVCC (Multi-Version Concurrency Control)**: Supports snapshots and transactional
+//!   isolation via sequence numbers and the `SnapshotRegistry`.
+//!
+//! ## Read Path
+//! 1. Check the active MemTable.
+//! 2. Check immutable MemTables (from newest to oldest).
+//! 3. Check SSTables (from newest to oldest).
+//!
+//! ## Write Path
+//! 1. Operations are staged in the `TxBuffer`.
+//! 2. On `commit()`, operations are assigned sequence numbers, written to the WAL,
+//!    and then applied to the active MemTable.
 
 use crate::compaction::{CompactionConfig, CompactionEngine};
 use crate::memtable::MemTable;
@@ -158,7 +178,7 @@ impl LsmStorage {
         // TEST: cargo test -p memfuse-store test_concurrent_reads_during_compaction
         // DONE: Triple-Test grün, keine Deadlocks in tokio::spawn.
         // DEPS: NONE
-        // EST:  L | STATUS:OPEN
+        // EST:  L | STATUS:REVIEW
         // AGENT:jules-02 DATE:2026-05-09 SPRINT:1
         // CREATED:2026-05-09 DEADLINE:NONE
         let compaction_engine = Arc::new(CompactionEngine::new(
