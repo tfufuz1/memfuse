@@ -9,6 +9,8 @@
 
 pub mod bm25;
 pub mod inverted;
+pub mod tokenizer;
 
 pub use bm25::Bm25Scorer;
 pub use inverted::InvertedIndex;
+pub use tokenizer::Tokenizer;

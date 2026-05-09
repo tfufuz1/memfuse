@@ -10,6 +10,7 @@ description = "MemFuse — Embedded hybrid-search for AI agents"
 memfuse-core = { workspace = true }
 memfuse-store = { workspace = true }
 memfuse-index = { workspace = true }
+memfuse-text = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }

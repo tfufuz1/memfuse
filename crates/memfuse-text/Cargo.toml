@@ -6,4 +6,9 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+memfuse-core.workspace = true
+memfuse-store.workspace = true
 roaring.workspace = true
+unicode-segmentation.workspace = true
+bincode.workspace = true
+serde.workspace = true

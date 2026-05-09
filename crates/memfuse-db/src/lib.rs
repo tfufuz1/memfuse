@@ -51,6 +51,8 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 pub mod collection;
+pub mod fusion;
+
 pub use collection::Collection;
 
 /// User-facing search result.
@@ -257,6 +259,19 @@ impl MemFuse {
         self.default_col()
             .await?
             .search_filtered(query, k, filter)
+            .await
+    }
+
+    /// Performs hybrid search combining BM25 keyword search and vector similarity.
+    pub async fn hybrid_search(
+        &self,
+        text_query: &str,
+        vector_query: &[f32],
+        k: usize,
+    ) -> Result<Vec<SearchResult>> {
+        self.default_col()
+            .await?
+            .hybrid_search(text_query, vector_query, k)
             .await
     }
 
@@ -548,6 +563,72 @@ mod tests {
         let stats = db.stats().await.expect("stats");
         assert_eq!(stats.index_stats.num_vectors, 1);
         assert!(stats.storage_stats.memtable_size_bytes > 0);
+    }
+
+    #[tokio::test]
+    async fn test_hybrid_search_integration() {
+        let (db, _tmp) = test_db(4).await;
+
+        db.insert(
+            "doc1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"text": "rust programming language"})),
+        )
+        .await
+        .expect("insert");
+        db.insert(
+            "doc2",
+            &[0.0, 1.0, 0.0, 0.0],
+            Some(json!({"text": "python programming language"})),
+        )
+        .await
+        .expect("insert");
+        db.insert(
+            "doc3",
+            &[1.0, 0.1, 0.0, 0.0],
+            Some(json!({"text": "rust language basics"})),
+        )
+        .await
+        .expect("insert");
+
+        // Hybrid search for "rust"
+        let results = db
+            .hybrid_search("rust", &[1.0, 0.0, 0.0, 0.0], 3)
+            .await
+            .expect("hybrid search");
+
+        assert!(!results.is_empty());
+        // doc1 or doc3 should be at the top
+        assert!(results[0].id.contains("doc1") || results[0].id.contains("doc3"));
+    }
+
+    #[tokio::test]
+    async fn test_bm25_ranks_exact_keyword_higher() {
+        let (db, _tmp) = test_db(4).await;
+
+        db.insert(
+            "doc1",
+            &[0.1, 0.1, 0.1, 0.1],
+            Some(json!({"text": "rust programming"})),
+        )
+        .await
+        .expect("insert");
+        db.insert(
+            "doc2",
+            &[0.1, 0.1, 0.1, 0.1],
+            Some(json!({"text": "java development"})),
+        )
+        .await
+        .expect("insert");
+
+        let results = db
+            .hybrid_search("rust", &[0.0, 0.0, 0.0, 0.0], 2)
+            .await
+            .expect("hybrid search");
+        // RRF might only return documents that have at least one hit in one of the result sets.
+        // If doc2 has no "rust" and no vector similarity, it might not be in the results.
+        assert!(!results.is_empty());
+        assert!(results[0].id.contains("doc1"));
     }
 
     #[tokio::test]
