@@ -1,6 +1,6 @@
 // ANCHOR:DOC:DOC-WAL-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:READY
+// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:WAL-001 — Write-Ahead Log für Crash Recovery.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -15,7 +15,23 @@
 // WP:WP-3.2 PRIO:3 NEEDS:NONE
 // AGENT:10 DATE:2026-05-09 STATUS:READY
 // CREATED:2026-05-09 DEADLINE:NONE
-//! Write-Ahead Log with HMAC integrity.
+//! Write-Ahead Log (WAL) for durability and crash recovery.
+//!
+//! ## Workflow
+//! 1. Every write operation (Put/Delete) is first appended to the WAL.
+//! 2. `sync_all()` is called to ensure the entry is persisted to physical disk.
+//! 3. The operation is then applied to the in-memory MemTable.
+//!
+//! ## Crash Recovery
+//! Upon restart, the `LsmStorage` engine replays the WAL from start to end,
+//! reconstructing the state of the MemTable as it was before the crash.
+//! Entries with invalid CRC32 checksums are ignored, and replay stops
+//! at the first point of corruption.
+//!
+//! ## Invariants
+//! - **Durability**: Every committed transaction is guaranteed to be in the WAL.
+//! - **Integrity**: Entries are protected by CRC32 checksums to detect data corruption.
+//! - **Async I/O**: Operations use `tokio::fs` for non-blocking disk access.
 //
 // ANCHOR:PERF:LATENCY-001 — WAL-Write-Path Hotspot
 // WP:WP-0.0 PRIO:2 NEEDS:NONE
