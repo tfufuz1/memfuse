@@ -1,13 +1,14 @@
+//! SnapshotRegistry for MVCC-safe reads.
+//!
+//! Manages active read snapshots and computes the minimum active
+//! sequence number to prevent premature tombstone GC.
+
 // ANCHOR:ARCH:MVCC-001 — Snapshot-Registry schützt Reads vor Compaction-GC.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
 // INVARIANTE: Solange SnapshotGuard lebt → keine Tombstone-GC für seq >= guard.seq_no.
 // RAII-PATTERN: Drop deregistriert automatisch. unwrap_or(u64::MAX) ist KORREKT.
-//! SnapshotRegistry for MVCC-safe reads.
-//!
-//! Manages active read snapshots and computes the minimum active
-//! sequence number to prevent premature tombstone GC.
 
 use parking_lot::Mutex;
 use std::collections::BTreeMap;
@@ -15,6 +16,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 /// Registry for active read snapshots.
+///
+/// ### Locking Strategy
+/// Uses a single `parking_lot::Mutex` to protect the map of active snapshots.
+/// Updates to `min_active_seqno` use atomic operations with Release/Acquire
+/// semantics to ensure visibility across threads without holding the lock
+/// during reads.
 #[derive(Debug)]
 pub struct SnapshotRegistry {
     active: Mutex<BTreeMap<u64, usize>>,
@@ -78,6 +85,9 @@ impl SnapshotRegistry {
     }
 
     fn update_min(&self, active: &BTreeMap<u64, usize>) {
+        // SAFETY: u64::MAX is the correct default when no snapshots are active.
+        // It allows the LSM compaction to garbage collect ALL tombstones, as
+        // all existing records will have seq_no < u64::MAX.
         let min = active.keys().next().copied().unwrap_or(u64::MAX);
         self.min_active_seqno.store(min, Ordering::Release);
     }
