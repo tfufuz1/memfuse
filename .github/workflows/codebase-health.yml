@@ -1,0 +1,36 @@
+# .github/workflows/codebase-health.yml
+name: Codebase Health Monitor
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Alle 6 Stunden
+  workflow_dispatch:
+
+jobs:
+  health-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Vollständiger Health-Check
+        run: |
+          echo "=== MemFuse Codebase Health Report ===" >> $GITHUB_STEP_SUMMARY
+          echo "**Zeitpunkt:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          UNWRAPS=$(grep -rn "\.unwrap()\|\.expect(" crates/ --include="*.rs" | grep -v "/tests/" | wc -l)
+          echo "**Unwrap in Prod-Code:** $UNWRAPS" >> $GITHUB_STEP_SUMMARY
+
+          BLOCKING=$(grep -rn "std::fs::" crates/ --include="*.rs" | grep -v "/tests/" | wc -l)
+          echo "**Blocking IO in Prod-Code:** $BLOCKING" >> $GITHUB_STEP_SUMMARY
+
+          TESTS=$(cargo test --workspace -- --list 2>/dev/null | grep "::" | wc -l || echo 0)
+          echo "**Test-Anzahl gesamt:** $TESTS" >> $GITHUB_STEP_SUMMARY
+
+          TODO=$(grep -rn "⬡ @JULES" --include="*.rs" | grep "STATUS:OPEN" | wc -l || echo 0)
+          echo "**Offene JULES-TODOs:** $TODO" >> $GITHUB_STEP_SUMMARY
+
+      - name: Validation
+        run: cargo check --workspace && cargo clippy --workspace -- -D warnings

@@ -154,7 +154,7 @@ impl Collection {
 
         self.storage.put(tx, &user_key, &data).await?;
         self.storage.put(tx, &doc_key, &data).await?;
-        
+
         // Record for compensating transaction
         db_tx.record_keys(user_key, doc_key, doc_id);
 
@@ -289,10 +289,7 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn scan_prefix(
-        &self,
-        prefix: &str,
-    ) -> Result<Vec<(String, serde_json::Value)>> {
+    pub async fn scan_prefix(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>> {
         let real_prefix = if prefix.starts_with("__rel:") {
             self.namespaced_key(
                 prefix.strip_prefix("__rel:").unwrap_or(prefix).as_bytes(),

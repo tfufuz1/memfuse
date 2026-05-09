@@ -1,0 +1,49 @@
+{
+  "todos": [
+    {
+      "description": "Analyze existing codebase for Phase 2A (Spatial-Semantic Fusion)",
+      "status": "pending",
+      "priority": "high",
+      "tags": ["analysis", "phase-2a"]
+    },
+    {
+      "description": "Implement Octree-HNSW Integration (Phase 2A)",
+      "status": "pending",
+      "priority": "high",
+      "tags": ["coding", "phase-2a", "spatial", "vector"],
+      "subtasks": [
+        "Check/Add Morton code encoding",
+        "Implement spatial prefiltering API",
+        "Implement spatial-constrained vector search in Query Engine"
+      ]
+    },
+    {
+      "description": "Enhance Query Engine (Phase 2A)",
+      "status": "pending",
+      "priority": "medium",
+      "tags": ["coding", "phase-2a", "query-engine"],
+      "subtasks": [
+        "Add cost estimation to Planner",
+        "Optimize RRF fusion"
+      ]
+    },
+    {
+      "description": "Implement gRPC API (Phase 2B)",
+      "status": "pending",
+      "priority": "medium",
+      "tags": ["coding", "phase-2b", "api", "grpc"]
+    },
+    {
+      "description": "Implement Observability & Backup (Phase 2B)",
+      "status": "pending",
+      "priority": "medium",
+      "tags": ["coding", "phase-2b", "observability"]
+    },
+    {
+      "description": "Implement Advanced Features (Phase 3)",
+      "status": "pending",
+      "priority": "low",
+      "tags": ["coding", "phase-3"]
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+# .github/workflows/auto-merge-jules.yml
+name: Auto-Merge Jules PRs
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # ── Gate 1: Erkennung ob dieser PR von Jules kommt ──────────────────────
+  detect-jules:
+    runs-on: ubuntu-latest
+    outputs:
+      is_jules: ${{ steps.check.outputs.is_jules }}
+    steps:
+      - name: Jules-PR erkennen
+        id: check
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          TITLE="${{ github.event.pull_request.title }}"
+          # Jules-Branches beginnen typischerweise mit "jules/"
+          if [[ "$BRANCH" == jules/* ]] || echo "$TITLE" | grep -qi "@JULES-"; then
+            echo "is_jules=true" >> $GITHUB_OUTPUT
+            echo "✅ Jules-PR erkannt: Branch=$BRANCH"
+          else
+            echo "is_jules=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ Kein Jules-PR: Branch=$BRANCH"
+          fi
+
+  # ── Gate 2: Triple-Test (3x cargo test + Invariant Scans) ────────────────
+  triple-test:
+    needs: detect-jules
+    if: needs.detect-jules.outputs.is_jules == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        run: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Format Check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (Zero-Warnings-Policy)
+        run: cargo clippy --workspace --all-features -- -D warnings
+
+      - name: Zero-Unwrap-Scan (INV: Zero-Panic)
+        run: |
+          UNWRAPS=$(grep -rn "\.unwrap()\|\.expect(" crates/ --include="*.rs" \
+            | grep -v "/tests/" | grep -v "#\[cfg(test)\]" | wc -l)
+          echo "Unwrap-Count in Produktionscode: $UNWRAPS"
+          if [ "$UNWRAPS" -gt 0 ]; then
+            grep -rn "\.unwrap()\|\.expect(" crates/ --include="*.rs" \
+              | grep -v "/tests/" | grep -v "#\[cfg(test)\]"
+            exit 1
+          fi
+
+      - name: Zero-Blocking-IO-Scan (INV: Async-Safety)
+        run: |
+          BLOCKING=$(grep -rn "std::fs::" crates/ --include="*.rs" \
+            | grep -v "/tests/" | grep -v "mod tests" | wc -l)
+          if [ "$BLOCKING" -gt 0 ]; then
+            echo "❌ Blockierendes std::fs:: gefunden:"
+            grep -rn "std::fs::" crates/ --include="*.rs" | grep -v "/tests/"
+            exit 1
+          fi
+
+      - name: Test-Lauf ${{ matrix.run }}/3
+        run: cargo test --workspace --all-features
+
+  # ── Gate 3: Security Scan ───────────────────────────────────────────────
+  security:
+    needs: detect-jules
+    if: needs.detect-jules.outputs.is_jules == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - name: cargo audit
+        uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Merge: Nur wenn ALLE Gates grün ─────────────────────────────────────
+  auto-merge:
+    needs: [triple-test, security]
+    if: |
+      always() &&
+      needs.triple-test.result == 'success' &&
+      needs.security.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auto-Approve & Auto-Merge
+        run: |
+          gh pr review "${{ github.event.pull_request.number }}" --approve --body "✅ Triple-Test-Gate PASS · Invariants OK · Security OK"
+          gh pr merge "${{ github.event.pull_request.number }}" --auto --squash --delete-branch
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}

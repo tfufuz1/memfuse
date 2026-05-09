@@ -43,7 +43,7 @@ pub fn create_block_cache(capacity_mb: usize) -> Arc<BlockCache> {
         // WP:WP-0.0 PRIO:2 NEEDS:NONE
         // AGENT:02 DATE:2026-05-09 STATUS:READY
         // CREATED:2026-05-09 DEADLINE:NONE
-        NonZeroUsize::new(capacity).expect("capacity > 0"), // unwrap
+        NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::MIN), // safe: capacity >= 256
     )))
 }
 

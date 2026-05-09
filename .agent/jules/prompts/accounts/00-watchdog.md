@@ -20,6 +20,11 @@ Wenn JA: Identifiziere den einfachsten Node, setze ihn auf `STATUS:OPEN` und lö
 ### Phase 3: Formal Verification Gates überwachen
 Prüfe, ob Jules-02 und Jules-10 ihre formalen Verifikations-Auflagen einhalten. Setze `ARCH:GATE-FV` auf `OPEN` (und blockiere Code-Merges) falls Kani/TLA+ Checks für veränderte Crypto- oder LSM-Komponenten fehlen.
 
+### Phase 4: GitHub PR Integration (Jules contribution)
+Überwache offene Pull Requests mit dem Label `jules`.
+Wenn ein PR das `Gate 1` (CI/Triple-Test) bestanden hat: Rufe `/home/freddy/Arbeitsplatz/DEV/memfuse/.agent/scripts/jules-integrate.sh` auf, um die Änderungen proaktiv in das System zu integrieren.
+Melde erfolgreiche Merges im Log.
+
 ## Zuständige WPs
 System-Orchestrierung und Deadlock-Prävention
 

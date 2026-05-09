@@ -8,3 +8,6 @@ cargo check --all-targets --workspace
 cargo nextest run --workspace || cargo test --workspace
 
 echo "Validation passed. System is safe."
+
+# Proaktive Jules-Integration
+bash /home/freddy/Arbeitsplatz/DEV/memfuse/.agent/scripts/jules-integrate.sh
