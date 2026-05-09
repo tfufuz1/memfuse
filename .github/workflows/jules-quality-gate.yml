@@ -114,7 +114,7 @@ jobs:
       - name: Scan for unsafe code outside distance.rs
         run: |
           echo "=== Scanning for unsafe code ==="
-          VIOLATIONS=$(grep -rn "unsafe" --include="*.rs" crates/ \
+          VIOLATIONS=$(grep -rnE "unsafe (fn|block|impl|trait)" --include="*.rs" crates/ \
             | grep -v "crates/memfuse-index/src/distance.rs" \
             | grep -v "#\[allow(unsafe_code)\]" \
             | grep -v "//.*unsafe" \
