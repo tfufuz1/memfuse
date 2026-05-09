@@ -2,7 +2,7 @@
 
 **Sovereign Agentic Operating System (SAOS)**
 
-> "The ultimate runtime for AI Agents: Database, Saftey Layer, and Orchestrator in one crate."
+> "The ultimate runtime for AI Agents: Database, Safety Layer, and Orchestrator in one crate."
 
 ## Quick Start
 
@@ -57,6 +57,8 @@ memfuse-py           ← PyO3 bindings (`pip install memfuse`)
 - **LSM-Tree Persistence** — WAL + MemTable with crash recovery
 - **Transactional** — Sharded TxBuffer with orphan-reaping
 - **Relationship Tracking** — `relate()` API for graph-aware retrieval
+- **Logically Isolated Collections** — Multi-tenancy via namespaces
+- **Background Compaction** — Size-Tiered strategy for disk efficiency
 
 ## Building
 

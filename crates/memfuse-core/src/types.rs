@@ -23,14 +23,18 @@ pub const TOMBSTONE_BIT: u64 = 1 << 63;
 pub struct DocId(pub u64);
 
 impl DocId {
+    /// Maximum possible DocId.
     pub const MAX: Self = Self(u64::MAX);
+    /// Minimum possible DocId.
     pub const MIN: Self = Self(0);
 
+    /// Creates a new DocId from a raw u64.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
+    /// Returns the raw u64 value.
     #[inline]
     pub const fn inner(self) -> u64 {
         self.0
@@ -63,11 +67,13 @@ impl std::fmt::Display for DocId {
 pub struct EntityId(pub u64);
 
 impl EntityId {
+    /// Creates a new EntityId from a raw u64.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
+    /// Returns the raw u64 value.
     #[inline]
     pub const fn inner(self) -> u64 {
         self.0
@@ -92,11 +98,13 @@ impl std::fmt::Display for EntityId {
 pub struct TxId(pub u64);
 
 impl TxId {
+    /// Creates a new TxId from a raw u64.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
+    /// Returns the raw u64 value.
     #[inline]
     pub const fn inner(self) -> u64 {
         self.0
@@ -124,19 +132,23 @@ pub enum DistanceMetric {
 /// Vector embedding representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Embedding {
+    /// The vector data.
     pub data: Vec<f32>,
 }
 
 impl Embedding {
+    /// Creates a new embedding from a vector of floats.
     pub fn new(data: Vec<f32>) -> Self {
         Self { data }
     }
 
+    /// Returns the dimensionality of the embedding.
     #[inline]
     pub fn dim(&self) -> usize {
         self.data.len()
     }
 
+    /// Returns the embedding data as a slice.
     #[inline]
     pub fn as_slice(&self) -> &[f32] {
         &self.data
@@ -160,11 +172,14 @@ impl Embedding {
 /// A scored search result.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ScoredDocument {
+    /// The document ID.
     pub doc_id: DocId,
+    /// The similarity score.
     pub score: f32,
 }
 
 impl ScoredDocument {
+    /// Creates a new scored document result.
     pub fn new(doc_id: DocId, score: f32) -> Self {
         Self { doc_id, score }
     }
@@ -173,12 +188,16 @@ impl ScoredDocument {
 /// Graph entity (node) representing a concept.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
+    /// Unique identifier for the entity.
     pub id: EntityId,
+    /// Name of the entity.
     pub name: String,
+    /// Type of the entity (e.g., "person", "location").
     pub entity_type: String,
 }
 
 impl Entity {
+    /// Creates a new entity.
     pub fn new(id: EntityId, name: impl Into<String>, entity_type: impl Into<String>) -> Self {
         Self {
             id,
@@ -191,13 +210,18 @@ impl Entity {
 /// Graph edge (relation) between two entities.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Edge {
+    /// Source entity ID.
     pub from: EntityId,
+    /// Target entity ID.
     pub to: EntityId,
+    /// Label of the relation.
     pub label: String,
+    /// Weight/strength of the relation.
     pub weight: f32,
 }
 
 impl Edge {
+    /// Creates a new edge between two entities with a label.
     pub fn new(from: EntityId, to: EntityId, label: impl Into<String>) -> Self {
         Self {
             from,
@@ -215,6 +239,7 @@ impl Edge {
 /// Resource budget for memory management.
 #[derive(Debug, Clone, Copy)]
 pub struct ResourceBudget {
+    /// Maximum allowed memory usage in bytes.
     pub memory_limit: u64,
 }
 
@@ -234,6 +259,7 @@ pub struct ResourceTracker {
 }
 
 impl ResourceTracker {
+    /// Creates a new tracker with the given budget.
     pub fn new(budget: ResourceBudget) -> Self {
         Self {
             budget,
@@ -241,6 +267,7 @@ impl ResourceTracker {
         }
     }
 
+    /// Records consumption of memory. Returns error if budget exceeded.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         let current = self
             .memory_used
@@ -256,15 +283,18 @@ impl ResourceTracker {
         Ok(())
     }
 
+    /// Releases previously consumed memory.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Returns the current memory usage in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns the configured budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }

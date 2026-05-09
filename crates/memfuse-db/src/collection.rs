@@ -32,6 +32,7 @@ pub struct Collection {
 }
 
 impl Collection {
+    /// Creates a new Collection handle.
     pub fn new(
         name: String,
         storage: Arc<LsmStorage>,
@@ -81,6 +82,9 @@ impl Collection {
         TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst))
     }
 
+    /// Inserts a document into the collection.
+    ///
+    /// This will update both the persistent storage and the vector index.
     pub async fn insert(
         &self,
         id: &str,
@@ -117,6 +121,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Retrieves a document by its ID.
     pub async fn get(&self, id: &str) -> Result<Option<crate::Document>> {
         let key = self.namespaced_key(id.as_bytes(), 0);
         if let Some(data) = self.storage.get(&key).await? {
@@ -129,6 +134,7 @@ impl Collection {
         Ok(None)
     }
 
+    /// Updates an existing document or inserts it if it doesn't exist.
     pub async fn update(
         &self,
         id: &str,
@@ -140,6 +146,7 @@ impl Collection {
         self.insert(id, embedding, metadata).await
     }
 
+    /// Deletes a document by its ID.
     pub async fn delete(&self, id: &str) -> Result<()> {
         let user_key = self.namespaced_key(id.as_bytes(), 0);
         if let Some(data) = self.storage.get(&user_key).await? {
@@ -158,6 +165,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Searches for the k nearest neighbors to a query embedding.
     pub async fn search(
         &self,
         query_embedding: &[f32],
@@ -166,6 +174,7 @@ impl Collection {
         self.search_filtered(query_embedding, k, None).await
     }
 
+    /// Searches with an optional filter predicate.
     pub async fn search_filtered(
         &self,
         query: &[f32],
@@ -190,6 +199,7 @@ impl Collection {
         Ok(results)
     }
 
+    /// Creates a directed relation between two document IDs.
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
         let tx = self.next_tx();
         let key_str = format!("{}:{}:{}", from, label, to);
@@ -205,6 +215,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Scans documents or relations by prefix.
     pub async fn scan_prefix(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>> {
         let real_prefix = if prefix.starts_with("__rel:") {
             self.namespaced_key(
@@ -226,14 +237,17 @@ impl Collection {
         Ok(results)
     }
 
+    /// Returns the number of documents in the collection.
     pub async fn len(&self) -> usize {
         self.index.len().await
     }
 
+    /// Returns true if the collection has no documents.
     pub async fn is_empty(&self) -> bool {
         self.index.is_empty().await
     }
 
+    /// Scans a range of document IDs.
     pub async fn scan(
         &self,
         start: std::ops::Bound<&[u8]>,
@@ -292,6 +306,7 @@ impl Collection {
         Ok(results)
     }
 
+    /// Returns statistics for the collection's vector index.
     pub async fn stats(&self) -> Result<memfuse_core::VectorIndexStats> {
         self.index.stats().await
     }
@@ -317,6 +332,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Drops the collection and all its data from the storage.
     pub async fn drop_collection(&self) -> Result<()> {
         let prefix = if self.name == "default" {
             // We don't drop default usually, but if requested:

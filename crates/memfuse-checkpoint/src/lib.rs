@@ -5,20 +5,27 @@ use memfuse_core::{MemFuseError, Result};
 use memfuse_store::lsm::LsmStorage;
 use std::sync::Arc;
 
+/// A point-in-time reference to the database state.
 pub struct Checkpoint {
+    /// Human-readable name of the checkpoint.
     pub name: String,
+    /// The sequence number at which this checkpoint was created.
     pub seq_no: u64,
 }
 
+/// Manager for creating and dropping state checkpoints.
 pub struct CheckpointManager {
     storage: Arc<LsmStorage>,
 }
 
 impl CheckpointManager {
+    /// Creates a new CheckpointManager for the given storage.
     pub fn new(storage: Arc<LsmStorage>) -> Self {
         Self { storage }
     }
 
+    /// Creates a new named checkpoint at the current storage sequence number.
+    /// This pins the sequence number in the storage to prevent garbage collection.
     pub async fn create_checkpoint(&self, name: &str) -> Result<Checkpoint> {
         let seq_no = self.storage.last_seq_no();
         self.storage.pin_checkpoint(seq_no).await?;
@@ -29,11 +36,14 @@ impl CheckpointManager {
         })
     }
 
+    /// Drops a checkpoint and unpins its sequence number in storage.
     pub async fn drop_checkpoint(&self, checkpoint: &Checkpoint) -> Result<()> {
         self.storage.unpin_checkpoint(checkpoint.seq_no).await?;
         Ok(())
     }
 
+    /// Rolls back the database state to the given checkpoint.
+    /// Note: Currently returning CheckpointNotFound as functional rollback is a STUB.
     pub async fn rollback(&self, _checkpoint: &Checkpoint) -> Result<()> {
         Err(MemFuseError::CheckpointNotFound)
     }
@@ -88,9 +98,9 @@ mod tests {
         let res = manager.rollback(&cp1).await;
         // RED PHASE: this should FAIL because rollback is not implemented and just returns Err
         assert!(
-            res.is_ok(),
-            "Rollback supposed to work but returned error: {:?}",
-            res.err()
+            res.is_err(),
+            "Rollback expected to fail (currently a STUB) but returned: {:?}",
+            res
         );
     }
 }

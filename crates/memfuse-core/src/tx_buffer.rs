@@ -24,9 +24,19 @@ pub const DEFAULT_SHARD_COUNT: usize = 64;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IndexOp<T: Clone> {
     /// Insert a document with associated data.
-    Insert { doc_id: DocId, data: T },
+    Insert {
+        /// Document ID to insert.
+        doc_id: DocId,
+        /// Associated data (e.g., vector or key-value pair).
+        data: T,
+    },
     /// Delete a document.
-    Delete { doc_id: DocId, data: Option<T> },
+    Delete {
+        /// Document ID to delete.
+        doc_id: DocId,
+        /// Optional data for tombstone.
+        data: Option<T>,
+    },
 }
 
 impl<T: Clone> IndexOp<T> {
