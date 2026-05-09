@@ -66,7 +66,16 @@ debt-audit:
         echo "$STDFS"
     else echo "✅ Kein std::fs:: in Produktionscode"; fi
 
-    echo "--- [4/4] Security Audit ---"
+    echo "--- [4/4] Lock-Hierarchy & Async-Safety ---"
+    # Prüfe auf verschachtelte Locks (potenzielle Deadlocks)
+    # Einfacher Check: Mehrere lock().await in derselben Funktion
+    NESTED_LOCKS=$(grep -rnzP "lock\(\)\.await.*lock\(\)\.await" crates --include="*.rs" || true)
+    if [ -n "$NESTED_LOCKS" ]; then
+        echo "⚠️  Warnung: Mehrfache lock().await in kurzem Abstand gefunden (Deadlock-Gefahr):"
+        echo "$NESTED_LOCKS" | tr '\0' '\n'
+    else echo "✅ Keine offensichtlichen verschachtelten Locks"; fi
+
+    echo "--- [5/5] Security & Audit ---"
     if cargo audit --version &>/dev/null 2>&1; then
         cargo audit || echo "⚠️ Audit warnings — manuell prüfen"
     else

@@ -1,0 +1,23 @@
+# .github/workflows/jules-invoke.yml
+name: Jules Invoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      account_id:
+        description: 'ID des zu triggernden Jules Accounts (01-13)'
+        required: true
+
+jobs:
+  invoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Jules Trigger (Labs Action)
+        uses: google-labs-code/jules-invoke@v1
+        with:
+          # Wir wählen das richtige Secret basierend auf der ID
+          api-key: ${{ secrets[format('JULES_API_KEY_ACCOUNT_{0}', github.event.inputs.account_id)] || secrets[format('JULES_API_KEY_{0}', github.event.inputs.account_id)] }}
+          # Zusätzlicher Context für Jules
+          instruction: "Du bist JULES-${{ github.event.inputs.account_id }}. Bearbeite die nächsten offenen oder blauen Anchors in deinem Bereich."
