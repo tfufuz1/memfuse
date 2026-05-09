@@ -959,7 +959,11 @@ mod tests {
         assert_eq!(num_offsets, 2);
 
         let bloom_pos = n - 2 - (num_offsets as usize * 2) - 8;
-        let bloom = u64::from_le_bytes(block[bloom_pos..bloom_pos + 8].try_into().unwrap());
+        let bloom = u64::from_le_bytes(
+            block[bloom_pos..bloom_pos + 8]
+                .try_into()
+                .expect("correct length"),
+        );
         assert!(bloom > 0);
 
         // 2. Helper to check bloom
@@ -984,23 +988,23 @@ mod tests {
 
     #[tokio::test]
     async fn test_sstable_bloom_integration() {
-        let tmp = TempDir::new().unwrap();
+        let tmp = TempDir::new().expect("temp dir");
         let path = tmp.path().join("test.sst");
         let bc = create_block_cache(1);
 
-        let mut builder = SstableBuilder::create(&path).await.unwrap();
-        builder.add(b"key1", b"val1", 1).await.unwrap();
-        builder.add(b"key2", b"val2", 2).await.unwrap();
-        builder.finish().await.unwrap();
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder");
+        builder.add(b"key1", b"val1", 1).await.expect("add key1");
+        builder.add(b"key2", b"val2", 2).await.expect("add key2");
+        builder.finish().await.expect("finish builder");
 
-        let reader = SstableReader::open(&path, bc).await.unwrap();
+        let reader = SstableReader::open(&path, bc).await.expect("open reader");
 
         // Positive lookup
-        let res = reader.get(b"key1").await.unwrap();
-        assert_eq!(res.unwrap().0.as_ref(), b"val1");
+        let res = reader.get(b"key1").await.expect("get key1");
+        assert_eq!(res.expect("exists").0.as_ref(), b"val1");
 
         // Negative lookup (should be caught by bloom or range check)
-        let res = reader.get(b"nonexistent").await.unwrap();
+        let res = reader.get(b"nonexistent").await.expect("get nonexistent");
         assert!(res.is_none());
     }
 }
