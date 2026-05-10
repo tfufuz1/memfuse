@@ -21,5 +21,5 @@ tokio = { version = "1", features = ["full"] }
 # IMPACT: Verstößt gegen Layer-Architektur, verhindert saubere Kompilierung
 # SOFORTIGE AKTION: Abhängigkeit extrahieren nach memfuse-core oder neuen Crate
 # AGENT:antigravity DATE:2026-05-09 STATUS:READY
-memfuse-db = { path = "../memfuse-db" }
+memfuse-db = { workspace = true }
 serde_json.workspace = true

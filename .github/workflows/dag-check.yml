@@ -18,7 +18,7 @@ jobs:
         run: |
           set -e
           echo "Verifying memfuse-core imports no internal crates..."
-          if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py"; then
+          if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator"; then
             echo "ERROR: memfuse-core imports forbidden crates."
             exit 1
           fi
@@ -37,6 +37,19 @@ jobs:
             exit 1
           fi
 
+      - name: Check L1 facade isolation (db must not be imported by L2)
+        run: |
+          set -e
+          echo "Verifying memfuse-db is not imported by L2/L3..."
+          if cargo tree -p memfuse-store --edges no-dev | grep -q "memfuse-db"; then
+            echo "ERROR: memfuse-store imports memfuse-db."
+            exit 1
+          fi
+          if cargo tree -p memfuse-index --edges no-dev | grep -q "memfuse-db"; then
+            echo "ERROR: memfuse-index imports memfuse-db."
+            exit 1
+          fi
+
       - name: Check known DAG violations (tracking)
         run: |
           set -e
@@ -52,4 +65,10 @@ jobs:
             echo "⚠️  DAG-002 still present (memfuse-checkpoint → memfuse-store)"
           else
             echo "✅ DAG-002 resolved"
+          fi
+          echo "--- DAG-003: memfuse-py → memfuse-db ---"
+          if cargo tree -p memfuse-py --edges no-dev | grep -q "memfuse-db"; then
+            echo "⚠️  DAG-003 still present (memfuse-py → memfuse-db)"
+          else
+            echo "✅ DAG-003 resolved"
           fi

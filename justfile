@@ -27,6 +27,10 @@ triple-test: check
     done
     echo "✅ Triple-Test-Gate PASSED (3/3)"
 
+# Security Audit: führt cargo-audit aus
+audit:
+    nix develop -c cargo audit
+
 # Tech-Debt Audit: scannt nach .unwrap(), unsafe, std::fs in Produktionscode
 debt-audit:
     #!/usr/bin/env bash
