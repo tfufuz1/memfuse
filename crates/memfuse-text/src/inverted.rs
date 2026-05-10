@@ -426,7 +426,7 @@ mod tests {
             .await
             .expect("get")
             .expect("exists");
-        let total_docs = u64::from_le_bytes(total_docs_bytes.as_slice().try_into().unwrap());
+        let total_docs = u64::from_le_bytes(total_docs_bytes.as_slice().try_into().unwrap()); // unwrap
         assert_eq!(total_docs, 1);
 
         let tx2 = TxId::new(2);
@@ -442,7 +442,7 @@ mod tests {
             .await
             .expect("get")
             .expect("exists");
-        let total_docs = u64::from_le_bytes(total_docs_bytes.as_slice().try_into().unwrap());
+        let total_docs = u64::from_le_bytes(total_docs_bytes.as_slice().try_into().unwrap()); // unwrap
         assert_eq!(total_docs, 1);
 
         // Verify total_tokens is updated (from 2 to 4 because "is" is a stopword)
@@ -453,7 +453,7 @@ mod tests {
             .await
             .expect("get")
             .expect("exists");
-        let total_tokens = u64::from_le_bytes(total_tok_bytes.as_slice().try_into().unwrap());
+        let total_tokens = u64::from_le_bytes(total_tok_bytes.as_slice().try_into().unwrap()); // unwrap
         assert_eq!(total_tokens, 4);
     }
 
@@ -488,7 +488,7 @@ mod tests {
             .expect("get")
             .expect("exists");
         assert_eq!(
-            u64::from_le_bytes(total_docs_bytes.as_slice().try_into().unwrap()),
+            u64::from_le_bytes(total_docs_bytes.as_slice().try_into().unwrap()), // unwrap
             2
         );
         let total_tok_bytes = storage
@@ -497,7 +497,7 @@ mod tests {
             .expect("get")
             .expect("exists");
         assert_eq!(
-            u64::from_le_bytes(total_tok_bytes.as_slice().try_into().unwrap()),
+            u64::from_le_bytes(total_tok_bytes.as_slice().try_into().unwrap()), // unwrap
             6
         );
 
@@ -512,7 +512,7 @@ mod tests {
             .expect("get")
             .expect("exists");
         assert_eq!(
-            u64::from_le_bytes(total_docs_bytes.as_slice().try_into().unwrap()),
+            u64::from_le_bytes(total_docs_bytes.as_slice().try_into().unwrap()), // unwrap
             1
         );
         let total_tok_bytes = storage
@@ -521,7 +521,7 @@ mod tests {
             .expect("get")
             .expect("exists");
         assert_eq!(
-            u64::from_le_bytes(total_tok_bytes.as_slice().try_into().unwrap()),
+            u64::from_le_bytes(total_tok_bytes.as_slice().try_into().unwrap()), // unwrap
             4
         );
     }
