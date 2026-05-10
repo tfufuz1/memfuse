@@ -1,8 +1,8 @@
 use memfuse_checkpoint::CheckpointManager;
 use memfuse_core::StorageEngine;
 use memfuse_db::MemFuseConfig;
-use tempfile::TempDir;
 use std::sync::Arc;
+use tempfile::TempDir;
 
 // ANCHOR:TEST:LAYER-001 — DAG Integrationstest fehlt
 // ZIEL: memfuse-checkpoint -> memfuse-db (Fork + Diverge + Merge)

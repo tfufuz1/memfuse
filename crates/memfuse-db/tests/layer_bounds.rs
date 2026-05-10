@@ -1,4 +1,4 @@
-use memfuse_db::{MemFuse, MemFuseConfig, json};
+use memfuse_db::{json, MemFuse, MemFuseConfig};
 use tempfile::TempDir;
 
 // ANCHOR:TEST:LAYER-002 — DAG Integrationstest fehlt
@@ -13,7 +13,9 @@ async fn test_layer_002_collection_persistence() {
     };
 
     {
-        let db = MemFuse::open_with_config(&path, config.clone()).await.unwrap();
+        let db = MemFuse::open_with_config(&path, config.clone())
+            .await
+            .unwrap();
         let col = db.collection("persisted_col").await.unwrap();
         col.insert("doc1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"val": 42})))
             .await
@@ -27,10 +29,17 @@ async fn test_layer_002_collection_persistence() {
     {
         let db = MemFuse::open_with_config(&path, config).await.unwrap();
         let list = db.list_collections().await.unwrap();
-        assert!(list.contains(&"persisted_col".to_string()), "Collection should be reloaded from storage");
+        assert!(
+            list.contains(&"persisted_col".to_string()),
+            "Collection should be reloaded from storage"
+        );
 
         let col = db.collection("persisted_col").await.unwrap();
-        let doc = col.get("doc1").await.unwrap().expect("Document should persist");
+        let doc = col
+            .get("doc1")
+            .await
+            .unwrap()
+            .expect("Document should persist");
         assert_eq!(doc.id, "doc1");
         assert_eq!(doc.metadata.unwrap()["val"], 42);
 
@@ -70,18 +79,27 @@ async fn test_layer_003_hybrid_search_text_integration() {
     .unwrap();
 
     // Text search only (zero vector)
-    let results = col.hybrid_search("fox", &[0.0, 0.0, 0.0, 0.0], 10).await.unwrap();
+    let results = col
+        .hybrid_search("fox", &[0.0, 0.0, 0.0, 0.0], 10)
+        .await
+        .unwrap();
     assert!(!results.is_empty());
     assert_eq!(results[0].id, "doc1");
 
     // Text search for the other doc
-    let results = col.hybrid_search("dog", &[0.0, 0.0, 0.0, 0.0], 10).await.unwrap();
+    let results = col
+        .hybrid_search("dog", &[0.0, 0.0, 0.0, 0.0], 10)
+        .await
+        .unwrap();
     assert!(!results.is_empty());
     assert_eq!(results[0].id, "doc2");
 
     // Hybrid search
     // doc1 matches vector but doc2 matches text "dog"
-    let results = col.hybrid_search("dog", &[1.0, 0.0, 0.0, 0.0], 10).await.unwrap();
+    let results = col
+        .hybrid_search("dog", &[1.0, 0.0, 0.0, 0.0], 10)
+        .await
+        .unwrap();
     assert_eq!(results.len(), 2);
     // Both should be present, order depends on RRF
 }

@@ -1,6 +1,6 @@
-use memfuse_db::{MemFuse, MemFuseConfig, json};
-use tempfile::TempDir;
+use memfuse_db::{json, MemFuse, MemFuseConfig};
 use std::sync::Arc;
+use tempfile::TempDir;
 use tokio::task;
 
 #[tokio::test]
@@ -24,7 +24,10 @@ async fn test_concurrent_stress_ops() {
                 let vec = vec![i as f32, j as f32, 0.0, 0.0];
 
                 // Insert
-                db_clone.insert(&id, &vec, Some(json!({"task": i, "op": j}))).await.unwrap();
+                db_clone
+                    .insert(&id, &vec, Some(json!({"task": i, "op": j})))
+                    .await
+                    .unwrap();
 
                 // Search
                 let results = db_clone.search(&vec, 1).await.unwrap();

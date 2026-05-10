@@ -1,4 +1,4 @@
-use memfuse_db::{MemFuse, MemFuseConfig, json};
+use memfuse_db::{json, MemFuse, MemFuseConfig};
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -17,18 +17,27 @@ async fn test_full_stack_lifecycle_e2e() {
         "doc-1",
         &[1.0, 0.0, 0.0, 0.0],
         Some(json!({"text": "semantic search is cool", "category": "tech"})),
-    ).await.unwrap();
+    )
+    .await
+    .unwrap();
 
     db.insert(
         "doc-2",
         &[0.0, 1.0, 0.0, 0.0],
         Some(json!({"text": "rust programming language", "category": "coding"})),
-    ).await.unwrap();
+    )
+    .await
+    .unwrap();
 
     // 3. Hybrid Search (Vector + Text)
     // Query that matches doc-2 by text "rust" and doc-1 by vector similarity
-    let results = db.collection("default").await.unwrap()
-        .hybrid_search("rust", &[1.0, 0.0, 0.0, 0.0], 10).await.unwrap();
+    let results = db
+        .collection("default")
+        .await
+        .unwrap()
+        .hybrid_search("rust", &[1.0, 0.0, 0.0, 0.0], 10)
+        .await
+        .unwrap();
 
     // 4. Verify Ergebnisse (Score, Metadata, Ordering)
     assert!(!results.is_empty());
@@ -43,11 +52,16 @@ async fn test_full_stack_lifecycle_e2e() {
         "doc-1",
         &[0.0, 0.0, 1.0, 0.0],
         Some(json!({"text": "updated text", "category": "updated"})),
-    ).await.unwrap();
+    )
+    .await
+    .unwrap();
 
     let results_updated = db.search(&[0.0, 0.0, 1.0, 0.0], 1).await.unwrap();
     assert_eq!(results_updated[0].id, "doc-1");
-    assert_eq!(results_updated[0].metadata.as_ref().unwrap()["category"], "updated");
+    assert_eq!(
+        results_updated[0].metadata.as_ref().unwrap()["category"],
+        "updated"
+    );
 
     // 6. Delete + Verify Gone
     db.delete("doc-1").await.unwrap();
@@ -61,8 +75,22 @@ async fn test_full_stack_lifecycle_e2e() {
     let col_a = db.collection("alpha").await.unwrap();
     let col_b = db.collection("beta").await.unwrap();
 
-    col_a.insert("shared-id", &[1.0, 1.0, 1.0, 1.0], Some(json!({"col": "a"}))).await.unwrap();
-    col_b.insert("shared-id", &[1.0, 1.0, 1.0, 1.0], Some(json!({"col": "b"}))).await.unwrap();
+    col_a
+        .insert(
+            "shared-id",
+            &[1.0, 1.0, 1.0, 1.0],
+            Some(json!({"col": "a"})),
+        )
+        .await
+        .unwrap();
+    col_b
+        .insert(
+            "shared-id",
+            &[1.0, 1.0, 1.0, 1.0],
+            Some(json!({"col": "b"})),
+        )
+        .await
+        .unwrap();
 
     let doc_a = col_a.get("shared-id").await.unwrap().unwrap();
     let doc_b = col_b.get("shared-id").await.unwrap().unwrap();
