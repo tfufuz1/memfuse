@@ -1,6 +1,6 @@
 // ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:13 DATE:2026-05-09 STATUS:READY
+// AGENT:13 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:AUDIT:SAOS-023 — forbid(unsafe_code) fehlte → nachgerüstet
 // WP:NONE PRIO:3 NEEDS:NONE
@@ -14,6 +14,10 @@
 // CREATED:2026-05-09 DEADLINE:NONE
 // ZIEL: Deklarative LangGraph-ähnliche Graphenausführung in nativem Rust.
 //! MemFuse Orchestrator — Declarative StateGraphs and Agent execution.
+//!
+//! The Orchestrator is responsible for managing complex Agent workflows using
+//! a declarative state-graph approach. It allows defining multi-step processes
+//! where Agents can collaborate, share state, and perform tasks in a structured manner.
 
 #![forbid(unsafe_code)]
 
