@@ -9,6 +9,8 @@
 // INVARIANTEN: DocId=#[repr(transparent)] u64 via blake3, TOMBSTONE_BIT=Bit63 in SeqNo.
 // ACHTUNG: Änderungen an DocId::from_key() brechen ALLE bestehenden Datenbanken!
 
+// ANCHOR:DOC STATUS:DONE AGENT:01 PRIO:3 — Missing documentation for constants and ResourceTracker methods.
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +28,9 @@ pub const TOMBSTONE_BIT: u64 = 1 << 63;
 pub struct DocId(pub u64);
 
 impl DocId {
+    /// Maximum possible document ID.
     pub const MAX: Self = Self(u64::MAX);
+    /// Minimum possible document ID.
     pub const MIN: Self = Self(0);
 
     /// Creates a new DocId from a raw u64.
@@ -276,6 +280,9 @@ impl ResourceTracker {
         }
     }
 
+    /// Tries to consume the given amount of memory.
+    ///
+    /// Returns an error if the budget would be exceeded.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         let current = self
             .memory_used
@@ -291,15 +298,18 @@ impl ResourceTracker {
         Ok(())
     }
 
+    /// Releases the given amount of memory back to the budget.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Returns the current memory usage in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns the configured resource budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }

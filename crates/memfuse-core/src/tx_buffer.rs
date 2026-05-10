@@ -10,6 +10,8 @@
 // CREATED:2026-05-05 DEADLINE:NONE
 // DESIGN: 64 Shards → TxId % 64. LIFECYCLE: stage() → drain()/discard().
 
+// ANCHOR:DEBT STATUS:DONE AGENT:01 PRIO:3 — Missing clear() method for full buffer reset.
+
 use crate::error::{MemFuseError, Result};
 use crate::types::{DocId, TxId};
 use ahash::AHashMap;
@@ -173,6 +175,14 @@ impl<T: Clone> TxBuffer<T> {
         self.shards.iter().all(|s| s.read().ops.is_empty())
     }
 
+    /// Clears all transactions and operations from the buffer.
+    pub fn clear(&self) {
+        for shard_lock in &self.shards {
+            let mut shard = shard_lock.write();
+            shard.ops.clear();
+        }
+    }
+
     /// Cleans up expired transactions.
     pub fn reap_orphans(&self) -> Vec<TxId> {
         let mut expired = Vec::new();
@@ -294,6 +304,28 @@ mod tests {
             },
         );
         buffer.discard(tx);
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_tx_buffer_clear() {
+        let buffer = TxBuffer::<String>::new_with_config(64, Duration::from_secs(30));
+        buffer.stage(
+            TxId::new(1),
+            IndexOp::Insert {
+                doc_id: DocId::new(1),
+                data: "data1".to_string(),
+            },
+        );
+        buffer.stage(
+            TxId::new(2),
+            IndexOp::Insert {
+                doc_id: DocId::new(2),
+                data: "data2".to_string(),
+            },
+        );
+        assert_eq!(buffer.len(), 2);
+        buffer.clear();
         assert!(buffer.is_empty());
     }
 
