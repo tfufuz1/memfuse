@@ -88,7 +88,7 @@ impl Collection {
 
         let rt = runtime()?;
         py.allow_threads(move || rt.block_on(self.inner.insert(&id_string, &vec_owned, meta_val)))
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(())
     }
 
@@ -139,7 +139,9 @@ impl Collection {
 
         let rt = runtime()?;
         let results = py
-            .allow_threads(move || rt.block_on(self.inner.hybrid_search(&text_owned, &vec_owned, k)))
+            .allow_threads(move || {
+                rt.block_on(self.inner.hybrid_search(&text_owned, &vec_owned, k))
+            })
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let mut py_res = Vec::new();
