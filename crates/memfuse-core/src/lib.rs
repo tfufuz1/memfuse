@@ -20,6 +20,13 @@
 // INVARIANTE: Kein I/O, kein async, kein Netzwerk — reine Datentypen + Traits.
 // Vor jeder Änderung: `cargo check -p memfuse-db` um Downstream-Bruch zu erkennen.
 
+// ANCHOR:ARCH:GATE-FV — Formal Verification Gate
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:00 DATE:2026-05-10 STATUS:OPEN
+// CREATED:2026-05-10 DEADLINE:NONE
+// WATCHDOG: LSM/Crypto changes by Jules-02/10 in memfuse-store lack Kani proofs.
+// Blocking merges until formal verification is provided.
+
 #![forbid(unsafe_code)]
 
 pub mod error;
@@ -31,5 +38,5 @@ pub mod types;
 pub use error::{MemFuseError, Result};
 pub use snapshot::{SnapshotGuard, SnapshotRegistry};
 pub use traits::*;
-pub use tx_buffer::{IndexOp, TxBuffer};
 pub use types::*;
+pub use tx_buffer::{IndexOp, TxBuffer};

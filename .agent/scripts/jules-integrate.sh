@@ -4,7 +4,7 @@
 
 set -e
 
-REPO_DIR="/home/freddy/Arbeitsplatz/DEV/memfuse"
+REPO_DIR="/app"
 cd "$REPO_DIR"
 
 echo "--- Jules Integration Check ---"
