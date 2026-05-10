@@ -71,6 +71,13 @@ pub enum MemFuseError {
     // ═══ Internal ═══
     #[error("Internal error: {0}")]
     Internal(String),
+
+    // ANCHOR:DEBT:ERR-002 — Fehlende spezialisierte Error-Varianten (DimensionMismatch).
+    // WP:WP-0.0 PRIO:3 NEEDS:NONE
+    // AGENT:01 DATE:2026-05-10 STATUS:DONE
+    // CREATED:2026-05-10 DEADLINE:NONE
+    #[error("Dimension mismatch: expected {expected}, found {found}")]
+    DimensionMismatch { expected: usize, found: usize },
 }
 
 impl MemFuseError {

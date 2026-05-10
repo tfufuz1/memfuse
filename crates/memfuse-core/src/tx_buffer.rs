@@ -76,6 +76,11 @@ impl<T: Clone> TxBuffer<T> {
 
     /// Creates a new buffer with custom settings.
     pub fn new_with_config(shard_count: usize, tx_timeout: Duration) -> Self {
+        // ANCHOR:DEBT:TXBUF-002 — Zero-Shard-Panik-Risiko (Division durch Null in shard_idx).
+        // WP:WP-0.0 PRIO:3 NEEDS:NONE
+        // AGENT:01 DATE:2026-05-10 STATUS:DONE
+        // CREATED:2026-05-10 DEADLINE:NONE
+        let shard_count = shard_count.max(1);
         let mut shards = Vec::with_capacity(shard_count);
         for _ in 0..shard_count {
             shards.push(RwLock::new(TxShard::new()));
@@ -214,23 +219,35 @@ pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
     buffer: Arc<TxBuffer<T>>,
     interval: Duration,
 ) -> tokio::task::JoinHandle<()> {
+    // ANCHOR:DEBT:TXBUF-003 — Strong Arc Leak (Reaper verhindert Drop des Buffers).
+    // WP:WP-0.0 PRIO:3 NEEDS:NONE
+    // AGENT:01 DATE:2026-05-10 STATUS:DONE
+    // CREATED:2026-05-10 DEADLINE:NONE
+    let weak_buffer = Arc::downgrade(&buffer);
+    let tx_timeout = buffer.tx_timeout;
+
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         tracing::info!(
             "Orphan reaper started (timeout: {:?}, interval: {:?})",
-            buffer.tx_timeout,
+            tx_timeout,
             interval
         );
         loop {
             ticker.tick().await;
-            let expired = buffer.reap_orphans();
-            if !expired.is_empty() {
-                tracing::warn!(
-                    "Orphan reaper cleaned up {} expired transactions",
-                    expired.len()
-                );
+            if let Some(buffer) = weak_buffer.upgrade() {
+                let expired = buffer.reap_orphans();
+                if !expired.is_empty() {
+                    tracing::warn!(
+                        "Orphan reaper cleaned up {} expired transactions",
+                        expired.len()
+                    );
+                }
+            } else {
+                tracing::info!("Orphan reaper stopping: TxBuffer dropped");
+                break;
             }
         }
     })

@@ -9,6 +9,11 @@
 // CREATED:2026-05-05 DEADLINE:NONE
 // REGEL: Neue Methoden MÜSSEN Default-Impl haben (backward compat).
 
+// ANCHOR:DEBT:TRAIT-002 — Fehlender MemBank Trait (erwähnt in SYSTEM.spec.md).
+// WP:WP-0.0 PRIO:3 NEEDS:NONE
+// AGENT:01 DATE:2026-05-10 STATUS:DONE
+// CREATED:2026-05-10 DEADLINE:NONE
+
 use crate::types::*;
 use crate::Result;
 use async_trait::async_trait;
@@ -127,4 +132,21 @@ pub trait VectorIndex: Send + Sync {
 
     /// Returns index statistics.
     async fn stats(&self) -> Result<VectorIndexStats>;
+}
+
+// ANCHOR:ARCH:CONTRACT-MEMBANK-001 — Paging-Struktur für Speicherverwaltung.
+// WP:WP-0.0 PRIO:3 NEEDS:NONE
+// AGENT:01 DATE:2026-05-10 STATUS:DONE
+// CREATED:2026-05-10 DEADLINE:NONE
+/// MemBank trait — abstracts over paging-based storage structures.
+#[async_trait]
+pub trait MemBank: Send + Sync {
+    /// Returns the fixed page size in bytes.
+    fn page_size(&self) -> usize;
+
+    /// Reads a page by its identifier.
+    async fn read_page(&self, page_id: u64) -> Result<Vec<u8>>;
+
+    /// Writes a page by its identifier.
+    async fn write_page(&self, page_id: u64, data: &[u8]) -> Result<()>;
 }
