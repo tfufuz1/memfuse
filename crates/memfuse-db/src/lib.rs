@@ -171,15 +171,12 @@ impl MemFuse {
     /// Returns the next transaction ID (auto-incremented).
     /// Returns a specific collection (namespace).
     /// Creates the collection if it does not already exist.
-    // ⬡ @JULES-04 | P1 | TODO:COL-001
-    // WHY:  WP-1.2 Collections erfordert Isolation der Datensätze.
-    // WHAT: Implementiere vollständige Persistenz und Isolation für `collection()`.
+    // ANCHOR:TODO:COL-001 — Implementiere vollständige Persistenz und Isolation für `collection()`.
+    // WP:WP-1.2 PRIO:1 NEEDS:NONE
+    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:READY
     // TEST: cargo test -p memfuse-db test_collections_are_isolated
     // DONE: `collection()` ist wal-gesichert, Isolation ist korrekt.
-    // DEPS: NONE
-    // EST:  M | STATUS:OPEN
-    // AGENT:jules-04 DATE:2026-05-09 SPRINT:1
-    // CREATED:2026-05-09 DEADLINE:NONE
+    // SUCCESSOR: @JULES-04 — "Mach weiter mit COL-002 und COL-003, bis Collections-Modul fully featured ist."
     pub async fn collection(&self, name: &str) -> Result<Collection> {
         // Validation
         if name.len() > 64 {
@@ -238,15 +235,12 @@ impl MemFuse {
     }
 
     /// Lists all existing collection names (those currently active in memory).
-    // ⬡ @JULES-04 | P1 | TODO:COL-002
-    // WHY:  WP-1.2 Collections Liste muss persistent geladen werden.
-    // WHAT: Erweitere `list_collections` so, dass es aus dem LSM-Store/Metadata ließt.
+    // ANCHOR:TODO:COL-002 — Erweitere `list_collections` so, dass es aus dem LSM-Store/Metadata ließt.
+    // WP:WP-1.2 PRIO:1 NEEDS:COL-001
+    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:READY
     // TEST: cargo test -p memfuse-db test_list_collections
     // DONE: list_collections gibt persistierte Collections zurück.
-    // DEPS: COL-001
-    // EST:  S | STATUS:OPEN
-    // AGENT:jules-04 DATE:2026-05-09 SPRINT:1
-    // CREATED:2026-05-09 DEADLINE:NONE
+    // SUCCESSOR: @JULES-04 — "Mache weiter mit COL-003."
     pub async fn list_collections(&self) -> Result<Vec<String>> {
         let guard = self.collections.read().await;
         let mut names: Vec<String> = guard.keys().cloned().collect();
@@ -255,15 +249,12 @@ impl MemFuse {
     }
 
     /// Drops a collection, removing all its data from storage.
-    // ⬡ @JULES-04 | P1 | TODO:COL-003
-    // WHY:  WP-1.2 fordert dass drop_collection komplette Daten entfernt.
-    // WHAT: Löschen der Collection-Keys aus LSM und des HNSW Graphen.
+    // ANCHOR:TODO:COL-003 — Löschen der Collection-Keys aus LSM und des HNSW Graphen.
+    // WP:WP-1.2 PRIO:1 NEEDS:COL-001
+    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:READY
     // TEST: cargo test -p memfuse-db test_drop_removes_all_data
     // DONE: Alle Daten getilgt, re-öffnen führt zu leerer DB.
-    // DEPS: COL-001
-    // EST:  M | STATUS:OPEN
-    // AGENT:jules-04 DATE:2026-05-09 SPRINT:1
-    // CREATED:2026-05-09 DEADLINE:NONE
+    // SUCCESSOR: @JULES-05 — "Collections sind fertig. Beginne mit WP-2.1 SEARCH-001."
     pub async fn drop_collection(&self, name: &str) -> Result<()> {
         if name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(
@@ -329,15 +320,12 @@ impl MemFuse {
             .await
     }
 
-    // ⬡ @JULES-05 | P1 | TODO:SEARCH-001
-    // WHY:  WP-2.1 Hybrid Search benötigt eine API-Facade.
-    // WHAT: Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection::hybrid_search.
+    // ANCHOR:TODO:SEARCH-001 — Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection.
+    // WP:WP-2.1 PRIO:1 NEEDS:COL-001
+    // AGENT:@JULES-05 DATE:2026-05-09 STATUS:READY
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
-    // DEPS: COL-001
-    // EST:  S | STATUS:OPEN
-    // AGENT:jules-05 DATE:2026-05-09 SPRINT:1
-    // CREATED:2026-05-09 DEADLINE:NONE
+    // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
 
     /// Deletes a document by its string ID.
     pub async fn delete(&self, id: &str) -> Result<()> {

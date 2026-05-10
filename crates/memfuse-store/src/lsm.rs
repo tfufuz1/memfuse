@@ -57,15 +57,12 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 
 /// LSM storage configuration.
-// ⬡ @JULES-10 | P1 | TODO:SEC-001
-// WHY:  WP-3.2 Encryption at Rest benötigt AES-256-GCM für SSTables und WAL.
-// WHAT: Erweitere LsmConfig um `encryption_passphrase: Option<String>` und reiche diese an WAL/SSTables weiter.
+// ANCHOR:TODO:SEC-001 — Erweitere LsmConfig um `encryption_passphrase` und AES-256.
+// WP:WP-3.2 PRIO:1 NEEDS:COL-001
+// AGENT:@JULES-10 DATE:2026-05-09 STATUS:READY
 // TEST: cargo test -p memfuse-store test_encrypted_db_unreadable_without_key
 // DONE: LsmConfig akzeptiert Passphrase, AES-256 wird für Disk-I/O verwendet.
-// DEPS: COL-001
-// EST:  M | STATUS:OPEN
-// AGENT:jules-10 DATE:2026-05-09 SPRINT:1
-// CREATED:2026-05-09 DEADLINE:NONE
+// SUCCESSOR: @JULES-13 — "Encryption ist impl. Bitte Specs finalisieren."
 #[derive(Clone, Debug)]
 pub struct LsmConfig {
     pub path: PathBuf,
@@ -172,15 +169,12 @@ impl LsmStorage {
         let snapshot_registry = Arc::new(SnapshotRegistry::new());
 
         // Spawn background compaction task
-        // ⬡ @JULES-02 | P0 | TODO:COMP-001
-        // WHY:  WP-1.1 Background Compaction muss SSTables zusammenführen ohne Deadlocks.
-        // WHAT: Implementiere `CompactionEngine::run_loop`, Size-Tiered K-Way Merge Logic under concurrent load.
+        // ANCHOR:TODO:COMP-001 — Implementiere CompactionEngine::run_loop.
+        // WP:WP-1.1 PRIO:1 NEEDS:NONE
+        // AGENT:@JULES-02 DATE:2026-05-09 STATUS:VERIFY
         // TEST: cargo test -p memfuse-store test_concurrent_reads_during_compaction
         // DONE: Triple-Test grün, keine Deadlocks in tokio::spawn.
-        // DEPS: NONE
-        // EST:  L | STATUS:REVIEW
-        // AGENT:jules-02 DATE:2026-05-09 SPRINT:1
-        // CREATED:2026-05-09 DEADLINE:NONE
+        // SUCCESSOR: @JULES-04 — "Background compaction ist stabil. Collections können aufbauen."
         let compaction_engine = Arc::new(CompactionEngine::new(
             config.compaction.clone(),
             Arc::clone(&snapshot_registry),

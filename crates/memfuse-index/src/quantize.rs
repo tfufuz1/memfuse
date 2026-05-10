@@ -1,13 +1,10 @@
 //! Scalar Quantization (SQ8) for HNSW Index.
-// ⬡ @JULES-03 | P1 | TODO:QUANT-001
-// WHY:  WP-2.2 Scalar Quantization (SQ8) muss voll funktionsfähig sein und 4x RAM sparen bei 95% Recall.
-// WHAT: Optimiere und finalisiere die SQ8 Quantization impl, repariere Cast-Bugs und Lazy-Training.
+// ANCHOR:TODO:QUANT-001 — Optimiere und finalisiere die SQ8 Quantization impl, repariere Cast-Bugs.
+// WP:WP-2.2 PRIO:1 NEEDS:NONE
+// AGENT:@JULES-03 DATE:2026-05-09 STATUS:READY
 // TEST: cargo bench -p memfuse-index -- quantization
 // DONE: Performance- und Recall Metriken sind stabil.
-// DEPS: NONE
-// EST:  M | STATUS:OPEN
-// AGENT:jules-03 DATE:2026-05-09 SPRINT:1
-// CREATED:2026-05-09 DEADLINE:NONE
+// SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
 
 use memfuse_core::DistanceMetric;
 

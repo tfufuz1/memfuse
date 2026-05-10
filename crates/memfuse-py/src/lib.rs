@@ -2,15 +2,12 @@
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:06 DATE:2026-05-09 STATUS:READY
 // CREATED:2026-05-09 DEADLINE:NONE
-// ⬡ @JULES-06 | P1 | TODO:PY-001
-// WHY:  WP-3.1 Python Bindings (PyO3 + maturin) werden für KI-Entwickler benötigt.
-// WHAT: Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist und GIL-Locks freigegeben werden.
+// ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
+// WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
+// AGENT:@JULES-06 DATE:2026-05-09 STATUS:READY
 // TEST: cd crates/memfuse-py && python -m pytest tests/ -v
 // DONE: pip install . funktioniert, keine Deadlocks in tokio-Runtime.
-// DEPS: SEARCH-001
-// EST:  M | STATUS:OPEN
-// AGENT:jules-06 DATE:2026-05-09 SPRINT:1
-// CREATED:2026-05-09 DEADLINE:NONE
+// SUCCESSOR: @JULES-09 — "Python Bindings sind stabil. StateGraph kann darauf aufbauen."
 #![forbid(unsafe_code)]
 
 use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
