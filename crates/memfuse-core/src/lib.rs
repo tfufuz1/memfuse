@@ -30,8 +30,6 @@ pub mod types;
 
 pub use error::{MemFuseError, Result};
 pub use snapshot::{SnapshotGuard, SnapshotRegistry};
-pub use traits::{
-    MemBank, StorageEngine, StorageStats, VectorIndex, VectorIndexStats,
-};
+pub use traits::{MemBank, StorageEngine, StorageStats, VectorIndex, VectorIndexStats};
 pub use tx_buffer::{IndexOp, TxBuffer};
 pub use types::*;
