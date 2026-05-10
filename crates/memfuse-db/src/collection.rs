@@ -7,6 +7,13 @@
 // STATUS: Full Implementation für WP-1.2.
 //! Logically isolated Collections inside the MemFuse database.
 
+// ANCHOR:SEC:UNENCRYPTED-DOCS-001 — Unverschlüsselte Serialisierung von Dokumenten.
+// WP:WP-3.2 PRIO:1 STATUS:READY
+// AGENT:10 DATE:2026-05-10
+// GEFUNDEN: Dokumente werden via serde_json::to_vec unverschlüsselt persistiert.
+// ERWARTET: Dokumente müssen vor dem Schreiben in den Storage-Engine (LsmStorage)
+//           verschlüsselt werden (z.B. AES-GCM), falls Encryption-at-Rest aktiviert ist.
+
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;

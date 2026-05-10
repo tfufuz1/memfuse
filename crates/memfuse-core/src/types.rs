@@ -45,6 +45,7 @@ impl DocId {
     pub fn from_key(key: &str) -> Self {
         let hash = blake3::hash(key.as_bytes());
         let mut bytes = [0u8; 8];
+        // SAFETY: hash.as_bytes() always returns 32 bytes for BLAKE3, so [..8] is safe.
         bytes.copy_from_slice(&hash.as_bytes()[..8]);
         Self(u64::from_le_bytes(bytes))
     }

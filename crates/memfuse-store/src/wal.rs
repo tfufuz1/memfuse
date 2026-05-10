@@ -13,7 +13,7 @@
 //
 // ANCHOR:SPEC:WP-3.2-HMAC-001 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
 // WP:WP-3.2 PRIO:3 NEEDS:NONE
-// AGENT:10 DATE:2026-05-09 STATUS:READY
+// AGENT:10 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 //! Write-Ahead Log (WAL) for durability and crash recovery.
 //!
@@ -80,7 +80,13 @@ impl WalEntry {
     }
 
     fn compute_checksum(op: &WalOp, seq_no: u64) -> u32 {
-        let mut hasher = crc32fast::Hasher::new();
+        // ANCHOR:SPEC:WP-3.2-HMAC-001 — HMAC-Integrity statt CRC32.
+        // ACHTUNG: Der Wechsel zu BLAKE3 bricht die Kompatibilität mit existierenden WAL-Files (WP-6.7 Upgrade).
+        // Wir nutzen BLAKE3 im Keyed-Mode als HMAC-Ersatz.
+        // Da die Specs für Key-Management noch offen sind, nutzen wir einen statischen Security-Key.
+        let key = [0u8; 32]; // TODO: In LsmConfig konfigurierbar machen
+        let mut hasher = blake3::Hasher::new_keyed(&key);
+
         hasher.update(&seq_no.to_le_bytes());
         match op {
             WalOp::Put { key, value, .. } => {
@@ -93,7 +99,10 @@ impl WalEntry {
                 hasher.update(key);
             }
         }
-        hasher.finalize()
+        let hash = hasher.finalize();
+        // Wir nutzen die ersten 4 Bytes als Checksumme für Kompatibilität mit dem bestehenden Format.
+        // WP-6.7 sieht mittelfristig eine Erweiterung auf 32-Byte Tags vor.
+        u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap())
     }
 
     /// Serializes the entry to bytes.
