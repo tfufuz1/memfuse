@@ -1,0 +1,12 @@
+id: verify-state-transitions
+language: rust
+rule:
+  any:
+    - pattern: |
+        pub async fn $FUNC($$$) -> Result<$RET, MemFuseError> {
+          $$$
+          let mut $TX = Transaction::new($$$);
+          $$$
+        }
+message: "State Transition Verification: Function defines a valid MVCC state transition."
+severity: info

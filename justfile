@@ -66,14 +66,18 @@ debt-audit:
         echo "$STDFS"
     else echo "✅ Kein std::fs:: in Produktionscode"; fi
 
-    echo "--- [4/4] Lock-Hierarchy & Async-Safety ---"
-    # Prüfe auf verschachtelte Locks (potenzielle Deadlocks)
-    # Einfacher Check: Mehrere lock().await in derselben Funktion
-    NESTED_LOCKS=$(grep -rnzP "lock\(\)\.await.*lock\(\)\.await" crates --include="*.rs" || true)
-    if [ -n "$NESTED_LOCKS" ]; then
-        echo "⚠️  Warnung: Mehrfache lock().await in kurzem Abstand gefunden (Deadlock-Gefahr):"
-        echo "$NESTED_LOCKS" | tr '\0' '\n'
-    else echo "✅ Keine offensichtlichen verschachtelten Locks"; fi
+    echo "--- [4/4] Lock-Hierarchy & Async-Safety (AST Analysis) ---"
+    # Prüfe auf verschachtelte Locks (potenzielle Deadlocks) mittels ast-grep
+    if command -v sg > /dev/null; then
+        if sg scan --rule rules/detect_nested_locks.yml crates/; then
+            echo "❌ Graceful Deadlock Risiko erkannt! Verschachtelte Locks gefunden:"
+            FAIL=1
+        else
+            echo "✅ Keine kritischen Deadlock-Zustände im AST gefunden."
+        fi
+    else
+        echo "⚠️  ast-grep (sg) nicht installiert, überspringe AST-Lock-Analyse."
+    fi
 
     echo "--- [5/5] Security & Audit ---"
     if cargo audit --version &>/dev/null 2>&1; then
