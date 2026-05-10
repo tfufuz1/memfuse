@@ -38,5 +38,5 @@ pub mod types;
 pub use error::{MemFuseError, Result};
 pub use snapshot::{SnapshotGuard, SnapshotRegistry};
 pub use traits::*;
-pub use types::*;
 pub use tx_buffer::{IndexOp, TxBuffer};
+pub use types::*;
