@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Jules Trigger (Labs Action)
-        uses: google-labs-code/jules-invoke@v1
+        uses: google-labs-code/jules-action@v1.0.0
         with:
           # Wir wählen das richtige Secret basierend auf der ID
           api-key: ${{ secrets[format('JULES_API_KEY_ACCOUNT_{0}', github.event.inputs.account_id)] || secrets[format('JULES_API_KEY_{0}', github.event.inputs.account_id)] }}
