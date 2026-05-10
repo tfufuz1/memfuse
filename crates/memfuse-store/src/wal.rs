@@ -102,7 +102,9 @@ impl WalEntry {
         let hash = hasher.finalize();
         // Wir nutzen die ersten 4 Bytes als Checksumme für Kompatibilität mit dem bestehenden Format.
         // WP-6.7 sieht mittelfristig eine Erweiterung auf 32-Byte Tags vor.
-        u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap())
+        let mut cksum_bytes = [0u8; 4];
+        cksum_bytes.copy_from_slice(&hash.as_bytes()[0..4]);
+        u32::from_le_bytes(cksum_bytes)
     }
 
     /// Serializes the entry to bytes.
