@@ -30,7 +30,12 @@ fn try_runtime() -> PyResult<&'static Runtime> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to create tokio runtime: {}", e)))?;
+        .map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                "Failed to create tokio runtime: {}",
+                e
+            ))
+        })?;
 
     // We can't use get_or_init here easily because it doesn't support fallible initialization
     // but since this is called from Python and we are likely under a lock or it's rare to
@@ -38,7 +43,6 @@ fn try_runtime() -> PyResult<&'static Runtime> {
     // for a OnceLock. However, for thread safety:
     Ok(RUNTIME.get_or_init(|| rt))
 }
-
 
 #[pyclass(unsendable)]
 pub struct Db {
@@ -90,10 +94,8 @@ impl Collection {
         };
         let id_string = id.to_string();
 
-        py.allow_threads(move || {
-            rt.block_on(self.inner.insert(&id_string, &vec_owned, meta_val))
-        })
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        py.allow_threads(move || rt.block_on(self.inner.insert(&id_string, &vec_owned, meta_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(())
     }
 
