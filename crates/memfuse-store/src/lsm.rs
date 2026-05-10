@@ -157,7 +157,7 @@ impl LsmStorage {
         }
         sst_files.sort();
 
-        let block_cache = create_block_cache(64); // 64MB block cache for SSTables
+        let block_cache = create_block_cache(64)?; // 64MB block cache for SSTables
 
         let mut sstables = Vec::new();
         for path in sst_files {

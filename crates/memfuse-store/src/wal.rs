@@ -201,12 +201,19 @@ impl Wal {
         let mut pos = 0;
 
         while pos + 4 <= data.len() {
-            let len = u32::from_le_bytes(data[pos..pos + 4].try_into().map_err(|_| {
-                MemFuseError::WalCorruption {
-                    offset: pos as u64,
-                    reason: "Invalid length".into(),
-                }
-            })?) as usize;
+            let start_pos = pos as u64;
+            let len = u32::from_le_bytes(
+                data.get(pos..pos + 4)
+                    .ok_or_else(|| MemFuseError::WalCorruption {
+                        offset: start_pos,
+                        reason: "Unexpected EOF reading length".into(),
+                    })?
+                    .try_into()
+                    .map_err(|_| MemFuseError::WalCorruption {
+                        offset: start_pos,
+                        reason: "Invalid length slice".into(),
+                    })?,
+            ) as usize;
             pos += 4;
 
             if pos + len > data.len() {
@@ -215,25 +222,40 @@ impl Wal {
             }
 
             let entry_data = &data[pos..pos + len];
+            let entry_start_pos = pos as u64;
             pos += len;
 
             if entry_data.len() < 13 {
-                continue;
+                tracing::warn!("WAL entry too small at offset {}", entry_start_pos);
+                break;
             }
 
-            let seq_no = u64::from_le_bytes(entry_data[0..8].try_into().map_err(|_| {
-                MemFuseError::WalCorruption {
-                    offset: pos as u64,
-                    reason: "Invalid seq_no".into(),
-                }
-            })?);
-            let stored_checksum =
-                u32::from_le_bytes(entry_data[8..12].try_into().map_err(|_| {
-                    MemFuseError::WalCorruption {
-                        offset: pos as u64,
-                        reason: "Invalid checksum".into(),
-                    }
-                })?);
+            let seq_no = u64::from_le_bytes(
+                entry_data
+                    .get(0..8)
+                    .ok_or_else(|| MemFuseError::WalCorruption {
+                        offset: entry_start_pos,
+                        reason: "Unexpected EOF reading seq_no".into(),
+                    })?
+                    .try_into()
+                    .map_err(|_| MemFuseError::WalCorruption {
+                        offset: entry_start_pos,
+                        reason: "Invalid seq_no slice".into(),
+                    })?,
+            );
+            let stored_checksum = u32::from_le_bytes(
+                entry_data
+                    .get(8..12)
+                    .ok_or_else(|| MemFuseError::WalCorruption {
+                        offset: entry_start_pos + 8,
+                        reason: "Unexpected EOF reading checksum".into(),
+                    })?
+                    .try_into()
+                    .map_err(|_| MemFuseError::WalCorruption {
+                        offset: entry_start_pos + 8,
+                        reason: "Invalid checksum slice".into(),
+                    })?,
+            );
             let op_type = entry_data[12];
 
             let remaining = &entry_data[13..];
@@ -241,34 +263,68 @@ impl Wal {
                 0 => {
                     // Put
                     if remaining.len() < 12 {
-                        continue;
+                        tracing::warn!(
+                            "WAL Put entry too small at offset {}",
+                            entry_start_pos + 13
+                        );
+                        break;
                     }
-                    let tx_id = TxId::new(u64::from_le_bytes(remaining[0..8].try_into().map_err(
-                        |_| MemFuseError::WalCorruption {
-                            offset: pos as u64,
-                            reason: "Invalid tx_id".into(),
-                        },
-                    )?));
-                    let key_len = u32::from_le_bytes(remaining[8..12].try_into().map_err(|_| {
-                        MemFuseError::WalCorruption {
-                            offset: pos as u64,
-                            reason: "Invalid key_len".into(),
-                        }
-                    })?) as usize;
+                    let tx_id = TxId::new(u64::from_le_bytes(
+                        remaining
+                            .get(0..8)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: entry_start_pos + 13,
+                                reason: "Unexpected EOF reading tx_id".into(),
+                            })?
+                            .try_into()
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: entry_start_pos + 13,
+                                reason: "Invalid tx_id slice".into(),
+                            })?,
+                    ));
+                    let key_len = u32::from_le_bytes(
+                        remaining
+                            .get(8..12)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: entry_start_pos + 21,
+                                reason: "Unexpected EOF reading key_len".into(),
+                            })?
+                            .try_into()
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: entry_start_pos + 21,
+                                reason: "Invalid key_len slice".into(),
+                            })?,
+                    ) as usize;
+
                     if remaining.len() < 12 + key_len + 4 {
-                        continue;
+                        tracing::warn!(
+                            "WAL Put entry truncated reading key at offset {}",
+                            entry_start_pos + 25
+                        );
+                        break;
                     }
                     let key = remaining[12..12 + key_len].to_vec();
                     let val_start = 12 + key_len;
-                    let val_len =
-                        u32::from_le_bytes(remaining[val_start..val_start + 4].try_into().map_err(
-                            |_| MemFuseError::WalCorruption {
-                                offset: pos as u64,
-                                reason: "Invalid val_len".into(),
-                            },
-                        )?) as usize;
+                    let val_len = u32::from_le_bytes(
+                        remaining
+                            .get(val_start..val_start + 4)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: entry_start_pos + 13 + val_start as u64,
+                                reason: "Unexpected EOF reading val_len".into(),
+                            })?
+                            .try_into()
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: entry_start_pos + 13 + val_start as u64,
+                                reason: "Invalid val_len slice".into(),
+                            })?,
+                    ) as usize;
+
                     if remaining.len() < val_start + 4 + val_len {
-                        continue;
+                        tracing::warn!(
+                            "WAL Put entry truncated reading value at offset {}",
+                            entry_start_pos + 13 + val_start as u64 + 4
+                        );
+                        break;
                     }
                     let value = remaining[val_start + 4..val_start + 4 + val_len].to_vec();
                     WalOp::Put { tx_id, key, value }
@@ -276,27 +332,57 @@ impl Wal {
                 1 => {
                     // Delete
                     if remaining.len() < 12 {
-                        continue;
+                        tracing::warn!(
+                            "WAL Delete entry too small at offset {}",
+                            entry_start_pos + 13
+                        );
+                        break;
                     }
-                    let tx_id = TxId::new(u64::from_le_bytes(remaining[0..8].try_into().map_err(
-                        |_| MemFuseError::WalCorruption {
-                            offset: pos as u64,
-                            reason: "Invalid tx_id".into(),
-                        },
-                    )?));
-                    let key_len = u32::from_le_bytes(remaining[8..12].try_into().map_err(|_| {
-                        MemFuseError::WalCorruption {
-                            offset: pos as u64,
-                            reason: "Invalid key_len".into(),
-                        }
-                    })?) as usize;
+                    let tx_id = TxId::new(u64::from_le_bytes(
+                        remaining
+                            .get(0..8)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: entry_start_pos + 13,
+                                reason: "Unexpected EOF reading tx_id".into(),
+                            })?
+                            .try_into()
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: entry_start_pos + 13,
+                                reason: "Invalid tx_id slice".into(),
+                            })?,
+                    ));
+                    let key_len = u32::from_le_bytes(
+                        remaining
+                            .get(8..12)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: entry_start_pos + 21,
+                                reason: "Unexpected EOF reading key_len".into(),
+                            })?
+                            .try_into()
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: entry_start_pos + 21,
+                                reason: "Invalid key_len slice".into(),
+                            })?,
+                    ) as usize;
+
                     if remaining.len() < 12 + key_len {
-                        continue;
+                        tracing::warn!(
+                            "WAL Delete entry truncated reading key at offset {}",
+                            entry_start_pos + 25
+                        );
+                        break;
                     }
                     let key = remaining[12..12 + key_len].to_vec();
                     WalOp::Delete { tx_id, key }
                 }
-                _ => continue,
+                _ => {
+                    tracing::warn!(
+                        "Unknown WAL op_type {} at offset {}",
+                        op_type,
+                        entry_start_pos + 12
+                    );
+                    break;
+                }
             };
 
             // ANCHOR:ALG-FIX:D1-007 — CRC32-Verifikation bei WAL Replay

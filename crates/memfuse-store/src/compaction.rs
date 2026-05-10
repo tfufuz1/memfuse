@@ -15,6 +15,7 @@
 //! references them.
 
 use crate::sstable::{BlockCache, SstableBuilder, SstableReader};
+use bytes::Bytes;
 use memfuse_core::{Result, SnapshotRegistry, TOMBSTONE_BIT};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -100,8 +101,9 @@ impl CompactionEngine {
 
         // 3. Perform the merge (no lock held — this is the expensive part)
         let min_snapshot_seq = self.snapshot_registry.min_active_seqno();
+        let is_bottom_level = indices.contains(&0);
         let output_path = Self::generate_sst_path(data_path);
-        self.merge_sstables(&input_ssts, &output_path, min_snapshot_seq)
+        self.merge_sstables(&input_ssts, &output_path, min_snapshot_seq, is_bottom_level)
             .await?;
 
         // 4. Open the new SSTable
@@ -211,51 +213,105 @@ impl CompactionEngine {
     ///
     /// During merge:
     /// - Duplicate keys: newest sequence number wins
-    /// - Tombstones: removed if `seq_no < min_snapshot_seq` (no snapshot references them)
+    /// - Tombstones: removed if `is_bottom_level` is true and `seq_no < min_snapshot_seq`
     async fn merge_sstables(
         &self,
         inputs: &[Arc<SstableReader>],
         output_path: &std::path::Path,
         min_snapshot_seq: u64,
+        is_bottom_level: bool,
     ) -> Result<()> {
-        // 1. Collect all entries from all input SSTables
-        let mut all_entries: Vec<(Vec<u8>, Vec<u8>, u64)> = Vec::new();
+        use std::cmp::Ordering;
+        use std::collections::BinaryHeap;
+
+        struct MergeEntry {
+            key: Bytes,
+            value: Bytes,
+            seq_no: u64,
+            sst_idx: usize,
+            entry_idx: usize,
+        }
+
+        impl PartialEq for MergeEntry {
+            fn eq(&self, other: &Self) -> bool {
+                self.key == other.key && self.seq_no == other.seq_no
+            }
+        }
+
+        impl Eq for MergeEntry {}
+
+        impl PartialOrd for MergeEntry {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+
+        impl Ord for MergeEntry {
+            fn cmp(&self, other: &Self) -> Ordering {
+                // Min-heap for keys, max-heap for seq_no
+                other
+                    .key
+                    .cmp(&self.key)
+                    .then_with(|| self.seq_no.cmp(&other.seq_no))
+            }
+        }
+
+        // 1. Load all entries from all input SSTables into memory (for now)
+        // Note: Real streaming would load one block at a time, but SstableReader::iter()
+        // currently returns all entries. This K-way merge is still more efficient
+        // than sorting the entire combined vector.
+        let mut iterators = Vec::with_capacity(inputs.len());
         for sst in inputs {
-            let entries = sst.iter().await?;
-            for (k, v, seq) in entries {
-                all_entries.push((k.to_vec(), v.to_vec(), seq));
+            iterators.push(sst.iter().await?);
+        }
+
+        let mut heap = BinaryHeap::new();
+        for (sst_idx, it) in iterators.iter().enumerate() {
+            if let Some((k, v, seq)) = it.first() {
+                heap.push(MergeEntry {
+                    key: k.clone(),
+                    value: v.clone(),
+                    seq_no: *seq,
+                    sst_idx,
+                    entry_idx: 0,
+                });
             }
         }
 
-        // 2. Sort by key, then by sequence number descending (newest first)
-        all_entries.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| b.2.cmp(&a.2)));
-
-        // 3. Deduplicate: for each key, keep only the entry with the highest seq_no
-        let mut deduped: Vec<(Vec<u8>, Vec<u8>, u64)> = Vec::new();
-        let mut last_key: Option<&[u8]> = None;
-
-        for entry in &all_entries {
-            if last_key == Some(&entry.0) {
-                continue; // Skip: already have a newer version of this key
-            }
-            last_key = Some(&entry.0);
-
-            let is_tombstone = (entry.2 & TOMBSTONE_BIT) != 0;
-            let raw_seq = entry.2 & !TOMBSTONE_BIT;
-
-            // GC tombstones that are older than all active snapshots
-            if is_tombstone && raw_seq < min_snapshot_seq {
-                continue; // Tombstone is safe to garbage-collect
-            }
-
-            deduped.push(entry.clone());
-        }
-
-        // 4. Write to output SSTable
+        // 2. Write to output SSTable using K-way merge
         let mut builder = SstableBuilder::create(output_path).await?;
-        for (key, value, seq) in &deduped {
-            builder.add(key, value, *seq).await?;
+        let mut last_key: Option<Bytes> = None;
+
+        while let Some(mut entry) = heap.pop() {
+            // Check for duplicate keys
+            let is_duplicate = last_key.as_ref().is_some_and(|k| k == &entry.key);
+
+            if !is_duplicate {
+                let is_tombstone = (entry.seq_no & TOMBSTONE_BIT) != 0;
+                let raw_seq = entry.seq_no & !TOMBSTONE_BIT;
+
+                // GC tombstones that are older than all active snapshots AND at bottom level
+                let safe_to_gc = is_bottom_level && is_tombstone && raw_seq < min_snapshot_seq;
+
+                if !safe_to_gc {
+                    builder.add(&entry.key, &entry.value, entry.seq_no).await?;
+                }
+                last_key = Some(entry.key.clone());
+            }
+
+            // Push next entry from the same SSTable
+            entry.entry_idx += 1;
+            if let Some((k, v, seq)) = iterators[entry.sst_idx].get(entry.entry_idx) {
+                heap.push(MergeEntry {
+                    key: k.clone(),
+                    value: v.clone(),
+                    seq_no: *seq,
+                    sst_idx: entry.sst_idx,
+                    entry_idx: entry.entry_idx,
+                });
+            }
         }
+
         builder.finish().await?;
 
         Ok(())
@@ -324,7 +380,7 @@ mod tests {
     async fn test_merge_deduplication() {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
-        let bc = create_block_cache(1);
+        let bc = create_block_cache(1).expect("create bc");
         let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
 
         // Two SSTables with overlapping keys
@@ -346,7 +402,7 @@ mod tests {
 
         let output = tmp.path().join("merged.sst");
         engine
-            .merge_sstables(&[sst1, sst2], &output, 0)
+            .merge_sstables(&[sst1, sst2], &output, 0, false)
             .await
             .expect("merge");
 
@@ -366,7 +422,7 @@ mod tests {
     async fn test_tombstone_gc() {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
-        let bc = create_block_cache(1);
+        let bc = create_block_cache(1).expect("create bc");
         let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
 
         let tombstone_seq = 5 | TOMBSTONE_BIT;
@@ -380,9 +436,9 @@ mod tests {
 
         let output = tmp.path().join("compacted.sst");
 
-        // min_snapshot_seq=100 → tombstone at seq=5 is safe to GC
+        // min_snapshot_seq=100 → tombstone at seq=5 is safe to GC (if bottom level)
         engine
-            .merge_sstables(&[sst1], &output, 100)
+            .merge_sstables(&[sst1], &output, 100, true)
             .await
             .expect("merge");
 
@@ -399,7 +455,7 @@ mod tests {
     async fn test_tombstone_preserved_with_active_snapshot() {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
-        let bc = create_block_cache(1);
+        let bc = create_block_cache(1).expect("create bc");
         let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
 
         let tombstone_seq = 5 | TOMBSTONE_BIT;
@@ -415,7 +471,7 @@ mod tests {
 
         // min_snapshot_seq=2 → tombstone at seq=5 is NOT safe to GC
         engine
-            .merge_sstables(&[sst1], &output, 2)
+            .merge_sstables(&[sst1], &output, 2, true)
             .await
             .expect("merge");
 
@@ -431,7 +487,7 @@ mod tests {
     async fn test_maybe_compact_full_cycle() {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
-        let bc = create_block_cache(1);
+        let bc = create_block_cache(1).expect("create bc");
         let config = CompactionConfig {
             min_sstables_per_tier: 2, // Low threshold for testing
             size_ratio: 4.0,
@@ -490,7 +546,7 @@ mod tests {
     async fn test_no_compaction_below_threshold() {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
-        let bc = create_block_cache(1);
+        let bc = create_block_cache(1).expect("create bc");
         let config = CompactionConfig {
             min_sstables_per_tier: 4,
             size_ratio: 4.0,

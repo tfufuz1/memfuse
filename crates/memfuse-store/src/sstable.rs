@@ -47,16 +47,14 @@ use tokio::io::AsyncWriteExt;
 pub type BlockCache = RwLock<LruCache<(u64, u64), Bytes>>;
 
 /// Creates a new block cache instance. Capacity is in MB (assuming 4KB blocks).
-pub fn create_block_cache(capacity_mb: usize) -> Arc<BlockCache> {
+pub fn create_block_cache(capacity_mb: usize) -> Result<Arc<BlockCache>> {
     let capacity = capacity_mb * 256;
     let capacity = capacity.max(256); // minimum 1MB
-    Arc::new(RwLock::new(LruCache::new(
-        // ANCHOR:DEBT:DEBT-UNWRAP-SSTABLE-37 — unwrap/expect in production code
-        // WP:WP-0.0 PRIO:2 NEEDS:NONE
-        // AGENT:02 DATE:2026-05-09 STATUS:REVIEW
-        // CREATED:2026-05-09 DEADLINE:NONE
-        NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::MIN), // safe: capacity >= 256
-    )))
+    let non_zero_cap = NonZeroUsize::new(capacity).ok_or_else(|| {
+        MemFuseError::Storage(format!("Invalid block cache capacity: {}", capacity))
+    })?;
+
+    Ok(Arc::new(RwLock::new(LruCache::new(non_zero_cap))))
 }
 
 /// Block size for SSTable data blocks (4KB).
@@ -242,8 +240,8 @@ impl SstableBuilder {
             .len();
 
         Ok(SstableMetadata {
-            first_key: self.first_key.unwrap_or_default(), // unwrap
-            last_key: self.last_key.unwrap_or_default(),   // unwrap
+            first_key: self.first_key.unwrap_or_default(),
+            last_key: self.last_key.unwrap_or_default(),
             file_size,
         })
     }
@@ -299,12 +297,20 @@ impl SstableReader {
             return Err(MemFuseError::Storage("Invalid SSTable magic number".into()));
         }
 
+        if index_offset + 12 > file_size {
+            return Err(MemFuseError::Storage(format!(
+                "Invalid SSTable: index_offset {} out of bounds for file_size {}",
+                index_offset, file_size
+            )));
+        }
+
         // Read index
         file.seek(std::io::SeekFrom::Start(index_offset))
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
 
-        let mut index_data = vec![0u8; (file_size - 12 - index_offset) as usize];
+        let index_len = (file_size - 12 - index_offset) as usize;
+        let mut index_data = vec![0u8; index_len];
         file.read_exact(&mut index_data)
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
@@ -312,13 +318,18 @@ impl SstableReader {
         let mut index = Vec::new();
         let mut pos = 0;
 
-        while pos + 10 <= index_data.len() {
+        while pos + 2 <= index_data.len() {
             let key_len = u16::from_le_bytes(
                 index_data[pos..pos + 2]
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
             pos += 2;
+
+            if pos + key_len + 8 > index_data.len() {
+                return Err(MemFuseError::Storage("Malformed SSTable index".into()));
+            }
+
             let key = Bytes::copy_from_slice(&index_data[pos..pos + key_len]);
             pos += key_len;
             let offset = u64::from_le_bytes(
@@ -330,7 +341,7 @@ impl SstableReader {
             index.push((key, offset));
         }
 
-        let last_key = index.last().map(|(k, _)| k.clone()).unwrap_or_default(); // unwrap
+        let last_key = index.last().map(|(k, _)| k.clone()).unwrap_or_default();
 
         // Read the actual first key from the first data block header
         // (index stores last_key per block, NOT first_key)
@@ -489,13 +500,6 @@ impl SstableReader {
             ) as usize;
 
             let mut ep = entry_off;
-            // ANCHOR:SEC:SLICE-002 — Slice-Indexing ohne Bounds-Check
-            // WP:WP-0.0 PRIO:1 NEEDS:NONE
-            // AGENT:09-security DATE:2026-05-09 STATUS:REVIEW
-            // CREATED:2026-05-09 DEADLINE:NONE
-            // FUNDORT: memfuse-store/src/sstable.rs:416
-            // RISIKO: Panic bei Runtime durch unzureichende Datei-Länge
-            // BEHEBUNG: bounds check vor indexing implementieren
             let k_len = u16::from_le_bytes(
                 block_data
                     .get(ep..ep + 2)
@@ -990,7 +994,7 @@ mod tests {
     async fn test_sstable_bloom_integration() {
         let tmp = TempDir::new().expect("temp dir");
         let path = tmp.path().join("test.sst");
-        let bc = create_block_cache(1);
+        let bc = create_block_cache(1).expect("create bc");
 
         let mut builder = SstableBuilder::create(&path).await.expect("create builder");
         builder.add(b"key1", b"val1", 1).await.expect("add key1");
