@@ -1,5 +1,7 @@
 # Jules Scheduling-Kalender — MemFuse Development
 
+> [!WARNING]  
+> **DEPRECATED:** Scheduled tasks via Cron/Dashboard are obsolete. The system uses a dynamic, event-driven queue dispatch system (`jules-queue-dispatcher.yml`). Agents are invoked based on code `SUCCESSOR` anchors rather than rigid scheduling.
 > **13 Accounts × 15 Scheduled Tasks/Tag**
 > **Branch-Strategie:** Jeder Account → `jules/<account>/<wp-name>` → PR nach `dev`
 

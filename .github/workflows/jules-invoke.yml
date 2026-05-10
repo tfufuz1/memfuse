@@ -49,15 +49,35 @@ jobs:
           JULES_API_KEY_12: ${{ secrets.JULES_API_KEY_12 }}
           JULES_API_KEY_13: ${{ secrets.JULES_API_KEY_13 }}
 
+      - name: Generate Complete Prompt
+        id: generate_prompt
+        run: |
+          # Generate base context using script (Preamble + Account context)
+          bash .agent/jules/scripts/generate-jules-prompt.sh "${{ inputs.account_id }}" > full_prompt.txt
+          
+          # Append the dynamic instruction from the predecessor
+          echo "" >> full_prompt.txt
+          echo "═══════════════════════════════════════════════════════════════" >> full_prompt.txt
+          echo "  LAYER 4: IMMEDIATE SUCCESSOR TASK" >> full_prompt.txt
+          echo "═══════════════════════════════════════════════════════════════" >> full_prompt.txt
+          echo "" >> full_prompt.txt
+          echo "Hier ist deine unmittelbare Event-Task (SUCCESSOR) von deinem Vorgänger:" >> full_prompt.txt
+          echo "---" >> full_prompt.txt
+          echo "${{ inputs.instruction }}" >> full_prompt.txt
+          echo "---" >> full_prompt.txt
+          echo "Bitte finde den dazu passenden READY-Anchor im Code, erledige die Aufgabe (inkl. Triple-Test-Gate), setze ihn auf DONE und generiere zwingend den SUCCESSOR-Anchor für den nächsten Agenten." >> full_prompt.txt
+          
+          # Put into Action Step Summary
+          cat full_prompt.txt >> $GITHUB_STEP_SUMMARY
+          
+          # Multiline output to GITHUB_OUTPUT
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "prompt<<$EOF" >> $GITHUB_OUTPUT
+          cat full_prompt.txt >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
+
       - name: Jules Trigger (Labs Action)
         uses: google-labs-code/jules-action@v1.0.0
         with:
           api-key: ${{ steps.api_key.outputs.final_key }}
-          instruction: |
-            Du bist MemFuse JULES Account ${{ inputs.account_id }}.
-            Hier ist deine primäre SUCCESSOR Aufgabe vom Vorgänger-Agenten:
-            ---
-            ${{ inputs.instruction }}
-            ---
-            Bitte durchsuche das Projekt nach DEINEM Anchor, setze ihn auf DONE 
-            und generiere zwingend den SUCCESSOR-Anchor für den nächsten Agenten.
+          instruction: ${{ steps.generate_prompt.outputs.prompt }}

@@ -86,4 +86,25 @@ Ein ANCHOR ist DONE wenn:
   2. cargo clippy -- -D warnings ist grün
   3. Keine bestehenden Tests sind neu rot
   4. ANCHOR-STATUS ist auf DONE gesetzt
+
+═══════════════════════════════════════════════════════════════
+  CONVEYOR BELT HANDOFF (SUCCESSOR PROTOCOL) - PFLICHT!
+═══════════════════════════════════════════════════════════════
+
+WICHTIG (ARCHITEKTUR-PFLICHT): Gemäß der Conveyor Belt / Dynamic Queue Architektur MUSST du jedes Mal, wenn du einen ANKER auf STATUS:DONE setzt, zwingend den nächsten Agenten in der Pipeline aufrufen.
+Instruktion: Setze in den Code (oder das Markdown) als letzten Schritt folgenden Block:
+// SUCCESSOR: @JULES-[nächster-Agent] — "[Deine Instruktion an den Nachfolger]"
+(Hinweis: Falls du eine Aufgabe im Auftrag eines anderen bearbeitest, nutze anstelle des Standard-Nachfolgers den ursprünglichen Agenten).
+OHNE SUCCESSOR BRICHT DIE AUTOMATISCHE CHAIN AB! ES WÜRDE EIN FATALER DEADLOCK ENTSTEHEN.
+
+═══════════════════════════════════════════════════════════════
+  ITERATIVE SELBSTKORREKTUR-SCHLEIFE (PFLICHT)
+═══════════════════════════════════════════════════════════════
+
+DOKTRIN: Du musst deinen Code in Schleifen und Mechanismen so lange iterativ überarbeiten und korrigieren, bis er wirklich 100% vollfunktionsfähig ist.
+- Es muss immer testbar sein.
+- Die Tests müssen durchgehend bestehen (Triple-Test-Gate).
+- Wenn die Validierung (cargo test / clippy / kani) fehlschlägt, darfst du nicht aufgeben. Gehe direkt in die Fehleranalyse und Implementierungsphase zurück.
+- Analysiere den Fehler, korrigiere den Code und verifiziere erneut.
+- Du bleibst in dieser Schleife, bis 100% Funktionalität sichergestellt ist und die Tests (bzw. Checks) 3x erfolgreich durchlaufen sind.
 ```

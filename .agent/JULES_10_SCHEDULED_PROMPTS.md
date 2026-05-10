@@ -1,5 +1,6 @@
 # MemFuse SAOS — JULES Autonomous Prompts
-## Event-Driven | Pipeline-Oriented | Successor-Handoff Protocol
+> [!WARNING]  
+> **DEPRECATED:** This file is no longer the single source of truth. The multi-agent pipeline is now fully event-driven via the "Conveyor Belt" (`.github/workflows/jules-invoke.yml`). See `.agent/jules/prompts/` for the modular, role-specific prompts.
 
 > **Anwendung:** Wird von der CI `jules-queue-dispatcher.yml` bei Bedarf pro Account aufgerufen.
 > **Methodik:** Jules wird via Queue geweckt, findet seinen `ANCHOR:[TYP]:[ID]`, führt ihn aus (Red/Green/Refactor) und schreibt **zwingend** den `SUCCESSOR:` ANKER für den nächsten Schritt/Agenten.
