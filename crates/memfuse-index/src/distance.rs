@@ -26,6 +26,7 @@
 //! Implementations use AVX2/AVX-512 SIMD if available, falling back to portable-simd, then scalar.
 
 #![allow(unused_unsafe)]
+#![allow(unsafe_code)]
 
 use memfuse_core::DistanceMetric;
 use std::simd::prelude::*;
