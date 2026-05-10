@@ -12,7 +12,11 @@ async fn test_concurrent_load_stress() {
         max_elements: 10000,
         ..Default::default()
     };
-    let db = Arc::new(MemFuse::open_with_config(tmp.path(), config).await.expect("open db"));
+    let db = Arc::new(
+        MemFuse::open_with_config(tmp.path(), config)
+            .await
+            .expect("open db"),
+    );
 
     let num_tasks = 10;
     let ops_per_task = 50;
@@ -41,9 +45,13 @@ async fn test_concurrent_load_stress() {
 
                 // 3. Update (occasionally)
                 if i % 15 == 0 {
-                    col.update(&id, &embedding, Some(json!({"t": t, "i": i, "updated": true})))
-                        .await
-                        .expect("update failed");
+                    col.update(
+                        &id,
+                        &embedding,
+                        Some(json!({"t": t, "i": i, "updated": true})),
+                    )
+                    .await
+                    .expect("update failed");
                 }
             }
         });

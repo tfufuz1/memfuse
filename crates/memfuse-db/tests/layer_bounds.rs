@@ -34,7 +34,10 @@ async fn test_layer_002_collection_persistence_and_reload() {
         let collections = db.list_collections().await.expect("list collections");
         assert!(collections.contains(&"persistent_col".to_string()));
 
-        let col = db.collection("persistent_col").await.expect("get collection");
+        let col = db
+            .collection("persistent_col")
+            .await
+            .expect("get collection");
         assert_eq!(col.len().await, 1);
 
         let doc = col.get("doc-1").await.expect("get doc").expect("exists");
@@ -55,7 +58,9 @@ async fn test_layer_003_hybrid_search_bm25() {
         dimension: 4,
         ..Default::default()
     };
-    let db = MemFuse::open_with_config(tmp.path(), config).await.expect("open db");
+    let db = MemFuse::open_with_config(tmp.path(), config)
+        .await
+        .expect("open db");
     let col = db.collection("hybrid_col").await.expect("collection");
 
     // Insert documents with text metadata
@@ -76,18 +81,27 @@ async fn test_layer_003_hybrid_search_bm25() {
     .expect("insert");
 
     // 1. Pure Vector Search
-    let vec_results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("vector search");
+    let vec_results = col
+        .search(&[1.0, 0.0, 0.0, 0.0], 1)
+        .await
+        .expect("vector search");
     assert_eq!(vec_results[0].id, "rust-doc");
 
     // 2. Hybrid Search - favoring text "Python"
     // Use a zero vector to focus on text first to verify text index works
-    let hybrid_results = col.hybrid_search("Python", &[0.0, 0.0, 0.0, 0.0], 1).await.expect("hybrid search");
+    let hybrid_results = col
+        .hybrid_search("Python", &[0.0, 0.0, 0.0, 0.0], 1)
+        .await
+        .expect("hybrid search");
     assert_eq!(hybrid_results.len(), 1);
     assert_eq!(hybrid_results[0].id, "python-doc");
 
     // 3. Hybrid Search - both vector and text
     // Vector points to rust-doc, but text is "Python"
-    let hybrid_results_mixed = col.hybrid_search("Python", &[1.0, 0.0, 0.0, 0.0], 2).await.expect("mixed hybrid search");
+    let hybrid_results_mixed = col
+        .hybrid_search("Python", &[1.0, 0.0, 0.0, 0.0], 2)
+        .await
+        .expect("mixed hybrid search");
     assert_eq!(hybrid_results_mixed.len(), 2);
     // RRF will combine them. Since each is top in its category, they'll both be there.
 }

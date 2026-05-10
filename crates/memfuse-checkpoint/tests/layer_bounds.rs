@@ -20,7 +20,10 @@ async fn test_layer_001_checkpoint_fork_diverge() {
     storage.commit(tx1).await.unwrap();
 
     // 2. Create Checkpoint (Fork)
-    let cp = manager.create_checkpoint("v1_state").await.expect("create checkpoint");
+    let cp = manager
+        .create_checkpoint("v1_state")
+        .await
+        .expect("create checkpoint");
     assert!(cp.seq_no > 0);
 
     // 3. Diverge (Overwrite)
