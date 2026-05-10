@@ -1,6 +1,8 @@
+//! Write-Ahead Log (WAL) for durability and crash recovery.
+
 // ANCHOR:DOC:DOC-WAL-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
+// AGENT:08-perf DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:WAL-001 — Write-Ahead Log für Crash Recovery.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -35,12 +37,12 @@
 //
 // ANCHOR:PERF:LATENCY-001 — WAL-Write-Path Hotspot
 // WP:WP-0.0 PRIO:2 NEEDS:NONE
-// AGENT:08-perf DATE:2026-05-09 STATUS:READY
+// AGENT:08-perf DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // TARGET: < 2ms bei Peak-Load
 // AKTUELL: Unbekannt (Sync Flush)
 // BOTTLENECK: I/O (File::sync_all blockiert)
-// OPTIMIERUNGSIDEE: Group Commit oder fsync-Offloading
+// OPTIMIERUNGSIDEE: Group Commit oder fsync-Offloading (Siehe SPEC-WP-4.1)
 
 use memfuse_core::{MemFuseError, Result, TxId};
 use std::path::{Path, PathBuf};

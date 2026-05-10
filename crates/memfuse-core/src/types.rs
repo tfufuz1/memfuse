@@ -21,6 +21,8 @@ use serde::{Deserialize, Serialize};
 pub const TOMBSTONE_BIT: u64 = 1 << 63;
 
 /// Internal document identifier (u64, not exposed to users).
+///
+/// Generated via blake3 hash of the user-provided key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct DocId(pub u64);
@@ -93,7 +95,7 @@ impl std::fmt::Display for EntityId {
     }
 }
 
-/// Transaction identifier.
+/// Transaction identifier for MVCC and WAL operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct TxId(pub u64);
@@ -118,7 +120,7 @@ impl std::fmt::Display for TxId {
     }
 }
 
-/// Distance metric for vector comparison.
+/// Distance metric for vector comparison and ANN search.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 pub enum DistanceMetric {
     /// Cosine distance (1 - cosine similarity).
@@ -130,10 +132,10 @@ pub enum DistanceMetric {
     DotProduct,
 }
 
-/// Vector embedding representation.
+/// Vector embedding representation for vector search.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Embedding {
-    /// Raw vector data.
+    /// Raw vector data (f32 floats).
     pub data: Vec<f32>,
 }
 
@@ -170,7 +172,7 @@ impl Embedding {
     }
 }
 
-/// A scored search result.
+/// A scored search result from a vector or hybrid search.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ScoredDocument {
     /// The document identifier.
@@ -186,7 +188,7 @@ impl ScoredDocument {
     }
 }
 
-/// Graph entity (node) representing a concept.
+/// Graph entity (node) representing a concept in the knowledge graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
     /// Unique identifier for the entity.
@@ -243,7 +245,7 @@ impl Edge {
 // WP:WP-4.1 PRIO:4 NEEDS:NONE
 // AGENT:02 DATE:2026-05-09 STATUS:READY
 // CREATED:2026-05-09 DEADLINE:NONE
-/// Resource budget for memory management.
+/// Resource budget for memory management and OOM prevention.
 #[derive(Debug, Clone, Copy)]
 pub struct ResourceBudget {
     /// Maximum allowed memory usage in bytes.
@@ -258,7 +260,7 @@ impl Default for ResourceBudget {
     }
 }
 
-/// Tracks resource usage against a budget.
+/// Tracks resource usage against a budget for the entire engine.
 #[derive(Debug)]
 pub struct ResourceTracker {
     /// The configured budget.
@@ -276,6 +278,8 @@ impl ResourceTracker {
         }
     }
 
+    /// Attempts to consume memory from the budget.
+    /// Returns an error if the budget is exceeded.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         let current = self
             .memory_used
@@ -291,15 +295,18 @@ impl ResourceTracker {
         Ok(())
     }
 
+    /// Releases memory back to the budget.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Returns the current total memory usage in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns the configured budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }

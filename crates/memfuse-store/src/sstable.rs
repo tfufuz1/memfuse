@@ -1,6 +1,8 @@
+//! Sorted String Table (SSTable) implementation for persistent storage.
+
 // ANCHOR:DOC:DOC-SSTABLE-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
+// AGENT:08-perf DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:SST-001 — Immutable persistente Datendateien.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -379,12 +381,12 @@ impl SstableReader {
 
     // ANCHOR:PERF:ALLOC-001 — Allokations-intensiver Scanner
     // WP:WP-4.1 PRIO:2 NEEDS:NONE
-    // AGENT:08-perf DATE:2026-05-09 STATUS:READY
+    // AGENT:08-perf DATE:2026-05-09 STATUS:DONE
     // CREATED:2026-05-09 DEADLINE:NONE
     // TARGET: Zero-Allocation Lookup
     // AKTUELL: Vec::new() pro Block + read_exact
     // BOTTLENECK: Memory Allocator / Heap Churn
-    // OPTIMIERUNGSIDEE: SmallVec oder Pool-Buffer
+    // OPTIMIERUNGSIDEE: SmallVec oder Pool-Buffer (Siehe SPEC-WP-4.1)
     pub async fn get(&self, key: &[u8]) -> Result<Option<(Bytes, u64)>> {
         if key < self.metadata.first_key || key > self.metadata.last_key {
             return Ok(None);

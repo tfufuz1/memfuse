@@ -1,3 +1,5 @@
+//! Agent orchestration graph and execution logic.
+
 // ANCHOR:ARCH:GRAPH-001 — Deklarativer StateGraph.
 // WP:NONE PRIO:2 NEEDS:NONE
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE

@@ -1,3 +1,5 @@
+//! Log-Structured Merge-Tree (LSM) storage engine orchestration.
+
 // ANCHOR:DOC:DOC-LSM-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:02 DATE:2026-05-09 STATUS:REVIEW
