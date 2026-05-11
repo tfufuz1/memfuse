@@ -13,7 +13,7 @@
 //
 // ANCHOR:SPEC:WP-3.2-HMAC-001 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
 // WP:WP-3.2 PRIO:3 NEEDS:NONE
-// AGENT:10 DATE:2026-05-09 STATUS:READY
+// AGENT:10 DATE:2026-05-11 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 //! Write-Ahead Log (WAL) for durability and crash recovery.
 //!
@@ -65,22 +65,27 @@ pub enum WalOp {
 pub struct WalEntry {
     pub op: WalOp,
     pub seq_no: u64,
-    pub checksum: u32,
+    pub keyed_hash: [u8; 32],
 }
 
 impl WalEntry {
-    /// Creates a new WAL entry with CRC32 checksum.
-    pub fn new(op: WalOp, seq_no: u64) -> Self {
-        let checksum = Self::compute_checksum(&op, seq_no);
+    /// Creates a new WAL entry with keyed hash (HMAC-SHA256 equivalent via BLAKE3).
+    pub fn new(op: WalOp, seq_no: u64, key: Option<&[u8; 32]>) -> Self {
+        let keyed_hash = Self::compute_keyed_hash(&op, seq_no, key);
         Self {
             op,
             seq_no,
-            checksum,
+            keyed_hash,
         }
     }
 
-    fn compute_checksum(op: &WalOp, seq_no: u64) -> u32 {
-        let mut hasher = crc32fast::Hasher::new();
+    fn compute_keyed_hash(op: &WalOp, seq_no: u64, key: Option<&[u8; 32]>) -> [u8; 32] {
+        let mut hasher = if let Some(k) = key {
+            blake3::Hasher::new_keyed(k)
+        } else {
+            blake3::Hasher::new()
+        };
+
         hasher.update(&seq_no.to_le_bytes());
         match op {
             WalOp::Put { key, value, .. } => {
@@ -93,15 +98,15 @@ impl WalEntry {
                 hasher.update(key);
             }
         }
-        hasher.finalize()
+        hasher.finalize().into()
     }
 
     /// Serializes the entry to bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
-        // seq_no (8) + checksum (4) + op_type (1)
+        // seq_no (8) + keyed_hash (32) + op_type (1)
         buf.extend_from_slice(&self.seq_no.to_le_bytes());
-        buf.extend_from_slice(&self.checksum.to_le_bytes());
+        buf.extend_from_slice(&self.keyed_hash);
 
         match &self.op {
             WalOp::Put { tx_id, key, value } => {
@@ -134,6 +139,7 @@ pub struct Wal {
     path: PathBuf,
     file: tokio::sync::Mutex<tokio::fs::File>,
     size: std::sync::atomic::AtomicU64,
+    key: Option<[u8; 32]>,
 }
 
 /// Maximum WAL size before triggering a flush (128MB).
@@ -141,7 +147,7 @@ pub const MAX_WAL_SIZE: u64 = 128 * 1024 * 1024;
 
 impl Wal {
     /// Opens or creates a WAL file.
-    pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
+    pub async fn open(path: impl AsRef<Path>, key: Option<[u8; 32]>) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
         let file = tokio::fs::OpenOptions::new()
             .create(true)
@@ -160,6 +166,7 @@ impl Wal {
             path,
             size: std::sync::atomic::AtomicU64::new(metadata.len()),
             file: tokio::sync::Mutex::new(file),
+            key,
         })
     }
 
@@ -217,7 +224,7 @@ impl Wal {
             let entry_data = &data[pos..pos + len];
             pos += len;
 
-            if entry_data.len() < 13 {
+            if entry_data.len() < 41 {
                 continue;
             }
 
@@ -227,16 +234,11 @@ impl Wal {
                     reason: "Invalid seq_no".into(),
                 }
             })?);
-            let stored_checksum =
-                u32::from_le_bytes(entry_data[8..12].try_into().map_err(|_| {
-                    MemFuseError::WalCorruption {
-                        offset: pos as u64,
-                        reason: "Invalid checksum".into(),
-                    }
-                })?);
-            let op_type = entry_data[12];
+            let mut stored_hash = [0u8; 32];
+            stored_hash.copy_from_slice(&entry_data[8..40]);
+            let op_type = entry_data[40];
 
-            let remaining = &entry_data[13..];
+            let remaining = &entry_data[41..];
             let op = match op_type {
                 0 => {
                     // Put
@@ -299,17 +301,17 @@ impl Wal {
                 _ => continue,
             };
 
-            // ANCHOR:ALG-FIX:D1-007 — CRC32-Verifikation bei WAL Replay
+            // ANCHOR:ALG-FIX:D1-007 — BLAKE3-Keyed-Hash-Verifikation bei WAL Replay
             // WP:WP-0.0 PRIO:1 NEEDS:NONE
             // AGENT:13 DATE:2026-05-08 STATUS:DONE
             // CREATED:2026-05-08 DEADLINE:NONE
             // Ohne Verifikation werden korrupte Entries (Bit-Flip, Partial Write)
             // blind in die MemTable replayed → stille Datenkorrumpierung.
-            let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no);
-            if recomputed_checksum != stored_checksum {
+            let recomputed_hash = WalEntry::compute_keyed_hash(&op, seq_no, self.key.as_ref());
+            if recomputed_hash != stored_hash {
                 tracing::warn!(
-                    "WAL entry at offset {} has invalid checksum (stored={}, computed={}), truncating replay",
-                    pos, stored_checksum, recomputed_checksum
+                    "WAL entry at offset {} has invalid hash, truncating replay",
+                    pos
                 );
                 break;
             }
@@ -319,7 +321,7 @@ impl Wal {
                 WalEntry {
                     op,
                     seq_no,
-                    checksum: stored_checksum,
+                    keyed_hash: stored_hash,
                 },
             ));
         }
@@ -335,5 +337,41 @@ impl Wal {
     /// Returns the WAL file path.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Returns the optional key used for this WAL.
+    pub fn key(&self) -> Option<&[u8; 32]> {
+        self.key.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn test_keyed_wal_roundtrip() {
+        let tmp = TempDir::new().unwrap();
+        let wal_path = tmp.path().join("wal.log");
+        let key = Some([42u8; 32]);
+
+        let wal = Wal::open(&wal_path, key).await.unwrap();
+        let op = WalOp::Put {
+            tx_id: TxId::new(1),
+            key: b"key".to_vec(),
+            value: b"value".to_vec(),
+        };
+        let entry = WalEntry::new(op, 1, key.as_ref());
+        wal.append(&entry).await.unwrap();
+
+        // Replay with same key
+        let entries = wal.replay().await.unwrap();
+        assert_eq!(entries.len(), 1);
+
+        // Replay with wrong key should fail or truncate
+        let wal_wrong_key = Wal::open(&wal_path, Some([43u8; 32])).await.unwrap();
+        let entries_wrong = wal_wrong_key.replay().await.unwrap();
+        assert_eq!(entries_wrong.len(), 0);
     }
 }

@@ -61,6 +61,7 @@ mod tests {
             max_ram_mb: 64,
             tx_timeout: std::time::Duration::from_secs(60),
             compaction: memfuse_store::compaction::CompactionConfig::default(),
+            encryption_key: None,
         };
         // Lower threshold so we can trigger compaction easily
         config.compaction.min_sstables_per_tier = 2;

@@ -70,6 +70,8 @@ pub struct LsmConfig {
     pub max_ram_mb: u64,
     pub tx_timeout: Duration,
     pub compaction: CompactionConfig,
+    /// 32-byte key for keyed hashing (HMAC-like integrity) and encryption.
+    pub encryption_key: Option<[u8; 32]>,
 }
 
 impl Default for LsmConfig {
@@ -80,6 +82,7 @@ impl Default for LsmConfig {
             max_ram_mb: 2048,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
+            encryption_key: None,
         }
     }
 }
@@ -112,7 +115,7 @@ impl LsmStorage {
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create dir: {}", e)))?;
 
-        let wal = Wal::open(config.path.join("wal.log")).await?;
+        let wal = Wal::open(config.path.join("wal.log"), config.encryption_key).await?;
         let memtable = MemTable::new();
 
         // Replay WAL
@@ -270,7 +273,9 @@ impl StorageEngine for LsmStorage {
         let doc_id = {
             let hash = blake3::hash(key);
             let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&hash.as_bytes()[..8]);
+            bytes.copy_from_slice(hash.as_bytes().get(..8).ok_or_else(|| {
+                MemFuseError::Internal("BLAKE3 hash output shorter than 8 bytes".into())
+            })?);
             DocId::new(u64::from_le_bytes(bytes))
         };
 
@@ -288,7 +293,9 @@ impl StorageEngine for LsmStorage {
         let doc_id = {
             let hash = blake3::hash(key);
             let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&hash.as_bytes()[..8]);
+            bytes.copy_from_slice(hash.as_bytes().get(..8).ok_or_else(|| {
+                MemFuseError::Internal("BLAKE3 hash output shorter than 8 bytes".into())
+            })?);
             DocId::new(u64::from_le_bytes(bytes))
         };
 
@@ -332,6 +339,7 @@ impl StorageEngine for LsmStorage {
                             value: value.clone(),
                         },
                         seq_no,
+                        state.wal.key(),
                     );
                     let entry_size = key.len() + value.len() + 8;
                     let _ = self.budget.consume_memory(entry_size as u64);
@@ -348,6 +356,7 @@ impl StorageEngine for LsmStorage {
                                 key: key.clone(),
                             },
                             seq_no,
+                            state.wal.key(),
                         );
                         let _ = self.budget.consume_memory(key.len() as u64 + 8);
                         state.wal.append(&entry).await?;
@@ -384,7 +393,7 @@ impl StorageEngine for LsmStorage {
             .map_err(|e| MemFuseError::Storage(format!("Time error: {}", e)))?
             .as_micros();
         let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
-        let new_wal = Wal::open(wal_path).await?;
+        let new_wal = Wal::open(wal_path, self.config.encryption_key).await?;
 
         let old_memtable = std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));
         let old_wal = std::mem::replace(&mut state.wal, new_wal);
@@ -598,6 +607,7 @@ mod tests {
             max_ram_mb: 64,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
+            encryption_key: None,
         };
         let storage = LsmStorage::new(config).await.expect("create storage");
         (storage, tmp)
@@ -675,6 +685,7 @@ mod tests {
             max_ram_mb: 64,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
+            encryption_key: None,
         };
         let storage = LsmStorage::new(config).await.expect("create storage");
 

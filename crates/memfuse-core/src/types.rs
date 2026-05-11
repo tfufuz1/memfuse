@@ -42,11 +42,13 @@ impl DocId {
     }
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
-    pub fn from_key(key: &str) -> Self {
+    pub fn from_key(key: &str) -> Result<Self> {
         let hash = blake3::hash(key.as_bytes());
         let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&hash.as_bytes()[..8]);
-        Self(u64::from_le_bytes(bytes))
+        bytes.copy_from_slice(hash.as_bytes().get(..8).ok_or_else(|| {
+            MemFuseError::Internal("BLAKE3 hash output shorter than 8 bytes".into())
+        })?);
+        Ok(Self(u64::from_le_bytes(bytes)))
     }
 }
 

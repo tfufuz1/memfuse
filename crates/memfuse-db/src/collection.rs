@@ -5,6 +5,14 @@
 // DESIGN: Eigener HNSW-Index pro Collection, GEMEINSAMER LSM-Storage.
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 // STATUS: Full Implementation für WP-1.2.
+//
+// ANCHOR:SEC:UNENCRYPTED-SERIALIZATION-001 — Unverschlüsselte Serialisierung von Dokumenten.
+// WP:WP-3.2 PRIO:1 NEEDS:NONE
+// AGENT:10 DATE:2026-05-11 STATUS:READY
+// CREATED:2026-05-11 DEADLINE:NONE
+// GEFUNDEN: StoredDocument wird via serde_json::to_vec direkt in den LSM-Storage geschrieben.
+// ERWARTET: Dokumente sollten vor dem Schreiben in den Storage verschlüsselt werden (Encryption at Rest).
+// RISIKO: Sensible Daten sind im LSM/SSTable im Klartext lesbar.
 //! Logically isolated Collections inside the MemFuse database.
 
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
@@ -140,7 +148,7 @@ impl Collection {
 
         let db_tx = self.begin_transaction();
         let tx = db_tx.tx_id;
-        let doc_id = DocId::from_key(id);
+        let doc_id = DocId::from_key(id)?;
 
         let stored = StoredDocument {
             id: id.to_string(),
@@ -198,7 +206,7 @@ impl Collection {
 
         let db_tx = self.begin_transaction();
         let tx = db_tx.tx_id;
-        let doc_id = DocId::from_key(id);
+        let doc_id = DocId::from_key(id)?;
 
         let user_key = self.namespaced_key(id.as_bytes(), 0);
 
@@ -245,7 +253,7 @@ impl Collection {
     pub async fn delete(&self, id: &str) -> Result<()> {
         let db_tx = self.begin_transaction();
         let tx = db_tx.tx_id;
-        let doc_id = DocId::from_key(id);
+        let doc_id = DocId::from_key(id)?;
 
         let user_key = self.namespaced_key(id.as_bytes(), 0);
 
@@ -493,7 +501,7 @@ impl Collection {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         for (_, v) in entries {
             let stored: StoredDocument = serde_json::from_slice(&v)?;
-            let doc_id = DocId::from_key(&stored.id);
+            let doc_id = DocId::from_key(&stored.id)?;
             self.index.insert(tx, doc_id, &stored.embedding).await?;
         }
         self.index.commit(tx).await?;
