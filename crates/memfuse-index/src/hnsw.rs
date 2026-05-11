@@ -1103,7 +1103,8 @@ mod tests {
             rebuild_threshold: 0.8,
             distance_metric: DistanceMetric::Euclidean,
             ..test_config(2)
-        }).expect("failed to create index");
+        })
+        .expect("failed to create index");
         let tx = TxId::new(1);
 
         for i in 1..=5u64 {
