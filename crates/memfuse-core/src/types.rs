@@ -47,7 +47,10 @@ impl DocId {
         let hash_bytes = hash.as_bytes();
         let mut bytes = [0u8; 8];
         // ANCHOR:FIX:ZERO-PANIC-001 — Replace copy_from_slice with safe zip-based copy to ensure no panics.
-        bytes.iter_mut().zip(hash_bytes.iter()).for_each(|(dest, src)| *dest = *src);
+        bytes
+            .iter_mut()
+            .zip(hash_bytes.iter())
+            .for_each(|(dest, src)| *dest = *src);
         Self(u64::from_le_bytes(bytes))
     }
 }

@@ -33,7 +33,9 @@ fn runtime() -> PyResult<&'static Runtime> {
             ))
         })?;
     let _ = RUNTIME.set(rt);
-    Ok(RUNTIME.get().unwrap())
+    RUNTIME.get().ok_or_else(|| {
+        pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve tokio runtime")
+    })
 }
 
 #[pyclass(unsendable)]
@@ -138,7 +140,9 @@ impl Collection {
 
         let rt = runtime()?;
         let results = py
-            .allow_threads(move || rt.block_on(self.inner.hybrid_search(&text_owned, &vec_owned, k)))
+            .allow_threads(move || {
+                rt.block_on(self.inner.hybrid_search(&text_owned, &vec_owned, k))
+            })
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let mut py_res = Vec::new();
