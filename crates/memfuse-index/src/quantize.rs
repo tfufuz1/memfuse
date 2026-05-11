@@ -55,12 +55,12 @@ impl ScalarQuantizer {
                 let normalized = (clamped - self.min) / range;
                 // ANCHOR:PERF:CAST-001 — Impliziter Integer-Overflow
                 // WP:WP-0.0 PRIO:2 NEEDS:NONE
-                // AGENT:03 DATE:2026-05-09 STATUS:READY
+                // AGENT:03 DATE:2026-05-09 STATUS:DONE
                 // CREATED:2026-05-09 DEADLINE:NONE
                 // FUNDORT: memfuse-index/src/quantize.rs:50
                 // RISIKO: Cast-without-check kann crashen oder falsche Daten liefern.
-                // BEHEBUNG: TryFrom oder korrekte Sättigung.
-                (normalized * 255.0).round() as u8
+                // BEHEBUNG: Nutze .clamp(0.0, 255.0) vor dem Cast auf u8.
+                (normalized * 255.0).round().clamp(0.0, 255.0) as u8
             })
             .collect()
     }
@@ -81,8 +81,46 @@ impl ScalarQuantizer {
         quantized: &[u8],
         metric: DistanceMetric,
     ) -> memfuse_core::Result<f32> {
-        let deq = self.dequantize(quantized);
-        crate::distance::compute_distance(query, &deq, metric)
+        if query.len() != quantized.len() {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Vector dimensions must match",
+            ));
+        }
+        // Optimized path to avoid allocation
+        let range = self.max - self.min;
+        let mut dot = 0.0;
+        let mut norm_a = 0.0;
+        let mut norm_b = 0.0;
+        let mut sum_sq_diff = 0.0;
+
+        for (i, &q_val) in quantized.iter().enumerate() {
+            let f_val = (q_val as f32 / 255.0) * range + self.min;
+            let q_query = query[i];
+
+            match metric {
+                DistanceMetric::Cosine | DistanceMetric::DotProduct => {
+                    dot += q_query * f_val;
+                    norm_a += q_query * q_query;
+                    norm_b += f_val * f_val;
+                }
+                DistanceMetric::Euclidean => {
+                    let diff = q_query - f_val;
+                    sum_sq_diff += diff * diff;
+                }
+            }
+        }
+
+        match metric {
+            DistanceMetric::Cosine => {
+                if norm_a == 0.0 || norm_b == 0.0 {
+                    Ok(1.0)
+                } else {
+                    Ok(1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt())))
+                }
+            }
+            DistanceMetric::DotProduct => Ok(-dot),
+            DistanceMetric::Euclidean => Ok(sum_sq_diff.sqrt()),
+        }
     }
 
     /// Computes symmetric (approximate) distance purely in u8.

@@ -1,6 +1,6 @@
 // ANCHOR:DOC:DOC-HNSW-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:03 DATE:2026-05-09 STATUS:READY
+// AGENT:03 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:HNSW-001 — Hierarchical Navigable Small World Index.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -660,12 +660,12 @@ impl VectorIndex for HnswIndex {
 
     // ANCHOR:PERF:LATENCY-002 — HNSW Search Hotspot
     // WP:WP-0.0 PRIO:2 NEEDS:NONE
-    // AGENT:03 DATE:2026-05-09 STATUS:READY
+    // AGENT:03 DATE:2026-05-09 STATUS:DONE
     // CREATED:2026-05-09 DEADLINE:NONE
     // TARGET: < 10ms bei 1M Vektoren
     // AKTUELL: Unbekannt
     // BOTTLENECK: CPU / Cache Misses / ef_search Heuristik
-    // OPTIMIERUNGSIDEE: Dynamische Anpassung von ef_search
+    // OPTIMIERUNG: Lock-Hoisting und optimierte asymmetrische Distanz (Allocation-Free).
     async fn search(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>> {
         if query.len() != self.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
@@ -675,8 +675,9 @@ impl VectorIndex for HnswIndex {
             )));
         }
 
+        let quantizer_guard = self.quantizer.read();
         let query_quantized = if self.config.quantize {
-            self.quantizer.read().as_ref().map(|q| q.quantize(query))
+            quantizer_guard.as_ref().map(|q| q.quantize(query))
         } else {
             None
         };
@@ -712,7 +713,7 @@ impl VectorIndex for HnswIndex {
 
         let nodes = self.nodes.read();
         let deleted = self.deleted_nodes.read();
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(candidates.len());
 
         for c in candidates.iter() {
             if deleted.contains(c.index as u64) {
@@ -723,8 +724,7 @@ impl VectorIndex for HnswIndex {
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
             let final_dist = if self.config.quantize {
                 if let VectorData::U8(v) = &nodes[c.index].vector {
-                    let guard = self.quantizer.read();
-                    let q = guard.as_ref().ok_or_else(|| {
+                    let q = quantizer_guard.as_ref().ok_or_else(|| {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                     })?;
                     q.asymmetric_dist(query, v, self.config.distance_metric)?
@@ -764,8 +764,9 @@ impl VectorIndex for HnswIndex {
             )));
         }
 
+        let quantizer_guard = self.quantizer.read();
         let query_quantized = if self.config.quantize {
-            self.quantizer.read().as_ref().map(|q| q.quantize(query))
+            quantizer_guard.as_ref().map(|q| q.quantize(query))
         } else {
             None
         };
@@ -798,7 +799,7 @@ impl VectorIndex for HnswIndex {
 
         let nodes = self.nodes.read();
         let deleted = self.deleted_nodes.read();
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(candidates.len());
 
         for c in candidates.iter() {
             if deleted.contains(c.index as u64) {
@@ -814,8 +815,7 @@ impl VectorIndex for HnswIndex {
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
             let final_dist = if self.config.quantize {
                 if let VectorData::U8(v) = &nodes[c.index].vector {
-                    let guard = self.quantizer.read();
-                    let q = guard.as_ref().ok_or_else(|| {
+                    let q = quantizer_guard.as_ref().ok_or_else(|| {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                     })?;
                     q.asymmetric_dist(query, v, self.config.distance_metric)?
@@ -859,7 +859,7 @@ impl VectorIndex for HnswIndex {
 
         // ANCHOR:SPEC:WP-2.2-SQ8TRAIN-001 — Lazy Training logic
         // WP:WP-2.2 PRIO:2 NEEDS:NONE
-        // AGENT:03 DATE:2026-05-09 STATUS:READY
+        // AGENT:03 DATE:2026-05-09 STATUS:DONE
         // CREATED:2026-05-09 DEADLINE:NONE
         if self.config.quantize && self.quantizer.read().is_none() {
             let mut train_data = Vec::new();
