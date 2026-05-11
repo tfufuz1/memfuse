@@ -45,7 +45,14 @@ impl DocId {
     pub fn from_key(key: &str) -> Self {
         let hash = blake3::hash(key.as_bytes());
         let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&hash.as_bytes()[..8]);
+        // ANCHOR:DEBT:PANIC-001 — copy_from_slice kann panicken.
+        // WP:WP-0.0 PRIO:3 NEEDS:NONE
+        // AGENT:01 DATE:2026-05-09 STATUS:DONE
+        // CREATED:2026-05-09 DEADLINE:NONE
+        // Zero-Panic: Sicherer Copy via zip-Iterator.
+        for (dest, src) in bytes.iter_mut().zip(hash.as_bytes().iter()) {
+            *dest = *src;
+        }
         Self(u64::from_le_bytes(bytes))
     }
 }
