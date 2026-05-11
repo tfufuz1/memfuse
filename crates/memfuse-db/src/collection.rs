@@ -150,6 +150,17 @@ impl Collection {
         let data = serde_json::to_vec(&stored)?;
 
         let user_key = self.namespaced_key(id.as_bytes(), 0);
+
+        // Remove from old text index if document exists
+        if let Some(old_bytes) = self.storage.get(&user_key).await? {
+            let old_stored: StoredDocument = serde_json::from_slice(&old_bytes)?;
+            if let Some(old_text) = extract_text(&old_stored.metadata) {
+                self.text_index
+                    .delete_document(tx, doc_id, &old_text)
+                    .await?;
+            }
+        }
+
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
 
         self.storage.put(tx, &user_key, &data).await?;

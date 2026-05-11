@@ -41,8 +41,21 @@ impl InvertedIndex {
             *tfs.entry(t.clone()).or_insert(0u32) += 1;
         }
 
-        // Store document length
+        // Check if document already exists to adjust statistics correctly
         let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
+        let old_len = if let Some(bytes) = self.storage.get(&dl_key).await? {
+            if bytes.len() == 4 {
+                Some(u32::from_le_bytes(bytes.as_slice().try_into().map_err(
+                    |_| MemFuseError::Storage("Invalid doc_len length".into()),
+                )?))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Store new document length
         self.storage
             .put(tx, &dl_key, &(tokens.len() as u32).to_le_bytes())
             .await?;
@@ -58,7 +71,12 @@ impl InvertedIndex {
                     })?);
             }
         }
+
+        if let Some(ol) = old_len {
+            total_tokens = total_tokens.saturating_sub(ol as u64);
+        }
         total_tokens += tokens.len() as u64;
+
         self.storage
             .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
             .await?;
@@ -66,7 +84,6 @@ impl InvertedIndex {
         // Update total docs
         let total_docs_key = self.key("meta:total_docs");
         let mut total_docs = 0u64;
-        let is_new = true;
         if let Some(bytes) = self.storage.get(&total_docs_key).await? {
             if bytes.len() == 8 {
                 total_docs = u64::from_le_bytes(
@@ -75,18 +92,15 @@ impl InvertedIndex {
                         .try_into()
                         .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
                 );
-                // We assume it's an update, but actually we don't know if doc existed.
-                // We'll increment anyway for simplicity (in a real system, we'd check if doc existed).
-                // Or we can just rely on index.len() from HNSW! Wait, HNSW len is not accessible here.
-                // It's okay, we can increment total_docs. It's an approximation.
             }
         }
-        if is_new {
+
+        if old_len.is_none() {
             total_docs += 1;
+            self.storage
+                .put(tx, &total_docs_key, &total_docs.to_le_bytes())
+                .await?;
         }
-        self.storage
-            .put(tx, &total_docs_key, &total_docs.to_le_bytes())
-            .await?;
 
         // Update posting lists
         for (term, tf) in tfs {
@@ -124,6 +138,44 @@ impl InvertedIndex {
         let tokens = tokenize(original_text);
 
         let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
+        if let Some(bytes) = self.storage.get(&dl_key).await? {
+            let doc_len = if bytes.len() == 4 {
+                u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid doc_len length".into())
+                })?)
+            } else {
+                0
+            };
+
+            // Update total tokens
+            let total_tok_key = self.key("meta:total_tokens");
+            if let Some(tt_bytes) = self.storage.get(&total_tok_key).await? {
+                if tt_bytes.len() == 8 {
+                    let total_tokens = u64::from_le_bytes(tt_bytes.as_slice().try_into().map_err(
+                        |_| MemFuseError::Storage("Invalid total_tokens length".into()),
+                    )?);
+                    let new_total = total_tokens.saturating_sub(doc_len as u64);
+                    self.storage
+                        .put(tx, &total_tok_key, &new_total.to_le_bytes())
+                        .await?;
+                }
+            }
+
+            // Update total docs
+            let total_docs_key = self.key("meta:total_docs");
+            if let Some(td_bytes) = self.storage.get(&total_docs_key).await? {
+                if td_bytes.len() == 8 {
+                    let total_docs = u64::from_le_bytes(td_bytes.as_slice().try_into().map_err(
+                        |_| MemFuseError::Storage("Invalid total_docs length".into()),
+                    )?);
+                    let new_total = total_docs.saturating_sub(1);
+                    self.storage
+                        .put(tx, &total_docs_key, &new_total.to_le_bytes())
+                        .await?;
+                }
+            }
+        }
+
         self.storage.delete(tx, &dl_key).await?;
 
         let mut unique_terms = tokens;
@@ -287,8 +339,8 @@ mod tests {
         // doc 2 has "rust" twice and "programming" once, should score higher than doc 1
         assert!(results[0].0 == d2 || results[1].0 == d2);
 
-        let doc2_pos = results.iter().position(|r| r.0 == d2).unwrap(); // unwrap
-        let doc1_pos = results.iter().position(|r| r.0 == d1).unwrap(); // unwrap
+        let doc2_pos = results.iter().position(|r| r.0 == d2).expect("doc2 found");
+        let doc1_pos = results.iter().position(|r| r.0 == d1).expect("doc1 found");
         assert!(
             doc2_pos < doc1_pos,
             "doc2 should be ranked higher due to higher TF"
