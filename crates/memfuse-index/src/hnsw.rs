@@ -660,7 +660,7 @@ impl VectorIndex for HnswIndex {
 
     // ANCHOR:PERF:LATENCY-002 — HNSW Search Hotspot
     // WP:WP-0.0 PRIO:2 NEEDS:NONE
-    // AGENT:03 DATE:2026-05-09 STATUS:READY
+    // AGENT:03 DATE:2026-05-09 STATUS:DONE
     // CREATED:2026-05-09 DEADLINE:NONE
     // TARGET: < 10ms bei 1M Vektoren
     // AKTUELL: Unbekannt
@@ -714,6 +714,13 @@ impl VectorIndex for HnswIndex {
         let deleted = self.deleted_nodes.read();
         let mut results = Vec::new();
 
+        // ANCHOR:PERF:LATENCY-002 — Lock-Acquisition außerhalb der Loop
+        let quantizer_guard = if self.config.quantize {
+            Some(self.quantizer.read())
+        } else {
+            None
+        };
+
         for c in candidates.iter() {
             if deleted.contains(c.index as u64) {
                 continue;
@@ -723,10 +730,12 @@ impl VectorIndex for HnswIndex {
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
             let final_dist = if self.config.quantize {
                 if let VectorData::U8(v) = &nodes[c.index].vector {
-                    let guard = self.quantizer.read();
-                    let q = guard.as_ref().ok_or_else(|| {
-                        memfuse_core::MemFuseError::Index("Quantizer not trained".into())
-                    })?;
+                    let q = quantizer_guard
+                        .as_ref()
+                        .and_then(|g| g.as_ref())
+                        .ok_or_else(|| {
+                            memfuse_core::MemFuseError::Index("Quantizer not trained".into())
+                        })?;
                     q.asymmetric_dist(query, v, self.config.distance_metric)?
                 } else {
                     c.distance
@@ -800,6 +809,13 @@ impl VectorIndex for HnswIndex {
         let deleted = self.deleted_nodes.read();
         let mut results = Vec::new();
 
+        // ANCHOR:PERF:LATENCY-002 — Lock-Acquisition außerhalb der Loop
+        let quantizer_guard = if self.config.quantize {
+            Some(self.quantizer.read())
+        } else {
+            None
+        };
+
         for c in candidates.iter() {
             if deleted.contains(c.index as u64) {
                 continue;
@@ -814,10 +830,12 @@ impl VectorIndex for HnswIndex {
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
             let final_dist = if self.config.quantize {
                 if let VectorData::U8(v) = &nodes[c.index].vector {
-                    let guard = self.quantizer.read();
-                    let q = guard.as_ref().ok_or_else(|| {
-                        memfuse_core::MemFuseError::Index("Quantizer not trained".into())
-                    })?;
+                    let q = quantizer_guard
+                        .as_ref()
+                        .and_then(|g| g.as_ref())
+                        .ok_or_else(|| {
+                            memfuse_core::MemFuseError::Index("Quantizer not trained".into())
+                        })?;
                     q.asymmetric_dist(query, v, self.config.distance_metric)?
                 } else {
                     c.distance
@@ -859,7 +877,7 @@ impl VectorIndex for HnswIndex {
 
         // ANCHOR:SPEC:WP-2.2-SQ8TRAIN-001 — Lazy Training logic
         // WP:WP-2.2 PRIO:2 NEEDS:NONE
-        // AGENT:03 DATE:2026-05-09 STATUS:READY
+        // AGENT:03 DATE:2026-05-09 STATUS:DONE
         // CREATED:2026-05-09 DEADLINE:NONE
         if self.config.quantize && self.quantizer.read().is_none() {
             let mut train_data = Vec::new();

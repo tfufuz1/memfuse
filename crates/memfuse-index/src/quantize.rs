@@ -60,7 +60,7 @@ impl ScalarQuantizer {
                 // FUNDORT: memfuse-index/src/quantize.rs:50
                 // RISIKO: Cast-without-check kann crashen oder falsche Daten liefern.
                 // BEHEBUNG: TryFrom oder korrekte Sättigung.
-                (normalized * 255.0).round() as u8
+                (normalized * 255.0).round().clamp(0.0, 255.0) as u8
             })
             .collect()
     }
