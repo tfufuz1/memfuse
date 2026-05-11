@@ -91,6 +91,47 @@ debt-audit:
     fi
     echo ""; echo "✅ Debt-Audit PASSED"
 
+# Local DAG Integrity Check (Architectural Invariants)
+dag-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== Local DAG Integrity Check ==="
+
+    echo "--- [1/4] Layer 3 (Kernel) Isolation ---"
+    FORBIDDEN="memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py"
+    for c in memfuse-core memfuse-runtime memfuse-orchestrator; do
+        echo "Checking $c..."
+        if cargo tree -p $c --edges no-dev | grep -q "$FORBIDDEN"; then
+            echo "❌ ERROR: $c imports forbidden crates."
+            exit 1
+        fi
+    done
+    echo "✅ Layer 3 isolated."
+
+    echo "--- [2/4] Layer 2 (Peers) L1/L0 Isolation ---"
+    FORBIDDEN_LAYERS="memfuse-db\|memfuse-py"
+    for c in memfuse-store memfuse-index memfuse-text memfuse-checkpoint; do
+        echo "Checking $c..."
+        if cargo tree -p $c --edges no-dev | grep -q "$FORBIDDEN_LAYERS"; then
+            echo "❌ ERROR: $c imports forbidden L1/L0 crates."
+            exit 1
+        fi
+    done
+    echo "✅ Layer 2 isolated from L1/L0."
+
+    echo "--- [3/4] Layer 1 (Facade) L0 Isolation ---"
+    if cargo tree -p memfuse-db --edges no-dev | grep -q "memfuse-py"; then
+        echo "❌ ERROR: memfuse-db imports L0 (memfuse-py)."
+        exit 1
+    fi
+    echo "✅ Layer 1 isolated from L0."
+
+    echo "--- [4/4] Known Violations Tracking ---"
+    cargo tree -p memfuse-text --edges no-dev | grep -q "memfuse-store" && echo "⚠️  DAG-001 present" || echo "✅ DAG-001 resolved"
+    cargo tree -p memfuse-checkpoint --edges no-dev | grep -q "memfuse-store" && echo "⚠️  DAG-002 present" || echo "✅ DAG-002 resolved"
+    cargo tree -p memfuse-py --edges no-dev | grep -q "memfuse-db" && echo "⚠️  DAG-003 present" || echo "✅ DAG-003 resolved"
+    echo "=== DAG Check Complete ==="
+
 # Bootstrap a new feature using the Atomic Spec Template
 spec NAME:
     #!/usr/bin/env bash
