@@ -29,7 +29,12 @@ fn runtime() -> PyResult<&'static Runtime> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to create tokio runtime: {}", e)))?;
+        .map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                "Failed to create tokio runtime: {}",
+                e
+            ))
+        })?;
 
     Ok(RUNTIME.get_or_init(|| rt))
 }
@@ -103,11 +108,9 @@ impl PyMemFuse {
             .allow_threads(|| rt.block_on(self.inner.collection("default")))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        let vec_slice = vector
-            .as_slice()
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let meta_val = if let Some(d) = metadata {
             Some(pythonize::depythonize(&d).map_err(|e| {
@@ -136,11 +139,9 @@ impl PyMemFuse {
             .allow_threads(|| rt.block_on(self.inner.collection("default")))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        let vec_slice = vector
-            .as_slice()
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let meta_val = if let Some(d) = metadata {
             Some(pythonize::depythonize(&d).map_err(|e| {
@@ -206,7 +207,10 @@ impl PyMemFuse {
         idx_dict.set_item("memory_usage_bytes", stats.index_stats.memory_usage_bytes)?;
 
         let storage_dict = PyDict::new(py);
-        storage_dict.set_item("memtable_size_bytes", stats.storage_stats.memtable_size_bytes)?;
+        storage_dict.set_item(
+            "memtable_size_bytes",
+            stats.storage_stats.memtable_size_bytes,
+        )?;
         storage_dict.set_item("num_segments", stats.storage_stats.num_segments)?;
         storage_dict.set_item("total_size_bytes", stats.storage_stats.total_size_bytes)?;
 
@@ -269,11 +273,9 @@ impl PyCollection {
         vector: PyReadonlyArray1<'py, f32>,
         metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
     ) -> PyResult<()> {
-        let vec_slice = vector
-            .as_slice()
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let meta_val = if let Some(d) = metadata {
             Some(pythonize::depythonize(&d).map_err(|e| {
@@ -285,10 +287,8 @@ impl PyCollection {
         let id_string = id.to_string();
         let rt = runtime()?;
 
-        py.allow_threads(|| {
-            rt.block_on(self.inner.insert(&id_string, vec_slice, meta_val))
-        })
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        py.allow_threads(|| rt.block_on(self.inner.insert(&id_string, vec_slice, meta_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(())
     }
 
@@ -300,11 +300,9 @@ impl PyCollection {
         vector: PyReadonlyArray1<'py, f32>,
         metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
     ) -> PyResult<()> {
-        let vec_slice = vector
-            .as_slice()
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let meta_val = if let Some(d) = metadata {
             Some(pythonize::depythonize(&d).map_err(|e| {
@@ -316,10 +314,8 @@ impl PyCollection {
         let id_string = id.to_string();
         let rt = runtime()?;
 
-        py.allow_threads(|| {
-            rt.block_on(self.inner.update(&id_string, vec_slice, meta_val))
-        })
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        py.allow_threads(|| rt.block_on(self.inner.update(&id_string, vec_slice, meta_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(())
     }
 
@@ -330,11 +326,9 @@ impl PyCollection {
         vector: PyReadonlyArray1<'py, f32>,
         k: usize,
     ) -> PyResult<Vec<PySearchResult>> {
-        let vec_slice = vector
-            .as_slice()
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
         let rt = runtime()?;
 
         let results = py
@@ -344,9 +338,11 @@ impl PyCollection {
         let mut py_res = Vec::new();
         for r in results {
             let metadata = if let Some(meta) = r.metadata {
-                Some(pythonize::pythonize(py, &meta)
-                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
-                    .unbind())
+                Some(
+                    pythonize::pythonize(py, &meta)
+                        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
+                        .unbind(),
+                )
             } else {
                 None
             };
@@ -367,26 +363,24 @@ impl PyCollection {
         vector: PyReadonlyArray1<'py, f32>,
         k: usize,
     ) -> PyResult<Vec<PySearchResult>> {
-        let vec_slice = vector
-            .as_slice()
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
         let text_owned = text.to_string();
 
         let rt = runtime()?;
         let results = py
-            .allow_threads(|| {
-                rt.block_on(self.inner.hybrid_search(&text_owned, vec_slice, k))
-            })
+            .allow_threads(|| rt.block_on(self.inner.hybrid_search(&text_owned, vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let mut py_res = Vec::new();
         for r in results {
             let metadata = if let Some(meta) = r.metadata {
-                Some(pythonize::pythonize(py, &meta)
-                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
-                    .unbind())
+                Some(
+                    pythonize::pythonize(py, &meta)
+                        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
+                        .unbind(),
+                )
             } else {
                 None
             };
