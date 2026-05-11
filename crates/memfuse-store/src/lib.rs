@@ -1,3 +1,4 @@
+// ANCHOR:INTEGRATION PRIO:3 AGENT:02 STATUS:READY
 // ANCHOR:ARCH:STORE-001 — LSM-Tree Storage Engine (Triebwerk — Layer 1).
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -17,6 +18,7 @@ pub mod lsm;
 pub mod memtable;
 pub mod sstable;
 pub mod wal;
+pub mod checkpoint;
 
 pub use compaction::{CompactionConfig, CompactionEngine};
 pub use lsm::{LsmConfig, LsmStorage};

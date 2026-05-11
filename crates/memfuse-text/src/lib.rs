@@ -1,3 +1,4 @@
+// ANCHOR:INTEGRATION PRIO:3 AGENT:05 STATUS:READY
 //! # MemFuse Text Processing
 //!
 //! Provides tokenization, inverted indexing on LSM, and BM25 scoring.

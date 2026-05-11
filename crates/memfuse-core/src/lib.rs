@@ -1,3 +1,4 @@
+// ANCHOR:INTEGRATION PRIO:3 AGENT:01 STATUS:READY
 //! MemFuse Core — Types, traits, and error handling.
 //!
 //! This crate provides the foundational building blocks for the MemFuse

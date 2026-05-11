@@ -16,7 +16,6 @@ memfuse-core = { workspace = true }
 # IMPACT: Verstößt gegen Layer-Architektur, verhindert saubere Kompilierung
 # SOFORTIGE AKTION: Abhängigkeit extrahieren nach memfuse-core oder neuen Crate
 # AGENT:antigravity DATE:2026-05-09 STATUS:READY
-memfuse-store = { workspace = true }
 unicode-segmentation = "1.11.0"
 bincode = { workspace = true }
 serde = { workspace = true }
@@ -24,5 +23,6 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+memfuse-store = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
