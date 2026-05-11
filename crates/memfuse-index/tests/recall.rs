@@ -19,9 +19,9 @@ async fn test_recall_at_10_above_95() {
         quantize: false,
     };
 
-    let index_f32 = HnswIndex::new(config.clone());
+    let index_f32 = HnswIndex::new(config.clone()).expect("failed to create index");
     config.quantize = true;
-    let index_sq8 = HnswIndex::new(config);
+    let index_sq8 = HnswIndex::new(config).expect("failed to create index");
 
     let mut rng = rand::thread_rng();
     let mut data = Vec::with_capacity(num_vectors);

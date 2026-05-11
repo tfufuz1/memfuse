@@ -17,9 +17,9 @@ async fn test_ram_reduction_4x() {
         quantize: false,
     };
 
-    let index_f32 = HnswIndex::new(config.clone());
+    let index_f32 = HnswIndex::new(config.clone()).expect("failed to create index");
     config.quantize = true;
-    let index_sq8 = HnswIndex::new(config);
+    let index_sq8 = HnswIndex::new(config).expect("failed to create index");
 
     let tx = TxId::new(1);
     for i in 0..num_vectors {
