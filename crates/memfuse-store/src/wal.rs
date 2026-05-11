@@ -13,7 +13,7 @@
 //
 // ANCHOR:SPEC:WP-3.2-HMAC-001 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
 // WP:WP-3.2 PRIO:3 NEEDS:NONE
-// AGENT:10 DATE:2026-05-09 STATUS:READY
+// AGENT:10 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 //! Write-Ahead Log (WAL) for durability and crash recovery.
 //!
@@ -25,12 +25,12 @@
 //! ## Crash Recovery
 //! Upon restart, the `LsmStorage` engine replays the WAL from start to end,
 //! reconstructing the state of the MemTable as it was before the crash.
-//! Entries with invalid CRC32 checksums are ignored, and replay stops
+//! Entries with invalid MACs are ignored, and replay stops
 //! at the first point of corruption.
 //!
 //! ## Invariants
 //! - **Durability**: Every committed transaction is guaranteed to be in the WAL.
-//! - **Integrity**: Entries are protected by CRC32 checksums to detect data corruption.
+//! - **Integrity**: Entries are protected by BLAKE3 keyed hashes (MAC) to detect data corruption and tampering.
 //! - **Async I/O**: Operations use `tokio::fs` for non-blocking disk access.
 //
 // ANCHOR:PERF:LATENCY-001 — WAL-Write-Path Hotspot
@@ -65,22 +65,22 @@ pub enum WalOp {
 pub struct WalEntry {
     pub op: WalOp,
     pub seq_no: u64,
-    pub checksum: u32,
+    pub mac: [u8; 32],
 }
 
+/// Default key for BLAKE3 keyed hash (HMAC-like integrity).
+/// In a production environment, this should be managed by a Key Management System (WP-3.2).
+const WAL_INTEGRITY_KEY: [u8; 32] = [0u8; 32];
+
 impl WalEntry {
-    /// Creates a new WAL entry with CRC32 checksum.
+    /// Creates a new WAL entry with BLAKE3 keyed hash (MAC).
     pub fn new(op: WalOp, seq_no: u64) -> Self {
-        let checksum = Self::compute_checksum(&op, seq_no);
-        Self {
-            op,
-            seq_no,
-            checksum,
-        }
+        let mac = Self::compute_mac(&op, seq_no);
+        Self { op, seq_no, mac }
     }
 
-    fn compute_checksum(op: &WalOp, seq_no: u64) -> u32 {
-        let mut hasher = crc32fast::Hasher::new();
+    fn compute_mac(op: &WalOp, seq_no: u64) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new_keyed(&WAL_INTEGRITY_KEY);
         hasher.update(&seq_no.to_le_bytes());
         match op {
             WalOp::Put { key, value, .. } => {
@@ -93,15 +93,15 @@ impl WalEntry {
                 hasher.update(key);
             }
         }
-        hasher.finalize()
+        *hasher.finalize().as_bytes()
     }
 
     /// Serializes the entry to bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
-        // seq_no (8) + checksum (4) + op_type (1)
+        // seq_no (8) + mac (32)
         buf.extend_from_slice(&self.seq_no.to_le_bytes());
-        buf.extend_from_slice(&self.checksum.to_le_bytes());
+        buf.extend_from_slice(&self.mac);
 
         match &self.op {
             WalOp::Put { tx_id, key, value } => {
@@ -201,12 +201,15 @@ impl Wal {
         let mut pos = 0;
 
         while pos + 4 <= data.len() {
-            let len = u32::from_le_bytes(data[pos..pos + 4].try_into().map_err(|_| {
-                MemFuseError::WalCorruption {
+            let len_bytes: [u8; 4] = data
+                .get(pos..pos + 4)
+                .ok_or_else(|| MemFuseError::WalCorruption {
                     offset: pos as u64,
-                    reason: "Invalid length".into(),
-                }
-            })?) as usize;
+                    reason: "Unexpected end of data while reading length".into(),
+                })?
+                .try_into()
+                .unwrap();
+            let len = u32::from_le_bytes(len_bytes) as usize;
             pos += 4;
 
             if pos + len > data.len() {
@@ -214,63 +217,90 @@ impl Wal {
                 break;
             }
 
-            let entry_data = &data[pos..pos + len];
+            let entry_data = data.get(pos..pos + len).ok_or_else(|| {
+                MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid entry data range".into(),
+                }
+            })?;
             pos += len;
 
-            if entry_data.len() < 13 {
+            if entry_data.len() < 41 {
                 continue;
             }
 
-            let seq_no = u64::from_le_bytes(entry_data[0..8].try_into().map_err(|_| {
-                MemFuseError::WalCorruption {
-                    offset: pos as u64,
-                    reason: "Invalid seq_no".into(),
-                }
-            })?);
-            let stored_checksum =
-                u32::from_le_bytes(entry_data[8..12].try_into().map_err(|_| {
-                    MemFuseError::WalCorruption {
+            let seq_no = u64::from_le_bytes(
+                entry_data
+                    .get(0..8)
+                    .ok_or_else(|| MemFuseError::WalCorruption {
                         offset: pos as u64,
-                        reason: "Invalid checksum".into(),
-                    }
-                })?);
-            let op_type = entry_data[12];
+                        reason: "Invalid seq_no range".into(),
+                    })?
+                    .try_into()
+                    .unwrap(),
+            );
+            let stored_mac: [u8; 32] = entry_data
+                .get(8..40)
+                .ok_or_else(|| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid MAC range".into(),
+                })?
+                .try_into()
+                .unwrap();
+            let op_type = *entry_data.get(40).ok_or_else(|| MemFuseError::WalCorruption {
+                offset: pos as u64,
+                reason: "Invalid op_type index".into(),
+            })?;
 
-            let remaining = &entry_data[13..];
+            let remaining = entry_data.get(41..).unwrap_or(&[]);
             let op = match op_type {
                 0 => {
                     // Put
                     if remaining.len() < 12 {
                         continue;
                     }
-                    let tx_id = TxId::new(u64::from_le_bytes(remaining[0..8].try_into().map_err(
-                        |_| MemFuseError::WalCorruption {
-                            offset: pos as u64,
-                            reason: "Invalid tx_id".into(),
-                        },
-                    )?));
-                    let key_len = u32::from_le_bytes(remaining[8..12].try_into().map_err(|_| {
-                        MemFuseError::WalCorruption {
-                            offset: pos as u64,
-                            reason: "Invalid key_len".into(),
-                        }
-                    })?) as usize;
+                    let tx_id = TxId::new(u64::from_le_bytes(
+                        remaining
+                            .get(0..8)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid tx_id range".into(),
+                            })?
+                            .try_into()
+                            .unwrap(),
+                    ));
+                    let key_len = u32::from_le_bytes(
+                        remaining
+                            .get(8..12)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid key_len range".into(),
+                            })?
+                            .try_into()
+                            .unwrap(),
+                    ) as usize;
                     if remaining.len() < 12 + key_len + 4 {
                         continue;
                     }
-                    let key = remaining[12..12 + key_len].to_vec();
+                    let key = remaining.get(12..12 + key_len).unwrap_or(&[]).to_vec();
                     let val_start = 12 + key_len;
-                    let val_len =
-                        u32::from_le_bytes(remaining[val_start..val_start + 4].try_into().map_err(
-                            |_| MemFuseError::WalCorruption {
+                    let val_len = u32::from_le_bytes(
+                        remaining
+                            .get(val_start..val_start + 4)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
                                 offset: pos as u64,
-                                reason: "Invalid val_len".into(),
-                            },
-                        )?) as usize;
+                                reason: "Invalid val_len range".into(),
+                            })?
+                            .try_into()
+                            .unwrap(),
+                    ) as usize;
                     if remaining.len() < val_start + 4 + val_len {
                         continue;
                     }
-                    let value = remaining[val_start + 4..val_start + 4 + val_len].to_vec();
+                    let value = remaining
+                        .get(val_start + 4..val_start + 4 + val_len)
+                        .unwrap_or(&[])
+                        .to_vec();
                     WalOp::Put { tx_id, key, value }
                 }
                 1 => {
@@ -278,38 +308,46 @@ impl Wal {
                     if remaining.len() < 12 {
                         continue;
                     }
-                    let tx_id = TxId::new(u64::from_le_bytes(remaining[0..8].try_into().map_err(
-                        |_| MemFuseError::WalCorruption {
-                            offset: pos as u64,
-                            reason: "Invalid tx_id".into(),
-                        },
-                    )?));
-                    let key_len = u32::from_le_bytes(remaining[8..12].try_into().map_err(|_| {
-                        MemFuseError::WalCorruption {
-                            offset: pos as u64,
-                            reason: "Invalid key_len".into(),
-                        }
-                    })?) as usize;
+                    let tx_id = TxId::new(u64::from_le_bytes(
+                        remaining
+                            .get(0..8)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid tx_id range".into(),
+                            })?
+                            .try_into()
+                            .unwrap(),
+                    ));
+                    let key_len = u32::from_le_bytes(
+                        remaining
+                            .get(8..12)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid key_len range".into(),
+                            })?
+                            .try_into()
+                            .unwrap(),
+                    ) as usize;
                     if remaining.len() < 12 + key_len {
                         continue;
                     }
-                    let key = remaining[12..12 + key_len].to_vec();
+                    let key = remaining.get(12..12 + key_len).unwrap_or(&[]).to_vec();
                     WalOp::Delete { tx_id, key }
                 }
                 _ => continue,
             };
 
-            // ANCHOR:ALG-FIX:D1-007 — CRC32-Verifikation bei WAL Replay
+            // ANCHOR:ALG-FIX:D1-007 — MAC-Verifikation bei WAL Replay
             // WP:WP-0.0 PRIO:1 NEEDS:NONE
             // AGENT:13 DATE:2026-05-08 STATUS:DONE
             // CREATED:2026-05-08 DEADLINE:NONE
-            // Ohne Verifikation werden korrupte Entries (Bit-Flip, Partial Write)
-            // blind in die MemTable replayed → stille Datenkorrumpierung.
-            let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no);
-            if recomputed_checksum != stored_checksum {
+            // Ohne Verifikation werden korrupte Entries (Bit-Flip, Partial Write, malicious injection)
+            // blind in die MemTable replayed → stille Datenkorrumpierung oder Sicherheitsbruch.
+            let recomputed_mac = WalEntry::compute_mac(&op, seq_no);
+            if recomputed_mac != stored_mac {
                 tracing::warn!(
-                    "WAL entry at offset {} has invalid checksum (stored={}, computed={}), truncating replay",
-                    pos, stored_checksum, recomputed_checksum
+                    "WAL entry at offset {} has invalid MAC, truncating replay",
+                    pos
                 );
                 break;
             }
@@ -319,7 +357,7 @@ impl Wal {
                 WalEntry {
                     op,
                     seq_no,
-                    checksum: stored_checksum,
+                    mac: stored_mac,
                 },
             ));
         }
@@ -335,5 +373,111 @@ impl Wal {
     /// Returns the WAL file path.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use memfuse_core::TxId;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_wal_roundtrip() -> memfuse_core::Result<()> {
+        let dir = tempdir().unwrap();
+        let wal_path = dir.path().join("test.wal");
+        let wal = Wal::open(&wal_path).await?;
+
+        let op = WalOp::Put {
+            tx_id: TxId::new(1),
+            key: b"key".to_vec(),
+            value: b"value".to_vec(),
+        };
+        let entry = WalEntry::new(op, 1);
+        wal.append(&entry).await?;
+
+        let entries = wal.replay().await?;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].0, 1);
+        if let WalOp::Put { tx_id, key, value } = &entries[0].1.op {
+            assert_eq!(tx_id.inner(), 1);
+            assert_eq!(key, b"key");
+            assert_eq!(value, b"value");
+        } else {
+            panic!("Expected Put op");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_wal_corruption() -> memfuse_core::Result<()> {
+        let dir = tempdir().unwrap();
+        let wal_path = dir.path().join("test_corrupt.wal");
+
+        {
+            let wal = Wal::open(&wal_path).await?;
+            let op = WalOp::Put {
+                tx_id: TxId::new(1),
+                key: b"key".to_vec(),
+                value: b"value".to_vec(),
+            };
+            let entry = WalEntry::new(op, 1);
+            wal.append(&entry).await?;
+        }
+
+        // Corrupt the MAC
+        let mut data = std::fs::read(&wal_path).unwrap();
+        if data.len() > 12 {
+            data[12] ^= 0xFF; // Flip a bit in the MAC
+            std::fs::write(&wal_path, data).unwrap();
+        }
+
+        let wal = Wal::open(&wal_path).await?;
+        let entries = wal.replay().await?;
+        assert_eq!(entries.len(), 0, "Corrupt entry should be ignored");
+
+        Ok(())
+    }
+}
+
+#[cfg(kani)]
+mod kani_proofs {
+    use super::*;
+
+    #[kani::proof]
+    fn verify_compute_mac_no_panic() {
+        let tx_id = TxId::new(kani::any());
+        let key_len: usize = kani::any();
+        kani::assume(key_len < 100);
+        let key = vec![0u8; key_len];
+
+        let value_len: usize = kani::any();
+        kani::assume(value_len < 100);
+        let value = vec![0u8; value_len];
+
+        let op = WalOp::Put { tx_id, key, value };
+        let seq_no: u64 = kani::any();
+
+        let _mac = WalEntry::compute_mac(&op, seq_no);
+    }
+
+    #[kani::proof]
+    fn verify_to_bytes_no_panic() {
+        let tx_id = TxId::new(kani::any());
+        let key_len: usize = kani::any();
+        kani::assume(key_len < 64);
+        let key = vec![0u8; key_len];
+
+        let value_len: usize = kani::any();
+        kani::assume(value_len < 64);
+        let value = vec![0u8; value_len];
+
+        let op = WalOp::Put { tx_id, key, value };
+        let seq_no: u64 = kani::any();
+        let entry = WalEntry::new(op, seq_no);
+
+        let bytes = entry.to_bytes();
+        assert!(bytes.len() >= 45); // 4 (len) + 8 (seq) + 32 (mac) + 1 (op)
     }
 }

@@ -45,7 +45,10 @@ impl DocId {
     pub fn from_key(key: &str) -> Self {
         let hash = blake3::hash(key.as_bytes());
         let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&hash.as_bytes()[..8]);
+        // ANCHOR:SEC:SAFE-SLICE-001 — Safe slice access.
+        // BEGRÜNDUNG: BLAKE3 hash always returns 32 bytes, so taking the first 8 is guaranteed safe.
+        let hash_bytes = hash.as_bytes();
+        bytes.copy_from_slice(&hash_bytes[..8]);
         Self(u64::from_le_bytes(bytes))
     }
 }
