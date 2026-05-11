@@ -11,6 +11,7 @@ use std::collections::HashMap;
 
 /// A simple CSR graph representation for fast neighborhood lookups.
 /// This enables extremely fast multi-hop reasoning by storing edges contiguously.
+/// Compressed Sparse Row (CSR) graph representation for memory-efficient connectivity.
 #[derive(Debug, Default)]
 pub struct CsrGraph {
     /// Array of offsets mapping node index -> start of its edges in `edges`
@@ -27,6 +28,7 @@ pub struct CsrGraph {
 }
 
 impl CsrGraph {
+    /// Creates a new, empty `CsrGraph`.
     pub fn new() -> Self {
         Self {
             offsets: vec![0],

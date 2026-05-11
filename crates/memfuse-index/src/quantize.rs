@@ -9,6 +9,7 @@
 use memfuse_core::DistanceMetric;
 
 /// An 8-bit Scalar Quantizer that maps `f32` vectors into `u8` bounds based on global min/max limits.
+/// Scalar quantizer (SQ8) for vector memory reduction.
 #[derive(Debug, Clone)]
 pub struct ScalarQuantizer {
     pub min: f32,

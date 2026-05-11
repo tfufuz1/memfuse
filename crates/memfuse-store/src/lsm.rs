@@ -1,6 +1,11 @@
-// ANCHOR:DOC:DOC-LSM-001 — Missing module documentation
+//! LSM-Tree (Log-Structured Merge-Tree) storage engine implementation.
+//!
+//! Orchestrates WAL, MemTables, and SSTables to provide a high-performance,
+//! persistent key-value store.
+
+// ANCHOR:DOC:DOC-LSM-001 — Fixed module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
+// AGENT:08 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:LSM-001 — Zentraler Storage-Engine-Orchestrator des Triebwerks.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -63,6 +68,7 @@ use tokio::sync::RwLock;
 // TEST: cargo test -p memfuse-store test_encrypted_db_unreadable_without_key
 // DONE: LsmConfig akzeptiert Passphrase, AES-256 wird für Disk-I/O verwendet.
 // SUCCESSOR: @JULES-13 — "Encryption ist impl. Bitte Specs finalisieren."
+/// Configuration for the LSM storage engine.
 #[derive(Clone, Debug)]
 pub struct LsmConfig {
     pub path: PathBuf,

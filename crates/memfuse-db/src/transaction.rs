@@ -1,6 +1,11 @@
-// ANCHOR:DOC:DOC-TRANSACTION-001 — Missing module documentation
+//! Transaction management for atomic multi-index commits.
+//!
+//! Provides `DbTransaction` to coordinate atomic updates across
+//! the LSM storage and vector indices.
+
+// ANCHOR:DOC:DOC-TRANSACTION-001 — Fixed module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:04 DATE:2026-05-09 STATUS:READY
+// AGENT:08 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 use crate::Collection;
 use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId, VectorIndex};
@@ -27,6 +32,7 @@ pub struct DbTransaction<'a> {
 }
 
 impl<'a> DbTransaction<'a> {
+    /// Creates a new database transaction.
     pub fn new(collection: &'a Collection, tx_id: TxId) -> Self {
         Self {
             tx_id,

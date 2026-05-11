@@ -1,6 +1,11 @@
-// ANCHOR:DOC:DOC-WAL-001 — Missing module documentation
+//! Write-Ahead Log (WAL) implementation for durability and crash recovery.
+//!
+//! Every committed transaction is first written to the WAL before being
+//! applied to the in-memory state.
+
+// ANCHOR:DOC:DOC-WAL-001 — Fixed module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
+// AGENT:08 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:WAL-001 — Write-Ahead Log für Crash Recovery.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE

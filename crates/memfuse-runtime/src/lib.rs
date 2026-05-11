@@ -1,6 +1,10 @@
-// ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
+//! MemFuse Runtime — Sandboxing and Execution Layer.
+//!
+//! Provides secure WASM sandboxing for isolated agent tool execution.
+
+// ANCHOR:DOC:DOC-LIB-001 — Fixed module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:13 DATE:2026-05-09 STATUS:READY
+// AGENT:08 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:AUDIT:SAOS-022 — forbid(unsafe_code) fehlte → nachgerüstet
 // WP:NONE PRIO:3 NEEDS:NONE

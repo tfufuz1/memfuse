@@ -9,18 +9,20 @@
 ```python
 # MemFuse provides a zero-setup Python experience
 import memfuse
+import numpy as np
 
-# Initializes the full SAOS (LSM-Tree, HNSW, WASM Sandbox, Orchestrator)
-agent = memfuse.Agent("./my_agent_memory")
+# Open the database
+db = memfuse.open("./my_agent_memory", dimension=1536)
+col = db.collection("default")
 
-# Declarative StateGraph (Cockpit Layer)
-agent.add_node("research", "Research the topic using tools")
-agent.add_node("code", "Generate code safely via WASM")
-agent.add_edge("research", "code")
+# Insert a document with embedding
+vector = np.random.rand(1536).astype('float32')
+col.insert("doc-1", vector, {"text": "MemFuse is awesome"})
 
-# Autonomously run the workflow in an isolated environment
-result = agent.run("Erstelle ein Rust-Programm", isolation_mode="wasm")
-print(result)
+# Semantic search
+results = col.search(vector, k=5)
+for r in results:
+    print(f"{r['id']}: {r['score']}")
 ```
 
 ## Architecture: The 3 SAOS Layers

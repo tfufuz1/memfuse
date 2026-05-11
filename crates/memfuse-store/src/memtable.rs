@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 ///
 /// Entries are sorted by key for efficient range scans and
 /// ordered flushing to SSTables.
+/// An in-memory sorted buffer for write operations.
 #[derive(Debug)]
 pub struct MemTable {
     entries: RwLock<BTreeMap<Bytes, (Bytes, u64)>>,

@@ -1,6 +1,11 @@
-// ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
+//! Python bindings for MemFuse.
+//!
+//! Provides PyO3-based wrappers for the MemFuse database and collections,
+//! including zero-copy integration with NumPy for vector operations.
+
+// ANCHOR:DOC:DOC-LIB-001 — Fixed module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:06 DATE:2026-05-09 STATUS:READY
+// AGENT:08 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001

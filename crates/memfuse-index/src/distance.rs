@@ -49,7 +49,7 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
     })
 }
 
-/// Computes cosine distance (1 - similarity).
+/// Computes cosine distance between two vectors (1 - similarity).
 #[inline]
 pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
     debug_assert_eq!(a.len(), b.len());
@@ -70,7 +70,7 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
     cosine_distance_std_simd(a, b)
 }
 
-/// Computes Euclidean (L2) distance.
+/// Computes Euclidean distance between two vectors (L2).
 #[inline]
 pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
     debug_assert_eq!(a.len(), b.len());
@@ -91,7 +91,7 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
     euclidean_distance_std_simd(a, b)
 }
 
-/// Computes negative dot product.
+/// Computes dot product distance between two vectors.
 #[inline]
 pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
     debug_assert_eq!(a.len(), b.len());

@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// An inverted index stored in the LSM engine.
+/// A BM25-based inverted index for full-text search.
 #[derive(Clone)]
 pub struct InvertedIndex {
     storage: Arc<dyn StorageEngine>,

@@ -25,10 +25,12 @@ pub struct StateGraph {
 }
 
 impl StateGraph {
+    /// Creates a new, empty `StateGraph`.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Adds a new node to the graph.
     pub fn add_node(&mut self, id: &str, description: &str) {
         self.nodes.insert(
             id.to_string(),
@@ -39,6 +41,7 @@ impl StateGraph {
         );
     }
 
+    /// Adds a directed edge between two nodes with an optional condition.
     pub fn add_edge(&mut self, source: &str, target: &str, condition: Option<&str>) {
         self.edges.push((
             source.to_string(),
@@ -47,6 +50,7 @@ impl StateGraph {
         ));
     }
 
+    /// Executes the workflow starting from the initial state.
     pub fn run_workflow(&self, _initial_state: &str) {
         // Execute the State Graph, invoking WASM sandbox nodes
         // and retrieving context selectively via Triebwerk (Hybrid Search)

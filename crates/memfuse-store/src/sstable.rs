@@ -1,6 +1,11 @@
-// ANCHOR:DOC:DOC-SSTABLE-001 — Missing module documentation
+//! SSTable (Sorted String Table) implementation.
+//!
+//! Provides immutable, persistent storage files for keys and values,
+//! including block-based caching and binary search indices.
+
+// ANCHOR:DOC:DOC-SSTABLE-001 — Fixed module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
+// AGENT:08 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:SST-001 — Immutable persistente Datendateien.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
