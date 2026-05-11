@@ -155,7 +155,7 @@ mod tests {
         }
 
         for h in handles {
-            h.join().unwrap();
+            h.join().expect("thread panicked");
         }
 
         assert_eq!(registry.min_active_seqno(), u64::MAX);

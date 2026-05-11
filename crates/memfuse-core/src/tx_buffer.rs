@@ -376,14 +376,17 @@ mod tests {
         // Test missing transaction
         let res = buffer.validate_pending_ops(tx_missing);
         assert!(res.is_err());
-        assert!(res.unwrap_err().to_string().contains("not found"));
+        assert!(res
+            .expect_err("should be error")
+            .to_string()
+            .contains("not found"));
 
         // Test empty transaction (registered but no ops)
         buffer.begin(tx_empty);
         let res = buffer.validate_pending_ops(tx_empty);
         assert!(res.is_err());
         assert!(res
-            .unwrap_err()
+            .expect_err("should be error")
             .to_string()
             .contains("no pending operations"));
 
