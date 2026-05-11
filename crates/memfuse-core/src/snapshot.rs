@@ -88,6 +88,9 @@ impl SnapshotRegistry {
         // SAFETY: u64::MAX is the correct default when no snapshots are active.
         // It allows the LSM compaction to garbage collect ALL tombstones, as
         // all existing records will have seq_no < u64::MAX.
+        //
+        // NOTE: If a snapshot is registered with u64::MAX, it represents a view of
+        // the entire history, which is equivalent to having no snapshots active.
         let min = active.keys().next().copied().unwrap_or(u64::MAX);
         self.min_active_seqno.store(min, Ordering::Release);
     }

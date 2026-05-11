@@ -14,6 +14,17 @@ use crate::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+/// Statistics for a text index.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextIndexStats {
+    /// Number of indexed documents.
+    pub num_documents: usize,
+    /// Number of unique terms in the vocabulary.
+    pub vocabulary_size: usize,
+    /// Total number of tokens across all documents.
+    pub total_tokens: u64,
+}
+
 /// Statistics for a vector index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VectorIndexStats {
