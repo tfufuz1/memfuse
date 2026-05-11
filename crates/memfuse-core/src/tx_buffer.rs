@@ -311,8 +311,20 @@ mod tests {
         let tx1 = TxId::new(1);
         let tx2 = TxId::new(2);
 
-        buffer.stage(tx1, IndexOp::Insert { doc_id: DocId::new(1), data: "d1".to_string() });
-        buffer.stage(tx2, IndexOp::Insert { doc_id: DocId::new(2), data: "d2".to_string() });
+        buffer.stage(
+            tx1,
+            IndexOp::Insert {
+                doc_id: DocId::new(1),
+                data: "d1".to_string(),
+            },
+        );
+        buffer.stage(
+            tx2,
+            IndexOp::Insert {
+                doc_id: DocId::new(2),
+                data: "d2".to_string(),
+            },
+        );
 
         assert_eq!(buffer.len(), 2);
         buffer.clear();
