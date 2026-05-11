@@ -15,7 +15,9 @@ async fn test_db_layer_bounds_orchestration() {
     };
 
     // Test opening DB and creating a collection
-    let db = MemFuse::open_with_config(tmp.path().to_str().unwrap(), config).await.unwrap();
+    let db = MemFuse::open_with_config(tmp.path().to_str().unwrap(), config)
+        .await
+        .unwrap();
     let col = db.collection("test_bounds").await.unwrap();
 
     // Insert should work (orchestrates store + index)

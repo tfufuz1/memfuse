@@ -210,7 +210,6 @@ impl LsmStorage {
         self.next_seq_no.load(Ordering::Acquire).saturating_sub(1)
     }
 
-
     /// Forces a flush (to be used by CheckpointManager or tests).
     pub async fn force_flush(&self) -> Result<()> {
         self.flush().await

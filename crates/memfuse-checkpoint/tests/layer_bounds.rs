@@ -5,19 +5,31 @@
 //! without a direct dependency on memfuse-store in production code.
 
 use memfuse_checkpoint::CheckpointManager;
-use memfuse_core::{StorageEngine, Result, StorageStats, TxId};
+use memfuse_core::{Result, StorageEngine, StorageStats, TxId};
 use std::sync::Arc;
 
 struct MockStorage;
 
 #[async_trait::async_trait]
 impl StorageEngine for MockStorage {
-    async fn get(&self, _key: &[u8]) -> Result<Option<Vec<u8>>> { Ok(None) }
-    async fn put(&self, _tx_id: TxId, _key: &[u8], _value: &[u8]) -> Result<()> { Ok(()) }
-    async fn delete(&self, _tx_id: TxId, _key: &[u8]) -> Result<()> { Ok(()) }
-    async fn commit(&self, _tx_id: TxId) -> Result<()> { Ok(()) }
-    async fn rollback(&self, _tx_id: TxId) -> Result<()> { Ok(()) }
-    async fn flush(&self) -> Result<()> { Ok(()) }
+    async fn get(&self, _key: &[u8]) -> Result<Option<Vec<u8>>> {
+        Ok(None)
+    }
+    async fn put(&self, _tx_id: TxId, _key: &[u8], _value: &[u8]) -> Result<()> {
+        Ok(())
+    }
+    async fn delete(&self, _tx_id: TxId, _key: &[u8]) -> Result<()> {
+        Ok(())
+    }
+    async fn commit(&self, _tx_id: TxId) -> Result<()> {
+        Ok(())
+    }
+    async fn rollback(&self, _tx_id: TxId) -> Result<()> {
+        Ok(())
+    }
+    async fn flush(&self) -> Result<()> {
+        Ok(())
+    }
     async fn stats(&self) -> Result<StorageStats> {
         Ok(StorageStats {
             num_segments: 42,
@@ -25,8 +37,12 @@ impl StorageEngine for MockStorage {
             memtable_size_bytes: 0,
         })
     }
-    async fn scan_prefix(&self, _prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> { Ok(Vec::new()) }
-    fn last_seq_no(&self) -> u64 { 100 }
+    async fn scan_prefix(&self, _prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        Ok(Vec::new())
+    }
+    fn last_seq_no(&self) -> u64 {
+        100
+    }
 }
 
 #[tokio::test]
