@@ -1,8 +1,8 @@
-use memfuse_core::{DocId, TxId, StorageEngine};
+use memfuse_core::{DocId, StorageEngine, TxId};
 use memfuse_store::lsm::{LsmConfig, LsmStorage};
 use memfuse_text::inverted::InvertedIndex;
-use tempfile::TempDir;
 use std::sync::Arc;
+use tempfile::TempDir;
 
 // ANCHOR:INTEGRATION:TEXT-001 — Text Pipeline Integration Test
 // AGENT:12 DATE:2026-05-09 STATUS:DONE
@@ -18,8 +18,14 @@ async fn test_text_pipeline_full() {
 
     // 1. Ingest
     let tx1 = TxId::new(1);
-    index.upsert_document(tx1, DocId::new(1), "The quick brown fox").await.unwrap();
-    index.upsert_document(tx1, DocId::new(2), "Jumps over the lazy dog").await.unwrap();
+    index
+        .upsert_document(tx1, DocId::new(1), "The quick brown fox")
+        .await
+        .unwrap();
+    index
+        .upsert_document(tx1, DocId::new(2), "Jumps over the lazy dog")
+        .await
+        .unwrap();
     storage.commit(tx1).await.unwrap();
 
     // 2. Search
@@ -29,7 +35,10 @@ async fn test_text_pipeline_full() {
 
     // 3. Update
     let tx2 = TxId::new(2);
-    index.upsert_document(tx2, DocId::new(1), "The quick brown fox is fast").await.unwrap();
+    index
+        .upsert_document(tx2, DocId::new(1), "The quick brown fox is fast")
+        .await
+        .unwrap();
     storage.commit(tx2).await.unwrap();
 
     let results = index.search_bm25("fast", 10).await.unwrap();
@@ -38,7 +47,10 @@ async fn test_text_pipeline_full() {
 
     // 4. Delete
     let tx3 = TxId::new(3);
-    index.delete_document(tx3, DocId::new(1), "The quick brown fox is fast").await.unwrap();
+    index
+        .delete_document(tx3, DocId::new(1), "The quick brown fox is fast")
+        .await
+        .unwrap();
     storage.commit(tx3).await.unwrap();
 
     let results = index.search_bm25("fox", 10).await.unwrap();

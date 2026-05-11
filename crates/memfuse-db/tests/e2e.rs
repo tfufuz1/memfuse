@@ -16,8 +16,20 @@ async fn test_e2e_full_stack_workflow() {
     let col1 = db.collection("col1").await.unwrap();
     let col2 = db.collection("col2").await.unwrap();
 
-    col1.insert("doc-c1", &[1.0, 0.0, 0.0, 0.0], Some(serde_json::json!({"text": "rust programming", "tag": "tech"}))).await.unwrap();
-    col2.insert("doc-c2", &[0.0, 1.0, 0.0, 0.0], Some(serde_json::json!({"text": "gardening tips", "tag": "hobby"}))).await.unwrap();
+    col1.insert(
+        "doc-c1",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(serde_json::json!({"text": "rust programming", "tag": "tech"})),
+    )
+    .await
+    .unwrap();
+    col2.insert(
+        "doc-c2",
+        &[0.0, 1.0, 0.0, 0.0],
+        Some(serde_json::json!({"text": "gardening tips", "tag": "hobby"})),
+    )
+    .await
+    .unwrap();
 
     // 2. Retrieval & Isolation Verification
     let d1_c1 = col1.get("doc-c1").await.unwrap().unwrap();
@@ -30,7 +42,10 @@ async fn test_e2e_full_stack_workflow() {
 
     // 3. Hybrid Search
     // Search in col1
-    let results = col1.hybrid_search("rust", &[1.0, 0.0, 0.0, 0.0], 5).await.unwrap();
+    let results = col1
+        .hybrid_search("rust", &[1.0, 0.0, 0.0, 0.0], 5)
+        .await
+        .unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].id, "doc-c1");
 
@@ -39,8 +54,17 @@ async fn test_e2e_full_stack_workflow() {
     assert_eq!(results_c2.len(), 0, "col2 should not find col1's text data");
 
     // 4. Update
-    col1.update("doc-c1", &[1.0, 0.0, 0.0, 0.0], Some(serde_json::json!({"text": "rust language", "tag": "tech"}))).await.unwrap();
-    let results_upd = col1.hybrid_search("language", &[1.0, 0.0, 0.0, 0.0], 5).await.unwrap();
+    col1.update(
+        "doc-c1",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(serde_json::json!({"text": "rust language", "tag": "tech"})),
+    )
+    .await
+    .unwrap();
+    let results_upd = col1
+        .hybrid_search("language", &[1.0, 0.0, 0.0, 0.0], 5)
+        .await
+        .unwrap();
     assert_eq!(results_upd.len(), 1);
     assert_eq!(results_upd[0].id, "doc-c1");
 

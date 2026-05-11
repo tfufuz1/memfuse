@@ -1,6 +1,6 @@
 use memfuse_db::{MemFuse, MemFuseConfig};
-use tempfile::TempDir;
 use std::sync::Arc;
+use tempfile::TempDir;
 use tokio::task::JoinHandle;
 
 // ANCHOR:INTEGRATION:STRESS-001 — Concurrent Ingest Stress Test
@@ -24,7 +24,9 @@ async fn test_stress_concurrent_inserts() {
             let col = db_clone.collection("stress_col").await.unwrap();
             for i in 0..docs_per_task {
                 let id = format!("task-{}-doc-{}", t, i);
-                col.insert(&id, &[t as f32, i as f32, 0.0, 0.0], None).await.unwrap();
+                col.insert(&id, &[t as f32, i as f32, 0.0, 0.0], None)
+                    .await
+                    .unwrap();
             }
         }));
     }

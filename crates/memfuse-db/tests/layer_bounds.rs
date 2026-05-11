@@ -15,9 +15,17 @@ async fn test_layer_002_collection_persistence_and_reload() {
     };
 
     {
-        let db = MemFuse::open_with_config(&path, config.clone()).await.unwrap();
+        let db = MemFuse::open_with_config(&path, config.clone())
+            .await
+            .unwrap();
         let col = db.collection("persistent_col").await.unwrap();
-        col.insert("doc1", &[1.0, 0.0, 0.0, 0.0], Some(serde_json::json!({"text": "hello"}))).await.unwrap();
+        col.insert(
+            "doc1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(serde_json::json!({"text": "hello"})),
+        )
+        .await
+        .unwrap();
 
         let list = db.list_collections().await.unwrap();
         assert!(list.contains(&"persistent_col".to_string()));
@@ -27,10 +35,17 @@ async fn test_layer_002_collection_persistence_and_reload() {
     {
         let db = MemFuse::open_with_config(&path, config).await.unwrap();
         let list = db.list_collections().await.unwrap();
-        assert!(list.contains(&"persistent_col".to_string()), "Collection should be reloaded from storage");
+        assert!(
+            list.contains(&"persistent_col".to_string()),
+            "Collection should be reloaded from storage"
+        );
 
         let col = db.collection("persistent_col").await.unwrap();
-        let doc = col.get("doc1").await.unwrap().expect("Document should be there");
+        let doc = col
+            .get("doc1")
+            .await
+            .unwrap()
+            .expect("Document should be there");
         assert_eq!(doc.id, "doc1");
 
         let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.unwrap();
@@ -52,8 +67,20 @@ async fn test_layer_003_bm25_query_after_ingest() {
     let db = MemFuse::open_with_config(tmp.path(), config).await.unwrap();
     let col = db.collection("text_col").await.unwrap();
 
-    col.insert("doc1", &[0.1; 4], Some(serde_json::json!({"text": "The quick brown fox"}))).await.unwrap();
-    col.insert("doc2", &[0.2; 4], Some(serde_json::json!({"text": "Jumps over the lazy dog"}))).await.unwrap();
+    col.insert(
+        "doc1",
+        &[0.1; 4],
+        Some(serde_json::json!({"text": "The quick brown fox"})),
+    )
+    .await
+    .unwrap();
+    col.insert(
+        "doc2",
+        &[0.2; 4],
+        Some(serde_json::json!({"text": "Jumps over the lazy dog"})),
+    )
+    .await
+    .unwrap();
 
     // Hybrid search with vector = 0 means pure text search
     let results = col.hybrid_search("fox", &[0.0; 4], 10).await.unwrap();

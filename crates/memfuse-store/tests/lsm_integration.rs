@@ -1,7 +1,7 @@
 use memfuse_core::{StorageEngine, TxId};
 use memfuse_store::lsm::{LsmConfig, LsmStorage};
-use tempfile::TempDir;
 use std::sync::Arc;
+use tempfile::TempDir;
 
 // ANCHOR:INTEGRATION:STORE-001 — LSM Integration Test
 // AGENT:12 DATE:2026-05-09 STATUS:DONE
@@ -20,7 +20,11 @@ async fn test_lsm_full_pipeline() {
     storage.commit(tx1).await.unwrap();
 
     // 2. Get
-    let val = storage.get(b"key1").await.unwrap().expect("Value should exist");
+    let val = storage
+        .get(b"key1")
+        .await
+        .unwrap()
+        .expect("Value should exist");
     assert_eq!(val, b"val1");
 
     // 3. Rollback
@@ -28,12 +32,20 @@ async fn test_lsm_full_pipeline() {
     storage.put(tx2, b"key1", b"val2").await.unwrap();
     storage.rollback(tx2).await.unwrap();
 
-    let val = storage.get(b"key1").await.unwrap().expect("Value should still be val1");
+    let val = storage
+        .get(b"key1")
+        .await
+        .unwrap()
+        .expect("Value should still be val1");
     assert_eq!(val, b"val1");
 
     // 4. Flush
     storage.flush().await.unwrap();
-    let val = storage.get(b"key1").await.unwrap().expect("Value should exist after flush");
+    let val = storage
+        .get(b"key1")
+        .await
+        .unwrap()
+        .expect("Value should exist after flush");
     assert_eq!(val, b"val1");
 
     // 5. Delete
