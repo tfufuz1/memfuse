@@ -9,6 +9,11 @@ SIMD (AVX2/AVX-512) provides significant speedup for high-dimensional vector ope
 
 ## Optimizations
 
+### 3. SSTable Block Retrieval (memfuse-store)
+- **Problem:** `ALLOC-001` - Each SSTable lookup (`get`, `iter`, `scan_prefix`, `scan_range`) would copy block data from the cache into a fresh `Vec<u8>`, causing excessive heap churn.
+- **Solution:** Switched to zero-copy `Bytes` from the block cache and used `BytesMut` for efficient disk reads.
+- **Impact:** VORHER: 1.73 µs → NACHHER: 1.45 µs (~16% improvement for cached lookups).
+
 ### 1. `Collection::namespaced_key` (memfuse-db)
 - **Problem:** Frequent allocations of `Vec<u8>` when generating keys for LSM-Tree. Each call would clone the prefix and then extend it.
 - **Solution:** Switched to `Vec::with_capacity(prefix.len() + 1 + key.len())` to perform a single allocation.

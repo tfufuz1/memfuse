@@ -407,34 +407,30 @@ impl SstableReader {
             self.index_offset
         };
 
-        let mut block_data = Vec::new();
-        let mut cache_miss = false;
-
-        {
-            let mut cache = self.block_cache.write();
-            if let Some(cached) = cache.get(&(self.file_id, offset)) {
-                block_data.extend_from_slice(cached);
+        let block_data = {
+            let cached = self.block_cache.read().peek(&(self.file_id, offset)).cloned();
+            if let Some(cached) = cached {
+                cached
             } else {
-                cache_miss = true;
+                let mut raw_block = BytesMut::with_capacity((next_offset - offset) as usize);
+                raw_block.resize((next_offset - offset) as usize, 0);
+
+                use tokio::io::{AsyncReadExt, AsyncSeekExt};
+                let mut file = self.file.lock().await;
+                file.seek(std::io::SeekFrom::Start(offset))
+                    .await
+                    .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
+                file.read_exact(&mut raw_block)
+                    .await
+                    .map_err(|e| MemFuseError::Storage(format!("SSTable read failed: {}", e)))?;
+
+                let block = raw_block.freeze();
+                self.block_cache
+                    .write()
+                    .put((self.file_id, offset), block.clone());
+                block
             }
-        }
-
-        if cache_miss {
-            let mut raw_block = vec![0u8; (next_offset - offset) as usize];
-            use tokio::io::{AsyncReadExt, AsyncSeekExt};
-            let mut file = self.file.lock().await;
-            file.seek(std::io::SeekFrom::Start(offset))
-                .await
-                .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
-            file.read_exact(&mut raw_block)
-                .await
-                .map_err(|e| MemFuseError::Storage(format!("SSTable read failed: {}", e)))?;
-
-            block_data.extend_from_slice(&raw_block);
-            self.block_cache
-                .write()
-                .put((self.file_id, offset), Bytes::from(raw_block));
-        }
+        };
 
         let n = block_data.len();
         if n < 10 {
@@ -557,33 +553,30 @@ impl SstableReader {
                 self.index_offset
             };
 
-            let mut block_data = Vec::new();
-            let mut cache_miss = false;
-
-            {
-                let mut cache = self.block_cache.write();
-                if let Some(cached) = cache.get(&(self.file_id, offset)) {
-                    block_data.extend_from_slice(cached);
+            let block_data = {
+                let cached = self.block_cache.read().peek(&(self.file_id, offset)).cloned();
+                if let Some(cached) = cached {
+                    cached
                 } else {
-                    cache_miss = true;
-                }
-            }
+                    let mut raw_block = BytesMut::with_capacity((next_offset - offset) as usize);
+                    raw_block.resize((next_offset - offset) as usize, 0);
 
-            if cache_miss {
-                let mut raw_block = vec![0u8; (next_offset - offset) as usize];
-                use tokio::io::{AsyncReadExt, AsyncSeekExt};
-                let mut file = self.file.lock().await;
-                file.seek(std::io::SeekFrom::Start(offset))
-                    .await
-                    .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
-                file.read_exact(&mut raw_block).await.map_err(|e| {
-                    MemFuseError::Storage(format!("SSTable iter read failed: {}", e))
-                })?;
-                block_data.extend_from_slice(&raw_block);
-                self.block_cache
-                    .write()
-                    .put((self.file_id, offset), Bytes::from(raw_block));
-            }
+                    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+                    let mut file = self.file.lock().await;
+                    file.seek(std::io::SeekFrom::Start(offset))
+                        .await
+                        .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
+                    file.read_exact(&mut raw_block).await.map_err(|e| {
+                        MemFuseError::Storage(format!("SSTable iter read failed: {}", e))
+                    })?;
+
+                    let block = raw_block.freeze();
+                    self.block_cache
+                        .write()
+                        .put((self.file_id, offset), block.clone());
+                    block
+                }
+            };
 
             let n = block_data.len();
             if n < 10 {
@@ -686,33 +679,30 @@ impl SstableReader {
                 self.index_offset
             };
 
-            let mut block_data = Vec::new();
-            let mut cache_miss = false;
-
-            {
-                let mut cache = self.block_cache.write();
-                if let Some(cached) = cache.get(&(self.file_id, offset)) {
-                    block_data.extend_from_slice(cached);
+            let block_data = {
+                let cached = self.block_cache.read().peek(&(self.file_id, offset)).cloned();
+                if let Some(cached) = cached {
+                    cached
                 } else {
-                    cache_miss = true;
-                }
-            }
+                    let mut raw_block = BytesMut::with_capacity((next_offset - offset) as usize);
+                    raw_block.resize((next_offset - offset) as usize, 0);
 
-            if cache_miss {
-                let mut raw_block = vec![0u8; (next_offset - offset) as usize];
-                use tokio::io::{AsyncReadExt, AsyncSeekExt};
-                let mut file = self.file.lock().await;
-                file.seek(std::io::SeekFrom::Start(offset))
-                    .await
-                    .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
-                file.read_exact(&mut raw_block).await.map_err(|e| {
-                    MemFuseError::Storage(format!("SSTable scan read failed: {}", e))
-                })?;
-                block_data.extend_from_slice(&raw_block);
-                self.block_cache
-                    .write()
-                    .put((self.file_id, offset), Bytes::from(raw_block));
-            }
+                    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+                    let mut file = self.file.lock().await;
+                    file.seek(std::io::SeekFrom::Start(offset))
+                        .await
+                        .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
+                    file.read_exact(&mut raw_block).await.map_err(|e| {
+                        MemFuseError::Storage(format!("SSTable scan read failed: {}", e))
+                    })?;
+
+                    let block = raw_block.freeze();
+                    self.block_cache
+                        .write()
+                        .put((self.file_id, offset), block.clone());
+                    block
+                }
+            };
 
             let n = block_data.len();
             if n < 10 {
@@ -819,33 +809,30 @@ impl SstableReader {
                 self.index_offset
             };
 
-            let mut block_data = Vec::new();
-            let mut cache_miss = false;
-
-            {
-                let mut cache = self.block_cache.write();
-                if let Some(cached) = cache.get(&(self.file_id, offset)) {
-                    block_data.extend_from_slice(cached);
+            let block_data = {
+                let cached = self.block_cache.read().peek(&(self.file_id, offset)).cloned();
+                if let Some(cached) = cached {
+                    cached
                 } else {
-                    cache_miss = true;
-                }
-            }
+                    let mut raw_block = BytesMut::with_capacity((next_offset - offset) as usize);
+                    raw_block.resize((next_offset - offset) as usize, 0);
 
-            if cache_miss {
-                let mut raw_block = vec![0u8; (next_offset - offset) as usize];
-                use tokio::io::{AsyncReadExt, AsyncSeekExt};
-                let mut file = self.file.lock().await;
-                file.seek(std::io::SeekFrom::Start(offset))
-                    .await
-                    .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
-                file.read_exact(&mut raw_block).await.map_err(|e| {
-                    MemFuseError::Storage(format!("SSTable range read failed: {}", e))
-                })?;
-                block_data.extend_from_slice(&raw_block);
-                self.block_cache
-                    .write()
-                    .put((self.file_id, offset), Bytes::from(raw_block));
-            }
+                    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+                    let mut file = self.file.lock().await;
+                    file.seek(std::io::SeekFrom::Start(offset))
+                        .await
+                        .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
+                    file.read_exact(&mut raw_block).await.map_err(|e| {
+                        MemFuseError::Storage(format!("SSTable range read failed: {}", e))
+                    })?;
+
+                    let block = raw_block.freeze();
+                    self.block_cache
+                        .write()
+                        .put((self.file_id, offset), block.clone());
+                    block
+                }
+            };
 
             let n = block_data.len();
             if n < 10 {

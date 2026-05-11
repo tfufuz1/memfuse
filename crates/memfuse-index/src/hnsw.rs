@@ -712,6 +712,7 @@ impl VectorIndex for HnswIndex {
 
         let nodes = self.nodes.read();
         let deleted = self.deleted_nodes.read();
+        let quantizer_guard = self.quantizer.read();
         let mut results = Vec::new();
 
         for c in candidates.iter() {
@@ -723,8 +724,7 @@ impl VectorIndex for HnswIndex {
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
             let final_dist = if self.config.quantize {
                 if let VectorData::U8(v) = &nodes[c.index].vector {
-                    let guard = self.quantizer.read();
-                    let q = guard.as_ref().ok_or_else(|| {
+                    let q = quantizer_guard.as_ref().ok_or_else(|| {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                     })?;
                     q.asymmetric_dist(query, v, self.config.distance_metric)?
@@ -798,6 +798,7 @@ impl VectorIndex for HnswIndex {
 
         let nodes = self.nodes.read();
         let deleted = self.deleted_nodes.read();
+        let quantizer_guard = self.quantizer.read();
         let mut results = Vec::new();
 
         for c in candidates.iter() {
@@ -814,8 +815,7 @@ impl VectorIndex for HnswIndex {
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
             let final_dist = if self.config.quantize {
                 if let VectorData::U8(v) = &nodes[c.index].vector {
-                    let guard = self.quantizer.read();
-                    let q = guard.as_ref().ok_or_else(|| {
+                    let q = quantizer_guard.as_ref().ok_or_else(|| {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                     })?;
                     q.asymmetric_dist(query, v, self.config.distance_metric)?
