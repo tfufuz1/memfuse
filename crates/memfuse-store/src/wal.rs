@@ -13,7 +13,7 @@
 //
 // ANCHOR:SPEC:WP-3.2-HMAC-001 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
 // WP:WP-3.2 PRIO:3 NEEDS:NONE
-// AGENT:10 DATE:2026-05-09 STATUS:READY
+// AGENT:10 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 //! Write-Ahead Log (WAL) for durability and crash recovery.
 //!
@@ -60,27 +60,33 @@ pub enum WalOp {
     },
 }
 
+/// Integrity key for WAL HMAC (Placeholder, should be managed via KMS).
+const WAL_INTEGRITY_KEY: [u8; 32] = [0x5A; 32];
+
 /// A single WAL entry.
 #[derive(Debug, Clone)]
 pub struct WalEntry {
     pub op: WalOp,
     pub seq_no: u64,
-    pub checksum: u32,
+    pub integrity_tag: [u8; 32],
 }
 
 impl WalEntry {
-    /// Creates a new WAL entry with CRC32 checksum.
+    /// Creates a new WAL entry with HMAC integrity tag.
     pub fn new(op: WalOp, seq_no: u64) -> Self {
-        let checksum = Self::compute_checksum(&op, seq_no);
+        let integrity_tag = Self::compute_integrity(&op, seq_no);
         Self {
             op,
             seq_no,
-            checksum,
+            integrity_tag,
         }
     }
 
-    fn compute_checksum(op: &WalOp, seq_no: u64) -> u32 {
-        let mut hasher = crc32fast::Hasher::new();
+    fn compute_integrity(op: &WalOp, seq_no: u64) -> [u8; 32] {
+        // ANCHOR:SEC:HMAC-FIX:D1-001 — Keyed BLAKE3 für WAL-Integrität
+        // BEGRÜNDUNG: CRC32 ist nicht kryptografisch sicher. Keyed BLAKE3 bietet
+        // starken Schutz gegen Manipulation und Bit-Rot.
+        let mut hasher = blake3::Hasher::new_keyed(&WAL_INTEGRITY_KEY);
         hasher.update(&seq_no.to_le_bytes());
         match op {
             WalOp::Put { key, value, .. } => {
@@ -93,15 +99,15 @@ impl WalEntry {
                 hasher.update(key);
             }
         }
-        hasher.finalize()
+        *hasher.finalize().as_bytes()
     }
 
     /// Serializes the entry to bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
-        // seq_no (8) + checksum (4) + op_type (1)
+        // seq_no (8) + integrity_tag (32) + op_type (1)
         buf.extend_from_slice(&self.seq_no.to_le_bytes());
-        buf.extend_from_slice(&self.checksum.to_le_bytes());
+        buf.extend_from_slice(&self.integrity_tag);
 
         match &self.op {
             WalOp::Put { tx_id, key, value } => {
@@ -217,7 +223,8 @@ impl Wal {
             let entry_data = &data[pos..pos + len];
             pos += len;
 
-            if entry_data.len() < 13 {
+            // min len: seq_no(8) + tag(32) + op_type(1) = 41
+            if entry_data.len() < 41 {
                 continue;
             }
 
@@ -227,16 +234,15 @@ impl Wal {
                     reason: "Invalid seq_no".into(),
                 }
             })?);
-            let stored_checksum =
-                u32::from_le_bytes(entry_data[8..12].try_into().map_err(|_| {
-                    MemFuseError::WalCorruption {
-                        offset: pos as u64,
-                        reason: "Invalid checksum".into(),
-                    }
-                })?);
-            let op_type = entry_data[12];
+            let stored_tag: [u8; 32] = entry_data[8..40].try_into().map_err(|_| {
+                MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid integrity tag".into(),
+                }
+            })?;
+            let op_type = entry_data[40];
 
-            let remaining = &entry_data[13..];
+            let remaining = &entry_data[41..];
             let op = match op_type {
                 0 => {
                     // Put
@@ -299,17 +305,17 @@ impl Wal {
                 _ => continue,
             };
 
-            // ANCHOR:ALG-FIX:D1-007 — CRC32-Verifikation bei WAL Replay
+            // ANCHOR:ALG-FIX:D1-007 — Integrity-Verifikation bei WAL Replay
             // WP:WP-0.0 PRIO:1 NEEDS:NONE
             // AGENT:13 DATE:2026-05-08 STATUS:DONE
             // CREATED:2026-05-08 DEADLINE:NONE
             // Ohne Verifikation werden korrupte Entries (Bit-Flip, Partial Write)
             // blind in die MemTable replayed → stille Datenkorrumpierung.
-            let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no);
-            if recomputed_checksum != stored_checksum {
+            let recomputed_tag = WalEntry::compute_integrity(&op, seq_no);
+            if recomputed_tag != stored_tag {
                 tracing::warn!(
-                    "WAL entry at offset {} has invalid checksum (stored={}, computed={}), truncating replay",
-                    pos, stored_checksum, recomputed_checksum
+                    "WAL entry at offset {} has invalid integrity tag, truncating replay",
+                    pos
                 );
                 break;
             }
@@ -319,7 +325,7 @@ impl Wal {
                 WalEntry {
                     op,
                     seq_no,
-                    checksum: stored_checksum,
+                    integrity_tag: stored_tag,
                 },
             ));
         }

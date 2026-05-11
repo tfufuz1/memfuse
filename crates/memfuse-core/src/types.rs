@@ -44,8 +44,14 @@ impl DocId {
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Self {
         let hash = blake3::hash(key.as_bytes());
+        // ANCHOR:SEC:SLICE-FIX:D1-001 — Sicherer Hash-Cast (Zero-Panic)
+        // BEGRÜNDUNG: blake3::Hash liefert immer 32 Bytes. Wir kopieren die
+        // ersten 8 Bytes explizit in ein Array, um .expect() zu vermeiden.
         let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&hash.as_bytes()[..8]);
+        let hash_bytes = hash.as_bytes();
+        for i in 0..8 {
+            bytes[i] = hash_bytes[i];
+        }
         Self(u64::from_le_bytes(bytes))
     }
 }
