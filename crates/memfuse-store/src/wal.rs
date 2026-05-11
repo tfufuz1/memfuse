@@ -208,7 +208,10 @@ impl Wal {
                     reason: "Unexpected end of data while reading length".into(),
                 })?
                 .try_into()
-                .unwrap();
+                .map_err(|_| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid length slice".into(),
+                })?;
             let len = u32::from_le_bytes(len_bytes) as usize;
             pos += 4;
 
@@ -217,12 +220,12 @@ impl Wal {
                 break;
             }
 
-            let entry_data = data.get(pos..pos + len).ok_or_else(|| {
-                MemFuseError::WalCorruption {
-                    offset: pos as u64,
-                    reason: "Invalid entry data range".into(),
-                }
-            })?;
+            let entry_data =
+                data.get(pos..pos + len)
+                    .ok_or_else(|| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Invalid entry data range".into(),
+                    })?;
             pos += len;
 
             if entry_data.len() < 41 {
@@ -237,7 +240,10 @@ impl Wal {
                         reason: "Invalid seq_no range".into(),
                     })?
                     .try_into()
-                    .unwrap(),
+                    .map_err(|_| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Invalid seq_no slice".into(),
+                    })?,
             );
             let stored_mac: [u8; 32] = entry_data
                 .get(8..40)
@@ -246,11 +252,16 @@ impl Wal {
                     reason: "Invalid MAC range".into(),
                 })?
                 .try_into()
-                .unwrap();
-            let op_type = *entry_data.get(40).ok_or_else(|| MemFuseError::WalCorruption {
-                offset: pos as u64,
-                reason: "Invalid op_type index".into(),
-            })?;
+                .map_err(|_| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid MAC slice".into(),
+                })?;
+            let op_type = *entry_data
+                .get(40)
+                .ok_or_else(|| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid op_type index".into(),
+                })?;
 
             let remaining = entry_data.get(41..).unwrap_or(&[]);
             let op = match op_type {
@@ -267,7 +278,10 @@ impl Wal {
                                 reason: "Invalid tx_id range".into(),
                             })?
                             .try_into()
-                            .unwrap(),
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid tx_id slice".into(),
+                            })?,
                     ));
                     let key_len = u32::from_le_bytes(
                         remaining
@@ -277,7 +291,10 @@ impl Wal {
                                 reason: "Invalid key_len range".into(),
                             })?
                             .try_into()
-                            .unwrap(),
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid key_len slice".into(),
+                            })?,
                     ) as usize;
                     if remaining.len() < 12 + key_len + 4 {
                         continue;
@@ -292,7 +309,10 @@ impl Wal {
                                 reason: "Invalid val_len range".into(),
                             })?
                             .try_into()
-                            .unwrap(),
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid val_len slice".into(),
+                            })?,
                     ) as usize;
                     if remaining.len() < val_start + 4 + val_len {
                         continue;
@@ -316,7 +336,10 @@ impl Wal {
                                 reason: "Invalid tx_id range".into(),
                             })?
                             .try_into()
-                            .unwrap(),
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid tx_id slice".into(),
+                            })?,
                     ));
                     let key_len = u32::from_le_bytes(
                         remaining
@@ -326,7 +349,10 @@ impl Wal {
                                 reason: "Invalid key_len range".into(),
                             })?
                             .try_into()
-                            .unwrap(),
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid key_len slice".into(),
+                            })?,
                     ) as usize;
                     if remaining.len() < 12 + key_len {
                         continue;
@@ -384,7 +410,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_wal_roundtrip() -> memfuse_core::Result<()> {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("safe");
         let wal_path = dir.path().join("test.wal");
         let wal = Wal::open(&wal_path).await?;
 
@@ -412,7 +438,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_wal_corruption() -> memfuse_core::Result<()> {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("safe");
         let wal_path = dir.path().join("test_corrupt.wal");
 
         {
@@ -427,10 +453,10 @@ mod tests {
         }
 
         // Corrupt the MAC
-        let mut data = std::fs::read(&wal_path).unwrap();
+        let mut data = std::fs::read(&wal_path).expect("safe");
         if data.len() > 12 {
             data[12] ^= 0xFF; // Flip a bit in the MAC
-            std::fs::write(&wal_path, data).unwrap();
+            std::fs::write(&wal_path, data).expect("safe");
         }
 
         let wal = Wal::open(&wal_path).await?;
