@@ -287,8 +287,8 @@ mod tests {
         // doc 2 has "rust" twice and "programming" once, should score higher than doc 1
         assert!(results[0].0 == d2 || results[1].0 == d2);
 
-        let doc2_pos = results.iter().position(|r| r.0 == d2).unwrap(); // unwrap
-        let doc1_pos = results.iter().position(|r| r.0 == d1).unwrap(); // unwrap
+        let doc2_pos = results.iter().position(|r| r.0 == d2).expect("doc2 found");
+        let doc1_pos = results.iter().position(|r| r.0 == d1).expect("doc1 found");
         assert!(
             doc2_pos < doc1_pos,
             "doc2 should be ranked higher due to higher TF"

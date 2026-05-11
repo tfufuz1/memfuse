@@ -352,26 +352,26 @@ mod tests {
 
     #[tokio::test]
     async fn test_keyed_wal_roundtrip() {
-        let tmp = TempDir::new().unwrap();
+        let tmp = TempDir::new().expect("test");
         let wal_path = tmp.path().join("wal.log");
         let key = Some([42u8; 32]);
 
-        let wal = Wal::open(&wal_path, key).await.unwrap();
+        let wal = Wal::open(&wal_path, key).await.expect("test");
         let op = WalOp::Put {
             tx_id: TxId::new(1),
             key: b"key".to_vec(),
             value: b"value".to_vec(),
         };
         let entry = WalEntry::new(op, 1, key.as_ref());
-        wal.append(&entry).await.unwrap();
+        wal.append(&entry).await.expect("test");
 
         // Replay with same key
-        let entries = wal.replay().await.unwrap();
+        let entries = wal.replay().await.expect("test");
         assert_eq!(entries.len(), 1);
 
         // Replay with wrong key should fail or truncate
-        let wal_wrong_key = Wal::open(&wal_path, Some([43u8; 32])).await.unwrap();
-        let entries_wrong = wal_wrong_key.replay().await.unwrap();
+        let wal_wrong_key = Wal::open(&wal_path, Some([43u8; 32])).await.expect("test");
+        let entries_wrong = wal_wrong_key.replay().await.expect("test");
         assert_eq!(entries_wrong.len(), 0);
     }
 }
