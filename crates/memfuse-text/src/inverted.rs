@@ -47,9 +47,12 @@ impl InvertedIndex {
 
         if let Some(bytes) = self.storage.get(&dl_key).await? {
             if bytes.len() == 4 {
-                old_len = u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid doc_len length".into())
-                })?);
+                old_len = u32::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
+                );
                 is_new = false;
             }
         }
@@ -124,7 +127,12 @@ impl InvertedIndex {
     }
 
     /// Deletes a document from the index.
-    pub async fn delete_document(&self, tx: TxId, doc_id: DocId, original_text: &str) -> Result<()> {
+    pub async fn delete_document(
+        &self,
+        tx: TxId,
+        doc_id: DocId,
+        original_text: &str,
+    ) -> Result<()> {
         let tokens = tokenize(original_text);
 
         let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
@@ -132,9 +140,12 @@ impl InvertedIndex {
         let mut existed = false;
         if let Some(bytes) = self.storage.get(&dl_key).await? {
             if bytes.len() == 4 {
-                old_len = u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid doc_len length".into())
-                })?);
+                old_len = u32::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
+                );
                 existed = true;
             }
         }
@@ -168,12 +179,10 @@ impl InvertedIndex {
         let total_tok_key = self.key("meta:total_tokens");
         if let Some(bytes) = self.storage.get(&total_tok_key).await? {
             if bytes.len() == 8 {
-                let total_tokens = u64::from_le_bytes(
-                    bytes
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("Invalid total_tokens length".into()))?,
-                );
+                let total_tokens =
+                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid total_tokens length".into())
+                    })?);
                 self.storage
                     .put(
                         tx,
@@ -374,8 +383,22 @@ mod tests {
         let get_stats = |s: Arc<LsmStorage>, i: InvertedIndex| async move {
             let docs_key = i.key("meta:total_docs");
             let tok_key = i.key("meta:total_tokens");
-            let docs = u64::from_le_bytes(s.get(&docs_key).await.unwrap().unwrap().try_into().unwrap());
-            let toks = u64::from_le_bytes(s.get(&tok_key).await.unwrap().unwrap().try_into().unwrap());
+            let docs = u64::from_le_bytes(
+                s.get(&docs_key)
+                    .await
+                    .expect("get docs")
+                    .expect("exists")
+                    .try_into()
+                    .expect("8 bytes"),
+            );
+            let toks = u64::from_le_bytes(
+                s.get(&tok_key)
+                    .await
+                    .expect("get toks")
+                    .expect("exists")
+                    .try_into()
+                    .expect("8 bytes"),
+            );
             (docs, toks)
         };
 
