@@ -49,6 +49,7 @@ impl DocId {
         // ersten 8 Bytes explizit in ein Array, um .expect() zu vermeiden.
         let mut bytes = [0u8; 8];
         let hash_bytes = hash.as_bytes();
+        #[allow(clippy::manual_memcpy)]
         for i in 0..8 {
             bytes[i] = hash_bytes[i];
         }
