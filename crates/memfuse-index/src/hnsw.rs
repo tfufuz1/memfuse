@@ -1,3 +1,9 @@
+//! HNSW (Hierarchical Navigable Small World) vector index.
+//!
+//! Provides approximate nearest neighbor search with:
+//! - Diversity heuristic neighbor selection
+//! - Automatic rebuild on >20% deletions
+//! - Transactional inserts/deletes via TxBuffer
 // ANCHOR:DOC:DOC-HNSW-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:03 DATE:2026-05-09 STATUS:READY
@@ -12,12 +18,6 @@
 // DELETE: Soft-Delete (Tombstone via deleted_nodes Roaring Bitmap).
 // REBUILD-LOGIK: Wenn >20% gelöscht → async trigger_rebuild_async() -> Atomic Swap.
 // TRANSAKTIONEN: Nutzt memfuse_core::TxBuffer zur Staging-Isolation.
-//! HNSW (Hierarchical Navigable Small World) vector index.
-//!
-//! Provides approximate nearest neighbor search with:
-//! - Diversity heuristic neighbor selection
-//! - Automatic rebuild on >20% deletions
-//! - Transactional inserts/deletes via TxBuffer
 
 use crate::distance::compute_distance;
 use ahash::{AHashMap, AHashSet};
@@ -71,6 +71,7 @@ impl Default for HnswConfig {
 }
 
 impl HnswConfig {
+    /// Validates the configuration parameters.
     pub fn validate(&self) -> Result<()> {
         // ANCHOR:ALG-FIX:D2-003 — ef_construction < M Guard fehlt
         // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -133,6 +134,7 @@ impl Ord for Candidate {
     }
 }
 
+/// Thread-safe HNSW vector index implementation.
 pub struct HnswIndex {
     inner: std::sync::Arc<HnswIndexCore>,
 }
@@ -144,6 +146,7 @@ impl std::ops::Deref for HnswIndex {
     }
 }
 
+/// Internal state of the HNSW index.
 pub struct HnswIndexCore {
     config: HnswConfig,
     nodes: RwLock<Vec<HnswNode>>,

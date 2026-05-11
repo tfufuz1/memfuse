@@ -1,3 +1,4 @@
+//! MemFuse Index — HNSW vector index with SIMD distance computation.
 // ANCHOR:ARCH:INDEX-001 — Vector Engine (Triebwerk — Layer 1).
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -5,7 +6,6 @@
 // IMPLEMENTS: VectorIndex Trait (memfuse-core/traits.rs)
 // KERNKOMPONENTEN: HNSW (Graph-basierte ANN) + CSR Graph (Relationen) + SIMD-Distanz.
 // INVARIANTE: HNSW-Graphen liegen exklusiv im RAM. Disk-Storage erfolgt über memfuse-store (via LsmStorage).
-//! MemFuse Index — HNSW vector index with SIMD distance computation.
 
 #![feature(portable_simd)]
 

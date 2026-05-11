@@ -1,3 +1,4 @@
+//! Logically isolated Collections inside the MemFuse database.
 // ANCHOR:ARCH:COLLECTION-001 — Logische Isolation (Namespaces).
 // WP:WP-1.2 PRIO:1 NEEDS:NONE
 // AGENT:04 DATE:2026-05-09 STATUS:DONE
@@ -5,7 +6,6 @@
 // DESIGN: Eigener HNSW-Index pro Collection, GEMEINSAMER LSM-Storage.
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 // STATUS: Full Implementation für WP-1.2.
-//! Logically isolated Collections inside the MemFuse database.
 
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
 use memfuse_index::HnswIndex;
@@ -124,6 +124,7 @@ impl Collection {
         crate::transaction::DbTransaction::new(self, tx)
     }
 
+    /// Inserts a document with an embedding and optional metadata into the collection.
     pub async fn insert(
         &self,
         id: &str,
@@ -170,6 +171,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Retrieves a document by its string ID.
     pub async fn get(&self, id: &str) -> Result<Option<crate::Document>> {
         let key = self.namespaced_key(id.as_bytes(), 0);
         if let Some(data) = self.storage.get(&key).await? {
@@ -182,6 +184,7 @@ impl Collection {
         Ok(None)
     }
 
+    /// Updates an existing document's embedding and/or metadata.
     pub async fn update(
         &self,
         id: &str,
@@ -242,6 +245,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Deletes a document by its string ID from the collection and indices.
     pub async fn delete(&self, id: &str) -> Result<()> {
         let db_tx = self.begin_transaction();
         let tx = db_tx.tx_id;
@@ -273,6 +277,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Creates a directional relationship between two documents.
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         let key_str = format!("{}:{}:{}", from, label, to);
@@ -289,6 +294,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Scans the collection for keys matching a given prefix.
     pub async fn scan_prefix(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>> {
         let real_prefix = if prefix.starts_with("__rel:") {
             self.namespaced_key(
@@ -325,6 +331,7 @@ impl Collection {
         Ok(results)
     }
 
+    /// Performs a semantic vector search in the collection.
     pub async fn search(
         &self,
         query_embedding: &[f32],
@@ -333,6 +340,7 @@ impl Collection {
         self.search_filtered(query_embedding, k, None).await
     }
 
+    /// Performs a semantic vector search with an optional predicate filter.
     pub async fn search_filtered(
         &self,
         query: &[f32],
@@ -356,6 +364,7 @@ impl Collection {
         Ok(results)
     }
 
+    /// Performs a hybrid search combining BM25 keyword matching and vector similarity.
     pub async fn hybrid_search(
         &self,
         text: &str,
@@ -400,14 +409,17 @@ impl Collection {
         ))
     }
 
+    /// Returns the number of documents in the collection's vector index.
     pub async fn len(&self) -> usize {
         self.index.len().await
     }
 
+    /// Returns true if the collection's vector index is empty.
     pub async fn is_empty(&self) -> bool {
         self.index.is_empty().await
     }
 
+    /// Scans a range of document keys in the collection.
     pub async fn scan(
         &self,
         start: std::ops::Bound<&[u8]>,
@@ -475,6 +487,7 @@ impl Collection {
         Ok(results)
     }
 
+    /// Returns statistics for the collection's vector index.
     pub async fn stats(&self) -> Result<memfuse_core::VectorIndexStats> {
         self.index.stats().await
     }
@@ -500,6 +513,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Permanently deletes all data associated with this collection from storage.
     pub async fn drop_collection(&self) -> Result<()> {
         let prefix = if self.name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(

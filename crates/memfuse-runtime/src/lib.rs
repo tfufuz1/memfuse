@@ -1,3 +1,4 @@
+//! MemFuse Runtime — Sandboxing and Execution Layer.
 // ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:13 DATE:2026-05-09 STATUS:READY
@@ -13,7 +14,6 @@
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ZIEL: Sichere Ausführung von Agent-Tools ohne Host-Zugriff.
-//! MemFuse Runtime — Sandboxing and Execution Layer.
 
 #![forbid(unsafe_code)]
 

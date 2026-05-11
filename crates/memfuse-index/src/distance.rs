@@ -1,3 +1,7 @@
+//! Distance computation functions.
+//!
+//! This module provides distance metrics for vector comparison.
+//! Implementations use AVX2/AVX-512 SIMD if available, falling back to portable-simd, then scalar.
 // ANCHOR:DOC:DOC-DISTANCE-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:03 DATE:2026-05-09 STATUS:READY
@@ -19,11 +23,6 @@
 // CREATED:2026-05-05 DEADLINE:NONE
 // PRECEDENCE: AVX-512 > AVX2 > portable_simd > scalar.
 // INVARIANTE: Caller (hnsw.rs) validiert Vektor-Dimensionen VOR dem Aufruf.
-//!
-//! Distance computation functions.
-//!
-//! This module provides distance metrics for vector comparison.
-//! Implementations use AVX2/AVX-512 SIMD if available, falling back to portable-simd, then scalar.
 
 #![allow(unused_unsafe)]
 

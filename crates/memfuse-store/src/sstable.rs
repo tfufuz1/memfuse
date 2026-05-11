@@ -1,3 +1,19 @@
+//! SSTable (Sorted String Table) implementation.
+//!
+//! SSTables are persistent, immutable files containing sorted key-value pairs.
+//!
+//! ## Architecture
+//! - **Data Blocks**: Keys and values are grouped into 4KB blocks. Each entry consists of
+//!   key length, key, sequence number, value length, and value.
+//! - **Index Block**: Located at the end of the file, it maps the last key of each data
+//!   block to its byte offset, enabling efficient binary search.
+//! - **Trailer**: Contains the index offset (8 bytes) and a magic number `0x4D465354` ("MFST").
+//!
+//! ## Invariants
+//! - **Immutability**: Once written, SSTables are never modified. Compaction creates new ones.
+//! - **Sorted Order**: Entries within blocks and blocks within the file are sorted lexicographically by key.
+//! - **Async I/O**: All disk operations use `tokio::fs` to ensure compatibility with the async runtime.
+//! - **Zero Panic**: Production code paths avoid `unwrap()` and `expect()`, favoring explicit error handling.
 // ANCHOR:DOC:DOC-SSTABLE-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:02 DATE:2026-05-09 STATUS:REVIEW
@@ -16,22 +32,6 @@
 // WP:WP-4.1 PRIO:3 NEEDS:NONE
 // AGENT:02 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
-//! SSTable (Sorted String Table) implementation.
-//!
-//! SSTables are persistent, immutable files containing sorted key-value pairs.
-//!
-//! ## Architecture
-//! - **Data Blocks**: Keys and values are grouped into 4KB blocks. Each entry consists of
-//!   key length, key, sequence number, value length, and value.
-//! - **Index Block**: Located at the end of the file, it maps the last key of each data
-//!   block to its byte offset, enabling efficient binary search.
-//! - **Trailer**: Contains the index offset (8 bytes) and a magic number `0x4D465354` ("MFST").
-//!
-//! ## Invariants
-//! - **Immutability**: Once written, SSTables are never modified. Compaction creates new ones.
-//! - **Sorted Order**: Entries within blocks and blocks within the file are sorted lexicographically by key.
-//! - **Async I/O**: All disk operations use `tokio::fs` to ensure compatibility with the async runtime.
-//! - **Zero Panic**: Production code paths avoid `unwrap()` and `expect()`, favoring explicit error handling.
 
 use bytes::{BufMut, Bytes, BytesMut};
 use lru::LruCache;
@@ -147,6 +147,7 @@ pub struct SstableBuilder {
 }
 
 impl SstableBuilder {
+    /// Creates a new SSTable builder that writes to the specified file path.
     pub async fn create(path: impl AsRef<Path>) -> Result<Self> {
         let file = File::create(path)
             .await
@@ -265,6 +266,7 @@ pub struct SstableReader {
 }
 
 impl SstableReader {
+    /// Opens an existing SSTable file for reading.
     pub async fn open(path: impl AsRef<Path>, block_cache: Arc<BlockCache>) -> Result<Self> {
         let mut file = tokio::fs::File::open(&path)
             .await
@@ -379,12 +381,13 @@ impl SstableReader {
 
     // ANCHOR:PERF:ALLOC-001 — Allokations-intensiver Scanner
     // WP:WP-4.1 PRIO:2 NEEDS:NONE
-    // AGENT:08-perf DATE:2026-05-09 STATUS:READY
+    // AGENT:08-perf DATE:2026-05-09 STATUS:DONE
     // CREATED:2026-05-09 DEADLINE:NONE
     // TARGET: Zero-Allocation Lookup
     // AKTUELL: Vec::new() pro Block + read_exact
     // BOTTLENECK: Memory Allocator / Heap Churn
     // OPTIMIERUNGSIDEE: SmallVec oder Pool-Buffer
+    /// Retrieves a value and sequence number for a given key from the SSTable.
     pub async fn get(&self, key: &[u8]) -> Result<Option<(Bytes, u64)>> {
         if key < self.metadata.first_key || key > self.metadata.last_key {
             return Ok(None);
@@ -535,6 +538,7 @@ impl SstableReader {
         Ok(None)
     }
 
+    /// Returns the metadata for this SSTable.
     pub fn metadata(&self) -> &SstableMetadata {
         &self.metadata
     }
@@ -664,6 +668,7 @@ impl SstableReader {
         &self.file_path
     }
 
+    /// Scans the SSTable for all keys starting with the given prefix.
     pub async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Bytes, Bytes, u64)>> {
         let mut results = Vec::new();
 
