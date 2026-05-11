@@ -419,8 +419,8 @@ mod tests {
         index
             .upsert_document(tx1, d1, "one two three", None)
             .await
-            .unwrap();
-        storage.commit(tx1).await.unwrap();
+            .expect("upsert");
+        storage.commit(tx1).await.expect("commit");
 
         // Check metadata
         let total_docs_key = index.key("meta:total_docs");

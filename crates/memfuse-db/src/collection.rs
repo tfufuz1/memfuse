@@ -162,7 +162,9 @@ impl Collection {
 
         // Index text if present
         if let Some(text) = extract_text(&metadata) {
-            self.text_index.upsert_document(tx, doc_id, &text).await?;
+            self.text_index
+                .upsert_document(tx, doc_id, &text, None)
+                .await?;
         }
 
         db_tx.commit().await?;
@@ -224,14 +226,20 @@ impl Collection {
         self.storage.put(tx, &user_key, &data).await?;
         self.storage.put(tx, &doc_key, &data).await?;
 
-        db_tx.record_keys(user_key, doc_key, doc_id);
-
         // Re-insert into text index if new text present
         if let Some(new_text) = extract_text(&metadata) {
+            let old_text = if let Some(old_bytes) = self.storage.get(&user_key).await? {
+                let old_stored: StoredDocument = serde_json::from_slice(&old_bytes)?;
+                extract_text(&old_stored.metadata)
+            } else {
+                None
+            };
             self.text_index
-                .upsert_document(tx, doc_id, &new_text)
+                .upsert_document(tx, doc_id, &new_text, old_text.as_deref())
                 .await?;
         }
+
+        db_tx.record_keys(user_key, doc_key, doc_id);
 
         // Re-insert into HNSW
         let _ = self.index.delete(tx, doc_id).await;
