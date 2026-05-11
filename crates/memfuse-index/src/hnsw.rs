@@ -798,8 +798,8 @@ impl VectorIndex for HnswIndex {
         let score = self.connectivity_score();
         let connectivity_factor = 2.0 - score;
         let factor = if self.config.quantize { 4 } else { 2 };
-        let ef = ((self.config.ef_search.max(k) * factor) as f64 * connectivity_factor).round()
-            as usize;
+        let ef =
+            ((self.config.ef_search.max(k) * factor) as f64 * connectivity_factor).round() as usize;
         let candidates = self.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
 
         if score < self.config.rebuild_threshold {
