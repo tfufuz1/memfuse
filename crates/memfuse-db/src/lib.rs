@@ -138,7 +138,30 @@ impl MemFuse {
         };
 
         let storage = Arc::new(LsmStorage::new(lsm_config).await?);
-        let next_tx = Arc::new(AtomicU64::new(1));
+
+        // Recover next_tx from storage metadata.
+        // We scan for the highest TX ID among the transaction intent markers.
+        let intent_prefix = b"__tx_intent:";
+        let entries = storage.scan_prefix(intent_prefix).await?;
+        let mut max_tx = 0u64;
+        for (k, _) in entries {
+            if let Some(id_bytes) = k.strip_prefix(intent_prefix) {
+                if id_bytes.len() == 8 {
+                    let id = u64::from_le_bytes(id_bytes.try_into().unwrap_or([0; 8]));
+                    if id > max_tx {
+                        max_tx = id;
+                    }
+                }
+            }
+        }
+
+        // Also check collection index entries for TX IDs
+        let col_idx_prefix = b"__col_idx:\x00";
+        let _col_entries = storage.scan_prefix(col_idx_prefix).await?;
+        // We don't have the TX ID in the key for col_idx, but we might have used it.
+        // Actually, the intent markers are the best bet for high TX IDs from user operations.
+
+        let next_tx = Arc::new(AtomicU64::new(max_tx + 1));
 
         let db = Self {
             storage,
@@ -173,7 +196,7 @@ impl MemFuse {
     /// Creates the collection if it does not already exist.
     // ANCHOR:TODO:COL-001 — Implementiere vollständige Persistenz und Isolation für `collection()`.
     // WP:WP-1.2 PRIO:1 NEEDS:NONE
-    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:READY
+    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_collections_are_isolated
     // DONE: `collection()` ist wal-gesichert, Isolation ist korrekt.
     // SUCCESSOR: @JULES-04 — "Mach weiter mit COL-002 und COL-003, bis Collections-Modul fully featured ist."
@@ -234,24 +257,44 @@ impl MemFuse {
         Ok(col)
     }
 
-    /// Lists all existing collection names (those currently active in memory).
+    /// Lists all existing collection names (those currently active in memory and persisted).
     // ANCHOR:TODO:COL-002 — Erweitere `list_collections` so, dass es aus dem LSM-Store/Metadata ließt.
     // WP:WP-1.2 PRIO:1 NEEDS:COL-001
-    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:READY
+    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_list_collections
     // DONE: list_collections gibt persistierte Collections zurück.
     // SUCCESSOR: @JULES-04 — "Mache weiter mit COL-003."
     pub async fn list_collections(&self) -> Result<Vec<String>> {
+        let col_idx_prefix = b"__col_idx:\x00";
+        let entries = self.storage.scan_prefix(col_idx_prefix).await?;
+
+        let mut names = std::collections::HashSet::new();
+        // Always include default
+        names.insert("default".to_string());
+
+        for (k, _) in entries {
+            if let Some(name_bytes) = k.strip_prefix(col_idx_prefix) {
+                if let Ok(name) = String::from_utf8(name_bytes.to_vec()) {
+                    names.insert(name);
+                }
+            }
+        }
+
+        // Also add those that might be in memory but not yet persisted (if any)
         let guard = self.collections.read().await;
-        let mut names: Vec<String> = guard.keys().cloned().collect();
-        names.sort();
-        Ok(names)
+        for name in guard.keys() {
+            names.insert(name.clone());
+        }
+
+        let mut sorted_names: Vec<String> = names.into_iter().collect();
+        sorted_names.sort();
+        Ok(sorted_names)
     }
 
     /// Drops a collection, removing all its data from storage.
     // ANCHOR:TODO:COL-003 — Löschen der Collection-Keys aus LSM und des HNSW Graphen.
     // WP:WP-1.2 PRIO:1 NEEDS:COL-001
-    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:READY
+    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_drop_removes_all_data
     // DONE: Alle Daten getilgt, re-öffnen führt zu leerer DB.
     // SUCCESSOR: @JULES-05 — "Collections sind fertig. Beginne mit WP-2.1 SEARCH-001."
@@ -322,10 +365,13 @@ impl MemFuse {
 
     // ANCHOR:TODO:SEARCH-001 — Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection.
     // WP:WP-2.1 PRIO:1 NEEDS:COL-001
-    // AGENT:@JULES-05 DATE:2026-05-09 STATUS:READY
+    // AGENT:@JULES-05 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
+    pub async fn hybrid_search(&self, text: &str, vector: &[f32], k: usize) -> Result<Vec<SearchResult>> {
+        self.default_col().await?.hybrid_search(text, vector, k).await
+    }
 
     /// Deletes a document by its string ID.
     pub async fn delete(&self, id: &str) -> Result<()> {

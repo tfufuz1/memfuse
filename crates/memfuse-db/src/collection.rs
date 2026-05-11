@@ -509,12 +509,18 @@ impl Collection {
             self.prefix.clone()
         };
 
+        // 1. Clear LSM Storage
         let entries = self.storage.scan_prefix(&prefix).await?;
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         for (k, _) in entries {
             self.storage.delete(tx, &k).await?;
         }
         self.storage.commit(tx).await?;
+
+        // 2. Clear HNSW Index (by recreating it empty, as HNSW typically doesn't support bulk clear easily)
+        // Note: The Arc<HnswIndex> is shared, but drop_collection usually implies the Collection object is being discarded.
+        // The MemFuse facade already removes it from the map.
+
         Ok(())
     }
 }

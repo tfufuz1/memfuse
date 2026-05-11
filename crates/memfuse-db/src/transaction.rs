@@ -1,7 +1,12 @@
-// ANCHOR:DOC:DOC-TRANSACTION-001 — Missing module documentation
+// ANCHOR:DOC:DOC-TRANSACTION-001 — Transaction orchestration for atomic multi-index commits.
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:04 DATE:2026-05-09 STATUS:READY
+// AGENT:04 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
+//! This module provides the `DbTransaction` orchestrator, which ensures that
+//! operations spanning multiple indices (like LSM-Store for metadata and HNSW-Index for vectors)
+//! are committed atomically.
+//!
+//! It uses a 2-Phase Commit approach with compensating transactions to maintain consistency.
 use crate::Collection;
 use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId, VectorIndex};
 use std::sync::Mutex;
