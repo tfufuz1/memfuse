@@ -408,7 +408,11 @@ impl SstableReader {
         };
 
         let block_data = {
-            let cached = self.block_cache.read().peek(&(self.file_id, offset)).cloned();
+            let cached = self
+                .block_cache
+                .read()
+                .peek(&(self.file_id, offset))
+                .cloned();
             if let Some(cached) = cached {
                 cached
             } else {
@@ -554,7 +558,11 @@ impl SstableReader {
             };
 
             let block_data = {
-                let cached = self.block_cache.read().peek(&(self.file_id, offset)).cloned();
+                let cached = self
+                    .block_cache
+                    .read()
+                    .peek(&(self.file_id, offset))
+                    .cloned();
                 if let Some(cached) = cached {
                     cached
                 } else {
@@ -680,7 +688,11 @@ impl SstableReader {
             };
 
             let block_data = {
-                let cached = self.block_cache.read().peek(&(self.file_id, offset)).cloned();
+                let cached = self
+                    .block_cache
+                    .read()
+                    .peek(&(self.file_id, offset))
+                    .cloned();
                 if let Some(cached) = cached {
                     cached
                 } else {
@@ -810,7 +822,11 @@ impl SstableReader {
             };
 
             let block_data = {
-                let cached = self.block_cache.read().peek(&(self.file_id, offset)).cloned();
+                let cached = self
+                    .block_cache
+                    .read()
+                    .peek(&(self.file_id, offset))
+                    .cloned();
                 if let Some(cached) = cached {
                     cached
                 } else {
