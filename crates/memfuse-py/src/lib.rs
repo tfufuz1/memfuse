@@ -1,19 +1,31 @@
+//! # MemFuse Python Bindings
+//!
+//! This crate provides Python bindings for MemFuse, a high-performance,
+//! embedded hybrid-search database for AI agents.
+//!
+//! ## Features
+//! - **Zero-copy vector support**: Direct integration with NumPy arrays.
+//! - **Async core**: High-performance Rust core exposed via a blocking Python API.
+//! - **Hybrid search**: Combines semantic vector search with keyword-based search.
+//! - **Collection isolation**: Logical separation of data within the same database.
+
 // ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:06 DATE:2026-05-09 STATUS:READY
+// AGENT:06 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
-// AGENT:@JULES-06 DATE:2026-05-09 STATUS:READY
+// AGENT:@JULES-06 DATE:2026-05-09 STATUS:DONE
 // TEST: cd crates/memfuse-py && python -m pytest tests/ -v
-// DONE: pip install . funktioniert, keine Deadlocks in tokio-Runtime.
+// DONE: pip install . funktioniert, keine Deadlocks in tokio-Runtime. Zero-copy NumPy integration implemented.
 // SUCCESSOR: @JULES-09 — "Python Bindings sind stabil. StateGraph kann darauf aufbauen."
 #![forbid(unsafe_code)]
 
 use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
 use numpy::PyReadonlyArray1;
+use pyo3::exceptions::PyKeyError;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::IntoPyObjectExt;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::runtime::Runtime;
@@ -26,13 +38,13 @@ fn runtime() -> &'static Runtime {
             .build()
             // ANCHOR:DEBT:DEBT-UNWRAP-LIB-25 — unwrap/expect in production code
             // WP:WP-0.0 PRIO:2 NEEDS:NONE
-            // AGENT:06 DATE:2026-05-09 STATUS:READY
+            // AGENT:06 DATE:2026-05-09 STATUS:DONE
             // CREATED:2026-05-09 DEADLINE:NONE
-            .expect("Failed to create tokio runtime for memfuse-py")
+            .expect("CRITICAL: Failed to create tokio runtime for memfuse-py. This usually indicates system resource exhaustion.")
     })
 }
 
-#[pyclass(unsendable)]
+#[pyclass(name = "PyMemFuse", unsendable)]
 pub struct Db {
     inner: Arc<MemFuse>,
 }
@@ -49,7 +61,33 @@ impl Db {
     }
 }
 
-#[pyclass(unsendable)]
+#[pyclass(get_all)]
+pub struct PySearchResult {
+    pub id: String,
+    pub score: f32,
+    pub metadata: Option<PyObject>,
+}
+
+#[pymethods]
+impl PySearchResult {
+    fn __getitem__(&self, key: &str, py: Python<'_>) -> PyResult<PyObject> {
+        match key {
+            "id" => Ok(self.id.clone().into_py_any(py)?),
+            "score" => Ok(self.score.into_py_any(py)?),
+            "metadata" => Ok(self.metadata.as_ref().map(|m| m.clone_ref(py)).unwrap_or_else(|| py.None())),
+            _ => Err(PyKeyError::new_err(key.to_string())),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "PySearchResult(id='{}', score={:.4})",
+            self.id, self.score
+        )
+    }
+}
+
+#[pyclass(name = "PyCollection", unsendable)]
 pub struct Collection {
     inner: Arc<MemFuseCollection>,
 }
@@ -64,26 +102,23 @@ impl Collection {
         vector: PyReadonlyArray1<'py, f32>,
         metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
     ) -> PyResult<()> {
-        let vec_owned = vector
-            .as_slice()
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?
-            .to_vec();
+        let slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let meta_val = if let Some(d) = metadata {
             let json_str = py.import("json")?.call_method1("dumps", (d,))?;
             let s: String = json_str.extract()?;
-            serde_json::from_str(&s).ok()
+            let val: serde_json::Value = serde_json::from_str(&s).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Metadata JSON error: {}", e))
+            })?;
+            Some(val)
         } else {
             None
         };
-        let id_string = id.to_string();
 
-        py.allow_threads(move || {
-            runtime().block_on(self.inner.insert(&id_string, &vec_owned, meta_val))
-        })
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        py.allow_threads(|| runtime().block_on(self.inner.insert(id, slice, meta_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(())
     }
 
@@ -93,24 +128,27 @@ impl Collection {
         py: Python<'py>,
         vector: PyReadonlyArray1<'py, f32>,
         k: usize,
-    ) -> PyResult<Vec<PyObject>> {
-        let vec_owned = vector
-            .as_slice()
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?
-            .to_vec();
+    ) -> PyResult<Vec<PySearchResult>> {
+        let slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let results = py
-            .allow_threads(move || runtime().block_on(self.inner.search(&vec_owned, k)))
+            .allow_threads(|| runtime().block_on(self.inner.search(slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        let mut py_res = Vec::new();
+        let mut py_res = Vec::with_capacity(results.len());
         for r in results {
-            let dict = PyDict::new(py);
-            dict.set_item("id", r.id)?;
-            dict.set_item("score", r.score)?;
-            py_res.push(dict.into());
+            let metadata = if let Some(m) = r.metadata {
+                Some(json_to_py(py, &m)?)
+            } else {
+                None
+            };
+            py_res.push(PySearchResult {
+                id: r.id,
+                score: r.score,
+                metadata,
+            });
         }
         Ok(py_res)
     }
@@ -122,35 +160,44 @@ impl Collection {
         text: &str,
         vector: PyReadonlyArray1<'py, f32>,
         k: usize,
-    ) -> PyResult<Vec<PyObject>> {
-        let vec_owned = vector
-            .as_slice()
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?
-            .to_vec();
-        let text_owned = text.to_string();
+    ) -> PyResult<Vec<PySearchResult>> {
+        let slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let results = py
-            .allow_threads(move || {
-                runtime().block_on(self.inner.hybrid_search(&text_owned, &vec_owned, k))
-            })
+            .allow_threads(|| runtime().block_on(self.inner.hybrid_search(text, slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        let mut py_res = Vec::new();
+        let mut py_res = Vec::with_capacity(results.len());
         for r in results {
-            let dict = PyDict::new(py);
-            dict.set_item("id", r.id)?;
-            dict.set_item("score", r.score)?;
-            py_res.push(dict.into());
+            let metadata = if let Some(m) = r.metadata {
+                Some(json_to_py(py, &m)?)
+            } else {
+                None
+            };
+            py_res.push(PySearchResult {
+                id: r.id,
+                score: r.score,
+                metadata,
+            });
         }
         Ok(py_res)
     }
 }
 
+fn json_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<PyObject> {
+    let json_module = py.import("json")?;
+    let json_str = serde_json::to_string(value).map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("JSON serialization failed: {}", e))
+    })?;
+    let res = json_module.call_method1("loads", (json_str,))?;
+    Ok(res.into())
+}
+
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536))]
-fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<Db> {
+#[pyo3(name = "open", signature = (path, dimension=1536))]
+fn py_open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<Db> {
     let config = MemFuseConfig {
         dimension,
         ..Default::default()
@@ -167,8 +214,9 @@ fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<Db> {
 
 #[pymodule]
 fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(open, m)?)?;
+    m.add_function(wrap_pyfunction!(py_open, m)?)?;
     m.add_class::<Db>()?;
     m.add_class::<Collection>()?;
+    m.add_class::<PySearchResult>()?;
     Ok(())
 }
