@@ -1,7 +1,27 @@
-// ANCHOR:DOC:DOC-TRANSACTION-001 — Missing module documentation
+// ANCHOR:DOC:DOC-TRANSACTION-001 — Module documentation added.
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:04 DATE:2026-05-09 STATUS:READY
+// AGENT:04 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
+//! Atomic Transaction Orchestration for MemFuse.
+//!
+//! This module provides the `DbTransaction` struct, which ensures that updates
+//! to both the LSM-based storage (persistent documents) and the HNSW-based
+//! vector index are performed atomically.
+//!
+//! ## Mechanism: Two-Phase Commit with Compensating Transactions
+//!
+//! Because the LSM storage and the HNSW index are separate components,
+//! achieving atomicity requires a coordinated commit process:
+//!
+//! 1.  **Prepare**: An intent marker is written to the storage.
+//! 2.  **Storage Commit**: The changes are committed to the LSM tree.
+//! 3.  **Index Commit**: The changes are committed to the HNSW index.
+//! 4.  **Cleanup**: The intent marker is updated to reflect the final state.
+//!
+//! If the HNSW index commit fails after the storage commit has succeeded,
+//! a **compensating transaction** is triggered to roll back the changes
+//! in the storage, ensuring eventual consistency between the two systems.
+
 use crate::Collection;
 use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId, VectorIndex};
 use std::sync::Mutex;
