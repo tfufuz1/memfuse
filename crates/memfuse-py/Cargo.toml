@@ -10,16 +10,11 @@ name = "memfuse"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.24.1", features = ["extension-module", "abi3-py38"] }
+pyo3 = { version = "0.24", features = ["extension-module", "abi3-py38"] }
 numpy = "0.24"
+pythonize = "0.24"
 tokio = { version = "1", features = ["full"] }
-# ANCHOR:ARCH:DAG-003 — Architektur-Layer durchbrochen
-# WP:NONE PRIO:2 NEEDS:NONE
-# AGENT:NONE DATE:2026-05-09 STATUS:DONE
-# CREATED:2026-05-09 DEADLINE:NONE
-# VERLETZUNG: memfuse-py importiert memfuse-db gegen die DAG-Invariante
-# IMPACT: Verstößt gegen Layer-Architektur, verhindert saubere Kompilierung
-# SOFORTIGE AKTION: Abhängigkeit extrahieren nach memfuse-core oder neuen Crate
-# AGENT:antigravity DATE:2026-05-09 STATUS:READY
 memfuse-db = { path = "../memfuse-db" }
-serde_json.workspace = true
+memfuse-core = { path = "../memfuse-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }

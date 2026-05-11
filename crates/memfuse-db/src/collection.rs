@@ -59,6 +59,10 @@ pub struct Collection {
 }
 
 impl Collection {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub fn new(
         name: String,
         storage: Arc<LsmStorage>,
