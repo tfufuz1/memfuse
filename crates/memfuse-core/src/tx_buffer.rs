@@ -131,15 +131,21 @@ impl<T: Clone> TxBuffer<T> {
         let shard_idx = self.shard_idx(tx);
         let shard = self.shards[shard_idx].read();
 
-        if let Some((ops, _)) = shard.ops.get(&tx) {
-            if ops.is_empty() {
-                return Err(MemFuseError::Transaction(format!(
-                    "Transaction {} was registered but has no pending operations",
-                    tx
-                )));
+        match shard.ops.get(&tx) {
+            Some((ops, _)) => {
+                if ops.is_empty() {
+                    return Err(MemFuseError::Transaction(format!(
+                        "Transaction {} was registered but has no pending operations",
+                        tx
+                    )));
+                }
+                Ok(())
             }
+            None => Err(MemFuseError::Transaction(format!(
+                "Transaction {} not found in buffer",
+                tx
+            ))),
         }
-        Ok(())
     }
 
     /// Drains and returns all buffered operations for a transaction.
@@ -358,5 +364,37 @@ mod tests {
             assert_eq!(ops.len(), ops_per_tx);
         }
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_validate_pending_ops() {
+        let buffer = TxBuffer::<String>::new();
+        let tx_empty = TxId::new(1);
+        let tx_missing = TxId::new(2);
+        let tx_valid = TxId::new(3);
+
+        // Test missing transaction
+        let res = buffer.validate_pending_ops(tx_missing);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("not found"));
+
+        // Test empty transaction (registered but no ops)
+        buffer.begin(tx_empty);
+        let res = buffer.validate_pending_ops(tx_empty);
+        assert!(res.is_err());
+        assert!(res
+            .unwrap_err()
+            .to_string()
+            .contains("no pending operations"));
+
+        // Test valid transaction
+        buffer.stage(
+            tx_valid,
+            IndexOp::Insert {
+                doc_id: DocId::new(1),
+                data: "ok".to_string(),
+            },
+        );
+        assert!(buffer.validate_pending_ops(tx_valid).is_ok());
     }
 }

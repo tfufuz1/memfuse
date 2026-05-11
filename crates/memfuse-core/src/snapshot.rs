@@ -110,3 +110,54 @@ impl Drop for SnapshotGuard {
         self.registry.release(self.seq_no);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::thread;
+
+    #[test]
+    fn test_snapshot_registry_min_active() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+
+        let g1 = registry.register(100);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        let g2 = registry.register(50);
+        assert_eq!(registry.min_active_seqno(), 50);
+
+        let g3 = registry.register(150);
+        assert_eq!(registry.min_active_seqno(), 50);
+
+        drop(g2);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        drop(g1);
+        assert_eq!(registry.min_active_seqno(), 150);
+
+        drop(g3);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
+    fn test_snapshot_registry_concurrency() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        let mut handles = Vec::new();
+
+        for i in 0..100 {
+            let reg = registry.clone();
+            handles.push(thread::spawn(move || {
+                let _guard = reg.register(i as u64);
+                thread::sleep(std::time::Duration::from_millis(1));
+            }));
+        }
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+}
