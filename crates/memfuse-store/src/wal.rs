@@ -1,6 +1,6 @@
 // ANCHOR:DOC:DOC-WAL-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
+// AGENT:02 DATE:2026-05-11 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:WAL-001 — Write-Ahead Log für Crash Recovery.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -98,33 +98,33 @@ impl WalEntry {
 
     /// Serializes the entry to bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
-        // seq_no (8) + checksum (4) + op_type (1)
-        buf.extend_from_slice(&self.seq_no.to_le_bytes());
-        buf.extend_from_slice(&self.checksum.to_le_bytes());
+        use bytes::BufMut;
+        let body_size = match &self.op {
+            WalOp::Put { key, value, .. } => 8 + 4 + 1 + 8 + 4 + key.len() + 4 + value.len(),
+            WalOp::Delete { key, .. } => 8 + 4 + 1 + 8 + 4 + key.len(),
+        };
+
+        let mut result = Vec::with_capacity(4 + body_size);
+        result.put_u32_le(body_size as u32);
+        result.put_u64_le(self.seq_no);
+        result.put_u32_le(self.checksum);
 
         match &self.op {
             WalOp::Put { tx_id, key, value } => {
-                buf.push(0u8);
-                buf.extend_from_slice(&tx_id.inner().to_le_bytes());
-                buf.extend_from_slice(&(key.len() as u32).to_le_bytes());
-                buf.extend_from_slice(key);
-                buf.extend_from_slice(&(value.len() as u32).to_le_bytes());
-                buf.extend_from_slice(value);
+                result.put_u8(0);
+                result.put_u64_le(tx_id.inner());
+                result.put_u32_le(key.len() as u32);
+                result.put_slice(key);
+                result.put_u32_le(value.len() as u32);
+                result.put_slice(value);
             }
             WalOp::Delete { tx_id, key } => {
-                buf.push(1u8);
-                buf.extend_from_slice(&tx_id.inner().to_le_bytes());
-                buf.extend_from_slice(&(key.len() as u32).to_le_bytes());
-                buf.extend_from_slice(key);
+                result.put_u8(1);
+                result.put_u64_le(tx_id.inner());
+                result.put_u32_le(key.len() as u32);
+                result.put_slice(key);
             }
         }
-
-        // Prepend total length
-        let len = buf.len() as u32;
-        let mut result = Vec::with_capacity(4 + buf.len());
-        result.extend_from_slice(&len.to_le_bytes());
-        result.extend_from_slice(&buf);
         result
     }
 }

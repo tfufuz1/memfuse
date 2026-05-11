@@ -218,46 +218,84 @@ impl CompactionEngine {
         output_path: &std::path::Path,
         min_snapshot_seq: u64,
     ) -> Result<()> {
-        // 1. Collect all entries from all input SSTables
-        let mut all_entries: Vec<(Vec<u8>, Vec<u8>, u64)> = Vec::new();
-        for sst in inputs {
-            let entries = sst.iter().await?;
-            for (k, v, seq) in entries {
-                all_entries.push((k.to_vec(), v.to_vec(), seq));
+        use std::collections::BinaryHeap;
+        use crate::sstable::SstableScanner;
+        use bytes::Bytes;
+
+        struct MergeIter<'a> {
+            scanner: SstableScanner<'a>,
+            current: (Bytes, Bytes, u64),
+            input_idx: usize,
+        }
+
+        impl<'a> PartialEq for MergeIter<'a> {
+            fn eq(&self, other: &Self) -> bool {
+                self.current.0 == other.current.0
+                    && self.current.2 == other.current.2
+                    && self.input_idx == other.input_idx
             }
         }
 
-        // 2. Sort by key, then by sequence number descending (newest first)
-        all_entries.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| b.2.cmp(&a.2)));
+        impl<'a> Eq for MergeIter<'a> {}
 
-        // 3. Deduplicate: for each key, keep only the entry with the highest seq_no
-        let mut deduped: Vec<(Vec<u8>, Vec<u8>, u64)> = Vec::new();
-        let mut last_key: Option<&[u8]> = None;
-
-        for entry in &all_entries {
-            if last_key == Some(&entry.0) {
-                continue; // Skip: already have a newer version of this key
+        impl<'a> PartialOrd for MergeIter<'a> {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(other))
             }
-            last_key = Some(&entry.0);
-
-            let is_tombstone = (entry.2 & TOMBSTONE_BIT) != 0;
-            let raw_seq = entry.2 & !TOMBSTONE_BIT;
-
-            // GC tombstones that are older than all active snapshots
-            if is_tombstone && raw_seq < min_snapshot_seq {
-                continue; // Tombstone is safe to garbage-collect
-            }
-
-            deduped.push(entry.clone());
         }
 
-        // 4. Write to output SSTable
+        impl<'a> Ord for MergeIter<'a> {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                // Min-heap on key, then max-heap on seq_no (for same key, newest wins)
+                other.current.0.cmp(&self.current.0)
+                    .then_with(|| self.current.2.cmp(&other.current.2))
+                    .then_with(|| other.input_idx.cmp(&self.input_idx))
+            }
+        }
+
+        let mut heap = BinaryHeap::new();
+
+        for (idx, sst) in inputs.iter().enumerate() {
+            let mut scanner = sst.scanner();
+            if let Some(entry) = scanner.next().await? {
+                heap.push(MergeIter {
+                    scanner,
+                    current: entry,
+                    input_idx: idx,
+                });
+            }
+        }
+
         let mut builder = SstableBuilder::create(output_path).await?;
-        for (key, value, seq) in &deduped {
-            builder.add(key, value, *seq).await?;
-        }
-        builder.finish().await?;
+        let mut last_key: Option<Bytes> = None;
 
+        while let Some(mut iter) = heap.pop() {
+            let (key, value, seq) = iter.current.clone();
+
+            if last_key.as_ref() == Some(&key) {
+                // Skip newer versions or duplicates (heap order ensures newest is first)
+                if let Some(next_entry) = iter.scanner.next().await? {
+                    iter.current = next_entry;
+                    heap.push(iter);
+                }
+                continue;
+            }
+
+            last_key = Some(key.clone());
+            let is_tombstone = (seq & TOMBSTONE_BIT) != 0;
+            let raw_seq = seq & !TOMBSTONE_BIT;
+
+            if !(is_tombstone && raw_seq < min_snapshot_seq) {
+                builder.add(&key, &value, seq).await?;
+            }
+
+            if let Some(next_entry) = iter.scanner.next().await? {
+                iter.current = next_entry;
+                heap.push(iter);
+            }
+        }
+
+        builder.finish().await?;
         Ok(())
     }
 
@@ -266,8 +304,8 @@ impl CompactionEngine {
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let id = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_micros();
+            .map(|d| d.as_micros())
+            .unwrap_or(0);
         let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         data_path.join(format!("sst-compact-{:020}-{:04}.sst", id, count % 10000))
     }
