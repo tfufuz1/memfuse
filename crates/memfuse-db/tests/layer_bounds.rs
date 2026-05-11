@@ -58,11 +58,19 @@ async fn test_collection_persistence_and_reload() {
         );
 
         let col1 = db.collection("col1").await.expect("get col1");
-        let doc1 = col1.get("doc1").await.expect("get doc1").expect("doc1 exists");
+        let doc1 = col1
+            .get("doc1")
+            .await
+            .expect("get doc1")
+            .expect("doc1 exists");
         assert_eq!(doc1.metadata.expect("has metadata")["val"], "a");
 
         let col2 = db.collection("col2").await.expect("get col2");
-        let doc2 = col2.get("doc2").await.expect("get doc2").expect("doc2 exists");
+        let doc2 = col2
+            .get("doc2")
+            .await
+            .expect("get doc2")
+            .expect("doc2 exists");
         assert_eq!(doc2.metadata.expect("has metadata")["val"], "b");
 
         // Verify isolation is still maintained
