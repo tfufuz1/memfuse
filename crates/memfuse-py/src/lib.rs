@@ -74,16 +74,17 @@ impl PySearchResult {
         match key {
             "id" => Ok(self.id.clone().into_py_any(py)?),
             "score" => Ok(self.score.into_py_any(py)?),
-            "metadata" => Ok(self.metadata.as_ref().map(|m| m.clone_ref(py)).unwrap_or_else(|| py.None())),
+            "metadata" => Ok(self
+                .metadata
+                .as_ref()
+                .map(|m| m.clone_ref(py))
+                .unwrap_or_else(|| py.None())),
             _ => Err(PyKeyError::new_err(key.to_string())),
         }
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "PySearchResult(id='{}', score={:.4})",
-            self.id, self.score
-        )
+        format!("PySearchResult(id='{}', score={:.4})", self.id, self.score)
     }
 }
 
@@ -137,10 +138,11 @@ impl Collection {
             .allow_threads(|| runtime().block_on(self.inner.search(slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
+        let json_module = py.import("json")?;
         let mut py_res = Vec::with_capacity(results.len());
         for r in results {
             let metadata = if let Some(m) = r.metadata {
-                Some(json_to_py(py, &m)?)
+                Some(json_to_py_with_module(py, &json_module, &m)?)
             } else {
                 None
             };
@@ -169,10 +171,11 @@ impl Collection {
             .allow_threads(|| runtime().block_on(self.inner.hybrid_search(text, slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
+        let json_module = py.import("json")?;
         let mut py_res = Vec::with_capacity(results.len());
         for r in results {
             let metadata = if let Some(m) = r.metadata {
-                Some(json_to_py(py, &m)?)
+                Some(json_to_py_with_module(py, &json_module, &m)?)
             } else {
                 None
             };
@@ -186,8 +189,11 @@ impl Collection {
     }
 }
 
-fn json_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<PyObject> {
-    let json_module = py.import("json")?;
+fn json_to_py_with_module(
+    _py: Python<'_>,
+    json_module: &Bound<'_, pyo3::types::PyModule>,
+    value: &serde_json::Value,
+) -> PyResult<PyObject> {
     let json_str = serde_json::to_string(value).map_err(|e| {
         pyo3::exceptions::PyRuntimeError::new_err(format!("JSON serialization failed: {}", e))
     })?;
