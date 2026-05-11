@@ -15,7 +15,7 @@
 //! references them.
 
 use crate::sstable::{BlockCache, SstableBuilder, SstableReader};
-use memfuse_core::{Result, SnapshotRegistry, TOMBSTONE_BIT};
+use memfuse_core::{MemFuseError, Result, SnapshotRegistry, TOMBSTONE_BIT};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -218,46 +218,91 @@ impl CompactionEngine {
         output_path: &std::path::Path,
         min_snapshot_seq: u64,
     ) -> Result<()> {
-        // 1. Collect all entries from all input SSTables
-        let mut all_entries: Vec<(Vec<u8>, Vec<u8>, u64)> = Vec::new();
-        for sst in inputs {
-            let entries = sst.iter().await?;
-            for (k, v, seq) in entries {
-                all_entries.push((k.to_vec(), v.to_vec(), seq));
+        use std::cmp::Ordering;
+        use std::collections::BinaryHeap;
+
+        #[derive(Eq, PartialEq)]
+        struct MergeEntry {
+            key: bytes::Bytes,
+            seq: u64,
+            iter_idx: usize,
+            // Value is kept separate to keep MergeEntry small and Eq/Ord consistent
+        }
+
+        impl Ord for MergeEntry {
+            fn cmp(&self, other: &Self) -> Ordering {
+                // Min-heap on key, then Max-heap on sequence number (for deduplication)
+                other
+                    .key
+                    .cmp(&self.key)
+                    .then_with(|| self.seq.cmp(&other.seq))
+                    .then_with(|| self.iter_idx.cmp(&other.iter_idx))
             }
         }
 
-        // 2. Sort by key, then by sequence number descending (newest first)
-        all_entries.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| b.2.cmp(&a.2)));
-
-        // 3. Deduplicate: for each key, keep only the entry with the highest seq_no
-        let mut deduped: Vec<(Vec<u8>, Vec<u8>, u64)> = Vec::new();
-        let mut last_key: Option<&[u8]> = None;
-
-        for entry in &all_entries {
-            if last_key == Some(&entry.0) {
-                continue; // Skip: already have a newer version of this key
+        impl PartialOrd for MergeEntry {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
             }
-            last_key = Some(&entry.0);
-
-            let is_tombstone = (entry.2 & TOMBSTONE_BIT) != 0;
-            let raw_seq = entry.2 & !TOMBSTONE_BIT;
-
-            // GC tombstones that are older than all active snapshots
-            if is_tombstone && raw_seq < min_snapshot_seq {
-                continue; // Tombstone is safe to garbage-collect
-            }
-
-            deduped.push(entry.clone());
         }
 
-        // 4. Write to output SSTable
+        let mut iters = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            iters.push(input.clone().streaming_iter());
+        }
+
+        let mut heap = BinaryHeap::new();
+        let mut current_values = Vec::with_capacity(iters.len());
+
+        for (idx, iter) in iters.iter_mut().enumerate() {
+            if let Some((k, v, s)) = iter.next().await? {
+                heap.push(MergeEntry {
+                    key: k,
+                    seq: s,
+                    iter_idx: idx,
+                });
+                current_values.push(Some(v));
+            } else {
+                current_values.push(None);
+            }
+        }
+
         let mut builder = SstableBuilder::create(output_path).await?;
-        for (key, value, seq) in &deduped {
-            builder.add(key, value, *seq).await?;
-        }
-        builder.finish().await?;
+        let mut last_key: Option<bytes::Bytes> = None;
 
+        while let Some(top) = heap.pop() {
+            let is_duplicate = last_key.as_ref().is_some_and(|k| k == &top.key);
+            let val = current_values[top.iter_idx]
+                .take()
+                .ok_or_else(|| MemFuseError::Internal("Heap/Value sync lost".into()))?;
+
+            if !is_duplicate {
+                let is_tombstone = (top.seq & TOMBSTONE_BIT) != 0;
+                let raw_seq = top.seq & !TOMBSTONE_BIT;
+
+                // GC tombstones that are older than all active snapshots
+                let keep = !is_tombstone || raw_seq >= min_snapshot_seq;
+
+                if keep {
+                    builder.add(&top.key, &val, top.seq).await?;
+                }
+                // ALWAYS update last_key if it's the first time we see this key in the heap
+                // (which is the newest version due to BinaryHeap ordering)
+                last_key = Some(top.key);
+            }
+
+            // Refill heap from the iterator that provided the popped entry
+            if let Some((k, v, s)) = iters[top.iter_idx].next().await? {
+                heap.push(MergeEntry {
+                    key: k,
+                    seq: s,
+                    iter_idx: top.iter_idx,
+                });
+                current_values[top.iter_idx] = Some(v);
+            }
+        }
+
+        builder.finish().await?;
         Ok(())
     }
 
@@ -318,6 +363,50 @@ mod tests {
         }
         builder.finish().await.expect("finish sst");
         Arc::new(SstableReader::open(&path, bc).await.expect("open sst"))
+    }
+
+    #[tokio::test]
+    async fn test_compaction_prevents_data_resurrection() {
+        let tmp = TempDir::new().expect("temp dir");
+        let registry = Arc::new(SnapshotRegistry::new());
+        let bc = create_block_cache(1);
+        let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
+
+        // Version 1: key=foo, val=v1, seq=1 (OLD)
+        let sst1 = create_test_sstable(
+            tmp.path(),
+            "sst1.sst",
+            &[(b"foo", b"v1", 1)],
+            Arc::clone(&bc),
+        )
+        .await;
+
+        // Version 2: key=foo, val="", seq=2|TOMBSTONE (NEW)
+        let sst2 = create_test_sstable(
+            tmp.path(),
+            "sst2.sst",
+            &[(b"foo", b"", 2 | TOMBSTONE_BIT)],
+            Arc::clone(&bc),
+        )
+        .await;
+
+        let output = tmp.path().join("compacted.sst");
+
+        // min_snapshot_seq=100 → Version 2 (tombstone) is safe to GC
+        // But it MUST still shadow Version 1 (resurrection prevention)
+        engine
+            .merge_sstables(&[sst1, sst2], &output, 100)
+            .await
+            .expect("merge");
+
+        let reader = SstableReader::open(&output, Arc::clone(&bc))
+            .await
+            .expect("open");
+        let entries = reader.iter().await.expect("iter");
+
+        // The key "foo" should be COMPLETELY GONE.
+        // If v1 resurrections, entries.len() would be 1.
+        assert!(entries.is_empty(), "Data resurrection detected! Key 'foo' should be shadowed by tombstone even if tombstone is GC'd. Found entries: {:?}", entries);
     }
 
     #[tokio::test]

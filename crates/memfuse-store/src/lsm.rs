@@ -1,6 +1,6 @@
 // ANCHOR:DOC:DOC-LSM-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
+// AGENT:02 DATE:2026-05-10 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:LSM-001 — Zentraler Storage-Engine-Orchestrator des Triebwerks.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -161,9 +161,8 @@ impl LsmStorage {
 
         let mut sstables = Vec::new();
         for path in sst_files {
-            if let Ok(reader) = SstableReader::open(path, Arc::clone(&block_cache)).await {
-                sstables.push(Arc::new(reader));
-            }
+            let reader = SstableReader::open(path, Arc::clone(&block_cache)).await?;
+            sstables.push(Arc::new(reader));
         }
         let sstables = Arc::new(RwLock::new(sstables));
         let snapshot_registry = Arc::new(SnapshotRegistry::new());
