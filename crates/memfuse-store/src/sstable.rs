@@ -323,13 +323,17 @@ impl SstableReader {
             pos += 2;
 
             if pos + key_len > index_data.len() {
-                return Err(MemFuseError::Storage("malformed SSTable index: key out of bounds".into()));
+                return Err(MemFuseError::Storage(
+                    "malformed SSTable index: key out of bounds".into(),
+                ));
             }
             let key = Bytes::copy_from_slice(&index_data[pos..pos + key_len]);
             pos += key_len;
 
             if pos + 8 > index_data.len() {
-                return Err(MemFuseError::Storage("malformed SSTable index: offset out of bounds".into()));
+                return Err(MemFuseError::Storage(
+                    "malformed SSTable index: offset out of bounds".into(),
+                ));
             }
             let offset = u64::from_le_bytes(
                 index_data
@@ -456,7 +460,9 @@ impl SstableReader {
         let num_offsets = u16::from_le_bytes(
             block_data
                 .get(n - 2..n)
-                .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets missing".into()))?
+                .ok_or_else(|| {
+                    MemFuseError::Storage("malformed block: num_offsets missing".into())
+                })?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
         ) as usize;
@@ -609,7 +615,9 @@ impl SstableReader {
             let num_offsets = u16::from_le_bytes(
                 block_data
                     .get(n - 2..n)
-                    .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets missing".into()))?
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("malformed block: num_offsets missing".into())
+                    })?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
@@ -745,7 +753,9 @@ impl SstableReader {
             let num_offsets = u16::from_le_bytes(
                 block_data
                     .get(n - 2..n)
-                    .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets missing".into()))?
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("malformed block: num_offsets missing".into())
+                    })?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
@@ -880,7 +890,9 @@ impl SstableReader {
             let num_offsets = u16::from_le_bytes(
                 block_data
                     .get(n - 2..n)
-                    .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets missing".into()))?
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("malformed block: num_offsets missing".into())
+                    })?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
@@ -1034,7 +1046,8 @@ impl SstableIterator {
                     MemFuseError::Storage(format!("SSTable streaming iter read failed: {}", e))
                 })?;
                 block_data.extend_from_slice(&raw_block);
-                self.reader.block_cache
+                self.reader
+                    .block_cache
                     .write()
                     .put((self.reader.file_id, offset), Bytes::from(raw_block));
             }
@@ -1048,7 +1061,9 @@ impl SstableIterator {
             let num_offsets = u16::from_le_bytes(
                 block_data
                     .get(n - 2..n)
-                    .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets missing".into()))?
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("malformed block: num_offsets missing".into())
+                    })?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;

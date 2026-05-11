@@ -201,7 +201,12 @@ impl Wal {
             match file.read_exact(&mut len_buf).await {
                 Ok(_) => (),
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-                Err(e) => return Err(MemFuseError::Storage(format!("WAL replay length read failed: {}", e))),
+                Err(e) => {
+                    return Err(MemFuseError::Storage(format!(
+                        "WAL replay length read failed: {}",
+                        e
+                    )))
+                }
             }
 
             let len = u32::from_le_bytes(len_buf) as usize;
