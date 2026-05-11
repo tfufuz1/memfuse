@@ -18,18 +18,22 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::runtime::Runtime;
 
-fn runtime() -> &'static Runtime {
+fn runtime() -> PyResult<&'static Runtime> {
     static RUNTIME: OnceLock<Runtime> = OnceLock::new();
-    RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            // ANCHOR:DEBT:DEBT-UNWRAP-LIB-25 — unwrap/expect in production code
-            // WP:WP-0.0 PRIO:2 NEEDS:NONE
-            // AGENT:06 DATE:2026-05-09 STATUS:READY
-            // CREATED:2026-05-09 DEADLINE:NONE
-            .expect("Failed to create tokio runtime for memfuse-py")
-    })
+    if let Some(rt) = RUNTIME.get() {
+        return Ok(rt);
+    }
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                "Failed to create tokio runtime for memfuse-py: {}",
+                e
+            ))
+        })?;
+    let _ = RUNTIME.set(rt);
+    Ok(RUNTIME.get().unwrap())
 }
 
 #[pyclass(unsendable)]
@@ -40,8 +44,9 @@ pub struct Db {
 #[pymethods]
 impl Db {
     pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<Collection> {
+        let rt = runtime()?;
         let col = py
-            .allow_threads(|| runtime().block_on(self.inner.collection(name)))
+            .allow_threads(|| rt.block_on(self.inner.collection(name)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(Collection {
             inner: Arc::new(col),
@@ -80,10 +85,9 @@ impl Collection {
         };
         let id_string = id.to_string();
 
-        py.allow_threads(move || {
-            runtime().block_on(self.inner.insert(&id_string, &vec_owned, meta_val))
-        })
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let rt = runtime()?;
+        py.allow_threads(move || rt.block_on(self.inner.insert(&id_string, &vec_owned, meta_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(())
     }
 
@@ -101,8 +105,9 @@ impl Collection {
             })?
             .to_vec();
 
+        let rt = runtime()?;
         let results = py
-            .allow_threads(move || runtime().block_on(self.inner.search(&vec_owned, k)))
+            .allow_threads(move || rt.block_on(self.inner.search(&vec_owned, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let mut py_res = Vec::new();
@@ -131,10 +136,9 @@ impl Collection {
             .to_vec();
         let text_owned = text.to_string();
 
+        let rt = runtime()?;
         let results = py
-            .allow_threads(move || {
-                runtime().block_on(self.inner.hybrid_search(&text_owned, &vec_owned, k))
-            })
+            .allow_threads(move || rt.block_on(self.inner.hybrid_search(&text_owned, &vec_owned, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let mut py_res = Vec::new();
@@ -156,8 +160,9 @@ fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<Db> {
         ..Default::default()
     };
     let path_string = path.to_string();
+    let rt = runtime()?;
     let db = py
-        .allow_threads(|| runtime().block_on(MemFuse::open_with_config(path_string, config)))
+        .allow_threads(|| rt.block_on(MemFuse::open_with_config(path_string, config)))
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
     Ok(Db {
