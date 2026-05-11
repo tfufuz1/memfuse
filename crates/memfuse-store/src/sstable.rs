@@ -53,7 +53,7 @@ pub fn create_block_cache(capacity_mb: usize) -> Arc<BlockCache> {
     Arc::new(RwLock::new(LruCache::new(
         // ANCHOR:DEBT:DEBT-UNWRAP-SSTABLE-37 — unwrap/expect in production code
         // WP:WP-0.0 PRIO:2 NEEDS:NONE
-        // AGENT:02 DATE:2026-05-09 STATUS:REVIEW
+        // AGENT:02 DATE:2026-05-10 STATUS:REVIEW
         // CREATED:2026-05-09 DEADLINE:NONE
         NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::MIN), // safe: capacity >= 256
     )))
@@ -242,8 +242,12 @@ impl SstableBuilder {
             .len();
 
         Ok(SstableMetadata {
-            first_key: self.first_key.unwrap_or_default(), // unwrap
-            last_key: self.last_key.unwrap_or_default(),   // unwrap
+            first_key: self.first_key.ok_or_else(|| {
+                MemFuseError::Storage("malformed SSTable: missing first_key".into())
+            })?,
+            last_key: self.last_key.ok_or_else(|| {
+                MemFuseError::Storage("malformed SSTable: missing last_key".into())
+            })?,
             file_size,
         })
     }
@@ -314,15 +318,23 @@ impl SstableReader {
 
         while pos + 10 <= index_data.len() {
             let key_len = u16::from_le_bytes(
-                index_data[pos..pos + 2]
+                index_data
+                    .get(pos..pos + 2)
+                    .ok_or_else(|| MemFuseError::Storage("malformed index: key_len".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
             pos += 2;
-            let key = Bytes::copy_from_slice(&index_data[pos..pos + key_len]);
+            let key = Bytes::copy_from_slice(
+                index_data
+                    .get(pos..pos + key_len)
+                    .ok_or_else(|| MemFuseError::Storage("malformed index: key".into()))?,
+            );
             pos += key_len;
             let offset = u64::from_le_bytes(
-                index_data[pos..pos + 8]
+                index_data
+                    .get(pos..pos + 8)
+                    .ok_or_else(|| MemFuseError::Storage("malformed index: offset".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             );
@@ -330,7 +342,10 @@ impl SstableReader {
             index.push((key, offset));
         }
 
-        let last_key = index.last().map(|(k, _)| k.clone()).unwrap_or_default(); // unwrap
+        let last_key = index
+            .last()
+            .map(|(k, _)| k.clone())
+            .ok_or_else(|| MemFuseError::Storage("malformed SSTable: empty index".into()))?;
 
         // Read the actual first key from the first data block header
         // (index stores last_key per block, NOT first_key)
@@ -442,7 +457,9 @@ impl SstableReader {
         }
 
         let num_offsets = u16::from_le_bytes(
-            block_data[n - 2..n]
+            block_data
+                .get(n - 2..n)
+                .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
         ) as usize;
@@ -456,7 +473,9 @@ impl SstableReader {
         let offsets_start = n - 2 - offsets_len;
         let bloom_offset = offsets_start - 8;
         let bloom = u64::from_le_bytes(
-            block_data[bloom_offset..bloom_offset + 8]
+            block_data
+                .get(bloom_offset..bloom_offset + 8)
+                .ok_or_else(|| MemFuseError::Storage("malformed block: bloom".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
         );
@@ -489,9 +508,9 @@ impl SstableReader {
             ) as usize;
 
             let mut ep = entry_off;
-            // ANCHOR:SEC:SLICE-002 — Slice-Indexing ohne Bounds-Check
+            // ANCHOR:SEC:SLICE-002 — Slice-Indexing mit Bounds-Check
             // WP:WP-0.0 PRIO:1 NEEDS:NONE
-            // AGENT:09-security DATE:2026-05-09 STATUS:REVIEW
+            // AGENT:02 DATE:2026-05-10 STATUS:REVIEW
             // CREATED:2026-05-09 DEADLINE:NONE
             // FUNDORT: memfuse-store/src/sstable.rs:416
             // RISIKO: Panic bei Runtime durch unzureichende Datei-Länge
@@ -591,7 +610,9 @@ impl SstableReader {
             }
 
             let num_offsets = u16::from_le_bytes(
-                block_data[n - 2..n]
+                block_data
+                    .get(n - 2..n)
+                    .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
@@ -720,7 +741,9 @@ impl SstableReader {
             }
 
             let num_offsets = u16::from_le_bytes(
-                block_data[n - 2..n]
+                block_data
+                    .get(n - 2..n)
+                    .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
@@ -853,7 +876,9 @@ impl SstableReader {
             }
 
             let num_offsets = u16::from_le_bytes(
-                block_data[n - 2..n]
+                block_data
+                    .get(n - 2..n)
+                    .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
