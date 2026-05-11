@@ -27,6 +27,42 @@ triple-test: check
     done
     echo "✅ Triple-Test-Gate PASSED (3/3)"
 
+# DAG Integrity Check: verifiziert Architektur-Layer Isolation
+dag-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== DAG Integrity Check ==="
+
+    echo "--- [1/3] Layer 0 Isolation (Kernel) ---"
+    if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator"; then
+        echo "❌ ERROR: memfuse-core imports forbidden internal crates."
+        exit 1
+    fi
+    echo "✅ memfuse-core isolation OK"
+
+    echo "--- [2/3] Layer 1 Isolation (Peers) ---"
+    FAIL=0
+    if cargo tree -p memfuse-store --edges no-dev | grep -q "memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator"; then
+        echo "❌ ERROR: memfuse-store imports forbidden crates."
+        FAIL=1
+    fi
+    if cargo tree -p memfuse-index --edges no-dev | grep -q "memfuse-db\|memfuse-store\|memfuse-text\|memfuse-checkpoint\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator"; then
+        echo "❌ ERROR: memfuse-index imports forbidden crates."
+        FAIL=1
+    fi
+    if cargo tree -p memfuse-text --edges no-dev | grep -v "memfuse-store" | grep -q "memfuse-db\|memfuse-index\|memfuse-checkpoint\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator"; then
+        echo "❌ ERROR: memfuse-text imports forbidden crates (excluding DAG-001)."
+        FAIL=1
+    fi
+    [ $FAIL -eq 0 ] && echo "✅ Layer 1 isolation OK (modulo DAG-001)" || exit 1
+
+    echo "--- [3/3] Tracking Known Violations ---"
+    VIOLATIONS=0
+    cargo tree -p memfuse-text --edges no-dev | grep -q "memfuse-store" && { echo "⚠️ DAG-001 present (text->store)"; VIOLATIONS=$((VIOLATIONS+1)); }
+    cargo tree -p memfuse-checkpoint --edges no-dev | grep -q "memfuse-store" && { echo "⚠️ DAG-002 present (checkpoint->store)"; VIOLATIONS=$((VIOLATIONS+1)); }
+    cargo tree -p memfuse-py --edges no-dev | grep -q "memfuse-db" && { echo "⚠️ DAG-003 present (py->db)"; VIOLATIONS=$((VIOLATIONS+1)); }
+    echo "Found $VIOLATIONS known violations."
+
 # Tech-Debt Audit: scannt nach .unwrap(), unsafe, std::fs in Produktionscode
 debt-audit:
     #!/usr/bin/env bash

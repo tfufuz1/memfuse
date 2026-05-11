@@ -62,10 +62,10 @@ jobs:
             ["jules/wp-1.2-collections"]="jules/wp-2.1-hybrid-search"
             ["jules/wp-2.1-hybrid-search"]="jules/wp-2.2-quantization"
             ["jules/wp-2.2-quantization"]="jules/wp-3.1-python-bindings"
-            ["jules/wp-1.1-compaction"]="jules/wp-3.2-encryption"
-            ["jules/wp-3.1-python-bindings"]="jules/wp-4.2-filtering"
+            ["jules/wp-3.1-python-bindings"]="jules/wp-3.2-encryption"
             ["jules/wp-3.2-encryption"]="jules/wp-4.1-mmap"
-            ["jules/wp-4.1-mmap"]="jules/wp-4.3-diskann"
+            ["jules/wp-4.1-mmap"]="jules/wp-4.2-filtering"
+            ["jules/wp-4.2-filtering"]="jules/wp-4.3-diskann"
           )
           
           WP_NAME=$(echo "$BRANCH" | sed 's|jules/||')

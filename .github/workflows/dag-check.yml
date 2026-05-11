@@ -14,26 +14,33 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         
-      - name: Check memfuse-core (L3 Kernel — imports NOBODY)
+      - name: Check memfuse-core (Layer 0 Kernel — imports NOBODY)
         run: |
           set -e
           echo "Verifying memfuse-core imports no internal crates..."
-          if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py"; then
-            echo "ERROR: memfuse-core imports forbidden crates."
+          # No internal crates should be imported by the core kernel
+          if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator"; then
+            echo "ERROR: memfuse-core imports forbidden internal crates."
             exit 1
           fi
 
-      - name: Check L2 peer isolation (store, index must not import peers)
+      - name: Check Layer 1 peer isolation (store, index, text)
         run: |
           set -e
-          echo "Verifying memfuse-store does not import L2 peers..."
-          if cargo tree -p memfuse-store --edges no-dev | grep -q "memfuse-db\|memfuse-index\|memfuse-text"; then
-            echo "ERROR: memfuse-store imports L2 peers."
+          echo "Verifying memfuse-store does not import peers or orchestrators..."
+          if cargo tree -p memfuse-store --edges no-dev | grep -q "memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator"; then
+            echo "ERROR: memfuse-store imports forbidden crates."
             exit 1
           fi
-          echo "Verifying memfuse-index does not import L2 peers..."
-          if cargo tree -p memfuse-index --edges no-dev | grep -q "memfuse-db\|memfuse-store\|memfuse-text"; then
-            echo "ERROR: memfuse-index imports L2 peers."
+          echo "Verifying memfuse-index does not import peers or orchestrators..."
+          if cargo tree -p memfuse-index --edges no-dev | grep -q "memfuse-db\|memfuse-store\|memfuse-text\|memfuse-checkpoint\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator"; then
+            echo "ERROR: memfuse-index imports forbidden crates."
+            exit 1
+          fi
+          echo "Verifying memfuse-text isolation..."
+          # Note: DAG-001 is a known violation (memfuse-text -> memfuse-store)
+          if cargo tree -p memfuse-text --edges no-dev | grep -v "memfuse-store" | grep -q "memfuse-db\|memfuse-index\|memfuse-checkpoint\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator"; then
+            echo "ERROR: memfuse-text imports forbidden crates (excluding known DAG-001)."
             exit 1
           fi
 
@@ -52,4 +59,10 @@ jobs:
             echo "⚠️  DAG-002 still present (memfuse-checkpoint → memfuse-store)"
           else
             echo "✅ DAG-002 resolved"
+          fi
+          echo "--- DAG-003: memfuse-py → memfuse-db ---"
+          if cargo tree -p memfuse-py --edges no-dev | grep -q "memfuse-db"; then
+            echo "⚠️  DAG-003 still present (memfuse-py → memfuse-db)"
+          else
+            echo "✅ DAG-003 resolved"
           fi
