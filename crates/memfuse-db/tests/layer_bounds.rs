@@ -5,9 +5,9 @@
 // ZIEL: memfuse-db -> memfuse-store (Collection-Persist + Reload)
 // AGENT:antigravity DATE:2026-05-09 STATUS:DONE
 
-use memfuse_db::{MemFuse, MemFuseConfig, DistanceMetric};
-use tempfile::TempDir;
+use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
+use tempfile::TempDir;
 
 #[tokio::test]
 async fn test_layer_002_collection_persistence_reload() {
@@ -23,9 +23,13 @@ async fn test_layer_002_collection_persistence_reload() {
             .await
             .expect("open db");
         let col = db.collection("persistent_col").await.expect("create col");
-        col.insert("k1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"val": "persisted"})))
-            .await
-            .expect("insert");
+        col.insert(
+            "k1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"val": "persisted"})),
+        )
+        .await
+        .expect("insert");
 
         let list = db.list_collections().await.expect("list");
         assert!(list.contains(&"persistent_col".to_string()));
@@ -85,17 +89,26 @@ async fn test_layer_003_hybrid_search_bm25() {
     .expect("insert 2");
 
     // Pure text search via hybrid_search (zero vector)
-    let results = db.hybrid_search("fox", &[0.0, 0.0, 0.0, 0.0], 5).await.expect("hybrid search");
+    let results = db
+        .hybrid_search("fox", &[0.0, 0.0, 0.0, 0.0], 5)
+        .await
+        .expect("hybrid search");
     assert!(!results.is_empty());
     assert_eq!(results[0].id, "doc1");
 
     // Pure vector search via hybrid_search (empty text)
-    let results = db.hybrid_search("", &[0.0, 1.0, 0.0, 0.0], 5).await.expect("hybrid search");
+    let results = db
+        .hybrid_search("", &[0.0, 1.0, 0.0, 0.0], 5)
+        .await
+        .expect("hybrid search");
     assert!(!results.is_empty());
     assert_eq!(results[0].id, "doc2");
 
     // Hybrid search
-    let results = db.hybrid_search("fox", &[0.0, 1.0, 0.0, 0.0], 5).await.expect("hybrid search");
+    let results = db
+        .hybrid_search("fox", &[0.0, 1.0, 0.0, 0.0], 5)
+        .await
+        .expect("hybrid search");
     assert!(results.len() >= 2);
     // Both should be in results due to RRF
     let ids: Vec<String> = results.iter().map(|r| r.id.clone()).collect();
