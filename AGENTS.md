@@ -2,7 +2,7 @@
 
 > **Phase:** Feature Implementation & TDD  
 > **Doctrine:** Zero-Panic / Sovereign Core / Triple-Test-Gate  
-> **Updated:** 2026-05-05
+> **Updated:** 2026-05-11
 
 ---
 
@@ -97,12 +97,13 @@ just spec WP-X.Y-NAME
 
 ---
 
-## ⚠️ Autonomous Squad Protocol (13 Agents)
+## ⚠️ Autonomous Squad Protocol (14 Agents)
 
-MemFuse is built by a squad of 13 autonomous agents. Each agent has a specific domain and a staggered execution window.
+MemFuse is built by a squad of 14 autonomous agents. Each agent has a specific domain and a staggered execution window.
 
 | # | Role | Domain | Schedule |
 |---|---|---|---|
+| **00** | **Watchdog** | **Deadlock Prevention & FV Gates** | **Continuous** |
 | 13 | **Debt Hunter** | Tech Debt & Invariant Cleanup | 05:00 UTC |
 | 01 | **Core Guardian** | `memfuse-core` & Shared Types | 06:00 UTC |
 | 02 | **Store Engineer** | `memfuse-store` (LSM / WAL) | 07:00 UTC |
@@ -118,6 +119,16 @@ MemFuse is built by a squad of 13 autonomous agents. Each agent has a specific d
 ### <protocol name="Triple-Test-Gate">
 No code enters the `main` branch without passing 3 consecutive test runs, a Zero-Unwrap scan, and an Async-Safety audit. Warnings are treated as hard errors.
 </protocol>
+
+---
+
+## 🔐 Formal Verification Gate (ARCH:GATE-FV)
+
+The Watchdog (Agent 00) monitors the formal verification of critical components.
+
+- **Status:** 🔴 OPEN (Initial Lock)
+- **Scope:** LSM-Tree (memfuse-store), SIMD Distances (memfuse-index)
+- **Required:** Kani harnesses or TLA+ specs for any changes in critical path.
 
 ---
 

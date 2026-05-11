@@ -5,6 +5,13 @@
 // DATEN-PFAD: Client → TxBuffer → WAL → MemTable → SSTable → Compaction
 // INVARIANTE: Alle Disk-I/O via tokio::fs (zero std::fs imports).
 // MODUL-HIERARCHIE: lsm.rs orchestriert, memtable/wal/sstable sind Bausteine.
+
+// ANCHOR:ARCH:GATE-FV — Formal Verification Gate
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:00 DATE:2026-05-11 STATUS:OPEN
+// DONE: Alle krypto- oder parallelitäts-relevanten LSM-Änderungen sind formal verifiziert (Kani/TLA+).
+// WATCHDOG: Initializing Gate as OPEN until formal proofs are integrated.
+
 //! MemFuse Store — LSM-Tree based storage engine.
 //!
 //! Provides persistent key-value storage with WAL, MemTable,
