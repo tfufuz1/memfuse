@@ -30,10 +30,50 @@ impl InvertedIndex {
     }
 
     /// Appends and updates inverted index structures for a document.
-    pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
+    pub async fn upsert_document(
+        &self,
+        tx: TxId,
+        doc_id: DocId,
+        text: &str,
+        old_text: Option<&str>,
+    ) -> Result<()> {
         let tokens = tokenize(text);
         if tokens.is_empty() {
+            // If new text has no tokens, we should effectively delete the document from index
+            if let Some(ot) = old_text {
+                return self.delete_document(tx, doc_id, ot).await;
+            }
             return Ok(());
+        }
+
+        // If we are updating, remove old terms first
+        if let Some(ot) = old_text {
+            let old_tokens = tokenize(ot);
+            let mut unique_old_terms = old_tokens;
+            unique_old_terms.sort();
+            unique_old_terms.dedup();
+
+            for term in unique_old_terms {
+                let pl_key = self.key(&format!("pl:{}", term));
+                if let Some(bytes) = self.storage.get(&pl_key).await? {
+                    let config = bincode::config::standard();
+                    if let Ok((mut pl, _)) =
+                        bincode::serde::decode_from_slice::<Vec<(DocId, u32)>, _>(&bytes, config)
+                    {
+                        pl.retain(|&(d, _)| d != doc_id);
+                        if pl.is_empty() {
+                            self.storage.delete(tx, &pl_key).await?;
+                        } else {
+                            let new_bytes =
+                                bincode::serde::encode_to_vec(&pl, bincode::config::standard())
+                                    .map_err(|e| {
+                                        MemFuseError::Storage(format!("bincode: {}", e))
+                                    })?;
+                            self.storage.put(tx, &pl_key, &new_bytes).await?;
+                        }
+                    }
+                }
+            }
         }
 
         let mut tfs = HashMap::new();
@@ -43,6 +83,21 @@ impl InvertedIndex {
 
         // Store document length
         let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
+        let mut is_new = true;
+        let mut old_len = 0u32;
+
+        if let Some(bytes) = self.storage.get(&dl_key).await? {
+            if bytes.len() == 4 {
+                old_len = u32::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
+                );
+                is_new = false;
+            }
+        }
+
         self.storage
             .put(tx, &dl_key, &(tokens.len() as u32).to_le_bytes())
             .await?;
@@ -58,35 +113,34 @@ impl InvertedIndex {
                     })?);
             }
         }
-        total_tokens += tokens.len() as u64;
+        if is_new {
+            total_tokens += tokens.len() as u64;
+        } else {
+            total_tokens = total_tokens
+                .saturating_sub(old_len as u64)
+                .saturating_add(tokens.len() as u64);
+        }
         self.storage
             .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
             .await?;
 
         // Update total docs
-        let total_docs_key = self.key("meta:total_docs");
-        let mut total_docs = 0u64;
-        let is_new = true;
-        if let Some(bytes) = self.storage.get(&total_docs_key).await? {
-            if bytes.len() == 8 {
-                total_docs = u64::from_le_bytes(
-                    bytes
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
-                );
-                // We assume it's an update, but actually we don't know if doc existed.
-                // We'll increment anyway for simplicity (in a real system, we'd check if doc existed).
-                // Or we can just rely on index.len() from HNSW! Wait, HNSW len is not accessible here.
-                // It's okay, we can increment total_docs. It's an approximation.
-            }
-        }
         if is_new {
+            let total_docs_key = self.key("meta:total_docs");
+            let mut total_docs = 0u64;
+            if let Some(bytes) = self.storage.get(&total_docs_key).await? {
+                if bytes.len() == 8 {
+                    total_docs =
+                        u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                            MemFuseError::Storage("Invalid total_docs length".into())
+                        })?);
+                }
+            }
             total_docs += 1;
+            self.storage
+                .put(tx, &total_docs_key, &total_docs.to_le_bytes())
+                .await?;
         }
-        self.storage
-            .put(tx, &total_docs_key, &total_docs.to_le_bytes())
-            .await?;
 
         // Update posting lists
         for (term, tf) in tfs {
@@ -124,7 +178,51 @@ impl InvertedIndex {
         let tokens = tokenize(original_text);
 
         let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
+        let mut old_len = 0u32;
+        if let Some(bytes) = self.storage.get(&dl_key).await? {
+            if bytes.len() == 4 {
+                old_len = u32::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
+                );
+            }
+        }
+
         self.storage.delete(tx, &dl_key).await?;
+
+        // Update total tokens
+        let total_tok_key = self.key("meta:total_tokens");
+        if let Some(bytes) = self.storage.get(&total_tok_key).await? {
+            if bytes.len() == 8 {
+                let mut total_tokens =
+                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid total_tokens length".into())
+                    })?);
+                total_tokens = total_tokens.saturating_sub(old_len as u64);
+                self.storage
+                    .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
+                    .await?;
+            }
+        }
+
+        // Update total docs
+        let total_docs_key = self.key("meta:total_docs");
+        if let Some(bytes) = self.storage.get(&total_docs_key).await? {
+            if bytes.len() == 8 {
+                let mut total_docs = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
+                );
+                total_docs = total_docs.saturating_sub(1);
+                self.storage
+                    .put(tx, &total_docs_key, &total_docs.to_le_bytes())
+                    .await?;
+            }
+        }
 
         let mut unique_terms = tokens;
         unique_terms.sort();
@@ -257,7 +355,7 @@ mod tests {
         let tx1 = TxId::new(1);
         let d1 = DocId::new(1);
         index
-            .upsert_document(tx1, d1, "Rust is a fast programming language.")
+            .upsert_document(tx1, d1, "Rust is a fast programming language.", None)
             .await
             .expect("insert");
         storage.commit(tx1).await.expect("commit");
@@ -265,7 +363,12 @@ mod tests {
         let tx2 = TxId::new(2);
         let d2 = DocId::new(2);
         index
-            .upsert_document(tx2, d2, "I like rust programming and rust ownership rules.")
+            .upsert_document(
+                tx2,
+                d2,
+                "I like rust programming and rust ownership rules.",
+                None,
+            )
             .await
             .expect("insert");
         storage.commit(tx2).await.expect("commit");
@@ -273,7 +376,7 @@ mod tests {
         let tx3 = TxId::new(3);
         let d3 = DocId::new(3);
         index
-            .upsert_document(tx3, d3, "Python is dynamically typed.")
+            .upsert_document(tx3, d3, "Python is dynamically typed.", None)
             .await
             .expect("insert");
         storage.commit(tx3).await.expect("commit");
@@ -287,11 +390,194 @@ mod tests {
         // doc 2 has "rust" twice and "programming" once, should score higher than doc 1
         assert!(results[0].0 == d2 || results[1].0 == d2);
 
-        let doc2_pos = results.iter().position(|r| r.0 == d2).unwrap(); // unwrap
-        let doc1_pos = results.iter().position(|r| r.0 == d1).unwrap(); // unwrap
+        let doc2_pos = results
+            .iter()
+            .position(|r| r.0 == d2)
+            .expect("d2 should be in results");
+        let doc1_pos = results
+            .iter()
+            .position(|r| r.0 == d1)
+            .expect("d1 should be in results");
         assert!(
             doc2_pos < doc1_pos,
             "doc2 should be ranked higher due to higher TF"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_upsert_update_metadata() {
+        let tmp = TempDir::new().expect("tmp");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(config).await.expect("storage"));
+        let index = InvertedIndex::new(storage.clone(), "default");
+
+        let tx1 = TxId::new(1);
+        let d1 = DocId::new(1);
+        index
+            .upsert_document(tx1, d1, "one two three", None)
+            .await
+            .unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        // Check metadata
+        let total_docs_key = index.key("meta:total_docs");
+        let total_tok_key = index.key("meta:total_tokens");
+
+        let docs = u64::from_le_bytes(
+            storage
+                .get(&total_docs_key)
+                .await
+                .expect("get")
+                .expect("exists")
+                .try_into()
+                .expect("u64"),
+        );
+        let tokens = u64::from_le_bytes(
+            storage
+                .get(&total_tok_key)
+                .await
+                .expect("get")
+                .expect("exists")
+                .try_into()
+                .expect("u64"),
+        );
+        assert_eq!(docs, 1);
+        assert_eq!(tokens, 3);
+
+        // Update same doc
+        let tx2 = TxId::new(2);
+        index
+            .upsert_document(tx2, d1, "one two", Some("one two three"))
+            .await
+            .expect("upsert");
+        storage.commit(tx2).await.expect("commit");
+
+        let docs = u64::from_le_bytes(
+            storage
+                .get(&total_docs_key)
+                .await
+                .expect("get")
+                .expect("exists")
+                .try_into()
+                .expect("u64"),
+        );
+        let tokens = u64::from_le_bytes(
+            storage
+                .get(&total_tok_key)
+                .await
+                .expect("get")
+                .expect("exists")
+                .try_into()
+                .expect("u64"),
+        );
+        assert_eq!(docs, 1); // Should still be 1
+        assert_eq!(tokens, 2); // Should be 2 now
+
+        // Delete doc
+        let tx3 = TxId::new(3);
+        index
+            .delete_document(tx3, d1, "one two")
+            .await
+            .expect("delete");
+        storage.commit(tx3).await.expect("commit");
+
+        let docs = u64::from_le_bytes(
+            storage
+                .get(&total_docs_key)
+                .await
+                .expect("get")
+                .expect("exists")
+                .try_into()
+                .expect("u64"),
+        );
+        let tokens = u64::from_le_bytes(
+            storage
+                .get(&total_tok_key)
+                .await
+                .expect("get")
+                .expect("exists")
+                .try_into()
+                .expect("u64"),
+        );
+        assert_eq!(docs, 0);
+        assert_eq!(tokens, 0);
+    }
+
+    #[tokio::test]
+    async fn test_update_removes_old_terms() {
+        let tmp = TempDir::new().expect("tmp");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(config).await.expect("storage"));
+        let index = InvertedIndex::new(storage.clone(), "default");
+
+        let d1 = DocId::new(1);
+        let tx1 = TxId::new(1);
+        index
+            .upsert_document(tx1, d1, "apple banana", None)
+            .await
+            .expect("upsert");
+        storage.commit(tx1).await.expect("commit");
+
+        // Search for apple
+        let results = index.search_bm25("apple", 10).await.expect("search");
+        assert_eq!(results.len(), 1);
+
+        // Update doc 1: apple -> cherry
+        let tx2 = TxId::new(2);
+        index
+            .upsert_document(tx2, d1, "cherry banana", Some("apple banana"))
+            .await
+            .expect("upsert");
+        storage.commit(tx2).await.expect("commit");
+
+        // Search for apple: should be 0
+        let results = index.search_bm25("apple", 10).await.expect("search");
+        assert_eq!(results.len(), 0, "apple should be removed");
+
+        // Search for cherry: should be 1
+        let results = index.search_bm25("cherry", 10).await.expect("search");
+        assert_eq!(results.len(), 1, "cherry should be added");
+    }
+
+    #[tokio::test]
+    async fn test_delete_removes_from_search() {
+        let tmp = TempDir::new().expect("tmp");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(config).await.expect("storage"));
+        let index = InvertedIndex::new(storage.clone(), "default");
+
+        let d1 = DocId::new(1);
+        let tx1 = TxId::new(1);
+        index
+            .upsert_document(tx1, d1, "quick brown fox", None)
+            .await
+            .expect("upsert");
+        storage.commit(tx1).await.expect("commit");
+
+        let results = index.search_bm25("fox", 10).await.expect("search");
+        assert_eq!(results.len(), 1);
+
+        let tx2 = TxId::new(2);
+        index
+            .delete_document(tx2, d1, "quick brown fox")
+            .await
+            .expect("delete");
+        storage.commit(tx2).await.expect("commit");
+
+        let results = index.search_bm25("fox", 10).await.expect("search");
+        assert_eq!(
+            results.len(),
+            0,
+            "fox should be removed from search after deletion"
         );
     }
 }
