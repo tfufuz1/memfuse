@@ -276,6 +276,7 @@ impl ResourceTracker {
         }
     }
 
+    /// Reserves memory in the tracker. Returns an error if the budget is exceeded.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         let current = self
             .memory_used
@@ -291,15 +292,18 @@ impl ResourceTracker {
         Ok(())
     }
 
+    /// Releases memory back to the tracker.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Returns the current memory usage in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns a reference to the resource budget configuration.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }

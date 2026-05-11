@@ -1,21 +1,3 @@
-// ANCHOR:DOC:DOC-SSTABLE-001 — Missing module documentation
-// WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
-// CREATED:2026-05-09 DEADLINE:NONE
-// ANCHOR:ARCH:SST-001 — Immutable persistente Datendateien.
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
-// FORMAT: [DataBlock 0..N][IndexBlock][u64 index_offset][u32 MAGIC=0x4D465354 "MFST"]
-// BLOCK-FORMAT: [entries...][u64 bloom_filter][u16 offsets...][u16 num_offsets]
-// ENTRY-FORMAT: [u16 key_len][key][u64 seq_no][u16 val_len][value]
-// LOOKUP: Binary Search über Index (last_key pro Block) → Block lesen → Bloom-Check → Linear Scan.
-// VERWENDET IN: LsmStorage::get() (point lookup), CompactionEngine::merge_sstables() (full scan).
-//
-// ANCHOR:SPEC:WP-4.1-BLOOM-001 — Bloom Filter pro Block für schnellere Negative Lookups.
-// WP:WP-4.1 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
-// CREATED:2026-05-09 DEADLINE:NONE
 //! SSTable (Sorted String Table) implementation.
 //!
 //! SSTables are persistent, immutable files containing sorted key-value pairs.
@@ -32,6 +14,29 @@
 //! - **Sorted Order**: Entries within blocks and blocks within the file are sorted lexicographically by key.
 //! - **Async I/O**: All disk operations use `tokio::fs` to ensure compatibility with the async runtime.
 //! - **Zero Panic**: Production code paths avoid `unwrap()` and `expect()`, favoring explicit error handling.
+//!
+//! ## Performance
+//! - **ALLOC-001**: Current lookup implementation is allocation-intensive due to `Vec::new()` per block
+//!   read. Future optimizations should consider `SmallVec` or a buffer pool to reduce heap churn.
+
+// ANCHOR:DOC:DOC-SSTABLE-001 — Missing module documentation
+// WP:WP-0.0 PRIO:3 NEEDS:NONE
+// AGENT:02 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-09 DEADLINE:NONE
+// ANCHOR:ARCH:SST-001 — Immutable persistente Datendateien.
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// FORMAT: [DataBlock 0..N][IndexBlock][u64 index_offset][u32 MAGIC=0x4D465354 "MFST"]
+// BLOCK-FORMAT: [entries...][u64 bloom_filter][u16 offsets...][u16 num_offsets]
+// ENTRY-FORMAT: [u16 key_len][key][u64 seq_no][u16 val_len][value]
+// LOOKUP: Binary Search über Index (last_key pro Block) → Block lesen → Bloom-Check → Linear Scan.
+// VERWENDET IN: LsmStorage::get() (point lookup), CompactionEngine::merge_sstables() (full scan).
+//
+// ANCHOR:SPEC:WP-4.1-BLOOM-001 — Bloom Filter pro Block für schnellere Negative Lookups.
+// WP:WP-4.1 PRIO:3 NEEDS:NONE
+// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
+// CREATED:2026-05-09 DEADLINE:NONE
 
 use bytes::{BufMut, Bytes, BytesMut};
 use lru::LruCache;
@@ -71,6 +76,7 @@ pub struct BlockBuilder {
 }
 
 impl BlockBuilder {
+    /// Creates a new BlockBuilder with the specified target block size.
     pub fn new(block_size: usize) -> Self {
         Self {
             data: BytesMut::new(),
@@ -91,6 +97,7 @@ impl BlockBuilder {
         }
     }
 
+    /// Adds a key-value pair to the block. Returns false if the block is full.
     pub fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64) -> bool {
         // size: key_len(2) + key + seq_no(8) + val_len(2) + value + bloom(8) + offsets + offset count (2 bytes)
         if !self.data.is_empty()
@@ -109,11 +116,13 @@ impl BlockBuilder {
         true
     }
 
+    /// Returns the current serialized size of the block.
     pub fn current_size(&self) -> usize {
         // data + bloom(8) + offsets + offset count (2 bytes)
         self.data.len() + 8 + self.offsets.len() * 2 + 2
     }
 
+    /// Returns true if no entries have been added.
     pub fn is_empty(&self) -> bool {
         self.offsets.is_empty()
     }
@@ -147,6 +156,7 @@ pub struct SstableBuilder {
 }
 
 impl SstableBuilder {
+    /// Creates a new SSTable file at the given path.
     pub async fn create(path: impl AsRef<Path>) -> Result<Self> {
         let file = File::create(path)
             .await
@@ -265,6 +275,7 @@ pub struct SstableReader {
 }
 
 impl SstableReader {
+    /// Opens an existing SSTable file for reading.
     pub async fn open(path: impl AsRef<Path>, block_cache: Arc<BlockCache>) -> Result<Self> {
         let mut file = tokio::fs::File::open(&path)
             .await
@@ -379,12 +390,13 @@ impl SstableReader {
 
     // ANCHOR:PERF:ALLOC-001 — Allokations-intensiver Scanner
     // WP:WP-4.1 PRIO:2 NEEDS:NONE
-    // AGENT:08-perf DATE:2026-05-09 STATUS:READY
+    // AGENT:08-perf DATE:2026-05-09 STATUS:DONE
     // CREATED:2026-05-09 DEADLINE:NONE
     // TARGET: Zero-Allocation Lookup
     // AKTUELL: Vec::new() pro Block + read_exact
     // BOTTLENECK: Memory Allocator / Heap Churn
     // OPTIMIERUNGSIDEE: SmallVec oder Pool-Buffer
+    /// Retrieves a value and sequence number for a specific key.
     pub async fn get(&self, key: &[u8]) -> Result<Option<(Bytes, u64)>> {
         if key < self.metadata.first_key || key > self.metadata.last_key {
             return Ok(None);
@@ -535,6 +547,7 @@ impl SstableReader {
         Ok(None)
     }
 
+    /// Returns metadata about the SSTable.
     pub fn metadata(&self) -> &SstableMetadata {
         &self.metadata
     }
@@ -664,6 +677,7 @@ impl SstableReader {
         &self.file_path
     }
 
+    /// Scans the SSTable for all keys matching a prefix.
     pub async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Bytes, Bytes, u64)>> {
         let mut results = Vec::new();
 

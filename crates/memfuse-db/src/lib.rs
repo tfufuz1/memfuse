@@ -4,44 +4,13 @@
 // CREATED:2026-05-05 DEADLINE:NONE
 // ROLLE: Verbindet memfuse-core (Traits), memfuse-store (LSM) und memfuse-index (HNSW).
 // DESIGN: Zero-Boilerplate API für Nutzer. Intern wird alles über die Collection-Abstraktion geroutet.
-// ABWÄRTSKOMPATIBILITÄT: Bietet weiterhin top-level insert/search an, die intern auf die "default" Collection leiten.
 //! # MemFuse — Embedded Hybrid-Search for AI Agents
 //!
 //! MemFuse is a zero-boilerplate embedded database for AI agent memory.
 //! It combines vector search (HNSW), persistent storage (LSM-Tree),
 //! and relationship tracking in a single library.
-//!
-//! ## Quick Start
-//!
-//! ```rust,no_run
-//! use memfuse_db::MemFuse;
-//!
-//! # async fn example() -> memfuse_core::Result<()> {
-//! // Open or create a database
-//! let db = MemFuse::open("./my_data").await?;
-//!
-//! // Insert a document with embedding and metadata
-//! let embedding = vec![0.1, 0.2, 0.3, 0.4];
-//! db.insert(
-//!     "doc-1",
-//!     &embedding,
-//!     Some(serde_json::json!({"topic": "rust"})),
-//! ).await?;
-//!
-//! // Semantic search
-//! let results = db.search(&[0.1, 0.2, 0.3, 0.4], 5).await?;
-//! for result in &results {
-//!     println!("{}: score={:.3}", result.id, result.score);
-//! }
-//!
-//! // Get by key
-//! let doc = db.get("doc-1").await?;
-//!
-//! // Delete
-//! db.delete("doc-1").await?;
-//! # Ok(())
-//! # }
-//! ```
+
+// ABWÄRTSKOMPATIBILITÄT: Bietet weiterhin top-level insert/search an, die intern auf die "default" Collection leiten.
 
 #![forbid(unsafe_code)]
 
@@ -168,7 +137,6 @@ impl MemFuse {
         Ok(())
     }
 
-    /// Returns the next transaction ID (auto-incremented).
     /// Returns a specific collection (namespace).
     /// Creates the collection if it does not already exist.
     // ANCHOR:TODO:COL-001 — Implementiere vollständige Persistenz und Isolation für `collection()`.
@@ -234,7 +202,7 @@ impl MemFuse {
         Ok(col)
     }
 
-    /// Lists all existing collection names (those currently active in memory).
+    /// Lists all existing collection names.
     // ANCHOR:TODO:COL-002 — Erweitere `list_collections` so, dass es aus dem LSM-Store/Metadata ließt.
     // WP:WP-1.2 PRIO:1 NEEDS:COL-001
     // AGENT:@JULES-04 DATE:2026-05-09 STATUS:READY

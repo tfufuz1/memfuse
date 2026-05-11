@@ -6,13 +6,9 @@
 // TOMBSTONE-GC: Tombstones werden NUR gelöscht wenn seq < min_active_seqno (MVCC-SAFE).
 // ATOMARER SWAP: Merge unter read-lock, SSTable-Liste swap unter write-lock.
 // INVARIANTE: Während Compaction sind alte SSTables noch lesbar (readers halten Arc).
-// LIFECYCLE: run_loop() -> maybe_compact() -> select_candidates() -> merge_sstables()
 //! Background compaction engine for the LSM-Tree.
-//!
-//! Implements a Size-Tiered Compaction Strategy (STCS):
-//! Groups SSTables by size class and merges groups that exceed a threshold.
-//! Tombstones are garbage-collected during merge when no active snapshot
-//! references them.
+
+// LIFECYCLE: run_loop() -> maybe_compact() -> select_candidates() -> merge_sstables()
 
 use crate::sstable::{BlockCache, SstableBuilder, SstableReader};
 use memfuse_core::{Result, SnapshotRegistry, TOMBSTONE_BIT};

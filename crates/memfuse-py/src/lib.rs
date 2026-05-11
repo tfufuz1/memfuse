@@ -1,6 +1,8 @@
+//! Python bindings for MemFuse using PyO3.
+
 // ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:06 DATE:2026-05-09 STATUS:READY
+// AGENT:06 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
@@ -32,6 +34,7 @@ fn runtime() -> &'static Runtime {
     })
 }
 
+/// Python handle for a MemFuse database.
 #[pyclass(unsendable)]
 pub struct Db {
     inner: Arc<MemFuse>,
@@ -39,6 +42,7 @@ pub struct Db {
 
 #[pymethods]
 impl Db {
+    /// Returns a specific collection (namespace).
     pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<Collection> {
         let col = py
             .allow_threads(|| runtime().block_on(self.inner.collection(name)))
@@ -49,6 +53,7 @@ impl Db {
     }
 }
 
+/// Python handle for a specific MemFuse collection.
 #[pyclass(unsendable)]
 pub struct Collection {
     inner: Arc<MemFuseCollection>,
@@ -56,6 +61,7 @@ pub struct Collection {
 
 #[pymethods]
 impl Collection {
+    /// Inserts a document into the collection.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
@@ -87,6 +93,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Performs semantic k-NN search.
     #[pyo3(signature = (vector, k))]
     pub fn search<'py>(
         &self,
@@ -115,6 +122,7 @@ impl Collection {
         Ok(py_res)
     }
 
+    /// Combines vector search and BM25 text search.
     #[pyo3(signature = (text, vector, k))]
     pub fn hybrid_search<'py>(
         &self,

@@ -27,6 +27,7 @@ pub struct DbTransaction<'a> {
 }
 
 impl<'a> DbTransaction<'a> {
+    /// Creates a new DbTransaction for the given collection and transaction ID.
     pub fn new(collection: &'a Collection, tx_id: TxId) -> Self {
         Self {
             tx_id,

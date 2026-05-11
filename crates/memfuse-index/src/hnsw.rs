@@ -1,6 +1,13 @@
+//! HNSW (Hierarchical Navigable Small World) vector index.
+//!
+//! Provides approximate nearest neighbor search with:
+//! - Diversity heuristic neighbor selection
+//! - Automatic rebuild on >20% deletions
+//! - Transactional inserts/deletes via TxBuffer
+
 // ANCHOR:DOC:DOC-HNSW-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:03 DATE:2026-05-09 STATUS:READY
+// AGENT:03 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:HNSW-001 — Hierarchical Navigable Small World Index.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -12,12 +19,6 @@
 // DELETE: Soft-Delete (Tombstone via deleted_nodes Roaring Bitmap).
 // REBUILD-LOGIK: Wenn >20% gelöscht → async trigger_rebuild_async() -> Atomic Swap.
 // TRANSAKTIONEN: Nutzt memfuse_core::TxBuffer zur Staging-Isolation.
-//! HNSW (Hierarchical Navigable Small World) vector index.
-//!
-//! Provides approximate nearest neighbor search with:
-//! - Diversity heuristic neighbor selection
-//! - Automatic rebuild on >20% deletions
-//! - Transactional inserts/deletes via TxBuffer
 
 use crate::distance::compute_distance;
 use ahash::{AHashMap, AHashSet};
@@ -71,6 +72,7 @@ impl Default for HnswConfig {
 }
 
 impl HnswConfig {
+    /// Validates the HNSW configuration parameters.
     pub fn validate(&self) -> Result<()> {
         // ANCHOR:ALG-FIX:D2-003 — ef_construction < M Guard fehlt
         // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -87,9 +89,12 @@ impl HnswConfig {
     }
 }
 
+/// Representation of vector data in the index (either raw f32 or quantized u8).
 #[derive(Debug, Clone)]
 pub enum VectorData {
+    /// Full precision 32-bit floating point vectors.
     F32(Vec<f32>),
+    /// 8-bit scalar quantized vectors.
     U8(Vec<u8>),
 }
 
@@ -133,6 +138,7 @@ impl Ord for Candidate {
     }
 }
 
+/// The HNSW (Hierarchical Navigable Small World) index handle.
 pub struct HnswIndex {
     inner: std::sync::Arc<HnswIndexCore>,
 }
@@ -144,6 +150,7 @@ impl std::ops::Deref for HnswIndex {
     }
 }
 
+/// Core HNSW index implementation containing the graph and vector data.
 pub struct HnswIndexCore {
     config: HnswConfig,
     nodes: RwLock<Vec<HnswNode>>,

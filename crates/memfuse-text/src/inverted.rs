@@ -5,7 +5,7 @@ use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// An inverted index stored in the LSM engine.
+/// Inverted index for full-text search, stored in the LSM engine.
 #[derive(Clone)]
 pub struct InvertedIndex {
     storage: Arc<dyn StorageEngine>,

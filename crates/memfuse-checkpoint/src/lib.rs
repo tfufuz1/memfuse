@@ -1,8 +1,16 @@
+//! LSM-Snapshots and Checkpointing Manager.
+//!
+//! Orchestrates Native State Checkpoints for Time-Travel.
+
 // ANCHOR:ARCH:CHECKPOINT-001 — Checkpoint Manager
 // WP:NONE PRIO:2 NEEDS:NONE
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
-//! Orchestrates Native State Checkpoints for Time-Travel.
+
+// ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
+// WP:WP-0.0 PRIO:3 NEEDS:NONE
+// AGENT:08 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-09 DEADLINE:NONE
 
 #![forbid(unsafe_code)]
 
@@ -10,20 +18,24 @@ use memfuse_core::Result;
 use memfuse_store::lsm::LsmStorage;
 use std::sync::Arc;
 
+/// Represents a persistent snapshot of the database at a specific point in time.
 pub struct Checkpoint {
     pub name: String,
     pub seq_no: u64,
 }
 
+/// Manages database checkpoints for time-travel and data safety.
 pub struct CheckpointManager {
     storage: Arc<LsmStorage>,
 }
 
 impl CheckpointManager {
+    /// Creates a new CheckpointManager for the given storage.
     pub fn new(storage: Arc<LsmStorage>) -> Self {
         Self { storage }
     }
 
+    /// Creates a new named checkpoint at the current sequence number.
     pub async fn create_checkpoint(&self, name: &str) -> Result<Checkpoint> {
         let seq_no = self.storage.last_seq_no();
         self.storage.pin_checkpoint(seq_no).await?;
@@ -34,11 +46,13 @@ impl CheckpointManager {
         })
     }
 
+    /// Removes a checkpoint and its associated pin in storage.
     pub async fn drop_checkpoint(&self, checkpoint: &Checkpoint) -> Result<()> {
         self.storage.unpin_checkpoint(checkpoint.seq_no).await?;
         Ok(())
     }
 
+    /// Rolls back the database state to a specific checkpoint.
     pub async fn rollback(&self, _checkpoint: &Checkpoint) -> Result<()> {
         // Full Time-Travel replay will be implemented here. For WP-5.1, pinning is the core requirement.
         Ok(())
