@@ -13,8 +13,19 @@ check:
     nix develop -c cargo clippy --all-targets -- -D warnings
     nix develop -c cargo check --all-targets --workspace
 
+# Checks if formal verification gates are open
+fv-gate-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if grep -q "ARCH:GATE-FV STATUS:OPEN" AGENTS.md; then
+        echo "❌ FORMAL VERIFICATION GATE IS OPEN! Merge blocked."
+        grep "ARCH:GATE-FV STATUS:OPEN" AGENTS.md
+        exit 1
+    fi
+    echo "✅ Formal Verification Gate is CLOSED."
+
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)
-triple-test: check
+triple-test: check fv-gate-check
     #!/usr/bin/env bash
     set -euo pipefail
     echo "=== Triple-Test-Gate ==="

@@ -31,6 +31,8 @@
 6. **Jede Datei** braucht ein `//!` Crate/Module Doc-Comment im Header
 7. **Backward Compatibility**: bestehende API-Signaturen dürfen nicht gebrochen werden
 
+8. **ANCHOR:ARCH:GATE-FV STATUS:OPEN** — Formale Verifikation (Kani/TLA+) fehlt für LSM/SIMD Änderungen seit 2026-05-09.
+
 ### Triple-Test-Gate (DONE-Definition)
 
 > **Ein Work Package gilt als DONE wenn und nur wenn:**
@@ -103,6 +105,7 @@ MemFuse is built by a squad of 13 autonomous agents. Each agent has a specific d
 
 | # | Role | Domain | Schedule |
 |---|---|---|---|
+| 00 | **Watchdog** | System Orchestration & Deadlock Prevention | 00:00 UTC |
 | 13 | **Debt Hunter** | Tech Debt & Invariant Cleanup | 05:00 UTC |
 | 01 | **Core Guardian** | `memfuse-core` & Shared Types | 06:00 UTC |
 | 02 | **Store Engineer** | `memfuse-store` (LSM / WAL) | 07:00 UTC |

@@ -4,7 +4,8 @@
 
 set -e
 
-REPO_DIR="/home/freddy/Arbeitsplatz/DEV/memfuse"
+# Try to determine project root
+REPO_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_DIR"
 
 echo "--- Jules Integration Check ---"
