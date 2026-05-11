@@ -642,11 +642,7 @@ impl SstableReader {
                     ) as usize;
                     ep += 2;
                     let entry_val = block_data.slice(ep..ep + v_len);
-                    results.push((
-                        Bytes::copy_from_slice(entry_key),
-                        entry_val,
-                        seq_no,
-                    ));
+                    results.push((Bytes::copy_from_slice(entry_key), entry_val, seq_no));
                 }
             }
             if broke {
@@ -753,11 +749,7 @@ impl SstableReader {
                 ) as usize;
                 ep += 2;
                 let entry_val = block_data.slice(ep..ep + v_len);
-                results.push((
-                    Bytes::copy_from_slice(entry_key),
-                    entry_val,
-                    seq_no,
-                ));
+                results.push((Bytes::copy_from_slice(entry_key), entry_val, seq_no));
             }
         }
 
@@ -790,14 +782,18 @@ impl<'a> SstableScanner<'a> {
             }
 
             if self.current_block.is_none() {
-                self.current_block =
-                    Some(self.reader.get_block(self.reader.index[self.block_idx].1).await?);
+                self.current_block = Some(
+                    self.reader
+                        .get_block(self.reader.index[self.block_idx].1)
+                        .await?,
+                );
                 self.entry_idx = 0;
             }
 
-            let block = self.current_block.as_ref().ok_or_else(|| {
-                MemFuseError::Storage("scanner: block missing".into())
-            })?;
+            let block = self
+                .current_block
+                .as_ref()
+                .ok_or_else(|| MemFuseError::Storage("scanner: block missing".into()))?;
             let n = block.len();
             if n < 10 {
                 self.block_idx += 1;

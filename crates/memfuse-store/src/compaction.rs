@@ -218,9 +218,9 @@ impl CompactionEngine {
         output_path: &std::path::Path,
         min_snapshot_seq: u64,
     ) -> Result<()> {
-        use std::collections::BinaryHeap;
         use crate::sstable::SstableScanner;
         use bytes::Bytes;
+        use std::collections::BinaryHeap;
 
         struct MergeIter<'a> {
             scanner: SstableScanner<'a>,
@@ -247,7 +247,10 @@ impl CompactionEngine {
         impl<'a> Ord for MergeIter<'a> {
             fn cmp(&self, other: &Self) -> std::cmp::Ordering {
                 // Min-heap on key, then max-heap on seq_no (for same key, newest wins)
-                other.current.0.cmp(&self.current.0)
+                other
+                    .current
+                    .0
+                    .cmp(&self.current.0)
                     .then_with(|| self.current.2.cmp(&other.current.2))
                     .then_with(|| other.input_idx.cmp(&self.input_idx))
             }
