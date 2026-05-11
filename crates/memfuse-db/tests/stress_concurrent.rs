@@ -1,6 +1,6 @@
-use memfuse_db::{MemFuse, MemFuseConfig, DistanceMetric, json};
-use tempfile::TempDir;
+use memfuse_db::{json, DistanceMetric, MemFuse, MemFuseConfig};
 use std::sync::Arc;
+use tempfile::TempDir;
 use tokio::task;
 
 #[tokio::test]
@@ -29,7 +29,9 @@ async fn test_concurrent_stress_ops() {
                 let embedding = vec![t as f32, i as f32, 0.0, 0.0];
 
                 // 1. Insert
-                col.insert(&id, &embedding, Some(json!({"t": t, "i": i}))).await.unwrap();
+                col.insert(&id, &embedding, Some(json!({"t": t, "i": i})))
+                    .await
+                    .unwrap();
 
                 // 2. Search (sometimes)
                 if i % 10 == 0 {
@@ -38,7 +40,13 @@ async fn test_concurrent_stress_ops() {
                 }
 
                 // 3. Update
-                col.update(&id, &embedding, Some(json!({"t": t, "i": i, "updated": true}))).await.unwrap();
+                col.update(
+                    &id,
+                    &embedding,
+                    Some(json!({"t": t, "i": i, "updated": true})),
+                )
+                .await
+                .unwrap();
 
                 // 4. Delete
                 col.delete(&id).await.unwrap();
