@@ -11,7 +11,7 @@
 //! Enables exact state reconstruction of an SAOS database at any given transaction ID
 //! by replaying the Write-Ahead Log (WAL) up to that point.
 
-use memfuse_core::{TxId, Result};
+use memfuse_core::{Result, TxId};
 
 /// Represents a Point-in-Time snapshot of the agent's memory state.
 #[derive(Debug, Clone)]
