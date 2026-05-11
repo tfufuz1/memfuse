@@ -3,11 +3,11 @@
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
 #![forbid(unsafe_code)]
 
-use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
 use memfuse_core::DistanceMetric;
+use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
 use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;
-use pythonize::{pythonize, depythonize};
+use pythonize::{depythonize, pythonize};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::runtime::Runtime;
@@ -23,7 +23,10 @@ fn get_runtime() -> PyResult<&'static Runtime> {
     });
     match res {
         Ok(rt) => Ok(rt),
-        Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to create tokio runtime: {}", e))),
+        Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+            "Failed to create tokio runtime: {}",
+            e
+        ))),
     }
 }
 
@@ -100,7 +103,9 @@ impl PySearchResult {
     #[getter]
     fn get_metadata(&self, py: Python<'_>) -> PyObject {
         if let Some(ref meta) = self.metadata {
-            pythonize(py, meta).map(|b| b.into()).unwrap_or_else(|_| py.None())
+            pythonize(py, meta)
+                .map(|b| b.into())
+                .unwrap_or_else(|_| py.None())
         } else {
             py.None()
         }
@@ -127,11 +132,13 @@ impl PyMemFuse {
         };
         let path_owned = path.to_string();
         let rt = get_runtime()?;
-        let db = py.allow_threads(|| {
-            rt.block_on(MemFuse::open_with_config(path_owned, config))
-        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let db = py
+            .allow_threads(|| rt.block_on(MemFuse::open_with_config(path_owned, config)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        Ok(Self { inner: Arc::new(db) })
+        Ok(Self {
+            inner: Arc::new(db),
+        })
     }
 
     #[staticmethod]
@@ -143,35 +150,37 @@ impl PyMemFuse {
         };
         let path_owned = path.to_string();
         let rt = get_runtime()?;
-        let db = py.allow_threads(|| {
-            rt.block_on(MemFuse::open_with_config(path_owned, db_config))
-        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let db = py
+            .allow_threads(|| rt.block_on(MemFuse::open_with_config(path_owned, db_config)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        Ok(Self { inner: Arc::new(db) })
+        Ok(Self {
+            inner: Arc::new(db),
+        })
     }
 
     pub fn collection(&self, py: Python<'_>, name: &str) -> PyResult<PyCollection> {
         let rt = get_runtime()?;
-        let col = py.allow_threads(|| {
-            rt.block_on(self.inner.collection(name))
-        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let col = py
+            .allow_threads(|| rt.block_on(self.inner.collection(name)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        Ok(PyCollection { inner: Arc::new(col) })
+        Ok(PyCollection {
+            inner: Arc::new(col),
+        })
     }
 
     pub fn list_collections(&self, py: Python<'_>) -> PyResult<Vec<String>> {
         let rt = get_runtime()?;
-        py.allow_threads(|| {
-            rt.block_on(self.inner.list_collections())
-        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+        py.allow_threads(|| rt.block_on(self.inner.list_collections()))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
     pub fn drop_collection(&self, py: Python<'_>, name: &str) -> PyResult<()> {
         let rt = get_runtime()?;
         let name_owned = name.to_string();
-        py.allow_threads(|| {
-            rt.block_on(self.inner.drop_collection(&name_owned))
-        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+        py.allow_threads(|| rt.block_on(self.inner.drop_collection(&name_owned)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
     fn __repr__(&self) -> String {
@@ -206,17 +215,16 @@ impl PyCollection {
 
         let id_owned = id.to_string();
         let rt = get_runtime()?;
-        py.allow_threads(|| {
-            rt.block_on(self.inner.insert(&id_owned, vec_slice, meta_val))
-        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+        py.allow_threads(|| rt.block_on(self.inner.insert(&id_owned, vec_slice, meta_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
     pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyObject>> {
         let rt = get_runtime()?;
         let id_owned = id.to_string();
-        let doc = py.allow_threads(|| {
-            rt.block_on(self.inner.get(&id_owned))
-        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let doc = py
+            .allow_threads(|| rt.block_on(self.inner.get(&id_owned)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         if let Some(d) = doc {
             let dict = pyo3::types::PyDict::new(py);
@@ -252,17 +260,15 @@ impl PyCollection {
 
         let id_owned = id.to_string();
         let rt = get_runtime()?;
-        py.allow_threads(|| {
-            rt.block_on(self.inner.update(&id_owned, vec_slice, meta_val))
-        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+        py.allow_threads(|| rt.block_on(self.inner.update(&id_owned, vec_slice, meta_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
     pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
         let rt = get_runtime()?;
         let id_owned = id.to_string();
-        py.allow_threads(|| {
-            rt.block_on(self.inner.delete(&id_owned))
-        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+        py.allow_threads(|| rt.block_on(self.inner.delete(&id_owned)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
     #[pyo3(signature = (vector, k))]
@@ -277,15 +283,18 @@ impl PyCollection {
         })?;
 
         let rt = get_runtime()?;
-        let results = py.allow_threads(|| {
-            rt.block_on(self.inner.search(vec_slice, k))
-        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        Ok(results.into_iter().map(|r| PySearchResult {
-            id: r.id,
-            score: r.score,
-            metadata: r.metadata,
-        }).collect())
+        Ok(results
+            .into_iter()
+            .map(|r| PySearchResult {
+                id: r.id,
+                score: r.score,
+                metadata: r.metadata,
+            })
+            .collect())
     }
 
     #[pyo3(signature = (text, vector, k))]
@@ -302,15 +311,18 @@ impl PyCollection {
 
         let text_owned = text.to_string();
         let rt = get_runtime()?;
-        let results = py.allow_threads(|| {
-            rt.block_on(self.inner.hybrid_search(&text_owned, vec_slice, k))
-        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.hybrid_search(&text_owned, vec_slice, k)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        Ok(results.into_iter().map(|r| PySearchResult {
-            id: r.id,
-            score: r.score,
-            metadata: r.metadata,
-        }).collect())
+        Ok(results
+            .into_iter()
+            .map(|r| PySearchResult {
+                id: r.id,
+                score: r.score,
+                metadata: r.metadata,
+            })
+            .collect())
     }
 
     pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
@@ -318,9 +330,8 @@ impl PyCollection {
         let from_owned = from.to_string();
         let to_owned = to.to_string();
         let label_owned = label.to_string();
-        py.allow_threads(|| {
-            rt.block_on(self.inner.relate(&from_owned, &to_owned, &label_owned))
-        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+        py.allow_threads(|| rt.block_on(self.inner.relate(&from_owned, &to_owned, &label_owned)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
     pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
@@ -330,9 +341,9 @@ impl PyCollection {
 
     pub fn stats(&self, py: Python<'_>) -> PyResult<PyObject> {
         let rt = get_runtime()?;
-        let stats = py.allow_threads(|| {
-            rt.block_on(self.inner.stats())
-        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let stats = py
+            .allow_threads(|| rt.block_on(self.inner.stats()))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         // Simplified stats exposure
         let dict = pyo3::types::PyDict::new(py);
@@ -345,9 +356,9 @@ impl PyCollection {
     pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<(String, PyObject)>> {
         let rt = get_runtime()?;
         let prefix_owned = prefix.to_string();
-        let results = py.allow_threads(|| {
-            rt.block_on(self.inner.scan_prefix(&prefix_owned))
-        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.scan_prefix(&prefix_owned)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let mut py_res = Vec::with_capacity(results.len());
         for (k, v) in results {
