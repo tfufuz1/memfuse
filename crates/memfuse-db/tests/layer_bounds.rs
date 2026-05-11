@@ -99,7 +99,7 @@ async fn test_hybrid_search_bm25_rrf() {
     col.insert(
         "doc1",
         &[1.0, 0.0],
-        Some(json!({"text": "rust programming language", "desc": "primary"})),
+        Some(json!({"text": "rust rust programming language", "desc": "primary"})),
     )
     .await
     .expect("ins1");
