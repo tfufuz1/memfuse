@@ -55,6 +55,10 @@ memfuse-store = { path = "crates/memfuse-store" }
 memfuse-index = { path = "crates/memfuse-index" }
 memfuse-db = { path = "crates/memfuse-db" }
 memfuse-text = { path = "crates/memfuse-text" }
+memfuse-checkpoint = { path = "crates/memfuse-checkpoint" }
+memfuse-runtime = { path = "crates/memfuse-runtime" }
+memfuse-orchestrator = { path = "crates/memfuse-orchestrator" }
+memfuse-py = { path = "crates/memfuse-py" }
 
 [profile.release]
 opt-level = 3
