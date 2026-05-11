@@ -22,10 +22,15 @@
 
 #![forbid(unsafe_code)]
 
+/// Error types and result alias.
 pub mod error;
+/// MVCC snapshot isolation registry.
 pub mod snapshot;
+/// Core trait definitions for engines.
 pub mod traits;
+/// Transactional operation buffer.
 pub mod tx_buffer;
+/// Shared data types and identifiers.
 pub mod types;
 
 pub use error::{MemFuseError, Result};

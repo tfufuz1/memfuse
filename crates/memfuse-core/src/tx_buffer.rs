@@ -163,6 +163,14 @@ impl<T: Clone> TxBuffer<T> {
         shard.ops.remove(&tx);
     }
 
+    /// Clears all transactions and operations from the buffer.
+    pub fn clear(&self) {
+        for shard_lock in &self.shards {
+            let mut shard = shard_lock.write();
+            shard.ops.clear();
+        }
+    }
+
     /// Returns the total number of pending transactions.
     pub fn len(&self) -> usize {
         self.shards.iter().map(|s| s.read().ops.len()).sum()
@@ -295,6 +303,21 @@ mod tests {
         );
         buffer.discard(tx);
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_tx_buffer_clear() {
+        let buffer = TxBuffer::<String>::new();
+        let tx1 = TxId::new(1);
+        let tx2 = TxId::new(2);
+
+        buffer.stage(tx1, IndexOp::Insert { doc_id: DocId::new(1), data: "d1".to_string() });
+        buffer.stage(tx2, IndexOp::Insert { doc_id: DocId::new(2), data: "d2".to_string() });
+
+        assert_eq!(buffer.len(), 2);
+        buffer.clear();
+        assert!(buffer.is_empty());
+        assert_eq!(buffer.len(), 0);
     }
 
     #[tokio::test]
