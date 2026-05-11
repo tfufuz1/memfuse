@@ -1,7 +1,7 @@
 //! Scalar Quantization (SQ8) for HNSW Index.
 // ANCHOR:TODO:QUANT-001 — Optimiere und finalisiere die SQ8 Quantization impl, repariere Cast-Bugs.
 // WP:WP-2.2 PRIO:1 NEEDS:NONE
-// AGENT:@JULES-03 DATE:2026-05-09 STATUS:READY
+// AGENT:@JULES-03 DATE:2026-05-10 STATUS:DONE
 // TEST: cargo bench -p memfuse-index -- quantization
 // DONE: Performance- und Recall Metriken sind stabil.
 // SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
@@ -55,12 +55,12 @@ impl ScalarQuantizer {
                 let normalized = (clamped - self.min) / range;
                 // ANCHOR:PERF:CAST-001 — Impliziter Integer-Overflow
                 // WP:WP-0.0 PRIO:2 NEEDS:NONE
-                // AGENT:03 DATE:2026-05-09 STATUS:READY
+                // AGENT:03 DATE:2026-05-10 STATUS:DONE
                 // CREATED:2026-05-09 DEADLINE:NONE
                 // FUNDORT: memfuse-index/src/quantize.rs:50
                 // RISIKO: Cast-without-check kann crashen oder falsche Daten liefern.
                 // BEHEBUNG: TryFrom oder korrekte Sättigung.
-                (normalized * 255.0).round() as u8
+                (normalized * 255.0).round().clamp(0.0, 255.0) as u8
             })
             .collect()
     }

@@ -1,7 +1,17 @@
 // ANCHOR:DOC:DOC-HNSW-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:03 DATE:2026-05-09 STATUS:READY
+// AGENT:03 DATE:2026-05-10 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
+//! HNSW (Hierarchical Navigable Small World) Index implementation.
+//!
+//! This module provides a high-performance vector index using a hierarchical graph structure.
+//! Key features:
+//! - Multi-layered graph for logarithmic search complexity.
+//! - Heuristic neighbor selection for improved graph connectivity and diversity.
+//! - Support for Scalar Quantization (SQ8) to reduce memory footprint.
+//! - Automatic background rebuild mechanism when deletion threshold is reached.
+//! - Transactional consistency via TxBuffer integration.
+//! - Provides approximate nearest neighbor search with diversity heuristics.
 // ANCHOR:ARCH:HNSW-001 — Hierarchical Navigable Small World Index.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -12,12 +22,6 @@
 // DELETE: Soft-Delete (Tombstone via deleted_nodes Roaring Bitmap).
 // REBUILD-LOGIK: Wenn >20% gelöscht → async trigger_rebuild_async() -> Atomic Swap.
 // TRANSAKTIONEN: Nutzt memfuse_core::TxBuffer zur Staging-Isolation.
-//! HNSW (Hierarchical Navigable Small World) vector index.
-//!
-//! Provides approximate nearest neighbor search with:
-//! - Diversity heuristic neighbor selection
-//! - Automatic rebuild on >20% deletions
-//! - Transactional inserts/deletes via TxBuffer
 
 use crate::distance::compute_distance;
 use ahash::{AHashMap, AHashSet};
@@ -698,14 +702,18 @@ impl VectorIndex for HnswIndex {
         }
 
         // Higher candidate list for reranking if quantized
+        // ANCHOR:PERF:LATENCY-002 — HNSW Search Hotspot
+        // WP:WP-0.0 PRIO:2 NEEDS:NONE
+        // AGENT:03 DATE:2026-05-10 STATUS:DONE
+        let score = self.connectivity_score();
+        let connectivity_factor = 2.0 - score;
         let ef = if self.config.quantize {
-            self.config.ef_search.max(k) * 4
+            ((self.config.ef_search.max(k) * 4) as f64 * connectivity_factor).round() as usize
         } else {
-            self.config.ef_search.max(k)
+            ((self.config.ef_search.max(k)) as f64 * connectivity_factor).round() as usize
         };
         let candidates = self.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
 
-        let score = self.connectivity_score();
         if score < self.config.rebuild_threshold {
             tracing::warn!("HNSW Index degraded: connectivity score {:.2} below threshold ({:.2}). Search quality may be reduced.", score, self.config.rebuild_threshold);
         }
@@ -787,11 +795,13 @@ impl VectorIndex for HnswIndex {
         }
 
         // Over-fetch to compensate for filtered-out results and reranking
+        let score = self.connectivity_score();
+        let connectivity_factor = 2.0 - score;
         let factor = if self.config.quantize { 4 } else { 2 };
-        let ef = self.config.ef_search.max(k) * factor;
+        let ef = ((self.config.ef_search.max(k) * factor) as f64 * connectivity_factor).round()
+            as usize;
         let candidates = self.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
 
-        let score = self.connectivity_score();
         if score < self.config.rebuild_threshold {
             tracing::warn!("HNSW Index degraded: connectivity score {:.2} below threshold ({:.2}). Search quality may be reduced.", score, self.config.rebuild_threshold);
         }
@@ -859,7 +869,7 @@ impl VectorIndex for HnswIndex {
 
         // ANCHOR:SPEC:WP-2.2-SQ8TRAIN-001 — Lazy Training logic
         // WP:WP-2.2 PRIO:2 NEEDS:NONE
-        // AGENT:03 DATE:2026-05-09 STATUS:READY
+        // AGENT:03 DATE:2026-05-10 STATUS:DONE
         // CREATED:2026-05-09 DEADLINE:NONE
         if self.config.quantize && self.quantizer.read().is_none() {
             let mut train_data = Vec::new();
@@ -885,7 +895,7 @@ impl VectorIndex for HnswIndex {
                 }
             }
 
-            if train_data.len() >= 50 {
+            if train_data.len() >= 100 {
                 let training_refs: Vec<&[f32]> = train_data.iter().map(|v| v.as_slice()).collect();
                 let q =
                     crate::quantize::ScalarQuantizer::train(&training_refs, self.config.dimension);
