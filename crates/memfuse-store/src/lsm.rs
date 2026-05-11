@@ -210,17 +210,6 @@ impl LsmStorage {
         self.next_seq_no.load(Ordering::Acquire).saturating_sub(1)
     }
 
-    /// Pins a sequence number to prevent premature GC (SAOS Checkpoint).
-    pub async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
-        self.snapshot_registry.pin(seq_no);
-        Ok(())
-    }
-
-    /// Unpins a sequence number.
-    pub async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
-        self.snapshot_registry.unpin(seq_no);
-        Ok(())
-    }
 
     /// Forces a flush (to be used by CheckpointManager or tests).
     pub async fn force_flush(&self) -> Result<()> {
@@ -439,6 +428,10 @@ impl StorageEngine for LsmStorage {
         Ok(())
     }
 
+    fn last_seq_no(&self) -> u64 {
+        self.next_seq_no.load(Ordering::Acquire).saturating_sub(1)
+    }
+
     async fn stats(&self) -> Result<memfuse_core::StorageStats> {
         let state = self.state.read().await;
         let sstables = self.sstables.read().await;
@@ -458,6 +451,16 @@ impl StorageEngine for LsmStorage {
             total_size_bytes,
             memtable_size_bytes,
         })
+    }
+
+    async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
+        self.snapshot_registry.pin(seq_no);
+        Ok(())
+    }
+
+    async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
+        self.snapshot_registry.unpin(seq_no);
+        Ok(())
     }
 
     async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {

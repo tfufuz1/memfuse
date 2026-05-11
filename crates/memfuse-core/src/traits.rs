@@ -65,6 +65,23 @@ pub trait StorageEngine: Send + Sync {
     /// Returns storage statistics.
     async fn stats(&self) -> Result<StorageStats>;
 
+    /// Returns the last committed sequence number.
+    fn last_seq_no(&self) -> u64 {
+        0
+    }
+
+    /// Pins a sequence number to prevent premature GC (SAOS Checkpoint).
+    async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
+        let _ = seq_no;
+        Ok(())
+    }
+
+    /// Unpins a sequence number.
+    async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
+        let _ = seq_no;
+        Ok(())
+    }
+
     /// Scans a range of keys with the given prefix.
     async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
 

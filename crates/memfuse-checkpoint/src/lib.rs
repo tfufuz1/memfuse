@@ -6,8 +6,7 @@
 
 #![forbid(unsafe_code)]
 
-use memfuse_core::Result;
-use memfuse_store::lsm::LsmStorage;
+use memfuse_core::{Result, StorageEngine};
 use std::sync::Arc;
 
 pub struct Checkpoint {
@@ -16,11 +15,11 @@ pub struct Checkpoint {
 }
 
 pub struct CheckpointManager {
-    storage: Arc<LsmStorage>,
+    storage: Arc<dyn StorageEngine>,
 }
 
 impl CheckpointManager {
-    pub fn new(storage: Arc<LsmStorage>) -> Self {
+    pub fn new(storage: Arc<dyn StorageEngine>) -> Self {
         Self { storage }
     }
 
@@ -49,7 +48,7 @@ impl CheckpointManager {
 mod tests {
     use super::*;
     use memfuse_core::{StorageEngine, TxId};
-    use memfuse_store::lsm::LsmConfig;
+    use memfuse_store::lsm::{LsmConfig, LsmStorage};
     use tempfile::TempDir;
 
     #[tokio::test]
