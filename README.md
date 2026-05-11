@@ -11,16 +11,15 @@
 import memfuse
 
 # Initializes the full SAOS (LSM-Tree, HNSW, WASM Sandbox, Orchestrator)
-agent = memfuse.Agent("./my_agent_memory")
+db = memfuse.open("./my_agent_memory", dimension=1536)
+col = db.collection("default")
 
-# Declarative StateGraph (Cockpit Layer)
-agent.add_node("research", "Research the topic using tools")
-agent.add_node("code", "Generate code safely via WASM")
-agent.add_edge("research", "code")
+# High-level operations on the collection
+col.insert("doc_1", vector=[0.1] * 1536, metadata={"text": "SAOS Architecture"})
 
-# Autonomously run the workflow in an isolated environment
-result = agent.run("Erstelle ein Rust-Programm", isolation_mode="wasm")
-print(result)
+# Hybrid Search (Vector + Text)
+results = col.hybrid_search(text="Architecture", vector=[0.1] * 1536, k=5)
+print(results)
 ```
 
 ## Architecture: The 3 SAOS Layers

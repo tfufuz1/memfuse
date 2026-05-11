@@ -1,4 +1,4 @@
-// ANCHOR:DOC:DOC-WAL-001 — Missing module documentation
+// ANCHOR:DOC:DOC-WAL-001 — WAL Implementation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:02 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
@@ -35,12 +35,12 @@
 //
 // ANCHOR:PERF:LATENCY-001 — WAL-Write-Path Hotspot
 // WP:WP-0.0 PRIO:2 NEEDS:NONE
-// AGENT:08-perf DATE:2026-05-09 STATUS:READY
+// AGENT:08-perf DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 // TARGET: < 2ms bei Peak-Load
-// AKTUELL: Unbekannt (Sync Flush)
-// BOTTLENECK: I/O (File::sync_all blockiert)
-// OPTIMIERUNGSIDEE: Group Commit oder fsync-Offloading
+// AKTUELL: Unbekannt (Sync Flush nach jedem Write)
+// BOTTLENECK: I/O (File::sync_all blockiert). Bei vielen kleinen Writes dominiert die Disk-Latency (fsync).
+// OPTIMIERUNGSIDEE: Implementierung von "Group Commit", bei dem mehrere konkurrierende Writes in einem einzigen `fsync()` gebündelt werden. Alternativ: Offloading von fsync in einen dedizierten Hintergrund-Thread/Task.
 
 use memfuse_core::{MemFuseError, Result, TxId};
 use std::path::{Path, PathBuf};

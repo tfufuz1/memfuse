@@ -1,7 +1,14 @@
-// ANCHOR:DOC:DOC-SSTABLE-001 — Missing module documentation
+// ANCHOR:DOC:DOC-SSTABLE-001 — SSTable Implementation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:02 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
+//! Immutable SSTable (Sorted String Table) implementation.
+//!
+//! SSTables are the primary on-disk storage format for the LSM-tree.
+//! Each SSTable is sorted by key and consists of:
+//! - **Data Blocks**: Containing key-value pairs.
+//! - **Index Block**: Containing offsets to the data blocks for fast lookup.
+//! - **Footer**: Containing metadata and the offset to the index block.
 // ANCHOR:ARCH:SST-001 — Immutable persistente Datendateien.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -16,9 +23,6 @@
 // WP:WP-4.1 PRIO:3 NEEDS:NONE
 // AGENT:02 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
-//! SSTable (Sorted String Table) implementation.
-//!
-//! SSTables are persistent, immutable files containing sorted key-value pairs.
 //!
 //! ## Architecture
 //! - **Data Blocks**: Keys and values are grouped into 4KB blocks. Each entry consists of
@@ -265,6 +269,7 @@ pub struct SstableReader {
 }
 
 impl SstableReader {
+    /// Opens an existing SSTable file and reads its index.
     pub async fn open(path: impl AsRef<Path>, block_cache: Arc<BlockCache>) -> Result<Self> {
         let mut file = tokio::fs::File::open(&path)
             .await
@@ -379,12 +384,16 @@ impl SstableReader {
 
     // ANCHOR:PERF:ALLOC-001 — Allokations-intensiver Scanner
     // WP:WP-4.1 PRIO:2 NEEDS:NONE
-    // AGENT:08-perf DATE:2026-05-09 STATUS:READY
+    // AGENT:08-perf DATE:2026-05-09 STATUS:REVIEW
     // CREATED:2026-05-09 DEADLINE:NONE
     // TARGET: Zero-Allocation Lookup
     // AKTUELL: Vec::new() pro Block + read_exact
-    // BOTTLENECK: Memory Allocator / Heap Churn
-    // OPTIMIERUNGSIDEE: SmallVec oder Pool-Buffer
+    // BOTTLENECK: Memory Allocator / Heap Churn. Jedes `get()` erzeugt neue Vec-Allokationen für den Block-Buffer, was bei hohen QPS zu CPU-Spikes im Allocator führt.
+    // OPTIMIERUNGSIDEE: Verwendung von `SmallVec` für kleine Blöcke oder Implementierung eines `BufferPool` / `ObjectPool` für Block-Daten. Mmap (WP-4.1) wird dieses Problem langfristig durch Zero-Copy lösen.
+    /// Retrieves the value and sequence number for a given key from the SSTable.
+    ///
+    /// Performs a binary search on the in-memory index to find the relevant data block,
+    /// then searches within the block. Uses the block cache if available.
     pub async fn get(&self, key: &[u8]) -> Result<Option<(Bytes, u64)>> {
         if key < self.metadata.first_key || key > self.metadata.last_key {
             return Ok(None);

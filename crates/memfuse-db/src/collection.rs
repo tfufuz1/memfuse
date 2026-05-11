@@ -119,11 +119,16 @@ impl Collection {
         }
     }
 
+    /// Starts a new atomic transaction for this collection.
     pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<'_> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         crate::transaction::DbTransaction::new(self, tx)
     }
 
+    /// Inserts or updates a document in the collection with its embedding and metadata.
+    ///
+    /// This operation is atomic and ensures consistency between the LSM storage
+    /// and the vector index.
     pub async fn insert(
         &self,
         id: &str,
