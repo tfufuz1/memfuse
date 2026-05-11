@@ -379,10 +379,10 @@ impl SstableReader {
 
     // ANCHOR:PERF:ALLOC-001 — Allokations-intensiver Scanner
     // WP:WP-4.1 PRIO:2 NEEDS:NONE
-    // AGENT:08-perf DATE:2026-05-09 STATUS:READY
+    // AGENT:09 DATE:2026-05-11 STATUS:REVIEW
     // CREATED:2026-05-09 DEADLINE:NONE
     // TARGET: Zero-Allocation Lookup
-    // AKTUELL: Vec::new() pro Block + read_exact
+    // AKTUELL: Bytes::clone() (O(1)) aus BlockCache
     // BOTTLENECK: Memory Allocator / Heap Churn
     // OPTIMIERUNGSIDEE: SmallVec oder Pool-Buffer
     pub async fn get(&self, key: &[u8]) -> Result<Option<(Bytes, u64)>> {
@@ -407,19 +407,14 @@ impl SstableReader {
             self.index_offset
         };
 
-        let mut block_data = Vec::new();
-        let mut cache_miss = false;
-
-        {
+        let block_data = {
             let mut cache = self.block_cache.write();
-            if let Some(cached) = cache.get(&(self.file_id, offset)) {
-                block_data.extend_from_slice(cached);
-            } else {
-                cache_miss = true;
-            }
-        }
+            cache.get(&(self.file_id, offset)).cloned()
+        };
 
-        if cache_miss {
+        let block_data = if let Some(data) = block_data {
+            data
+        } else {
             let mut raw_block = vec![0u8; (next_offset - offset) as usize];
             use tokio::io::{AsyncReadExt, AsyncSeekExt};
             let mut file = self.file.lock().await;
@@ -430,11 +425,12 @@ impl SstableReader {
                 .await
                 .map_err(|e| MemFuseError::Storage(format!("SSTable read failed: {}", e)))?;
 
-            block_data.extend_from_slice(&raw_block);
+            let bytes = Bytes::from(raw_block);
             self.block_cache
                 .write()
-                .put((self.file_id, offset), Bytes::from(raw_block));
-        }
+                .put((self.file_id, offset), bytes.clone());
+            bytes
+        };
 
         let n = block_data.len();
         if n < 10 {

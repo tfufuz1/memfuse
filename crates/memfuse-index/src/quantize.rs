@@ -55,12 +55,12 @@ impl ScalarQuantizer {
                 let normalized = (clamped - self.min) / range;
                 // ANCHOR:PERF:CAST-001 — Impliziter Integer-Overflow
                 // WP:WP-0.0 PRIO:2 NEEDS:NONE
-                // AGENT:03 DATE:2026-05-09 STATUS:READY
+                // AGENT:09 DATE:2026-05-11 STATUS:REVIEW
                 // CREATED:2026-05-09 DEADLINE:NONE
                 // FUNDORT: memfuse-index/src/quantize.rs:50
                 // RISIKO: Cast-without-check kann crashen oder falsche Daten liefern.
-                // BEHEBUNG: TryFrom oder korrekte Sättigung.
-                (normalized * 255.0).round() as u8
+                // BEHEBUNG: Sättigung via clamp(0.0, 255.0) vor dem Cast.
+                (normalized * 255.0).round().clamp(0.0, 255.0) as u8
             })
             .collect()
     }
