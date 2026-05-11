@@ -1,7 +1,11 @@
 // ANCHOR:DOC:DOC-TRANSACTION-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:04 DATE:2026-05-09 STATUS:READY
+// AGENT:04 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
+//! Transaction orchestration for MemFuse.
+//!
+//! This module provides the `DbTransaction` struct which coordinates
+//! atomic commits across the LSM storage engine and the HNSW vector index.
 use crate::Collection;
 use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId, VectorIndex};
 use std::sync::Mutex;

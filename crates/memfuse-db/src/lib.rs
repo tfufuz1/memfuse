@@ -234,18 +234,36 @@ impl MemFuse {
         Ok(col)
     }
 
-    /// Lists all existing collection names (those currently active in memory).
+    /// Lists all existing collection names (those currently active in memory and persisted).
     // ANCHOR:TODO:COL-002 — Erweitere `list_collections` so, dass es aus dem LSM-Store/Metadata ließt.
     // WP:WP-1.2 PRIO:1 NEEDS:COL-001
-    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:READY
+    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_list_collections
     // DONE: list_collections gibt persistierte Collections zurück.
     // SUCCESSOR: @JULES-04 — "Mache weiter mit COL-003."
     pub async fn list_collections(&self) -> Result<Vec<String>> {
+        let mut names = std::collections::HashSet::new();
+
+        // Include "default"
+        names.insert("default".to_string());
+
+        // Scan storage for registered collections
+        let col_idx_prefix = b"__col_idx:\x00";
+        let entries = self.storage.scan_prefix(col_idx_prefix).await?;
+        for (k, _) in entries {
+            let name_bytes = &k[col_idx_prefix.len()..];
+            if let Ok(name) = String::from_utf8(name_bytes.to_vec()) {
+                names.insert(name);
+            }
+        }
+
+        // Include any that might only be in memory (though they should be in storage)
         let guard = self.collections.read().await;
-        let mut names: Vec<String> = guard.keys().cloned().collect();
-        names.sort();
-        Ok(names)
+        names.extend(guard.keys().cloned());
+
+        let mut sorted_names: Vec<String> = names.into_iter().collect();
+        sorted_names.sort();
+        Ok(sorted_names)
     }
 
     /// Drops a collection, removing all its data from storage.
@@ -322,10 +340,19 @@ impl MemFuse {
 
     // ANCHOR:TODO:SEARCH-001 — Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection.
     // WP:WP-2.1 PRIO:1 NEEDS:COL-001
-    // AGENT:@JULES-05 DATE:2026-05-09 STATUS:READY
+    // AGENT:04 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
+    /// Performs a hybrid search combining BM25 text search and vector search.
+    pub async fn hybrid_search(
+        &self,
+        text: &str,
+        vector: &[f32],
+        k: usize,
+    ) -> Result<Vec<SearchResult>> {
+        self.default_col().await?.hybrid_search(text, vector, k).await
+    }
 
     /// Deletes a document by its string ID.
     pub async fn delete(&self, id: &str) -> Result<()> {
