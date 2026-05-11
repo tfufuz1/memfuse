@@ -1,7 +1,7 @@
 use memfuse_db::{MemFuse, MemFuseConfig};
-use tempfile::TempDir;
 use serde_json::json;
 use std::sync::Arc;
+use tempfile::TempDir;
 use tokio::task::JoinSet;
 
 #[tokio::test]
@@ -26,18 +26,30 @@ async fn test_stress_concurrent_ops() {
                 let embedding = vec![task_id as f32, op_id as f32, 0.0, 0.0];
 
                 // 1. Insert
-                col.insert(&doc_id, &embedding, Some(json!({"task": task_id, "op": op_id})))
-                    .await
-                    .expect("Insert failed during stress test");
+                col.insert(
+                    &doc_id,
+                    &embedding,
+                    Some(json!({"task": task_id, "op": op_id})),
+                )
+                .await
+                .expect("Insert failed during stress test");
 
                 // 2. Search
-                let results = col.search(&embedding, 5).await.expect("Search failed during stress test");
-                assert!(!results.is_empty(), "Search should return at least one result");
+                let results = col
+                    .search(&embedding, 5)
+                    .await
+                    .expect("Search failed during stress test");
+                assert!(
+                    !results.is_empty(),
+                    "Search should return at least one result"
+                );
 
                 // 3. Relate (internal to same task docs if op_id > 0)
                 if op_id > 0 {
                     let prev_id = format!("task-{}-doc-{}", task_id, op_id - 1);
-                    col.relate(&doc_id, &prev_id, "previous").await.expect("Relate failed during stress test");
+                    col.relate(&doc_id, &prev_id, "previous")
+                        .await
+                        .expect("Relate failed during stress test");
                 }
             }
         });
@@ -58,7 +70,9 @@ async fn test_stress_concurrent_ops() {
             let col = db.collection("stress").await.unwrap();
             for op_id in 0..ops_per_task {
                 let doc_id = format!("task-{}-doc-{}", task_id, op_id);
-                col.delete(&doc_id).await.expect("Delete failed during stress test");
+                col.delete(&doc_id)
+                    .await
+                    .expect("Delete failed during stress test");
             }
         });
     }
