@@ -140,9 +140,12 @@ impl InvertedIndex {
         let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
         if let Some(bytes) = self.storage.get(&dl_key).await? {
             let doc_len = if bytes.len() == 4 {
-                u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid doc_len length".into())
-                })?)
+                u32::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
+                )
             } else {
                 0
             };
@@ -151,9 +154,10 @@ impl InvertedIndex {
             let total_tok_key = self.key("meta:total_tokens");
             if let Some(tt_bytes) = self.storage.get(&total_tok_key).await? {
                 if tt_bytes.len() == 8 {
-                    let total_tokens = u64::from_le_bytes(tt_bytes.as_slice().try_into().map_err(
-                        |_| MemFuseError::Storage("Invalid total_tokens length".into()),
-                    )?);
+                    let total_tokens =
+                        u64::from_le_bytes(tt_bytes.as_slice().try_into().map_err(|_| {
+                            MemFuseError::Storage("Invalid total_tokens length".into())
+                        })?);
                     let new_total = total_tokens.saturating_sub(doc_len as u64);
                     self.storage
                         .put(tx, &total_tok_key, &new_total.to_le_bytes())
@@ -165,9 +169,10 @@ impl InvertedIndex {
             let total_docs_key = self.key("meta:total_docs");
             if let Some(td_bytes) = self.storage.get(&total_docs_key).await? {
                 if td_bytes.len() == 8 {
-                    let total_docs = u64::from_le_bytes(td_bytes.as_slice().try_into().map_err(
-                        |_| MemFuseError::Storage("Invalid total_docs length".into()),
-                    )?);
+                    let total_docs =
+                        u64::from_le_bytes(td_bytes.as_slice().try_into().map_err(|_| {
+                            MemFuseError::Storage("Invalid total_docs length".into())
+                        })?);
                     let new_total = total_docs.saturating_sub(1);
                     self.storage
                         .put(tx, &total_docs_key, &new_total.to_le_bytes())
