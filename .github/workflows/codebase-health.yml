@@ -29,8 +29,8 @@ jobs:
           TESTS=$(cargo test --workspace -- --list 2>/dev/null | grep "::" | wc -l || echo 0)
           echo "**Test-Anzahl gesamt:** $TESTS" >> $GITHUB_STEP_SUMMARY
 
-          TODO=$(grep -rn "⬡ @JULES" --include="*.rs" | grep "STATUS:OPEN" | wc -l || echo 0)
-          echo "**Offene JULES-TODOs:** $TODO" >> $GITHUB_STEP_SUMMARY
+          TODO=$(grep -rn "⬡ @JULES\|ANCHOR:" --include="*.rs" | grep "STATUS:OPEN\|STATUS:READY" | wc -l || echo 0)
+          echo "**Offene JULES-TODOs/Anker:** $TODO" >> $GITHUB_STEP_SUMMARY
 
       - name: Validation
         run: cargo check --workspace && cargo clippy --workspace -- -D warnings

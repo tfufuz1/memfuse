@@ -14,8 +14,11 @@
 | **`memfuse-store`** | LSM-Storage, MemTables, WAL, Compaction | ~1400 | ✅ Stabil |
 | **`memfuse-index`** | HNSW-Graphen, SIMD Vektor-Distanz, Quantization | ~1300 | ✅ Stabil |
 | **`memfuse-db`** | Orchestrierung, Hybrid-Search Facade, Collections | ~700 | ✅ Stabil |
-| **`memfuse-text`** | BM25, Inverted Index, Tokenizer | — | 🔵 WP-2.1 geplant |
-| **`memfuse-py`** | PyO3 Bindings, maturin | — | 🔵 WP-3.1 geplant |
+| **`memfuse-text`** | BM25, Inverted Index, Tokenizer | — | ✅ Stabil |
+| **`memfuse-runtime`** | Async Worker & Task Management | — | ✅ Stabil |
+| **`memfuse-orchestrator`** | Multi-Agent Orchestration | — | ✅ Stabil |
+| **`memfuse-checkpoint`** | Snapshot & WAL Checkpointing | — | ✅ Stabil |
+| **`memfuse-py`** | PyO3 Bindings, maturin | — | ✅ Stabil |
 
 ---
 

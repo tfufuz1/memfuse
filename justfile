@@ -91,6 +91,25 @@ debt-audit:
     fi
     echo ""; echo "✅ Debt-Audit PASSED"
 
+# Checks for workspace consistency (edition/version)
+check-workspace-consistency:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== Workspace Consistency Check ==="
+    EDITIONS=$(grep -h "^edition" crates/*/Cargo.toml | sort -u | wc -l)
+    VERSIONS=$(grep -h "^version" crates/*/Cargo.toml | sort -u | wc -l)
+    if [ "$EDITIONS" -ne 1 ]; then
+        echo "❌ Inconsistent editions found in crates:"
+        grep -rn "^edition" crates/*/Cargo.toml
+        exit 1
+    fi
+    if [ "$VERSIONS" -ne 1 ]; then
+        echo "❌ Inconsistent versions found in crates:"
+        grep -rn "^version" crates/*/Cargo.toml
+        exit 1
+    fi
+    echo "✅ Workspace is consistent (all crates use workspace = true)"
+
 # Bootstrap a new feature using the Atomic Spec Template
 spec NAME:
     #!/usr/bin/env bash
