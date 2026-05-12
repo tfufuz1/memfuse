@@ -2,6 +2,8 @@
 //!
 //! Provides tokenization, inverted indexing on LSM, and BM25 scoring.
 
+// ANCHOR:INTEGRATION STATUS:TODO AGENT:05
+
 #![forbid(unsafe_code)]
 
 pub mod bm25;
