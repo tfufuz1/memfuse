@@ -362,7 +362,7 @@ mod tests {
         // 4 + 8 + 4 + 1 + 8 + 4 + 3 + 4 + 5 = 41
         assert_eq!(bytes.len(), 41);
 
-        let payload_len = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        let payload_len = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice"));
         assert_eq!(payload_len, 37);
 
         // Test with Delete

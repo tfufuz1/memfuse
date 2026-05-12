@@ -14,12 +14,21 @@ fn bench_hybrid_search(c: &mut Criterion) {
 
     // Prepare data
     rt.block_on(async {
-        db.insert("doc-1", &vec![0.1; 1536], Some(serde_json::json!({"text": "The quick brown fox jumps over the lazy dog"}))).await.unwrap();
+        db.insert(
+            "doc-1",
+            &vec![0.1; 1536],
+            Some(serde_json::json!({"text": "The quick brown fox jumps over the lazy dog"})),
+        )
+        .await
+        .unwrap();
     });
 
     c.bench_function("hybrid_search_latency", |b| {
         b.to_async(&rt).iter(|| async {
-            let _ = db.hybrid_search("quick fox", &vec![0.1; 1536], 5).await.unwrap();
+            let _ = db
+                .hybrid_search("quick fox", &vec![0.1; 1536], 5)
+                .await
+                .unwrap();
         })
     });
 }
@@ -40,5 +49,10 @@ fn bench_rerun_cost(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_hybrid_search, bench_agent_state_checkpoint, bench_rerun_cost);
+criterion_group!(
+    benches,
+    bench_hybrid_search,
+    bench_agent_state_checkpoint,
+    bench_rerun_cost
+);
 criterion_main!(benches);
