@@ -356,6 +356,19 @@ impl MemFuse {
             .await
     }
 
+    /// Performs hybrid search combining BM25 and vector search.
+    pub async fn hybrid_search(
+        &self,
+        text: &str,
+        vector: &[f32],
+        k: usize,
+    ) -> Result<Vec<SearchResult>> {
+        self.default_col()
+            .await?
+            .hybrid_search(text, vector, k)
+            .await
+    }
+
     /// Deletes a document by its string ID.
     pub async fn delete(&self, id: &str) -> Result<()> {
         self.default_col().await?.delete(id).await

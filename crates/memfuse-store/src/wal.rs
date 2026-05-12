@@ -98,8 +98,19 @@ impl WalEntry {
 
     /// Serializes the entry to bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
-        // seq_no (8) + checksum (4) + op_type (1)
+        let op_size = match &self.op {
+            WalOp::Put { key, value, .. } => 1 + 8 + 4 + key.len() + 4 + value.len(),
+            WalOp::Delete { key, .. } => 1 + 8 + 4 + key.len(),
+        };
+        // Verify op_size matches what is actually written in the match block below.
+        // Put: type(1) + tx_id(8) + k_len(4) + key + v_len(4) + value
+        // Delete: type(1) + tx_id(8) + k_len(4) + key
+
+        let payload_size = 8 + 4 + op_size; // seq_no(8) + checksum(4) + op
+        let total_size = 4 + payload_size; // length prefix + payload
+
+        let mut buf = Vec::with_capacity(total_size);
+        buf.extend_from_slice(&(payload_size as u32).to_le_bytes());
         buf.extend_from_slice(&self.seq_no.to_le_bytes());
         buf.extend_from_slice(&self.checksum.to_le_bytes());
 
@@ -119,13 +130,7 @@ impl WalEntry {
                 buf.extend_from_slice(key);
             }
         }
-
-        // Prepend total length
-        let len = buf.len() as u32;
-        let mut result = Vec::with_capacity(4 + buf.len());
-        result.extend_from_slice(&len.to_le_bytes());
-        result.extend_from_slice(&buf);
-        result
+        buf
     }
 }
 
@@ -335,5 +340,39 @@ impl Wal {
     /// Returns the WAL file path.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_wal_entry_serialization_roundtrip() {
+        let op = WalOp::Put {
+            tx_id: TxId::new(42),
+            key: b"key".to_vec(),
+            value: b"value".to_vec(),
+        };
+        let entry = WalEntry::new(op, 100);
+        let bytes = entry.to_bytes();
+
+        // Manual verification of length
+        // total_len(4) + seq_no(8) + checksum(4) + op_type(1) + tx_id(8) + k_len(4) + key(3) + v_len(4) + val(5)
+        // 4 + 8 + 4 + 1 + 8 + 4 + 3 + 4 + 5 = 41
+        assert_eq!(bytes.len(), 41);
+
+        let payload_len = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice"));
+        assert_eq!(payload_len, 37);
+
+        // Test with Delete
+        let op2 = WalOp::Delete {
+            tx_id: TxId::new(43),
+            key: b"key2".to_vec(),
+        };
+        let entry2 = WalEntry::new(op2, 101);
+        let bytes2 = entry2.to_bytes();
+        // 4 + 8 + 4 + 1 + 8 + 4 + key(4) = 33
+        assert_eq!(bytes2.len(), 33);
     }
 }
