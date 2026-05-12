@@ -1,10 +1,10 @@
 // ANCHOR:DOC:DOC-DISTANCE-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:03 DATE:2026-05-09 STATUS:READY
+// AGENT:03 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:SEC:UNSAFE-001 — Undokumentierte unsafe-Blöcke in SIMD-Zone
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:10 DATE:2026-05-08 STATUS:READY
+// AGENT:10 DATE:2026-05-08 STATUS:REVIEW
 // CREATED:2026-05-08 DEADLINE:NONE
 // GEFUNDEN: 42 unsafe-Blöcke (AVX2 + AVX-512) ohne SAFETY: Kommentare
 // ERWARTET: Jeder unsafe-Block braucht SAFETY: Kommentar mit:
@@ -26,6 +26,7 @@
 //! Implementations use AVX2/AVX-512 SIMD if available, falling back to portable-simd, then scalar.
 
 #![allow(unused_unsafe)]
+#![allow(unsafe_code)]
 
 use memfuse_core::DistanceMetric;
 use std::simd::prelude::*;
@@ -57,13 +58,13 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
     {
         // Try AVX-512 first for maximum performance
         if is_x86_feature_detected!("avx512f") {
-            return // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { cosine_distance_avx512(a, b) };
+            // SAFETY: CPU support for AVX-512F is detected. `a` and `b` have same length.
+            return unsafe { cosine_distance_avx512(a, b) };
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            return // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { cosine_distance_avx2(a, b) };
+            // SAFETY: CPU support for AVX2/FMA is detected. `a` and `b` have same length.
+            return unsafe { cosine_distance_avx2(a, b) };
         }
     }
     // Portable-simd fallback
@@ -78,13 +79,13 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
     {
         // Try AVX-512
         if is_x86_feature_detected!("avx512f") {
-            return // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { euclidean_distance_avx512(a, b) };
+            // SAFETY: CPU support for AVX-512F is detected. `a` and `b` have same length.
+            return unsafe { euclidean_distance_avx512(a, b) };
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            return // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { euclidean_distance_avx2(a, b) };
+            // SAFETY: CPU support for AVX2/FMA is detected. `a` and `b` have same length.
+            return unsafe { euclidean_distance_avx2(a, b) };
         }
     }
     // Portable-simd fallback
@@ -99,13 +100,13 @@ pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
     {
         // Try AVX-512
         if is_x86_feature_detected!("avx512f") {
-            return // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { -dot_product_avx512(a, b) };
+            // SAFETY: CPU support for AVX-512F is detected. `a` and `b` have same length.
+            return unsafe { -dot_product_avx512(a, b) };
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            return // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { -dot_product_avx2(a, b) };
+            // SAFETY: CPU support for AVX2/FMA is detected. `a` and `b` have same length.
+            return unsafe { -dot_product_avx2(a, b) };
         }
     }
     // Portable-simd fallback
@@ -233,15 +234,22 @@ pub fn cosine_distance_std_simd(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "fma")]
-// SAFETY: Caller must ensure target feature support and slice equal length
+/// # SAFETY
+/// Caller must ensure that:
+/// 1. The CPU supports AVX2 and FMA instructions.
+/// 2. `a` and `b` have the same length.
+/// 3. Dimensions are validated before calling.
 unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
-    let mut sum_v = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { _mm256_setzero_ps() };
+    // SAFETY: AVX2 feature is enabled for this function and checked by caller.
+    let mut sum_v = unsafe { _mm256_setzero_ps() };
     let n = a.len();
     let mut i = 0;
 
     while i + 8 <= n {
-        // SAFETY: Hardware instruction wrapper is safe to execute in this block
+        // SAFETY:
+        // 1. AVX2/FMA are enabled for this scope.
+        // 2. Loop invariant `i + 8 <= n` ensures `a.as_ptr().add(i)` and `b.as_ptr().add(i)`
+        //    are within bounds for 8-float (32-byte) unaligned loads.
         unsafe {
             let va = _mm256_loadu_ps(a.as_ptr().add(i));
             let vb = _mm256_loadu_ps(b.as_ptr().add(i));
@@ -250,8 +258,8 @@ unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
         i += 8;
     }
 
-    let mut sum = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { hsum256_ps_avx(sum_v) };
+    // SAFETY: AVX2 is supported and sum_v is initialized.
+    let mut sum = unsafe { hsum256_ps_avx(sum_v) };
 
     while i < n {
         sum += a[i] * b[i];
@@ -263,20 +271,23 @@ unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "fma")]
-// SAFETY: Caller must ensure target feature support and slice equal length
+/// # SAFETY
+/// Caller must ensure that:
+/// 1. The CPU supports AVX2 and FMA instructions.
+/// 2. `a` and `b` have the same length.
 unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
-    let mut dot_v = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { _mm256_setzero_ps() };
-    let mut norm_a_v = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { _mm256_setzero_ps() };
-    let mut norm_b_v = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { _mm256_setzero_ps() };
+    // SAFETY: AVX2 feature is enabled for this function and checked by caller.
+    let mut dot_v = unsafe { _mm256_setzero_ps() };
+    let mut norm_a_v = unsafe { _mm256_setzero_ps() };
+    let mut norm_b_v = unsafe { _mm256_setzero_ps() };
 
     let n = a.len();
     let mut i = 0;
 
     while i + 8 <= n {
-        // SAFETY: Hardware instruction wrapper is safe to execute in this block
+        // SAFETY:
+        // 1. AVX2/FMA are enabled for this scope.
+        // 2. Loop invariant `i + 8 <= n` ensures unaligned loads from `a` and `b` are safe.
         unsafe {
             let va = _mm256_loadu_ps(a.as_ptr().add(i));
             let vb = _mm256_loadu_ps(b.as_ptr().add(i));
@@ -288,12 +299,10 @@ unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
         i += 8;
     }
 
-    let mut dot = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { hsum256_ps_avx(dot_v) };
-    let mut norm_a = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { hsum256_ps_avx(norm_a_v) };
-    let mut norm_b = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { hsum256_ps_avx(norm_b_v) };
+    // SAFETY: AVX2 is supported and vectors are initialized.
+    let mut dot = unsafe { hsum256_ps_avx(dot_v) };
+    let mut norm_a = unsafe { hsum256_ps_avx(norm_a_v) };
+    let mut norm_b = unsafe { hsum256_ps_avx(norm_b_v) };
 
     while i < n {
         let x = a[i];
@@ -314,15 +323,20 @@ unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "fma")]
-// SAFETY: Caller must ensure target feature support and slice equal length
+/// # SAFETY
+/// Caller must ensure that:
+/// 1. The CPU supports AVX2 and FMA instructions.
+/// 2. `a` and `b` have the same length.
 unsafe fn euclidean_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
-    let mut sum_v = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { _mm256_setzero_ps() };
+    // SAFETY: AVX2 feature is enabled for this function and checked by caller.
+    let mut sum_v = unsafe { _mm256_setzero_ps() };
     let n = a.len();
     let mut i = 0;
 
     while i + 8 <= n {
-        // SAFETY: Hardware instruction wrapper is safe to execute in this block
+        // SAFETY:
+        // 1. AVX2/FMA are enabled for this scope.
+        // 2. Loop invariant `i + 8 <= n` ensures unaligned loads from `a` and `b` are safe.
         unsafe {
             let va = _mm256_loadu_ps(a.as_ptr().add(i));
             let vb = _mm256_loadu_ps(b.as_ptr().add(i));
@@ -332,8 +346,8 @@ unsafe fn euclidean_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
         i += 8;
     }
 
-    let mut sum = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { hsum256_ps_avx(sum_v) };
+    // SAFETY: AVX2 is supported and sum_v is initialized.
+    let mut sum = unsafe { hsum256_ps_avx(sum_v) };
 
     while i < n {
         let diff = a[i] - b[i];
@@ -347,9 +361,11 @@ unsafe fn euclidean_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "fma")]
-// SAFETY: Caller must ensure target feature support and slice equal length
+/// # SAFETY
+/// Caller must ensure that the CPU supports AVX2.
 unsafe fn hsum256_ps_avx(v: __m256) -> f32 {
-    // SAFETY: Hardware instruction wrapper is safe to execute in this block
+    // SAFETY: AVX2 feature is enabled for this function.
+    // Instructions are safe to execute on a __m256 vector.
     unsafe {
         let x128 = _mm_add_ps(_mm256_extractf128_ps(v, 1), _mm256_castps256_ps128(v));
         let x64 = _mm_add_ps(x128, _mm_movehl_ps(x128, x128));
@@ -364,15 +380,20 @@ unsafe fn hsum256_ps_avx(v: __m256) -> f32 {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx512f")]
-// SAFETY: Caller must ensure target feature support and slice equal length
+/// # SAFETY
+/// Caller must ensure that:
+/// 1. The CPU supports AVX-512F instructions.
+/// 2. `a` and `b` have the same length.
 unsafe fn dot_product_avx512(a: &[f32], b: &[f32]) -> f32 {
-    let mut sum_v = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { _mm512_setzero_ps() };
+    // SAFETY: AVX-512F feature is enabled for this function and checked by caller.
+    let mut sum_v = unsafe { _mm512_setzero_ps() };
     let n = a.len();
     let mut i = 0;
 
     while i + 16 <= n {
-        // SAFETY: Hardware instruction wrapper is safe to execute in this block
+        // SAFETY:
+        // 1. AVX-512F is enabled for this scope.
+        // 2. Loop invariant `i + 16 <= n` ensures unaligned loads from `a` and `b` are safe.
         unsafe {
             let va = _mm512_loadu_ps(a.as_ptr().add(i));
             let vb = _mm512_loadu_ps(b.as_ptr().add(i));
@@ -381,8 +402,8 @@ unsafe fn dot_product_avx512(a: &[f32], b: &[f32]) -> f32 {
         i += 16;
     }
 
-    let mut sum = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { hsum512_ps_avx(sum_v) };
+    // SAFETY: AVX-512F is supported and sum_v is initialized.
+    let mut sum = unsafe { hsum512_ps_avx(sum_v) };
 
     while i < n {
         sum += a[i] * b[i];
@@ -393,20 +414,23 @@ unsafe fn dot_product_avx512(a: &[f32], b: &[f32]) -> f32 {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx512f")]
-// SAFETY: Caller must ensure target feature support and slice equal length
+/// # SAFETY
+/// Caller must ensure that:
+/// 1. The CPU supports AVX-512F instructions.
+/// 2. `a` and `b` have the same length.
 unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
-    let mut dot_v = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { _mm512_setzero_ps() };
-    let mut norm_a_v = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { _mm512_setzero_ps() };
-    let mut norm_b_v = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { _mm512_setzero_ps() };
+    // SAFETY: AVX-512F feature is enabled for this function and checked by caller.
+    let mut dot_v = unsafe { _mm512_setzero_ps() };
+    let mut norm_a_v = unsafe { _mm512_setzero_ps() };
+    let mut norm_b_v = unsafe { _mm512_setzero_ps() };
 
     let n = a.len();
     let mut i = 0;
 
     while i + 16 <= n {
-        // SAFETY: Hardware instruction wrapper is safe to execute in this block
+        // SAFETY:
+        // 1. AVX-512F is enabled for this scope.
+        // 2. Loop invariant `i + 16 <= n` ensures unaligned loads from `a` and `b` are safe.
         unsafe {
             let va = _mm512_loadu_ps(a.as_ptr().add(i));
             let vb = _mm512_loadu_ps(b.as_ptr().add(i));
@@ -418,12 +442,10 @@ unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
         i += 16;
     }
 
-    let mut dot = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { hsum512_ps_avx(dot_v) };
-    let mut norm_a = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { hsum512_ps_avx(norm_a_v) };
-    let mut norm_b = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { hsum512_ps_avx(norm_b_v) };
+    // SAFETY: AVX-512F is supported and vectors are initialized.
+    let mut dot = unsafe { hsum512_ps_avx(dot_v) };
+    let mut norm_a = unsafe { hsum512_ps_avx(norm_a_v) };
+    let mut norm_b = unsafe { hsum512_ps_avx(norm_b_v) };
 
     while i < n {
         let x = a[i];
@@ -443,15 +465,20 @@ unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx512f")]
-// SAFETY: Caller must ensure target feature support and slice equal length
+/// # SAFETY
+/// Caller must ensure that:
+/// 1. The CPU supports AVX-512F instructions.
+/// 2. `a` and `b` have the same length.
 unsafe fn euclidean_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
-    let mut sum_v = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { _mm512_setzero_ps() };
+    // SAFETY: AVX-512F feature is enabled for this function and checked by caller.
+    let mut sum_v = unsafe { _mm512_setzero_ps() };
     let n = a.len();
     let mut i = 0;
 
     while i + 16 <= n {
-        // SAFETY: Hardware instruction wrapper is safe to execute in this block
+        // SAFETY:
+        // 1. AVX-512F is enabled for this scope.
+        // 2. Loop invariant `i + 16 <= n` ensures unaligned loads from `a` and `b` are safe.
         unsafe {
             let va = _mm512_loadu_ps(a.as_ptr().add(i));
             let vb = _mm512_loadu_ps(b.as_ptr().add(i));
@@ -461,8 +488,8 @@ unsafe fn euclidean_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
         i += 16;
     }
 
-    let mut sum = // SAFETY: Hardware instruction wrapper is safe to execute in this block
- unsafe { hsum512_ps_avx(sum_v) };
+    // SAFETY: AVX-512F is supported and sum_v is initialized.
+    let mut sum = unsafe { hsum512_ps_avx(sum_v) };
 
     while i < n {
         let diff = a[i] - b[i];
@@ -475,9 +502,11 @@ unsafe fn euclidean_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx512f")]
-// SAFETY: Caller must ensure target feature support and slice equal length
+/// # SAFETY
+/// Caller must ensure that the CPU supports AVX-512F.
 unsafe fn hsum512_ps_avx(v: __m512) -> f32 {
-    // SAFETY: Hardware instruction wrapper is safe to execute in this block
+    // SAFETY: AVX-512F feature is enabled for this function.
+    // Instructions are safe to execute on a __m512 vector.
     unsafe {
         let low = _mm512_castps512_ps256(v);
         let high = _mm512_extractf32x8_ps(v, 1);

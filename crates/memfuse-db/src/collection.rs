@@ -5,6 +5,13 @@
 // DESIGN: Eigener HNSW-Index pro Collection, GEMEINSAMER LSM-Storage.
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 // STATUS: Full Implementation für WP-1.2.
+// ANCHOR:SEC:SERIAL-001 — Unverschlüsselte Serialisierung von Dokumenten.
+// WP:WP-3.2 PRIO:2 NEEDS:NONE
+// AGENT:10 DATE:2026-05-12 STATUS:READY
+// CREATED:2026-05-12 DEADLINE:NONE
+// FINDING: `serde_json::to_vec` schreibt Dokumente und Metadaten im Klartext in den LSM-Store.
+// MASSNAHME: WP-3.2 (Encryption at Rest) muss hier eine AEAD-Verschlüsselung (z.B. ChaCha20-Poly1305)
+// integrieren, bevor die Daten an `storage.put` übergeben werden.
 //! Logically isolated Collections inside the MemFuse database.
 
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};

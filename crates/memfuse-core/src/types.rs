@@ -45,7 +45,12 @@ impl DocId {
     pub fn from_key(key: &str) -> Self {
         let hash = blake3::hash(key.as_bytes());
         let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&hash.as_bytes()[..8]);
+        // SAFETY: blake3 hashes are always 32 bytes, so taking the first 8 is safe.
+        // We use a safe copy via zip to avoid panics.
+        let hash_bytes = hash.as_bytes();
+        for (dest, src) in bytes.iter_mut().zip(hash_bytes.iter().take(8)) {
+            *dest = *src;
+        }
         Self(u64::from_le_bytes(bytes))
     }
 }
@@ -205,6 +210,22 @@ impl Entity {
             name: name.into(),
             entity_type: entity_type.into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_doc_id_from_key() {
+        let id1 = DocId::from_key("test_key");
+        let id2 = DocId::from_key("test_key");
+        let id3 = DocId::from_key("other_key");
+
+        assert_eq!(id1, id2);
+        assert_ne!(id1, id3);
+        assert_ne!(id1.inner(), 0);
     }
 }
 
