@@ -107,11 +107,9 @@ impl Collection {
         metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
     ) -> PyResult<()> {
         let rt = get_runtime()?;
-        let vec_slice = vector
-            .as_slice()
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
             depythonize(&d).map_err(|e| {
@@ -122,10 +120,8 @@ impl Collection {
         };
 
         // AGENT:06 DATE:2026-05-09 STATUS:DONE — Zero-copy slice passed to backend
-        py.allow_threads(|| {
-            rt.block_on(self.inner.insert(id, vec_slice, meta_val))
-        })
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        py.allow_threads(|| rt.block_on(self.inner.insert(id, vec_slice, meta_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(())
     }
 
@@ -137,11 +133,9 @@ impl Collection {
         k: usize,
     ) -> PyResult<Vec<PyObject>> {
         let rt = get_runtime()?;
-        let vec_slice = vector
-            .as_slice()
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         // AGENT:06 DATE:2026-05-09 STATUS:DONE — Zero-copy slice passed to backend
         let results = py
@@ -151,9 +145,16 @@ impl Collection {
         let mut py_res = Vec::new();
         for r in results {
             let meta_py = if let Some(m) = r.metadata {
-                Some(pythonize(py, &m).map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
-                })?.unbind())
+                Some(
+                    pythonize(py, &m)
+                        .map_err(|e| {
+                            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                "Metadata error: {}",
+                                e
+                            ))
+                        })?
+                        .unbind(),
+                )
             } else {
                 None
             };
@@ -179,25 +180,28 @@ impl Collection {
         k: usize,
     ) -> PyResult<Vec<PyObject>> {
         let rt = get_runtime()?;
-        let vec_slice = vector
-            .as_slice()
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         // AGENT:06 DATE:2026-05-09 STATUS:DONE — Zero-copy slice passed to backend
         let results = py
-            .allow_threads(|| {
-                rt.block_on(self.inner.hybrid_search(text, vec_slice, k))
-            })
+            .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let mut py_res = Vec::new();
         for r in results {
             let meta_py = if let Some(m) = r.metadata {
-                Some(pythonize(py, &m).map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
-                })?.unbind())
+                Some(
+                    pythonize(py, &m)
+                        .map_err(|e| {
+                            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                "Metadata error: {}",
+                                e
+                            ))
+                        })?
+                        .unbind(),
+                )
             } else {
                 None
             };
