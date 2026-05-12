@@ -4,8 +4,10 @@
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use memfuse_db::MemFuse;
+use memfuse_checkpoint::CheckpointManager;
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
+use std::sync::Arc;
 
 fn bench_hybrid_search(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
@@ -34,17 +36,38 @@ fn bench_hybrid_search(c: &mut Criterion) {
 }
 
 fn bench_agent_state_checkpoint(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    let tmp = TempDir::new().unwrap();
+
+    use memfuse_store::LsmStorage;
+    use memfuse_store::LsmConfig;
+
+    let config = LsmConfig {
+        path: tmp.path().to_path_buf(),
+        ..Default::default()
+    };
+    let storage = rt.block_on(LsmStorage::new(config)).unwrap();
+    let manager = CheckpointManager::new(Arc::new(storage));
+
     c.bench_function("checkpoint_latency", |b| {
-        b.iter(|| {
-            // TODO: Implement benchmark vs Redis
+        b.to_async(&rt).iter(|| async {
+            let _ = manager.create_checkpoint("test-checkpoint").await.unwrap();
         })
     });
 }
 
 fn bench_rerun_cost(c: &mut Criterion) {
-    c.bench_function("rerun_cost", |b| {
-        b.iter(|| {
-            // TODO: Implement benchmark
+    let rt = Runtime::new().unwrap();
+    let tmp = TempDir::new().unwrap();
+    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap();
+
+    rt.block_on(async {
+        db.insert("state-1", &vec![0.1; 1536], Some(serde_json::json!({"data": "state info"}))).await.unwrap();
+    });
+
+    c.bench_function("rerun_cost_get_latency", |b| {
+        b.to_async(&rt).iter(|| async {
+            let _ = db.get("state-1").await.unwrap();
         })
     });
 }
