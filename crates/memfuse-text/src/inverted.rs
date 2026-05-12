@@ -347,8 +347,8 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
-    async fn test_bm25_ranks_exact_keyword_higher() -> std::result::Result<(), Box<dyn std::error::Error>>
-    {
+    async fn test_bm25_ranks_exact_keyword_higher(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let tmp = TempDir::new()?;
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
@@ -496,7 +496,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_forward_index_consistency() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn test_forward_index_consistency() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
         let tmp = TempDir::new()?;
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
