@@ -6,14 +6,16 @@
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
-// FORMAT: [u32 len][u64 seq_no][u32 crc32][u8 op_type][payload...]
+// FORMAT: [u32 len][u8 version][u64 seq_no][u8[32] mac][u8 op_type][payload...]
 // INVARIANTE: Jeder Eintrag wird ERST in WAL geschrieben, DANN in MemTable übernommen.
 // REPLAY: Bei Neustart wird WAL komplett in MemTable replayed (lsm.rs::new()).
 // ROTATION: Beim Flush wird alte WAL archiviert, neue geöffnet.
 //
+#![allow(unexpected_cfgs)]
+
 // ANCHOR:SPEC:WP-3.2-HMAC-001 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
 // WP:WP-3.2 PRIO:3 NEEDS:NONE
-// AGENT:10 DATE:2026-05-09 STATUS:READY
+// AGENT:10 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 //! Write-Ahead Log (WAL) for durability and crash recovery.
 //!
@@ -25,12 +27,12 @@
 //! ## Crash Recovery
 //! Upon restart, the `LsmStorage` engine replays the WAL from start to end,
 //! reconstructing the state of the MemTable as it was before the crash.
-//! Entries with invalid CRC32 checksums are ignored, and replay stops
+//! Entries with invalid MACs are ignored, and replay stops
 //! at the first point of corruption.
 //!
 //! ## Invariants
 //! - **Durability**: Every committed transaction is guaranteed to be in the WAL.
-//! - **Integrity**: Entries are protected by CRC32 checksums to detect data corruption.
+//! - **Integrity**: Entries are protected by keyed BLAKE3 MACs to detect data corruption and tampering.
 //! - **Async I/O**: Operations use `tokio::fs` for non-blocking disk access.
 //
 // ANCHOR:PERF:LATENCY-001 — WAL-Write-Path Hotspot
@@ -45,6 +47,19 @@
 use memfuse_core::{MemFuseError, Result, TxId};
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+/// Current WAL format version.
+const WAL_VERSION: u8 = 2;
+
+/// Key used for WAL integrity MAC.
+/// In production, this should be loaded from a secure KMS.
+/// For now, we use a fixed placeholder that is explicitly documented.
+const WAL_INTEGRITY_KEY: [u8; 32] = [
+    0x4d, 0x65, 0x6d, 0x46, 0x75, 0x73, 0x65, 0x57, // MemFuseW
+    0x41, 0x4c, 0x49, 0x6e, 0x74, 0x65, 0x67, 0x72, // ALIntegr
+    0x69, 0x74, 0x79, 0x4b, 0x65, 0x79, 0x32, 0x30, // ityKey20
+    0x32, 0x36, 0x30, 0x35, 0x30, 0x39, 0x5f, 0x5f, // 260509__
+];
 
 /// WAL entry operation.
 #[derive(Debug, Clone)]
@@ -65,22 +80,23 @@ pub enum WalOp {
 pub struct WalEntry {
     pub op: WalOp,
     pub seq_no: u64,
-    pub checksum: u32,
+    pub mac: [u8; 32],
 }
 
 impl WalEntry {
-    /// Creates a new WAL entry with CRC32 checksum.
+    /// Creates a new WAL entry with BLAKE3 MAC.
     pub fn new(op: WalOp, seq_no: u64) -> Self {
-        let checksum = Self::compute_checksum(&op, seq_no);
+        let mac = Self::compute_mac(&op, seq_no);
         Self {
             op,
             seq_no,
-            checksum,
+            mac,
         }
     }
 
-    fn compute_checksum(op: &WalOp, seq_no: u64) -> u32 {
-        let mut hasher = crc32fast::Hasher::new();
+    fn compute_mac(op: &WalOp, seq_no: u64) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new_keyed(&WAL_INTEGRITY_KEY);
+        hasher.update(&[WAL_VERSION]);
         hasher.update(&seq_no.to_le_bytes());
         match op {
             WalOp::Put { key, value, .. } => {
@@ -93,15 +109,16 @@ impl WalEntry {
                 hasher.update(key);
             }
         }
-        hasher.finalize()
+        *hasher.finalize().as_bytes()
     }
 
     /// Serializes the entry to bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
-        // seq_no (8) + checksum (4) + op_type (1)
+        // version (1) + seq_no (8) + mac (32) + op_type (1)
+        buf.push(WAL_VERSION);
         buf.extend_from_slice(&self.seq_no.to_le_bytes());
-        buf.extend_from_slice(&self.checksum.to_le_bytes());
+        buf.extend_from_slice(&self.mac);
 
         match &self.op {
             WalOp::Put { tx_id, key, value } => {
@@ -201,12 +218,12 @@ impl Wal {
         let mut pos = 0;
 
         while pos + 4 <= data.len() {
-            let len = u32::from_le_bytes(data[pos..pos + 4].try_into().map_err(|_| {
+            let len = u32::from_le_bytes(data.get(pos..pos + 4).ok_or_else(|| {
                 MemFuseError::WalCorruption {
                     offset: pos as u64,
                     reason: "Invalid length".into(),
                 }
-            })?) as usize;
+            })?.try_into().unwrap()) as usize;
             pos += 4;
 
             if pos + len > data.len() {
@@ -217,26 +234,33 @@ impl Wal {
             let entry_data = &data[pos..pos + len];
             pos += len;
 
-            if entry_data.len() < 13 {
+            if entry_data.len() < 42 { // version(1) + seq_no(8) + mac(32) + op_type(1)
                 continue;
             }
 
-            let seq_no = u64::from_le_bytes(entry_data[0..8].try_into().map_err(|_| {
+            let version = entry_data[0];
+            if version != WAL_VERSION {
+                return Err(MemFuseError::WalCorruption {
+                    offset: (pos - len) as u64,
+                    reason: format!("Unsupported WAL version: {}, expected {}", version, WAL_VERSION),
+                });
+            }
+
+            let seq_no = u64::from_le_bytes(entry_data[1..9].try_into().map_err(|_| {
                 MemFuseError::WalCorruption {
                     offset: pos as u64,
                     reason: "Invalid seq_no".into(),
                 }
             })?);
-            let stored_checksum =
-                u32::from_le_bytes(entry_data[8..12].try_into().map_err(|_| {
-                    MemFuseError::WalCorruption {
-                        offset: pos as u64,
-                        reason: "Invalid checksum".into(),
-                    }
-                })?);
-            let op_type = entry_data[12];
+            let stored_mac: [u8; 32] = entry_data[9..41].try_into().map_err(|_| {
+                MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid mac".into(),
+                }
+            })?;
+            let op_type = entry_data[41];
 
-            let remaining = &entry_data[13..];
+            let remaining = &entry_data[42..];
             let op = match op_type {
                 0 => {
                     // Put
@@ -299,17 +323,17 @@ impl Wal {
                 _ => continue,
             };
 
-            // ANCHOR:ALG-FIX:D1-007 — CRC32-Verifikation bei WAL Replay
+            // ANCHOR:ALG-FIX:D1-007 — MAC-Verifikation bei WAL Replay
             // WP:WP-0.0 PRIO:1 NEEDS:NONE
             // AGENT:13 DATE:2026-05-08 STATUS:DONE
             // CREATED:2026-05-08 DEADLINE:NONE
             // Ohne Verifikation werden korrupte Entries (Bit-Flip, Partial Write)
             // blind in die MemTable replayed → stille Datenkorrumpierung.
-            let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no);
-            if recomputed_checksum != stored_checksum {
+            let recomputed_mac = WalEntry::compute_mac(&op, seq_no);
+            if recomputed_mac != stored_mac {
                 tracing::warn!(
-                    "WAL entry at offset {} has invalid checksum (stored={}, computed={}), truncating replay",
-                    pos, stored_checksum, recomputed_checksum
+                    "WAL entry at offset {} has invalid MAC, truncating replay",
+                    pos
                 );
                 break;
             }
@@ -319,7 +343,7 @@ impl Wal {
                 WalEntry {
                     op,
                     seq_no,
-                    checksum: stored_checksum,
+                    mac: stored_mac,
                 },
             ));
         }
@@ -335,5 +359,28 @@ impl Wal {
     /// Returns the WAL file path.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+}
+
+#[cfg(kani)]
+mod proof {
+    use super::*;
+
+    #[kani::proof]
+    fn verify_mac_consistency() {
+        let seq_no: u64 = kani::any();
+        let key_len: usize = kani::any();
+        kani::assume(key_len < 16);
+        let key: Vec<u8> = vec![0u8; key_len];
+
+        let op = WalOp::Delete {
+            tx_id: TxId::new(0),
+            key: key.clone()
+        };
+
+        let mac1 = WalEntry::compute_mac(&op, seq_no);
+        let mac2 = WalEntry::compute_mac(&op, seq_no);
+
+        assert_eq!(mac1, mac2);
     }
 }

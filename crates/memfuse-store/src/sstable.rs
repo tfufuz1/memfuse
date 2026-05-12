@@ -314,15 +314,18 @@ impl SstableReader {
 
         while pos + 10 <= index_data.len() {
             let key_len = u16::from_le_bytes(
-                index_data[pos..pos + 2]
+                index_data.get(pos..pos + 2)
+                    .ok_or_else(|| MemFuseError::Storage("invalid index: key_len".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
             pos += 2;
-            let key = Bytes::copy_from_slice(&index_data[pos..pos + key_len]);
+            let key = Bytes::copy_from_slice(index_data.get(pos..pos + key_len)
+                .ok_or_else(|| MemFuseError::Storage("invalid index: key".into()))?);
             pos += key_len;
             let offset = u64::from_le_bytes(
-                index_data[pos..pos + 8]
+                index_data.get(pos..pos + 8)
+                    .ok_or_else(|| MemFuseError::Storage("invalid index: offset".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             );
@@ -442,7 +445,8 @@ impl SstableReader {
         }
 
         let num_offsets = u16::from_le_bytes(
-            block_data[n - 2..n]
+            block_data.get(n - 2..n)
+                .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
         ) as usize;
@@ -456,7 +460,8 @@ impl SstableReader {
         let offsets_start = n - 2 - offsets_len;
         let bloom_offset = offsets_start - 8;
         let bloom = u64::from_le_bytes(
-            block_data[bloom_offset..bloom_offset + 8]
+            block_data.get(bloom_offset..bloom_offset + 8)
+                .ok_or_else(|| MemFuseError::Storage("malformed block: bloom".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
         );
@@ -466,7 +471,10 @@ impl SstableReader {
         let hash_bytes = hash.as_bytes();
         let mut may_contain = true;
         for i in 0..4 {
-            let chunk = u16::from_le_bytes([hash_bytes[i * 2], hash_bytes[i * 2 + 1]]);
+            let chunk = u16::from_le_bytes([
+                *hash_bytes.get(i * 2).ok_or_else(|| MemFuseError::Internal("bloom hash index".into()))?,
+                *hash_bytes.get(i * 2 + 1).ok_or_else(|| MemFuseError::Internal("bloom hash index".into()))?
+            ]);
             let bit = chunk % 64;
             if (bloom & (1 << bit)) == 0 {
                 may_contain = false;
@@ -591,7 +599,8 @@ impl SstableReader {
             }
 
             let num_offsets = u16::from_le_bytes(
-                block_data[n - 2..n]
+                block_data.get(n - 2..n)
+                    .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
@@ -720,7 +729,8 @@ impl SstableReader {
             }
 
             let num_offsets = u16::from_le_bytes(
-                block_data[n - 2..n]
+                block_data.get(n - 2..n)
+                    .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
@@ -853,7 +863,8 @@ impl SstableReader {
             }
 
             let num_offsets = u16::from_le_bytes(
-                block_data[n - 2..n]
+                block_data.get(n - 2..n)
+                    .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
