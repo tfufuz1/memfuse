@@ -6,6 +6,9 @@ on:
     branches: [ "main", "master" ]
   pull_request:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   verify-dag:
     runs-on: ubuntu-latest
