@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 // ANCHOR:DOC:DOC-HNSW-001 — Module documentation added
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:03 DATE:2026-05-15 STATUS:DONE

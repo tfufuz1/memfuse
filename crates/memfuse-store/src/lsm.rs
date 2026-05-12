@@ -70,6 +70,7 @@ pub struct LsmConfig {
     pub max_ram_mb: u64,
     pub tx_timeout: Duration,
     pub compaction: CompactionConfig,
+    pub encryption_passphrase: Option<String>,
 }
 
 impl Default for LsmConfig {
@@ -80,6 +81,7 @@ impl Default for LsmConfig {
             max_ram_mb: 2048,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
         }
     }
 }
@@ -597,6 +599,7 @@ mod tests {
             max_ram_mb: 64,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
         };
         let storage = LsmStorage::new(config).await.expect("create storage");
         (storage, tmp)
@@ -674,6 +677,7 @@ mod tests {
             max_ram_mb: 64,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
         };
         let storage = LsmStorage::new(config).await.expect("create storage");
 

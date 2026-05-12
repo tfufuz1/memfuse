@@ -38,6 +38,8 @@ unicode-segmentation = "1"
 # Crypto & hashing
 blake3 = "1"
 crc32fast = "1.3"
+hmac = "0.12"
+sha2 = "0.10"
 
 # Concurrency
 rand = "0.8"

@@ -6,7 +6,11 @@
 // KERNKOMPONENTEN: HNSW (Graph-basierte ANN) + CSR Graph (Relationen) + SIMD-Distanz.
 // INVARIANTE: HNSW-Graphen liegen exklusiv im RAM. Disk-Storage erfolgt über memfuse-store (via LsmStorage).
 //! MemFuse Index — HNSW vector index with SIMD distance computation.
+//!
+//! This crate uses `unsafe` code primarily in the `distance` module for hardware-specific
+//! SIMD optimizations (AVX2, AVX-512). All other modules are subject to strict `forbid(unsafe_code)`.
 
+#![allow(unsafe_code)]
 #![feature(portable_simd)]
 
 pub mod csr;
