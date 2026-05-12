@@ -96,7 +96,12 @@ pub struct PyMemFuse {
 #[pymethods]
 impl PyMemFuse {
     #[pyo3(signature = (name, _dimension=None))]
-    pub fn collection(&self, name: &str, _dimension: Option<usize>, py: Python<'_>) -> PyResult<PyCollection> {
+    pub fn collection(
+        &self,
+        name: &str,
+        _dimension: Option<usize>,
+        py: Python<'_>,
+    ) -> PyResult<PyCollection> {
         let rt = get_runtime()?;
         let col = py
             .allow_threads(|| rt.block_on(self.inner.collection(name)))
@@ -139,21 +144,32 @@ impl PyMemFuse {
 
     pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
         let rt = get_runtime()?;
-        let doc = py.allow_threads(|| rt.block_on(self.inner.get(id)))
+        let doc = py
+            .allow_threads(|| rt.block_on(self.inner.get(id)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         match doc {
             Some(d) => {
                 let meta_py = if let Some(m) = d.metadata {
-                    Some(pythonize(py, &m).map_err(|e| {
-                        pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
-                    })?.unbind())
+                    Some(
+                        pythonize(py, &m)
+                            .map_err(|e| {
+                                pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                    "Metadata error: {}",
+                                    e
+                                ))
+                            })?
+                            .unbind(),
+                    )
                 } else {
                     None
                 };
-                Ok(Some(PyDocument { id: d.id, metadata: meta_py }))
+                Ok(Some(PyDocument {
+                    id: d.id,
+                    metadata: meta_py,
+                }))
             }
-            None => Ok(None)
+            None => Ok(None),
         }
     }
 
@@ -174,7 +190,8 @@ impl PyMemFuse {
         let vec_slice = vector.as_slice().map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
         })?;
-        let results = py.allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         convert_results(py, results)
@@ -222,7 +239,8 @@ impl PyCollection {
         let vec_slice = vector.as_slice().map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
         })?;
-        let results = py.allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         convert_results(py, results)
     }
@@ -239,28 +257,40 @@ impl PyCollection {
         let vec_slice = vector.as_slice().map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
         })?;
-        let results = py.allow_threads(|| rt.block_on(self.inner.hybrid_search(text, vec_slice, k)))
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         convert_results(py, results)
     }
 
     pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
         let rt = get_runtime()?;
-        let doc = py.allow_threads(|| rt.block_on(self.inner.get(id)))
+        let doc = py
+            .allow_threads(|| rt.block_on(self.inner.get(id)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         match doc {
             Some(d) => {
                 let meta_py = if let Some(m) = d.metadata {
-                    Some(pythonize(py, &m).map_err(|e| {
-                        pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
-                    })?.unbind())
+                    Some(
+                        pythonize(py, &m)
+                            .map_err(|e| {
+                                pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                    "Metadata error: {}",
+                                    e
+                                ))
+                            })?
+                            .unbind(),
+                    )
                 } else {
                     None
                 };
-                Ok(Some(PyDocument { id: d.id, metadata: meta_py }))
+                Ok(Some(PyDocument {
+                    id: d.id,
+                    metadata: meta_py,
+                }))
             }
-            None => Ok(None)
+            None => Ok(None),
         }
     }
 
@@ -294,23 +324,31 @@ impl PyCollection {
     }
 }
 
-fn parse_metadata(metadata: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Option<serde_json::Value>> {
+fn parse_metadata(
+    metadata: Option<Bound<'_, pyo3::types::PyDict>>,
+) -> PyResult<Option<serde_json::Value>> {
     if let Some(d) = metadata {
-        depythonize(&d).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Metadata error: {}", e))
-        })
+        depythonize(&d)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Metadata error: {}", e)))
     } else {
         Ok(None)
     }
 }
 
-fn convert_results(py: Python<'_>, results: Vec<memfuse_db::SearchResult>) -> PyResult<Vec<PyObject>> {
+fn convert_results(
+    py: Python<'_>,
+    results: Vec<memfuse_db::SearchResult>,
+) -> PyResult<Vec<PyObject>> {
     let mut py_res = Vec::new();
     for r in results {
         let meta_py = if let Some(m) = r.metadata {
-            Some(pythonize(py, &m).map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
-            })?.unbind())
+            Some(
+                pythonize(py, &m)
+                    .map_err(|e| {
+                        pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
+                    })?
+                    .unbind(),
+            )
         } else {
             None
         };
