@@ -23,14 +23,24 @@ async fn test_layer_002_collection_persistence() {
     };
 
     {
-        let db = MemFuse::open_with_config(&path, config.clone()).await.expect("open");
+        let db = MemFuse::open_with_config(&path, config.clone())
+            .await
+            .expect("open");
         let col = db.collection("persistent_col").await.expect("collection");
-        col.insert("k1", &[1.0, 0.0, 0.0, 0.0], Some(serde_json::json!({"val": 42}))).await.expect("insert");
+        col.insert(
+            "k1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(serde_json::json!({"val": 42})),
+        )
+        .await
+        .expect("insert");
     }
 
     // Re-open and verify
     {
-        let db = MemFuse::open_with_config(&path, config).await.expect("re-open");
+        let db = MemFuse::open_with_config(&path, config)
+            .await
+            .expect("re-open");
         let cols = db.list_collections().await.expect("list");
         assert!(cols.contains(&"persistent_col".to_string()));
 
@@ -51,14 +61,37 @@ async fn test_layer_003_hybrid_search() {
         dimension: 4,
         ..Default::default()
     };
-    let db = MemFuse::open_with_config(tmp.path(), config).await.expect("open");
+    let db = MemFuse::open_with_config(tmp.path(), config)
+        .await
+        .expect("open");
 
-    db.insert("doc1", &[1.0, 0.0, 0.0, 0.0], Some(serde_json::json!({"text": "rust is great"}))).await.expect("ins1");
-    db.insert("doc2", &[0.0, 1.0, 0.0, 0.0], Some(serde_json::json!({"text": "python is okay"}))).await.expect("ins2");
-    db.insert("doc3", &[0.9, 0.1, 0.0, 0.0], Some(serde_json::json!({"text": "c++ is fast"}))).await.expect("ins3");
+    db.insert(
+        "doc1",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(serde_json::json!({"text": "rust is great"})),
+    )
+    .await
+    .expect("ins1");
+    db.insert(
+        "doc2",
+        &[0.0, 1.0, 0.0, 0.0],
+        Some(serde_json::json!({"text": "python is okay"})),
+    )
+    .await
+    .expect("ins2");
+    db.insert(
+        "doc3",
+        &[0.9, 0.1, 0.0, 0.0],
+        Some(serde_json::json!({"text": "c++ is fast"})),
+    )
+    .await
+    .expect("ins3");
 
     // Hybrid search: "rust" + vector close to doc1
-    let results = db.hybrid_search("rust", &[1.0, 0.0, 0.0, 0.0], 2).await.expect("hybrid search");
+    let results = db
+        .hybrid_search("rust", &[1.0, 0.0, 0.0, 0.0], 2)
+        .await
+        .expect("hybrid search");
 
     assert_eq!(results.len(), 2);
     assert_eq!(results[0].id, "doc1"); // High vector AND text match
