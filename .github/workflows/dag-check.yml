@@ -20,7 +20,8 @@ jobs:
           set -e
           for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator; do
             echo "Verifying $CRATE imports no internal crates..."
-            if cargo tree -p $CRATE --edges no-dev | grep -v "$CRATE" | grep -q "memfuse-"; then
+            # Using -w to match whole word to avoid accidental prefix matches
+            if cargo tree -p $CRATE --edges no-dev | grep "memfuse-" | grep -v -w "$CRATE" | grep -q "memfuse-"; then
               echo "ERROR: $CRATE imports forbidden crates."
               cargo tree -p $CRATE --edges no-dev | grep "memfuse-"
               exit 1
