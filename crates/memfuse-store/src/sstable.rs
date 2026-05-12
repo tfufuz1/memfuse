@@ -423,9 +423,9 @@ impl SstableReader {
                     file.seek(std::io::SeekFrom::Start(offset))
                         .await
                         .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
-                    file.read_exact(&mut raw_block)
-                        .await
-                        .map_err(|e| MemFuseError::Storage(format!("SSTable read failed: {}", e)))?;
+                    file.read_exact(&mut raw_block).await.map_err(|e| {
+                        MemFuseError::Storage(format!("SSTable read failed: {}", e))
+                    })?;
                 }
                 let block = Bytes::from(raw_block);
                 self.block_cache
@@ -526,7 +526,9 @@ impl SstableReader {
                 ) as usize;
                 ep += 2;
                 if ep + v_len > block_data.len() {
-                    return Err(MemFuseError::Storage("malformed block: value length out of bounds".into()));
+                    return Err(MemFuseError::Storage(
+                        "malformed block: value length out of bounds".into(),
+                    ));
                 }
                 let entry_val = block_data.slice(ep..ep + v_len);
                 return Ok(Some((entry_val, seq_no)));
