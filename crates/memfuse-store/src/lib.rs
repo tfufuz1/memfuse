@@ -10,7 +10,7 @@
 //! Provides persistent key-value storage with WAL, MemTable,
 //! SSTable, and background compaction.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 pub mod compaction;
 pub mod lsm;
