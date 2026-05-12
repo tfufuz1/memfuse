@@ -175,7 +175,7 @@ impl<T: Clone> TxBuffer<T> {
 
     /// Cleans up expired transactions.
     pub fn reap_orphans(&self) -> Vec<TxId> {
-        let mut expired = Vec::new();
+        let mut expired = Vec::with_capacity(self.len());
         for shard_lock in &self.shards {
             let mut shard = shard_lock.write();
             shard.ops.retain(|tx, (_, created)| {
