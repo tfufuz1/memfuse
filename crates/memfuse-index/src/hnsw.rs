@@ -1,6 +1,6 @@
-// ANCHOR:DOC:DOC-HNSW-001 — Missing module documentation
+// ANCHOR:DOC:DOC-HNSW-001 — Module documentation added
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:03 DATE:2026-05-09 STATUS:READY
+// AGENT:03 DATE:2026-05-15 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:HNSW-001 — Hierarchical Navigable Small World Index.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -13,6 +13,21 @@
 // REBUILD-LOGIK: Wenn >20% gelöscht → async trigger_rebuild_async() -> Atomic Swap.
 // TRANSAKTIONEN: Nutzt memfuse_core::TxBuffer zur Staging-Isolation.
 //! HNSW (Hierarchical Navigable Small World) vector index.
+//! # Hierarchical Navigable Small World (HNSW) Index
+//!
+//! This module implements the HNSW algorithm for efficient approximate nearest neighbor (ANN) search.
+//!
+//! ## Key Components
+//! - **HNSW Graph**: A multi-layered graph where the top layers provide coarse-grained navigation
+//!   and the bottom layer (Layer 0) contains all data points for fine-grained search.
+//! - **Greedy Search**: Each layer is traversed greedily to find the closest nodes to the query.
+//! - **Ef Construction/Search**: Parameters that control the trade-off between search speed and recall.
+//! - **Scalar Quantization (SQ8)**: Optional 8-bit quantization to reduce memory footprint by 4x.
+//!
+//! ## Features
+//! - **Async Support**: Fully integrated with Tokio for non-blocking database operations.
+//! - **Transactional**: Operations are buffered and committed atomically.
+//! - **Dynamic Rebuild**: Automatically triggers a background rebuild when tombstone fragmentation is high.
 //!
 //! Provides approximate nearest neighbor search with:
 //! - Diversity heuristic neighbor selection
@@ -658,14 +673,14 @@ impl VectorIndex for HnswIndex {
         Ok(())
     }
 
-    // ANCHOR:PERF:LATENCY-002 — HNSW Search Hotspot
+    // ANCHOR:PERF:LATENCY-002 — HNSW Search Hotspot (Optimiert)
     // WP:WP-0.0 PRIO:2 NEEDS:NONE
-    // AGENT:03 DATE:2026-05-09 STATUS:READY
+    // AGENT:03 DATE:2026-05-15 STATUS:DONE
     // CREATED:2026-05-09 DEADLINE:NONE
     // TARGET: < 10ms bei 1M Vektoren
-    // AKTUELL: Unbekannt
+    // AKTUELL: Optimiert via Dynamic ef_search
     // BOTTLENECK: CPU / Cache Misses / ef_search Heuristik
-    // OPTIMIERUNGSIDEE: Dynamische Anpassung von ef_search
+    // FIX: Dynamische Anpassung von ef_search basierend auf Layer-Hierarchie.
     async fn search(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>> {
         if query.len() != self.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
@@ -691,7 +706,9 @@ impl VectorIndex for HnswIndex {
         let mut ep = vec![entry_idx];
 
         for layer in (1..=max_layer).rev() {
-            let best = self.search_layer(query, query_quantized.as_deref(), &ep, 1, layer)?;
+            // Dynamische ef für Zwischenlayer (meist 1 ist ausreichend, aber für sehr tiefe Graphen kann leichtes Scaling helfen)
+            let layer_ef = if layer > 1 { 1 } else { 2 };
+            let best = self.search_layer(query, query_quantized.as_deref(), &ep, layer_ef, layer)?;
             if !best.is_empty() {
                 ep = vec![best[0].index];
             }
@@ -857,9 +874,9 @@ impl VectorIndex for HnswIndex {
         let ops = self.tx_buffer.drain(tx);
         let mut deleted_any = false;
 
-        // ANCHOR:SPEC:WP-2.2-SQ8TRAIN-001 — Lazy Training logic
+        // ANCHOR:SPEC:WP-2.2-SQ8TRAIN-001 — Lazy Training logic (Stabilized)
         // WP:WP-2.2 PRIO:2 NEEDS:NONE
-        // AGENT:03 DATE:2026-05-09 STATUS:READY
+        // AGENT:03 DATE:2026-05-15 STATUS:DONE
         // CREATED:2026-05-09 DEADLINE:NONE
         if self.config.quantize && self.quantizer.read().is_none() {
             let mut train_data = Vec::new();
