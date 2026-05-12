@@ -53,14 +53,14 @@ impl ScalarQuantizer {
             .map(|&v| {
                 let clamped = v.clamp(self.min, self.max);
                 let normalized = (clamped - self.min) / range;
-                // ANCHOR:PERF:CAST-001 — Impliziter Integer-Overflow
+                // ANCHOR:PERF:CAST-001 — Sicherer Integer-Cast mit Sättigung
                 // WP:WP-0.0 PRIO:2 NEEDS:NONE
-                // AGENT:03 DATE:2026-05-09 STATUS:READY
+                // AGENT:03 DATE:2026-05-15 STATUS:DONE
                 // CREATED:2026-05-09 DEADLINE:NONE
                 // FUNDORT: memfuse-index/src/quantize.rs:50
                 // RISIKO: Cast-without-check kann crashen oder falsche Daten liefern.
                 // BEHEBUNG: TryFrom oder korrekte Sättigung.
-                (normalized * 255.0).round() as u8
+                (normalized * 255.0).round().clamp(0.0, 255.0) as u8
             })
             .collect()
     }
