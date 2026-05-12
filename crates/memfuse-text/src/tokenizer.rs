@@ -5,8 +5,8 @@ use unicode_segmentation::UnicodeSegmentation;
 /// A small set of common English stopwords.
 const STOPWORDS: &[&str] = &[
     "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "i", "if", "in", "into", "is",
-    "it", "no", "not", "of", "on", "or", "such", "that", "the", "their", "then", "there",
-    "these", "they", "this", "to", "was", "will", "with",
+    "it", "no", "not", "of", "on", "or", "such", "that", "the", "their", "then", "there", "these",
+    "they", "this", "to", "was", "will", "with",
 ];
 
 /// Tokenizes text into lowercase words using Unicode word boundaries, filtering out stopwords.
