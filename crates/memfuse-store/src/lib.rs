@@ -20,3 +20,9 @@ pub mod wal;
 
 pub use compaction::{CompactionConfig, CompactionEngine};
 pub use lsm::{LsmConfig, LsmStorage};
+
+// ANCHOR:ARCH:GATE-FV — Formal Verification Gate
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:00 DATE:2026-05-12 STATUS:OPEN
+// DONE: Kani/TLA+ Checks for LSM/Crypto are completed.
+// WATCHDOG: Blocking merge due to missing formal verification for LSM changes in sstable.rs, wal.rs, lsm.rs.
