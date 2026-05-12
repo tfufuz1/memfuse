@@ -161,9 +161,8 @@ impl LsmStorage {
 
         let mut sstables = Vec::new();
         for path in sst_files {
-            if let Ok(reader) = SstableReader::open(path, Arc::clone(&block_cache)).await {
-                sstables.push(Arc::new(reader));
-            }
+            let reader = SstableReader::open(path, Arc::clone(&block_cache)).await?;
+            sstables.push(Arc::new(reader));
         }
         let sstables = Arc::new(RwLock::new(sstables));
         let snapshot_registry = Arc::new(SnapshotRegistry::new());
@@ -171,7 +170,7 @@ impl LsmStorage {
         // Spawn background compaction task
         // ANCHOR:TODO:COMP-001 — Implementiere CompactionEngine::run_loop.
         // WP:WP-1.1 PRIO:1 NEEDS:NONE
-        // AGENT:@JULES-02 DATE:2026-05-09 STATUS:VERIFY
+        // AGENT:@JULES-02 DATE:2026-05-12 STATUS:REVIEW
         // TEST: cargo test -p memfuse-store test_concurrent_reads_during_compaction
         // DONE: Triple-Test grün, keine Deadlocks in tokio::spawn.
         // SUCCESSOR: @JULES-04 — "Background compaction ist stabil. Collections können aufbauen."
