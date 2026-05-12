@@ -3,11 +3,11 @@
 // AGENT:09 DATE:2026-05-09 STATUS:DONE
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use memfuse_db::MemFuse;
 use memfuse_checkpoint::CheckpointManager;
+use memfuse_db::MemFuse;
+use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
-use std::sync::Arc;
 
 fn bench_hybrid_search(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
@@ -39,8 +39,8 @@ fn bench_agent_state_checkpoint(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let tmp = TempDir::new().unwrap();
 
-    use memfuse_store::LsmStorage;
     use memfuse_store::LsmConfig;
+    use memfuse_store::LsmStorage;
 
     let config = LsmConfig {
         path: tmp.path().to_path_buf(),
@@ -62,7 +62,13 @@ fn bench_rerun_cost(c: &mut Criterion) {
     let db = rt.block_on(MemFuse::open(tmp.path())).unwrap();
 
     rt.block_on(async {
-        db.insert("state-1", &vec![0.1; 1536], Some(serde_json::json!({"data": "state info"}))).await.unwrap();
+        db.insert(
+            "state-1",
+            &vec![0.1; 1536],
+            Some(serde_json::json!({"data": "state info"})),
+        )
+        .await
+        .unwrap();
     });
 
     c.bench_function("rerun_cost_get_latency", |b| {
