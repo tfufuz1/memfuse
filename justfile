@@ -14,6 +14,10 @@ check:
     nix develop -c cargo check --all-targets --workspace
 
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)
+# Watchdog: Runs the system watchdog (stale anchors, deadlocks, FV gates)
+watchdog:
+    python3 .agent/scripts/jules-watchdog.py
+
 triple-test: check
     #!/usr/bin/env bash
     set -euo pipefail
