@@ -47,9 +47,9 @@ fn runtime() -> PyResult<&'static Runtime> {
     // WP:WP-0.0 PRIO:2 NEEDS:NONE
     // AGENT:06 DATE:2026-05-12 STATUS:DONE
     // CREATED:2026-05-09 DEADLINE:NONE
-    RUNTIME
-        .get()
-        .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Failed to initialize tokio runtime"))
+    RUNTIME.get().ok_or_else(|| {
+        pyo3::exceptions::PyRuntimeError::new_err("Failed to initialize tokio runtime")
+    })
 }
 
 #[pyclass(name = "Db", unsendable)]
@@ -96,18 +96,14 @@ impl PyCollection {
         metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
     ) -> PyResult<()> {
         let rt = runtime()?;
-        let vec_slice = vector
-            .as_slice()
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let meta_val = metadata.map(|d| py_to_json(d.into_any())).transpose()?;
 
-        py.allow_threads(|| {
-            rt.block_on(self.inner.insert(id, vec_slice, meta_val))
-        })
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        py.allow_threads(|| rt.block_on(self.inner.insert(id, vec_slice, meta_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(())
     }
 
@@ -119,11 +115,9 @@ impl PyCollection {
         k: usize,
     ) -> PyResult<Vec<PySearchResult>> {
         let rt = runtime()?;
-        let vec_slice = vector
-            .as_slice()
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let results = py
             .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
@@ -155,16 +149,12 @@ impl PyCollection {
         k: usize,
     ) -> PyResult<Vec<PySearchResult>> {
         let rt = runtime()?;
-        let vec_slice = vector
-            .as_slice()
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let results = py
-            .allow_threads(|| {
-                rt.block_on(self.inner.hybrid_search(text, vec_slice, k))
-            })
+            .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let mut py_res = Vec::new();
