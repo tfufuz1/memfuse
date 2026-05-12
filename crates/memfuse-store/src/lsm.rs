@@ -1,18 +1,4 @@
-// ANCHOR:DOC:DOC-LSM-001 — Missing module documentation
-// WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
-// CREATED:2026-05-09 DEADLINE:NONE
-// ANCHOR:ARCH:LSM-001 — Zentraler Storage-Engine-Orchestrator des Triebwerks.
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
-// IMPLEMENTS: StorageEngine Trait (memfuse-core/src/traits.rs)
-// READ-PATH:  get() → Active MemTable → Immutable MemTables → SSTables (newest first)
-// WRITE-PATH: put()/delete() → TxBuffer → commit() → WAL + MemTable
-// FLUSH:      MemTable > size_limit → rotate → SSTable schreiben → cleanup
-// BACKGROUND: CompactionEngine läuft als tokio::spawn loop
-// INVARIANTE: WAL Replay bei Neustart stellt MemTable deterministisch wieder her.
-//! LSM-Tree (Log-Structured Merge-Tree) storage engine.
+//! LSM-Tree (Log-Structured Merge-Tree) storage engine implementation.
 //!
 //! The `LsmStorage` engine provides a high-performance, persistent key-value store
 //! implementing the `StorageEngine` trait.
@@ -39,6 +25,21 @@
 //! 1. Operations are staged in the `TxBuffer`.
 //! 2. On `commit()`, operations are assigned sequence numbers, written to the WAL,
 //!    and then applied to the active MemTable.
+
+// ANCHOR:DOC:DOC-LSM-001 — Missing module documentation
+// WP:WP-0.0 PRIO:3 NEEDS:NONE
+// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
+// CREATED:2026-05-09 DEADLINE:NONE
+// ANCHOR:ARCH:LSM-001 — Zentraler Storage-Engine-Orchestrator des Triebwerks.
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// IMPLEMENTS: StorageEngine Trait (memfuse-core/src/traits.rs)
+// READ-PATH:  get() → Active MemTable → Immutable MemTables → SSTables (newest first)
+// WRITE-PATH: put()/delete() → TxBuffer → commit() → WAL + MemTable
+// FLUSH:      MemTable > size_limit → rotate → SSTable schreiben → cleanup
+// BACKGROUND: CompactionEngine läuft als tokio::spawn loop
+// INVARIANTE: WAL Replay bei Neustart stellt MemTable deterministisch wieder her.
 
 use crate::compaction::{CompactionConfig, CompactionEngine};
 use crate::memtable::MemTable;

@@ -1,3 +1,7 @@
+//! Python bindings for MemFuse using PyO3.
+//!
+//! Provides a high-level Python API for vector search and persistent storage.
+
 // ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:06 DATE:2026-05-09 STATUS:READY

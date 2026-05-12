@@ -1,3 +1,5 @@
+//! Logically isolated Collections inside the MemFuse database.
+
 // ANCHOR:ARCH:COLLECTION-001 — Logische Isolation (Namespaces).
 // WP:WP-1.2 PRIO:1 NEEDS:NONE
 // AGENT:04 DATE:2026-05-09 STATUS:DONE
@@ -5,7 +7,6 @@
 // DESIGN: Eigener HNSW-Index pro Collection, GEMEINSAMER LSM-Storage.
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 // STATUS: Full Implementation für WP-1.2.
-//! Logically isolated Collections inside the MemFuse database.
 
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
 use memfuse_index::HnswIndex;
@@ -119,11 +120,15 @@ impl Collection {
         }
     }
 
+    /// Starts a new atomic transaction for this collection.
     pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<'_> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         crate::transaction::DbTransaction::new(self, tx)
     }
 
+    /// Inserts a new document with its embedding and optional metadata.
+    ///
+    /// The operation is atomic and ensures both vector and text indices are updated.
     pub async fn insert(
         &self,
         id: &str,
@@ -170,6 +175,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Retrieves a document by its unique string identifier.
     pub async fn get(&self, id: &str) -> Result<Option<crate::Document>> {
         let key = self.namespaced_key(id.as_bytes(), 0);
         if let Some(data) = self.storage.get(&key).await? {
@@ -182,6 +188,7 @@ impl Collection {
         Ok(None)
     }
 
+    /// Updates an existing document's embedding and metadata.
     pub async fn update(
         &self,
         id: &str,
@@ -242,6 +249,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Deletes a document by its ID, removing it from all indices.
     pub async fn delete(&self, id: &str) -> Result<()> {
         let db_tx = self.begin_transaction();
         let tx = db_tx.tx_id;
@@ -356,6 +364,9 @@ impl Collection {
         Ok(results)
     }
 
+    /// Performs a hybrid search combining BM25 keyword search and HNSW vector similarity.
+    ///
+    /// Results are fused using Reciprocal Rank Fusion (RRF).
     pub async fn hybrid_search(
         &self,
         text: &str,

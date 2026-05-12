@@ -1,3 +1,9 @@
+//! Transaction management for atomic multi-index commits.
+//!
+//! This module provides [`DbTransaction`], which orchestrates the two-phase commit
+//! process between the LSM storage engine and the HNSW vector index, ensuring
+//! consistency across both storage layers.
+
 // ANCHOR:DOC:DOC-TRANSACTION-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:04 DATE:2026-05-09 STATUS:READY

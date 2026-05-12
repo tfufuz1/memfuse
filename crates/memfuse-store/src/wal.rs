@@ -1,20 +1,3 @@
-// ANCHOR:DOC:DOC-WAL-001 — Missing module documentation
-// WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
-// CREATED:2026-05-09 DEADLINE:NONE
-// ANCHOR:ARCH:WAL-001 — Write-Ahead Log für Crash Recovery.
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
-// FORMAT: [u32 len][u64 seq_no][u32 crc32][u8 op_type][payload...]
-// INVARIANTE: Jeder Eintrag wird ERST in WAL geschrieben, DANN in MemTable übernommen.
-// REPLAY: Bei Neustart wird WAL komplett in MemTable replayed (lsm.rs::new()).
-// ROTATION: Beim Flush wird alte WAL archiviert, neue geöffnet.
-//
-// ANCHOR:SPEC:WP-3.2-HMAC-001 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
-// WP:WP-3.2 PRIO:3 NEEDS:NONE
-// AGENT:10 DATE:2026-05-09 STATUS:READY
-// CREATED:2026-05-09 DEADLINE:NONE
 //! Write-Ahead Log (WAL) for durability and crash recovery.
 //!
 //! ## Workflow
@@ -32,10 +15,28 @@
 //! - **Durability**: Every committed transaction is guaranteed to be in the WAL.
 //! - **Integrity**: Entries are protected by CRC32 checksums to detect data corruption.
 //! - **Async I/O**: Operations use `tokio::fs` for non-blocking disk access.
+
+// ANCHOR:DOC:DOC-WAL-001 — Missing module documentation
+// WP:WP-0.0 PRIO:3 NEEDS:NONE
+// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
+// CREATED:2026-05-09 DEADLINE:NONE
+// ANCHOR:ARCH:WAL-001 — Write-Ahead Log für Crash Recovery.
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// FORMAT: [u32 len][u64 seq_no][u32 crc32][u8 op_type][payload...]
+// INVARIANTE: Jeder Eintrag wird ERST in WAL geschrieben, DANN in MemTable übernommen.
+// REPLAY: Bei Neustart wird WAL komplett in MemTable replayed (lsm.rs::new()).
+// ROTATION: Beim Flush wird alte WAL archiviert, neue geöffnet.
+//
+// ANCHOR:SPEC:WP-3.2-HMAC-001 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
+// WP:WP-3.2 PRIO:3 NEEDS:NONE
+// AGENT:10 DATE:2026-05-09 STATUS:READY
+// CREATED:2026-05-09 DEADLINE:NONE
 //
 // ANCHOR:PERF:LATENCY-001 — WAL-Write-Path Hotspot
 // WP:WP-0.0 PRIO:2 NEEDS:NONE
-// AGENT:08-perf DATE:2026-05-09 STATUS:READY
+// AGENT:08-perf DATE:2026-05-09 STATUS:TRACKED
 // CREATED:2026-05-09 DEADLINE:NONE
 // TARGET: < 2ms bei Peak-Load
 // AKTUELL: Unbekannt (Sync Flush)

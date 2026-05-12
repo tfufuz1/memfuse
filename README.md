@@ -71,6 +71,8 @@ bash .agent/scripts/jules-dashboard.sh
 - **LSM-Tree Persistence** — WAL + MemTable with crash recovery
 - **Transactional** — Sharded TxBuffer with orphan-reaping
 - **Relationship Tracking** — `relate()` API for graph-aware retrieval
+- **Hybrid Search** — Reciprocal Rank Fusion of Vector and Keyword search
+- **Collections** — Logical data isolation (Namespaces)
 - **Deterministic Checkpointing** — Native state pinning for "Time-Travel" debugging
 
 ## Building
