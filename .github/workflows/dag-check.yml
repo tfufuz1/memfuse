@@ -15,14 +15,17 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         
-      - name: Check memfuse-core (L3 Kernel — imports NOBODY)
+      - name: Check L3 Kernel isolation (core, runtime, orchestrator — imports NOBODY)
         run: |
           set -e
-          echo "Verifying memfuse-core imports no internal crates..."
-          if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py"; then
-            echo "ERROR: memfuse-core imports forbidden crates."
-            exit 1
-          fi
+          for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator; do
+            echo "Verifying $CRATE imports no internal crates..."
+            if cargo tree -p $CRATE --edges no-dev | grep -v "$CRATE" | grep -q "memfuse-"; then
+              echo "ERROR: $CRATE imports forbidden crates."
+              cargo tree -p $CRATE --edges no-dev | grep "memfuse-"
+              exit 1
+            fi
+          done
 
       - name: Check L2 peer isolation (store, index, text, checkpoint)
         run: |
@@ -59,6 +62,8 @@ jobs:
             echo "⚠️  DAG-001 still present (memfuse-text → memfuse-store)"
           else
             echo "✅ DAG-001 resolved"
+            # If it's resolved, we should probably enforce it doesn't come back
+            # But for now, we just track it.
           fi
           echo "--- DAG-002: memfuse-checkpoint → memfuse-store ---"
           if cargo tree -p memfuse-checkpoint --edges no-dev | grep -q "memfuse-store"; then

@@ -14,6 +14,13 @@ check:
     nix develop -c cargo clippy --all-targets -- -D warnings
     nix develop -c cargo check --all-targets --workspace
 
+# Specific checks for L3 Kernel crates
+check-runtime:
+    nix develop -c cargo check -p memfuse-runtime --all-targets
+
+check-orchestrator:
+    nix develop -c cargo check -p memfuse-orchestrator --all-targets
+
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)
 triple-test: check
     #!/usr/bin/env bash
