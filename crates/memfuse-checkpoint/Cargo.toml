@@ -21,3 +21,5 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+memfuse-db = { path = "../memfuse-db" }
+serde_json = { workspace = true }
