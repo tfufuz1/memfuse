@@ -512,10 +512,7 @@ impl SstableReader {
         &self.metadata
     }
 
-    /// Iterates over all entries in sorted key order.
-    ///
-    /// Returns `(key, value, seq_no)` triples for every entry in the SSTable,
-    /// including tombstones. Used by compaction for multi-way merge.
+    /// Fetches a data block from the cache or disk.
     async fn get_block(&self, offset: u64, next_offset: u64) -> Result<Bytes> {
         {
             let mut cache = self.block_cache.write();
