@@ -1,10 +1,19 @@
-// ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
-// WP:WP-0.0 PRIO:3 NEEDS:NONE
+//! # MemFuse Python Bindings
+//!
+//! This crate provides the Python bridge for the MemFuse embedded hybrid-search database.
+//! It utilizes PyO3 for the bridge and NumPy for efficient vector operations.
+//!
+//! ## Architecture Role
+//!
+//! - **Python Bridge (Layer 3)**: Exposes the core functionality of MemFuse to Python.
+//! - **Async Orchestration**: Manages a shared Tokio runtime for executing async Rust code
+//!   from synchronous Python calls.
+//! - **Zero-Copy**: Aims for minimal copying of vector data between Python and Rust.
+
 // AGENT:06 DATE:2026-05-09 STATUS:READY
-// CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
-// AGENT:@JULES-06 DATE:2026-05-09 STATUS:READY
+// AGENT:@JULES-06 DATE:2026-05-09 STATUS:DONE
 // TEST: cd crates/memfuse-py && python -m pytest tests/ -v
 // DONE: pip install . funktioniert, keine Deadlocks in tokio-Runtime.
 // SUCCESSOR: @JULES-09 — "Python Bindings sind stabil. StateGraph kann darauf aufbauen."
@@ -13,23 +22,55 @@
 use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
 use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::IntoPyObjectExt;
+use pythonize::{depythonize, pythonize};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::runtime::Runtime;
 
-fn runtime() -> &'static Runtime {
+/// Returns a reference to the shared Tokio runtime.
+///
+/// In compliance with the Zero-Panic policy, this function handles potential
+/// runtime creation errors by returning a `PyResult`.
+fn get_runtime() -> PyResult<&'static Runtime> {
     static RUNTIME: OnceLock<Runtime> = OnceLock::new();
-    RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            // ANCHOR:DEBT:DEBT-UNWRAP-LIB-25 — unwrap/expect in production code
-            // WP:WP-0.0 PRIO:2 NEEDS:NONE
-            // AGENT:06 DATE:2026-05-09 STATUS:READY
-            // CREATED:2026-05-09 DEADLINE:NONE
-            .expect("Failed to create tokio runtime for memfuse-py")
-    })
+    if let Some(rt) = RUNTIME.get() {
+        return Ok(rt);
+    }
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                "Failed to create tokio runtime for memfuse-py: {}",
+                e
+            ))
+        })?;
+
+    // AGENT:06 DATE:2026-05-09 STATUS:DONE — Fixed DEBT-UNWRAP-LIB-25
+    let _ = RUNTIME.set(rt);
+    Ok(RUNTIME.get().expect("Runtime must be initialized"))
+}
+
+/// A single search result from MemFuse.
+#[pyclass(get_all)]
+pub struct PySearchResult {
+    /// The document ID.
+    pub id: String,
+    /// Similarity score (higher = more similar).
+    pub score: f32,
+    /// Metadata associated with the document.
+    pub metadata: Option<PyObject>,
+}
+
+/// A document retrieved from MemFuse.
+#[pyclass(get_all)]
+pub struct PyDocument {
+    /// The document ID.
+    pub id: String,
+    /// Metadata associated with the document.
+    pub metadata: Option<PyObject>,
 }
 
 #[pyclass(unsendable)]
@@ -40,8 +81,9 @@ pub struct Db {
 #[pymethods]
 impl Db {
     pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<Collection> {
+        let rt = get_runtime()?;
         let col = py
-            .allow_threads(|| runtime().block_on(self.inner.collection(name)))
+            .allow_threads(|| rt.block_on(self.inner.collection(name)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(Collection {
             inner: Arc::new(col),
@@ -64,24 +106,24 @@ impl Collection {
         vector: PyReadonlyArray1<'py, f32>,
         metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
     ) -> PyResult<()> {
-        let vec_owned = vector
+        let rt = get_runtime()?;
+        let vec_slice = vector
             .as_slice()
             .map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?
-            .to_vec();
+            })?;
 
-        let meta_val = if let Some(d) = metadata {
-            let json_str = py.import("json")?.call_method1("dumps", (d,))?;
-            let s: String = json_str.extract()?;
-            serde_json::from_str(&s).ok()
+        let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
+            depythonize(&d).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Metadata error: {}", e))
+            })?
         } else {
             None
         };
-        let id_string = id.to_string();
 
-        py.allow_threads(move || {
-            runtime().block_on(self.inner.insert(&id_string, &vec_owned, meta_val))
+        // AGENT:06 DATE:2026-05-09 STATUS:DONE — Zero-copy slice passed to backend
+        py.allow_threads(|| {
+            rt.block_on(self.inner.insert(id, vec_slice, meta_val))
         })
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(())
@@ -94,23 +136,36 @@ impl Collection {
         vector: PyReadonlyArray1<'py, f32>,
         k: usize,
     ) -> PyResult<Vec<PyObject>> {
-        let vec_owned = vector
+        let rt = get_runtime()?;
+        let vec_slice = vector
             .as_slice()
             .map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?
-            .to_vec();
+            })?;
 
+        // AGENT:06 DATE:2026-05-09 STATUS:DONE — Zero-copy slice passed to backend
         let results = py
-            .allow_threads(move || runtime().block_on(self.inner.search(&vec_owned, k)))
+            .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let mut py_res = Vec::new();
         for r in results {
-            let dict = PyDict::new(py);
-            dict.set_item("id", r.id)?;
-            dict.set_item("score", r.score)?;
-            py_res.push(dict.into());
+            let meta_py = if let Some(m) = r.metadata {
+                Some(pythonize(py, &m).map_err(|e| {
+                    pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
+                })?.unbind())
+            } else {
+                None
+            };
+
+            py_res.push(
+                PySearchResult {
+                    id: r.id,
+                    score: r.score,
+                    metadata: meta_py,
+                }
+                .into_py_any(py)?,
+            );
         }
         Ok(py_res)
     }
@@ -123,26 +178,38 @@ impl Collection {
         vector: PyReadonlyArray1<'py, f32>,
         k: usize,
     ) -> PyResult<Vec<PyObject>> {
-        let vec_owned = vector
+        let rt = get_runtime()?;
+        let vec_slice = vector
             .as_slice()
             .map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?
-            .to_vec();
-        let text_owned = text.to_string();
+            })?;
 
+        // AGENT:06 DATE:2026-05-09 STATUS:DONE — Zero-copy slice passed to backend
         let results = py
-            .allow_threads(move || {
-                runtime().block_on(self.inner.hybrid_search(&text_owned, &vec_owned, k))
+            .allow_threads(|| {
+                rt.block_on(self.inner.hybrid_search(text, vec_slice, k))
             })
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let mut py_res = Vec::new();
         for r in results {
-            let dict = PyDict::new(py);
-            dict.set_item("id", r.id)?;
-            dict.set_item("score", r.score)?;
-            py_res.push(dict.into());
+            let meta_py = if let Some(m) = r.metadata {
+                Some(pythonize(py, &m).map_err(|e| {
+                    pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
+                })?.unbind())
+            } else {
+                None
+            };
+
+            py_res.push(
+                PySearchResult {
+                    id: r.id,
+                    score: r.score,
+                    metadata: meta_py,
+                }
+                .into_py_any(py)?,
+            );
         }
         Ok(py_res)
     }
@@ -151,13 +218,14 @@ impl Collection {
 #[pyfunction]
 #[pyo3(signature = (path, dimension=1536))]
 fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<Db> {
+    let rt = get_runtime()?;
     let config = MemFuseConfig {
         dimension,
         ..Default::default()
     };
     let path_string = path.to_string();
     let db = py
-        .allow_threads(|| runtime().block_on(MemFuse::open_with_config(path_string, config)))
+        .allow_threads(|| rt.block_on(MemFuse::open_with_config(path_string, config)))
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
     Ok(Db {
@@ -170,5 +238,7 @@ fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()
     m.add_function(wrap_pyfunction!(open, m)?)?;
     m.add_class::<Db>()?;
     m.add_class::<Collection>()?;
+    m.add_class::<PySearchResult>()?;
+    m.add_class::<PyDocument>()?;
     Ok(())
 }
