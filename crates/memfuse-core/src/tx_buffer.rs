@@ -131,15 +131,21 @@ impl<T: Clone> TxBuffer<T> {
         let shard_idx = self.shard_idx(tx);
         let shard = self.shards[shard_idx].read();
 
-        if let Some((ops, _)) = shard.ops.get(&tx) {
-            if ops.is_empty() {
-                return Err(MemFuseError::Transaction(format!(
-                    "Transaction {} was registered but has no pending operations",
-                    tx
-                )));
+        match shard.ops.get(&tx) {
+            Some((ops, _)) => {
+                if ops.is_empty() {
+                    return Err(MemFuseError::Transaction(format!(
+                        "Transaction {} was registered but has no pending operations",
+                        tx
+                    )));
+                }
+                Ok(())
             }
+            None => Err(MemFuseError::Transaction(format!(
+                "Transaction {} not found in buffer",
+                tx
+            ))),
         }
-        Ok(())
     }
 
     /// Drains and returns all buffered operations for a transaction.
@@ -241,6 +247,29 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tokio::time::sleep;
+
+    #[test]
+    fn test_validate_pending_ops() {
+        let buffer = TxBuffer::<String>::new();
+        let tx = TxId::new(1);
+
+        // Not found
+        assert!(buffer.validate_pending_ops(tx).is_err());
+
+        // Registered but empty
+        buffer.begin(tx);
+        assert!(buffer.validate_pending_ops(tx).is_err());
+
+        // Has ops
+        buffer.stage(
+            tx,
+            IndexOp::Insert {
+                doc_id: DocId::new(1),
+                data: "test".to_string(),
+            },
+        );
+        assert!(buffer.validate_pending_ops(tx).is_ok());
+    }
 
     #[test]
     fn test_sharding_distributes_evenly() {
