@@ -9,12 +9,13 @@ static STOPWORDS: OnceLock<HashSet<String>> = OnceLock::new();
 fn get_stopwords() -> &'static HashSet<String> {
     STOPWORDS.get_or_init(|| {
         let words = vec![
-            "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "if", "in", "into", "is",
-            "it", "no", "not", "of", "on", "or", "such", "that", "the", "their", "then", "there",
-            "these", "they", "this", "to", "was", "will", "with", "i", "me", "my", "we", "our",
-            "you", "your", "he", "she", "his", "her", "it", "its", "they", "them", "their",
+            "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "if", "in", "into",
+            "is", "it", "no", "not", "of", "on", "or", "such", "that", "the", "their", "then",
+            "there", "these", "they", "this", "to", "was", "will", "with", "i", "me", "my", "we",
+            "our", "you", "your", "he", "she", "his", "her", "it", "its", "they", "them", "their",
             "der", "die", "das", "ein", "eine", "einer", "eines", "dem", "den", "des", "am", "im",
-            "in", "an", "zu", "für", "und", "oder", "ist", "sind", "war", "von", "mit", "auf", "über",
+            "in", "an", "zu", "für", "und", "oder", "ist", "sind", "war", "von", "mit", "auf",
+            "über",
         ];
         words.into_iter().map(|w| w.to_string()).collect()
     })
