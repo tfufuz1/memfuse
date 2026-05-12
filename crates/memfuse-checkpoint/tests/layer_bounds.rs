@@ -19,7 +19,10 @@ async fn test_layer_001_checkpoint_persistence() {
 
     // In a real scenario, we'd verify it prevents GC or allows rollback.
     // Rollback is currently a stub in CheckpointManager.
-    manager.rollback(&cp).await.expect("rollback stub should return Ok");
+    manager
+        .rollback(&cp)
+        .await
+        .expect("rollback stub should return Ok");
 
     manager.drop_checkpoint(&cp).await.unwrap();
 }
