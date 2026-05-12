@@ -51,9 +51,9 @@ fn get_runtime() -> PyResult<&'static Runtime> {
     // AGENT:13 DATE:2026-05-10 STATUS:DONE — Replaced expect() with ok_or_else()
     // ANCHOR:DEBT:PY-002
     let _ = RUNTIME.set(rt);
-    RUNTIME.get().ok_or_else(|| {
-        pyo3::exceptions::PyRuntimeError::new_err("Runtime must be initialized")
-    })
+    RUNTIME
+        .get()
+        .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Runtime must be initialized"))
 }
 
 /// A single search result from MemFuse.
