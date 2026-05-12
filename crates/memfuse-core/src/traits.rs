@@ -143,3 +143,36 @@ pub trait VectorIndex: Send + Sync {
     /// Returns index statistics.
     async fn stats(&self) -> Result<VectorIndexStats>;
 }
+
+/// Statistics for a text index.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextIndexStats {
+    /// Total number of documents indexed.
+    pub num_documents: usize,
+    /// Total number of tokens across all documents.
+    pub num_tokens: usize,
+    /// Estimated memory usage in bytes.
+    pub memory_usage_bytes: usize,
+}
+
+/// Text index trait — abstracts over the inverted index and BM25 search.
+#[async_trait]
+pub trait TextIndex: Send + Sync {
+    /// Searches for documents matching the query.
+    async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>>;
+
+    /// Inserts or updates a document in the index.
+    async fn insert(&self, tx: TxId, id: DocId, text: &str) -> Result<()>;
+
+    /// Deletes a document from the index.
+    async fn delete(&self, tx: TxId, id: DocId) -> Result<()>;
+
+    /// Commits a transaction.
+    async fn commit(&self, tx: TxId) -> Result<()>;
+
+    /// Rolls back a transaction.
+    async fn rollback(&self, tx: TxId) -> Result<()>;
+
+    /// Returns index statistics.
+    async fn stats(&self) -> Result<TextIndexStats>;
+}

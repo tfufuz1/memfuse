@@ -10,6 +10,7 @@
 // INVARIANTE: Solange SnapshotGuard lebt → keine Tombstone-GC für seq >= guard.seq_no.
 // RAII-PATTERN: Drop deregistriert automatisch. unwrap_or(u64::MAX) ist KORREKT.
 
+use crate::types::TOMBSTONE_BIT;
 use parking_lot::Mutex;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -46,6 +47,7 @@ impl SnapshotRegistry {
     /// Registers a read snapshot. Returns an RAII guard that
     /// automatically deregisters on drop.
     pub fn register(self: &Arc<Self>, seq_no: u64) -> SnapshotGuard {
+        let seq_no = seq_no & !TOMBSTONE_BIT;
         let mut active = self.active.lock();
         *active.entry(seq_no).or_default() += 1;
         self.update_min(&active);
@@ -63,6 +65,7 @@ impl SnapshotRegistry {
 
     /// Persistent pin of a sequence number to prevent GC (SAOS Checkpoint).
     pub fn pin(&self, seq_no: u64) {
+        let seq_no = seq_no & !TOMBSTONE_BIT;
         let mut active = self.active.lock();
         *active.entry(seq_no).or_default() += 1;
         self.update_min(&active);
@@ -74,6 +77,7 @@ impl SnapshotRegistry {
     }
 
     pub(crate) fn release(&self, seq_no: u64) {
+        let seq_no = seq_no & !TOMBSTONE_BIT;
         let mut active = self.active.lock();
         if let Some(count) = active.get_mut(&seq_no) {
             *count -= 1;

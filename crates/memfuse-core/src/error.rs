@@ -71,6 +71,10 @@ pub enum MemFuseError {
     // ═══ Internal ═══
     #[error("Internal error: {0}")]
     Internal(String),
+
+    // ═══ Text Engine ═══
+    #[error("Text engine error: {0}")]
+    Text(String),
 }
 
 impl MemFuseError {
