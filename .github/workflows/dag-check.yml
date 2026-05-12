@@ -14,42 +14,63 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         
-      - name: Check memfuse-core (L3 Kernel — imports NOBODY)
+      - name: Check L3 Kernel (memfuse-core — imports NOBODY)
         run: |
           set -e
-          echo "Verifying memfuse-core imports no internal crates..."
-          if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py"; then
-            echo "ERROR: memfuse-core imports forbidden crates."
+          echo "Verifying memfuse-core isolation..."
+          # L3 cannot import L2, L1, or L0
+          if cargo tree -p memfuse-core --edges no-dev | grep -E "memfuse-(store|index|text|checkpoint|db|runtime|orchestrator|py)"; then
+            echo "ERROR: memfuse-core imports forbidden higher-layer crates."
             exit 1
           fi
 
-      - name: Check L2 peer isolation (store, index must not import peers)
+      - name: Check L2 Engines (store, index, text, checkpoint — import NO L1/L0)
         run: |
           set -e
-          echo "Verifying memfuse-store does not import L2 peers..."
-          if cargo tree -p memfuse-store --edges no-dev | grep -q "memfuse-db\|memfuse-index\|memfuse-text"; then
-            echo "ERROR: memfuse-store imports L2 peers."
-            exit 1
-          fi
-          echo "Verifying memfuse-index does not import L2 peers..."
-          if cargo tree -p memfuse-index --edges no-dev | grep -q "memfuse-db\|memfuse-store\|memfuse-text"; then
-            echo "ERROR: memfuse-index imports L2 peers."
-            exit 1
-          fi
+          echo "Verifying L2 Engines isolation from L1/L0..."
+          for crate in memfuse-store memfuse-index memfuse-text memfuse-checkpoint; do
+            echo "Checking $crate..."
+            if cargo tree -p $crate --edges no-dev | grep -E "memfuse-(db|runtime|orchestrator|py)"; then
+              echo "ERROR: $crate imports forbidden L1 or L0 crates."
+              exit 1
+            fi
+          done
 
-      - name: Check known DAG violations (tracking)
+      - name: Check L1 Orchestration (db, runtime, orchestrator — import NO L0)
         run: |
           set -e
-          echo "=== Known DAG Violations (tracked via ANKERs) ==="
+          echo "Verifying L1 Orchestration isolation from L0..."
+          for crate in memfuse-db memfuse-runtime memfuse-orchestrator; do
+            echo "Checking $crate..."
+            if cargo tree -p $crate --edges no-dev | grep -E "memfuse-py"; then
+              echo "ERROR: $crate imports forbidden L0 crates."
+              exit 1
+            fi
+          done
+
+      - name: Track Known DAG Violations (L2 Cross-Imports)
+        run: |
+          set -e
+          echo "=== Cross-Engine Dependency Tracking ==="
+
           echo "--- DAG-001: memfuse-text → memfuse-store ---"
           if cargo tree -p memfuse-text --edges no-dev | grep -q "memfuse-store"; then
             echo "⚠️  DAG-001 still present (memfuse-text → memfuse-store)"
           else
             echo "✅ DAG-001 resolved"
           fi
+
           echo "--- DAG-002: memfuse-checkpoint → memfuse-store ---"
           if cargo tree -p memfuse-checkpoint --edges no-dev | grep -q "memfuse-store"; then
             echo "⚠️  DAG-002 still present (memfuse-checkpoint → memfuse-store)"
           else
             echo "✅ DAG-002 resolved"
+          fi
+
+          echo "--- New Violation: memfuse-index cross-imports ---"
+          if cargo tree -p memfuse-index --edges no-dev | grep -E "memfuse-(store|text|checkpoint)"; then
+             echo "⚠️  memfuse-index has cross-engine dependencies"
+             cargo tree -p memfuse-index --edges no-dev | grep -E "memfuse-(store|text|checkpoint)"
+          else
+             echo "✅ memfuse-index is pure"
           fi

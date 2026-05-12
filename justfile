@@ -91,6 +91,28 @@ debt-audit:
     fi
     echo ""; echo "✅ Debt-Audit PASSED"
 
+# Verifies that all workspace crates inherit version and edition from the workspace root
+check-workspace-consistency:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== Workspace Consistency Check ==="
+    FAIL=0
+    for toml in crates/*/Cargo.toml; do
+        if ! grep -q "version.workspace = true" "$toml"; then
+            echo "❌ $toml: missing version.workspace = true"
+            FAIL=1
+        fi
+        if ! grep -q "edition.workspace = true" "$toml"; then
+            echo "❌ $toml: missing edition.workspace = true"
+            FAIL=1
+        fi
+    done
+    if [ $FAIL -eq 1 ]; then
+        echo "❌ Workspace consistency check FAILED"
+        exit 1
+    fi
+    echo "✅ All crates are consistent with workspace metadata"
+
 # Bootstrap a new feature using the Atomic Spec Template
 spec NAME:
     #!/usr/bin/env bash
