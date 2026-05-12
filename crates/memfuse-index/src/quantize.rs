@@ -48,21 +48,22 @@ impl ScalarQuantizer {
     /// Quantizes an `f32` vector to `u8`.
     pub fn quantize(&self, vector: &[f32]) -> Vec<u8> {
         let range = self.max - self.min;
-        vector
-            .iter()
-            .map(|&v| {
-                let clamped = v.clamp(self.min, self.max);
-                let normalized = (clamped - self.min) / range;
-                // ANCHOR:PERF:CAST-001 — Impliziter Integer-Overflow
-                // WP:WP-0.0 PRIO:2 NEEDS:NONE
-                // AGENT:03 DATE:2026-05-09 STATUS:READY
-                // CREATED:2026-05-09 DEADLINE:NONE
-                // FUNDORT: memfuse-index/src/quantize.rs:50
-                // RISIKO: Cast-without-check kann crashen oder falsche Daten liefern.
-                // BEHEBUNG: TryFrom oder korrekte Sättigung.
-                (normalized * 255.0).round() as u8
-            })
-            .collect()
+        let mut quantized = Vec::with_capacity(vector.len());
+        for &v in vector {
+            let clamped = v.clamp(self.min, self.max);
+            let normalized = (clamped - self.min) / range;
+            // ANCHOR:PERF:CAST-001 — Impliziter Integer-Overflow
+            // WP:WP-0.0 PRIO:2 NEEDS:NONE
+            // AGENT:03 DATE:2026-05-09 STATUS:DONE
+            // CREATED:2026-05-09 DEADLINE:NONE
+            // FUNDORT: memfuse-index/src/quantize.rs:50
+            // RISIKO: Cast-without-check kann crashen oder falsche Daten liefern.
+            // BEHEBUNG: TryFrom oder korrekte Sättigung.
+            // Done: clamped and rounded to [0, 255] range before casting.
+            let val = (normalized * 255.0).round();
+            quantized.push(val.clamp(0.0, 255.0) as u8);
+        }
+        quantized
     }
 
     /// Dequantizes a `u8` vector back to `f32`.
