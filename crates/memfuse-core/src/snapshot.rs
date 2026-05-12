@@ -46,8 +46,11 @@ impl SnapshotRegistry {
 
     /// Registers a read snapshot. Returns an RAII guard that
     /// automatically deregisters on drop.
-    pub fn register(self: &Arc<Self>, seq_no: u64) -> SnapshotGuard {
-        let seq_no = seq_no & !TOMBSTONE_BIT;
+    ///
+    /// The `seq_no` is masked with `!TOMBSTONE_BIT` to ensure the internal
+    /// `BTreeMap` and `min_active_seqno` only track the raw sequence number.
+    pub fn register(self: &Arc<Self>, mut seq_no: u64) -> SnapshotGuard {
+        seq_no &= !TOMBSTONE_BIT;
         let mut active = self.active.lock();
         *active.entry(seq_no).or_default() += 1;
         self.update_min(&active);
