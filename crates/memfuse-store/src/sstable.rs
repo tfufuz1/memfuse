@@ -300,7 +300,9 @@ impl SstableReader {
         }
 
         if index_offset + 12 > file_size {
-            return Err(MemFuseError::Storage("corrupted SSTable: index_offset out of bounds".into()));
+            return Err(MemFuseError::Storage(
+                "corrupted SSTable: index_offset out of bounds".into(),
+            ));
         }
 
         // Read index
