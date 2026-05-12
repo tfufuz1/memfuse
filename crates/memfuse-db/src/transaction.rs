@@ -1,6 +1,12 @@
+//! # Database Transactions
+//!
+//! This module provides `DbTransaction`, an orchestrator for atomic multi-index commits
+//! between the LSM-Tree storage engine (`memfuse-store`) and the HNSW vector index (`memfuse-index`).
+//! It implements a 2-phase commit protocol and provides compensating transactions for rollbacks.
+
 // ANCHOR:DOC:DOC-TRANSACTION-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:04 DATE:2026-05-09 STATUS:READY
+// AGENT:04 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 use crate::Collection;
 use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId, VectorIndex};
