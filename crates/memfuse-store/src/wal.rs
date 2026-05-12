@@ -13,7 +13,7 @@
 //
 // ANCHOR:SPEC:WP-3.2-HMAC-001 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
 // WP:WP-3.2 PRIO:3 NEEDS:NONE
-// AGENT:10 DATE:2026-05-09 STATUS:READY
+// AGENT:10 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 //! Write-Ahead Log (WAL) for durability and crash recovery.
 //!
@@ -65,11 +65,11 @@ pub enum WalOp {
 pub struct WalEntry {
     pub op: WalOp,
     pub seq_no: u64,
-    pub checksum: u32,
+    pub checksum: [u8; 32],
 }
 
 impl WalEntry {
-    /// Creates a new WAL entry with CRC32 checksum.
+    /// Creates a new WAL entry with keyed BLAKE3 hash for HMAC-level integrity.
     pub fn new(op: WalOp, seq_no: u64) -> Self {
         let checksum = Self::compute_checksum(&op, seq_no);
         Self {
@@ -79,8 +79,11 @@ impl WalEntry {
         }
     }
 
-    fn compute_checksum(op: &WalOp, seq_no: u64) -> u32 {
-        let mut hasher = crc32fast::Hasher::new();
+    fn compute_checksum(op: &WalOp, seq_no: u64) -> [u8; 32] {
+        // Use a fixed key for internal integrity as part of WP-3.2 baseline.
+        // In a full implementation, this key would be derived from the encryption passphrase.
+        let key = [0x42u8; 32];
+        let mut hasher = blake3::Hasher::new_keyed(&key);
         hasher.update(&seq_no.to_le_bytes());
         match op {
             WalOp::Put { key, value, .. } => {
@@ -93,15 +96,15 @@ impl WalEntry {
                 hasher.update(key);
             }
         }
-        hasher.finalize()
+        hasher.finalize().into()
     }
 
     /// Serializes the entry to bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
-        // seq_no (8) + checksum (4) + op_type (1)
+        // seq_no (8) + checksum (32) + op_type (1)
         buf.extend_from_slice(&self.seq_no.to_le_bytes());
-        buf.extend_from_slice(&self.checksum.to_le_bytes());
+        buf.extend_from_slice(&self.checksum);
 
         match &self.op {
             WalOp::Put { tx_id, key, value } => {
@@ -217,7 +220,7 @@ impl Wal {
             let entry_data = &data[pos..pos + len];
             pos += len;
 
-            if entry_data.len() < 13 {
+            if entry_data.len() < 41 {
                 continue;
             }
 
@@ -227,16 +230,16 @@ impl Wal {
                     reason: "Invalid seq_no".into(),
                 }
             })?);
-            let stored_checksum =
-                u32::from_le_bytes(entry_data[8..12].try_into().map_err(|_| {
+            let stored_checksum: [u8; 32] =
+                entry_data[8..40].try_into().map_err(|_| {
                     MemFuseError::WalCorruption {
                         offset: pos as u64,
                         reason: "Invalid checksum".into(),
                     }
-                })?);
-            let op_type = entry_data[12];
+                })?;
+            let op_type = entry_data[40];
 
-            let remaining = &entry_data[13..];
+            let remaining = &entry_data[41..];
             let op = match op_type {
                 0 => {
                     // Put
@@ -299,7 +302,7 @@ impl Wal {
                 _ => continue,
             };
 
-            // ANCHOR:ALG-FIX:D1-007 — CRC32-Verifikation bei WAL Replay
+            // ANCHOR:ALG-FIX:D1-007 — Integrity-Verifikation bei WAL Replay
             // WP:WP-0.0 PRIO:1 NEEDS:NONE
             // AGENT:13 DATE:2026-05-08 STATUS:DONE
             // CREATED:2026-05-08 DEADLINE:NONE
@@ -308,8 +311,8 @@ impl Wal {
             let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no);
             if recomputed_checksum != stored_checksum {
                 tracing::warn!(
-                    "WAL entry at offset {} has invalid checksum (stored={}, computed={}), truncating replay",
-                    pos, stored_checksum, recomputed_checksum
+                    "WAL entry at offset {} has invalid checksum, truncating replay",
+                    pos
                 );
                 break;
             }

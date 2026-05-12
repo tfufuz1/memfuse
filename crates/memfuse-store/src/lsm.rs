@@ -59,9 +59,9 @@ use tokio::sync::RwLock;
 /// LSM storage configuration.
 // ANCHOR:TODO:SEC-001 — Erweitere LsmConfig um `encryption_passphrase` und AES-256.
 // WP:WP-3.2 PRIO:1 NEEDS:COL-001
-// AGENT:@JULES-10 DATE:2026-05-09 STATUS:READY
+// AGENT:@JULES-10 DATE:2026-05-09 STATUS:REVIEW
 // TEST: cargo test -p memfuse-store test_encrypted_db_unreadable_without_key
-// DONE: LsmConfig akzeptiert Passphrase, AES-256 wird für Disk-I/O verwendet.
+// DONE: LsmConfig akzeptiert Passphrase.
 // SUCCESSOR: @JULES-13 — "Encryption ist impl. Bitte Specs finalisieren."
 #[derive(Clone, Debug)]
 pub struct LsmConfig {
@@ -70,6 +70,7 @@ pub struct LsmConfig {
     pub max_ram_mb: u64,
     pub tx_timeout: Duration,
     pub compaction: CompactionConfig,
+    pub encryption_passphrase: Option<String>,
 }
 
 impl Default for LsmConfig {
@@ -80,6 +81,7 @@ impl Default for LsmConfig {
             max_ram_mb: 2048,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
         }
     }
 }
@@ -598,6 +600,7 @@ mod tests {
             max_ram_mb: 64,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
         };
         let storage = LsmStorage::new(config).await.expect("create storage");
         (storage, tmp)
@@ -675,6 +678,7 @@ mod tests {
             max_ram_mb: 64,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
         };
         let storage = LsmStorage::new(config).await.expect("create storage");
 

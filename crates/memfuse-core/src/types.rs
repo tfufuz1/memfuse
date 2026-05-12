@@ -43,10 +43,19 @@ impl DocId {
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Self {
+        Self::try_from_key(key).unwrap_or(Self(0))
+    }
+
+    /// Safely derive a DocId from a user-provided string key via blake3 hash.
+    pub fn try_from_key(key: &str) -> Result<Self> {
         let hash = blake3::hash(key.as_bytes());
+        let hash_bytes = hash.as_bytes();
+        let bytes_slice = hash_bytes
+            .get(..8)
+            .ok_or_else(|| MemFuseError::invalid_input("Hash length insufficient"))?;
         let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&hash.as_bytes()[..8]);
-        Self(u64::from_le_bytes(bytes))
+        bytes.copy_from_slice(bytes_slice);
+        Ok(Self(u64::from_le_bytes(bytes)))
     }
 }
 
