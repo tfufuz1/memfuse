@@ -1,7 +1,15 @@
 // ANCHOR:DOC:DOC-TRANSACTION-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:04 DATE:2026-05-09 STATUS:READY
+// AGENT:04 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
+//! Atomic Multi-Index Transaction Orchestration.
+//!
+//! This module provides the [`DbTransaction`] which orchestrates a 2-Phase Commit
+//! between the LSM-based storage (persistent) and the HNSW-based vector index (in-memory).
+//!
+//! It ensures that updates are either applied to both systems or correctly rolled back
+//! using compensating transactions in the LSM store if the HNSW commit fails.
+
 use crate::Collection;
 use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId, VectorIndex};
 use std::sync::Mutex;

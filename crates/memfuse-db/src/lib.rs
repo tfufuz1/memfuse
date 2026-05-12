@@ -173,7 +173,7 @@ impl MemFuse {
     /// Creates the collection if it does not already exist.
     // ANCHOR:TODO:COL-001 — Implementiere vollständige Persistenz und Isolation für `collection()`.
     // WP:WP-1.2 PRIO:1 NEEDS:NONE
-    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:READY
+    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_collections_are_isolated
     // DONE: `collection()` ist wal-gesichert, Isolation ist korrekt.
     // SUCCESSOR: @JULES-04 — "Mach weiter mit COL-002 und COL-003, bis Collections-Modul fully featured ist."
@@ -234,24 +234,46 @@ impl MemFuse {
         Ok(col)
     }
 
-    /// Lists all existing collection names (those currently active in memory).
+    /// Lists all existing collection names (including those not currently active in memory).
     // ANCHOR:TODO:COL-002 — Erweitere `list_collections` so, dass es aus dem LSM-Store/Metadata ließt.
     // WP:WP-1.2 PRIO:1 NEEDS:COL-001
-    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:READY
+    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_list_collections
     // DONE: list_collections gibt persistierte Collections zurück.
     // SUCCESSOR: @JULES-04 — "Mache weiter mit COL-003."
     pub async fn list_collections(&self) -> Result<Vec<String>> {
-        let guard = self.collections.read().await;
-        let mut names: Vec<String> = guard.keys().cloned().collect();
-        names.sort();
-        Ok(names)
+        let mut names = std::collections::HashSet::new();
+
+        // Include in-memory collections
+        {
+            let guard = self.collections.read().await;
+            for name in guard.keys() {
+                names.insert(name.clone());
+            }
+        }
+
+        // Include persisted collections from LSM
+        let col_idx_prefix = b"__col_idx:\x00";
+        let entries = self.storage.scan_prefix(col_idx_prefix).await?;
+        for (k, _) in entries {
+            let name_bytes = &k[col_idx_prefix.len()..];
+            if let Ok(name) = String::from_utf8(name_bytes.to_vec()) {
+                names.insert(name);
+            }
+        }
+
+        // Always include default
+        names.insert("default".to_string());
+
+        let mut sorted_names: Vec<String> = names.into_iter().collect();
+        sorted_names.sort();
+        Ok(sorted_names)
     }
 
     /// Drops a collection, removing all its data from storage.
     // ANCHOR:TODO:COL-003 — Löschen der Collection-Keys aus LSM und des HNSW Graphen.
     // WP:WP-1.2 PRIO:1 NEEDS:COL-001
-    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:READY
+    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_drop_removes_all_data
     // DONE: Alle Daten getilgt, re-öffnen führt zu leerer DB.
     // SUCCESSOR: @JULES-05 — "Collections sind fertig. Beginne mit WP-2.1 SEARCH-001."
@@ -262,16 +284,31 @@ impl MemFuse {
             ));
         }
 
+        // 1. Remove from in-memory cache
         let mut guard = self.collections.write().await;
-        if let Some(col) = guard.remove(name) {
-            col.drop_collection().await?;
+        let col = guard.remove(name);
+        drop(guard);
 
-            // Remove from index
-            let col_idx_key = [b"__col_idx:\x00", name.as_bytes()].concat();
+        // 2. Clear collection data from storage
+        if let Some(c) = col {
+            c.drop_collection().await?;
+        } else {
+            // Even if not in memory, we must ensure all prefixed data is gone
+            let prefix = format!("__col:{}:\x00", name).into_bytes();
+            let entries = self.storage.scan_prefix(&prefix).await?;
             let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
-            self.storage.delete(tx, &col_idx_key).await?;
+            for (k, _) in entries {
+                self.storage.delete(tx, &k).await?;
+            }
             self.storage.commit(tx).await?;
         }
+
+        // 3. Remove the collection metadata entry
+        let col_idx_key = [b"__col_idx:\x00", name.as_bytes()].concat();
+        let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+        self.storage.delete(tx, &col_idx_key).await?;
+        self.storage.commit(tx).await?;
+
         Ok(())
     }
 
@@ -320,12 +357,21 @@ impl MemFuse {
             .await
     }
 
+    /// Performs hybrid search combining vector similarity and BM25 text ranking.
     // ANCHOR:TODO:SEARCH-001 — Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection.
     // WP:WP-2.1 PRIO:1 NEEDS:COL-001
-    // AGENT:@JULES-05 DATE:2026-05-09 STATUS:READY
+    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
+    pub async fn hybrid_search(
+        &self,
+        text: &str,
+        vector: &[f32],
+        k: usize,
+    ) -> Result<Vec<SearchResult>> {
+        self.default_col().await?.hybrid_search(text, vector, k).await
+    }
 
     /// Deletes a document by its string ID.
     pub async fn delete(&self, id: &str) -> Result<()> {
