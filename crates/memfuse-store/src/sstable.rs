@@ -341,10 +341,7 @@ impl SstableReader {
             index.push((key, offset));
         }
 
-        let last_key = index
-            .last()
-            .map(|(k, _)| k.clone())
-            .unwrap_or_default();
+        let last_key = index.last().map(|(k, _)| k.clone()).unwrap_or_default();
 
         // Read the actual first key from the first data block header
         let first_key = if !index.is_empty() {
