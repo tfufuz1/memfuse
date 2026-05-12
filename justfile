@@ -5,13 +5,17 @@ default:
 
 # Runs the TDD Validation Loop (Red -> Green -> Refactor)
 test: check
-    nix develop -c cargo nextest run --workspace || nix develop -c cargo test --workspace
+    @if cargo nextest --version >/dev/null 2>&1; then \
+        cargo nextest run --workspace; \
+    else \
+        cargo test --workspace; \
+    fi
 
 # Runs formatting, clippy and checks compilation
 check:
-    nix develop -c cargo fmt --all -- --check
-    nix develop -c cargo clippy --all-targets -- -D warnings
-    nix develop -c cargo check --all-targets --workspace
+    cargo fmt --all -- --check
+    cargo clippy --all-targets -- -D warnings
+    cargo check --all-targets --workspace
 
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)
 triple-test: check
@@ -20,7 +24,7 @@ triple-test: check
     echo "=== Triple-Test-Gate ==="
     for RUN in 1 2 3; do
         echo "--- Run $RUN/3 ---"
-        if ! nix develop -c cargo test --workspace; then
+        if ! cargo test --workspace; then
             echo "❌ FAILED on run $RUN/3. Fix all failures before this WP is DONE."
             exit 1
         fi
@@ -90,6 +94,50 @@ debt-audit:
         echo ""; echo "❌ Debt-Audit FAILED — WP-0.0 zuerst abschließen!"; exit 1
     fi
     echo ""; echo "✅ Debt-Audit PASSED"
+
+# Verify DAG integrity and layer isolation
+dag-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== DAG Integrity Check ==="
+
+    echo "--- [1/3] memfuse-core isolation ---"
+    if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator"; then
+        echo "❌ ERROR: memfuse-core imports forbidden crates."
+        exit 1
+    fi
+    echo "✅ memfuse-core is isolated"
+
+    echo "--- [2/3] L2 isolation (store, index, text) ---"
+    if cargo tree -p memfuse-store --edges no-dev | grep -q "memfuse-db\|memfuse-index\|memfuse-text\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator\|memfuse-checkpoint"; then
+        echo "❌ ERROR: memfuse-store imports forbidden crates."
+        exit 1
+    fi
+    if cargo tree -p memfuse-index --edges no-dev | grep -q "memfuse-db\|memfuse-store\|memfuse-text\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator\|memfuse-checkpoint"; then
+        echo "❌ ERROR: memfuse-index imports forbidden crates."
+        exit 1
+    fi
+    if cargo tree -p memfuse-text --edges no-dev | grep -v "memfuse-store" | grep -q "memfuse-db\|memfuse-index\|memfuse-py\|memfuse-runtime\|memfuse-orchestrator\|memfuse-checkpoint"; then
+        echo "❌ ERROR: memfuse-text imports forbidden crates (other than known DAG-001)."
+        exit 1
+    fi
+    echo "✅ L2 crates are isolated"
+
+    echo "--- [3/3] Tracked violations ---"
+    VIOLATIONS=0
+    if cargo tree -p memfuse-text --edges no-dev | grep -q "memfuse-store"; then
+        echo "⚠️  DAG-001 still present (memfuse-text → memfuse-store)"
+        VIOLATIONS=$((VIOLATIONS+1))
+    fi
+    if cargo tree -p memfuse-checkpoint --edges no-dev | grep -q "memfuse-store"; then
+        echo "⚠️  DAG-002 still present (memfuse-checkpoint → memfuse-store)"
+        VIOLATIONS=$((VIOLATIONS+1))
+    fi
+    if cargo tree -p memfuse-py --edges no-dev | grep -q "memfuse-db"; then
+        echo "⚠️  DAG-003 still present (memfuse-py → memfuse-db)"
+        VIOLATIONS=$((VIOLATIONS+1))
+    fi
+    echo "✅ Tracked violations: $VIOLATIONS"
 
 # Bootstrap a new feature using the Atomic Spec Template
 spec NAME:
