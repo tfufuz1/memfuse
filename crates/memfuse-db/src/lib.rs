@@ -350,7 +350,10 @@ impl MemFuse {
         vector: &[f32],
         k: usize,
     ) -> Result<Vec<SearchResult>> {
-        self.default_col().await?.hybrid_search(text, vector, k).await
+        self.default_col()
+            .await?
+            .hybrid_search(text, vector, k)
+            .await
     }
 
     /// Deletes a document by its string ID.
