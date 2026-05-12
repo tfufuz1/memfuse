@@ -1,3 +1,8 @@
+//! Distance measurement benchmarks for memfuse-index.
+//!
+// ANCHOR:FIXME:DOC-BENCH-001 — Missing module documentation (Sovereign Core Doctrine)
+// AGENT:09 DATE:2026-05-12 STATUS:OPEN
+// PRIO:3
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use memfuse_index::distance::*;
 use rand::Rng;

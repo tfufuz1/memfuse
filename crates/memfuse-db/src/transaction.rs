@@ -1,6 +1,6 @@
 // ANCHOR:DOC:DOC-TRANSACTION-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:04 DATE:2026-05-09 STATUS:READY
+// AGENT:04 DATE:2026-05-09 STATUS:OPEN
 // CREATED:2026-05-09 DEADLINE:NONE
 use crate::Collection;
 use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId, VectorIndex};

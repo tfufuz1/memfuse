@@ -100,8 +100,10 @@ mod tests {
 
         // Let's trigger compaction manually if exposed, or wait, or assert it hasn't gc'ed
         // With pinning, rollback should eventually work and give us "val1".
+        // ANCHOR:FIXME:FAKE-TEST-001 — Fake test passes because rollback is a no-op.
+        // WP:WP-5.1 PRIO:2 NEEDS:NONE
+        // AGENT:12 DATE:2026-05-12 STATUS:OPEN
         let res = manager.rollback(&cp1).await;
-        // RED PHASE: this should FAIL because rollback is not implemented and just returns Err
         assert!(
             res.is_ok(),
             "Rollback supposed to work but returned error: {:?}",

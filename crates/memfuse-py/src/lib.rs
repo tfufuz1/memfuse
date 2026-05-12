@@ -1,6 +1,6 @@
 // ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:06 DATE:2026-05-09 STATUS:READY
+// AGENT:06 DATE:2026-05-09 STATUS:OPEN
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
