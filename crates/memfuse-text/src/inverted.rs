@@ -128,11 +128,10 @@ impl InvertedIndex {
             let mut total_docs = 0u64;
             if let Some(bytes) = self.storage.get(&total_docs_key).await? {
                 if bytes.len() == 8 {
-                    total_docs = u64::from_le_bytes(
-                        bytes.as_slice().try_into().map_err(|_| {
+                    total_docs =
+                        u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
                             MemFuseError::Storage("Invalid total_docs length".into())
-                        })?,
-                    );
+                        })?);
                 }
             }
             total_docs += 1;
@@ -169,8 +168,9 @@ impl InvertedIndex {
             .put(tx, &dl_key, &(tokens.len() as u32).to_le_bytes())
             .await?;
 
-        let term_bytes = bincode::serde::encode_to_vec(&new_unique_terms, bincode::config::standard())
-            .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
+        let term_bytes =
+            bincode::serde::encode_to_vec(&new_unique_terms, bincode::config::standard())
+                .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
         self.storage.put(tx, &dt_key, &term_bytes).await?;
 
         Ok(())
@@ -184,9 +184,12 @@ impl InvertedIndex {
         // 1. Fetch metadata
         let old_dl = if let Some(bytes) = self.storage.get(&dl_key).await? {
             if bytes.len() == 4 {
-                u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid doc_len length".into())
-                })?)
+                u32::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
+                )
             } else {
                 0
             }
@@ -237,11 +240,10 @@ impl InvertedIndex {
             let total_tok_key = self.key("meta:total_tokens");
             if let Some(bytes) = self.storage.get(&total_tok_key).await? {
                 if bytes.len() == 8 {
-                    let mut total_tokens = u64::from_le_bytes(
-                        bytes.as_slice().try_into().map_err(|_| {
+                    let mut total_tokens =
+                        u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
                             MemFuseError::Storage("Invalid total_tokens length".into())
-                        })?,
-                    );
+                        })?);
                     total_tokens = total_tokens.saturating_sub(old_dl as u64);
                     self.storage
                         .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
@@ -252,11 +254,10 @@ impl InvertedIndex {
             let total_docs_key = self.key("meta:total_docs");
             if let Some(bytes) = self.storage.get(&total_docs_key).await? {
                 if bytes.len() == 8 {
-                    let mut total_docs = u64::from_le_bytes(
-                        bytes.as_slice().try_into().map_err(|_| {
+                    let mut total_docs =
+                        u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
                             MemFuseError::Storage("Invalid total_docs length".into())
-                        })?,
-                    );
+                        })?);
                     total_docs = total_docs.saturating_sub(1);
                     self.storage
                         .put(tx, &total_docs_key, &total_docs.to_le_bytes())
