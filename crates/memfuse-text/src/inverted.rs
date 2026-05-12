@@ -41,11 +41,18 @@ impl InvertedIndex {
             *tfs.entry(t.clone()).or_insert(0u32) += 1;
         }
 
-        // Store document length
+        // Check if doc exists and handle total_tokens/total_docs
         let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
-        self.storage
-            .put(tx, &dl_key, &(tokens.len() as u32).to_le_bytes())
-            .await?;
+        let mut old_len = 0u32;
+        let mut exists = false;
+        if let Some(bytes) = self.storage.get(&dl_key).await? {
+            if bytes.len() == 4 {
+                old_len = u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid doc_len length".into())
+                })?);
+                exists = true;
+            }
+        }
 
         // Update total tokens (global for avg_doc_len)
         let total_tok_key = self.key("meta:total_tokens");
@@ -58,34 +65,31 @@ impl InvertedIndex {
                     })?);
             }
         }
-        total_tokens += tokens.len() as u64;
+        total_tokens = total_tokens.saturating_sub(old_len as u64) + tokens.len() as u64;
         self.storage
             .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
             .await?;
 
         // Update total docs
-        let total_docs_key = self.key("meta:total_docs");
-        let mut total_docs = 0u64;
-        let is_new = true;
-        if let Some(bytes) = self.storage.get(&total_docs_key).await? {
-            if bytes.len() == 8 {
-                total_docs = u64::from_le_bytes(
-                    bytes
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
-                );
-                // We assume it's an update, but actually we don't know if doc existed.
-                // We'll increment anyway for simplicity (in a real system, we'd check if doc existed).
-                // Or we can just rely on index.len() from HNSW! Wait, HNSW len is not accessible here.
-                // It's okay, we can increment total_docs. It's an approximation.
+        if !exists {
+            let total_docs_key = self.key("meta:total_docs");
+            let mut total_docs = 0u64;
+            if let Some(bytes) = self.storage.get(&total_docs_key).await? {
+                if bytes.len() == 8 {
+                    total_docs = u64::from_le_bytes(bytes.as_slice().try_into().map_err(
+                        |_| MemFuseError::Storage("Invalid total_docs length".into()),
+                    )?);
+                }
             }
-        }
-        if is_new {
             total_docs += 1;
+            self.storage
+                .put(tx, &total_docs_key, &total_docs.to_le_bytes())
+                .await?;
         }
+
+        // Store document length
         self.storage
-            .put(tx, &total_docs_key, &total_docs.to_le_bytes())
+            .put(tx, &dl_key, &(tokens.len() as u32).to_le_bytes())
             .await?;
 
         // Update posting lists
@@ -122,8 +126,49 @@ impl InvertedIndex {
         original_text: &str,
     ) -> Result<()> {
         let tokens = tokenize(original_text);
-
         let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
+
+        // Check if doc existed to update stats
+        if let Some(bytes) = self.storage.get(&dl_key).await? {
+            let doc_len = if bytes.len() == 4 {
+                u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid doc_len length".into())
+                })?)
+            } else {
+                tokens.len() as u32
+            };
+
+            // Update total docs
+            let total_docs_key = self.key("meta:total_docs");
+            if let Some(bytes) = self.storage.get(&total_docs_key).await? {
+                if bytes.len() == 8 {
+                    let total_docs = u64::from_le_bytes(bytes.as_slice().try_into().map_err(
+                        |_| MemFuseError::Storage("Invalid total_docs length".into()),
+                    )?);
+                    self.storage
+                        .put(tx, &total_docs_key, &total_docs.saturating_sub(1).to_le_bytes())
+                        .await?;
+                }
+            }
+
+            // Update total tokens
+            let total_tok_key = self.key("meta:total_tokens");
+            if let Some(bytes) = self.storage.get(&total_tok_key).await? {
+                if bytes.len() == 8 {
+                    let total_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(
+                        |_| MemFuseError::Storage("Invalid total_tokens length".into()),
+                    )?);
+                    self.storage
+                        .put(
+                            tx,
+                            &total_tok_key,
+                            &total_tokens.saturating_sub(doc_len as u64).to_le_bytes(),
+                        )
+                        .await?;
+                }
+            }
+        }
+
         self.storage.delete(tx, &dl_key).await?;
 
         let mut unique_terms = tokens;
@@ -191,6 +236,7 @@ impl InvertedIndex {
         };
 
         let mut scores: HashMap<DocId, f32> = HashMap::new();
+        let mut doc_len_cache: HashMap<DocId, u32> = HashMap::new();
 
         for term in &tokens {
             let pl_key = self.key(&format!("pl:{}", term));
@@ -202,17 +248,24 @@ impl InvertedIndex {
                     let df = pl.len() as u32;
 
                     for (doc_id, tf) in pl {
-                        // Fetch doc length
-                        let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
-                        let mut doc_len = 0u32;
-                        if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
-                            if dl_bytes.len() == 4 {
-                                doc_len =
-                                    u32::from_le_bytes(dl_bytes.as_slice().try_into().map_err(
-                                        |_| MemFuseError::Storage("Invalid doc_len length".into()),
-                                    )?);
+                        // Fetch doc length with caching
+                        let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
+                            len
+                        } else {
+                            let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
+                            let mut len = 0u32;
+                            if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
+                                if dl_bytes.len() == 4 {
+                                    len = u32::from_le_bytes(
+                                        dl_bytes.as_slice().try_into().map_err(|_| {
+                                            MemFuseError::Storage("Invalid doc_len length".into())
+                                        })?,
+                                    );
+                                }
                             }
-                        }
+                            doc_len_cache.insert(doc_id, len);
+                            len
+                        };
 
                         let score = crate::bm25::score_term(
                             tf,

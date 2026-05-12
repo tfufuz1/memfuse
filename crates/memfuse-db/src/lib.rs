@@ -322,10 +322,20 @@ impl MemFuse {
 
     // ANCHOR:TODO:SEARCH-001 — Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection.
     // WP:WP-2.1 PRIO:1 NEEDS:COL-001
-    // AGENT:@JULES-05 DATE:2026-05-09 STATUS:READY
+    // AGENT:05 DATE:2026-05-12 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
+
+    /// Performs hybrid search combining vector similarity and BM25 text search.
+    pub async fn hybrid_search(
+        &self,
+        text: &str,
+        vector: &[f32],
+        k: usize,
+    ) -> Result<Vec<SearchResult>> {
+        self.default_col().await?.hybrid_search(text, vector, k).await
+    }
 
     /// Deletes a document by its string ID.
     pub async fn delete(&self, id: &str) -> Result<()> {
@@ -713,6 +723,42 @@ mod tests {
 
         let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
         assert_eq!(results[0].id, "k");
+    }
+
+    #[tokio::test]
+    async fn test_hybrid_search_ranks_correctly() {
+        let (db, _tmp) = test_db(4).await;
+
+        db.insert(
+            "doc-1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"text": "Rust is fast"})),
+        )
+        .await
+        .expect("ins1");
+
+        db.insert(
+            "doc-2",
+            &[0.0, 1.0, 0.0, 0.0],
+            Some(json!({"text": "Python is slow"})),
+        )
+        .await
+        .expect("ins2");
+
+        // Search for "Rust" with a vector closer to doc-2
+        // BM25 should find doc-1, Vector search should find doc-2.
+        // RRF should combine them.
+        let results = db
+            .hybrid_search("Rust", &[0.0, 1.0, 0.0, 0.0], 2)
+            .await
+            .expect("search");
+
+        assert_eq!(results.len(), 2);
+        // doc-1 has high BM25 for "Rust", doc-2 has high vector similarity.
+        // Both should be present.
+        let ids: Vec<String> = results.iter().map(|r| r.id.clone()).collect();
+        assert!(ids.contains(&"doc-1".to_string()));
+        assert!(ids.contains(&"doc-2".to_string()));
     }
 
     #[tokio::test]
