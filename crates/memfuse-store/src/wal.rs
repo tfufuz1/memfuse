@@ -237,10 +237,12 @@ impl Wal {
                 break;
             }
 
-            let entry_data = data.get(pos..pos + len).ok_or(MemFuseError::WalCorruption {
-                offset: pos as u64,
-                reason: "Unexpected EOF while reading entry data".into(),
-            })?;
+            let entry_data = data
+                .get(pos..pos + len)
+                .ok_or(MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Unexpected EOF while reading entry data".into(),
+                })?;
             pos += len;
 
             // Minimum length: seq_no(8) + checksum(32) + op_type(1) = 41
