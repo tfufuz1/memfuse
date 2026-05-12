@@ -20,3 +20,8 @@ lru = "0.13"
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile = { workspace = true }
+
+# ANCHOR:INTEGRATION — Fehlende Cross-Crate Integration Tests
+# WP:NONE PRIO:2 NEEDS:NONE
+# AGENT:02 DATE:2026-05-09 STATUS:READY
+# VERLETZUNG: Keine Integration-Tests in crates/memfuse-store/tests/

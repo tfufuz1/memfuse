@@ -6,3 +6,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+
+# ANCHOR:INTEGRATION — Fehlende Cross-Crate Integration Tests
+# WP:NONE PRIO:2 NEEDS:NONE
+# AGENT:12 DATE:2026-05-09 STATUS:READY
+# VERLETZUNG: Keine Integration-Tests in crates/memfuse-orchestrator/tests/

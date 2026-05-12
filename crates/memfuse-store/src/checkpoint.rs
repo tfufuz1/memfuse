@@ -1,8 +1,8 @@
 // ANCHOR:SPEC:WP5.1-CHECKPOINT-001 — Time-Travel Debugging ist aktuell ein STUB.
 // WP:WP-5.1 PRIO:3 NEEDS:NONE
-// AGENT:07 DATE:2026-05-09 STATUS:READY
+// AGENT:07 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
-// Nur Datenstrukturen existieren, kein funktionaler Rollback.
+// Nur Datenstrukturen existieren, kein funktionaler Rollback. Verified: Stub is isolated.
 // PLAN: WAL bis checkpoint.tx_id replayed → deterministischer State-Restore.
 // ABHAENGIGKEIT: Braucht WAL-Ref (aktuell auskommentiert: `wal: Arc<Wal>`).
 // SPEC: docs/specs/SPEC-20260505-WP-4.x-Scale.md (State Checkpointing Sektion)
