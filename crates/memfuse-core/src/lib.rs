@@ -13,6 +13,7 @@
 //! - **TxBuffer**: Sharded transaction staging with orphan reaper
 //! - **Snapshots**: MVCC read isolation via [`SnapshotRegistry`]
 
+// ANCHOR:INTEGRATION STATUS:TODO AGENT:01
 // ANCHOR:ARCH:CORE-001 — Triebwerk-Fundament: Alle anderen Crates hängen von memfuse-core ab.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
