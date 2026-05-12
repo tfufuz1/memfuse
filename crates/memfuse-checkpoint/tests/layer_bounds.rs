@@ -1,6 +1,6 @@
 use memfuse_checkpoint::CheckpointManager;
-use memfuse_store::lsm::{LsmStorage, LsmConfig};
 use memfuse_core::{StorageEngine, TxId};
+use memfuse_store::lsm::{LsmConfig, LsmStorage};
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -26,7 +26,10 @@ async fn test_layer_001_checkpoint_fork_diverge_rollback() {
     storage.commit(tx1).await.expect("commit1");
 
     // 2. Create Checkpoint (Fork point)
-    let cp1 = manager.create_checkpoint("v1").await.expect("create checkpoint");
+    let cp1 = manager
+        .create_checkpoint("v1")
+        .await
+        .expect("create checkpoint");
     let fork_seq = cp1.seq_no;
     assert!(fork_seq > 0);
 
@@ -39,19 +42,31 @@ async fn test_layer_001_checkpoint_fork_diverge_rollback() {
     storage.commit(tx2).await.expect("commit2");
 
     let tx3 = TxId::new(3);
-    storage.put(tx3, b"key1", b"val1_updated").await.expect("put3");
+    storage
+        .put(tx3, b"key1", b"val1_updated")
+        .await
+        .expect("put3");
     storage.commit(tx3).await.expect("commit3");
 
     // Current state should have updated values
-    assert_eq!(storage.get(b"key1").await.expect("get key1"), Some(b"val1_updated".to_vec()));
-    assert_eq!(storage.get(b"key2").await.expect("get key2"), Some(b"val2".to_vec()));
+    assert_eq!(
+        storage.get(b"key1").await.expect("get key1"),
+        Some(b"val1_updated".to_vec())
+    );
+    assert_eq!(
+        storage.get(b"key2").await.expect("get key2"),
+        Some(b"val2".to_vec())
+    );
 
     // 4. Rollback (Stub implementation for now)
     // In the future, this would restore the state to 'val1' for 'key1' and no 'key2'.
     manager.rollback(&cp1).await.expect("rollback stub");
 
     // 5. Cleanup: Drop Checkpoint (Merge/Release)
-    manager.drop_checkpoint(&cp1).await.expect("drop checkpoint");
+    manager
+        .drop_checkpoint(&cp1)
+        .await
+        .expect("drop checkpoint");
 
     // Verify sequence number is unpinned
     // If no other snapshots are active, min_active_seqno returns u64::MAX
