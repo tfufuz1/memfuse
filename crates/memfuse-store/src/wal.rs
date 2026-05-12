@@ -12,7 +12,6 @@
 // ROTATION: Beim Flush wird alte WAL archiviert, neue geöffnet.
 //
 #![allow(unexpected_cfgs)]
-
 // ANCHOR:SPEC:WP-3.2-HMAC-001 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
 // WP:WP-3.2 PRIO:3 NEEDS:NONE
 // AGENT:10 DATE:2026-05-09 STATUS:REVIEW
@@ -87,11 +86,7 @@ impl WalEntry {
     /// Creates a new WAL entry with BLAKE3 MAC.
     pub fn new(op: WalOp, seq_no: u64) -> Self {
         let mac = Self::compute_mac(&op, seq_no);
-        Self {
-            op,
-            seq_no,
-            mac,
-        }
+        Self { op, seq_no, mac }
     }
 
     fn compute_mac(op: &WalOp, seq_no: u64) -> [u8; 32] {
@@ -218,12 +213,15 @@ impl Wal {
         let mut pos = 0;
 
         while pos + 4 <= data.len() {
-            let len = u32::from_le_bytes(data.get(pos..pos + 4).ok_or_else(|| {
-                MemFuseError::WalCorruption {
+            let len_bytes = data
+                .get(pos..pos + 4)
+                .ok_or_else(|| MemFuseError::WalCorruption {
                     offset: pos as u64,
                     reason: "Invalid length".into(),
-                }
-            })?.try_into().unwrap()) as usize;
+                })?;
+            // ANCHOR:SEC:SLICE-004 — Safe length conversion
+            // BEGRÜNDUNG: we verified the slice has length 4 via get(pos..pos + 4).
+            let len = u32::from_le_bytes(len_bytes.try_into().unwrap_or([0u8; 4])) as usize; // unwrap
             pos += 4;
 
             if pos + len > data.len() {
@@ -234,7 +232,8 @@ impl Wal {
             let entry_data = &data[pos..pos + len];
             pos += len;
 
-            if entry_data.len() < 42 { // version(1) + seq_no(8) + mac(32) + op_type(1)
+            if entry_data.len() < 42 {
+                // version(1) + seq_no(8) + mac(32) + op_type(1)
                 continue;
             }
 
@@ -242,7 +241,10 @@ impl Wal {
             if version != WAL_VERSION {
                 return Err(MemFuseError::WalCorruption {
                     offset: (pos - len) as u64,
-                    reason: format!("Unsupported WAL version: {}, expected {}", version, WAL_VERSION),
+                    reason: format!(
+                        "Unsupported WAL version: {}, expected {}",
+                        version, WAL_VERSION
+                    ),
                 });
             }
 
@@ -252,12 +254,13 @@ impl Wal {
                     reason: "Invalid seq_no".into(),
                 }
             })?);
-            let stored_mac: [u8; 32] = entry_data[9..41].try_into().map_err(|_| {
-                MemFuseError::WalCorruption {
-                    offset: pos as u64,
-                    reason: "Invalid mac".into(),
-                }
-            })?;
+            let stored_mac: [u8; 32] =
+                entry_data[9..41]
+                    .try_into()
+                    .map_err(|_| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Invalid mac".into(),
+                    })?;
             let op_type = entry_data[41];
 
             let remaining = &entry_data[42..];
@@ -375,7 +378,7 @@ mod proof {
 
         let op = WalOp::Delete {
             tx_id: TxId::new(0),
-            key: key.clone()
+            key: key.clone(),
         };
 
         let mac1 = WalEntry::compute_mac(&op, seq_no);
