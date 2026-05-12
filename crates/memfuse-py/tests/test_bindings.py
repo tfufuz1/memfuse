@@ -9,7 +9,7 @@ def test_open_and_basic_insert_search(tmp_path):
     col.insert("doc1", v)
     results = col.search(v, k=1)
     assert len(results) == 1
-    assert results[0]["id"] == "doc1"  # AC-1
+    assert results[0].id == "doc1"  # AC-1
 
 def test_hybrid_search(tmp_path):
     db2 = memfuse.open(str(tmp_path / "test_wp31_hybrid"), dimension=4)
@@ -18,7 +18,7 @@ def test_hybrid_search(tmp_path):
     col.insert("doc1", v, metadata={"text": "rust programming language"})
     results = col.hybrid_search("rust programming", v, k=1)
     assert len(results) == 1
-    assert results[0]["id"] == "doc1"  # AC-2
+    assert results[0].id == "doc1"  # AC-2
 
 def test_collection_isolation(tmp_path):
     db3 = memfuse.open(str(tmp_path / "test_wp31_iso"), dimension=4)
