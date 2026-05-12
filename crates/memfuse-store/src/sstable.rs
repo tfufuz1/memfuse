@@ -53,9 +53,9 @@ pub fn create_block_cache(capacity_mb: usize) -> Arc<BlockCache> {
     Arc::new(RwLock::new(LruCache::new(
         // ANCHOR:DEBT:DEBT-UNWRAP-SSTABLE-37 — unwrap/expect in production code
         // WP:WP-0.0 PRIO:2 NEEDS:NONE
-        // AGENT:02 DATE:2026-05-09 STATUS:REVIEW
+        // AGENT:02 DATE:2026-05-12 STATUS:REVIEW
         // CREATED:2026-05-09 DEADLINE:NONE
-        NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::MIN), // safe: capacity >= 256
+        NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::MIN),
     )))
 }
 
@@ -242,8 +242,8 @@ impl SstableBuilder {
             .len();
 
         Ok(SstableMetadata {
-            first_key: self.first_key.unwrap_or_default(), // unwrap
-            last_key: self.last_key.unwrap_or_default(),   // unwrap
+            first_key: self.first_key.unwrap_or_default(),
+            last_key: self.last_key.unwrap_or_default(),
             file_size,
         })
     }
@@ -299,6 +299,12 @@ impl SstableReader {
             return Err(MemFuseError::Storage("Invalid SSTable magic number".into()));
         }
 
+        if index_offset + 12 > file_size {
+            return Err(MemFuseError::Storage(
+                "corrupted SSTable: index_offset out of bounds".into(),
+            ));
+        }
+
         // Read index
         file.seek(std::io::SeekFrom::Start(index_offset))
             .await
@@ -319,8 +325,16 @@ impl SstableReader {
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
             pos += 2;
+
+            if pos + key_len > index_data.len() {
+                return Err(MemFuseError::Storage("corrupted SSTable index".into()));
+            }
             let key = Bytes::copy_from_slice(&index_data[pos..pos + key_len]);
             pos += key_len;
+
+            if pos + 8 > index_data.len() {
+                return Err(MemFuseError::Storage("corrupted SSTable index".into()));
+            }
             let offset = u64::from_le_bytes(
                 index_data[pos..pos + 8]
                     .try_into()
@@ -330,7 +344,7 @@ impl SstableReader {
             index.push((key, offset));
         }
 
-        let last_key = index.last().map(|(k, _)| k.clone()).unwrap_or_default(); // unwrap
+        let last_key = index.last().map(|(k, _)| k.clone()).unwrap_or_default();
 
         // Read the actual first key from the first data block header
         // (index stores last_key per block, NOT first_key)
