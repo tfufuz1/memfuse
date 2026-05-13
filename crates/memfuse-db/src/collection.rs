@@ -74,6 +74,15 @@ impl Collection {
 
         let text_index = InvertedIndex::new(storage.clone(), &name);
 
+        // WP-6.5: Determine tokenizer by language if possible
+        // For now, if collection name contains "de", use German tokenizer
+        let tokenizer = if name.contains("de") {
+            memfuse_text::tokenizer::get_tokenizer("de")
+        } else {
+            memfuse_text::tokenizer::get_tokenizer("en")
+        };
+        let text_index = text_index.with_tokenizer(tokenizer);
+
         Self {
             name,
             prefix,

@@ -344,18 +344,6 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
-    pub async fn hybrid_search(
-        &self,
-        text: &str,
-        vector: &[f32],
-        k: usize,
-    ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .hybrid_search(text, vector, k)
-            .await
-    }
-
     /// Performs hybrid search combining BM25 and vector search.
     pub async fn hybrid_search(
         &self,
@@ -770,5 +758,51 @@ mod tests {
         assert!(list.contains(&"c2".to_string()));
         assert!(list.contains(&"c3".to_string()));
         assert_eq!(list.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_empty_text_falls_back_to_vector() {
+        let (db, _tmp) = test_db(4).await;
+        db.insert("d1", &[1.0, 0.0, 0.0, 0.0], None)
+            .await
+            .expect("ins");
+
+        // empty text, non-zero vector
+        let res = db
+            .hybrid_search("", &[1.0, 0.0, 0.0, 0.0], 1)
+            .await
+            .expect("search");
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].id, "d1");
+
+        // blank text, non-zero vector
+        let res = db
+            .hybrid_search("   ", &[1.0, 0.0, 0.0, 0.0], 1)
+            .await
+            .expect("search");
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].id, "d1");
+    }
+
+    #[tokio::test]
+    async fn test_german_morphological_search() {
+        let (db, _tmp) = test_db(4).await;
+        let col = db.collection("docs-de").await.expect("col");
+
+        col.insert(
+            "d1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"text": "Das Bundesverfassungsgericht hat entschieden."})),
+        )
+        .await
+        .expect("ins");
+
+        // Search for "gericht" (part of compound)
+        let res = col
+            .hybrid_search("gericht", &[0.0, 0.0, 0.0, 0.0], 1)
+            .await
+            .expect("search");
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].id, "d1");
     }
 }
