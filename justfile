@@ -92,6 +92,61 @@ debt-audit:
     fi
     echo ""; echo "✅ Debt-Audit PASSED"
 
+# Verifies Directed Acyclic Graph (DAG) integrity of crates
+dag-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== DAG Integrity Check ==="
+
+    echo "--- [1/3] memfuse-core Isolation ---"
+    if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py\|memfuse-orchestrator\|memfuse-runtime"; then
+        echo "❌ ERROR: memfuse-core imports forbidden crates."
+        exit 1
+    fi
+    echo "✅ memfuse-core is isolated."
+
+    echo "--- [2/3] L2 Peer Isolation (store, index, text, checkpoint) ---"
+    PEERS="memfuse-db|memfuse-index|memfuse-store|memfuse-text|memfuse-checkpoint|memfuse-py|memfuse-orchestrator|memfuse-runtime"
+    for CRATE in memfuse-store memfuse-index memfuse-text memfuse-checkpoint; do
+        # We allow tracked violations to NOT fail the local check yet if they are in dev-dependencies
+        # but the CI check uses --edges no-dev which we also do here.
+        FILTER=$(echo "$PEERS" | sed "s/$CRATE|//; s/|$CRATE//; s/$CRATE//")
+        if cargo tree -p "$CRATE" --edges no-dev | grep -E -q "$FILTER"; then
+            # Exceptions for tracked violations DAG-001 and DAG-002
+            if [[ "$CRATE" == "memfuse-text" || "$CRATE" == "memfuse-checkpoint" ]]; then
+                 if cargo tree -p "$CRATE" --edges no-dev | grep -E -v "memfuse-store" | grep -E -q "$FILTER"; then
+                    echo "❌ ERROR: $CRATE imports forbidden peers (excluding tracked memfuse-store)."
+                    exit 1
+                 fi
+            else
+                echo "❌ ERROR: $CRATE imports forbidden peers."
+                exit 1
+            fi
+        fi
+    done
+    echo "✅ L2 isolation verified (tracked violations skipped)."
+
+    echo "--- [3/4] L1 Orchestration Isolation ---"
+    for CRATE in memfuse-db memfuse-orchestrator memfuse-runtime; do
+        if cargo tree -p "$CRATE" --edges no-dev | grep -q "memfuse-py"; then
+            echo "❌ ERROR: $CRATE imports memfuse-py (Circular Dependency Risk)."
+            exit 1
+        fi
+    done
+    echo "✅ L1 isolation verified."
+
+    echo "--- [4/4] Tracking Known Violations ---"
+    for DAG in "DAG-001:memfuse-text:memfuse-store" "DAG-002:memfuse-checkpoint:memfuse-store" "DAG-003:memfuse-py:memfuse-db"; do
+        ID=$(echo $DAG | cut -d: -f1)
+        SRC=$(echo $DAG | cut -d: -f2)
+        DST=$(echo $DAG | cut -d: -f3)
+        if cargo tree -p "$SRC" --edges no-dev | grep -q "$DST"; then
+            echo "⚠️  $ID still present ($SRC → $DST)"
+        else
+            echo "✅ $ID resolved"
+        fi
+    done
+
 # Bootstrap a new feature using the Atomic Spec Template
 spec NAME:
     #!/usr/bin/env bash

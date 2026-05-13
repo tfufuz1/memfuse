@@ -19,7 +19,7 @@ jobs:
         run: |
           set -e
           echo "Verifying memfuse-core imports no internal crates..."
-          if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py"; then
+          if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py\|memfuse-orchestrator\|memfuse-runtime"; then
             echo "ERROR: memfuse-core imports forbidden crates."
             exit 1
           fi
@@ -28,25 +28,44 @@ jobs:
         run: |
           set -e
           echo "Verifying memfuse-store does not import L2 peers..."
-          if cargo tree -p memfuse-store --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-checkpoint|memfuse-py"; then
+          if cargo tree -p memfuse-store --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-checkpoint|memfuse-py|memfuse-orchestrator|memfuse-runtime"; then
             echo "ERROR: memfuse-store imports L2 peers or higher layers."
             exit 1
           fi
           echo "Verifying memfuse-index does not import L2 peers..."
-          if cargo tree -p memfuse-index --edges no-dev | grep -E -q "memfuse-db|memfuse-store|memfuse-text|memfuse-checkpoint|memfuse-py"; then
+          if cargo tree -p memfuse-index --edges no-dev | grep -E -q "memfuse-db|memfuse-store|memfuse-text|memfuse-checkpoint|memfuse-py|memfuse-orchestrator|memfuse-runtime"; then
             echo "ERROR: memfuse-index imports L2 peers or higher layers."
             exit 1
           fi
           echo "Verifying memfuse-text does not import L2 peers (except tracked)..."
           # Excluding memfuse-store from the immediate failure to allow tracking in the next step
-          if cargo tree -p memfuse-text --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-checkpoint|memfuse-py"; then
+          if cargo tree -p memfuse-text --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-checkpoint|memfuse-py|memfuse-orchestrator|memfuse-runtime"; then
             echo "ERROR: memfuse-text imports L2 peers (beyond tracked exceptions)."
             exit 1
           fi
           echo "Verifying memfuse-checkpoint does not import L2 peers (except tracked)..."
           # Excluding memfuse-store from the immediate failure to allow tracking in the next step
-          if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-py"; then
+          if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-py|memfuse-orchestrator|memfuse-runtime"; then
             echo "ERROR: memfuse-checkpoint imports L2 peers (beyond tracked exceptions)."
+            exit 1
+          fi
+
+      - name: Check L1 Orchestration (db, orchestrator, runtime)
+        run: |
+          set -e
+          echo "Verifying memfuse-db does not import memfuse-py..."
+          if cargo tree -p memfuse-db --edges no-dev | grep -q "memfuse-py"; then
+            echo "ERROR: memfuse-db imports memfuse-py (Circular Dependency Risk)."
+            exit 1
+          fi
+          echo "Verifying memfuse-orchestrator does not import memfuse-py..."
+          if cargo tree -p memfuse-orchestrator --edges no-dev | grep -q "memfuse-py"; then
+            echo "ERROR: memfuse-orchestrator imports memfuse-py."
+            exit 1
+          fi
+          echo "Verifying memfuse-runtime does not import memfuse-py..."
+          if cargo tree -p memfuse-runtime --edges no-dev | grep -q "memfuse-py"; then
+            echo "ERROR: memfuse-runtime imports memfuse-py."
             exit 1
           fi
 
@@ -65,4 +84,10 @@ jobs:
             echo "⚠️  DAG-002 still present (memfuse-checkpoint → memfuse-store)"
           else
             echo "✅ DAG-002 resolved"
+          fi
+          echo "--- DAG-003: memfuse-py → memfuse-db ---"
+          if cargo tree -p memfuse-py --edges no-dev | grep -q "memfuse-db"; then
+            echo "⚠️  DAG-003 still present (memfuse-py → memfuse-db)"
+          else
+            echo "✅ DAG-003 resolved"
           fi
