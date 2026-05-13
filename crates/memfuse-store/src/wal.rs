@@ -42,9 +42,15 @@
 // BOTTLENECK: I/O (File::sync_all blockiert)
 // OPTIMIERUNGSIDEE: Group Commit oder fsync-Offloading
 
+use crate::crypto::KeyManager;
+use hmac::{Hmac, Mac};
 use memfuse_core::{MemFuseError, Result, TxId};
+use sha2::Sha256;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+type HmacSha256 = Hmac<Sha256>;
 
 /// WAL entry operation.
 #[derive(Debug, Clone)]
@@ -65,11 +71,11 @@ pub enum WalOp {
 pub struct WalEntry {
     pub op: WalOp,
     pub seq_no: u64,
-    pub checksum: u32,
+    pub checksum: [u8; 32],
 }
 
 impl WalEntry {
-    /// Creates a new WAL entry with CRC32 checksum.
+    /// Creates a new WAL entry with HMAC-SHA256 checksum.
     pub fn new(op: WalOp, seq_no: u64) -> Self {
         let checksum = Self::compute_checksum(&op, seq_no);
         Self {
@@ -79,21 +85,23 @@ impl WalEntry {
         }
     }
 
-    fn compute_checksum(op: &WalOp, seq_no: u64) -> u32 {
-        let mut hasher = crc32fast::Hasher::new();
-        hasher.update(&seq_no.to_le_bytes());
+    fn compute_checksum(op: &WalOp, seq_no: u64) -> [u8; 32] {
+        // Use a fixed key for integrity. WP-3.2 will later use derived keys for encryption.
+        let mut mac = HmacSha256::new_from_slice(b"memfuse-integrity-key-v1")
+            .expect("HMAC can take key of any size");
+        mac.update(&seq_no.to_le_bytes());
         match op {
             WalOp::Put { key, value, .. } => {
-                hasher.update(&[0u8]); // op type
-                hasher.update(key);
-                hasher.update(value);
+                mac.update(&[0u8]); // op type
+                mac.update(key);
+                mac.update(value);
             }
             WalOp::Delete { key, .. } => {
-                hasher.update(&[1u8]); // op type
-                hasher.update(key);
+                mac.update(&[1u8]); // op type
+                mac.update(key);
             }
         }
-        hasher.finalize()
+        mac.finalize().into_bytes().into()
     }
 
     /// Serializes the entry to bytes.
@@ -102,17 +110,14 @@ impl WalEntry {
             WalOp::Put { key, value, .. } => 1 + 8 + 4 + key.len() + 4 + value.len(),
             WalOp::Delete { key, .. } => 1 + 8 + 4 + key.len(),
         };
-        // Verify op_size matches what is actually written in the match block below.
-        // Put: type(1) + tx_id(8) + k_len(4) + key + v_len(4) + value
-        // Delete: type(1) + tx_id(8) + k_len(4) + key
 
-        let payload_size = 8 + 4 + op_size; // seq_no(8) + checksum(4) + op
+        let payload_size = 8 + 32 + op_size; // seq_no(8) + checksum(32) + op
         let total_size = 4 + payload_size; // length prefix + payload
 
         let mut buf = Vec::with_capacity(total_size);
         buf.extend_from_slice(&(payload_size as u32).to_le_bytes());
         buf.extend_from_slice(&self.seq_no.to_le_bytes());
-        buf.extend_from_slice(&self.checksum.to_le_bytes());
+        buf.extend_from_slice(&self.checksum);
 
         match &self.op {
             WalOp::Put { tx_id, key, value } => {
@@ -139,6 +144,7 @@ pub struct Wal {
     path: PathBuf,
     file: tokio::sync::Mutex<tokio::fs::File>,
     size: std::sync::atomic::AtomicU64,
+    key_manager: Option<Arc<KeyManager>>,
 }
 
 /// Maximum WAL size before triggering a flush (128MB).
@@ -147,6 +153,14 @@ pub const MAX_WAL_SIZE: u64 = 128 * 1024 * 1024;
 impl Wal {
     /// Opens or creates a WAL file.
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
+        Self::open_with_key_manager(path, None).await
+    }
+
+    /// Opens or creates a WAL file with an optional KeyManager.
+    pub async fn open_with_key_manager(
+        path: impl AsRef<Path>,
+        key_manager: Option<Arc<KeyManager>>,
+    ) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
         let file = tokio::fs::OpenOptions::new()
             .create(true)
@@ -165,12 +179,27 @@ impl Wal {
             path,
             size: std::sync::atomic::AtomicU64::new(metadata.len()),
             file: tokio::sync::Mutex::new(file),
+            key_manager,
         })
     }
 
     /// Appends an entry to the WAL.
     pub async fn append(&self, entry: &WalEntry) -> Result<()> {
-        let bytes = entry.to_bytes();
+        let mut bytes = entry.to_bytes();
+
+        if let Some(km) = &self.key_manager {
+            // Encrypt the payload (everything after the length prefix)
+            if bytes.len() > 4 {
+                let payload = &bytes[4..];
+                let offset = self.size();
+                let encrypted = km.encrypt(payload, offset)?;
+                let mut new_bytes = Vec::with_capacity(4 + encrypted.len());
+                new_bytes.extend_from_slice(&(encrypted.len() as u32).to_le_bytes());
+                new_bytes.extend_from_slice(&encrypted);
+                bytes = new_bytes;
+            }
+        }
+
         let mut file = self.file.lock().await;
         file.write_all(&bytes)
             .await
@@ -219,10 +248,31 @@ impl Wal {
                 break;
             }
 
-            let entry_data = &data[pos..pos + len];
+            let entry_data_raw = &data[pos..pos + len];
             pos += len;
 
-            if entry_data.len() < 13 {
+            let decrypted_data;
+            let entry_data = if let Some(km) = &self.key_manager {
+                // We need seq_no for decryption, but it's inside the encrypted payload.
+                // Replay might be tricky if we use seq_no as nonce for WAL entries.
+                // In SSTables we use offset, but WAL entries are appended.
+                // Wait, LsmStorage::commit uses self.next_seq_no.fetch_add(1).
+                // Let's look at how WalEntry is constructed.
+                // If we encrypt the whole payload including seq_no, we have a chicken-and-egg problem
+                // if we want to use seq_no as nonce.
+                // However, in append() I used km.encrypt(payload, entry.seq_no).
+                // During replay, we don't know seq_no yet.
+                // Alternative: use pos (offset in file) as nonce for WAL as well?
+                // Yes, that's more consistent with SSTables.
+                let offset = (pos - len) as u64;
+                decrypted_data = km.decrypt(entry_data_raw, offset)?;
+                &decrypted_data
+            } else {
+                entry_data_raw
+            };
+
+            if entry_data.len() < 41 {
+                // seq_no(8) + checksum(32) + op_type(1)
                 continue;
             }
 
@@ -232,16 +282,15 @@ impl Wal {
                     reason: "Invalid seq_no".into(),
                 }
             })?);
-            let stored_checksum =
-                u32::from_le_bytes(entry_data[8..12].try_into().map_err(|_| {
-                    MemFuseError::WalCorruption {
-                        offset: pos as u64,
-                        reason: "Invalid checksum".into(),
-                    }
-                })?);
-            let op_type = entry_data[12];
+            let stored_checksum: [u8; 32] = entry_data[8..40].try_into().map_err(|_| {
+                MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid checksum".into(),
+                }
+            })?;
+            let op_type = entry_data[40];
 
-            let remaining = &entry_data[13..];
+            let remaining = &entry_data[41..];
             let op = match op_type {
                 0 => {
                     // Put
@@ -304,17 +353,16 @@ impl Wal {
                 _ => continue,
             };
 
-            // ANCHOR:ALG-FIX:D1-007 — CRC32-Verifikation bei WAL Replay
-            // WP:WP-0.0 PRIO:1 NEEDS:NONE
-            // AGENT:13 DATE:2026-05-08 STATUS:DONE
-            // CREATED:2026-05-08 DEADLINE:NONE
+            // ANCHOR:ALG-FIX:D1-007 — HMAC-Verifikation bei WAL Replay
+            // WP:WP-3.2 PRIO:1 NEEDS:NONE
+            // AGENT:10 DATE:2026-05-15 STATUS:READY
             // Ohne Verifikation werden korrupte Entries (Bit-Flip, Partial Write)
             // blind in die MemTable replayed → stille Datenkorrumpierung.
             let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no);
             if recomputed_checksum != stored_checksum {
                 tracing::warn!(
-                    "WAL entry at offset {} has invalid checksum (stored={}, computed={}), truncating replay",
-                    pos, stored_checksum, recomputed_checksum
+                    "WAL entry at offset {} has invalid checksum, truncating replay",
+                    pos
                 );
                 break;
             }
@@ -358,12 +406,12 @@ mod tests {
         let bytes = entry.to_bytes();
 
         // Manual verification of length
-        // total_len(4) + seq_no(8) + checksum(4) + op_type(1) + tx_id(8) + k_len(4) + key(3) + v_len(4) + val(5)
-        // 4 + 8 + 4 + 1 + 8 + 4 + 3 + 4 + 5 = 41
-        assert_eq!(bytes.len(), 41);
+        // total_len(4) + seq_no(8) + checksum(32) + op_type(1) + tx_id(8) + k_len(4) + key(3) + v_len(4) + val(5)
+        // 4 + 8 + 32 + 1 + 8 + 4 + 3 + 4 + 5 = 69
+        assert_eq!(bytes.len(), 69);
 
         let payload_len = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice"));
-        assert_eq!(payload_len, 37);
+        assert_eq!(payload_len, 65);
 
         // Test with Delete
         let op2 = WalOp::Delete {
@@ -372,7 +420,7 @@ mod tests {
         };
         let entry2 = WalEntry::new(op2, 101);
         let bytes2 = entry2.to_bytes();
-        // 4 + 8 + 4 + 1 + 8 + 4 + key(4) = 33
-        assert_eq!(bytes2.len(), 33);
+        // 4 + 8 + 32 + 1 + 8 + 4 + key(4) = 61
+        assert_eq!(bytes2.len(), 61);
     }
 }

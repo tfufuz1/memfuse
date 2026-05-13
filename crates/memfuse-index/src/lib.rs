@@ -8,6 +8,7 @@
 //! MemFuse Index — HNSW vector index with SIMD distance computation.
 
 #![feature(portable_simd)]
+#![deny(unsafe_code)]
 
 pub mod csr;
 pub mod distance;

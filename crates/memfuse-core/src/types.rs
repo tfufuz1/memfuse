@@ -56,8 +56,9 @@ impl DocId {
             .get(..8)
             .ok_or_else(|| MemFuseError::Internal("Blake3 hash too short".to_string()))?;
 
-        let mut buf = [0u8; 8];
-        buf.copy_from_slice(bytes);
+        let buf: [u8; 8] = bytes.try_into().map_err(|_| {
+            MemFuseError::Internal("Failed to convert hash slice to array".to_string())
+        })?;
         Ok(Self(u64::from_le_bytes(buf)))
     }
 }
