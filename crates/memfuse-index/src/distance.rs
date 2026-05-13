@@ -585,7 +585,12 @@ pub fn asymmetric_dot_product_scalar(query: &[f32], quantized: &[u8], min: f32, 
 #[target_feature(enable = "fma")]
 // ANCHOR:SAFETY:SIMD-035 — AVX2 Asymmetric Dot Product.
 // BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
-unsafe fn asymmetric_dot_product_avx2(query: &[f32], quantized: &[u8], min: f32, scale: f32) -> f32 {
+unsafe fn asymmetric_dot_product_avx2(
+    query: &[f32],
+    quantized: &[u8],
+    min: f32,
+    scale: f32,
+) -> f32 {
     let mut sum_v = _mm256_setzero_ps();
     let scale_v = _mm256_set1_ps(scale);
     let min_v = _mm256_set1_ps(min);
