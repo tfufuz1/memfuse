@@ -88,19 +88,18 @@ impl WalEntry {
         let mut hasher = blake3::Hasher::new_keyed(WAL_INTEGRITY_KEY);
         hasher.update(&seq_no.to_le_bytes());
         match op {
-            WalOp::Put {
-                tx_id,
-                key,
-                value,
-            } => {
+            WalOp::Put { tx_id, key, value } => {
                 hasher.update(&[0u8]); // op type
                 hasher.update(&tx_id.inner().to_le_bytes());
+                hasher.update(&(key.len() as u32).to_le_bytes());
                 hasher.update(key);
+                hasher.update(&(value.len() as u32).to_le_bytes());
                 hasher.update(value);
             }
             WalOp::Delete { tx_id, key } => {
                 hasher.update(&[1u8]); // op type
                 hasher.update(&tx_id.inner().to_le_bytes());
+                hasher.update(&(key.len() as u32).to_le_bytes());
                 hasher.update(key);
             }
         }
@@ -232,14 +231,17 @@ impl Wal {
                 break;
             }
 
-            let entry_data = data.get(pos..pos + len).ok_or(MemFuseError::WalCorruption {
-                offset: pos as u64,
-                reason: "Unexpected end of data while reading entry".into(),
-            })?;
+            let entry_data = data
+                .get(pos..pos + len)
+                .ok_or(MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Unexpected end of data while reading entry".into(),
+                })?;
             pos += len;
 
             if entry_data.len() < 1 + 8 + 32 + 1 {
-                continue;
+                tracing::warn!("WAL entry at offset {} too small, breaking", pos - len);
+                break;
             }
 
             let version = *entry_data.first().ok_or(MemFuseError::WalCorruption {
@@ -294,7 +296,8 @@ impl Wal {
                 0 => {
                     // Put
                     if remaining.len() < 12 {
-                        continue;
+                        tracing::warn!("WAL Put entry at offset {} too small, breaking", pos - len);
+                        break;
                     }
                     let tx_id = TxId::new(u64::from_le_bytes(
                         remaining
@@ -323,7 +326,11 @@ impl Wal {
                             })?,
                     ) as usize;
                     if remaining.len() < 12 + key_len + 4 {
-                        continue;
+                        tracing::warn!(
+                            "WAL Put entry at offset {} truncated (key), breaking",
+                            pos - len
+                        );
+                        break;
                     }
                     let key = remaining
                         .get(12..12 + key_len)
@@ -347,7 +354,11 @@ impl Wal {
                             })?,
                     ) as usize;
                     if remaining.len() < val_start + 4 + val_len {
-                        continue;
+                        tracing::warn!(
+                            "WAL Put entry at offset {} truncated (value), breaking",
+                            pos - len
+                        );
+                        break;
                     }
                     let value = remaining
                         .get(val_start + 4..val_start + 4 + val_len)
@@ -361,7 +372,11 @@ impl Wal {
                 1 => {
                     // Delete
                     if remaining.len() < 12 {
-                        continue;
+                        tracing::warn!(
+                            "WAL Delete entry at offset {} too small, breaking",
+                            pos - len
+                        );
+                        break;
                     }
                     let tx_id = TxId::new(u64::from_le_bytes(
                         remaining
@@ -390,7 +405,11 @@ impl Wal {
                             })?,
                     ) as usize;
                     if remaining.len() < 12 + key_len {
-                        continue;
+                        tracing::warn!(
+                            "WAL Delete entry at offset {} truncated (key), breaking",
+                            pos - len
+                        );
+                        break;
                     }
                     let key = remaining
                         .get(12..12 + key_len)
@@ -401,7 +420,14 @@ impl Wal {
                         .to_vec();
                     WalOp::Delete { tx_id, key }
                 }
-                _ => continue,
+                _ => {
+                    tracing::warn!(
+                        "WAL entry at offset {} has unknown op_type {}, breaking",
+                        pos - len,
+                        op_type
+                    );
+                    break;
+                }
             };
 
             // ANCHOR:ALG-FIX:D1-007 — BLAKE3-MAC-Verifikation bei WAL Replay
