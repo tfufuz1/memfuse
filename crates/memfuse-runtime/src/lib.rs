@@ -13,7 +13,7 @@
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ZIEL: Sichere Ausführung von Agent-Tools ohne Host-Zugriff.
-// ANCHOR:INTEGRATION STATUS:TODO AGENT:13
+// ANCHOR:INTEGRATION STATUS:TODO AGENT:12 PRIO:3 — Missing integration tests for runtime.
 //! MemFuse Runtime — Sandboxing and Execution Layer.
 
 #![forbid(unsafe_code)]

@@ -13,7 +13,7 @@
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ZIEL: Deklarative LangGraph-ähnliche Graphenausführung in nativem Rust.
-// ANCHOR:INTEGRATION STATUS:TODO AGENT:13
+// ANCHOR:INTEGRATION STATUS:TODO AGENT:12 PRIO:3 — Missing integration tests for orchestrator.
 //! MemFuse Orchestrator — Declarative StateGraphs and Agent execution.
 
 #![forbid(unsafe_code)]
