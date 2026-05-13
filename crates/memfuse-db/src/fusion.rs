@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Reciprocal Rank Fusion implementation.
 
 use crate::SearchResult;

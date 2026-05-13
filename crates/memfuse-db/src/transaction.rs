@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! # Database Transactions
 //!
 //! This module provides `DbTransaction`, an orchestrator for atomic multi-index commits
