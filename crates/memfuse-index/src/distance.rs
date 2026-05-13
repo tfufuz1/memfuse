@@ -40,6 +40,7 @@
 //! This module contains `unsafe` code for hardware-specific intrinsics. All `unsafe` blocks
 //! are guarded by runtime feature detection and documented with safety justifications.
 
+#![allow(unsafe_code)]
 #![allow(unused_unsafe)]
 
 use memfuse_core::DistanceMetric;
