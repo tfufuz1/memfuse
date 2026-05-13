@@ -542,6 +542,150 @@ pub fn normalize_inplace(v: &mut [f32]) {
     }
 }
 
+// -----------------------------------------------------------------------------
+// SQ8 Specialized Distance Functions
+// -----------------------------------------------------------------------------
+
+/// Computes asymmetric dot product between f32 query and u8 quantized vector.
+pub fn asymmetric_dot_product(
+    query: &[f32],
+    quantized: &[u8],
+    min: f32,
+    scale: f32,
+) -> memfuse_core::Result<f32> {
+    if query.len() != quantized.len() {
+        return Err(memfuse_core::MemFuseError::invalid_input(
+            "Vector dimensions must match",
+        ));
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // ANCHOR:SAFETY:SIMD-039 — Hardware-Support-Check und Bounds-Validation.
+            // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
+            // Dimensionen wurden oben validiert.
+            return Ok(unsafe { asymmetric_dot_product_avx2(query, quantized, min, scale) });
+        }
+    }
+
+    Ok(asymmetric_dot_product_scalar(query, quantized, min, scale))
+}
+
+pub fn asymmetric_dot_product_scalar(query: &[f32], quantized: &[u8], min: f32, scale: f32) -> f32 {
+    let mut sum = 0.0;
+    for (q, &v) in query.iter().zip(quantized.iter()) {
+        sum += q * (v as f32 * scale + min);
+    }
+    sum
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+#[target_feature(enable = "fma")]
+// ANCHOR:SAFETY:SIMD-035 — AVX2 Asymmetric Dot Product.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+unsafe fn asymmetric_dot_product_avx2(query: &[f32], quantized: &[u8], min: f32, scale: f32) -> f32 {
+    let mut sum_v = _mm256_setzero_ps();
+    let scale_v = _mm256_set1_ps(scale);
+    let min_v = _mm256_set1_ps(min);
+    let n = query.len();
+    let mut i = 0;
+
+    while i + 8 <= n {
+        // ANCHOR:SAFETY:SIMD-037 — AVX2 Load, Dequantize und FMA.
+        // BEGRÜNDUNG: i + 8 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadl) ist sicher.
+        unsafe {
+            let q_v = _mm256_loadu_ps(query.as_ptr().add(i));
+            let u_v_sse = _mm_loadl_epi64(quantized.as_ptr().add(i) as *const __m128i);
+            let f_v = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(u_v_sse));
+            let deq_v = _mm256_fmadd_ps(f_v, scale_v, min_v);
+            sum_v = _mm256_fmadd_ps(q_v, deq_v, sum_v);
+        }
+        i += 8;
+    }
+
+    let mut sum = hsum256_ps_avx(sum_v);
+    while i < n {
+        sum += query[i] * (quantized[i] as f32 * scale + min);
+        i += 1;
+    }
+    sum
+}
+
+/// Computes symmetric dot product between two u8 quantized vectors.
+pub fn symmetric_dot_product(
+    q1: &[u8],
+    q2: &[u8],
+    min: f32,
+    scale: f32,
+) -> memfuse_core::Result<f32> {
+    if q1.len() != q2.len() {
+        return Err(memfuse_core::MemFuseError::invalid_input(
+            "Vector dimensions must match",
+        ));
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // ANCHOR:SAFETY:SIMD-040 — Hardware-Support-Check und Bounds-Validation.
+            // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
+            // Dimensionen wurden oben validiert.
+            return Ok(unsafe { symmetric_dot_product_avx2(q1, q2, min, scale) });
+        }
+    }
+
+    Ok(symmetric_dot_product_scalar(q1, q2, min, scale))
+}
+
+pub fn symmetric_dot_product_scalar(q1: &[u8], q2: &[u8], min: f32, scale: f32) -> f32 {
+    let mut sum = 0.0;
+    for (&v1, &v2) in q1.iter().zip(q2.iter()) {
+        let f1 = v1 as f32 * scale + min;
+        let f2 = v2 as f32 * scale + min;
+        sum += f1 * f2;
+    }
+    sum
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+#[target_feature(enable = "fma")]
+// ANCHOR:SAFETY:SIMD-036 — AVX2 Symmetric Dot Product.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+unsafe fn symmetric_dot_product_avx2(q1: &[u8], q2: &[u8], min: f32, scale: f32) -> f32 {
+    let mut sum_v = _mm256_setzero_ps();
+    let scale_v = _mm256_set1_ps(scale);
+    let min_v = _mm256_set1_ps(min);
+    let n = q1.len();
+    let mut i = 0;
+
+    while i + 8 <= n {
+        // ANCHOR:SAFETY:SIMD-038 — AVX2 Load, Dequantize und FMA.
+        // BEGRÜNDUNG: i + 8 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadl) ist sicher.
+        unsafe {
+            let u1_v_sse = _mm_loadl_epi64(q1.as_ptr().add(i) as *const __m128i);
+            let u2_v_sse = _mm_loadl_epi64(q2.as_ptr().add(i) as *const __m128i);
+            let f1_v = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(u1_v_sse));
+            let f2_v = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(u2_v_sse));
+            let deq1_v = _mm256_fmadd_ps(f1_v, scale_v, min_v);
+            let deq2_v = _mm256_fmadd_ps(f2_v, scale_v, min_v);
+            sum_v = _mm256_fmadd_ps(deq1_v, deq2_v, sum_v);
+        }
+        i += 8;
+    }
+
+    let mut sum = hsum256_ps_avx(sum_v);
+    while i < n {
+        let f1 = q1[i] as f32 * scale + min;
+        let f2 = q2[i] as f32 * scale + min;
+        sum += f1 * f2;
+        i += 1;
+    }
+    sum
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -584,6 +728,25 @@ mod tests {
         let expected = 8.0; // sqrt(64 * (1-2)^2) = sqrt(64) = 8
         let actual = super::euclidean_distance_std_simd(&a, &b);
         assert!((expected - actual).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_sq8_dot_products() {
+        let a = vec![0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0];
+        let q = vec![10u8, 20, 30, 40, 50, 60, 70, 80];
+        let min = 0.0;
+        let scale = 0.1;
+
+        // Asymmetric
+        let expected_asym = asymmetric_dot_product_scalar(&a, &q, min, scale);
+        let actual_asym = asymmetric_dot_product(&a, &q, min, scale).expect("test");
+        assert!((expected_asym - actual_asym).abs() < 1e-5);
+
+        // Symmetric
+        let q2 = vec![5u8, 15, 25, 35, 45, 55, 65, 75];
+        let expected_sym = symmetric_dot_product_scalar(&q, &q2, min, scale);
+        let actual_sym = symmetric_dot_product(&q, &q2, min, scale).expect("test");
+        assert!((expected_sym - actual_sym).abs() < 1e-5);
     }
 
     #[test]
