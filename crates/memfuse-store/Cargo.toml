@@ -16,6 +16,7 @@ tokio = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 lru = "0.13"
+memmap2 = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
