@@ -43,7 +43,10 @@ fn bench_agent_state_checkpoint(c: &mut Criterion) {
         path: tmp.path().to_path_buf(),
         ..Default::default()
     };
-    let storage = Arc::new(rt.block_on(memfuse_store::LsmStorage::new(lsm_config)).unwrap());
+    let storage = Arc::new(
+        rt.block_on(memfuse_store::LsmStorage::new(lsm_config))
+            .unwrap(),
+    );
     let manager = CheckpointManager::new(storage.clone());
 
     // Prepare some data
