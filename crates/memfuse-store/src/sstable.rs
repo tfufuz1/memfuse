@@ -427,7 +427,9 @@ impl SstableReader {
                 let raw_block = self
                     .mmap
                     .get(offset as usize..next_offset as usize)
-                    .ok_or_else(|| MemFuseError::Storage("SSTable read failed: out of bounds".into()))?;
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("SSTable read failed: out of bounds".into())
+                    })?;
 
                 let block = Bytes::copy_from_slice(raw_block);
                 self.block_cache
