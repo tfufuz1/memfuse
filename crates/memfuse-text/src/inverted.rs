@@ -415,8 +415,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_german_morph_inverted_index() -> std::result::Result<(), Box<dyn std::error::Error>>
-    {
+    async fn test_german_morph_inverted_index(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let tmp = TempDir::new()?;
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
@@ -428,7 +428,9 @@ mod tests {
 
         let tx1 = TxId::new(1);
         let d1 = DocId::new(1);
-        index.upsert_document(tx1, d1, "Bundesverfassungsgericht").await?;
+        index
+            .upsert_document(tx1, d1, "Bundesverfassungsgericht")
+            .await?;
         storage.commit(tx1).await?;
 
         // Should find by compound parts
