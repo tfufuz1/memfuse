@@ -58,6 +58,7 @@ pub mod fusion;
 pub mod transaction;
 
 pub use collection::Collection;
+pub use memfuse_checkpoint;
 
 /// User-facing search result.
 #[derive(Debug, Clone)]
@@ -344,18 +345,6 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
-    pub async fn hybrid_search(
-        &self,
-        text: &str,
-        vector: &[f32],
-        k: usize,
-    ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .hybrid_search(text, vector, k)
-            .await
-    }
-
     /// Performs hybrid search combining BM25 and vector search.
     pub async fn hybrid_search(
         &self,
@@ -418,6 +407,12 @@ impl MemFuse {
 pub use memfuse_core::DistanceMetric;
 pub use serde_json::json;
 
+#[cfg(any(test, feature = "bench"))]
+impl MemFuse {
+    pub fn inner_storage(&self) -> Arc<LsmStorage> {
+        self.storage.clone()
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

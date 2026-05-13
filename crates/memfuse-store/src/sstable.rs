@@ -681,7 +681,7 @@ impl SstableReader {
     }
 
     pub async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Bytes, Bytes, u64)>> {
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(16);
 
         let start_idx = match self.index.binary_search_by(|(k, _)| k.as_ref().cmp(prefix)) {
             Ok(i) => i,
@@ -822,7 +822,7 @@ impl SstableReader {
     ) -> Result<Vec<(Bytes, Bytes, u64)>> {
         use std::ops::Bound;
 
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(16);
         if self.index.is_empty() {
             return Ok(results);
         }
