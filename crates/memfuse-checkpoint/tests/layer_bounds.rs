@@ -28,10 +28,20 @@ async fn test_layer_001_fork_diverge_merge() {
         let main_col = db.collection("main").await.expect("main col");
 
         // Daten einfügen in "main"
-        main_col.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"val": "initial"})))
+        main_col
+            .insert(
+                "doc-1",
+                &[1.0, 0.0, 0.0, 0.0],
+                Some(json!({"val": "initial"})),
+            )
             .await
             .expect("insert 1");
-        main_col.insert("doc-2", &[0.0, 1.0, 0.0, 0.0], Some(json!({"val": "initial"})))
+        main_col
+            .insert(
+                "doc-2",
+                &[0.0, 1.0, 0.0, 0.0],
+                Some(json!({"val": "initial"})),
+            )
             .await
             .expect("insert 2");
 
@@ -45,10 +55,17 @@ async fn test_layer_001_fork_diverge_merge() {
             path: db_path.clone(),
             ..Default::default()
         };
-        let storage = Arc::new(memfuse_store::LsmStorage::new(lsm_config).await.expect("storage"));
+        let storage = Arc::new(
+            memfuse_store::LsmStorage::new(lsm_config)
+                .await
+                .expect("storage"),
+        );
         let cp_manager = CheckpointManager::new(storage.clone());
 
-        cp_v1 = cp_manager.create_checkpoint("v1").await.expect("checkpoint");
+        cp_v1 = cp_manager
+            .create_checkpoint("v1")
+            .await
+            .expect("checkpoint");
         // Storage wird gedroppt, Lock frei.
     }
 
@@ -63,17 +80,28 @@ async fn test_layer_001_fork_diverge_merge() {
         // Daten von "main" nach "fork" kopieren (Simulation von Fork-Logic)
         let main_data = main_col.scan_prefix("").await.expect("scan main");
         for (id, meta) in main_data {
-            fork_col.insert(&id, &[0.5, 0.5, 0.5, 0.5], Some(meta))
+            fork_col
+                .insert(&id, &[0.5, 0.5, 0.5, 0.5], Some(meta))
                 .await
                 .expect("insert fork");
         }
 
         // 4. "Diverge" (Auseinanderlaufen)
-        main_col.insert("doc-main-only", &[1.0, 1.0, 0.0, 0.0], Some(json!({"origin": "main"})))
+        main_col
+            .insert(
+                "doc-main-only",
+                &[1.0, 1.0, 0.0, 0.0],
+                Some(json!({"origin": "main"})),
+            )
             .await
             .expect("ins main only");
 
-        fork_col.insert("doc-fork-only", &[0.0, 0.0, 1.0, 1.0], Some(json!({"origin": "fork"})))
+        fork_col
+            .insert(
+                "doc-fork-only",
+                &[0.0, 0.0, 1.0, 1.0],
+                Some(json!({"origin": "fork"})),
+            )
             .await
             .expect("ins fork only");
 
@@ -86,12 +114,17 @@ async fn test_layer_001_fork_diverge_merge() {
 
         // 5. "Merge" simulieren
         let fork_doc = fork_col.get("doc-fork-only").await.expect("get").unwrap();
-        main_col.insert(&fork_doc.id, &[0.0, 0.0, 1.0, 1.0], fork_doc.metadata)
+        main_col
+            .insert(&fork_doc.id, &[0.0, 0.0, 1.0, 1.0], fork_doc.metadata)
             .await
             .expect("merge insert");
 
         // Final State Check
-        let merged_doc = main_col.get("doc-fork-only").await.expect("get merged").unwrap();
+        let merged_doc = main_col
+            .get("doc-fork-only")
+            .await
+            .expect("get merged")
+            .unwrap();
         assert_eq!(merged_doc.metadata.unwrap()["origin"], "fork");
     }
 
@@ -101,7 +134,11 @@ async fn test_layer_001_fork_diverge_merge() {
             path: db_path,
             ..Default::default()
         };
-        let storage = Arc::new(memfuse_store::LsmStorage::new(lsm_config).await.expect("storage"));
+        let storage = Arc::new(
+            memfuse_store::LsmStorage::new(lsm_config)
+                .await
+                .expect("storage"),
+        );
         let cp_manager = CheckpointManager::new(storage.clone());
         cp_manager.drop_checkpoint(&cp_v1).await.expect("drop cp");
     }
