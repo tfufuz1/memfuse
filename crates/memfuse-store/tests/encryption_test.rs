@@ -1,5 +1,5 @@
+use memfuse_core::{StorageEngine, TxId};
 use memfuse_store::lsm::{LsmConfig, LsmStorage};
-use memfuse_core::{TxId, StorageEngine};
 use std::time::Duration;
 use tempfile::TempDir;
 
@@ -17,7 +17,9 @@ async fn test_encrypted_db_roundtrip() {
 
     // 1. Write data to encrypted DB
     {
-        let storage = LsmStorage::new(config.clone()).await.expect("create storage");
+        let storage = LsmStorage::new(config.clone())
+            .await
+            .expect("create storage");
         let tx = TxId::new(1);
         storage.put(tx, b"key1", b"val1").await.expect("put");
         storage.commit(tx).await.expect("commit");
@@ -31,7 +33,9 @@ async fn test_encrypted_db_roundtrip() {
 
     // 2. Re-open with same passphrase
     {
-        let storage = LsmStorage::new(config.clone()).await.expect("reopen storage");
+        let storage = LsmStorage::new(config.clone())
+            .await
+            .expect("reopen storage");
         let val = storage.get(b"key1").await.expect("get after reopen");
         assert_eq!(val, Some(b"val1".to_vec()));
     }
@@ -51,7 +55,9 @@ async fn test_wrong_passphrase_fails() {
 
     // 1. Write data
     {
-        let storage = LsmStorage::new(config.clone()).await.expect("create storage");
+        let storage = LsmStorage::new(config.clone())
+            .await
+            .expect("create storage");
         let tx = TxId::new(1);
         storage.put(tx, b"key1", b"val1").await.expect("put");
         storage.commit(tx).await.expect("commit");
@@ -95,12 +101,18 @@ async fn test_encrypted_db_unreadable_as_plaintext() {
         if entry.path().is_file() {
             let content = std::fs::read(entry.path()).expect("read file");
             // Simple sub-slice search
-            if content.windows(secret_val.len()).any(|window| window == secret_val) {
+            if content
+                .windows(secret_val.len())
+                .any(|window| window == secret_val)
+            {
                 found = true;
                 break;
             }
         }
     }
 
-    assert!(!found, "Secret value was found in plaintext in the database files!");
+    assert!(
+        !found,
+        "Secret value was found in plaintext in the database files!"
+    );
 }

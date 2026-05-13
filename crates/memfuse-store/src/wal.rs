@@ -282,12 +282,13 @@ impl Wal {
                     reason: "Invalid seq_no".into(),
                 }
             })?);
-            let stored_checksum: [u8; 32] = entry_data[8..40].try_into().map_err(|_| {
-                MemFuseError::WalCorruption {
-                    offset: pos as u64,
-                    reason: "Invalid checksum".into(),
-                }
-            })?;
+            let stored_checksum: [u8; 32] =
+                entry_data[8..40]
+                    .try_into()
+                    .map_err(|_| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Invalid checksum".into(),
+                    })?;
             let op_type = entry_data[40];
 
             let remaining = &entry_data[41..];

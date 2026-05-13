@@ -121,7 +121,8 @@ impl LsmStorage {
             .as_ref()
             .map(|p| Arc::new(KeyManager::new(p)));
 
-        let wal = Wal::open_with_key_manager(config.path.join("wal.log"), key_manager.clone()).await?;
+        let wal =
+            Wal::open_with_key_manager(config.path.join("wal.log"), key_manager.clone()).await?;
         let memtable = MemTable::new();
 
         // Replay WAL
