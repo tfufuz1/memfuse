@@ -10,8 +10,8 @@
 //!   from synchronous Python calls.
 //! - **Zero-Copy**: Aims for minimal copying of vector data between Python and Rust.
 
-// AGENT:06 DATE:2026-05-09 STATUS:READY
-// ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
+// AGENT:06 DATE:2026-05-13 STATUS:DONE
+// ANCHOR:DONE:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
 // AGENT:@JULES-06 DATE:2026-05-09 STATUS:DONE
 // TEST: cd crates/memfuse-py && python -m pytest tests/ -v
@@ -48,13 +48,15 @@ fn get_runtime() -> PyResult<&'static Runtime> {
             ))
         })?;
 
-    // AGENT:06 DATE:2026-05-09 STATUS:DONE — Fixed DEBT-UNWRAP-LIB-25
+    // AGENT:06 DATE:2026-05-13 STATUS:DONE — Fixed DEBT-UNWRAP-LIB-25 and Zero-Panic compliant
     let _ = RUNTIME.set(rt);
-    Ok(RUNTIME.get().expect("Runtime must be initialized"))
+    RUNTIME.get().ok_or_else(|| {
+        pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve initialized runtime")
+    })
 }
 
 /// A single search result from MemFuse.
-#[pyclass(get_all)]
+#[pyclass(name = "SearchResult", get_all)]
 pub struct PySearchResult {
     /// The document ID.
     pub id: String,
@@ -65,7 +67,7 @@ pub struct PySearchResult {
 }
 
 /// A document retrieved from MemFuse.
-#[pyclass(get_all)]
+#[pyclass(name = "Document", get_all)]
 pub struct PyDocument {
     /// The document ID.
     pub id: String,
@@ -73,31 +75,31 @@ pub struct PyDocument {
     pub metadata: Option<PyObject>,
 }
 
-#[pyclass(unsendable)]
-pub struct Db {
+#[pyclass(name = "Db", unsendable)]
+pub struct PyMemFuse {
     inner: Arc<MemFuse>,
 }
 
 #[pymethods]
-impl Db {
-    pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<Collection> {
+impl PyMemFuse {
+    pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<PyCollection> {
         let rt = get_runtime()?;
         let col = py
             .allow_threads(|| rt.block_on(self.inner.collection(name)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        Ok(Collection {
+        Ok(PyCollection {
             inner: Arc::new(col),
         })
     }
 }
 
-#[pyclass(unsendable)]
-pub struct Collection {
+#[pyclass(name = "Collection", unsendable)]
+pub struct PyCollection {
     inner: Arc<MemFuseCollection>,
 }
 
 #[pymethods]
-impl Collection {
+impl PyCollection {
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
@@ -119,7 +121,7 @@ impl Collection {
             None
         };
 
-        // AGENT:06 DATE:2026-05-09 STATUS:DONE — Zero-copy slice passed to backend
+        // AGENT:06 DATE:2026-05-13 STATUS:DONE — Zero-copy slice passed to backend
         py.allow_threads(|| rt.block_on(self.inner.insert(id, vec_slice, meta_val)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(())
@@ -137,7 +139,7 @@ impl Collection {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
         })?;
 
-        // AGENT:06 DATE:2026-05-09 STATUS:DONE — Zero-copy slice passed to backend
+        // AGENT:06 DATE:2026-05-13 STATUS:DONE — Zero-copy slice passed to backend
         let results = py
             .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
@@ -184,7 +186,7 @@ impl Collection {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
         })?;
 
-        // AGENT:06 DATE:2026-05-09 STATUS:DONE — Zero-copy slice passed to backend
+        // AGENT:06 DATE:2026-05-13 STATUS:DONE — Zero-copy slice passed to backend
         let results = py
             .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
@@ -221,7 +223,7 @@ impl Collection {
 
 #[pyfunction]
 #[pyo3(signature = (path, dimension=1536))]
-fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<Db> {
+fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<PyMemFuse> {
     let rt = get_runtime()?;
     let config = MemFuseConfig {
         dimension,
@@ -232,7 +234,7 @@ fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<Db> {
         .allow_threads(|| rt.block_on(MemFuse::open_with_config(path_string, config)))
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-    Ok(Db {
+    Ok(PyMemFuse {
         inner: Arc::new(db),
     })
 }
@@ -240,8 +242,8 @@ fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<Db> {
 #[pymodule]
 fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(open, m)?)?;
-    m.add_class::<Db>()?;
-    m.add_class::<Collection>()?;
+    m.add_class::<PyMemFuse>()?;
+    m.add_class::<PyCollection>()?;
     m.add_class::<PySearchResult>()?;
     m.add_class::<PyDocument>()?;
     Ok(())
