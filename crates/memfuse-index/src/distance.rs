@@ -85,9 +85,7 @@ pub fn compute_asymmetric_distance(
             // ANCHOR:SAFETY:SIMD-035 — AVX2/FMA Asymmetric Distance.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_asymmetric_distance validiert.
-            return unsafe {
-                compute_asymmetric_distance_avx2(query, quantized, min, max, metric)
-            };
+            return unsafe { compute_asymmetric_distance_avx2(query, quantized, min, max, metric) };
         }
     }
 
@@ -476,7 +474,8 @@ unsafe fn compute_asymmetric_distance_avx2(
 
             while i + 8 <= n {
                 let v_query = _mm256_loadu_ps(query.as_ptr().add(i));
-                let v_quant = load_u8_to_f32_avx2(quantized.as_ptr().add(i), v_min, v_range, v_inv_255);
+                let v_quant =
+                    load_u8_to_f32_avx2(quantized.as_ptr().add(i), v_min, v_range, v_inv_255);
 
                 dot_v = _mm256_fmadd_ps(v_query, v_quant, dot_v);
                 norm_a_v = _mm256_fmadd_ps(v_query, v_query, norm_a_v);
@@ -508,7 +507,8 @@ unsafe fn compute_asymmetric_distance_avx2(
 
             while i + 8 <= n {
                 let v_query = _mm256_loadu_ps(query.as_ptr().add(i));
-                let v_quant = load_u8_to_f32_avx2(quantized.as_ptr().add(i), v_min, v_range, v_inv_255);
+                let v_quant =
+                    load_u8_to_f32_avx2(quantized.as_ptr().add(i), v_min, v_range, v_inv_255);
                 let diff = _mm256_sub_ps(v_query, v_quant);
                 sum_v = _mm256_fmadd_ps(diff, diff, sum_v);
                 i += 8;
@@ -529,7 +529,8 @@ unsafe fn compute_asymmetric_distance_avx2(
 
             while i + 8 <= n {
                 let v_query = _mm256_loadu_ps(query.as_ptr().add(i));
-                let v_quant = load_u8_to_f32_avx2(quantized.as_ptr().add(i), v_min, v_range, v_inv_255);
+                let v_quant =
+                    load_u8_to_f32_avx2(quantized.as_ptr().add(i), v_min, v_range, v_inv_255);
                 dot_v = _mm256_fmadd_ps(v_query, v_quant, dot_v);
                 i += 8;
             }
@@ -651,7 +652,12 @@ unsafe fn compute_symmetric_distance_avx2(
 // ANCHOR:SAFETY:SIMD-039 — Hilfsfunktion für u8 -> f32 Dequantisierung.
 // BEGRÜNDUNG: Caller muss Hardware-Support garantieren. ptr muss valide für 8 bytes sein.
 // Wir nutzen read_unaligned um Alignment-Probleme (UB) beim Cast auf __m128i zu vermeiden.
-unsafe fn load_u8_to_f32_avx2(ptr: *const u8, v_min: __m256, v_range: __m256, v_inv_255: __m256) -> __m256 {
+unsafe fn load_u8_to_f32_avx2(
+    ptr: *const u8,
+    v_min: __m256,
+    v_range: __m256,
+    v_inv_255: __m256,
+) -> __m256 {
     // Load 8 bytes safely from potentially unaligned pointer
     let bytes: u64 = std::ptr::read_unaligned(ptr as *const u64);
     let u8_vec = _mm_set_epi64x(0, bytes as i64);
@@ -981,9 +987,14 @@ mod tests {
         let min = -1.0;
         let max = 1.0;
 
-        for metric in [DistanceMetric::Cosine, DistanceMetric::Euclidean, DistanceMetric::DotProduct] {
-            let scalar = compute_asymmetric_distance_scalar(&q, &quantized, min, max, metric).unwrap();
-            let actual = compute_asymmetric_distance(&q, &quantized, min, max, metric).unwrap();
+        for metric in [
+            DistanceMetric::Cosine,
+            DistanceMetric::Euclidean,
+            DistanceMetric::DotProduct,
+        ] {
+            let scalar =
+                compute_asymmetric_distance_scalar(&q, &quantized, min, max, metric).unwrap(); // #[cfg(test)]
+            let actual = compute_asymmetric_distance(&q, &quantized, min, max, metric).unwrap(); // #[cfg(test)]
             assert!((scalar - actual).abs() < 1e-5, "Metric {:?} failed", metric);
         }
     }
@@ -995,9 +1006,13 @@ mod tests {
         let min = -1.0;
         let max = 1.0;
 
-        for metric in [DistanceMetric::Cosine, DistanceMetric::Euclidean, DistanceMetric::DotProduct] {
-            let scalar = compute_symmetric_distance_scalar(&q1, &q2, min, max, metric).unwrap();
-            let actual = compute_symmetric_distance_u8(&q1, &q2, min, max, metric).unwrap();
+        for metric in [
+            DistanceMetric::Cosine,
+            DistanceMetric::Euclidean,
+            DistanceMetric::DotProduct,
+        ] {
+            let scalar = compute_symmetric_distance_scalar(&q1, &q2, min, max, metric).unwrap(); // #[cfg(test)]
+            let actual = compute_symmetric_distance_u8(&q1, &q2, min, max, metric).unwrap(); // #[cfg(test)]
             assert!((scalar - actual).abs() < 1e-5, "Metric {:?} failed", metric);
         }
     }
