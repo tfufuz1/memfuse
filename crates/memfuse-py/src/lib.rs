@@ -10,8 +10,8 @@
 //!   from synchronous Python calls.
 //! - **Zero-Copy**: Aims for minimal copying of vector data between Python and Rust.
 
-// AGENT:06 DATE:2026-05-09 STATUS:READY
-// ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
+// AGENT:06 DATE:2026-05-15 STATUS:DONE
+// ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist. STATUS:DONE
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
 // AGENT:@JULES-06 DATE:2026-05-09 STATUS:DONE
 // TEST: cd crates/memfuse-py && python -m pytest tests/ -v
@@ -50,7 +50,9 @@ fn get_runtime() -> PyResult<&'static Runtime> {
 
     // AGENT:06 DATE:2026-05-09 STATUS:DONE — Fixed DEBT-UNWRAP-LIB-25
     let _ = RUNTIME.set(rt);
-    Ok(RUNTIME.get().expect("Runtime must be initialized"))
+    RUNTIME
+        .get()
+        .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized"))
 }
 
 /// A single search result from MemFuse.
