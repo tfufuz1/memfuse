@@ -2,12 +2,12 @@
 // ZIEL: Beweise wirtschaftliche Kohärenz durch Latenz-Metriken (MemFuse vs Redis / Chroma)
 // AGENT:09 DATE:2026-05-09 STATUS:DONE
 
-use criterion::{criterion_group, criterion_main, Criterion, black_box};
-use memfuse_db::MemFuse;
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use memfuse_checkpoint::CheckpointManager;
+use memfuse_db::MemFuse;
+use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
-use std::sync::Arc;
 
 fn bench_hybrid_search(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
@@ -49,12 +49,16 @@ fn bench_agent_state_checkpoint(c: &mut Criterion) {
         path: tmp.path().to_path_buf(),
         ..Default::default()
     };
-    let storage = rt.block_on(async { Arc::new(memfuse_store::LsmStorage::new(lsm_config).await.unwrap()) }); // unwrap
+    let storage =
+        rt.block_on(async { Arc::new(memfuse_store::LsmStorage::new(lsm_config).await.unwrap()) }); // unwrap
     let manager = CheckpointManager::new(storage.clone());
 
     c.bench_function("checkpoint_latency", |b| {
         b.to_async(&rt).iter(|| async {
-            let _ = manager.create_checkpoint(black_box("test-cp")).await.unwrap(); // unwrap
+            let _ = manager
+                .create_checkpoint(black_box("test-cp"))
+                .await
+                .unwrap(); // unwrap
         })
     });
 }
@@ -68,13 +72,9 @@ fn bench_rerun_cost(c: &mut Criterion) {
         b.to_async(&rt).iter(|| async {
             // Simulate 10 inserts and 1 search
             for i in 0..10 {
-                db.insert(
-                    &format!("doc-{}", i),
-                    &vec![0.1; 1536],
-                    None,
-                )
-                .await
-                .unwrap(); // unwrap
+                db.insert(&format!("doc-{}", i), &vec![0.1; 1536], None)
+                    .await
+                    .unwrap(); // unwrap
             }
             let _ = db.search(&vec![0.1; 1536], 5).await.unwrap(); // unwrap
         })

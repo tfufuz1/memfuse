@@ -1,9 +1,9 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use memfuse_store::wal::{Wal, WalEntry, WalOp};
 use memfuse_core::TxId;
+use memfuse_store::wal::{Wal, WalEntry, WalOp};
+use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
-use std::sync::Arc;
 
 fn bench_wal_append_parallel(c: &mut Criterion) {
     let rt = Runtime::new().unwrap(); // unwrap

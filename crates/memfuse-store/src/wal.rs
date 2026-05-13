@@ -45,8 +45,8 @@
 use bytes::BufMut;
 use memfuse_core::{MemFuseError, Result, TxId};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, oneshot};
 
@@ -209,7 +209,9 @@ impl Wal {
                     Err(e) => {
                         let err_msg = e.to_string();
                         for req in requests {
-                            let _ = req.response.send(Err(MemFuseError::Storage(err_msg.clone())));
+                            let _ = req
+                                .response
+                                .send(Err(MemFuseError::Storage(err_msg.clone())));
                         }
                     }
                 }

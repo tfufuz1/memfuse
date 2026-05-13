@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use memfuse_store::wal::{Wal, WalEntry, WalOp};
 use memfuse_core::TxId;
+use memfuse_store::wal::{Wal, WalEntry, WalOp};
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
