@@ -49,8 +49,12 @@ fn get_runtime() -> PyResult<&'static Runtime> {
         })?;
 
     // AGENT:06 DATE:2026-05-09 STATUS:DONE — Fixed DEBT-UNWRAP-LIB-25
+    // ANCHOR:DEBT:PY-002 — Zero-Panic compliance for runtime access
+    // AGENT:13 DATE:2026-05-13 STATUS:DONE
     let _ = RUNTIME.set(rt);
-    Ok(RUNTIME.get().expect("Runtime must be initialized"))
+    RUNTIME.get().ok_or_else(|| {
+        pyo3::exceptions::PyRuntimeError::new_err("Tokio runtime synchronization failure")
+    })
 }
 
 /// A single search result from MemFuse.
