@@ -50,7 +50,9 @@ fn get_runtime() -> PyResult<&'static Runtime> {
 
     // AGENT:06 DATE:2026-05-09 STATUS:DONE — Fixed DEBT-UNWRAP-LIB-25
     let _ = RUNTIME.set(rt);
-    Ok(RUNTIME.get().expect("Runtime must be initialized"))
+    RUNTIME
+        .get()
+        .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Runtime initialization failed"))
 }
 
 /// A single search result from MemFuse.
@@ -62,6 +64,21 @@ pub struct PySearchResult {
     pub score: f32,
     /// Metadata associated with the document.
     pub metadata: Option<PyObject>,
+}
+
+#[pymethods]
+impl PySearchResult {
+    pub fn __getitem__(&self, key: &str, py: Python<'_>) -> PyResult<PyObject> {
+        match key {
+            "id" => self.id.clone().into_py_any(py),
+            "score" => self.score.into_py_any(py),
+            "metadata" => match &self.metadata {
+                Some(meta) => Ok(meta.clone_ref(py)),
+                None => Ok(py.None()),
+            },
+            _ => Err(pyo3::exceptions::PyKeyError::new_err(key.to_string())),
+        }
+    }
 }
 
 /// A document retrieved from MemFuse.

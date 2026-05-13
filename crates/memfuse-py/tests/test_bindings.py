@@ -10,6 +10,8 @@ def test_open_and_basic_insert_search(tmp_path):
     results = col.search(v, k=1)
     assert len(results) == 1
     assert results[0].id == "doc1"  # AC-1
+    assert results[0]["id"] == "doc1"
+    assert results[0]["score"] > 0
 
 def test_hybrid_search(tmp_path):
     db2 = memfuse.open(str(tmp_path / "test_wp31_hybrid"), dimension=4)
