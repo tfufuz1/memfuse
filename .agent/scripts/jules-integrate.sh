@@ -4,13 +4,18 @@
 
 set -e
 
-REPO_DIR="/home/freddy/Arbeitsplatz/DEV/memfuse"
+REPO_DIR=$(pwd)
 cd "$REPO_DIR"
 
 echo "--- Jules Integration Check ---"
 
 # Suche nach offenen PRs mit dem Label 'jules'
-PRS=$(gh pr list --label jules --json number,title,state,mergeable,statusCheckRollup --jq '.[] | select(.state=="OPEN")')
+if command -v gh &> /dev/null; then
+    PRS=$(gh pr list --label jules --json number,title,state,mergeable,statusCheckRollup --jq '.[] | select(.state=="OPEN")')
+else
+    echo "⚠️  gh tool not found. Skipping PR integration."
+    exit 0
+fi
 
 if [ -z "$PRS" ]; then
     echo "✅ Keine offenen Jules-PRs gefunden."

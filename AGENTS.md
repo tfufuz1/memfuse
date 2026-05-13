@@ -8,6 +8,11 @@
 
 ## Crate-Übersicht & Lokale Agent-Kontexte
 
+// ANCHOR:ARCH:GATE-FV — Formal Verification Gate
+// WP:WP-6.7 PRIO:1 NEEDS:NONE
+// AGENT:@AGENT-00 DATE:2026-05-13 STATUS:OPEN
+// WATCHDOG: Missing Kani/TLA+ checks for recently modified LSM components in sstable.rs.
+
 | Crate | Rolle | LoC | Status |
 |:------|:------|:----|:-------|
 | **`memfuse-core`** | Grundlegende Typen, TxBuffer, MemBank, Error, Snapshots | ~280 | ✅ Stabil |

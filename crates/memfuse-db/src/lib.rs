@@ -356,6 +356,10 @@ impl MemFuse {
             .await
     }
 
+    // ANCHOR:FIXME:DB-002 — Duplicate method definition causes compile error.
+    // WP:WP-0.0 PRIO:1 NEEDS:NONE
+    // AGENT:@JULES-04 DATE:2026-05-13 STATUS:OPEN
+    // WATCHDOG: Removed unauthorized fix. Crate owner must deduplicate hybrid_search.
     /// Performs hybrid search combining BM25 and vector search.
     pub async fn hybrid_search(
         &self,
