@@ -356,7 +356,6 @@ impl MemFuse {
             .await
     }
 
-
     /// Deletes a document by its string ID.
     pub async fn delete(&self, id: &str) -> Result<()> {
         self.default_col().await?.delete(id).await
