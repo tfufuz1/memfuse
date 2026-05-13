@@ -1,7 +1,10 @@
 //! LSM-backed Inverted Index.
 
 use crate::tokenizer::tokenize;
-use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId};
+use async_trait::async_trait;
+use memfuse_core::{
+    DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -256,7 +259,7 @@ impl InvertedIndex {
     }
 
     /// Searches the inverted index using BM25.
-    pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
+    pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         let tokens = tokenize(query);
         if tokens.is_empty() {
             return Ok(Vec::new());
@@ -331,12 +334,66 @@ impl InvertedIndex {
             }
         }
 
-        let mut results: Vec<(DocId, f32)> = scores.into_iter().collect();
+        let mut results: Vec<ScoredDocument> = scores
+            .into_iter()
+            .map(|(doc_id, score)| ScoredDocument::new(doc_id, score))
+            .collect();
         // Sort descending by score
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         results.truncate(k);
 
         Ok(results)
+    }
+}
+
+#[async_trait]
+impl TextIndex for InvertedIndex {
+    async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
+        self.search_bm25(query, k).await
+    }
+
+    async fn insert(&self, tx: TxId, id: DocId, text: &str) -> Result<()> {
+        self.upsert_document(tx, id, text).await
+    }
+
+    async fn delete(&self, tx: TxId, id: DocId) -> Result<()> {
+        self.delete_document(tx, id).await
+    }
+
+    async fn commit(&self, _tx: TxId) -> Result<()> {
+        Ok(())
+    }
+
+    async fn rollback(&self, _tx: TxId) -> Result<()> {
+        Ok(())
+    }
+
+    async fn stats(&self) -> Result<TextIndexStats> {
+        let total_docs_key = self.key("meta:total_docs");
+        let mut num_documents = 0usize;
+        if let Some(bytes) = self.storage.get(&total_docs_key).await? {
+            if bytes.len() == 8 {
+                num_documents = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid total_docs length".into())
+                })?) as usize;
+            }
+        }
+
+        let total_tok_key = self.key("meta:total_tokens");
+        let mut num_tokens = 0usize;
+        if let Some(bytes) = self.storage.get(&total_tok_key).await? {
+            if bytes.len() == 8 {
+                num_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid total_tokens length".into())
+                })?) as usize;
+            }
+        }
+
+        Ok(TextIndexStats {
+            num_documents,
+            num_tokens,
+            memory_usage_bytes: 0, // Primarily on-disk
+        })
     }
 }
 
@@ -383,15 +440,15 @@ mod tests {
 
         assert_eq!(results.len(), 2);
         // doc 2 has "rust" twice and "programming" once, should score higher than doc 1
-        assert!(results[0].0 == d2 || results[1].0 == d2);
+        assert!(results[0].doc_id == d2 || results[1].doc_id == d2);
 
         let doc2_pos = results
             .iter()
-            .position(|r| r.0 == d2)
+            .position(|r| r.doc_id == d2)
             .ok_or("doc2 not found")?;
         let doc1_pos = results
             .iter()
-            .position(|r| r.0 == d1)
+            .position(|r| r.doc_id == d1)
             .ok_or("doc1 not found")?;
         assert!(
             doc2_pos < doc1_pos,
