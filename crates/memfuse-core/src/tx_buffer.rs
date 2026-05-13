@@ -320,7 +320,7 @@ mod tests {
 
         let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10));
         assert!(buffer.has_tx(tx1));
-        sleep(Duration::from_millis(100)).await;
+        for _ in 0..20 { if !buffer.has_tx(tx1) { break; } sleep(Duration::from_millis(10)).await; }
         assert!(!buffer.has_tx(tx1));
     }
 
