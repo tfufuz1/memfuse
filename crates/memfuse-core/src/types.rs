@@ -21,6 +21,8 @@ use serde::{Deserialize, Serialize};
 pub const TOMBSTONE_BIT: u64 = 1 << 63;
 
 /// Internal document identifier (u64, not exposed to users).
+///
+/// `DocId` is typically derived from a string key via hashing (blake3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct DocId(pub u64);
@@ -105,7 +107,7 @@ impl std::fmt::Display for EntityId {
     }
 }
 
-/// Transaction identifier.
+/// Transaction identifier used to coordinate atomic writes and isolation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct TxId(pub u64);
@@ -288,6 +290,8 @@ impl ResourceTracker {
         }
     }
 
+    /// Consumes the given number of bytes from the memory budget.
+    /// Returns an error if the budget is exceeded.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         let current = self
             .memory_used
@@ -303,15 +307,18 @@ impl ResourceTracker {
         Ok(())
     }
 
+    /// Releases the given number of bytes back to the memory budget.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Returns the current memory usage in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns a reference to the configured resource budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }

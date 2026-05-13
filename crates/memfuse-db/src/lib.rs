@@ -59,7 +59,7 @@ pub mod transaction;
 
 pub use collection::Collection;
 
-/// User-facing search result.
+/// User-facing search result containing the ID, score, and optional metadata.
 #[derive(Debug, Clone)]
 pub struct SearchResult {
     /// The string ID provided during insert.
@@ -79,7 +79,7 @@ pub struct DbStats {
     pub storage_stats: memfuse_core::StorageStats,
 }
 
-/// User-facing document retrieved by key.
+/// User-facing document structure.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Document {
     /// The string ID.
@@ -88,7 +88,7 @@ pub struct Document {
     pub metadata: Option<Value>,
 }
 
-/// Configuration for MemFuse.
+/// Global configuration settings for the MemFuse database.
 #[derive(Debug, Clone)]
 pub struct MemFuseConfig {
     /// Vector dimensionality (must match your embeddings).
@@ -338,25 +338,13 @@ impl MemFuse {
             .await
     }
 
+    /// Performs hybrid search combining BM25 and vector search.
     // ANCHOR:TODO:SEARCH-001 — Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection.
     // WP:WP-2.1 PRIO:1 NEEDS:COL-001
     // AGENT:@JULES-05 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
-    pub async fn hybrid_search(
-        &self,
-        text: &str,
-        vector: &[f32],
-        k: usize,
-    ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .hybrid_search(text, vector, k)
-            .await
-    }
-
-    /// Performs hybrid search combining BM25 and vector search.
     pub async fn hybrid_search(
         &self,
         text: &str,

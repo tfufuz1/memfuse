@@ -10,20 +10,26 @@ use memfuse_core::Result;
 use memfuse_store::lsm::LsmStorage;
 use std::sync::Arc;
 
+/// A point-in-time snapshot of the database state.
 pub struct Checkpoint {
+    /// User-defined name for the checkpoint.
     pub name: String,
+    /// The sequence number at which the checkpoint was created.
     pub seq_no: u64,
 }
 
+/// Manager for creating and tracking database state checkpoints.
 pub struct CheckpointManager {
     storage: Arc<LsmStorage>,
 }
 
 impl CheckpointManager {
+    /// Creates a new `CheckpointManager`.
     pub fn new(storage: Arc<LsmStorage>) -> Self {
         Self { storage }
     }
 
+    /// Creates a new checkpoint for the current state.
     pub async fn create_checkpoint(&self, name: &str) -> Result<Checkpoint> {
         let seq_no = self.storage.last_seq_no();
         self.storage.pin_checkpoint(seq_no).await?;
