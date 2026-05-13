@@ -338,6 +338,7 @@ impl MemFuse {
             .await
     }
 
+    /// Performs hybrid search combining BM25 and vector search.
     // ANCHOR:TODO:SEARCH-001 — Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection.
     // WP:WP-2.1 PRIO:1 NEEDS:COL-001
     // AGENT:@JULES-05 DATE:2026-05-09 STATUS:DONE
@@ -346,19 +347,6 @@ impl MemFuse {
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
     // ANCHOR:FIXME PRIO:1 AGENT:04 DATE:2026-05-15 STATUS:READY
     // ISSUE: Duplicate definition of `hybrid_search`.
-    pub async fn hybrid_search(
-        &self,
-        text: &str,
-        vector: &[f32],
-        k: usize,
-    ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .hybrid_search(text, vector, k)
-            .await
-    }
-
-    /// Performs hybrid search combining BM25 and vector search.
     pub async fn hybrid_search(
         &self,
         text: &str,
