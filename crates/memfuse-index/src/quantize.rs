@@ -1,7 +1,7 @@
 //! Scalar Quantization (SQ8) for HNSW Index.
 // ANCHOR:TODO:QUANT-001 — Optimiere und finalisiere die SQ8 Quantization impl, repariere Cast-Bugs.
 // WP:WP-2.2 PRIO:1 NEEDS:NONE
-// AGENT:@JULES-03 DATE:2026-05-09 STATUS:READY
+// AGENT:@JULES-03 DATE:2026-05-15 STATUS:DONE
 // TEST: cargo bench -p memfuse-index -- quantization
 // DONE: Performance- und Recall Metriken sind stabil.
 // SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
@@ -14,6 +14,7 @@ pub struct ScalarQuantizer {
     pub min: f32,
     pub max: f32,
     pub dimension: usize,
+    pub inv_255_range: f32,
 }
 
 impl ScalarQuantizer {
@@ -38,10 +39,14 @@ impl ScalarQuantizer {
             max = min + 1e-6;
         }
 
+        let range = max - min;
+        let inv_255_range = range / 255.0;
+
         Self {
             min,
             max,
             dimension,
+            inv_255_range,
         }
     }
 
@@ -65,13 +70,15 @@ impl ScalarQuantizer {
             .collect()
     }
 
+    /// Dequantizes a `u8` value to `f32`.
+    #[inline]
+    fn dequantize_val(&self, v: u8) -> f32 {
+        (v as f32) * self.inv_255_range + self.min
+    }
+
     /// Dequantizes a `u8` vector back to `f32`.
     pub fn dequantize(&self, vector: &[u8]) -> Vec<f32> {
-        let range = self.max - self.min;
-        vector
-            .iter()
-            .map(|&v| (v as f32 / 255.0) * range + self.min)
-            .collect()
+        vector.iter().map(|&v| self.dequantize_val(v)).collect()
     }
 
     /// Computes the asymmetric distance between an exact query and a quantized vector.
@@ -81,8 +88,47 @@ impl ScalarQuantizer {
         quantized: &[u8],
         metric: DistanceMetric,
     ) -> memfuse_core::Result<f32> {
-        let deq = self.dequantize(quantized);
-        crate::distance::compute_distance(query, &deq, metric)
+        if query.len() != quantized.len() {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Vector dimensions must match",
+            ));
+        }
+
+        match metric {
+            DistanceMetric::Cosine => {
+                let mut dot = 0.0;
+                let mut norm_a = 0.0;
+                let mut norm_b = 0.0;
+                for (x, &y_q) in query.iter().zip(quantized.iter()) {
+                    let y = self.dequantize_val(y_q);
+                    dot += x * y;
+                    norm_a += x * x;
+                    norm_b += y * y;
+                }
+                if norm_a == 0.0 || norm_b == 0.0 {
+                    Ok(1.0)
+                } else {
+                    Ok(1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt())))
+                }
+            }
+            DistanceMetric::Euclidean => {
+                let mut sum = 0.0;
+                for (x, &y_q) in query.iter().zip(quantized.iter()) {
+                    let y = self.dequantize_val(y_q);
+                    let diff = x - y;
+                    sum += diff * diff;
+                }
+                Ok(sum.sqrt())
+            }
+            DistanceMetric::DotProduct => {
+                let mut dot = 0.0;
+                for (x, &y_q) in query.iter().zip(quantized.iter()) {
+                    let y = self.dequantize_val(y_q);
+                    dot += x * y;
+                }
+                Ok(-dot)
+            }
+        }
     }
 
     /// Computes symmetric (approximate) distance purely in u8.
@@ -93,11 +139,50 @@ impl ScalarQuantizer {
         q2: &[u8],
         metric: DistanceMetric,
     ) -> memfuse_core::Result<f32> {
-        // For accurate distance logic while taking advantages of u8 caching, we perform fast inline dequantization.
-        // In highly optimized AVX512 implementations this would be done without casting to f32 memory.
-        let deq1 = self.dequantize(q1);
-        let deq2 = self.dequantize(q2);
-        crate::distance::compute_distance(&deq1, &deq2, metric)
+        if q1.len() != q2.len() {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Vector dimensions must match",
+            ));
+        }
+
+        match metric {
+            DistanceMetric::Cosine => {
+                let mut dot = 0.0;
+                let mut norm_a = 0.0;
+                let mut norm_b = 0.0;
+                for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
+                    let x = self.dequantize_val(x_q);
+                    let y = self.dequantize_val(y_q);
+                    dot += x * y;
+                    norm_a += x * x;
+                    norm_b += y * y;
+                }
+                if norm_a == 0.0 || norm_b == 0.0 {
+                    Ok(1.0)
+                } else {
+                    Ok(1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt())))
+                }
+            }
+            DistanceMetric::Euclidean => {
+                let mut sum = 0.0;
+                for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
+                    let x = self.dequantize_val(x_q);
+                    let y = self.dequantize_val(y_q);
+                    let diff = x - y;
+                    sum += diff * diff;
+                }
+                Ok(sum.sqrt())
+            }
+            DistanceMetric::DotProduct => {
+                let mut dot = 0.0;
+                for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
+                    let x = self.dequantize_val(x_q);
+                    let y = self.dequantize_val(y_q);
+                    dot += x * y;
+                }
+                Ok(-dot)
+            }
+        }
     }
 }
 

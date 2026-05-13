@@ -263,7 +263,7 @@ impl HnswIndexCore {
             }
             // ANCHOR:ALG-FIX:PANIC-001 — Mixed VectorData Guard (Zero-Panic Policy)
             // WP:WP-0.0 PRIO:1 NEEDS:NONE
-            // AGENT:13 DATE:2026-05-09 STATUS:DONE
+            // AGENT:03 DATE:2026-05-15 STATUS:DONE
             // CREATED:2026-05-09 DEADLINE:NONE
             // FUNDORT: memfuse-index/src/hnsw.rs
             // FIX: unreachable!() → Result<T, MemFuseError> für Sovereign Core Compliance
