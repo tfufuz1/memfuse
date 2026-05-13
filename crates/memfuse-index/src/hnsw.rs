@@ -229,6 +229,7 @@ impl HnswIndexCore {
         &self,
         query_exact: &[f32],
         query_quantized: Option<&[u8]>,
+        query_norm: Option<f32>,
         data: &VectorData,
     ) -> Result<f32> {
         match data {
@@ -241,7 +242,7 @@ impl HnswIndexCore {
                 if let Some(qq) = query_quantized {
                     q.symmetric_dist(qq, v, self.config.distance_metric)
                 } else {
-                    q.asymmetric_dist(query_exact, v, self.config.distance_metric)
+                    q.asymmetric_dist(query_exact, v, self.config.distance_metric, query_norm)
                 }
             }
         }
@@ -277,6 +278,7 @@ impl HnswIndexCore {
         &self,
         query: &[f32],
         query_quantized: Option<&[u8]>,
+        query_norm: Option<f32>,
         entry_points: &[usize],
         ef: usize,
         layer: usize,
@@ -288,8 +290,12 @@ impl HnswIndexCore {
 
         for &ep in entry_points {
             if visited.insert(ep) {
-                let dist =
-                    self.compute_distance_with_data(query, query_quantized, &nodes[ep].vector)?;
+                let dist = self.compute_distance_with_data(
+                    query,
+                    query_quantized,
+                    query_norm,
+                    &nodes[ep].vector,
+                )?;
                 let cand = Candidate {
                     index: ep,
                     distance: dist,
@@ -312,6 +318,7 @@ impl HnswIndexCore {
                         let dist = self.compute_distance_with_data(
                             query,
                             query_quantized,
+                            query_norm,
                             &nodes[neighbor].vector,
                         )?;
                         let is_better = match results.peek() {
@@ -457,15 +464,27 @@ impl HnswIndexCore {
             }
         };
 
-        let query_quantized = if self.config.quantize {
-            self.quantizer.read().as_ref().map(|q| q.quantize(vector))
+        let (query_quantized, query_norm) = if self.config.quantize {
+            let guard = self.quantizer.read();
+            if let Some(q) = guard.as_ref() {
+                (Some(q.quantize(vector)), Some(q.compute_f32_norm(vector)))
+            } else {
+                (None, None)
+            }
         } else {
-            None
+            (None, None)
         };
 
         let mut ep = vec![ep_idx];
         for layer in (new_layer + 1..=current_max_layer).rev() {
-            let best = self.search_layer(vector, query_quantized.as_deref(), &ep, 1, layer)?;
+            let best = self.search_layer(
+                vector,
+                query_quantized.as_deref(),
+                query_norm,
+                &ep,
+                1,
+                layer,
+            )?;
             if !best.is_empty() {
                 ep = vec![best[0].index];
             }
@@ -483,6 +502,7 @@ impl HnswIndexCore {
             let neighbors = self.search_layer(
                 vector,
                 query_quantized.as_deref(),
+                query_norm,
                 &ep,
                 self.config.ef_construction,
                 layer,
@@ -690,10 +710,15 @@ impl VectorIndex for HnswIndex {
             )));
         }
 
-        let query_quantized = if self.config.quantize {
-            self.quantizer.read().as_ref().map(|q| q.quantize(query))
+        let (query_quantized, query_norm) = if self.config.quantize {
+            let guard = self.quantizer.read();
+            if let Some(q) = guard.as_ref() {
+                (Some(q.quantize(query)), Some(q.compute_f32_norm(query)))
+            } else {
+                (None, None)
+            }
         } else {
-            None
+            (None, None)
         };
 
         let entry = *self.entry_point.read();
@@ -708,8 +733,14 @@ impl VectorIndex for HnswIndex {
         for layer in (1..=max_layer).rev() {
             // Dynamische ef für Zwischenlayer (meist 1 ist ausreichend, aber für sehr tiefe Graphen kann leichtes Scaling helfen)
             let layer_ef = if layer > 1 { 1 } else { 2 };
-            let best =
-                self.search_layer(query, query_quantized.as_deref(), &ep, layer_ef, layer)?;
+            let best = self.search_layer(
+                query,
+                query_quantized.as_deref(),
+                query_norm,
+                &ep,
+                layer_ef,
+                layer,
+            )?;
             if !best.is_empty() {
                 ep = vec![best[0].index];
             }
@@ -721,7 +752,8 @@ impl VectorIndex for HnswIndex {
         } else {
             self.config.ef_search.max(k)
         };
-        let candidates = self.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
+        let candidates =
+            self.search_layer(query, query_quantized.as_deref(), query_norm, &ep, ef, 0)?;
 
         let score = self.connectivity_score();
         if score < self.config.rebuild_threshold {
@@ -745,7 +777,7 @@ impl VectorIndex for HnswIndex {
                     let q = guard.as_ref().ok_or_else(|| {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                     })?;
-                    q.asymmetric_dist(query, v, self.config.distance_metric)?
+                    q.asymmetric_dist(query, v, self.config.distance_metric, query_norm)?
                 } else {
                     c.distance
                 }
@@ -782,10 +814,15 @@ impl VectorIndex for HnswIndex {
             )));
         }
 
-        let query_quantized = if self.config.quantize {
-            self.quantizer.read().as_ref().map(|q| q.quantize(query))
+        let (query_quantized, query_norm) = if self.config.quantize {
+            let guard = self.quantizer.read();
+            if let Some(q) = guard.as_ref() {
+                (Some(q.quantize(query)), Some(q.compute_f32_norm(query)))
+            } else {
+                (None, None)
+            }
         } else {
-            None
+            (None, None)
         };
 
         let entry = *self.entry_point.read();
@@ -798,7 +835,8 @@ impl VectorIndex for HnswIndex {
         let mut ep = vec![entry_idx];
 
         for layer in (1..=max_layer).rev() {
-            let best = self.search_layer(query, query_quantized.as_deref(), &ep, 1, layer)?;
+            let best =
+                self.search_layer(query, query_quantized.as_deref(), query_norm, &ep, 1, layer)?;
             if !best.is_empty() {
                 ep = vec![best[0].index];
             }
@@ -807,7 +845,8 @@ impl VectorIndex for HnswIndex {
         // Over-fetch to compensate for filtered-out results and reranking
         let factor = if self.config.quantize { 4 } else { 2 };
         let ef = self.config.ef_search.max(k) * factor;
-        let candidates = self.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
+        let candidates =
+            self.search_layer(query, query_quantized.as_deref(), query_norm, &ep, ef, 0)?;
 
         let score = self.connectivity_score();
         if score < self.config.rebuild_threshold {
@@ -836,7 +875,7 @@ impl VectorIndex for HnswIndex {
                     let q = guard.as_ref().ok_or_else(|| {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                     })?;
-                    q.asymmetric_dist(query, v, self.config.distance_metric)?
+                    q.asymmetric_dist(query, v, self.config.distance_metric, query_norm)?
                 } else {
                     c.distance
                 }

@@ -7,6 +7,7 @@
 // SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
 
 use memfuse_core::DistanceMetric;
+use std::simd::prelude::*;
 
 /// An 8-bit Scalar Quantizer that maps `f32` vectors into `u8` bounds based on global min/max limits.
 #[derive(Debug, Clone)]
@@ -14,7 +15,6 @@ pub struct ScalarQuantizer {
     pub min: f32,
     pub max: f32,
     pub dimension: usize,
-    pub inv_255_range: f32,
 }
 
 impl ScalarQuantizer {
@@ -39,15 +39,17 @@ impl ScalarQuantizer {
             max = min + 1e-6;
         }
 
-        let range = max - min;
-        let inv_255_range = range / 255.0;
-
         Self {
             min,
             max,
             dimension,
-            inv_255_range,
         }
+    }
+
+    /// Pre-calculates the range / 255.0 for faster dequantization.
+    #[inline]
+    fn inv_255_range(&self) -> f32 {
+        (self.max - self.min) / 255.0
     }
 
     /// Quantizes an `f32` vector to `u8`.
@@ -72,21 +74,45 @@ impl ScalarQuantizer {
 
     /// Dequantizes a `u8` value to `f32`.
     #[inline]
-    fn dequantize_val(&self, v: u8) -> f32 {
-        (v as f32) * self.inv_255_range + self.min
+    pub fn dequantize_val(&self, v: u8, inv_255_range: f32) -> f32 {
+        (v as f32) * inv_255_range + self.min
     }
 
     /// Dequantizes a `u8` vector back to `f32`.
     pub fn dequantize(&self, vector: &[u8]) -> Vec<f32> {
-        vector.iter().map(|&v| self.dequantize_val(v)).collect()
+        let inv_range = self.inv_255_range();
+        vector
+            .iter()
+            .map(|&v| self.dequantize_val(v, inv_range))
+            .collect()
+    }
+
+    /// Computes the norm of an f32 vector.
+    pub fn compute_f32_norm(&self, vector: &[f32]) -> f32 {
+        let mut i = 0;
+        let n = vector.len();
+        let mut sum = f32x8::splat(0.0);
+        while i + 8 <= n {
+            let v = f32x8::from_slice(&vector[i..i + 8]);
+            sum += v * v;
+            i += 8;
+        }
+        let mut res = sum.reduce_sum();
+        while i < n {
+            res += vector[i] * vector[i];
+            i += 1;
+        }
+        res.sqrt()
     }
 
     /// Computes the asymmetric distance between an exact query and a quantized vector.
+    /// `query_norm` can be optionally pre-calculated to speed up Cosine distance.
     pub fn asymmetric_dist(
         &self,
         query: &[f32],
         quantized: &[u8],
         metric: DistanceMetric,
+        query_norm: Option<f32>,
     ) -> memfuse_core::Result<f32> {
         if query.len() != quantized.len() {
             return Err(memfuse_core::MemFuseError::invalid_input(
@@ -94,27 +120,30 @@ impl ScalarQuantizer {
             ));
         }
 
+        let inv_range = self.inv_255_range();
+
         match metric {
             DistanceMetric::Cosine => {
                 let mut dot = 0.0;
-                let mut norm_a = 0.0;
                 let mut norm_b = 0.0;
                 for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = self.dequantize_val(y_q);
+                    let y = self.dequantize_val(y_q, inv_range);
                     dot += x * y;
-                    norm_a += x * x;
                     norm_b += y * y;
                 }
+                let norm_a = query_norm.unwrap_or_else(|| self.compute_f32_norm(query));
+                let norm_b = norm_b.sqrt();
+
                 if norm_a == 0.0 || norm_b == 0.0 {
                     Ok(1.0)
                 } else {
-                    Ok(1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt())))
+                    Ok(1.0 - (dot / (norm_a * norm_b)))
                 }
             }
             DistanceMetric::Euclidean => {
                 let mut sum = 0.0;
                 for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = self.dequantize_val(y_q);
+                    let y = self.dequantize_val(y_q, inv_range);
                     let diff = x - y;
                     sum += diff * diff;
                 }
@@ -123,7 +152,7 @@ impl ScalarQuantizer {
             DistanceMetric::DotProduct => {
                 let mut dot = 0.0;
                 for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = self.dequantize_val(y_q);
+                    let y = self.dequantize_val(y_q, inv_range);
                     dot += x * y;
                 }
                 Ok(-dot)
@@ -145,14 +174,16 @@ impl ScalarQuantizer {
             ));
         }
 
+        let inv_range = self.inv_255_range();
+
         match metric {
             DistanceMetric::Cosine => {
                 let mut dot = 0.0;
                 let mut norm_a = 0.0;
                 let mut norm_b = 0.0;
                 for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = self.dequantize_val(x_q);
-                    let y = self.dequantize_val(y_q);
+                    let x = self.dequantize_val(x_q, inv_range);
+                    let y = self.dequantize_val(y_q, inv_range);
                     dot += x * y;
                     norm_a += x * x;
                     norm_b += y * y;
@@ -166,8 +197,8 @@ impl ScalarQuantizer {
             DistanceMetric::Euclidean => {
                 let mut sum = 0.0;
                 for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = self.dequantize_val(x_q);
-                    let y = self.dequantize_val(y_q);
+                    let x = self.dequantize_val(x_q, inv_range);
+                    let y = self.dequantize_val(y_q, inv_range);
                     let diff = x - y;
                     sum += diff * diff;
                 }
@@ -176,8 +207,8 @@ impl ScalarQuantizer {
             DistanceMetric::DotProduct => {
                 let mut dot = 0.0;
                 for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = self.dequantize_val(x_q);
-                    let y = self.dequantize_val(y_q);
+                    let x = self.dequantize_val(x_q, inv_range);
+                    let y = self.dequantize_val(y_q, inv_range);
                     dot += x * y;
                 }
                 Ok(-dot)
