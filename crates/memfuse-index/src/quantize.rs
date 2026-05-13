@@ -6,6 +6,8 @@
 // DONE: Performance- und Recall Metriken sind stabil.
 // SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
 
+#![forbid(unsafe_code)]
+
 use memfuse_core::DistanceMetric;
 
 /// An 8-bit Scalar Quantizer that maps `f32` vectors into `u8` bounds based on global min/max limits.

@@ -344,19 +344,8 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
-    pub async fn hybrid_search(
-        &self,
-        text: &str,
-        vector: &[f32],
-        k: usize,
-    ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .hybrid_search(text, vector, k)
-            .await
-    }
-
     /// Performs hybrid search combining BM25 and vector search.
+    // ANCHOR:DEBT STATUS:DONE AGENT:13 DATE:2026-05-15 — removed duplicate hybrid_search definition
     pub async fn hybrid_search(
         &self,
         text: &str,

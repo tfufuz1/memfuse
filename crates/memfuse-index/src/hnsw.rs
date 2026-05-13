@@ -34,6 +34,8 @@
 //! - Automatic rebuild on >20% deletions
 //! - Transactional inserts/deletes via TxBuffer
 
+#![forbid(unsafe_code)]
+
 use crate::distance::compute_distance;
 use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;

@@ -7,6 +7,8 @@
 // VERWENDET FÜR: Agent-Interaction-Graphs, Task-Hierarchien.
 //! Compressed Sparse Row (CSR) Graph for relation tracking.
 
+#![forbid(unsafe_code)]
+
 use std::collections::HashMap;
 
 /// A simple CSR graph representation for fast neighborhood lookups.
