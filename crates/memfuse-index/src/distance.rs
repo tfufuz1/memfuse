@@ -1,3 +1,7 @@
+//! # Distance Computation Module
+//!
+//! This module provides highly optimized distance metrics for vector comparison,
+//! essential for the HNSW index performance.
 // ANCHOR:DOC:DOC-DISTANCE-001 — Module documentation added
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:03 DATE:2026-05-15 STATUS:DONE
@@ -19,10 +23,6 @@
 // CREATED:2026-05-05 DEADLINE:NONE
 // PRECEDENCE: AVX-512 > AVX2 > portable_simd > scalar.
 // INVARIANTE: Caller (hnsw.rs) validiert Vektor-Dimensionen VOR dem Aufruf.
-//! # Distance Computation Module
-//!
-//! This module provides highly optimized distance metrics for vector comparison,
-//! essential for the HNSW index performance.
 //!
 //! ## Supported Metrics
 //! - **Cosine Distance**: 1 - cosine similarity, useful for orientation-based similarity.

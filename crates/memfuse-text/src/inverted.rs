@@ -1,4 +1,12 @@
-//! LSM-backed Inverted Index.
+//! # Inverted Index
+//!
+//! This module provides an inverted index implementation backed by the MemFuse LSM engine.
+//! It supports efficient keyword-based document retrieval.
+//!
+//! ## Architecture
+//! The index is stored directly in the LSM engine using specialized key prefixes,
+//! allowing it to benefit from the same durability and performance characteristics
+//! as the primary data store.
 
 use crate::tokenizer::tokenize;
 use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId};

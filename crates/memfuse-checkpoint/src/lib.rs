@@ -10,20 +10,28 @@ use memfuse_core::Result;
 use memfuse_store::lsm::LsmStorage;
 use std::sync::Arc;
 
+/// A named point-in-time snapshot of the database state.
 pub struct Checkpoint {
+    /// User-provided name for the checkpoint.
     pub name: String,
+    /// The sequence number representing the database state at checkpoint creation.
     pub seq_no: u64,
 }
 
+/// Manages the creation, deletion, and rollback of database checkpoints.
 pub struct CheckpointManager {
     storage: Arc<LsmStorage>,
 }
 
 impl CheckpointManager {
+    /// Creates a new `CheckpointManager` for the given storage engine.
     pub fn new(storage: Arc<LsmStorage>) -> Self {
         Self { storage }
     }
 
+    /// Creates a new named checkpoint at the current sequence number.
+    /// This pins the sequence number in the storage engine to prevent garbage collection
+    /// of data required to reconstruct this state.
     pub async fn create_checkpoint(&self, name: &str) -> Result<Checkpoint> {
         let seq_no = self.storage.last_seq_no();
         self.storage.pin_checkpoint(seq_no).await?;
@@ -34,11 +42,13 @@ impl CheckpointManager {
         })
     }
 
+    /// Removes a checkpoint and unpins its sequence number, allowing garbage collection.
     pub async fn drop_checkpoint(&self, checkpoint: &Checkpoint) -> Result<()> {
         self.storage.unpin_checkpoint(checkpoint.seq_no).await?;
         Ok(())
     }
 
+    /// Rolls the database state back to the specified checkpoint.
     pub async fn rollback(&self, _checkpoint: &Checkpoint) -> Result<()> {
         // Full Time-Travel replay will be implemented here. For WP-5.1, pinning is the core requirement.
         Ok(())

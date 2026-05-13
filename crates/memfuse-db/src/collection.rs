@@ -5,7 +5,22 @@
 // DESIGN: Eigener HNSW-Index pro Collection, GEMEINSAMER LSM-Storage.
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 // STATUS: Full Implementation für WP-1.2.
-//! Logically isolated Collections inside the MemFuse database.
+//! # MemFuse Collections
+//!
+//! This module provides logically isolated collections within a single MemFuse database instance.
+//! Each collection maintains its own HNSW vector index but shares the underlying LSM storage engine.
+//!
+//! ## Logical Isolation
+//!
+//! Isolation is achieved by prefixing all keys in the LSM store with a collection-specific prefix:
+//! `__col:{name}:\x00`.
+//!
+//! ## Architecture
+//!
+//! - **HNSW Index**: Each collection has a dedicated `HnswIndex` for vector similarity search.
+//! - **LSM Storage**: All collections share a single `LsmStorage` instance, ensuring efficient
+//!   resource usage and consistent persistence.
+//! - **Hybrid Search**: Combines vector search with keyword search (BM25) via Reciprocal Rank Fusion (RRF).
 
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
 use memfuse_index::HnswIndex;
@@ -45,8 +60,10 @@ fn extract_text(metadata: &Option<serde_json::Value>) -> Option<String> {
     }
 }
 
-/// A logically isolated collection of documents.
-/// Each collection has its own HNSW vector index but shares the underlying LSM-Tree.
+/// A logically isolated collection of documents within a MemFuse database.
+///
+/// Each collection has its own HNSW vector index and maintains its own
+/// namespace within the shared underlying LSM storage engine.
 #[derive(Clone)]
 pub struct Collection {
     pub(crate) name: String,
@@ -59,6 +76,7 @@ pub struct Collection {
 }
 
 impl Collection {
+    /// Creates a new `Collection` instance.
     pub fn new(
         name: String,
         storage: Arc<LsmStorage>,
@@ -119,11 +137,13 @@ impl Collection {
         }
     }
 
+    /// Starts a new database transaction.
     pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<'_> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         crate::transaction::DbTransaction::new(self, tx)
     }
 
+    /// Inserts a document into the collection.
     pub async fn insert(
         &self,
         id: &str,

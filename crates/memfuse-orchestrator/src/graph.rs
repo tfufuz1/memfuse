@@ -3,7 +3,10 @@
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // DESIGN: Hashmaps für Knoten, einfache Tuple-Listen für Edges.
-//! Declarative StateGraph definition for Agent Workflows.
+//! # Declarative StateGraph
+//!
+//! This module defines the `StateGraph` structure, which is used to model agent workflows.
+//! It allows for the definition of nodes (tasks) and edges (transitions) with optional conditions.
 
 use std::collections::HashMap;
 

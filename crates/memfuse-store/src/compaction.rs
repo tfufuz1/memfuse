@@ -7,7 +7,14 @@
 // ATOMARER SWAP: Merge unter read-lock, SSTable-Liste swap unter write-lock.
 // INVARIANTE: Während Compaction sind alte SSTables noch lesbar (readers halten Arc).
 // LIFECYCLE: run_loop() -> maybe_compact() -> select_candidates() -> merge_sstables()
-//! Background compaction engine for the LSM-Tree.
+//! # LSM Compaction Engine
+//!
+//! This module implements background compaction strategies for the LSM-Tree to maintain
+//! read performance and garbage collect deleted data.
+//!
+//! ## Strategy
+//! It currently uses a **Size-Tiered Compaction Strategy (STCS)**, which groups SSTables
+//! by size and merges them once a threshold is reached.
 //!
 //! Implements a Size-Tiered Compaction Strategy (STCS):
 //! Groups SSTables by size class and merges groups that exceed a threshold.

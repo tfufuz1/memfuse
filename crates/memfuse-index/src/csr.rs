@@ -5,7 +5,15 @@
 // ZIEL: Extrem schnelle, cache-lokale Multi-Hop-Traversierung für SAOS Agents.
 // DESIGN: Static Graph (wird via `build_from_dynamic` ge-freezed).
 // VERWENDET FÜR: Agent-Interaction-Graphs, Task-Hierarchien.
-//! Compressed Sparse Row (CSR) Graph for relation tracking.
+//! # Compressed Sparse Row (CSR) Graph Representation
+//!
+//! This module provides a memory-efficient representation for large graphs,
+//! optimized for read-heavy traversal patterns common in vector indices.
+//!
+//! ## Overview
+//! CSR representation allows for fast neighborhood lookups by storing all edges
+//! contiguously in memory. This improves cache locality during multi-hop reasoning
+//! tasks performed by AI agents.
 
 use std::collections::HashMap;
 

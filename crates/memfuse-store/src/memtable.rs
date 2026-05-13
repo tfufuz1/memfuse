@@ -6,7 +6,10 @@
 // SIZE-TRACKING: AtomicUsize zählt Bytes, LsmStorage flusht bei > memtable_size_limit.
 // LIFECYCLE: Active MemTable → Immutable MemTable → Flushed to SSTable → Dropped.
 // BENANNT als "SkipList" im Doc-Comment, aber BTreeMap-backed (historischer Name).
-//! In-memory SkipList-based MemTable.
+//! # MemTable — In-Memory Write Buffer
+//!
+//! This module provides the `MemTable`, an in-memory sorted buffer that handles hot writes.
+//! It ensures that all writes are sorted by key before they are flushed to persistent SSTables.
 
 use bytes::Bytes;
 use parking_lot::RwLock;

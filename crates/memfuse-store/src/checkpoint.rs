@@ -7,7 +7,15 @@
 // PLAN: WAL bis checkpoint.tx_id replayed → deterministischer State-Restore.
 // ABHAENGIGKEIT: Braucht WAL-Ref (aktuell auskommentiert: `wal: Arc<Wal>`).
 // SPEC: docs/specs/SPEC-20260505-WP-4.x-Scale.md (State Checkpointing Sektion)
-//! Native State Checkpointing (Time-Travel Debugging)
+//! # Native State Checkpointing (Time-Travel Debugging)
+//!
+//! Enables exact state reconstruction of an SAOS database at any given transaction ID
+//! by replaying the Write-Ahead Log (WAL) up to that point.
+//!
+//! ## Time-Travel Debugging
+//!
+//! This mechanism allows developers and agents to "rewind" the memory state to a specific
+//! point in history, facilitating debugging and the analysis of past decision-making processes.
 //!
 //! Enables exact state reconstruction of an SAOS database at any given transaction ID
 //! by replaying the Write-Ahead Log (WAL) up to that point.

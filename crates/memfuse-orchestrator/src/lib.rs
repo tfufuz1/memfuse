@@ -1,3 +1,12 @@
+//! # MemFuse Orchestrator — Agent Workflow Engine
+//!
+//! This crate provides the high-level orchestration layer for MemFuse, enabling
+//! the definition and execution of complex agent workflows using declarative StateGraphs.
+//!
+//! ## Core Concepts
+//! - **StateGraph**: A directed graph where nodes represent agent tasks and edges represent transitions.
+//! - **Agent Execution**: Autonomous execution of workflows in an isolated environment.
+
 // ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:13 DATE:2026-05-09 STATUS:READY
@@ -14,7 +23,6 @@
 // CREATED:2026-05-09 DEADLINE:NONE
 // ZIEL: Deklarative LangGraph-ähnliche Graphenausführung in nativem Rust.
 // ANCHOR:INTEGRATION STATUS:TODO AGENT:13
-//! MemFuse Orchestrator — Declarative StateGraphs and Agent execution.
 
 #![forbid(unsafe_code)]
 

@@ -11,6 +11,17 @@
 //! It combines vector search (HNSW), persistent storage (LSM-Tree),
 //! and relationship tracking in a single library.
 //!
+//! ## Core Features
+//!
+//! - **Hybrid Search**: Seamlessly combines dense vector search with sparse keyword search (BM25).
+//! - **LSM Persistence**: Reliable storage with Write-Ahead Log (WAL) and background compaction.
+//! - **Multi-Collection**: Logical isolation of datasets within a single database instance.
+//! - **Agentic Focus**: Designed for high-performance retrieval in AI agent workflows.
+//!
+//! MemFuse is a zero-boilerplate embedded database for AI agent memory.
+//! It combines vector search (HNSW), persistent storage (LSM-Tree),
+//! and relationship tracking in a single library.
+//!
 //! ## Quick Start
 //!
 //! ```rust,no_run
@@ -59,7 +70,7 @@ pub mod transaction;
 
 pub use collection::Collection;
 
-/// User-facing search result.
+/// A single search result containing document details and similarity score.
 #[derive(Debug, Clone)]
 pub struct SearchResult {
     /// The string ID provided during insert.
@@ -79,7 +90,7 @@ pub struct DbStats {
     pub storage_stats: memfuse_core::StorageStats,
 }
 
-/// User-facing document retrieved by key.
+/// A document retrieved from the database.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Document {
     /// The string ID.
@@ -88,7 +99,7 @@ pub struct Document {
     pub metadata: Option<Value>,
 }
 
-/// Configuration for MemFuse.
+/// Configuration options for a MemFuse database instance.
 #[derive(Debug, Clone)]
 pub struct MemFuseConfig {
     /// Vector dimensionality (must match your embeddings).
@@ -111,9 +122,10 @@ impl Default for MemFuseConfig {
 
 /// MemFuse — Embedded hybrid-search database for AI agents.
 ///
-/// This is the primary entry point for all operations. It provides
-/// a simple, zero-boilerplate API on top of a LSM-Tree storage engine
-/// and HNSW vector index.
+/// The main entry point for the MemFuse embedded database.
+///
+/// It provides a simple, zero-boilerplate API on top of an LSM-Tree
+/// storage engine and HNSW vector index.
 pub struct MemFuse {
     storage: Arc<LsmStorage>,
     next_tx: Arc<AtomicU64>,
@@ -126,6 +138,7 @@ impl MemFuse {
     ///
     /// Uses default configuration (1536 dimensions, cosine distance).
     /// For custom settings, use [`MemFuse::open_with_config`].
+    /// Opens or creates a MemFuse database at the specified path with default configuration.
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
         Self::open_with_config(path, MemFuseConfig::default()).await
     }
@@ -177,6 +190,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_collections_are_isolated
     // DONE: `collection()` ist wal-gesichert, Isolation ist korrekt.
     // SUCCESSOR: @JULES-04 — "Mach weiter mit COL-002 und COL-003, bis Collections-Modul fully featured ist."
+    /// Returns a handle to the collection with the specified name.
     pub async fn collection(&self, name: &str) -> Result<Collection> {
         // Validation
         if name.len() > 64 {
@@ -344,18 +358,6 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
-    pub async fn hybrid_search(
-        &self,
-        text: &str,
-        vector: &[f32],
-        k: usize,
-    ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .hybrid_search(text, vector, k)
-            .await
-    }
-
     /// Performs hybrid search combining BM25 and vector search.
     pub async fn hybrid_search(
         &self,

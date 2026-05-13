@@ -53,7 +53,7 @@ fn get_runtime() -> PyResult<&'static Runtime> {
     Ok(RUNTIME.get().expect("Runtime must be initialized"))
 }
 
-/// A single search result from MemFuse.
+/// A single search result from MemFuse, exposed to Python.
 #[pyclass(get_all)]
 pub struct PySearchResult {
     /// The document ID.
@@ -64,7 +64,7 @@ pub struct PySearchResult {
     pub metadata: Option<PyObject>,
 }
 
-/// A document retrieved from MemFuse.
+/// A document retrieved from MemFuse, exposed to Python.
 #[pyclass(get_all)]
 pub struct PyDocument {
     /// The document ID.
@@ -73,6 +73,7 @@ pub struct PyDocument {
     pub metadata: Option<PyObject>,
 }
 
+/// The main MemFuse database handle, exposed to Python.
 #[pyclass(unsendable)]
 pub struct Db {
     inner: Arc<MemFuse>,
@@ -91,6 +92,7 @@ impl Db {
     }
 }
 
+/// A collection within a MemFuse database, exposed to Python.
 #[pyclass(unsendable)]
 pub struct Collection {
     inner: Arc<MemFuseCollection>,

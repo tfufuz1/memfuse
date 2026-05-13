@@ -5,7 +5,16 @@
 // IMPLEMENTS: VectorIndex Trait (memfuse-core/traits.rs)
 // KERNKOMPONENTEN: HNSW (Graph-basierte ANN) + CSR Graph (Relationen) + SIMD-Distanz.
 // INVARIANTE: HNSW-Graphen liegen exklusiv im RAM. Disk-Storage erfolgt über memfuse-store (via LsmStorage).
-//! MemFuse Index — HNSW vector index with SIMD distance computation.
+//! # MemFuse Index — Vector Similarity Search Engine
+//!
+//! This crate provides the indexing and search core for MemFuse, focusing on
+//! high-performance vector retrieval.
+//!
+//! ## Key Components
+//! - **HNSW**: Hierarchical Navigable Small World graph for ANN search.
+//! - **SIMD Distance**: Hardware-accelerated distance metrics (Cosine, L2, Dot).
+//! - **Quantization**: Memory-efficient scalar quantization (SQ8).
+//! - **CSR Graph**: Compressed Sparse Row graph representation for optimized traversal.
 
 #![feature(portable_simd)]
 
