@@ -15,12 +15,24 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         
-      - name: Check memfuse-core (L3 Kernel — imports NOBODY)
+      - name: Check L3 Kernel/Cockpit (core, orchestrator, runtime — imports NOBODY)
         run: |
           set -e
-          echo "Verifying memfuse-core imports no internal crates..."
-          if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py"; then
+          echo "Verifying L3 crates (core, orchestrator, runtime) import no internal crates..."
+          FORBIDDEN="memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py"
+
+          if cargo tree -p memfuse-core --edges no-dev | grep -q "$FORBIDDEN\|memfuse-orchestrator\|memfuse-runtime"; then
             echo "ERROR: memfuse-core imports forbidden crates."
+            exit 1
+          fi
+
+          if cargo tree -p memfuse-orchestrator --edges no-dev | grep -q "$FORBIDDEN"; then
+            echo "ERROR: memfuse-orchestrator imports forbidden crates."
+            exit 1
+          fi
+
+          if cargo tree -p memfuse-runtime --edges no-dev | grep -q "$FORBIDDEN"; then
+            echo "ERROR: memfuse-runtime imports forbidden crates."
             exit 1
           fi
 
