@@ -4,15 +4,15 @@
 // CREATED:2026-05-09 DEADLINE:NONE
 // ZIEL: memfuse-checkpoint -> memfuse-db (Fork + Diverge + Merge)
 
-use memfuse_core::Result;
-use memfuse_store::lsm::{LsmStorage, LsmConfig};
 use memfuse_checkpoint::CheckpointManager;
+use memfuse_core::Result;
 use memfuse_db::Collection;
-use memfuse_index::{HnswIndex, HnswConfig};
+use memfuse_index::{HnswConfig, HnswIndex};
+use memfuse_store::lsm::{LsmConfig, LsmStorage};
 use serde_json::json;
-use tempfile::TempDir;
-use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
+use tempfile::TempDir;
 
 #[tokio::test]
 async fn test_layer_001_fork_diverge_merge() -> Result<()> {
@@ -43,8 +43,10 @@ async fn test_layer_001_fork_diverge_merge() -> Result<()> {
 
     // 1. Initialize Main Collection
     let main = create_col("main");
-    main.insert("doc1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"v": 1}))).await?;
-    main.insert("doc2", &[0.0, 1.0, 0.0, 0.0], Some(json!({"v": 2}))).await?;
+    main.insert("doc1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"v": 1})))
+        .await?;
+    main.insert("doc2", &[0.0, 1.0, 0.0, 0.0], Some(json!({"v": 2})))
+        .await?;
 
     // 2. Create Checkpoint (Pins sequence number)
     let cp = manager.create_checkpoint("base_state").await?;
@@ -57,8 +59,12 @@ async fn test_layer_001_fork_diverge_merge() -> Result<()> {
     let branch_a = create_col("branch_a");
     let branch_b = create_col("branch_b");
 
-    branch_a.insert("doc_a", &[0.0, 0.0, 1.0, 0.0], Some(json!({"branch": "a"}))).await?;
-    branch_b.insert("doc_b", &[0.0, 0.0, 0.0, 1.0], Some(json!({"branch": "b"}))).await?;
+    branch_a
+        .insert("doc_a", &[0.0, 0.0, 1.0, 0.0], Some(json!({"branch": "a"})))
+        .await?;
+    branch_b
+        .insert("doc_b", &[0.0, 0.0, 0.0, 1.0], Some(json!({"branch": "b"})))
+        .await?;
 
     // 4. Verify Isolation
     assert!(main.get("doc_a").await?.is_none());
@@ -68,7 +74,8 @@ async fn test_layer_001_fork_diverge_merge() -> Result<()> {
 
     // 5. Simulate "Merge": Bring branch_a data into main
     let doc_a = branch_a.get("doc_a").await?.expect("should exist");
-    main.insert(&doc_a.id, &[0.0, 0.0, 1.0, 0.0], doc_a.metadata).await?;
+    main.insert(&doc_a.id, &[0.0, 0.0, 1.0, 0.0], doc_a.metadata)
+        .await?;
     assert!(main.get("doc_a").await?.is_some());
 
     // 6. GC Protection Verification
