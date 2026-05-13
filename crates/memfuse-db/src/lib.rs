@@ -161,8 +161,8 @@ impl MemFuse {
         let entries = self.storage.scan_prefix(col_idx_prefix).await?;
         for (k, _) in entries {
             let name_bytes = &k[col_idx_prefix.len()..];
-            if let Ok(name) = String::from_utf8(name_bytes.to_vec()) {
-                let _ = self.collection(&name).await?;
+            if let Ok(name) = std::str::from_utf8(name_bytes) {
+                let _ = self.collection(name).await?;
             }
         }
         Ok(())
@@ -245,13 +245,13 @@ impl MemFuse {
         let col_idx_prefix = b"__col_idx:\x00";
         let entries = self.storage.scan_prefix(col_idx_prefix).await?;
 
-        let mut names = std::collections::HashSet::new();
+        let mut names = std::collections::HashSet::with_capacity(entries.len() + 1);
         names.insert("default".to_string());
 
         for (k, _) in entries {
             let name_bytes = &k[col_idx_prefix.len()..];
-            if let Ok(name) = String::from_utf8(name_bytes.to_vec()) {
-                names.insert(name);
+            if let Ok(name) = std::str::from_utf8(name_bytes) {
+                names.insert(name.to_string());
             }
         }
 
@@ -338,25 +338,13 @@ impl MemFuse {
             .await
     }
 
+    /// Performs hybrid search combining BM25 and vector search.
     // ANCHOR:TODO:SEARCH-001 — Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection.
     // WP:WP-2.1 PRIO:1 NEEDS:COL-001
     // AGENT:@JULES-05 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
-    pub async fn hybrid_search(
-        &self,
-        text: &str,
-        vector: &[f32],
-        k: usize,
-    ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .hybrid_search(text, vector, k)
-            .await
-    }
-
-    /// Performs hybrid search combining BM25 and vector search.
     pub async fn hybrid_search(
         &self,
         text: &str,

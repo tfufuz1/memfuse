@@ -17,6 +17,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+memfuse-checkpoint = { workspace = true }
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile = { workspace = true }
 criterion = { version = "0.5", features = ["async_tokio"] }
