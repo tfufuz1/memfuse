@@ -29,20 +29,41 @@ async fn test_layer_001_checkpoint_fork_diverge() {
     key1.extend_from_slice(b"agent-1");
 
     let tx1 = TxId::new(1);
-    storage.put(tx1, &key1, b"{\"id\":\"agent-1\",\"metadata\":{\"status\":\"idle\"}}").await.expect("put 1");
+    storage
+        .put(
+            tx1,
+            &key1,
+            b"{\"id\":\"agent-1\",\"metadata\":{\"status\":\"idle\"}}",
+        )
+        .await
+        .expect("put 1");
     storage.commit(tx1).await.expect("commit 1");
 
     // Create checkpoint
-    let cp = manager.create_checkpoint("stable_state").await.expect("checkpoint");
+    let cp = manager
+        .create_checkpoint("stable_state")
+        .await
+        .expect("checkpoint");
     assert!(cp.seq_no > 0);
 
     // 2. Diverge: Overwrite data
     let tx2 = TxId::new(2);
-    storage.put(tx2, &key1, b"{\"id\":\"agent-1\",\"metadata\":{\"status\":\"busy\"}}").await.expect("put 2");
+    storage
+        .put(
+            tx2,
+            &key1,
+            b"{\"id\":\"agent-1\",\"metadata\":{\"status\":\"busy\"}}",
+        )
+        .await
+        .expect("put 2");
     storage.commit(tx2).await.expect("commit 2");
 
     // Verify divergence
-    let val_after = storage.get(&key1).await.expect("get after").expect("exists");
+    let val_after = storage
+        .get(&key1)
+        .await
+        .expect("get after")
+        .expect("exists");
     assert!(val_after.windows(4).any(|w| w == b"busy"));
 
     // 3. Merge/Rollback: Return to checkpoint state
