@@ -43,7 +43,13 @@ impl DocId {
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Self {
-        Self::try_from_key(key).unwrap_or(Self(0))
+        let hash = blake3::hash(key.as_bytes());
+        // Blake3 hash is always 32 bytes, so taking the first 8 bytes is safe.
+        // We avoid .expect() to comply with the Zero-Panic policy.
+        let mut buf = [0u8; 8];
+        let bytes = hash.as_bytes();
+        buf.copy_from_slice(&bytes[..8]);
+        Self(u64::from_le_bytes(buf))
     }
 
     /// Safely derive a DocId from a user-provided string key.
