@@ -339,7 +339,11 @@ impl InvertedIndex {
             .map(|(doc_id, score)| ScoredDocument::new(doc_id, score))
             .collect();
         // Sort descending by score
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(k);
 
         Ok(results)
@@ -373,9 +377,12 @@ impl TextIndex for InvertedIndex {
         let mut num_documents = 0usize;
         if let Some(bytes) = self.storage.get(&total_docs_key).await? {
             if bytes.len() == 8 {
-                num_documents = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid total_docs length".into())
-                })?) as usize;
+                num_documents = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
+                ) as usize;
             }
         }
 
@@ -383,9 +390,12 @@ impl TextIndex for InvertedIndex {
         let mut num_tokens = 0usize;
         if let Some(bytes) = self.storage.get(&total_tok_key).await? {
             if bytes.len() == 8 {
-                num_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid total_tokens length".into())
-                })?) as usize;
+                num_tokens = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid total_tokens length".into()))?,
+                ) as usize;
             }
         }
 
