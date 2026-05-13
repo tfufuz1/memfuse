@@ -1215,10 +1215,16 @@ mod tests {
 
         // Verify state after rebuild
         assert_eq!(index.len().await, 50);
-        assert!(index.quantizer.read().is_some(), "Quantizer must be preserved");
+        assert!(
+            index.quantizer.read().is_some(),
+            "Quantizer must be preserved"
+        );
 
         // Verify search still works
-        let results = index.search(&[60.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+        let results = index
+            .search(&[60.0, 0.0, 0.0, 0.0], 1)
+            .await
+            .expect("search");
         assert_eq!(results[0].doc_id, DocId::new(60));
     }
 
