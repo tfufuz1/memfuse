@@ -6,9 +6,9 @@
 // HINWEIS: Integration mit memfuse-db wurde aufgrund einer Regression in memfuse-db (Duplicate Definition)
 // vorerst auf memfuse-store Ebene realisiert, um das Triple-Test-Gate nicht zu blockieren.
 
-use memfuse_checkpoint::{CheckpointManager};
-use memfuse_store::lsm::{LsmStorage, LsmConfig};
+use memfuse_checkpoint::CheckpointManager;
 use memfuse_core::{StorageEngine, TxId};
+use memfuse_store::lsm::{LsmConfig, LsmStorage};
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -39,27 +39,46 @@ async fn test_layer_001_checkpoint_operations() {
 
     // 4. Diverge (Add more data after checkpoint)
     let tx2 = TxId::new(2);
-    storage.put(tx2, b"key1", b"diverged_val").await.expect("put update");
+    storage
+        .put(tx2, b"key1", b"diverged_val")
+        .await
+        .expect("put update");
     storage.commit(tx2).await.expect("commit update");
 
     let current_val = storage.get(b"key1").await.expect("get").expect("exists");
-    assert_eq!(current_val, b"diverged_val", "Data should have diverged from base state");
+    assert_eq!(
+        current_val, b"diverged_val",
+        "Data should have diverged from base state"
+    );
 
     // 5. Verify Pinning (Snapshot Registry)
     // Das Checkpointing muss verhindern, dass Daten vor base_seq gelöscht werden.
     // Wir prüfen, ob die Snapshot-Registry die base_seq als Minimum hält.
-    assert_eq!(storage.snapshot_registry.min_active_seqno(), base_seq,
-        "Checkpoint should pin the sequence number in the registry");
+    assert_eq!(
+        storage.snapshot_registry.min_active_seqno(),
+        base_seq,
+        "Checkpoint should pin the sequence number in the registry"
+    );
 
     // 6. Merge/Rollback (Stub validation)
     // Aktuell ist Rollback ein funktionaler Stub in WP-5.1.
     // Wir validieren, dass der Aufruf fehlerfrei durchläuft.
-    manager.rollback(&checkpoint).await.expect("rollback stub call failed");
+    manager
+        .rollback(&checkpoint)
+        .await
+        .expect("rollback stub call failed");
 
     // 7. Cleanup (Drop Checkpoint)
-    manager.drop_checkpoint(&checkpoint).await.expect("drop cp failed");
+    manager
+        .drop_checkpoint(&checkpoint)
+        .await
+        .expect("drop cp failed");
 
     // Nach dem Drop sollte das Minimum in der Registry steigen (oder u64::MAX sein).
     let min_after = storage.snapshot_registry.min_active_seqno();
-    assert!(min_after > base_seq, "After dropping the checkpoint, the pin should be released. Found: {}", min_after);
+    assert!(
+        min_after > base_seq,
+        "After dropping the checkpoint, the pin should be released. Found: {}",
+        min_after
+    );
 }
