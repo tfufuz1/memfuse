@@ -57,6 +57,15 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
         ));
     }
 
+    // [INV-MATH-2] NaN/Inf Protection
+    if a.iter().any(|&x| x.is_nan() || x.is_infinite())
+        || b.iter().any(|&x| x.is_nan() || x.is_infinite())
+    {
+        return Err(memfuse_core::MemFuseError::invalid_input(
+            "Vectors contain NaN or Infinity",
+        ));
+    }
+
     Ok(match metric {
         DistanceMetric::Cosine => cosine_distance(a, b),
         DistanceMetric::Euclidean => euclidean_distance(a, b),
@@ -533,6 +542,47 @@ unsafe fn hsum512_ps_avx(v: __m512) -> f32 {
     }
 }
 
+/// Computes the dot product of two u8 vectors.
+pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
+    debug_assert_eq!(a.len(), b.len());
+    // Using u32 for sum is safe up to ~65k dimensions (255*255 * 65536 < 2^32)
+    // For even longer vectors, we'd need u64.
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| x as u32 * y as u32)
+        .sum()
+}
+
+/// Computes the squared Euclidean distance between two u8 vectors.
+pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
+    debug_assert_eq!(a.len(), b.len());
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| {
+            let dx = x as i32 - y as i32;
+            (dx * dx) as u32
+        })
+        .sum()
+}
+
+/// Computes the components needed for cosine similarity on u8 vectors: (dot, norm_a_sq, norm_b_sq).
+pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> (u32, u32, u32) {
+    debug_assert_eq!(a.len(), b.len());
+    let mut dot = 0u32;
+    let mut norm_a = 0u32;
+    let mut norm_b = 0u32;
+
+    for (&x, &y) in a.iter().zip(b.iter()) {
+        let ux = x as u32;
+        let uy = y as u32;
+        dot += ux * uy;
+        norm_a += ux * ux;
+        norm_b += uy * uy;
+    }
+
+    (dot, norm_a, norm_b)
+}
+
 pub fn normalize_inplace(v: &mut [f32]) {
     let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
     if norm > 0.0 {
@@ -584,6 +634,41 @@ mod tests {
         let expected = 8.0; // sqrt(64 * (1-2)^2) = sqrt(64) = 8
         let actual = super::euclidean_distance_std_simd(&a, &b);
         assert!((expected - actual).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_nan_inf_protection() {
+        let a = vec![1.0, f32::NAN];
+        let b = vec![1.0, 1.0];
+        assert!(compute_distance(&a, &b, DistanceMetric::Euclidean).is_err());
+
+        let a = vec![1.0, f32::INFINITY];
+        let b = vec![1.0, 1.0];
+        assert!(compute_distance(&a, &b, DistanceMetric::Euclidean).is_err());
+
+        let a = vec![1.0, 1.0];
+        let b = vec![1.0, f32::NEG_INFINITY];
+        assert!(compute_distance(&a, &b, DistanceMetric::Euclidean).is_err());
+    }
+
+    #[test]
+    fn test_u8_metrics() {
+        let a = vec![100, 200];
+        let b = vec![50, 150];
+
+        // Dot product: 100*50 + 200*150 = 5000 + 30000 = 35000
+        assert_eq!(dot_product_u8(&a, &b), 35000);
+
+        // Euclidean sq: (100-50)^2 + (200-150)^2 = 50^2 + 50^2 = 2500 + 2500 = 5000
+        assert_eq!(euclidean_distance_sq_u8(&a, &b), 5000);
+
+        // Cosine parts
+        // norm_a_sq: 100^2 + 200^2 = 10000 + 40000 = 50000
+        // norm_b_sq: 50^2 + 150^2 = 2500 + 22500 = 25000
+        let (dot, na, nb) = cosine_similarity_parts_u8(&a, &b);
+        assert_eq!(dot, 35000);
+        assert_eq!(na, 50000);
+        assert_eq!(nb, 25000);
     }
 
     #[test]

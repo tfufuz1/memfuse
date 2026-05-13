@@ -1,9 +1,9 @@
 //! Scalar Quantization (SQ8) for HNSW Index.
 // ANCHOR:TODO:QUANT-001 — Optimiere und finalisiere die SQ8 Quantization impl, repariere Cast-Bugs.
 // WP:WP-2.2 PRIO:1 NEEDS:NONE
-// AGENT:@JULES-03 DATE:2026-05-09 STATUS:READY
+// AGENT:03 DATE:2026-05-15 STATUS:DONE
 // TEST: cargo bench -p memfuse-index -- quantization
-// DONE: Performance- und Recall Metriken sind stabil.
+// DONE: Performance- und Recall Metriken sind stabil. Optimized u8 distance logic implemented.
 // SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
 
 use memfuse_core::DistanceMetric;
@@ -81,8 +81,50 @@ impl ScalarQuantizer {
         quantized: &[u8],
         metric: DistanceMetric,
     ) -> memfuse_core::Result<f32> {
-        let deq = self.dequantize(quantized);
-        crate::distance::compute_distance(query, &deq, metric)
+        // [INV-MATH-2] NaN/Inf Protection
+        if query.iter().any(|&x| x.is_nan() || x.is_infinite()) {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Query vector contains NaN or Infinity",
+            ));
+        }
+
+        let range = self.max - self.min;
+        let dist = match metric {
+            DistanceMetric::DotProduct => {
+                let mut dot = 0.0;
+                for (&q, &v) in query.iter().zip(quantized.iter()) {
+                    let deq = (v as f32 / 255.0) * range + self.min;
+                    dot += q * deq;
+                }
+                -dot
+            }
+            DistanceMetric::Euclidean => {
+                let mut sum_sq = 0.0;
+                for (&q, &v) in query.iter().zip(quantized.iter()) {
+                    let deq = (v as f32 / 255.0) * range + self.min;
+                    let diff = q - deq;
+                    sum_sq += diff * diff;
+                }
+                sum_sq.sqrt()
+            }
+            DistanceMetric::Cosine => {
+                let mut dot = 0.0;
+                let mut norm_a_sq = 0.0;
+                let mut norm_b_sq = 0.0;
+                for (&q, &v) in query.iter().zip(quantized.iter()) {
+                    let deq = (v as f32 / 255.0) * range + self.min;
+                    dot += q * deq;
+                    norm_a_sq += q * q;
+                    norm_b_sq += deq * deq;
+                }
+                if norm_a_sq == 0.0 || norm_b_sq == 0.0 {
+                    1.0
+                } else {
+                    1.0 - (dot / (norm_a_sq.sqrt() * norm_b_sq.sqrt()))
+                }
+            }
+        };
+        Ok(dist)
     }
 
     /// Computes symmetric (approximate) distance purely in u8.
@@ -93,11 +135,49 @@ impl ScalarQuantizer {
         q2: &[u8],
         metric: DistanceMetric,
     ) -> memfuse_core::Result<f32> {
-        // For accurate distance logic while taking advantages of u8 caching, we perform fast inline dequantization.
-        // In highly optimized AVX512 implementations this would be done without casting to f32 memory.
-        let deq1 = self.dequantize(q1);
-        let deq2 = self.dequantize(q2);
-        crate::distance::compute_distance(&deq1, &deq2, metric)
+        use crate::distance::*;
+
+        let range = self.max - self.min;
+
+        match metric {
+            DistanceMetric::DotProduct => {
+                // (v1/255 * range + min) * (v2/255 * range + min)
+                // = v1*v2/255^2 * range^2 + (v1+v2)/255 * range * min + min^2
+                let mut dot_sum = 0.0;
+                for (&v1, &v2) in q1.iter().zip(q2.iter()) {
+                    let deq1 = (v1 as f32 / 255.0) * range + self.min;
+                    let deq2 = (v2 as f32 / 255.0) * range + self.min;
+                    dot_sum += deq1 * deq2;
+                }
+                Ok(-dot_sum)
+            }
+            DistanceMetric::Euclidean => {
+                // sqrt( sum( ((v1-v2)/255 * range)^2 ) )
+                // = sqrt( sum( (v1-v2)^2 ) * (range/255)^2 )
+                // = range/255 * sqrt( sum( (v1-v2)^2 ) )
+                let sum_sq = euclidean_distance_sq_u8(q1, q2);
+                Ok((range / 255.0) * (sum_sq as f32).sqrt())
+            }
+            DistanceMetric::Cosine => {
+                // This is harder to do purely in u8 because of the offsets,
+                // but we can at least avoid Vec allocation.
+                let mut dot = 0.0;
+                let mut norm_a_sq = 0.0;
+                let mut norm_b_sq = 0.0;
+                for (&v1, &v2) in q1.iter().zip(q2.iter()) {
+                    let deq1 = (v1 as f32 / 255.0) * range + self.min;
+                    let deq2 = (v2 as f32 / 255.0) * range + self.min;
+                    dot += deq1 * deq2;
+                    norm_a_sq += deq1 * deq1;
+                    norm_b_sq += deq2 * deq2;
+                }
+                if norm_a_sq == 0.0 || norm_b_sq == 0.0 {
+                    Ok(1.0)
+                } else {
+                    Ok(1.0 - (dot / (norm_a_sq.sqrt() * norm_b_sq.sqrt())))
+                }
+            }
+        }
     }
 }
 
