@@ -978,7 +978,7 @@ mod tests {
         let bloom = u64::from_le_bytes(
             block[bloom_pos..bloom_pos + 8]
                 .try_into()
-                .expect("correct length") // #[cfg(test)]
+                .expect("correct length"), // #[cfg(test)]
         );
         assert!(bloom > 0);
 
