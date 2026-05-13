@@ -106,10 +106,12 @@ impl<T: Clone> TxBuffer<T> {
     pub fn begin(&self, tx: TxId) {
         let shard_idx = self.shard_idx(tx);
         let mut shard = self.shards[shard_idx].write();
+        // ANCHOR:DEBT:TXBUF-003 — missing Vec::with_capacity(8) optimization.
+        // AGENT:01 STATUS:DONE PRIO:3
         shard
             .ops
             .entry(tx)
-            .or_insert_with(|| (Vec::new(), Instant::now()));
+            .or_insert_with(|| (Vec::with_capacity(8), Instant::now()));
     }
 
     /// Stages an operation for the given transaction.
@@ -119,10 +121,12 @@ impl<T: Clone> TxBuffer<T> {
     pub fn stage(&self, tx: TxId, op: IndexOp<T>) {
         let shard_idx = self.shard_idx(tx);
         let mut shard = self.shards[shard_idx].write();
+        // ANCHOR:DEBT:TXBUF-004 — missing Vec::with_capacity(8) optimization.
+        // AGENT:01 STATUS:DONE PRIO:3
         let entry = shard
             .ops
             .entry(tx)
-            .or_insert_with(|| (Vec::new(), Instant::now()));
+            .or_insert_with(|| (Vec::with_capacity(8), Instant::now()));
         entry.0.push(op);
     }
 
