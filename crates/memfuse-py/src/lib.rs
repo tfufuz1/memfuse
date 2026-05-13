@@ -11,6 +11,7 @@
 //! - **Zero-Copy**: Aims for minimal copying of vector data between Python and Rust.
 
 // AGENT:06 DATE:2026-05-09 STATUS:READY
+// ANCHOR:INTEGRATION STATUS:TODO AGENT:06
 // ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
 // AGENT:@JULES-06 DATE:2026-05-09 STATUS:DONE
