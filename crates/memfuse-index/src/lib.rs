@@ -7,6 +7,7 @@
 // INVARIANTE: HNSW-Graphen liegen exklusiv im RAM. Disk-Storage erfolgt über memfuse-store (via LsmStorage).
 //! MemFuse Index — HNSW vector index with SIMD distance computation.
 
+#![deny(unsafe_code)]
 #![feature(portable_simd)]
 
 pub mod csr;

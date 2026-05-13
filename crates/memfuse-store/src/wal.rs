@@ -65,11 +65,11 @@ pub enum WalOp {
 pub struct WalEntry {
     pub op: WalOp,
     pub seq_no: u64,
-    pub checksum: u32,
+    pub checksum: [u8; 32],
 }
 
 impl WalEntry {
-    /// Creates a new WAL entry with CRC32 checksum.
+    /// Creates a new WAL entry with BLAKE3 checksum.
     pub fn new(op: WalOp, seq_no: u64) -> Self {
         let checksum = Self::compute_checksum(&op, seq_no);
         Self {
@@ -79,8 +79,8 @@ impl WalEntry {
         }
     }
 
-    fn compute_checksum(op: &WalOp, seq_no: u64) -> u32 {
-        let mut hasher = crc32fast::Hasher::new();
+    fn compute_checksum(op: &WalOp, seq_no: u64) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new();
         hasher.update(&seq_no.to_le_bytes());
         match op {
             WalOp::Put { key, value, .. } => {
@@ -93,7 +93,7 @@ impl WalEntry {
                 hasher.update(key);
             }
         }
-        hasher.finalize()
+        *hasher.finalize().as_bytes()
     }
 
     /// Serializes the entry to bytes.
@@ -106,13 +106,13 @@ impl WalEntry {
         // Put: type(1) + tx_id(8) + k_len(4) + key + v_len(4) + value
         // Delete: type(1) + tx_id(8) + k_len(4) + key
 
-        let payload_size = 8 + 4 + op_size; // seq_no(8) + checksum(4) + op
+        let payload_size = 8 + 32 + op_size; // seq_no(8) + checksum(32) + op
         let total_size = 4 + payload_size; // length prefix + payload
 
         let mut buf = Vec::with_capacity(total_size);
         buf.extend_from_slice(&(payload_size as u32).to_le_bytes());
         buf.extend_from_slice(&self.seq_no.to_le_bytes());
-        buf.extend_from_slice(&self.checksum.to_le_bytes());
+        buf.extend_from_slice(&self.checksum);
 
         match &self.op {
             WalOp::Put { tx_id, key, value } => {
@@ -222,7 +222,7 @@ impl Wal {
             let entry_data = &data[pos..pos + len];
             pos += len;
 
-            if entry_data.len() < 13 {
+            if entry_data.len() < 41 {
                 continue;
             }
 
@@ -232,16 +232,14 @@ impl Wal {
                     reason: "Invalid seq_no".into(),
                 }
             })?);
-            let stored_checksum =
-                u32::from_le_bytes(entry_data[8..12].try_into().map_err(|_| {
-                    MemFuseError::WalCorruption {
-                        offset: pos as u64,
-                        reason: "Invalid checksum".into(),
-                    }
-                })?);
-            let op_type = entry_data[12];
+            let stored_checksum: [u8; 32] =
+                entry_data[8..40].try_into().map_err(|_| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid checksum".into(),
+                })?;
+            let op_type = entry_data[40];
 
-            let remaining = &entry_data[13..];
+            let remaining = &entry_data[41..];
             let op = match op_type {
                 0 => {
                     // Put
@@ -304,17 +302,16 @@ impl Wal {
                 _ => continue,
             };
 
-            // ANCHOR:ALG-FIX:D1-007 — CRC32-Verifikation bei WAL Replay
-            // WP:WP-0.0 PRIO:1 NEEDS:NONE
-            // AGENT:13 DATE:2026-05-08 STATUS:DONE
-            // CREATED:2026-05-08 DEADLINE:NONE
+            // ANCHOR:ALG-FIX:D1-007 — BLAKE3-Verifikation bei WAL Replay (WP-3.2)
+            // WP:WP-3.2 PRIO:1 NEEDS:NONE
+            // AGENT:10 DATE:2026-05-15 STATUS:READY
             // Ohne Verifikation werden korrupte Entries (Bit-Flip, Partial Write)
             // blind in die MemTable replayed → stille Datenkorrumpierung.
             let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no);
             if recomputed_checksum != stored_checksum {
                 tracing::warn!(
-                    "WAL entry at offset {} has invalid checksum (stored={}, computed={}), truncating replay",
-                    pos, stored_checksum, recomputed_checksum
+                    "WAL entry at offset {} has invalid checksum, truncating replay",
+                    pos
                 );
                 break;
             }
@@ -358,12 +355,12 @@ mod tests {
         let bytes = entry.to_bytes();
 
         // Manual verification of length
-        // total_len(4) + seq_no(8) + checksum(4) + op_type(1) + tx_id(8) + k_len(4) + key(3) + v_len(4) + val(5)
-        // 4 + 8 + 4 + 1 + 8 + 4 + 3 + 4 + 5 = 41
-        assert_eq!(bytes.len(), 41);
+        // total_len(4) + seq_no(8) + checksum(32) + op_type(1) + tx_id(8) + k_len(4) + key(3) + v_len(4) + val(5)
+        // 4 + 8 + 32 + 1 + 8 + 4 + 3 + 4 + 5 = 69
+        assert_eq!(bytes.len(), 69);
 
         let payload_len = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice"));
-        assert_eq!(payload_len, 37);
+        assert_eq!(payload_len, 65);
 
         // Test with Delete
         let op2 = WalOp::Delete {
@@ -372,7 +369,7 @@ mod tests {
         };
         let entry2 = WalEntry::new(op2, 101);
         let bytes2 = entry2.to_bytes();
-        // 4 + 8 + 4 + 1 + 8 + 4 + key(4) = 33
-        assert_eq!(bytes2.len(), 33);
+        // 4 + 8 + 32 + 1 + 8 + 4 + key(4) = 61
+        assert_eq!(bytes2.len(), 61);
     }
 }

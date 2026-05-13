@@ -95,7 +95,17 @@ impl CompactionEngine {
         // 2. Collect input SSTables (under read-lock, just clone Arcs)
         let input_ssts: Vec<Arc<SstableReader>> = {
             let ssts = sstables.read().await;
-            indices.iter().map(|&i| Arc::clone(&ssts[i])).collect()
+            let mut collected = Vec::with_capacity(indices.len());
+            for &i in &indices {
+                let sst = ssts.get(i).ok_or_else(|| {
+                    memfuse_core::MemFuseError::Storage(format!(
+                        "Compaction candidate index {} out of bounds",
+                        i
+                    ))
+                })?;
+                collected.push(Arc::clone(sst));
+            }
+            collected
         };
 
         // 3. Perform the merge (no lock held — this is the expensive part)
@@ -113,15 +123,23 @@ impl CompactionEngine {
             let mut ssts = sstables.write().await;
 
             // Collect paths of old SSTables before removing them
-            let old_paths: Vec<PathBuf> = indices
-                .iter()
-                .map(|&i| ssts[i].file_path().to_path_buf())
-                .collect();
+            let mut old_paths = Vec::with_capacity(indices.len());
+            for &i in &indices {
+                let sst = ssts.get(i).ok_or_else(|| {
+                    memfuse_core::MemFuseError::Storage(format!(
+                        "Compaction candidate index {} out of bounds during swap",
+                        i
+                    ))
+                })?;
+                old_paths.push(sst.file_path().to_path_buf());
+            }
 
             // Remove old SSTables (reverse order to preserve indices)
             let mut sorted_indices = indices.clone();
             sorted_indices.sort_unstable_by(|a, b| b.cmp(a));
-            let insertion_point = sorted_indices[sorted_indices.len() - 1]; // Position of the oldest input
+            let insertion_point = *sorted_indices.last().ok_or_else(|| {
+                memfuse_core::MemFuseError::Storage("Compaction indices empty".into())
+            })?;
 
             for idx in sorted_indices {
                 ssts.remove(idx);
@@ -166,7 +184,17 @@ impl CompactionEngine {
             let mut placed = false;
 
             for tier in &mut tiers {
-                let tier_size = ssts[tier[0]].metadata().file_size;
+                // ANCHOR:SEC:SLICE-003 — Safe indexing for tier first element
+                // AGENT:10 PRIO:1 STATUS:READY
+                let tier_first_idx = match tier.first() {
+                    Some(&idx) => idx,
+                    None => continue,
+                };
+                let tier_size = match ssts.get(tier_first_idx) {
+                    Some(s) => s.metadata().file_size,
+                    None => continue,
+                };
+
                 let ratio = if size > tier_size {
                     size as f64 / tier_size.max(1) as f64
                 } else {
@@ -201,7 +229,7 @@ impl CompactionEngine {
                 .collect();
             by_size.sort_by_key(|&(_, size)| size);
             let count = self.config.min_sstables_per_tier;
-            return Some(by_size[..count].iter().map(|&(i, _)| i).collect());
+            return Some(by_size.iter().take(count).map(|&(i, _)| i).collect());
         }
 
         None
