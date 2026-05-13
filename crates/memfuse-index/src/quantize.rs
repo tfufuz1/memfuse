@@ -1,7 +1,7 @@
 //! Scalar Quantization (SQ8) for HNSW Index.
 // ANCHOR:TODO:QUANT-001 — Optimiere und finalisiere die SQ8 Quantization impl, repariere Cast-Bugs.
 // WP:WP-2.2 PRIO:1 NEEDS:NONE
-// AGENT:@JULES-03 DATE:2026-05-09 STATUS:READY
+// AGENT:@JULES-03 DATE:2026-05-15 STATUS:DONE
 // TEST: cargo bench -p memfuse-index -- quantization
 // DONE: Performance- und Recall Metriken sind stabil.
 // SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
@@ -81,8 +81,7 @@ impl ScalarQuantizer {
         quantized: &[u8],
         metric: DistanceMetric,
     ) -> memfuse_core::Result<f32> {
-        let deq = self.dequantize(quantized);
-        crate::distance::compute_distance(query, &deq, metric)
+        crate::distance::compute_asymmetric_distance(query, quantized, self.min, self.max, metric)
     }
 
     /// Computes symmetric (approximate) distance purely in u8.
@@ -93,11 +92,7 @@ impl ScalarQuantizer {
         q2: &[u8],
         metric: DistanceMetric,
     ) -> memfuse_core::Result<f32> {
-        // For accurate distance logic while taking advantages of u8 caching, we perform fast inline dequantization.
-        // In highly optimized AVX512 implementations this would be done without casting to f32 memory.
-        let deq1 = self.dequantize(q1);
-        let deq2 = self.dequantize(q2);
-        crate::distance::compute_distance(&deq1, &deq2, metric)
+        crate::distance::compute_symmetric_distance_u8(q1, q2, self.min, self.max, metric)
     }
 }
 

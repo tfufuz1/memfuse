@@ -64,6 +64,161 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
     })
 }
 
+/// Computes asymmetric distance between exact query and quantized vector.
+#[inline]
+pub fn compute_asymmetric_distance(
+    query: &[f32],
+    quantized: &[u8],
+    min: f32,
+    max: f32,
+    metric: DistanceMetric,
+) -> memfuse_core::Result<f32> {
+    if query.len() != quantized.len() {
+        return Err(memfuse_core::MemFuseError::invalid_input(
+            "Vector dimensions must match",
+        ));
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // ANCHOR:SAFETY:SIMD-035 — AVX2/FMA Asymmetric Distance.
+            // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
+            // Dimensionen werden durch compute_asymmetric_distance validiert.
+            return unsafe {
+                compute_asymmetric_distance_avx2(query, quantized, min, max, metric)
+            };
+        }
+    }
+
+    compute_asymmetric_distance_scalar(query, quantized, min, max, metric)
+}
+
+fn compute_asymmetric_distance_scalar(
+    query: &[f32],
+    quantized: &[u8],
+    min: f32,
+    max: f32,
+    metric: DistanceMetric,
+) -> memfuse_core::Result<f32> {
+    let range = max - min;
+    let inv_255 = 1.0 / 255.0;
+
+    Ok(match metric {
+        DistanceMetric::Cosine => {
+            let mut dot = 0.0;
+            let mut norm_a = 0.0;
+            let mut norm_b = 0.0;
+            for (&x, &y_u8) in query.iter().zip(quantized.iter()) {
+                let y = (y_u8 as f32 * inv_255) * range + min;
+                dot += x * y;
+                norm_a += x * x;
+                norm_b += y * y;
+            }
+            if norm_a == 0.0 || norm_b == 0.0 {
+                1.0
+            } else {
+                1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
+            }
+        }
+        DistanceMetric::Euclidean => {
+            let mut sum = 0.0;
+            for (&x, &y_u8) in query.iter().zip(quantized.iter()) {
+                let y = (y_u8 as f32 * inv_255) * range + min;
+                let diff = x - y;
+                sum += diff * diff;
+            }
+            sum.sqrt()
+        }
+        DistanceMetric::DotProduct => {
+            let mut dot = 0.0;
+            for (&x, &y_u8) in query.iter().zip(quantized.iter()) {
+                let y = (y_u8 as f32 * inv_255) * range + min;
+                dot += x * y;
+            }
+            -dot
+        }
+    })
+}
+
+/// Computes symmetric distance between two quantized vectors.
+#[inline]
+pub fn compute_symmetric_distance_u8(
+    q1: &[u8],
+    q2: &[u8],
+    min: f32,
+    max: f32,
+    metric: DistanceMetric,
+) -> memfuse_core::Result<f32> {
+    if q1.len() != q2.len() {
+        return Err(memfuse_core::MemFuseError::invalid_input(
+            "Vector dimensions must match",
+        ));
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // ANCHOR:SAFETY:SIMD-036 — AVX2/FMA Symmetric Distance.
+            // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
+            // Dimensionen werden durch compute_symmetric_distance_u8 validiert.
+            return unsafe { compute_symmetric_distance_avx2(q1, q2, min, max, metric) };
+        }
+    }
+
+    compute_symmetric_distance_scalar(q1, q2, min, max, metric)
+}
+
+fn compute_symmetric_distance_scalar(
+    q1: &[u8],
+    q2: &[u8],
+    min: f32,
+    max: f32,
+    metric: DistanceMetric,
+) -> memfuse_core::Result<f32> {
+    let range = max - min;
+    let inv_255 = 1.0 / 255.0;
+
+    Ok(match metric {
+        DistanceMetric::Cosine => {
+            let mut dot = 0.0;
+            let mut norm_a = 0.0;
+            let mut norm_b = 0.0;
+            for (&x_u8, &y_u8) in q1.iter().zip(q2.iter()) {
+                let x = (x_u8 as f32 * inv_255) * range + min;
+                let y = (y_u8 as f32 * inv_255) * range + min;
+                dot += x * y;
+                norm_a += x * x;
+                norm_b += y * y;
+            }
+            if norm_a == 0.0 || norm_b == 0.0 {
+                1.0
+            } else {
+                1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
+            }
+        }
+        DistanceMetric::Euclidean => {
+            let mut sum = 0.0;
+            for (&x_u8, &y_u8) in q1.iter().zip(q2.iter()) {
+                let x = (x_u8 as f32 * inv_255) * range + min;
+                let y = (y_u8 as f32 * inv_255) * range + min;
+                let diff = x - y;
+                sum += diff * diff;
+            }
+            sum.sqrt()
+        }
+        DistanceMetric::DotProduct => {
+            let mut dot = 0.0;
+            for (&x_u8, &y_u8) in q1.iter().zip(q2.iter()) {
+                let x = (x_u8 as f32 * inv_255) * range + min;
+                let y = (y_u8 as f32 * inv_255) * range + min;
+                dot += x * y;
+            }
+            -dot
+        }
+    })
+}
+
 /// Computes cosine distance (1 - similarity).
 #[inline]
 pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
@@ -289,6 +444,224 @@ unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
         i += 1;
     }
     sum
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+#[target_feature(enable = "fma")]
+// ANCHOR:SAFETY:SIMD-037 — AVX2/FMA Asymmetric Distance Core.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+unsafe fn compute_asymmetric_distance_avx2(
+    query: &[f32],
+    quantized: &[u8],
+    min: f32,
+    max: f32,
+    metric: DistanceMetric,
+) -> memfuse_core::Result<f32> {
+    let n = query.len();
+    let mut i = 0;
+    let range = max - min;
+    let inv_255 = 1.0 / 255.0;
+
+    // SIMD constants
+    let v_min = _mm256_set1_ps(min);
+    let v_range = _mm256_set1_ps(range);
+    let v_inv_255 = _mm256_set1_ps(inv_255);
+
+    match metric {
+        DistanceMetric::Cosine => {
+            let mut dot_v = _mm256_setzero_ps();
+            let mut norm_a_v = _mm256_setzero_ps();
+            let mut norm_b_v = _mm256_setzero_ps();
+
+            while i + 8 <= n {
+                let v_query = _mm256_loadu_ps(query.as_ptr().add(i));
+                let v_quant = load_u8_to_f32_avx2(quantized.as_ptr().add(i), v_min, v_range, v_inv_255);
+
+                dot_v = _mm256_fmadd_ps(v_query, v_quant, dot_v);
+                norm_a_v = _mm256_fmadd_ps(v_query, v_query, norm_a_v);
+                norm_b_v = _mm256_fmadd_ps(v_quant, v_quant, norm_b_v);
+                i += 8;
+            }
+
+            let mut dot = hsum256_ps_avx(dot_v);
+            let mut norm_a = hsum256_ps_avx(norm_a_v);
+            let mut norm_b = hsum256_ps_avx(norm_b_v);
+
+            while i < n {
+                let x = query[i];
+                let y = (quantized[i] as f32 * inv_255) * range + min;
+                dot += x * y;
+                norm_a += x * x;
+                norm_b += y * y;
+                i += 1;
+            }
+
+            if norm_a == 0.0 || norm_b == 0.0 {
+                Ok(1.0)
+            } else {
+                Ok(1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt())))
+            }
+        }
+        DistanceMetric::Euclidean => {
+            let mut sum_v = _mm256_setzero_ps();
+
+            while i + 8 <= n {
+                let v_query = _mm256_loadu_ps(query.as_ptr().add(i));
+                let v_quant = load_u8_to_f32_avx2(quantized.as_ptr().add(i), v_min, v_range, v_inv_255);
+                let diff = _mm256_sub_ps(v_query, v_quant);
+                sum_v = _mm256_fmadd_ps(diff, diff, sum_v);
+                i += 8;
+            }
+
+            let mut sum = hsum256_ps_avx(sum_v);
+            while i < n {
+                let x = query[i];
+                let y = (quantized[i] as f32 * inv_255) * range + min;
+                let diff = x - y;
+                sum += diff * diff;
+                i += 1;
+            }
+            Ok(sum.sqrt())
+        }
+        DistanceMetric::DotProduct => {
+            let mut dot_v = _mm256_setzero_ps();
+
+            while i + 8 <= n {
+                let v_query = _mm256_loadu_ps(query.as_ptr().add(i));
+                let v_quant = load_u8_to_f32_avx2(quantized.as_ptr().add(i), v_min, v_range, v_inv_255);
+                dot_v = _mm256_fmadd_ps(v_query, v_quant, dot_v);
+                i += 8;
+            }
+
+            let mut dot = hsum256_ps_avx(dot_v);
+            while i < n {
+                let x = query[i];
+                let y = (quantized[i] as f32 * inv_255) * range + min;
+                dot += x * y;
+                i += 1;
+            }
+            Ok(-dot)
+        }
+    }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+#[target_feature(enable = "fma")]
+// ANCHOR:SAFETY:SIMD-038 — AVX2/FMA Symmetric Distance Core.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+unsafe fn compute_symmetric_distance_avx2(
+    q1: &[u8],
+    q2: &[u8],
+    min: f32,
+    max: f32,
+    metric: DistanceMetric,
+) -> memfuse_core::Result<f32> {
+    let n = q1.len();
+    let mut i = 0;
+    let range = max - min;
+    let inv_255 = 1.0 / 255.0;
+
+    let v_min = _mm256_set1_ps(min);
+    let v_range = _mm256_set1_ps(range);
+    let v_inv_255 = _mm256_set1_ps(inv_255);
+
+    match metric {
+        DistanceMetric::Cosine => {
+            let mut dot_v = _mm256_setzero_ps();
+            let mut norm_a_v = _mm256_setzero_ps();
+            let mut norm_b_v = _mm256_setzero_ps();
+
+            while i + 8 <= n {
+                let v1 = load_u8_to_f32_avx2(q1.as_ptr().add(i), v_min, v_range, v_inv_255);
+                let v2 = load_u8_to_f32_avx2(q2.as_ptr().add(i), v_min, v_range, v_inv_255);
+
+                dot_v = _mm256_fmadd_ps(v1, v2, dot_v);
+                norm_a_v = _mm256_fmadd_ps(v1, v1, norm_a_v);
+                norm_b_v = _mm256_fmadd_ps(v2, v2, norm_b_v);
+                i += 8;
+            }
+
+            let mut dot = hsum256_ps_avx(dot_v);
+            let mut norm_a = hsum256_ps_avx(norm_a_v);
+            let mut norm_b = hsum256_ps_avx(norm_b_v);
+
+            while i < n {
+                let x = (q1[i] as f32 * inv_255) * range + min;
+                let y = (q2[i] as f32 * inv_255) * range + min;
+                dot += x * y;
+                norm_a += x * x;
+                norm_b += y * y;
+                i += 1;
+            }
+
+            if norm_a == 0.0 || norm_b == 0.0 {
+                Ok(1.0)
+            } else {
+                Ok(1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt())))
+            }
+        }
+        DistanceMetric::Euclidean => {
+            let mut sum_v = _mm256_setzero_ps();
+
+            while i + 8 <= n {
+                let v1 = load_u8_to_f32_avx2(q1.as_ptr().add(i), v_min, v_range, v_inv_255);
+                let v2 = load_u8_to_f32_avx2(q2.as_ptr().add(i), v_min, v_range, v_inv_255);
+                let diff = _mm256_sub_ps(v1, v2);
+                sum_v = _mm256_fmadd_ps(diff, diff, sum_v);
+                i += 8;
+            }
+
+            let mut sum = hsum256_ps_avx(sum_v);
+            while i < n {
+                let x = (q1[i] as f32 * inv_255) * range + min;
+                let y = (q2[i] as f32 * inv_255) * range + min;
+                let diff = x - y;
+                sum += diff * diff;
+                i += 1;
+            }
+            Ok(sum.sqrt())
+        }
+        DistanceMetric::DotProduct => {
+            let mut dot_v = _mm256_setzero_ps();
+
+            while i + 8 <= n {
+                let v1 = load_u8_to_f32_avx2(q1.as_ptr().add(i), v_min, v_range, v_inv_255);
+                let v2 = load_u8_to_f32_avx2(q2.as_ptr().add(i), v_min, v_range, v_inv_255);
+                dot_v = _mm256_fmadd_ps(v1, v2, dot_v);
+                i += 8;
+            }
+
+            let mut dot = hsum256_ps_avx(dot_v);
+            while i < n {
+                let x = (q1[i] as f32 * inv_255) * range + min;
+                let y = (q2[i] as f32 * inv_255) * range + min;
+                dot += x * y;
+                i += 1;
+            }
+            Ok(-dot)
+        }
+    }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+#[target_feature(enable = "fma")]
+// ANCHOR:SAFETY:SIMD-039 — Hilfsfunktion für u8 -> f32 Dequantisierung.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren. ptr muss valide für 8 bytes sein.
+// Wir nutzen read_unaligned um Alignment-Probleme (UB) beim Cast auf __m128i zu vermeiden.
+unsafe fn load_u8_to_f32_avx2(ptr: *const u8, v_min: __m256, v_range: __m256, v_inv_255: __m256) -> __m256 {
+    // Load 8 bytes safely from potentially unaligned pointer
+    let bytes: u64 = std::ptr::read_unaligned(ptr as *const u64);
+    let u8_vec = _mm_set_epi64x(0, bytes as i64);
+
+    // Convert to 32-bit integers
+    let i32_vec = _mm256_cvtepu8_epi32(u8_vec);
+    // Convert to f32
+    let f32_vec = _mm256_cvtepi32_ps(i32_vec);
+    // Dequantize: (v * inv_255) * range + min
+    _mm256_fmadd_ps(_mm256_mul_ps(f32_vec, v_inv_255), v_range, v_min)
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -599,5 +972,33 @@ mod tests {
         let expected_same = 0.0; // Identical
         let actual_same = super::cosine_distance_std_simd(&c, &d);
         assert!((expected_same - actual_same).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_asymmetric_matches_scalar() {
+        let q = vec![0.5, -0.2, 0.8, 0.1, 0.4, -0.1, 0.3, 0.9, 0.2];
+        let quantized = vec![100, 50, 200, 10, 150, 80, 120, 250, 30];
+        let min = -1.0;
+        let max = 1.0;
+
+        for metric in [DistanceMetric::Cosine, DistanceMetric::Euclidean, DistanceMetric::DotProduct] {
+            let scalar = compute_asymmetric_distance_scalar(&q, &quantized, min, max, metric).unwrap();
+            let actual = compute_asymmetric_distance(&q, &quantized, min, max, metric).unwrap();
+            assert!((scalar - actual).abs() < 1e-5, "Metric {:?} failed", metric);
+        }
+    }
+
+    #[test]
+    fn test_symmetric_matches_scalar() {
+        let q1 = vec![100, 50, 200, 10, 150, 80, 120, 250, 30];
+        let q2 = vec![120, 40, 180, 20, 160, 70, 110, 240, 40];
+        let min = -1.0;
+        let max = 1.0;
+
+        for metric in [DistanceMetric::Cosine, DistanceMetric::Euclidean, DistanceMetric::DotProduct] {
+            let scalar = compute_symmetric_distance_scalar(&q1, &q2, min, max, metric).unwrap();
+            let actual = compute_symmetric_distance_u8(&q1, &q2, min, max, metric).unwrap();
+            assert!((scalar - actual).abs() < 1e-5, "Metric {:?} failed", metric);
+        }
     }
 }
