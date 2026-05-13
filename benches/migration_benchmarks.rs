@@ -34,9 +34,18 @@ fn bench_hybrid_search(c: &mut Criterion) {
 }
 
 fn bench_agent_state_checkpoint(c: &mut Criterion) {
-    c.bench_function("checkpoint_latency", |b| {
-        b.iter(|| {
-            // TODO: Implement benchmark vs Redis
+    let rt = Runtime::new().unwrap();
+    let tmp = TempDir::new().unwrap();
+    let lsm_config = memfuse_store::LsmConfig {
+        path: tmp.path().to_path_buf(),
+        ..Default::default()
+    };
+    let storage = rt.block_on(memfuse_store::LsmStorage::new(lsm_config)).unwrap();
+    let manager = memfuse_checkpoint::CheckpointManager::new(std::sync::Arc::new(storage));
+
+    c.bench_function("checkpoint_creation_latency", |b| {
+        b.to_async(&rt).iter(|| async {
+            let _ = manager.create_checkpoint("bench-cp").await.unwrap();
         })
     });
 }
