@@ -50,7 +50,9 @@ fn get_runtime() -> PyResult<&'static Runtime> {
 
     // AGENT:06 DATE:2026-05-09 STATUS:DONE — Fixed DEBT-UNWRAP-LIB-25
     let _ = RUNTIME.set(rt);
-    Ok(RUNTIME.get().expect("Runtime must be initialized"))
+    RUNTIME
+        .get()
+        .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Runtime must be initialized"))
 }
 
 /// A single search result from MemFuse.

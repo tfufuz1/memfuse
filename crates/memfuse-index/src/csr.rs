@@ -5,6 +5,8 @@
 // ZIEL: Extrem schnelle, cache-lokale Multi-Hop-Traversierung für SAOS Agents.
 // DESIGN: Static Graph (wird via `build_from_dynamic` ge-freezed).
 // VERWENDET FÜR: Agent-Interaction-Graphs, Task-Hierarchien.
+#![forbid(unsafe_code)]
+
 //! Compressed Sparse Row (CSR) Graph for relation tracking.
 
 use std::collections::HashMap;
