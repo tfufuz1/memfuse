@@ -21,9 +21,10 @@ jobs:
           for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator; do
             echo "Verifying $CRATE imports no internal crates..."
             # Using grep -E to match any internal crate starting with 'memfuse-' but not the crate itself
-            if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -v "$CRATE" | grep -q .; then
+            # Use --depth 1 to check only direct dependencies
+            if cargo tree -p "$CRATE" --edges no-dev --depth 1 | grep "memfuse-" | grep -v "$CRATE" | grep -q .; then
               echo "ERROR: $CRATE imports forbidden internal crates."
-              cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-"
+              cargo tree -p "$CRATE" --edges no-dev --depth 1 | grep "memfuse-"
               exit 1
             fi
           done
@@ -32,23 +33,23 @@ jobs:
         run: |
           set -e
           echo "Verifying memfuse-store does not import L2 peers..."
-          if cargo tree -p memfuse-store --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-checkpoint|memfuse-py"; then
+          if cargo tree -p memfuse-store --edges no-dev --depth 1 | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-checkpoint|memfuse-py"; then
             echo "ERROR: memfuse-store imports L2 peers or higher layers."
             exit 1
           fi
           echo "Verifying memfuse-index does not import L2 peers..."
-          if cargo tree -p memfuse-index --edges no-dev | grep -E -q "memfuse-db|memfuse-store|memfuse-text|memfuse-checkpoint|memfuse-py"; then
+          if cargo tree -p memfuse-index --edges no-dev --depth 1 | grep -E -q "memfuse-db|memfuse-store|memfuse-text|memfuse-checkpoint|memfuse-py"; then
             echo "ERROR: memfuse-index imports L2 peers or higher layers."
             exit 1
           fi
           echo "Verifying memfuse-text does not import L2 peers..."
-          if cargo tree -p memfuse-text --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-store|memfuse-checkpoint|memfuse-py"; then
+          if cargo tree -p memfuse-text --edges no-dev --depth 1 | grep -E -q "memfuse-db|memfuse-index|memfuse-store|memfuse-checkpoint|memfuse-py"; then
             echo "ERROR: memfuse-text imports forbidden crates."
             exit 1
           fi
           echo "Verifying memfuse-checkpoint does not import L2 peers (except tracked)..."
           # Excluding memfuse-store from the immediate failure to allow tracking in the next step
-          if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-py"; then
+          if cargo tree -p memfuse-checkpoint --edges no-dev --depth 1 | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-py"; then
             echo "ERROR: memfuse-checkpoint imports L2 peers (beyond tracked exceptions)."
             exit 1
           fi
@@ -58,7 +59,7 @@ jobs:
           set -e
           echo "Verifying memfuse-py only imports permitted crates..."
           # memfuse-py is allowed to import memfuse-db (exception DAG-003)
-          # Use --depth 1 to only check direct dependencies and ignore permitted transitive internal crates via memfuse-db
+          # Use --depth 1 to check only direct dependencies
           if cargo tree -p memfuse-py --edges no-dev --depth 1 | grep "memfuse-" | grep -v "memfuse-py" | grep -v "memfuse-db" | grep -q .; then
              echo "ERROR: memfuse-py imports forbidden internal crates beyond memfuse-db."
              cargo tree -p memfuse-py --edges no-dev --depth 1 | grep "memfuse-"
@@ -70,7 +71,7 @@ jobs:
           set -e
           echo "=== Known DAG Violations (tracked via ANKERs) ==="
           echo "--- DAG-002: memfuse-checkpoint → memfuse-store ---"
-          if cargo tree -p memfuse-checkpoint --edges no-dev | grep -q "memfuse-store"; then
+          if cargo tree -p memfuse-checkpoint --edges no-dev --depth 1 | grep -q "memfuse-store"; then
             echo "⚠️  DAG-002 still present (memfuse-checkpoint → memfuse-store)"
           else
             echo "✅ DAG-002 resolved"
