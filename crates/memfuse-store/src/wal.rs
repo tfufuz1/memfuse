@@ -98,11 +98,7 @@ impl WalEntry {
             .expect("HMAC can take key of any size");
         mac.update(&seq_no.to_le_bytes());
         match op {
-            WalOp::Put {
-                tx_id,
-                key,
-                value,
-            } => {
+            WalOp::Put { tx_id, key, value } => {
                 mac.update(&[0u8]); // op type
                 mac.update(&tx_id.inner().to_le_bytes());
                 mac.update(key);
@@ -248,10 +244,12 @@ impl Wal {
         let mut pos = 0;
 
         while pos + 4 <= data.len() {
-            let len_bytes = data.get(pos..pos + 4).ok_or_else(|| MemFuseError::WalCorruption {
-                offset: pos as u64,
-                reason: "Unexpected end of data while reading length".into(),
-            })?;
+            let len_bytes = data
+                .get(pos..pos + 4)
+                .ok_or_else(|| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Unexpected end of data while reading length".into(),
+                })?;
             let len = u32::from_le_bytes(len_bytes.try_into().map_err(|_| {
                 MemFuseError::WalCorruption {
                     offset: pos as u64,
@@ -311,15 +309,19 @@ impl Wal {
                     offset: pos as u64,
                     reason: "Invalid checksum format".into(),
                 })?;
-            let op_type = *entry_data.get(40).ok_or_else(|| MemFuseError::WalCorruption {
-                offset: pos as u64,
-                reason: "Missing op_type".into(),
-            })?;
+            let op_type = *entry_data
+                .get(40)
+                .ok_or_else(|| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Missing op_type".into(),
+                })?;
 
-            let remaining = entry_data.get(41..).ok_or_else(|| MemFuseError::WalCorruption {
-                offset: pos as u64,
-                reason: "Missing operation payload".into(),
-            })?;
+            let remaining = entry_data
+                .get(41..)
+                .ok_or_else(|| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Missing operation payload".into(),
+                })?;
 
             let op = match op_type {
                 0 => {
