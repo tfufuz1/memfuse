@@ -1,6 +1,6 @@
 //! LSM-backed Inverted Index.
 
-use crate::tokenizer::tokenize;
+use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -270,7 +270,7 @@ impl InvertedIndex {
 
     /// Searches the inverted index using BM25.
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
-        let tokens = tokenize(query);
+        let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
             return Ok(Vec::new());
         }

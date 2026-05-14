@@ -296,6 +296,51 @@ impl PyCollection {
         }
         Ok(py_res)
     }
+
+    pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<(String, PyObject)>> {
+        let rt = get_runtime()?;
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.scan_prefix(prefix)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut py_res = Vec::new();
+        for (k, v) in results {
+            let val_py = pythonize(py, &v)
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
+                .unbind();
+            py_res.push((k, val_py));
+        }
+        Ok(py_res)
+    }
+
+    pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
+        let rt = get_runtime()?;
+        Ok(py.allow_threads(|| rt.block_on(self.inner.len())))
+    }
+
+    pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
+        let rt = get_runtime()?;
+        Ok(py.allow_threads(|| rt.block_on(self.inner.is_empty())))
+    }
+
+    pub fn stats(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let rt = get_runtime()?;
+        let stats = py
+            .allow_threads(|| rt.block_on(self.inner.stats()))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let dict = pyo3::types::PyDict::new(py);
+        dict.set_item("num_vectors", stats.num_vectors)?;
+        dict.set_item("memory_usage_bytes", stats.memory_usage_bytes)?;
+        dict.set_item("num_layers", stats.num_layers)?;
+        Ok(dict.unbind().into())
+    }
 }
 
 #[pyfunction]
