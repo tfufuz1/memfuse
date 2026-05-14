@@ -542,6 +542,295 @@ pub fn normalize_inplace(v: &mut [f32]) {
     }
 }
 
+/// Computes the dot product of two u8 vectors.
+pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| x as u32 * y as u32)
+        .sum()
+}
+
+/// Computes the squared Euclidean distance between two u8 vectors.
+pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| {
+            let diff = x as i32 - y as i32;
+            (diff * diff) as u32
+        })
+        .sum()
+}
+
+/// Parts required to compute cosine similarity for quantized vectors.
+#[derive(Debug, Clone, Copy)]
+pub struct CosineSimilarityPartsU8 {
+    pub dot: u32,
+    pub sum_a: u32,
+    pub sum_b: u32,
+    pub norm_a_sq: u32,
+    pub norm_b_sq: u32,
+}
+
+/// Computes the parts required for cosine similarity between two u8 vectors.
+pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
+    let mut dot = 0;
+    let mut sum_a = 0;
+    let mut sum_b = 0;
+    let mut norm_a_sq = 0;
+    let mut norm_b_sq = 0;
+
+    for (&x, &y) in a.iter().zip(b.iter()) {
+        let xu = x as u32;
+        let yu = y as u32;
+        dot += xu * yu;
+        sum_a += xu;
+        sum_b += yu;
+        norm_a_sq += xu * xu;
+        norm_b_sq += yu * yu;
+    }
+
+    CosineSimilarityPartsU8 {
+        dot,
+        sum_a,
+        sum_b,
+        norm_a_sq,
+        norm_b_sq,
+    }
+}
+
+/// Computes the dot product between an f32 vector and a u8 vector.
+pub fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| x * (y as f32))
+        .sum()
+}
+
+/// Computes the squared Euclidean distance between an f32 vector and a u8 vector
+/// performing inline dequantization.
+pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| {
+            let y_f32 = (y as f32) * alpha + min;
+            let diff = x - y_f32;
+            diff * diff
+        })
+        .sum()
+}
+
+/// Parts required to compute asymmetric cosine similarity.
+pub struct CosineSimilarityPartsF32U8 {
+    pub dot_f32_u8: f32,
+    pub sum_u8: u32,
+    pub norm_u8_sq: u32,
+}
+
+/// Computes the parts required for asymmetric cosine similarity between an f32 and a u8 vector.
+pub fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPartsF32U8 {
+    let mut dot_f32_u8 = 0.0;
+    let mut sum_u8 = 0;
+    let mut norm_u8_sq = 0;
+
+    for (&x, &y) in a.iter().zip(b.iter()) {
+        let yu = y as u32;
+        dot_f32_u8 += x * (y as f32);
+        sum_u8 += yu;
+        norm_u8_sq += yu * yu;
+    }
+
+    CosineSimilarityPartsF32U8 {
+        dot_f32_u8,
+        sum_u8,
+        norm_u8_sq,
+    }
+}
+
+// -----------------------------------------------------------------------------
+// AVX2 Implementations for u8
+// -----------------------------------------------------------------------------
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+// ANCHOR:SAFETY:SIMD-U8-001 — AVX2 Dot Product for u8.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren. Dimensionen müssen gleich sein.
+/// # Safety
+/// This function is unsafe because it uses AVX2 intrinsics. The caller must ensure that the CPU supports AVX2.
+pub unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
+    let n = a.len();
+    let mut i = 0;
+    let mut sum_v = _mm256_setzero_si256();
+
+    while i + 32 <= n {
+        // ANCHOR:SAFETY:SIMD-U8-002 — AVX2 Load und Madd.
+        // BEGRÜNDUNG: i + 32 <= n garantiert In-Bounds Zugriff.
+        unsafe {
+            let va = _mm256_loadu_si256(a.as_ptr().add(i) as *const __m256i);
+            let vb = _mm256_loadu_si256(b.as_ptr().add(i) as *const __m256i);
+
+            // Split 32 u8 into two 16 i16
+            let va_lo = _mm256_cvtepu8_epi16(_mm256_castsi256_si128(va));
+            let va_hi = _mm256_cvtepu8_epi16(_mm256_extracti128_si256(va, 1));
+            let vb_lo = _mm256_cvtepu8_epi16(_mm256_castsi256_si128(vb));
+            let vb_hi = _mm256_cvtepu8_epi16(_mm256_extracti128_si256(vb, 1));
+
+            sum_v = _mm256_add_epi32(sum_v, _mm256_madd_epi16(va_lo, vb_lo));
+            sum_v = _mm256_add_epi32(sum_v, _mm256_madd_epi16(va_hi, vb_hi));
+        }
+        i += 32;
+    }
+
+    let mut sum = hsum256_epi32_avx2(sum_v) as u32;
+    while i < n {
+        sum += a[i] as u32 * b[i] as u32;
+        i += 1;
+    }
+    sum
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+// ANCHOR:SAFETY:SIMD-U8-003 — AVX2 Squared Euclidean for u8.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren. Dimensionen müssen gleich sein.
+/// # Safety
+/// This function is unsafe because it uses AVX2 intrinsics. The caller must ensure that the CPU supports AVX2.
+pub unsafe fn euclidean_distance_sq_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
+    let n = a.len();
+    let mut i = 0;
+    let mut sum_v = _mm256_setzero_si256();
+
+    while i + 32 <= n {
+        // ANCHOR:SAFETY:SIMD-U8-004 — AVX2 Load und Sub/Madd.
+        // BEGRÜNDUNG: i + 32 <= n garantiert In-Bounds Zugriff.
+        unsafe {
+            let va = _mm256_loadu_si256(a.as_ptr().add(i) as *const __m256i);
+            let vb = _mm256_loadu_si256(b.as_ptr().add(i) as *const __m256i);
+
+            let va_lo = _mm256_cvtepu8_epi16(_mm256_castsi256_si128(va));
+            let va_hi = _mm256_cvtepu8_epi16(_mm256_extracti128_si256(va, 1));
+            let vb_lo = _mm256_cvtepu8_epi16(_mm256_castsi256_si128(vb));
+            let vb_hi = _mm256_cvtepu8_epi16(_mm256_extracti128_si256(vb, 1));
+
+            let diff_lo = _mm256_sub_epi16(va_lo, vb_lo);
+            let diff_hi = _mm256_sub_epi16(va_hi, vb_hi);
+
+            sum_v = _mm256_add_epi32(sum_v, _mm256_madd_epi16(diff_lo, diff_lo));
+            sum_v = _mm256_add_epi32(sum_v, _mm256_madd_epi16(diff_hi, diff_hi));
+        }
+        i += 32;
+    }
+
+    let mut sum = hsum256_epi32_avx2(sum_v) as u32;
+    while i < n {
+        let diff = a[i] as i32 - b[i] as i32;
+        sum += (diff * diff) as u32;
+        i += 1;
+    }
+    sum
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+// ANCHOR:SAFETY:SIMD-U8-005 — AVX2 Cosine Similarity Parts for u8.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren. Dimensionen müssen gleich sein.
+/// # Safety
+/// This function is unsafe because it uses AVX2 intrinsics. The caller must ensure that the CPU supports AVX2.
+pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
+    let n = a.len();
+    let mut i = 0;
+
+    let mut dot_v = _mm256_setzero_si256();
+    let mut sum_a_v = _mm256_setzero_si256();
+    let mut sum_b_v = _mm256_setzero_si256();
+    let mut norm_a_v = _mm256_setzero_si256();
+    let mut norm_b_v = _mm256_setzero_si256();
+
+    while i + 32 <= n {
+        // ANCHOR:SAFETY:SIMD-U8-006 — AVX2 Loads und Accumulation.
+        // BEGRÜNDUNG: i + 32 <= n garantiert In-Bounds Zugriff.
+        unsafe {
+            let va = _mm256_loadu_si256(a.as_ptr().add(i) as *const __m256i);
+            let vb = _mm256_loadu_si256(b.as_ptr().add(i) as *const __m256i);
+
+            let va_lo = _mm256_cvtepu8_epi16(_mm256_castsi256_si128(va));
+            let va_hi = _mm256_cvtepu8_epi16(_mm256_extracti128_si256(va, 1));
+            let vb_lo = _mm256_cvtepu8_epi16(_mm256_castsi256_si128(vb));
+            let vb_hi = _mm256_cvtepu8_epi16(_mm256_extracti128_si256(vb, 1));
+
+            dot_v = _mm256_add_epi32(dot_v, _mm256_madd_epi16(va_lo, vb_lo));
+            dot_v = _mm256_add_epi32(dot_v, _mm256_madd_epi16(va_hi, vb_hi));
+
+            norm_a_v = _mm256_add_epi32(norm_a_v, _mm256_madd_epi16(va_lo, va_lo));
+            norm_a_v = _mm256_add_epi32(norm_a_v, _mm256_madd_epi16(va_hi, va_hi));
+
+            norm_b_v = _mm256_add_epi32(norm_b_v, _mm256_madd_epi16(vb_lo, vb_lo));
+            norm_b_v = _mm256_add_epi32(norm_b_v, _mm256_madd_epi16(vb_hi, vb_hi));
+
+            // Sums can use SAD against zero to sum bytes fast
+            let zero = _mm256_setzero_si256();
+            let sa = _mm256_sad_epu8(va, zero);
+            let sb = _mm256_sad_epu8(vb, zero);
+            sum_a_v = _mm256_add_epi64(sum_a_v, sa);
+            sum_b_v = _mm256_add_epi64(sum_b_v, sb);
+        }
+        i += 32;
+    }
+
+    let mut dot = hsum256_epi32_avx2(dot_v) as u32;
+    let mut norm_a_sq = hsum256_epi32_avx2(norm_a_v) as u32;
+    let mut norm_b_sq = hsum256_epi32_avx2(norm_b_v) as u32;
+    let mut sum_a = hsum256_epi64_avx2(sum_a_v) as u32;
+    let mut sum_b = hsum256_epi64_avx2(sum_b_v) as u32;
+
+    while i < n {
+        let xu = a[i] as u32;
+        let yu = b[i] as u32;
+        dot += xu * yu;
+        sum_a += xu;
+        sum_b += yu;
+        norm_a_sq += xu * xu;
+        norm_b_sq += yu * yu;
+        i += 1;
+    }
+
+    CosineSimilarityPartsU8 {
+        dot,
+        sum_a,
+        sum_b,
+        norm_a_sq,
+        norm_b_sq,
+    }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+// ANCHOR:SAFETY:SIMD-U8-007 — Horizontal Sum epi32.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+unsafe fn hsum256_epi32_avx2(v: __m256i) -> i32 {
+    // ANCHOR:SAFETY:SIMD-U8-009 — AVX2 Reduktion.
+    // BEGRÜNDUNG: Standard AVX2 Befehle zur horizontalen Reduktion.
+    unsafe {
+        let v128 = _mm_add_epi32(_mm256_castsi256_si128(v), _mm256_extracti128_si256(v, 1));
+        let v64 = _mm_add_epi32(v128, _mm_shuffle_epi32(v128, 0x4E));
+        let v32 = _mm_add_epi32(v64, _mm_shuffle_epi32(v64, 0xB1));
+        _mm_cvtsi128_si32(v32)
+    }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+// ANCHOR:SAFETY:SIMD-U8-008 — Horizontal Sum epi64.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+unsafe fn hsum256_epi64_avx2(v: __m256i) -> i64 {
+    // ANCHOR:SAFETY:SIMD-U8-010 — AVX2 Reduktion epi64.
+    // BEGRÜNDUNG: Standard AVX2 Befehle zur horizontalen Reduktion.
+    unsafe {
+        let v128 = _mm_add_epi64(_mm256_castsi256_si128(v), _mm256_extracti128_si256(v, 1));
+        let v64 = _mm_add_epi64(v128, _mm_unpackhi_epi64(v128, v128));
+        _mm_cvtsi128_si64(v64)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -584,6 +873,46 @@ mod tests {
         let expected = 8.0; // sqrt(64 * (1-2)^2) = sqrt(64) = 8
         let actual = super::euclidean_distance_std_simd(&a, &b);
         assert!((expected - actual).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_u8_metrics_match_scalar() {
+        let a = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
+        let b = vec![32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+
+        // Dot product
+        let dot_scalar = dot_product_u8(&a, &b);
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("avx2") {
+                let dot_simd = unsafe { dot_product_u8_avx2(&a, &b) };
+                assert_eq!(dot_scalar, dot_simd);
+            }
+        }
+
+        // Euclidean
+        let euc_scalar = euclidean_distance_sq_u8(&a, &b);
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("avx2") {
+                let euc_simd = unsafe { euclidean_distance_sq_u8_avx2(&a, &b) };
+                assert_eq!(euc_scalar, euc_simd);
+            }
+        }
+
+        // Cosine parts
+        let parts_scalar = cosine_similarity_parts_u8(&a, &b);
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("avx2") {
+                let parts_simd = unsafe { cosine_similarity_parts_u8_avx2(&a, &b) };
+                assert_eq!(parts_scalar.dot, parts_simd.dot);
+                assert_eq!(parts_scalar.sum_a, parts_simd.sum_a);
+                assert_eq!(parts_scalar.sum_b, parts_simd.sum_b);
+                assert_eq!(parts_scalar.norm_a_sq, parts_simd.norm_a_sq);
+                assert_eq!(parts_scalar.norm_b_sq, parts_simd.norm_b_sq);
+            }
+        }
     }
 
     #[test]

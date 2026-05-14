@@ -161,6 +161,7 @@ impl std::ops::Deref for HnswIndex {
 
 pub struct HnswIndexCore {
     config: HnswConfig,
+    validation_error: Option<String>,
     nodes: RwLock<Vec<HnswNode>>,
     doc_to_node: RwLock<AHashMap<u64, usize>>,
     entry_point: RwLock<Option<usize>>,
@@ -177,12 +178,12 @@ pub struct HnswIndexCore {
 impl HnswIndex {
     /// Creates a new HNSW index.
     pub fn new(config: HnswConfig) -> Self {
-        // Ignoriere den Fehler in new() für Rückwärtskompatibilität, er wird validiert wo möglich
-        let _ = config.validate();
+        let validation_error = config.validate().err().map(|e| e.to_string());
         let ml = 1.0 / (config.m as f64).ln();
         Self {
             inner: std::sync::Arc::new(HnswIndexCore {
                 config,
+                validation_error,
                 nodes: RwLock::new(Vec::new()),
                 doc_to_node: RwLock::new(AHashMap::new()),
                 entry_point: RwLock::new(None),
@@ -656,6 +657,12 @@ impl HnswIndexCore {
 #[async_trait]
 impl VectorIndex for HnswIndex {
     async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
         if embedding.len() != self.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
                 "Expected dimension {}, got {}",
@@ -682,6 +689,12 @@ impl VectorIndex for HnswIndex {
     // BOTTLENECK: CPU / Cache Misses / ef_search Heuristik
     // FIX: Dynamische Anpassung von ef_search basierend auf Layer-Hierarchie.
     async fn search(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
         if query.len() != self.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
                 "Expected dimension {}, got {}",
@@ -774,6 +787,12 @@ impl VectorIndex for HnswIndex {
         k: usize,
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<ScoredDocument>> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
         if query.len() != self.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
                 "Expected dimension {}, got {}",
@@ -860,6 +879,12 @@ impl VectorIndex for HnswIndex {
     }
 
     async fn delete(&self, tx: TxId, id: DocId) -> Result<()> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
         self.tx_buffer.stage(
             tx,
             IndexOp::Delete {
@@ -871,6 +896,12 @@ impl VectorIndex for HnswIndex {
     }
 
     async fn commit(&self, tx: TxId) -> Result<()> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
         let _lock = self.write_mutex.lock().await;
         let ops = self.tx_buffer.drain(tx);
         let mut deleted_any = false;
@@ -942,17 +973,32 @@ impl VectorIndex for HnswIndex {
     }
 
     async fn rollback(&self, tx: TxId) -> Result<()> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
         self.tx_buffer.discard(tx);
         Ok(())
     }
 
     async fn len(&self) -> usize {
+        if self.validation_error.is_some() {
+            return 0;
+        }
         let total = self.nodes.read().len();
         let deleted = self.deleted_count.load(Ordering::SeqCst) as usize;
         total.saturating_sub(deleted)
     }
 
     async fn stats(&self) -> Result<VectorIndexStats> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
         let nodes = self.nodes.read();
         let deleted_count = self.deleted_count.load(Ordering::SeqCst) as usize;
         let num_vectors = nodes.len().saturating_sub(deleted_count);
@@ -998,6 +1044,22 @@ mod tests {
             rebuild_threshold: 0.8,
             quantize: false,
         }
+    }
+
+    #[tokio::test]
+    async fn test_invalid_config_error() {
+        let config = HnswConfig {
+            ef_construction: 5,
+            m: 10, // Invalid: ef_construction < m
+            ..test_config(4)
+        };
+        let index = HnswIndex::new(config);
+        let tx = TxId::new(1);
+        let result = index.insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0]).await;
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("Invalid index configuration"));
+        assert!(err_msg.contains("ef_construction (5) must be >= m (10)"));
     }
 
     #[tokio::test]
