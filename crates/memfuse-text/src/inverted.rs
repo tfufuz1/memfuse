@@ -2,7 +2,9 @@
 
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use async_trait::async_trait;
-use memfuse_core::{DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId};
+use memfuse_core::{
+    DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -384,17 +386,23 @@ impl TextIndex for InvertedIndex {
         let tt_key = self.key("meta:total_tokens");
 
         let num_documents = if let Some(bytes) = self.storage.get(&td_key).await? {
-            u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                MemFuseError::Storage("Invalid total_docs length".into())
-            })?) as usize
+            u64::from_le_bytes(
+                bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
+            ) as usize
         } else {
             0
         };
 
         let num_tokens = if let Some(bytes) = self.storage.get(&tt_key).await? {
-            u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                MemFuseError::Storage("Invalid total_tokens length".into())
-            })?) as usize
+            u64::from_le_bytes(
+                bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid total_tokens length".into()))?,
+            ) as usize
         } else {
             0
         };
@@ -616,7 +624,9 @@ mod tests {
 
         let tx1 = TxId::new(1);
         let d1 = DocId::new(1);
-        index.upsert_document(tx1, d1, "Das Bundesverfassungsgericht in Karlsruhe").await?;
+        index
+            .upsert_document(tx1, d1, "Das Bundesverfassungsgericht in Karlsruhe")
+            .await?;
         storage.commit(tx1).await?;
 
         // Search for "gericht" should find it because of compound splitting
