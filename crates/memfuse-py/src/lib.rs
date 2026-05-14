@@ -250,6 +250,7 @@ impl PyCollection {
         Ok(py_res)
     }
 
+    /// Performs hybrid search (BM25 + Vector).
     #[pyo3(signature = (text, vector, k))]
     pub fn hybrid_search<'py>(
         &self,

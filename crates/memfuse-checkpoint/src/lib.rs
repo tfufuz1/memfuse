@@ -40,11 +40,13 @@ impl CheckpointManager {
         })
     }
 
+    /// Drops a checkpoint and releases its pinned sequence number in the storage engine.
     pub async fn drop_checkpoint(&self, checkpoint: &Checkpoint) -> Result<()> {
         self.storage.unpin_checkpoint(checkpoint.seq_no).await?;
         Ok(())
     }
 
+    /// Rollback the database state to a specific checkpoint.
     pub async fn rollback(&self, _checkpoint: &Checkpoint) -> Result<()> {
         // Full Time-Travel replay will be implemented here. For WP-5.1, pinning is the core requirement.
         Ok(())

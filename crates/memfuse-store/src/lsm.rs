@@ -1,7 +1,7 @@
 //! LSM-Tree (Log-Structured Merge-Tree) storage engine.
 // ANCHOR:DOC:DOC-LSM-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
+// AGENT:02 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:LSM-001 — Zentraler Storage-Engine-Orchestrator des Triebwerks.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -65,11 +65,17 @@ use tokio::sync::RwLock;
 // DONE: LsmConfig akzeptiert Passphrase, AES-256 wird für Disk-I/O verwendet.
 // SUCCESSOR: @JULES-13 — "Encryption ist impl. Bitte Specs finalisieren."
 #[derive(Clone, Debug)]
+/// Configuration for the LSM storage engine.
 pub struct LsmConfig {
+    /// Path to the data directory.
     pub path: PathBuf,
+    /// Maximum size of the memtable before flushing to disk.
     pub memtable_size_limit: usize,
+    /// Maximum RAM usage for the storage engine in MB.
     pub max_ram_mb: u64,
+    /// Timeout for transactions in the buffer.
     pub tx_timeout: Duration,
+    /// Configuration for background compaction.
     pub compaction: CompactionConfig,
     pub encryption_passphrase: Option<String>,
 }

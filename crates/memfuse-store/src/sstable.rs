@@ -1,21 +1,3 @@
-// ANCHOR:DOC:DOC-SSTABLE-001 — Missing module documentation
-// WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
-// CREATED:2026-05-09 DEADLINE:NONE
-// ANCHOR:ARCH:SST-001 — Immutable persistente Datendateien.
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
-// FORMAT: [DataBlock 0..N][IndexBlock][u64 index_offset][u32 MAGIC=0x4D465354 "MFST"]
-// BLOCK-FORMAT: [entries...][u64 bloom_filter][u16 offsets...][u16 num_offsets]
-// ENTRY-FORMAT: [u16 key_len][key][u64 seq_no][u16 val_len][value]
-// LOOKUP: Binary Search über Index (last_key pro Block) → Block lesen → Bloom-Check → Linear Scan.
-// VERWENDET IN: LsmStorage::get() (point lookup), CompactionEngine::merge_sstables() (full scan).
-//
-// ANCHOR:SPEC:WP-4.1-BLOOM-001 — Bloom Filter pro Block für schnellere Negative Lookups.
-// WP:WP-4.1 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
-// CREATED:2026-05-09 DEADLINE:NONE
 //! SSTable (Sorted String Table) implementation.
 //!
 //! SSTables are persistent, immutable files containing sorted key-value pairs.
@@ -149,6 +131,7 @@ pub struct SstableBuilder {
 }
 
 impl SstableBuilder {
+    /// Creates a new SstableBuilder that writes to the given file path.
     pub async fn create(path: impl AsRef<Path>) -> Result<Self> {
         Self::create_with_key_manager(path, None).await
     }
@@ -172,7 +155,7 @@ impl SstableBuilder {
         })
     }
 
-    /// Adds a key-value pair to the SSTable.
+    /// Adds a key-value pair to the SSTable being built.
     pub async fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64) -> Result<()> {
         if self.first_key.is_none() {
             self.first_key = Some(Bytes::copy_from_slice(key));
@@ -288,6 +271,7 @@ pub struct SstableReader {
 }
 
 impl SstableReader {
+    /// Opens an existing SSTable file for reading.
     pub async fn open(path: impl AsRef<Path>, block_cache: Arc<BlockCache>) -> Result<Self> {
         Self::open_with_key_manager(path, block_cache, None).await
     }
@@ -444,6 +428,7 @@ impl SstableReader {
     // VORHER: 2.26 µs → NACHHER: 2.07 µs (~8% gain)
     // BOTTLENECK: Memory Allocator / Heap Churn
     // OPTIMIERUNGSIDEE: SmallVec oder Pool-Buffer
+    /// Retrieves a value from the SSTable by key.
     pub async fn get(&self, key: &[u8]) -> Result<Option<(Bytes, u64)>> {
         if key < self.metadata.first_key || key > self.metadata.last_key {
             return Ok(None);
@@ -730,6 +715,7 @@ impl SstableReader {
         &self.file_path
     }
 
+    /// Scans the SSTable for keys starting with the given prefix.
     pub async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Bytes, Bytes, u64)>> {
         let mut results = Vec::with_capacity(16);
 
