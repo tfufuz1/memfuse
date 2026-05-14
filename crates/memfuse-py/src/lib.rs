@@ -10,10 +10,10 @@
 //!   from synchronous Python calls.
 //! - **Zero-Copy**: Aims for minimal copying of vector data between Python and Rust.
 
-// AGENT:06 DATE:2026-05-09 STATUS:READY
+// AGENT:06 DATE:2026-05-15 STATUS:DONE
 // ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
-// AGENT:@JULES-06 DATE:2026-05-09 STATUS:DONE
+// AGENT:@JULES-06 DATE:2026-05-15 STATUS:DONE
 // TEST: cd crates/memfuse-py && python -m pytest tests/ -v
 // DONE: pip install . funktioniert, keine Deadlocks in tokio-Runtime.
 // SUCCESSOR: @JULES-09 — "Python Bindings sind stabil. StateGraph kann darauf aufbauen."
@@ -50,7 +50,9 @@ fn get_runtime() -> PyResult<&'static Runtime> {
 
     // AGENT:06 DATE:2026-05-09 STATUS:DONE — Fixed DEBT-UNWRAP-LIB-25
     let _ = RUNTIME.set(rt);
-    Ok(RUNTIME.get().expect("Runtime must be initialized"))
+    RUNTIME.get().ok_or_else(|| {
+        pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve initialized tokio runtime")
+    })
 }
 
 /// A single search result from MemFuse.
@@ -89,6 +91,18 @@ impl Db {
             inner: Arc::new(col),
         })
     }
+
+    pub fn list_collections(&self, py: Python<'_>) -> PyResult<Vec<String>> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.list_collections()))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn drop_collection(&self, name: &str, py: Python<'_>) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.drop_collection(name)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
 }
 
 #[pyclass(unsendable)]
@@ -123,6 +137,98 @@ impl Collection {
         py.allow_threads(|| rt.block_on(self.inner.insert(id, vec_slice, meta_val)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(())
+    }
+
+    pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
+        let rt = get_runtime()?;
+        let doc = py
+            .allow_threads(|| rt.block_on(self.inner.get(id)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        if let Some(d) = doc {
+            let meta_py = if let Some(m) = d.metadata {
+                Some(
+                    pythonize(py, &m)
+                        .map_err(|e| {
+                            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                "Metadata error: {}",
+                                e
+                            ))
+                        })?
+                        .unbind(),
+                )
+            } else {
+                None
+            };
+
+            Ok(Some(PyDocument {
+                id: d.id,
+                metadata: meta_py,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    #[pyo3(signature = (id, vector, metadata=None))]
+    pub fn update<'py>(
+        &self,
+        py: Python<'py>,
+        id: &str,
+        vector: PyReadonlyArray1<'py, f32>,
+        metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+    ) -> PyResult<()> {
+        let rt = get_runtime()?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
+
+        let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
+            depythonize(&d).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Metadata error: {}", e))
+            })?
+        } else {
+            None
+        };
+
+        py.allow_threads(|| rt.block_on(self.inner.update(id, vec_slice, meta_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.delete(id)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<(String, PyObject)>> {
+        let rt = get_runtime()?;
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.scan_prefix(prefix)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut py_res = Vec::with_capacity(results.len());
+        for (k, v) in results {
+            let val_py = pythonize(py, &v)
+                .map_err(|e| {
+                    pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
+                })?
+                .unbind();
+            py_res.push((k, val_py));
+        }
+        Ok(py_res)
+    }
+
+    pub fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        let rt = get_runtime()?;
+        Ok(py.allow_threads(|| rt.block_on(self.inner.len())))
     }
 
     #[pyo3(signature = (vector, k))]
