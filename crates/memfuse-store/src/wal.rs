@@ -206,12 +206,18 @@ impl Wal {
         let mut pos = 0;
 
         while pos + 4 <= data.len() {
-            let len = u32::from_le_bytes(data[pos..pos + 4].try_into().map_err(|_| {
-                MemFuseError::WalCorruption {
-                    offset: pos as u64,
-                    reason: "Invalid length".into(),
-                }
-            })?) as usize;
+            let len = u32::from_le_bytes(
+                data.get(pos..pos + 4)
+                    .ok_or_else(|| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Buffer underrun reading length".into(),
+                    })?
+                    .try_into()
+                    .map_err(|_| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Invalid length slice".into(),
+                    })?,
+            ) as usize;
             pos += 4;
 
             if pos + len > data.len() {
@@ -219,63 +225,116 @@ impl Wal {
                 break;
             }
 
-            let entry_data = &data[pos..pos + len];
+            let entry_data = data.get(pos..pos + len).ok_or_else(|| {
+                MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Buffer underrun reading entry data".into(),
+                }
+            })?;
             pos += len;
 
             if entry_data.len() < 13 {
                 continue;
             }
 
-            let seq_no = u64::from_le_bytes(entry_data[0..8].try_into().map_err(|_| {
-                MemFuseError::WalCorruption {
-                    offset: pos as u64,
-                    reason: "Invalid seq_no".into(),
-                }
-            })?);
-            let stored_checksum =
-                u32::from_le_bytes(entry_data[8..12].try_into().map_err(|_| {
-                    MemFuseError::WalCorruption {
+            let seq_no = u64::from_le_bytes(
+                entry_data
+                    .get(0..8)
+                    .ok_or_else(|| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Invalid seq_no buffer".into(),
+                    })?
+                    .try_into()
+                    .map_err(|_| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Invalid seq_no".into(),
+                    })?,
+            );
+            let stored_checksum = u32::from_le_bytes(
+                entry_data
+                    .get(8..12)
+                    .ok_or_else(|| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Invalid checksum buffer".into(),
+                    })?
+                    .try_into()
+                    .map_err(|_| MemFuseError::WalCorruption {
                         offset: pos as u64,
                         reason: "Invalid checksum".into(),
-                    }
-                })?);
-            let op_type = entry_data[12];
+                    })?,
+            );
+            let op_type = *entry_data.get(12).ok_or_else(|| MemFuseError::WalCorruption {
+                offset: pos as u64,
+                reason: "Invalid op_type".into(),
+            })?;
 
-            let remaining = &entry_data[13..];
+            let remaining = entry_data.get(13..).ok_or_else(|| MemFuseError::WalCorruption {
+                offset: pos as u64,
+                reason: "Invalid remaining data".into(),
+            })?;
             let op = match op_type {
                 0 => {
                     // Put
                     if remaining.len() < 12 {
                         continue;
                     }
-                    let tx_id = TxId::new(u64::from_le_bytes(remaining[0..8].try_into().map_err(
-                        |_| MemFuseError::WalCorruption {
-                            offset: pos as u64,
-                            reason: "Invalid tx_id".into(),
-                        },
-                    )?));
-                    let key_len = u32::from_le_bytes(remaining[8..12].try_into().map_err(|_| {
-                        MemFuseError::WalCorruption {
-                            offset: pos as u64,
-                            reason: "Invalid key_len".into(),
-                        }
-                    })?) as usize;
+                    let tx_id = TxId::new(u64::from_le_bytes(
+                        remaining
+                            .get(0..8)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid tx_id buffer".into(),
+                            })?
+                            .try_into()
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid tx_id".into(),
+                            })?,
+                    ));
+                    let key_len = u32::from_le_bytes(
+                        remaining
+                            .get(8..12)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid key_len buffer".into(),
+                            })?
+                            .try_into()
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid key_len".into(),
+                            })?,
+                    ) as usize;
                     if remaining.len() < 12 + key_len + 4 {
                         continue;
                     }
-                    let key = remaining[12..12 + key_len].to_vec();
+                    let key = remaining
+                        .get(12..12 + key_len)
+                        .ok_or_else(|| MemFuseError::WalCorruption {
+                            offset: pos as u64,
+                            reason: "Invalid key buffer".into(),
+                        })?
+                        .to_vec();
                     let val_start = 12 + key_len;
-                    let val_len =
-                        u32::from_le_bytes(remaining[val_start..val_start + 4].try_into().map_err(
-                            |_| MemFuseError::WalCorruption {
+                    let val_len = u32::from_le_bytes(
+                        remaining
+                            .get(val_start..val_start + 4)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid val_len buffer".into(),
+                            })?
+                            .try_into()
+                            .map_err(|_| MemFuseError::WalCorruption {
                                 offset: pos as u64,
                                 reason: "Invalid val_len".into(),
-                            },
-                        )?) as usize;
-                    if remaining.len() < val_start + 4 + val_len {
-                        continue;
-                    }
-                    let value = remaining[val_start + 4..val_start + 4 + val_len].to_vec();
+                            })?,
+                    ) as usize;
+                    let value = remaining
+                        .get(val_start + 4..val_start + 4 + val_len)
+                        .ok_or_else(|| MemFuseError::WalCorruption {
+                            offset: pos as u64,
+                            reason: "Invalid value buffer".into(),
+                        })?
+                        .to_vec();
                     WalOp::Put { tx_id, key, value }
                 }
                 1 => {
@@ -283,22 +342,39 @@ impl Wal {
                     if remaining.len() < 12 {
                         continue;
                     }
-                    let tx_id = TxId::new(u64::from_le_bytes(remaining[0..8].try_into().map_err(
-                        |_| MemFuseError::WalCorruption {
+                    let tx_id = TxId::new(u64::from_le_bytes(
+                        remaining
+                            .get(0..8)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid tx_id buffer".into(),
+                            })?
+                            .try_into()
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid tx_id".into(),
+                            })?,
+                    ));
+                    let key_len = u32::from_le_bytes(
+                        remaining
+                            .get(8..12)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid key_len buffer".into(),
+                            })?
+                            .try_into()
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid key_len".into(),
+                            })?,
+                    ) as usize;
+                    let key = remaining
+                        .get(12..12 + key_len)
+                        .ok_or_else(|| MemFuseError::WalCorruption {
                             offset: pos as u64,
-                            reason: "Invalid tx_id".into(),
-                        },
-                    )?));
-                    let key_len = u32::from_le_bytes(remaining[8..12].try_into().map_err(|_| {
-                        MemFuseError::WalCorruption {
-                            offset: pos as u64,
-                            reason: "Invalid key_len".into(),
-                        }
-                    })?) as usize;
-                    if remaining.len() < 12 + key_len {
-                        continue;
-                    }
-                    let key = remaining[12..12 + key_len].to_vec();
+                            reason: "Invalid key buffer".into(),
+                        })?
+                        .to_vec();
                     WalOp::Delete { tx_id, key }
                 }
                 _ => continue,

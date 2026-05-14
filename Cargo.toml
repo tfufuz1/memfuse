@@ -29,6 +29,7 @@ async-stream = "0.3"
 tokio-stream = "0.1"
 
 # Data structures
+memmap2 = "0.9"
 bytes = "1"
 ahash = "0.8"
 parking_lot = "0.12"
