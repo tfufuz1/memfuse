@@ -81,29 +81,27 @@ impl ScalarQuantizer {
         quantized: &[u8],
         metric: DistanceMetric,
     ) -> memfuse_core::Result<f32> {
+        let alpha = (self.max - self.min) / 255.0;
+        let sum_query: f32 = query.iter().sum();
+
         match metric {
             DistanceMetric::DotProduct => {
                 let dot = crate::distance::dot_product_f32_u8(query, quantized);
                 // dequantized v = quantized * alpha + min
                 // dot(query, v) = dot(query, quantized * alpha + min)
                 //               = alpha * dot(query, quantized) + min * sum(query)
-                let alpha = (self.max - self.min) / 255.0;
-                let sum_query: f32 = query.iter().sum();
                 Ok(alpha * dot + self.min * sum_query)
             }
             DistanceMetric::Euclidean => {
-                let alpha = (self.max - self.min) / 255.0;
                 let dist_sq = crate::distance::euclidean_distance_sq_f32_u8(
                     query, quantized, alpha, self.min,
                 );
                 Ok(dist_sq.sqrt())
             }
             DistanceMetric::Cosine => {
-                let alpha = (self.max - self.min) / 255.0;
                 let parts = crate::distance::cosine_similarity_parts_f32_u8(query, quantized);
 
                 // dot(query, v) = alpha * parts.dot_f32_u8 + min * sum(query)
-                let sum_query: f32 = query.iter().sum();
                 let dot_uv = alpha * parts.dot_f32_u8 + self.min * sum_query;
 
                 // norm(v)^2 = sum((y_i * alpha + min)^2)

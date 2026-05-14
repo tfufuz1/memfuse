@@ -543,7 +543,21 @@ pub fn normalize_inplace(v: &mut [f32]) {
 }
 
 /// Computes the dot product of two u8 vectors.
+#[inline]
 pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
+    debug_assert_eq!(a.len(), b.len());
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            // ANCHOR:SAFETY:SIMD-U8-014 — AVX2 Dispatch.
+            // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
+            return unsafe { dot_product_u8_avx2(a, b) };
+        }
+    }
+    dot_product_u8_scalar(a, b)
+}
+
+pub fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
         .map(|(&x, &y)| x as u32 * y as u32)
@@ -551,7 +565,21 @@ pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
 }
 
 /// Computes the squared Euclidean distance between two u8 vectors.
+#[inline]
 pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
+    debug_assert_eq!(a.len(), b.len());
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            // ANCHOR:SAFETY:SIMD-U8-015 — AVX2 Dispatch.
+            // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
+            return unsafe { euclidean_distance_sq_u8_avx2(a, b) };
+        }
+    }
+    euclidean_distance_sq_u8_scalar(a, b)
+}
+
+pub fn euclidean_distance_sq_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
         .map(|(&x, &y)| {
@@ -572,7 +600,21 @@ pub struct CosineSimilarityPartsU8 {
 }
 
 /// Computes the parts required for cosine similarity between two u8 vectors.
+#[inline]
 pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
+    debug_assert_eq!(a.len(), b.len());
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            // ANCHOR:SAFETY:SIMD-U8-016 — AVX2 Dispatch.
+            // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
+            return unsafe { cosine_similarity_parts_u8_avx2(a, b) };
+        }
+    }
+    cosine_similarity_parts_u8_scalar(a, b)
+}
+
+pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
     let mut dot = 0;
     let mut sum_a = 0;
     let mut sum_b = 0;
@@ -617,6 +659,7 @@ pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alpha: f32, min: f32) -
 }
 
 /// Parts required to compute asymmetric cosine similarity.
+#[derive(Debug, Clone, Copy)]
 pub struct CosineSimilarityPartsF32U8 {
     pub dot_f32_u8: f32,
     pub sum_u8: u32,
@@ -677,7 +720,9 @@ pub unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
         i += 32;
     }
 
-    let mut sum = hsum256_epi32_avx2(sum_v) as u32;
+    // ANCHOR:SAFETY:SIMD-U8-011 — Horizontale Summe.
+    // BEGRÜNDUNG: Hardware-Support durch Caller garantiert.
+    let mut sum = unsafe { hsum256_epi32_avx2(sum_v) as u32 };
     while i < n {
         sum += a[i] as u32 * b[i] as u32;
         i += 1;
@@ -717,7 +762,9 @@ pub unsafe fn euclidean_distance_sq_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
         i += 32;
     }
 
-    let mut sum = hsum256_epi32_avx2(sum_v) as u32;
+    // ANCHOR:SAFETY:SIMD-U8-012 — Horizontale Summe.
+    // BEGRÜNDUNG: Hardware-Support durch Caller garantiert.
+    let mut sum = unsafe { hsum256_epi32_avx2(sum_v) as u32 };
     while i < n {
         let diff = a[i] as i32 - b[i] as i32;
         sum += (diff * diff) as u32;
@@ -773,11 +820,17 @@ pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimil
         i += 32;
     }
 
-    let mut dot = hsum256_epi32_avx2(dot_v) as u32;
-    let mut norm_a_sq = hsum256_epi32_avx2(norm_a_v) as u32;
-    let mut norm_b_sq = hsum256_epi32_avx2(norm_b_v) as u32;
-    let mut sum_a = hsum256_epi64_avx2(sum_a_v) as u32;
-    let mut sum_b = hsum256_epi64_avx2(sum_b_v) as u32;
+    // ANCHOR:SAFETY:SIMD-U8-013 — Horizontale Summen.
+    // BEGRÜNDUNG: Hardware-Support durch Caller garantiert.
+    let (mut dot, mut norm_a_sq, mut norm_b_sq, mut sum_a, mut sum_b) = unsafe {
+        (
+            hsum256_epi32_avx2(dot_v) as u32,
+            hsum256_epi32_avx2(norm_a_v) as u32,
+            hsum256_epi32_avx2(norm_b_v) as u32,
+            hsum256_epi64_avx2(sum_a_v) as u32,
+            hsum256_epi64_avx2(sum_b_v) as u32,
+        )
+    };
 
     while i < n {
         let xu = a[i] as u32;
