@@ -1,3 +1,4 @@
+//! MemFuse Orchestrator — Declarative StateGraphs and Agent execution.
 // ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:13 DATE:2026-05-09 STATUS:READY
@@ -13,8 +14,7 @@
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ZIEL: Deklarative LangGraph-ähnliche Graphenausführung in nativem Rust.
-// ANCHOR:INTEGRATION STATUS:READY AGENT:13 DATE:2026-05-15
-//! MemFuse Orchestrator — Declarative StateGraphs and Agent execution.
+// ANCHOR:INTEGRATION STATUS:TODO AGENT:13
 
 #![forbid(unsafe_code)]
 

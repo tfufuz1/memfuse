@@ -58,8 +58,9 @@ pub mod fusion;
 pub mod transaction;
 
 pub use collection::Collection;
+pub use memfuse_checkpoint;
 
-/// User-facing search result.
+/// User-facing search result containing the ID, score, and optional metadata.
 #[derive(Debug, Clone)]
 pub struct SearchResult {
     /// The string ID provided during insert.
@@ -79,7 +80,7 @@ pub struct DbStats {
     pub storage_stats: memfuse_core::StorageStats,
 }
 
-/// User-facing document retrieved by key.
+/// User-facing document structure.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Document {
     /// The string ID.
@@ -88,7 +89,7 @@ pub struct Document {
     pub metadata: Option<Value>,
 }
 
-/// Configuration for MemFuse.
+/// Global configuration settings for the MemFuse database.
 #[derive(Debug, Clone)]
 pub struct MemFuseConfig {
     /// Vector dimensionality (must match your embeddings).
@@ -345,8 +346,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
-    // ANCHOR:FIXME PRIO:1 AGENT:04 DATE:2026-05-15 STATUS:READY
-    // ISSUE: Duplicate definition of `hybrid_search`.
+    /// Performs hybrid search combining BM25 and vector search.
     pub async fn hybrid_search(
         &self,
         text: &str,
@@ -408,6 +408,12 @@ impl MemFuse {
 pub use memfuse_core::DistanceMetric;
 pub use serde_json::json;
 
+#[cfg(any(test, feature = "bench"))]
+impl MemFuse {
+    pub fn inner_storage(&self) -> Arc<LsmStorage> {
+        self.storage.clone()
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -10,6 +10,7 @@ use std::sync::Arc;
 pub struct InvertedIndex {
     storage: Arc<dyn StorageEngine>,
     prefix: Vec<u8>,
+    tokenizer: Arc<dyn Tokenizer>,
 }
 
 impl InvertedIndex {
@@ -20,7 +21,18 @@ impl InvertedIndex {
         } else {
             format!("__txt:{}:", namespace).into_bytes()
         };
-        Self { storage, prefix }
+
+        let tokenizer: Arc<dyn Tokenizer> = if namespace.contains("de") {
+            Arc::new(GermanMorphTokenizer)
+        } else {
+            Arc::new(DefaultTokenizer)
+        };
+
+        Self {
+            storage,
+            prefix,
+            tokenizer,
+        }
     }
 
     fn key(&self, suffix: &str) -> Vec<u8> {
@@ -31,7 +43,7 @@ impl InvertedIndex {
 
     /// Appends and updates inverted index structures for a document.
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
-        let tokens = tokenize(text);
+        let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
 
         let mut tfs = HashMap::new();
