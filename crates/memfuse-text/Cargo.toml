@@ -17,10 +17,12 @@ memfuse-core = { workspace = true }
 # SOFORTIGE AKTION: Abhängigkeit extrahieren nach memfuse-core oder neuen Crate
 # AGENT:antigravity DATE:2026-05-09 STATUS:DONE
 unicode-segmentation = "1.11.0"
+async-trait = { workspace = true }
 bincode = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+async-trait = { workspace = true }
 
 [dev-dependencies]
 memfuse-store = { workspace = true }
