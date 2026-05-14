@@ -41,9 +41,13 @@ impl DocId {
         self.0
     }
 
+    // ANCHOR:DEBT:DOCID-001 — DocId::from_key avoids panics via unwrap_or(0).
+    // WP:WP-0.0 PRIO:3 NEEDS:NONE
+    // AGENT:01 DATE:2026-05-15 STATUS:DONE
+    // CREATED:2026-05-15 DEADLINE:NONE
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Self {
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes")
+        Self::try_from_key(key).unwrap_or(Self(0))
     }
 
     /// Safely derive a DocId from a user-provided string key.
