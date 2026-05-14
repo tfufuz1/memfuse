@@ -339,7 +339,10 @@ impl StorageEngine for LsmStorage {
 
         let ops = self.tx_buffer.drain(tx_id);
         let state = self.state.read().await;
-        let integrity_key = self.key_manager.as_ref().map(|km| km.derive_integrity_key());
+        let integrity_key = self
+            .key_manager
+            .as_ref()
+            .map(|km| km.derive_integrity_key());
 
         for op in ops {
             let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);

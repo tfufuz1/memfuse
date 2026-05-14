@@ -365,9 +365,15 @@ impl Wal {
             // AGENT:10 DATE:2026-05-15 STATUS:REVIEW
             // Ohne Verifikation werden korrupte Entries (Bit-Flip, Partial Write)
             // blind in die MemTable replayed → stille Datenkorrumpierung.
-            let integrity_key = self.key_manager.as_ref().map(|km| km.derive_integrity_key());
-            let recomputed_checksum =
-                WalEntry::compute_checksum(&op, seq_no, integrity_key.as_ref().map(|k| k.as_slice()));
+            let integrity_key = self
+                .key_manager
+                .as_ref()
+                .map(|km| km.derive_integrity_key());
+            let recomputed_checksum = WalEntry::compute_checksum(
+                &op,
+                seq_no,
+                integrity_key.as_ref().map(|k| k.as_slice()),
+            );
             if recomputed_checksum != stored_checksum {
                 tracing::warn!(
                     "WAL entry at offset {} has invalid checksum, truncating replay",
