@@ -3,7 +3,7 @@
 // AGENT:09 DATE:2026-05-15 STATUS:DONE
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use memfuse_db::{MemFuse, memfuse_checkpoint::CheckpointManager};
+use memfuse_db::{memfuse_checkpoint::CheckpointManager, MemFuse};
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
