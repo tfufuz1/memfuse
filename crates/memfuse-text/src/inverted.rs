@@ -1,6 +1,6 @@
 //! LSM-backed Inverted Index.
 
-use crate::tokenizer::tokenize;
+use crate::tokenizer::{tokenize, DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -37,7 +37,8 @@ impl InvertedIndex {
     }
 
     fn key(&self, suffix: &str) -> Vec<u8> {
-        let mut k = self.prefix.clone();
+        let mut k = Vec::with_capacity(self.prefix.len() + suffix.len());
+        k.extend_from_slice(&self.prefix);
         k.extend_from_slice(suffix.as_bytes());
         k
     }
@@ -47,7 +48,7 @@ impl InvertedIndex {
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
 
-        let mut tfs = HashMap::new();
+        let mut tfs = HashMap::with_capacity(tokens.len());
         for t in &tokens {
             *tfs.entry(t.clone()).or_insert(0u32) += 1;
         }
@@ -109,7 +110,8 @@ impl InvertedIndex {
             .await?;
 
         // Store forward index (unique terms)
-        let mut unique_terms: Vec<String> = tfs.keys().cloned().collect();
+        let mut unique_terms: Vec<String> = Vec::with_capacity(tfs.len());
+        unique_terms.extend(tfs.keys().cloned());
         unique_terms.sort();
         let fw_bytes = bincode::serde::encode_to_vec(&unique_terms, bincode::config::standard())
             .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
