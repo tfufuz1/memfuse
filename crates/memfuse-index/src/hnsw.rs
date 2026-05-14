@@ -267,7 +267,6 @@ impl HnswIndexCore {
             // AGENT:13 DATE:2026-05-09 STATUS:DONE
             // CREATED:2026-05-09 DEADLINE:NONE
             // FUNDORT: memfuse-index/src/hnsw.rs
-            // FIX: unreachable!() → Result<T, MemFuseError> für Sovereign Core Compliance
             _ => Err(MemFuseError::Index(
                 "Mixed vector representations (F32/U8) are not supported".into(),
             )),
@@ -749,7 +748,7 @@ impl VectorIndex for HnswIndex {
 
         let nodes = self.nodes.read();
         let deleted = self.deleted_nodes.read();
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(k);
 
         for c in candidates.iter() {
             if deleted.contains(c.index as u64) {
@@ -835,7 +834,7 @@ impl VectorIndex for HnswIndex {
 
         let nodes = self.nodes.read();
         let deleted = self.deleted_nodes.read();
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(k);
 
         for c in candidates.iter() {
             if deleted.contains(c.index as u64) {
