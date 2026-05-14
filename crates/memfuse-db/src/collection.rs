@@ -1,7 +1,7 @@
 //! Logically isolated Collections inside the MemFuse database.
 // ANCHOR:ARCH:COLLECTION-001 — Logische Isolation (Namespaces).
 // WP:WP-1.2 PRIO:1 NEEDS:NONE
-// AGENT:04 DATE:2026-05-09 STATUS:DONE
+// AGENT:04 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-05 DEADLINE:NONE
 // DESIGN: Eigener HNSW-Index pro Collection, GEMEINSAMER LSM-Storage.
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.

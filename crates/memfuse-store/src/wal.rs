@@ -90,11 +90,7 @@ impl WalEntry {
         }
     }
 
-    pub fn compute_checksum(
-        op: &WalOp,
-        seq_no: u64,
-        integrity_key: Option<&[u8; 32]>,
-    ) -> [u8; 32] {
+    pub fn compute_checksum(op: &WalOp, seq_no: u64, integrity_key: Option<&[u8; 32]>) -> [u8; 32] {
         let key: &[u8] = if let Some(k) = integrity_key {
             k
         } else {
@@ -294,17 +290,19 @@ impl Wal {
                 continue;
             }
 
-            let seq_no = u64::from_le_bytes(entry_data.get(0..8).ok_or_else(|| {
-                MemFuseError::WalCorruption {
-                    offset: pos as u64,
-                    reason: "Invalid seq_no".into(),
-                }
-            })?.try_into().map_err(|_| {
-                MemFuseError::WalCorruption {
-                    offset: pos as u64,
-                    reason: "Invalid seq_no".into(),
-                }
-            })?);
+            let seq_no = u64::from_le_bytes(
+                entry_data
+                    .get(0..8)
+                    .ok_or_else(|| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Invalid seq_no".into(),
+                    })?
+                    .try_into()
+                    .map_err(|_| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Invalid seq_no".into(),
+                    })?,
+            );
             let stored_checksum: [u8; 32] = entry_data
                 .get(8..40)
                 .ok_or_else(|| MemFuseError::WalCorruption {
@@ -316,15 +314,19 @@ impl Wal {
                     offset: pos as u64,
                     reason: "Invalid checksum".into(),
                 })?;
-            let op_type = *entry_data.get(40).ok_or_else(|| MemFuseError::WalCorruption {
-                offset: pos as u64,
-                reason: "Invalid op_type".into(),
-            })?;
+            let op_type = *entry_data
+                .get(40)
+                .ok_or_else(|| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid op_type".into(),
+                })?;
 
-            let remaining = entry_data.get(41..).ok_or_else(|| MemFuseError::WalCorruption {
-                offset: pos as u64,
-                reason: "Invalid payload".into(),
-            })?;
+            let remaining = entry_data
+                .get(41..)
+                .ok_or_else(|| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid payload".into(),
+                })?;
             let op = match op_type {
                 0 => {
                     // Put
