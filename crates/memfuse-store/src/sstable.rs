@@ -33,6 +33,7 @@
 //! - **Async I/O**: All disk operations use `tokio::fs` to ensure compatibility with the async runtime.
 //! - **Zero Panic**: Production code paths avoid `unwrap()` and `expect()`, favoring explicit error handling.
 
+use crate::crypto::KeyManager;
 use bytes::{BufMut, Bytes, BytesMut};
 use lru::LruCache;
 use memfuse_core::{MemFuseError, Result};
@@ -144,10 +145,18 @@ pub struct SstableBuilder {
     first_key: Option<Bytes>,
     last_key: Option<Bytes>,
     offset: u64,
+    key_manager: Option<Arc<KeyManager>>,
 }
 
 impl SstableBuilder {
     pub async fn create(path: impl AsRef<Path>) -> Result<Self> {
+        Self::create_with_key_manager(path, None).await
+    }
+
+    pub async fn create_with_key_manager(
+        path: impl AsRef<Path>,
+        key_manager: Option<Arc<KeyManager>>,
+    ) -> Result<Self> {
         let file = File::create(path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create SSTable: {}", e)))?;
@@ -159,6 +168,7 @@ impl SstableBuilder {
             first_key: None,
             last_key: None,
             offset: 0,
+            key_manager,
         })
     }
 
@@ -186,9 +196,21 @@ impl SstableBuilder {
             .last_key
             .clone()
             .ok_or_else(|| MemFuseError::Storage("Missing last_key".into()))?;
-        let block =
+        let mut block =
             std::mem::replace(&mut self.block_builder, BlockBuilder::new(BLOCK_SIZE)).build();
+
+        if let Some(km) = &self.key_manager {
+            let encrypted = km.encrypt(&block, self.offset)?;
+            block = Bytes::from(encrypted);
+        }
+
         let block_len = block.len() as u64;
+
+        // Write block length prefix for encrypted blocks to allow easy decryption?
+        // Actually SSTable blocks are usually fixed-ish size, and we know the offsets from the index.
+        // If encrypted, the block size might increase (AEAD tag).
+        // Let's write the length of the block before the block itself if it's variable.
+        // But the index stores the absolute offset. So we can compute length as next_offset - offset.
 
         self.file
             .write_all(&block)
@@ -262,10 +284,19 @@ pub struct SstableReader {
     file_id: u64,
     /// Shared block cache.
     block_cache: Arc<BlockCache>,
+    key_manager: Option<Arc<KeyManager>>,
 }
 
 impl SstableReader {
     pub async fn open(path: impl AsRef<Path>, block_cache: Arc<BlockCache>) -> Result<Self> {
+        Self::open_with_key_manager(path, block_cache, None).await
+    }
+
+    pub async fn open_with_key_manager(
+        path: impl AsRef<Path>,
+        block_cache: Arc<BlockCache>,
+        key_manager: Option<Arc<KeyManager>>,
+    ) -> Result<Self> {
         let mut file = tokio::fs::File::open(&path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to open SSTable: {}", e)))?;
@@ -348,29 +379,42 @@ impl SstableReader {
 
         // Read the actual first key from the first data block header
         // (index stores last_key per block, NOT first_key)
-        let mut sync_file = tokio::fs::File::open(&path)
-            .await
-            .map_err(|e| MemFuseError::Storage(format!("Failed to open SSTable: {}", e)))?;
         let first_key = if !index.is_empty() {
-            sync_file
-                .seek(tokio::io::SeekFrom::Start(index[0].1))
+            let offset = index[0].1;
+            let next_offset = if index.len() > 1 {
+                index[1].1
+            } else {
+                index_offset
+            };
+            file.seek(std::io::SeekFrom::Start(offset))
                 .await
                 .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
-            let mut hdr = [0u8; 2];
-            sync_file
-                .read_exact(&mut hdr)
+            let mut raw_block = vec![0u8; (next_offset - offset) as usize];
+            file.read_exact(&mut raw_block)
                 .await
                 .map_err(|e| MemFuseError::Storage(format!("Read failed: {}", e)))?;
-            let k_len = u16::from_le_bytes(hdr) as usize;
-            let mut k_buf = vec![0u8; k_len];
-            sync_file
-                .read_exact(&mut k_buf)
-                .await
-                .map_err(|e| MemFuseError::Storage(format!("Read failed: {}", e)))?;
-            Bytes::from(k_buf)
+
+            let mut block_data = Bytes::from(raw_block);
+            if let Some(km) = &key_manager {
+                let decrypted = km.decrypt(&block_data, offset)?;
+                block_data = Bytes::from(decrypted);
+            }
+
+            if block_data.len() < 2 {
+                return Err(MemFuseError::Storage("corrupted SSTable block".into()));
+            }
+            let k_len = u16::from_le_bytes([block_data[0], block_data[1]]) as usize;
+            if block_data.len() < 2 + k_len {
+                return Err(MemFuseError::Storage("corrupted SSTable block".into()));
+            }
+            Bytes::copy_from_slice(&block_data[2..2 + k_len])
         } else {
             Bytes::new()
         };
+
+        let sync_file = tokio::fs::File::open(&path)
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("Failed to re-open SSTable: {}", e)))?;
 
         Ok(Self {
             file: tokio::sync::Mutex::new(sync_file),
@@ -388,6 +432,7 @@ impl SstableReader {
                 NEXT_FILE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             },
             block_cache,
+            key_manager,
         })
     }
 
@@ -441,7 +486,12 @@ impl SstableReader {
                         MemFuseError::Storage(format!("SSTable read failed: {}", e))
                     })?;
                 }
-                let block = Bytes::from(raw_block);
+                let mut block = Bytes::from(raw_block);
+                if let Some(km) = &self.key_manager {
+                    let decrypted = km.decrypt(&block, offset)?;
+                    block = Bytes::from(decrypted);
+                }
+
                 self.block_cache
                     .write()
                     .put((self.file_id, offset), block.clone());
@@ -681,7 +731,7 @@ impl SstableReader {
     }
 
     pub async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Bytes, Bytes, u64)>> {
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(16);
 
         let start_idx = match self.index.binary_search_by(|(k, _)| k.as_ref().cmp(prefix)) {
             Ok(i) => i,
@@ -822,7 +872,7 @@ impl SstableReader {
     ) -> Result<Vec<(Bytes, Bytes, u64)>> {
         use std::ops::Bound;
 
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(16);
         if self.index.is_empty() {
             return Ok(results);
         }

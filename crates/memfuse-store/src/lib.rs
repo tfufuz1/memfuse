@@ -4,7 +4,7 @@
 // CREATED:2026-05-05 DEADLINE:NONE
 // DATEN-PFAD: Client → TxBuffer → WAL → MemTable → SSTable → Compaction
 // INVARIANTE: Alle Disk-I/O via tokio::fs (zero std::fs imports).
-// ANCHOR:INTEGRATION STATUS:TODO AGENT:02
+// ANCHOR:INTEGRATION STATUS:READY AGENT:02 DATE:2026-05-15
 // MODUL-HIERARCHIE: lsm.rs orchestriert, memtable/wal/sstable sind Bausteine.
 //! MemFuse Store — LSM-Tree based storage engine.
 //!
@@ -14,6 +14,7 @@
 #![forbid(unsafe_code)]
 
 pub mod compaction;
+pub mod crypto;
 pub mod lsm;
 pub mod memtable;
 pub mod sstable;
