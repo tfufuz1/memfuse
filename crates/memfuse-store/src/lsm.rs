@@ -336,6 +336,7 @@ impl StorageEngine for LsmStorage {
 
         for op in ops {
             let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
+            let integrity_key = self.key_manager.as_ref().map(|km| km.integrity_key());
 
             match op {
                 IndexOp::Insert { data, .. } => {
@@ -347,6 +348,7 @@ impl StorageEngine for LsmStorage {
                             value: value.clone(),
                         },
                         seq_no,
+                        integrity_key,
                     );
                     let entry_size = key.len() + value.len() + 8;
                     let _ = self.budget.consume_memory(entry_size as u64);
@@ -363,6 +365,7 @@ impl StorageEngine for LsmStorage {
                                 key: key.clone(),
                             },
                             seq_no,
+                            integrity_key,
                         );
                         let _ = self.budget.consume_memory(key.len() as u64 + 8);
                         state.wal.append(&entry).await?;

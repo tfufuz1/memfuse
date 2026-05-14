@@ -12,24 +12,33 @@ use sha2::Sha256;
 
 /// Manager for encryption keys and block encryption.
 pub struct KeyManager {
-    key: [u8; 32],
+    encryption_key: [u8; 32],
+    integrity_key: [u8; 32],
 }
 
 impl KeyManager {
-    /// Creates a new KeyManager by deriving a key from a passphrase.
+    /// Creates a new KeyManager by deriving keys from a passphrase.
     pub fn new(passphrase: &str) -> Self {
         let salt = b"memfuse-encryption-salt-v1";
         let hk = Hkdf::<Sha256>::new(Some(salt), passphrase.as_bytes());
-        let mut key = [0u8; 32];
-        hk.expand(b"memfuse-aes-256-gcm-key", &mut key)
+
+        let mut encryption_key = [0u8; 32];
+        hk.expand(b"memfuse-aes-256-gcm-key", &mut encryption_key)
             .expect("32 bytes is a valid length for HKDF expansion");
 
-        Self { key }
+        let mut integrity_key = [0u8; 32];
+        hk.expand(b"memfuse-hmac-sha256-integrity-key", &mut integrity_key)
+            .expect("32 bytes is a valid length for HKDF expansion");
+
+        Self {
+            encryption_key,
+            integrity_key,
+        }
     }
 
     /// Encrypts a block of data with a given nonce (e.g., block offset).
     pub fn encrypt(&self, data: &[u8], nonce_val: u64) -> Result<Vec<u8>> {
-        let cipher = Aes256Gcm::new_from_slice(&self.key)
+        let cipher = Aes256Gcm::new_from_slice(&self.encryption_key)
             .map_err(|e| MemFuseError::Storage(format!("Crypto error: {}", e)))?;
 
         let mut nonce_bytes = [0u8; 12];
@@ -43,7 +52,7 @@ impl KeyManager {
 
     /// Decrypts a block of data.
     pub fn decrypt(&self, ciphertext: &[u8], nonce_val: u64) -> Result<Vec<u8>> {
-        let cipher = Aes256Gcm::new_from_slice(&self.key)
+        let cipher = Aes256Gcm::new_from_slice(&self.encryption_key)
             .map_err(|e| MemFuseError::Storage(format!("Crypto error: {}", e)))?;
 
         let mut nonce_bytes = [0u8; 12];
@@ -53,6 +62,11 @@ impl KeyManager {
         cipher
             .decrypt(nonce, ciphertext)
             .map_err(|e| MemFuseError::Storage(format!("Decryption failed: {}", e)))
+    }
+
+    /// Returns the derived integrity key.
+    pub fn integrity_key(&self) -> &[u8; 32] {
+        &self.integrity_key
     }
 }
 

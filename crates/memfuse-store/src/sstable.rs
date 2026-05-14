@@ -313,6 +313,9 @@ impl SstableReader {
 
         // Read index offset and magic
         use tokio::io::{AsyncReadExt, AsyncSeekExt};
+        if file_size < 12 {
+            return Err(MemFuseError::Storage("SSTable file too small".into()));
+        }
         file.seek(std::io::SeekFrom::End(-12))
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
@@ -351,7 +354,9 @@ impl SstableReader {
 
         while pos + 10 <= index_data.len() {
             let key_len = u16::from_le_bytes(
-                index_data[pos..pos + 2]
+                index_data
+                    .get(pos..pos + 2)
+                    .ok_or_else(|| MemFuseError::Storage("corrupted SSTable index".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
@@ -360,14 +365,20 @@ impl SstableReader {
             if pos + key_len > index_data.len() {
                 return Err(MemFuseError::Storage("corrupted SSTable index".into()));
             }
-            let key = Bytes::copy_from_slice(&index_data[pos..pos + key_len]);
+            let key = Bytes::copy_from_slice(
+                index_data
+                    .get(pos..pos + key_len)
+                    .ok_or_else(|| MemFuseError::Storage("corrupted SSTable index".into()))?,
+            );
             pos += key_len;
 
             if pos + 8 > index_data.len() {
                 return Err(MemFuseError::Storage("corrupted SSTable index".into()));
             }
             let offset = u64::from_le_bytes(
-                index_data[pos..pos + 8]
+                index_data
+                    .get(pos..pos + 8)
+                    .ok_or_else(|| MemFuseError::Storage("corrupted SSTable index".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             );
@@ -403,11 +414,22 @@ impl SstableReader {
             if block_data.len() < 2 {
                 return Err(MemFuseError::Storage("corrupted SSTable block".into()));
             }
-            let k_len = u16::from_le_bytes([block_data[0], block_data[1]]) as usize;
+            let k_len = u16::from_le_bytes([
+                *block_data
+                    .first()
+                    .ok_or_else(|| MemFuseError::Storage("corrupted SSTable block".into()))?,
+                *block_data
+                    .get(1)
+                    .ok_or_else(|| MemFuseError::Storage("corrupted SSTable block".into()))?,
+            ]) as usize;
             if block_data.len() < 2 + k_len {
                 return Err(MemFuseError::Storage("corrupted SSTable block".into()));
             }
-            Bytes::copy_from_slice(&block_data[2..2 + k_len])
+            Bytes::copy_from_slice(
+                block_data
+                    .get(2..2 + k_len)
+                    .ok_or_else(|| MemFuseError::Storage("corrupted SSTable block".into()))?,
+            )
         } else {
             Bytes::new()
         };
@@ -505,7 +527,9 @@ impl SstableReader {
         }
 
         let num_offsets = u16::from_le_bytes(
-            block_data[n - 2..n]
+            block_data
+                .get(n - 2..n)
+                .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
         ) as usize;
@@ -519,7 +543,9 @@ impl SstableReader {
         let offsets_start = n - 2 - offsets_len;
         let bloom_offset = offsets_start - 8;
         let bloom = u64::from_le_bytes(
-            block_data[bloom_offset..bloom_offset + 8]
+            block_data
+                .get(bloom_offset..bloom_offset + 8)
+                .ok_or_else(|| MemFuseError::Storage("malformed block: bloom".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
         );

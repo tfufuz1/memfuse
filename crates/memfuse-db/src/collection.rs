@@ -152,7 +152,9 @@ impl Collection {
             embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
-        // ANCHOR:SEC:SERIAL-001 (PRIO:2 STATUS:READY)
+        // ANCHOR:SEC:SERIAL-001 (PRIO:2 STATUS:REVIEW)
+        // BEGRÜNDUNG: Serialisierung erfolgt in den LSM-Storage-Sink, der bei
+        // aktivierter Encryption (WP-3.2) automatisch via KeyManager verschlüsselt.
         let data = serde_json::to_vec(&stored)?;
 
         let user_key = self.namespaced_key(id.as_bytes(), 0);
@@ -217,7 +219,9 @@ impl Collection {
             embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
-        // ANCHOR:SEC:SERIAL-001 (PRIO:2 STATUS:READY)
+        // ANCHOR:SEC:SERIAL-001 (PRIO:2 STATUS:REVIEW)
+        // BEGRÜNDUNG: Serialisierung erfolgt in den LSM-Storage-Sink, der bei
+        // aktivierter Encryption (WP-3.2) automatisch via KeyManager verschlüsselt.
         let data = serde_json::to_vec(&stored)?;
 
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
@@ -276,7 +280,9 @@ impl Collection {
             "to": to,
             "label": label,
         });
-        // ANCHOR:SEC:SERIAL-001 (PRIO:2 STATUS:READY)
+        // ANCHOR:SEC:SERIAL-001 (PRIO:2 STATUS:REVIEW)
+        // BEGRÜNDUNG: Serialisierung erfolgt in den LSM-Storage-Sink, der bei
+        // aktivierter Encryption (WP-3.2) automatisch via KeyManager verschlüsselt.
         let bytes = serde_json::to_vec(&val)?;
 
         self.storage.put(tx, &key, &bytes).await?;
@@ -381,18 +387,15 @@ impl Collection {
                     }
                 }
 
-        let bm25_results = self.text_index.search_bm25(text, k).await?;
+                if is_vector_zero {
+                    return Ok(text_results);
+                }
 
-        let mut text_set = Vec::new();
-        for (doc_id, score) in bm25_results {
-            let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-            if let Some(bytes) = self.storage.get(&doc_key).await? {
-                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                text_set.push(crate::SearchResult {
-                    id: stored.id,
-                    score,
-                    metadata: stored.metadata,
-                });
+                let vector_results = self.search(vector, k).await?;
+                Ok(crate::fusion::reciprocal_rank_fusion(
+                    vec![text_results, vector_results],
+                    k,
+                ))
             }
         }
     }

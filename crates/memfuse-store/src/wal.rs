@@ -14,7 +14,7 @@
 //
 // ANCHOR:SPEC:WP-3.2-HMAC-001 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
 // WP:WP-3.2 PRIO:3 NEEDS:NONE
-// AGENT:10 DATE:2026-05-09 STATUS:READY
+// AGENT:10 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 //!
 //! ## Workflow
@@ -81,8 +81,8 @@ pub struct WalEntry {
 
 impl WalEntry {
     /// Creates a new WAL entry with HMAC-SHA256 checksum.
-    pub fn new(op: WalOp, seq_no: u64) -> Self {
-        let checksum = Self::compute_checksum(&op, seq_no);
+    pub fn new(op: WalOp, seq_no: u64, integrity_key: Option<&[u8; 32]>) -> Self {
+        let checksum = Self::compute_checksum(&op, seq_no, integrity_key);
         Self {
             op,
             seq_no,
@@ -90,10 +90,17 @@ impl WalEntry {
         }
     }
 
-    fn compute_checksum(op: &WalOp, seq_no: u64) -> [u8; 32] {
-        // Use a fixed key for integrity. WP-3.2 will later use derived keys for encryption.
-        let mut mac = HmacSha256::new_from_slice(b"memfuse-integrity-key-v1")
-            .expect("HMAC can take key of any size");
+    pub fn compute_checksum(
+        op: &WalOp,
+        seq_no: u64,
+        integrity_key: Option<&[u8; 32]>,
+    ) -> [u8; 32] {
+        let key: &[u8] = if let Some(k) = integrity_key {
+            k
+        } else {
+            b"memfuse-integrity-key-v1"
+        };
+        let mut mac = HmacSha256::new_from_slice(key).expect("HMAC can take key of any size");
         mac.update(&seq_no.to_le_bytes());
         match op {
             WalOp::Put { key, value, .. } => {
@@ -240,12 +247,18 @@ impl Wal {
         let mut pos = 0;
 
         while pos + 4 <= data.len() {
-            let len = u32::from_le_bytes(data[pos..pos + 4].try_into().map_err(|_| {
-                MemFuseError::WalCorruption {
-                    offset: pos as u64,
-                    reason: "Invalid length".into(),
-                }
-            })?) as usize;
+            let len = u32::from_le_bytes(
+                data.get(pos..pos + 4)
+                    .ok_or_else(|| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Invalid length".into(),
+                    })?
+                    .try_into()
+                    .map_err(|_| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Invalid length".into(),
+                    })?,
+            ) as usize;
             pos += 4;
 
             if pos + len > data.len() {
@@ -281,22 +294,37 @@ impl Wal {
                 continue;
             }
 
-            let seq_no = u64::from_le_bytes(entry_data[0..8].try_into().map_err(|_| {
+            let seq_no = u64::from_le_bytes(entry_data.get(0..8).ok_or_else(|| {
+                MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid seq_no".into(),
+                }
+            })?.try_into().map_err(|_| {
                 MemFuseError::WalCorruption {
                     offset: pos as u64,
                     reason: "Invalid seq_no".into(),
                 }
             })?);
-            let stored_checksum: [u8; 32] =
-                entry_data[8..40]
-                    .try_into()
-                    .map_err(|_| MemFuseError::WalCorruption {
-                        offset: pos as u64,
-                        reason: "Invalid checksum".into(),
-                    })?;
-            let op_type = entry_data[40];
+            let stored_checksum: [u8; 32] = entry_data
+                .get(8..40)
+                .ok_or_else(|| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid checksum".into(),
+                })?
+                .try_into()
+                .map_err(|_| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid checksum".into(),
+                })?;
+            let op_type = *entry_data.get(40).ok_or_else(|| MemFuseError::WalCorruption {
+                offset: pos as u64,
+                reason: "Invalid op_type".into(),
+            })?;
 
-            let remaining = &entry_data[41..];
+            let remaining = entry_data.get(41..).ok_or_else(|| MemFuseError::WalCorruption {
+                offset: pos as u64,
+                reason: "Invalid payload".into(),
+            })?;
             let op = match op_type {
                 0 => {
                     // Put
@@ -361,10 +389,11 @@ impl Wal {
 
             // ANCHOR:ALG-FIX:D1-007 — HMAC-Verifikation bei WAL Replay
             // WP:WP-3.2 PRIO:1 NEEDS:NONE
-            // AGENT:10 DATE:2026-05-15 STATUS:READY
+            // AGENT:10 DATE:2026-05-15 STATUS:REVIEW
             // Ohne Verifikation werden korrupte Entries (Bit-Flip, Partial Write)
             // blind in die MemTable replayed → stille Datenkorrumpierung.
-            let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no);
+            let integrity_key = self.key_manager.as_ref().map(|km| km.integrity_key());
+            let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no, integrity_key);
             if recomputed_checksum != stored_checksum {
                 tracing::warn!(
                     "WAL entry at offset {} has invalid checksum, truncating replay",
@@ -408,7 +437,7 @@ mod tests {
             key: b"key".to_vec(),
             value: b"value".to_vec(),
         };
-        let entry = WalEntry::new(op, 100);
+        let entry = WalEntry::new(op, 100, None);
         let bytes = entry.to_bytes();
 
         // Manual verification of length
@@ -424,7 +453,7 @@ mod tests {
             tx_id: TxId::new(43),
             key: b"key2".to_vec(),
         };
-        let entry2 = WalEntry::new(op2, 101);
+        let entry2 = WalEntry::new(op2, 101, None);
         let bytes2 = entry2.to_bytes();
         // 4 + 8 + 32 + 1 + 8 + 4 + key(4) = 61
         assert_eq!(bytes2.len(), 61);
