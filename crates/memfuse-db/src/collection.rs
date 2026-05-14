@@ -377,7 +377,6 @@ impl Collection {
 
         let bm25_results = self.text_index.search_bm25(text, k).await?;
         let mut text_results = Vec::with_capacity(bm25_results.len());
-
         for (doc_id, score) in bm25_results {
             let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
             if let Some(bytes) = self.storage.get(&doc_key).await? {

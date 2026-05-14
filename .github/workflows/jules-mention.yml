@@ -38,6 +38,7 @@ jobs:
 
       - name: Checkout PR Branch via GitHub CLI
         env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr checkout ${{ github.event.issue.number }}
@@ -46,6 +47,7 @@ jobs:
 
       - name: Jules Agent Ausführen (mit Triple-Test-Gate)
         env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
           # ANTHROPIC_API_KEY muss in den GitHub Actions Secrets hinterlegt sein
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
@@ -55,11 +57,12 @@ jobs:
             --message-file jules_instruction.txt \
             --yes \
             --auto-commits \
-            --test-cmd "cargo test --workspace" \
-            --lint-cmd "cargo clippy --workspace -- -D warnings"
+            --test-cmd "cargo test --workspace --all-features" \
+            --lint-cmd "cargo clippy --workspace --all-features -- -D warnings"
           
       - name: Push Commits to PR
         env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git push origin HEAD

@@ -29,4 +29,5 @@ jobs:
       - name: Trigger next in Queue
         run: bash .agent/scripts/jules-dispatch.sh
         env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}

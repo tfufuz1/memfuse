@@ -19,6 +19,7 @@ jobs:
 
       - name: Run AI Architect Review
         env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
           # Wir nutzen Account 'franz' als Lead-Architect für Reviews
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_FRANZ }}
         run: |
@@ -36,4 +37,5 @@ jobs:
           gh pr comment "${{ github.event.pull_request.number }}" --body "### 🤖 Gemini Squad Architect Review
           $(cat review_comment.txt)"
         env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
