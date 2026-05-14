@@ -1,3 +1,7 @@
+//! HNSW (Hierarchical Navigable Small World) vector index.
+//! # Hierarchical Navigable Small World (HNSW) Index
+//!
+//! This module implements the HNSW algorithm for efficient approximate nearest neighbor (ANN) search.
 // ANCHOR:DOC:DOC-HNSW-001 — Module documentation added
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:03 DATE:2026-05-15 STATUS:DONE
@@ -12,10 +16,6 @@
 // DELETE: Soft-Delete (Tombstone via deleted_nodes Roaring Bitmap).
 // REBUILD-LOGIK: Wenn >20% gelöscht → async trigger_rebuild_async() -> Atomic Swap.
 // TRANSAKTIONEN: Nutzt memfuse_core::TxBuffer zur Staging-Isolation.
-//! HNSW (Hierarchical Navigable Small World) vector index.
-//! # Hierarchical Navigable Small World (HNSW) Index
-//!
-//! This module implements the HNSW algorithm for efficient approximate nearest neighbor (ANN) search.
 //!
 //! ## Key Components
 //! - **HNSW Graph**: A multi-layered graph where the top layers provide coarse-grained navigation
@@ -49,7 +49,7 @@ use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::Mutex;
 
-/// HNSW index configuration.
+/// Configuration parameters for the HNSW index.
 #[derive(Debug, Clone)]
 pub struct HnswConfig {
     /// Vector dimensionality.
@@ -148,6 +148,7 @@ impl Ord for Candidate {
     }
 }
 
+/// The HNSW (Hierarchical Navigable Small World) vector index.
 pub struct HnswIndex {
     inner: std::sync::Arc<HnswIndexCore>,
 }
