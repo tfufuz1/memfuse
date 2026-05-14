@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 /// An inverted index stored in the LSM engine.
 #[derive(Clone)]
+/// An inverted index tied to a specific collection namespace.
 pub struct InvertedIndex {
     storage: Arc<dyn StorageEngine>,
     prefix: Vec<u8>,

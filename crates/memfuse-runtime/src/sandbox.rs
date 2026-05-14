@@ -1,9 +1,10 @@
+//! WebAssembly Sandboxing for safe agent tool execution.
+
 // ANCHOR:ARCH:SANDBOX-001 — Isolierte WASM-Ausführungsumgebung.
 // WP:NONE PRIO:2 NEEDS:NONE
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // DEFAULT-LIMS: 64MB Memory, 500ms Timeout, Netzwerk OFF.
-//! WebAssembly Sandboxing for safe agent tool execution.
 
 use std::time::Duration;
 
@@ -32,6 +33,7 @@ pub struct WasmSandbox {
 }
 
 impl WasmSandbox {
+    /// Creates a new WASM sandbox with the given configuration.
     pub fn new(config: SandboxConfig) -> Self {
         Self { config }
     }

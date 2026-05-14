@@ -169,7 +169,6 @@ impl MemFuse {
         Ok(())
     }
 
-    /// Returns the next transaction ID (auto-incremented).
     /// Returns a specific collection (namespace).
     /// Creates the collection if it does not already exist.
     // ANCHOR:TODO:COL-001 — Implementiere vollständige Persistenz und Isolation für `collection()`.

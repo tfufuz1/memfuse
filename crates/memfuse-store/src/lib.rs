@@ -1,3 +1,8 @@
+//! MemFuse Store — LSM-Tree based storage engine.
+//!
+//! Provides persistent key-value storage with WAL, MemTable,
+//! SSTable, and background compaction.
+
 // ANCHOR:ARCH:STORE-001 — LSM-Tree Storage Engine (Triebwerk — Layer 1).
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -6,7 +11,6 @@
 // INVARIANTE: Alle Disk-I/O via tokio::fs (zero std::fs imports).
 // ANCHOR:INTEGRATION STATUS:READY AGENT:02 DATE:2026-05-15
 // MODUL-HIERARCHIE: lsm.rs orchestriert, memtable/wal/sstable sind Bausteine.
-//! MemFuse Store — LSM-Tree based storage engine.
 //!
 //! Provides persistent key-value storage with WAL, MemTable,
 //! SSTable, and background compaction.

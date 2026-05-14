@@ -534,6 +534,7 @@ unsafe fn hsum512_ps_avx(v: __m512) -> f32 {
     }
 }
 
+/// Normalizes a vector in-place to unit length (L2 norm = 1.0).
 pub fn normalize_inplace(v: &mut [f32]) {
     let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
     if norm > 0.0 {
