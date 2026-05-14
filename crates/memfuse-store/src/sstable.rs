@@ -71,6 +71,7 @@ pub struct BlockBuilder {
 }
 
 impl BlockBuilder {
+    /// Creates a new SstableBuilder with the given block size.
     pub fn new(block_size: usize) -> Self {
         Self {
             data: BytesMut::new(),
@@ -91,6 +92,7 @@ impl BlockBuilder {
         }
     }
 
+    /// Adds a key-value pair to the SSTable.
     pub fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64) -> bool {
         // size: key_len(2) + key + seq_no(8) + val_len(2) + value + bloom(8) + offsets + offset count (2 bytes)
         if !self.data.is_empty()
@@ -109,11 +111,13 @@ impl BlockBuilder {
         true
     }
 
+    /// Returns the current size of the builder's buffer.
     pub fn current_size(&self) -> usize {
         // data + bloom(8) + offsets + offset count (2 bytes)
         self.data.len() + 8 + self.offsets.len() * 2 + 2
     }
 
+    /// Returns true if the builder is empty.
     pub fn is_empty(&self) -> bool {
         self.offsets.is_empty()
     }
@@ -147,6 +151,7 @@ pub struct SstableBuilder {
 }
 
 impl SstableBuilder {
+    /// Creates a new SSTable file at the specified path.
     pub async fn create(path: impl AsRef<Path>) -> Result<Self> {
         let file = File::create(path)
             .await
@@ -265,6 +270,7 @@ pub struct SstableReader {
 }
 
 impl SstableReader {
+    /// Opens an existing SSTable file.
     pub async fn open(path: impl AsRef<Path>, block_cache: Arc<BlockCache>) -> Result<Self> {
         let mut file = tokio::fs::File::open(&path)
             .await
@@ -399,6 +405,7 @@ impl SstableReader {
     // VORHER: 2.26 µs → NACHHER: 2.07 µs (~8% gain)
     // BOTTLENECK: Memory Allocator / Heap Churn
     // OPTIMIERUNGSIDEE: SmallVec oder Pool-Buffer
+    /// Retrieves a value by its key from the SSTable.
     pub async fn get(&self, key: &[u8]) -> Result<Option<(Bytes, u64)>> {
         if key < self.metadata.first_key || key > self.metadata.last_key {
             return Ok(None);
@@ -551,6 +558,7 @@ impl SstableReader {
         Ok(None)
     }
 
+    /// Returns the metadata for the SSTable.
     pub fn metadata(&self) -> &SstableMetadata {
         &self.metadata
     }
@@ -680,6 +688,7 @@ impl SstableReader {
         &self.file_path
     }
 
+    /// Scans for keys matching the given prefix in the SSTable.
     pub async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Bytes, Bytes, u64)>> {
         let mut results = Vec::new();
 

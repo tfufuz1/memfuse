@@ -51,6 +51,7 @@ use tokio::sync::Mutex;
 
 /// HNSW index configuration.
 #[derive(Debug, Clone)]
+/// Configuration for the HNSW (Hierarchical Navigable Small World) index.
 pub struct HnswConfig {
     /// Vector dimensionality.
     pub dimension: usize,
@@ -86,6 +87,7 @@ impl Default for HnswConfig {
 }
 
 impl HnswConfig {
+    /// Validates the HNSW configuration.
     pub fn validate(&self) -> Result<()> {
         // ANCHOR:ALG-FIX:D2-003 — ef_construction < M Guard fehlt
         // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -103,6 +105,7 @@ impl HnswConfig {
 }
 
 #[derive(Debug, Clone)]
+/// Represents the internal storage for vector data in HNSW.
 pub enum VectorData {
     F32(Vec<f32>),
     U8(Vec<u8>),
@@ -148,6 +151,7 @@ impl Ord for Candidate {
     }
 }
 
+/// A high-performance vector index using the HNSW algorithm.
 pub struct HnswIndex {
     inner: std::sync::Arc<HnswIndexCore>,
 }
@@ -159,6 +163,7 @@ impl std::ops::Deref for HnswIndex {
     }
 }
 
+/// The core internal state of an HNSW index.
 pub struct HnswIndexCore {
     config: HnswConfig,
     nodes: RwLock<Vec<HnswNode>>,

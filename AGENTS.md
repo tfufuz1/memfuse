@@ -79,10 +79,10 @@ just spec WP-X.Y-NAME
 |---|---|---|---|---|
 | **WP-0.0** | Dependency Audit & Tech Debt | 🔴 KRITISCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-0.0-DependencyAudit.md) |
 | **WP-1.1** | Background Compaction | 🔴 KRITISCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-1.1-Compaction.md) |
-| **WP-1.2** | Collections / Namespaces | 🟠 HOCH | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-1.2-Collections.md) |
-| **WP-2.1** | Hybrid Search (BM25+RRF) | 🟠 HOCH | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-2.1-HybridSearch.md) |
-| **WP-2.2** | Scalar Quantization (SQ8) | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-2.2-Quantization.md) |
-| **WP-3.1** | Python Bindings (PyO3) | 🟠 HOCH | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-3.1-PythonBindings.md) |
+| **WP-1.2** | Collections / Namespaces | 🟠 HOCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-1.2-Collections.md) |
+| **WP-2.1** | Hybrid Search (BM25+RRF) | 🟠 HOCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-2.1-HybridSearch.md) |
+| **WP-2.2** | Scalar Quantization (SQ8) | 🟡 MITTEL | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-2.2-Quantization.md) |
+| **WP-3.1** | Python Bindings (PyO3) | 🟠 HOCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-3.1-PythonBindings.md) |
 | **WP-3.2** | Encryption at Rest | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-3.2-Encryption.md) |
 | **WP-4.1** | Memory-Mapped I/O | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
 | **WP-4.2** | Advanced Filtering | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |

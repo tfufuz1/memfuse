@@ -61,6 +61,7 @@ pub use collection::Collection;
 
 /// User-facing search result.
 #[derive(Debug, Clone)]
+/// A single search result with its score.
 pub struct SearchResult {
     /// The string ID provided during insert.
     pub id: String,
@@ -72,6 +73,7 @@ pub struct SearchResult {
 
 /// Overall database statistics.
 #[derive(Debug, Clone)]
+/// Statistics for the entire database.
 pub struct DbStats {
     /// Statistics for the vector index.
     pub index_stats: memfuse_core::VectorIndexStats,
@@ -81,6 +83,7 @@ pub struct DbStats {
 
 /// User-facing document retrieved by key.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// A document containing content and metadata.
 pub struct Document {
     /// The string ID.
     pub id: String,
@@ -90,6 +93,7 @@ pub struct Document {
 
 /// Configuration for MemFuse.
 #[derive(Debug, Clone)]
+/// Configuration for the MemFuse database.
 pub struct MemFuseConfig {
     /// Vector dimensionality (must match your embeddings).
     pub dimension: usize,
@@ -177,6 +181,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_collections_are_isolated
     // DONE: `collection()` ist wal-gesichert, Isolation ist korrekt.
     // SUCCESSOR: @JULES-04 — "Mach weiter mit COL-002 und COL-003, bis Collections-Modul fully featured ist."
+    /// Returns a handle to the specified collection, creating it if it doesn't exist.
     pub async fn collection(&self, name: &str) -> Result<Collection> {
         // Validation
         if name.len() > 64 {
@@ -241,6 +246,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_list_collections
     // DONE: list_collections gibt persistierte Collections zurück.
     // SUCCESSOR: @JULES-04 — "Mache weiter mit COL-003."
+    /// Lists the names of all collections in the database.
     pub async fn list_collections(&self) -> Result<Vec<String>> {
         let col_idx_prefix = b"__col_idx:\x00";
         let entries = self.storage.scan_prefix(col_idx_prefix).await?;
@@ -273,6 +279,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_drop_removes_all_data
     // DONE: Alle Daten getilgt, re-öffnen führt zu leerer DB.
     // SUCCESSOR: @JULES-05 — "Collections sind fertig. Beginne mit WP-2.1 SEARCH-001."
+    /// Drops the specified collection.
     pub async fn drop_collection(&self, name: &str) -> Result<()> {
         if name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(
@@ -344,19 +351,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
-    pub async fn hybrid_search(
-        &self,
-        text: &str,
-        vector: &[f32],
-        k: usize,
-    ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .hybrid_search(text, vector, k)
-            .await
-    }
-
-    /// Performs hybrid search combining BM25 and vector search.
+    /// Performs a hybrid search on the default collection.
     pub async fn hybrid_search(
         &self,
         text: &str,
