@@ -11,6 +11,10 @@ memfuse-core = { workspace = true }
 bytes = { workspace = true }
 blake3 = { workspace = true }
 crc32fast = { workspace = true }
+sha2 = "0.10"
+hmac = "0.12"
+aes-gcm = "0.10"
+hkdf = "0.12"
 parking_lot = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }

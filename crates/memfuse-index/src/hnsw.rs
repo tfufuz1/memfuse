@@ -1,3 +1,7 @@
+//! HNSW (Hierarchical Navigable Small World) vector index.
+//! # Hierarchical Navigable Small World (HNSW) Index
+//!
+//! This module implements the HNSW algorithm for efficient approximate nearest neighbor (ANN) search.
 // ANCHOR:DOC:DOC-HNSW-001 — Module documentation added
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:03 DATE:2026-05-15 STATUS:DONE
@@ -12,10 +16,6 @@
 // DELETE: Soft-Delete (Tombstone via deleted_nodes Roaring Bitmap).
 // REBUILD-LOGIK: Wenn >20% gelöscht → async trigger_rebuild_async() -> Atomic Swap.
 // TRANSAKTIONEN: Nutzt memfuse_core::TxBuffer zur Staging-Isolation.
-//! HNSW (Hierarchical Navigable Small World) vector index.
-//! # Hierarchical Navigable Small World (HNSW) Index
-//!
-//! This module implements the HNSW algorithm for efficient approximate nearest neighbor (ANN) search.
 //!
 //! ## Key Components
 //! - **HNSW Graph**: A multi-layered graph where the top layers provide coarse-grained navigation
@@ -49,7 +49,7 @@ use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::Mutex;
 
-/// HNSW index configuration.
+/// Configuration parameters for the HNSW index.
 #[derive(Debug, Clone)]
 pub struct HnswConfig {
     /// Vector dimensionality.
@@ -148,6 +148,7 @@ impl Ord for Candidate {
     }
 }
 
+/// The HNSW (Hierarchical Navigable Small World) vector index.
 pub struct HnswIndex {
     inner: std::sync::Arc<HnswIndexCore>,
 }
@@ -620,9 +621,27 @@ impl HnswIndexCore {
 
         // 2. Build fresh index
         let new_index = HnswIndex::new(config);
+
+        // Copy quantizer to new index to maintain parity
+        let quantizer_guard = self.quantizer.read();
+        if let Some(q) = quantizer_guard.as_ref() {
+            *new_index.quantizer.write() = Some(q.clone());
+        }
+
         for (doc_id, vector) in active_nodes {
-            if let VectorData::F32(ref v) = vector {
-                new_index.do_insert(doc_id, v)?;
+            match vector {
+                VectorData::F32(v) => {
+                    new_index.do_insert(doc_id, &v)?;
+                }
+                VectorData::U8(v) => {
+                    let dequantized = {
+                        let q = quantizer_guard.as_ref().ok_or_else(|| {
+                            MemFuseError::Index("Quantizer missing during rebuild".into())
+                        })?;
+                        q.dequantize(&v)
+                    };
+                    new_index.do_insert(doc_id, &dequantized)?;
+                }
             }
         }
 
@@ -1221,6 +1240,55 @@ mod tests {
         // Ensure rebuilt index still works
         let results = index.search(&[1.0, 0.0], 1).await.expect("test");
         assert_eq!(results[0].doc_id, DocId::new(1));
+    }
+
+    #[tokio::test]
+    async fn test_rebuild_quantized_persistence() {
+        let index = HnswIndex::new(HnswConfig {
+            dimension: 4,
+            quantize: true,
+            rebuild_threshold: 0.1, // Trigger easily
+            distance_metric: DistanceMetric::Euclidean,
+            ..test_config(4)
+        });
+        let tx = TxId::new(1);
+
+        // Insert enough vectors to train quantizer (>= 50)
+        for i in 1..=60u64 {
+            let v = [i as f32, 0.0, 0.0, 0.0];
+            index.insert(tx, DocId::new(i), &v).await.expect("test");
+        }
+        index.commit(tx).await.expect("test");
+
+        assert_eq!(index.len().await, 60);
+        // Verify quantizer is trained
+        assert!(index.quantizer.read().is_some());
+
+        // Delete some to lower connectivity and allow rebuild
+        let tx2 = TxId::new(2);
+        for i in 1..=10u64 {
+            index.delete(tx2, DocId::new(i)).await.expect("test");
+        }
+        index.commit(tx2).await.expect("test");
+
+        assert_eq!(index.len().await, 50);
+
+        // Rebuild
+        index.rebuild().await.expect("rebuild");
+
+        // Verify state after rebuild
+        assert_eq!(index.len().await, 50);
+        assert!(
+            index.quantizer.read().is_some(),
+            "Quantizer must be preserved"
+        );
+
+        // Verify search still works
+        let results = index
+            .search(&[60.0, 0.0, 0.0, 0.0], 1)
+            .await
+            .expect("search");
+        assert_eq!(results[0].doc_id, DocId::new(60));
     }
 
     #[test]
