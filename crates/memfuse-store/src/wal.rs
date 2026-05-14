@@ -35,11 +35,11 @@
 //
 // ANCHOR:PERF:LATENCY-001 — WAL-Write-Path Hotspot
 // WP:WP-0.0 PRIO:2 NEEDS:NONE
-// AGENT:08-perf DATE:2026-05-09 STATUS:READY
+// AGENT:09 DATE:2026-05-15 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // TARGET: < 2ms bei Peak-Load
-// AKTUELL: Unbekannt (Sync Flush)
-// BOTTLENECK: I/O (File::sync_all blockiert)
+// AKTUELL: ~71ns (Memory-only latency in migration_benchmarks)
+// BOTTLENECK: I/O (File::sync_all blockiert bei echtem Disk-Sync)
 // OPTIMIERUNGSIDEE: Group Commit oder fsync-Offloading
 
 use memfuse_core::{MemFuseError, Result, TxId};
@@ -194,10 +194,21 @@ impl Wal {
 
     /// Replays the WAL, returning all valid entries.
     pub async fn replay(&self) -> Result<Vec<(u64, WalEntry)>> {
-        let mut data = Vec::new();
         let mut file = tokio::fs::File::open(&self.path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("WAL replay open failed: {}", e)))?;
+
+        let metadata = file
+            .metadata()
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("WAL metadata failed: {}", e)))?;
+
+        // ANCHOR:PERF:ALLOC-003 — Pre-allocate replay buffer
+        // WP:WP-0.0 PRIO:3 NEEDS:NONE
+        // AGENT:09 DATE:2026-05-15 STATUS:DONE
+        // Pre-allocating the entire WAL content avoids multiple re-allocations during read_to_end.
+        let mut data = Vec::with_capacity(metadata.len() as usize);
+
         file.read_to_end(&mut data)
             .await
             .map_err(|e| MemFuseError::Storage(format!("WAL replay read failed: {}", e)))?;

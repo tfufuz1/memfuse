@@ -486,6 +486,18 @@ impl Collection {
         Ok(())
     }
 
+    pub fn last_seq_no(&self) -> u64 {
+        self.storage.last_seq_no()
+    }
+
+    pub async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
+        self.storage.pin_checkpoint(seq_no).await
+    }
+
+    pub async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
+        self.storage.unpin_checkpoint(seq_no).await
+    }
+
     pub async fn drop_collection(&self) -> Result<()> {
         let prefix = if self.name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(

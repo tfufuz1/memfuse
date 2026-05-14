@@ -175,7 +175,12 @@ impl<T: Clone> TxBuffer<T> {
 
     /// Cleans up expired transactions.
     pub fn reap_orphans(&self) -> Vec<TxId> {
-        let mut expired = Vec::with_capacity(self.len());
+        // ANCHOR:PERF:ALLOC-002 — Avoid global lock for capacity hint
+        // WP:WP-0.0 PRIO:3 NEEDS:NONE
+        // AGENT:09 DATE:2026-05-15 STATUS:DONE
+        // Calling self.len() would acquire read-locks on ALL shards.
+        // We use a heuristic capacity instead.
+        let mut expired = Vec::with_capacity(32);
         for shard_lock in &self.shards {
             let mut shard = shard_lock.write();
             shard.ops.retain(|tx, (_, created)| {

@@ -34,17 +34,37 @@ fn bench_hybrid_search(c: &mut Criterion) {
 }
 
 fn bench_agent_state_checkpoint(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    let tmp = TempDir::new().unwrap();
+    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap();
+
     c.bench_function("checkpoint_latency", |b| {
-        b.iter(|| {
-            // TODO: Implement benchmark vs Redis
+        b.to_async(&rt).iter(|| async {
+            // MemFuse checkpointing is memory-only pinning of the SnapshotRegistry
+            // We use the collection's last_seq_no and pin it
+            let col = db.collection("default").await.unwrap();
+            let seq = col.last_seq_no();
+            col.pin_checkpoint(seq).await.unwrap();
         })
     });
 }
 
 fn bench_rerun_cost(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().to_path_buf();
+
+    // Initial open and one collection
+    {
+        let db = rt.block_on(MemFuse::open(&path)).unwrap();
+        let _ = rt.block_on(db.collection("bench")).unwrap();
+    }
+
     c.bench_function("rerun_cost", |b| {
-        b.iter(|| {
-            // TODO: Implement benchmark
+        b.to_async(&rt).iter(|| async {
+            // Measure cost of reopening the DB and listing collections
+            let db = MemFuse::open(&path).await.unwrap();
+            let _ = db.list_collections().await.unwrap();
         })
     });
 }
