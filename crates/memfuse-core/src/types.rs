@@ -21,6 +21,8 @@ use serde::{Deserialize, Serialize};
 pub const TOMBSTONE_BIT: u64 = 1 << 63;
 
 /// Internal document identifier (u64, not exposed to users).
+///
+/// `DocId` is typically derived from a string key via hashing (blake3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct DocId(pub u64);
@@ -116,7 +118,7 @@ impl std::fmt::Display for EntityId {
     }
 }
 
-/// Transaction identifier.
+/// Transaction identifier used to coordinate atomic writes and isolation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct TxId(pub u64);

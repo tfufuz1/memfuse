@@ -1,3 +1,4 @@
+//! Write-Ahead Log (WAL) for durability and crash recovery.
 // ANCHOR:DOC:DOC-WAL-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:02 DATE:2026-05-09 STATUS:REVIEW
@@ -15,7 +16,6 @@
 // WP:WP-3.2 PRIO:3 NEEDS:NONE
 // AGENT:10 DATE:2026-05-09 STATUS:READY
 // CREATED:2026-05-09 DEADLINE:NONE
-//! Write-Ahead Log (WAL) for durability and crash recovery.
 //!
 //! ## Workflow
 //! 1. Every write operation (Put/Delete) is first appended to the WAL.
@@ -32,10 +32,15 @@
 //! - **Durability**: Every committed transaction is guaranteed to be in the WAL.
 //! - **Integrity**: Entries are protected by CRC32 checksums to detect data corruption.
 //! - **Async I/O**: Operations use `tokio::fs` for non-blocking disk access.
+//!
+//! ## Performance
+//! The current WAL implementation uses `sync_all()` (fsync) after every append to ensure
+//! strict durability. This can be a performance bottleneck for high-throughput write
+//! workloads. Future optimizations may include group commit or asynchronous fsync offloading.
 //
 // ANCHOR:PERF:LATENCY-001 — WAL-Write-Path Hotspot
 // WP:WP-0.0 PRIO:2 NEEDS:NONE
-// AGENT:08-perf DATE:2026-05-09 STATUS:READY
+// AGENT:08-perf DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // TARGET: < 2ms bei Peak-Load
 // AKTUELL: Unbekannt (Sync Flush)

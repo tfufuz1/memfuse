@@ -1,3 +1,4 @@
+//! LSM-Tree (Log-Structured Merge-Tree) storage engine.
 // ANCHOR:DOC:DOC-LSM-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:02 DATE:2026-05-09 STATUS:REVIEW
@@ -12,7 +13,6 @@
 // FLUSH:      MemTable > size_limit → rotate → SSTable schreiben → cleanup
 // BACKGROUND: CompactionEngine läuft als tokio::spawn loop
 // INVARIANTE: WAL Replay bei Neustart stellt MemTable deterministisch wieder her.
-//! LSM-Tree (Log-Structured Merge-Tree) storage engine.
 //!
 //! The `LsmStorage` engine provides a high-performance, persistent key-value store
 //! implementing the `StorageEngine` trait.
