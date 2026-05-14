@@ -772,9 +772,7 @@ mod tests {
             .await
             .expect("insert");
 
-        col.relate("doc-1", "doc-2", "knows")
-            .await
-            .expect("relate");
+        col.relate("doc-1", "doc-2", "knows").await.expect("relate");
 
         // Scan in namespaced collection
         let results = col.scan_prefix("__rel:doc-1:knows:").await.expect("scan");
@@ -782,7 +780,10 @@ mod tests {
         assert_eq!(results[0].1["to"], "doc-2");
 
         // Verify default collection doesn't see it
-        let default_results = db.scan_prefix("__rel:doc-1:knows:").await.expect("scan def");
+        let default_results = db
+            .scan_prefix("__rel:doc-1:knows:")
+            .await
+            .expect("scan def");
         assert!(default_results.is_empty());
     }
 }
