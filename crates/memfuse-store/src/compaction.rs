@@ -535,6 +535,7 @@ mod tests {
                 size_ratio: 2.0,
                 check_interval: Duration::from_millis(100), // Fast check
             },
+            encryption_passphrase: None,
         };
 
         let storage = Arc::new(LsmStorage::new(config).await.expect("create storage"));
