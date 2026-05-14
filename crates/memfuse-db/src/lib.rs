@@ -339,6 +339,7 @@ impl MemFuse {
             .await
     }
 
+    /// Performs hybrid search combining BM25 and vector search.
     // ANCHOR:TODO:SEARCH-001 — Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection.
     // WP:WP-2.1 PRIO:1 NEEDS:COL-001
     // AGENT:@JULES-05 DATE:2026-05-09 STATUS:DONE
