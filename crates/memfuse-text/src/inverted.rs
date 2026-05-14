@@ -1,6 +1,6 @@
 //! LSM-backed Inverted Index.
 
-use crate::tokenizer::tokenize;
+use crate::tokenizer::{tokenize, Tokenizer, GermanMorphTokenizer, DefaultTokenizer};
 use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId};
 use std::collections::HashMap;
 use std::sync::Arc;
