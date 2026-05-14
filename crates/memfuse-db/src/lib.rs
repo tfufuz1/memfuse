@@ -168,7 +168,6 @@ impl MemFuse {
         Ok(())
     }
 
-    /// Returns the next transaction ID (auto-incremented).
     /// Returns a specific collection (namespace).
     /// Creates the collection if it does not already exist.
     // ANCHOR:TODO:COL-001 — Implementiere vollständige Persistenz und Isolation für `collection()`.
@@ -344,18 +343,6 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
-    pub async fn hybrid_search(
-        &self,
-        text: &str,
-        vector: &[f32],
-        k: usize,
-    ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .hybrid_search(text, vector, k)
-            .await
-    }
-
     /// Performs hybrid search combining BM25 and vector search.
     pub async fn hybrid_search(
         &self,

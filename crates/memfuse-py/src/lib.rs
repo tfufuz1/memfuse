@@ -73,6 +73,7 @@ pub struct PyDocument {
     pub metadata: Option<PyObject>,
 }
 
+/// Python wrapper for the MemFuse database.
 #[pyclass(unsendable)]
 pub struct Db {
     inner: Arc<MemFuse>,
@@ -80,6 +81,7 @@ pub struct Db {
 
 #[pymethods]
 impl Db {
+    /// Returns a collection by name, creating it if it doesn't exist.
     pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<Collection> {
         let rt = get_runtime()?;
         let col = py
@@ -91,6 +93,7 @@ impl Db {
     }
 }
 
+/// Python wrapper for a MemFuse collection.
 #[pyclass(unsendable)]
 pub struct Collection {
     inner: Arc<MemFuseCollection>,
@@ -98,6 +101,7 @@ pub struct Collection {
 
 #[pymethods]
 impl Collection {
+    /// Inserts a document with its vector and optional metadata.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
@@ -125,6 +129,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Performs semantic vector search.
     #[pyo3(signature = (vector, k))]
     pub fn search<'py>(
         &self,
@@ -171,6 +176,7 @@ impl Collection {
         Ok(py_res)
     }
 
+    /// Performs hybrid search (BM25 + Vector).
     #[pyo3(signature = (text, vector, k))]
     pub fn hybrid_search<'py>(
         &self,

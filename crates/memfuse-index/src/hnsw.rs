@@ -86,6 +86,7 @@ impl Default for HnswConfig {
 }
 
 impl HnswConfig {
+    /// Validates that the configuration parameters are within acceptable bounds.
     pub fn validate(&self) -> Result<()> {
         // ANCHOR:ALG-FIX:D2-003 — ef_construction < M Guard fehlt
         // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -103,8 +104,11 @@ impl HnswConfig {
 }
 
 #[derive(Debug, Clone)]
+/// Represents the format of vector data stored in the index.
 pub enum VectorData {
+    /// Standard 32-bit floating point vectors.
     F32(Vec<f32>),
+    /// 8-bit quantized vectors (SQ8).
     U8(Vec<u8>),
 }
 
@@ -148,6 +152,7 @@ impl Ord for Candidate {
     }
 }
 
+/// Thread-safe wrapper for the HNSW vector index.
 pub struct HnswIndex {
     inner: std::sync::Arc<HnswIndexCore>,
 }
@@ -159,6 +164,7 @@ impl std::ops::Deref for HnswIndex {
     }
 }
 
+/// The core implementation of the HNSW index.
 pub struct HnswIndexCore {
     config: HnswConfig,
     nodes: RwLock<Vec<HnswNode>>,

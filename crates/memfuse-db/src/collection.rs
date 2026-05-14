@@ -59,6 +59,7 @@ pub struct Collection {
 }
 
 impl Collection {
+    /// Creates a new Collection instance.
     pub fn new(
         name: String,
         storage: Arc<LsmStorage>,
@@ -119,11 +120,13 @@ impl Collection {
         }
     }
 
+    /// Starts a new database transaction for this collection.
     pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<'_> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         crate::transaction::DbTransaction::new(self, tx)
     }
 
+    /// Inserts a document into the collection.
     pub async fn insert(
         &self,
         id: &str,
@@ -170,6 +173,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Retrieves a document from the collection by its ID.
     pub async fn get(&self, id: &str) -> Result<Option<crate::Document>> {
         let key = self.namespaced_key(id.as_bytes(), 0);
         if let Some(data) = self.storage.get(&key).await? {
@@ -182,6 +186,7 @@ impl Collection {
         Ok(None)
     }
 
+    /// Updates an existing document in the collection.
     pub async fn update(
         &self,
         id: &str,
@@ -235,6 +240,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Deletes a document from the collection by its ID.
     pub async fn delete(&self, id: &str) -> Result<()> {
         let db_tx = self.begin_transaction();
         let tx = db_tx.tx_id;
@@ -259,6 +265,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Creates a directional relationship between two documents in the collection.
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         let key_str = format!("{}:{}:{}", from, label, to);
@@ -275,6 +282,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Scans documents in the collection that match a given key prefix.
     pub async fn scan_prefix(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>> {
         let real_prefix = if prefix.starts_with("__rel:") {
             self.namespaced_key(
@@ -311,6 +319,7 @@ impl Collection {
         Ok(results)
     }
 
+    /// Performs semantic vector search in the collection.
     pub async fn search(
         &self,
         query_embedding: &[f32],
@@ -319,6 +328,7 @@ impl Collection {
         self.search_filtered(query_embedding, k, None).await
     }
 
+    /// Performs filtered semantic vector search in the collection.
     pub async fn search_filtered(
         &self,
         query: &[f32],
@@ -342,6 +352,7 @@ impl Collection {
         Ok(results)
     }
 
+    /// Performs hybrid search (BM25 + Vector) in the collection.
     pub async fn hybrid_search(
         &self,
         text: &str,
@@ -386,14 +397,17 @@ impl Collection {
         ))
     }
 
+    /// Returns the number of documents in the collection.
     pub async fn len(&self) -> usize {
         self.index.len().await
     }
 
+    /// Returns true if the collection is empty.
     pub async fn is_empty(&self) -> bool {
         self.index.is_empty().await
     }
 
+    /// Performs a range scan of documents in the collection.
     pub async fn scan(
         &self,
         start: std::ops::Bound<&[u8]>,
@@ -461,6 +475,7 @@ impl Collection {
         Ok(results)
     }
 
+    /// Returns statistics for the collection's vector index.
     pub async fn stats(&self) -> Result<memfuse_core::VectorIndexStats> {
         self.index.stats().await
     }
@@ -486,6 +501,7 @@ impl Collection {
         Ok(())
     }
 
+    /// Removes all data belonging to this collection from storage.
     pub async fn drop_collection(&self) -> Result<()> {
         let prefix = if self.name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(

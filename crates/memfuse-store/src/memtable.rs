@@ -1,3 +1,8 @@
+//! In-memory sorted MemTable for the LSM-Tree.
+//!
+//! Entries are stored in a `BTreeMap` to maintain lexicographical order,
+//! which is required for efficient range scans and ordered flushing to SSTables.
+
 // ANCHOR:ARCH:MEMTABLE-001 — In-Memory Sortierter Puffer (hot writes).
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -6,7 +11,6 @@
 // SIZE-TRACKING: AtomicUsize zählt Bytes, LsmStorage flusht bei > memtable_size_limit.
 // LIFECYCLE: Active MemTable → Immutable MemTable → Flushed to SSTable → Dropped.
 // BENANNT als "SkipList" im Doc-Comment, aber BTreeMap-backed (historischer Name).
-//! In-memory SkipList-based MemTable.
 
 use bytes::Bytes;
 use parking_lot::RwLock;
@@ -18,6 +22,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// Entries are sorted by key for efficient range scans and
 /// ordered flushing to SSTables.
 #[derive(Debug)]
+/// An in-memory sorted key-value structure.
 pub struct MemTable {
     entries: RwLock<BTreeMap<Bytes, (Bytes, u64)>>,
     size: AtomicUsize,
