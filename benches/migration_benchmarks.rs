@@ -3,7 +3,10 @@
 // AGENT:09 DATE:2026-05-09 STATUS:DONE
 
 use criterion::{criterion_group, criterion_main, Criterion};
+use memfuse_checkpoint::CheckpointManager;
 use memfuse_db::MemFuse;
+use memfuse_store::lsm::{LsmConfig, LsmStorage};
+use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
@@ -34,9 +37,18 @@ fn bench_hybrid_search(c: &mut Criterion) {
 }
 
 fn bench_agent_state_checkpoint(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    let tmp = TempDir::new().unwrap();
+    let config = LsmConfig {
+        path: tmp.path().to_path_buf(),
+        ..Default::default()
+    };
+    let storage = rt.block_on(LsmStorage::new(config)).unwrap();
+    let manager = CheckpointManager::new(Arc::new(storage));
+
     c.bench_function("checkpoint_latency", |b| {
-        b.iter(|| {
-            // TODO: Implement benchmark vs Redis
+        b.to_async(&rt).iter(|| async {
+            let _ = manager.create_checkpoint("test-checkpoint").await.unwrap();
         })
     });
 }
