@@ -762,7 +762,7 @@ impl VectorIndex for HnswIndex {
 
         let nodes = self.nodes.read();
         let deleted = self.deleted_nodes.read();
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(k);
 
         for c in candidates.iter() {
             if deleted.contains(c.index as u64) {
