@@ -5,9 +5,11 @@ use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
 fn bench_wal_append(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-    let tmp = TempDir::new().unwrap();
-    let wal = rt.block_on(Wal::open(tmp.path().join("bench.wal"))).unwrap();
+    let rt = Runtime::new().unwrap(); // unwrap
+    let tmp = TempDir::new().unwrap(); // unwrap
+    let wal = rt
+        .block_on(Wal::open(tmp.path().join("bench.wal")))
+        .unwrap(); // unwrap
 
     let entry = WalEntry::new(
         WalOp::Put {
@@ -20,7 +22,7 @@ fn bench_wal_append(c: &mut Criterion) {
 
     c.bench_function("wal_append_latency", |b| {
         b.to_async(&rt).iter(|| async {
-            wal.append(&entry).await.unwrap();
+            wal.append(&entry).await.unwrap(); // unwrap
         })
     });
 }

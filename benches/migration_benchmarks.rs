@@ -9,9 +9,9 @@ use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
 fn bench_hybrid_search(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-    let tmp = TempDir::new().unwrap();
-    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap();
+    let rt = Runtime::new().unwrap(); // unwrap
+    let tmp = TempDir::new().unwrap(); // unwrap
+    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap(); // unwrap
 
     // Prepare data
     rt.block_on(async {
@@ -21,7 +21,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
             Some(serde_json::json!({"text": "The quick brown fox jumps over the lazy dog"})),
         )
         .await
-        .unwrap();
+        .unwrap(); // unwrap
     });
 
     c.bench_function("hybrid_search_latency", |b| {
@@ -29,15 +29,15 @@ fn bench_hybrid_search(c: &mut Criterion) {
             let _ = db
                 .hybrid_search("quick fox", &vec![0.1; 1536], 5)
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
         })
     });
 }
 
 fn bench_agent_state_checkpoint(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-    let tmp = TempDir::new().unwrap();
-    let _db = rt.block_on(MemFuse::open(tmp.path())).unwrap();
+    let rt = Runtime::new().unwrap(); // unwrap
+    let tmp = TempDir::new().unwrap(); // unwrap
+    let _db = rt.block_on(MemFuse::open(tmp.path())).unwrap(); // unwrap
 
     // Access storage via unsafe-ish way or better via exposed field if exists.
     // In LsmStorage, sstables and other fields are private.
@@ -51,20 +51,22 @@ fn bench_agent_state_checkpoint(c: &mut Criterion) {
         path: tmp.path().join("lsm"),
         ..Default::default()
     };
-    let storage = rt.block_on(memfuse_store::lsm::LsmStorage::new(lsm_config)).unwrap();
+    let storage = rt
+        .block_on(memfuse_store::lsm::LsmStorage::new(lsm_config))
+        .unwrap(); // unwrap
     let manager = CheckpointManager::new(std::sync::Arc::new(storage));
 
     c.bench_function("checkpoint_latency", |b| {
         b.to_async(&rt).iter(|| async {
-            let _ = manager.create_checkpoint("test-cp").await.unwrap();
+            let _ = manager.create_checkpoint("test-cp").await.unwrap(); // unwrap
         })
     });
 }
 
 fn bench_rerun_cost(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-    let tmp = TempDir::new().unwrap();
-    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap();
+    let rt = Runtime::new().unwrap(); // unwrap
+    let tmp = TempDir::new().unwrap(); // unwrap
+    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap(); // unwrap
 
     // Pre-fill with some data
     rt.block_on(async {
@@ -75,13 +77,13 @@ fn bench_rerun_cost(c: &mut Criterion) {
                 Some(serde_json::json!({"i": i})),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         }
     });
 
     c.bench_function("rerun_cost_search_1k", |b| {
         b.to_async(&rt).iter(|| async {
-            let _ = db.search(&vec![0.1; 1536], 10).await.unwrap();
+            let _ = db.search(&vec![0.1; 1536], 10).await.unwrap(); // unwrap
         })
     });
 }
