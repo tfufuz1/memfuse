@@ -35,12 +35,17 @@ async fn test_stress_multi_collection_concurrency() {
                 let vec = vec![i as f32, (i + 1) as f32, (i + 2) as f32, (i + 3) as f32];
 
                 // 1. Insert
-                col.insert(&id, &vec, Some(json!({"task": t, "idx": i, "text": format!("content for {} {}", t, i)})))
-                    .await
-                    .expect("insert");
+                col.insert(
+                    &id,
+                    &vec,
+                    Some(json!({"task": t, "idx": i, "text": format!("content for {} {}", t, i)})),
+                )
+                .await
+                .expect("insert");
 
                 // 2. Hybrid Search
-                let results = col.hybrid_search(&format!("content for {} {}", t, i), &vec, 1)
+                let results = col
+                    .hybrid_search(&format!("content for {} {}", t, i), &vec, 1)
                     .await
                     .expect("hybrid search");
                 assert!(!results.is_empty());

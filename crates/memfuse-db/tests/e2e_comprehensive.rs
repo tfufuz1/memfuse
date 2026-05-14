@@ -92,18 +92,34 @@ async fn test_comprehensive_e2e_flow() {
     }
 
     // 5. Relationships
-    tech_col.relate("rust-lang", "python-lang", "alternative").await.expect("relate");
-    let rels = tech_col.scan_prefix("__rel:rust-lang:alternative:").await.expect("scan rels");
+    tech_col
+        .relate("rust-lang", "python-lang", "alternative")
+        .await
+        .expect("relate");
+    let rels = tech_col
+        .scan_prefix("__rel:rust-lang:alternative:")
+        .await
+        .expect("scan rels");
     assert_eq!(rels.len(), 1);
     assert_eq!(rels[0].1["to"], "python-lang");
 
     // 6. Checkpoint Integration
     let cp_manager = CheckpointManager::new(db.inner_storage());
-    let cp1 = cp_manager.create_checkpoint("base_state").await.expect("create cp");
+    let cp1 = cp_manager
+        .create_checkpoint("base_state")
+        .await
+        .expect("create cp");
     assert!(cp1.seq_no > 0);
 
     // 7. Post-checkpoint changes
-    tech_col.insert("cpp-lang", &[1.0, 0.8, 0.1, 0.0], Some(json!({"text": "C++ is a classic systems language."}))).await.expect("insert cpp");
+    tech_col
+        .insert(
+            "cpp-lang",
+            &[1.0, 0.8, 0.1, 0.0],
+            Some(json!({"text": "C++ is a classic systems language."})),
+        )
+        .await
+        .expect("insert cpp");
     assert_eq!(tech_col.len().await, 3);
 
     // 8. Stats and Verification

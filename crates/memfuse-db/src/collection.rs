@@ -397,7 +397,7 @@ impl Collection {
         }
 
         if result_sets.len() == 1 {
-            return Ok(result_sets.pop().unwrap());
+            return Ok(result_sets.pop().unwrap_or_default());
         }
 
         Ok(crate::fusion::reciprocal_rank_fusion(result_sets, k))
