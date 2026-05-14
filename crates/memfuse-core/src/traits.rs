@@ -44,19 +44,20 @@ pub struct StorageStats {
 /// Storage engine trait — abstracts over the LSM-Tree implementation.
 #[async_trait]
 pub trait StorageEngine: Send + Sync {
-    /// Retrieves a value by key.
+    /// Retrieves a value by key. Returns `None` if the key does not exist.
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
 
     /// Stores a key-value pair as part of a transaction.
+    /// The write is staged until [`commit`](Self::commit) is called.
     async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()>;
 
     /// Deletes a key as part of a transaction.
     async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()>;
 
-    /// Commits a transaction — makes writes visible.
+    /// Commits a transaction — makes writes visible and persistent.
     async fn commit(&self, tx_id: TxId) -> Result<()>;
 
-    /// Rolls back a transaction — discards writes.
+    /// Rolls back a transaction — discards all writes staged for this transaction.
     async fn rollback(&self, tx_id: TxId) -> Result<()>;
 
     /// Flushes the memtable to disk.
@@ -66,11 +67,13 @@ pub trait StorageEngine: Send + Sync {
     async fn stats(&self) -> Result<StorageStats>;
 
     /// Returns the last sequence number committed to storage.
+    ///
+    /// This is used to determine the starting point for WAL replay.
     async fn last_seq_no(&self) -> Result<u64> {
         Ok(0)
     }
 
-    /// Pins a checkpoint for the given sequence number.
+    /// Pins a checkpoint for the given sequence number to prevent GC of relevant data.
     async fn pin_checkpoint(&self, _seq_no: u64) -> Result<()> {
         Ok(())
     }
@@ -81,6 +84,8 @@ pub trait StorageEngine: Send + Sync {
     }
 
     /// Scans a range of keys with the given prefix.
+    ///
+    /// Returns a list of key-value pairs matching the prefix.
     async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
 
     /// Scans a range of keys between `start` and `end` bounds.
@@ -112,6 +117,8 @@ pub trait VectorIndex: Send + Sync {
     async fn search(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>>;
 
     /// Searches with an optional filter predicate.
+    ///
+    /// The `filter` closure returns `true` if the document should be included.
     async fn search_filtered(
         &self,
         query: &[f32],
@@ -123,24 +130,24 @@ pub trait VectorIndex: Send + Sync {
         self.search(query, k).await
     }
 
-    /// Deletes a vector by its document ID.
+    /// Deletes a vector by its document ID as part of a transaction.
     async fn delete(&self, tx: TxId, id: DocId) -> Result<()>;
 
-    /// Commits a transaction.
+    /// Commits a transaction for the vector index.
     async fn commit(&self, tx: TxId) -> Result<()>;
 
-    /// Rolls back a transaction.
+    /// Rolls back a transaction for the vector index.
     async fn rollback(&self, tx: TxId) -> Result<()>;
 
-    /// Returns the number of vectors in the index.
+    /// Returns the number of active vectors in the index.
     async fn len(&self) -> usize;
 
-    /// Returns true if the index is empty.
+    /// Returns `true` if the index contains no active vectors.
     async fn is_empty(&self) -> bool {
         self.len().await == 0
     }
 
-    /// Returns index statistics.
+    /// Returns performance and size statistics for the vector index.
     async fn stats(&self) -> Result<VectorIndexStats>;
 }
 
@@ -158,21 +165,21 @@ pub struct TextIndexStats {
 /// Text index trait — abstracts over the inverted index and BM25 search.
 #[async_trait]
 pub trait TextIndex: Send + Sync {
-    /// Searches for documents matching the query.
+    /// Searches for documents matching the query string.
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>>;
 
-    /// Inserts or updates a document in the index.
+    /// Inserts or updates a document in the text index as part of a transaction.
     async fn insert(&self, tx: TxId, id: DocId, text: &str) -> Result<()>;
 
-    /// Deletes a document from the index.
+    /// Deletes a document from the text index as part of a transaction.
     async fn delete(&self, tx: TxId, id: DocId) -> Result<()>;
 
-    /// Commits a transaction.
+    /// Commits a transaction for the text index.
     async fn commit(&self, tx: TxId) -> Result<()>;
 
-    /// Rolls back a transaction.
+    /// Rolls back a transaction for the text index.
     async fn rollback(&self, tx: TxId) -> Result<()>;
 
-    /// Returns index statistics.
+    /// Returns performance and size statistics for the text index.
     async fn stats(&self) -> Result<TextIndexStats>;
 }

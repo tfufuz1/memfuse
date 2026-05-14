@@ -89,11 +89,18 @@ impl SnapshotRegistry {
     }
 
     fn update_min(&self, active: &BTreeMap<u64, usize>) {
-        // SAFETY: u64::MAX is the correct default when no snapshots are active.
-        // It allows the LSM compaction to garbage collect ALL tombstones, as
-        // all existing records will have seq_no < u64::MAX.
+        // Find the smallest sequence number currently active.
+        // If the map is empty, u64::MAX signals that no snapshots are pinning
+        // any sequence numbers, allowing full GC.
         let min = active.keys().next().copied().unwrap_or(u64::MAX);
-        self.min_active_seqno.store(min, Ordering::Release);
+
+        // Only store if the value has changed to minimize cache line invalidations
+        // for cross-thread readers using Acquire loads.
+        // Relaxed load is safe here because we are holding the Mutex lock,
+        // and any concurrent store would also be under the same lock.
+        if self.min_active_seqno.load(Ordering::Relaxed) != min {
+            self.min_active_seqno.store(min, Ordering::Release);
+        }
     }
 }
 

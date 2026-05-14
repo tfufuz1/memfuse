@@ -75,6 +75,13 @@ pub enum MemFuseError {
     // ═══ Text Engine ═══
     #[error("Text engine error: {0}")]
     Text(String),
+
+    // ═══ Specific Hardening ═══
+    #[error("Quantizer not trained")]
+    QuantizerNotTrained,
+
+    #[error("SSTable corruption: {0}")]
+    SstableCorruption(String),
 }
 
 impl MemFuseError {
