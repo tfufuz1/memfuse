@@ -7,14 +7,14 @@
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
-// FORMAT: [u32 len][u64 seq_no][u32 crc32][u8 op_type][payload...]
+// FORMAT: [u32 len][u64 seq_no][u8[32] HMAC-SHA256][u8 op_type][payload...]
 // INVARIANTE: Jeder Eintrag wird ERST in WAL geschrieben, DANN in MemTable übernommen.
 // REPLAY: Bei Neustart wird WAL komplett in MemTable replayed (lsm.rs::new()).
 // ROTATION: Beim Flush wird alte WAL archiviert, neue geöffnet.
 //
 // ANCHOR:SPEC:WP-3.2-HMAC-001 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
 // WP:WP-3.2 PRIO:3 NEEDS:NONE
-// AGENT:10 DATE:2026-05-09 STATUS:READY
+// AGENT:10 DATE:2026-05-16 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 //!
 //! ## Workflow
@@ -25,12 +25,12 @@
 //! ## Crash Recovery
 //! Upon restart, the `LsmStorage` engine replays the WAL from start to end,
 //! reconstructing the state of the MemTable as it was before the crash.
-//! Entries with invalid CRC32 checksums are ignored, and replay stops
-//! at the first point of corruption.
+//! Entries with invalid HMAC-SHA256 checksums cause the replay to stop
+//! at the first point of corruption to ensure data integrity.
 //!
 //! ## Invariants
 //! - **Durability**: Every committed transaction is guaranteed to be in the WAL.
-//! - **Integrity**: Entries are protected by CRC32 checksums to detect data corruption.
+//! - **Integrity**: Entries are protected by HMAC-SHA256 checksums to detect data corruption.
 //! - **Async I/O**: Operations use `tokio::fs` for non-blocking disk access.
 //!
 //! ## Performance
@@ -278,7 +278,8 @@ impl Wal {
 
             if entry_data.len() < 41 {
                 // seq_no(8) + checksum(32) + op_type(1)
-                continue;
+                tracing::error!("WAL entry at offset {} too small, stopping replay", pos);
+                break;
             }
 
             let seq_no = u64::from_le_bytes(entry_data[0..8].try_into().map_err(|_| {
@@ -301,7 +302,8 @@ impl Wal {
                 0 => {
                     // Put
                     if remaining.len() < 12 {
-                        continue;
+                        tracing::error!("WAL Put entry at offset {} too small for tx_id/key_len, stopping replay", pos);
+                        break;
                     }
                     let tx_id = TxId::new(u64::from_le_bytes(remaining[0..8].try_into().map_err(
                         |_| MemFuseError::WalCorruption {
@@ -316,7 +318,8 @@ impl Wal {
                         }
                     })?) as usize;
                     if remaining.len() < 12 + key_len + 4 {
-                        continue;
+                        tracing::error!("WAL Put entry at offset {} too small for key/val_len, stopping replay", pos);
+                        break;
                     }
                     let key = remaining[12..12 + key_len].to_vec();
                     let val_start = 12 + key_len;
@@ -328,7 +331,8 @@ impl Wal {
                             },
                         )?) as usize;
                     if remaining.len() < val_start + 4 + val_len {
-                        continue;
+                        tracing::error!("WAL Put entry at offset {} too small for value, stopping replay", pos);
+                        break;
                     }
                     let value = remaining[val_start + 4..val_start + 4 + val_len].to_vec();
                     WalOp::Put { tx_id, key, value }
@@ -336,7 +340,8 @@ impl Wal {
                 1 => {
                     // Delete
                     if remaining.len() < 12 {
-                        continue;
+                        tracing::error!("WAL Delete entry at offset {} too small for tx_id/key_len, stopping replay", pos);
+                        break;
                     }
                     let tx_id = TxId::new(u64::from_le_bytes(remaining[0..8].try_into().map_err(
                         |_| MemFuseError::WalCorruption {
@@ -351,17 +356,21 @@ impl Wal {
                         }
                     })?) as usize;
                     if remaining.len() < 12 + key_len {
-                        continue;
+                        tracing::error!("WAL Delete entry at offset {} too small for key, stopping replay", pos);
+                        break;
                     }
                     let key = remaining[12..12 + key_len].to_vec();
                     WalOp::Delete { tx_id, key }
                 }
-                _ => continue,
+                _ => {
+                    tracing::error!("WAL entry at offset {} has unknown op_type {}, stopping replay", pos, op_type);
+                    break;
+                }
             };
 
             // ANCHOR:ALG-FIX:D1-007 — HMAC-Verifikation bei WAL Replay
             // WP:WP-3.2 PRIO:1 NEEDS:NONE
-            // AGENT:10 DATE:2026-05-15 STATUS:READY
+            // AGENT:10 DATE:2026-05-16 STATUS:REVIEW
             // Ohne Verifikation werden korrupte Entries (Bit-Flip, Partial Write)
             // blind in die MemTable replayed → stille Datenkorrumpierung.
             let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no);
