@@ -1,3 +1,7 @@
+//! HNSW (Hierarchical Navigable Small World) vector index.
+//! # Hierarchical Navigable Small World (HNSW) Index
+//!
+//! This module implements the HNSW algorithm for efficient approximate nearest neighbor (ANN) search.
 // ANCHOR:DOC:DOC-HNSW-001 — Module documentation added
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:03 DATE:2026-05-15 STATUS:DONE
@@ -12,10 +16,6 @@
 // DELETE: Soft-Delete (Tombstone via deleted_nodes Roaring Bitmap).
 // REBUILD-LOGIK: Wenn >20% gelöscht → async trigger_rebuild_async() -> Atomic Swap.
 // TRANSAKTIONEN: Nutzt memfuse_core::TxBuffer zur Staging-Isolation.
-//! HNSW (Hierarchical Navigable Small World) vector index.
-//! # Hierarchical Navigable Small World (HNSW) Index
-//!
-//! This module implements the HNSW algorithm for efficient approximate nearest neighbor (ANN) search.
 //!
 //! ## Key Components
 //! - **HNSW Graph**: A multi-layered graph where the top layers provide coarse-grained navigation
@@ -49,7 +49,7 @@ use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::Mutex;
 
-/// HNSW index configuration.
+/// Configuration parameters for the HNSW index.
 #[derive(Debug, Clone)]
 pub struct HnswConfig {
     /// Vector dimensionality.
@@ -148,6 +148,7 @@ impl Ord for Candidate {
     }
 }
 
+/// The HNSW (Hierarchical Navigable Small World) vector index.
 pub struct HnswIndex {
     inner: std::sync::Arc<HnswIndexCore>,
 }
@@ -161,6 +162,7 @@ impl std::ops::Deref for HnswIndex {
 
 pub struct HnswIndexCore {
     config: HnswConfig,
+    validation_error: Option<String>,
     nodes: RwLock<Vec<HnswNode>>,
     doc_to_node: RwLock<AHashMap<u64, usize>>,
     entry_point: RwLock<Option<usize>>,
@@ -177,12 +179,12 @@ pub struct HnswIndexCore {
 impl HnswIndex {
     /// Creates a new HNSW index.
     pub fn new(config: HnswConfig) -> Self {
-        // Ignoriere den Fehler in new() für Rückwärtskompatibilität, er wird validiert wo möglich
-        let _ = config.validate();
+        let validation_error = config.validate().err().map(|e| e.to_string());
         let ml = 1.0 / (config.m as f64).ln();
         Self {
             inner: std::sync::Arc::new(HnswIndexCore {
                 config,
+                validation_error,
                 nodes: RwLock::new(Vec::new()),
                 doc_to_node: RwLock::new(AHashMap::new()),
                 entry_point: RwLock::new(None),
@@ -619,9 +621,27 @@ impl HnswIndexCore {
 
         // 2. Build fresh index
         let new_index = HnswIndex::new(config);
+
+        // Copy quantizer to new index to maintain parity
+        let quantizer_guard = self.quantizer.read();
+        if let Some(q) = quantizer_guard.as_ref() {
+            *new_index.quantizer.write() = Some(q.clone());
+        }
+
         for (doc_id, vector) in active_nodes {
-            if let VectorData::F32(ref v) = vector {
-                new_index.do_insert(doc_id, v)?;
+            match vector {
+                VectorData::F32(v) => {
+                    new_index.do_insert(doc_id, &v)?;
+                }
+                VectorData::U8(v) => {
+                    let dequantized = {
+                        let q = quantizer_guard.as_ref().ok_or_else(|| {
+                            MemFuseError::Index("Quantizer missing during rebuild".into())
+                        })?;
+                        q.dequantize(&v)
+                    };
+                    new_index.do_insert(doc_id, &dequantized)?;
+                }
             }
         }
 
@@ -656,6 +676,12 @@ impl HnswIndexCore {
 #[async_trait]
 impl VectorIndex for HnswIndex {
     async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
         if embedding.len() != self.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
                 "Expected dimension {}, got {}",
@@ -682,6 +708,12 @@ impl VectorIndex for HnswIndex {
     // BOTTLENECK: CPU / Cache Misses / ef_search Heuristik
     // FIX: Dynamische Anpassung von ef_search basierend auf Layer-Hierarchie.
     async fn search(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
         if query.len() != self.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
                 "Expected dimension {}, got {}",
@@ -774,6 +806,12 @@ impl VectorIndex for HnswIndex {
         k: usize,
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<ScoredDocument>> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
         if query.len() != self.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
                 "Expected dimension {}, got {}",
@@ -860,6 +898,12 @@ impl VectorIndex for HnswIndex {
     }
 
     async fn delete(&self, tx: TxId, id: DocId) -> Result<()> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
         self.tx_buffer.stage(
             tx,
             IndexOp::Delete {
@@ -871,6 +915,12 @@ impl VectorIndex for HnswIndex {
     }
 
     async fn commit(&self, tx: TxId) -> Result<()> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
         let _lock = self.write_mutex.lock().await;
         let ops = self.tx_buffer.drain(tx);
         let mut deleted_any = false;
@@ -942,17 +992,32 @@ impl VectorIndex for HnswIndex {
     }
 
     async fn rollback(&self, tx: TxId) -> Result<()> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
         self.tx_buffer.discard(tx);
         Ok(())
     }
 
     async fn len(&self) -> usize {
+        if self.validation_error.is_some() {
+            return 0;
+        }
         let total = self.nodes.read().len();
         let deleted = self.deleted_count.load(Ordering::SeqCst) as usize;
         total.saturating_sub(deleted)
     }
 
     async fn stats(&self) -> Result<VectorIndexStats> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
         let nodes = self.nodes.read();
         let deleted_count = self.deleted_count.load(Ordering::SeqCst) as usize;
         let num_vectors = nodes.len().saturating_sub(deleted_count);
@@ -998,6 +1063,22 @@ mod tests {
             rebuild_threshold: 0.8,
             quantize: false,
         }
+    }
+
+    #[tokio::test]
+    async fn test_invalid_config_error() {
+        let config = HnswConfig {
+            ef_construction: 5,
+            m: 10, // Invalid: ef_construction < m
+            ..test_config(4)
+        };
+        let index = HnswIndex::new(config);
+        let tx = TxId::new(1);
+        let result = index.insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0]).await;
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("Invalid index configuration"));
+        assert!(err_msg.contains("ef_construction (5) must be >= m (10)"));
     }
 
     #[tokio::test]
@@ -1159,6 +1240,55 @@ mod tests {
         // Ensure rebuilt index still works
         let results = index.search(&[1.0, 0.0], 1).await.expect("test");
         assert_eq!(results[0].doc_id, DocId::new(1));
+    }
+
+    #[tokio::test]
+    async fn test_rebuild_quantized_persistence() {
+        let index = HnswIndex::new(HnswConfig {
+            dimension: 4,
+            quantize: true,
+            rebuild_threshold: 0.1, // Trigger easily
+            distance_metric: DistanceMetric::Euclidean,
+            ..test_config(4)
+        });
+        let tx = TxId::new(1);
+
+        // Insert enough vectors to train quantizer (>= 50)
+        for i in 1..=60u64 {
+            let v = [i as f32, 0.0, 0.0, 0.0];
+            index.insert(tx, DocId::new(i), &v).await.expect("test");
+        }
+        index.commit(tx).await.expect("test");
+
+        assert_eq!(index.len().await, 60);
+        // Verify quantizer is trained
+        assert!(index.quantizer.read().is_some());
+
+        // Delete some to lower connectivity and allow rebuild
+        let tx2 = TxId::new(2);
+        for i in 1..=10u64 {
+            index.delete(tx2, DocId::new(i)).await.expect("test");
+        }
+        index.commit(tx2).await.expect("test");
+
+        assert_eq!(index.len().await, 50);
+
+        // Rebuild
+        index.rebuild().await.expect("rebuild");
+
+        // Verify state after rebuild
+        assert_eq!(index.len().await, 50);
+        assert!(
+            index.quantizer.read().is_some(),
+            "Quantizer must be preserved"
+        );
+
+        // Verify search still works
+        let results = index
+            .search(&[60.0, 0.0, 0.0, 0.0], 1)
+            .await
+            .expect("search");
+        assert_eq!(results[0].doc_id, DocId::new(60));
     }
 
     #[test]
