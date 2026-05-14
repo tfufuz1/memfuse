@@ -1,6 +1,6 @@
 //! LSM-backed Inverted Index.
 
-use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
+use crate::tokenizer::tokenize;
 use async_trait::async_trait;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
@@ -271,8 +271,8 @@ impl InvertedIndex {
     }
 
     /// Searches the inverted index using BM25.
-    pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
-        let tokens = self.tokenizer.tokenize(query);
+    pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
+        let tokens = tokenize(query);
         if tokens.is_empty() {
             return Ok(Vec::new());
         }
@@ -346,9 +346,16 @@ impl InvertedIndex {
             }
         }
 
-        let mut results: Vec<(DocId, f32)> = scores.into_iter().collect();
+        let mut results: Vec<ScoredDocument> = scores
+            .into_iter()
+            .map(|(doc_id, score)| ScoredDocument::new(doc_id, score))
+            .collect();
         // Sort descending by score
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(k);
 
         Ok(results)
@@ -358,11 +365,7 @@ impl InvertedIndex {
 #[async_trait]
 impl TextIndex for InvertedIndex {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
-        let results = self.search_bm25(query, k).await?;
-        Ok(results
-            .into_iter()
-            .map(|(doc_id, score)| ScoredDocument::new(doc_id, score))
-            .collect())
+        self.search_bm25(query, k).await
     }
 
     async fn insert(&self, tx: TxId, id: DocId, text: &str) -> Result<()> {
@@ -382,35 +385,36 @@ impl TextIndex for InvertedIndex {
     }
 
     async fn stats(&self) -> Result<TextIndexStats> {
-        let td_key = self.key("meta:total_docs");
-        let tt_key = self.key("meta:total_tokens");
+        let total_docs_key = self.key("meta:total_docs");
+        let mut total_docs = 0usize;
+        if let Some(bytes) = self.storage.get(&total_docs_key).await? {
+            if bytes.len() == 8 {
+                total_docs = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
+                ) as usize;
+            }
+        }
 
-        let num_documents = if let Some(bytes) = self.storage.get(&td_key).await? {
-            u64::from_le_bytes(
-                bytes
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
-            ) as usize
-        } else {
-            0
-        };
-
-        let num_tokens = if let Some(bytes) = self.storage.get(&tt_key).await? {
-            u64::from_le_bytes(
-                bytes
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| MemFuseError::Storage("Invalid total_tokens length".into()))?,
-            ) as usize
-        } else {
-            0
-        };
+        let total_tok_key = self.key("meta:total_tokens");
+        let mut total_tokens = 0usize;
+        if let Some(bytes) = self.storage.get(&total_tok_key).await? {
+            if bytes.len() == 8 {
+                total_tokens = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid total_tokens length".into()))?,
+                ) as usize;
+            }
+        }
 
         Ok(TextIndexStats {
-            num_documents,
-            num_tokens,
-            memory_usage_bytes: 0, // LSM is on disk
+            num_documents: total_docs,
+            num_tokens: total_tokens,
+            memory_usage_bytes: 0,
         })
     }
 }
@@ -458,15 +462,15 @@ mod tests {
 
         assert_eq!(results.len(), 2);
         // doc 2 has "rust" twice and "programming" once, should score higher than doc 1
-        assert!(results[0].0 == d2 || results[1].0 == d2);
+        assert!(results[0].doc_id == d2 || results[1].doc_id == d2);
 
         let doc2_pos = results
             .iter()
-            .position(|r| r.0 == d2)
+            .position(|r| r.doc_id == d2)
             .ok_or("doc2 not found")?;
         let doc1_pos = results
             .iter()
-            .position(|r| r.0 == d1)
+            .position(|r| r.doc_id == d1)
             .ok_or("doc1 not found")?;
         assert!(
             doc2_pos < doc1_pos,
@@ -612,27 +616,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_german_index() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn test_text_index_trait_implementation(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let tmp = TempDir::new()?;
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             ..Default::default()
         };
         let storage = Arc::new(LsmStorage::new(config).await?);
-        // "de" in namespace triggers GermanMorphTokenizer
-        let index = InvertedIndex::new(storage.clone(), "collection_de");
+        let index: Arc<dyn TextIndex> = Arc::new(InvertedIndex::new(storage.clone(), "default"));
 
         let tx1 = TxId::new(1);
         let d1 = DocId::new(1);
-        index
-            .upsert_document(tx1, d1, "Das Bundesverfassungsgericht in Karlsruhe")
-            .await?;
-        storage.commit(tx1).await?;
+        index.insert(tx1, d1, "trait implementation").await?;
+        index.commit(tx1).await?;
 
-        // Search for "gericht" should find it because of compound splitting
-        let results = index.search_bm25("gericht", 10).await?;
+        let results = index.search("trait", 10).await?;
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].0, d1);
+        assert_eq!(results[0].doc_id, d1);
+
+        let stats = index.stats().await?;
+        assert_eq!(stats.num_documents, 1);
+        assert_eq!(stats.num_tokens, 2);
+
+        let tx2 = TxId::new(2);
+        index.delete(tx2, d1).await?;
+        index.commit(tx2).await?;
+
+        assert_eq!(index.search("trait", 10).await?.len(), 0);
+        let stats = index.stats().await?;
+        assert_eq!(stats.num_documents, 0);
+        assert_eq!(stats.num_tokens, 0);
 
         Ok(())
     }
