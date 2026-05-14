@@ -58,10 +58,7 @@ pub enum WalOp {
         value: Vec<u8>,
     },
     /// Deletes a key.
-    Delete {
-        tx_id: TxId,
-        key: Vec<u8>,
-    },
+    Delete { tx_id: TxId, key: Vec<u8> },
 }
 
 /// A single entry in the Write-Ahead Log.
