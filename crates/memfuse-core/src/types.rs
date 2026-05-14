@@ -60,7 +60,16 @@ impl DocId {
     ///
     /// Uses blake3 hash and safe slice indexing.
     pub fn try_from_key(key: &str) -> Result<Self> {
-        Ok(Self::from_key(key))
+        let hash = blake3::hash(key.as_bytes());
+        let bytes = hash
+            .as_bytes()
+            .get(..8)
+            .ok_or_else(|| MemFuseError::Internal("Blake3 hash too short".to_string()))?;
+
+        let buf: [u8; 8] = bytes.try_into().map_err(|_| {
+            MemFuseError::Internal("Failed to convert hash slice to array".to_string())
+        })?;
+        Ok(Self(u64::from_le_bytes(buf)))
     }
 }
 
