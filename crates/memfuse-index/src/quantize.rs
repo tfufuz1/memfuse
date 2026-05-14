@@ -22,6 +22,15 @@ pub struct ScalarQuantizer {
 impl ScalarQuantizer {
     /// Creates a new ScalarQuantizer trained on a batch of vectors to find global min/max.
     pub fn train(batch: &[&[f32]], dimension: usize) -> Self {
+        if batch.is_empty() {
+            return Self {
+                min: 0.0,
+                max: 1.0,
+                inv_255_range: 1.0 / 255.0,
+                dimension,
+            };
+        }
+
         let mut min = f32::MAX;
         let mut max = f32::MIN;
 
@@ -252,6 +261,21 @@ mod tests {
                 }
             }
             assert!(top < 100);
+        }
+    }
+
+    #[test]
+    fn test_train_empty_batch() {
+        let q = ScalarQuantizer::train(&[], 128);
+        assert_eq!(q.min, 0.0);
+        assert_eq!(q.max, 1.0);
+        assert_eq!(q.dimension, 128);
+
+        let v = vec![0.5; 128];
+        let quantized = q.quantize(&v);
+        assert_eq!(quantized.len(), 128);
+        for &val in &quantized {
+            assert!(val > 120 && val < 135); // Close to 127
         }
     }
 }

@@ -300,9 +300,13 @@ unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
 unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-012 — Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_ps ist immer sicher.
-    let mut dot_v = unsafe { _mm256_setzero_ps() };
-    let mut norm_a_v = unsafe { _mm256_setzero_ps() };
-    let mut norm_b_v = unsafe { _mm256_setzero_ps() };
+    let (mut dot_v, mut norm_a_v, mut norm_b_v) = unsafe {
+        (
+            _mm256_setzero_ps(),
+            _mm256_setzero_ps(),
+            _mm256_setzero_ps(),
+        )
+    };
 
     let n = a.len();
     let mut i = 0;
@@ -323,9 +327,13 @@ unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
 
     // ANCHOR:SAFETY:SIMD-014 — Horizontale Summen.
     // BEGRÜNDUNG: hsum256_ps_avx benötigt AVX Support, der hier durch target_feature garantiert ist.
-    let mut dot = unsafe { hsum256_ps_avx(dot_v) };
-    let mut norm_a = unsafe { hsum256_ps_avx(norm_a_v) };
-    let mut norm_b = unsafe { hsum256_ps_avx(norm_b_v) };
+    let (mut dot, mut norm_a, mut norm_b) = unsafe {
+        (
+            hsum256_ps_avx(dot_v),
+            hsum256_ps_avx(norm_a_v),
+            hsum256_ps_avx(norm_b_v),
+        )
+    };
 
     while i < n {
         let x = a[i];
@@ -440,9 +448,13 @@ unsafe fn dot_product_avx512(a: &[f32], b: &[f32]) -> f32 {
 unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-026 — Initialisierung.
     // BEGRÜNDUNG: _mm512_setzero_ps ist immer sicher.
-    let mut dot_v = unsafe { _mm512_setzero_ps() };
-    let mut norm_a_v = unsafe { _mm512_setzero_ps() };
-    let mut norm_b_v = unsafe { _mm512_setzero_ps() };
+    let (mut dot_v, mut norm_a_v, mut norm_b_v) = unsafe {
+        (
+            _mm512_setzero_ps(),
+            _mm512_setzero_ps(),
+            _mm512_setzero_ps(),
+        )
+    };
 
     let n = a.len();
     let mut i = 0;
@@ -463,9 +475,13 @@ unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
 
     // ANCHOR:SAFETY:SIMD-028 — Horizontale Summen.
     // BEGRÜNDUNG: hsum512_ps_avx benötigt AVX-512 Support, der hier durch target_feature garantiert ist.
-    let mut dot = unsafe { hsum512_ps_avx(dot_v) };
-    let mut norm_a = unsafe { hsum512_ps_avx(norm_a_v) };
-    let mut norm_b = unsafe { hsum512_ps_avx(norm_b_v) };
+    let (mut dot, mut norm_a, mut norm_b) = unsafe {
+        (
+            hsum512_ps_avx(dot_v),
+            hsum512_ps_avx(norm_a_v),
+            hsum512_ps_avx(norm_b_v),
+        )
+    };
 
     while i < n {
         let x = a[i];
