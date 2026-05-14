@@ -290,13 +290,17 @@ impl SstableReader {
         // Read index offset and magic from the end of the mmap
         let index_offset = u64::from_le_bytes(
             mmap.get(file_size as usize - 12..file_size as usize - 4)
-                .ok_or_else(|| MemFuseError::Storage("corrupted SSTable: cannot read index_offset".into()))?
+                .ok_or_else(|| {
+                    MemFuseError::Storage("corrupted SSTable: cannot read index_offset".into())
+                })?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
         );
         let magic = u32::from_le_bytes(
             mmap.get(file_size as usize - 4..file_size as usize)
-                .ok_or_else(|| MemFuseError::Storage("corrupted SSTable: cannot read magic".into()))?
+                .ok_or_else(|| {
+                    MemFuseError::Storage("corrupted SSTable: cannot read magic".into())
+                })?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
         );
@@ -314,7 +318,9 @@ impl SstableReader {
         // Read index
         let index_data = mmap
             .get(index_offset as usize..file_size as usize - 12)
-            .ok_or_else(|| MemFuseError::Storage("corrupted SSTable: index out of bounds".into()))?;
+            .ok_or_else(|| {
+                MemFuseError::Storage("corrupted SSTable: index out of bounds".into())
+            })?;
 
         let mut index = Vec::new();
         let mut pos = 0;
@@ -323,7 +329,9 @@ impl SstableReader {
             let key_len = u16::from_le_bytes(
                 index_data
                     .get(pos..pos + 2)
-                    .ok_or_else(|| MemFuseError::Storage("corrupted SSTable index: key_len".into()))?
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("corrupted SSTable index: key_len".into())
+                    })?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
@@ -354,7 +362,9 @@ impl SstableReader {
             let offset = index[0].1 as usize;
             let k_len = u16::from_le_bytes(
                 mmap.get(offset..offset + 2)
-                    .ok_or_else(|| MemFuseError::Storage("corrupted SSTable: first key k_len".into()))?
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("corrupted SSTable: first key k_len".into())
+                    })?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;

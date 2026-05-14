@@ -225,12 +225,12 @@ impl Wal {
                 break;
             }
 
-            let entry_data = data.get(pos..pos + len).ok_or_else(|| {
-                MemFuseError::WalCorruption {
-                    offset: pos as u64,
-                    reason: "Buffer underrun reading entry data".into(),
-                }
-            })?;
+            let entry_data =
+                data.get(pos..pos + len)
+                    .ok_or_else(|| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Buffer underrun reading entry data".into(),
+                    })?;
             pos += len;
 
             if entry_data.len() < 13 {
@@ -263,15 +263,19 @@ impl Wal {
                         reason: "Invalid checksum".into(),
                     })?,
             );
-            let op_type = *entry_data.get(12).ok_or_else(|| MemFuseError::WalCorruption {
-                offset: pos as u64,
-                reason: "Invalid op_type".into(),
-            })?;
+            let op_type = *entry_data
+                .get(12)
+                .ok_or_else(|| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid op_type".into(),
+                })?;
 
-            let remaining = entry_data.get(13..).ok_or_else(|| MemFuseError::WalCorruption {
-                offset: pos as u64,
-                reason: "Invalid remaining data".into(),
-            })?;
+            let remaining = entry_data
+                .get(13..)
+                .ok_or_else(|| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid remaining data".into(),
+                })?;
             let op = match op_type {
                 0 => {
                     // Put
