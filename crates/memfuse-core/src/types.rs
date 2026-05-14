@@ -28,7 +28,9 @@ pub const TOMBSTONE_BIT: u64 = 1 << 63;
 pub struct DocId(pub u64);
 
 impl DocId {
+    /// Maximum possible DocId.
     pub const MAX: Self = Self(u64::MAX);
+    /// Minimum possible DocId.
     pub const MIN: Self = Self(0);
 
     /// Creates a new DocId from a raw u64.
@@ -44,8 +46,16 @@ impl DocId {
     }
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
+    ///
+    /// This is infallible as blake3 always produces a 32-byte hash.
+    // ANCHOR:DEBT:TYPES-002 — Zero-Panic DocId derivation.
+    // WP:WP-0.0 PRIO:3 NEEDS:NONE
+    // AGENT:01 DATE:2026-05-13 STATUS:DONE
     pub fn from_key(key: &str) -> Self {
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes")
+        let hash = blake3::hash(key.as_bytes());
+        let mut buf = [0u8; 8];
+        buf.copy_from_slice(&hash.as_bytes()[..8]);
+        Self(u64::from_le_bytes(buf))
     }
 
     /// Safely derive a DocId from a user-provided string key.
@@ -58,8 +68,9 @@ impl DocId {
             .get(..8)
             .ok_or_else(|| MemFuseError::Internal("Blake3 hash too short".to_string()))?;
 
-        let mut buf = [0u8; 8];
-        buf.copy_from_slice(bytes);
+        let buf: [u8; 8] = bytes.try_into().map_err(|_| {
+            MemFuseError::Internal("Failed to convert hash slice to array".to_string())
+        })?;
         Ok(Self(u64::from_le_bytes(buf)))
     }
 }
@@ -291,6 +302,7 @@ impl ResourceTracker {
     }
 
     /// Consumes the given number of bytes from the memory budget.
+    ///
     /// Returns an error if the budget is exceeded.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         let current = self

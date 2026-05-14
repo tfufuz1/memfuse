@@ -345,6 +345,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
+    /// Performs hybrid search combining BM25 and vector search.
     pub async fn hybrid_search(
         &self,
         text: &str,
@@ -758,5 +759,32 @@ mod tests {
         assert!(list.contains(&"c2".to_string()));
         assert!(list.contains(&"c3".to_string()));
         assert_eq!(list.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_namespaced_relationships() {
+        let (db, _tmp) = test_db(4).await;
+        let col = db.collection("tenant-1").await.expect("col");
+
+        col.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
+            .await
+            .expect("insert");
+        col.insert("doc-2", &[0.0, 1.0, 0.0, 0.0], None)
+            .await
+            .expect("insert");
+
+        col.relate("doc-1", "doc-2", "knows").await.expect("relate");
+
+        // Scan in namespaced collection
+        let results = col.scan_prefix("__rel:doc-1:knows:").await.expect("scan");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1["to"], "doc-2");
+
+        // Verify default collection doesn't see it
+        let default_results = db
+            .scan_prefix("__rel:doc-1:knows:")
+            .await
+            .expect("scan def");
+        assert!(default_results.is_empty());
     }
 }

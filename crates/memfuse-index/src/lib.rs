@@ -8,6 +8,7 @@
 // INVARIANTE: HNSW-Graphen liegen exklusiv im RAM. Disk-Storage erfolgt über memfuse-store (via LsmStorage).
 
 #![feature(portable_simd)]
+#![deny(unsafe_code)]
 
 pub mod csr;
 pub mod distance;
