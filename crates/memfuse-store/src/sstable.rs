@@ -539,11 +539,11 @@ impl SstableReader {
             let mut ep = entry_off;
             // ANCHOR:SEC:SLICE-002 — Slice-Indexing ohne Bounds-Check
             // WP:WP-0.0 PRIO:1 NEEDS:NONE
-            // AGENT:09-security DATE:2026-05-09 STATUS:REVIEW
+            // AGENT:10 DATE:2026-05-15 STATUS:DONE
             // CREATED:2026-05-09 DEADLINE:NONE
             // FUNDORT: memfuse-store/src/sstable.rs:416
             // RISIKO: Panic bei Runtime durch unzureichende Datei-Länge
-            // BEHEBUNG: bounds check vor indexing implementieren
+            // BEHEBUNG: bounds check vor indexing implementieren (Verifiziert: get() wird verwendet)
             let k_len = u16::from_le_bytes(
                 block_data
                     .get(ep..ep + 2)

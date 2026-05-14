@@ -54,6 +54,15 @@ impl KeyManager {
             .decrypt(nonce, ciphertext)
             .map_err(|e| MemFuseError::Storage(format!("Decryption failed: {}", e)))
     }
+
+    /// Derives a dedicated integrity key for HMAC operations.
+    pub fn derive_integrity_key(&self) -> [u8; 32] {
+        let hk = Hkdf::<Sha256>::from_prk(&self.key).expect("PRK is 32 bytes");
+        let mut integrity_key = [0u8; 32];
+        hk.expand(b"memfuse-hmac-integrity-key-v1", &mut integrity_key)
+            .expect("32 bytes is a valid length for HKDF expansion");
+        integrity_key
+    }
 }
 
 #[cfg(test)]

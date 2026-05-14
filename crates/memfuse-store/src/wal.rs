@@ -14,7 +14,7 @@
 //
 // ANCHOR:SPEC:WP-3.2-HMAC-001 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
 // WP:WP-3.2 PRIO:3 NEEDS:NONE
-// AGENT:10 DATE:2026-05-09 STATUS:READY
+// AGENT:10 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 //!
 //! ## Workflow
@@ -83,8 +83,8 @@ pub struct WalEntry {
 
 impl WalEntry {
     /// Creates a new WAL entry with HMAC-SHA256 checksum.
-    pub fn new(op: WalOp, seq_no: u64) -> Self {
-        let checksum = Self::compute_checksum(&op, seq_no);
+    pub fn new(op: WalOp, seq_no: u64, integrity_key: Option<&[u8]>) -> Self {
+        let checksum = Self::compute_checksum(&op, seq_no, integrity_key);
         Self {
             op,
             seq_no,
@@ -92,10 +92,9 @@ impl WalEntry {
         }
     }
 
-    fn compute_checksum(op: &WalOp, seq_no: u64) -> [u8; 32] {
-        // Use a fixed key for integrity. WP-3.2 will later use derived keys for encryption.
-        let mut mac = HmacSha256::new_from_slice(b"memfuse-integrity-key-v1")
-            .expect("HMAC can take key of any size");
+    fn compute_checksum(op: &WalOp, seq_no: u64, integrity_key: Option<&[u8]>) -> [u8; 32] {
+        let key = integrity_key.unwrap_or(b"memfuse-integrity-key-v1");
+        let mut mac = HmacSha256::new_from_slice(key).expect("HMAC can take key of any size");
         mac.update(&seq_no.to_le_bytes());
         match op {
             WalOp::Put { key, value, .. } => {
@@ -363,10 +362,12 @@ impl Wal {
 
             // ANCHOR:ALG-FIX:D1-007 — HMAC-Verifikation bei WAL Replay
             // WP:WP-3.2 PRIO:1 NEEDS:NONE
-            // AGENT:10 DATE:2026-05-15 STATUS:READY
+            // AGENT:10 DATE:2026-05-15 STATUS:REVIEW
             // Ohne Verifikation werden korrupte Entries (Bit-Flip, Partial Write)
             // blind in die MemTable replayed → stille Datenkorrumpierung.
-            let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no);
+            let integrity_key = self.key_manager.as_ref().map(|km| km.derive_integrity_key());
+            let recomputed_checksum =
+                WalEntry::compute_checksum(&op, seq_no, integrity_key.as_ref().map(|k| k.as_slice()));
             if recomputed_checksum != stored_checksum {
                 tracing::warn!(
                     "WAL entry at offset {} has invalid checksum, truncating replay",
@@ -410,7 +411,7 @@ mod tests {
             key: b"key".to_vec(),
             value: b"value".to_vec(),
         };
-        let entry = WalEntry::new(op, 100);
+        let entry = WalEntry::new(op, 100, None);
         let bytes = entry.to_bytes();
 
         // Manual verification of length
@@ -426,7 +427,7 @@ mod tests {
             tx_id: TxId::new(43),
             key: b"key2".to_vec(),
         };
-        let entry2 = WalEntry::new(op2, 101);
+        let entry2 = WalEntry::new(op2, 101, None);
         let bytes2 = entry2.to_bytes();
         // 4 + 8 + 32 + 1 + 8 + 4 + key(4) = 61
         assert_eq!(bytes2.len(), 61);
