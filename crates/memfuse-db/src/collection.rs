@@ -358,7 +358,6 @@ impl Collection {
     }
 
     /// Performs hybrid search combining BM25 and vector search results via RRF.
-    /// Performs hybrid search combining BM25 and vector search results via RRF.
     pub async fn hybrid_search(
         &self,
         text: &str,
