@@ -19,6 +19,9 @@ pub enum MemFuseError {
     #[error("Storage error: {0}")]
     Storage(String),
 
+    #[error("SSTable corruption detected: {0}")]
+    SstableCorruption(String),
+
     #[error("WAL corruption detected at offset {offset}: {reason}")]
     WalCorruption { offset: u64, reason: String },
 
@@ -28,6 +31,9 @@ pub enum MemFuseError {
     // ═══ Index ═══
     #[error("Index error: {0}")]
     Index(String),
+
+    #[error("Quantizer not trained")]
+    QuantizerNotTrained,
 
     #[error("HNSW graph connectivity degraded: {deleted_ratio:.1}% deleted nodes")]
     HnswConnectivityDegraded { deleted_ratio: f64 },
