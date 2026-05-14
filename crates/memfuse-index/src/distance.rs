@@ -41,6 +41,7 @@
 //! are guarded by runtime feature detection and documented with safety justifications.
 
 #![allow(unused_unsafe)]
+#![allow(unsafe_code)]
 
 use memfuse_core::DistanceMetric;
 use std::simd::prelude::*;

@@ -1,3 +1,4 @@
+//! Logically isolated Collections inside the MemFuse database.
 // ANCHOR:ARCH:COLLECTION-001 — Logische Isolation (Namespaces).
 // WP:WP-1.2 PRIO:1 NEEDS:NONE
 // AGENT:04 DATE:2026-05-09 STATUS:DONE
@@ -5,7 +6,6 @@
 // DESIGN: Eigener HNSW-Index pro Collection, GEMEINSAMER LSM-Storage.
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 // STATUS: Full Implementation für WP-1.2.
-//! Logically isolated Collections inside the MemFuse database.
 
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
 use memfuse_index::HnswIndex;
@@ -45,8 +45,10 @@ fn extract_text(metadata: &Option<serde_json::Value>) -> Option<String> {
     }
 }
 
-/// A logically isolated collection of documents.
-/// Each collection has its own HNSW vector index but shares the underlying LSM-Tree.
+/// A logically isolated collection of documents (namespace).
+///
+/// Each collection provides its own HNSW vector index and inverted text index,
+/// while sharing the underlying LSM-Tree storage with other collections.
 #[derive(Clone)]
 pub struct Collection {
     pub(crate) name: String,
@@ -59,7 +61,7 @@ pub struct Collection {
 }
 
 impl Collection {
-    /// Creates a new Collection instance.
+    /// Creates a new `Collection` instance.
     pub fn new(
         name: String,
         storage: Arc<LsmStorage>,
@@ -120,13 +122,13 @@ impl Collection {
         }
     }
 
-    /// Starts a new database transaction for this collection.
+    /// Begins a new atomic transaction for this collection.
     pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<'_> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         crate::transaction::DbTransaction::new(self, tx)
     }
 
-    /// Inserts a document into the collection.
+    /// Inserts a document with an embedding and optional metadata.
     pub async fn insert(
         &self,
         id: &str,
@@ -173,7 +175,7 @@ impl Collection {
         Ok(())
     }
 
-    /// Retrieves a document from the collection by its ID.
+    /// Retrieves a document by its user-provided string ID.
     pub async fn get(&self, id: &str) -> Result<Option<crate::Document>> {
         let key = self.namespaced_key(id.as_bytes(), 0);
         if let Some(data) = self.storage.get(&key).await? {
@@ -319,7 +321,7 @@ impl Collection {
         Ok(results)
     }
 
-    /// Performs semantic vector search in the collection.
+    /// Performs semantic k-NN search over the collection's embeddings.
     pub async fn search(
         &self,
         query_embedding: &[f32],
@@ -352,7 +354,7 @@ impl Collection {
         Ok(results)
     }
 
-    /// Performs hybrid search (BM25 + Vector) in the collection.
+    /// Performs hybrid search combining BM25 and vector search results via RRF.
     pub async fn hybrid_search(
         &self,
         text: &str,

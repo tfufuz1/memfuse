@@ -59,7 +59,7 @@ pub mod transaction;
 
 pub use collection::Collection;
 
-/// User-facing search result.
+/// User-facing search result containing the ID, score, and optional metadata.
 #[derive(Debug, Clone)]
 pub struct SearchResult {
     /// The string ID provided during insert.
@@ -79,7 +79,7 @@ pub struct DbStats {
     pub storage_stats: memfuse_core::StorageStats,
 }
 
-/// User-facing document retrieved by key.
+/// User-facing document structure.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Document {
     /// The string ID.
@@ -88,7 +88,7 @@ pub struct Document {
     pub metadata: Option<Value>,
 }
 
-/// Configuration for MemFuse.
+/// Global configuration settings for the MemFuse database.
 #[derive(Debug, Clone)]
 pub struct MemFuseConfig {
     /// Vector dimensionality (must match your embeddings).

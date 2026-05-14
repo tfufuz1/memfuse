@@ -1,8 +1,4 @@
 //! LSM-Tree (Log-Structured Merge-Tree) storage engine.
-//!
-//! The `LsmStorage` engine provides a high-performance, persistent key-value store
-//! implementing the `StorageEngine` trait.
-
 // ANCHOR:DOC:DOC-LSM-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:02 DATE:2026-05-09 STATUS:DONE
@@ -45,6 +41,7 @@
 //!    and then applied to the active MemTable.
 
 use crate::compaction::{CompactionConfig, CompactionEngine};
+use crate::crypto::KeyManager;
 use crate::memtable::MemTable;
 use crate::sstable::{create_block_cache, BlockCache, SstableBuilder, SstableReader};
 use crate::wal::{Wal, WalEntry, WalOp};
@@ -80,6 +77,7 @@ pub struct LsmConfig {
     pub tx_timeout: Duration,
     /// Configuration for background compaction.
     pub compaction: CompactionConfig,
+    pub encryption_passphrase: Option<String>,
 }
 
 impl Default for LsmConfig {
@@ -90,6 +88,7 @@ impl Default for LsmConfig {
             max_ram_mb: 2048,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
         }
     }
 }
@@ -103,6 +102,7 @@ struct LsmState {
 /// LSM-Tree based storage engine.
 pub struct LsmStorage {
     config: LsmConfig,
+    key_manager: Option<Arc<KeyManager>>,
     state: RwLock<LsmState>,
     /// SSTables stored separately for shared access with compaction engine.
     sstables: Arc<RwLock<Vec<Arc<SstableReader>>>>,
@@ -122,7 +122,13 @@ impl LsmStorage {
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create dir: {}", e)))?;
 
-        let wal = Wal::open(config.path.join("wal.log")).await?;
+        let key_manager = config
+            .encryption_passphrase
+            .as_ref()
+            .map(|p| Arc::new(KeyManager::new(p)));
+
+        let wal =
+            Wal::open_with_key_manager(config.path.join("wal.log"), key_manager.clone()).await?;
         let memtable = MemTable::new();
 
         // Replay WAL
@@ -171,7 +177,12 @@ impl LsmStorage {
 
         let mut sstables = Vec::new();
         for path in sst_files {
-            let reader = SstableReader::open(path, Arc::clone(&block_cache)).await?;
+            let reader = SstableReader::open_with_key_manager(
+                path,
+                Arc::clone(&block_cache),
+                key_manager.clone(),
+            )
+            .await?;
             sstables.push(Arc::new(reader));
         }
         let sstables = Arc::new(RwLock::new(sstables));
@@ -199,6 +210,7 @@ impl LsmStorage {
 
         Ok(Self {
             config,
+            key_manager,
             state: RwLock::new(LsmState {
                 memtable: Arc::new(memtable),
                 immutable_memtables: Vec::new(),
@@ -393,7 +405,7 @@ impl StorageEngine for LsmStorage {
             .map_err(|e| MemFuseError::Storage(format!("Time error: {}", e)))?
             .as_micros();
         let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
-        let new_wal = Wal::open(wal_path).await?;
+        let new_wal = Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?;
 
         let old_memtable = std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));
         let old_wal = std::mem::replace(&mut state.wal, new_wal);
@@ -420,14 +432,20 @@ impl StorageEngine for LsmStorage {
                 .path
                 .join(format!("sst-{:020}-{:04}.sst", flush_id, count % 10000))
         };
-        let mut builder = SstableBuilder::create(&sst_path).await?;
+        let mut builder =
+            SstableBuilder::create_with_key_manager(&sst_path, self.key_manager.clone()).await?;
 
         for (k, v, seq) in old_memtable.iter() {
             builder.add(&k, &v, seq).await?;
         }
         builder.finish().await?;
 
-        let reader = SstableReader::open(&sst_path, Arc::clone(&self.block_cache)).await?;
+        let reader = SstableReader::open_with_key_manager(
+            &sst_path,
+            Arc::clone(&self.block_cache),
+            self.key_manager.clone(),
+        )
+        .await?;
 
         // Atomic transition: remove from immutable memtables and add to SSTables
         let mut state = self.state.write().await;
@@ -607,6 +625,7 @@ mod tests {
             max_ram_mb: 64,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
         };
         let storage = LsmStorage::new(config).await.expect("create storage");
         (storage, tmp)
@@ -684,6 +703,7 @@ mod tests {
             max_ram_mb: 64,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
         };
         let storage = LsmStorage::new(config).await.expect("create storage");
 

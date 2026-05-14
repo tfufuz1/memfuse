@@ -67,6 +67,9 @@ bash .agent/scripts/jules-dashboard.sh
 
 - **Zero Boilerplate** — String IDs, auto-commit, no configuration needed
 - **HNSW Vector Search** — Approximate nearest neighbor with diversity heuristic
+- **Scalar Quantization (SQ8)** — 4x RAM reduction for large-scale vector indices
+- **Hybrid Search** — Combined BM25 (text) and Vector search via RRF (Reciprocal Rank Fusion)
+- **Multi-Tenancy** — Logically isolated collections (namespaces) for different agents/tasks
 - **SIMD Acceleration** — portable-simd for distance computation
 - **LSM-Tree Persistence** — WAL + MemTable with crash recovery
 - **Transactional** — Sharded TxBuffer with orphan-reaping
