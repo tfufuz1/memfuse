@@ -3,6 +3,7 @@ name = "memfuse-index"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
 description = "HNSW vector index with SIMD distance computation for MemFuse"
 
 [dependencies]

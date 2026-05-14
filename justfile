@@ -14,6 +14,14 @@ check:
     nix develop -c cargo clippy --all-targets -- -D warnings
     nix develop -c cargo check --all-targets --workspace
 
+# Modular check for memfuse-runtime
+check-runtime:
+    nix develop -c cargo check -p memfuse-runtime
+
+# Modular check for memfuse-orchestrator
+check-orchestrator:
+    nix develop -c cargo check -p memfuse-orchestrator
+
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)
 triple-test: check
     #!/usr/bin/env bash

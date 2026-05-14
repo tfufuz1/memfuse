@@ -1,4 +1,5 @@
-// ANCHOR:DOC:DOC-LIB-001 — Module documentation improved
+//! MemFuse Runtime — Sandboxing and Execution Layer.
+// ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:13 DATE:2026-05-13 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
@@ -14,16 +15,6 @@
 // CREATED:2026-05-09 DEADLINE:NONE
 // ZIEL: Sichere Ausführung von Agent-Tools ohne Host-Zugriff.
 // ANCHOR:INTEGRATION STATUS:TODO AGENT:13
-//! # MemFuse Runtime
-//!
-//! The Runtime crate provides sandboxing and execution capabilities for MemFuse agents.
-//! It ensures that agent tools and custom logic are executed in a secure, isolated
-//! environment, typically using WebAssembly (WASM).
-//!
-//! ## Key Responsibilities
-//! - **Isolation**: Executing code without direct access to the host system.
-//! - **Resource Control**: Managing CPU and memory limits for execution.
-//! - **Portability**: Enabling agent logic to run across different platforms via WASM.
 
 #![forbid(unsafe_code)]
 

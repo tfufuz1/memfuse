@@ -10,10 +10,10 @@
 //!   from synchronous Python calls.
 //! - **Zero-Copy**: Aims for minimal copying of vector data between Python and Rust.
 
-// AGENT:06 DATE:2026-05-09 STATUS:READY
+// AGENT:06 DATE:2026-05-15 STATUS:DONE
 // ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
-// AGENT:@JULES-06 DATE:2026-05-09 STATUS:DONE
+// AGENT:@JULES-06 DATE:2026-05-15 STATUS:DONE
 // TEST: cd crates/memfuse-py && python -m pytest tests/ -v
 // DONE: pip install . funktioniert, keine Deadlocks in tokio-Runtime.
 // SUCCESSOR: @JULES-09 — "Python Bindings sind stabil. StateGraph kann darauf aufbauen."
@@ -48,12 +48,13 @@ fn get_runtime() -> PyResult<&'static Runtime> {
             ))
         })?;
 
-    // AGENT:06 DATE:2026-05-09 STATUS:DONE — Fixed DEBT-UNWRAP-LIB-25
-    // ANCHOR:DEBT:PY-002 — Zero-Panic compliance for runtime access
-    // AGENT:13 DATE:2026-05-13 STATUS:DONE
-    let _ = RUNTIME.set(rt);
+    if let Err(_rt_existing) = RUNTIME.set(rt) {
+        // Another thread already initialized it, just return the existing one.
+        // The newly created runtime will be dropped here.
+    }
+
     RUNTIME.get().ok_or_else(|| {
-        pyo3::exceptions::PyRuntimeError::new_err("Tokio runtime synchronization failure")
+        pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve initialized tokio runtime")
     })
 }
 
@@ -77,31 +78,43 @@ pub struct PyDocument {
     pub metadata: Option<PyObject>,
 }
 
-#[pyclass(unsendable)]
-pub struct Db {
+#[pyclass(unsendable, name = "Db")]
+pub struct PyMemFuse {
     inner: Arc<MemFuse>,
 }
 
 #[pymethods]
-impl Db {
-    pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<Collection> {
+impl PyMemFuse {
+    pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<PyCollection> {
         let rt = get_runtime()?;
         let col = py
             .allow_threads(|| rt.block_on(self.inner.collection(name)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        Ok(Collection {
+        Ok(PyCollection {
             inner: Arc::new(col),
         })
     }
+
+    pub fn list_collections(&self, py: Python<'_>) -> PyResult<Vec<String>> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.list_collections()))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn drop_collection(&self, name: &str, py: Python<'_>) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.drop_collection(name)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
 }
 
-#[pyclass(unsendable)]
-pub struct Collection {
+#[pyclass(unsendable, name = "Collection")]
+pub struct PyCollection {
     inner: Arc<MemFuseCollection>,
 }
 
 #[pymethods]
-impl Collection {
+impl PyCollection {
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
@@ -123,8 +136,71 @@ impl Collection {
             None
         };
 
-        // AGENT:06 DATE:2026-05-09 STATUS:DONE — Zero-copy slice passed to backend
         py.allow_threads(|| rt.block_on(self.inner.insert(id, vec_slice, meta_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
+        let rt = get_runtime()?;
+        let doc = py
+            .allow_threads(|| rt.block_on(self.inner.get(id)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        if let Some(d) = doc {
+            let meta_py = if let Some(m) = d.metadata {
+                Some(
+                    pythonize(py, &m)
+                        .map_err(|e| {
+                            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                "Metadata error: {}",
+                                e
+                            ))
+                        })?
+                        .unbind(),
+                )
+            } else {
+                None
+            };
+
+            Ok(Some(PyDocument {
+                id: d.id,
+                metadata: meta_py,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    #[pyo3(signature = (id, vector, metadata=None))]
+    pub fn update<'py>(
+        &self,
+        py: Python<'py>,
+        id: &str,
+        vector: PyReadonlyArray1<'py, f32>,
+        metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+    ) -> PyResult<()> {
+        let rt = get_runtime()?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
+
+        let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
+            depythonize(&d).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Metadata error: {}", e))
+            })?
+        } else {
+            None
+        };
+
+        py.allow_threads(|| rt.block_on(self.inner.update(id, vec_slice, meta_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.delete(id)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(())
     }
@@ -141,7 +217,6 @@ impl Collection {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
         })?;
 
-        // AGENT:06 DATE:2026-05-09 STATUS:DONE — Zero-copy slice passed to backend
         let results = py
             .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
@@ -188,7 +263,6 @@ impl Collection {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
         })?;
 
-        // AGENT:06 DATE:2026-05-09 STATUS:DONE — Zero-copy slice passed to backend
         let results = py
             .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
@@ -225,7 +299,7 @@ impl Collection {
 
 #[pyfunction]
 #[pyo3(signature = (path, dimension=1536))]
-fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<Db> {
+fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<PyMemFuse> {
     let rt = get_runtime()?;
     let config = MemFuseConfig {
         dimension,
@@ -236,7 +310,7 @@ fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<Db> {
         .allow_threads(|| rt.block_on(MemFuse::open_with_config(path_string, config)))
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-    Ok(Db {
+    Ok(PyMemFuse {
         inner: Arc::new(db),
     })
 }
@@ -244,8 +318,8 @@ fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<Db> {
 #[pymodule]
 fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(open, m)?)?;
-    m.add_class::<Db>()?;
-    m.add_class::<Collection>()?;
+    m.add_class::<PyMemFuse>()?;
+    m.add_class::<PyCollection>()?;
     m.add_class::<PySearchResult>()?;
     m.add_class::<PyDocument>()?;
     Ok(())
