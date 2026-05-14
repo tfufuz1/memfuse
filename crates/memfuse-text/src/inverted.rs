@@ -1,7 +1,8 @@
 //! LSM-backed Inverted Index.
 
-use crate::tokenizer::tokenize;
-use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId};
+use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
+use async_trait::async_trait;
+use memfuse_core::{DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -10,6 +11,7 @@ use std::sync::Arc;
 pub struct InvertedIndex {
     storage: Arc<dyn StorageEngine>,
     prefix: Vec<u8>,
+    tokenizer: Arc<dyn Tokenizer>,
 }
 
 impl InvertedIndex {
@@ -20,7 +22,18 @@ impl InvertedIndex {
         } else {
             format!("__txt:{}:", namespace).into_bytes()
         };
-        Self { storage, prefix }
+
+        let tokenizer: Arc<dyn Tokenizer> = if namespace.contains("de") {
+            Arc::new(GermanMorphTokenizer)
+        } else {
+            Arc::new(DefaultTokenizer)
+        };
+
+        Self {
+            storage,
+            prefix,
+            tokenizer,
+        }
     }
 
     fn key(&self, suffix: &str) -> Vec<u8> {
@@ -31,7 +44,7 @@ impl InvertedIndex {
 
     /// Appends and updates inverted index structures for a document.
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
-        let tokens = tokenize(text);
+        let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
 
         let mut tfs = HashMap::new();
@@ -257,7 +270,7 @@ impl InvertedIndex {
 
     /// Searches the inverted index using BM25.
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
-        let tokens = tokenize(query);
+        let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
             return Ok(Vec::new());
         }
@@ -337,6 +350,60 @@ impl InvertedIndex {
         results.truncate(k);
 
         Ok(results)
+    }
+}
+
+#[async_trait]
+impl TextIndex for InvertedIndex {
+    async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
+        let results = self.search_bm25(query, k).await?;
+        Ok(results
+            .into_iter()
+            .map(|(doc_id, score)| ScoredDocument::new(doc_id, score))
+            .collect())
+    }
+
+    async fn insert(&self, tx: TxId, id: DocId, text: &str) -> Result<()> {
+        self.upsert_document(tx, id, text).await
+    }
+
+    async fn delete(&self, tx: TxId, id: DocId) -> Result<()> {
+        self.delete_document(tx, id).await
+    }
+
+    async fn commit(&self, tx: TxId) -> Result<()> {
+        self.storage.commit(tx).await
+    }
+
+    async fn rollback(&self, tx: TxId) -> Result<()> {
+        self.storage.rollback(tx).await
+    }
+
+    async fn stats(&self) -> Result<TextIndexStats> {
+        let td_key = self.key("meta:total_docs");
+        let tt_key = self.key("meta:total_tokens");
+
+        let num_documents = if let Some(bytes) = self.storage.get(&td_key).await? {
+            u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                MemFuseError::Storage("Invalid total_docs length".into())
+            })?) as usize
+        } else {
+            0
+        };
+
+        let num_tokens = if let Some(bytes) = self.storage.get(&tt_key).await? {
+            u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                MemFuseError::Storage("Invalid total_tokens length".into())
+            })?) as usize
+        } else {
+            0
+        };
+
+        Ok(TextIndexStats {
+            num_documents,
+            num_tokens,
+            memory_usage_bytes: 0, // LSM is on disk
+        })
     }
 }
 
@@ -533,6 +600,30 @@ mod tests {
         storage.commit(tx3).await?;
 
         assert_eq!(index.search_bm25("python", 10).await?.len(), 0);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_german_index() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(config).await?);
+        // "de" in namespace triggers GermanMorphTokenizer
+        let index = InvertedIndex::new(storage.clone(), "collection_de");
+
+        let tx1 = TxId::new(1);
+        let d1 = DocId::new(1);
+        index.upsert_document(tx1, d1, "Das Bundesverfassungsgericht in Karlsruhe").await?;
+        storage.commit(tx1).await?;
+
+        // Search for "gericht" should find it because of compound splitting
+        let results = index.search_bm25("gericht", 10).await?;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, d1);
+
         Ok(())
     }
 }
