@@ -332,3 +332,66 @@ impl ResourceTracker {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_doc_id_consistency() {
+        let key = "test-key";
+        let id1 = DocId::from_key(key);
+        let id2 = DocId::from_key(key);
+        assert_eq!(id1, id2);
+        assert_ne!(id1.inner(), 0);
+    }
+
+    #[test]
+    fn test_resource_tracker_budget() {
+        let budget = ResourceBudget { memory_limit: 100 };
+        let tracker = ResourceTracker::new(budget);
+
+        assert!(tracker.consume_memory(60).is_ok());
+        assert_eq!(tracker.memory_used(), 60);
+        assert!(tracker.has_memory_capacity()); // 60 < 95
+
+        assert!(tracker.consume_memory(40).is_ok());
+        assert_eq!(tracker.memory_used(), 100);
+        assert!(!tracker.has_memory_capacity()); // 100 >= 95
+
+        let err = tracker.consume_memory(1).unwrap_err();
+        match err {
+            MemFuseError::MemoryBudgetExceeded { used_mb, limit_mb } => {
+                // Values are in MB, so 101 bytes and 100 bytes both round to 0 MB
+                assert_eq!(used_mb, 0);
+                assert_eq!(limit_mb, 0);
+            }
+            _ => panic!("Expected MemoryBudgetExceeded error"),
+        }
+
+        tracker.release_memory(50);
+        assert_eq!(tracker.memory_used(), 50);
+        assert!(tracker.has_memory_capacity());
+    }
+
+    #[tokio::test]
+    async fn test_resource_tracker_backpressure() {
+        let budget = ResourceBudget { memory_limit: 100 };
+        let tracker = ResourceTracker::new(budget);
+
+        let _ = tracker.consume_memory(79);
+        let start = std::time::Instant::now();
+        tracker.apply_backpressure().await;
+        assert!(start.elapsed() < std::time::Duration::from_millis(1));
+
+        let _ = tracker.consume_memory(1); // Now at 80
+        let start = std::time::Instant::now();
+        tracker.apply_backpressure().await;
+        assert!(start.elapsed() >= std::time::Duration::from_millis(5));
+    }
+}
+
+// ANCHOR:INTEGRATION:CORE-001 — Explicit Validation of DocId derivation logic.
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-15 STATUS:DONE
+// CREATED:2026-05-15 DEADLINE:NONE
