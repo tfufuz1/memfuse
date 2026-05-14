@@ -367,39 +367,53 @@ impl Collection {
         let is_vector_zero = vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
 
-        match (is_text_empty, is_vector_zero) {
-            (true, true) => Ok(Vec::new()),
-            (true, false) => self.search(vector, k).await,
-            (false, _) => {
-                let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let mut text_results = Vec::with_capacity(bm25_results.len());
+        if is_text_empty && is_vector_zero {
+            return Ok(Vec::new());
+        }
 
-                for (doc_id, score) in bm25_results {
-                    let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-                    if let Some(bytes) = self.storage.get(&doc_key).await? {
-                        let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                        text_results.push(crate::SearchResult {
-                            id: stored.id,
-                            score,
-                            metadata: stored.metadata,
-                        });
-                    }
+        let mut rrf_scores: std::collections::HashMap<String, f32> =
+            std::collections::HashMap::new();
+        let k_rrf = 60.0;
+
+        if !is_text_empty {
+            let bm25_results = self.text_index.search_bm25(text, k * 2).await?;
+            for (rank, (doc_id, _)) in bm25_results.iter().enumerate() {
+                let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+                if let Some(bytes) = self.storage.get(&doc_key).await? {
+                    let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                    *rrf_scores.entry(stored.id).or_insert(0.0) +=
+                        1.0 / (k_rrf + rank as f32 + 1.0);
                 }
+            }
+        }
 
-        let bm25_results = self.text_index.search_bm25(text, k).await?;
+        if !is_vector_zero {
+            let vector_results = self.index.search(vector, k * 2).await?;
+            for (rank, sd) in vector_results.iter().enumerate() {
+                let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
+                if let Some(bytes) = self.storage.get(&doc_key).await? {
+                    let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                    *rrf_scores.entry(stored.id).or_insert(0.0) +=
+                        1.0 / (k_rrf + rank as f32 + 1.0);
+                }
+            }
+        }
 
-        let mut text_set = Vec::new();
-        for (doc_id, score) in bm25_results {
-            let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-            if let Some(bytes) = self.storage.get(&doc_key).await? {
-                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                text_set.push(crate::SearchResult {
-                    id: stored.id,
+        let mut combined: Vec<(String, f32)> = rrf_scores.into_iter().collect();
+        combined.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        combined.truncate(k);
+
+        let mut results = Vec::with_capacity(combined.len());
+        for (id, score) in combined {
+            if let Some(doc) = self.get(&id).await? {
+                results.push(crate::SearchResult {
+                    id: doc.id,
                     score,
-                    metadata: stored.metadata,
+                    metadata: doc.metadata,
                 });
             }
         }
+        Ok(results)
     }
 
     /// Returns the number of documents in the collection.
