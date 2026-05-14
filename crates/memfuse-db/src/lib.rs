@@ -59,7 +59,7 @@ pub mod transaction;
 
 pub use collection::Collection;
 
-/// User-facing search result.
+/// User-facing search result containing the ID, score, and optional metadata.
 #[derive(Debug, Clone)]
 pub struct SearchResult {
     /// The string ID provided during insert.
@@ -79,7 +79,7 @@ pub struct DbStats {
     pub storage_stats: memfuse_core::StorageStats,
 }
 
-/// User-facing document retrieved by key.
+/// User-facing document structure.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Document {
     /// The string ID.
@@ -88,7 +88,7 @@ pub struct Document {
     pub metadata: Option<Value>,
 }
 
-/// Configuration for MemFuse.
+/// Global configuration settings for the MemFuse database.
 #[derive(Debug, Clone)]
 pub struct MemFuseConfig {
     /// Vector dimensionality (must match your embeddings).
@@ -338,12 +338,14 @@ impl MemFuse {
             .await
     }
 
+    /// Performs hybrid search combining BM25 and vector search.
     // ANCHOR:TODO:SEARCH-001 — Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection.
     // WP:WP-2.1 PRIO:1 NEEDS:COL-001
     // AGENT:@JULES-05 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
+    /// Performs hybrid search combining BM25 and vector search.
     pub async fn hybrid_search(
         &self,
         text: &str,
@@ -757,5 +759,32 @@ mod tests {
         assert!(list.contains(&"c2".to_string()));
         assert!(list.contains(&"c3".to_string()));
         assert_eq!(list.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_namespaced_relationships() {
+        let (db, _tmp) = test_db(4).await;
+        let col = db.collection("tenant-1").await.expect("col");
+
+        col.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
+            .await
+            .expect("insert");
+        col.insert("doc-2", &[0.0, 1.0, 0.0, 0.0], None)
+            .await
+            .expect("insert");
+
+        col.relate("doc-1", "doc-2", "knows").await.expect("relate");
+
+        // Scan in namespaced collection
+        let results = col.scan_prefix("__rel:doc-1:knows:").await.expect("scan");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1["to"], "doc-2");
+
+        // Verify default collection doesn't see it
+        let default_results = db
+            .scan_prefix("__rel:doc-1:knows:")
+            .await
+            .expect("scan def");
+        assert!(default_results.is_empty());
     }
 }
