@@ -93,8 +93,9 @@ impl ScalarQuantizer {
             }
             DistanceMetric::Euclidean => {
                 let alpha = (self.max - self.min) / 255.0;
-                let dist_sq =
-                    crate::distance::euclidean_distance_sq_f32_u8(query, quantized, alpha, self.min);
+                let dist_sq = crate::distance::euclidean_distance_sq_f32_u8(
+                    query, quantized, alpha, self.min,
+                );
                 Ok(dist_sq.sqrt())
             }
             DistanceMetric::Cosine => {
