@@ -1,7 +1,7 @@
 //! Scalar Quantization (SQ8) for HNSW Index.
 // ANCHOR:TODO:QUANT-001 — Optimiere und finalisiere die SQ8 Quantization impl, repariere Cast-Bugs.
 // WP:WP-2.2 PRIO:1 NEEDS:NONE
-// AGENT:@JULES-03 DATE:2026-05-09 STATUS:READY
+// AGENT:@JULES-03 DATE:2026-05-15 STATUS:DONE
 // TEST: cargo bench -p memfuse-index -- quantization
 // DONE: Performance- und Recall Metriken sind stabil.
 // SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
@@ -13,6 +13,8 @@ use memfuse_core::DistanceMetric;
 pub struct ScalarQuantizer {
     pub min: f32,
     pub max: f32,
+    pub scale: f32,
+    pub inv_scale: f32,
     pub dimension: usize,
 }
 
@@ -38,21 +40,25 @@ impl ScalarQuantizer {
             max = min + 1e-6;
         }
 
+        let range = max - min;
+        let scale = 255.0 / range;
+        let inv_scale = range / 255.0;
+
         Self {
             min,
             max,
+            scale,
+            inv_scale,
             dimension,
         }
     }
 
     /// Quantizes an `f32` vector to `u8`.
     pub fn quantize(&self, vector: &[f32]) -> Vec<u8> {
-        let range = self.max - self.min;
         vector
             .iter()
             .map(|&v| {
                 let clamped = v.clamp(self.min, self.max);
-                let normalized = (clamped - self.min) / range;
                 // ANCHOR:PERF:CAST-001 — Sicherer Integer-Cast mit Sättigung
                 // WP:WP-0.0 PRIO:2 NEEDS:NONE
                 // AGENT:03 DATE:2026-05-15 STATUS:DONE
@@ -60,17 +66,16 @@ impl ScalarQuantizer {
                 // FUNDORT: memfuse-index/src/quantize.rs:50
                 // RISIKO: Cast-without-check kann crashen oder falsche Daten liefern.
                 // BEHEBUNG: TryFrom oder korrekte Sättigung.
-                (normalized * 255.0).round().clamp(0.0, 255.0) as u8
+                ((clamped - self.min) * self.scale).round().clamp(0.0, 255.0) as u8
             })
             .collect()
     }
 
     /// Dequantizes a `u8` vector back to `f32`.
     pub fn dequantize(&self, vector: &[u8]) -> Vec<f32> {
-        let range = self.max - self.min;
         vector
             .iter()
-            .map(|&v| (v as f32 / 255.0) * range + self.min)
+            .map(|&v| (v as f32) * self.inv_scale + self.min)
             .collect()
     }
 
