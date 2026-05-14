@@ -43,8 +43,16 @@ impl DocId {
         self.0
     }
 
+    // ANCHOR:DEBT:TYPES-002 — expect() in production code.
+    // WP:WP-0.0 PRIO:3 NEEDS:NONE
+    // AGENT:01 DATE:2026-05-16 STATUS:DONE
+    // CREATED:2026-05-16 DEADLINE:NONE
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Self {
+        // SAFETY: Blake3 always produces a 32-byte hash.
+        // DocId::try_from_key only fails if the hash is less than 8 bytes,
+        // which is impossible for Blake3. We use expect() here to maintain
+        // a non-Result API for this common derivation.
         Self::try_from_key(key).expect("Blake3 hash must be 32 bytes")
     }
 
