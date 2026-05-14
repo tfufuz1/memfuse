@@ -155,6 +155,10 @@ impl Collection {
         // ANCHOR:SEC:SERIAL-001 (PRIO:2 STATUS:READY)
         let data = serde_json::to_vec(&stored)?;
 
+        // NOTE: WP-3.2: LsmStorage already encrypts the WAL and SSTables if enabled.
+        // The data passed to storage.put will be encrypted by the storage engine.
+        // We don't need to double-encrypt here.
+
         let user_key = self.namespaced_key(id.as_bytes(), 0);
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
 
@@ -386,18 +390,16 @@ impl Collection {
                     }
                 }
 
-        let bm25_results = self.text_index.search_bm25(text, k).await?;
+                let vector_results = if is_vector_zero {
+                    Vec::new()
+                } else {
+                    self.search(vector, k).await?
+                };
 
-        let mut text_set = Vec::new();
-        for (doc_id, score) in bm25_results {
-            let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-            if let Some(bytes) = self.storage.get(&doc_key).await? {
-                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                text_set.push(crate::SearchResult {
-                    id: stored.id,
-                    score,
-                    metadata: stored.metadata,
-                });
+                Ok(crate::fusion::reciprocal_rank_fusion(
+                    vec![text_results, vector_results],
+                    k,
+                ))
             }
         }
     }

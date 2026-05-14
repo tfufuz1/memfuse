@@ -1,11 +1,7 @@
 //! MemFuse Runtime — Sandboxing and Execution Layer.
 // ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-<<<<<<< HEAD
-// AGENT:13 DATE:2026-05-09 STATUS:DONE
-=======
 // AGENT:13 DATE:2026-05-13 STATUS:DONE
->>>>>>> main
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:AUDIT:SAOS-022 — forbid(unsafe_code) fehlte → nachgerüstet
 // WP:NONE PRIO:3 NEEDS:NONE

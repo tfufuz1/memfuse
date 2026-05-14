@@ -98,13 +98,19 @@ impl WalEntry {
             .expect("HMAC can take key of any size");
         mac.update(&seq_no.to_le_bytes());
         match op {
-            WalOp::Put { key, value, .. } => {
+            WalOp::Put {
+                tx_id,
+                key,
+                value,
+            } => {
                 mac.update(&[0u8]); // op type
+                mac.update(&tx_id.inner().to_le_bytes());
                 mac.update(key);
                 mac.update(value);
             }
-            WalOp::Delete { key, .. } => {
+            WalOp::Delete { tx_id, key } => {
                 mac.update(&[1u8]); // op type
+                mac.update(&tx_id.inner().to_le_bytes());
                 mac.update(key);
             }
         }
@@ -242,10 +248,14 @@ impl Wal {
         let mut pos = 0;
 
         while pos + 4 <= data.len() {
-            let len = u32::from_le_bytes(data[pos..pos + 4].try_into().map_err(|_| {
+            let len_bytes = data.get(pos..pos + 4).ok_or_else(|| MemFuseError::WalCorruption {
+                offset: pos as u64,
+                reason: "Unexpected end of data while reading length".into(),
+            })?;
+            let len = u32::from_le_bytes(len_bytes.try_into().map_err(|_| {
                 MemFuseError::WalCorruption {
                     offset: pos as u64,
-                    reason: "Invalid length".into(),
+                    reason: "Invalid length format".into(),
                 }
             })?) as usize;
             pos += 4;
@@ -255,22 +265,16 @@ impl Wal {
                 break;
             }
 
-            let entry_data_raw = &data[pos..pos + len];
+            let entry_data_raw =
+                data.get(pos..pos + len)
+                    .ok_or_else(|| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Unexpected end of data while reading payload".into(),
+                    })?;
             pos += len;
 
             let decrypted_data;
             let entry_data = if let Some(km) = &self.key_manager {
-                // We need seq_no for decryption, but it's inside the encrypted payload.
-                // Replay might be tricky if we use seq_no as nonce for WAL entries.
-                // In SSTables we use offset, but WAL entries are appended.
-                // Wait, LsmStorage::commit uses self.next_seq_no.fetch_add(1).
-                // Let's look at how WalEntry is constructed.
-                // If we encrypt the whole payload including seq_no, we have a chicken-and-egg problem
-                // if we want to use seq_no as nonce.
-                // However, in append() I used km.encrypt(payload, entry.seq_no).
-                // During replay, we don't know seq_no yet.
-                // Alternative: use pos (offset in file) as nonce for WAL as well?
-                // Yes, that's more consistent with SSTables.
                 let offset = (pos - len) as u64;
                 decrypted_data = km.decrypt(entry_data_raw, offset)?;
                 &decrypted_data
@@ -283,79 +287,138 @@ impl Wal {
                 continue;
             }
 
-            let seq_no = u64::from_le_bytes(entry_data[0..8].try_into().map_err(|_| {
-                MemFuseError::WalCorruption {
-                    offset: pos as u64,
-                    reason: "Invalid seq_no".into(),
-                }
-            })?);
-            let stored_checksum: [u8; 32] =
-                entry_data[8..40]
+            let seq_no = u64::from_le_bytes(
+                entry_data
+                    .get(0..8)
+                    .ok_or_else(|| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Missing seq_no".into(),
+                    })?
                     .try_into()
                     .map_err(|_| MemFuseError::WalCorruption {
                         offset: pos as u64,
-                        reason: "Invalid checksum".into(),
-                    })?;
-            let op_type = entry_data[40];
+                        reason: "Invalid seq_no format".into(),
+                    })?,
+            );
+            let stored_checksum: [u8; 32] = entry_data
+                .get(8..40)
+                .ok_or_else(|| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Missing checksum".into(),
+                })?
+                .try_into()
+                .map_err(|_| MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Invalid checksum format".into(),
+                })?;
+            let op_type = *entry_data.get(40).ok_or_else(|| MemFuseError::WalCorruption {
+                offset: pos as u64,
+                reason: "Missing op_type".into(),
+            })?;
 
-            let remaining = &entry_data[41..];
+            let remaining = entry_data.get(41..).ok_or_else(|| MemFuseError::WalCorruption {
+                offset: pos as u64,
+                reason: "Missing operation payload".into(),
+            })?;
+
             let op = match op_type {
                 0 => {
                     // Put
-                    if remaining.len() < 12 {
-                        continue;
-                    }
-                    let tx_id = TxId::new(u64::from_le_bytes(remaining[0..8].try_into().map_err(
-                        |_| MemFuseError::WalCorruption {
-                            offset: pos as u64,
-                            reason: "Invalid tx_id".into(),
-                        },
-                    )?));
-                    let key_len = u32::from_le_bytes(remaining[8..12].try_into().map_err(|_| {
-                        MemFuseError::WalCorruption {
-                            offset: pos as u64,
-                            reason: "Invalid key_len".into(),
-                        }
-                    })?) as usize;
-                    if remaining.len() < 12 + key_len + 4 {
-                        continue;
-                    }
-                    let key = remaining[12..12 + key_len].to_vec();
-                    let val_start = 12 + key_len;
-                    let val_len =
-                        u32::from_le_bytes(remaining[val_start..val_start + 4].try_into().map_err(
-                            |_| MemFuseError::WalCorruption {
+                    let tx_id = TxId::new(u64::from_le_bytes(
+                        remaining
+                            .get(0..8)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
                                 offset: pos as u64,
-                                reason: "Invalid val_len".into(),
-                            },
-                        )?) as usize;
-                    if remaining.len() < val_start + 4 + val_len {
-                        continue;
-                    }
-                    let value = remaining[val_start + 4..val_start + 4 + val_len].to_vec();
+                                reason: "Missing tx_id".into(),
+                            })?
+                            .try_into()
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid tx_id format".into(),
+                            })?,
+                    ));
+                    let key_len = u32::from_le_bytes(
+                        remaining
+                            .get(8..12)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Missing key_len".into(),
+                            })?
+                            .try_into()
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid key_len format".into(),
+                            })?,
+                    ) as usize;
+
+                    let key = remaining
+                        .get(12..12 + key_len)
+                        .ok_or_else(|| MemFuseError::WalCorruption {
+                            offset: pos as u64,
+                            reason: "Missing key data".into(),
+                        })?
+                        .to_vec();
+
+                    let val_start = 12 + key_len;
+                    let val_len = u32::from_le_bytes(
+                        remaining
+                            .get(val_start..val_start + 4)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Missing val_len".into(),
+                            })?
+                            .try_into()
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid val_len format".into(),
+                            })?,
+                    ) as usize;
+
+                    let value = remaining
+                        .get(val_start + 4..val_start + 4 + val_len)
+                        .ok_or_else(|| MemFuseError::WalCorruption {
+                            offset: pos as u64,
+                            reason: "Missing value data".into(),
+                        })?
+                        .to_vec();
                     WalOp::Put { tx_id, key, value }
                 }
                 1 => {
                     // Delete
-                    if remaining.len() < 12 {
-                        continue;
-                    }
-                    let tx_id = TxId::new(u64::from_le_bytes(remaining[0..8].try_into().map_err(
-                        |_| MemFuseError::WalCorruption {
+                    let tx_id = TxId::new(u64::from_le_bytes(
+                        remaining
+                            .get(0..8)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Missing tx_id".into(),
+                            })?
+                            .try_into()
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid tx_id format".into(),
+                            })?,
+                    ));
+                    let key_len = u32::from_le_bytes(
+                        remaining
+                            .get(8..12)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Missing key_len".into(),
+                            })?
+                            .try_into()
+                            .map_err(|_| MemFuseError::WalCorruption {
+                                offset: pos as u64,
+                                reason: "Invalid key_len format".into(),
+                            })?,
+                    ) as usize;
+
+                    let key = remaining
+                        .get(12..12 + key_len)
+                        .ok_or_else(|| MemFuseError::WalCorruption {
                             offset: pos as u64,
-                            reason: "Invalid tx_id".into(),
-                        },
-                    )?));
-                    let key_len = u32::from_le_bytes(remaining[8..12].try_into().map_err(|_| {
-                        MemFuseError::WalCorruption {
-                            offset: pos as u64,
-                            reason: "Invalid key_len".into(),
-                        }
-                    })?) as usize;
-                    if remaining.len() < 12 + key_len {
-                        continue;
-                    }
-                    let key = remaining[12..12 + key_len].to_vec();
+                            reason: "Missing key data".into(),
+                        })?
+                        .to_vec();
                     WalOp::Delete { tx_id, key }
                 }
                 _ => continue,
