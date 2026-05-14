@@ -21,13 +21,56 @@ fn get_stopwords() -> &'static HashSet<String> {
     })
 }
 
+/// Tokenizer trait for different language-specific or morphological strategies.
+pub trait Tokenizer: Send + Sync {
+    /// Tokenizes text into lowercase words and filters stopwords.
+    fn tokenize(&self, text: &str) -> Vec<String>;
+}
+
+/// Default tokenizer using Unicode word boundaries and generic stopwords.
+pub struct DefaultTokenizer;
+
+impl Tokenizer for DefaultTokenizer {
+    fn tokenize(&self, text: &str) -> Vec<String> {
+        let stopwords = get_stopwords();
+        text.unicode_words()
+            .map(|w| w.to_lowercase())
+            .filter(|w| !stopwords.contains(w))
+            .collect()
+    }
+}
+
+/// German tokenizer with basic compound splitting POC.
+pub struct GermanMorphTokenizer;
+
+impl Tokenizer for GermanMorphTokenizer {
+    fn tokenize(&self, text: &str) -> Vec<String> {
+        let stopwords = get_stopwords();
+        let mut tokens = Vec::new();
+
+        for word in text.unicode_words() {
+            let lower = word.to_lowercase();
+            if stopwords.contains(&lower) {
+                continue;
+            }
+
+            // POC for compound splitting: "gericht"
+            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
+            if lower.ends_with("gericht") && lower.len() > 7 {
+                tokens.push(lower.clone());
+                tokens.push("gericht".to_string());
+            } else {
+                tokens.push(lower);
+            }
+        }
+        tokens
+    }
+}
+
 /// Tokenizes text into lowercase words using Unicode word boundaries and filters stopwords.
+/// Deprecated: Use `DefaultTokenizer.tokenize()` instead.
 pub fn tokenize(text: &str) -> Vec<String> {
-    let stopwords = get_stopwords();
-    text.unicode_words()
-        .map(|w| w.to_lowercase())
-        .filter(|w| !stopwords.contains(w))
-        .collect()
+    DefaultTokenizer.tokenize(text)
 }
 
 #[cfg(test)]
@@ -48,5 +91,14 @@ mod tests {
         let tokens = tokenize(text);
         assert!(!tokens.contains(&"the".to_string()));
         assert!(tokens.contains(&"quick".to_string()));
+    }
+
+    #[test]
+    fn test_german_morph_tokenizer() {
+        let tokenizer = GermanMorphTokenizer;
+        let tokens = tokenizer.tokenize("Das Bundesverfassungsgericht");
+        // "Das" is stopword
+        assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
+        assert!(tokens.contains(&"gericht".to_string()));
     }
 }

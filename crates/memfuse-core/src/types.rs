@@ -21,6 +21,8 @@ use serde::{Deserialize, Serialize};
 pub const TOMBSTONE_BIT: u64 = 1 << 63;
 
 /// Internal document identifier (u64, not exposed to users).
+///
+/// `DocId` is typically derived from a string key via hashing (blake3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct DocId(pub u64);
@@ -60,7 +62,16 @@ impl DocId {
     ///
     /// Uses blake3 hash and safe slice indexing.
     pub fn try_from_key(key: &str) -> Result<Self> {
-        Ok(Self::from_key(key))
+        let hash = blake3::hash(key.as_bytes());
+        let bytes = hash
+            .as_bytes()
+            .get(..8)
+            .ok_or_else(|| MemFuseError::Internal("Blake3 hash too short".to_string()))?;
+
+        let buf: [u8; 8] = bytes.try_into().map_err(|_| {
+            MemFuseError::Internal("Failed to convert hash slice to array".to_string())
+        })?;
+        Ok(Self(u64::from_le_bytes(buf)))
     }
 }
 
@@ -107,7 +118,7 @@ impl std::fmt::Display for EntityId {
     }
 }
 
-/// Transaction identifier.
+/// Transaction identifier used to coordinate atomic writes and isolation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct TxId(pub u64);

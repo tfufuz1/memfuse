@@ -14,6 +14,7 @@
 #![forbid(unsafe_code)]
 
 pub mod compaction;
+pub mod crypto;
 pub mod lsm;
 pub mod memtable;
 pub mod sstable;
