@@ -58,9 +58,10 @@ jobs:
           set -e
           echo "Verifying memfuse-py only imports permitted crates..."
           # memfuse-py is allowed to import memfuse-db (exception DAG-003)
-          if cargo tree -p memfuse-py --edges no-dev | grep "memfuse-" | grep -v "memfuse-py" | grep -v "memfuse-db" | grep -q .; then
+          # Use --depth 1 to only check direct dependencies and ignore permitted transitive internal crates via memfuse-db
+          if cargo tree -p memfuse-py --edges no-dev --depth 1 | grep "memfuse-" | grep -v "memfuse-py" | grep -v "memfuse-db" | grep -q .; then
              echo "ERROR: memfuse-py imports forbidden internal crates beyond memfuse-db."
-             cargo tree -p memfuse-py --edges no-dev | grep "memfuse-"
+             cargo tree -p memfuse-py --edges no-dev --depth 1 | grep "memfuse-"
              exit 1
           fi
 
