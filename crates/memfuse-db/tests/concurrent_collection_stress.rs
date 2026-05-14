@@ -35,18 +35,32 @@ async fn test_single_collection_stress_concurrency() {
                 let vec = vec![i as f32, (i + 1) as f32, (i + 2) as f32, (i + 3) as f32];
 
                 // 1. Insert
-                col.insert(&id, &vec, Some(json!({"t": t, "i": i, "text": format!("content for task {} op {}", t, i)})))
-                    .await
-                    .expect("insert");
+                col.insert(
+                    &id,
+                    &vec,
+                    Some(
+                        json!({"t": t, "i": i, "text": format!("content for task {} op {}", t, i)}),
+                    ),
+                )
+                .await
+                .expect("insert");
 
                 // 2. Search (Vector)
                 let results = col.search(&vec, 1).await.expect("search");
-                assert!(!results.is_empty(), "Result set empty for task {} op {}", t, i);
+                assert!(
+                    !results.is_empty(),
+                    "Result set empty for task {} op {}",
+                    t,
+                    i
+                );
                 // We don't assert id == id because another task might have inserted an identical vector
                 // But it should at least return something.
 
                 // 3. Hybrid Search
-                let hybrid_results = col.hybrid_search(&format!("task {} op {}", t, i), &vec, 1).await.expect("hybrid search");
+                let hybrid_results = col
+                    .hybrid_search(&format!("task {} op {}", t, i), &vec, 1)
+                    .await
+                    .expect("hybrid search");
                 assert!(!hybrid_results.is_empty());
 
                 // 4. Get by Key
