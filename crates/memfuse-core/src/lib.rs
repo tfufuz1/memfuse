@@ -23,10 +23,15 @@
 
 #![forbid(unsafe_code)]
 
+/// Error types and result alias.
 pub mod error;
+/// Snapshot registry for MVCC.
 pub mod snapshot;
+/// Core traits for storage and indexing.
 pub mod traits;
+/// Transactional buffer for staging operations.
 pub mod tx_buffer;
+/// Basic data types (DocId, TxId, etc.).
 pub mod types;
 
 pub use error::{MemFuseError, Result};
