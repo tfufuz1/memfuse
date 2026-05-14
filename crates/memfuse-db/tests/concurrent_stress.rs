@@ -1,7 +1,7 @@
 //! Concurrent Stress Test for MemFuse.
 //! AGENT:12 DATE:2026-05-16 STATUS:READY
 
-use memfuse_db::{MemFuse, MemFuseConfig, DistanceMetric};
+use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -14,7 +14,11 @@ async fn test_concurrent_load() {
         max_elements: 1000,
         distance_metric: DistanceMetric::Cosine,
     };
-    let db = Arc::new(MemFuse::open_with_config(tmp.path(), config).await.expect("open db"));
+    let db = Arc::new(
+        MemFuse::open_with_config(tmp.path(), config)
+            .await
+            .expect("open db"),
+    );
 
     let num_tasks = 8;
     let ops_per_task = 20;
@@ -31,7 +35,9 @@ async fn test_concurrent_load() {
                 let vec = vec![i as f32, (i + 1) as f32, (i + 2) as f32, (i + 3) as f32];
 
                 // 1. Insert
-                col.insert(&id, &vec, Some(json!({"t": t, "i": i}))).await.expect("insert");
+                col.insert(&id, &vec, Some(json!({"t": t, "i": i})))
+                    .await
+                    .expect("insert");
 
                 // 2. Search
                 let res = col.search(&vec, 1).await.expect("search");
@@ -54,6 +60,11 @@ async fn test_concurrent_load() {
     for t in 0..num_tasks {
         let col_name = format!("stress-col-{}", t);
         let col = db.collection(&col_name).await.expect("get col");
-        assert_eq!(col.len().await, 0, "Collection {} should be empty", col_name);
+        assert_eq!(
+            col.len().await,
+            0,
+            "Collection {} should be empty",
+            col_name
+        );
     }
 }
