@@ -3,6 +3,7 @@
 // AGENT:09 DATE:2026-05-09 STATUS:DONE
 
 use criterion::{criterion_group, criterion_main, Criterion};
+use memfuse_checkpoint::CheckpointManager;
 use memfuse_db::MemFuse;
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
@@ -34,17 +35,53 @@ fn bench_hybrid_search(c: &mut Criterion) {
 }
 
 fn bench_agent_state_checkpoint(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    let tmp = TempDir::new().unwrap();
+    let _db = rt.block_on(MemFuse::open(tmp.path())).unwrap();
+
+    // Access storage via unsafe-ish way or better via exposed field if exists.
+    // In LsmStorage, sstables and other fields are private.
+    // However, LsmStorage is in memfuse-store and CheckpointManager needs it.
+    // MemFuse has a storage: Arc<LsmStorage> field but it is private.
+    // Let's check memfuse_db::MemFuse to see if we can get storage.
+    // Actually, I can't easily get storage from MemFuse without modifying it.
+    // Let's use LsmStorage directly for the benchmark if I can't.
+
+    let lsm_config = memfuse_store::lsm::LsmConfig {
+        path: tmp.path().join("lsm"),
+        ..Default::default()
+    };
+    let storage = rt.block_on(memfuse_store::lsm::LsmStorage::new(lsm_config)).unwrap();
+    let manager = CheckpointManager::new(std::sync::Arc::new(storage));
+
     c.bench_function("checkpoint_latency", |b| {
-        b.iter(|| {
-            // TODO: Implement benchmark vs Redis
+        b.to_async(&rt).iter(|| async {
+            let _ = manager.create_checkpoint("test-cp").await.unwrap();
         })
     });
 }
 
 fn bench_rerun_cost(c: &mut Criterion) {
-    c.bench_function("rerun_cost", |b| {
-        b.iter(|| {
-            // TODO: Implement benchmark
+    let rt = Runtime::new().unwrap();
+    let tmp = TempDir::new().unwrap();
+    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap();
+
+    // Pre-fill with some data
+    rt.block_on(async {
+        for i in 0..1000 {
+            db.insert(
+                &format!("doc-{}", i),
+                &vec![0.1; 1536],
+                Some(serde_json::json!({"i": i})),
+            )
+            .await
+            .unwrap();
+        }
+    });
+
+    c.bench_function("rerun_cost_search_1k", |b| {
+        b.to_async(&rt).iter(|| async {
+            let _ = db.search(&vec![0.1; 1536], 10).await.unwrap();
         })
     });
 }

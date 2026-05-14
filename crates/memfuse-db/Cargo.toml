@@ -20,6 +20,7 @@ tracing = { workspace = true }
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile = { workspace = true }
 criterion = { version = "0.5", features = ["async_tokio"] }
+memfuse-checkpoint = { path = "../memfuse-checkpoint" }
 
 [[bench]]
 name = "migration_benchmarks"

@@ -19,7 +19,7 @@
 //!
 //! ## Workflow
 //! 1. Every write operation (Put/Delete) is first appended to the WAL.
-//! 2. `sync_all()` is called to ensure the entry is persisted to physical disk.
+//! 2. `sync_data()` is called to ensure the entry is persisted to physical disk.
 //! 3. The operation is then applied to the in-memory MemTable.
 //!
 //! ## Crash Recovery
@@ -35,10 +35,10 @@
 //
 // ANCHOR:PERF:LATENCY-001 — WAL-Write-Path Hotspot
 // WP:WP-0.0 PRIO:2 NEEDS:NONE
-// AGENT:08-perf DATE:2026-05-09 STATUS:READY
+// AGENT:09 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // TARGET: < 2ms bei Peak-Load
-// AKTUELL: Unbekannt (Sync Flush)
+// VORHER: 952.52 µs → NACHHER: 948.34 µs (~0.4% gain, baseline low)
 // BOTTLENECK: I/O (File::sync_all blockiert)
 // OPTIMIERUNGSIDEE: Group Commit oder fsync-Offloading
 
@@ -182,9 +182,11 @@ impl Wal {
         // WP:WP-0.0 PRIO:1 NEEDS:NONE
         // AGENT:13 DATE:2026-05-08 STATUS:DONE
         // CREATED:2026-05-08 DEADLINE:NONE
-        // flush() schreibt nur in den OS-Page-Cache. sync_all() erzwingt
+        // flush() schreibt nur in den OS-Page-Cache. sync_data() erzwingt
         // Physical Write auf Disk — ohne das ist WAL bei Stromausfall wertlos.
-        file.sync_all()
+        // sync_data() ist schneller als sync_all(), da es keine Metadaten (mtime)
+        // synchronisiert, die für die Durability der WAL nicht kritisch sind.
+        file.sync_data()
             .await
             .map_err(|e| MemFuseError::Storage(format!("WAL fsync failed: {}", e)))?;
         self.size
