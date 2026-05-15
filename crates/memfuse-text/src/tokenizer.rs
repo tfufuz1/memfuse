@@ -54,12 +54,19 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
+            // POC for compound splitting: "gericht", "amt", "haus", "stelle", "wesen"
             // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            let mut split = false;
+            for suffix in &["gericht", "amt", "haus", "stelle", "wesen"] {
+                if lower.ends_with(suffix) && lower.len() > suffix.len() + 2 {
+                    tokens.push(lower.clone());
+                    tokens.push(suffix.to_string());
+                    split = true;
+                    break;
+                }
+            }
+
+            if !split {
                 tokens.push(lower);
             }
         }
@@ -100,5 +107,21 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+
+        let tokens = tokenizer.tokenize("Finanzamt");
+        assert!(tokens.contains(&"finanzamt".to_string()));
+        assert!(tokens.contains(&"amt".to_string()));
+
+        let tokens = tokenizer.tokenize("Krankenhaus");
+        assert!(tokens.contains(&"krankenhaus".to_string()));
+        assert!(tokens.contains(&"haus".to_string()));
+
+        let tokens = tokenizer.tokenize("Arbeitsstelle");
+        assert!(tokens.contains(&"arbeitsstelle".to_string()));
+        assert!(tokens.contains(&"stelle".to_string()));
+
+        let tokens = tokenizer.tokenize("Bildungswesen");
+        assert!(tokens.contains(&"bildungswesen".to_string()));
+        assert!(tokens.contains(&"wesen".to_string()));
     }
 }

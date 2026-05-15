@@ -370,34 +370,56 @@ impl Collection {
         match (is_text_empty, is_vector_zero) {
             (true, true) => Ok(Vec::new()),
             (true, false) => self.search(vector, k).await,
-            (false, _) => {
+            (false, true) => {
                 let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let mut text_results = Vec::with_capacity(bm25_results.len());
-
+                let mut results = Vec::with_capacity(bm25_results.len());
                 for (doc_id, score) in bm25_results {
                     let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
                     if let Some(bytes) = self.storage.get(&doc_key).await? {
                         let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                        text_results.push(crate::SearchResult {
+                        results.push(crate::SearchResult {
                             id: stored.id,
                             score,
                             metadata: stored.metadata,
                         });
                     }
                 }
+                Ok(results)
+            }
+            (false, false) => {
+                let bm25_results = self.text_index.search_bm25(text, k * 2).await?;
+                let vector_results = self.search(vector, k * 2).await?;
 
-        let bm25_results = self.text_index.search_bm25(text, k).await?;
+                let mut scores = std::collections::HashMap::new();
+                let k_rrf = 60.0;
 
-        let mut text_set = Vec::new();
-        for (doc_id, score) in bm25_results {
-            let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-            if let Some(bytes) = self.storage.get(&doc_key).await? {
-                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                text_set.push(crate::SearchResult {
-                    id: stored.id,
-                    score,
-                    metadata: stored.metadata,
-                });
+                for (rank, (doc_id, _)) in bm25_results.into_iter().enumerate() {
+                    let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+                    if let Some(bytes) = self.storage.get(&doc_key).await? {
+                        let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                        *scores.entry(stored.id).or_insert(0.0) += 1.0 / (k_rrf + rank as f32 + 1.0);
+                    }
+                }
+
+                for (rank, res) in vector_results.into_iter().enumerate() {
+                    *scores.entry(res.id).or_insert(0.0) += 1.0 / (k_rrf + rank as f32 + 1.0);
+                }
+
+                let mut combined: Vec<_> = scores.into_iter().collect();
+                combined.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                combined.truncate(k);
+
+                let mut final_results = Vec::with_capacity(combined.len());
+                for (id, score) in combined {
+                    if let Some(doc) = self.get(&id).await? {
+                        final_results.push(crate::SearchResult {
+                            id,
+                            score,
+                            metadata: doc.metadata,
+                        });
+                    }
+                }
+                Ok(final_results)
             }
         }
     }
