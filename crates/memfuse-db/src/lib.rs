@@ -1,10 +1,3 @@
-//! # MemFuse DB — Orchestrator Facade
-//!
-//! This crate provides the `MemFuse` facade, which orchestrates the storage,
-//! vector indexing, and full-text search components. It manages `Collection`
-//! namespaces and provides a unified API for hybrid search and data management.
-//!
-// AGENT:08 DATE:2026-05-18 STATUS:DONE
 // ANCHOR:ARCH:DB-001 — Orchestrator Facade (Getriebe — Layer 2).
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -17,6 +10,8 @@
 //! MemFuse is a zero-boilerplate embedded database for AI agent memory.
 //! It combines vector search (HNSW), persistent storage (LSM-Tree),
 //! and relationship tracking in a single library.
+//!
+// AGENT:08 DATE:2026-05-18 STATUS:DONE
 //!
 //! ## Quick Start
 //!
@@ -414,7 +409,6 @@ impl MemFuse {
 pub use memfuse_core::DistanceMetric;
 pub use serde_json::json;
 
-#[cfg(any(test, feature = "bench"))]
 impl MemFuse {
     pub fn inner_storage(&self) -> Arc<LsmStorage> {
         self.storage.clone()

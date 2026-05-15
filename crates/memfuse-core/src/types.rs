@@ -28,9 +28,7 @@ pub const TOMBSTONE_BIT: u64 = 1 << 63;
 pub struct DocId(pub u64);
 
 impl DocId {
-    /// Maximum possible DocId.
     pub const MAX: Self = Self(u64::MAX);
-    /// Minimum possible DocId.
     pub const MIN: Self = Self(0);
 
     /// Creates a new DocId from a raw u64.
@@ -46,10 +44,6 @@ impl DocId {
     }
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the Blake3 hash is less than 8 bytes (which should never happen).
     pub fn from_key(key: &str) -> Self {
         Self::try_from_key(key).expect("Blake3 hash must be 32 bytes")
     }
@@ -297,11 +291,6 @@ impl ResourceTracker {
         }
     }
 
-    /// Attempts to consume the specified amount of memory.
-    ///
-    /// # Errors
-    ///
-    /// Returns `MemFuseError::MemoryBudgetExceeded` if the limit is reached.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         let current = self
             .memory_used
@@ -317,18 +306,15 @@ impl ResourceTracker {
         Ok(())
     }
 
-    /// Releases the specified amount of memory.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
-    /// Returns the current memory usage in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// Returns a reference to the budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }
