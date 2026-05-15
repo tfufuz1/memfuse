@@ -73,14 +73,14 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
     {
         // Try AVX-512 first for maximum performance
         if is_x86_feature_detected!("avx512f") {
-            // ANCHOR:SAFETY:SIMD-001 — Hardware-Support-Check und Bounds-Validation.
+            // ANCHOR:SAFETY:SIMD-001 — AVX-512 Hardware Support.
             // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
             return unsafe { cosine_distance_avx512(a, b) };
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // ANCHOR:SAFETY:SIMD-002 — Hardware-Support-Check und Bounds-Validation.
+            // ANCHOR:SAFETY:SIMD-002 — AVX2/FMA Hardware Support.
             // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
             return unsafe { cosine_distance_avx2(a, b) };
@@ -98,14 +98,14 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
     {
         // Try AVX-512
         if is_x86_feature_detected!("avx512f") {
-            // ANCHOR:SAFETY:SIMD-003 — Hardware-Support-Check und Bounds-Validation.
+            // ANCHOR:SAFETY:SIMD-003 — AVX-512 Hardware Support.
             // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
             return unsafe { euclidean_distance_avx512(a, b) };
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // ANCHOR:SAFETY:SIMD-004 — Hardware-Support-Check und Bounds-Validation.
+            // ANCHOR:SAFETY:SIMD-004 — AVX2/FMA Hardware Support.
             // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
             return unsafe { euclidean_distance_avx2(a, b) };
@@ -123,14 +123,14 @@ pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
     {
         // Try AVX-512
         if is_x86_feature_detected!("avx512f") {
-            // ANCHOR:SAFETY:SIMD-005 — Hardware-Support-Check und Bounds-Validation.
+            // ANCHOR:SAFETY:SIMD-005 — AVX-512 Hardware Support.
             // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
             return unsafe { -dot_product_avx512(a, b) };
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // ANCHOR:SAFETY:SIMD-006 — Hardware-Support-Check und Bounds-Validation.
+            // ANCHOR:SAFETY:SIMD-006 — AVX2/FMA Hardware Support.
             // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
             return unsafe { -dot_product_avx2(a, b) };
@@ -717,7 +717,9 @@ pub fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPa
 pub unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
     let n = a.len();
     let mut i = 0;
-    let mut sum_v = _mm256_setzero_si256();
+    // ANCHOR:SAFETY:SIMD-U8-017 — Initialisierung.
+    // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
+    let mut sum_v = unsafe { _mm256_setzero_si256() };
 
     while i + 32 <= n {
         // ANCHOR:SAFETY:SIMD-U8-002 — AVX2 Load und Madd.
@@ -757,7 +759,9 @@ pub unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
 pub unsafe fn euclidean_distance_sq_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
     let n = a.len();
     let mut i = 0;
-    let mut sum_v = _mm256_setzero_si256();
+    // ANCHOR:SAFETY:SIMD-U8-018 — Initialisierung.
+    // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
+    let mut sum_v = unsafe { _mm256_setzero_si256() };
 
     while i + 32 <= n {
         // ANCHOR:SAFETY:SIMD-U8-004 — AVX2 Load und Sub/Madd.
@@ -801,11 +805,17 @@ pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimil
     let n = a.len();
     let mut i = 0;
 
-    let mut dot_v = _mm256_setzero_si256();
-    let mut sum_a_v = _mm256_setzero_si256();
-    let mut sum_b_v = _mm256_setzero_si256();
-    let mut norm_a_v = _mm256_setzero_si256();
-    let mut norm_b_v = _mm256_setzero_si256();
+    // ANCHOR:SAFETY:SIMD-U8-019 — Initialisierung.
+    // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
+    let (mut dot_v, mut sum_a_v, mut sum_b_v, mut norm_a_v, mut norm_b_v) = unsafe {
+        (
+            _mm256_setzero_si256(),
+            _mm256_setzero_si256(),
+            _mm256_setzero_si256(),
+            _mm256_setzero_si256(),
+            _mm256_setzero_si256(),
+        )
+    };
 
     while i + 32 <= n {
         // ANCHOR:SAFETY:SIMD-U8-006 — AVX2 Loads und Accumulation.

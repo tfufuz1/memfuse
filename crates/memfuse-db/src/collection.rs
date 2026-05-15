@@ -333,6 +333,26 @@ impl Collection {
         self.search_filtered(query_embedding, k, None).await
     }
 
+    /// Helper to fetch SearchResults with metadata from a list of DocIds and scores.
+    pub(crate) async fn fetch_search_results(
+        &self,
+        scored_docs: Vec<(DocId, f32)>,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let mut results = Vec::with_capacity(scored_docs.len());
+        for (doc_id, score) in scored_docs {
+            let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+            if let Some(bytes) = self.storage.get(&doc_key).await? {
+                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                results.push(crate::SearchResult {
+                    id: stored.id,
+                    score,
+                    metadata: stored.metadata,
+                });
+            }
+        }
+        Ok(results)
+    }
+
     /// Performs filtered semantic vector search in the collection.
     pub async fn search_filtered(
         &self,
@@ -341,20 +361,13 @@ impl Collection {
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<crate::SearchResult>> {
         let scored_docs = self.index.search_filtered(query, k, filter).await?;
-        let mut results = Vec::with_capacity(scored_docs.len());
-
-        for sd in scored_docs {
-            let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
-            if let Some(bytes) = self.storage.get(&doc_key).await? {
-                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                results.push(crate::SearchResult {
-                    id: stored.id,
-                    score: sd.score,
-                    metadata: stored.metadata,
-                });
-            }
-        }
-        Ok(results)
+        self.fetch_search_results(
+            scored_docs
+                .into_iter()
+                .map(|sd| (sd.doc_id, sd.score))
+                .collect(),
+        )
+        .await
     }
 
     /// Performs hybrid search combining BM25 and vector search results via RRF.
@@ -372,19 +385,7 @@ impl Collection {
             (true, false) => self.search(vector, k).await,
             (false, _) => {
                 let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let mut text_results = Vec::with_capacity(bm25_results.len());
-
-                for (doc_id, score) in bm25_results {
-                    let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-                    if let Some(bytes) = self.storage.get(&doc_key).await? {
-                        let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                        text_results.push(crate::SearchResult {
-                            id: stored.id,
-                            score,
-                            metadata: stored.metadata,
-                        });
-                    }
-                }
+                let text_results = self.fetch_search_results(bm25_results).await?;
 
                 if is_vector_zero {
                     return Ok(text_results);

@@ -385,16 +385,22 @@ impl TextIndex for InvertedIndex {
 
         let mut total_docs = 0;
         if let Some(bytes) = self.storage.get(&td_key).await? {
-            total_docs = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                MemFuseError::Storage("Invalid total_docs length".into())
-            })?) as usize;
+            total_docs = u64::from_le_bytes(
+                bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
+            ) as usize;
         }
 
         let mut total_tokens = 0;
         if let Some(bytes) = self.storage.get(&tt_key).await? {
-            total_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                MemFuseError::Storage("Invalid total_tokens length".into())
-            })?) as usize;
+            total_tokens = u64::from_le_bytes(
+                bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid total_tokens length".into()))?,
+            ) as usize;
         }
 
         Ok(memfuse_core::TextIndexStats {
