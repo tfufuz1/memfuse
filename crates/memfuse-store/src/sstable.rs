@@ -371,7 +371,8 @@ impl SstableReader {
                 return Err(MemFuseError::Storage("corrupted SSTable offsets".into()));
             }
 
-            let mut block_data = Bytes::copy_from_slice(&mmap[offset as usize..next_offset as usize]);
+            let mut block_data =
+                Bytes::copy_from_slice(&mmap[offset as usize..next_offset as usize]);
 
             if let Some(km) = &key_manager {
                 let decrypted = km.decrypt(&block_data, offset)?;
@@ -614,9 +615,7 @@ impl SstableReader {
                     block = Bytes::from(decrypted);
                 }
                 block_data = block.clone();
-                self.block_cache
-                    .write()
-                    .put((self.file_id, offset), block);
+                self.block_cache.write().put((self.file_id, offset), block);
             }
 
             let n = block_data.len();
@@ -744,9 +743,7 @@ impl SstableReader {
                     block = Bytes::from(decrypted);
                 }
                 block_data = block.clone();
-                self.block_cache
-                    .write()
-                    .put((self.file_id, offset), block);
+                self.block_cache.write().put((self.file_id, offset), block);
             }
 
             let n = block_data.len();
@@ -877,9 +874,7 @@ impl SstableReader {
                     block = Bytes::from(decrypted);
                 }
                 block_data = block.clone();
-                self.block_cache
-                    .write()
-                    .put((self.file_id, offset), block);
+                self.block_cache.write().put((self.file_id, offset), block);
             }
 
             let n = block_data.len();
