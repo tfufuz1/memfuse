@@ -68,6 +68,13 @@ impl MemTable {
         self.entries.read().is_empty()
     }
 
+    /// Clears all entries from the MemTable.
+    pub fn clear(&self) {
+        let mut entries = self.entries.write();
+        entries.clear();
+        self.size.store(0, Ordering::Relaxed);
+    }
+
     /// Iterates over all entries in sorted order.
     pub fn iter(&self) -> Vec<(Bytes, Bytes, u64)> {
         let entries = self.entries.read();

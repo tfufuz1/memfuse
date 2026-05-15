@@ -94,6 +94,7 @@ impl WalEntry {
 
     fn compute_checksum(op: &WalOp, seq_no: u64) -> [u8; 32] {
         // Use a fixed key for integrity. WP-3.2 will later use derived keys for encryption.
+        // SAFETY: HMAC-SHA256 can take a key of any size.
         let mut mac = HmacSha256::new_from_slice(b"memfuse-integrity-key-v1")
             .expect("HMAC can take key of any size");
         mac.update(&seq_no.to_le_bytes());
@@ -363,7 +364,7 @@ impl Wal {
 
             // ANCHOR:ALG-FIX:D1-007 — HMAC-Verifikation bei WAL Replay
             // WP:WP-3.2 PRIO:1 NEEDS:NONE
-            // AGENT:10 DATE:2026-05-15 STATUS:READY
+            // AGENT:10 DATE:2026-05-15 STATUS:REVIEW
             // Ohne Verifikation werden korrupte Entries (Bit-Flip, Partial Write)
             // blind in die MemTable replayed → stille Datenkorrumpierung.
             let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no);
@@ -418,7 +419,12 @@ mod tests {
         // 4 + 8 + 32 + 1 + 8 + 4 + 3 + 4 + 5 = 69
         assert_eq!(bytes.len(), 69);
 
-        let payload_len = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice"));
+        let payload_len = u32::from_le_bytes(
+            bytes[0..4]
+                .try_into()
+                // SAFETY: bytes[0..4] is exactly 4 bytes.
+                .expect("valid slice"),
+        );
         assert_eq!(payload_len, 65);
 
         // Test with Delete

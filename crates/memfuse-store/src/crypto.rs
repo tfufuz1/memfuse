@@ -21,6 +21,7 @@ impl KeyManager {
         let salt = b"memfuse-encryption-salt-v1";
         let hk = Hkdf::<Sha256>::new(Some(salt), passphrase.as_bytes());
         let mut key = [0u8; 32];
+        // SAFETY: 32 bytes is a valid length for HKDF expansion with SHA256.
         hk.expand(b"memfuse-aes-256-gcm-key", &mut key)
             .expect("32 bytes is a valid length for HKDF expansion");
 

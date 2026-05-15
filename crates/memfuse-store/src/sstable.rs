@@ -38,7 +38,8 @@ pub fn create_block_cache(capacity_mb: usize) -> Arc<BlockCache> {
         // WP:WP-0.0 PRIO:2 NEEDS:NONE
         // AGENT:02 DATE:2026-05-12 STATUS:REVIEW
         // CREATED:2026-05-09 DEADLINE:NONE
-        NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::MIN),
+        // SAFETY: capacity is at least 256 due to .max(256) call above.
+        NonZeroUsize::new(capacity).expect("capacity is positive")
     )))
 }
 
@@ -1014,6 +1015,7 @@ mod tests {
         let bloom = u64::from_le_bytes(
             block[bloom_pos..bloom_pos + 8]
                 .try_into()
+                // SAFETY: block[bloom_pos..bloom_pos + 8] is exactly 8 bytes.
                 .expect("correct length"),
         );
         assert!(bloom > 0);
