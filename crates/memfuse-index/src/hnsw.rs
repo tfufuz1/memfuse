@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! HNSW (Hierarchical Navigable Small World) vector index.
 //! # Hierarchical Navigable Small World (HNSW) Index
 //!

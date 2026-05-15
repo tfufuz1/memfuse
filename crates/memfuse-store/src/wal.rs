@@ -95,7 +95,7 @@ impl WalEntry {
     fn compute_checksum(op: &WalOp, seq_no: u64) -> [u8; 32] {
         // Use a fixed key for integrity. WP-3.2 will later use derived keys for encryption.
         let mut mac = HmacSha256::new_from_slice(b"memfuse-integrity-key-v1")
-            .expect("HMAC can take key of any size");
+            .expect("HMAC can take key of any size"); // unwrap: HMAC-SHA256 accepts keys of any size
         mac.update(&seq_no.to_le_bytes());
         match op {
             WalOp::Put { key, value, .. } => {

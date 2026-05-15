@@ -22,7 +22,7 @@ impl KeyManager {
         let hk = Hkdf::<Sha256>::new(Some(salt), passphrase.as_bytes());
         let mut key = [0u8; 32];
         hk.expand(b"memfuse-aes-256-gcm-key", &mut key)
-            .expect("32 bytes is a valid length for HKDF expansion");
+            .expect("32 bytes is a valid length for HKDF expansion"); // unwrap: HKDF-SHA256 expansion to 32 bytes is guaranteed to succeed
 
         Self { key }
     }
