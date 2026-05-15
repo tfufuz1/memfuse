@@ -381,7 +381,10 @@ impl Collection {
     }
 
     /// Helper to fetch full document metadata and map to SearchResult.
-    async fn hydrate_results(&self, scored_docs: Vec<(DocId, f32)>) -> Result<Vec<crate::SearchResult>> {
+    async fn hydrate_results(
+        &self,
+        scored_docs: Vec<(DocId, f32)>,
+    ) -> Result<Vec<crate::SearchResult>> {
         let mut results = Vec::with_capacity(scored_docs.len());
         for (doc_id, score) in scored_docs {
             let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
