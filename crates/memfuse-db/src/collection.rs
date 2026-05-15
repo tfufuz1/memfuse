@@ -210,9 +210,6 @@ impl Collection {
 
         let user_key = self.namespaced_key(id.as_bytes(), 0);
 
-        // Remove from old text index
-        self.text_index.delete_document(tx, doc_id).await?;
-
         let stored = StoredDocument {
             id: id.to_string(),
             embedding: embedding.to_vec(),
@@ -228,11 +225,13 @@ impl Collection {
 
         db_tx.record_keys(user_key, doc_key, doc_id);
 
-        // Re-insert into text index if new text present
+        // Re-insert into text index if new text present, or delete if no longer present
         if let Some(new_text) = extract_text(&metadata) {
             self.text_index
                 .upsert_document(tx, doc_id, &new_text)
                 .await?;
+        } else {
+            self.text_index.delete_document(tx, doc_id).await?;
         }
 
         // Re-insert into HNSW
@@ -370,7 +369,7 @@ impl Collection {
         match (is_text_empty, is_vector_zero) {
             (true, true) => Ok(Vec::new()),
             (true, false) => self.search(vector, k).await,
-            (false, _) => {
+            (false, vector_is_zero) => {
                 let bm25_results = self.text_index.search_bm25(text, k).await?;
                 let mut text_results = Vec::with_capacity(bm25_results.len());
 
@@ -386,18 +385,15 @@ impl Collection {
                     }
                 }
 
-        let bm25_results = self.text_index.search_bm25(text, k).await?;
+                if vector_is_zero {
+                    return Ok(text_results);
+                }
 
-        let mut text_set = Vec::new();
-        for (doc_id, score) in bm25_results {
-            let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-            if let Some(bytes) = self.storage.get(&doc_key).await? {
-                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                text_set.push(crate::SearchResult {
-                    id: stored.id,
-                    score,
-                    metadata: stored.metadata,
-                });
+                let vector_results = self.search(vector, k).await?;
+                Ok(crate::fusion::reciprocal_rank_fusion(
+                    vec![text_results, vector_results],
+                    k,
+                ))
             }
         }
     }
