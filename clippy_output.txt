@@ -1,0 +1,10 @@
+    Checking memfuse-core v0.1.0 (/app/crates/memfuse-core)
+    Checking memfuse-orchestrator v0.1.0 (/app/crates/memfuse-orchestrator)
+    Checking memfuse-runtime v0.1.0 (/app/crates/memfuse-runtime)
+    Checking memfuse-store v0.1.0 (/app/crates/memfuse-store)
+    Checking memfuse-index v0.1.0 (/app/crates/memfuse-index)
+    Checking memfuse-text v0.1.0 (/app/crates/memfuse-text)
+    Checking memfuse-checkpoint v0.1.0 (/app/crates/memfuse-checkpoint)
+    Checking memfuse-db v0.1.0 (/app/crates/memfuse-db)
+    Checking memfuse-py v0.1.0 (/app/crates/memfuse-py)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.75s
