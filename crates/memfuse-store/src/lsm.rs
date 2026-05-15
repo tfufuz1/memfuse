@@ -291,10 +291,10 @@ impl StorageEngine for LsmStorage {
         let doc_id = {
             let hash = blake3::hash(key);
             let mut bytes = [0u8; 8];
-            let hash_bytes =
-                hash.as_bytes()
-                    .get(..8)
-                    .ok_or_else(|| MemFuseError::Internal("Hash too short".into()))?;
+            let hash_bytes = hash
+                .as_bytes()
+                .get(..8)
+                .ok_or_else(|| MemFuseError::Internal("Hash too short".into()))?;
             bytes.copy_from_slice(hash_bytes);
             DocId::new(u64::from_le_bytes(bytes))
         };
@@ -313,10 +313,10 @@ impl StorageEngine for LsmStorage {
         let doc_id = {
             let hash = blake3::hash(key);
             let mut bytes = [0u8; 8];
-            let hash_bytes =
-                hash.as_bytes()
-                    .get(..8)
-                    .ok_or_else(|| MemFuseError::Internal("Hash too short".into()))?;
+            let hash_bytes = hash
+                .as_bytes()
+                .get(..8)
+                .ok_or_else(|| MemFuseError::Internal("Hash too short".into()))?;
             bytes.copy_from_slice(hash_bytes);
             DocId::new(u64::from_le_bytes(bytes))
         };

@@ -96,8 +96,8 @@ impl WalEntry {
     }
 
     fn compute_checksum(op: &WalOp, seq_no: u64, integrity_key: &[u8]) -> [u8; 32] {
-        let mut mac = HmacSha256::new_from_slice(integrity_key)
-            .expect("HMAC can take key of any size"); // unwrap
+        let mut mac =
+            HmacSha256::new_from_slice(integrity_key).expect("HMAC can take key of any size"); // unwrap
         mac.update(&seq_no.to_le_bytes());
         match op {
             WalOp::Put { key, value, .. } => {
@@ -245,10 +245,12 @@ impl Wal {
 
         while pos + 4 <= data.len() {
             let entry_offset = pos as u64;
-            let len_bytes = data.get(pos..pos + 4).ok_or_else(|| MemFuseError::WalCorruption {
-                offset: entry_offset,
-                reason: "Invalid length bytes".into(),
-            })?;
+            let len_bytes = data
+                .get(pos..pos + 4)
+                .ok_or_else(|| MemFuseError::WalCorruption {
+                    offset: entry_offset,
+                    reason: "Invalid length bytes".into(),
+                })?;
             let len = u32::from_le_bytes(len_bytes.try_into().map_err(|_| {
                 MemFuseError::WalCorruption {
                     offset: entry_offset,
@@ -262,10 +264,12 @@ impl Wal {
                 break;
             }
 
-            let entry_data_raw = data.get(pos..pos + len).ok_or_else(|| MemFuseError::WalCorruption {
-                offset: pos as u64,
-                reason: "Invalid entry data range".into(),
-            })?;
+            let entry_data_raw =
+                data.get(pos..pos + len)
+                    .ok_or_else(|| MemFuseError::WalCorruption {
+                        offset: pos as u64,
+                        reason: "Invalid entry data range".into(),
+                    })?;
             pos += len;
 
             let decrypted_data;
@@ -281,10 +285,12 @@ impl Wal {
                 continue;
             }
 
-            let seq_no_bytes = entry_data.get(0..8).ok_or_else(|| MemFuseError::WalCorruption {
-                offset: entry_offset,
-                reason: "Missing seq_no in entry".into(),
-            })?;
+            let seq_no_bytes = entry_data
+                .get(0..8)
+                .ok_or_else(|| MemFuseError::WalCorruption {
+                    offset: entry_offset,
+                    reason: "Missing seq_no in entry".into(),
+                })?;
             let seq_no = u64::from_le_bytes(seq_no_bytes.try_into().map_err(|_| {
                 MemFuseError::WalCorruption {
                     offset: entry_offset,
@@ -302,15 +308,19 @@ impl Wal {
                     offset: entry_offset,
                     reason: "Invalid checksum format".into(),
                 })?;
-            let op_type = *entry_data.get(40).ok_or_else(|| MemFuseError::WalCorruption {
-                offset: entry_offset,
-                reason: "Missing op_type in entry".into(),
-            })?;
+            let op_type = *entry_data
+                .get(40)
+                .ok_or_else(|| MemFuseError::WalCorruption {
+                    offset: entry_offset,
+                    reason: "Missing op_type in entry".into(),
+                })?;
 
-            let remaining = entry_data.get(41..).ok_or_else(|| MemFuseError::WalCorruption {
-                offset: entry_offset,
-                reason: "Missing payload in entry".into(),
-            })?;
+            let remaining = entry_data
+                .get(41..)
+                .ok_or_else(|| MemFuseError::WalCorruption {
+                    offset: entry_offset,
+                    reason: "Missing payload in entry".into(),
+                })?;
             let op = match op_type {
                 0 => {
                     // Put
@@ -318,10 +328,12 @@ impl Wal {
                         continue;
                     }
                     let tx_id_bytes =
-                        remaining.get(0..8).ok_or_else(|| MemFuseError::WalCorruption {
-                            offset: entry_offset,
-                            reason: "Missing tx_id".into(),
-                        })?;
+                        remaining
+                            .get(0..8)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: entry_offset,
+                                reason: "Missing tx_id".into(),
+                            })?;
                     let tx_id = TxId::new(u64::from_le_bytes(tx_id_bytes.try_into().map_err(
                         |_| MemFuseError::WalCorruption {
                             offset: entry_offset,
@@ -329,10 +341,12 @@ impl Wal {
                         },
                     )?));
                     let key_len_bytes =
-                        remaining.get(8..12).ok_or_else(|| MemFuseError::WalCorruption {
-                            offset: entry_offset,
-                            reason: "Missing key_len".into(),
-                        })?;
+                        remaining
+                            .get(8..12)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: entry_offset,
+                                reason: "Missing key_len".into(),
+                            })?;
                     let key_len = u32::from_le_bytes(key_len_bytes.try_into().map_err(|_| {
                         MemFuseError::WalCorruption {
                             offset: entry_offset,
@@ -350,11 +364,12 @@ impl Wal {
                         })?
                         .to_vec();
                     let val_start = 12 + key_len;
-                    let val_len_bytes = remaining
-                        .get(val_start..val_start + 4)
-                        .ok_or_else(|| MemFuseError::WalCorruption {
-                            offset: entry_offset,
-                            reason: "Missing val_len".into(),
+                    let val_len_bytes =
+                        remaining.get(val_start..val_start + 4).ok_or_else(|| {
+                            MemFuseError::WalCorruption {
+                                offset: entry_offset,
+                                reason: "Missing val_len".into(),
+                            }
                         })?;
                     let val_len = u32::from_le_bytes(val_len_bytes.try_into().map_err(|_| {
                         MemFuseError::WalCorruption {
@@ -380,10 +395,12 @@ impl Wal {
                         continue;
                     }
                     let tx_id_bytes =
-                        remaining.get(0..8).ok_or_else(|| MemFuseError::WalCorruption {
-                            offset: entry_offset,
-                            reason: "Missing tx_id".into(),
-                        })?;
+                        remaining
+                            .get(0..8)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: entry_offset,
+                                reason: "Missing tx_id".into(),
+                            })?;
                     let tx_id = TxId::new(u64::from_le_bytes(tx_id_bytes.try_into().map_err(
                         |_| MemFuseError::WalCorruption {
                             offset: entry_offset,
@@ -391,10 +408,12 @@ impl Wal {
                         },
                     )?));
                     let key_len_bytes =
-                        remaining.get(8..12).ok_or_else(|| MemFuseError::WalCorruption {
-                            offset: entry_offset,
-                            reason: "Missing key_len".into(),
-                        })?;
+                        remaining
+                            .get(8..12)
+                            .ok_or_else(|| MemFuseError::WalCorruption {
+                                offset: entry_offset,
+                                reason: "Missing key_len".into(),
+                            })?;
                     let key_len = u32::from_le_bytes(key_len_bytes.try_into().map_err(|_| {
                         MemFuseError::WalCorruption {
                             offset: entry_offset,
@@ -483,7 +502,13 @@ mod tests {
         // 4 + 8 + 32 + 1 + 8 + 4 + 3 + 4 + 5 = 69
         assert_eq!(bytes.len(), 69);
 
-        let payload_len = u32::from_le_bytes(bytes.get(0..4).expect("valid slice").try_into().expect("valid slice"));
+        let payload_len = u32::from_le_bytes(
+            bytes
+                .get(0..4)
+                .expect("valid slice")
+                .try_into()
+                .expect("valid slice"),
+        );
         assert_eq!(payload_len, 65);
 
         // Test with Delete
