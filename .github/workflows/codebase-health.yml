@@ -12,7 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
 
       - name: Vollständiger Health-Check
         run: |
