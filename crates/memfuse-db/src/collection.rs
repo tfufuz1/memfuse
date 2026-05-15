@@ -152,7 +152,7 @@ impl Collection {
             embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
-        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:READY
+        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
         // Document serialization is unencrypted before being sent to storage.
         // If Encryption-at-Rest is enabled, it's encrypted in the storage layer (WP-3.2).
         let data = serde_json::to_vec(&stored)?;
@@ -220,7 +220,7 @@ impl Collection {
             embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
-        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:READY
+        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
         let data = serde_json::to_vec(&stored)?;
 
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
@@ -281,7 +281,7 @@ impl Collection {
             "to": to,
             "label": label,
         });
-        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:READY
+        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
         let bytes = serde_json::to_vec(&val)?;
 
         self.storage.put(tx, &key, &bytes).await?;

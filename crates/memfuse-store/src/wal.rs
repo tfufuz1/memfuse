@@ -14,7 +14,7 @@
 //
 // ANCHOR:SPEC:WP-3.2-HMAC-001 — HMAC-Integrity statt CRC32 für Encryption-at-Rest.
 // WP:WP-3.2 PRIO:3 NEEDS:NONE
-// AGENT:10 DATE:2026-05-09 STATUS:READY
+// AGENT:10 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 //!
 //! ## Workflow
@@ -93,8 +93,8 @@ impl WalEntry {
     }
 
     pub fn compute_checksum(op: &WalOp, seq_no: u64, integrity_key: &[u8]) -> [u8; 32] {
-        let mut mac = HmacSha256::new_from_slice(integrity_key)
-            .expect("HMAC can take key of any size");
+        let mut mac =
+            HmacSha256::new_from_slice(integrity_key).expect("HMAC can take key of any size");
         mac.update(&seq_no.to_le_bytes());
         match op {
             WalOp::Put { key, value, .. } => {
@@ -264,10 +264,12 @@ impl Wal {
                 break;
             }
 
-            let entry_data_raw = data.get(pos..pos + len).ok_or(MemFuseError::WalCorruption {
-                offset: pos as u64,
-                reason: "Unexpected end of file while reading entry data".into(),
-            })?;
+            let entry_data_raw = data
+                .get(pos..pos + len)
+                .ok_or(MemFuseError::WalCorruption {
+                    offset: pos as u64,
+                    reason: "Unexpected end of file while reading entry data".into(),
+                })?;
             pos += len;
 
             let decrypted_data;
