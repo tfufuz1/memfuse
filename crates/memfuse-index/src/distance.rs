@@ -40,6 +40,8 @@
 //! This module contains `unsafe` code for hardware-specific intrinsics. All `unsafe` blocks
 //! are guarded by runtime feature detection and documented with safety justifications.
 
+// ANCHOR:SAFETY:SIMD-LIB-001 — Crate-wide allow for SIMD intrinsics.
+// BEGRÜNDUNG: Dieses Modul ist der dedizierte Ort für hardware-beschleunigte Berechnungen.
 #![allow(unused_unsafe)]
 #![allow(unsafe_code)]
 

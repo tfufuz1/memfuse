@@ -1,7 +1,7 @@
 //! Scalar Quantization (SQ8) for HNSW Index.
-// ANCHOR:TODO:QUANT-001 — Optimiere und finalisiere die SQ8 Quantization impl, repariere Cast-Bugs.
+// ANCHOR:DONE:QUANT-001 — SQ8 Quantization impl optimiert und Cast-Bugs behoben.
 // WP:WP-2.2 PRIO:1 NEEDS:NONE
-// AGENT:@JULES-03 DATE:2026-05-15 STATUS:DONE
+// AGENT:03 DATE:2026-05-15 STATUS:DONE
 // TEST: cargo bench -p memfuse-index -- quantization
 // DONE: Performance- und Recall Metriken sind stabil.
 // SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
