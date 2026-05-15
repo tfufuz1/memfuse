@@ -1,10 +1,12 @@
 //! LSM-backed Inverted Index.
 
 use crate::tokenizer::{tokenize, DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
-use memfuse_core::{DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId};
+use async_trait::async_trait;
+use memfuse_core::{
+    DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
-use async_trait::async_trait;
 
 /// An inverted index stored in the LSM engine.
 #[derive(Clone)]
