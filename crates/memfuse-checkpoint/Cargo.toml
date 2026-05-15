@@ -20,7 +20,9 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+memfuse-core = { workspace = true }
 memfuse-db = { workspace = true }
+memfuse-store = { workspace = true }
 memfuse-index = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
