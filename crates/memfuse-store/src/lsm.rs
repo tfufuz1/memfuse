@@ -44,7 +44,7 @@ use crate::compaction::{CompactionConfig, CompactionEngine};
 use crate::crypto::KeyManager;
 use crate::memtable::MemTable;
 use crate::sstable::{create_block_cache, BlockCache, SstableBuilder, SstableReader};
-use crate::wal::{Wal, WalEntry, WalOp};
+use crate::wal::{Wal, WalEntry, WalOp, DEFAULT_INTEGRITY_KEY};
 use async_trait::async_trait;
 use bytes::Bytes;
 use memfuse_core::{
@@ -291,7 +291,11 @@ impl StorageEngine for LsmStorage {
         let doc_id = {
             let hash = blake3::hash(key);
             let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&hash.as_bytes()[..8]);
+            let hash_bytes =
+                hash.as_bytes()
+                    .get(..8)
+                    .ok_or_else(|| MemFuseError::Internal("Hash too short".into()))?;
+            bytes.copy_from_slice(hash_bytes);
             DocId::new(u64::from_le_bytes(bytes))
         };
 
@@ -309,7 +313,11 @@ impl StorageEngine for LsmStorage {
         let doc_id = {
             let hash = blake3::hash(key);
             let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&hash.as_bytes()[..8]);
+            let hash_bytes =
+                hash.as_bytes()
+                    .get(..8)
+                    .ok_or_else(|| MemFuseError::Internal("Hash too short".into()))?;
+            bytes.copy_from_slice(hash_bytes);
             DocId::new(u64::from_le_bytes(bytes))
         };
 
@@ -340,6 +348,16 @@ impl StorageEngine for LsmStorage {
         let ops = self.tx_buffer.drain(tx_id);
         let state = self.state.read().await;
 
+        let integrity_key = self
+            .key_manager
+            .as_ref()
+            .map(|km| km.integrity_key())
+            .unwrap_or_else(|| {
+                let mut k = [0u8; 32];
+                k[..DEFAULT_INTEGRITY_KEY.len()].copy_from_slice(DEFAULT_INTEGRITY_KEY);
+                k
+            }); // unwrap
+
         for op in ops {
             let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
 
@@ -353,6 +371,7 @@ impl StorageEngine for LsmStorage {
                             value: value.clone(),
                         },
                         seq_no,
+                        &integrity_key,
                     );
                     let entry_size = key.len() + value.len() + 8;
                     let _ = self.budget.consume_memory(entry_size as u64);
@@ -369,6 +388,7 @@ impl StorageEngine for LsmStorage {
                                 key: key.clone(),
                             },
                             seq_no,
+                            &integrity_key,
                         );
                         let _ = self.budget.consume_memory(key.len() as u64 + 8);
                         state.wal.append(&entry).await?;

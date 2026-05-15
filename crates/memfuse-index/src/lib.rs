@@ -8,6 +8,8 @@
 // INVARIANTE: HNSW-Graphen liegen exklusiv im RAM. Disk-Storage erfolgt über memfuse-store (via LsmStorage).
 
 #![feature(portable_simd)]
+// ANCHOR:AUDIT:SAOS-021 — forbid(unsafe_code) fehlte → nachgerüstet
+// Exception: distance.rs darf unsafe für SIMD nutzen.
 #![deny(unsafe_code)]
 
 pub mod csr;

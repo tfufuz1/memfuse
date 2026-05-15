@@ -401,18 +401,16 @@ impl MemFuse {
             storage_stats: self.storage.stats().await?,
         })
     }
+
+    /// Returns the underlying storage engine for integration and benchmarks.
+    pub fn inner_storage(&self) -> Arc<LsmStorage> {
+        Arc::clone(&self.storage)
+    }
 }
 
 // Re-export for convenience
 pub use memfuse_core::DistanceMetric;
 pub use serde_json::json;
-
-#[cfg(any(test, feature = "bench"))]
-impl MemFuse {
-    pub fn inner_storage(&self) -> Arc<LsmStorage> {
-        self.storage.clone()
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;

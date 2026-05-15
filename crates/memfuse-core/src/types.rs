@@ -60,7 +60,7 @@ impl DocId {
 
         let buf: [u8; 8] = bytes.try_into().map_err(|_| {
             MemFuseError::Internal("Failed to convert hash slice to array".to_string())
-        })?;
+        })?; // unwrap
         Ok(Self(u64::from_le_bytes(buf)))
     }
 }
