@@ -49,7 +49,14 @@ async fn test_stress_multi_collection_concurrent_ops() {
                 let results = col.search(&vec, 1).await.expect("search");
                 assert!(!results.is_empty());
                 // results[0].id must be our 'id' because vectors are unique and HNSW should find it
-                assert_eq!(results[0].id, id, "Failed for task {} op {} with vec at index {}", t, i, i % 64);
+                assert_eq!(
+                    results[0].id,
+                    id,
+                    "Failed for task {} op {} with vec at index {}",
+                    t,
+                    i,
+                    i % 64
+                );
 
                 // Delete every 2nd
                 if i % 2 == 0 {
