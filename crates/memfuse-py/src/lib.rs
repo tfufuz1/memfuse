@@ -69,6 +69,18 @@ pub struct PySearchResult {
     pub metadata: Option<PyObject>,
 }
 
+/// Statistics for a vector index.
+#[pyclass(get_all)]
+#[derive(Clone)]
+pub struct PyVectorIndexStats {
+    /// Number of active (non-deleted) vectors.
+    pub num_vectors: usize,
+    /// Estimated memory usage in bytes.
+    pub memory_usage_bytes: usize,
+    /// Number of HNSW layers.
+    pub num_layers: usize,
+}
+
 /// A document retrieved from MemFuse.
 #[pyclass(get_all)]
 pub struct PyDocument {
@@ -296,6 +308,102 @@ impl PyCollection {
         }
         Ok(py_res)
     }
+
+    pub fn stats(&self, py: Python<'_>) -> PyResult<PyVectorIndexStats> {
+        let rt = get_runtime()?;
+        let stats = py
+            .allow_threads(|| rt.block_on(self.inner.stats()))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        Ok(PyVectorIndexStats {
+            num_vectors: stats.num_vectors,
+            memory_usage_bytes: stats.memory_usage_bytes,
+            num_layers: stats.num_layers,
+        })
+    }
+
+    pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
+        let rt = get_runtime()?;
+        Ok(py.allow_threads(|| rt.block_on(self.inner.len())))
+    }
+
+    pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
+        let rt = get_runtime()?;
+        Ok(py.allow_threads(|| rt.block_on(self.inner.is_empty())))
+    }
+
+    pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<PyObject>> {
+        let rt = get_runtime()?;
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.scan_prefix(prefix)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut py_res = Vec::new();
+        for (id, meta) in results {
+            let meta_py = pythonize(py, &meta)
+                .map_err(|e| {
+                    pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
+                })?
+                .unbind();
+
+            py_res.push(
+                PyDocument {
+                    id,
+                    metadata: Some(meta_py),
+                }
+                .into_py_any(py)?,
+            );
+        }
+        Ok(py_res)
+    }
+
+    #[pyo3(signature = (start=None, end=None))]
+    pub fn scan(
+        &self,
+        py: Python<'_>,
+        start: Option<&[u8]>,
+        end: Option<&[u8]>,
+    ) -> PyResult<Vec<PyObject>> {
+        let rt = get_runtime()?;
+        use std::ops::Bound;
+
+        let start_bound = match start {
+            Some(s) => Bound::Included(s),
+            None => Bound::Unbounded,
+        };
+        let end_bound = match end {
+            Some(e) => Bound::Excluded(e),
+            None => Bound::Unbounded,
+        };
+
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.scan(start_bound, end_bound)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut py_res = Vec::new();
+        for (id, meta) in results {
+            let meta_py = pythonize(py, &meta)
+                .map_err(|e| {
+                    pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
+                })?
+                .unbind();
+
+            py_res.push(
+                PyDocument {
+                    id,
+                    metadata: Some(meta_py),
+                }
+                .into_py_any(py)?,
+            );
+        }
+        Ok(py_res)
+    }
 }
 
 #[pyfunction]
@@ -323,5 +431,6 @@ fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()
     m.add_class::<PyCollection>()?;
     m.add_class::<PySearchResult>()?;
     m.add_class::<PyDocument>()?;
+    m.add_class::<PyVectorIndexStats>()?;
     Ok(())
 }
