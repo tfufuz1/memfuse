@@ -106,6 +106,17 @@ impl PyMemFuse {
         py.allow_threads(|| rt.block_on(self.inner.drop_collection(name)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
+
+    pub fn stats(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let rt = get_runtime()?;
+        let stats = py
+            .allow_threads(|| rt.block_on(self.inner.stats()))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        Ok(pythonize(py, &stats)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Stats error: {}", e)))?
+            .unbind())
+    }
 }
 
 #[pyclass(unsendable, name = "Collection")]
@@ -203,6 +214,50 @@ impl PyCollection {
         py.allow_threads(|| rt.block_on(self.inner.delete(id)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(())
+    }
+
+    pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<(String, PyObject)>> {
+        let rt = get_runtime()?;
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.scan_prefix(prefix)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut py_results = Vec::with_capacity(results.len());
+        for (k, v) in results {
+            let v_py = pythonize(py, &v).map_err(|e| {
+                pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
+            })?;
+            py_results.push((k, v_py.unbind()));
+        }
+        Ok(py_results)
+    }
+
+    pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
+        let rt = get_runtime()?;
+        Ok(py.allow_threads(|| rt.block_on(self.inner.len())))
+    }
+
+    pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
+        let rt = get_runtime()?;
+        Ok(py.allow_threads(|| rt.block_on(self.inner.is_empty())))
+    }
+
+    pub fn stats(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let rt = get_runtime()?;
+        let stats = py
+            .allow_threads(|| rt.block_on(self.inner.stats()))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        Ok(pythonize(py, &stats)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Stats error: {}", e)))?
+            .unbind())
     }
 
     #[pyo3(signature = (vector, k))]

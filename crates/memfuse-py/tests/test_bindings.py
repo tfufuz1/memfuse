@@ -85,3 +85,36 @@ def test_collection_isolation(db_path):
     b_results = col_b.search(v, k=5)
     assert len(b_results) == 0
     assert col_b.get("k1") is None
+
+def test_relationships_and_scanning(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("graph")
+    v = np.zeros(4, dtype=np.float32)
+
+    col.insert("a", v)
+    col.insert("b", v)
+    col.relate("a", "b", "friend")
+
+    # Scan for relationships
+    rels = col.scan_prefix("__rel:a:friend:")
+    assert len(rels) == 1
+    assert rels[0][1]["to"] == "b"
+
+def test_stats_and_len(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("stats")
+    assert col.is_empty()
+    assert col.len() == 0
+
+    v = np.zeros(4, dtype=np.float32)
+    col.insert("doc1", v)
+
+    assert not col.is_empty()
+    assert col.len() == 1
+
+    stats = col.stats()
+    assert stats["num_vectors"] == 1
+
+    db_stats = db.stats()
+    assert "storage_stats" in db_stats
+    assert "index_stats" in db_stats

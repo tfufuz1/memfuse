@@ -72,7 +72,7 @@ pub struct SearchResult {
 }
 
 /// Overall database statistics.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DbStats {
     /// Statistics for the vector index.
     pub index_stats: memfuse_core::VectorIndexStats,

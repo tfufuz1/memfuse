@@ -90,6 +90,16 @@ impl Collection {
 
     /// Internal helper to generate namespaced keys.
     /// key_type: 0 = user key, 1 = docid mapping, 2 = relationship, 3 = tx intent
+    async fn fetch_stored_document(&self, doc_id: DocId) -> Result<Option<StoredDocument>> {
+        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+        if let Some(bytes) = self.storage.get(&doc_key).await? {
+            let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+            Ok(Some(stored))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub(crate) fn namespaced_key(&self, key: &[u8], key_type: u8) -> Vec<u8> {
         if self.name == "default" {
             match key_type {
@@ -344,9 +354,7 @@ impl Collection {
         let mut results = Vec::with_capacity(scored_docs.len());
 
         for sd in scored_docs {
-            let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
-            if let Some(bytes) = self.storage.get(&doc_key).await? {
-                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+            if let Some(stored) = self.fetch_stored_document(sd.doc_id).await? {
                 results.push(crate::SearchResult {
                     id: stored.id,
                     score: sd.score,
@@ -370,14 +378,27 @@ impl Collection {
         match (is_text_empty, is_vector_zero) {
             (true, true) => Ok(Vec::new()),
             (true, false) => self.search(vector, k).await,
-            (false, _) => {
+            (false, true) => {
                 let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let mut text_results = Vec::with_capacity(bm25_results.len());
-
+                let mut results = Vec::with_capacity(bm25_results.len());
                 for (doc_id, score) in bm25_results {
-                    let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-                    if let Some(bytes) = self.storage.get(&doc_key).await? {
-                        let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                    if let Some(stored) = self.fetch_stored_document(doc_id).await? {
+                        results.push(crate::SearchResult {
+                            id: stored.id,
+                            score,
+                            metadata: stored.metadata,
+                        });
+                    }
+                }
+                Ok(results)
+            }
+            (false, false) => {
+                let vector_results = self.search(vector, k).await?;
+                let bm25_results = self.text_index.search_bm25(text, k).await?;
+
+                let mut text_results = Vec::with_capacity(bm25_results.len());
+                for (doc_id, score) in bm25_results {
+                    if let Some(stored) = self.fetch_stored_document(doc_id).await? {
                         text_results.push(crate::SearchResult {
                             id: stored.id,
                             score,
@@ -386,18 +407,10 @@ impl Collection {
                     }
                 }
 
-        let bm25_results = self.text_index.search_bm25(text, k).await?;
-
-        let mut text_set = Vec::new();
-        for (doc_id, score) in bm25_results {
-            let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-            if let Some(bytes) = self.storage.get(&doc_key).await? {
-                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                text_set.push(crate::SearchResult {
-                    id: stored.id,
-                    score,
-                    metadata: stored.metadata,
-                });
+                Ok(crate::fusion::reciprocal_rank_fusion(
+                    vec![vector_results, text_results],
+                    k,
+                ))
             }
         }
     }
