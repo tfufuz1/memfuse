@@ -397,7 +397,8 @@ impl Collection {
                     let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
                     if let Some(bytes) = self.storage.get(&doc_key).await? {
                         let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                        *scores.entry(stored.id).or_insert(0.0) += 1.0 / (k_rrf + rank as f32 + 1.0);
+                        *scores.entry(stored.id).or_insert(0.0) +=
+                            1.0 / (k_rrf + rank as f32 + 1.0);
                     }
                 }
 
