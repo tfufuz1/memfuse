@@ -97,6 +97,70 @@ impl SnapshotRegistry {
     }
 }
 
+// ANCHOR:TEST:SNAPSHOT-001 — Missing unit tests for SnapshotRegistry.
+// WP:WP-0.0 PRIO:3 NEEDS:NONE
+// AGENT:01 STATUS:DONE
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_snapshot_registration_min_tracking() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+
+        let g1 = registry.register(100);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        let g2 = registry.register(50);
+        assert_eq!(registry.min_active_seqno(), 50);
+
+        let g3 = registry.register(150);
+        assert_eq!(registry.min_active_seqno(), 50);
+
+        drop(g2);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        drop(g1);
+        assert_eq!(registry.min_active_seqno(), 150);
+
+        drop(g3);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
+    fn test_snapshot_pinning() {
+        let registry = SnapshotRegistry::new();
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+
+        registry.pin(200);
+        assert_eq!(registry.min_active_seqno(), 200);
+
+        registry.pin(100);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        registry.unpin(100);
+        assert_eq!(registry.min_active_seqno(), 200);
+
+        registry.unpin(200);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
+    fn test_tombstone_bit_masking() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        let seq_with_tombstone = 100 | TOMBSTONE_BIT;
+
+        let _guard = registry.register(seq_with_tombstone);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        registry.pin(200 | TOMBSTONE_BIT);
+        assert_eq!(registry.min_active_seqno(), 100);
+    }
+}
+
 /// RAII Guard for an active snapshot.
 pub struct SnapshotGuard {
     registry: Arc<SnapshotRegistry>,

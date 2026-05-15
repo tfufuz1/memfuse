@@ -103,26 +103,32 @@ impl<T: Clone> TxBuffer<T> {
     }
 
     /// Registers a new transaction in the buffer.
+    // ANCHOR:PERF:TXBUF-001 — Vec::with_capacity(8) optimization.
+    // WP:WP-0.0 PRIO:3 NEEDS:NONE
+    // AGENT:01 STATUS:DONE
     pub fn begin(&self, tx: TxId) {
         let shard_idx = self.shard_idx(tx);
         let mut shard = self.shards[shard_idx].write();
         shard
             .ops
             .entry(tx)
-            .or_insert_with(|| (Vec::new(), Instant::now()));
+            .or_insert_with(|| (Vec::with_capacity(8), Instant::now()));
     }
 
     /// Stages an operation for the given transaction.
     ///
     /// If the transaction has not been explicitly started with `begin`,
     /// it will be implicitly created on the first `stage` call.
+    // ANCHOR:PERF:TXBUF-002 — Vec::with_capacity(8) optimization.
+    // WP:WP-0.0 PRIO:3 NEEDS:NONE
+    // AGENT:01 STATUS:DONE
     pub fn stage(&self, tx: TxId, op: IndexOp<T>) {
         let shard_idx = self.shard_idx(tx);
         let mut shard = self.shards[shard_idx].write();
         let entry = shard
             .ops
             .entry(tx)
-            .or_insert_with(|| (Vec::new(), Instant::now()));
+            .or_insert_with(|| (Vec::with_capacity(8), Instant::now()));
         entry.0.push(op);
     }
 

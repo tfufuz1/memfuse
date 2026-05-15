@@ -44,24 +44,25 @@ impl DocId {
     }
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
+    ///
+    /// This method is panic-free.
     pub fn from_key(key: &str) -> Self {
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes")
+        // ANCHOR:DEBT:DOCID-001 — Unsafe expect in DocId::from_key.
+        // WP:WP-0.0 PRIO:3 NEEDS:NONE
+        // AGENT:01 STATUS:DONE
+        let hash = blake3::hash(key.as_bytes());
+        let bytes: [u8; 32] = hash.into();
+        let mut buf = [0u8; 8];
+        // SAFETY: blake3::hash always returns 32 bytes, taking 8 is always safe.
+        buf.copy_from_slice(&bytes[..8]);
+        Self(u64::from_le_bytes(buf))
     }
 
     /// Safely derive a DocId from a user-provided string key.
     ///
     /// Uses blake3 hash and safe slice indexing.
     pub fn try_from_key(key: &str) -> Result<Self> {
-        let hash = blake3::hash(key.as_bytes());
-        let bytes = hash
-            .as_bytes()
-            .get(..8)
-            .ok_or_else(|| MemFuseError::Internal("Blake3 hash too short".to_string()))?;
-
-        let buf: [u8; 8] = bytes.try_into().map_err(|_| {
-            MemFuseError::Internal("Failed to convert hash slice to array".to_string())
-        })?;
-        Ok(Self(u64::from_le_bytes(buf)))
+        Ok(Self::from_key(key))
     }
 }
 
