@@ -341,20 +341,13 @@ impl Collection {
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<crate::SearchResult>> {
         let scored_docs = self.index.search_filtered(query, k, filter).await?;
-        let mut results = Vec::with_capacity(scored_docs.len());
-
-        for sd in scored_docs {
-            let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
-            if let Some(bytes) = self.storage.get(&doc_key).await? {
-                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                results.push(crate::SearchResult {
-                    id: stored.id,
-                    score: sd.score,
-                    metadata: stored.metadata,
-                });
-            }
-        }
-        Ok(results)
+        self.hydrate_results(
+            scored_docs
+                .into_iter()
+                .map(|sd| (sd.doc_id, sd.score))
+                .collect(),
+        )
+        .await
     }
 
     /// Performs hybrid search combining BM25 and vector search results via RRF.
@@ -372,43 +365,36 @@ impl Collection {
             (true, false) => self.search(vector, k).await,
             (false, true) => {
                 let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let mut results = Vec::with_capacity(bm25_results.len());
-
-                for (doc_id, score) in bm25_results {
-                    let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-                    if let Some(bytes) = self.storage.get(&doc_key).await? {
-                        let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                        results.push(crate::SearchResult {
-                            id: stored.id,
-                            score,
-                            metadata: stored.metadata,
-                        });
-                    }
-                }
-                Ok(results)
+                self.hydrate_results(bm25_results).await
             }
             (false, false) => {
                 let vector_results = self.search(vector, k).await?;
                 let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let mut text_results = Vec::with_capacity(bm25_results.len());
+                let text_results = self.hydrate_results(bm25_results).await?;
 
-                for (doc_id, score) in bm25_results {
-                    let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-                    if let Some(bytes) = self.storage.get(&doc_key).await? {
-                        let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                        text_results.push(crate::SearchResult {
-                            id: stored.id,
-                            score,
-                            metadata: stored.metadata,
-                        });
-                    }
-                }
                 Ok(crate::fusion::reciprocal_rank_fusion(
                     vec![vector_results, text_results],
                     k,
                 ))
             }
         }
+    }
+
+    /// Helper to fetch full document metadata and map to SearchResult.
+    async fn hydrate_results(&self, scored_docs: Vec<(DocId, f32)>) -> Result<Vec<crate::SearchResult>> {
+        let mut results = Vec::with_capacity(scored_docs.len());
+        for (doc_id, score) in scored_docs {
+            let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+            if let Some(bytes) = self.storage.get(&doc_key).await? {
+                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                results.push(crate::SearchResult {
+                    id: stored.id,
+                    score,
+                    metadata: stored.metadata,
+                });
+            }
+        }
+        Ok(results)
     }
 
     /// Returns the number of documents in the collection.
