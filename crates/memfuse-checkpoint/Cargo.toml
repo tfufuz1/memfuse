@@ -25,4 +25,3 @@ memfuse-db = { workspace = true }
 memfuse-index = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
-memfuse-store = { workspace = true }

@@ -13,43 +13,49 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         
-      - name: Check L3 Kernel Isolation (core, runtime, orchestrator)
+      - name: Check L1 Kernel Isolation (memfuse-core)
         run: |
           set -e
-          for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator; do
-            echo "Verifying $CRATE imports no internal crates..."
-            # Using grep -E to match any internal crate starting with 'memfuse-' but not the crate itself
-            if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -v "$CRATE" | grep -q .; then
-              echo "ERROR: $CRATE imports forbidden internal crates."
-              cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-"
-              exit 1
-            fi
-          done
+          CRATE=memfuse-core
+          echo "Verifying $CRATE imports no internal crates..."
+          if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -v "$CRATE" | grep -q .; then
+            echo "ERROR: $CRATE imports forbidden internal crates."
+            cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-"
+            exit 1
+          fi
 
-      - name: Check L2 peer isolation (store, index, text, checkpoint)
+      - name: Check L2 Peer Isolation (store, index, text, checkpoint)
         run: |
           set -e
-          echo "Verifying memfuse-store does not import L2 peers..."
-          if cargo tree -p memfuse-store --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-checkpoint|memfuse-py"; then
-            echo "ERROR: memfuse-store imports L2 peers or higher layers."
+          echo "Verifying memfuse-store does not import L2 peers or higher..."
+          if cargo tree -p memfuse-store --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-checkpoint|memfuse-py|memfuse-runtime|memfuse-orchestrator"; then
+            echo "ERROR: memfuse-store imports forbidden crates."
             exit 1
           fi
-          echo "Verifying memfuse-index does not import L2 peers..."
-          if cargo tree -p memfuse-index --edges no-dev | grep -E -q "memfuse-db|memfuse-store|memfuse-text|memfuse-checkpoint|memfuse-py"; then
-            echo "ERROR: memfuse-index imports L2 peers or higher layers."
+          echo "Verifying memfuse-index does not import L2 peers or higher..."
+          if cargo tree -p memfuse-index --edges no-dev | grep -E -q "memfuse-db|memfuse-store|memfuse-text|memfuse-checkpoint|memfuse-py|memfuse-runtime|memfuse-orchestrator"; then
+            echo "ERROR: memfuse-index imports forbidden crates."
             exit 1
           fi
-          echo "Verifying memfuse-text does not import L2 peers..."
-          if cargo tree -p memfuse-text --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-store|memfuse-checkpoint|memfuse-py"; then
+          echo "Verifying memfuse-text does not import L2 peers or higher..."
+          if cargo tree -p memfuse-text --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-store|memfuse-checkpoint|memfuse-py|memfuse-runtime|memfuse-orchestrator"; then
             echo "ERROR: memfuse-text imports forbidden crates."
             exit 1
           fi
           echo "Verifying memfuse-checkpoint does not import L2 peers (except tracked)..."
-          # Excluding memfuse-store from the immediate failure to allow tracking in the next step
-          if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-py"; then
-            echo "ERROR: memfuse-checkpoint imports L2 peers (beyond tracked exceptions)."
+          if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-py|memfuse-runtime|memfuse-orchestrator"; then
+            echo "ERROR: memfuse-checkpoint imports forbidden crates."
+            exit 1
+          fi
+
+      - name: Check L3 Orchestration Isolation (memfuse-db)
+        run: |
+          set -e
+          echo "Verifying memfuse-db does not import higher layers..."
+          if cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py|memfuse-runtime|memfuse-orchestrator"; then
+            echo "ERROR: memfuse-db imports forbidden higher layers."
             exit 1
           fi
 

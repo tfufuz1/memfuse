@@ -22,6 +22,14 @@ check-runtime:
 check-orchestrator:
     nix develop -c cargo check -p memfuse-orchestrator
 
+# Modular check for memfuse-checkpoint
+check-checkpoint:
+    nix develop -c cargo check -p memfuse-checkpoint
+
+# Modular check for memfuse-py
+check-py:
+    nix develop -c cargo check -p memfuse-py
+
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)
 triple-test: check
     #!/usr/bin/env bash
