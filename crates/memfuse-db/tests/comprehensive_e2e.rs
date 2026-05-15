@@ -53,7 +53,8 @@ async fn test_comprehensive_e2e_workflow() {
         // 3. Relationships
         db.relate("agent-1", "task-1", "assigned_to").await.expect("Relate failed");
 
-        let relations = col_agent.scan_prefix("__rel:agent-1:assigned_to:").await.expect("Scan relations failed");
+        // Use facade scan_prefix for relationships
+        let relations = db.scan_prefix("__rel:agent-1:assigned_to:").await.expect("Scan relations failed");
         assert_eq!(relations.len(), 1);
 
         // 4. Update Verification
@@ -71,7 +72,9 @@ async fn test_comprehensive_e2e_workflow() {
         assert!(col_agent.get("agent-2").await.unwrap().is_none());
 
         // 6. Hybrid Search
+        // Note: This may fail to compile or run if production logic in collection.rs is broken
         let hybrid_results = col_task.hybrid_search("LSM storage", &[0.0, 0.0, 0.0, 0.0], 5).await.expect("Hybrid search failed");
+        assert!(!hybrid_results.is_empty(), "Hybrid search should return results");
         assert_eq!(hybrid_results[0].id, "task-1");
     }
 
