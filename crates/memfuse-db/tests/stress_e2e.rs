@@ -32,7 +32,7 @@ async fn test_high_concurrency_insert_search_delete() {
                 // Concurrent Ops
                 col.insert(&id, &vec, Some(json!({"t": t, "i": i}))).await.unwrap();
                 let res = col.search(&vec, 5).await.unwrap();
-                assert!(res.iter().any(|r| r.id == id), "Expected id {} in results {:?}", id, res);
+                assert!(res.iter().any(|r| r.id == id));
 
                 if i % 2 == 0 {
                     col.delete(&id).await.unwrap();

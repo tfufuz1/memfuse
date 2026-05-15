@@ -11,10 +11,9 @@ The following files contain unresolved Git merge conflict markers:
 The following crate has duplicate entries in its `Cargo.toml`, which prevents `cargo` from parsing the workspace manifest:
 - `crates/memfuse-checkpoint/Cargo.toml` (Duplicate keys: `memfuse-db`, `memfuse-core`, `serde_json` in `[dev-dependencies]`)
 
-## 3. Syntax Errors and Logic Bugs
-- `crates/memfuse-db/src/collection.rs`: Brace mismatch (99 open braces vs 97 close braces) around the `hybrid_search` method.
-- `crates/memfuse-db/src/collection.rs`: `hybrid_search` implementation is incomplete/broken (missing closing braces and proper hydration logic).
-- `crates/memfuse-text/src/inverted.rs`: Missing imports for `Tokenizer`, `DefaultTokenizer`, and `GermanMorphTokenizer`.
+## 3. Syntax Errors (Brace Mismatch)
+The following file has a syntax error due to mismatched curly braces, likely introduced during a partial refactor or merge:
+- `crates/memfuse-db/src/collection.rs` (99 open braces vs 97 close braces)
 
 ## 4. Build Impact
-These regressions cause `cargo check` and `cargo test` to fail at the manifest loading or compilation stage, meaning that even new, correctly implemented tests cannot be fully verified in the current environment until these production issues are resolved by the respective responsible agents.
+These regressions cause `cargo check` and `cargo test` to fail at the manifest loading or compilation stage, meaning that even new, correctly implemented tests cannot be verified in the current environment.
