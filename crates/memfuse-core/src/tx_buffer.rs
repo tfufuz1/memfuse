@@ -109,7 +109,7 @@ impl<T: Clone> TxBuffer<T> {
         shard
             .ops
             .entry(tx)
-            .or_insert_with(|| (Vec::new(), Instant::now()));
+            .or_insert_with(|| (Vec::with_capacity(8), Instant::now()));
     }
 
     /// Stages an operation for the given transaction.
@@ -122,7 +122,7 @@ impl<T: Clone> TxBuffer<T> {
         let entry = shard
             .ops
             .entry(tx)
-            .or_insert_with(|| (Vec::new(), Instant::now()));
+            .or_insert_with(|| (Vec::with_capacity(8), Instant::now()));
         entry.0.push(op);
     }
 

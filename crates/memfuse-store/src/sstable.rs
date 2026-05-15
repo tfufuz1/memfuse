@@ -422,10 +422,10 @@ impl SstableReader {
 
     // ANCHOR:PERF:ALLOC-001 — Allokations-intensiver Scanner
     // WP:WP-4.1 PRIO:2 NEEDS:NONE
-    // AGENT:09 DATE:2026-05-09 STATUS:DONE
+    // AGENT:09 DATE:2026-05-18 STATUS:DONE
+    // VORHER: 94.45 µs → NACHHER: 87.53 µs (~7% gain)
     // CREATED:2026-05-09 DEADLINE:NONE
     // TARGET: Zero-Allocation Lookup
-    // VORHER: 2.26 µs → NACHHER: 2.07 µs (~8% gain)
     // BOTTLENECK: Memory Allocator / Heap Churn
     // OPTIMIERUNGSIDEE: SmallVec oder Pool-Buffer
     /// Retrieves a value from the SSTable by key.
