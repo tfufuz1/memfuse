@@ -36,19 +36,19 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy (warnings = errors)
-        run: cargo clippy --all-targets --workspace -- -D warnings
+        run: cargo clippy --all-targets --workspace --all-features -- -D warnings
 
       - name: Build check
-        run: cargo check --all-targets --workspace
+        run: cargo check --all-targets --workspace --all-features
 
       - name: Run tests (pass 1/3)
-        run: cargo test --workspace 2>&1 | tee test-run-1.txt
+        run: cargo test --workspace --all-features 2>&1 | tee test-run-1.txt
 
       - name: Run tests (pass 2/3)
-        run: cargo test --workspace 2>&1 | tee test-run-2.txt
+        run: cargo test --workspace --all-features 2>&1 | tee test-run-2.txt
 
       - name: Run tests (pass 3/3)
-        run: cargo test --workspace 2>&1 | tee test-run-3.txt
+        run: cargo test --workspace --all-features 2>&1 | tee test-run-3.txt
 
       - name: Verify triple-pass consistency
         run: |
