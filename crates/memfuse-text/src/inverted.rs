@@ -1,7 +1,7 @@
 //! LSM-backed Inverted Index.
 
-use crate::tokenizer::tokenize;
-use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId};
+use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
+use memfuse_core::{DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TxId};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -270,7 +270,7 @@ impl InvertedIndex {
 
     /// Searches the inverted index using BM25.
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
-        let tokens = tokenize(query);
+        let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
             return Ok(Vec::new());
         }
@@ -350,6 +350,58 @@ impl InvertedIndex {
         results.truncate(k);
 
         Ok(results)
+    }
+}
+
+#[async_trait::async_trait]
+impl TextIndex for InvertedIndex {
+    async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
+        let results = self.search_bm25(query, k).await?;
+        Ok(results
+            .into_iter()
+            .map(|(doc_id, score)| ScoredDocument { doc_id, score })
+            .collect())
+    }
+
+    async fn insert(&self, tx: TxId, id: DocId, text: &str) -> Result<()> {
+        self.upsert_document(tx, id, text).await
+    }
+
+    async fn delete(&self, tx: TxId, id: DocId) -> Result<()> {
+        self.delete_document(tx, id).await
+    }
+
+    async fn commit(&self, _tx: TxId) -> Result<()> {
+        Ok(())
+    }
+
+    async fn rollback(&self, _tx: TxId) -> Result<()> {
+        Ok(())
+    }
+
+    async fn stats(&self) -> Result<memfuse_core::TextIndexStats> {
+        let td_key = self.key("meta:total_docs");
+        let tt_key = self.key("meta:total_tokens");
+
+        let mut total_docs = 0;
+        if let Some(bytes) = self.storage.get(&td_key).await? {
+            total_docs = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                MemFuseError::Storage("Invalid total_docs length".into())
+            })?) as usize;
+        }
+
+        let mut total_tokens = 0;
+        if let Some(bytes) = self.storage.get(&tt_key).await? {
+            total_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                MemFuseError::Storage("Invalid total_tokens length".into())
+            })?) as usize;
+        }
+
+        Ok(memfuse_core::TextIndexStats {
+            num_documents: total_docs,
+            num_tokens: total_tokens,
+            memory_usage_bytes: 0, // Not easily estimated for LSM-backed index
+        })
     }
 }
 

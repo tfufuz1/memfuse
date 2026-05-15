@@ -959,6 +959,8 @@ mod tests {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("avx2") {
+                // ANCHOR:SAFETY:SIMD-U8-TEST-001 — AVX2 Test Dispatch.
+                // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
                 let dot_simd = unsafe { dot_product_u8_avx2(&a, &b) };
                 assert_eq!(dot_scalar, dot_simd);
             }
@@ -969,6 +971,8 @@ mod tests {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("avx2") {
+                // ANCHOR:SAFETY:SIMD-U8-TEST-002 — AVX2 Test Dispatch.
+                // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
                 let euc_simd = unsafe { euclidean_distance_sq_u8_avx2(&a, &b) };
                 assert_eq!(euc_scalar, euc_simd);
             }
@@ -979,6 +983,8 @@ mod tests {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("avx2") {
+                // ANCHOR:SAFETY:SIMD-U8-TEST-003 — AVX2 Test Dispatch.
+                // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
                 let parts_simd = unsafe { cosine_similarity_parts_u8_avx2(&a, &b) };
                 assert_eq!(parts_scalar.dot, parts_simd.dot);
                 assert_eq!(parts_scalar.sum_a, parts_simd.sum_a);

@@ -386,18 +386,15 @@ impl Collection {
                     }
                 }
 
-        let bm25_results = self.text_index.search_bm25(text, k).await?;
+                if is_vector_zero {
+                    return Ok(text_results);
+                }
 
-        let mut text_set = Vec::new();
-        for (doc_id, score) in bm25_results {
-            let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-            if let Some(bytes) = self.storage.get(&doc_key).await? {
-                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                text_set.push(crate::SearchResult {
-                    id: stored.id,
-                    score,
-                    metadata: stored.metadata,
-                });
+                let vector_results = self.search(vector, k).await?;
+                Ok(crate::fusion::reciprocal_rank_fusion(
+                    vec![text_results, vector_results],
+                    k,
+                ))
             }
         }
     }
