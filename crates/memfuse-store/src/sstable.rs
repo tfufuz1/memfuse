@@ -337,7 +337,9 @@ impl SstableReader {
             let key_len = u16::from_le_bytes(
                 index_data
                     .get(pos..pos + 2)
-                    .ok_or_else(|| MemFuseError::Storage("corrupted SSTable index: key_len".into()))?
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("corrupted SSTable index: key_len".into())
+                    })?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
