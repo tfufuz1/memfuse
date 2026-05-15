@@ -29,3 +29,4 @@ bench = []
 name = "migration_benchmarks"
 path = "../../benches/migration_benchmarks.rs"
 harness = false
+required-features = ["bench"]
