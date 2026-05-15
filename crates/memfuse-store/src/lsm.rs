@@ -340,6 +340,12 @@ impl StorageEngine for LsmStorage {
         let ops = self.tx_buffer.drain(tx_id);
         let state = self.state.read().await;
 
+        let integrity_key = self
+            .key_manager
+            .as_ref()
+            .map(|km| km.integrity_key())
+            .unwrap_or(*b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0");
+
         for op in ops {
             let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
 
@@ -353,6 +359,7 @@ impl StorageEngine for LsmStorage {
                             value: value.clone(),
                         },
                         seq_no,
+                        &integrity_key,
                     );
                     let entry_size = key.len() + value.len() + 8;
                     let _ = self.budget.consume_memory(entry_size as u64);
@@ -369,6 +376,7 @@ impl StorageEngine for LsmStorage {
                                 key: key.clone(),
                             },
                             seq_no,
+                            &integrity_key,
                         );
                         let _ = self.budget.consume_memory(key.len() as u64 + 8);
                         state.wal.append(&entry).await?;

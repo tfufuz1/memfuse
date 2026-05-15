@@ -27,6 +27,16 @@ impl KeyManager {
         Self { key }
     }
 
+    /// Derives an integrity key for HMAC-SHA256.
+    pub fn integrity_key(&self) -> [u8; 32] {
+        let salt = b"memfuse-encryption-salt-v1";
+        let hk = Hkdf::<Sha256>::new(Some(salt), &self.key);
+        let mut key = [0u8; 32];
+        hk.expand(b"memfuse-hmac-sha256-key", &mut key)
+            .expect("32 bytes is a valid length for HKDF expansion");
+        key
+    }
+
     /// Encrypts a block of data with a given nonce (e.g., block offset).
     pub fn encrypt(&self, data: &[u8], nonce_val: u64) -> Result<Vec<u8>> {
         let cipher = Aes256Gcm::new_from_slice(&self.key)
