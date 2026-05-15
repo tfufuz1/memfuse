@@ -78,6 +78,31 @@ pub struct PyDocument {
     pub metadata: Option<PyObject>,
 }
 
+/// Statistics for the vector index.
+#[pyclass(get_all)]
+#[derive(Clone)]
+pub struct PyVectorIndexStats {
+    pub num_vectors: usize,
+    pub memory_usage_bytes: usize,
+    pub num_layers: usize,
+}
+
+/// Statistics for the storage engine.
+#[pyclass(get_all)]
+#[derive(Clone)]
+pub struct PyStorageStats {
+    pub num_segments: usize,
+    pub total_size_bytes: u64,
+    pub memtable_size_bytes: u64,
+}
+
+/// Overall database statistics.
+#[pyclass(get_all)]
+pub struct PyDbStats {
+    pub index_stats: PyVectorIndexStats,
+    pub storage_stats: PyStorageStats,
+}
+
 #[pyclass(unsendable, name = "Db")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
@@ -105,6 +130,243 @@ impl PyMemFuse {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.drop_collection(name)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
+    // Delegation to default collection
+    #[pyo3(signature = (id, vector, metadata=None))]
+    pub fn insert<'py>(
+        &self,
+        py: Python<'py>,
+        id: &str,
+        vector: PyReadonlyArray1<'py, f32>,
+        metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+    ) -> PyResult<()> {
+        let rt = get_runtime()?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
+
+        let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
+            depythonize(&d).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Metadata error: {}", e))
+            })?
+        } else {
+            None
+        };
+
+        py.allow_threads(|| rt.block_on(self.inner.insert(id, vec_slice, meta_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
+        let rt = get_runtime()?;
+        let doc = py
+            .allow_threads(|| rt.block_on(self.inner.get(id)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        if let Some(d) = doc {
+            let meta_py = if let Some(m) = d.metadata {
+                Some(
+                    pythonize(py, &m)
+                        .map_err(|e| {
+                            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                "Metadata error: {}",
+                                e
+                            ))
+                        })?
+                        .unbind(),
+                )
+            } else {
+                None
+            };
+
+            Ok(Some(PyDocument {
+                id: d.id,
+                metadata: meta_py,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    #[pyo3(signature = (id, vector, metadata=None))]
+    pub fn update<'py>(
+        &self,
+        py: Python<'py>,
+        id: &str,
+        vector: PyReadonlyArray1<'py, f32>,
+        metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+    ) -> PyResult<()> {
+        let rt = get_runtime()?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
+
+        let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
+            depythonize(&d).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Metadata error: {}", e))
+            })?
+        } else {
+            None
+        };
+
+        py.allow_threads(|| rt.block_on(self.inner.update(id, vec_slice, meta_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.delete(id)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (vector, k))]
+    pub fn search<'py>(
+        &self,
+        py: Python<'py>,
+        vector: PyReadonlyArray1<'py, f32>,
+        k: usize,
+    ) -> PyResult<Vec<PyObject>> {
+        let rt = get_runtime()?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
+
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut py_res = Vec::new();
+        for r in results {
+            let meta_py = if let Some(m) = r.metadata {
+                Some(
+                    pythonize(py, &m)
+                        .map_err(|e| {
+                            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                "Metadata error: {}",
+                                e
+                            ))
+                        })?
+                        .unbind(),
+                )
+            } else {
+                None
+            };
+
+            py_res.push(
+                PySearchResult {
+                    id: r.id,
+                    score: r.score,
+                    metadata: meta_py,
+                }
+                .into_py_any(py)?,
+            );
+        }
+        Ok(py_res)
+    }
+
+    #[pyo3(signature = (text, vector, k))]
+    pub fn hybrid_search<'py>(
+        &self,
+        py: Python<'py>,
+        text: &str,
+        vector: PyReadonlyArray1<'py, f32>,
+        k: usize,
+    ) -> PyResult<Vec<PyObject>> {
+        let rt = get_runtime()?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
+
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, vec_slice, k)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut py_res = Vec::new();
+        for r in results {
+            let meta_py = if let Some(m) = r.metadata {
+                Some(
+                    pythonize(py, &m)
+                        .map_err(|e| {
+                            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                "Metadata error: {}",
+                                e
+                            ))
+                        })?
+                        .unbind(),
+                )
+            } else {
+                None
+            };
+
+            py_res.push(
+                PySearchResult {
+                    id: r.id,
+                    score: r.score,
+                    metadata: meta_py,
+                }
+                .into_py_any(py)?,
+            );
+        }
+        Ok(py_res)
+    }
+
+    pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<(String, PyObject)>> {
+        let rt = get_runtime()?;
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.scan_prefix(prefix)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut py_res = Vec::new();
+        for (k, v) in results {
+            let val_py = pythonize(py, &v)
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
+                .unbind();
+            py_res.push((k, val_py));
+        }
+        Ok(py_res)
+    }
+
+    pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
+        let rt = get_runtime()?;
+        let l = py
+            .allow_threads(|| rt.block_on(self.inner.len()))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        Ok(l)
+    }
+
+    pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
+        let rt = get_runtime()?;
+        let empty = py
+            .allow_threads(|| rt.block_on(self.inner.is_empty()))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        Ok(empty)
+    }
+
+    pub fn stats(&self, py: Python<'_>) -> PyResult<PyDbStats> {
+        let rt = get_runtime()?;
+        let stats = py
+            .allow_threads(|| rt.block_on(self.inner.stats()))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        Ok(PyDbStats {
+            index_stats: PyVectorIndexStats {
+                num_vectors: stats.index_stats.num_vectors,
+                memory_usage_bytes: stats.index_stats.memory_usage_bytes,
+                num_layers: stats.index_stats.num_layers,
+            },
+            storage_stats: PyStorageStats {
+                num_segments: stats.storage_stats.num_segments,
+                total_size_bytes: stats.storage_stats.total_size_bytes,
+                memtable_size_bytes: stats.storage_stats.memtable_size_bytes,
+            },
+        })
     }
 }
 
@@ -296,14 +558,81 @@ impl PyCollection {
         }
         Ok(py_res)
     }
+
+    pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<(String, PyObject)>> {
+        let rt = get_runtime()?;
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.scan_prefix(prefix)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut py_res = Vec::new();
+        for (k, v) in results {
+            let val_py = pythonize(py, &v)
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
+                .unbind();
+            py_res.push((k, val_py));
+        }
+        Ok(py_res)
+    }
+
+    pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
+        let rt = get_runtime()?;
+        let l = py.allow_threads(|| rt.block_on(self.inner.len()));
+        Ok(l)
+    }
+
+    pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
+        let rt = get_runtime()?;
+        let empty = py.allow_threads(|| rt.block_on(self.inner.is_empty()));
+        Ok(empty)
+    }
+
+    pub fn stats(&self, py: Python<'_>) -> PyResult<PyVectorIndexStats> {
+        let rt = get_runtime()?;
+        let stats = py
+            .allow_threads(|| rt.block_on(self.inner.stats()))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        Ok(PyVectorIndexStats {
+            num_vectors: stats.num_vectors,
+            memory_usage_bytes: stats.memory_usage_bytes,
+            num_layers: stats.num_layers,
+        })
+    }
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536))]
-fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<PyMemFuse> {
+#[pyo3(signature = (path, dimension=1536, distance_metric="cosine", encryption_passphrase=None))]
+fn open(
+    py: Python<'_>,
+    path: &str,
+    dimension: usize,
+    distance_metric: &str,
+    encryption_passphrase: Option<String>,
+) -> PyResult<PyMemFuse> {
     let rt = get_runtime()?;
+    let metric = match distance_metric.to_lowercase().as_str() {
+        "cosine" => memfuse_db::DistanceMetric::Cosine,
+        "euclidean" | "l2" => memfuse_db::DistanceMetric::Euclidean,
+        "dotproduct" | "ip" => memfuse_db::DistanceMetric::DotProduct,
+        _ => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unsupported distance metric: {}",
+                distance_metric
+            )))
+        }
+    };
+
     let config = MemFuseConfig {
         dimension,
+        distance_metric: metric,
+        encryption_passphrase,
         ..Default::default()
     };
     let path_string = path.to_string();
@@ -323,5 +652,8 @@ fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()
     m.add_class::<PyCollection>()?;
     m.add_class::<PySearchResult>()?;
     m.add_class::<PyDocument>()?;
+    m.add_class::<PyDbStats>()?;
+    m.add_class::<PyVectorIndexStats>()?;
+    m.add_class::<PyStorageStats>()?;
     Ok(())
 }
