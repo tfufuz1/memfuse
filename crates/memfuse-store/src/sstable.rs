@@ -335,7 +335,9 @@ impl SstableReader {
 
         while pos + 10 <= index_data.len() {
             let key_len = u16::from_le_bytes(
-                index_data[pos..pos + 2]
+                index_data
+                    .get(pos..pos + 2)
+                    .ok_or_else(|| MemFuseError::Storage("corrupted SSTable index: key_len".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
@@ -344,14 +346,20 @@ impl SstableReader {
             if pos + key_len > index_data.len() {
                 return Err(MemFuseError::Storage("corrupted SSTable index".into()));
             }
-            let key = Bytes::copy_from_slice(&index_data[pos..pos + key_len]);
+            let key = Bytes::copy_from_slice(
+                index_data
+                    .get(pos..pos + key_len)
+                    .ok_or_else(|| MemFuseError::Storage("corrupted SSTable index: key".into()))?,
+            );
             pos += key_len;
 
             if pos + 8 > index_data.len() {
                 return Err(MemFuseError::Storage("corrupted SSTable index".into()));
             }
             let offset = u64::from_le_bytes(
-                index_data[pos..pos + 8]
+                index_data
+                    .get(pos..pos + 8)
+                    .ok_or_else(|| MemFuseError::Storage("corrupted SSTable index: offset".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             );
@@ -364,9 +372,14 @@ impl SstableReader {
         // Read the actual first key from the first data block header
         // (index stores last_key per block, NOT first_key)
         let first_key = if !index.is_empty() {
-            let offset = index[0].1;
+            let offset = index
+                .first()
+                .map(|(_, o)| *o)
+                .ok_or_else(|| MemFuseError::Storage("corrupted SSTable index: empty".into()))?;
             let next_offset = if index.len() > 1 {
-                index[1].1
+                index.get(1).map(|(_, o)| *o).ok_or_else(|| {
+                    MemFuseError::Storage("corrupted SSTable index: missing second block".into())
+                })?
             } else {
                 index_offset
             };
@@ -387,11 +400,21 @@ impl SstableReader {
             if block_data.len() < 2 {
                 return Err(MemFuseError::Storage("corrupted SSTable block".into()));
             }
-            let k_len = u16::from_le_bytes([block_data[0], block_data[1]]) as usize;
+            let k_len = u16::from_le_bytes(
+                block_data
+                    .get(0..2)
+                    .ok_or_else(|| MemFuseError::Storage("corrupted SSTable block: k_len".into()))?
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+            ) as usize;
             if block_data.len() < 2 + k_len {
                 return Err(MemFuseError::Storage("corrupted SSTable block".into()));
             }
-            Bytes::copy_from_slice(&block_data[2..2 + k_len])
+            Bytes::copy_from_slice(
+                block_data
+                    .get(2..2 + k_len)
+                    .ok_or_else(|| MemFuseError::Storage("corrupted SSTable block: key".into()))?,
+            )
         } else {
             Bytes::new()
         };
@@ -444,9 +467,13 @@ impl SstableReader {
             }
         };
 
-        let offset = self.index[idx].1;
+        let offset = self.index.get(idx).map(|(_, o)| *o).ok_or_else(|| {
+            MemFuseError::Storage(format!("SSTable index out of bounds: {}", idx))
+        })?;
         let next_offset = if idx + 1 < self.index.len() {
-            self.index[idx + 1].1
+            self.index.get(idx + 1).map(|(_, o)| *o).ok_or_else(|| {
+                MemFuseError::Storage(format!("SSTable index out of bounds: {}", idx + 1))
+            })?
         } else {
             self.index_offset
         };
@@ -490,7 +517,9 @@ impl SstableReader {
         }
 
         let num_offsets = u16::from_le_bytes(
-            block_data[n - 2..n]
+            block_data
+                .get(n - 2..n)
+                .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
         ) as usize;
@@ -504,7 +533,9 @@ impl SstableReader {
         let offsets_start = n - 2 - offsets_len;
         let bloom_offset = offsets_start - 8;
         let bloom = u64::from_le_bytes(
-            block_data[bloom_offset..bloom_offset + 8]
+            block_data
+                .get(bloom_offset..bloom_offset + 8)
+                .ok_or_else(|| MemFuseError::Storage("malformed block: bloom".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
         );
@@ -539,7 +570,7 @@ impl SstableReader {
             let mut ep = entry_off;
             // ANCHOR:SEC:SLICE-002 — Slice-Indexing ohne Bounds-Check
             // WP:WP-0.0 PRIO:1 NEEDS:NONE
-            // AGENT:09-security DATE:2026-05-09 STATUS:REVIEW
+            // AGENT:10 DATE:2026-05-15 STATUS:REVIEW
             // CREATED:2026-05-09 DEADLINE:NONE
             // FUNDORT: memfuse-store/src/sstable.rs:416
             // RISIKO: Panic bei Runtime durch unzureichende Datei-Länge
@@ -601,9 +632,13 @@ impl SstableReader {
         }
 
         for idx in 0..self.index.len() {
-            let offset = self.index[idx].1;
+            let offset = self.index.get(idx).map(|(_, o)| *o).ok_or_else(|| {
+                MemFuseError::Storage(format!("SSTable index out of bounds: {}", idx))
+            })?;
             let next_offset = if idx + 1 < self.index.len() {
-                self.index[idx + 1].1
+                self.index.get(idx + 1).map(|(_, o)| *o).ok_or_else(|| {
+                    MemFuseError::Storage(format!("SSTable index out of bounds: {}", idx + 1))
+                })?
             } else {
                 self.index_offset
             };
@@ -642,7 +677,9 @@ impl SstableReader {
             }
 
             let num_offsets = u16::from_le_bytes(
-                block_data[n - 2..n]
+                block_data
+                    .get(n - 2..n)
+                    .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
@@ -731,9 +768,13 @@ impl SstableReader {
         };
 
         for idx in start_idx..self.index.len() {
-            let offset = self.index[idx].1;
+            let offset = self.index.get(idx).map(|(_, o)| *o).ok_or_else(|| {
+                MemFuseError::Storage(format!("SSTable index out of bounds: {}", idx))
+            })?;
             let next_offset = if idx + 1 < self.index.len() {
-                self.index[idx + 1].1
+                self.index.get(idx + 1).map(|(_, o)| *o).ok_or_else(|| {
+                    MemFuseError::Storage(format!("SSTable index out of bounds: {}", idx + 1))
+                })?
             } else {
                 self.index_offset
             };
@@ -772,7 +813,9 @@ impl SstableReader {
             }
 
             let num_offsets = u16::from_le_bytes(
-                block_data[n - 2..n]
+                block_data
+                    .get(n - 2..n)
+                    .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
@@ -864,9 +907,13 @@ impl SstableReader {
         }
 
         for idx in 0..self.index.len() {
-            let offset = self.index[idx].1;
+            let offset = self.index.get(idx).map(|(_, o)| *o).ok_or_else(|| {
+                MemFuseError::Storage(format!("SSTable index out of bounds: {}", idx))
+            })?;
             let next_offset = if idx + 1 < self.index.len() {
-                self.index[idx + 1].1
+                self.index.get(idx + 1).map(|(_, o)| *o).ok_or_else(|| {
+                    MemFuseError::Storage(format!("SSTable index out of bounds: {}", idx + 1))
+                })?
             } else {
                 self.index_offset
             };
@@ -905,7 +952,9 @@ impl SstableReader {
             }
 
             let num_offsets = u16::from_le_bytes(
-                block_data[n - 2..n]
+                block_data
+                    .get(n - 2..n)
+                    .ok_or_else(|| MemFuseError::Storage("malformed block: num_offsets".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
