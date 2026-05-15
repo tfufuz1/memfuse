@@ -122,10 +122,11 @@ impl LsmStorage {
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create dir: {}", e)))?;
 
-        let key_manager = config
-            .encryption_passphrase
-            .as_ref()
-            .map(|p| Arc::new(KeyManager::new(p)));
+        let key_manager = if let Some(p) = &config.encryption_passphrase {
+            Some(Arc::new(KeyManager::new(p)?))
+        } else {
+            None
+        };
 
         let wal =
             Wal::open_with_key_manager(config.path.join("wal.log"), key_manager.clone()).await?;
@@ -353,7 +354,7 @@ impl StorageEngine for LsmStorage {
                             value: value.clone(),
                         },
                         seq_no,
-                    );
+                    )?;
                     let entry_size = key.len() + value.len() + 8;
                     let _ = self.budget.consume_memory(entry_size as u64);
                     state.wal.append(&entry).await?;
@@ -369,7 +370,7 @@ impl StorageEngine for LsmStorage {
                                 key: key.clone(),
                             },
                             seq_no,
-                        );
+                        )?;
                         let _ = self.budget.consume_memory(key.len() as u64 + 8);
                         state.wal.append(&entry).await?;
                         state

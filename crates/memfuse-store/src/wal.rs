@@ -83,19 +83,19 @@ pub struct WalEntry {
 
 impl WalEntry {
     /// Creates a new WAL entry with HMAC-SHA256 checksum.
-    pub fn new(op: WalOp, seq_no: u64) -> Self {
-        let checksum = Self::compute_checksum(&op, seq_no);
-        Self {
+    pub fn new(op: WalOp, seq_no: u64) -> Result<Self> {
+        let checksum = Self::compute_checksum(&op, seq_no)?;
+        Ok(Self {
             op,
             seq_no,
             checksum,
-        }
+        })
     }
 
-    fn compute_checksum(op: &WalOp, seq_no: u64) -> [u8; 32] {
+    fn compute_checksum(op: &WalOp, seq_no: u64) -> Result<[u8; 32]> {
         // Use a fixed key for integrity. WP-3.2 will later use derived keys for encryption.
         let mut mac = HmacSha256::new_from_slice(b"memfuse-integrity-key-v1")
-            .expect("HMAC can take key of any size");
+            .map_err(|e| MemFuseError::Storage(format!("HMAC init failed: {}", e)))?;
         mac.update(&seq_no.to_le_bytes());
         match op {
             WalOp::Put { key, value, .. } => {
@@ -108,7 +108,7 @@ impl WalEntry {
                 mac.update(key);
             }
         }
-        mac.finalize().into_bytes().into()
+        Ok(mac.finalize().into_bytes().into())
     }
 
     /// Serializes the entry to bytes.
@@ -366,7 +366,7 @@ impl Wal {
             // AGENT:10 DATE:2026-05-15 STATUS:READY
             // Ohne Verifikation werden korrupte Entries (Bit-Flip, Partial Write)
             // blind in die MemTable replayed → stille Datenkorrumpierung.
-            let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no);
+            let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no)?;
             if recomputed_checksum != stored_checksum {
                 tracing::warn!(
                     "WAL entry at offset {} has invalid checksum, truncating replay",
@@ -410,7 +410,7 @@ mod tests {
             key: b"key".to_vec(),
             value: b"value".to_vec(),
         };
-        let entry = WalEntry::new(op, 100);
+        let entry = WalEntry::new(op, 100).expect("create entry");
         let bytes = entry.to_bytes();
 
         // Manual verification of length
@@ -426,7 +426,7 @@ mod tests {
             tx_id: TxId::new(43),
             key: b"key2".to_vec(),
         };
-        let entry2 = WalEntry::new(op2, 101);
+        let entry2 = WalEntry::new(op2, 101).expect("create entry 2");
         let bytes2 = entry2.to_bytes();
         // 4 + 8 + 32 + 1 + 8 + 4 + key(4) = 61
         assert_eq!(bytes2.len(), 61);
