@@ -14,39 +14,31 @@ check:
     nix develop -c cargo clippy --all-targets -- -D warnings
     nix develop -c cargo check --all-targets --workspace
 
-# Modular check for memfuse-core
+# Modular check targets
 check-core:
     nix develop -c cargo check -p memfuse-core
 
-# Modular check for memfuse-store
 check-store:
     nix develop -c cargo check -p memfuse-store
 
-# Modular check for memfuse-index
 check-index:
     nix develop -c cargo check -p memfuse-index
 
-# Modular check for memfuse-db
 check-db:
     nix develop -c cargo check -p memfuse-db
 
-# Modular check for memfuse-text
 check-text:
     nix develop -c cargo check -p memfuse-text
 
-# Modular check for memfuse-runtime
 check-runtime:
     nix develop -c cargo check -p memfuse-runtime
 
-# Modular check for memfuse-orchestrator
 check-orchestrator:
     nix develop -c cargo check -p memfuse-orchestrator
 
-# Modular check for memfuse-checkpoint
 check-checkpoint:
     nix develop -c cargo check -p memfuse-checkpoint
 
-# Modular check for memfuse-py
 check-py:
     nix develop -c cargo check -p memfuse-py
 
