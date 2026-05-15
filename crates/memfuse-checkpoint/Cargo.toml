@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+description = "MemFuse — Point-in-time snapshots and recovery"
 
 [dependencies]
 memfuse-core = { workspace = true }
@@ -23,9 +24,6 @@ tracing = { workspace = true }
 memfuse-core = { workspace = true }
 memfuse-db = { workspace = true }
 memfuse-index = { workspace = true }
+memfuse-store = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
-memfuse-db = { workspace = true }
-memfuse-store = { workspace = true }
-memfuse-core = { workspace = true }
-serde_json = { workspace = true }

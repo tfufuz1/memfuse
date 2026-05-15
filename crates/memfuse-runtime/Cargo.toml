@@ -2,6 +2,7 @@
 name = "memfuse-runtime"
 version.workspace = true
 edition.workspace = true
+description = "MemFuse — Runtime management and task orchestration"
 license.workspace = true
 rust-version.workspace = true
 

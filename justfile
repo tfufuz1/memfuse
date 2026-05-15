@@ -14,6 +14,26 @@ check:
     nix develop -c cargo clippy --all-targets -- -D warnings
     nix develop -c cargo check --all-targets --workspace
 
+# Modular check for memfuse-core
+check-core:
+    nix develop -c cargo check -p memfuse-core
+
+# Modular check for memfuse-store
+check-store:
+    nix develop -c cargo check -p memfuse-store
+
+# Modular check for memfuse-index
+check-index:
+    nix develop -c cargo check -p memfuse-index
+
+# Modular check for memfuse-db
+check-db:
+    nix develop -c cargo check -p memfuse-db
+
+# Modular check for memfuse-text
+check-text:
+    nix develop -c cargo check -p memfuse-text
+
 # Modular check for memfuse-runtime
 check-runtime:
     nix develop -c cargo check -p memfuse-runtime
@@ -21,6 +41,49 @@ check-runtime:
 # Modular check for memfuse-orchestrator
 check-orchestrator:
     nix develop -c cargo check -p memfuse-orchestrator
+
+# Modular check for memfuse-checkpoint
+check-checkpoint:
+    nix develop -c cargo check -p memfuse-checkpoint
+
+# Modular check for memfuse-py
+check-py:
+    nix develop -c cargo check -p memfuse-py
+
+# DAG Integrity Check (Kernel & Peer Isolation)
+dag-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== DAG Integrity Check ==="
+    for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator; do
+      echo "Verifying $CRATE (L3 Kernel Isolation)..."
+      if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -v "$CRATE" | grep -q .; then
+        echo "❌ ERROR: $CRATE imports forbidden internal crates."
+        cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-"
+        exit 1
+      fi
+    done
+    echo "Verifying memfuse-store (L2 Peer Isolation)..."
+    if cargo tree -p memfuse-store --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-checkpoint|memfuse-py"; then
+      echo "❌ ERROR: memfuse-store imports L2 peers or higher layers."
+      exit 1
+    fi
+    echo "Verifying memfuse-index (L2 Peer Isolation)..."
+    if cargo tree -p memfuse-index --edges no-dev | grep -E -q "memfuse-db|memfuse-store|memfuse-text|memfuse-checkpoint|memfuse-py"; then
+      echo "❌ ERROR: memfuse-index imports L2 peers or higher layers."
+      exit 1
+    fi
+    echo "Verifying memfuse-text (L2 Peer Isolation)..."
+    if cargo tree -p memfuse-text --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-checkpoint|memfuse-py"; then
+      echo "❌ ERROR: memfuse-text imports forbidden crates (non-tracked)."
+      exit 1
+    fi
+    echo "Verifying memfuse-checkpoint (L2 Peer Isolation)..."
+    if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-py"; then
+      echo "❌ ERROR: memfuse-checkpoint imports L2 peers (non-tracked)."
+      exit 1
+    fi
+    echo "✅ DAG Integrity Check PASSED"
 
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)
 triple-test: check

@@ -2,6 +2,7 @@
 name = "memfuse-orchestrator"
 version.workspace = true
 edition.workspace = true
+description = "MemFuse — High-level agent orchestration and coordination"
 license.workspace = true
 rust-version.workspace = true
 
