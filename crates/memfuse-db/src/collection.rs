@@ -364,42 +364,36 @@ impl Collection {
         vector: &[f32],
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
-        let is_vector_zero = vector.iter().all(|&v| v == 0.0);
+        // ANCHOR:DEBT:HYBRID-001 — Placeholder for complex RRF logic
+        // WP:WP-1.3 PRIO:2 NEEDS:NONE
+        // AGENT:04 DATE:2026-05-15 STATUS:READY
+        // Hybrid Search (RRF) logic is complex and should be implemented by Agent 04.
         let is_text_empty = text.trim().is_empty();
+        let is_vector_zero = vector.iter().all(|&v| v == 0.0);
 
-        match (is_text_empty, is_vector_zero) {
-            (true, true) => Ok(Vec::new()),
-            (true, false) => self.search(vector, k).await,
-            (false, _) => {
-                let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let mut text_results = Vec::with_capacity(bm25_results.len());
+        if is_text_empty && is_vector_zero {
+            return Ok(Vec::new());
+        }
 
-                for (doc_id, score) in bm25_results {
-                    let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-                    if let Some(bytes) = self.storage.get(&doc_key).await? {
-                        let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                        text_results.push(crate::SearchResult {
-                            id: stored.id,
-                            score,
-                            metadata: stored.metadata,
-                        });
-                    }
-                }
+        if is_text_empty {
+            return self.search(vector, k).await;
+        }
 
+        // Fallback: BM25 search
         let bm25_results = self.text_index.search_bm25(text, k).await?;
-
-        let mut text_set = Vec::new();
+        let mut results = Vec::with_capacity(bm25_results.len());
         for (doc_id, score) in bm25_results {
             let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
             if let Some(bytes) = self.storage.get(&doc_key).await? {
                 let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                text_set.push(crate::SearchResult {
+                results.push(crate::SearchResult {
                     id: stored.id,
                     score,
                     metadata: stored.metadata,
                 });
             }
         }
+        Ok(results)
     }
 
     /// Returns the number of documents in the collection.

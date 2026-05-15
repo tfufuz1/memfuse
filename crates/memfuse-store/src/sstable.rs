@@ -36,7 +36,7 @@ pub fn create_block_cache(capacity_mb: usize) -> Arc<BlockCache> {
     Arc::new(RwLock::new(LruCache::new(
         // ANCHOR:DEBT:DEBT-UNWRAP-SSTABLE-37 — unwrap/expect in production code
         // WP:WP-0.0 PRIO:2 NEEDS:NONE
-        // AGENT:02 DATE:2026-05-12 STATUS:REVIEW
+        // AGENT:13 DATE:2026-05-15 STATUS:DONE
         // CREATED:2026-05-09 DEADLINE:NONE
         NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::MIN),
     )))
