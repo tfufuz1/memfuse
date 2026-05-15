@@ -39,8 +39,8 @@
 //! let results = db.search(&[0.1, 0.2, 0.3, 0.4], 5).await?;
 //! for result in &results {
 //!     println!("{}: score={:.3}", result.id, result.score);
-}
-
+//! }
+//!
 //! // Get by key
 //! let doc = db.get("doc-1").await?;
 //!
