@@ -1,3 +1,10 @@
+//! # MemFuse DB — Orchestrator Facade
+//!
+//! This crate provides the `MemFuse` facade, which orchestrates the storage,
+//! vector indexing, and full-text search components. It manages `Collection`
+//! namespaces and provides a unified API for hybrid search and data management.
+//!
+// AGENT:08 DATE:2026-05-18 STATUS:DONE
 // ANCHOR:ARCH:DB-001 — Orchestrator Facade (Getriebe — Layer 2).
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -32,8 +39,8 @@
 //! let results = db.search(&[0.1, 0.2, 0.3, 0.4], 5).await?;
 //! for result in &results {
 //!     println!("{}: score={:.3}", result.id, result.score);
-//! }
-//!
+}
+
 //! // Get by key
 //! let doc = db.get("doc-1").await?;
 //!

@@ -1,3 +1,9 @@
+//! # MemFuse Index — CSR Graph
+//!
+//! This module implements a Compressed Sparse Row (CSR) graph representation
+//! for memory-efficient and fast multi-hop relationship traversal.
+//!
+// AGENT:08 DATE:2026-05-18 STATUS:DONE
 // ANCHOR:ARCH:CSR-001 — Compressed Sparse Row (CSR) Graph für Memory-optimierte Relationen.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
