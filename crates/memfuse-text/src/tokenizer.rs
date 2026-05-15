@@ -15,7 +15,36 @@ fn get_stopwords() -> &'static HashSet<String> {
             "our", "you", "your", "he", "she", "his", "her", "it", "its", "they", "them", "their",
             "der", "die", "das", "ein", "eine", "einer", "eines", "dem", "den", "des", "am", "im",
             "in", "an", "zu", "für", "und", "oder", "ist", "sind", "war", "von", "mit", "auf",
-            "über",
+            "über", "als", "auch", "bei", "bin", "bis", "bist", "da", "dadurch", "daher", "darum",
+            "das", "daß", "dass", "dein", "deine", "dem", "den", "der", "des", "dessen", "deshalb",
+            "die", "dies", "dieser", "dieses", "doch", "dort", "du", "durch", "ein", "eine",
+            "einem", "einen", "einer", "eines", "er", "es", "euer", "eure", "für", "hatte",
+            "hatten", "hattest", "hattet", "hier", "hinter", "ich", "ihm", "ihn", "ihr", "ihre",
+            "im", "in", "ist", "ja", "jede", "jedem", "jeden", "jeder", "jedes", "jener", "jenes",
+            "jetzt", "kann", "können", "könnte", "machen", "man", "mein", "meine", "mit", "muß",
+            "musst", "müssen", "müßt", "nach", "nachdem", "nein", "nicht", "nun", "oder", "seid",
+            "sein", "seine", "sich", "sie", "sind", "soll", "sollen", "sollte", "sollten", "sonst",
+            "soweit", "sowie", "und", "unser", "unsere", "unter", "vom", "von", "vor", "wann",
+            "war", "waren", "warst", "wart", "was", "weg", "weil", "weiter", "welche", "welchem",
+            "welchen", "welcher", "welches", "wenn", "werde", "werden", "wie", "wir", "wo", "wollen",
+            "wollte", "wollten", "während", "würde", "würden", "zu", "zum", "zur", "zwar", "zwischen",
+            "about", "above", "after", "again", "against", "all", "am", "an", "any", "are", "aren't",
+            "as", "at", "be", "because", "been", "before", "being", "below", "between", "both",
+            "but", "by", "can't", "cannot", "could", "couldn't", "did", "didn't", "do", "does",
+            "doesn't", "doing", "don't", "down", "during", "each", "few", "further", "had",
+            "hadn't", "has", "hasn't", "have", "haven't", "having", "he", "he'd", "he'll", "he's",
+            "her", "here", "here's", "hers", "herself", "him", "himself", "his", "how", "how's",
+            "i'd", "i'll", "i'm", "i've", "if", "in", "into", "is", "isn't", "it", "it's", "its",
+            "itself", "let's", "me", "more", "most", "mustn't", "my", "myself", "no", "nor", "not",
+            "of", "off", "on", "once", "only", "or", "other", "ought", "our", "ours", "ourselves",
+            "out", "over", "own", "same", "shan't", "she", "she'd", "she'll", "she's", "should",
+            "shouldn't", "so", "some", "such", "than", "that", "that's", "the", "their", "theirs",
+            "them", "themselves", "then", "there", "there's", "these", "they", "they'd", "they'll",
+            "they're", "they've", "this", "those", "through", "to", "too", "under", "until", "up",
+            "very", "was", "wasn't", "we", "we'd", "we'll", "we're", "we've", "were", "weren't",
+            "what", "what's", "when", "when's", "where", "where's", "which", "while", "who",
+            "who's", "whom", "why", "why's", "with", "won't", "would", "wouldn't", "you", "you'd",
+            "you'll", "you're", "you've", "your", "yours", "yourself", "yourselves",
         ];
         words.into_iter().map(|w| w.to_string()).collect()
     })
@@ -54,12 +83,19 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
+            // POC for compound splitting and suffix extraction
             // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            let mut split = false;
+            for suffix in &["gericht", "schaft", "keit", "ung", "ismus"] {
+                if lower.ends_with(suffix) && lower.len() > suffix.len() + 2 {
+                    tokens.push(lower.clone());
+                    tokens.push(suffix.to_string());
+                    split = true;
+                    break;
+                }
+            }
+
+            if !split {
                 tokens.push(lower);
             }
         }
