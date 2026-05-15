@@ -367,39 +367,41 @@ impl Collection {
         let is_vector_zero = vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
 
-        match (is_text_empty, is_vector_zero) {
-            (true, true) => Ok(Vec::new()),
-            (true, false) => self.search(vector, k).await,
-            (false, _) => {
-                let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let mut text_results = Vec::with_capacity(bm25_results.len());
+        if is_text_empty && is_vector_zero {
+            return Ok(Vec::new());
+        }
 
-                for (doc_id, score) in bm25_results {
-                    let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-                    if let Some(bytes) = self.storage.get(&doc_key).await? {
-                        let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                        text_results.push(crate::SearchResult {
-                            id: stored.id,
-                            score,
-                            metadata: stored.metadata,
-                        });
-                    }
-                }
+        if is_text_empty {
+            return self.search(vector, k).await;
+        }
 
-        let bm25_results = self.text_index.search_bm25(text, k).await?;
-
-        let mut text_set = Vec::new();
-        for (doc_id, score) in bm25_results {
+        // Fetch BM25 results
+        let bm25_raw = self.text_index.search_bm25(text, k).await?;
+        let mut text_results = Vec::with_capacity(bm25_raw.len());
+        for (doc_id, score) in bm25_raw {
             let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
             if let Some(bytes) = self.storage.get(&doc_key).await? {
                 let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                text_set.push(crate::SearchResult {
+                text_results.push(crate::SearchResult {
                     id: stored.id,
                     score,
                     metadata: stored.metadata,
                 });
             }
         }
+
+        if is_vector_zero {
+            return Ok(text_results);
+        }
+
+        // Fetch Vector results
+        let vector_results = self.search(vector, k).await?;
+
+        // Fuse
+        Ok(crate::fusion::reciprocal_rank_fusion(
+            vec![text_results, vector_results],
+            k,
+        ))
     }
 
     /// Returns the number of documents in the collection.
