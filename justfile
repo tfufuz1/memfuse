@@ -57,25 +57,30 @@ dag-check:
     echo "=== DAG Integrity Check ==="
     for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator; do
         echo "Verifying $CRATE isolation..."
-        if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -v "$CRATE" | grep -q .; then
+        # L3 Kernel crates must not import any internal memfuse crates
+        if cargo tree -p "$CRATE" --edges no-dev | grep -E "memfuse-" | grep -v "$CRATE" | grep -q .; then
             echo "❌ ERROR: $CRATE imports forbidden internal crates."
-            cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-"
+            cargo tree -p "$CRATE" --edges no-dev | grep -E "memfuse-"
             exit 1
         fi
     done
 
-    echo "Verifying L2 peer isolation (Store/Index)..."
+    echo "Verifying L2 peer isolation..."
     if cargo tree -p memfuse-store --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-checkpoint|memfuse-py"; then
-        echo "❌ ERROR: memfuse-store violates DAG."
+        echo "❌ ERROR: memfuse-store violates DAG (imports L2 peers or higher)."
         exit 1
     fi
     if cargo tree -p memfuse-index --edges no-dev | grep -E -q "memfuse-db|memfuse-store|memfuse-text|memfuse-checkpoint|memfuse-py"; then
-        echo "❌ ERROR: memfuse-index violates DAG."
+        echo "❌ ERROR: memfuse-index violates DAG (imports L2 peers or higher)."
+        exit 1
+    fi
+    if cargo tree -p memfuse-text --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-store|memfuse-checkpoint|memfuse-py"; then
+        echo "❌ ERROR: memfuse-text violates DAG (imports L2 peers or higher)."
         exit 1
     fi
 
     echo "--- Known DAG Violations (Tracking) ---"
-    for VIOLATION in "memfuse-text:memfuse-store:DAG-001" "memfuse-checkpoint:memfuse-store:DAG-002" "memfuse-py:memfuse-db:DAG-003"; do
+    for VIOLATION in "memfuse-checkpoint:memfuse-store:DAG-002" "memfuse-py:memfuse-db:DAG-003"; do
         CRATE=${VIOLATION%%:*}
         TARGET=$(echo $VIOLATION | cut -d: -f2)
         ID=$(echo $VIOLATION | cut -d: -f3)
