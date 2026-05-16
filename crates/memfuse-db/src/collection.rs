@@ -7,6 +7,7 @@
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 // STATUS: Full Implementation für WP-1.2.
 
+use crate::filter::{choose_filter_strategy, FilterExpr, FilterStrategy};
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;
@@ -332,7 +333,82 @@ impl Collection {
         query_embedding: &[f32],
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
-        self.search_filtered(query_embedding, k, None).await
+        self.search_with_filter(query_embedding, k, None).await
+    }
+
+    /// Performs semantic vector search with an optional expression filter.
+    pub async fn search_with_filter(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: Option<FilterExpr>,
+    ) -> Result<Vec<crate::SearchResult>> {
+        // 1. Choose strategy (simplified: assume 0.1 selectivity for now if filter exists)
+        let selectivity = if filter.is_some() { 0.1 } else { 1.0 };
+        let strategy = choose_filter_strategy(selectivity, self.index.len().await);
+
+        match strategy {
+            FilterStrategy::PreFilter => {
+                // HNSW Pre-filtering
+                // Note: Current implementation of HNSW search_filtered is async but takes a sync closure.
+                // Performing I/O inside the closure via block_on is dangerous and can cause panics if not careful.
+                // We avoid it for now by defaulting to PostFilter if we are in a tokio context that doesn't allow block_on,
+                // but since we want to follow SPEC-SAOS-WP-5.4, we implement a safer version or fallback.
+
+                let filter_expr = Arc::new(filter);
+                let storage = Arc::clone(&self.storage);
+                let col = self.clone();
+
+                // To avoid block_on panic, we check if we can actually use it.
+                // In a real implementation, we should use a sync-safe cache or an async-friendly index.
+                let filter_fn = move |doc_id: DocId| {
+                    let doc_key = col.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+
+                    // SAFETY: This is a hacky way to do sync I/O in an async context.
+                    // In production, we'd use a metadata cache.
+                    let res = std::thread::scope(|s| {
+                        s.spawn(|| {
+                            tokio::runtime::Builder::new_current_thread()
+                                .enable_all()
+                                .build()
+                                .unwrap() // unwrap
+                                .block_on(storage.get(&doc_key))
+                        }).join().unwrap() // unwrap
+                    });
+
+                    if let Ok(Some(bytes)) = res {
+                        if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&bytes) {
+                            if let Some(expr) = filter_expr.as_ref() {
+                                return expr.matches(stored.metadata.as_ref().unwrap_or(&serde_json::Value::Null));
+                            }
+                        }
+                    }
+                    false
+                };
+
+                self.search_filtered(query, k, Some(&filter_fn)).await
+            }
+            FilterStrategy::PostFilter | FilterStrategy::Hybrid => {
+                // Post-filtering: request more from index to account for filtering
+                let oversample_k = if filter.is_some() { k * 5 } else { k };
+                let initial_results = self.search_filtered(query, oversample_k, None).await?;
+
+                if let Some(expr) = filter {
+                    let mut filtered = Vec::with_capacity(k);
+                    for r in initial_results {
+                        if expr.matches(r.metadata.as_ref().unwrap_or(&serde_json::Value::Null)) {
+                            filtered.push(r);
+                        }
+                        if filtered.len() >= k {
+                            break;
+                        }
+                    }
+                    Ok(filtered)
+                } else {
+                    Ok(initial_results.into_iter().take(k).collect())
+                }
+            }
+        }
     }
 
     /// Performs filtered semantic vector search in the collection.
@@ -366,25 +442,48 @@ impl Collection {
         vector: &[f32],
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
+        self.hybrid_search_with_filter(text, vector, k, None).await
+    }
+
+    /// Performs hybrid search with an optional expression filter.
+    pub async fn hybrid_search_with_filter(
+        &self,
+        text: &str,
+        vector: &[f32],
+        k: usize,
+        filter: Option<FilterExpr>,
+    ) -> Result<Vec<crate::SearchResult>> {
         let is_vector_zero = vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
 
         match (is_text_empty, is_vector_zero) {
             (true, true) => Ok(Vec::new()),
-            (true, false) => self.search(vector, k).await,
+            (true, false) => self.search_with_filter(vector, k, filter).await,
             (false, is_v_zero) => {
-                let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let mut text_results = Vec::with_capacity(bm25_results.len());
+                // BM25 results are already ranked. We apply filtering during/after retrieval.
+                // Oversample to allow for filtering
+                let oversample_k = if filter.is_some() { k * 10 } else { k };
+                let bm25_results = self.text_index.search_bm25(text, oversample_k).await?;
 
+                // Fetch and filter in parallel if many results
+                let mut text_results = Vec::new();
                 for (doc_id, score) in bm25_results {
                     let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
                     if let Some(bytes) = self.storage.get(&doc_key).await? {
                         let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                        if let Some(ref expr) = filter {
+                            if !expr.matches(stored.metadata.as_ref().unwrap_or(&serde_json::Value::Null)) {
+                                continue;
+                            }
+                        }
                         text_results.push(crate::SearchResult {
                             id: stored.id,
                             score,
                             metadata: stored.metadata,
                         });
+                        if text_results.len() >= k {
+                            break;
+                        }
                     }
                 }
 
@@ -392,7 +491,7 @@ impl Collection {
                     return Ok(text_results);
                 }
 
-                let vector_results = self.search(vector, k).await?;
+                let vector_results = self.search_with_filter(vector, k, filter).await?;
                 Ok(crate::fusion::reciprocal_rank_fusion(
                     vec![vector_results, text_results],
                     k,
