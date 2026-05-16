@@ -33,7 +33,9 @@ impl KeyManager {
         let hk = Hkdf::<Sha256>::new(Some(salt), &self.key);
         let mut key = [0u8; 32];
         hk.expand(b"memfuse-hmac-sha256-key", &mut key)
-            .map_err(|e| MemFuseError::Storage(format!("HKDF integrity expansion failed: {}", e)))?;
+            .map_err(|e| {
+                MemFuseError::Storage(format!("HKDF integrity expansion failed: {}", e))
+            })?;
         Ok(key)
     }
 

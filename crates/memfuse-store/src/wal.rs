@@ -482,7 +482,8 @@ mod tests {
             key: b"key".to_vec(),
             value: b"value".to_vec(),
         };
-        let entry = WalEntry::try_new(op, 100, b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0").expect("try_new");
+        let entry = WalEntry::try_new(op, 100, b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0")
+            .expect("try_new");
         let bytes = entry.to_bytes();
 
         // Manual verification of length
@@ -498,7 +499,8 @@ mod tests {
             tx_id: TxId::new(43),
             key: b"key2".to_vec(),
         };
-        let entry2 = WalEntry::try_new(op2, 101, b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0").expect("try_new");
+        let entry2 = WalEntry::try_new(op2, 101, b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0")
+            .expect("try_new");
         let bytes2 = entry2.to_bytes();
         // 4 + 8 + 32 + 1 + 8 + 4 + key(4) = 61
         assert_eq!(bytes2.len(), 61);

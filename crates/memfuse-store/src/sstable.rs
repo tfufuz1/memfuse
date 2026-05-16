@@ -272,22 +272,23 @@ impl SstableReader {
         key_manager: Option<Arc<KeyManager>>,
     ) -> Result<Self> {
         let path_buf = path.as_ref().to_path_buf();
-        let (mmap, file_size) = tokio::task::spawn_blocking(move || -> std::io::Result<(memmap2::Mmap, u64)> {
-            let file = std::fs::File::open(&path_buf)?;
-            let metadata = file.metadata()?;
-            let file_size = metadata.len();
-            // ANCHOR:SAFETY:MMAP-001 — Memory Mapping of SSTable file
-            // WP:WP-4.1 PRIO:1 NEEDS:NONE
-            // AGENT:02 DATE:2026-05-16 STATUS:REVIEW
-            // BEGRÜNDUNG: SSTables sind im LSM-Tree unveränderlich. Memory Mapping
-            // ermöglicht effizienten Zugriff ohne explizite Syscalls.
-            #[allow(unsafe_code)]
-            let mmap = unsafe { memmap2::Mmap::map(&file)? };
-            Ok((mmap, file_size))
-        })
-        .await
-        .map_err(|e| MemFuseError::Storage(format!("Join error: {}", e)))?
-        .map_err(|e| MemFuseError::Storage(format!("Mmap failed: {}", e)))?;
+        let (mmap, file_size) =
+            tokio::task::spawn_blocking(move || -> std::io::Result<(memmap2::Mmap, u64)> {
+                let file = std::fs::File::open(&path_buf)?;
+                let metadata = file.metadata()?;
+                let file_size = metadata.len();
+                // ANCHOR:SAFETY:MMAP-001 — Memory Mapping of SSTable file
+                // WP:WP-4.1 PRIO:1 NEEDS:NONE
+                // AGENT:02 DATE:2026-05-16 STATUS:REVIEW
+                // BEGRÜNDUNG: SSTables sind im LSM-Tree unveränderlich. Memory Mapping
+                // ermöglicht effizienten Zugriff ohne explizite Syscalls.
+                #[allow(unsafe_code)]
+                let mmap = unsafe { memmap2::Mmap::map(&file)? };
+                Ok((mmap, file_size))
+            })
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("Join error: {}", e)))?
+            .map_err(|e| MemFuseError::Storage(format!("Mmap failed: {}", e)))?;
 
         if file_size < 12 {
             return Err(MemFuseError::Storage("SSTable file too small".into()));
@@ -966,7 +967,10 @@ mod tests {
         for i in 0..100 {
             let key = format!("key-{:03}", i);
             let val = format!("val-{:03}", i);
-            builder.add(key.as_bytes(), val.as_bytes(), i as u64).await.expect("add");
+            builder
+                .add(key.as_bytes(), val.as_bytes(), i as u64)
+                .await
+                .expect("add");
         }
         builder.finish().await.expect("finish");
 
@@ -974,7 +978,11 @@ mod tests {
         for i in 0..100 {
             let key = format!("key-{:03}", i);
             let expected = format!("val-{:03}", i);
-            let res = reader.get(key.as_bytes()).await.expect("get").expect("exists");
+            let res = reader
+                .get(key.as_bytes())
+                .await
+                .expect("get")
+                .expect("exists");
             assert_eq!(res.0.as_ref(), expected.as_bytes());
             assert_eq!(res.1, i as u64);
         }
@@ -991,7 +999,10 @@ mod tests {
         for i in 0..100 {
             let key = format!("key-{:03}", i);
             let val = format!("val-{:03}", i);
-            builder.add(key.as_bytes(), val.as_bytes(), i as u64).await.expect("add");
+            builder
+                .add(key.as_bytes(), val.as_bytes(), i as u64)
+                .await
+                .expect("add");
         }
         builder.finish().await.expect("finish");
 
