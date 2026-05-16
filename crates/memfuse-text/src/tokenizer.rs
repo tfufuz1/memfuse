@@ -48,18 +48,25 @@ impl Tokenizer for GermanMorphTokenizer {
         let stopwords = get_stopwords();
         let mut tokens = Vec::new();
 
+        let suffixes = ["gericht", "amt", "haus", "stelle", "wesen"];
+
         for word in text.unicode_words() {
             let lower = word.to_lowercase();
             if stopwords.contains(&lower) {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            let mut split = false;
+            for suffix in suffixes {
+                if lower.ends_with(suffix) && lower.len() > suffix.len() {
+                    tokens.push(lower.clone());
+                    tokens.push(suffix.to_string());
+                    split = true;
+                    break;
+                }
+            }
+
+            if !split {
                 tokens.push(lower);
             }
         }
@@ -100,5 +107,15 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+
+        let tokens = tokenizer.tokenize("Arbeitsamt Krankenhaus Sammelstelle Gesundheitswesen");
+        assert!(tokens.contains(&"arbeitsamt".to_string()));
+        assert!(tokens.contains(&"amt".to_string()));
+        assert!(tokens.contains(&"krankenhaus".to_string()));
+        assert!(tokens.contains(&"haus".to_string()));
+        assert!(tokens.contains(&"sammelstelle".to_string()));
+        assert!(tokens.contains(&"stelle".to_string()));
+        assert!(tokens.contains(&"gesundheitswesen".to_string()));
+        assert!(tokens.contains(&"wesen".to_string()));
     }
 }
