@@ -343,8 +343,18 @@ impl Collection {
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<crate::SearchResult>> {
         let scored_docs = self.index.search_filtered(query, k, filter).await?;
-        let mut results = Vec::with_capacity(scored_docs.len());
+        self.hydrate_from_scored(scored_docs).await
+    }
 
+    async fn hydrate_from_scored(
+        &self,
+        scored_docs: Vec<memfuse_core::ScoredDocument>,
+    ) -> Result<Vec<crate::SearchResult>> {
+        if scored_docs.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut results = Vec::with_capacity(scored_docs.len());
         for sd in scored_docs {
             let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
             if let Some(bytes) = self.storage.get(&doc_key).await? {
@@ -352,6 +362,29 @@ impl Collection {
                 results.push(crate::SearchResult {
                     id: stored.id,
                     score: sd.score,
+                    metadata: stored.metadata,
+                });
+            }
+        }
+        Ok(results)
+    }
+
+    async fn hydrate_from_tuples(
+        &self,
+        scored_tuples: Vec<(DocId, f32)>,
+    ) -> Result<Vec<crate::SearchResult>> {
+        if scored_tuples.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut results = Vec::with_capacity(scored_tuples.len());
+        for (doc_id, score) in scored_tuples {
+            let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+            if let Some(bytes) = self.storage.get(&doc_key).await? {
+                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                results.push(crate::SearchResult {
+                    id: stored.id,
+                    score,
                     metadata: stored.metadata,
                 });
             }
@@ -374,19 +407,7 @@ impl Collection {
             (true, false) => self.search(vector, k).await,
             (false, is_v_zero) => {
                 let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let mut text_results = Vec::with_capacity(bm25_results.len());
-
-                for (doc_id, score) in bm25_results {
-                    let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-                    if let Some(bytes) = self.storage.get(&doc_key).await? {
-                        let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                        text_results.push(crate::SearchResult {
-                            id: stored.id,
-                            score,
-                            metadata: stored.metadata,
-                        });
-                    }
-                }
+                let text_results = self.hydrate_from_tuples(bm25_results).await?;
 
                 if is_v_zero {
                     return Ok(text_results);
