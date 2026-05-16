@@ -329,11 +329,7 @@ impl PyMemFuse {
     }
 
     #[pyo3(signature = (prefix=""))]
-    pub fn scan_prefix(
-        &self,
-        py: Python<'_>,
-        prefix: &str,
-    ) -> PyResult<Vec<(String, PyObject)>> {
+    pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<(String, PyObject)>> {
         let rt = get_runtime()?;
         let results = py
             .allow_threads(|| rt.block_on(self.inner.scan_prefix(prefix)))
@@ -614,11 +610,7 @@ impl PyCollection {
     }
 
     #[pyo3(signature = (prefix=""))]
-    pub fn scan_prefix(
-        &self,
-        py: Python<'_>,
-        prefix: &str,
-    ) -> PyResult<Vec<(String, PyObject)>> {
+    pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<(String, PyObject)>> {
         let rt = get_runtime()?;
         let results = py
             .allow_threads(|| rt.block_on(self.inner.scan_prefix(prefix)))
