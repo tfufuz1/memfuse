@@ -40,7 +40,8 @@ impl InvertedIndex {
     }
 
     fn key(&self, suffix: &str) -> Vec<u8> {
-        let mut k = self.prefix.clone();
+        let mut k = Vec::with_capacity(self.prefix.len() + suffix.len());
+        k.extend_from_slice(&self.prefix);
         k.extend_from_slice(suffix.as_bytes());
         k
     }
@@ -50,9 +51,9 @@ impl InvertedIndex {
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
 
-        let mut tfs = HashMap::new();
-        for t in &tokens {
-            *tfs.entry(t.clone()).or_insert(0u32) += 1;
+        let mut tfs = HashMap::with_capacity(tokens.len());
+        for t in tokens {
+            *tfs.entry(t).or_insert(0u32) += 1;
         }
 
         // Check if document already exists to adjust total_tokens and total_docs
@@ -112,8 +113,10 @@ impl InvertedIndex {
             .await?;
 
         // Store forward index (unique terms)
-        let mut unique_terms: Vec<String> = tfs.keys().cloned().collect();
-        unique_terms.sort();
+        let mut tfs_vec: Vec<(String, u32)> = tfs.into_iter().collect();
+        tfs_vec.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let unique_terms: Vec<&str> = tfs_vec.iter().map(|(k, _)| k.as_str()).collect();
         let fw_bytes = bincode::serde::encode_to_vec(&unique_terms, bincode::config::standard())
             .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
         self.storage.put(tx, &fw_key, &fw_bytes).await?;
@@ -158,7 +161,7 @@ impl InvertedIndex {
         }
 
         // Update posting lists
-        for (term, tf) in tfs {
+        for (term, tf) in tfs_vec {
             let pl_key = self.key(&format!("pl:{}", term));
             let mut pl: Vec<(DocId, u32)> = Vec::new();
 

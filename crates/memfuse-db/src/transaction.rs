@@ -37,9 +37,9 @@ impl<'a> DbTransaction<'a> {
         Self {
             tx_id,
             collection,
-            staged_forward_keys: Mutex::new(Vec::new()),
-            staged_reverse_keys: Mutex::new(Vec::new()),
-            staged_doc_ids: Mutex::new(Vec::new()),
+            staged_forward_keys: Mutex::new(Vec::with_capacity(16)),
+            staged_reverse_keys: Mutex::new(Vec::with_capacity(16)),
+            staged_doc_ids: Mutex::new(Vec::with_capacity(16)),
         }
     }
 
