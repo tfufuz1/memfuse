@@ -196,6 +196,18 @@ impl<T: Clone> TxBuffer<T> {
         let shard = self.shards[shard_idx].read();
         shard.ops.get(&tx).map(|(ops, _)| ops.clone())
     }
+
+    /// Allows read-only access to staged operations for a transaction via a closure.
+    ///
+    /// This avoids cloning the entire operations vector.
+    pub fn inspect_ops<F, R>(&self, tx: TxId, f: F) -> Option<R>
+    where
+        F: FnOnce(&[IndexOp<T>]) -> R,
+    {
+        let shard_idx = self.shard_idx(tx);
+        let shard = self.shards[shard_idx].read();
+        shard.ops.get(&tx).map(|(ops, _)| f(ops))
+    }
 }
 
 impl<T: Clone> Default for TxBuffer<T> {

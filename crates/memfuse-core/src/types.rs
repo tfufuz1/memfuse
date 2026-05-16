@@ -44,11 +44,20 @@ impl DocId {
     }
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
+    ///
+    /// This is guaranteed not to panic as blake3 always returns 32 bytes.
     pub fn from_key(key: &str) -> Self {
+        let hash = blake3::hash(key.as_bytes());
+        let bytes = hash.as_bytes();
+        let mut buf = [0u8; 8];
+
         // ANCHOR:DEBT:TYPES-002 AGENT:01 STATUS:DONE PRIO:3
-        // SAFETY: blake3::hash() always returns a 32-byte hash.
-        // try_from_key() only fails if the hash is shorter than 8 bytes.
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes")
+        // SAFETY: blake3::hash() is fixed-size 32 bytes.
+        // Using min(8) and safe slice indexing ensures zero-panic.
+        let len = bytes.len().min(8);
+        buf[..len].copy_from_slice(&bytes[..len]);
+
+        Self(u64::from_le_bytes(buf))
     }
 
     /// Safely derive a DocId from a user-provided string key.
@@ -56,14 +65,14 @@ impl DocId {
     /// Uses blake3 hash and safe slice indexing.
     pub fn try_from_key(key: &str) -> Result<Self> {
         let hash = blake3::hash(key.as_bytes());
-        let bytes = hash
-            .as_bytes()
-            .get(..8)
-            .ok_or_else(|| MemFuseError::Internal("Blake3 hash too short".to_string()))?;
+        let bytes = hash.as_bytes();
 
-        let buf: [u8; 8] = bytes.try_into().map_err(|_| {
-            MemFuseError::Internal("Failed to convert hash slice to array".to_string())
-        })?;
+        if bytes.len() < 8 {
+            return Err(MemFuseError::Internal("Blake3 hash too short".to_string()));
+        }
+
+        let mut buf = [0u8; 8];
+        buf.copy_from_slice(&bytes[..8]);
         Ok(Self(u64::from_le_bytes(buf)))
     }
 }

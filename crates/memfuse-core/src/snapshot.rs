@@ -93,17 +93,25 @@ impl SnapshotRegistry {
         // It allows the LSM compaction to garbage collect ALL tombstones, as
         // all existing records will have seq_no < u64::MAX.
         let min = active.keys().next().copied().unwrap_or(u64::MAX);
-        self.min_active_seqno.store(min, Ordering::Release);
+
+        // Optimization: skip store if value hasn't changed.
+        if self.min_active_seqno.load(Ordering::Relaxed) != min {
+            self.min_active_seqno.store(min, Ordering::Release);
+        }
     }
 }
 
 /// RAII Guard for an active snapshot.
+///
+/// When this guard is dropped, the snapshot is automatically
+/// deregistered from the registry.
 pub struct SnapshotGuard {
     registry: Arc<SnapshotRegistry>,
     seq_no: u64,
 }
 
 impl SnapshotGuard {
+    /// Returns the sequence number associated with this snapshot.
     pub fn seq_no(&self) -> u64 {
         self.seq_no
     }
