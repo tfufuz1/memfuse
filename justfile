@@ -64,13 +64,25 @@ dag-check:
         fi
     done
 
-    echo "Verifying L2 peer isolation (Store/Index)..."
+    echo "Verifying L2/L1 peer isolation (Store/Index/Text/Checkpoint/Db)..."
     if cargo tree -p memfuse-store --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-checkpoint|memfuse-py"; then
         echo "❌ ERROR: memfuse-store violates DAG."
         exit 1
     fi
     if cargo tree -p memfuse-index --edges no-dev | grep -E -q "memfuse-db|memfuse-store|memfuse-text|memfuse-checkpoint|memfuse-py"; then
         echo "❌ ERROR: memfuse-index violates DAG."
+        exit 1
+    fi
+    if cargo tree -p memfuse-text --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-checkpoint|memfuse-py"; then
+        echo "❌ ERROR: memfuse-text violates DAG."
+        exit 1
+    fi
+    if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-py"; then
+        echo "❌ ERROR: memfuse-checkpoint violates DAG."
+        exit 1
+    fi
+    if cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py"; then
+        echo "❌ ERROR: memfuse-db violates DAG."
         exit 1
     fi
 

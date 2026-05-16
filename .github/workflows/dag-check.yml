@@ -28,28 +28,34 @@ jobs:
             fi
           done
 
-      - name: Check L2 peer isolation (store, index, text, checkpoint)
+      - name: Check L2/L1 isolation (store, index, text, checkpoint, db)
         run: |
           set -e
-          echo "Verifying memfuse-store does not import L2 peers..."
+          echo "Verifying memfuse-store isolation..."
           if cargo tree -p memfuse-store --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-checkpoint|memfuse-py"; then
-            echo "ERROR: memfuse-store imports L2 peers or higher layers."
+            echo "ERROR: memfuse-store imports higher layer or peer crates."
             exit 1
           fi
-          echo "Verifying memfuse-index does not import L2 peers..."
+          echo "Verifying memfuse-index isolation..."
           if cargo tree -p memfuse-index --edges no-dev | grep -E -q "memfuse-db|memfuse-store|memfuse-text|memfuse-checkpoint|memfuse-py"; then
-            echo "ERROR: memfuse-index imports L2 peers or higher layers."
+            echo "ERROR: memfuse-index imports higher layer or peer crates."
             exit 1
           fi
-          echo "Verifying memfuse-text does not import L2 peers..."
-          if cargo tree -p memfuse-text --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-store|memfuse-checkpoint|memfuse-py"; then
-            echo "ERROR: memfuse-text imports forbidden crates."
+          echo "Verifying memfuse-text isolation..."
+          # Note: DAG-001 (memfuse-store) is tracked below
+          if cargo tree -p memfuse-text --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-checkpoint|memfuse-py"; then
+            echo "ERROR: memfuse-text imports forbidden higher layer or peer crates."
             exit 1
           fi
-          echo "Verifying memfuse-checkpoint does not import L2 peers (except tracked)..."
-          # Excluding memfuse-store from the immediate failure to allow tracking in the next step
+          echo "Verifying memfuse-checkpoint isolation..."
+          # Note: DAG-002 (memfuse-store) is tracked below
           if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-py"; then
-            echo "ERROR: memfuse-checkpoint imports L2 peers (beyond tracked exceptions)."
+            echo "ERROR: memfuse-checkpoint imports forbidden higher layer or peer crates."
+            exit 1
+          fi
+          echo "Verifying memfuse-db isolation..."
+          if cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py"; then
+            echo "ERROR: memfuse-db imports higher layer crates."
             exit 1
           fi
 
