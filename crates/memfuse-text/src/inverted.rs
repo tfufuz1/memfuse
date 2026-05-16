@@ -1,7 +1,10 @@
 //! LSM-backed Inverted Index.
 
 use crate::tokenizer::{tokenize, DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
-use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId};
+use async_trait::async_trait;
+use memfuse_core::{
+    DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -353,6 +356,65 @@ impl InvertedIndex {
     }
 }
 
+#[async_trait]
+impl TextIndex for InvertedIndex {
+    async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
+        let results = self.search_bm25(query, k).await?;
+        Ok(results
+            .into_iter()
+            .map(|(doc_id, score)| ScoredDocument { doc_id, score })
+            .collect())
+    }
+
+    async fn insert(&self, tx: TxId, id: DocId, text: &str) -> Result<()> {
+        self.upsert_document(tx, id, text).await
+    }
+
+    async fn delete(&self, tx: TxId, id: DocId) -> Result<()> {
+        self.delete_document(tx, id).await
+    }
+
+    async fn commit(&self, tx: TxId) -> Result<()> {
+        self.storage.commit(tx).await
+    }
+
+    async fn rollback(&self, tx: TxId) -> Result<()> {
+        self.storage.rollback(tx).await
+    }
+
+    async fn stats(&self) -> Result<TextIndexStats> {
+        let total_docs_key = self.key("meta:total_docs");
+        let mut total_docs = 0u64;
+        if let Some(bytes) = self.storage.get(&total_docs_key).await? {
+            if bytes.len() == 8 {
+                total_docs = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
+                );
+            }
+        }
+
+        let total_tok_key = self.key("meta:total_tokens");
+        let mut total_tokens = 0u64;
+        if let Some(bytes) = self.storage.get(&total_tok_key).await? {
+            if bytes.len() == 8 {
+                total_tokens =
+                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid total_tokens length".into())
+                    })?);
+            }
+        }
+
+        Ok(TextIndexStats {
+            num_documents: total_docs as usize,
+            num_tokens: total_tokens as usize,
+            memory_usage_bytes: 0,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -546,6 +608,52 @@ mod tests {
         storage.commit(tx3).await?;
 
         assert_eq!(index.search_bm25("python", 10).await?.len(), 0);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_text_index_trait_implementation() -> Result<()> {
+        let tmp = TempDir::new().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(
+            LsmStorage::new(config)
+                .await
+                .map_err(|e| MemFuseError::Storage(e.to_string()))?,
+        );
+        let index: Arc<dyn TextIndex> = Arc::new(InvertedIndex::new(storage.clone(), "trait_test"));
+
+        let tx = TxId::new(100);
+        let doc_id = DocId::new(100);
+
+        index
+            .insert(tx, doc_id, "Testing the TextIndex trait.")
+            .await?;
+        index.commit(tx).await?;
+
+        // Verify search
+        let results = index.search("testing", 10).await?;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].doc_id, doc_id);
+
+        // Verify stats
+        let stats = index.stats().await?;
+        assert_eq!(stats.num_documents, 1);
+        assert!(stats.num_tokens >= 3); // "testing", "textindex", "trait"
+
+        // Verify delete
+        let tx2 = TxId::new(101);
+        index.delete(tx2, doc_id).await?;
+        index.commit(tx2).await?;
+
+        let results_after = index.search("testing", 10).await?;
+        assert_eq!(results_after.len(), 0);
+
+        let stats_after = index.stats().await?;
+        assert_eq!(stats_after.num_documents, 0);
+
         Ok(())
     }
 }
