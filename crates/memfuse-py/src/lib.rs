@@ -78,9 +78,38 @@ pub struct PyDocument {
     pub metadata: Option<PyObject>,
 }
 
+/// Provider for local or remote embeddings.
+#[pyclass(name = "EmbeddingProvider", get_all)]
+#[derive(Clone)]
+pub struct PyEmbeddingProvider {
+    /// Path to the model file.
+    pub model_path: String,
+    /// Runtime to use (e.g., "ort").
+    pub runtime: String,
+}
+
+#[pymethods]
+impl PyEmbeddingProvider {
+    /// Creates a local embedding provider (GS-06).
+    #[staticmethod]
+    #[pyo3(signature = (model_path, runtime="ort"))]
+    pub fn local(model_path: String, runtime: &str) -> Self {
+        Self {
+            model_path,
+            runtime: runtime.to_string(),
+        }
+    }
+}
+
 #[pyclass(unsendable, name = "Db")]
 pub struct PyMemFuse {
-    inner: Arc<MemFuse>,
+    pub inner: Arc<MemFuse>,
+    #[pyo3(get)]
+    pub encryption: bool,
+    #[pyo3(get)]
+    pub network: bool,
+    #[pyo3(get)]
+    pub embedding: Option<PyEmbeddingProvider>,
 }
 
 #[pymethods]
@@ -299,8 +328,15 @@ impl PyCollection {
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536))]
-fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<PyMemFuse> {
+#[pyo3(signature = (path, dimension=1536, encryption=false, network=true, embedding=None))]
+fn open(
+    py: Python<'_>,
+    path: &str,
+    dimension: usize,
+    encryption: bool,
+    network: bool,
+    embedding: Option<PyEmbeddingProvider>,
+) -> PyResult<PyMemFuse> {
     let rt = get_runtime()?;
     let config = MemFuseConfig {
         dimension,
@@ -313,6 +349,9 @@ fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<PyMemFuse> {
 
     Ok(PyMemFuse {
         inner: Arc::new(db),
+        encryption,
+        network,
+        embedding,
     })
 }
 
@@ -323,5 +362,6 @@ fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()
     m.add_class::<PyCollection>()?;
     m.add_class::<PySearchResult>()?;
     m.add_class::<PyDocument>()?;
+    m.add_class::<PyEmbeddingProvider>()?;
     Ok(())
 }
