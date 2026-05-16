@@ -373,13 +373,17 @@ impl Collection {
                                 .build()
                                 .unwrap() // unwrap
                                 .block_on(storage.get(&doc_key))
-                        }).join().unwrap() // unwrap
+                        })
+                        .join()
+                        .unwrap() // unwrap
                     });
 
                     if let Ok(Some(bytes)) = res {
                         if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&bytes) {
                             if let Some(expr) = filter_expr.as_ref() {
-                                return expr.matches(stored.metadata.as_ref().unwrap_or(&serde_json::Value::Null));
+                                return expr.matches(
+                                    stored.metadata.as_ref().unwrap_or(&serde_json::Value::Null),
+                                );
                             }
                         }
                     }
@@ -472,7 +476,9 @@ impl Collection {
                     if let Some(bytes) = self.storage.get(&doc_key).await? {
                         let stored: StoredDocument = serde_json::from_slice(&bytes)?;
                         if let Some(ref expr) = filter {
-                            if !expr.matches(stored.metadata.as_ref().unwrap_or(&serde_json::Value::Null)) {
+                            if !expr.matches(
+                                stored.metadata.as_ref().unwrap_or(&serde_json::Value::Null),
+                            ) {
                                 continue;
                             }
                         }

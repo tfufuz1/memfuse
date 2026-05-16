@@ -1,4 +1,7 @@
 //! Advanced Metadata Filtering for MemFuse.
+// ANCHOR:TODO:FILTER-001 — Metadata Filtering Logic
+// WP:WP-4.2 PRIO:1 NEEDS:NONE
+// AGENT:04 DATE:2026-05-16 STATUS:DONE
 
 use serde::{Deserialize, Serialize};
 
@@ -27,10 +30,7 @@ pub enum FilterStrategy {
 /// Chooses the most efficient filter strategy based on estimated selectivity.
 ///
 /// selectivity: 0.0 = matches nothing, 1.0 = matches everything.
-pub fn choose_filter_strategy(
-    filter_selectivity: f32,
-    _index_size: usize,
-) -> FilterStrategy {
+pub fn choose_filter_strategy(filter_selectivity: f32, _index_size: usize) -> FilterStrategy {
     match filter_selectivity {
         s if s < 0.05 => FilterStrategy::PreFilter, // High selectivity -> PreFilter
         s if s > 0.50 => FilterStrategy::PostFilter, // Low selectivity -> PostFilter
