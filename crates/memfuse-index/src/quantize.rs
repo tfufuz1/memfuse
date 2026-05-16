@@ -1,7 +1,7 @@
 //! Scalar Quantization (SQ8) for HNSW Index.
 // ANCHOR:TODO:QUANT-001 — Optimiere und finalisiere die SQ8 Quantization impl, repariere Cast-Bugs.
 // WP:WP-2.2 PRIO:1 NEEDS:NONE
-// AGENT:@JULES-03 DATE:2026-05-15 STATUS:DONE
+// AGENT:03 DATE:2026-05-16 STATUS:DONE
 // TEST: cargo bench -p memfuse-index -- quantization
 // DONE: Performance- und Recall Metriken sind stabil.
 // SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
@@ -15,7 +15,8 @@ use memfuse_core::DistanceMetric;
 pub struct ScalarQuantizer {
     pub min: f32,
     pub max: f32,
-    pub inv_255_range: f32,
+    pub scale: f32,
+    pub inv_scale: f32,
     pub dimension: usize,
 }
 
@@ -26,7 +27,8 @@ impl ScalarQuantizer {
             return Self {
                 min: 0.0,
                 max: 1.0,
-                inv_255_range: 1.0 / 255.0,
+                scale: 255.0,
+                inv_scale: 1.0 / 255.0,
                 dimension,
             };
         }
@@ -54,35 +56,27 @@ impl ScalarQuantizer {
         Self {
             min,
             max,
-            inv_255_range: range / 255.0,
+            scale: 255.0 / range,
+            inv_scale: range / 255.0,
             dimension,
         }
     }
 
     /// Quantizes an `f32` vector to `u8`.
     pub fn quantize(&self, vector: &[f32]) -> Vec<u8> {
-        let range = self.max - self.min;
-        let inv_range = if range > 0.0 { 1.0 / range } else { 0.0 };
         vector
             .iter()
             .map(|&v| {
                 let clamped = v.clamp(self.min, self.max);
-                let normalized = (clamped - self.min) * inv_range;
                 // ANCHOR:PERF:CAST-001 — Sicherer Integer-Cast mit Sättigung
                 // WP:WP-0.0 PRIO:2 NEEDS:NONE
-                // AGENT:03 DATE:2026-05-15 STATUS:DONE
+                // AGENT:03 DATE:2026-05-16 STATUS:DONE
                 // CREATED:2026-05-09 DEADLINE:NONE
-                // FUNDORT: memfuse-index/src/quantize.rs:50
-                // RISIKO: Cast-without-check kann crashen oder falsche Daten liefern.
-                // BEHEBUNG: TryFrom oder korrekte Sättigung.
-                let val = (normalized * 255.0).round();
-                if val.is_nan() || val <= 0.0 {
-                    0
-                } else if val >= 255.0 {
-                    255
-                } else {
-                    val as u8
-                }
+                // FUNDORT: memfuse-index/src/quantize.rs
+                // BEHEBUNG: Saturated casting via clamp and round.
+                ((clamped - self.min) * self.scale)
+                    .round()
+                    .clamp(0.0, 255.0) as u8
             })
             .collect()
     }
@@ -91,7 +85,7 @@ impl ScalarQuantizer {
     pub fn dequantize(&self, vector: &[u8]) -> Vec<f32> {
         vector
             .iter()
-            .map(|&v| (v as f32) * self.inv_255_range + self.min)
+            .map(|&v| (v as f32) * self.inv_scale + self.min)
             .collect()
     }
 
@@ -116,7 +110,7 @@ impl ScalarQuantizer {
                 let mut norm_a = 0.0;
                 let mut norm_b = 0.0;
                 for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = (y_q as f32) * self.inv_255_range + self.min;
+                    let y = (y_q as f32) * self.inv_scale + self.min;
                     dot += x * y;
                     norm_a += x * x;
                     norm_b += y * y;
@@ -129,7 +123,7 @@ impl ScalarQuantizer {
             }
             DistanceMetric::Euclidean => {
                 for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = (y_q as f32) * self.inv_255_range + self.min;
+                    let y = (y_q as f32) * self.inv_scale + self.min;
                     let diff = x - y;
                     acc += diff * diff;
                 }
@@ -137,7 +131,7 @@ impl ScalarQuantizer {
             }
             DistanceMetric::DotProduct => {
                 for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = (y_q as f32) * self.inv_255_range + self.min;
+                    let y = (y_q as f32) * self.inv_scale + self.min;
                     acc += x * y;
                 }
                 acc = -acc;
@@ -167,8 +161,8 @@ impl ScalarQuantizer {
                 let mut norm_a = 0.0;
                 let mut norm_b = 0.0;
                 for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = (x_q as f32) * self.inv_255_range + self.min;
-                    let y = (y_q as f32) * self.inv_255_range + self.min;
+                    let x = (x_q as f32) * self.inv_scale + self.min;
+                    let y = (y_q as f32) * self.inv_scale + self.min;
                     dot += x * y;
                     norm_a += x * x;
                     norm_b += y * y;
@@ -181,8 +175,8 @@ impl ScalarQuantizer {
             }
             DistanceMetric::Euclidean => {
                 for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = (x_q as f32) * self.inv_255_range + self.min;
-                    let y = (y_q as f32) * self.inv_255_range + self.min;
+                    let x = (x_q as f32) * self.inv_scale + self.min;
+                    let y = (y_q as f32) * self.inv_scale + self.min;
                     let diff = x - y;
                     acc += diff * diff;
                 }
@@ -190,8 +184,8 @@ impl ScalarQuantizer {
             }
             DistanceMetric::DotProduct => {
                 for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = (x_q as f32) * self.inv_255_range + self.min;
-                    let y = (y_q as f32) * self.inv_255_range + self.min;
+                    let x = (x_q as f32) * self.inv_scale + self.min;
+                    let y = (y_q as f32) * self.inv_scale + self.min;
                     acc += x * y;
                 }
                 acc = -acc;
