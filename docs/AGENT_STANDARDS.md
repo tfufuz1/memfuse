@@ -555,6 +555,10 @@ project-root/
 
 ## Aktiv
 
+### Formal Verification Gate
+// ANCHOR:ARCH:GATE-FV STATUS:OPEN AGENT:00 DATE:2026-05-16
+// WATCHDOG: Blocking merges due to missing Kani proofs for Crypto/LSM components (WAL, SSTable).
+
 | Agent-ID | Komponente | Arbeitspaket | Status | Blockiert? |
 |----------|-----------|-------------|--------|------------|
 | impl-01  | AUTH      | FR-005 JWT Blacklist | IN PROGRESS | Nein |
