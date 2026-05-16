@@ -43,25 +43,21 @@ impl DocId {
         self.0
     }
 
+    // ANCHOR:DEBT:DOCID-001 AGENT:01 STATUS:DONE PRIO:3
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Self {
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes")
+        let hash = blake3::hash(key.as_bytes());
+        let mut buf = [0u8; 8];
+        // Blake3 always produces 32 bytes. We take the first 8 bytes for u64.
+        buf.copy_from_slice(&hash.as_bytes()[..8]);
+        Self(u64::from_le_bytes(buf))
     }
 
     /// Safely derive a DocId from a user-provided string key.
     ///
-    /// Uses blake3 hash and safe slice indexing.
+    /// Maintained for backward compatibility.
     pub fn try_from_key(key: &str) -> Result<Self> {
-        let hash = blake3::hash(key.as_bytes());
-        let bytes = hash
-            .as_bytes()
-            .get(..8)
-            .ok_or_else(|| MemFuseError::Internal("Blake3 hash too short".to_string()))?;
-
-        let buf: [u8; 8] = bytes.try_into().map_err(|_| {
-            MemFuseError::Internal("Failed to convert hash slice to array".to_string())
-        })?;
-        Ok(Self(u64::from_le_bytes(buf)))
+        Ok(Self::from_key(key))
     }
 }
 
@@ -329,5 +325,26 @@ impl ResourceTracker {
         if self.memory_used() >= (self.budget.memory_limit as f64 * 0.80) as u64 {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_doc_id_derivation() {
+        let key = "test_key";
+        let doc_id = DocId::from_key(key);
+        let try_doc_id = DocId::try_from_key(key).expect("should not fail");
+
+        assert_eq!(doc_id, try_doc_id);
+        assert_ne!(doc_id.inner(), 0);
+
+        // Verify stability (same key -> same ID)
+        assert_eq!(doc_id, DocId::from_key(key));
+
+        // Verify distinctness
+        assert_ne!(doc_id, DocId::from_key("other_key"));
     }
 }
