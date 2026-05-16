@@ -353,7 +353,11 @@ impl InvertedIndex {
             .collect();
 
         // Sort descending by score
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(k);
 
         Ok(results)
@@ -612,7 +616,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_text_index_trait_implementation() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn test_text_index_trait_implementation(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let tmp = TempDir::new()?;
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
