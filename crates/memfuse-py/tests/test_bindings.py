@@ -85,3 +85,50 @@ def test_collection_isolation(db_path):
     b_results = col_b.search(v, k=5)
     assert len(b_results) == 0
     assert col_b.get("k1") is None
+
+def test_relate_and_scan(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("graph")
+    v = np.zeros(4, dtype=np.float32)
+    col.insert("a", v)
+    col.insert("b", v)
+
+    col.relate("a", "b", "friend")
+
+    # scan_prefix for relations
+    rels = col.scan_prefix("__rel:a:friend:")
+    assert len(rels) == 1
+    assert rels[0][1]["to"] == "b"
+
+def test_len_and_stats(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("stats")
+    assert col.len() == 0
+
+    v = np.zeros(4, dtype=np.float32)
+    col.insert("d1", v)
+    assert col.len() == 1
+
+    s = col.stats()
+    assert s.num_vectors == 1
+    assert s.num_layers >= 1
+
+def test_open_with_config(db_path):
+    # Test distance metric
+    db = memfuse.open(db_path, dimension=4, distance_metric="euclidean")
+    col = db.collection("conf")
+    v1 = np.array([1, 0, 0, 0], dtype=np.float32)
+    v2 = np.array([1, 1, 0, 0], dtype=np.float32)
+    col.insert("p1", v1)
+
+    # Euclidean search
+    res = col.search(v2, k=1)
+    assert res[0].id == "p1"
+
+def test_encryption_config(db_path):
+    # Just verify it opens with passphrase without crashing
+    db = memfuse.open(db_path, dimension=4, encryption_passphrase="test-passphrase")
+    col = db.collection("enc")
+    v = np.zeros(4, dtype=np.float32)
+    col.insert("e1", v)
+    assert col.get("e1").id == "e1"

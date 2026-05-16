@@ -78,6 +78,14 @@ pub struct PyDocument {
     pub metadata: Option<PyObject>,
 }
 
+/// Statistics for the vector index.
+#[pyclass(get_all)]
+pub struct PyVectorIndexStats {
+    pub num_vectors: usize,
+    pub memory_usage_bytes: usize,
+    pub num_layers: usize,
+}
+
 #[pyclass(unsendable, name = "Db")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
@@ -115,6 +123,49 @@ pub struct PyCollection {
 
 #[pymethods]
 impl PyCollection {
+    pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<(String, PyObject)>> {
+        let rt = get_runtime()?;
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.scan_prefix(prefix)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut py_res = Vec::with_capacity(results.len());
+        for (k, v) in results {
+            let py_v = pythonize(py, &v)
+                .map_err(|e| {
+                    pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
+                })?
+                .unbind();
+            py_res.push((k, py_v));
+        }
+        Ok(py_res)
+    }
+
+    pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
+        let rt = get_runtime()?;
+        Ok(py.allow_threads(|| rt.block_on(self.inner.len())))
+    }
+
+    pub fn stats(&self, py: Python<'_>) -> PyResult<PyVectorIndexStats> {
+        let rt = get_runtime()?;
+        let stats = py
+            .allow_threads(|| rt.block_on(self.inner.stats()))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        Ok(PyVectorIndexStats {
+            num_vectors: stats.num_vectors,
+            memory_usage_bytes: stats.memory_usage_bytes,
+            num_layers: stats.num_layers,
+        })
+    }
+
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
@@ -299,11 +350,36 @@ impl PyCollection {
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536))]
-fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<PyMemFuse> {
+#[pyo3(signature = (path, dimension=1536, encryption_passphrase=None, distance_metric=None))]
+fn open(
+    py: Python<'_>,
+    path: &str,
+    dimension: usize,
+    encryption_passphrase: Option<String>,
+    distance_metric: Option<String>,
+) -> PyResult<PyMemFuse> {
     let rt = get_runtime()?;
+
+    let metric = if let Some(m) = distance_metric {
+        match m.to_lowercase().as_str() {
+            "cosine" => memfuse_db::DistanceMetric::Cosine,
+            "euclidean" | "l2" => memfuse_db::DistanceMetric::Euclidean,
+            "dot" | "dotproduct" => memfuse_db::DistanceMetric::DotProduct,
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Unsupported distance metric: {}",
+                    m
+                )))
+            }
+        }
+    } else {
+        memfuse_db::DistanceMetric::Cosine
+    };
+
     let config = MemFuseConfig {
         dimension,
+        distance_metric: metric,
+        encryption_passphrase,
         ..Default::default()
     };
     let path_string = path.to_string();
@@ -323,5 +399,6 @@ fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()
     m.add_class::<PyCollection>()?;
     m.add_class::<PySearchResult>()?;
     m.add_class::<PyDocument>()?;
+    m.add_class::<PyVectorIndexStats>()?;
     Ok(())
 }
