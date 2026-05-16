@@ -1,7 +1,7 @@
 //! Write-Ahead Log (WAL) for durability and crash recovery.
 // ANCHOR:DOC:DOC-WAL-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:REVIEW
+// AGENT:02 DATE:2026-05-16 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:WAL-001 — Write-Ahead Log für Crash Recovery.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -83,18 +83,18 @@ pub struct WalEntry {
 
 impl WalEntry {
     /// Creates a new WAL entry with HMAC-SHA256 checksum.
-    pub fn new(op: WalOp, seq_no: u64, integrity_key: &[u8]) -> Self {
-        let checksum = Self::compute_checksum(&op, seq_no, integrity_key);
-        Self {
+    pub fn try_new(op: WalOp, seq_no: u64, integrity_key: &[u8]) -> Result<Self> {
+        let checksum = Self::compute_checksum(&op, seq_no, integrity_key)?;
+        Ok(Self {
             op,
             seq_no,
             checksum,
-        }
+        })
     }
 
-    pub fn compute_checksum(op: &WalOp, seq_no: u64, integrity_key: &[u8]) -> [u8; 32] {
-        let mut mac =
-            HmacSha256::new_from_slice(integrity_key).expect("HMAC can take key of any size");
+    pub fn compute_checksum(op: &WalOp, seq_no: u64, integrity_key: &[u8]) -> Result<[u8; 32]> {
+        let mut mac = HmacSha256::new_from_slice(integrity_key)
+            .map_err(|e| MemFuseError::Storage(format!("HMAC key error: {}", e)))?;
         mac.update(&seq_no.to_le_bytes());
         match op {
             WalOp::Put { key, value, .. } => {
@@ -107,7 +107,7 @@ impl WalEntry {
                 mac.update(key);
             }
         }
-        mac.finalize().into_bytes().into()
+        Ok(mac.finalize().into_bytes().into())
     }
 
     /// Serializes the entry to bytes.
@@ -240,11 +240,11 @@ impl Wal {
         let mut entries = Vec::new();
         let mut pos = 0;
 
-        let integrity_key = self
-            .key_manager
-            .as_ref()
-            .map(|km| km.integrity_key())
-            .unwrap_or(*b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0");
+        let integrity_key = if let Some(km) = &self.key_manager {
+            km.integrity_key()?
+        } else {
+            *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0"
+        };
 
         while pos + 4 <= data.len() {
             let len_bytes = data.get(pos..pos + 4).ok_or(MemFuseError::WalCorruption {
@@ -438,7 +438,7 @@ impl Wal {
             // AGENT:10 DATE:2026-05-15 STATUS:REVIEW
             // Ohne Verifikation werden korrupte Entries (Bit-Flip, Partial Write)
             // blind in die MemTable replayed → stille Datenkorrumpierung.
-            let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no, &integrity_key);
+            let recomputed_checksum = WalEntry::compute_checksum(&op, seq_no, &integrity_key)?;
             if recomputed_checksum != stored_checksum {
                 tracing::warn!(
                     "WAL entry at offset {} has invalid checksum, truncating replay",
@@ -482,7 +482,7 @@ mod tests {
             key: b"key".to_vec(),
             value: b"value".to_vec(),
         };
-        let entry = WalEntry::new(op, 100, b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0");
+        let entry = WalEntry::try_new(op, 100, b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0").expect("try_new");
         let bytes = entry.to_bytes();
 
         // Manual verification of length
@@ -498,7 +498,7 @@ mod tests {
             tx_id: TxId::new(43),
             key: b"key2".to_vec(),
         };
-        let entry2 = WalEntry::new(op2, 101, b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0");
+        let entry2 = WalEntry::try_new(op2, 101, b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0").expect("try_new");
         let bytes2 = entry2.to_bytes();
         // 4 + 8 + 32 + 1 + 8 + 4 + key(4) = 61
         assert_eq!(bytes2.len(), 61);
