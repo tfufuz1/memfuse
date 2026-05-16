@@ -361,28 +361,39 @@ impl SstableReader {
 
         let last_key = index.last().map(|(k, _)| k.clone()).unwrap_or_default();
 
+        let sync_file = tokio::fs::File::open(&path)
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("Failed to re-open SSTable: {}", e)))?;
+
+        let reader = Self {
+            file: tokio::sync::Mutex::new(sync_file),
+            index,
+            metadata: SstableMetadata {
+                first_key: Bytes::new(), // Temporary
+                last_key,
+                file_size,
+            },
+            index_offset,
+            file_path: path.as_ref().to_path_buf(),
+            file_id: {
+                static NEXT_FILE_ID: std::sync::atomic::AtomicU64 =
+                    std::sync::atomic::AtomicU64::new(1);
+                NEXT_FILE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            },
+            block_cache,
+            key_manager,
+        };
+
         // Read the actual first key from the first data block header
         // (index stores last_key per block, NOT first_key)
-        let first_key = if !index.is_empty() {
-            let offset = index[0].1;
-            let next_offset = if index.len() > 1 {
-                index[1].1
+        let first_key = if !reader.index.is_empty() {
+            let offset = reader.index[0].1;
+            let next_offset = if reader.index.len() > 1 {
+                reader.index[1].1
             } else {
                 index_offset
             };
-            file.seek(std::io::SeekFrom::Start(offset))
-                .await
-                .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
-            let mut raw_block = vec![0u8; (next_offset - offset) as usize];
-            file.read_exact(&mut raw_block)
-                .await
-                .map_err(|e| MemFuseError::Storage(format!("Read failed: {}", e)))?;
-
-            let mut block_data = Bytes::from(raw_block);
-            if let Some(km) = &key_manager {
-                let decrypted = km.decrypt(&block_data, offset)?;
-                block_data = Bytes::from(decrypted);
-            }
+            let block_data = reader.get_block(offset, next_offset).await?;
 
             if block_data.len() < 2 {
                 return Err(MemFuseError::Storage("corrupted SSTable block".into()));
@@ -396,28 +407,9 @@ impl SstableReader {
             Bytes::new()
         };
 
-        let sync_file = tokio::fs::File::open(&path)
-            .await
-            .map_err(|e| MemFuseError::Storage(format!("Failed to re-open SSTable: {}", e)))?;
-
-        Ok(Self {
-            file: tokio::sync::Mutex::new(sync_file),
-            index,
-            metadata: SstableMetadata {
-                first_key,
-                last_key,
-                file_size,
-            },
-            index_offset,
-            file_path: path.as_ref().to_path_buf(),
-            file_id: {
-                static NEXT_FILE_ID: std::sync::atomic::AtomicU64 =
-                    std::sync::atomic::AtomicU64::new(1);
-                NEXT_FILE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            },
-            block_cache,
-            key_manager,
-        })
+        let mut reader = reader;
+        reader.metadata.first_key = first_key;
+        Ok(reader)
     }
 
     // ANCHOR:PERF:ALLOC-001 — Allokations-intensiver Scanner
@@ -451,38 +443,7 @@ impl SstableReader {
             self.index_offset
         };
 
-        let block_data = {
-            let cached = {
-                let mut cache = self.block_cache.write();
-                cache.get(&(self.file_id, offset)).cloned()
-            };
-
-            if let Some(block) = cached {
-                block
-            } else {
-                let mut raw_block = vec![0u8; (next_offset - offset) as usize];
-                {
-                    use tokio::io::{AsyncReadExt, AsyncSeekExt};
-                    let mut file = self.file.lock().await;
-                    file.seek(std::io::SeekFrom::Start(offset))
-                        .await
-                        .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
-                    file.read_exact(&mut raw_block).await.map_err(|e| {
-                        MemFuseError::Storage(format!("SSTable read failed: {}", e))
-                    })?;
-                }
-                let mut block = Bytes::from(raw_block);
-                if let Some(km) = &self.key_manager {
-                    let decrypted = km.decrypt(&block, offset)?;
-                    block = Bytes::from(decrypted);
-                }
-
-                self.block_cache
-                    .write()
-                    .put((self.file_id, offset), block.clone());
-                block
-            }
-        };
+        let block_data = self.get_block(offset, next_offset).await?;
 
         let n = block_data.len();
         if n < 10 {
@@ -552,9 +513,12 @@ impl SstableReader {
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
             ep += 2;
-            let entry_key = block_data
-                .get(ep..ep + k_len)
-                .ok_or_else(|| MemFuseError::Storage("malformed block: entry_key".into()))?;
+            if ep + k_len > block_data.len() {
+                return Err(MemFuseError::Storage(
+                    "malformed block: entry_key out of bounds".into(),
+                ));
+            }
+            let entry_key = block_data.slice(ep..ep + k_len);
             ep += k_len;
 
             if entry_key == key {
@@ -590,6 +554,39 @@ impl SstableReader {
         &self.metadata
     }
 
+    async fn get_block(&self, offset: u64, next_offset: u64) -> Result<Bytes> {
+        let cached = {
+            let mut cache = self.block_cache.write();
+            cache.get(&(self.file_id, offset)).cloned()
+        };
+
+        if let Some(block) = cached {
+            Ok(block)
+        } else {
+            let mut raw_block = vec![0u8; (next_offset - offset) as usize];
+            {
+                use tokio::io::{AsyncReadExt, AsyncSeekExt};
+                let mut file = self.file.lock().await;
+                file.seek(std::io::SeekFrom::Start(offset))
+                    .await
+                    .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
+                file.read_exact(&mut raw_block)
+                    .await
+                    .map_err(|e| MemFuseError::Storage(format!("SSTable read failed: {}", e)))?;
+            }
+            let mut block = Bytes::from(raw_block);
+            if let Some(km) = &self.key_manager {
+                let decrypted = km.decrypt(&block, offset)?;
+                block = Bytes::from(decrypted);
+            }
+
+            self.block_cache
+                .write()
+                .put((self.file_id, offset), block.clone());
+            Ok(block)
+        }
+    }
+
     /// Iterates over all entries in sorted key order.
     ///
     /// Returns `(key, value, seq_no)` triples for every entry in the SSTable,
@@ -608,33 +605,7 @@ impl SstableReader {
                 self.index_offset
             };
 
-            let mut block_data = Vec::new();
-            let mut cache_miss = false;
-
-            {
-                let mut cache = self.block_cache.write();
-                if let Some(cached) = cache.get(&(self.file_id, offset)) {
-                    block_data.extend_from_slice(cached);
-                } else {
-                    cache_miss = true;
-                }
-            }
-
-            if cache_miss {
-                let mut raw_block = vec![0u8; (next_offset - offset) as usize];
-                use tokio::io::{AsyncReadExt, AsyncSeekExt};
-                let mut file = self.file.lock().await;
-                file.seek(std::io::SeekFrom::Start(offset))
-                    .await
-                    .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
-                file.read_exact(&mut raw_block).await.map_err(|e| {
-                    MemFuseError::Storage(format!("SSTable iter read failed: {}", e))
-                })?;
-                block_data.extend_from_slice(&raw_block);
-                self.block_cache
-                    .write()
-                    .put((self.file_id, offset), Bytes::from(raw_block));
-            }
+            let block_data = self.get_block(offset, next_offset).await?;
 
             let n = block_data.len();
             if n < 10 {
@@ -674,9 +645,12 @@ impl SstableReader {
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 ) as usize;
                 ep += 2;
-                let entry_key = block_data
-                    .get(ep..ep + k_len)
-                    .ok_or_else(|| MemFuseError::Storage("malformed block: entry_key".into()))?;
+                if ep + k_len > block_data.len() {
+                    return Err(MemFuseError::Storage(
+                        "malformed block: entry_key out of bounds".into(),
+                    ));
+                }
+                let entry_key = block_data.slice(ep..ep + k_len);
                 ep += k_len;
 
                 let seq_no = u64::from_le_bytes(
@@ -695,15 +669,9 @@ impl SstableReader {
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 ) as usize;
                 ep += 2;
-                let entry_val = block_data
-                    .get(ep..ep + v_len)
-                    .ok_or_else(|| MemFuseError::Storage("malformed block: value".into()))?;
+                let entry_val = block_data.slice(ep..ep + v_len);
 
-                results.push((
-                    Bytes::copy_from_slice(entry_key),
-                    Bytes::copy_from_slice(entry_val),
-                    seq_no,
-                ));
+                results.push((entry_key, entry_val, seq_no));
             }
         }
 
@@ -738,33 +706,7 @@ impl SstableReader {
                 self.index_offset
             };
 
-            let mut block_data = Vec::new();
-            let mut cache_miss = false;
-
-            {
-                let mut cache = self.block_cache.write();
-                if let Some(cached) = cache.get(&(self.file_id, offset)) {
-                    block_data.extend_from_slice(cached);
-                } else {
-                    cache_miss = true;
-                }
-            }
-
-            if cache_miss {
-                let mut raw_block = vec![0u8; (next_offset - offset) as usize];
-                use tokio::io::{AsyncReadExt, AsyncSeekExt};
-                let mut file = self.file.lock().await;
-                file.seek(std::io::SeekFrom::Start(offset))
-                    .await
-                    .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
-                file.read_exact(&mut raw_block).await.map_err(|e| {
-                    MemFuseError::Storage(format!("SSTable scan read failed: {}", e))
-                })?;
-                block_data.extend_from_slice(&raw_block);
-                self.block_cache
-                    .write()
-                    .put((self.file_id, offset), Bytes::from(raw_block));
-            }
+            let block_data = self.get_block(offset, next_offset).await?;
 
             let n = block_data.len();
             if n < 10 {
@@ -805,12 +747,15 @@ impl SstableReader {
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 ) as usize;
                 ep += 2;
-                let entry_key = block_data
-                    .get(ep..ep + k_len)
-                    .ok_or_else(|| MemFuseError::Storage("malformed block: entry_key".into()))?;
+                if ep + k_len > block_data.len() {
+                    return Err(MemFuseError::Storage(
+                        "malformed block: entry_key out of bounds".into(),
+                    ));
+                }
+                let entry_key = block_data.slice(ep..ep + k_len);
                 ep += k_len;
 
-                if !entry_key.starts_with(prefix) && entry_key > prefix {
+                if !entry_key.starts_with(prefix) && &entry_key[..] > prefix {
                     broke = true;
                     break; // Passed prefix lexicographically
                 }
@@ -832,14 +777,8 @@ impl SstableReader {
                             .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                     ) as usize;
                     ep += 2;
-                    let entry_val = block_data
-                        .get(ep..ep + v_len)
-                        .ok_or_else(|| MemFuseError::Storage("malformed block: value".into()))?;
-                    results.push((
-                        Bytes::copy_from_slice(entry_key),
-                        Bytes::copy_from_slice(entry_val),
-                        seq_no,
-                    ));
+                    let entry_val = block_data.slice(ep..ep + v_len);
+                    results.push((entry_key, entry_val, seq_no));
                 }
             }
             if broke {
@@ -871,33 +810,7 @@ impl SstableReader {
                 self.index_offset
             };
 
-            let mut block_data = Vec::new();
-            let mut cache_miss = false;
-
-            {
-                let mut cache = self.block_cache.write();
-                if let Some(cached) = cache.get(&(self.file_id, offset)) {
-                    block_data.extend_from_slice(cached);
-                } else {
-                    cache_miss = true;
-                }
-            }
-
-            if cache_miss {
-                let mut raw_block = vec![0u8; (next_offset - offset) as usize];
-                use tokio::io::{AsyncReadExt, AsyncSeekExt};
-                let mut file = self.file.lock().await;
-                file.seek(std::io::SeekFrom::Start(offset))
-                    .await
-                    .map_err(|e| MemFuseError::Storage(format!("Seek failed: {}", e)))?;
-                file.read_exact(&mut raw_block).await.map_err(|e| {
-                    MemFuseError::Storage(format!("SSTable range read failed: {}", e))
-                })?;
-                block_data.extend_from_slice(&raw_block);
-                self.block_cache
-                    .write()
-                    .put((self.file_id, offset), Bytes::from(raw_block));
-            }
+            let block_data = self.get_block(offset, next_offset).await?;
 
             let n = block_data.len();
             if n < 10 {
@@ -937,9 +850,12 @@ impl SstableReader {
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 ) as usize;
                 ep += 2;
-                let entry_key = block_data
-                    .get(ep..ep + k_len)
-                    .ok_or_else(|| MemFuseError::Storage("malformed block: entry_key".into()))?;
+                if ep + k_len > block_data.len() {
+                    return Err(MemFuseError::Storage(
+                        "malformed block: entry_key out of bounds".into(),
+                    ));
+                }
+                let entry_key = block_data.slice(ep..ep + k_len);
                 ep += k_len;
 
                 // Check start bound
@@ -978,14 +894,13 @@ impl SstableReader {
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 ) as usize;
                 ep += 2;
-                let entry_val = block_data
-                    .get(ep..ep + v_len)
-                    .ok_or_else(|| MemFuseError::Storage("malformed block: value".into()))?;
-                results.push((
-                    Bytes::copy_from_slice(entry_key),
-                    Bytes::copy_from_slice(entry_val),
-                    seq_no,
-                ));
+                if ep + v_len > block_data.len() {
+                    return Err(MemFuseError::Storage(
+                        "malformed block: value length out of bounds".into(),
+                    ));
+                }
+                let entry_val = block_data.slice(ep..ep + v_len);
+                results.push((entry_key, entry_val, seq_no));
             }
         }
 

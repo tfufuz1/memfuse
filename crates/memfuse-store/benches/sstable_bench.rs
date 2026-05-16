@@ -38,6 +38,14 @@ fn bench_sstable_get(c: &mut Criterion) {
             black_box(res);
         })
     });
+
+    group.bench_function("scan_prefix", |b| {
+        b.to_async(&rt).iter(|| async {
+            let res = reader.scan_prefix(black_box(b"key005")).await.unwrap(); // unwrap
+            black_box(res);
+        })
+    });
+
     group.finish();
 }
 
