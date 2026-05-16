@@ -1,5 +1,9 @@
 # MemFuse — Agentic OS Directory & Crate Lookup
 
+// ANCHOR:ARCH:GATE-FV STATUS:OPEN AGENT:00
+// WATCHDOG: Formal Verification (Kani) missing for recent Crypto/WAL changes (Commit b36859f).
+// MERGE BLOCK ACTIVE.
+
 > **Phase:** Feature Implementation & TDD  
 > **Doctrine:** Zero-Panic / Sovereign Core / Triple-Test-Gate  
 > **Updated:** 2026-05-05

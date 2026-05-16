@@ -110,3 +110,7 @@ spec NAME:
     cp docs/specs/TEMPLATE_ATOMIC_SPEC.md "$TARGET"
     echo "Created new atomic spec at $TARGET"
     echo "Please fill out the spec and follow the TDD-Loop!"
+
+# Runs the Orchestrator-Watchdog logic
+watchdog:
+    bash .agent/scripts/jules-watchdog.sh
