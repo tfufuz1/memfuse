@@ -41,7 +41,7 @@ pub struct StorageStats {
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
 // Lifecycle: put/delete → commit/rollback → flush(background).
-/// Storage engine trait — abstracts over the LSM-Tree implementation.
+/// Trait for a storage engine that supports ACID transactions and MVCC.
 #[async_trait]
 pub trait StorageEngine: Send + Sync {
     /// Retrieves a value by key.
@@ -102,7 +102,7 @@ pub trait StorageEngine: Send + Sync {
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
 // Rebuild: Automatisch bei >20% gelöschten Nodes.
-/// Vector index trait — abstracts over the HNSW implementation.
+/// Trait for a vector index supporting approximate nearest neighbor search.
 #[async_trait]
 pub trait VectorIndex: Send + Sync {
     /// Inserts a vector with an associated document ID.
@@ -155,7 +155,7 @@ pub struct TextIndexStats {
     pub memory_usage_bytes: usize,
 }
 
-/// Text index trait — abstracts over the inverted index and BM25 search.
+/// Trait for a text index supporting keyword search and BM25 scoring.
 #[async_trait]
 pub trait TextIndex: Send + Sync {
     /// Searches for documents matching the query.

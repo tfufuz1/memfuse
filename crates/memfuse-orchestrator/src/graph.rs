@@ -1,3 +1,5 @@
+// ANCHOR:DEBT:GRAPH-DOC-001 AGENT:13 STATUS:READY PRIO:3
+// Missing public item documentation.
 //! Declarative StateGraph definition for Agent Workflows.
 
 // ANCHOR:ARCH:GRAPH-001 — Deklarativer StateGraph.

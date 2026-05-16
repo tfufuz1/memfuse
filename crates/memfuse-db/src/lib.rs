@@ -1,3 +1,5 @@
+// ANCHOR:DEBT:DB-DOC-001 AGENT:04 STATUS:READY PRIO:3
+// Missing public item documentation.
 // ANCHOR:ARCH:DB-001 — Orchestrator Facade (Getriebe — Layer 2).
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE

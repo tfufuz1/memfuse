@@ -1,3 +1,5 @@
+// ANCHOR:DEBT:PY-DOC-001 AGENT:08 STATUS:READY PRIO:3
+// Missing public item documentation.
 //! # MemFuse Python Bindings
 //!
 //! This crate provides the Python bridge for the MemFuse embedded hybrid-search database.

@@ -23,6 +23,8 @@ use std::sync::Arc;
 /// Updates to `min_active_seqno` use atomic operations with Release/Acquire
 /// semantics to ensure visibility across threads without holding the lock
 /// during reads.
+///
+/// Registry for managing point-in-time snapshots of the database.
 #[derive(Debug)]
 pub struct SnapshotRegistry {
     active: Mutex<BTreeMap<u64, usize>>,

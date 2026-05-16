@@ -1,3 +1,5 @@
+// ANCHOR:DEBT:CHECKPOINT-DOC-001 AGENT:02 STATUS:READY PRIO:3
+// Missing public item documentation.
 //! Native State Checkpointing (Time-Travel Debugging).
 //!
 //! Enables exact state reconstruction of an SAOS database at any given transaction ID

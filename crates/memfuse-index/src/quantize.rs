@@ -1,3 +1,5 @@
+// ANCHOR:DEBT:QUANTIZE-DOC-001 AGENT:01 STATUS:READY PRIO:3
+// Missing public item documentation.
 //! Scalar Quantization (SQ8) for HNSW Index.
 // ANCHOR:TODO:QUANT-001 — Optimiere und finalisiere die SQ8 Quantization impl, repariere Cast-Bugs.
 // WP:WP-2.2 PRIO:1 NEEDS:NONE
