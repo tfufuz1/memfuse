@@ -97,6 +97,24 @@ impl SnapshotRegistry {
     }
 }
 
+/// RAII Guard for an active snapshot.
+pub struct SnapshotGuard {
+    registry: Arc<SnapshotRegistry>,
+    seq_no: u64,
+}
+
+impl SnapshotGuard {
+    pub fn seq_no(&self) -> u64 {
+        self.seq_no
+    }
+}
+
+impl Drop for SnapshotGuard {
+    fn drop(&mut self) {
+        self.registry.release(self.seq_no);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,23 +170,5 @@ mod tests {
 
         registry.unpin(200 | TOMBSTONE_BIT);
         assert_eq!(registry.min_active_seqno(), 100);
-    }
-}
-
-/// RAII Guard for an active snapshot.
-pub struct SnapshotGuard {
-    registry: Arc<SnapshotRegistry>,
-    seq_no: u64,
-}
-
-impl SnapshotGuard {
-    pub fn seq_no(&self) -> u64 {
-        self.seq_no
-    }
-}
-
-impl Drop for SnapshotGuard {
-    fn drop(&mut self) {
-        self.registry.release(self.seq_no);
     }
 }
