@@ -17,6 +17,12 @@ pub struct KeyManager {
 
 impl KeyManager {
     /// Creates a new KeyManager by deriving a key from a passphrase.
+    // ANCHOR:DEBT:KEYMANAGER-001 — .expect() in key derivation
+    // WP:WP-3.2 PRIO:3 NEEDS:NONE
+    // AGENT:10 DATE:2026-05-16 STATUS:READY
+    // CREATED:2026-05-16 DEADLINE:NONE
+    // .expect() should be replaced with Result propagation.
+    // Requiring API change in callers.
     pub fn new(passphrase: &str) -> Self {
         let salt = b"memfuse-encryption-salt-v1";
         let hk = Hkdf::<Sha256>::new(Some(salt), passphrase.as_bytes());
@@ -28,6 +34,10 @@ impl KeyManager {
     }
 
     /// Derives an integrity key for HMAC-SHA256.
+    // ANCHOR:DEBT:KEYMANAGER-002 — .expect() in integrity key derivation
+    // WP:WP-3.2 PRIO:3 NEEDS:NONE
+    // AGENT:10 DATE:2026-05-16 STATUS:READY
+    // CREATED:2026-05-16 DEADLINE:NONE
     pub fn integrity_key(&self) -> [u8; 32] {
         let salt = b"memfuse-encryption-salt-v1";
         let hk = Hkdf::<Sha256>::new(Some(salt), &self.key);

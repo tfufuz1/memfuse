@@ -44,6 +44,11 @@ impl DocId {
     }
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
+    // ANCHOR:DEBT:DOCID-001 — .expect() in infallible derivation
+    // WP:WP-0.0 PRIO:3 NEEDS:NONE
+    // AGENT:01 DATE:2026-05-16 STATUS:READY
+    // CREATED:2026-05-16 DEADLINE:NONE
+    // .expect() should be replaced by making derivation infallible (byte-copy).
     pub fn from_key(key: &str) -> Self {
         Self::try_from_key(key).expect("Blake3 hash must be 32 bytes")
     }

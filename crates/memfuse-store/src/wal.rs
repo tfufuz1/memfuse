@@ -93,6 +93,10 @@ impl WalEntry {
     }
 
     pub fn compute_checksum(op: &WalOp, seq_no: u64, integrity_key: &[u8]) -> [u8; 32] {
+        // ANCHOR:DEBT:WAL-001 — .expect() in checksum computation
+        // WP:WP-3.2 PRIO:3 NEEDS:NONE
+        // AGENT:02 DATE:2026-05-16 STATUS:READY
+        // CREATED:2026-05-16 DEADLINE:NONE
         let mut mac =
             HmacSha256::new_from_slice(integrity_key).expect("HMAC can take key of any size");
         mac.update(&seq_no.to_le_bytes());
