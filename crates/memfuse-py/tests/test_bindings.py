@@ -85,3 +85,73 @@ def test_collection_isolation(db_path):
     b_results = col_b.search(v, k=5)
     assert len(b_results) == 0
     assert col_b.get("k1") is None
+
+def test_db_top_level_parity(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    v = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+
+    # Top-level CRUD
+    db.insert("db_k1", v, metadata={"source": "top"})
+    doc = db.get("db_k1")
+    assert doc.id == "db_k1"
+    assert doc.metadata["source"] == "top"
+
+    results = db.search(v, k=1)
+    assert results[0].id == "db_k1"
+
+    assert db.len() == 1
+    assert not db.is_empty()
+
+    db.delete("db_k1")
+    assert db.len() == 0
+
+def test_relationships_and_scanning(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("rel")
+    v = np.zeros(4, dtype=np.float32)
+
+    col.insert("a", v)
+    col.insert("b", v)
+    col.relate("a", "b", "friend")
+
+    # scan_prefix for relations
+    # Note: internal prefixing might be visible or stripped depending on implementation
+    # The Rust side for collection prepends __col:{name}:\x00
+    # But scan_prefix in Collection handles it.
+    rels = col.scan_prefix("__rel:a:friend:")
+    assert len(rels) == 1
+    assert rels[0][1]["to"] == "b"
+
+    # db level scan_prefix (default collection)
+    db.insert("x", v, metadata={"type": "agent"})
+    db.insert("y", v, metadata={"type": "task"})
+
+    # Scan all
+    all_docs = db.scan()
+    # db.scan() on default collection sees EVERYTHING because it has no prefix.
+    # We just check that our keys are in there.
+    doc_ids = [k for k, v in all_docs]
+    assert "x" in doc_ids
+    assert "y" in doc_ids
+
+    # Named collection scan IS isolated
+    rel_docs = col.scan()
+    assert len(rel_docs) == 2
+    rel_doc_ids = [k for k, v in rel_docs]
+    assert "a" in rel_doc_ids
+    assert "b" in rel_doc_ids
+
+def test_statistics(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("stats_col")
+    v = np.random.rand(4).astype(np.float32)
+    col.insert("s1", v)
+
+    c_stats = col.stats()
+    assert c_stats.num_vectors == 1
+    assert isinstance(c_stats.memory_usage_bytes, int)
+
+    db_stats = db.stats()
+    # db.stats() currently aggregates default collection
+    assert db_stats.index_stats.num_vectors == 0 # because s1 is in "stats_col"
+    assert db_stats.storage_stats.num_segments >= 0
