@@ -14,6 +14,26 @@ check:
     nix develop -c cargo clippy --all-targets -- -D warnings
     nix develop -c cargo check --all-targets --workspace
 
+# Modular check for memfuse-core
+check-core:
+    nix develop -c cargo check -p memfuse-core
+
+# Modular check for memfuse-store
+check-store:
+    nix develop -c cargo check -p memfuse-store
+
+# Modular check for memfuse-index
+check-index:
+    nix develop -c cargo check -p memfuse-index
+
+# Modular check for memfuse-db
+check-db:
+    nix develop -c cargo check -p memfuse-db
+
+# Modular check for memfuse-text
+check-text:
+    nix develop -c cargo check -p memfuse-text
+
 # Modular check for memfuse-runtime
 check-runtime:
     nix develop -c cargo check -p memfuse-runtime
@@ -21,6 +41,51 @@ check-runtime:
 # Modular check for memfuse-orchestrator
 check-orchestrator:
     nix develop -c cargo check -p memfuse-orchestrator
+
+# Modular check for memfuse-py
+check-py:
+    nix develop -c cargo check -p memfuse-py
+
+# Modular check for memfuse-checkpoint
+check-checkpoint:
+    nix develop -c cargo check -p memfuse-checkpoint
+
+# Verifies the Directed Acyclic Graph (DAG) integrity of the workspace
+dag-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== DAG Integrity Check ==="
+    for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator; do
+        echo "Verifying $CRATE isolation..."
+        if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -v "$CRATE" | grep -q .; then
+            echo "❌ ERROR: $CRATE imports forbidden internal crates."
+            cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-"
+            exit 1
+        fi
+    done
+
+    echo "Verifying L2 peer isolation (Store/Index)..."
+    if cargo tree -p memfuse-store --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-checkpoint|memfuse-py"; then
+        echo "❌ ERROR: memfuse-store violates DAG."
+        exit 1
+    fi
+    if cargo tree -p memfuse-index --edges no-dev | grep -E -q "memfuse-db|memfuse-store|memfuse-text|memfuse-checkpoint|memfuse-py"; then
+        echo "❌ ERROR: memfuse-index violates DAG."
+        exit 1
+    fi
+
+    echo "--- Known DAG Violations (Tracking) ---"
+    for VIOLATION in "memfuse-text:memfuse-store:DAG-001" "memfuse-checkpoint:memfuse-store:DAG-002" "memfuse-py:memfuse-db:DAG-003"; do
+        CRATE=${VIOLATION%%:*}
+        TARGET=$(echo $VIOLATION | cut -d: -f2)
+        ID=$(echo $VIOLATION | cut -d: -f3)
+        if cargo tree -p "$CRATE" --edges no-dev | grep -q "$TARGET"; then
+            echo "⚠️  $ID still present ($CRATE → $TARGET)"
+        else
+            echo "✅ $ID resolved"
+        fi
+    done
+    echo "=== DAG-Check PASSED ==="
 
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)
 triple-test: check
