@@ -101,7 +101,16 @@ impl CompactionEngine {
         // 2. Collect input SSTables (under read-lock, just clone Arcs)
         let input_ssts: Vec<Arc<SstableReader>> = {
             let ssts = sstables.read().await;
-            indices.iter().map(|&i| Arc::clone(&ssts[i])).collect()
+            let mut collected = Vec::with_capacity(indices.len());
+            for &i in &indices {
+                collected.push(Arc::clone(ssts.get(i).ok_or_else(|| {
+                    memfuse_core::MemFuseError::Storage(format!(
+                        "Compaction candidate index {} out of bounds",
+                        i
+                    ))
+                })?));
+            }
+            collected
         };
 
         // 3. Perform the merge (no lock held — this is the expensive part)
@@ -119,10 +128,20 @@ impl CompactionEngine {
             let mut ssts = sstables.write().await;
 
             // Collect paths of old SSTables before removing them
-            let old_paths: Vec<PathBuf> = indices
-                .iter()
-                .map(|&i| ssts[i].file_path().to_path_buf())
-                .collect();
+            let mut old_paths = Vec::with_capacity(indices.len());
+            for &i in &indices {
+                old_paths.push(
+                    ssts.get(i)
+                        .ok_or_else(|| {
+                            memfuse_core::MemFuseError::Storage(format!(
+                                "Old SSTable index {} out of bounds",
+                                i
+                            ))
+                        })?
+                        .file_path()
+                        .to_path_buf(),
+                );
+            }
 
             // Remove old SSTables (reverse order to preserve indices)
             let mut sorted_indices = indices.clone();
@@ -172,7 +191,14 @@ impl CompactionEngine {
             let mut placed = false;
 
             for tier in &mut tiers {
-                let tier_size = ssts[tier[0]].metadata().file_size;
+                let first_idx = match tier.first() {
+                    Some(&idx) => idx,
+                    None => continue,
+                };
+                let tier_size = match ssts.get(first_idx) {
+                    Some(s) => s.metadata().file_size,
+                    None => continue,
+                };
                 let ratio = if size > tier_size {
                     size as f64 / tier_size.max(1) as f64
                 } else {
