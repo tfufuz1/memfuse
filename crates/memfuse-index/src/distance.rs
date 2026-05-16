@@ -663,6 +663,43 @@ pub fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
     a.iter().zip(b.iter()).map(|(&x, &y)| x * (y as f32)).sum()
 }
 
+/// # Safety
+/// This function is unsafe because it maps a file into memory.
+/// The caller must ensure the path is valid and the file is not modified while mapped.
+pub unsafe fn mmap_file(file: &std::fs::File) -> memfuse_core::Result<memmap2::Mmap> {
+    // ANCHOR:SAFETY:SIMD-DISK-003 — Mmap creation.
+    // BEGRÜNDUNG: mmap wird für read-only Zugriff auf die Index-Datei verwendet.
+    unsafe { Ok(memmap2::Mmap::map(file)?) }
+}
+
+/// # Safety
+/// This function is unsafe because it performs pointer casting on a byte slice.
+/// The caller must ensure that the slice is large enough and correctly aligned.
+pub unsafe fn cast_slice_f32(data: &[u8]) -> &[f32] {
+    // ANCHOR:SAFETY:SIMD-DISK-001 — Mmap Cast for f32 Vector.
+    // BEGRÜNDUNG: f32 Alignment ist durch binary write der f32-Werte im HnswIndex Serialization garantiert.
+    unsafe {
+        std::slice::from_raw_parts(
+            data.as_ptr() as *const f32,
+            data.len() / 4
+        )
+    }
+}
+
+/// # Safety
+/// This function is unsafe because it performs pointer casting on a byte slice.
+/// The caller must ensure that the slice is large enough and correctly aligned.
+pub unsafe fn cast_slice_u32(data: &[u8]) -> &[u32] {
+    // ANCHOR:SAFETY:SIMD-DISK-002 — Mmap Cast for Neighbor Indices.
+    // BEGRÜNDUNG: u32 Alignment ist durch binary write der u32-Werte garantiert.
+    unsafe {
+        std::slice::from_raw_parts(
+            data.as_ptr() as *const u32,
+            data.len() / 4
+        )
+    }
+}
+
 /// Computes the squared Euclidean distance between an f32 vector and a u8 vector
 /// performing inline dequantization.
 pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {

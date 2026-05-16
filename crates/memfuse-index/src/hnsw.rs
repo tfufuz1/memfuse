@@ -114,11 +114,11 @@ pub enum VectorData {
 
 /// A node in the HNSW graph.
 #[derive(Debug)]
-struct HnswNode {
-    doc_id: DocId,
-    vector: VectorData,
-    connections: Vec<Vec<usize>>,
-    _max_layer: usize,
+pub(crate) struct HnswNode {
+    pub(crate) doc_id: DocId,
+    pub(crate) vector: VectorData,
+    pub(crate) connections: Vec<Vec<usize>>,
+    pub(crate) _max_layer: usize,
 }
 
 /// Search candidate.
@@ -591,6 +591,32 @@ impl HnswIndexCore {
     /// Checks if a rebuild is required based on the deletion ratio.
     pub fn is_rebuild_required(&self) -> bool {
         self.connectivity_score() < self.config.rebuild_threshold
+    }
+
+    pub(crate) fn get_nodes_for_diskann(&self) -> Vec<HnswNode> {
+        let nodes = self.nodes.read();
+        let mut result = Vec::with_capacity(nodes.len());
+        for node in nodes.iter() {
+            result.push(HnswNode {
+                doc_id: node.doc_id,
+                vector: node.vector.clone(),
+                connections: node.connections.clone(),
+                _max_layer: node._max_layer,
+            });
+        }
+        result
+    }
+
+    pub(crate) fn get_entry_point_for_diskann(&self) -> Option<usize> {
+        *self.entry_point.read()
+    }
+
+    pub(crate) fn get_config_for_diskann(&self) -> HnswConfig {
+        self.config.clone()
+    }
+
+    pub(crate) fn get_quantizer_for_diskann(&self) -> Option<crate::quantize::ScalarQuantizer> {
+        self.quantizer.read().clone()
     }
 
     /// Rebuilds the HNSW index from scratch, removing all deleted nodes.

@@ -16,6 +16,8 @@ pub mod csr;
 pub mod distance;
 pub mod hnsw;
 pub mod quantize;
+pub mod diskann;
 
 pub use csr::CsrGraph;
 pub use hnsw::{HnswConfig, HnswIndex};
+pub use diskann::{DiskHnsw, DiskHnswConfig};

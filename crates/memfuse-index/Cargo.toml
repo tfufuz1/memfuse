@@ -15,8 +15,10 @@ roaring = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
+memmap2 = { workspace = true }
 
 [dev-dependencies]
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["full", "test-util"] }
 criterion = "0.5"
 
