@@ -19,6 +19,9 @@
 
 pub mod compaction;
 pub mod crypto;
+// #[cfg(kani)] is used by the formal verification tool.
+// Clippy might complain about unexpected cfgs, but it's required for Kani.
+pub mod crypto_kani;
 pub mod lsm;
 pub mod memtable;
 pub mod sstable;

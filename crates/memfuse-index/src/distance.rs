@@ -4,7 +4,7 @@
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:SEC:UNSAFE-001 — Dokumentierte unsafe-Blöcke in SIMD-Zone
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:10 DATE:2026-05-15 STATUS:DONE
+// AGENT:10 DATE:2026-05-15 STATUS:REVIEW
 // CREATED:2026-05-08 DEADLINE:NONE
 // GEFUNDEN: 42 unsafe-Blöcke (AVX2 + AVX-512) ohne SAFETY: Kommentare
 // ERWARTET: Jeder unsafe-Block braucht SAFETY: Kommentar mit:
@@ -19,6 +19,10 @@
 // CREATED:2026-05-05 DEADLINE:NONE
 // PRECEDENCE: AVX-512 > AVX2 > portable_simd > scalar.
 // INVARIANTE: Caller (hnsw.rs) validiert Vektor-Dimensionen VOR dem Aufruf.
+//
+// ANCHOR:SEC:FORBID-UNSAFE-EXCEPTION — Exception für SIMD-Intrinsics
+// BEGRÜNDUNG: Dieses Modul benötigt `unsafe` für Hardware-spezifische SIMD-Optimierungen.
+// Alle anderen Module im Crate unterliegen `forbid(unsafe_code)`.
 //! # Distance Computation Module
 //!
 //! This module provides highly optimized distance metrics for vector comparison,

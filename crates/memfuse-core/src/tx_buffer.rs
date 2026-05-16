@@ -87,7 +87,7 @@ impl<T: Clone> TxBuffer<T> {
     fn shard_idx(&self, tx: TxId) -> usize {
         // ANCHOR:SEC:CAST-001 — Modulo-Cast u64→usize (sicher wegen %-Operator)
         // WP:WP-0.0 PRIO:5 NEEDS:NONE
-        // AGENT:10 DATE:2026-05-09 STATUS:DONE
+        // AGENT:10 DATE:2026-05-15 STATUS:REVIEW
         // CREATED:2026-05-09 DEADLINE:NONE
         (tx.inner() % self.shards.len() as u64) as usize
     }
@@ -96,20 +96,25 @@ impl<T: Clone> TxBuffer<T> {
     pub fn has_tx(&self, tx: TxId) -> bool {
         // ANCHOR:SEC:SLICE-001 — Slice-Indexing — sicher weil shard_idx = modulo len()
         // WP:WP-0.0 PRIO:5 NEEDS:NONE
-        // AGENT:10 DATE:2026-05-09 STATUS:DONE
+        // AGENT:10 DATE:2026-05-15 STATUS:REVIEW
         // CREATED:2026-05-09 DEADLINE:NONE
-        let shard = &self.shards[self.shard_idx(tx)];
+        let shard = match self.shards.get(self.shard_idx(tx)) {
+            Some(s) => s,
+            None => return false,
+        };
         shard.read().ops.contains_key(&tx)
     }
 
     /// Registers a new transaction in the buffer.
     pub fn begin(&self, tx: TxId) {
         let shard_idx = self.shard_idx(tx);
-        let mut shard = self.shards[shard_idx].write();
-        shard
-            .ops
-            .entry(tx)
-            .or_insert_with(|| (Vec::new(), Instant::now()));
+        if let Some(shard_lock) = self.shards.get(shard_idx) {
+            let mut shard = shard_lock.write();
+            shard
+                .ops
+                .entry(tx)
+                .or_insert_with(|| (Vec::new(), Instant::now()));
+        }
     }
 
     /// Stages an operation for the given transaction.
@@ -118,18 +123,24 @@ impl<T: Clone> TxBuffer<T> {
     /// it will be implicitly created on the first `stage` call.
     pub fn stage(&self, tx: TxId, op: IndexOp<T>) {
         let shard_idx = self.shard_idx(tx);
-        let mut shard = self.shards[shard_idx].write();
-        let entry = shard
-            .ops
-            .entry(tx)
-            .or_insert_with(|| (Vec::new(), Instant::now()));
-        entry.0.push(op);
+        if let Some(shard_lock) = self.shards.get(shard_idx) {
+            let mut shard = shard_lock.write();
+            let entry = shard
+                .ops
+                .entry(tx)
+                .or_insert_with(|| (Vec::new(), Instant::now()));
+            entry.0.push(op);
+        }
     }
 
     /// Validates that the transaction has pending operations.
     pub fn validate_pending_ops(&self, tx: TxId) -> Result<()> {
         let shard_idx = self.shard_idx(tx);
-        let shard = self.shards[shard_idx].read();
+        let shard = self
+            .shards
+            .get(shard_idx)
+            .ok_or_else(|| MemFuseError::Internal("Invalid shard_idx".into()))?;
+        let shard = shard.read();
 
         if let Some((ops, _)) = shard.ops.get(&tx) {
             if ops.is_empty() {
@@ -148,19 +159,25 @@ impl<T: Clone> TxBuffer<T> {
     /// This operation is atomic per shard.
     pub fn drain(&self, tx: TxId) -> Vec<IndexOp<T>> {
         let shard_idx = self.shard_idx(tx);
-        let mut shard = self.shards[shard_idx].write();
-        shard
-            .ops
-            .remove(&tx)
-            .map(|(ops, _)| ops)
-            .unwrap_or_default()
+        if let Some(shard_lock) = self.shards.get(shard_idx) {
+            let mut shard = shard_lock.write();
+            shard
+                .ops
+                .remove(&tx)
+                .map(|(ops, _)| ops)
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        }
     }
 
     /// Discards all buffered operations for a transaction.
     pub fn discard(&self, tx: TxId) {
         let shard_idx = self.shard_idx(tx);
-        let mut shard = self.shards[shard_idx].write();
-        shard.ops.remove(&tx);
+        if let Some(shard_lock) = self.shards.get(shard_idx) {
+            let mut shard = shard_lock.write();
+            shard.ops.remove(&tx);
+        }
     }
 
     /// Returns the total number of pending transactions.
@@ -193,7 +210,8 @@ impl<T: Clone> TxBuffer<T> {
     /// Returns a clone of the pending operations for a transaction.
     pub fn get_ops(&self, tx: TxId) -> Option<Vec<IndexOp<T>>> {
         let shard_idx = self.shard_idx(tx);
-        let shard = self.shards[shard_idx].read();
+        let shard = self.shards.get(shard_idx)?;
+        let shard = shard.read();
         shard.ops.get(&tx).map(|(ops, _)| ops.clone())
     }
 }
