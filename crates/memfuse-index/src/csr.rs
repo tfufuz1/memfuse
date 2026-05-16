@@ -1,3 +1,8 @@
+//! # Compressed Sparse Row (CSR) Graph
+//!
+//! This module provides a memory-efficient and high-performance representation of
+//! relationships between documents, optimized for multi-hop reasoning.
+
 // ANCHOR:ARCH:CSR-001 — Compressed Sparse Row (CSR) Graph für Memory-optimierte Relationen.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -5,7 +10,6 @@
 // ZIEL: Extrem schnelle, cache-lokale Multi-Hop-Traversierung für SAOS Agents.
 // DESIGN: Static Graph (wird via `build_from_dynamic` ge-freezed).
 // VERWENDET FÜR: Agent-Interaction-Graphs, Task-Hierarchien.
-//! Compressed Sparse Row (CSR) Graph for relation tracking.
 
 use std::collections::HashMap;
 

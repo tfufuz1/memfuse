@@ -9,18 +9,25 @@
 ```python
 # MemFuse provides a zero-setup Python experience
 import memfuse
+import numpy as np
 
-# Initializes the full SAOS (LSM-Tree, HNSW, WASM Sandbox, Orchestrator)
-agent = memfuse.Agent("./my_agent_memory")
+# Open or create a database
+db = memfuse.open("./my_data", dimension=4)
 
-# Declarative StateGraph (Cockpit Layer)
-agent.add_node("research", "Research the topic using tools")
-agent.add_node("code", "Generate code safely via WASM")
-agent.add_edge("research", "code")
+# Access a specific collection (namespace)
+col = db.collection("agent-memory")
 
-# Autonomously run the workflow in an isolated environment
-result = agent.run("Erstelle ein Rust-Programm", isolation_mode="wasm")
-print(result)
+# Insert a document with embedding and metadata
+v = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
+col.insert("doc-1", v, metadata={"topic": "rust"})
+
+# Semantic search
+results = col.search(v, k=5)
+for res in results:
+    print(f"{res.id}: score={res.score}")
+
+# Hybrid search (Text + Vector)
+results = col.hybrid_search("rust programming", v, k=5)
 ```
 
 ## Architecture: The 3 SAOS Layers
@@ -29,23 +36,23 @@ MemFuse is no longer just a vector database, it is the runtime environment in wh
 
 1. **Das Triebwerk (Data & Memory Foundation)**
 ```
-memfuse-core   ← Core Types, WAL, Transactions, State Checkpoints
-memfuse-store  ← LSM-Tree Persistence
-memfuse-index  ← HNSW + SIMD Vector Search + CSR Graph (Multi-Hop)
-memfuse-text   ← Inverted Index + BM25 Scoring
+memfuse-core   ← Core Types, WAL, Transactions, State Checkpoints [STABLE]
+memfuse-store  ← LSM-Tree Persistence [STABLE]
+memfuse-index  ← HNSW + SIMD Vector Search + CSR Graph (Multi-Hop) [STABLE]
+memfuse-text   ← Inverted Index + BM25 Scoring [STABLE]
 ```
 *Provides 4-Signal-Fusion (Dense, Sparse, Graph, Meta) at edge latency.*
 
 2. **Das Getriebe (Execution & Safety Layer)**
 ```
-memfuse-runtime ← WASM Sandboxing & Native Tool Execution
+memfuse-runtime ← WASM Sandboxing & Native Tool Execution [WIP]
 ```
 *Provides guaranteed host-safety and native state checkpointing (Time-Travel).*
 
 3. **Das Cockpit (Agentic Workflow Orchestration)**
 ```
-memfuse-orchestrator ← Rust-native Declarative StateGraphs
-memfuse-py           ← PyO3 bindings (`pip install memfuse`)
+memfuse-orchestrator ← Rust-native Declarative StateGraphs [WIP]
+memfuse-py           ← PyO3 bindings (`pip install memfuse`) [STABLE]
 ```
 *Autonomously injects context, controls execution flow, and enforces isolation.*
 

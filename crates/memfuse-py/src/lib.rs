@@ -78,6 +78,7 @@ pub struct PyDocument {
     pub metadata: Option<PyObject>,
 }
 
+/// Python wrapper for the MemFuse database.
 #[pyclass(unsendable, name = "Db")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
@@ -108,6 +109,7 @@ impl PyMemFuse {
     }
 }
 
+/// Python wrapper for a MemFuse collection.
 #[pyclass(unsendable, name = "Collection")]
 pub struct PyCollection {
     inner: Arc<MemFuseCollection>,
