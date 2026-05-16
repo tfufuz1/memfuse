@@ -55,6 +55,8 @@ dag-check:
     #!/usr/bin/env bash
     set -euo pipefail
     echo "=== DAG Integrity Check ==="
+
+    echo "--- Phase 1: L1 Kernel Isolation (core, runtime, orchestrator) ---"
     for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator; do
         echo "Verifying $CRATE isolation..."
         if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -v "$CRATE" | grep -q .; then
@@ -64,13 +66,37 @@ dag-check:
         fi
     done
 
-    echo "Verifying L2 peer isolation (Store/Index)..."
-    if cargo tree -p memfuse-store --edges no-dev | grep -E -q "memfuse-db|memfuse-index|memfuse-text|memfuse-checkpoint|memfuse-py"; then
-        echo "❌ ERROR: memfuse-store violates DAG."
+    echo "--- Phase 2: L2 Peer Isolation (store, index, text, checkpoint) ---"
+    echo "Verifying memfuse-store..."
+    if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-store violates DAG by importing non-core crates."
+        cargo tree -p memfuse-store --edges no-dev | grep "memfuse-"
         exit 1
     fi
-    if cargo tree -p memfuse-index --edges no-dev | grep -E -q "memfuse-db|memfuse-store|memfuse-text|memfuse-checkpoint|memfuse-py"; then
-        echo "❌ ERROR: memfuse-index violates DAG."
+    echo "Verifying memfuse-index..."
+    if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-index violates DAG by importing non-core crates."
+        cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
+        exit 1
+    fi
+    echo "Verifying memfuse-text (excluding tracked DAG-001)..."
+    if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-text violates DAG."
+        cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
+        exit 1
+    fi
+    echo "Verifying memfuse-checkpoint (excluding tracked DAG-002)..."
+    if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-checkpoint violates DAG."
+        cargo tree -p memfuse-checkpoint --edges no-dev | grep "memfuse-"
+        exit 1
+    fi
+
+    echo "--- Phase 3: L3 Orchestration Isolation (db) ---"
+    echo "Verifying memfuse-db..."
+    if cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py|memfuse-runtime|memfuse-orchestrator"; then
+        echo "❌ ERROR: memfuse-db imports higher layers."
+        cargo tree -p memfuse-db --edges no-dev | grep -E "memfuse-py|memfuse-runtime|memfuse-orchestrator"
         exit 1
     fi
 
