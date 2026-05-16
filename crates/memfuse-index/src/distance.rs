@@ -660,12 +660,30 @@ pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarity
 
 /// Computes the dot product between an f32 vector and a u8 vector.
 pub fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
+    debug_assert_eq!(a.len(), b.len());
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // ANCHOR:SAFETY:SIMD-F32U8-001 — AVX2 Dispatch.
+            // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
+            return unsafe { dot_product_f32_u8_avx2(a, b) };
+        }
+    }
     a.iter().zip(b.iter()).map(|(&x, &y)| x * (y as f32)).sum()
 }
 
 /// Computes the squared Euclidean distance between an f32 vector and a u8 vector
 /// performing inline dequantization.
 pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {
+    debug_assert_eq!(a.len(), b.len());
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // ANCHOR:SAFETY:SIMD-F32U8-002 — AVX2 Dispatch.
+            // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
+            return unsafe { euclidean_distance_sq_f32_u8_avx2(a, b, alpha, min) };
+        }
+    }
     a.iter()
         .zip(b.iter())
         .map(|(&x, &y)| {
@@ -702,6 +720,96 @@ pub fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPa
         sum_u8,
         norm_u8_sq,
     }
+}
+
+// -----------------------------------------------------------------------------
+// AVX2 Implementations for Mixed f32 and u8
+// -----------------------------------------------------------------------------
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+#[target_feature(enable = "fma")]
+// ANCHOR:SAFETY:SIMD-F32U8-003 — AVX2/FMA Dot Product f32 and u8.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+/// # Safety
+/// This function is unsafe because it uses AVX2 and FMA intrinsics. The caller must ensure that the CPU supports AVX2 and FMA.
+pub unsafe fn dot_product_f32_u8_avx2(a: &[f32], b: &[u8]) -> f32 {
+    let n = a.len();
+    let mut i = 0;
+    // ANCHOR:SAFETY:SIMD-F32U8-004 — Initialisierung.
+    // BEGRÜNDUNG: _mm256_setzero_ps ist immer sicher.
+    let mut sum_v = unsafe { _mm256_setzero_ps() };
+
+    while i + 8 <= n {
+        // ANCHOR:SAFETY:SIMD-F32U8-005 — AVX2 Loads, Conversion und FMA.
+        // BEGRÜNDUNG: i + 8 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
+        unsafe {
+            let va = _mm256_loadu_ps(a.as_ptr().add(i));
+            // Load 8 u8, then convert to 8 f32
+            let vb_u8 = _mm_loadl_epi64(b.as_ptr().add(i) as *const __m128i);
+            let vb_f32 = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(vb_u8));
+            sum_v = _mm256_fmadd_ps(va, vb_f32, sum_v);
+        }
+        i += 8;
+    }
+
+    // ANCHOR:SAFETY:SIMD-F32U8-006 — Horizontale Summe.
+    // BEGRÜNDUNG: hsum256_ps_avx benötigt AVX Support, der hier durch target_feature garantiert ist.
+    let mut sum = unsafe { hsum256_ps_avx(sum_v) };
+    while i < n {
+        sum += a[i] * (b[i] as f32);
+        i += 1;
+    }
+    sum
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+#[target_feature(enable = "fma")]
+// ANCHOR:SAFETY:SIMD-F32U8-007 — AVX2/FMA Squared Euclidean f32 and u8.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+/// # Safety
+/// This function is unsafe because it uses AVX2 and FMA intrinsics. The caller must ensure that the CPU supports AVX2 and FMA.
+pub unsafe fn euclidean_distance_sq_f32_u8_avx2(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {
+    let n = a.len();
+    let mut i = 0;
+    // ANCHOR:SAFETY:SIMD-F32U8-008 — Initialisierung.
+    // BEGRÜNDUNG: _mm256_setzero_ps und _mm256_set1_ps sind immer sicher.
+    let (mut sum_v, alpha_v, min_v) = unsafe {
+        (
+            _mm256_setzero_ps(),
+            _mm256_set1_ps(alpha),
+            _mm256_set1_ps(min),
+        )
+    };
+
+    while i + 8 <= n {
+        // ANCHOR:SAFETY:SIMD-F32U8-009 — AVX2 Loads, Conversion, Dequantization und FMA.
+        // BEGRÜNDUNG: i + 8 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
+        unsafe {
+            let va = _mm256_loadu_ps(a.as_ptr().add(i));
+            // Load 8 u8, convert to 8 f32
+            let vb_u8 = _mm_loadl_epi64(b.as_ptr().add(i) as *const __m128i);
+            let vb_f32_raw = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(vb_u8));
+            // Dequantize: y = y_raw * alpha + min
+            let vb_f32 = _mm256_fmadd_ps(vb_f32_raw, alpha_v, min_v);
+
+            let diff = _mm256_sub_ps(va, vb_f32);
+            sum_v = _mm256_fmadd_ps(diff, diff, sum_v);
+        }
+        i += 8;
+    }
+
+    // ANCHOR:SAFETY:SIMD-F32U8-010 — Horizontale Summe.
+    // BEGRÜNDUNG: hsum256_ps_avx benötigt AVX Support, der hier durch target_feature garantiert ist.
+    let mut sum = unsafe { hsum256_ps_avx(sum_v) };
+    while i < n {
+        let y = (b[i] as f32) * alpha + min;
+        let diff = a[i] - y;
+        sum += diff * diff;
+        i += 1;
+    }
+    sum
 }
 
 // -----------------------------------------------------------------------------

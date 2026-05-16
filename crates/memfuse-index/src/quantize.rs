@@ -1,7 +1,7 @@
 //! Scalar Quantization (SQ8) for HNSW Index.
-// ANCHOR:TODO:QUANT-001 — Optimiere und finalisiere die SQ8 Quantization impl, repariere Cast-Bugs.
+// ANCHOR:TODO:QUANT-001 — SQ8 Quantization ist optimiert (SIMD) und finalisiert.
 // WP:WP-2.2 PRIO:1 NEEDS:NONE
-// AGENT:@JULES-03 DATE:2026-05-15 STATUS:DONE
+// AGENT:@JULES-03 DATE:2026-05-16 STATUS:DONE
 // TEST: cargo bench -p memfuse-index -- quantization
 // DONE: Performance- und Recall Metriken sind stabil.
 // SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
@@ -109,45 +109,49 @@ impl ScalarQuantizer {
             ));
         }
 
-        let mut acc = 0.0;
         match metric {
             DistanceMetric::Cosine => {
-                let mut dot = 0.0;
-                let mut norm_a = 0.0;
-                let mut norm_b = 0.0;
-                for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = (y_q as f32) * self.inv_255_range + self.min;
-                    dot += x * y;
-                    norm_a += x * x;
-                    norm_b += y * y;
-                }
-                acc = if norm_a == 0.0 || norm_b == 0.0 {
-                    1.0
+                let parts = crate::distance::cosine_similarity_parts_f32_u8(query, quantized);
+                // De-quantize the components needed for cosine
+                // dot(f32, dequant(u8)) = dot(f32, u8 * alpha + min) = alpha * dot(f32, u8) + min * sum(f32)
+                let sum_f32: f32 = query.iter().sum();
+                let dot = self.inv_255_range * parts.dot_f32_u8 + self.min * sum_f32;
+
+                // norm_u8_sq = sum((u8 * alpha + min)^2) = sum(u8^2 * alpha^2 + 2 * u8 * alpha * min + min^2)
+                //           = alpha^2 * sum(u8^2) + 2 * alpha * min * sum(u8) + n * min^2
+                let n = quantized.len() as f32;
+                let norm_b_sq = self.inv_255_range * self.inv_255_range * parts.norm_u8_sq as f32
+                    + 2.0 * self.inv_255_range * self.min * parts.sum_u8 as f32
+                    + n * self.min * self.min;
+
+                let norm_a_sq: f32 = query.iter().map(|x| x * x).sum();
+
+                if norm_a_sq <= 0.0 || norm_b_sq <= 0.0 {
+                    Ok(1.0)
                 } else {
-                    1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
-                };
+                    Ok(1.0 - (dot / (norm_a_sq.sqrt() * norm_b_sq.sqrt())))
+                }
             }
             DistanceMetric::Euclidean => {
-                for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = (y_q as f32) * self.inv_255_range + self.min;
-                    let diff = x - y;
-                    acc += diff * diff;
-                }
-                acc = acc.sqrt();
+                let dist_sq = crate::distance::euclidean_distance_sq_f32_u8(
+                    query,
+                    quantized,
+                    self.inv_255_range,
+                    self.min,
+                );
+                Ok(dist_sq.sqrt())
             }
             DistanceMetric::DotProduct => {
-                for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = (y_q as f32) * self.inv_255_range + self.min;
-                    acc += x * y;
-                }
-                acc = -acc;
+                let dot_f32_u8 = crate::distance::dot_product_f32_u8(query, quantized);
+                let sum_f32: f32 = query.iter().sum();
+                let dot = self.inv_255_range * dot_f32_u8 + self.min * sum_f32;
+                Ok(-dot)
             }
         }
-        Ok(acc)
     }
 
     /// Computes symmetric (approximate) distance purely in u8.
-    /// Optimized for zero allocations via inline dequantization.
+    /// Optimized for zero allocations via specialized u8 metrics.
     pub fn symmetric_dist(
         &self,
         q1: &[u8],
@@ -160,44 +164,56 @@ impl ScalarQuantizer {
             ));
         }
 
-        let mut acc = 0.0;
         match metric {
             DistanceMetric::Cosine => {
-                let mut dot = 0.0;
-                let mut norm_a = 0.0;
-                let mut norm_b = 0.0;
-                for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = (x_q as f32) * self.inv_255_range + self.min;
-                    let y = (y_q as f32) * self.inv_255_range + self.min;
-                    dot += x * y;
-                    norm_a += x * x;
-                    norm_b += y * y;
-                }
-                acc = if norm_a == 0.0 || norm_b == 0.0 {
-                    1.0
+                let parts = crate::distance::cosine_similarity_parts_u8(q1, q2);
+                let n = q1.len() as f32;
+                let alpha = self.inv_255_range;
+                let alpha_sq = alpha * alpha;
+                let min = self.min;
+
+                // dot = sum((u8_a * alpha + min) * (u8_b * alpha + min))
+                //     = sum(u8_a * u8_b * alpha^2 + (u8_a + u8_b) * alpha * min + min^2)
+                //     = alpha^2 * dot_u8 + alpha * min * (sum_a + sum_b) + n * min^2
+                let dot = alpha_sq * parts.dot as f32
+                    + alpha * min * (parts.sum_a + parts.sum_b) as f32
+                    + n * min * min;
+
+                // norm^2 = sum((u8 * alpha + min)^2) = alpha^2 * sum(u8^2) + 2 * alpha * min * sum(u8) + n * min^2
+                let norm_a_sq = alpha_sq * parts.norm_a_sq as f32
+                    + 2.0 * alpha * min * parts.sum_a as f32
+                    + n * min * min;
+                let norm_b_sq = alpha_sq * parts.norm_b_sq as f32
+                    + 2.0 * alpha * min * parts.sum_b as f32
+                    + n * min * min;
+
+                if norm_a_sq <= 0.0 || norm_b_sq <= 0.0 {
+                    Ok(1.0)
                 } else {
-                    1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
-                };
+                    Ok(1.0 - (dot / (norm_a_sq.sqrt() * norm_b_sq.sqrt())))
+                }
             }
             DistanceMetric::Euclidean => {
-                for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = (x_q as f32) * self.inv_255_range + self.min;
-                    let y = (y_q as f32) * self.inv_255_range + self.min;
-                    let diff = x - y;
-                    acc += diff * diff;
-                }
-                acc = acc.sqrt();
+                let dist_sq_u8 = crate::distance::euclidean_distance_sq_u8(q1, q2);
+                // Euclidean distance is scale-invariant for u8 differences
+                // sum((x_i * alpha + min - (y_i * alpha + min))^2) = sum((alpha * (x_i - y_i))^2) = alpha^2 * sum((x_i - y_i)^2)
+                Ok((self.inv_255_range * self.inv_255_range * dist_sq_u8 as f32).sqrt())
             }
             DistanceMetric::DotProduct => {
-                for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = (x_q as f32) * self.inv_255_range + self.min;
-                    let y = (y_q as f32) * self.inv_255_range + self.min;
-                    acc += x * y;
-                }
-                acc = -acc;
+                let n = q1.len() as f32;
+                let alpha = self.inv_255_range;
+                let min = self.min;
+
+                // dot = sum((u8_a * alpha + min) * (u8_b * alpha + min))
+                //     = alpha^2 * dot_u8 + alpha * min * (sum_a + sum_b) + n * min^2
+                // We need dot_u8, sum_a and sum_b, all provided by cosine_similarity_parts_u8
+                let parts = crate::distance::cosine_similarity_parts_u8(q1, q2);
+                let dot = (alpha * alpha) * parts.dot as f32
+                    + alpha * min * (parts.sum_a + parts.sum_b) as f32
+                    + n * min * min;
+                Ok(-dot)
             }
         }
-        Ok(acc)
     }
 }
 
