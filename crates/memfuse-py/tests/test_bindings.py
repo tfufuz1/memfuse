@@ -155,3 +155,52 @@ def test_statistics(db_path):
     # db.stats() currently aggregates default collection
     assert db_stats.index_stats.num_vectors == 0 # because s1 is in "stats_col"
     assert db_stats.storage_stats.num_segments >= 0
+
+def test_encryption_at_rest(tmp_path):
+    path = str(tmp_path / "encrypted_db")
+    passphrase = "super-secret-password"
+
+    # Open with encryption
+    db = memfuse.open(path, dimension=4, encryption_passphrase=passphrase)
+    col = db.collection("secret")
+    v = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    col.insert("k1", v, metadata={"secret": "data"})
+
+    # Close by deleting object (though it doesn't strictly close the file until dropped)
+    del col
+    del db
+
+    # Re-open with same passphrase
+    db2 = memfuse.open(path, dimension=4, encryption_passphrase=passphrase)
+    col2 = db2.collection("secret")
+    doc = col2.get("k1")
+    assert doc is not None
+    assert doc.metadata["secret"] == "data"
+
+    # Re-open with WRONG passphrase should fail to decrypt or at least fail to verify integrity
+    # LsmStorage::new tries to open WAL which will fail integrity check or decryption
+    with pytest.raises(Exception):
+         memfuse.open(path, dimension=4, encryption_passphrase="wrong-password")
+
+def test_distance_metrics(db_path):
+    # Euclidean
+    db_l2 = memfuse.open(db_path + "_l2", dimension=4, distance_metric="euclidean")
+    col = db_l2.collection("test")
+    v1 = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    col.insert("v1", v1)
+    # Search with exact same vector, should have score 0.0 (distance) or 1.0 (similarity)
+    # Actually HNSW usually returns distance. In memfuse-db SearchResult it is called "score".
+    # For Cosine it is 1.0 - cosine_dist.
+    results = col.search(v1, k=1)
+    assert results[0].id == "v1"
+
+    # Dot Product
+    db_dot = memfuse.open(db_path + "_dot", dimension=4, distance_metric="dot")
+    col_dot = db_dot.collection("test")
+    col_dot.insert("v1", v1)
+    results = col_dot.search(v1, k=1)
+    assert results[0].id == "v1"
+
+    # Invalid metric
+    with pytest.raises(ValueError):
+        memfuse.open(db_path + "_invalid", dimension=4, distance_metric="invalid")

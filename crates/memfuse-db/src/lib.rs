@@ -100,6 +100,8 @@ pub struct MemFuseConfig {
     pub max_elements: usize,
     /// Distance metric for vector comparison.
     pub distance_metric: memfuse_core::DistanceMetric,
+    /// Optional passphrase for encryption at rest.
+    pub encryption_passphrase: Option<String>,
 }
 
 impl Default for MemFuseConfig {
@@ -108,6 +110,7 @@ impl Default for MemFuseConfig {
             dimension: 1536,
             max_elements: 1_000_000,
             distance_metric: memfuse_core::DistanceMetric::Cosine,
+            encryption_passphrase: None,
         }
     }
 }
@@ -137,6 +140,7 @@ impl MemFuse {
     pub async fn open_with_config(path: impl AsRef<Path>, config: MemFuseConfig) -> Result<Self> {
         let lsm_config = memfuse_store::LsmConfig {
             path: path.as_ref().to_path_buf(),
+            encryption_passphrase: config.encryption_passphrase.clone(),
             ..Default::default()
         };
 
