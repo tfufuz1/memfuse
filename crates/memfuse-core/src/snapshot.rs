@@ -97,6 +97,64 @@ impl SnapshotRegistry {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_snapshot_registration() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+
+        {
+            let _guard1 = registry.register(100);
+            assert_eq!(registry.min_active_seqno(), 100);
+
+            {
+                let _guard2 = registry.register(50);
+                assert_eq!(registry.min_active_seqno(), 50);
+            }
+
+            assert_eq!(registry.min_active_seqno(), 100);
+        }
+
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
+    fn test_snapshot_pinning() {
+        let registry = SnapshotRegistry::new();
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+
+        registry.pin(200);
+        assert_eq!(registry.min_active_seqno(), 200);
+
+        registry.pin(150);
+        assert_eq!(registry.min_active_seqno(), 150);
+
+        registry.unpin(150);
+        assert_eq!(registry.min_active_seqno(), 200);
+
+        registry.unpin(200);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
+    fn test_tombstone_bit_stripping() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        let seq_with_tombstone = 100 | TOMBSTONE_BIT;
+
+        let _guard = registry.register(seq_with_tombstone);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        registry.pin(200 | TOMBSTONE_BIT);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        registry.unpin(200 | TOMBSTONE_BIT);
+        assert_eq!(registry.min_active_seqno(), 100);
+    }
+}
+
 /// RAII Guard for an active snapshot.
 pub struct SnapshotGuard {
     registry: Arc<SnapshotRegistry>,
