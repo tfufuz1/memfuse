@@ -66,19 +66,25 @@ async fn test_comprehensive_e2e_workflow() {
         let updated_doc = col_agent.get("agent-1").await.unwrap().unwrap();
         assert_eq!(updated_doc.metadata.unwrap()["status"], "Busy");
 
-        // 5. Delete Verification
+        // 5. Hybrid Search
+        // Note: This may fail to compile or run if production logic in collection.rs is broken
+        let hybrid_results = col_task.hybrid_search("LSM storage", &[0.0, 0.0, 0.0, 0.0], 5).await.expect("Hybrid search failed");
+        assert!(!hybrid_results.is_empty(), "Hybrid search should return results");
+        assert_eq!(hybrid_results[0].id, "task-1");
+
+        // 6. Delete Verification
         col_agent.delete("agent-2").await.expect("Delete failed");
         assert!(col_agent.get("agent-2").await.unwrap().is_none());
-
-        // 6. Hybrid Search
-        let hybrid_results = col_task.hybrid_search("LSM storage", &[0.0, 0.0, 0.0, 0.0], 5).await.expect("Hybrid search failed");
-        assert!(!hybrid_results.is_empty());
-        assert_eq!(hybrid_results[0].id, "task-1");
     }
 
-    // 7. Persistence
+    // 7. Persistence: Verify data survives restart
     {
         let db = setup_db(db_path).await;
+
+        let collections = db.list_collections().await.expect("List collections failed");
+        assert!(collections.contains(&"agents".to_string()));
+        assert!(collections.contains(&"tasks".to_string()));
+
         let col_agent = db.collection("agents").await.expect("Get agents collection failed");
         let agent = col_agent.get("agent-1").await.expect("Get agent failed").expect("Agent 1 missing");
         assert_eq!(agent.id, "agent-1");

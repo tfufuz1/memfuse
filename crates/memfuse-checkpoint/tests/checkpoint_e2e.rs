@@ -17,14 +17,11 @@ async fn test_checkpoint_integration_lifecycle() {
         ..Default::default()
     };
 
-    // 1. Setup DB via facade and insert some data
     {
         let db = MemFuse::open_with_config(&db_path, config).await.expect("Failed to open DB");
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None).await.unwrap();
-        // Drop db to release locks
     }
 
-    // 2. Create Checkpoint using CheckpointManager on the same path
     {
         let lsm_config = LsmConfig {
             path: db_path.clone(),
@@ -33,8 +30,8 @@ async fn test_checkpoint_integration_lifecycle() {
         let storage = Arc::new(LsmStorage::new(lsm_config).await.expect("Failed to open storage"));
         let manager = CheckpointManager::new(storage);
 
-        let cp = manager.create_checkpoint("v1-stable").await.expect("Failed to create checkpoint");
-        assert_eq!(cp.name, "v1-stable");
+        let cp = manager.create_checkpoint("v1").await.expect("Failed to create checkpoint");
+        assert_eq!(cp.name, "v1");
 
         manager.drop_checkpoint(&cp).await.expect("Failed to drop checkpoint");
     }
