@@ -31,7 +31,10 @@ async fn test_german_morphological_search_integration() {
         .await
         .expect("hybrid search");
 
-    assert!(!results.is_empty(), "Should find doc-1 via split suffix 'gericht'");
+    assert!(
+        !results.is_empty(),
+        "Should find doc-1 via split suffix 'gericht'"
+    );
     assert_eq!(results[0].id, "doc-1");
 
     col.insert(
@@ -47,6 +50,9 @@ async fn test_german_morphological_search_integration() {
         .await
         .expect("hybrid search amt");
 
-    assert!(!results2.is_empty(), "Should find doc-2 via split suffix 'amt'");
+    assert!(
+        !results2.is_empty(),
+        "Should find doc-2 via split suffix 'amt'"
+    );
     assert_eq!(results2[0].id, "doc-2");
 }
