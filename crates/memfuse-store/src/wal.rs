@@ -92,6 +92,7 @@ impl WalEntry {
         }
     }
 
+    /// Computes an HMAC-SHA256 checksum for a WAL entry.
     pub fn compute_checksum(op: &WalOp, seq_no: u64, integrity_key: &[u8]) -> [u8; 32] {
         let mut mac =
             HmacSha256::new_from_slice(integrity_key).expect("HMAC can take key of any size");

@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 
+/// Unique identifier for a node in the state graph.
 pub type NodeId = String;
 
 /// Represents a single specialized node (e.g. Research, Code) in the agent workflow.

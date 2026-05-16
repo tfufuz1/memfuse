@@ -71,7 +71,7 @@ Snapshot-Isolation (MVCC). `open_at_checkpoint(name)` ist äquivalent zu
 
 | Datei | Status |
 |---|---|
-| `crates/memfuse-checkpoint/src/lib.rs` | NEU |
-| `crates/memfuse-checkpoint/src/store.rs` | NEU: Checkpoint-Registry im LSM |
-| `crates/memfuse-checkpoint/src/fork.rs` | NEU: Copy-on-Write Collection Fork |
-| `crates/memfuse-db/src/lib.rs` | MODIFY: `checkpoint()`, `open_at_checkpoint()`, `fork_from_checkpoint()` |
+| `crates/memfuse-checkpoint/src/lib.rs` | DONE |
+| `crates/memfuse-checkpoint/src/store.rs` | DONE |
+| `crates/memfuse-checkpoint/src/fork.rs` | DONE |
+| `crates/memfuse-db/src/lib.rs` | DONE |

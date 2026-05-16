@@ -1,10 +1,3 @@
-// ANCHOR:ARCH:DB-001 — Orchestrator Facade (Getriebe — Layer 2).
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
-// ROLLE: Verbindet memfuse-core (Traits), memfuse-store (LSM) und memfuse-index (HNSW).
-// DESIGN: Zero-Boilerplate API für Nutzer. Intern wird alles über die Collection-Abstraktion geroutet.
-// ABWÄRTSKOMPATIBILITÄT: Bietet weiterhin top-level insert/search an, die intern auf die "default" Collection leiten.
 //! # MemFuse — Embedded Hybrid-Search for AI Agents
 //!
 //! MemFuse is a zero-boilerplate embedded database for AI agent memory.
@@ -42,6 +35,14 @@
 //! # Ok(())
 //! # }
 //! ```
+
+// ANCHOR:ARCH:DB-001 — Orchestrator Facade (Getriebe — Layer 2).
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// ROLLE: Verbindet memfuse-core (Traits), memfuse-store (LSM) und memfuse-index (HNSW).
+// DESIGN: Zero-Boilerplate API für Nutzer. Intern wird alles über die Collection-Abstraktion geroutet.
+// ABWÄRTSKOMPATIBILITÄT: Bietet weiterhin top-level insert/search an, die intern auf die "default" Collection leiten.
 
 #![forbid(unsafe_code)]
 
@@ -170,6 +171,7 @@ impl MemFuse {
     }
 
     /// Returns a specific collection (namespace).
+    ///
     /// Creates the collection if it does not already exist.
     // ANCHOR:TODO:COL-001 — Implementiere vollständige Persistenz und Isolation für `collection()`.
     // WP:WP-1.2 PRIO:1 NEEDS:NONE
@@ -409,6 +411,7 @@ pub use serde_json::json;
 
 #[cfg(any(test, feature = "bench", debug_assertions))]
 impl MemFuse {
+    /// Returns the underlying storage engine (for testing and benchmarks).
     pub fn inner_storage(&self) -> Arc<LsmStorage> {
         self.storage.clone()
     }

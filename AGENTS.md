@@ -14,8 +14,8 @@
 | **`memfuse-store`** | LSM-Storage, MemTables, WAL, Compaction | ~1400 | ✅ Stabil |
 | **`memfuse-index`** | HNSW-Graphen, SIMD Vektor-Distanz, Quantization | ~1300 | ✅ Stabil |
 | **`memfuse-db`** | Orchestrierung, Hybrid-Search Facade, Collections | ~700 | ✅ Stabil |
-| **`memfuse-text`** | BM25, Inverted Index, Tokenizer | — | 🔵 WP-2.1 geplant |
-| **`memfuse-py`** | PyO3 Bindings, maturin | — | 🔵 WP-3.1 geplant |
+| **`memfuse-text`** | BM25, Inverted Index, Tokenizer | — | ✅ Stabil |
+| **`memfuse-py`** | PyO3 Bindings, maturin | — | ✅ Stabil |
 
 ---
 
@@ -82,8 +82,8 @@ just spec WP-X.Y-NAME
 | **WP-1.2** | Collections / Namespaces | 🟠 HOCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-1.2-Collections.md) |
 | **WP-2.1** | Hybrid Search (BM25+RRF) | 🟠 HOCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-2.1-HybridSearch.md) |
 | **WP-2.2** | Scalar Quantization (SQ8) | 🟡 MITTEL | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-2.2-Quantization.md) |
-| **WP-3.1** | Python Bindings (PyO3) | 🟠 HOCH | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-3.1-PythonBindings.md) |
-| **WP-3.2** | Encryption at Rest | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-3.2-Encryption.md) |
+| **WP-3.1** | Python Bindings (PyO3) | 🟠 HOCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-3.1-PythonBindings.md) |
+| **WP-3.2** | Encryption at Rest | 🟡 MITTEL | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-3.2-Encryption.md) |
 | **WP-4.1** | Memory-Mapped I/O | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
 | **WP-4.2** | Advanced Filtering | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
 | **WP-4.3** | DiskANN Out-of-Core | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |

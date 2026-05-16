@@ -85,6 +85,7 @@ pub struct PyMemFuse {
 
 #[pymethods]
 impl PyMemFuse {
+    /// Returns a specific collection (namespace).
     pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<PyCollection> {
         let rt = get_runtime()?;
         let col = py
@@ -95,12 +96,14 @@ impl PyMemFuse {
         })
     }
 
+    /// Lists all existing collection names.
     pub fn list_collections(&self, py: Python<'_>) -> PyResult<Vec<String>> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.list_collections()))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Drops a collection, removing all its data.
     pub fn drop_collection(&self, name: &str, py: Python<'_>) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.drop_collection(name)))
@@ -108,6 +111,7 @@ impl PyMemFuse {
     }
 }
 
+/// A logically isolated collection of documents (Python binding).
 #[pyclass(unsendable, name = "Collection")]
 pub struct PyCollection {
     inner: Arc<MemFuseCollection>,
@@ -115,6 +119,7 @@ pub struct PyCollection {
 
 #[pymethods]
 impl PyCollection {
+    /// Inserts a document with an embedding and optional metadata.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
@@ -141,6 +146,7 @@ impl PyCollection {
         Ok(())
     }
 
+    /// Retrieves a document by its ID.
     pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
         let rt = get_runtime()?;
         let doc = py
@@ -172,6 +178,7 @@ impl PyCollection {
         }
     }
 
+    /// Updates an existing document.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn update<'py>(
         &self,
@@ -198,6 +205,7 @@ impl PyCollection {
         Ok(())
     }
 
+    /// Deletes a document by its ID.
     pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.delete(id)))
@@ -205,6 +213,7 @@ impl PyCollection {
         Ok(())
     }
 
+    /// Performs semantic k-NN search.
     #[pyo3(signature = (vector, k))]
     pub fn search<'py>(
         &self,
