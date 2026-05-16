@@ -1,6 +1,6 @@
 // AGENT:12
 // ANCHOR:INTEGRATION STATUS:DONE
-use memfuse_runtime::{WasmSandbox, SandboxConfig};
+use memfuse_runtime::{SandboxConfig, WasmSandbox};
 use std::time::Duration;
 
 #[test]
@@ -17,7 +17,9 @@ fn test_sandbox_initialization() {
 fn test_sandbox_execution_placeholder() {
     let sandbox = WasmSandbox::new(SandboxConfig::default());
     let wasm_bytes = vec![0, 1, 2, 3]; // Mock WASM
-    let result = sandbox.execute(&wasm_bytes, "input data").expect("execution failed");
+    let result = sandbox
+        .execute(&wasm_bytes, "input data")
+        .expect("execution failed");
 
     assert_eq!(result, "sandbox_execution_result_placeholder");
 }
