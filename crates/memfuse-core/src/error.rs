@@ -72,6 +72,9 @@ pub enum MemFuseError {
     #[error("Internal error: {0}")]
     Internal(String),
 
+    #[error("Crypto error: {0}")]
+    Crypto(String),
+
     // ═══ Text Engine ═══
     #[error("Text engine error: {0}")]
     Text(String),
