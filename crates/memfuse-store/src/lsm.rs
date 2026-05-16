@@ -1,7 +1,7 @@
 //! LSM-Tree (Log-Structured Merge-Tree) storage engine.
 // ANCHOR:DOC:DOC-LSM-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:DONE
+// AGENT:02 DATE:2026-05-16 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:LSM-001 — Zentraler Storage-Engine-Orchestrator des Triebwerks.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -125,7 +125,8 @@ impl LsmStorage {
         let key_manager = config
             .encryption_passphrase
             .as_ref()
-            .map(|p| Arc::new(KeyManager::new(p)));
+            .map(|p| KeyManager::try_new(p).map(Arc::new))
+            .transpose()?;
 
         let wal =
             Wal::open_with_key_manager(config.path.join("wal.log"), key_manager.clone()).await?;
@@ -340,20 +341,27 @@ impl StorageEngine for LsmStorage {
         let ops = self.tx_buffer.drain(tx_id);
         let state = self.state.read().await;
 
+        let integrity_key = if let Some(km) = &self.key_manager {
+            km.integrity_key()?
+        } else {
+            *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0"
+        };
+
         for op in ops {
             let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
 
             match op {
                 IndexOp::Insert { data, .. } => {
                     let (key, value) = data;
-                    let entry = WalEntry::new(
+                    let entry = WalEntry::try_new(
                         WalOp::Put {
                             tx_id,
                             key: key.clone(),
                             value: value.clone(),
                         },
                         seq_no,
-                    );
+                        &integrity_key,
+                    )?;
                     let entry_size = key.len() + value.len() + 8;
                     let _ = self.budget.consume_memory(entry_size as u64);
                     state.wal.append(&entry).await?;
@@ -363,13 +371,14 @@ impl StorageEngine for LsmStorage {
                 }
                 IndexOp::Delete { data, .. } => {
                     if let Some((key, _)) = data {
-                        let entry = WalEntry::new(
+                        let entry = WalEntry::try_new(
                             WalOp::Delete {
                                 tx_id,
                                 key: key.clone(),
                             },
                             seq_no,
-                        );
+                            &integrity_key,
+                        )?;
                         let _ = self.budget.consume_memory(key.len() as u64 + 8);
                         state.wal.append(&entry).await?;
                         state

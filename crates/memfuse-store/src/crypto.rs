@@ -17,14 +17,26 @@ pub struct KeyManager {
 
 impl KeyManager {
     /// Creates a new KeyManager by deriving a key from a passphrase.
-    pub fn new(passphrase: &str) -> Self {
+    pub fn try_new(passphrase: &str) -> Result<Self> {
         let salt = b"memfuse-encryption-salt-v1";
         let hk = Hkdf::<Sha256>::new(Some(salt), passphrase.as_bytes());
         let mut key = [0u8; 32];
         hk.expand(b"memfuse-aes-256-gcm-key", &mut key)
-            .expect("32 bytes is a valid length for HKDF expansion");
+            .map_err(|e| MemFuseError::Storage(format!("HKDF expansion failed: {}", e)))?;
 
-        Self { key }
+        Ok(Self { key })
+    }
+
+    /// Derives an integrity key for HMAC-SHA256.
+    pub fn integrity_key(&self) -> Result<[u8; 32]> {
+        let salt = b"memfuse-encryption-salt-v1";
+        let hk = Hkdf::<Sha256>::new(Some(salt), &self.key);
+        let mut key = [0u8; 32];
+        hk.expand(b"memfuse-hmac-sha256-key", &mut key)
+            .map_err(|e| {
+                MemFuseError::Storage(format!("HKDF integrity expansion failed: {}", e))
+            })?;
+        Ok(key)
     }
 
     /// Encrypts a block of data with a given nonce (e.g., block offset).
@@ -62,7 +74,7 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt_roundtrip() {
-        let km = KeyManager::new("secret-passphrase");
+        let km = KeyManager::try_new("secret-passphrase").expect("try_new");
         let data = b"sensitive data";
         let nonce = 42;
 
@@ -74,7 +86,7 @@ mod tests {
 
     #[test]
     fn test_wrong_nonce_fails() {
-        let km = KeyManager::new("secret-passphrase");
+        let km = KeyManager::try_new("secret-passphrase").expect("try_new");
         let data = b"sensitive data";
         let encrypted = km.encrypt(data, 42).expect("encrypt");
 
@@ -84,8 +96,8 @@ mod tests {
 
     #[test]
     fn test_different_keys_different_ciphertexts() {
-        let km1 = KeyManager::new("pass1");
-        let km2 = KeyManager::new("pass2");
+        let km1 = KeyManager::try_new("pass1").expect("try_new");
+        let km2 = KeyManager::try_new("pass2").expect("try_new");
         let data = b"data";
         let nonce = 0;
 

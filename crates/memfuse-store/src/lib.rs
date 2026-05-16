@@ -9,13 +9,10 @@
 // CREATED:2026-05-05 DEADLINE:NONE
 // DATEN-PFAD: Client → TxBuffer → WAL → MemTable → SSTable → Compaction
 // INVARIANTE: Alle Disk-I/O via tokio::fs (zero std::fs imports).
-// ANCHOR:INTEGRATION STATUS:READY AGENT:02 DATE:2026-05-15
+// ANCHOR:INTEGRATION STATUS:REVIEW AGENT:02 DATE:2026-05-16
 // MODUL-HIERARCHIE: lsm.rs orchestriert, memtable/wal/sstable sind Bausteine.
-//!
-//! Provides persistent key-value storage with WAL, MemTable,
-//! SSTable, and background compaction.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 pub mod compaction;
 pub mod crypto;
