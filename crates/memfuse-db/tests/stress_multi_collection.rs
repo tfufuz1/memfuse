@@ -1,7 +1,7 @@
 //! Stress tests for multi-collection isolation and concurrency.
 // AGENT:12 DATE:2026-05-18 STATUS:READY
 
-use memfuse_db::{MemFuse, MemFuseConfig, DistanceMetric};
+use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -50,7 +50,11 @@ async fn test_multi_collection_stress() -> memfuse_core::Result<()> {
                 let default_col = db.collection("default").await.expect("default");
                 let res_default = default_col.search(&vec, 10).await.expect("search default");
                 for r in res_default {
-                   assert_ne!(r.id, id, "Found doc from collection {} in default collection", col_name);
+                    assert_ne!(
+                        r.id, id,
+                        "Found doc from collection {} in default collection",
+                        col_name
+                    );
                 }
             }
         }));

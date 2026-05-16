@@ -1,7 +1,7 @@
 //! Comprehensive E2E tests for MemFuse DB.
 // AGENT:12 DATE:2026-05-18 STATUS:READY
 
-use memfuse_db::{MemFuse, MemFuseConfig, DistanceMetric};
+use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -23,21 +23,24 @@ async fn test_full_stack_e2e() -> memfuse_core::Result<()> {
         "doc-1",
         &[1.0, 0.0, 0.0, 0.0],
         Some(json!({"text": "rust programming language", "tags": ["coding"]})),
-    ).await?;
+    )
+    .await?;
 
     // Doc 2: Vector match [0, 1, 0, 0], Text: "python scripting"
     db.insert(
         "doc-2",
         &[0.0, 1.0, 0.0, 0.0],
         Some(json!({"text": "python scripting", "tags": ["scripting"]})),
-    ).await?;
+    )
+    .await?;
 
     // Doc 3: Vector match [0.9, 0.1, 0, 0], Text: "java software"
     db.insert(
         "doc-3",
         &[0.9, 0.1, 0.0, 0.0],
         Some(json!({"content": "java software engineering", "tags": ["enterprise"]})),
-    ).await?;
+    )
+    .await?;
 
     // 3. Hybrid Search (Vector + Text)
     // Query for "rust" and vector [1, 0, 0, 0]
@@ -47,7 +50,10 @@ async fn test_full_stack_e2e() -> memfuse_core::Result<()> {
     assert!(!results.is_empty());
     assert_eq!(results[0].id, "doc-1");
     assert!(results[0].score > 0.0);
-    assert_eq!(results[0].metadata.as_ref().unwrap()["text"], "rust programming language");
+    assert_eq!(
+        results[0].metadata.as_ref().unwrap()["text"],
+        "rust programming language"
+    );
 
     // 5. Update + Re-Search
     // Update doc-2 to be about rust too
@@ -55,7 +61,8 @@ async fn test_full_stack_e2e() -> memfuse_core::Result<()> {
         "doc-2",
         &[1.0, 0.0, 0.0, 0.0],
         Some(json!({"text": "rust is also great", "tags": ["rust"]})),
-    ).await?;
+    )
+    .await?;
 
     let results_after_update = db.hybrid_search("rust", &[1.0, 0.0, 0.0, 0.0], 5).await?;
     let ids: Vec<String> = results_after_update.iter().map(|r| r.id.clone()).collect();
@@ -73,7 +80,13 @@ async fn test_full_stack_e2e() -> memfuse_core::Result<()> {
 
     // 7. Collection Isolation
     let col_other = db.collection("other").await?;
-    col_other.insert("doc-other", &[0.0, 0.0, 1.0, 1.0], Some(json!({"text": "isolated"}))).await?;
+    col_other
+        .insert(
+            "doc-other",
+            &[0.0, 0.0, 1.0, 1.0],
+            Some(json!({"text": "isolated"})),
+        )
+        .await?;
 
     let get_from_default = db.get("doc-other").await?;
     assert!(get_from_default.is_none());

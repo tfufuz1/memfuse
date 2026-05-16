@@ -1,7 +1,7 @@
 //! Integration tests for memfuse-runtime.
 // AGENT:12 DATE:2026-05-18 STATUS:READY
 
-use memfuse_runtime::{WasmSandbox, SandboxConfig};
+use memfuse_runtime::{SandboxConfig, WasmSandbox};
 
 #[test]
 fn test_sandbox_initialization_and_execution() {
@@ -11,6 +11,8 @@ fn test_sandbox_initialization_and_execution() {
     let wasm_bytes = b"dummy wasm";
     let input = "test input";
 
-    let result = sandbox.execute(wasm_bytes, input).expect("execution should succeed");
+    let result = sandbox
+        .execute(wasm_bytes, input)
+        .expect("execution should succeed");
     assert_eq!(result, "sandbox_execution_result_placeholder");
 }
