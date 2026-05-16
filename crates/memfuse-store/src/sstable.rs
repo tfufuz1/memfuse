@@ -366,7 +366,9 @@ impl SstableReader {
         let first_key = if !index.is_empty() {
             let offset = index
                 .first()
-                .ok_or_else(|| MemFuseError::Storage("corrupted index: first entry missing".into()))?
+                .ok_or_else(|| {
+                    MemFuseError::Storage("corrupted index: first entry missing".into())
+                })?
                 .1;
             let next_offset = if index.len() > 1 {
                 index
@@ -500,7 +502,9 @@ impl SstableReader {
         let num_offsets = u16::from_le_bytes(
             block_data
                 .get(n.saturating_sub(2)..n)
-                .ok_or_else(|| MemFuseError::Storage("malformed block: missing num_offsets".into()))?
+                .ok_or_else(|| {
+                    MemFuseError::Storage("malformed block: missing num_offsets".into())
+                })?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
         ) as usize;
