@@ -278,6 +278,10 @@ impl SstableReader {
         let path_buf = path.as_ref().to_path_buf();
         let (mmap, file_size) =
             tokio::task::spawn_blocking(move || -> std::io::Result<(memmap2::Mmap, u64)> {
+                // ANCHOR:FIXME:STDFS-001
+                // AGENT:02 PRIO:3 STATUS:READY
+                // BEGRÜNDUNG: std::fs in async context (innerhalb spawn_blocking akzeptabel,
+                // aber tokio::fs bevorzugt).
                 let file = std::fs::File::open(&path_buf)?;
                 let metadata = file.metadata()?;
                 let file_size = metadata.len();
@@ -287,7 +291,9 @@ impl SstableReader {
                 // BEGRÜNDUNG: SSTables sind im LSM-Tree unveränderlich. Memory Mapping
                 // ermöglicht effizienten Zugriff ohne explizite Syscalls.
                 #[allow(unsafe_code)]
-                let mmap = unsafe { memmap2::Mmap::map(&file)? };
+                let mmap = unsafe { // unsafe
+                    memmap2::Mmap::map(&file)?
+                };
                 Ok((mmap, file_size))
             })
             .await
