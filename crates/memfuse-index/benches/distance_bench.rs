@@ -1,3 +1,8 @@
+//! Benchmarks for distance computation metrics.
+//!
+//! These benchmarks compare SIMD-accelerated implementations against
+//! scalar fallbacks for various distance metrics used in the HNSW index.
+
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use memfuse_index::distance::*;
 use rand::Rng;

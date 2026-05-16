@@ -1,3 +1,8 @@
+//! Benchmarks for SSTable read operations.
+//!
+//! These benchmarks measure the performance of key-value retrieval from
+//! persistent SSTable files, including both existing and non-existent keys.
+
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use memfuse_store::sstable::{create_block_cache, SstableBuilder, SstableReader};
 use tempfile::TempDir;

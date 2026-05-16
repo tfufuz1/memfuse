@@ -78,6 +78,7 @@ pub struct PyDocument {
     pub metadata: Option<PyObject>,
 }
 
+/// Python wrapper for the MemFuse database.
 #[pyclass(unsendable, name = "Db")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
@@ -85,6 +86,8 @@ pub struct PyMemFuse {
 
 #[pymethods]
 impl PyMemFuse {
+    /// Returns a specific collection (namespace).
+    /// Creates the collection if it does not already exist.
     pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<PyCollection> {
         let rt = get_runtime()?;
         let col = py
@@ -95,12 +98,14 @@ impl PyMemFuse {
         })
     }
 
+    /// Lists all existing collection names.
     pub fn list_collections(&self, py: Python<'_>) -> PyResult<Vec<String>> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.list_collections()))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Drops a collection, removing all its data from storage.
     pub fn drop_collection(&self, name: &str, py: Python<'_>) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.drop_collection(name)))
@@ -108,6 +113,7 @@ impl PyMemFuse {
     }
 }
 
+/// Python wrapper for a MemFuse collection.
 #[pyclass(unsendable, name = "Collection")]
 pub struct PyCollection {
     inner: Arc<MemFuseCollection>,
@@ -115,6 +121,7 @@ pub struct PyCollection {
 
 #[pymethods]
 impl PyCollection {
+    /// Inserts a document with an embedding and optional metadata.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
@@ -141,6 +148,7 @@ impl PyCollection {
         Ok(())
     }
 
+    /// Retrieves a document by its string key.
     pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
         let rt = get_runtime()?;
         let doc = py
@@ -172,6 +180,7 @@ impl PyCollection {
         }
     }
 
+    /// Updates a document's embedding and/or metadata.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn update<'py>(
         &self,
@@ -198,6 +207,7 @@ impl PyCollection {
         Ok(())
     }
 
+    /// Deletes a document by its string ID.
     pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.delete(id)))
@@ -205,6 +215,7 @@ impl PyCollection {
         Ok(())
     }
 
+    /// Performs semantic k-NN search over stored embeddings.
     #[pyo3(signature = (vector, k))]
     pub fn search<'py>(
         &self,

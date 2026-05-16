@@ -54,6 +54,7 @@ pub struct BlockBuilder {
 }
 
 impl BlockBuilder {
+    /// Creates a new `BlockBuilder` with the specified block size.
     pub fn new(block_size: usize) -> Self {
         Self {
             data: BytesMut::new(),
@@ -74,6 +75,8 @@ impl BlockBuilder {
         }
     }
 
+    /// Adds a key-value pair to the SSTable.
+    /// Returns `true` if the pair was added, or `false` if the block is full.
     pub fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64) -> bool {
         // size: key_len(2) + key + seq_no(8) + val_len(2) + value + bloom(8) + offsets + offset count (2 bytes)
         if !self.data.is_empty()
@@ -92,11 +95,13 @@ impl BlockBuilder {
         true
     }
 
+    /// Returns the current size of the SSTable being built.
     pub fn current_size(&self) -> usize {
         // data + bloom(8) + offsets + offset count (2 bytes)
         self.data.len() + 8 + self.offsets.len() * 2 + 2
     }
 
+    /// Returns `true` if no data has been added to the builder.
     pub fn is_empty(&self) -> bool {
         self.offsets.is_empty()
     }
@@ -136,6 +141,7 @@ impl SstableBuilder {
         Self::create_with_key_manager(path, None).await
     }
 
+    /// Creates a new SSTable at the specified path, optionally using a `KeyManager` for encryption.
     pub async fn create_with_key_manager(
         path: impl AsRef<Path>,
         key_manager: Option<Arc<KeyManager>>,
@@ -276,6 +282,7 @@ impl SstableReader {
         Self::open_with_key_manager(path, block_cache, None).await
     }
 
+    /// Opens an existing SSTable at the specified path, optionally using a `KeyManager` for decryption.
     pub async fn open_with_key_manager(
         path: impl AsRef<Path>,
         block_cache: Arc<BlockCache>,
@@ -586,6 +593,7 @@ impl SstableReader {
         Ok(None)
     }
 
+    /// Returns the metadata for this SSTable.
     pub fn metadata(&self) -> &SstableMetadata {
         &self.metadata
     }
