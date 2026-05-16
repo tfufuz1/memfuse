@@ -19,7 +19,7 @@
 // SUCCESSOR: @JULES-09 — "Python Bindings sind stabil. StateGraph kann darauf aufbauen."
 #![forbid(unsafe_code)]
 
-use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
+use memfuse_db::{Collection as MemFuseCollection, DistanceMetric, MemFuse, MemFuseConfig};
 use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;
 use pyo3::IntoPyObjectExt;
@@ -351,6 +351,10 @@ impl PyMemFuse {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    pub fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        self.len(py)
+    }
+
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.is_empty()))
@@ -598,6 +602,10 @@ impl PyCollection {
         Ok(py.allow_threads(|| rt.block_on(self.inner.len())))
     }
 
+    pub fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        self.len(py)
+    }
+
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
         Ok(py.allow_threads(|| rt.block_on(self.inner.is_empty())))
@@ -667,12 +675,31 @@ impl PyCollection {
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536))]
-fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<PyMemFuse> {
+#[pyo3(signature = (path, dimension=1536, max_elements=1000000, distance_metric="cosine"))]
+fn open(
+    py: Python<'_>,
+    path: &str,
+    dimension: usize,
+    max_elements: usize,
+    distance_metric: &str,
+) -> PyResult<PyMemFuse> {
     let rt = get_runtime()?;
+    let metric = match distance_metric.to_lowercase().as_str() {
+        "cosine" => DistanceMetric::Cosine,
+        "euclidean" | "l2" => DistanceMetric::Euclidean,
+        "dot" | "dotproduct" => DistanceMetric::DotProduct,
+        _ => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Invalid distance metric: {}. Supported: cosine, euclidean, dot",
+                distance_metric
+            )))
+        }
+    };
+
     let config = MemFuseConfig {
         dimension,
-        ..Default::default()
+        max_elements,
+        distance_metric: metric,
     };
     let path_string = path.to_string();
     let db = py

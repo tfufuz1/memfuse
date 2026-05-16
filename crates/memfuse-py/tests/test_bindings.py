@@ -155,3 +155,24 @@ def test_statistics(db_path):
     # db.stats() currently aggregates default collection
     assert db_stats.index_stats.num_vectors == 0 # because s1 is in "stats_col"
     assert db_stats.storage_stats.num_segments >= 0
+
+def test_len_ergonomics(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("test_len")
+    v = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
+
+    db.insert("d1", v)
+    assert len(db) == 1
+
+    col.insert("c1", v)
+    assert len(col) == 1
+    assert len(db) == 1 # db still 1 because c1 is in another collection
+
+def test_open_custom_config(db_path):
+    # This just ensures it doesn't crash and parameters are accepted
+    db = memfuse.open(db_path, dimension=128, max_elements=5000, distance_metric="euclidean")
+    assert db is not None
+
+    # Check invalid metric
+    with pytest.raises(ValueError):
+        memfuse.open(db_path + "_invalid", distance_metric="invalid")
