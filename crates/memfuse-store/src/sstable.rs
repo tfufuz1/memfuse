@@ -63,8 +63,12 @@ impl BlockBuilder {
         let hash = blake3::hash(key);
         let bytes = hash.as_bytes();
         // Use 4 x 11-bit chunks from the 256-bit hash for Bloom filter bits (64-bit filter)
+        // Safety: blake3 outputs 32 bytes, i * 2 + 1 is max 7.
         for i in 0..4 {
-            let chunk = u16::from_le_bytes([bytes[i * 2], bytes[i * 2 + 1]]);
+            let chunk = u16::from_le_bytes([
+                *bytes.get(i * 2).unwrap_or(&0),
+                *bytes.get(i * 2 + 1).unwrap_or(&0),
+            ]);
             let bit = chunk % 64;
             self.bloom |= 1 << bit;
         }
@@ -360,9 +364,19 @@ impl SstableReader {
         let last_key = index.last().map(|(k, _)| k.clone()).unwrap_or_default();
 
         let first_key = if !index.is_empty() {
-            let offset = index[0].1;
+            let offset = index
+                .first()
+                .ok_or_else(|| {
+                    MemFuseError::Storage("corrupted index: first entry missing".into())
+                })?
+                .1;
             let next_offset = if index.len() > 1 {
-                index[1].1
+                index
+                    .get(1)
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("corrupted index: second entry missing".into())
+                    })?
+                    .1
             } else {
                 index_offset
             };
@@ -382,7 +396,11 @@ impl SstableReader {
             if block_data.len() < 2 + k_len {
                 return Err(MemFuseError::Storage("corrupted SSTable block".into()));
             }
-            Bytes::copy_from_slice(&block_data[2..2 + k_len])
+            Bytes::copy_from_slice(
+                block_data
+                    .get(2..2 + k_len)
+                    .ok_or_else(|| MemFuseError::Storage("corrupted block key".into()))?,
+            )
         } else {
             Bytes::new()
         };
@@ -460,9 +478,16 @@ impl SstableReader {
             }
         };
 
-        let offset = self.index[idx].1;
+        let offset = self
+            .index
+            .get(idx)
+            .ok_or_else(|| MemFuseError::Storage("index out of bounds".into()))?
+            .1;
         let next_offset = if idx + 1 < self.index.len() {
-            self.index[idx + 1].1
+            self.index
+                .get(idx + 1)
+                .ok_or_else(|| MemFuseError::Storage("index out of bounds".into()))?
+                .1
         } else {
             self.index_offset
         };
@@ -475,21 +500,29 @@ impl SstableReader {
         }
 
         let num_offsets = u16::from_le_bytes(
-            block_data[n - 2..n]
+            block_data
+                .get(n.saturating_sub(2)..n)
+                .ok_or_else(|| {
+                    MemFuseError::Storage("malformed block: missing num_offsets".into())
+                })?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
         ) as usize;
 
-        let offsets_len = num_offsets * 2;
-        if n < 10 + offsets_len {
+        let offsets_len = num_offsets.saturating_mul(2);
+        if n < offsets_len.saturating_add(10) {
             return Err(MemFuseError::Storage(
                 "malformed block: num_offsets too large".into(),
             ));
         }
-        let offsets_start = n - 2 - offsets_len;
-        let bloom_offset = offsets_start - 8;
+        let offsets_start = n.saturating_sub(2).saturating_sub(offsets_len);
+        let bloom_offset = offsets_start.saturating_sub(8);
         let bloom = u64::from_le_bytes(
-            block_data[bloom_offset..bloom_offset + 8]
+            block_data
+                .get(bloom_offset..bloom_offset.saturating_add(8))
+                .ok_or_else(|| {
+                    MemFuseError::Storage("malformed block: missing bloom filter".into())
+                })?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
         );
@@ -498,8 +531,12 @@ impl SstableReader {
         let hash = blake3::hash(key);
         let hash_bytes = hash.as_bytes();
         let mut may_contain = true;
+        // Safety: blake3 outputs 32 bytes, i * 2 + 1 is max 7.
         for i in 0..4 {
-            let chunk = u16::from_le_bytes([hash_bytes[i * 2], hash_bytes[i * 2 + 1]]);
+            let chunk = u16::from_le_bytes([
+                *hash_bytes.get(i * 2).unwrap_or(&0),
+                *hash_bytes.get(i * 2 + 1).unwrap_or(&0),
+            ]);
             let bit = chunk % 64;
             if (bloom & (1 << bit)) == 0 {
                 may_contain = false;
@@ -576,9 +613,16 @@ impl SstableReader {
         }
 
         for idx in 0..self.index.len() {
-            let offset = self.index[idx].1;
+            let offset = self
+                .index
+                .get(idx)
+                .ok_or_else(|| MemFuseError::Storage("index out of bounds".into()))?
+                .1;
             let next_offset = if idx + 1 < self.index.len() {
-                self.index[idx + 1].1
+                self.index
+                    .get(idx + 1)
+                    .ok_or_else(|| MemFuseError::Storage("index out of bounds".into()))?
+                    .1
             } else {
                 self.index_offset
             };
@@ -591,7 +635,11 @@ impl SstableReader {
             }
 
             let num_offsets = u16::from_le_bytes(
-                block_data[n - 2..n]
+                block_data
+                    .get(n.saturating_sub(2)..n)
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("malformed block: missing num_offsets".into())
+                    })?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
@@ -680,9 +728,16 @@ impl SstableReader {
         };
 
         for idx in start_idx..self.index.len() {
-            let offset = self.index[idx].1;
+            let offset = self
+                .index
+                .get(idx)
+                .ok_or_else(|| MemFuseError::Storage("index out of bounds".into()))?
+                .1;
             let next_offset = if idx + 1 < self.index.len() {
-                self.index[idx + 1].1
+                self.index
+                    .get(idx + 1)
+                    .ok_or_else(|| MemFuseError::Storage("index out of bounds".into()))?
+                    .1
             } else {
                 self.index_offset
             };
@@ -695,7 +750,11 @@ impl SstableReader {
             }
 
             let num_offsets = u16::from_le_bytes(
-                block_data[n - 2..n]
+                block_data
+                    .get(n.saturating_sub(2)..n)
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("malformed block: missing num_offsets".into())
+                    })?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
@@ -787,9 +846,16 @@ impl SstableReader {
         }
 
         for idx in 0..self.index.len() {
-            let offset = self.index[idx].1;
+            let offset = self
+                .index
+                .get(idx)
+                .ok_or_else(|| MemFuseError::Storage("index out of bounds".into()))?
+                .1;
             let next_offset = if idx + 1 < self.index.len() {
-                self.index[idx + 1].1
+                self.index
+                    .get(idx + 1)
+                    .ok_or_else(|| MemFuseError::Storage("index out of bounds".into()))?
+                    .1
             } else {
                 self.index_offset
             };
@@ -802,7 +868,11 @@ impl SstableReader {
             }
 
             let num_offsets = u16::from_le_bytes(
-                block_data[n - 2..n]
+                block_data
+                    .get(n.saturating_sub(2)..n)
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("malformed block: missing num_offsets".into())
+                    })?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
@@ -904,12 +974,20 @@ mod tests {
 
         // 1. Verify format: [entries][u64 bloom][u16 offset1][u16 offset2][u16 num_offsets]
         let n = block.len();
-        let num_offsets = u16::from_le_bytes([block[n - 2], block[n - 1]]);
+        let num_offsets = u16::from_le_bytes(
+            block
+                .get(n.saturating_sub(2)..n)
+                .expect("test")
+                .try_into()
+                .expect("test"),
+        );
         assert_eq!(num_offsets, 2);
 
         let bloom_pos = n - 2 - (num_offsets as usize * 2) - 8;
         let bloom = u64::from_le_bytes(
-            block[bloom_pos..bloom_pos + 8]
+            block
+                .get(bloom_pos..bloom_pos + 8)
+                .expect("test")
                 .try_into()
                 .expect("correct length"),
         );
@@ -919,8 +997,12 @@ mod tests {
         let check_bloom = |key: &[u8], filter: u64| {
             let hash = blake3::hash(key);
             let bytes = hash.as_bytes();
+            // Safety: blake3 outputs 32 bytes.
             for i in 0..4 {
-                let chunk = u16::from_le_bytes([bytes[i * 2], bytes[i * 2 + 1]]);
+                let chunk = u16::from_le_bytes([
+                    *bytes.get(i * 2).unwrap_or(&0),
+                    *bytes.get(i * 2 + 1).unwrap_or(&0),
+                ]);
                 let bit = chunk % 64;
                 if (filter & (1 << bit)) == 0 {
                     return false;
