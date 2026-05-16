@@ -41,7 +41,10 @@ async fn test_concurrent_collection_ops() {
 
                 // Search
                 let results = col.search(&vec, 1).await.expect("search");
-                assert!(!results.is_empty(), "Search should find at least one result (itself)");
+                assert!(
+                    !results.is_empty(),
+                    "Search should find at least one result (itself)"
+                );
 
                 // Delete
                 col.delete(&id).await.expect("delete");
@@ -55,5 +58,9 @@ async fn test_concurrent_collection_ops() {
 
     // Final sanity check: collection should be empty
     let final_len = col.len().await;
-    assert_eq!(final_len, 0, "Collection should be empty after all deletes, but has {} docs", final_len);
+    assert_eq!(
+        final_len, 0,
+        "Collection should be empty after all deletes, but has {} docs",
+        final_len
+    );
 }
