@@ -934,7 +934,7 @@ impl VectorIndex for HnswIndex {
         // AGENT:03 DATE:2026-05-15 STATUS:DONE
         // CREATED:2026-05-09 DEADLINE:NONE
         if self.config.quantize && self.quantizer.read().is_none() {
-            let mut train_data = Vec::new();
+            let mut train_data = Vec::with_capacity(256.min(ops.len()));
             for op in &ops {
                 if let IndexOp::Insert { data, .. } = op {
                     train_data.push(data.clone());

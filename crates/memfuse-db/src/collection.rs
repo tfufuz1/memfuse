@@ -302,7 +302,7 @@ impl Collection {
 
         let kvs = self.storage.scan_prefix(&real_prefix).await?;
 
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(kvs.len());
         for (k, v) in kvs {
             let key_str = String::from_utf8_lossy(&k).to_string();
             // We should ideally strip the prefix to return the user-facing key
