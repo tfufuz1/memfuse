@@ -4,26 +4,21 @@
 // AGENT:03 DATE:2026-05-18 STATUS:WIP
 // ZIEL: Recall@10 >= 90% für Datasets die RAM übersteigen.
 
-#![allow(unsafe_code)]
-
-use memfuse_core::{DistanceMetric, DocId, Result, ScoredDocument, MemFuseError};
-use crate::distance::{compute_distance, mmap_file, cast_slice_f32, cast_slice_u32};
+use crate::distance::{cast_slice_f32, cast_slice_u32, compute_distance, mmap_file};
 use crate::hnsw::{HnswIndex, VectorData};
-use std::fs::File;
-use std::io::{Write, BufWriter};
-use memmap2::Mmap;
-use std::collections::BinaryHeap;
-use std::cmp::Reverse;
 use ahash::AHashSet;
+use memfuse_core::{DistanceMetric, DocId, MemFuseError, Result, ScoredDocument};
+use memmap2::Mmap;
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+use std::fs::File;
+use std::io::{BufWriter, Write};
 
 /// Configuration for DiskANN Out-of-Core search.
 #[derive(Debug, Clone)]
 pub struct DiskHnswConfig {
     pub beam_width: usize,
     pub distance_metric: DistanceMetric,
-    pub dimension: usize,
-    /// Whether the index is quantized (SQ8).
-    pub quantize: bool,
 }
 
 /// A disk-resident HNSW index using Beam Search.
@@ -34,6 +29,8 @@ pub struct DiskHnsw {
     num_nodes: usize,
     entry_point: usize,
     max_m: usize,
+    dimension: usize,
+    quantize: bool,
     quantizer: Option<crate::quantize::ScalarQuantizer>,
 }
 
@@ -81,44 +78,84 @@ impl DiskHnsw {
     /// Loads a DiskANN index from a file using mmap.
     pub fn open(path: &str, config: DiskHnswConfig) -> Result<Self> {
         let file = File::open(path)?;
-        // ANCHOR:SAFETY:SIMD-DISK-003 — Proxy to distance.rs
-        // BEGRÜNDUNG: mmap wird für read-only Zugriff auf die Index-Datei verwendet.
-        let mmap = unsafe { mmap_file(&file)? };
+        // SAFETY: All unsafe mmap logic moved to distance.rs
+        let mmap = mmap_file(&file)?;
 
-        // Header layout: [Magic (4b)] [Num Nodes (8b)] [Entry Point (8b)] [Max M (4b)] [Quantized (1b)] [Quantizer Data (if quantized)]
+        // Header layout: [Magic (4b)] [Num Nodes (8b)] [Entry Point (8b)] [Max M (4b)] [Dimension (4b)] [Quantized (1b)] [Padding (7b)]
         if mmap.len() < 32 {
-             return Err(MemFuseError::Storage("Corrupt DiskANN file: header too short".into()));
+            return Err(MemFuseError::Storage(
+                "Corrupt DiskANN file: header too short".into(),
+            ));
         }
 
         if &mmap[0..4] != b"DANN" {
             return Err(MemFuseError::Storage("Invalid DiskANN file magic".into()));
         }
 
-        let num_nodes = u64::from_le_bytes(mmap[4..12].try_into().map_err(|_| MemFuseError::Storage("Failed to read num_nodes".into()))?) as usize;
-        let entry_point = u64::from_le_bytes(mmap[12..20].try_into().map_err(|_| MemFuseError::Storage("Failed to read entry_point".into()))?) as usize;
-        let max_m = u32::from_le_bytes(mmap[20..24].try_into().map_err(|_| MemFuseError::Storage("Failed to read max_m".into()))?) as usize;
-        let is_quantized = mmap[24] != 0;
+        let num_nodes = u64::from_le_bytes(
+            mmap[4..12]
+                .try_into()
+                .map_err(|_| MemFuseError::Storage("Failed to read num_nodes".into()))?,
+        ) as usize;
+        let entry_point = u64::from_le_bytes(
+            mmap[12..20]
+                .try_into()
+                .map_err(|_| MemFuseError::Storage("Failed to read entry_point".into()))?,
+        ) as usize;
+        let max_m = u32::from_le_bytes(
+            mmap[20..24]
+                .try_into()
+                .map_err(|_| MemFuseError::Storage("Failed to read max_m".into()))?,
+        ) as usize;
+        let dimension = u32::from_le_bytes(
+            mmap[24..28]
+                .try_into()
+                .map_err(|_| MemFuseError::Storage("Failed to read dimension".into()))?,
+        ) as usize;
+        let is_quantized = mmap[28] != 0;
 
         let mut quantizer = None;
 
         if is_quantized {
-            // Quantizer data: [min (4f)] [max (4f)] [scale (4f)] [inv_scale (4f)] [dimension (8b)]
+            // Quantizer data: [min (4f)] [max (4f)] [scale (4f)] [inv_scale (4f)] [dimension (8b)] [Padding (8b)]
             let q_offset = 32;
-            if mmap.len() < q_offset + 24 {
-                return Err(MemFuseError::Storage("Corrupt DiskANN file: missing quantizer data".into()));
+            if mmap.len() < q_offset + 32 {
+                return Err(MemFuseError::Storage(
+                    "Corrupt DiskANN file: missing quantizer data".into(),
+                ));
             }
-            let min = f32::from_le_bytes(mmap[q_offset..q_offset+4].try_into().unwrap());
-            let max = f32::from_le_bytes(mmap[q_offset+4..q_offset+8].try_into().unwrap());
-            let scale = f32::from_le_bytes(mmap[q_offset+8..q_offset+12].try_into().unwrap());
-            let inv_scale = f32::from_le_bytes(mmap[q_offset+12..q_offset+16].try_into().unwrap());
-            let dimension = u64::from_le_bytes(mmap[q_offset+16..q_offset+24].try_into().unwrap()) as usize;
+            let min = f32::from_le_bytes(
+                mmap[q_offset..q_offset + 4]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Failed to read min".into()))?,
+            );
+            let max = f32::from_le_bytes(
+                mmap[q_offset + 4..q_offset + 8]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Failed to read max".into()))?,
+            );
+            let scale = f32::from_le_bytes(
+                mmap[q_offset + 8..q_offset + 12]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Failed to read scale".into()))?,
+            );
+            let inv_scale = f32::from_le_bytes(
+                mmap[q_offset + 12..q_offset + 16]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Failed to read inv_scale".into()))?,
+            );
+            let q_dimension = u64::from_le_bytes(
+                mmap[q_offset + 16..q_offset + 24]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Failed to read q_dimension".into()))?,
+            ) as usize;
 
             quantizer = Some(crate::quantize::ScalarQuantizer {
                 min,
                 max,
                 scale,
                 inv_scale,
-                dimension,
+                dimension: q_dimension,
             });
         }
 
@@ -129,6 +166,8 @@ impl DiskHnsw {
             num_nodes,
             entry_point,
             max_m,
+            dimension,
+            quantize: is_quantized,
             quantizer,
         })
     }
@@ -144,13 +183,14 @@ impl DiskHnsw {
         let config = index.get_config_for_diskann();
         let max_m = config.m * 2; // HNSW typically uses 2*M for layer 0
 
-        // Write Header: [Magic (4b)] [Num Nodes (8b)] [Entry Point (8b)] [Max M (4b)] [Quantized (1b)] [Padding (7b)]
+        // Write Header: [Magic (4b)] [Num Nodes (8b)] [Entry Point (8b)] [Max M (4b)] [Dimension (4b)] [Quantized (1b)] [Padding (3b)]
         writer.write_all(b"DANN")?;
         writer.write_all(&(num_nodes as u64).to_le_bytes())?;
         writer.write_all(&(entry_point as u64).to_le_bytes())?;
         writer.write_all(&(max_m as u32).to_le_bytes())?;
+        writer.write_all(&(config.dimension as u32).to_le_bytes())?;
         writer.write_all(&[config.quantize as u8])?;
-        writer.write_all(&[0u8; 7])?; // Padding to 32 bytes
+        writer.write_all(&[0u8; 3])?; // Padding to 32 bytes
 
         if config.quantize {
             let q = index.get_quantizer_for_diskann().ok_or_else(|| {
@@ -169,15 +209,23 @@ impl DiskHnsw {
             writer.write_all(&node.doc_id.inner().to_le_bytes())?;
 
             // [Vector (dim * 4b OR dim * 1b)]
-            match &node.vector {
+            let vector_bytes = match &node.vector {
                 VectorData::F32(v) => {
                     for &val in v {
                         writer.write_all(&val.to_le_bytes())?;
                     }
+                    v.len() * 4
                 }
                 VectorData::U8(v) => {
                     writer.write_all(v)?;
+                    v.len()
                 }
+            };
+
+            // Vector padding to ensure next field is 4-byte aligned
+            let v_padding = (4 - (vector_bytes % 4)) % 4;
+            if v_padding > 0 {
+                writer.write_all(&vec![0u8; v_padding])?;
             }
 
             // [Num Neighbors (4b)] [Neighbor Indices (max_m * 4b)]
@@ -187,16 +235,17 @@ impl DiskHnsw {
 
             for (i, &neighbor) in neighbors.iter().enumerate().take(max_m) {
                 writer.write_all(&(neighbor as u32).to_le_bytes())?;
-                if i == max_m - 1 { break; }
+                if i == max_m - 1 {
+                    break;
+                }
             }
             for _ in num_neighbors..max_m {
                 writer.write_all(&0u32.to_le_bytes())?;
             }
 
             // Node padding to ensure next node is aligned to 32
-            let vector_size = if config.quantize { config.dimension } else { config.dimension * 4 };
-            let node_bytes = 8 + vector_size + 4 + (max_m * 4);
-            let padding = (32 - (node_bytes % 32)) % 32;
+            let node_record_bytes = 8 + vector_bytes + v_padding + 4 + (max_m * 4);
+            let padding = (32 - (node_record_bytes % 32)) % 32;
             if padding > 0 {
                 writer.write_all(&vec![0u8; padding])?;
             }
@@ -211,9 +260,14 @@ impl DiskHnsw {
             return Err(MemFuseError::Storage("Node index out of bounds".into()));
         }
 
-        let header_size = if self.config.quantize { 32 + 32 } else { 32 };
-        let vector_size = if self.config.quantize { self.config.dimension } else { self.config.dimension * 4 };
-        let node_data_size = 8 + vector_size + 4 + (self.max_m * 4);
+        let header_size = if self.quantize { 32 + 32 } else { 32 };
+        let vector_bytes = if self.quantize {
+            self.dimension
+        } else {
+            self.dimension * 4
+        };
+        let v_padding = (4 - (vector_bytes % 4)) % 4;
+        let node_data_size = 8 + vector_bytes + v_padding + 4 + (self.max_m * 4);
         let padding = (32 - (node_data_size % 32)) % 32;
         let node_size = node_data_size + padding;
 
@@ -223,26 +277,34 @@ impl DiskHnsw {
             return Err(MemFuseError::Storage("Mmap access out of bounds".into()));
         }
 
-        let doc_id_raw = u64::from_le_bytes(self.mmap[offset..offset+8].try_into().map_err(|_| MemFuseError::Storage("Failed to read doc_id".into()))?);
+        let doc_id_raw = u64::from_le_bytes(
+            self.mmap[offset..offset + 8]
+                .try_into()
+                .map_err(|_| MemFuseError::Storage("Failed to read doc_id".into()))?,
+        );
         let doc_id = DocId::new(doc_id_raw);
 
         let vector_start = offset + 8;
-        let vector_end = vector_start + vector_size;
+        let vector_end = vector_start + vector_bytes;
 
-        let vector = if self.config.quantize {
+        let vector = if self.quantize {
             DiskVector::U8(&self.mmap[vector_start..vector_end])
         } else {
             // SAFETY: Casting logic moved to distance.rs
-            DiskVector::F32(unsafe { cast_slice_f32(&self.mmap[vector_start..vector_end]) })
+            DiskVector::F32(cast_slice_f32(&self.mmap[vector_start..vector_end]))
         };
 
-        let neighbors_count_start = vector_end;
-        let num_neighbors = u32::from_le_bytes(self.mmap[neighbors_count_start..neighbors_count_start+4].try_into().map_err(|_| MemFuseError::Storage("Failed to read num_neighbors".into()))?) as usize;
+        let neighbors_count_start = vector_end + v_padding;
+        let num_neighbors = u32::from_le_bytes(
+            self.mmap[neighbors_count_start..neighbors_count_start + 4]
+                .try_into()
+                .map_err(|_| MemFuseError::Storage("Failed to read num_neighbors".into()))?,
+        ) as usize;
         let neighbors_start = neighbors_count_start + 4;
         let neighbors_end = neighbors_start + (num_neighbors.min(self.max_m) * 4);
 
         // SAFETY: Casting logic moved to distance.rs
-        let neighbors = unsafe { cast_slice_u32(&self.mmap[neighbors_start..neighbors_end]) };
+        let neighbors = cast_slice_u32(&self.mmap[neighbors_start..neighbors_end]);
 
         Ok(DiskNode {
             doc_id,
@@ -255,7 +317,10 @@ impl DiskHnsw {
         match node_vector {
             DiskVector::F32(v) => compute_distance(query, v, self.config.distance_metric),
             DiskVector::U8(v) => {
-                let q = self.quantizer.as_ref().ok_or_else(|| MemFuseError::Index("Quantizer missing for DiskANN".into()))?;
+                let q = self
+                    .quantizer
+                    .as_ref()
+                    .ok_or_else(|| MemFuseError::Index("Quantizer missing for DiskANN".into()))?;
                 q.asymmetric_dist(query, v, self.config.distance_metric)
             }
         }
@@ -275,7 +340,10 @@ impl DiskHnsw {
 
         let ep_node = self.get_node(self.entry_point)?;
         let ep_dist = self.compute_dist(query, &ep_node.vector)?;
-        let ep_cand = Candidate { index: self.entry_point, distance: ep_dist };
+        let ep_cand = Candidate {
+            index: self.entry_point,
+            distance: ep_dist,
+        };
 
         candidates.push(Reverse(ep_cand));
         results.push(ep_cand);
@@ -301,7 +369,10 @@ impl DiskHnsw {
                     };
 
                     if results.len() < beam_width || is_better {
-                        let cand = Candidate { index: neighbor_idx, distance: dist };
+                        let cand = Candidate {
+                            index: neighbor_idx,
+                            distance: dist,
+                        };
                         candidates.push(Reverse(cand));
                         results.push(cand);
                         if results.len() > beam_width {
@@ -313,8 +384,7 @@ impl DiskHnsw {
         }
 
         let mut final_results = Vec::new();
-        let sorted_results = results.into_sorted_vec();
-        for cand in sorted_results.iter().take(k) {
+        while let Some(cand) = results.pop() {
             let node = self.get_node(cand.index)?;
             let score = match self.config.distance_metric {
                 DistanceMetric::Cosine => 1.0 - cand.distance,
@@ -323,6 +393,10 @@ impl DiskHnsw {
             };
             final_results.push(ScoredDocument::new(node.doc_id, score));
         }
+
+        // BinaryHeap pops in order, so we need to reverse to have descending scores
+        final_results.reverse();
+        final_results.truncate(k);
 
         Ok(final_results)
     }
@@ -336,7 +410,7 @@ mod tests {
     use tempfile::NamedTempFile;
 
     #[tokio::test]
-    async fn test_diskann_save_load_search() {
+    async fn test_diskann_save_load_search() -> Result<()> {
         let dim = 4;
         let config = HnswConfig {
             dimension: dim,
@@ -347,33 +421,42 @@ mod tests {
         let index = HnswIndex::new(config);
         let tx = TxId::new(1);
 
-        index.insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0]).await.unwrap();
-        index.insert(tx, DocId::new(2), &[0.0, 1.0, 0.0, 0.0]).await.unwrap();
-        index.insert(tx, DocId::new(3), &[0.0, 0.0, 1.0, 0.0]).await.unwrap();
-        index.commit(tx).await.unwrap();
+        index
+            .insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
+            .await?;
+        index
+            .insert(tx, DocId::new(2), &[0.0, 1.0, 0.0, 0.0])
+            .await?;
+        index
+            .insert(tx, DocId::new(3), &[0.0, 0.0, 1.0, 0.0])
+            .await?;
+        index.commit(tx).await?;
 
-        let tmp_file = NamedTempFile::new().unwrap();
-        let path = tmp_file.path().to_str().unwrap();
+        let tmp_file = NamedTempFile::new().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let path = tmp_file
+            .path()
+            .to_str()
+            .ok_or_else(|| MemFuseError::Storage("Path is not UTF-8".into()))?;
 
-        DiskHnsw::save_from_hnsw(&index, path).unwrap();
+        DiskHnsw::save_from_hnsw(&index, path)?;
 
         let disk_config = DiskHnswConfig {
             beam_width: 10,
             distance_metric: DistanceMetric::Cosine,
-            dimension: dim,
-            quantize: false,
         };
 
-        let disk_index = DiskHnsw::open(path, disk_config).unwrap();
+        let disk_index = DiskHnsw::open(path, disk_config)?;
         assert_eq!(disk_index.num_nodes, 3);
+        assert_eq!(disk_index.dimension, dim);
 
-        let results = disk_index.beam_search(&[1.0, 0.1, 0.0, 0.0], 1).unwrap();
+        let results = disk_index.beam_search(&[1.0, 0.1, 0.0, 0.0], 1)?;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].doc_id, DocId::new(1));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_diskann_quantized() {
+    async fn test_diskann_quantized() -> Result<()> {
         let dim = 4;
         let config = HnswConfig {
             dimension: dim,
@@ -388,26 +471,29 @@ mod tests {
         // Need enough vectors to train quantizer
         for i in 1..=60u64 {
             let v = [i as f32, 0.0, 0.0, 0.0];
-            index.insert(tx, DocId::new(i), &v).await.unwrap();
+            index.insert(tx, DocId::new(i), &v).await?;
         }
-        index.commit(tx).await.unwrap();
+        index.commit(tx).await?;
 
-        let tmp_file = NamedTempFile::new().unwrap();
-        let path = tmp_file.path().to_str().unwrap();
+        let tmp_file = NamedTempFile::new().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let path = tmp_file
+            .path()
+            .to_str()
+            .ok_or_else(|| MemFuseError::Storage("Path is not UTF-8".into()))?;
 
-        DiskHnsw::save_from_hnsw(&index, path).unwrap();
+        DiskHnsw::save_from_hnsw(&index, path)?;
 
         let disk_config = DiskHnswConfig {
             beam_width: 10,
             distance_metric: DistanceMetric::Euclidean,
-            dimension: dim,
-            quantize: true,
         };
 
-        let disk_index = DiskHnsw::open(path, disk_config).unwrap();
+        let disk_index = DiskHnsw::open(path, disk_config)?;
         assert!(disk_index.quantizer.is_some());
+        assert_eq!(disk_index.dimension, dim);
 
-        let results = disk_index.beam_search(&[60.0, 0.0, 0.0, 0.0], 1).unwrap();
+        let results = disk_index.beam_search(&[60.0, 0.0, 0.0, 0.0], 1)?;
         assert_eq!(results[0].doc_id, DocId::new(60));
+        Ok(())
     }
 }
