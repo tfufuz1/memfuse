@@ -1,5 +1,5 @@
 //! End-to-End integration tests for the full MemFuse stack.
-// ANCHOR:INTEGRATION:E2E-001 STATUS:READY AGENT:12 DATE:2026-05-18
+// ANCHOR:INTEGRATION:E2E-001 STATUS:DONE AGENT:12 DATE:2026-05-18
 
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
@@ -12,6 +12,7 @@ async fn test_full_stack_document_lifecycle() {
         dimension: 3,
         max_elements: 100,
         distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
     };
 
     let db = MemFuse::open_with_config(tmp.path(), config)
@@ -128,4 +129,31 @@ async fn test_full_stack_document_lifecycle() {
     // 8. Stats check
     let stats = db.stats().await.expect("Stats failed");
     assert!(stats.storage_stats.memtable_size_bytes > 0);
+
+    // 9. Collection Isolation Check
+    let col2 = db
+        .collection("isolated-test")
+        .await
+        .expect("Failed to get isolated-test collection");
+    col2.insert("iso-1", &[0.5, 0.5, 0.5], Some(json!({"val": "isolated"})))
+        .await
+        .expect("Insert iso-1 failed");
+
+    // iso-1 should NOT be in e2e-test
+    let get_iso = col.get("iso-1").await.expect("Get iso-1 from col failed");
+    assert!(get_iso.is_none(), "iso-1 should not be visible in e2e-test");
+
+    // Search in e2e-test should NOT find iso-1
+    let search_res = col
+        .search(&[0.5, 0.5, 0.5], 10)
+        .await
+        .expect("Search in col failed");
+    assert!(
+        search_res.iter().all(|r| r.id != "iso-1"),
+        "Search in e2e-test should not return iso-1"
+    );
+
+    // iso-1 SHOULD be in isolated-test
+    let get_iso_ok = col2.get("iso-1").await.expect("Get iso-1 from col2 failed");
+    assert!(get_iso_ok.is_some());
 }
