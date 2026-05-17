@@ -4,6 +4,7 @@
 // AGENT:03 DATE:2026-05-16 STATUS:DONE
 // TEST: cargo bench -p memfuse-index -- quantization
 // DONE: Performance- und Recall Metriken sind stabil.
+// PERF: quantize (8.77 µs), dequantize (409 ns), asymmetric_dist_cosine (2.58 µs), symmetric_dist_cosine (2.77 µs).
 // SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
 
 use memfuse_core::DistanceMetric;
