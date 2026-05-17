@@ -1,6 +1,6 @@
 //! LSM-backed Inverted Index.
 
-use crate::tokenizer::{tokenize, DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
+use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use async_trait::async_trait;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
@@ -26,11 +26,12 @@ impl InvertedIndex {
             format!("__txt:{}:", namespace).into_bytes()
         };
 
-        let tokenizer: Arc<dyn Tokenizer> = if namespace.contains("de") {
-            Arc::new(GermanMorphTokenizer)
-        } else {
-            Arc::new(DefaultTokenizer)
-        };
+        let tokenizer: Arc<dyn Tokenizer> =
+            if namespace.starts_with("de:") || namespace == "de" || namespace.ends_with(":de") {
+                Arc::new(GermanMorphTokenizer)
+            } else {
+                Arc::new(DefaultTokenizer)
+            };
 
         Self {
             storage,
@@ -276,7 +277,7 @@ impl InvertedIndex {
 
     /// Searches the inverted index using BM25.
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
-        let tokens = tokenize(query);
+        let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
             return Ok(Vec::new());
         }
@@ -656,6 +657,40 @@ mod tests {
 
         let stats_after = index.stats().await?;
         assert_eq!(stats_after.num_documents, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_german_compound_search() -> Result<()> {
+        let tmp = TempDir::new().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(
+            LsmStorage::new(config)
+                .await
+                .map_err(|e| MemFuseError::Storage(e.to_string()))?,
+        );
+        // "de" namespace should trigger GermanMorphTokenizer
+        let index = InvertedIndex::new(storage.clone(), "de");
+
+        let tx = TxId::new(1);
+        let doc_id = DocId::new(1);
+        index
+            .insert(tx, doc_id, "Das Gesundheitswesen ist wichtig.")
+            .await?;
+        index.commit(tx).await?;
+
+        // Search for the compound word itself
+        let res1 = index.search("gesundheitswesen", 10).await?;
+        assert_eq!(res1.len(), 1);
+
+        // Search for the split suffix
+        let res2 = index.search("wesen", 10).await?;
+        assert_eq!(res2.len(), 1);
+        assert_eq!(res2[0].doc_id, doc_id);
 
         Ok(())
     }
