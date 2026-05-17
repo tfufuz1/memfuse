@@ -357,7 +357,7 @@ impl PyMemFuse {
         Ok(py_res)
     }
 
-    #[pyo3(signature = (text, vector, k))]
+    #[pyo3(signature = (text, vector, k=5))]
     pub fn hybrid_search<'py>(
         &self,
         py: Python<'py>,
@@ -650,7 +650,7 @@ impl PyCollection {
     }
 
     /// Performs hybrid search (BM25 + Vector).
-    #[pyo3(signature = (text, vector, k))]
+    #[pyo3(signature = (text, vector, k=5))]
     pub fn hybrid_search<'py>(
         &self,
         py: Python<'py>,
