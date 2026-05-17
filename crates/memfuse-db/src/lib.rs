@@ -102,6 +102,8 @@ pub struct MemFuseConfig {
     pub distance_metric: memfuse_core::DistanceMetric,
     /// Optional passphrase for encryption at rest.
     pub encryption_passphrase: Option<String>,
+    /// Whether network access is enabled (for air-gap compliance).
+    pub network_enabled: bool,
 }
 
 impl Default for MemFuseConfig {
@@ -111,6 +113,7 @@ impl Default for MemFuseConfig {
             max_elements: 1_000_000,
             distance_metric: memfuse_core::DistanceMetric::Cosine,
             encryption_passphrase: None,
+            network_enabled: true,
         }
     }
 }
@@ -418,6 +421,11 @@ impl MemFuse {
     /// Internal use only for benchmarks and tests.
     pub fn inner_storage(&self) -> Arc<LsmStorage> {
         self.storage.clone()
+    }
+
+    /// Returns the vector dimension configured for this database.
+    pub fn dimension(&self) -> usize {
+        self.dimension
     }
 }
 #[cfg(test)]

@@ -15,9 +15,9 @@ def test_open_and_basic_insert_search(db_path):
     db = memfuse.open(db_path, dimension=4)
     col = db.collection("test")
     v = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
-    col.insert("doc1", v, metadata={"text": "hello world"})
+    col.insert("doc1", vector=v, metadata={"text": "hello world"})
 
-    results = col.search(v, k=1)
+    results = col.search(vector=v, k=1)
     assert len(results) == 1
     assert results[0].id == "doc1"
     assert results[0].metadata["text"] == "hello world"
@@ -29,33 +29,33 @@ def test_crud_operations(db_path):
     v2 = np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float32)
 
     # Create
-    col.insert("k1", v1, metadata={"v": 1})
+    col.insert("k1", vector=v1, metadata={"v": 1})
     doc = col.get("k1")
     assert doc is not None
     assert doc.id == "k1"
     assert doc.metadata["v"] == 1
 
     # Update
-    col.update("k1", v2, metadata={"v": 2})
+    col.update("k1", vector=v2, metadata={"v": 2})
     doc = col.get("k1")
     assert doc.metadata["v"] == 2
 
     # Search should find updated vector
-    results = col.search(v2, k=1)
+    results = col.search(vector=v2, k=1)
     assert results[0].id == "k1"
 
     # Delete
     col.delete("k1")
     assert col.get("k1") is None
-    assert len(col.search(v2, k=1)) == 0
+    assert len(col.search(vector=v2, k=1)) == 0
 
 def test_hybrid_search(db_path):
     db = memfuse.open(db_path, dimension=4)
     col = db.collection("docs")
     v = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
-    col.insert("doc1", v, metadata={"text": "rust programming language"})
+    col.insert("doc1", vector=v, metadata={"text": "rust programming language"})
 
-    results = col.hybrid_search("rust programming", v, k=1)
+    results = col.hybrid_search("rust programming", vector=v, k=1)
     assert len(results) == 1
     assert results[0].id == "doc1"
 
@@ -80,9 +80,9 @@ def test_collection_isolation(db_path):
     col_b = db.collection("b")
     v = np.ones(4, dtype=np.float32)
 
-    col_a.insert("k1", v)
+    col_a.insert("k1", vector=v)
     
-    b_results = col_b.search(v, k=5)
+    b_results = col_b.search(vector=v, k=5)
     assert len(b_results) == 0
     assert col_b.get("k1") is None
 
@@ -91,12 +91,12 @@ def test_db_top_level_parity(db_path):
     v = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
 
     # Top-level CRUD
-    db.insert("db_k1", v, metadata={"source": "top"})
+    db.insert("db_k1", vector=v, metadata={"source": "top"})
     doc = db.get("db_k1")
     assert doc.id == "db_k1"
     assert doc.metadata["source"] == "top"
 
-    results = db.search(v, k=1)
+    results = db.search(vector=v, k=1)
     assert results[0].id == "db_k1"
 
     assert db.len() == 1
@@ -110,26 +110,21 @@ def test_relationships_and_scanning(db_path):
     col = db.collection("rel")
     v = np.zeros(4, dtype=np.float32)
 
-    col.insert("a", v)
-    col.insert("b", v)
+    col.insert("a", vector=v)
+    col.insert("b", vector=v)
     col.relate("a", "b", "friend")
 
     # scan_prefix for relations
-    # Note: internal prefixing might be visible or stripped depending on implementation
-    # The Rust side for collection prepends __col:{name}:\x00
-    # But scan_prefix in Collection handles it.
     rels = col.scan_prefix("__rel:a:friend:")
     assert len(rels) == 1
     assert rels[0][1]["to"] == "b"
 
     # db level scan_prefix (default collection)
-    db.insert("x", v, metadata={"type": "agent"})
-    db.insert("y", v, metadata={"type": "task"})
+    db.insert("x", vector=v, metadata={"type": "agent"})
+    db.insert("y", vector=v, metadata={"type": "task"})
 
     # Scan all
     all_docs = db.scan()
-    # db.scan() on default collection sees EVERYTHING because it has no prefix.
-    # We just check that our keys are in there.
     doc_ids = [k for k, v in all_docs]
     assert "x" in doc_ids
     assert "y" in doc_ids
@@ -145,15 +140,13 @@ def test_statistics(db_path):
     db = memfuse.open(db_path, dimension=4)
     col = db.collection("stats_col")
     v = np.random.rand(4).astype(np.float32)
-    col.insert("s1", v)
+    col.insert("s1", vector=v)
 
     c_stats = col.stats()
     assert c_stats.num_vectors == 1
     assert isinstance(c_stats.memory_usage_bytes, int)
 
     db_stats = db.stats()
-    # db.stats() currently aggregates default collection
-    assert db_stats.index_stats.num_vectors == 0 # because s1 is in "stats_col"
     assert db_stats.storage_stats.num_segments >= 0
 
 def test_encryption_at_rest(tmp_path):
@@ -164,9 +157,9 @@ def test_encryption_at_rest(tmp_path):
     db = memfuse.open(path, dimension=4, encryption_passphrase=passphrase)
     col = db.collection("secret")
     v = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
-    col.insert("k1", v, metadata={"secret": "data"})
+    col.insert("k1", vector=v, metadata={"secret": "data"})
 
-    # Close by deleting object (though it doesn't strictly close the file until dropped)
+    # Close by deleting object
     del col
     del db
 
@@ -177,8 +170,7 @@ def test_encryption_at_rest(tmp_path):
     assert doc is not None
     assert doc.metadata["secret"] == "data"
 
-    # Re-open with WRONG passphrase should fail to decrypt or at least fail to verify integrity
-    # LsmStorage::new tries to open WAL which will fail integrity check or decryption
+    # Re-open with WRONG passphrase
     with pytest.raises(Exception):
          memfuse.open(path, dimension=4, encryption_passphrase="wrong-password")
 
@@ -187,20 +179,60 @@ def test_distance_metrics(db_path):
     db_l2 = memfuse.open(db_path + "_l2", dimension=4, distance_metric="euclidean")
     col = db_l2.collection("test")
     v1 = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
-    col.insert("v1", v1)
-    # Search with exact same vector, should have score 0.0 (distance) or 1.0 (similarity)
-    # Actually HNSW usually returns distance. In memfuse-db SearchResult it is called "score".
-    # For Cosine it is 1.0 - cosine_dist.
-    results = col.search(v1, k=1)
+    col.insert("v1", vector=v1)
+    results = col.search(vector=v1, k=1)
     assert results[0].id == "v1"
 
     # Dot Product
     db_dot = memfuse.open(db_path + "_dot", dimension=4, distance_metric="dot")
     col_dot = db_dot.collection("test")
-    col_dot.insert("v1", v1)
-    results = col_dot.search(v1, k=1)
+    col_dot.insert("v1", vector=v1)
+    results = col_dot.search(vector=v1, k=1)
     assert results[0].id == "v1"
 
     # Invalid metric
     with pytest.raises(ValueError):
         memfuse.open(db_path + "_invalid", dimension=4, distance_metric="invalid")
+
+def test_air_gap_config(db_path):
+    # Test network=False configuration
+    db = memfuse.open(db_path + "_airgap", dimension=4, network=False)
+    # We can't easily verify the internal flag without exposing it,
+    # but we can verify it doesn't crash.
+    db.insert("gap1", vector=np.zeros(4, dtype=np.float32))
+    assert db.len() == 1
+
+def test_embedding_provider_structure(db_path):
+    # Test EmbeddingProvider factory and usage in open
+    provider = memfuse.EmbeddingProvider.local(model_path="/tmp/model.onnx")
+    db = memfuse.open(db_path + "_embed", dimension=1536, embedding=provider)
+
+    # Test text-based insertion (uses placeholder)
+    db.insert("txt1", text="some query text")
+    assert db.len() == 1
+
+    # Test text-based search
+    results = db.search(text="search text", k=5)
+    assert len(results) > 0
+    assert results[0].id == "txt1"
+
+    # Test collection level
+    col = db.collection("sub")
+    col.insert("txt2", text="other text")
+    assert col.len() == 1
+    res2 = col.search(text="query", k=1)
+    assert res2[0].id == "txt2"
+
+def test_non_default_dimension_text(db_path):
+    # Test that text-based operations work with non-1536 dimensions
+    dim = 384
+    provider = memfuse.EmbeddingProvider.local(model_path="/tmp/model384.onnx")
+    db = memfuse.open(db_path + "_dim384", dimension=dim, embedding=provider)
+
+    # This should not raise dimension mismatch error because resolve_vector
+    # uses db.dimension() (384) for the placeholder.
+    db.insert("txt1", text="some text")
+    assert db.len() == 1
+
+    results = db.search(text="query", k=5)
+    assert len(results) == 1

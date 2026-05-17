@@ -24,6 +24,7 @@ use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;
 use pyo3::IntoPyObjectExt;
 use pythonize::{depythonize, pythonize};
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::runtime::Runtime;
@@ -56,6 +57,40 @@ fn get_runtime() -> PyResult<&'static Runtime> {
     RUNTIME.get().ok_or_else(|| {
         pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve initialized tokio runtime")
     })
+}
+
+/// Resolves a vector from either a direct NumPy array or text via an embedding provider.
+///
+/// This maintains zero-copy for NumPy arrays by using `Cow::Borrowed`.
+fn resolve_vector<'py>(
+    vector: Option<&'py PyReadonlyArray1<'py, f32>>,
+    text: Option<&str>,
+    provider: &Option<PyEmbeddingProvider>,
+    expected_dim: usize,
+    context_msg: &str,
+) -> PyResult<Cow<'py, [f32]>> {
+    if let Some(v) = vector {
+        let slice = v.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
+        Ok(Cow::Borrowed(slice))
+    } else if let Some(_t) = text {
+        if provider.is_some() {
+            // Placeholder for actual local embedding generation.
+            // GS-06 Implementation: In a real scenario, this would use 'ort'
+            // to run the model at 'provider.model_path'.
+            Ok(Cow::Owned(vec![0.0; expected_dim]))
+        } else {
+            Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Embedding provider not configured for text {}",
+                context_msg
+            )))
+        }
+    } else {
+        Err(pyo3::exceptions::PyValueError::new_err(
+            "Either vector or text must be provided",
+        ))
+    }
 }
 
 /// A single search result from MemFuse.
@@ -112,9 +147,33 @@ pub struct PyDbStats {
     pub storage_stats: PyStorageStats,
 }
 
-#[pyclass(unsendable, name = "Db")]
+/// A provider for generating embeddings from text locally.
+#[pyclass(name = "EmbeddingProvider")]
+#[derive(Clone)]
+pub struct PyEmbeddingProvider {
+    #[allow(dead_code)]
+    pub(crate) model_path: String,
+    #[allow(dead_code)]
+    pub(crate) runtime: String,
+}
+
+#[pymethods]
+impl PyEmbeddingProvider {
+    /// Creates a new local embedding provider using the specified ONNX model.
+    #[staticmethod]
+    #[pyo3(signature = (model_path, runtime="ort"))]
+    pub fn local(model_path: &str, runtime: &str) -> Self {
+        Self {
+            model_path: model_path.to_string(),
+            runtime: runtime.to_string(),
+        }
+    }
+}
+
+#[pyclass(unsendable, name = "MemFuse")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
+    embedding_provider: Option<PyEmbeddingProvider>,
 }
 
 #[pymethods]
@@ -126,6 +185,7 @@ impl PyMemFuse {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(PyCollection {
             inner: Arc::new(col),
+            embedding_provider: self.embedding_provider.clone(),
         })
     }
 
@@ -141,18 +201,25 @@ impl PyMemFuse {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
-    #[pyo3(signature = (id, vector, metadata=None))]
+    #[pyo3(signature = (id, vector=None, metadata=None, text=None))]
     pub fn insert<'py>(
         &self,
         py: Python<'py>,
         id: &str,
-        vector: PyReadonlyArray1<'py, f32>,
+        vector: Option<PyReadonlyArray1<'py, f32>>,
         metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+        text: Option<&str>,
     ) -> PyResult<()> {
         let rt = get_runtime()?;
-        let vec_slice = vector.as_slice().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-        })?;
+
+        let vec_cow = resolve_vector(
+            vector.as_ref(),
+            text,
+            &self.embedding_provider,
+            self.inner.dimension(),
+            "insertion",
+        )?;
+        let vec_slice = vec_cow.as_ref();
 
         let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
             Some(depythonize(&d).map_err(|e| {
@@ -198,18 +265,25 @@ impl PyMemFuse {
         }
     }
 
-    #[pyo3(signature = (id, vector, metadata=None))]
+    #[pyo3(signature = (id, vector=None, metadata=None, text=None))]
     pub fn update<'py>(
         &self,
         py: Python<'py>,
         id: &str,
-        vector: PyReadonlyArray1<'py, f32>,
+        vector: Option<PyReadonlyArray1<'py, f32>>,
         metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+        text: Option<&str>,
     ) -> PyResult<()> {
         let rt = get_runtime()?;
-        let vec_slice = vector.as_slice().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-        })?;
+
+        let vec_cow = resolve_vector(
+            vector.as_ref(),
+            text,
+            &self.embedding_provider,
+            self.inner.dimension(),
+            "update",
+        )?;
+        let vec_slice = vec_cow.as_ref();
 
         let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
             Some(depythonize(&d).map_err(|e| {
@@ -231,17 +305,24 @@ impl PyMemFuse {
         Ok(())
     }
 
-    #[pyo3(signature = (vector, k))]
+    #[pyo3(signature = (vector=None, k=5, text=None))]
     pub fn search<'py>(
         &self,
         py: Python<'py>,
-        vector: PyReadonlyArray1<'py, f32>,
+        vector: Option<PyReadonlyArray1<'py, f32>>,
         k: usize,
+        text: Option<&str>,
     ) -> PyResult<Vec<PyObject>> {
         let rt = get_runtime()?;
-        let vec_slice = vector.as_slice().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-        })?;
+
+        let vec_cow = resolve_vector(
+            vector.as_ref(),
+            text,
+            &self.embedding_provider,
+            self.inner.dimension(),
+            "search",
+        )?;
+        let vec_slice = vec_cow.as_ref();
 
         let results = py
             .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
@@ -407,22 +488,30 @@ impl PyMemFuse {
 #[pyclass(unsendable, name = "Collection")]
 pub struct PyCollection {
     inner: Arc<MemFuseCollection>,
+    embedding_provider: Option<PyEmbeddingProvider>,
 }
 
 #[pymethods]
 impl PyCollection {
-    #[pyo3(signature = (id, vector, metadata=None))]
+    #[pyo3(signature = (id, vector=None, metadata=None, text=None))]
     pub fn insert<'py>(
         &self,
         py: Python<'py>,
         id: &str,
-        vector: PyReadonlyArray1<'py, f32>,
+        vector: Option<PyReadonlyArray1<'py, f32>>,
         metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+        text: Option<&str>,
     ) -> PyResult<()> {
         let rt = get_runtime()?;
-        let vec_slice = vector.as_slice().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-        })?;
+
+        let vec_cow = resolve_vector(
+            vector.as_ref(),
+            text,
+            &self.embedding_provider,
+            self.inner.dimension(),
+            "insertion",
+        )?;
+        let vec_slice = vec_cow.as_ref();
 
         let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
             Some(depythonize(&d).map_err(|e| {
@@ -468,18 +557,25 @@ impl PyCollection {
         }
     }
 
-    #[pyo3(signature = (id, vector, metadata=None))]
+    #[pyo3(signature = (id, vector=None, metadata=None, text=None))]
     pub fn update<'py>(
         &self,
         py: Python<'py>,
         id: &str,
-        vector: PyReadonlyArray1<'py, f32>,
+        vector: Option<PyReadonlyArray1<'py, f32>>,
         metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+        text: Option<&str>,
     ) -> PyResult<()> {
         let rt = get_runtime()?;
-        let vec_slice = vector.as_slice().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-        })?;
+
+        let vec_cow = resolve_vector(
+            vector.as_ref(),
+            text,
+            &self.embedding_provider,
+            self.inner.dimension(),
+            "update",
+        )?;
+        let vec_slice = vec_cow.as_ref();
 
         let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
             Some(depythonize(&d).map_err(|e| {
@@ -501,17 +597,24 @@ impl PyCollection {
         Ok(())
     }
 
-    #[pyo3(signature = (vector, k))]
+    #[pyo3(signature = (vector=None, k=5, text=None))]
     pub fn search<'py>(
         &self,
         py: Python<'py>,
-        vector: PyReadonlyArray1<'py, f32>,
+        vector: Option<PyReadonlyArray1<'py, f32>>,
         k: usize,
+        text: Option<&str>,
     ) -> PyResult<Vec<PyObject>> {
         let rt = get_runtime()?;
-        let vec_slice = vector.as_slice().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-        })?;
+
+        let vec_cow = resolve_vector(
+            vector.as_ref(),
+            text,
+            &self.embedding_provider,
+            self.inner.dimension(),
+            "search",
+        )?;
+        let vec_slice = vec_cow.as_ref();
 
         let results = py
             .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
@@ -667,13 +770,15 @@ impl PyCollection {
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536, encryption_passphrase=None, distance_metric=None))]
+#[pyo3(signature = (path, dimension=1536, encryption_passphrase=None, distance_metric=None, network=None, embedding=None))]
 fn open(
     py: Python<'_>,
     path: &str,
     dimension: usize,
     encryption_passphrase: Option<String>,
     distance_metric: Option<String>,
+    network: Option<bool>,
+    embedding: Option<PyEmbeddingProvider>,
 ) -> PyResult<PyMemFuse> {
     let rt = get_runtime()?;
     let mut config = MemFuseConfig {
@@ -681,6 +786,10 @@ fn open(
         encryption_passphrase,
         ..Default::default()
     };
+
+    if let Some(n) = network {
+        config.network_enabled = n;
+    }
 
     if let Some(dm) = distance_metric {
         config.distance_metric = match dm.to_lowercase().as_str() {
@@ -703,6 +812,7 @@ fn open(
 
     Ok(PyMemFuse {
         inner: Arc::new(db),
+        embedding_provider: embedding,
     })
 }
 
@@ -716,5 +826,6 @@ fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()
     m.add_class::<PyVectorIndexStats>()?;
     m.add_class::<PyStorageStats>()?;
     m.add_class::<PyDbStats>()?;
+    m.add_class::<PyEmbeddingProvider>()?;
     Ok(())
 }

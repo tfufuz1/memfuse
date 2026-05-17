@@ -544,4 +544,9 @@ impl Collection {
         self.storage.commit(tx).await?;
         Ok(())
     }
+
+    /// Returns the vector dimension for this collection.
+    pub fn dimension(&self) -> usize {
+        self.dimension
+    }
 }
