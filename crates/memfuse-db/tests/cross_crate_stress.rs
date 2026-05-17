@@ -65,7 +65,10 @@ async fn test_cross_crate_db_and_checkpoint_stress() {
             for i in 0..5 {
                 sleep(Duration::from_millis(20)).await;
                 let cp_name = format!("cp-{}", i);
-                let cp = cp_manager.create_checkpoint(&cp_name).await.expect("create cp");
+                let cp = cp_manager
+                    .create_checkpoint(&cp_name)
+                    .await
+                    .expect("create cp");
 
                 sleep(Duration::from_millis(10)).await;
                 cp_manager.drop_checkpoint(&cp).await.expect("drop cp");
