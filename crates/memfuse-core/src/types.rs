@@ -346,7 +346,7 @@ mod tests {
     fn test_doc_id_from_key() {
         let key = "test-key";
         let id1 = DocId::from_key(key);
-        let id2 = DocId::try_from_key(key).unwrap();
+        let id2 = DocId::try_from_key(key).unwrap(); // unwrap: test constant
         assert_eq!(id1, id2);
         assert_eq!(id1.inner(), id2.inner());
 
