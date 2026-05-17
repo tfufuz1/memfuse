@@ -784,13 +784,18 @@ mod tests {
 
         for i in 0..10 {
             let topic = if i % 2 == 0 { "rust" } else { "python" };
-            db.insert(&format!("doc-{}", i), &[1.0, 0.0, 0.0, 0.0], Some(json!({"topic": topic})))
-                .await
-                .expect("insert");
+            db.insert(
+                &format!("doc-{}", i),
+                &[1.0, 0.0, 0.0, 0.0],
+                Some(json!({"topic": topic})),
+            )
+            .await
+            .expect("insert");
         }
 
         let filter = Filter::Eq("topic".into(), json!("rust"));
-        let results = db.search_filtered(&[1.0, 0.0, 0.0, 0.0], 10, None, Some(filter))
+        let results = db
+            .search_filtered(&[1.0, 0.0, 0.0, 0.0], 10, None, Some(filter))
             .await
             .expect("search filtered");
 
@@ -808,13 +813,18 @@ mod tests {
 
         for i in 0..100 {
             let topic = if i == 42 { "unique" } else { "common" };
-            db.insert(&format!("doc-{}", i), &[1.0, 0.0, 0.0, 0.0], Some(json!({"topic": topic})))
-                .await
-                .expect("insert");
+            db.insert(
+                &format!("doc-{}", i),
+                &[1.0, 0.0, 0.0, 0.0],
+                Some(json!({"topic": topic})),
+            )
+            .await
+            .expect("insert");
         }
 
         let filter = Filter::Eq("topic".into(), json!("unique"));
-        let results = db.search_filtered(&[1.0, 0.0, 0.0, 0.0], 10, None, Some(filter))
+        let results = db
+            .search_filtered(&[1.0, 0.0, 0.0, 0.0], 10, None, Some(filter))
             .await
             .expect("search filtered");
 

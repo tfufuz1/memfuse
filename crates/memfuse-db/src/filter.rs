@@ -36,12 +36,8 @@ impl Filter {
     /// Evaluates the filter against the given metadata.
     pub fn matches(&self, metadata: &Option<Value>) -> bool {
         match self {
-            Filter::Eq(key, val) => {
-                metadata.as_ref().and_then(|m| m.get(key)) == Some(val)
-            }
-            Filter::Ne(key, val) => {
-                metadata.as_ref().and_then(|m| m.get(key)) != Some(val)
-            }
+            Filter::Eq(key, val) => metadata.as_ref().and_then(|m| m.get(key)) == Some(val),
+            Filter::Ne(key, val) => metadata.as_ref().and_then(|m| m.get(key)) != Some(val),
             Filter::Gt(key, val) => {
                 if let Some(m_val) = metadata.as_ref().and_then(|m| m.get(key)) {
                     match (m_val, val) {
@@ -97,9 +93,7 @@ impl Filter {
             Filter::And(filters) => filters.iter().all(|f| f.matches(metadata)),
             Filter::Or(filters) => filters.iter().any(|f| f.matches(metadata)),
             Filter::Not(filter) => !filter.matches(metadata),
-            Filter::Exists(key) => {
-                metadata.as_ref().and_then(|m| m.get(key)).is_some()
-            }
+            Filter::Exists(key) => metadata.as_ref().and_then(|m| m.get(key)).is_some(),
         }
     }
 }

@@ -356,7 +356,10 @@ impl Collection {
                     }
                     valid_ids.contains(&id)
                 };
-                let scored_docs = self.index.search_filtered(query, k, Some(&combined)).await?;
+                let scored_docs = self
+                    .index
+                    .search_filtered(query, k, Some(&combined))
+                    .await?;
                 return self.hydrate_from_scored(scored_docs).await;
             }
 
@@ -387,10 +390,7 @@ impl Collection {
             return Ok(results);
         }
 
-        let scored_docs = self
-            .index
-            .search_filtered(query, k, doc_id_filter)
-            .await?;
+        let scored_docs = self.index.search_filtered(query, k, doc_id_filter).await?;
         self.hydrate_from_scored(scored_docs).await
     }
 
