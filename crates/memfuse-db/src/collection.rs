@@ -7,6 +7,7 @@
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 // STATUS: Full Implementation für WP-1.2.
 
+use crate::filter::{FilterExpr, FilterStrategy};
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;
@@ -335,6 +336,72 @@ impl Collection {
         self.search_filtered(query_embedding, k, None).await
     }
 
+    /// Performs semantic vector search with advanced metadata filtering.
+    /// Chooses between PreFilter and PostFilter strategies based on estimated selectivity.
+    pub async fn search_with_filter(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: FilterExpr,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let selectivity = self.estimate_selectivity(&filter).await;
+        let strategy = FilterStrategy::choose(selectivity, self.len().await);
+
+        match strategy {
+            FilterStrategy::PreFilter => {
+                let storage = Arc::clone(&self.storage);
+                let filter_expr = filter.clone();
+                let name = self.name.clone();
+                let prefix = self.prefix.clone();
+
+                let hnsw_filter = move |doc_id: DocId| {
+                    let handle = tokio::runtime::Handle::current();
+
+                    let doc_key = if name == "default" {
+                        let mut k = Vec::with_capacity(8 + 8);
+                        k.extend_from_slice(b"__docid:");
+                        k.extend_from_slice(&doc_id.inner().to_le_bytes());
+                        k
+                    } else {
+                        let mut k = Vec::with_capacity(prefix.len() + 1 + 8);
+                        k.extend_from_slice(&prefix);
+                        k.push(1);
+                        k.extend_from_slice(&doc_id.inner().to_le_bytes());
+                        k
+                    };
+
+                    tokio::task::block_in_place(|| {
+                        handle.block_on(async {
+                            if let Ok(Some(data)) = storage.get(&doc_key).await {
+                                if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&data) {
+                                    return filter_expr.matches(
+                                        &stored.metadata.unwrap_or(serde_json::Value::Null),
+                                    );
+                                }
+                            }
+                            false
+                        })
+                    })
+                };
+
+                self.search_filtered(query, k, Some(&hnsw_filter)).await
+            }
+            FilterStrategy::PostFilter | FilterStrategy::Hybrid => {
+                // PostFilter: over-fetch then filter
+                let ef = k * 10;
+                let results = self.search(query, ef).await?;
+                let filtered: Vec<_> = results
+                    .into_iter()
+                    .filter(|r| {
+                        filter.matches(r.metadata.as_ref().unwrap_or(&serde_json::Value::Null))
+                    })
+                    .take(k)
+                    .collect();
+                Ok(filtered)
+            }
+        }
+    }
+
     /// Performs filtered semantic vector search in the collection.
     pub async fn search_filtered(
         &self,
@@ -399,26 +466,78 @@ impl Collection {
         vector: &[f32],
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
+        self.hybrid_search_with_filter(text, vector, k, None).await
+    }
+
+    /// Performs hybrid search with optional metadata filtering.
+    pub async fn hybrid_search_with_filter(
+        &self,
+        text: &str,
+        vector: &[f32],
+        k: usize,
+        filter: Option<FilterExpr>,
+    ) -> Result<Vec<crate::SearchResult>> {
         let is_vector_zero = vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
 
         match (is_text_empty, is_vector_zero) {
             (true, true) => Ok(Vec::new()),
-            (true, false) => self.search(vector, k).await,
+            (true, false) => {
+                if let Some(f) = filter {
+                    self.search_with_filter(vector, k, f).await
+                } else {
+                    self.search(vector, k).await
+                }
+            }
             (false, is_v_zero) => {
-                let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let text_results = self.hydrate_from_tuples(bm25_results).await?;
+                let bm25_results = self.text_index.search_bm25(text, k * 2).await?;
+                let mut text_results = self.hydrate_from_tuples(bm25_results).await?;
+
+                if let Some(ref f) = filter {
+                    text_results.retain(|r| {
+                        f.matches(r.metadata.as_ref().unwrap_or(&serde_json::Value::Null))
+                    });
+                }
+                text_results.truncate(k);
 
                 if is_v_zero {
                     return Ok(text_results);
                 }
 
-                let vector_results = self.search(vector, k).await?;
+                let vector_results = if let Some(f) = filter {
+                    self.search_with_filter(vector, k, f).await?
+                } else {
+                    self.search(vector, k).await?
+                };
+
                 Ok(crate::fusion::reciprocal_rank_fusion(
                     vec![vector_results, text_results],
                     k,
                 ))
             }
+        }
+    }
+
+    /// Estimates the selectivity of a filter expression (0.0 to 1.0).
+    pub async fn estimate_selectivity(&self, filter: &FilterExpr) -> f32 {
+        // Heuristic: for now we use a simple approach based on index size
+        // In a production environment, this would use Bloom filters or HyperLogLog
+        // from the LSM storage layer.
+        match filter {
+            FilterExpr::Eq(_, _) => 0.01, // Assume 1% for equality
+            FilterExpr::NotEq(_, _) => 0.99,
+            FilterExpr::In(_, vals) => (0.01 * vals.len() as f32).min(1.0),
+            FilterExpr::And(exprs) => {
+                let mut s = 1.0;
+                for _e in exprs {
+                    // We don't have async recursion easily here without boxed future
+                    // but we can do a flat approximation
+                    s *= 0.1;
+                }
+                s
+            }
+            FilterExpr::Or(_) => 0.5,
+            _ => 0.1,
         }
     }
 

@@ -56,10 +56,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub mod collection;
+pub mod filter;
 pub mod fusion;
 pub mod transaction;
 
 pub use collection::Collection;
+pub use filter::{FilterExpr, FilterStrategy};
 pub use memfuse_checkpoint;
 
 /// User-facing search result containing the ID, score, and optional metadata.
@@ -344,6 +346,19 @@ impl MemFuse {
             .await
     }
 
+    /// Performs semantic vector search with advanced metadata filtering.
+    pub async fn search_with_filter(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: FilterExpr,
+    ) -> Result<Vec<SearchResult>> {
+        self.default_col()
+            .await?
+            .search_with_filter(query, k, filter)
+            .await
+    }
+
     /// Performs hybrid search combining BM25 and vector search.
     // ANCHOR:TODO:SEARCH-001 — Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection.
     // WP:WP-2.1 PRIO:1 NEEDS:COL-001
@@ -361,6 +376,20 @@ impl MemFuse {
         self.default_col()
             .await?
             .hybrid_search(text, vector, k)
+            .await
+    }
+
+    /// Performs hybrid search with advanced metadata filtering.
+    pub async fn hybrid_search_with_filter(
+        &self,
+        text: &str,
+        vector: &[f32],
+        k: usize,
+        filter: Option<FilterExpr>,
+    ) -> Result<Vec<SearchResult>> {
+        self.default_col()
+            .await?
+            .hybrid_search_with_filter(text, vector, k, filter)
             .await
     }
 
