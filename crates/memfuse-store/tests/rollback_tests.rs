@@ -1,5 +1,5 @@
-use memfuse_store::{LsmStorage, LsmConfig, CompactionConfig, Checkpointer};
-use memfuse_core::{TxId, StorageEngine};
+use memfuse_core::{StorageEngine, TxId};
+use memfuse_store::{Checkpointer, CompactionConfig, LsmConfig, LsmStorage};
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -38,7 +38,10 @@ async fn test_time_travel_rollback() {
 
     // 3. More Writes (TX 3, TX 4)
     let tx3 = TxId::new(3);
-    storage.put(tx3, b"key1", b"val1_updated").await.expect("put3");
+    storage
+        .put(tx3, b"key1", b"val1_updated")
+        .await
+        .expect("put3");
     storage.commit(tx3).await.expect("commit3");
 
     let tx4 = TxId::new(4);
@@ -46,11 +49,17 @@ async fn test_time_travel_rollback() {
     storage.commit(tx4).await.expect("commit4");
 
     // Verify current state
-    assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1_updated".to_vec()));
+    assert_eq!(
+        storage.get(b"key1").await.unwrap(),
+        Some(b"val1_updated".to_vec())
+    );
     assert_eq!(storage.get(b"key2").await.unwrap(), None);
 
     // 4. Rollback to TX 2
-    checkpointer.rollback_to(&checkpoint).await.expect("rollback");
+    checkpointer
+        .rollback_to(&checkpoint)
+        .await
+        .expect("rollback");
 
     // Verify rolled back state
     assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
@@ -79,25 +88,43 @@ async fn test_rollback_across_flushes() {
 
     // TX 1: Goes to SSTable 1
     let tx1 = TxId::new(1);
-    storage.put(tx1, b"key_stable", b"value_stable").await.expect("put1");
+    storage
+        .put(tx1, b"key_stable", b"value_stable")
+        .await
+        .expect("put1");
     storage.commit(tx1).await.expect("commit1");
     storage.flush().await.expect("flush1");
 
     // TX 2: Goes to MemTable (Checkpoint here)
     let tx2 = TxId::new(2);
-    storage.put(tx2, b"key_volatile", b"value_volatile").await.expect("put2");
+    storage
+        .put(tx2, b"key_volatile", b"value_volatile")
+        .await
+        .expect("put2");
     storage.commit(tx2).await.expect("commit2");
     let checkpoint = checkpointer.create_checkpoint(tx2);
 
     // TX 3: Overwrites
     let tx3 = TxId::new(3);
-    storage.put(tx3, b"key_stable", b"value_broken").await.expect("put3");
+    storage
+        .put(tx3, b"key_stable", b"value_broken")
+        .await
+        .expect("put3");
     storage.commit(tx3).await.expect("commit3");
 
     // Rollback
-    checkpointer.rollback_to(&checkpoint).await.expect("rollback");
+    checkpointer
+        .rollback_to(&checkpoint)
+        .await
+        .expect("rollback");
 
     // Verify
-    assert_eq!(storage.get(b"key_stable").await.unwrap(), Some(b"value_stable".to_vec()));
-    assert_eq!(storage.get(b"key_volatile").await.unwrap(), Some(b"value_volatile".to_vec()));
+    assert_eq!(
+        storage.get(b"key_stable").await.unwrap(),
+        Some(b"value_stable".to_vec())
+    );
+    assert_eq!(
+        storage.get(b"key_volatile").await.unwrap(),
+        Some(b"value_volatile".to_vec())
+    );
 }
