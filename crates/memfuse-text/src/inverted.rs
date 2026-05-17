@@ -1,6 +1,6 @@
 //! LSM-backed Inverted Index.
 
-use crate::tokenizer::{tokenize, DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
+use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use async_trait::async_trait;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
@@ -276,7 +276,7 @@ impl InvertedIndex {
 
     /// Searches the inverted index using BM25.
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
-        let tokens = tokenize(query);
+        let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
             return Ok(Vec::new());
         }
@@ -656,6 +656,35 @@ mod tests {
 
         let stats_after = index.stats().await?;
         assert_eq!(stats_after.num_documents, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_german_compound_search() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(config).await?);
+        // Namespace contains "de" to trigger GermanMorphTokenizer
+        let index = InvertedIndex::new(storage.clone(), "collection_de");
+
+        let tx1 = TxId::new(1);
+        let d1 = DocId::new(1);
+        index.upsert_document(tx1, d1, "Das Finanzamt ist zuständig.").await?;
+        storage.commit(tx1).await?;
+
+        // Search for "amt" should find "Finanzamt" due to compound splitting
+        let results = index.search_bm25("amt", 10).await?;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, d1);
+
+        // Search for "Finanzamt" should also find it
+        let results = index.search_bm25("Finanzamt", 10).await?;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, d1);
 
         Ok(())
     }

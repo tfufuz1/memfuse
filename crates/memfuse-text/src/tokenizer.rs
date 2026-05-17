@@ -47,6 +47,7 @@ impl Tokenizer for GermanMorphTokenizer {
     fn tokenize(&self, text: &str) -> Vec<String> {
         let stopwords = get_stopwords();
         let mut tokens = Vec::new();
+        let suffixes = ["gericht", "amt", "haus", "stelle", "wesen"];
 
         for word in text.unicode_words() {
             let lower = word.to_lowercase();
@@ -54,12 +55,17 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            let mut split = false;
+            for suffix in suffixes {
+                if lower.ends_with(suffix) && lower.len() > suffix.len() + 2 {
+                    tokens.push(lower.clone());
+                    tokens.push(suffix.to_string());
+                    split = true;
+                    break;
+                }
+            }
+
+            if !split {
                 tokens.push(lower);
             }
         }
@@ -100,5 +106,28 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+
+        let tokens = tokenizer.tokenize("Finanzamt");
+        assert!(tokens.contains(&"finanzamt".to_string()));
+        assert!(tokens.contains(&"amt".to_string()));
+
+        let tokens = tokenizer.tokenize("Krankenhaus");
+        assert!(tokens.contains(&"krankenhaus".to_string()));
+        assert!(tokens.contains(&"haus".to_string()));
+
+        let tokens = tokenizer.tokenize("Arbeitsstelle");
+        assert!(tokens.contains(&"arbeitsstelle".to_string()));
+        assert!(tokens.contains(&"stelle".to_string()));
+
+        let tokens = tokenizer.tokenize("Gesundheitswesen");
+        assert!(tokens.contains(&"gesundheitswesen".to_string()));
+        assert!(tokens.contains(&"wesen".to_string()));
+
+        // Short words should not be split (min length check)
+        let tokens = tokenizer.tokenize("Das Amt");
+        assert_eq!(tokens, vec!["amt"]); // "das" is stopword, "amt" is too short (<= 3+2) to split
+
+        let tokens = tokenizer.tokenize("Haus");
+        assert_eq!(tokens, vec!["haus"]); // "haus" is 4 chars, 4 > 4+2 is false
     }
 }
