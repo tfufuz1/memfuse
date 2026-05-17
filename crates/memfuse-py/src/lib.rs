@@ -10,12 +10,12 @@
 //!   from synchronous Python calls.
 //! - **Zero-Copy**: Aims for minimal copying of vector data between Python and Rust.
 
-// AGENT:06 DATE:2026-05-15 STATUS:DONE
+// AGENT:06 DATE:2026-05-20 STATUS:DONE
 // ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
-// AGENT:@JULES-06 DATE:2026-05-15 STATUS:DONE
+// AGENT:@JULES-06 DATE:2026-05-20 STATUS:DONE
 // TEST: cd crates/memfuse-py && python -m pytest tests/ -v
-// DONE: pip install . funktioniert, keine Deadlocks in tokio-Runtime.
+// DONE: pip install . funktioniert, keine Deadlocks in tokio-Runtime. Ergonomie via __len__, __bool__ und __repr__ verbessert.
 // SUCCESSOR: @JULES-09 — "Python Bindings sind stabil. StateGraph kann darauf aufbauen."
 #![forbid(unsafe_code)]
 
@@ -69,6 +69,16 @@ pub struct PySearchResult {
     pub metadata: Option<PyObject>,
 }
 
+#[pymethods]
+impl PySearchResult {
+    fn __repr__(&self) -> String {
+        format!(
+            "SearchResult(id='{}', score={:.4})",
+            self.id, self.score
+        )
+    }
+}
+
 /// A document retrieved from MemFuse.
 #[pyclass(get_all)]
 pub struct PyDocument {
@@ -76,6 +86,13 @@ pub struct PyDocument {
     pub id: String,
     /// Metadata associated with the document.
     pub metadata: Option<PyObject>,
+}
+
+#[pymethods]
+impl PyDocument {
+    fn __repr__(&self) -> String {
+        format!("Document(id='{}')", self.id)
+    }
 }
 
 /// Statistics for a vector index.
@@ -90,6 +107,16 @@ pub struct PyVectorIndexStats {
     pub num_layers: usize,
 }
 
+#[pymethods]
+impl PyVectorIndexStats {
+    fn __repr__(&self) -> String {
+        format!(
+            "VectorIndexStats(num_vectors={}, memory_usage_bytes={}, num_layers={})",
+            self.num_vectors, self.memory_usage_bytes, self.num_layers
+        )
+    }
+}
+
 /// Statistics for the storage engine.
 #[pyclass(get_all, name = "StorageStats")]
 #[derive(Clone)]
@@ -102,6 +129,16 @@ pub struct PyStorageStats {
     pub memtable_size_bytes: u64,
 }
 
+#[pymethods]
+impl PyStorageStats {
+    fn __repr__(&self) -> String {
+        format!(
+            "StorageStats(num_segments={}, total_size_bytes={}, memtable_size_bytes={})",
+            self.num_segments, self.total_size_bytes, self.memtable_size_bytes
+        )
+    }
+}
+
 /// Overall database statistics.
 #[pyclass(get_all, name = "DbStats")]
 #[derive(Clone)]
@@ -112,7 +149,37 @@ pub struct PyDbStats {
     pub storage_stats: PyStorageStats,
 }
 
-#[pyclass(unsendable, name = "Db")]
+#[pymethods]
+impl PyDbStats {
+    fn __repr__(&self) -> String {
+        format!(
+            "DbStats(index_stats={:?}, storage_stats={:?})",
+            self.index_stats, self.storage_stats
+        )
+    }
+}
+
+impl std::fmt::Debug for PyVectorIndexStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VectorIndexStats")
+            .field("num_vectors", &self.num_vectors)
+            .field("memory_usage_bytes", &self.memory_usage_bytes)
+            .field("num_layers", &self.num_layers)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for PyStorageStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StorageStats")
+            .field("num_segments", &self.num_segments)
+            .field("total_size_bytes", &self.total_size_bytes)
+            .field("memtable_size_bytes", &self.memtable_size_bytes)
+            .finish()
+    }
+}
+
+#[pyclass(name = "Db")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
 }
@@ -351,10 +418,18 @@ impl PyMemFuse {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    pub fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        self.len(py)
+    }
+
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.is_empty()))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn __bool__(&self, py: Python<'_>) -> PyResult<bool> {
+        self.is_empty(py).map(|empty| !empty)
     }
 
     #[pyo3(signature = (start=None, end=None))]
@@ -404,7 +479,7 @@ impl PyMemFuse {
     }
 }
 
-#[pyclass(unsendable, name = "Collection")]
+#[pyclass(name = "Collection")]
 pub struct PyCollection {
     inner: Arc<MemFuseCollection>,
 }
@@ -598,9 +673,17 @@ impl PyCollection {
         Ok(py.allow_threads(|| rt.block_on(self.inner.len())))
     }
 
+    pub fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        self.len(py)
+    }
+
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
         Ok(py.allow_threads(|| rt.block_on(self.inner.is_empty())))
+    }
+
+    pub fn __bool__(&self, py: Python<'_>) -> PyResult<bool> {
+        self.is_empty(py).map(|empty| !empty)
     }
 
     pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
@@ -667,13 +750,14 @@ impl PyCollection {
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536, encryption_passphrase=None, distance_metric=None))]
+#[pyo3(signature = (path, dimension=1536, encryption_passphrase=None, distance_metric=None, max_elements=None))]
 fn open(
     py: Python<'_>,
     path: &str,
     dimension: usize,
     encryption_passphrase: Option<String>,
     distance_metric: Option<String>,
+    max_elements: Option<usize>,
 ) -> PyResult<PyMemFuse> {
     let rt = get_runtime()?;
     let mut config = MemFuseConfig {
@@ -681,6 +765,10 @@ fn open(
         encryption_passphrase,
         ..Default::default()
     };
+
+    if let Some(me) = max_elements {
+        config.max_elements = me;
+    }
 
     if let Some(dm) = distance_metric {
         config.distance_metric = match dm.to_lowercase().as_str() {
