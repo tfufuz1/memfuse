@@ -7,13 +7,16 @@
 // WP:WP-5.1 PRIO:3 NEEDS:NONE
 // AGENT:07 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
-// ANCHOR:FIXME:WP-5.1-ROLLBACK-STUB STATUS:TODO AGENT:02
-// Nur Datenstrukturen existieren, kein funktionaler Rollback.
+// ANCHOR:FIXME:WP-5.1-ROLLBACK-STUB STATUS:REVIEW AGENT:02
+// Funktionaler Rollback via WAL-Replay implementiert.
 // PLAN: WAL bis checkpoint.tx_id replayed → deterministischer State-Restore.
 // ABHAENGIGKEIT: Braucht WAL-Ref (aktuell auskommentiert: `wal: Arc<Wal>`).
 // SPEC: docs/specs/SPEC-20260505-WP-4.x-Scale.md (State Checkpointing Sektion)
 
-use memfuse_core::{TxId, Result};
+use memfuse_core::{Result, TxId};
+use std::sync::Arc;
+
+use crate::lsm::LsmStorage;
 
 /// Represents a Point-in-Time snapshot of the agent's memory state.
 #[derive(Debug, Clone)]
@@ -24,19 +27,13 @@ pub struct StateCheckpoint {
 
 /// The Checkpointer manages WAL replay bounds for deterministic time-travel.
 pub struct Checkpointer {
-    // wal: Arc<Wal>,
-}
-
-impl Default for Checkpointer {
-    fn default() -> Self {
-        Self::new()
-    }
+    storage: Arc<LsmStorage>,
 }
 
 impl Checkpointer {
     /// Creates a new Checkpointer.
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(storage: Arc<LsmStorage>) -> Self {
+        Self { storage }
     }
 
     /// Records a new checkpoint at the current transaction ID marking an agent step.
@@ -55,10 +52,10 @@ impl Checkpointer {
             checkpoint.tx_id
         );
         // Process:
-        // 1. Halt all active writes globally.
+        // 1. Halt all active writes globally (via commit_mutex in rollback_to_tx).
         // 2. Drop current volatile MemTables and indices.
         // 3. Replay WAL strictly up to `checkpoint.tx_id`.
         // 4. Resume operations deterministically.
-        Ok(())
+        self.storage.rollback_to_tx(checkpoint.tx_id).await
     }
 }

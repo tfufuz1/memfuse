@@ -130,28 +130,17 @@ impl LsmStorage {
 
         let wal =
             Wal::open_with_key_manager(config.path.join("wal.log"), key_manager.clone()).await?;
-        let memtable = MemTable::new();
+        let memtable = Arc::new(MemTable::new());
 
         // Replay WAL
         let wal_entries = wal.replay().await?;
         let mut max_seq = 0u64;
-        let mut replayed_size = 0u64;
-
-        for (lsn, entry) in &wal_entries {
+        for (lsn, _) in &wal_entries {
             if *lsn > max_seq {
                 max_seq = *lsn;
             }
-            match &entry.op {
-                WalOp::Put { key, value, .. } => {
-                    replayed_size += (key.len() + value.len()) as u64;
-                    memtable.put(Bytes::from(key.clone()), Bytes::from(value.clone()), *lsn);
-                }
-                WalOp::Delete { key, .. } => {
-                    replayed_size += key.len() as u64;
-                    memtable.put(Bytes::from(key.clone()), Bytes::new(), lsn | TOMBSTONE_BIT);
-                }
-            }
         }
+        let replayed_size = Self::apply_wal_entries_to_memtable(&memtable, &wal_entries, None);
 
         let budget_config = ResourceBudget {
             memory_limit: config.max_ram_mb * 1024 * 1024,
@@ -213,7 +202,7 @@ impl LsmStorage {
             config,
             key_manager,
             state: RwLock::new(LsmState {
-                memtable: Arc::new(memtable),
+                memtable,
                 immutable_memtables: Vec::new(),
                 wal,
             }),
@@ -241,6 +230,86 @@ impl LsmStorage {
     /// Unpins a sequence number.
     pub async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
         self.snapshot_registry.unpin(seq_no);
+        Ok(())
+    }
+
+    /// Helper to apply WAL entries to a memtable, optionally filtering by TxId.
+    fn apply_wal_entries_to_memtable(
+        memtable: &MemTable,
+        entries: &[(u64, WalEntry)],
+        target_tx: Option<TxId>,
+    ) -> u64 {
+        let mut replayed_size = 0u64;
+        for (lsn, entry) in entries {
+            let matches_tx = match target_tx {
+                Some(target) => match &entry.op {
+                    WalOp::Put { tx_id, .. } => tx_id.inner() <= target.inner(),
+                    WalOp::Delete { tx_id, .. } => tx_id.inner() <= target.inner(),
+                },
+                None => true,
+            };
+
+            if matches_tx {
+                match &entry.op {
+                    WalOp::Put { key, value, .. } => {
+                        replayed_size += (key.len() + value.len()) as u64;
+                        memtable.put(Bytes::from(key.clone()), Bytes::from(value.clone()), *lsn);
+                    }
+                    WalOp::Delete { key, .. } => {
+                        replayed_size += key.len() as u64;
+                        memtable.put(Bytes::from(key.clone()), Bytes::new(), lsn | TOMBSTONE_BIT);
+                    }
+                }
+            }
+        }
+        replayed_size
+    }
+
+    /// Rolls back the volatile state (MemTables) to a specific transaction ID.
+    pub async fn rollback_to_tx(&self, target_tx: TxId) -> Result<()> {
+        let _commit_lock = self.commit_mutex.lock().await;
+        let mut state = self.state.write().await;
+
+        // 1. Clear volatile state
+        let old_memtable_size = state.memtable.size();
+        let mut immutable_size = 0;
+        for mt in &state.immutable_memtables {
+            immutable_size += mt.size();
+        }
+
+        state.memtable = Arc::new(MemTable::new());
+        state.immutable_memtables.clear();
+
+        // 2. Replay current WAL up to target_tx
+        let wal_entries = state.wal.replay().await?;
+        let replayed_size =
+            Self::apply_wal_entries_to_memtable(&state.memtable, &wal_entries, Some(target_tx));
+
+        // 3. Update budget
+        self.budget
+            .release_memory((old_memtable_size + immutable_size) as u64);
+        if replayed_size > 0 {
+            let _ = self.budget.consume_memory(replayed_size);
+        }
+
+        // 4. Update next_seq_no based on replayed entries
+        let mut max_seq = 0;
+        for (lsn, entry) in &wal_entries {
+            let tx_id = match &entry.op {
+                WalOp::Put { tx_id, .. } => *tx_id,
+                WalOp::Delete { tx_id, .. } => *tx_id,
+            };
+            if tx_id.inner() <= target_tx.inner() && *lsn > max_seq {
+                max_seq = *lsn;
+            }
+        }
+        self.next_seq_no.store(max_seq + 1, Ordering::SeqCst);
+
+        tracing::info!(
+            "Rolled back to TX: {}, replayed {} bytes",
+            target_tx.inner(),
+            replayed_size
+        );
         Ok(())
     }
 
