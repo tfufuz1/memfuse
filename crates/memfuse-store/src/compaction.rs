@@ -7,7 +7,7 @@
 
 // ANCHOR:ARCH:COMPACT-001 — Background Compaction (STCS — Size-Tiered Compaction Strategy).
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// AGENT:01 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-05 DEADLINE:NONE
 // ALGORITHMUS: Gruppiere SSTables nach Größenklasse → Merge wenn >= min_sstables_per_tier.
 // TOMBSTONE-GC: Tombstones werden NUR gelöscht wenn seq < min_active_seqno (MVCC-SAFE).
@@ -172,7 +172,12 @@ impl CompactionEngine {
             let mut placed = false;
 
             for tier in &mut tiers {
-                let tier_size = ssts[tier[0]].metadata().file_size;
+                // ANCHOR:SEC:SLICE-002 AGENT:10 PRIO:1 STATUS:REVIEW
+                let tier_size = tier
+                    .first()
+                    .and_then(|&idx| ssts.get(idx))
+                    .map(|sst| sst.metadata().file_size)
+                    .unwrap_or(0);
                 let ratio = if size > tier_size {
                     size as f64 / tier_size.max(1) as f64
                 } else {

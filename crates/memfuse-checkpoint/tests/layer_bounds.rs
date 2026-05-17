@@ -18,7 +18,7 @@ async fn test_layer_001_fork_diverge_merge() {
     let config = MemFuseConfig {
         dimension: 4,
         ..Default::default()
-    };
+};
 
     // 1. Initialisierung: DB befüllen
     {

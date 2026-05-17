@@ -4,7 +4,7 @@
 
 // ANCHOR:ARCH:TYPES-001 — Zentrale Datentypen für den gesamten Workspace.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// AGENT:01 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-05 DEADLINE:NONE
 // INVARIANTEN: DocId=#[repr(transparent)] u64 via blake3, TOMBSTONE_BIT=Bit63 in SeqNo.
 // ACHTUNG: Änderungen an DocId::from_key() brechen ALLE bestehenden Datenbanken!
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 // ANCHOR:ARCH:TOMBSTONE-001 — Bit 63 der SeqNo markiert Tombstones.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// AGENT:01 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-05 DEADLINE:NONE
 // Verwendet in: lsm.rs, compaction.rs. Raw-SeqNo = seq & !TOMBSTONE_BIT.
 /// Bit mask for identifying tombstones in sequence numbers.
@@ -45,10 +45,16 @@ impl DocId {
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Self {
-        // ANCHOR:DEBT:TYPES-002 AGENT:01 STATUS:DONE PRIO:3
+        // ANCHOR:DEBT:TYPES-002 AGENT:01 STATUS:REVIEW PRIO:3
         // SAFETY: blake3::hash() always returns a 32-byte hash.
         // try_from_key() only fails if the hash is shorter than 8 bytes.
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes") // unwrap: blake3 hash is always 32 bytes
+        // ANCHOR:SEC:PANIC-001 AGENT:10 PRIO:2 STATUS:REVIEW
+        Self::try_from_key(key).unwrap_or_else(|_| {
+            let hash = blake3::hash(key.as_bytes());
+            let mut buf = [0u8; 8];
+            buf.copy_from_slice(&hash.as_bytes()[0..8]);
+            Self(u64::from_le_bytes(buf))
+        })
     }
 
     /// Safely derive a DocId from a user-provided string key.
@@ -253,7 +259,7 @@ impl Edge {
 
 // ANCHOR:ARCH:BUDGET-001 — Memory-Budgeting verhindert OOM in Produktionsumgebungen.
 // WP:WP-0.0 PRIO:2 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// AGENT:01 DATE:2026-05-09 STATUS:REVIEW
 // CREATED:2026-05-05 DEADLINE:NONE
 // Backpressure: >80% → 5ms Sleep, >95% → MemFuseError::MemoryBudgetExceeded.
 //

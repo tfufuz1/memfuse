@@ -14,7 +14,7 @@ async fn test_orchestrator_stress_concurrency() {
         max_elements: 10000,
         distance_metric: DistanceMetric::Cosine,
         ..Default::default()
-    };
+};
     let db = Arc::new(
         MemFuse::open_with_config(tmp.path(), config)
             .await
