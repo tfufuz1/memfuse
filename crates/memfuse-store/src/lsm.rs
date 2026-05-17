@@ -281,7 +281,11 @@ impl LsmStorage {
         // 3. Discard staged operations to prevent them from committing with high LSNs
         self.tx_buffer.discard_all();
 
-        tracing::info!("Rolled back storage visibility to TxId: {} (LSN: {})", target_tx_id, target_lsn);
+        tracing::info!(
+            "Rolled back storage visibility to TxId: {} (LSN: {})",
+            target_tx_id,
+            target_lsn
+        );
         Ok(())
     }
 }
@@ -842,36 +846,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rollback_to_checkpoint() {
+    async fn test_rollback_to_checkpoint() -> Result<()> {
         let (storage, _tmp) = test_storage().await;
 
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.unwrap();
-        storage.commit(tx1).await.unwrap();
+        storage.put(tx1, b"key1", b"val1").await?;
+        storage.commit(tx1).await?;
 
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"key2", b"val2").await.unwrap();
-        storage.commit(tx2).await.unwrap();
+        storage.put(tx2, b"key2", b"val2").await?;
+        storage.commit(tx2).await?;
 
-        assert_eq!(
-            storage.get(b"key1").await.unwrap(),
-            Some(b"val1".to_vec())
-        );
-        assert_eq!(
-            storage.get(b"key2").await.unwrap(),
-            Some(b"val2".to_vec())
-        );
+        assert_eq!(storage.get(b"key1").await?, Some(b"val1".to_vec()));
+        assert_eq!(storage.get(b"key2").await?, Some(b"val2".to_vec()));
 
         // Rollback to tx1 (effectively undoing tx2)
-        storage.rollback_to_checkpoint(tx1).await.unwrap();
+        storage.rollback_to_checkpoint(tx1).await?;
 
-        assert_eq!(
-            storage.get(b"key1").await.unwrap(),
-            Some(b"val1".to_vec())
-        );
-        assert_eq!(storage.get(b"key2").await.unwrap(), None);
+        assert_eq!(storage.get(b"key1").await?, Some(b"val1".to_vec()));
+        assert_eq!(storage.get(b"key2").await?, None);
 
         // Verify sequence number was NOT reset (logical rollback)
         assert_eq!(storage.last_seq_no(), 2);
+        Ok(())
     }
 }
