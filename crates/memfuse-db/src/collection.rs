@@ -332,7 +332,7 @@ impl Collection {
         query_embedding: &[f32],
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
-        self.search_filtered(query_embedding, k, None).await
+        self.search_filtered(query_embedding, k, None, None).await
     }
 
     /// Performs filtered semantic vector search in the collection.
@@ -340,10 +340,79 @@ impl Collection {
         &self,
         query: &[f32],
         k: usize,
-        filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
+        doc_id_filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
+        metadata_filter: Option<crate::Filter>,
     ) -> Result<Vec<crate::SearchResult>> {
-        let scored_docs = self.index.search_filtered(query, k, filter).await?;
+        if let Some(m_filter) = metadata_filter {
+            // Pre-filtering strategy for small collections or highly selective filters
+            let doc_count = self.len().await;
+            if doc_count < 1000 {
+                let valid_ids = self.build_doc_id_set(&m_filter).await?;
+                let combined = |id: DocId| {
+                    if let Some(f) = doc_id_filter {
+                        if !f(id) {
+                            return false;
+                        }
+                    }
+                    valid_ids.contains(&id)
+                };
+                let scored_docs = self.index.search_filtered(query, k, Some(&combined)).await?;
+                return self.hydrate_from_scored(scored_docs).await;
+            }
+
+            // Post-filtering strategy for larger collections
+            // We fetch more results to account for filtering overhead
+            let oversearch_k = k * 10;
+            let scored_docs = self
+                .index
+                .search_filtered(query, oversearch_k, doc_id_filter)
+                .await?;
+            let mut results = Vec::new();
+            for sd in scored_docs {
+                let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
+                if let Some(bytes) = self.storage.get(&doc_key).await? {
+                    let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                    if m_filter.matches(&stored.metadata) {
+                        results.push(crate::SearchResult {
+                            id: stored.id,
+                            score: sd.score,
+                            metadata: stored.metadata,
+                        });
+                    }
+                }
+                if results.len() >= k {
+                    break;
+                }
+            }
+            return Ok(results);
+        }
+
+        let scored_docs = self
+            .index
+            .search_filtered(query, k, doc_id_filter)
+            .await?;
         self.hydrate_from_scored(scored_docs).await
+    }
+
+    async fn build_doc_id_set(
+        &self,
+        filter: &crate::Filter,
+    ) -> Result<std::collections::HashSet<DocId>> {
+        let mut set = std::collections::HashSet::new();
+        // Use an empty DocId to get the correct prefix for DocId mapping (type 1)
+        let prefix = self.namespaced_key(&0u64.to_le_bytes(), 1);
+        // We only want the prefix part before the actual 8 bytes of the DocId
+        let prefix_len = prefix.len() - 8;
+        let prefix = &prefix[..prefix_len];
+
+        let entries = self.storage.scan_prefix(prefix).await?;
+        for (_, v) in entries {
+            let stored: StoredDocument = serde_json::from_slice(&v)?;
+            if filter.matches(&stored.metadata) {
+                set.insert(DocId::from_key(&stored.id));
+            }
+        }
+        Ok(set)
     }
 
     async fn hydrate_from_scored(

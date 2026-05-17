@@ -56,10 +56,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub mod collection;
+pub mod filter;
 pub mod fusion;
 pub mod transaction;
 
 pub use collection::Collection;
+pub use filter::Filter;
 pub use memfuse_checkpoint;
 
 /// User-facing search result containing the ID, score, and optional metadata.
@@ -336,11 +338,12 @@ impl MemFuse {
         &self,
         query: &[f32],
         k: usize,
-        filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
+        doc_id_filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
+        metadata_filter: Option<Filter>,
     ) -> Result<Vec<SearchResult>> {
         self.default_col()
             .await?
-            .search_filtered(query, k, filter)
+            .search_filtered(query, k, doc_id_filter, metadata_filter)
             .await
     }
 
@@ -773,5 +776,49 @@ mod tests {
         assert!(list.contains(&"c2".to_string()));
         assert!(list.contains(&"c3".to_string()));
         assert_eq!(list.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_post_filter_returns_only_matching() {
+        let (db, _tmp) = test_db(4).await;
+
+        for i in 0..10 {
+            let topic = if i % 2 == 0 { "rust" } else { "python" };
+            db.insert(&format!("doc-{}", i), &[1.0, 0.0, 0.0, 0.0], Some(json!({"topic": topic})))
+                .await
+                .expect("insert");
+        }
+
+        let filter = Filter::Eq("topic".into(), json!("rust"));
+        let results = db.search_filtered(&[1.0, 0.0, 0.0, 0.0], 10, None, Some(filter))
+            .await
+            .expect("search filtered");
+
+        assert_eq!(results.len(), 5);
+        for r in results {
+            assert_eq!(r.metadata.expect("meta")["topic"], "rust");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pre_filter_with_low_selectivity() {
+        // Since we currently have a threshold of 1000 for Pre-filtering,
+        // 100 docs will trigger Pre-filtering.
+        let (db, _tmp) = test_db(4).await;
+
+        for i in 0..100 {
+            let topic = if i == 42 { "unique" } else { "common" };
+            db.insert(&format!("doc-{}", i), &[1.0, 0.0, 0.0, 0.0], Some(json!({"topic": topic})))
+                .await
+                .expect("insert");
+        }
+
+        let filter = Filter::Eq("topic".into(), json!("unique"));
+        let results = db.search_filtered(&[1.0, 0.0, 0.0, 0.0], 10, None, Some(filter))
+            .await
+            .expect("search filtered");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "doc-42");
     }
 }
