@@ -72,17 +72,22 @@ impl CsrGraph {
 
     /// Returns the outgoing edges for a given node ID
     pub fn get_neighbors(&self, id: &str) -> Vec<(&str, u8)> {
+        // ANCHOR:SEC:SLICE-004 AGENT:10 PRIO:1 STATUS:REVIEW
         let mut result = Vec::new();
         if let Some(&idx) = self.node_map.get(id) {
             let idx = idx as usize;
-            if idx < self.offsets.len() - 1 {
-                let start = self.offsets[idx];
-                let end = self.offsets[idx + 1];
+            if idx < self.offsets.len().saturating_sub(1) {
+                let start = *self.offsets.get(idx).unwrap_or(&0);
+                let end = *self.offsets.get(idx + 1).unwrap_or(&start);
                 for i in start..end {
-                    let target_idx = self.edges[i] as usize;
-                    let target_id = &self.rev_map[target_idx];
-                    let rel = self.relation_types[i];
-                    result.push((target_id.as_str(), rel));
+                    if let (Some(&target_idx_u32), Some(&rel)) =
+                        (self.edges.get(i), self.relation_types.get(i))
+                    {
+                        let target_idx = target_idx_u32 as usize;
+                        if let Some(target_id) = self.rev_map.get(target_idx) {
+                            result.push((target_id.as_str(), rel));
+                        }
+                    }
                 }
             }
         }
