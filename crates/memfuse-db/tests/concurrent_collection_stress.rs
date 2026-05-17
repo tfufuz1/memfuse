@@ -12,6 +12,7 @@ async fn test_concurrent_collection_ops() {
     let tmp = TempDir::new().expect("temp dir");
     let config = MemFuseConfig {
         dimension: 4,
+        encryption_passphrase: None,
         max_elements: 10000,
         distance_metric: DistanceMetric::Cosine,
     };
