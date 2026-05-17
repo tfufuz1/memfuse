@@ -76,7 +76,11 @@ impl PySearchResult {
             "SearchResult(id='{}', score={:.4}, metadata={})",
             self.id,
             self.score,
-            if self.metadata.is_some() { "{...}" } else { "None" }
+            if self.metadata.is_some() {
+                "{...}"
+            } else {
+                "None"
+            }
         )
     }
 }
@@ -96,7 +100,11 @@ impl PyDocument {
         format!(
             "Document(id='{}', metadata={})",
             self.id,
-            if self.metadata.is_some() { "{...}" } else { "None" }
+            if self.metadata.is_some() {
+                "{...}"
+            } else {
+                "None"
+            }
         )
     }
 }
