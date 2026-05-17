@@ -69,8 +69,8 @@ mod tests {
     use super::*;
     use crate::lsm::{LsmConfig, LsmStorage};
     use memfuse_core::StorageEngine;
-    use tempfile::TempDir;
     use std::time::Duration;
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_checkpoint_rollback() {
@@ -88,26 +88,38 @@ mod tests {
 
         // 1. Write some data
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.unwrap();
-        storage.commit(tx1).await.unwrap();
+        storage.put(tx1, b"key1", b"val1").await.expect("put");
+        storage.commit(tx1).await.expect("commit");
 
         // 2. Create checkpoint
         let cp = checkpointer.create_checkpoint(tx1);
 
         // 3. Write more data
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"key2", b"val2").await.unwrap();
-        storage.commit(tx2).await.unwrap();
+        storage.put(tx2, b"key2", b"val2").await.expect("put2");
+        storage.commit(tx2).await.expect("commit2");
 
-        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
-        assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec()));
+        assert_eq!(
+            storage.get(b"key1").await.expect("get key1"),
+            Some(b"val1".to_vec())
+        );
+        assert_eq!(
+            storage.get(b"key2").await.expect("get key2"),
+            Some(b"val2".to_vec())
+        );
 
         // 4. Rollback to CP
         checkpointer.rollback_to(&cp).await.expect("rollback");
 
         // 5. Verify state
-        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
-        assert_eq!(storage.get(b"key2").await.unwrap(), None);
+        assert_eq!(
+            storage.get(b"key1").await.expect("get key1 post-rollback"),
+            Some(b"val1".to_vec())
+        );
+        assert_eq!(
+            storage.get(b"key2").await.expect("get key2 post-rollback"),
+            None
+        );
 
         // Sequence number should be 1 (last replayed was seq 0)
         assert_eq!(storage.last_seq_no(), 1);

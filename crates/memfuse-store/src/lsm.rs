@@ -294,17 +294,16 @@ impl LsmStorage {
                 }
                 WalOp::Delete { key, .. } => {
                     replayed_size += key.len() as u64;
-                    state.memtable.put(
-                        Bytes::from(key.clone()),
-                        Bytes::new(),
-                        lsn | TOMBSTONE_BIT,
-                    );
+                    state
+                        .memtable
+                        .put(Bytes::from(key.clone()), Bytes::new(), lsn | TOMBSTONE_BIT);
                 }
             }
         }
 
         // 4. Update resource tracker and sequence number
-        self.budget.release_memory(old_memtable_size + immutable_size);
+        self.budget
+            .release_memory(old_memtable_size + immutable_size);
         if replayed_size > 0 {
             let _ = self.budget.consume_memory(replayed_size);
         }
