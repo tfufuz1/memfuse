@@ -34,7 +34,7 @@ impl Default for Checkpointer {
 }
 
 impl Checkpointer {
-    /// Creates a new Checkpointer.
+    /// Creates a new `Checkpointer`.
     pub fn new() -> Self {
         Self {}
     }
