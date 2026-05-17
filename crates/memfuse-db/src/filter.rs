@@ -38,18 +38,22 @@ impl FilterExpr {
         match self {
             FilterExpr::Eq(field, val) => metadata.get(field) == Some(val),
             FilterExpr::NotEq(field, val) => metadata.get(field) != Some(val),
-            FilterExpr::Gt(field, val) => {
-                metadata.get(field).and_then(|v| compare_values(v, val)).is_some_and(|ord| ord.is_gt())
-            }
-            FilterExpr::Gte(field, val) => {
-                 metadata.get(field).and_then(|v| compare_values(v, val)).is_some_and(|ord| ord.is_ge())
-            }
-            FilterExpr::Lt(field, val) => {
-                metadata.get(field).and_then(|v| compare_values(v, val)).is_some_and(|ord| ord.is_lt())
-            }
-            FilterExpr::Lte(field, val) => {
-                metadata.get(field).and_then(|v| compare_values(v, val)).is_some_and(|ord| ord.is_le())
-            }
+            FilterExpr::Gt(field, val) => metadata
+                .get(field)
+                .and_then(|v| compare_values(v, val))
+                .is_some_and(|ord| ord.is_gt()),
+            FilterExpr::Gte(field, val) => metadata
+                .get(field)
+                .and_then(|v| compare_values(v, val))
+                .is_some_and(|ord| ord.is_ge()),
+            FilterExpr::Lt(field, val) => metadata
+                .get(field)
+                .and_then(|v| compare_values(v, val))
+                .is_some_and(|ord| ord.is_lt()),
+            FilterExpr::Lte(field, val) => metadata
+                .get(field)
+                .and_then(|v| compare_values(v, val))
+                .is_some_and(|ord| ord.is_le()),
             FilterExpr::And(exprs) => exprs.iter().all(|e| e.matches(metadata)),
             FilterExpr::Or(exprs) => exprs.iter().any(|e| e.matches(metadata)),
             FilterExpr::Not(expr) => !expr.matches(metadata),

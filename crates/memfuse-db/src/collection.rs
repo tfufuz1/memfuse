@@ -373,7 +373,8 @@ impl Collection {
                     tokio::task::block_in_place(|| {
                         handle.block_on(async {
                             if let Ok(Some(data)) = storage.get(&doc_key).await {
-                                if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&data) {
+                                if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&data)
+                                {
                                     return filter_expr.matches(
                                         &stored.metadata.unwrap_or(serde_json::Value::Null),
                                     );
