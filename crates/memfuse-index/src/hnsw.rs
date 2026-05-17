@@ -298,8 +298,7 @@ impl HnswIndexCore {
                 let node = nodes
                     .get(ep)
                     .ok_or_else(|| MemFuseError::Index("Node not found".into()))?;
-                let dist =
-                    self.compute_distance_with_data(query, query_quantized, &node.vector)?;
+                let dist = self.compute_distance_with_data(query, query_quantized, &node.vector)?;
                 let cand = Candidate {
                     index: ep,
                     distance: dist,
@@ -556,13 +555,18 @@ impl HnswIndexCore {
                             let target_node = nodes
                                 .get(idx)
                                 .ok_or_else(|| MemFuseError::Index("Node not found".into()))?;
-                            let dist = self.compute_symmetric_distance(&node_vec, &target_node.vector)?;
+                            let dist =
+                                self.compute_symmetric_distance(&node_vec, &target_node.vector)?;
                             conn_cands.push(Candidate {
                                 index: idx,
                                 distance: dist,
                             });
                         }
-                        let selected = self.select_neighbors_heuristic(&nodes, &conn_cands, self.config.m * 2)?;
+                        let selected = self.select_neighbors_heuristic(
+                            &nodes,
+                            &conn_cands,
+                            self.config.m * 2,
+                        )?;
                         if let Some(neighbor_node) = nodes.get_mut(neighbor_idx) {
                             if let Some(c) = neighbor_node.connections.get_mut(layer) {
                                 *c = selected;
@@ -575,11 +579,7 @@ impl HnswIndexCore {
 
         if new_layer > current_max_layer {
             *self.entry_point.write() = Some(new_idx);
-            let nodes = self.nodes.read();
-            if let Some(new_node) = nodes.get(new_idx) {
-                self.max_layer
-                    .store(new_node._max_layer as u64, Ordering::SeqCst);
-            }
+            self.max_layer.store(new_layer as u64, Ordering::SeqCst);
         }
         Ok(())
     }

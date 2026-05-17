@@ -100,10 +100,7 @@ impl<T: Clone> TxBuffer<T> {
         // AGENT:10 DATE:2026-05-09 STATUS:DONE
         // CREATED:2026-05-09 DEADLINE:NONE
         let shard_idx = self.shard_idx(tx);
-        let shard = self
-            .shards
-            .get(shard_idx)
-            .expect("shard_idx out of bounds"); // unwrap: safe because of modulo
+        let shard = self.shards.get(shard_idx).expect("shard_idx out of bounds"); // unwrap: safe because of modulo
         shard.read().ops.contains_key(&tx)
     }
 
