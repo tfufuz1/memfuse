@@ -40,8 +40,33 @@ impl Tokenizer for DefaultTokenizer {
     }
 }
 
-/// German tokenizer with basic compound splitting POC.
+/// German tokenizer with enhanced morphological analysis and compound splitting.
 pub struct GermanMorphTokenizer;
+
+impl GermanMorphTokenizer {
+    fn split_compound(&self, word: &str) -> Vec<String> {
+        let mut parts = Vec::new();
+        // Common German suffixes for compound splitting
+        let suffixes = [
+            "verordnung", "ordnung", "gericht", "amt", "gesetz", "wesen", "schaft", "heit", "keit", "ung", "schutz",
+        ];
+
+        for suffix in suffixes {
+            if word.ends_with(suffix) && word.len() > suffix.len() + 2 {
+                parts.push(suffix.to_string());
+                // Also keep the part before the suffix as a potential token
+                let prefix = &word[..word.len() - suffix.len()];
+                // Handle "s" glue (Fugen-s)
+                if prefix.ends_with('s') && prefix.len() > 2 {
+                    parts.push(prefix[..prefix.len() - 1].to_string());
+                } else {
+                    parts.push(prefix.to_string());
+                }
+            }
+        }
+        parts
+    }
+}
 
 impl Tokenizer for GermanMorphTokenizer {
     fn tokenize(&self, text: &str) -> Vec<String> {
@@ -54,15 +79,16 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
-                tokens.push(lower);
+            let mut expanded = vec![lower.clone()];
+            expanded.extend(self.split_compound(&lower));
+
+            for t in expanded {
+                if !stopwords.contains(&t) && t.len() > 1 {
+                    tokens.push(t);
+                }
             }
         }
+
         tokens
     }
 }
@@ -100,5 +126,16 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+        assert!(tokens.contains(&"bundesverfassung".to_string()));
+
+        let tokens2 = tokenizer.tokenize("Datenschutzverordnung");
+        assert!(tokens2.contains(&"datenschutzverordnung".to_string()));
+        assert!(tokens2.contains(&"ordnung".to_string()));
+        assert!(tokens2.contains(&"datenschutz".to_string()));
+
+        let tokens3 = tokenizer.tokenize("Wissenschaft");
+        assert!(tokens3.contains(&"wissenschaft".to_string()));
+        assert!(tokens3.contains(&"wissen".to_string()));
+        assert!(tokens3.contains(&"schaft".to_string()));
     }
 }

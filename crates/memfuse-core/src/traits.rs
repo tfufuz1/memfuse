@@ -153,6 +153,10 @@ pub struct TextIndexStats {
     pub num_tokens: usize,
     /// Estimated memory usage in bytes.
     pub memory_usage_bytes: usize,
+    /// Token reduction ratio (optimized tokens vs raw tokens).
+    /// WP-6.5 Morphological Optimization metric.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_reduction_ratio: Option<f32>,
 }
 
 /// Text index trait — abstracts over the inverted index and BM25 search.
