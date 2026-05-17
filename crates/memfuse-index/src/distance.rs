@@ -12,6 +12,7 @@
 //   2. Welche Invarianten vom Caller garantiert werden
 // RISIKO: Release-Blocker — undokumentiertes unsafe verhindert qualifiziertes Review
 // MASSNAHME: SAFETY: Kommentare für alle 12 unsafe fn + 30 unsafe-Blöcke hinzufügen
+// STATUS: DONE AGENT:03 DATE:2026-05-18
 //
 // ANCHOR:ARCH:SIMD-001 — Hardware-beschleunigte Distanzberechnung.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -73,14 +74,14 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
     {
         // Try AVX-512 first for maximum performance
         if is_x86_feature_detected!("avx512f") {
-            // ANCHOR:SAFETY:SIMD-001 — Hardware-Support-Check und Bounds-Validation.
+            // ANCHOR:SAFETY:SIMD-F32-001 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
             return unsafe { cosine_distance_avx512(a, b) };
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // ANCHOR:SAFETY:SIMD-002 — Hardware-Support-Check und Bounds-Validation.
+            // ANCHOR:SAFETY:SIMD-F32-002 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
             return unsafe { cosine_distance_avx2(a, b) };
@@ -98,14 +99,14 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
     {
         // Try AVX-512
         if is_x86_feature_detected!("avx512f") {
-            // ANCHOR:SAFETY:SIMD-003 — Hardware-Support-Check und Bounds-Validation.
+            // ANCHOR:SAFETY:SIMD-F32-003 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
             return unsafe { euclidean_distance_avx512(a, b) };
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // ANCHOR:SAFETY:SIMD-004 — Hardware-Support-Check und Bounds-Validation.
+            // ANCHOR:SAFETY:SIMD-F32-004 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
             return unsafe { euclidean_distance_avx2(a, b) };
@@ -123,14 +124,14 @@ pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
     {
         // Try AVX-512
         if is_x86_feature_detected!("avx512f") {
-            // ANCHOR:SAFETY:SIMD-005 — Hardware-Support-Check und Bounds-Validation.
+            // ANCHOR:SAFETY:SIMD-F32-005 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
             return unsafe { -dot_product_avx512(a, b) };
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // ANCHOR:SAFETY:SIMD-006 — Hardware-Support-Check und Bounds-Validation.
+            // ANCHOR:SAFETY:SIMD-F32-006 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
             return unsafe { -dot_product_avx2(a, b) };
