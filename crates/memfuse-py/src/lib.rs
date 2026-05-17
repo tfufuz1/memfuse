@@ -667,13 +667,35 @@ impl PyCollection {
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536))]
-fn open(py: Python<'_>, path: &str, dimension: usize) -> PyResult<PyMemFuse> {
+#[pyo3(signature = (path, dimension=1536, encryption_passphrase=None, distance_metric=None))]
+fn open(
+    py: Python<'_>,
+    path: &str,
+    dimension: usize,
+    encryption_passphrase: Option<String>,
+    distance_metric: Option<String>,
+) -> PyResult<PyMemFuse> {
     let rt = get_runtime()?;
-    let config = MemFuseConfig {
+    let mut config = MemFuseConfig {
         dimension,
+        encryption_passphrase,
         ..Default::default()
     };
+
+    if let Some(dm) = distance_metric {
+        config.distance_metric = match dm.to_lowercase().as_str() {
+            "cosine" => memfuse_db::DistanceMetric::Cosine,
+            "euclidean" | "l2" => memfuse_db::DistanceMetric::Euclidean,
+            "dot" | "dotproduct" => memfuse_db::DistanceMetric::DotProduct,
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Unsupported distance metric: {}",
+                    dm
+                )))
+            }
+        };
+    }
+
     let path_string = path.to_string();
     let db = py
         .allow_threads(|| rt.block_on(MemFuse::open_with_config(path_string, config)))
