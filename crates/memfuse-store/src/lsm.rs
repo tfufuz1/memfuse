@@ -134,13 +134,8 @@ impl LsmStorage {
 
         // Replay WAL
         let wal_entries = wal.replay().await?;
-        let mut max_seq = 0u64;
-        for (lsn, _) in &wal_entries {
-            if *lsn > max_seq {
-                max_seq = *lsn;
-            }
-        }
-        let replayed_size = Self::apply_wal_entries_to_memtable(&memtable, &wal_entries, None);
+        let (replayed_size, max_seq) =
+            Self::apply_wal_entries_to_memtable(&memtable, &wal_entries, None);
 
         let budget_config = ResourceBudget {
             memory_limit: config.max_ram_mb * 1024 * 1024,
@@ -234,12 +229,14 @@ impl LsmStorage {
     }
 
     /// Helper to apply WAL entries to a memtable, optionally filtering by TxId.
+    /// Returns (total_replayed_bytes, max_lsn_encountered).
     fn apply_wal_entries_to_memtable(
         memtable: &MemTable,
         entries: &[(u64, WalEntry)],
         target_tx: Option<TxId>,
-    ) -> u64 {
+    ) -> (u64, u64) {
         let mut replayed_size = 0u64;
+        let mut max_lsn = 0u64;
         for (lsn, entry) in entries {
             let matches_tx = match target_tx {
                 Some(target) => match &entry.op {
@@ -250,6 +247,9 @@ impl LsmStorage {
             };
 
             if matches_tx {
+                if *lsn > max_lsn {
+                    max_lsn = *lsn;
+                }
                 match &entry.op {
                     WalOp::Put { key, value, .. } => {
                         replayed_size += (key.len() + value.len()) as u64;
@@ -262,10 +262,14 @@ impl LsmStorage {
                 }
             }
         }
-        replayed_size
+        (replayed_size, max_lsn)
     }
 
     /// Rolls back the volatile state (MemTables) to a specific transaction ID.
+    ///
+    /// NOTE: This currently only reverts the in-memory state and the current WAL.
+    /// SSTables persisted after the checkpoint are NOT removed, which may lead
+    /// to inconsistencies if transactions were already flushed to disk.
     pub async fn rollback_to_tx(&self, target_tx: TxId) -> Result<()> {
         let _commit_lock = self.commit_mutex.lock().await;
         let mut state = self.state.write().await;
@@ -282,33 +286,27 @@ impl LsmStorage {
 
         // 2. Replay current WAL up to target_tx
         let wal_entries = state.wal.replay().await?;
-        let replayed_size =
+        let (replayed_size, max_seq) =
             Self::apply_wal_entries_to_memtable(&state.memtable, &wal_entries, Some(target_tx));
 
         // 3. Update budget
         self.budget
             .release_memory((old_memtable_size + immutable_size) as u64);
         if replayed_size > 0 {
-            let _ = self.budget.consume_memory(replayed_size);
+            self.budget.consume_memory(replayed_size)?;
         }
 
         // 4. Update next_seq_no based on replayed entries
-        let mut max_seq = 0;
-        for (lsn, entry) in &wal_entries {
-            let tx_id = match &entry.op {
-                WalOp::Put { tx_id, .. } => *tx_id,
-                WalOp::Delete { tx_id, .. } => *tx_id,
-            };
-            if tx_id.inner() <= target_tx.inner() && *lsn > max_seq {
-                max_seq = *lsn;
-            }
-        }
+        // We set it to max_seq + 1 to continue the sequence.
+        // WARNING: If flushes occurred after target_tx, SSTables with higher LSNs
+        // still exist, which might cause shadowing issues.
         self.next_seq_no.store(max_seq + 1, Ordering::SeqCst);
 
         tracing::info!(
-            "Rolled back to TX: {}, replayed {} bytes",
+            "Rolled back to TX: {}, replayed {} bytes, next_seq: {}",
             target_tx.inner(),
-            replayed_size
+            replayed_size,
+            max_seq + 1
         );
         Ok(())
     }
