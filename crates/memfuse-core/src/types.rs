@@ -259,7 +259,8 @@ impl Edge {
 //
 // ANCHOR:SPEC:WP-4.1-MMAP-001 — Auf Memory-Mapped I/O umstellen für zero-copy Zugriff.
 // WP:WP-4.1 PRIO:4 NEEDS:NONE
-// AGENT:02 DATE:2026-05-09 STATUS:READY
+// WATCHDOG: Workspace-wide CI build regression (WP-3.2).
+// AGENT:02 DATE:2026-05-17 STATUS:BLOCKED
 // CREATED:2026-05-09 DEADLINE:NONE
 /// Resource budget for memory management.
 #[derive(Debug, Clone, Copy)]

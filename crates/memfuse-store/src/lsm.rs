@@ -60,7 +60,8 @@ use tokio::sync::RwLock;
 /// LSM storage configuration.
 // ANCHOR:TODO:SEC-001 — Erweitere LsmConfig um `encryption_passphrase` und AES-256.
 // WP:WP-3.2 PRIO:1 NEEDS:COL-001
-// AGENT:@JULES-10 DATE:2026-05-09 STATUS:READY
+// WATCHDOG: Workspace-wide CI build regression (WP-3.2).
+// AGENT:@JULES-10 DATE:2026-05-17 STATUS:BLOCKED
 // TEST: cargo test -p memfuse-store test_encrypted_db_unreadable_without_key
 // DONE: LsmConfig akzeptiert Passphrase, AES-256 wird für Disk-I/O verwendet.
 // SUCCESSOR: @JULES-13 — "Encryption ist impl. Bitte Specs finalisieren."

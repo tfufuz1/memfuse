@@ -5,7 +5,8 @@
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:AUDIT:SAOS-022 — forbid(unsafe_code) fehlte → nachgerüstet
 // WP:NONE PRIO:3 NEEDS:NONE
-// AGENT:NONE DATE:2026-05-09 STATUS:READY
+// WATCHDOG: Workspace-wide CI build regression (WP-3.2).
+// AGENT:NONE DATE:2026-05-17 STATUS:BLOCKED
 // CREATED:2026-05-09 DEADLINE:NONE
 // AGENT:saos-audit DATE:2026-05-08 STATUS:FIXED
 //
@@ -14,7 +15,8 @@
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ZIEL: Sichere Ausführung von Agent-Tools ohne Host-Zugriff.
-// ANCHOR:INTEGRATION PRIO:2 STATUS:READY AGENT:07 DATE:2026-05-16
+// WATCHDOG: Workspace-wide CI build regression (WP-3.2).
+// ANCHOR:INTEGRATION PRIO:2 STATUS:BLOCKED AGENT:07 DATE:2026-05-17
 // MISSING: Cross-Crate Integration Tests für WASM-Sandbox Isolation und Tool-Execution.
 
 #![forbid(unsafe_code)]
