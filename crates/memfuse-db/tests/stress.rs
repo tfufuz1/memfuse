@@ -9,12 +9,9 @@ use tokio::task::JoinHandle;
 #[tokio::test(flavor = "multi_thread")]
 async fn test_orchestrator_stress_concurrency() {
     let tmp = TempDir::new().expect("temp dir");
-    let config = MemFuseConfig {
-        dimension: 4,
+    let config = MemFuseConfig { dimension: 4,
         max_elements: 10000,
-        distance_metric: DistanceMetric::Cosine,
-        ..Default::default()
-    };
+        distance_metric: DistanceMetric::Cosine, ..Default::default() };
     let db = Arc::new(
         MemFuse::open_with_config(tmp.path(), config)
             .await

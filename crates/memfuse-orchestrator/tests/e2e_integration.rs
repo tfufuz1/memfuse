@@ -13,11 +13,9 @@ use tokio::task::JoinHandle;
 async fn test_e2e_agent_workflow() {
     // 1. MemFuse::open()
     let tmp = TempDir::new().expect("failed to create temp dir");
-    let config = MemFuseConfig {
-        dimension: 3,
+    let config = MemFuseConfig { dimension: 3,
         max_elements: 1000,
-        distance_metric: DistanceMetric::Cosine,
-    };
+        distance_metric: DistanceMetric::Cosine, ..Default::default() };
     let db = MemFuse::open_with_config(tmp.path(), config)
         .await
         .expect("failed to open db");
@@ -115,11 +113,9 @@ async fn test_stress_concurrent_agent_ops() {
     let db = Arc::new(
         MemFuse::open_with_config(
             tmp.path(),
-            MemFuseConfig {
-                dimension: 4,
+            MemFuseConfig { dimension: 4,
                 max_elements: 10000,
-                distance_metric: DistanceMetric::Cosine,
-            },
+                distance_metric: DistanceMetric::Cosine, ..Default::default() },
         )
         .await
         .expect("open db"),
