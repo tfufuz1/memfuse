@@ -45,6 +45,7 @@ use parking_lot::RwLock;
 use rand::Rng;
 use roaring::RoaringTreemap;
 use std::cmp::Reverse;
+use std::sync::Arc;
 use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::Mutex;
@@ -112,6 +113,17 @@ pub enum VectorData {
     U8(Vec<u8>),
 }
 
+#[derive(Debug)]
+struct HnswState {
+    nodes: RwLock<Vec<HnswNode>>,
+    doc_to_node: RwLock<AHashMap<u64, usize>>,
+    entry_point: RwLock<Option<usize>>,
+    max_layer: AtomicU64,
+    deleted_nodes: RwLock<RoaringTreemap>,
+    deleted_count: AtomicU64,
+    quantizer: RwLock<Option<crate::quantize::ScalarQuantizer>>,
+}
+
 /// A node in the HNSW graph.
 #[derive(Debug)]
 struct HnswNode {
@@ -168,17 +180,11 @@ impl std::ops::Deref for HnswIndex {
 pub struct HnswIndexCore {
     config: HnswConfig,
     validation_error: Option<String>,
-    nodes: RwLock<Vec<HnswNode>>,
-    doc_to_node: RwLock<AHashMap<u64, usize>>,
-    entry_point: RwLock<Option<usize>>,
-    max_layer: AtomicU64,
+    state: RwLock<Arc<HnswState>>,
     ml: f64,
     tx_buffer: TxBuffer<Vec<f32>>,
-    deleted_nodes: RwLock<RoaringTreemap>,
-    deleted_count: AtomicU64,
     rebuilding: AtomicBool,
     write_mutex: Mutex<()>,
-    quantizer: RwLock<Option<crate::quantize::ScalarQuantizer>>,
 }
 
 impl HnswIndex {
@@ -186,21 +192,25 @@ impl HnswIndex {
     pub fn new(config: HnswConfig) -> Self {
         let validation_error = config.validate().err().map(|e| e.to_string());
         let ml = 1.0 / (config.m as f64).ln();
+        let state = Arc::new(HnswState {
+            nodes: RwLock::new(Vec::new()),
+            doc_to_node: RwLock::new(AHashMap::new()),
+            entry_point: RwLock::new(None),
+            max_layer: AtomicU64::new(0),
+            deleted_nodes: RwLock::new(RoaringTreemap::new()),
+            deleted_count: AtomicU64::new(0),
+            quantizer: RwLock::new(None),
+        });
+
         Self {
-            inner: std::sync::Arc::new(HnswIndexCore {
+            inner: Arc::new(HnswIndexCore {
                 config,
                 validation_error,
-                nodes: RwLock::new(Vec::new()),
-                doc_to_node: RwLock::new(AHashMap::new()),
-                entry_point: RwLock::new(None),
-                max_layer: AtomicU64::new(0),
+                state: RwLock::new(state),
                 ml,
                 tx_buffer: TxBuffer::new_with_config(16, std::time::Duration::from_secs(60)),
-                deleted_nodes: RwLock::new(RoaringTreemap::new()),
-                deleted_count: AtomicU64::new(0),
                 rebuilding: AtomicBool::new(false),
                 write_mutex: Mutex::new(()),
-                quantizer: RwLock::new(None),
             }),
         }
     }
@@ -234,6 +244,7 @@ impl HnswIndexCore {
 
     fn compute_distance_with_data(
         &self,
+        state: &HnswState,
         query_exact: &[f32],
         query_quantized: Option<&[u8]>,
         data: &VectorData,
@@ -241,7 +252,7 @@ impl HnswIndexCore {
         match data {
             VectorData::F32(v) => compute_distance(query_exact, v, self.config.distance_metric),
             VectorData::U8(v) => {
-                let guard = self.quantizer.read();
+                let guard = state.quantizer.read();
                 let q = guard.as_ref().ok_or_else(|| {
                     memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                 })?;
@@ -254,13 +265,18 @@ impl HnswIndexCore {
         }
     }
 
-    fn compute_symmetric_distance(&self, data_a: &VectorData, data_b: &VectorData) -> Result<f32> {
+    fn compute_symmetric_distance(
+        &self,
+        state: &HnswState,
+        data_a: &VectorData,
+        data_b: &VectorData,
+    ) -> Result<f32> {
         match (data_a, data_b) {
             (VectorData::F32(a), VectorData::F32(b)) => {
                 compute_distance(a, b, self.config.distance_metric)
             }
             (VectorData::U8(a), VectorData::U8(b)) => {
-                let guard = self.quantizer.read();
+                let guard = state.quantizer.read();
                 guard
                     .as_ref()
                     .ok_or_else(|| {
@@ -281,13 +297,14 @@ impl HnswIndexCore {
 
     fn search_layer(
         &self,
+        state: &HnswState,
         query: &[f32],
         query_quantized: Option<&[u8]>,
         entry_points: &[usize],
         ef: usize,
         layer: usize,
     ) -> Result<Vec<Candidate>> {
-        let nodes = self.nodes.read();
+        let nodes = state.nodes.read();
         let mut visited = AHashSet::new();
         let mut candidates = BinaryHeap::new();
         let mut results = BinaryHeap::new();
@@ -295,7 +312,7 @@ impl HnswIndexCore {
         for &ep in entry_points {
             if visited.insert(ep) {
                 let dist =
-                    self.compute_distance_with_data(query, query_quantized, &nodes[ep].vector)?;
+                    self.compute_distance_with_data(state, query, query_quantized, &nodes[ep].vector)?;
                 let cand = Candidate {
                     index: ep,
                     distance: dist,
@@ -316,6 +333,7 @@ impl HnswIndexCore {
                 for &neighbor in &nodes[current.index].connections[layer] {
                     if visited.insert(neighbor) {
                         let dist = self.compute_distance_with_data(
+                            state,
                             query,
                             query_quantized,
                             &nodes[neighbor].vector,
@@ -345,6 +363,7 @@ impl HnswIndexCore {
 
     fn select_neighbors_heuristic(
         &self,
+        state: &HnswState,
         nodes: &[HnswNode],
         candidates: &[Candidate],
         m: usize,
@@ -364,6 +383,7 @@ impl HnswIndexCore {
             let mut keep = true;
             for selected in &result {
                 let dist_between = self.compute_symmetric_distance(
+                    state,
                     &nodes[closest.index].vector,
                     &nodes[selected.index].vector,
                 )?;
@@ -405,7 +425,7 @@ impl HnswIndexCore {
         Ok(result.iter().map(|c| c.index).collect())
     }
 
-    fn do_insert(&self, id: DocId, vector: &[f32]) -> Result<()> {
+    fn do_insert(&self, state: &Arc<HnswState>, id: DocId, vector: &[f32]) -> Result<()> {
         if vector.len() != self.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
                 "Dimension mismatch: expected {}, got {}",
@@ -427,7 +447,7 @@ impl HnswIndexCore {
         }
 
         let vector_data = if self.config.quantize {
-            if let Some(q) = self.quantizer.read().as_ref() {
+            if let Some(q) = state.quantizer.read().as_ref() {
                 VectorData::U8(q.quantize(vector))
             } else {
                 VectorData::F32(vector.to_vec())
@@ -437,11 +457,11 @@ impl HnswIndexCore {
         };
 
         let new_layer = self.random_layer();
-        let entry_point_opt = *self.entry_point.read();
-        let current_max_layer = self.max_layer.load(Ordering::SeqCst) as usize;
+        let entry_point_opt = *state.entry_point.read();
+        let current_max_layer = state.max_layer.load(Ordering::SeqCst) as usize;
 
         let new_idx = {
-            let mut nodes = self.nodes.write();
+            let mut nodes = state.nodes.write();
             let idx = nodes.len();
             nodes.push(HnswNode {
                 doc_id: id,
@@ -452,26 +472,26 @@ impl HnswIndexCore {
             idx
         };
 
-        self.doc_to_node.write().insert(id.inner(), new_idx);
+        state.doc_to_node.write().insert(id.inner(), new_idx);
 
         let ep_idx = match entry_point_opt {
             Some(idx) => idx,
             None => {
-                *self.entry_point.write() = Some(new_idx);
-                self.max_layer.store(new_layer as u64, Ordering::SeqCst);
+                *state.entry_point.write() = Some(new_idx);
+                state.max_layer.store(new_layer as u64, Ordering::SeqCst);
                 return Ok(());
             }
         };
 
         let query_quantized = if self.config.quantize {
-            self.quantizer.read().as_ref().map(|q| q.quantize(vector))
+            state.quantizer.read().as_ref().map(|q| q.quantize(vector))
         } else {
             None
         };
 
         let mut ep = vec![ep_idx];
         for layer in (new_layer + 1..=current_max_layer).rev() {
-            let best = self.search_layer(vector, query_quantized.as_deref(), &ep, 1, layer)?;
+            let best = self.search_layer(state, vector, query_quantized.as_deref(), &ep, 1, layer)?;
             if !best.is_empty() {
                 ep = vec![best[0].index];
             }
@@ -487,6 +507,7 @@ impl HnswIndexCore {
 
         for layer in (0..=new_layer.min(current_max_layer)).rev() {
             let neighbors = self.search_layer(
+                state,
                 vector,
                 query_quantized.as_deref(),
                 &ep,
@@ -494,15 +515,15 @@ impl HnswIndexCore {
                 layer,
             )?;
             let selected = {
-                let nodes = self.nodes.read();
-                self.select_neighbors_heuristic(&nodes, &neighbors, self.config.m)?
+                let nodes = state.nodes.read();
+                self.select_neighbors_heuristic(state, &nodes, &neighbors, self.config.m)?
             };
             final_connections[layer] = selected;
             ep = neighbors.iter().map(|c| c.index).collect();
         }
 
         {
-            let mut nodes = self.nodes.write();
+            let mut nodes = state.nodes.write();
             nodes[new_idx].connections = final_connections.clone();
 
             for layer in (0..=new_layer.min(current_max_layer)).rev() {
@@ -515,7 +536,7 @@ impl HnswIndexCore {
                                 Vec::with_capacity(nodes[neighbor_idx].connections[layer].len());
                             for &idx in &nodes[neighbor_idx].connections[layer] {
                                 let dist =
-                                    self.compute_symmetric_distance(&node_vec, &nodes[idx].vector)?;
+                                    self.compute_symmetric_distance(state, &node_vec, &nodes[idx].vector)?;
                                 conn_cands.push(Candidate {
                                     index: idx,
                                     distance: dist,
@@ -523,6 +544,7 @@ impl HnswIndexCore {
                             }
                             nodes[neighbor_idx].connections[layer] = self
                                 .select_neighbors_heuristic(
+                                    state,
                                     &nodes,
                                     &conn_cands,
                                     self.config.m * 2,
@@ -534,17 +556,17 @@ impl HnswIndexCore {
         }
 
         if new_layer > current_max_layer {
-            *self.entry_point.write() = Some(new_idx);
-            self.max_layer.store(new_layer as u64, Ordering::SeqCst);
+            *state.entry_point.write() = Some(new_idx);
+            state.max_layer.store(new_layer as u64, Ordering::SeqCst);
         }
         Ok(())
     }
 
-    fn do_delete(&self, id: DocId) {
-        let node_idx = self.doc_to_node.write().remove(&id.inner());
+    fn do_delete(&self, state: &Arc<HnswState>, id: DocId) {
+        let node_idx = state.doc_to_node.write().remove(&id.inner());
         if let Some(idx) = node_idx {
-            self.deleted_nodes.write().insert(idx as u64);
-            self.deleted_count.fetch_add(1, Ordering::SeqCst);
+            state.deleted_nodes.write().insert(idx as u64);
+            state.deleted_count.fetch_add(1, Ordering::SeqCst);
 
             // ANCHOR:ALG-FIX:D2-001 — Entry-Point-Aktualisierung nach Delete (INV-HNSW-4)
             // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -552,10 +574,10 @@ impl HnswIndexCore {
             // CREATED:2026-05-08 DEADLINE:NONE
             // Wenn der gelöschte Knoten der Entry-Point war, muss ein neuer
             // Entry-Point gefunden werden. Strategie: Nachbar auf höchstem Layer.
-            let mut ep = self.entry_point.write();
+            let mut ep = state.entry_point.write();
             if *ep == Some(idx) {
-                let nodes = self.nodes.read();
-                let deleted = self.deleted_nodes.read();
+                let nodes = state.nodes.read();
+                let deleted = state.deleted_nodes.read();
                 // Try to find a neighbor of the deleted EP on any layer
                 // HNSW requires the entry_point to be on the highest layer available.
                 // Iterating globally guarantees we find the exact highest remaining node.
@@ -569,10 +591,10 @@ impl HnswIndexCore {
                 }
                 *ep = best_node;
                 if let Some(new_idx) = best_node {
-                    self.max_layer
+                    state.max_layer
                         .store(nodes[new_idx]._max_layer as u64, Ordering::SeqCst);
                 } else {
-                    self.max_layer.store(0, Ordering::SeqCst);
+                    state.max_layer.store(0, Ordering::SeqCst);
                 }
             }
         }
@@ -580,8 +602,9 @@ impl HnswIndexCore {
 
     /// Graph connectivity score (1.0 = perfect, 0.0 = fully fragmented).
     pub fn connectivity_score(&self) -> f64 {
-        let deleted = self.deleted_count.load(Ordering::SeqCst);
-        let total = self.nodes.read().len();
+        let state = self.state.read();
+        let deleted = state.deleted_count.load(Ordering::SeqCst);
+        let total = state.nodes.read().len();
         if total == 0 {
             return 1.0;
         }
@@ -598,6 +621,10 @@ impl HnswIndexCore {
     pub async fn rebuild(&self) -> Result<()> {
         let _write_lock = self.write_mutex.lock().await;
 
+        if !self.is_rebuild_required() {
+            return Ok(());
+        }
+
         if self.rebuilding.swap(true, Ordering::SeqCst) {
             tracing::debug!("HNSW rebuild already in progress, skipping");
             return Ok(());
@@ -606,14 +633,16 @@ impl HnswIndexCore {
         tracing::info!("Starting HNSW index rebuild");
         let start_time = std::time::Instant::now();
 
+        let current_state = self.state.read().clone();
+
         // 1. Snapshot active nodes
         let (active_nodes, config) = {
-            let nodes = self.nodes.read();
-            let deleted_nodes = self.deleted_nodes.read();
+            let nodes = current_state.nodes.read();
+            let deleted_nodes = current_state.deleted_nodes.read();
             let mut active = Vec::with_capacity(
                 nodes
                     .len()
-                    .saturating_sub(self.deleted_count.load(Ordering::SeqCst) as usize),
+                    .saturating_sub(current_state.deleted_count.load(Ordering::SeqCst) as usize),
             );
             for (idx, node) in nodes.iter().enumerate() {
                 if !deleted_nodes.contains(idx as u64) {
@@ -625,17 +654,18 @@ impl HnswIndexCore {
 
         // 2. Build fresh index
         let new_index = HnswIndex::new(config);
+        let new_state = new_index.state.read().clone();
 
         // Copy quantizer to new index to maintain parity
-        let quantizer_guard = self.quantizer.read();
+        let quantizer_guard = current_state.quantizer.read();
         if let Some(q) = quantizer_guard.as_ref() {
-            *new_index.quantizer.write() = Some(q.clone());
+            *new_state.quantizer.write() = Some(q.clone());
         }
 
         for (doc_id, vector) in active_nodes {
             match vector {
                 VectorData::F32(v) => {
-                    new_index.do_insert(doc_id, &v)?;
+                    new_index.do_insert(&new_state, doc_id, &v)?;
                 }
                 VectorData::U8(v) => {
                     let dequantized = {
@@ -644,29 +674,15 @@ impl HnswIndexCore {
                         })?;
                         q.dequantize(&v)
                     };
-                    new_index.do_insert(doc_id, &dequantized)?;
+                    new_index.do_insert(&new_state, doc_id, &dequantized)?;
                 }
             }
         }
 
         // 3. Atomic swap
         {
-            let mut nodes = self.nodes.write();
-            let mut doc_to_node = self.doc_to_node.write();
-            let mut entry_point = self.entry_point.write();
-            let mut deleted_nodes = self.deleted_nodes.write();
-
-            let new_nodes = std::mem::take(&mut *new_index.nodes.write());
-            let new_doc_to_node = std::mem::take(&mut *new_index.doc_to_node.write());
-            let new_entry_point = *new_index.entry_point.read();
-
-            *nodes = new_nodes;
-            *doc_to_node = new_doc_to_node;
-            *entry_point = new_entry_point;
-            self.max_layer
-                .store(new_index.max_layer.load(Ordering::SeqCst), Ordering::SeqCst);
-            deleted_nodes.clear();
-            self.deleted_count.store(0, Ordering::SeqCst);
+            let mut state_lock = self.state.write();
+            *state_lock = new_state;
         }
 
         self.rebuilding.store(false, Ordering::SeqCst);
@@ -726,26 +742,35 @@ impl VectorIndex for HnswIndex {
             )));
         }
 
+        // ANCHOR:ALG-FIX:INV-MATH-2 — NaN/Inf-Validierung bei Search
+        if query.iter().any(|x| x.is_nan() || x.is_infinite()) {
+            return Err(MemFuseError::invalid_input(
+                "Query vector contains NaN or Infinity values",
+            ));
+        }
+
+        let state = self.state.read().clone();
+
         let query_quantized = if self.config.quantize {
-            self.quantizer.read().as_ref().map(|q| q.quantize(query))
+            state.quantizer.read().as_ref().map(|q| q.quantize(query))
         } else {
             None
         };
 
-        let entry = *self.entry_point.read();
+        let entry = *state.entry_point.read();
         let entry_idx = match entry {
             Some(idx) => idx,
             None => return Ok(Vec::new()),
         };
 
-        let max_layer = self.max_layer.load(Ordering::SeqCst) as usize;
+        let max_layer = state.max_layer.load(Ordering::SeqCst) as usize;
         let mut ep = vec![entry_idx];
 
         for layer in (1..=max_layer).rev() {
             // Dynamische ef für Zwischenlayer (meist 1 ist ausreichend, aber für sehr tiefe Graphen kann leichtes Scaling helfen)
             let layer_ef = if layer > 1 { 1 } else { 2 };
             let best =
-                self.search_layer(query, query_quantized.as_deref(), &ep, layer_ef, layer)?;
+                self.search_layer(&state, query, query_quantized.as_deref(), &ep, layer_ef, layer)?;
             if !best.is_empty() {
                 ep = vec![best[0].index];
             }
@@ -757,15 +782,15 @@ impl VectorIndex for HnswIndex {
         } else {
             self.config.ef_search.max(k)
         };
-        let candidates = self.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
+        let candidates = self.search_layer(&state, query, query_quantized.as_deref(), &ep, ef, 0)?;
 
         let score = self.connectivity_score();
         if score < self.config.rebuild_threshold {
             tracing::warn!("HNSW Index degraded: connectivity score {:.2} below threshold ({:.2}). Search quality may be reduced.", score, self.config.rebuild_threshold);
         }
 
-        let nodes = self.nodes.read();
-        let deleted = self.deleted_nodes.read();
+        let nodes = state.nodes.read();
+        let deleted = state.deleted_nodes.read();
         let mut results = Vec::with_capacity(k);
 
         for c in candidates.iter() {
@@ -777,7 +802,7 @@ impl VectorIndex for HnswIndex {
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
             let final_dist = if self.config.quantize {
                 if let VectorData::U8(v) = &nodes[c.index].vector {
-                    let guard = self.quantizer.read();
+                    let guard = state.quantizer.read();
                     let q = guard.as_ref().ok_or_else(|| {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                     })?;
@@ -824,23 +849,32 @@ impl VectorIndex for HnswIndex {
             )));
         }
 
+        // ANCHOR:ALG-FIX:INV-MATH-2 — NaN/Inf-Validierung bei Search
+        if query.iter().any(|x| x.is_nan() || x.is_infinite()) {
+            return Err(MemFuseError::invalid_input(
+                "Query vector contains NaN or Infinity values",
+            ));
+        }
+
+        let state = self.state.read().clone();
+
         let query_quantized = if self.config.quantize {
-            self.quantizer.read().as_ref().map(|q| q.quantize(query))
+            state.quantizer.read().as_ref().map(|q| q.quantize(query))
         } else {
             None
         };
 
-        let entry = *self.entry_point.read();
+        let entry = *state.entry_point.read();
         let entry_idx = match entry {
             Some(idx) => idx,
             None => return Ok(Vec::new()),
         };
 
-        let max_layer = self.max_layer.load(Ordering::SeqCst) as usize;
+        let max_layer = state.max_layer.load(Ordering::SeqCst) as usize;
         let mut ep = vec![entry_idx];
 
         for layer in (1..=max_layer).rev() {
-            let best = self.search_layer(query, query_quantized.as_deref(), &ep, 1, layer)?;
+            let best = self.search_layer(&state, query, query_quantized.as_deref(), &ep, 1, layer)?;
             if !best.is_empty() {
                 ep = vec![best[0].index];
             }
@@ -849,15 +883,15 @@ impl VectorIndex for HnswIndex {
         // Over-fetch to compensate for filtered-out results and reranking
         let factor = if self.config.quantize { 4 } else { 2 };
         let ef = self.config.ef_search.max(k) * factor;
-        let candidates = self.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
+        let candidates = self.search_layer(&state, query, query_quantized.as_deref(), &ep, ef, 0)?;
 
         let score = self.connectivity_score();
         if score < self.config.rebuild_threshold {
             tracing::warn!("HNSW Index degraded: connectivity score {:.2} below threshold ({:.2}). Search quality may be reduced.", score, self.config.rebuild_threshold);
         }
 
-        let nodes = self.nodes.read();
-        let deleted = self.deleted_nodes.read();
+        let nodes = state.nodes.read();
+        let deleted = state.deleted_nodes.read();
         let mut results = Vec::with_capacity(k);
 
         for c in candidates.iter() {
@@ -874,7 +908,7 @@ impl VectorIndex for HnswIndex {
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
             let final_dist = if self.config.quantize {
                 if let VectorData::U8(v) = &nodes[c.index].vector {
-                    let guard = self.quantizer.read();
+                    let guard = state.quantizer.read();
                     let q = guard.as_ref().ok_or_else(|| {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                     })?;
@@ -929,11 +963,13 @@ impl VectorIndex for HnswIndex {
         let ops = self.tx_buffer.drain(tx);
         let mut deleted_any = false;
 
+        let state = self.state.read().clone();
+
         // ANCHOR:SPEC:WP-2.2-SQ8TRAIN-001 — Lazy Training logic (Stabilized)
         // WP:WP-2.2 PRIO:2 NEEDS:NONE
         // AGENT:03 DATE:2026-05-15 STATUS:DONE
         // CREATED:2026-05-09 DEADLINE:NONE
-        if self.config.quantize && self.quantizer.read().is_none() {
+        if self.config.quantize && state.quantizer.read().is_none() {
             let mut train_data = Vec::with_capacity(256.min(ops.len()));
             for op in &ops {
                 if let IndexOp::Insert { data, .. } = op {
@@ -946,7 +982,7 @@ impl VectorIndex for HnswIndex {
 
             // If we don't have enough in this batch, check existing nodes
             if train_data.len() < 256 {
-                let nodes = self.nodes.read();
+                let nodes = state.nodes.read();
                 for node in nodes.iter() {
                     if let VectorData::F32(v) = &node.vector {
                         train_data.push(v.clone());
@@ -961,9 +997,9 @@ impl VectorIndex for HnswIndex {
                 let training_refs: Vec<&[f32]> = train_data.iter().map(|v| v.as_slice()).collect();
                 let q =
                     crate::quantize::ScalarQuantizer::train(&training_refs, self.config.dimension);
-                *self.quantizer.write() = Some(q.clone());
+                *state.quantizer.write() = Some(q.clone());
 
-                let mut nodes = self.nodes.write();
+                let mut nodes = state.nodes.write();
                 for node in nodes.iter_mut() {
                     if let VectorData::F32(v) = &node.vector {
                         node.vector = VectorData::U8(q.quantize(v));
@@ -975,10 +1011,10 @@ impl VectorIndex for HnswIndex {
         for op in ops {
             match op {
                 IndexOp::Insert { doc_id, data } => {
-                    self.do_insert(doc_id, &data)?;
+                    self.do_insert(&state, doc_id, &data)?;
                 }
                 IndexOp::Delete { doc_id, .. } => {
-                    self.do_delete(doc_id);
+                    self.do_delete(&state, doc_id);
                     deleted_any = true;
                 }
             }
@@ -1010,8 +1046,9 @@ impl VectorIndex for HnswIndex {
         if self.validation_error.is_some() {
             return 0;
         }
-        let total = self.nodes.read().len();
-        let deleted = self.deleted_count.load(Ordering::SeqCst) as usize;
+        let state = self.state.read();
+        let total = state.nodes.read().len();
+        let deleted = state.deleted_count.load(Ordering::SeqCst) as usize;
         total.saturating_sub(deleted)
     }
 
@@ -1022,8 +1059,9 @@ impl VectorIndex for HnswIndex {
                 err
             )));
         }
-        let nodes = self.nodes.read();
-        let deleted_count = self.deleted_count.load(Ordering::SeqCst) as usize;
+        let state = self.state.read();
+        let nodes = state.nodes.read();
+        let deleted_count = state.deleted_count.load(Ordering::SeqCst) as usize;
         let num_vectors = nodes.len().saturating_sub(deleted_count);
         let vector_memory: usize = nodes
             .iter()
@@ -1047,7 +1085,7 @@ impl VectorIndex for HnswIndex {
             memory_usage_bytes: vector_memory
                 + connection_memory
                 + (nodes.len() * std::mem::size_of::<HnswNode>()),
-            num_layers: self.max_layer.load(Ordering::SeqCst) as usize + 1,
+            num_layers: state.max_layer.load(Ordering::SeqCst) as usize + 1,
         })
     }
 }
@@ -1167,6 +1205,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_nan_inf_search() {
+        let index = HnswIndex::new(test_config(4));
+
+        // Test NaN
+        let result_nan = index.search(&[f32::NAN, 0.0, 0.0, 0.0], 1).await;
+        assert!(result_nan.is_err());
+        assert!(result_nan.unwrap_err().to_string().contains("NaN"));
+
+        // Test Infinity
+        let result_inf = index.search(&[f32::INFINITY, 0.0, 0.0, 0.0], 1).await;
+        assert!(result_inf.is_err());
+        assert!(result_inf.unwrap_err().to_string().contains("Infinity"));
+    }
+
+    #[tokio::test]
     async fn test_filtered_search() {
         let index = HnswIndex::new(test_config(4));
         let tx = TxId::new(1);
@@ -1266,7 +1319,7 @@ mod tests {
 
         assert_eq!(index.len().await, 60);
         // Verify quantizer is trained
-        assert!(index.quantizer.read().is_some());
+        assert!(index.state.read().quantizer.read().is_some());
 
         // Delete some to lower connectivity and allow rebuild
         let tx2 = TxId::new(2);
@@ -1283,7 +1336,7 @@ mod tests {
         // Verify state after rebuild
         assert_eq!(index.len().await, 50);
         assert!(
-            index.quantizer.read().is_some(),
+            index.state.read().quantizer.read().is_some(),
             "Quantizer must be preserved"
         );
 
