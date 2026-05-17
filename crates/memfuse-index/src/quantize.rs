@@ -239,13 +239,11 @@ impl ScalarQuantizer {
                     + sm * (parts.sum_a as f32 + parts.sum_b as f32)
                     + n * m2;
 
-                let norm_a_sq_f32 = s2 * (parts.norm_a_sq as f32)
-                    + sm * 2.0 * (parts.sum_a as f32)
-                    + n * m2;
+                let norm_a_sq_f32 =
+                    s2 * (parts.norm_a_sq as f32) + sm * 2.0 * (parts.sum_a as f32) + n * m2;
 
-                let norm_b_sq_f32 = s2 * (parts.norm_b_sq as f32)
-                    + sm * 2.0 * (parts.sum_b as f32)
-                    + n * m2;
+                let norm_b_sq_f32 =
+                    s2 * (parts.norm_b_sq as f32) + sm * 2.0 * (parts.sum_b as f32) + n * m2;
 
                 if norm_a_sq_f32 <= 0.0 || norm_b_sq_f32 <= 0.0 {
                     Ok(1.0)
