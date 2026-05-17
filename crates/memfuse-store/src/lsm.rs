@@ -248,6 +248,76 @@ impl LsmStorage {
     pub async fn force_flush(&self) -> Result<()> {
         self.flush().await
     }
+
+    /// Rolls back the state to a specific transaction ID by replaying the WAL.
+    /// This is an internal method used by the Checkpointer.
+    pub async fn rollback_to_tx(&self, target_tx: memfuse_core::TxId) -> Result<()> {
+        // 1. Halt all active writes globally by acquiring the commit mutex
+        let _commit_lock = self.commit_mutex.lock().await;
+
+        // 2. Clear volatile MemTables
+        let mut state = self.state.write().await;
+        let old_memtable_size = state.memtable.size() as u64;
+        let mut immutable_size = 0u64;
+        for mt in &state.immutable_memtables {
+            immutable_size += mt.size() as u64;
+        }
+
+        state.memtable = Arc::new(MemTable::new());
+        state.immutable_memtables.clear();
+
+        // 3. Replay WAL strictly up to target_tx
+        let wal_entries = state.wal.replay().await?;
+        let mut max_seq = 0u64;
+        let mut replayed_size = 0u64;
+
+        for (lsn, entry) in &wal_entries {
+            let entry_tx = match &entry.op {
+                WalOp::Put { tx_id, .. } => *tx_id,
+                WalOp::Delete { tx_id, .. } => *tx_id,
+            };
+
+            if entry_tx.inner() > target_tx.inner() {
+                continue;
+            }
+
+            if *lsn > max_seq {
+                max_seq = *lsn;
+            }
+
+            match &entry.op {
+                WalOp::Put { key, value, .. } => {
+                    replayed_size += (key.len() + value.len()) as u64;
+                    state
+                        .memtable
+                        .put(Bytes::from(key.clone()), Bytes::from(value.clone()), *lsn);
+                }
+                WalOp::Delete { key, .. } => {
+                    replayed_size += key.len() as u64;
+                    state.memtable.put(
+                        Bytes::from(key.clone()),
+                        Bytes::new(),
+                        lsn | TOMBSTONE_BIT,
+                    );
+                }
+            }
+        }
+
+        // 4. Update resource tracker and sequence number
+        self.budget.release_memory(old_memtable_size + immutable_size);
+        if replayed_size > 0 {
+            let _ = self.budget.consume_memory(replayed_size);
+        }
+        self.next_seq_no.store(max_seq + 1, Ordering::SeqCst);
+
+        tracing::info!(
+            "Rollback to TX {} successful. Replayed {} bytes into MemTable.",
+            target_tx,
+            replayed_size
+        );
+
+        Ok(())
+    }
 }
 
 #[async_trait]
