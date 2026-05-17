@@ -33,10 +33,15 @@ pub struct DefaultTokenizer;
 impl Tokenizer for DefaultTokenizer {
     fn tokenize(&self, text: &str) -> Vec<String> {
         let stopwords = get_stopwords();
-        text.unicode_words()
-            .map(|w| w.to_lowercase())
-            .filter(|w| !stopwords.contains(w))
-            .collect()
+        // Heuristic: estimate number of words by spaces or length
+        let estimated_words = text.len() / 6;
+        let mut tokens = Vec::with_capacity(estimated_words);
+        tokens.extend(
+            text.unicode_words()
+                .map(|w| w.to_lowercase())
+                .filter(|w| !stopwords.contains(w)),
+        );
+        tokens
     }
 }
 
@@ -46,7 +51,8 @@ pub struct GermanMorphTokenizer;
 impl Tokenizer for GermanMorphTokenizer {
     fn tokenize(&self, text: &str) -> Vec<String> {
         let stopwords = get_stopwords();
-        let mut tokens = Vec::new();
+        let estimated_words = text.len() / 7;
+        let mut tokens = Vec::with_capacity(estimated_words);
 
         for word in text.unicode_words() {
             let lower = word.to_lowercase();
