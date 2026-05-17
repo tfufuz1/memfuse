@@ -17,7 +17,7 @@ async fn test_layer_002_collection_persistence() {
         max_elements: 100,
         distance_metric: DistanceMetric::Cosine,
         ..Default::default()
-};
+    };
 
     // 1. Create collection and insert data
     {
@@ -69,7 +69,7 @@ async fn test_layer_003_hybrid_bm25_search() {
     let config = MemFuseConfig {
         dimension: 4,
         ..Default::default()
-};
+    };
     let db = MemFuse::open_with_config(tmp.path(), config)
         .await
         .expect("open");

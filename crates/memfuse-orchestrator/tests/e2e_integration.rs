@@ -18,7 +18,7 @@ async fn test_e2e_agent_workflow() {
         max_elements: 1000,
         distance_metric: DistanceMetric::Cosine,
         ..Default::default()
-};
+    };
     let db = MemFuse::open_with_config(tmp.path(), config)
         .await
         .expect("failed to open db");
@@ -121,7 +121,7 @@ async fn test_stress_concurrent_agent_ops() {
                 max_elements: 10000,
                 distance_metric: DistanceMetric::Cosine,
                 ..Default::default()
-},
+            },
         )
         .await
         .expect("open db"),
