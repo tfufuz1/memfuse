@@ -45,10 +45,12 @@ impl DocId {
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Self {
-        // ANCHOR:DEBT:TYPES-002 AGENT:01 STATUS:DONE PRIO:3
-        // SAFETY: blake3::hash() always returns a 32-byte hash.
-        // try_from_key() only fails if the hash is shorter than 8 bytes.
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes") // unwrap: blake3 hash is always 32 bytes
+        // ANCHOR:DEBT:TYPES-002 AGENT:13 STATUS:DONE PRIO:3
+        // SAFETY: blake3::hash() always returns a 32-byte hash. We safely extract 8 bytes.
+        let hash = blake3::hash(key.as_bytes());
+        let mut buf = [0u8; 8];
+        buf.copy_from_slice(&hash.as_bytes()[0..8]);
+        Self(u64::from_le_bytes(buf))
     }
 
     /// Safely derive a DocId from a user-provided string key.
@@ -223,6 +225,28 @@ impl Entity {
             name: name.into(),
             entity_type: entity_type.into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_doc_id_from_key() {
+        let key = "test-key";
+        let id1 = DocId::from_key(key);
+        let id2 = DocId::try_from_key(key).unwrap();
+        assert_eq!(id1, id2);
+        assert_ne!(id1.0, 0);
+    }
+
+    #[test]
+    fn test_doc_id_consistency() {
+        let key = "another-key";
+        let id1 = DocId::from_key(key);
+        let id2 = DocId::from_key(key);
+        assert_eq!(id1, id2);
     }
 }
 
