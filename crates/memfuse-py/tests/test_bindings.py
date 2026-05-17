@@ -204,3 +204,63 @@ def test_distance_metrics(db_path):
     # Invalid metric
     with pytest.raises(ValueError):
         memfuse.open(db_path + "_invalid", dimension=4, distance_metric="invalid")
+
+def test_magic_methods(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("magic")
+    v = np.zeros(4, dtype=np.float32)
+
+    col.insert("k1", v, metadata={"m": 1})
+    col.insert("k2", v, metadata={"m": 2})
+
+    # __len__
+    assert len(col) == 2
+    # db[key] maps to default collection if not specified, but here we used named collection.
+    # Let's test on db as well.
+    db.insert("db_k1", v)
+    assert len(db) == 1
+
+    # __contains__
+    assert "k1" in col
+    assert "k2" in col
+    assert "k3" not in col
+    assert "db_k1" in db
+
+    # __getitem__
+    doc1 = col["k1"]
+    assert doc1.id == "k1"
+    assert doc1.metadata["m"] == 1
+
+    with pytest.raises(KeyError):
+        _ = col["nonexistent"]
+
+def test_repr_methods(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("repr_test")
+    v = np.zeros(4, dtype=np.float32)
+    col.insert("k1", v, metadata={"foo": "bar"})
+
+    # Db repr
+    assert repr(db) == "Db()"
+
+    # Collection repr
+    assert repr(col) == "Collection(name='repr_test')"
+
+    # Document repr
+    doc = col.get("k1")
+    assert repr(doc).startswith("Document(id='k1'")
+
+    # SearchResult repr
+    results = col.search(v, k=1)
+    assert repr(results[0]).startswith("SearchResult(id='k1'")
+
+    # Stats repr
+    stats = db.stats()
+    assert repr(stats).startswith("DbStats(")
+    assert repr(stats.index_stats).startswith("VectorIndexStats(")
+    assert repr(stats.storage_stats).startswith("StorageStats(")
+
+def test_open_with_max_elements(db_path):
+    # Just verify it accepts the parameter
+    db = memfuse.open(db_path, dimension=4, max_elements=5000)
+    assert db.len() == 0
