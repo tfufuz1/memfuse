@@ -114,3 +114,77 @@ impl Drop for SnapshotGuard {
         self.registry.release(self.seq_no);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_snapshot_registration() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+
+        let guard1 = registry.register(100);
+        assert_eq!(registry.min_active_seqno(), 100);
+        assert_eq!(guard1.seq_no(), 100);
+
+        let guard2 = registry.register(50);
+        assert_eq!(registry.min_active_seqno(), 50);
+
+        drop(guard2);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        drop(guard1);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
+    fn test_snapshot_pinning() {
+        let registry = SnapshotRegistry::new();
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+
+        registry.pin(200);
+        assert_eq!(registry.min_active_seqno(), 200);
+
+        registry.pin(150);
+        assert_eq!(registry.min_active_seqno(), 150);
+
+        registry.unpin(150);
+        assert_eq!(registry.min_active_seqno(), 200);
+
+        registry.unpin(200);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
+    fn test_tombstone_bit_stripping() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        // seq_no with tombstone bit set
+        let seq_with_tombstone = 100 | TOMBSTONE_BIT;
+
+        let guard = registry.register(seq_with_tombstone);
+        assert_eq!(guard.seq_no(), 100);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        registry.pin(200 | TOMBSTONE_BIT);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        registry.unpin(200 | TOMBSTONE_BIT);
+        assert_eq!(registry.min_active_seqno(), 100);
+    }
+
+    #[test]
+    fn test_multiple_guards_same_seqno() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        let guard1 = registry.register(100);
+        let guard2 = registry.register(100);
+
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        drop(guard1);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        drop(guard2);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+}
