@@ -10,9 +10,11 @@ use tokio::task::JoinHandle;
 #[tokio::test(flavor = "multi_thread")]
 async fn test_concurrent_collection_ops() {
     let tmp = TempDir::new().expect("temp dir");
-    let config = MemFuseConfig { dimension: 4,
+    let config = MemFuseConfig {
+        dimension: 4,
         max_elements: 10000,
-        distance_metric: DistanceMetric::Cosine, ..Default::default() };
+        distance_metric: DistanceMetric::Cosine,
+    };
     let db = Arc::new(
         MemFuse::open_with_config(tmp.path(), config)
             .await

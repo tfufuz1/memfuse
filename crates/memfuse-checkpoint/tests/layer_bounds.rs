@@ -15,7 +15,10 @@ async fn test_layer_001_fork_diverge_merge() {
     let tmp = TempDir::new().expect("temp dir");
     let db_path = tmp.path().to_path_buf();
 
-    let config = MemFuseConfig { dimension: 4, ..Default::default() };
+    let config = MemFuseConfig {
+        dimension: 4,
+        ..Default::default()
+    };
 
     // 1. Initialisierung: DB befüllen
     {

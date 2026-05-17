@@ -8,9 +8,11 @@ use tempfile::TempDir;
 #[tokio::test]
 async fn test_full_stack_document_lifecycle() {
     let tmp = TempDir::new().expect("Failed to create temp dir");
-    let config = MemFuseConfig { dimension: 3,
+    let config = MemFuseConfig {
+        dimension: 3,
         max_elements: 100,
-        distance_metric: DistanceMetric::Cosine, ..Default::default() };
+        distance_metric: DistanceMetric::Cosine,
+    };
 
     let db = MemFuse::open_with_config(tmp.path(), config)
         .await
