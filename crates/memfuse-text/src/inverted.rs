@@ -673,7 +673,9 @@ mod tests {
 
         let tx1 = TxId::new(1);
         let d1 = DocId::new(1);
-        index.upsert_document(tx1, d1, "Das Finanzamt ist zuständig.").await?;
+        index
+            .upsert_document(tx1, d1, "Das Finanzamt ist zuständig.")
+            .await?;
         storage.commit(tx1).await?;
 
         // Search for "amt" should find "Finanzamt" due to compound splitting
