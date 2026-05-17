@@ -705,7 +705,7 @@ impl VectorIndex for HnswIndex {
 
     // ANCHOR:PERF:LATENCY-002 — HNSW Search Hotspot (Optimiert)
     // WP:WP-0.0 PRIO:2 NEEDS:NONE
-    // AGENT:03 DATE:2026-05-15 STATUS:DONE
+    // AGENT:03 DATE:2026-05-17 STATUS:DONE
     // CREATED:2026-05-09 DEADLINE:NONE
     // TARGET: < 10ms bei 1M Vektoren
     // AKTUELL: Optimiert via Dynamic ef_search
@@ -931,7 +931,7 @@ impl VectorIndex for HnswIndex {
 
         // ANCHOR:SPEC:WP-2.2-SQ8TRAIN-001 — Lazy Training logic (Stabilized)
         // WP:WP-2.2 PRIO:2 NEEDS:NONE
-        // AGENT:03 DATE:2026-05-15 STATUS:DONE
+        // AGENT:03 DATE:2026-05-17 STATUS:DONE
         // CREATED:2026-05-09 DEADLINE:NONE
         if self.config.quantize && self.quantizer.read().is_none() {
             let mut train_data = Vec::with_capacity(256.min(ops.len()));
