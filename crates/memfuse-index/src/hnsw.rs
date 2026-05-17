@@ -4,7 +4,7 @@
 //! This module implements the HNSW algorithm for efficient approximate nearest neighbor (ANN) search.
 // ANCHOR:DOC:DOC-HNSW-001 — Module documentation added
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:03 DATE:2026-05-15 STATUS:DONE
+// AGENT:03 DATE:2026-05-17 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:HNSW-001 — Hierarchical Navigable Small World Index.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
