@@ -167,9 +167,11 @@ impl MemFuse {
         let col_idx_prefix = b"__col_idx:\x00";
         let entries = self.storage.scan_prefix(col_idx_prefix).await?;
         for (k, _) in entries {
-            let name_bytes = &k[col_idx_prefix.len()..];
-            if let Ok(name) = String::from_utf8(name_bytes.to_vec()) {
-                let _ = self.collection(&name).await?;
+            // ANCHOR:SEC:SLICE-004 AGENT:10 PRIO:1 STATUS:REVIEW
+            if let Some(name_bytes) = k.get(col_idx_prefix.len()..) {
+                if let Ok(name) = String::from_utf8(name_bytes.to_vec()) {
+                    let _ = self.collection(&name).await?;
+                }
             }
         }
         Ok(())
@@ -255,9 +257,11 @@ impl MemFuse {
         names.insert("default".to_string());
 
         for (k, _) in entries {
-            let name_bytes = &k[col_idx_prefix.len()..];
-            if let Ok(name) = String::from_utf8(name_bytes.to_vec()) {
-                names.insert(name);
+            // ANCHOR:SEC:SLICE-004 AGENT:10 PRIO:1 STATUS:REVIEW
+            if let Some(name_bytes) = k.get(col_idx_prefix.len()..) {
+                if let Ok(name) = String::from_utf8(name_bytes.to_vec()) {
+                    names.insert(name);
+                }
             }
         }
 

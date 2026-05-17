@@ -76,6 +76,8 @@ impl<T: Clone> TxBuffer<T> {
 
     /// Creates a new buffer with custom settings.
     pub fn new_with_config(shard_count: usize, tx_timeout: Duration) -> Self {
+        // ANCHOR:SEC:PANIC-002 AGENT:10 PRIO:1 STATUS:REVIEW
+        let shard_count = shard_count.max(1);
         let mut shards = Vec::with_capacity(shard_count);
         for _ in 0..shard_count {
             shards.push(RwLock::new(TxShard::new()));
@@ -89,6 +91,8 @@ impl<T: Clone> TxBuffer<T> {
         // WP:WP-0.0 PRIO:5 NEEDS:NONE
         // AGENT:10 DATE:2026-05-09 STATUS:DONE
         // CREATED:2026-05-09 DEADLINE:NONE
+        // ANCHOR:SEC:PANIC-002 AGENT:10 PRIO:1 STATUS:REVIEW
+        // FIX: Ensure shard_count > 0 in new_with_config to avoid division-by-zero.
         (tx.inner() % self.shards.len() as u64) as usize
     }
 
@@ -98,6 +102,7 @@ impl<T: Clone> TxBuffer<T> {
         // WP:WP-0.0 PRIO:5 NEEDS:NONE
         // AGENT:10 DATE:2026-05-09 STATUS:DONE
         // CREATED:2026-05-09 DEADLINE:NONE
+        // ANCHOR:SEC:SLICE-002 AGENT:10 PRIO:1 STATUS:REVIEW
         let shard = &self.shards[self.shard_idx(tx)];
         shard.read().ops.contains_key(&tx)
     }

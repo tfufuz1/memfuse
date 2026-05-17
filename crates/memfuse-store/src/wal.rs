@@ -197,6 +197,7 @@ impl Wal {
         if let Some(km) = &self.key_manager {
             // Encrypt the payload (everything after the length prefix)
             if bytes.len() > 4 {
+                // ANCHOR:SEC:SLICE-005 AGENT:10 PRIO:1 STATUS:REVIEW
                 let payload = &bytes[4..];
                 let offset = self.size();
                 let encrypted = km.encrypt(payload, offset)?;
@@ -494,6 +495,7 @@ mod tests {
         // 4 + 8 + 32 + 1 + 8 + 4 + 3 + 4 + 5 = 69
         assert_eq!(bytes.len(), 69);
 
+        // ANCHOR:SEC:SLICE-005 AGENT:10 PRIO:1 STATUS:REVIEW
         let payload_len = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice"));
         assert_eq!(payload_len, 65);
 

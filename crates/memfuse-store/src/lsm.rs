@@ -60,7 +60,7 @@ use tokio::sync::RwLock;
 /// LSM storage configuration.
 // ANCHOR:TODO:SEC-001 — Erweitere LsmConfig um `encryption_passphrase` und AES-256.
 // WP:WP-3.2 PRIO:1 NEEDS:COL-001
-// AGENT:@JULES-10 DATE:2026-05-09 STATUS:READY
+// AGENT:@JULES-10 DATE:2026-05-09 STATUS:REVIEW
 // TEST: cargo test -p memfuse-store test_encrypted_db_unreadable_without_key
 // DONE: LsmConfig akzeptiert Passphrase, AES-256 wird für Disk-I/O verwendet.
 // SUCCESSOR: @JULES-13 — "Encryption ist impl. Bitte Specs finalisieren."
@@ -292,7 +292,7 @@ impl StorageEngine for LsmStorage {
         let doc_id = {
             let hash = blake3::hash(key);
             let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&hash.as_bytes()[..8]);
+            bytes.copy_from_slice(&hash.as_bytes()[0..8]);
             DocId::new(u64::from_le_bytes(bytes))
         };
 
@@ -310,7 +310,7 @@ impl StorageEngine for LsmStorage {
         let doc_id = {
             let hash = blake3::hash(key);
             let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&hash.as_bytes()[..8]);
+            bytes.copy_from_slice(&hash.as_bytes()[0..8]);
             DocId::new(u64::from_le_bytes(bytes))
         };
 
