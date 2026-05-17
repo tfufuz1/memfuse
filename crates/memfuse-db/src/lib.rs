@@ -432,6 +432,7 @@ mod tests {
             max_elements: 10_000,
             distance_metric: DistanceMetric::Cosine,
             encryption_passphrase: None,
+            ..Default::default()
         };
         let db = MemFuse::open_with_config(tmp.path(), config)
             .await

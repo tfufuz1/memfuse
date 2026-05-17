@@ -226,54 +226,6 @@ impl Entity {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_docid_derivation() {
-        let key = "test_key";
-        let doc_id = DocId::from_key(key);
-        let doc_id2 = DocId::try_from_key(key).unwrap(); // unwrap
-
-        assert_eq!(doc_id, doc_id2);
-        assert_ne!(doc_id, DocId::from_key("other_key"));
-    }
-
-    #[test]
-    fn test_embedding_normalization() {
-        let embedding = Embedding::new(vec![3.0, 4.0]);
-        assert_eq!(embedding.l2_norm(), 5.0);
-
-        let normalized = embedding.normalize();
-        assert_eq!(normalized.data, vec![0.6, 0.8]);
-        assert_eq!(normalized.l2_norm(), 1.0);
-    }
-
-    #[test]
-    fn test_resource_tracker() {
-        let budget = ResourceBudget { memory_limit: 100 };
-        let tracker = ResourceTracker::new(budget);
-
-        // Usage < 95% -> has capacity
-        assert!(tracker.consume_memory(50).is_ok());
-        assert_eq!(tracker.memory_used(), 50);
-        assert!(tracker.has_memory_capacity());
-
-        // Exceed budget (100)
-        assert!(tracker.consume_memory(60).is_err());
-        assert_eq!(tracker.memory_used(), 50);
-
-        tracker.release_memory(20);
-        assert_eq!(tracker.memory_used(), 30);
-
-        // Usage reaches 95% threshold -> has_memory_capacity() returns false
-        assert!(tracker.consume_memory(65).is_ok());
-        assert_eq!(tracker.memory_used(), 95);
-        assert!(!tracker.has_memory_capacity()); // Threshold is < 95% of limit
-    }
-}
-
 /// Graph edge (relation) between two entities.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Edge {
@@ -380,5 +332,53 @@ impl ResourceTracker {
         if self.memory_used() >= (self.budget.memory_limit as f64 * 0.80) as u64 {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_docid_derivation() {
+        let key = "test_key";
+        let doc_id = DocId::from_key(key);
+        let doc_id2 = DocId::try_from_key(key).unwrap(); // unwrap
+
+        assert_eq!(doc_id, doc_id2);
+        assert_ne!(doc_id, DocId::from_key("other_key"));
+    }
+
+    #[test]
+    fn test_embedding_normalization() {
+        let embedding = Embedding::new(vec![3.0, 4.0]);
+        assert_eq!(embedding.l2_norm(), 5.0);
+
+        let normalized = embedding.normalize();
+        assert_eq!(normalized.data, vec![0.6, 0.8]);
+        assert_eq!(normalized.l2_norm(), 1.0);
+    }
+
+    #[test]
+    fn test_resource_tracker() {
+        let budget = ResourceBudget { memory_limit: 100 };
+        let tracker = ResourceTracker::new(budget);
+
+        // Usage < 95% -> has capacity
+        assert!(tracker.consume_memory(50).is_ok());
+        assert_eq!(tracker.memory_used(), 50);
+        assert!(tracker.has_memory_capacity());
+
+        // Exceed budget (100)
+        assert!(tracker.consume_memory(60).is_err());
+        assert_eq!(tracker.memory_used(), 50);
+
+        tracker.release_memory(20);
+        assert_eq!(tracker.memory_used(), 30);
+
+        // Usage reaches 95% threshold -> has_memory_capacity() returns false
+        assert!(tracker.consume_memory(65).is_ok());
+        assert_eq!(tracker.memory_used(), 95);
+        assert!(!tracker.has_memory_capacity()); // Threshold is < 95% of limit
     }
 }

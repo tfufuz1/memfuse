@@ -15,7 +15,8 @@ async fn test_layer_002_collection_persistence() {
     let config = MemFuseConfig {
         dimension: 4,
         max_elements: 100,
-        distance_metric: DistanceMetric::Cosine, encryption_passphrase: None,
+        distance_metric: DistanceMetric::Cosine,
+        encryption_passphrase: None,
         ..Default::default()
     };
 
