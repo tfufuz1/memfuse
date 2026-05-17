@@ -17,6 +17,7 @@ async fn test_layer_001_fork_diverge_merge() {
 
     let config = MemFuseConfig {
         dimension: 4,
+        encryption_passphrase: None,
         ..Default::default()
     };
 

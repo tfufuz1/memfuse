@@ -16,6 +16,7 @@ async fn test_layer_002_collection_persistence() {
         dimension: 4,
         max_elements: 100,
         distance_metric: DistanceMetric::Cosine,
+        encryption_passphrase: None,
         ..Default::default()
     };
 
@@ -68,6 +69,7 @@ async fn test_layer_003_hybrid_bm25_search() {
     let tmp = TempDir::new().expect("temp dir");
     let config = MemFuseConfig {
         dimension: 4,
+        encryption_passphrase: None,
         ..Default::default()
     };
     let db = MemFuse::open_with_config(tmp.path(), config)
