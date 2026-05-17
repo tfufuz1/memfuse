@@ -15,7 +15,7 @@
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
 // AGENT:@JULES-06 DATE:2026-05-20 STATUS:DONE
 // TEST: cd crates/memfuse-py && python -m pytest tests/ -v
-// DONE: pip install . funktioniert, keine Deadlocks in tokio-Runtime. Ergonomie via __len__, __bool__ und __repr__ verbessert.
+// DONE: pip install . funktioniert, keine Deadlocks in tokio-Runtime.
 // SUCCESSOR: @JULES-09 — "Python Bindings sind stabil. StateGraph kann darauf aufbauen."
 #![forbid(unsafe_code)]
 
@@ -72,10 +72,7 @@ pub struct PySearchResult {
 #[pymethods]
 impl PySearchResult {
     fn __repr__(&self) -> String {
-        format!(
-            "SearchResult(id='{}', score={:.4})",
-            self.id, self.score
-        )
+        format!("SearchResult(id='{}', score={:.4})", self.id, self.score)
     }
 }
 
@@ -418,18 +415,10 @@ impl PyMemFuse {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
-    pub fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
-        self.len(py)
-    }
-
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.is_empty()))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
-    }
-
-    pub fn __bool__(&self, py: Python<'_>) -> PyResult<bool> {
-        self.is_empty(py).map(|empty| !empty)
     }
 
     #[pyo3(signature = (start=None, end=None))]
@@ -476,6 +465,14 @@ impl PyMemFuse {
                 memtable_size_bytes: stats.storage_stats.memtable_size_bytes,
             },
         })
+    }
+
+    pub fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        self.len(py)
+    }
+
+    pub fn __bool__(&self, py: Python<'_>) -> PyResult<bool> {
+        self.is_empty(py).map(|empty| !empty)
     }
 }
 
@@ -673,17 +670,9 @@ impl PyCollection {
         Ok(py.allow_threads(|| rt.block_on(self.inner.len())))
     }
 
-    pub fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
-        self.len(py)
-    }
-
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
         Ok(py.allow_threads(|| rt.block_on(self.inner.is_empty())))
-    }
-
-    pub fn __bool__(&self, py: Python<'_>) -> PyResult<bool> {
-        self.is_empty(py).map(|empty| !empty)
     }
 
     pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
@@ -746,6 +735,14 @@ impl PyCollection {
             memory_usage_bytes: stats.memory_usage_bytes,
             num_layers: stats.num_layers,
         })
+    }
+
+    pub fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        self.len(py)
+    }
+
+    pub fn __bool__(&self, py: Python<'_>) -> PyResult<bool> {
+        self.is_empty(py).map(|empty| !empty)
     }
 }
 
