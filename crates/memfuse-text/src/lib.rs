@@ -2,7 +2,8 @@
 //!
 //! Provides tokenization, inverted indexing on LSM, and BM25 scoring.
 
-// ANCHOR:INTEGRATION STATUS:DONE AGENT:05 DATE:2026-05-15
+// ANCHOR:INTEGRATION PRIO:2 STATUS:FIXME AGENT:05 DATE:2026-05-22
+// FIXME: Missing dedicated tests/ directory for integration tests.
 
 #![forbid(unsafe_code)]
 

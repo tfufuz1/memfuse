@@ -14,7 +14,7 @@
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ZIEL: Sichere Ausführung von Agent-Tools ohne Host-Zugriff.
-// ANCHOR:INTEGRATION PRIO:2 STATUS:READY AGENT:07 DATE:2026-05-16
+// ANCHOR:INTEGRATION PRIO:2 STATUS:DONE AGENT:07 DATE:2026-05-22
 // MISSING: Cross-Crate Integration Tests für WASM-Sandbox Isolation und Tool-Execution.
 
 #![forbid(unsafe_code)]
