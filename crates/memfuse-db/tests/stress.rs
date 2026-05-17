@@ -11,6 +11,7 @@ async fn test_orchestrator_stress_concurrency() {
     let tmp = TempDir::new().expect("temp dir");
     let config = MemFuseConfig {
         dimension: 4,
+
         max_elements: 10000,
         distance_metric: DistanceMetric::Cosine,
         ..Default::default()

@@ -288,9 +288,9 @@ impl HnswIndexCore {
         layer: usize,
     ) -> Result<Vec<Candidate>> {
         let nodes = self.nodes.read();
-        let mut visited = AHashSet::new();
-        let mut candidates = BinaryHeap::new();
-        let mut results = BinaryHeap::new();
+        let mut visited = AHashSet::with_capacity(ef);
+        let mut candidates = BinaryHeap::with_capacity(ef);
+        let mut results = BinaryHeap::with_capacity(ef);
 
         for &ep in entry_points {
             if visited.insert(ep) {
@@ -354,8 +354,8 @@ impl HnswIndexCore {
         }
 
         let mut result: Vec<Candidate> = Vec::with_capacity(m);
-        let mut remaining: BinaryHeap<Reverse<Candidate>> =
-            candidates.iter().copied().map(Reverse).collect();
+        let mut remaining = BinaryHeap::with_capacity(candidates.len());
+        remaining.extend(candidates.iter().copied().map(Reverse));
 
         while let Some(Reverse(closest)) = remaining.pop() {
             if result.len() >= m {

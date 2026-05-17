@@ -1,4 +1,4 @@
-use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
+use memfuse_db::{MemFuse, MemFuseConfig};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -14,8 +14,8 @@ async fn test_layer_002_collection_persistence() {
 
     let config = MemFuseConfig {
         dimension: 4,
+
         max_elements: 100,
-        distance_metric: DistanceMetric::Cosine,
         ..Default::default()
     };
 
