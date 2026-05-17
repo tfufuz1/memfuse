@@ -45,9 +45,9 @@ use parking_lot::RwLock;
 use rand::Rng;
 use roaring::RoaringTreemap;
 use std::cmp::Reverse;
-use std::sync::Arc;
 use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// Configuration parameters for the HNSW index.
@@ -311,8 +311,12 @@ impl HnswIndexCore {
 
         for &ep in entry_points {
             if visited.insert(ep) {
-                let dist =
-                    self.compute_distance_with_data(state, query, query_quantized, &nodes[ep].vector)?;
+                let dist = self.compute_distance_with_data(
+                    state,
+                    query,
+                    query_quantized,
+                    &nodes[ep].vector,
+                )?;
                 let cand = Candidate {
                     index: ep,
                     distance: dist,
@@ -491,7 +495,8 @@ impl HnswIndexCore {
 
         let mut ep = vec![ep_idx];
         for layer in (new_layer + 1..=current_max_layer).rev() {
-            let best = self.search_layer(state, vector, query_quantized.as_deref(), &ep, 1, layer)?;
+            let best =
+                self.search_layer(state, vector, query_quantized.as_deref(), &ep, 1, layer)?;
             if !best.is_empty() {
                 ep = vec![best[0].index];
             }
@@ -535,8 +540,11 @@ impl HnswIndexCore {
                             let mut conn_cands =
                                 Vec::with_capacity(nodes[neighbor_idx].connections[layer].len());
                             for &idx in &nodes[neighbor_idx].connections[layer] {
-                                let dist =
-                                    self.compute_symmetric_distance(state, &node_vec, &nodes[idx].vector)?;
+                                let dist = self.compute_symmetric_distance(
+                                    state,
+                                    &node_vec,
+                                    &nodes[idx].vector,
+                                )?;
                                 conn_cands.push(Candidate {
                                     index: idx,
                                     distance: dist,
@@ -591,7 +599,8 @@ impl HnswIndexCore {
                 }
                 *ep = best_node;
                 if let Some(new_idx) = best_node {
-                    state.max_layer
+                    state
+                        .max_layer
                         .store(nodes[new_idx]._max_layer as u64, Ordering::SeqCst);
                 } else {
                     state.max_layer.store(0, Ordering::SeqCst);
@@ -769,8 +778,14 @@ impl VectorIndex for HnswIndex {
         for layer in (1..=max_layer).rev() {
             // Dynamische ef für Zwischenlayer (meist 1 ist ausreichend, aber für sehr tiefe Graphen kann leichtes Scaling helfen)
             let layer_ef = if layer > 1 { 1 } else { 2 };
-            let best =
-                self.search_layer(&state, query, query_quantized.as_deref(), &ep, layer_ef, layer)?;
+            let best = self.search_layer(
+                &state,
+                query,
+                query_quantized.as_deref(),
+                &ep,
+                layer_ef,
+                layer,
+            )?;
             if !best.is_empty() {
                 ep = vec![best[0].index];
             }
@@ -782,7 +797,8 @@ impl VectorIndex for HnswIndex {
         } else {
             self.config.ef_search.max(k)
         };
-        let candidates = self.search_layer(&state, query, query_quantized.as_deref(), &ep, ef, 0)?;
+        let candidates =
+            self.search_layer(&state, query, query_quantized.as_deref(), &ep, ef, 0)?;
 
         let score = self.connectivity_score();
         if score < self.config.rebuild_threshold {
@@ -874,7 +890,8 @@ impl VectorIndex for HnswIndex {
         let mut ep = vec![entry_idx];
 
         for layer in (1..=max_layer).rev() {
-            let best = self.search_layer(&state, query, query_quantized.as_deref(), &ep, 1, layer)?;
+            let best =
+                self.search_layer(&state, query, query_quantized.as_deref(), &ep, 1, layer)?;
             if !best.is_empty() {
                 ep = vec![best[0].index];
             }
@@ -883,7 +900,8 @@ impl VectorIndex for HnswIndex {
         // Over-fetch to compensate for filtered-out results and reranking
         let factor = if self.config.quantize { 4 } else { 2 };
         let ef = self.config.ef_search.max(k) * factor;
-        let candidates = self.search_layer(&state, query, query_quantized.as_deref(), &ep, ef, 0)?;
+        let candidates =
+            self.search_layer(&state, query, query_quantized.as_deref(), &ep, ef, 0)?;
 
         let score = self.connectivity_score();
         if score < self.config.rebuild_threshold {
