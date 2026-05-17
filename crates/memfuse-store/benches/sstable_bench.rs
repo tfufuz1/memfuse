@@ -1,3 +1,5 @@
+//! Benchmarks for SSTable read performance.
+
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use memfuse_store::sstable::{create_block_cache, SstableBuilder, SstableReader};
 use tempfile::TempDir;

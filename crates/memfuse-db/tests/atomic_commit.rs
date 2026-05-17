@@ -1,3 +1,4 @@
+//! Atomic transaction commit and rollback consistency tests.
 use memfuse_db::{MemFuse, MemFuseConfig};
 use tempfile::TempDir;
 

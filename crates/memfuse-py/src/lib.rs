@@ -112,6 +112,7 @@ pub struct PyDbStats {
     pub storage_stats: PyStorageStats,
 }
 
+/// Python facade for the MemFuse database.
 #[pyclass(unsendable, name = "Db")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
@@ -119,6 +120,7 @@ pub struct PyMemFuse {
 
 #[pymethods]
 impl PyMemFuse {
+    /// Returns a collection by name.
     pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<PyCollection> {
         let rt = get_runtime()?;
         let col = py
@@ -129,18 +131,21 @@ impl PyMemFuse {
         })
     }
 
+    /// Returns a list of all collection names.
     pub fn list_collections(&self, py: Python<'_>) -> PyResult<Vec<String>> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.list_collections()))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Permanently deletes a collection.
     pub fn drop_collection(&self, name: &str, py: Python<'_>) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.drop_collection(name)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Inserts a document into the default collection.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
@@ -167,6 +172,7 @@ impl PyMemFuse {
         Ok(())
     }
 
+    /// Retrieves a document by ID from the default collection.
     pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
         let rt = get_runtime()?;
         let doc = py
@@ -198,6 +204,7 @@ impl PyMemFuse {
         }
     }
 
+    /// Updates a document in the default collection.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn update<'py>(
         &self,
@@ -224,6 +231,7 @@ impl PyMemFuse {
         Ok(())
     }
 
+    /// Deletes a document from the default collection.
     pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.delete(id)))
@@ -231,6 +239,7 @@ impl PyMemFuse {
         Ok(())
     }
 
+    /// Performs semantic search in the default collection.
     #[pyo3(signature = (vector, k))]
     pub fn search<'py>(
         &self,
@@ -276,6 +285,7 @@ impl PyMemFuse {
         Ok(py_res)
     }
 
+    /// Performs hybrid search (BM25 + Vector) in the default collection.
     #[pyo3(signature = (text, vector, k))]
     pub fn hybrid_search<'py>(
         &self,
@@ -322,12 +332,14 @@ impl PyMemFuse {
         Ok(py_res)
     }
 
+    /// Creates a relationship between two documents in the default collection.
     pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Scans documents by prefix in the default collection.
     #[pyo3(signature = (prefix=""))]
     pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<(String, PyObject)>> {
         let rt = get_runtime()?;
@@ -345,18 +357,21 @@ impl PyMemFuse {
         Ok(py_res)
     }
 
+    /// Returns the number of documents in the default collection.
     pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.len()))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Returns True if the default collection is empty.
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.is_empty()))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Scans a range of documents in the default collection.
     #[pyo3(signature = (start=None, end=None))]
     pub fn scan(
         &self,
@@ -383,6 +398,7 @@ impl PyMemFuse {
         Ok(py_res)
     }
 
+    /// Returns database statistics.
     pub fn stats(&self, py: Python<'_>) -> PyResult<PyDbStats> {
         let rt = get_runtime()?;
         let stats = py
@@ -404,6 +420,7 @@ impl PyMemFuse {
     }
 }
 
+/// Python representation of a MemFuse collection.
 #[pyclass(unsendable, name = "Collection")]
 pub struct PyCollection {
     inner: Arc<MemFuseCollection>,
@@ -411,6 +428,7 @@ pub struct PyCollection {
 
 #[pymethods]
 impl PyCollection {
+    /// Inserts a document into the collection.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
@@ -437,6 +455,7 @@ impl PyCollection {
         Ok(())
     }
 
+    /// Retrieves a document by ID.
     pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
         let rt = get_runtime()?;
         let doc = py
@@ -468,6 +487,7 @@ impl PyCollection {
         }
     }
 
+    /// Updates a document in the collection.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn update<'py>(
         &self,
@@ -494,6 +514,7 @@ impl PyCollection {
         Ok(())
     }
 
+    /// Deletes a document by ID.
     pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.delete(id)))
@@ -501,6 +522,7 @@ impl PyCollection {
         Ok(())
     }
 
+    /// Performs semantic search.
     #[pyo3(signature = (vector, k))]
     pub fn search<'py>(
         &self,
@@ -593,22 +615,26 @@ impl PyCollection {
         Ok(py_res)
     }
 
+    /// Returns the number of documents in the collection.
     pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
         let rt = get_runtime()?;
         Ok(py.allow_threads(|| rt.block_on(self.inner.len())))
     }
 
+    /// Returns True if the collection is empty.
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
         Ok(py.allow_threads(|| rt.block_on(self.inner.is_empty())))
     }
 
+    /// Creates a relationship between two documents.
     pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Scans documents by prefix.
     #[pyo3(signature = (prefix=""))]
     pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<(String, PyObject)>> {
         let rt = get_runtime()?;
@@ -626,6 +652,7 @@ impl PyCollection {
         Ok(py_res)
     }
 
+    /// Scans a range of documents.
     #[pyo3(signature = (start=None, end=None))]
     pub fn scan(
         &self,
@@ -652,6 +679,7 @@ impl PyCollection {
         Ok(py_res)
     }
 
+    /// Returns statistics for the collection's vector index.
     pub fn stats(&self, py: Python<'_>) -> PyResult<PyVectorIndexStats> {
         let rt = get_runtime()?;
         let stats = py

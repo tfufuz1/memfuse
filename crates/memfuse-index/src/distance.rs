@@ -1,3 +1,8 @@
+//! Hardware-accelerated distance metrics for vector search.
+//!
+//! This module provides SIMD-optimized implementations for Cosine, Euclidean,
+//! and Dot Product distances, supporting both F32 and quantized U8 vectors.
+
 // ANCHOR:DOC:DOC-DISTANCE-001 — Module documentation added
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:03 DATE:2026-05-16 STATUS:DONE
@@ -575,6 +580,7 @@ pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
     dot_product_u8_scalar(a, b)
 }
 
+/// Computes dot product between two U8 vectors (scalar implementation).
 pub fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
@@ -597,6 +603,7 @@ pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
     euclidean_distance_sq_u8_scalar(a, b)
 }
 
+/// Computes squared Euclidean distance between two U8 vectors (scalar implementation).
 pub fn euclidean_distance_sq_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
@@ -632,6 +639,7 @@ pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8
     cosine_similarity_parts_u8_scalar(a, b)
 }
 
+/// Computes components for cosine similarity between two U8 vectors (scalar implementation).
 pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
     let mut dot = 0;
     let mut sum_a = 0;

@@ -1,3 +1,4 @@
+//! Integration tests for Encryption-at-Rest functionality.
 use memfuse_core::{StorageEngine, TxId};
 use memfuse_store::lsm::{LsmConfig, LsmStorage};
 use std::time::Duration;

@@ -1,3 +1,10 @@
+//! # MemFuse — Embedded Hybrid-Search for AI Agents
+//!
+//! MemFuse is a zero-boilerplate embedded database for AI agent memory.
+//! It combines vector search (HNSW), persistent storage (LSM-Tree),
+//! and relationship tracking in a single library.
+//!
+
 // ANCHOR:ARCH:DB-001 — Orchestrator Facade (Getriebe — Layer 2).
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -73,7 +80,7 @@ pub struct SearchResult {
     pub metadata: Option<Value>,
 }
 
-/// Overall database statistics.
+/// Overall database statistics including index and storage metrics.
 #[derive(Debug, Clone)]
 pub struct DbStats {
     /// Statistics for the vector index.
@@ -82,7 +89,7 @@ pub struct DbStats {
     pub storage_stats: memfuse_core::StorageStats,
 }
 
-/// User-facing document structure.
+/// User-facing document structure for retrieval.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Document {
     /// The string ID.
@@ -91,7 +98,7 @@ pub struct Document {
     pub metadata: Option<Value>,
 }
 
-/// Global configuration settings for the MemFuse database.
+/// Global configuration settings for the MemFuse database instance.
 #[derive(Debug, Clone)]
 pub struct MemFuseConfig {
     /// Vector dimensionality (must match your embeddings).
@@ -183,6 +190,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_collections_are_isolated
     // DONE: `collection()` ist wal-gesichert, Isolation ist korrekt.
     // SUCCESSOR: @JULES-04 — "Mach weiter mit COL-002 und COL-003, bis Collections-Modul fully featured ist."
+    /// Retrieves or creates a collection with the given name.
     pub async fn collection(&self, name: &str) -> Result<Collection> {
         // Validation
         if name.len() > 64 {
@@ -247,6 +255,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_list_collections
     // DONE: list_collections gibt persistierte Collections zurück.
     // SUCCESSOR: @JULES-04 — "Mache weiter mit COL-003."
+    /// Returns a list of all existing collection names.
     pub async fn list_collections(&self) -> Result<Vec<String>> {
         let col_idx_prefix = b"__col_idx:\x00";
         let entries = self.storage.scan_prefix(col_idx_prefix).await?;
@@ -279,6 +288,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_drop_removes_all_data
     // DONE: Alle Daten getilgt, re-öffnen führt zu leerer DB.
     // SUCCESSOR: @JULES-05 — "Collections sind fertig. Beginne mit WP-2.1 SEARCH-001."
+    /// Permanently deletes a collection and all its associated data.
     pub async fn drop_collection(&self, name: &str) -> Result<()> {
         if name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(

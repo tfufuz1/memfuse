@@ -1,3 +1,4 @@
+//! Test file for transaction isolation.
 use memfuse_core::{DocId, StorageEngine, VectorIndex};
 use memfuse_db::Collection;
 use memfuse_index::{HnswConfig, HnswIndex};

@@ -1,3 +1,4 @@
+//! Test file for distance bench.
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use memfuse_index::distance::*;
 use rand::Rng;

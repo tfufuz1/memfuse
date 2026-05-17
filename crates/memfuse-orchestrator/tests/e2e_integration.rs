@@ -1,3 +1,4 @@
+//! Test file for e2e integration.
 // AGENT:12
 // ANCHOR:INTEGRATION STATUS:DONE
 // E2E Test: Full Stack Integration
@@ -17,6 +18,7 @@ async fn test_e2e_agent_workflow() {
         dimension: 3,
         max_elements: 1000,
         distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
     };
     let db = MemFuse::open_with_config(tmp.path(), config)
         .await
@@ -119,6 +121,7 @@ async fn test_stress_concurrent_agent_ops() {
                 dimension: 4,
                 max_elements: 10000,
                 distance_metric: DistanceMetric::Cosine,
+                ..Default::default()
             },
         )
         .await

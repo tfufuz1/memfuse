@@ -9,6 +9,7 @@
 use std::time::Duration;
 
 #[derive(Debug)]
+/// Configuration for the WASM sandbox environment.
 pub struct SandboxConfig {
     pub max_memory_mb: usize,
     pub timeout: Duration,

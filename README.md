@@ -21,7 +21,7 @@ col = db.collection("memories")
 v = np.random.rand(1536).astype(np.float32)
 col.insert("doc1", v, metadata={"topic": "AI", "tags": ["rust", "search"]})
 
-# Semantic search
+# Semantic search (returns list of SearchResult objects)
 results = col.search(v, k=5)
 for res in results:
     print(f"ID: {res.id}, Score: {res.score}")

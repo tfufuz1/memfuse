@@ -28,7 +28,9 @@ pub const TOMBSTONE_BIT: u64 = 1 << 63;
 pub struct DocId(pub u64);
 
 impl DocId {
+    /// Maximum possible value for a DocId.
     pub const MAX: Self = Self(u64::MAX);
+    /// Minimum possible value for a DocId.
     pub const MIN: Self = Self(0);
 
     /// Creates a new DocId from a raw u64.
@@ -294,6 +296,7 @@ impl ResourceTracker {
         }
     }
 
+    /// Consumes memory from the budget, returning an error if the limit is exceeded.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         let current = self
             .memory_used
@@ -309,15 +312,18 @@ impl ResourceTracker {
         Ok(())
     }
 
+    /// Releases memory back to the budget.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Returns the current amount of memory used in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns the resource budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }

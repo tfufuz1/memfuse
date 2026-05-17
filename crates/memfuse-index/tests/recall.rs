@@ -1,3 +1,4 @@
+//! Recall accuracy tests for HNSW index.
 use memfuse_core::{DistanceMetric, DocId, TxId, VectorIndex};
 use memfuse_index::hnsw::{HnswConfig, HnswIndex};
 use rand::Rng;

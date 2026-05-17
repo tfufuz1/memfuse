@@ -1,8 +1,9 @@
+//! Orchestrates Native State Checkpoints for Time-Travel.
+
 // ANCHOR:ARCH:CHECKPOINT-001 — Checkpoint Manager
 // WP:NONE PRIO:2 NEEDS:NONE
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
-//! Orchestrates Native State Checkpoints for Time-Travel.
 
 #![forbid(unsafe_code)]
 

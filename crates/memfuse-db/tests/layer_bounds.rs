@@ -1,3 +1,4 @@
+//! Test file for layer bounds.
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
 use tempfile::TempDir;

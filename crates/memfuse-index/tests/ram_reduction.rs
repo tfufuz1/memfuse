@@ -1,3 +1,4 @@
+//! Test file for ram reduction.
 use memfuse_core::{DistanceMetric, DocId, TxId, VectorIndex};
 use memfuse_index::hnsw::{HnswConfig, HnswIndex};
 

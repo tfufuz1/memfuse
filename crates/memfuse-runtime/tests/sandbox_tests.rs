@@ -1,3 +1,4 @@
+//! Sandbox execution and safety isolation tests.
 // AGENT:12
 // ANCHOR:INTEGRATION STATUS:DONE
 use memfuse_runtime::{SandboxConfig, WasmSandbox};
