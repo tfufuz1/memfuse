@@ -46,9 +46,17 @@ impl DocId {
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Self {
         // ANCHOR:DEBT:TYPES-002 AGENT:01 STATUS:DONE PRIO:3
-        // SAFETY: blake3::hash() always returns a 32-byte hash.
-        // try_from_key() only fails if the hash is shorter than 8 bytes.
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes") // unwrap: blake3 hash is always 32 bytes
+        Self::try_from_key(key).unwrap_or_else(|_| {
+            // Zero-panic fallback: manually derive ID using safe copy
+            let hash = blake3::hash(key.as_bytes());
+            let mut buf = [0u8; 8];
+            let hash_bytes = hash.as_bytes();
+            let copy_len = hash_bytes.len().min(8);
+            for (i, &byte) in hash_bytes.iter().enumerate().take(copy_len) {
+                buf[i] = byte;
+            }
+            Self(u64::from_le_bytes(buf))
+        })
     }
 
     /// Safely derive a DocId from a user-provided string key.
@@ -294,6 +302,10 @@ impl ResourceTracker {
         }
     }
 
+    /// Attempts to consume the specified amount of memory.
+    ///
+    /// Returns `Err(MemFuseError::MemoryBudgetExceeded)` if the consumption
+    /// would exceed the configured budget.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         let current = self
             .memory_used
@@ -309,15 +321,18 @@ impl ResourceTracker {
         Ok(())
     }
 
+    /// Releases the specified amount of memory back to the budget.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Returns the current amount of memory used in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns a reference to the configured resource budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }
