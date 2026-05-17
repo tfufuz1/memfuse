@@ -5,7 +5,7 @@
 
 // ANCHOR:ARCH:TRAITS-001 — Trait-Contracts sind das API-Rückgrat des Workspace.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// AGENT:01 DATE:2026-05-17 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
 // REGEL: Neue Methoden MÜSSEN Default-Impl haben (backward compat).
 
@@ -38,7 +38,7 @@ pub struct StorageStats {
 
 // ANCHOR:ARCH:CONTRACT-STORAGE-001 — Implementor: LsmStorage (memfuse-store/src/lsm.rs)
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// AGENT:01 DATE:2026-05-17 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
 // Lifecycle: put/delete → commit/rollback → flush(background).
 /// Storage engine trait — abstracts over the LSM-Tree implementation.
@@ -99,7 +99,7 @@ pub trait StorageEngine: Send + Sync {
 
 // ANCHOR:ARCH:CONTRACT-INDEX-001 — Implementor: HnswIndex (memfuse-index/src/hnsw.rs)
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// AGENT:01 DATE:2026-05-17 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
 // Rebuild: Automatisch bei >20% gelöschten Nodes.
 /// Vector index trait — abstracts over the HNSW implementation.

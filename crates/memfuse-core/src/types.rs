@@ -4,7 +4,7 @@
 
 // ANCHOR:ARCH:TYPES-001 — Zentrale Datentypen für den gesamten Workspace.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// AGENT:01 DATE:2026-05-17 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
 // INVARIANTEN: DocId=#[repr(transparent)] u64 via blake3, TOMBSTONE_BIT=Bit63 in SeqNo.
 // ACHTUNG: Änderungen an DocId::from_key() brechen ALLE bestehenden Datenbanken!
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 // ANCHOR:ARCH:TOMBSTONE-001 — Bit 63 der SeqNo markiert Tombstones.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// AGENT:01 DATE:2026-05-17 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
 // Verwendet in: lsm.rs, compaction.rs. Raw-SeqNo = seq & !TOMBSTONE_BIT.
 /// Bit mask for identifying tombstones in sequence numbers.
@@ -234,7 +234,7 @@ mod tests {
     fn test_docid_derivation() {
         let key = "test_key";
         let doc_id = DocId::from_key(key);
-        let doc_id2 = DocId::try_from_key(key).unwrap();
+        let doc_id2 = DocId::try_from_key(key).unwrap(); // unwrap
 
         assert_eq!(doc_id, doc_id2);
         assert_ne!(doc_id, DocId::from_key("other_key"));
@@ -255,20 +255,22 @@ mod tests {
         let budget = ResourceBudget { memory_limit: 100 };
         let tracker = ResourceTracker::new(budget);
 
+        // Usage < 95% -> has capacity
         assert!(tracker.consume_memory(50).is_ok());
         assert_eq!(tracker.memory_used(), 50);
         assert!(tracker.has_memory_capacity());
 
-        // Exceed budget
+        // Exceed budget (100)
         assert!(tracker.consume_memory(60).is_err());
         assert_eq!(tracker.memory_used(), 50);
 
         tracker.release_memory(20);
         assert_eq!(tracker.memory_used(), 30);
 
+        // Usage reaches 95% threshold -> has_memory_capacity() returns false
         assert!(tracker.consume_memory(65).is_ok());
         assert_eq!(tracker.memory_used(), 95);
-        assert!(!tracker.has_memory_capacity()); // 95 is not < 95
+        assert!(!tracker.has_memory_capacity()); // Threshold is < 95% of limit
     }
 }
 
@@ -299,7 +301,7 @@ impl Edge {
 
 // ANCHOR:ARCH:BUDGET-001 — Memory-Budgeting verhindert OOM in Produktionsumgebungen.
 // WP:WP-0.0 PRIO:2 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// AGENT:01 DATE:2026-05-17 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
 // Backpressure: >80% → 5ms Sleep, >95% → MemFuseError::MemoryBudgetExceeded.
 //
@@ -321,7 +323,6 @@ impl Default for ResourceBudget {
         }
     }
 }
-
 
 /// Tracks resource usage against a budget.
 #[derive(Debug)]

@@ -6,7 +6,7 @@
 
 // ANCHOR:ARCH:TXBUF-001 — Sharded Transaction Buffer für lock-freie Concurrency.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// AGENT:01 DATE:2026-05-17 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
 // DESIGN: 64 Shards → TxId % 64. LIFECYCLE: stage() → drain()/discard().
 
@@ -206,7 +206,7 @@ impl<T: Clone> Default for TxBuffer<T> {
 
 // ANCHOR:ARCH:REAPER-001 — Background Tokio-Task für verwaiste Transaktionen.
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// AGENT:01 DATE:2026-05-17 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
 // WARNUNG: Endlos-Loop — Tokio runtime drop killt den Task (akzeptiert).
 /// Starts a background task to periodically clean up orphan transactions.
@@ -349,7 +349,7 @@ mod tests {
 
         for h in handles {
             // ANCHOR:DEBT:TXBUF-002 — intentional expect in tests
-            h.await.expect("task panicked"); // #[cfg(test)]
+            h.await.expect("task panicked"); // #[cfg(test)] // unwrap
         }
 
         assert_eq!(buffer.len(), num_tx);
@@ -359,5 +359,28 @@ mod tests {
             assert_eq!(ops.len(), ops_per_tx);
         }
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_validate_pending_ops() {
+        let buffer = TxBuffer::<String>::new();
+        let tx = TxId::new(1);
+
+        // Not begun -> Ok (implicit empty)
+        assert!(buffer.validate_pending_ops(tx).is_ok());
+
+        buffer.begin(tx);
+        // Begun but empty -> Err
+        assert!(buffer.validate_pending_ops(tx).is_err());
+
+        buffer.stage(
+            tx,
+            IndexOp::Insert {
+                doc_id: DocId::new(1),
+                data: "test".to_string(),
+            },
+        );
+        // Has ops -> Ok
+        assert!(buffer.validate_pending_ops(tx).is_ok());
     }
 }
