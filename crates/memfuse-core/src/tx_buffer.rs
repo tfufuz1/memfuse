@@ -196,6 +196,14 @@ impl<T: Clone> TxBuffer<T> {
         let shard = self.shards[shard_idx].read();
         shard.ops.get(&tx).map(|(ops, _)| ops.clone())
     }
+
+    /// Discards all pending transactions in all shards.
+    pub fn discard_all(&self) {
+        for shard_lock in &self.shards {
+            let mut shard = shard_lock.write();
+            shard.ops.clear();
+        }
+    }
 }
 
 impl<T: Clone> Default for TxBuffer<T> {

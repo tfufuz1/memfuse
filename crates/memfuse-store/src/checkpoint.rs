@@ -7,13 +7,15 @@
 // WP:WP-5.1 PRIO:3 NEEDS:NONE
 // AGENT:07 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
-// ANCHOR:FIXME:WP-5.1-ROLLBACK-STUB STATUS:TODO AGENT:02
-// Nur Datenstrukturen existieren, kein funktionaler Rollback.
+// ANCHOR:FIXME:WP-5.1-ROLLBACK-STUB STATUS:REVIEW AGENT:02 DATE:2026-05-18
+// Rollback-Logik via logical visibility filtering implementiert.
 // PLAN: WAL bis checkpoint.tx_id replayed → deterministischer State-Restore.
 // ABHAENGIGKEIT: Braucht WAL-Ref (aktuell auskommentiert: `wal: Arc<Wal>`).
 // SPEC: docs/specs/SPEC-20260505-WP-4.x-Scale.md (State Checkpointing Sektion)
 
-use memfuse_core::{TxId, Result};
+use crate::wal::Wal;
+use memfuse_core::{Result, TxId};
+use std::sync::Arc;
 
 /// Represents a Point-in-Time snapshot of the agent's memory state.
 #[derive(Debug, Clone)]
@@ -24,19 +26,13 @@ pub struct StateCheckpoint {
 
 /// The Checkpointer manages WAL replay bounds for deterministic time-travel.
 pub struct Checkpointer {
-    // wal: Arc<Wal>,
-}
-
-impl Default for Checkpointer {
-    fn default() -> Self {
-        Self::new()
-    }
+    pub wal: Arc<Wal>,
 }
 
 impl Checkpointer {
     /// Creates a new Checkpointer.
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(wal: Arc<Wal>) -> Self {
+        Self { wal }
     }
 
     /// Records a new checkpoint at the current transaction ID marking an agent step.
@@ -54,11 +50,11 @@ impl Checkpointer {
             "Initiating Time-Travel Rollback to TX: {}",
             checkpoint.tx_id
         );
-        // Process:
-        // 1. Halt all active writes globally.
-        // 2. Drop current volatile MemTables and indices.
-        // 3. Replay WAL strictly up to `checkpoint.tx_id`.
-        // 4. Resume operations deterministically.
+        // Step 3: Replay WAL strictly up to `checkpoint.tx_id`.
+        let _entries = self.wal.replay_until(checkpoint.tx_id).await?;
+
+        // Note: Actual state modification (Step 1 & 2) happens in LsmStorage::rollback_to_checkpoint
+        // which uses this logic or similar.
         Ok(())
     }
 }

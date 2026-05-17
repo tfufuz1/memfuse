@@ -111,6 +111,8 @@ pub struct LsmStorage {
     block_cache: Arc<BlockCache>,
     pub snapshot_registry: Arc<SnapshotRegistry>,
     next_seq_no: AtomicU64,
+    /// Maximum sequence number visible to readers (used for rollback).
+    max_visible_lsn: AtomicU64,
     /// Mutex to serialize commits and prevent snapshot inversion (parallel seq_no holes).
     commit_mutex: tokio::sync::Mutex<()>,
 }
@@ -223,6 +225,7 @@ impl LsmStorage {
             block_cache,
             snapshot_registry,
             next_seq_no: AtomicU64::new(max_seq + 1),
+            max_visible_lsn: AtomicU64::new(u64::MAX),
             commit_mutex: tokio::sync::Mutex::new(()),
         })
     }
@@ -248,36 +251,76 @@ impl LsmStorage {
     pub async fn force_flush(&self) -> Result<()> {
         self.flush().await
     }
+
+    /// Rolls back the storage state to the given transaction ID.
+    ///
+    /// This implementation uses a "Logical Rollback" via visibility filtering.
+    /// Future writes will continue from the original sequence number to avoid collisions,
+    /// but data committed after the target transaction will be hidden from readers.
+    pub async fn rollback_to_checkpoint(&self, target_tx_id: TxId) -> Result<()> {
+        let _commit_lock = self.commit_mutex.lock().await;
+
+        // 1. Find the highest LSN associated with target_tx_id in the WAL
+        let state = self.state.read().await;
+        let entries = state.wal.replay().await?;
+
+        let mut target_lsn = 0;
+        for (lsn, entry) in &entries {
+            let tx_id = match &entry.op {
+                WalOp::Put { tx_id, .. } => *tx_id,
+                WalOp::Delete { tx_id, .. } => *tx_id,
+            };
+            if tx_id.inner() <= target_tx_id.inner() {
+                target_lsn = target_lsn.max(*lsn);
+            }
+        }
+
+        // 2. Set the visibility limit
+        self.max_visible_lsn.store(target_lsn, Ordering::Release);
+
+        // 3. Discard staged operations to prevent them from committing with high LSNs
+        self.tx_buffer.discard_all();
+
+        tracing::info!("Rolled back storage visibility to TxId: {} (LSN: {})", target_tx_id, target_lsn);
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl StorageEngine for LsmStorage {
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let state = self.state.read().await;
+        let max_lsn = self.max_visible_lsn.load(Ordering::Acquire);
 
         if let Some((val, seq)) = state.memtable.get(key) {
-            if (seq & TOMBSTONE_BIT) != 0 {
-                return Ok(None);
-            }
-            return Ok(Some(val.to_vec()));
-        }
-
-        for mt in state.immutable_memtables.iter().rev() {
-            if let Some((val, seq)) = mt.get(key) {
+            if (seq & !TOMBSTONE_BIT) <= max_lsn {
                 if (seq & TOMBSTONE_BIT) != 0 {
                     return Ok(None);
                 }
                 return Ok(Some(val.to_vec()));
+            }
+        }
+
+        for mt in state.immutable_memtables.iter().rev() {
+            if let Some((val, seq)) = mt.get(key) {
+                if (seq & !TOMBSTONE_BIT) <= max_lsn {
+                    if (seq & TOMBSTONE_BIT) != 0 {
+                        return Ok(None);
+                    }
+                    return Ok(Some(val.to_vec()));
+                }
             }
         }
 
         let sstables = self.sstables.read().await;
         for sst in sstables.iter().rev() {
             if let Some((val, seq)) = sst.get(key).await? {
-                if (seq & TOMBSTONE_BIT) != 0 {
-                    return Ok(None);
+                if (seq & !TOMBSTONE_BIT) <= max_lsn {
+                    if (seq & TOMBSTONE_BIT) != 0 {
+                        return Ok(None);
+                    }
+                    return Ok(Some(val.to_vec()));
                 }
-                return Ok(Some(val.to_vec()));
             }
         }
 
@@ -796,5 +839,39 @@ mod tests {
             .await
             .expect("scan");
         assert_eq!(results.len(), 2); // d, f (e deleted)
+    }
+
+    #[tokio::test]
+    async fn test_rollback_to_checkpoint() {
+        let (storage, _tmp) = test_storage().await;
+
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key1", b"val1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"key2", b"val2").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+
+        assert_eq!(
+            storage.get(b"key1").await.unwrap(),
+            Some(b"val1".to_vec())
+        );
+        assert_eq!(
+            storage.get(b"key2").await.unwrap(),
+            Some(b"val2".to_vec())
+        );
+
+        // Rollback to tx1 (effectively undoing tx2)
+        storage.rollback_to_checkpoint(tx1).await.unwrap();
+
+        assert_eq!(
+            storage.get(b"key1").await.unwrap(),
+            Some(b"val1".to_vec())
+        );
+        assert_eq!(storage.get(b"key2").await.unwrap(), None);
+
+        // Verify sequence number was NOT reset (logical rollback)
+        assert_eq!(storage.last_seq_no(), 2);
     }
 }

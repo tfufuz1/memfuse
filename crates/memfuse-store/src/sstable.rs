@@ -288,6 +288,8 @@ impl SstableReader {
                 // ermöglicht effizienten Zugriff ohne explizite Syscalls.
                 #[allow(unsafe_code)]
                 let mmap = unsafe { memmap2::Mmap::map(&file)? };
+                // WP-4.1: Optimize for random access in LSM-Tree
+                mmap.advise(memmap2::Advice::Random).ok();
                 Ok((mmap, file_size))
             })
             .await

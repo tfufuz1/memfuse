@@ -472,6 +472,18 @@ impl Wal {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    /// Replays the WAL up to (and including) the given transaction ID.
+    pub async fn replay_until(&self, target_tx_id: TxId) -> Result<Vec<(u64, WalEntry)>> {
+        let entries = self.replay().await?;
+        Ok(entries
+            .into_iter()
+            .filter(|(_, entry)| match &entry.op {
+                WalOp::Put { tx_id, .. } => tx_id.inner() <= target_tx_id.inner(),
+                WalOp::Delete { tx_id, .. } => tx_id.inner() <= target_tx_id.inner(),
+            })
+            .collect())
+    }
 }
 
 #[cfg(test)]
