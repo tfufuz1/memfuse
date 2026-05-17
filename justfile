@@ -79,8 +79,8 @@ dag-check:
         cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
         exit 1
     fi
-    echo "Verifying memfuse-text (excluding tracked DAG-001)..."
-    if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
+    echo "Verifying memfuse-text..."
+    if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-text violates DAG."
         cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
         exit 1
@@ -106,6 +106,10 @@ dag-check:
         TARGET=$(echo $VIOLATION | cut -d: -f2)
         ID=$(echo $VIOLATION | cut -d: -f3)
         if cargo tree -p "$CRATE" --edges no-dev | grep -q "$TARGET"; then
+            if [ "$ID" == "DAG-001" ]; then
+                echo "❌ ERROR: $ID regression ($CRATE → $TARGET)"
+                exit 1
+            fi
             echo "⚠️  $ID still present ($CRATE → $TARGET)"
         else
             echo "✅ $ID resolved"

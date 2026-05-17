@@ -42,8 +42,8 @@ jobs:
             cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
             exit 1
           fi
-          echo "Verifying memfuse-text (excluding tracked DAG-001)..."
-          if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
+          echo "Verifying memfuse-text..."
+          if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core" | grep -q "memfuse-"; then
             echo "ERROR: memfuse-text violates DAG."
             cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
             exit 1
@@ -71,7 +71,8 @@ jobs:
           echo "=== Known DAG Violations (tracked via ANKERs) ==="
           echo "--- DAG-001: memfuse-text → memfuse-store ---"
           if cargo tree -p memfuse-text --edges no-dev | grep -q "memfuse-store"; then
-            echo "⚠️  DAG-001 still present (memfuse-text → memfuse-store)"
+            echo "❌ ERROR: DAG-001 regression (memfuse-text → memfuse-store)"
+            exit 1
           else
             echo "✅ DAG-001 resolved"
           fi
