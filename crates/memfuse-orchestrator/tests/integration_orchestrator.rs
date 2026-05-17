@@ -1,5 +1,5 @@
-use memfuse_orchestrator::StateGraph;
 use memfuse_db::MemFuse;
+use memfuse_orchestrator::StateGraph;
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -28,7 +28,13 @@ async fn test_orchestrator_with_db_mock() {
     graph.add_node("db_query", "Queries MemFuse for relevant context");
 
     // Mock interaction: Orchestrator would typically use DB results to drive transitions
-    db.insert("context-1", &[0.1; 1536], Some(serde_json::json!({"text": "context"}))).await.unwrap();
+    db.insert(
+        "context-1",
+        &[0.1; 1536],
+        Some(serde_json::json!({"text": "context"})),
+    )
+    .await
+    .unwrap();
 
     let results = db.search(&[0.1; 1536], 1).await.unwrap();
     assert!(!results.is_empty());
