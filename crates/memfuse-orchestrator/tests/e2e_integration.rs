@@ -116,7 +116,7 @@ async fn test_stress_concurrent_agent_ops() {
             tmp.path(),
             MemFuseConfig {
                 dimension: 4,
-                    ..Default::default()
+                ..Default::default()
             },
         )
         .await
