@@ -47,6 +47,10 @@ impl Tokenizer for GermanMorphTokenizer {
     fn tokenize(&self, text: &str) -> Vec<String> {
         let stopwords = get_stopwords();
         let mut tokens = Vec::new();
+        let suffixes = [
+            "ordnung", "gericht", "amt", "gesetz", "wesen", "schaft", "heit", "keit", "ung",
+            "schutz",
+        ];
 
         for word in text.unicode_words() {
             let lower = word.to_lowercase();
@@ -54,12 +58,27 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            let mut matched = false;
+            for suffix in suffixes {
+                // Heuristic: only split if the remaining stem is at least 3 chars
+                if lower.ends_with(suffix) && lower.len() >= suffix.len() + 3 {
+                    tokens.push(lower.clone());
+                    tokens.push(suffix.to_string());
+
+                    // Fugen-s handling: "Arbeitsamt" -> "arbeit"
+                    let stem = &lower[..lower.len() - suffix.len()];
+                    if stem.ends_with('s') && stem.len() > 3 {
+                        tokens.push(stem[..stem.len() - 1].to_string());
+                    } else if stem.len() >= 3 {
+                        tokens.push(stem.to_string());
+                    }
+
+                    matched = true;
+                    break;
+                }
+            }
+
+            if !matched {
                 tokens.push(lower);
             }
         }
@@ -100,5 +119,42 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+    }
+
+    #[test]
+    fn test_german_morph_fugen_s() {
+        let tokenizer = GermanMorphTokenizer;
+        let tokens = tokenizer.tokenize("Das Arbeitsamt");
+        assert!(tokens.contains(&"arbeitsamt".to_string()));
+        assert!(tokens.contains(&"amt".to_string()));
+        assert!(tokens.contains(&"arbeit".to_string()));
+        assert!(!tokens.contains(&"arbeits".to_string()));
+    }
+
+    #[test]
+    fn test_german_morph_suffixes() {
+        let tokenizer = GermanMorphTokenizer;
+        let test_cases = [
+            ("Datenschutz", "schutz"),
+            ("Versicherung", "ung"),
+            ("Gesellschaft", "schaft"),
+            ("Freiheit", "heit"),
+            ("Gerechtigkeit", "keit"),
+        ];
+
+        for (word, suffix) in test_cases {
+            let tokens = tokenizer.tokenize(word);
+            assert!(
+                tokens.contains(&word.to_lowercase()),
+                "Missing original word: {}",
+                word
+            );
+            assert!(
+                tokens.contains(&suffix.to_string()),
+                "Missing suffix: {} for word: {}",
+                suffix,
+                word
+            );
+        }
     }
 }
