@@ -9,8 +9,8 @@ description = "High-level orchestration and task management for MemFuse"
 [dependencies]
 
 [dev-dependencies]
-memfuse-db = { path = "../memfuse-db" }
-memfuse-runtime = { path = "../memfuse-runtime" }
+memfuse-db = { workspace = true }
+memfuse-runtime = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tempfile = { workspace = true }
 serde_json = { workspace = true }
