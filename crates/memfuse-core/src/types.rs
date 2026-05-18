@@ -349,7 +349,7 @@ mod tests {
     fn test_doc_id_from_key() {
         let key = "test-key";
         let id1 = DocId::from_key(key);
-        let id2 = DocId::try_from_key(key).unwrap();
+        let id2 = DocId::try_from_key(key).unwrap(); // unwrap: test key
         assert_eq!(id1, id2);
 
         let id3 = DocId::from_key("another-key");
@@ -378,7 +378,7 @@ mod tests {
     #[test]
     fn test_resource_tracker_underflow_protection() {
         let tracker = ResourceTracker::new(ResourceBudget { memory_limit: 100 });
-        tracker.consume_memory(10).unwrap();
+        tracker.consume_memory(10).unwrap(); // unwrap: test budget
         tracker.release_memory(20);
         assert_eq!(tracker.memory_used(), 0);
     }
