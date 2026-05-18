@@ -17,13 +17,20 @@ async fn test_cross_crate_sandbox_data_flow() {
     .unwrap();
 
     // 1. Store data in DB
-    db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"content": "important data"})))
-        .await
-        .unwrap();
+    db.insert(
+        "doc-1",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(json!({"content": "important data"})),
+    )
+    .await
+    .unwrap();
 
     // 2. Retrieve data
     let doc = db.get("doc-1").await.unwrap().unwrap();
-    let input_for_sandbox = doc.metadata.unwrap()["content"].as_str().unwrap().to_string();
+    let input_for_sandbox = doc.metadata.unwrap()["content"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // 3. Pass data to Sandbox
     let sandbox = WasmSandbox::new(SandboxConfig::default());
