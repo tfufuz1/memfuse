@@ -26,14 +26,12 @@ impl InvertedIndex {
             format!("__txt:{}:", namespace).into_bytes()
         };
 
-        let tokenizer: Arc<dyn Tokenizer> = if namespace.starts_with("de:")
-            || namespace == "de"
-            || namespace.ends_with(":de")
-        {
-            Arc::new(GermanMorphTokenizer)
-        } else {
-            Arc::new(DefaultTokenizer)
-        };
+        let tokenizer: Arc<dyn Tokenizer> =
+            if namespace.starts_with("de:") || namespace == "de" || namespace.ends_with(":de") {
+                Arc::new(GermanMorphTokenizer)
+            } else {
+                Arc::new(DefaultTokenizer)
+            };
 
         Self {
             storage,
@@ -664,8 +662,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_namespace_tokenizer_selection() -> std::result::Result<(), Box<dyn std::error::Error>>
-    {
+    async fn test_namespace_tokenizer_selection(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let tmp = TempDir::new()?;
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
