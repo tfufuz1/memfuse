@@ -46,9 +46,16 @@ impl DocId {
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Self {
         // ANCHOR:DEBT:TYPES-002 AGENT:01 STATUS:DONE PRIO:3
-        // SAFETY: blake3::hash() always returns a 32-byte hash.
-        // try_from_key() only fails if the hash is shorter than 8 bytes.
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes") // unwrap: blake3 hash is always 32 bytes
+        // SAFE: Blake3 always returns 32 bytes. Clamping to 8 bytes for DocId.
+        // Falls back to manual copy if try_from_key unexpectedly fails.
+        Self::try_from_key(key).unwrap_or_else(|_| {
+            let hash = blake3::hash(key.as_bytes());
+            let mut buf = [0u8; 8];
+            let hash_bytes = hash.as_bytes();
+            let len = hash_bytes.len().min(8);
+            buf[..len].copy_from_slice(&hash_bytes[..len]);
+            Self(u64::from_le_bytes(buf))
+        })
     }
 
     /// Safely derive a DocId from a user-provided string key.
@@ -310,8 +317,11 @@ impl ResourceTracker {
     }
 
     pub fn release_memory(&self, bytes: u64) {
-        self.memory_used
-            .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
+        let _ = self.memory_used.fetch_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |curr| Some(curr.saturating_sub(bytes)),
+        );
     }
 
     pub fn memory_used(&self) -> u64 {
