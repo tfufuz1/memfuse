@@ -57,7 +57,9 @@ async fn test_concurrent_collection_ops() {
                     "Search should find at least one result (itself)"
                 );
                 assert_eq!(results[0].id, id);
-                assert!(results[0].metadata.as_ref().unwrap()["updated"].as_bool().unwrap());
+                assert!(results[0].metadata.as_ref().unwrap()["updated"]
+                    .as_bool()
+                    .unwrap());
 
                 // 5. Delete
                 col.delete(&id).await.expect("delete");

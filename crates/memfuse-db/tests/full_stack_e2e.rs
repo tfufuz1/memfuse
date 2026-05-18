@@ -131,25 +131,47 @@ async fn test_full_stack_document_lifecycle() {
     assert!(stats.storage_stats.memtable_size_bytes > 0);
 
     // 9. Collection Isolation Check (Robust)
-    let col_a = db.collection("isolation-a").await.expect("Failed to get col A");
-    let col_b = db.collection("isolation-b").await.expect("Failed to get col B");
+    let col_a = db
+        .collection("isolation-a")
+        .await
+        .expect("Failed to get col A");
+    let col_b = db
+        .collection("isolation-b")
+        .await
+        .expect("Failed to get col B");
 
-    col_a.insert("secret", &[0.1, 0.2, 0.3], Some(json!({"source": "A"})))
+    col_a
+        .insert("secret", &[0.1, 0.2, 0.3], Some(json!({"source": "A"})))
         .await
         .expect("Insert into A failed");
-    col_b.insert("secret", &[0.1, 0.2, 0.3], Some(json!({"source": "B"})))
+    col_b
+        .insert("secret", &[0.1, 0.2, 0.3], Some(json!({"source": "B"})))
         .await
         .expect("Insert into B failed");
 
-    let doc_a = col_a.get("secret").await.expect("Get from A failed").expect("Not found in A");
-    let doc_b = col_b.get("secret").await.expect("Get from B failed").expect("Not found in B");
+    let doc_a = col_a
+        .get("secret")
+        .await
+        .expect("Get from A failed")
+        .expect("Not found in A");
+    let doc_b = col_b
+        .get("secret")
+        .await
+        .expect("Get from B failed")
+        .expect("Not found in B");
 
     assert_eq!(doc_a.metadata.unwrap()["source"], "A");
     assert_eq!(doc_b.metadata.unwrap()["source"], "B");
 
     // Search isolation
-    let search_a = col_a.search(&[0.1, 0.2, 0.3], 10).await.expect("Search A failed");
-    let search_b = col_b.search(&[0.1, 0.2, 0.3], 10).await.expect("Search B failed");
+    let search_a = col_a
+        .search(&[0.1, 0.2, 0.3], 10)
+        .await
+        .expect("Search A failed");
+    let search_b = col_b
+        .search(&[0.1, 0.2, 0.3], 10)
+        .await
+        .expect("Search B failed");
 
     assert_eq!(search_a.len(), 1);
     assert_eq!(search_a[0].id, "secret");
