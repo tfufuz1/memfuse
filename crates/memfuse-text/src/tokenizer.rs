@@ -13,8 +13,8 @@ fn get_stopwords() -> &'static HashSet<String> {
             "den", "der", "des", "die", "ein", "eine", "einer", "eines", "for", "für", "he", "her",
             "his", "i", "if", "im", "in", "into", "is", "ist", "it", "its", "me", "mit", "my",
             "no", "not", "oder", "of", "on", "or", "our", "she", "sind", "such", "that", "the",
-            "their", "them", "then", "there", "these", "they", "this", "to", "über", "und", "von",
-            "war", "was", "we", "will", "with", "you", "your", "zu",
+            "their", "them", "then", "there", "these", "they", "this", "to", "und", "von", "war",
+            "was", "we", "will", "with", "you", "your", "zu", "über",
         ];
         words.into_iter().map(|w| w.to_string()).collect()
     })
