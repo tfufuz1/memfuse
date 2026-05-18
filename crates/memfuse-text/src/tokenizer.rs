@@ -48,18 +48,25 @@ impl Tokenizer for GermanMorphTokenizer {
         let stopwords = get_stopwords();
         let mut tokens = Vec::new();
 
+        let suffixes = ["gericht", "amt", "haus", "stelle", "wesen"];
+
         for word in text.unicode_words() {
             let lower = word.to_lowercase();
             if stopwords.contains(&lower) {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            let mut split = false;
+            for suffix in suffixes {
+                if lower.ends_with(suffix) && lower.len() > suffix.len() + 2 {
+                    tokens.push(lower.clone());
+                    tokens.push(suffix.to_string());
+                    split = true;
+                    break;
+                }
+            }
+
+            if !split {
                 tokens.push(lower);
             }
         }
@@ -100,5 +107,41 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+    }
+
+    #[test]
+    fn test_german_morph_tokenizer_suffixes() {
+        let tokenizer = GermanMorphTokenizer;
+
+        // Test "amt"
+        let tokens = tokenizer.tokenize("Finanzamt");
+        assert!(tokens.contains(&"finanzamt".to_string()));
+        assert!(tokens.contains(&"amt".to_string()));
+
+        // Test "haus"
+        let tokens = tokenizer.tokenize("Krankenhaus");
+        assert!(tokens.contains(&"krankenhaus".to_string()));
+        assert!(tokens.contains(&"haus".to_string()));
+
+        // Test "stelle"
+        let tokens = tokenizer.tokenize("Arbeitsstelle");
+        assert!(tokens.contains(&"arbeitsstelle".to_string()));
+        assert!(tokens.contains(&"stelle".to_string()));
+
+        // Test "wesen"
+        let tokens = tokenizer.tokenize("Bankwesen");
+        assert!(tokens.contains(&"bankwesen".to_string()));
+        assert!(tokens.contains(&"wesen".to_string()));
+
+        // Test minimum length condition (suffix + 2)
+        // "Amt" -> 3 chars. Suffix "amt" is 3 chars. 3 > 3+2 is false.
+        let tokens = tokenizer.tokenize("Das Amt");
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0], "amt");
+
+        // "Landamt" -> 7 chars. Suffix "amt" is 3 chars. 7 > 3+2 is true.
+        let tokens = tokenizer.tokenize("Landamt");
+        assert!(tokens.contains(&"landamt".to_string()));
+        assert!(tokens.contains(&"amt".to_string()));
     }
 }
