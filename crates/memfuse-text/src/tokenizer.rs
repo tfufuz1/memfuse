@@ -40,8 +40,25 @@ impl Tokenizer for DefaultTokenizer {
     }
 }
 
-/// German tokenizer with basic compound splitting POC.
+/// German tokenizer with basic compound splitting.
 pub struct GermanMorphTokenizer;
+
+impl GermanMorphTokenizer {
+    fn split_compounds(&self, word: &str) -> Vec<String> {
+        // List of common German compound suffixes for splitting
+        let suffixes = ["gericht", "wesen", "schaft", "kraft"];
+
+        let mut results = vec![word.to_string()];
+        for suffix in suffixes {
+            if word.ends_with(suffix) && word.len() > suffix.len() + 2 {
+                results.push(suffix.to_string());
+                // We could do more complex recursive splitting here if needed
+                break;
+            }
+        }
+        results
+    }
+}
 
 impl Tokenizer for GermanMorphTokenizer {
     fn tokenize(&self, text: &str) -> Vec<String> {
@@ -54,14 +71,9 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
-                tokens.push(lower);
-            }
+            // Compound splitting for German words
+            let split = self.split_compounds(&lower);
+            tokens.extend(split);
         }
         tokens
     }
@@ -100,5 +112,22 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+    }
+
+    #[test]
+    fn test_german_morph_tokenizer_more_suffixes() {
+        let tokenizer = GermanMorphTokenizer;
+
+        let tokens = tokenizer.tokenize("Gesundheitswesen");
+        assert!(tokens.contains(&"gesundheitswesen".to_string()));
+        assert!(tokens.contains(&"wesen".to_string()));
+
+        let tokens = tokenizer.tokenize("Wissenschaft");
+        assert!(tokens.contains(&"wissenschaft".to_string()));
+        assert!(tokens.contains(&"schaft".to_string()));
+
+        let tokens = tokenizer.tokenize("Streitkraft");
+        assert!(tokens.contains(&"streitkraft".to_string()));
+        assert!(tokens.contains(&"kraft".to_string()));
     }
 }

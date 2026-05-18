@@ -1,6 +1,6 @@
 //! LSM-backed Inverted Index.
 
-use crate::tokenizer::{tokenize, DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
+use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use async_trait::async_trait;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
@@ -26,7 +26,10 @@ impl InvertedIndex {
             format!("__txt:{}:", namespace).into_bytes()
         };
 
-        let tokenizer: Arc<dyn Tokenizer> = if namespace.contains("de") {
+        let tokenizer: Arc<dyn Tokenizer> = if namespace.starts_with("de:")
+            || namespace == "de"
+            || namespace.ends_with(":de")
+        {
             Arc::new(GermanMorphTokenizer)
         } else {
             Arc::new(DefaultTokenizer)
@@ -276,7 +279,7 @@ impl InvertedIndex {
 
     /// Searches the inverted index using BM25.
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
-        let tokens = tokenize(query);
+        let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
             return Ok(Vec::new());
         }
@@ -656,6 +659,39 @@ mod tests {
 
         let stats_after = index.stats().await?;
         assert_eq!(stats_after.num_documents, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_namespace_tokenizer_selection() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
+        let tmp = TempDir::new()?;
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(config).await?);
+
+        // "default" namespace should NOT split German compounds
+        let index_default = InvertedIndex::new(storage.clone(), "default");
+        let tx1 = TxId::new(1);
+        index_default
+            .upsert_document(tx1, DocId::new(1), "Bundesverfassungsgericht")
+            .await?;
+        storage.commit(tx1).await?;
+
+        assert_eq!(index_default.search_bm25("gericht", 10).await?.len(), 0);
+
+        // "de" namespace SHOULD split German compounds
+        let index_de = InvertedIndex::new(storage.clone(), "de");
+        let tx2 = TxId::new(2);
+        index_de
+            .upsert_document(tx2, DocId::new(2), "Bundesverfassungsgericht")
+            .await?;
+        storage.commit(tx2).await?;
+
+        assert_eq!(index_de.search_bm25("gericht", 10).await?.len(), 1);
 
         Ok(())
     }
