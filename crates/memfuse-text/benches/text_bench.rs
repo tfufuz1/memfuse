@@ -55,7 +55,7 @@ fn bench_text_search(c: &mut Criterion) {
                 .upsert_document(tx, doc_id, black_box(text))
                 .await
                 .unwrap(); // unwrap
-            // We don't commit to avoid disk growth in the benchmark loop
+                           // We don't commit to avoid disk growth in the benchmark loop
         })
     });
 
