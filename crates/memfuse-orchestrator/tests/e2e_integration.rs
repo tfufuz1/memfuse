@@ -120,8 +120,8 @@ async fn test_stress_concurrent_agent_ops() {
                 dimension: 4,
                 max_elements: 10000,
                 distance_metric: DistanceMetric::Cosine,
-        encryption_passphrase: None,
-    },
+                encryption_passphrase: None,
+            },
         )
         .await
         .expect("open db"),
