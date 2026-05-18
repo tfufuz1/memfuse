@@ -1,5 +1,5 @@
 //! End-to-End integration tests for the full MemFuse stack.
-// ANCHOR:INTEGRATION:E2E-001 STATUS:READY AGENT:12 DATE:2026-05-18
+// ANCHOR:INTEGRATION:E2E-001 STATUS:DONE AGENT:12 DATE:2026-05-18
 
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
@@ -12,6 +12,7 @@ async fn test_full_stack_document_lifecycle() {
         dimension: 3,
         max_elements: 100,
         distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
     };
 
     let db = MemFuse::open_with_config(tmp.path(), config)
@@ -128,4 +129,23 @@ async fn test_full_stack_document_lifecycle() {
     // 8. Stats check
     let stats = db.stats().await.expect("Stats failed");
     assert!(stats.storage_stats.memtable_size_bytes > 0);
+
+    // 9. Collection Isolation
+    let col_a = db.collection("isolated-a").await.expect("col a failed");
+    let col_b = db.collection("isolated-b").await.expect("col b failed");
+
+    col_a
+        .insert("secret", &[0.1, 0.2, 0.3], Some(json!({"val": "A"})))
+        .await
+        .expect("ins a");
+    col_b
+        .insert("secret", &[0.1, 0.2, 0.3], Some(json!({"val": "B"})))
+        .await
+        .expect("ins b");
+
+    let val_a = col_a.get("secret").await.expect("get a").unwrap();
+    let val_b = col_b.get("secret").await.expect("get b").unwrap();
+
+    assert_eq!(val_a.metadata.unwrap()["val"], "A");
+    assert_eq!(val_b.metadata.unwrap()["val"], "B");
 }
