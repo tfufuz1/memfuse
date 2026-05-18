@@ -79,11 +79,11 @@ just spec WP-X.Y-NAME
 |---|---|---|---|---|
 | **WP-0.0** | Dependency Audit & Tech Debt | 🔴 KRITISCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-0.0-DependencyAudit.md) |
 | **WP-1.1** | Background Compaction | 🔴 KRITISCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-1.1-Compaction.md) |
-| **WP-1.2** | Collections / Namespaces | 🟠 HOCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-1.2-Collections.md) |
-| **WP-2.1** | Hybrid Search (BM25+RRF) | 🟠 HOCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-2.1-HybridSearch.md) |
-| **WP-2.2** | Scalar Quantization (SQ8) | 🟡 MITTEL | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-2.2-Quantization.md) |
-| **WP-3.1** | Python Bindings (PyO3) | 🟠 HOCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-3.1-PythonBindings.md) |
-| **WP-3.2** | Encryption at Rest | 🟡 MITTEL | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-3.2-Encryption.md) |
+| **WP-1.2** | Collections / Namespaces | 🟠 HOCH | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-1.2-Collections.md) |
+| **WP-2.1** | Hybrid Search (BM25+RRF) | 🟠 HOCH | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-2.1-HybridSearch.md) |
+| **WP-2.2** | Scalar Quantization (SQ8) | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-2.2-Quantization.md) |
+| **WP-3.1** | Python Bindings (PyO3) | 🟠 HOCH | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-3.1-PythonBindings.md) |
+| **WP-3.2** | Encryption at Rest | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-3.2-Encryption.md) |
 | **WP-4.1** | Memory-Mapped I/O | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
 | **WP-4.2** | Advanced Filtering | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
 | **WP-4.3** | DiskANN Out-of-Core | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
@@ -97,38 +97,23 @@ just spec WP-X.Y-NAME
 
 ---
 
-## ⚠️ Autonomous Squad Protocol (13 Agents)
+## Jules Account Matrix (13 Accounts × 15 Tasks/Tag)
 
-MemFuse is built by a squad of 13 autonomous agents. Each agent has a specific domain and a staggered execution window.
-
-| # | Role | Domain | Schedule |
-|---|---|---|---|
-| 13 | **Debt Hunter** | Tech Debt & Invariant Cleanup | 05:00 UTC |
-| 01 | **Core Guardian** | `memfuse-core` & Shared Types | 06:00 UTC |
-| 02 | **Store Engineer** | `memfuse-store` (LSM / WAL) | 07:00 UTC |
-| ... | ... | ... | ... |
-| 07 | **QA Cross-Crate**| Integration & PR Verification | 20:00 UTC |
-
-### <protocol name="Dynamic Queue Dispatch">
-1. **Merge-Trigger**: On push to `develop`, the `jules-queue-dispatcher` calculates the next agent in the logical dependency chain.
-2. **Lock-Sync**: The dispatcher executes `jules-sync-locks.sh` to block high-level tasks while low-level crates are `WIP`.
-3. **Invocation**: The next agent is triggered via `jules-invoke.yml` with its specific API key.
-</protocol>
-
-### <protocol name="Triple-Test-Gate">
-No code enters the `main` branch without passing 3 consecutive test runs, a Zero-Unwrap scan, and an Async-Safety audit. Warnings are treated as hard errors.
-</protocol>
-
----
-
-## Coding Doctrine (NON-NEGOTIABLE)
-
-```rust
-// ❌ FORBIDDEN:
-.unwrap()                    // → Propagate error
-std::fs::read()              // → strictly tokio::fs
-unsafe { ... }               // → Only SIMD + // SAFETY: proof
-```
+| # | Rolle | Crate/Fokus | WPs | Cadence |
+|---|---|---|---|---|
+| 01 | Core Guardian | `memfuse-core` | WP-0.0 | Daily 06:00 UTC |
+| 02 | Store Engineer | `memfuse-store` | WP-1.1, WP-4.1 | Daily 07:00 UTC |
+| 03 | Index Engineer | `memfuse-index` | WP-2.2, WP-4.3 | Daily 08:00 UTC |
+| 04 | DB Orchestrator | `memfuse-db` | WP-1.2, WP-4.2 | Daily 09:00 UTC |
+| 05 | Text Engine | `memfuse-text` | WP-2.1 | Daily 10:00 UTC |
+| 06 | Python Bindings | `memfuse-py` | WP-3.1 | Daily 11:00 UTC |
+| 07 | QA Cross-Crate | Alle (read+fix) | Regression | Daily 20:00 UTC |
+| 08 | Docs & Specs | `docs/`, README | Documentation | Weekly Mo 08:00 |
+| 09 | Benchmarks | `benches/` | Performance | Daily 22:00 UTC |
+| 10 | Security | `crypto.rs` | WP-3.2 | Daily 12:00 UTC |
+| 11 | CI/DevOps | `.github/`, `justfile` | Workflows | Weekly Mo 10:00 |
+| 12 | Integration Tester | Workspace-wide | E2E Tests | Daily 21:00 UTC |
+| 13 | Debt Hunter | Alle Crates | Tech Debt | Daily 05:00 UTC |
 
 **Prompts:** `.agent/jules/prompts/accounts/XX-name.md`
 **Schedule:** `.agent/jules/SCHEDULE.md`

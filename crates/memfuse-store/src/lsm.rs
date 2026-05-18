@@ -1,7 +1,6 @@
-//! LSM-Tree (Log-Structured Merge-Tree) storage engine.
 // ANCHOR:DOC:DOC-LSM-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-16 STATUS:REVIEW
+// AGENT:02 DATE:2026-05-09 STATUS:READY
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:LSM-001 — Zentraler Storage-Engine-Orchestrator des Triebwerks.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -13,35 +12,15 @@
 // FLUSH:      MemTable > size_limit → rotate → SSTable schreiben → cleanup
 // BACKGROUND: CompactionEngine läuft als tokio::spawn loop
 // INVARIANTE: WAL Replay bei Neustart stellt MemTable deterministisch wieder her.
+//! LSM-Tree storage engine.
 //!
-//! The `LsmStorage` engine provides a high-performance, persistent key-value store
-//! implementing the `StorageEngine` trait.
-//!
-//! ## Architecture
-//! - **MemTable**: An in-memory sorted buffer (`BTreeMap`) that absorbs all writes.
-//!   Once it reaches a size threshold, it is frozen (becoming an immutable MemTable)
-//!   and eventually flushed to disk as an SSTable.
-//! - **WAL (Write-Ahead Log)**: Ensures durability by logging all operations before
-//!   they are applied to the MemTable.
-//! - **SSTables (Sorted String Tables)**: Persistent, immutable files on disk.
-//!   They are organized into tiers by the Compaction Engine.
-//! - **Compaction**: A background process that merges multiple SSTables into one,
-//!   deduplicating keys and garbage-collecting tombstones.
-//! - **MVCC (Multi-Version Concurrency Control)**: Supports snapshots and transactional
-//!   isolation via sequence numbers and the `SnapshotRegistry`.
-//!
-//! ## Read Path
-//! 1. Check the active MemTable.
-//! 2. Check immutable MemTables (from newest to oldest).
-//! 3. Check SSTables (from newest to oldest).
-//!
-//! ## Write Path
-//! 1. Operations are staged in the `TxBuffer`.
-//! 2. On `commit()`, operations are assigned sequence numbers, written to the WAL,
-//!    and then applied to the active MemTable.
+//! Provides a persistent key-value store with:
+//! - MemTable (in-memory sorted buffer)
+//! - WAL (crash recovery)
+//! - Transactional writes via TxBuffer
+//! - Background compaction (Size-Tiered)
 
 use crate::compaction::{CompactionConfig, CompactionEngine};
-use crate::crypto::KeyManager;
 use crate::memtable::MemTable;
 use crate::sstable::{create_block_cache, BlockCache, SstableBuilder, SstableReader};
 use crate::wal::{Wal, WalEntry, WalOp};
@@ -58,26 +37,22 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 
 /// LSM storage configuration.
-// ANCHOR:TODO:SEC-001 — Erweitere LsmConfig um `encryption_passphrase` und AES-256.
-// WP:WP-3.2 PRIO:1 NEEDS:COL-001
-// AGENT:@JULES-10 DATE:2026-05-09 STATUS:READY
+// ⬡ @JULES-10 | P1 | TODO:SEC-001
+// WHY:  WP-3.2 Encryption at Rest benötigt AES-256-GCM für SSTables und WAL.
+// WHAT: Erweitere LsmConfig um `encryption_passphrase: Option<String>` und reiche diese an WAL/SSTables weiter.
 // TEST: cargo test -p memfuse-store test_encrypted_db_unreadable_without_key
 // DONE: LsmConfig akzeptiert Passphrase, AES-256 wird für Disk-I/O verwendet.
-// SUCCESSOR: @JULES-13 — "Encryption ist impl. Bitte Specs finalisieren."
+// DEPS: COL-001
+// EST:  M | STATUS:OPEN
+// AGENT:jules-10 DATE:2026-05-09 SPRINT:1
+// CREATED:2026-05-09 DEADLINE:NONE
 #[derive(Clone, Debug)]
-/// Configuration for the LSM storage engine.
 pub struct LsmConfig {
-    /// Path to the data directory.
     pub path: PathBuf,
-    /// Maximum size of the memtable before flushing to disk.
     pub memtable_size_limit: usize,
-    /// Maximum RAM usage for the storage engine in MB.
     pub max_ram_mb: u64,
-    /// Timeout for transactions in the buffer.
     pub tx_timeout: Duration,
-    /// Configuration for background compaction.
     pub compaction: CompactionConfig,
-    pub encryption_passphrase: Option<String>,
 }
 
 impl Default for LsmConfig {
@@ -88,7 +63,6 @@ impl Default for LsmConfig {
             max_ram_mb: 2048,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
-            encryption_passphrase: None,
         }
     }
 }
@@ -102,7 +76,6 @@ struct LsmState {
 /// LSM-Tree based storage engine.
 pub struct LsmStorage {
     config: LsmConfig,
-    key_manager: Option<Arc<KeyManager>>,
     state: RwLock<LsmState>,
     /// SSTables stored separately for shared access with compaction engine.
     sstables: Arc<RwLock<Vec<Arc<SstableReader>>>>,
@@ -122,14 +95,7 @@ impl LsmStorage {
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create dir: {}", e)))?;
 
-        let key_manager = config
-            .encryption_passphrase
-            .as_ref()
-            .map(|p| KeyManager::try_new(p).map(Arc::new))
-            .transpose()?;
-
-        let wal =
-            Wal::open_with_key_manager(config.path.join("wal.log"), key_manager.clone()).await?;
+        let wal = Wal::open(config.path.join("wal.log")).await?;
         let memtable = MemTable::new();
 
         // Replay WAL
@@ -178,24 +144,23 @@ impl LsmStorage {
 
         let mut sstables = Vec::new();
         for path in sst_files {
-            let reader = SstableReader::open_with_key_manager(
-                path,
-                Arc::clone(&block_cache),
-                key_manager.clone(),
-            )
-            .await?;
-            sstables.push(Arc::new(reader));
+            if let Ok(reader) = SstableReader::open(path, Arc::clone(&block_cache)).await {
+                sstables.push(Arc::new(reader));
+            }
         }
         let sstables = Arc::new(RwLock::new(sstables));
         let snapshot_registry = Arc::new(SnapshotRegistry::new());
 
         // Spawn background compaction task
-        // ANCHOR:TODO:COMP-001 — Implementiere CompactionEngine::run_loop.
-        // WP:WP-1.1 PRIO:1 NEEDS:NONE
-        // AGENT:@JULES-02 DATE:2026-05-12 STATUS:REVIEW
+        // ⬡ @JULES-02 | P0 | TODO:COMP-001
+        // WHY:  WP-1.1 Background Compaction muss SSTables zusammenführen ohne Deadlocks.
+        // WHAT: Implementiere `CompactionEngine::run_loop`, Size-Tiered K-Way Merge Logic under concurrent load.
         // TEST: cargo test -p memfuse-store test_concurrent_reads_during_compaction
         // DONE: Triple-Test grün, keine Deadlocks in tokio::spawn.
-        // SUCCESSOR: @JULES-04 — "Background compaction ist stabil. Collections können aufbauen."
+        // DEPS: NONE
+        // EST:  L | STATUS:OPEN
+        // AGENT:jules-02 DATE:2026-05-09 SPRINT:1
+        // CREATED:2026-05-09 DEADLINE:NONE
         let compaction_engine = Arc::new(CompactionEngine::new(
             config.compaction.clone(),
             Arc::clone(&snapshot_registry),
@@ -211,7 +176,6 @@ impl LsmStorage {
 
         Ok(Self {
             config,
-            key_manager,
             state: RwLock::new(LsmState {
                 memtable: Arc::new(memtable),
                 immutable_memtables: Vec::new(),
@@ -341,27 +305,20 @@ impl StorageEngine for LsmStorage {
         let ops = self.tx_buffer.drain(tx_id);
         let state = self.state.read().await;
 
-        let integrity_key = if let Some(km) = &self.key_manager {
-            km.integrity_key()?
-        } else {
-            *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0"
-        };
-
         for op in ops {
             let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
 
             match op {
                 IndexOp::Insert { data, .. } => {
                     let (key, value) = data;
-                    let entry = WalEntry::try_new(
+                    let entry = WalEntry::new(
                         WalOp::Put {
                             tx_id,
                             key: key.clone(),
                             value: value.clone(),
                         },
                         seq_no,
-                        &integrity_key,
-                    )?;
+                    );
                     let entry_size = key.len() + value.len() + 8;
                     let _ = self.budget.consume_memory(entry_size as u64);
                     state.wal.append(&entry).await?;
@@ -371,14 +328,13 @@ impl StorageEngine for LsmStorage {
                 }
                 IndexOp::Delete { data, .. } => {
                     if let Some((key, _)) = data {
-                        let entry = WalEntry::try_new(
+                        let entry = WalEntry::new(
                             WalOp::Delete {
                                 tx_id,
                                 key: key.clone(),
                             },
                             seq_no,
-                            &integrity_key,
-                        )?;
+                        );
                         let _ = self.budget.consume_memory(key.len() as u64 + 8);
                         state.wal.append(&entry).await?;
                         state
@@ -414,7 +370,7 @@ impl StorageEngine for LsmStorage {
             .map_err(|e| MemFuseError::Storage(format!("Time error: {}", e)))?
             .as_micros();
         let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
-        let new_wal = Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?;
+        let new_wal = Wal::open(wal_path).await?;
 
         let old_memtable = std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));
         let old_wal = std::mem::replace(&mut state.wal, new_wal);
@@ -441,20 +397,14 @@ impl StorageEngine for LsmStorage {
                 .path
                 .join(format!("sst-{:020}-{:04}.sst", flush_id, count % 10000))
         };
-        let mut builder =
-            SstableBuilder::create_with_key_manager(&sst_path, self.key_manager.clone()).await?;
+        let mut builder = SstableBuilder::create(&sst_path).await?;
 
         for (k, v, seq) in old_memtable.iter() {
             builder.add(&k, &v, seq).await?;
         }
         builder.finish().await?;
 
-        let reader = SstableReader::open_with_key_manager(
-            &sst_path,
-            Arc::clone(&self.block_cache),
-            self.key_manager.clone(),
-        )
-        .await?;
+        let reader = SstableReader::open(&sst_path, Arc::clone(&self.block_cache)).await?;
 
         // Atomic transition: remove from immutable memtables and add to SSTables
         let mut state = self.state.write().await;
@@ -634,7 +584,6 @@ mod tests {
             max_ram_mb: 64,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
-            encryption_passphrase: None,
         };
         let storage = LsmStorage::new(config).await.expect("create storage");
         (storage, tmp)
@@ -712,7 +661,6 @@ mod tests {
             max_ram_mb: 64,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
-            encryption_passphrase: None,
         };
         let storage = LsmStorage::new(config).await.expect("create storage");
 

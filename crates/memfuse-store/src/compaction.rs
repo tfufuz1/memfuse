@@ -1,10 +1,3 @@
-//! Background compaction engine for the LSM-Tree.
-//!
-//! Implements a Size-Tiered Compaction Strategy (STCS):
-//! Groups SSTables by size class and merges groups that exceed a threshold.
-//! Tombstones are garbage-collected during merge when no active snapshot
-//! references them.
-
 // ANCHOR:ARCH:COMPACT-001 — Background Compaction (STCS — Size-Tiered Compaction Strategy).
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -14,6 +7,7 @@
 // ATOMARER SWAP: Merge unter read-lock, SSTable-Liste swap unter write-lock.
 // INVARIANTE: Während Compaction sind alte SSTables noch lesbar (readers halten Arc).
 // LIFECYCLE: run_loop() -> maybe_compact() -> select_candidates() -> merge_sstables()
+//! Background compaction engine for the LSM-Tree.
 //!
 //! Implements a Size-Tiered Compaction Strategy (STCS):
 //! Groups SSTables by size class and merges groups that exceed a threshold.
@@ -541,7 +535,6 @@ mod tests {
                 size_ratio: 2.0,
                 check_interval: Duration::from_millis(100), // Fast check
             },
-            encryption_passphrase: None,
         };
 
         let storage = Arc::new(LsmStorage::new(config).await.expect("create storage"));

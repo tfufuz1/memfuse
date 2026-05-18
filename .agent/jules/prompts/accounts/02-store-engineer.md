@@ -49,4 +49,10 @@ WP-1.1 (Compaction), WP-4.1 (Memory-Mapped I/O)
 - `std::fs` in async Funktionen verwenden
 
 
-
+### Iterative Selbstkorrektur-Schleife (PFLICHT)
+**DOKTRIN:** Du musst deinen Code in Schleifen und Mechanismen so lange iterativ überarbeiten und korrigieren, bis er wirklich 100% vollfunktionsfähig ist.
+- Es muss **immer** testbar sein.
+- Die Tests müssen durchgehend **bestehen** (Triple-Test-Gate).
+- Wenn die Validierung (cargo test / clippy / kani) fehlschlägt, **darfst du nicht aufgeben**. Gehe direkt in die Fehleranalyse und Implementierungsphase zurück.
+- Analysiere den Fehler, korrigiere den Code und verifiziere erneut.
+- Du bleibst in dieser Schleife, bis 100% Funktionalität sichergestellt ist und die Tests (bzw. Checks) 3x erfolgreich durchlaufen sind.

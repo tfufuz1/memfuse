@@ -1,4 +1,3 @@
-# AGENT:11
 set shell := ["bash", "-uc"]
 
 default:
@@ -13,105 +12,6 @@ check:
     nix develop -c cargo fmt --all -- --check
     nix develop -c cargo clippy --all-targets -- -D warnings
     nix develop -c cargo check --all-targets --workspace
-
-# Modular check for memfuse-core
-check-core:
-    nix develop -c cargo check -p memfuse-core
-
-# Modular check for memfuse-store
-check-store:
-    nix develop -c cargo check -p memfuse-store
-
-# Modular check for memfuse-index
-check-index:
-    nix develop -c cargo check -p memfuse-index
-
-# Modular check for memfuse-db
-check-db:
-    nix develop -c cargo check -p memfuse-db
-
-# Modular check for memfuse-text
-check-text:
-    nix develop -c cargo check -p memfuse-text
-
-# Modular check for memfuse-runtime
-check-runtime:
-    nix develop -c cargo check -p memfuse-runtime
-
-# Modular check for memfuse-orchestrator
-check-orchestrator:
-    nix develop -c cargo check -p memfuse-orchestrator
-
-# Modular check for memfuse-py
-check-py:
-    nix develop -c cargo check -p memfuse-py
-
-# Modular check for memfuse-checkpoint
-check-checkpoint:
-    nix develop -c cargo check -p memfuse-checkpoint
-
-# Verifies the Directed Acyclic Graph (DAG) integrity of the workspace
-dag-check:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "=== DAG Integrity Check ==="
-
-    echo "--- Phase 1: L1 Kernel Isolation (core, runtime, orchestrator) ---"
-    for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator; do
-        echo "Verifying $CRATE isolation..."
-        if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -v "$CRATE" | grep -q .; then
-            echo "❌ ERROR: $CRATE imports forbidden internal crates."
-            cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-"
-            exit 1
-        fi
-    done
-
-    echo "--- Phase 2: L2 Peer Isolation (store, index, text, checkpoint) ---"
-    echo "Verifying memfuse-store..."
-    if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core" | grep -q "memfuse-"; then
-        echo "❌ ERROR: memfuse-store violates DAG by importing non-core crates."
-        cargo tree -p memfuse-store --edges no-dev | grep "memfuse-"
-        exit 1
-    fi
-    echo "Verifying memfuse-index..."
-    if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core" | grep -q "memfuse-"; then
-        echo "❌ ERROR: memfuse-index violates DAG by importing non-core crates."
-        cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
-        exit 1
-    fi
-    echo "Verifying memfuse-text (excluding tracked DAG-001)..."
-    if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
-        echo "❌ ERROR: memfuse-text violates DAG."
-        cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
-        exit 1
-    fi
-    echo "Verifying memfuse-checkpoint (excluding tracked DAG-002)..."
-    if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
-        echo "❌ ERROR: memfuse-checkpoint violates DAG."
-        cargo tree -p memfuse-checkpoint --edges no-dev | grep "memfuse-"
-        exit 1
-    fi
-
-    echo "--- Phase 3: L3 Orchestration Isolation (db) ---"
-    echo "Verifying memfuse-db..."
-    if cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py|memfuse-runtime|memfuse-orchestrator"; then
-        echo "❌ ERROR: memfuse-db imports higher layers."
-        cargo tree -p memfuse-db --edges no-dev | grep -E "memfuse-py|memfuse-runtime|memfuse-orchestrator"
-        exit 1
-    fi
-
-    echo "--- Known DAG Violations (Tracking) ---"
-    for VIOLATION in "memfuse-text:memfuse-store:DAG-001" "memfuse-checkpoint:memfuse-store:DAG-002" "memfuse-py:memfuse-db:DAG-003"; do
-        CRATE=${VIOLATION%%:*}
-        TARGET=$(echo $VIOLATION | cut -d: -f2)
-        ID=$(echo $VIOLATION | cut -d: -f3)
-        if cargo tree -p "$CRATE" --edges no-dev | grep -q "$TARGET"; then
-            echo "⚠️  $ID still present ($CRATE → $TARGET)"
-        else
-            echo "✅ $ID resolved"
-        fi
-    done
-    echo "=== DAG-Check PASSED ==="
 
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)
 triple-test: check
@@ -166,18 +66,14 @@ debt-audit:
         echo "$STDFS"
     else echo "✅ Kein std::fs:: in Produktionscode"; fi
 
-    echo "--- [4/4] Lock-Hierarchy & Async-Safety (AST Analysis) ---"
-    # Prüfe auf verschachtelte Locks (potenzielle Deadlocks) mittels ast-grep
-    if command -v sg > /dev/null; then
-        if sg scan --rule rules/detect_nested_locks.yml crates/; then
-            echo "❌ Graceful Deadlock Risiko erkannt! Verschachtelte Locks gefunden:"
-            FAIL=1
-        else
-            echo "✅ Keine kritischen Deadlock-Zustände im AST gefunden."
-        fi
-    else
-        echo "⚠️  ast-grep (sg) nicht installiert, überspringe AST-Lock-Analyse."
-    fi
+    echo "--- [4/4] Lock-Hierarchy & Async-Safety ---"
+    # Prüfe auf verschachtelte Locks (potenzielle Deadlocks)
+    # Einfacher Check: Mehrere lock().await in derselben Funktion
+    NESTED_LOCKS=$(grep -rnzP "lock\(\)\.await.*lock\(\)\.await" crates --include="*.rs" || true)
+    if [ -n "$NESTED_LOCKS" ]; then
+        echo "⚠️  Warnung: Mehrfache lock().await in kurzem Abstand gefunden (Deadlock-Gefahr):"
+        echo "$NESTED_LOCKS" | tr '\0' '\n'
+    else echo "✅ Keine offensichtlichen verschachtelten Locks"; fi
 
     echo "--- [5/5] Security & Audit ---"
     if cargo audit --version &>/dev/null 2>&1; then

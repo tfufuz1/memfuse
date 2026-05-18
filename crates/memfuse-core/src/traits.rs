@@ -1,13 +1,12 @@
-//! Core trait definitions for MemFuse subsystems.
-//!
-//! These traits define the abstract interfaces that concrete implementations
-//! must fulfill, enabling modularity and testability.
-
 // ANCHOR:ARCH:TRAITS-001 — Trait-Contracts sind das API-Rückgrat des Workspace.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
 // REGEL: Neue Methoden MÜSSEN Default-Impl haben (backward compat).
+//! Core trait definitions for MemFuse subsystems.
+//!
+//! These traits define the abstract interfaces that concrete implementations
+//! must fulfill, enabling modularity and testability.
 
 use crate::types::*;
 use crate::Result;
@@ -64,21 +63,6 @@ pub trait StorageEngine: Send + Sync {
 
     /// Returns storage statistics.
     async fn stats(&self) -> Result<StorageStats>;
-
-    /// Returns the last sequence number committed to storage.
-    async fn last_seq_no(&self) -> Result<u64> {
-        Ok(0)
-    }
-
-    /// Pins a checkpoint for the given sequence number.
-    async fn pin_checkpoint(&self, _seq_no: u64) -> Result<()> {
-        Ok(())
-    }
-
-    /// Unpins a checkpoint for the given sequence number.
-    async fn unpin_checkpoint(&self, _seq_no: u64) -> Result<()> {
-        Ok(())
-    }
 
     /// Scans a range of keys with the given prefix.
     async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
@@ -142,37 +126,4 @@ pub trait VectorIndex: Send + Sync {
 
     /// Returns index statistics.
     async fn stats(&self) -> Result<VectorIndexStats>;
-}
-
-/// Statistics for a text index.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TextIndexStats {
-    /// Total number of documents indexed.
-    pub num_documents: usize,
-    /// Total number of tokens across all documents.
-    pub num_tokens: usize,
-    /// Estimated memory usage in bytes.
-    pub memory_usage_bytes: usize,
-}
-
-/// Text index trait — abstracts over the inverted index and BM25 search.
-#[async_trait]
-pub trait TextIndex: Send + Sync {
-    /// Searches for documents matching the query.
-    async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>>;
-
-    /// Inserts or updates a document in the index.
-    async fn insert(&self, tx: TxId, id: DocId, text: &str) -> Result<()>;
-
-    /// Deletes a document from the index.
-    async fn delete(&self, tx: TxId, id: DocId) -> Result<()>;
-
-    /// Commits a transaction.
-    async fn commit(&self, tx: TxId) -> Result<()>;
-
-    /// Rolls back a transaction.
-    async fn rollback(&self, tx: TxId) -> Result<()>;
-
-    /// Returns index statistics.
-    async fn stats(&self) -> Result<TextIndexStats>;
 }

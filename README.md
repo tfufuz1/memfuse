@@ -9,25 +9,18 @@
 ```python
 # MemFuse provides a zero-setup Python experience
 import memfuse
-import numpy as np
 
-# Open the database
-db = memfuse.open("./my_agent_memory", dimension=1536)
+# Initializes the full SAOS (LSM-Tree, HNSW, WASM Sandbox, Orchestrator)
+agent = memfuse.Agent("./my_agent_memory")
 
-# Create or get a collection
-col = db.collection("memories")
+# Declarative StateGraph (Cockpit Layer)
+agent.add_node("research", "Research the topic using tools")
+agent.add_node("code", "Generate code safely via WASM")
+agent.add_edge("research", "code")
 
-# Insert a document with embedding and metadata
-v = np.random.rand(1536).astype(np.float32)
-col.insert("doc1", v, metadata={"topic": "AI", "tags": ["rust", "search"]})
-
-# Semantic search
-results = col.search(v, k=5)
-for res in results:
-    print(f"ID: {res.id}, Score: {res.score}")
-
-# Hybrid Search (BM25 + Vector)
-hybrid_results = col.hybrid_search("AI search", v, k=5)
+# Autonomously run the workflow in an isolated environment
+result = agent.run("Erstelle ein Rust-Programm", isolation_mode="wasm")
+print(result)
 ```
 
 ## Architecture: The 3 SAOS Layers
@@ -56,34 +49,14 @@ memfuse-py           ← PyO3 bindings (`pip install memfuse`)
 ```
 *Autonomously injects context, controls execution flow, and enforces isolation.*
 
-## 4. The Jules Squad: 13 Autonomous Agents
-
-MemFuse is developed using a revolutionary **Multi-Agent Orchestration** system. 13 autonomous Jules agents work in a staggered 24-hour cycle to provide 24/7 development and maintenance without human intervention.
-
-- **Infinite Free-Tier Mastery**: Orchestration of 13 Google Jules accounts to bypass rate limits.
-- **Triple-Test-Gate**: Every PR is validated 3 times and checked for `Zero-Panic` invariants before auto-merging.
-- **Proactive Scaling**: Dynamic dispatcher triggers the next agent in the queue immediately after a successful merge.
-- **AI-Architect Supervision**: Gemini-CLI automated architectural reviews on every contribution.
-
-```bash
-# Monitor the squad in real-time
-bash .agent/scripts/jules-dashboard.sh
-```
-
 ## Features
 
 - **Zero Boilerplate** — String IDs, auto-commit, no configuration needed
 - **HNSW Vector Search** — Approximate nearest neighbor with diversity heuristic
-- **Scalar Quantization (SQ8)** — 4x RAM reduction for large-scale vector indices
-- **Hybrid Search** — Combined BM25 (text) and Vector search via RRF (Reciprocal Rank Fusion)
-- **Multi-Tenancy** — Logically isolated collections (namespaces) for different agents/tasks
 - **SIMD Acceleration** — portable-simd for distance computation
 - **LSM-Tree Persistence** — WAL + MemTable with crash recovery
 - **Transactional** — Sharded TxBuffer with orphan-reaping
 - **Relationship Tracking** — `relate()` API for graph-aware retrieval
-- **Hybrid Search** — Optimized BM25 + Vector Fusion (RRF)
-- **Scalar Quantization** — SQ8 compression for 4x reduced RAM footprint
-- **Deterministic Checkpointing** — Native state pinning for "Time-Travel" debugging
 
 ## Building
 

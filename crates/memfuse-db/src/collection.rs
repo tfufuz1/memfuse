@@ -1,4 +1,3 @@
-//! Logically isolated Collections inside the MemFuse database.
 // ANCHOR:ARCH:COLLECTION-001 — Logische Isolation (Namespaces).
 // WP:WP-1.2 PRIO:1 NEEDS:NONE
 // AGENT:04 DATE:2026-05-09 STATUS:DONE
@@ -6,6 +5,7 @@
 // DESIGN: Eigener HNSW-Index pro Collection, GEMEINSAMER LSM-Storage.
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 // STATUS: Full Implementation für WP-1.2.
+//! Logically isolated Collections inside the MemFuse database.
 
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
 use memfuse_index::HnswIndex;
@@ -45,10 +45,8 @@ fn extract_text(metadata: &Option<serde_json::Value>) -> Option<String> {
     }
 }
 
-/// A logically isolated collection of documents (namespace).
-///
-/// Each collection provides its own HNSW vector index and inverted text index,
-/// while sharing the underlying LSM-Tree storage with other collections.
+/// A logically isolated collection of documents.
+/// Each collection has its own HNSW vector index but shares the underlying LSM-Tree.
 #[derive(Clone)]
 pub struct Collection {
     pub(crate) name: String,
@@ -61,7 +59,6 @@ pub struct Collection {
 }
 
 impl Collection {
-    /// Creates a new `Collection` instance.
     pub fn new(
         name: String,
         storage: Arc<LsmStorage>,
@@ -122,13 +119,11 @@ impl Collection {
         }
     }
 
-    /// Begins a new atomic transaction for this collection.
     pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<'_> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         crate::transaction::DbTransaction::new(self, tx)
     }
 
-    /// Inserts a document with an embedding and optional metadata.
     pub async fn insert(
         &self,
         id: &str,
@@ -152,9 +147,6 @@ impl Collection {
             embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
-        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
-        // Document serialization is unencrypted before being sent to storage.
-        // If Encryption-at-Rest is enabled, it's encrypted in the storage layer (WP-3.2).
         let data = serde_json::to_vec(&stored)?;
 
         let user_key = self.namespaced_key(id.as_bytes(), 0);
@@ -178,7 +170,6 @@ impl Collection {
         Ok(())
     }
 
-    /// Retrieves a document by its user-provided string ID.
     pub async fn get(&self, id: &str) -> Result<Option<crate::Document>> {
         let key = self.namespaced_key(id.as_bytes(), 0);
         if let Some(data) = self.storage.get(&key).await? {
@@ -191,7 +182,6 @@ impl Collection {
         Ok(None)
     }
 
-    /// Updates an existing document in the collection.
     pub async fn update(
         &self,
         id: &str,
@@ -213,14 +203,20 @@ impl Collection {
         let user_key = self.namespaced_key(id.as_bytes(), 0);
 
         // Remove from old text index
-        self.text_index.delete_document(tx, doc_id).await?;
+        if let Some(old_bytes) = self.storage.get(&user_key).await? {
+            let old_stored: StoredDocument = serde_json::from_slice(&old_bytes)?;
+            if let Some(old_text) = extract_text(&old_stored.metadata) {
+                self.text_index
+                    .delete_document(tx, doc_id, &old_text)
+                    .await?;
+            }
+        }
 
         let stored = StoredDocument {
             id: id.to_string(),
             embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
-        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
         let data = serde_json::to_vec(&stored)?;
 
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
@@ -246,7 +242,6 @@ impl Collection {
         Ok(())
     }
 
-    /// Deletes a document from the collection by its ID.
     pub async fn delete(&self, id: &str) -> Result<()> {
         let db_tx = self.begin_transaction();
         let tx = db_tx.tx_id;
@@ -255,7 +250,14 @@ impl Collection {
         let user_key = self.namespaced_key(id.as_bytes(), 0);
 
         // Remove from old text index
-        self.text_index.delete_document(tx, doc_id).await?;
+        if let Some(old_bytes) = self.storage.get(&user_key).await? {
+            let old_stored: StoredDocument = serde_json::from_slice(&old_bytes)?;
+            if let Some(old_text) = extract_text(&old_stored.metadata) {
+                self.text_index
+                    .delete_document(tx, doc_id, &old_text)
+                    .await?;
+            }
+        }
 
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
 
@@ -271,7 +273,6 @@ impl Collection {
         Ok(())
     }
 
-    /// Creates a directional relationship between two documents in the collection.
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         let key_str = format!("{}:{}:{}", from, label, to);
@@ -281,7 +282,6 @@ impl Collection {
             "to": to,
             "label": label,
         });
-        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
         let bytes = serde_json::to_vec(&val)?;
 
         self.storage.put(tx, &key, &bytes).await?;
@@ -289,7 +289,6 @@ impl Collection {
         Ok(())
     }
 
-    /// Scans documents in the collection that match a given key prefix.
     pub async fn scan_prefix(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>> {
         let real_prefix = if prefix.starts_with("__rel:") {
             self.namespaced_key(
@@ -302,7 +301,7 @@ impl Collection {
 
         let kvs = self.storage.scan_prefix(&real_prefix).await?;
 
-        let mut results = Vec::with_capacity(kvs.len());
+        let mut results = Vec::new();
         for (k, v) in kvs {
             let key_str = String::from_utf8_lossy(&k).to_string();
             // We should ideally strip the prefix to return the user-facing key
@@ -326,7 +325,6 @@ impl Collection {
         Ok(results)
     }
 
-    /// Performs semantic k-NN search over the collection's embeddings.
     pub async fn search(
         &self,
         query_embedding: &[f32],
@@ -335,7 +333,6 @@ impl Collection {
         self.search_filtered(query_embedding, k, None).await
     }
 
-    /// Performs filtered semantic vector search in the collection.
     pub async fn search_filtered(
         &self,
         query: &[f32],
@@ -343,18 +340,8 @@ impl Collection {
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<crate::SearchResult>> {
         let scored_docs = self.index.search_filtered(query, k, filter).await?;
-        self.hydrate_from_scored(scored_docs).await
-    }
-
-    async fn hydrate_from_scored(
-        &self,
-        scored_docs: Vec<memfuse_core::ScoredDocument>,
-    ) -> Result<Vec<crate::SearchResult>> {
-        if scored_docs.is_empty() {
-            return Ok(Vec::new());
-        }
-
         let mut results = Vec::with_capacity(scored_docs.len());
+
         for sd in scored_docs {
             let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
             if let Some(bytes) = self.storage.get(&doc_key).await? {
@@ -369,30 +356,6 @@ impl Collection {
         Ok(results)
     }
 
-    async fn hydrate_from_tuples(
-        &self,
-        scored_tuples: Vec<(DocId, f32)>,
-    ) -> Result<Vec<crate::SearchResult>> {
-        if scored_tuples.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut results = Vec::with_capacity(scored_tuples.len());
-        for (doc_id, score) in scored_tuples {
-            let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-            if let Some(bytes) = self.storage.get(&doc_key).await? {
-                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                results.push(crate::SearchResult {
-                    id: stored.id,
-                    score,
-                    metadata: stored.metadata,
-                });
-            }
-        }
-        Ok(results)
-    }
-
-    /// Performs hybrid search combining BM25 and vector search results via RRF.
     pub async fn hybrid_search(
         &self,
         text: &str,
@@ -402,37 +365,49 @@ impl Collection {
         let is_vector_zero = vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
 
-        match (is_text_empty, is_vector_zero) {
-            (true, true) => Ok(Vec::new()),
-            (true, false) => self.search(vector, k).await,
-            (false, is_v_zero) => {
-                let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let text_results = self.hydrate_from_tuples(bm25_results).await?;
+        if is_text_empty && is_vector_zero {
+            return Ok(Vec::new());
+        }
 
-                if is_v_zero {
-                    return Ok(text_results);
-                }
+        if is_text_empty {
+            return self.search(vector, k).await;
+        }
 
-                let vector_results = self.search(vector, k).await?;
-                Ok(crate::fusion::reciprocal_rank_fusion(
-                    vec![vector_results, text_results],
-                    k,
-                ))
+        let bm25_results = self.text_index.search_bm25(text, k).await?;
+
+        let mut text_set = Vec::new();
+        for (doc_id, score) in bm25_results {
+            let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+            if let Some(bytes) = self.storage.get(&doc_key).await? {
+                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                text_set.push(crate::SearchResult {
+                    id: stored.id,
+                    score,
+                    metadata: stored.metadata,
+                });
             }
         }
+
+        if is_vector_zero {
+            return Ok(text_set);
+        }
+
+        let vec_results = self.search(vector, k).await?;
+
+        Ok(crate::fusion::reciprocal_rank_fusion(
+            vec![vec_results, text_set],
+            k,
+        ))
     }
 
-    /// Returns the number of documents in the collection.
     pub async fn len(&self) -> usize {
         self.index.len().await
     }
 
-    /// Returns true if the collection is empty.
     pub async fn is_empty(&self) -> bool {
         self.index.is_empty().await
     }
 
-    /// Performs a range scan of documents in the collection.
     pub async fn scan(
         &self,
         start: std::ops::Bound<&[u8]>,
@@ -500,7 +475,6 @@ impl Collection {
         Ok(results)
     }
 
-    /// Returns statistics for the collection's vector index.
     pub async fn stats(&self) -> Result<memfuse_core::VectorIndexStats> {
         self.index.stats().await
     }
@@ -526,7 +500,6 @@ impl Collection {
         Ok(())
     }
 
-    /// Removes all data belonging to this collection from storage.
     pub async fn drop_collection(&self) -> Result<()> {
         let prefix = if self.name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(

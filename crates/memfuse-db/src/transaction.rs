@@ -1,12 +1,6 @@
-//! # Database Transactions
-//!
-//! This module provides `DbTransaction`, an orchestrator for atomic multi-index commits
-//! between the LSM-Tree storage engine (`memfuse-store`) and the HNSW vector index (`memfuse-index`).
-//! It implements a 2-phase commit protocol and provides compensating transactions for rollbacks.
-
 // ANCHOR:DOC:DOC-TRANSACTION-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:04 DATE:2026-05-09 STATUS:DONE
+// AGENT:04 DATE:2026-05-09 STATUS:READY
 // CREATED:2026-05-09 DEADLINE:NONE
 use crate::Collection;
 use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId, VectorIndex};
@@ -21,7 +15,7 @@ use std::sync::Mutex;
 //
 // ANCHOR:GREEN:WP-1.2-TX-001 — Isolation-Tests für DbTransaction::rollback unter Contention.
 // WP:WP-1.2 PRIO:2 NEEDS:NONE
-// AGENT:12 DATE:2026-05-09 STATUS:DONE
+// AGENT:12 DATE:2026-05-09 STATUS:READY
 // CREATED:2026-05-09 DEADLINE:NONE
 /// A transaction wrapper that ensures atomic multi-index commits across LSM-Store and HNSW-Index.
 pub struct DbTransaction<'a> {
@@ -37,9 +31,9 @@ impl<'a> DbTransaction<'a> {
         Self {
             tx_id,
             collection,
-            staged_forward_keys: Mutex::new(Vec::with_capacity(16)),
-            staged_reverse_keys: Mutex::new(Vec::with_capacity(16)),
-            staged_doc_ids: Mutex::new(Vec::with_capacity(16)),
+            staged_forward_keys: Mutex::new(Vec::new()),
+            staged_reverse_keys: Mutex::new(Vec::new()),
+            staged_doc_ids: Mutex::new(Vec::new()),
         }
     }
 

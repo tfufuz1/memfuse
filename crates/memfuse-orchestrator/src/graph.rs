@@ -1,10 +1,9 @@
-//! Declarative StateGraph definition for Agent Workflows.
-
 // ANCHOR:ARCH:GRAPH-001 — Deklarativer StateGraph.
 // WP:NONE PRIO:2 NEEDS:NONE
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // DESIGN: Hashmaps für Knoten, einfache Tuple-Listen für Edges.
+//! Declarative StateGraph definition for Agent Workflows.
 
 use std::collections::HashMap;
 
@@ -26,12 +25,10 @@ pub struct StateGraph {
 }
 
 impl StateGraph {
-    /// Creates a new, empty StateGraph.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Adds a node to the workflow graph.
     pub fn add_node(&mut self, id: &str, description: &str) {
         self.nodes.insert(
             id.to_string(),
@@ -42,7 +39,6 @@ impl StateGraph {
         );
     }
 
-    /// Adds a directed edge between two nodes with an optional condition.
     pub fn add_edge(&mut self, source: &str, target: &str, condition: Option<&str>) {
         self.edges.push((
             source.to_string(),
@@ -51,7 +47,6 @@ impl StateGraph {
         ));
     }
 
-    /// Executes the workflow starting from the given node.
     pub fn run_workflow(&self, _initial_state: &str) {
         // Execute the State Graph, invoking WASM sandbox nodes
         // and retrieving context selectively via Triebwerk (Hybrid Search)

@@ -1,122 +1,44 @@
-# MemFuse — Agentic OS Directory & Crate Lookup
+# MemFuse — Agentic OS Configuration
 
-> **Phase:** Feature Implementation & TDD  
-> **Doctrine:** Zero-Panic / Sovereign Core / Triple-Test-Gate  
-> **Updated:** 2026-05-05
-
----
-
-## Crate-Übersicht & Lokale Agent-Kontexte
-
-| Crate | Rolle | LoC | Status |
-|:------|:------|:----|:-------|
-| **`memfuse-core`** | Grundlegende Typen, TxBuffer, MemBank, Error, Snapshots | ~280 | ✅ Stabil |
-| **`memfuse-store`** | LSM-Storage, MemTables, WAL, Compaction | ~1400 | ✅ Stabil |
-| **`memfuse-index`** | HNSW-Graphen, SIMD Vektor-Distanz, Quantization | ~1300 | ✅ Stabil |
-| **`memfuse-db`** | Orchestrierung, Hybrid-Search Facade, Collections | ~700 | ✅ Stabil |
-| **`memfuse-text`** | BM25, Inverted Index, Tokenizer | — | 🔵 WP-2.1 geplant |
-| **`memfuse-py`** | PyO3 Bindings, maturin | — | 🔵 WP-3.1 geplant |
+<agent_context>
+  <system>MemFuse Embedded Hybrid-Search Database</system>
+  <phase>TDD & Feature Implementation</phase>
+  <tolerances>Zero-Failure, Strict Determinism</tolerances>
+  <spec_directory>docs/specs/</spec_directory>
+  <architecture>docs/architecture/</architecture>
+</agent_context>
 
 ---
 
-## ⚠️ Entwicklungsregeln (ABSOLUT VERBINDLICH)
+## System Overview
 
-### Sovereign Core Doctrine
+MemFuse is an **Embedded Hybrid-Search vector database** optimized for local AI agents.
+It combines a dense vector index (HNSW) with metadata storage in a Sovereign Core architecture.
 
-1. **`#![forbid(unsafe_code)]`** in jedem Crate (Ausnahme: [`distance.rs`](./crates/memfuse-index/src/distance.rs))
-2. **Zero `.unwrap()`** außerhalb von `#[cfg(test)]` — nur `?` oder explizites Error-Handling
-3. **Zero blockierendes I/O** in async-Kontexten — `tokio::fs` statt `std::fs`
-4. **Warnings = Errors**: `cargo clippy -- -D warnings` muss immer sauber sein
-5. **Jede neue public API** bekommt mindestens einen `#[tokio::test]` Contract-Test
-6. **Jede Datei** braucht ein `//!` Crate/Module Doc-Comment im Header
-7. **Backward Compatibility**: bestehende API-Signaturen dürfen nicht gebrochen werden
-
-### Triple-Test-Gate (DONE-Definition)
-
-> **Ein Work Package gilt als DONE wenn und nur wenn:**
-> 1. Alle zugehörigen Contract-Tests bestehen **3× hintereinander** ohne Änderung
-> 2. `cargo clippy -- -D warnings` ist grün (0 Warnings)
-> 3. Der GitHub Actions CI-Check ist grün (`.github/workflows/jules-quality-gate.yml`)
-> 4. Keine bestehenden Tests des Workspace sind neu rot
-
-```bash
-# Triple-Test-Gate manuell ausführen:
-just triple-test
-```
-
-### Tech-Debt Elimination Priority
-
-Technische Schulden haben **höhere Priorität** als neue Features.  
-Vor jedem neuen WP:
-
-```bash
-just debt-audit  # fürt alle Debt-Checks aus
-```
-
-Akzeptanzkriterium: **kein einziger Treffer** in den Debt-Scans.
-
----
-
-## Atomic Spec Pflicht
-
-> **Nichts wird implementiert ohne Atomic Spec.**
-
-Alle Spezifikationen liegen in `docs/specs/`. Namenskonvention:
-```
-SPEC-YYYYMMDD-WP-X.Y-NAME.md
-```
-
-Neue Spec erstellen:
-```bash
-just spec WP-X.Y-NAME
+**Crate Dependency Graph:**
+```text
+memfuse            (Facade / lib.rs)
+  ├── memfuse-db     (Collections, Search orchestration)
+  │     ├── memfuse-index (HNSW, SIMD)
+  │     └── memfuse-store (LSM, Compaction, WAL)
+  └── memfuse-core   (Types, Traits, TxBuffer, MemBank)
 ```
 
 ---
 
-## Work Package Status
+## The TDD / Atomic Spec Workflow
 
-| WP | Name | Priorität | Status | Spec |
-|---|---|---|---|---|
-| **WP-0.0** | Dependency Audit & Tech Debt | 🔴 KRITISCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-0.0-DependencyAudit.md) |
-| **WP-1.1** | Background Compaction | 🔴 KRITISCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-1.1-Compaction.md) |
-| **WP-1.2** | Collections / Namespaces | 🟠 HOCH | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-1.2-Collections.md) |
-| **WP-2.1** | Hybrid Search (BM25+RRF) | 🟠 HOCH | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-2.1-HybridSearch.md) |
-| **WP-2.2** | Scalar Quantization (SQ8) | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-2.2-Quantization.md) |
-| **WP-3.1** | Python Bindings (PyO3) | 🟠 HOCH | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-3.1-PythonBindings.md) |
-| **WP-3.2** | Encryption at Rest | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-3.2-Encryption.md) |
-| **WP-4.1** | Memory-Mapped I/O | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
-| **WP-4.2** | Advanced Filtering | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
-| **WP-4.3** | DiskANN Out-of-Core | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
-| **WP-6.1** | 4-Signal Fusion API | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
-| **WP-6.2** | Declarative StateGraph API | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
-| **WP-6.3** | Autonomes Kontext-Management | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
-| **WP-6.4** | Multi-Agent Namespaces | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
-| **WP-6.5** | Morphologische Inferenz-Optimierung | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
-| **WP-6.6** | Air-Gap Deployment Profile | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
-| **WP-6.7** | Kryptografische WAL-Verifikation | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
+No significant code should be altered without a corresponding **Atomic Spec**.
 
----
-
-## ⚠️ Autonomous Squad Protocol (13 Agents)
-
-MemFuse is built by a squad of 13 autonomous agents. Each agent has a specific domain and a staggered execution window.
-
-| # | Role | Domain | Schedule |
-|---|---|---|---|
-| 13 | **Debt Hunter** | Tech Debt & Invariant Cleanup | 05:00 UTC |
-| 01 | **Core Guardian** | `memfuse-core` & Shared Types | 06:00 UTC |
-| 02 | **Store Engineer** | `memfuse-store` (LSM / WAL) | 07:00 UTC |
-| ... | ... | ... | ... |
-| 07 | **QA Cross-Crate**| Integration & PR Verification | 20:00 UTC |
-
-### <protocol name="Dynamic Queue Dispatch">
-1. **Merge-Trigger**: On push to `develop`, the `jules-queue-dispatcher` calculates the next agent in the logical dependency chain.
-2. **Lock-Sync**: The dispatcher executes `jules-sync-locks.sh` to block high-level tasks while low-level crates are `WIP`.
-3. **Invocation**: The next agent is triggered via `jules-invoke.yml` with its specific API key.
-</protocol>
-
-### <protocol name="Triple-Test-Gate">
-No code enters the `main` branch without passing 3 consecutive test runs, a Zero-Unwrap scan, and an Async-Safety audit. Warnings are treated as hard errors.
+### <protocol name="TDD Validation Loop">
+1. **Red Phase**: Engineer a `#[tokio::test]` that formally expects the new behavior and naturally fails on the current codebase.
+2. **Green Phase**: Implement the minimal Rust logic required to satisfy the invariant and make the test pass.
+3. **Refactor Phase**: Execute the validation pipeline:
+   ```bash
+   just check  # runs fmt, clippy, check
+   just test   # runs all tests
+   ```
+4. If ANY command fails, read the compiler output EXACTLY and fix the issue. **NEVER skip validation.**
 </protocol>
 
 ---
@@ -124,19 +46,32 @@ No code enters the `main` branch without passing 3 consecutive test runs, a Zero
 ## Coding Doctrine (NON-NEGOTIABLE)
 
 ```rust
-// ❌ FORBIDDEN:
-.unwrap()                    // → Propagate error
-std::fs::read()              // → strictly tokio::fs
-unsafe { ... }               // → Only SIMD + // SAFETY: proof
-```
+// ❌ FORBIDDEN (Will fail the build):
+.unwrap()                    // → Propagate error via MemFuseError and ?
+std::fs::read()              // → strictly tokio::fs / async I/O
+unsafe { ... }               // → Only allowed inside SIMD logic, paired with // SAFETY: proof
+panic!()                     // → MUST be Result<()> in hot-paths
 
-**Prompts:** `.agent/jules/prompts/accounts/XX-name.md`
-**Schedule:** `.agent/jules/SCHEDULE.md`
-**Prompt-Generator:** `bash .agent/jules/scripts/generate-jules-prompt.sh <ACCOUNT> [WP]`
-**CI:** `.github/workflows/jules-quality-gate.yml`
+// ✅ MANDATORY:
+#[tracing::instrument(skip(self))]   // Telemetry on major IO/compute boundaries
+// SPEC-0XX §Y.Z                    // Link implementation to an Atomic Spec
+// INVARIANT: <Condition>           // Document critical path conditions
+```
 
 ---
 
-## Globale Architektur
+## Agentic Roll-out (Conductor)
 
-[`Architecture Context`](./.agent/context/ARCHITECTURE.md)
+<agent_orchestration>
+  <conductor>
+    <role>System Supervisor & Task Dispatcher</role>
+    <constraints>
+      - ALWAYS confirm an Atomic Spec exists or draft a new one BEFORE coding.
+      - ALWAYS begin implementation by writing a failing test.
+      - NEVER commit logic with unresolved compiler warnings.
+    </constraints>
+    <protocol name="Justification">
+      Every architectural decision MUST be justified against the "SQLite for AI Agents" paradigm and the Zero-Panic doctrine.
+    </protocol>
+  </conductor>
+</agent_orchestration>

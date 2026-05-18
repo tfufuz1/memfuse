@@ -10,26 +10,20 @@ use memfuse_core::Result;
 use memfuse_store::lsm::LsmStorage;
 use std::sync::Arc;
 
-/// A point-in-time snapshot of the database state.
 pub struct Checkpoint {
-    /// User-defined name for the checkpoint.
     pub name: String,
-    /// The sequence number at which the checkpoint was created.
     pub seq_no: u64,
 }
 
-/// Manager for creating and tracking database state checkpoints.
 pub struct CheckpointManager {
     storage: Arc<LsmStorage>,
 }
 
 impl CheckpointManager {
-    /// Creates a new `CheckpointManager`.
     pub fn new(storage: Arc<LsmStorage>) -> Self {
         Self { storage }
     }
 
-    /// Creates a new checkpoint for the current state.
     pub async fn create_checkpoint(&self, name: &str) -> Result<Checkpoint> {
         let seq_no = self.storage.last_seq_no();
         self.storage.pin_checkpoint(seq_no).await?;
@@ -40,13 +34,11 @@ impl CheckpointManager {
         })
     }
 
-    /// Drops a checkpoint and releases its pinned sequence number in the storage engine.
     pub async fn drop_checkpoint(&self, checkpoint: &Checkpoint) -> Result<()> {
         self.storage.unpin_checkpoint(checkpoint.seq_no).await?;
         Ok(())
     }
 
-    /// Rollback the database state to a specific checkpoint.
     pub async fn rollback(&self, _checkpoint: &Checkpoint) -> Result<()> {
         // Full Time-Travel replay will be implemented here. For WP-5.1, pinning is the core requirement.
         Ok(())
@@ -69,7 +61,6 @@ mod tests {
             max_ram_mb: 64,
             tx_timeout: std::time::Duration::from_secs(60),
             compaction: memfuse_store::compaction::CompactionConfig::default(),
-            encryption_passphrase: None,
         };
         // Lower threshold so we can trigger compaction easily
         config.compaction.min_sstables_per_tier = 2;

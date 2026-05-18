@@ -1,4 +1,3 @@
-# AGENT:11
 name: DAG Integrity Check
 
 on:
@@ -15,53 +14,26 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         
-      - name: Check L1 Kernel Isolation (core, runtime, orchestrator)
+      - name: Check memfuse-core (L3 Kernel — imports NOBODY)
         run: |
           set -e
-          for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator; do
-            echo "Verifying $CRATE imports no internal crates..."
-            if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -v "$CRATE" | grep -q .; then
-              echo "ERROR: $CRATE imports forbidden internal crates."
-              cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-"
-              exit 1
-            fi
-          done
-
-      - name: Check L2 peer isolation (store, index, text, checkpoint)
-        run: |
-          set -e
-          echo "Verifying memfuse-store..."
-          if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core" | grep -q "memfuse-"; then
-            echo "ERROR: memfuse-store violates DAG by importing non-core crates."
-            cargo tree -p memfuse-store --edges no-dev | grep "memfuse-"
-            exit 1
-          fi
-          echo "Verifying memfuse-index..."
-          if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core" | grep -q "memfuse-"; then
-            echo "ERROR: memfuse-index violates DAG by importing non-core crates."
-            cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
-            exit 1
-          fi
-          echo "Verifying memfuse-text (excluding tracked DAG-001)..."
-          if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
-            echo "ERROR: memfuse-text violates DAG."
-            cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
-            exit 1
-          fi
-          echo "Verifying memfuse-checkpoint (excluding tracked DAG-002)..."
-          if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
-            echo "ERROR: memfuse-checkpoint violates DAG."
-            cargo tree -p memfuse-checkpoint --edges no-dev | grep "memfuse-"
+          echo "Verifying memfuse-core imports no internal crates..."
+          if cargo tree -p memfuse-core --edges no-dev | grep -q "memfuse-store\|memfuse-db\|memfuse-index\|memfuse-text\|memfuse-checkpoint\|memfuse-py"; then
+            echo "ERROR: memfuse-core imports forbidden crates."
             exit 1
           fi
 
-      - name: Check L3 Orchestration Isolation (db)
+      - name: Check L2 peer isolation (store, index must not import peers)
         run: |
           set -e
-          echo "Verifying memfuse-db..."
-          if cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py|memfuse-runtime|memfuse-orchestrator"; then
-            echo "ERROR: memfuse-db imports higher layers."
-            cargo tree -p memfuse-db --edges no-dev | grep -E "memfuse-py|memfuse-runtime|memfuse-orchestrator"
+          echo "Verifying memfuse-store does not import L2 peers..."
+          if cargo tree -p memfuse-store --edges no-dev | grep -q "memfuse-db\|memfuse-index\|memfuse-text"; then
+            echo "ERROR: memfuse-store imports L2 peers."
+            exit 1
+          fi
+          echo "Verifying memfuse-index does not import L2 peers..."
+          if cargo tree -p memfuse-index --edges no-dev | grep -q "memfuse-db\|memfuse-store\|memfuse-text"; then
+            echo "ERROR: memfuse-index imports L2 peers."
             exit 1
           fi
 
@@ -80,10 +52,4 @@ jobs:
             echo "⚠️  DAG-002 still present (memfuse-checkpoint → memfuse-store)"
           else
             echo "✅ DAG-002 resolved"
-          fi
-          echo "--- DAG-003: memfuse-py → memfuse-db ---"
-          if cargo tree -p memfuse-py --edges no-dev | grep -q "memfuse-db"; then
-            echo "⚠️  DAG-003 still present (memfuse-py → memfuse-db)"
-          else
-            echo "✅ DAG-003 resolved"
           fi

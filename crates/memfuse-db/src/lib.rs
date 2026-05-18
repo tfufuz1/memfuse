@@ -11,8 +11,6 @@
 //! It combines vector search (HNSW), persistent storage (LSM-Tree),
 //! and relationship tracking in a single library.
 //!
-// AGENT:08 DATE:2026-05-18 STATUS:DONE
-//!
 //! ## Quick Start
 //!
 //! ```rust,no_run
@@ -60,9 +58,8 @@ pub mod fusion;
 pub mod transaction;
 
 pub use collection::Collection;
-pub use memfuse_checkpoint;
 
-/// User-facing search result containing the ID, score, and optional metadata.
+/// User-facing search result.
 #[derive(Debug, Clone)]
 pub struct SearchResult {
     /// The string ID provided during insert.
@@ -82,7 +79,7 @@ pub struct DbStats {
     pub storage_stats: memfuse_core::StorageStats,
 }
 
-/// User-facing document structure.
+/// User-facing document retrieved by key.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Document {
     /// The string ID.
@@ -91,7 +88,7 @@ pub struct Document {
     pub metadata: Option<Value>,
 }
 
-/// Global configuration settings for the MemFuse database.
+/// Configuration for MemFuse.
 #[derive(Debug, Clone)]
 pub struct MemFuseConfig {
     /// Vector dimensionality (must match your embeddings).
@@ -100,7 +97,6 @@ pub struct MemFuseConfig {
     pub max_elements: usize,
     /// Distance metric for vector comparison.
     pub distance_metric: memfuse_core::DistanceMetric,
-    /// Optional passphrase for encryption at rest.
     pub encryption_passphrase: Option<String>,
 }
 
@@ -140,7 +136,6 @@ impl MemFuse {
     pub async fn open_with_config(path: impl AsRef<Path>, config: MemFuseConfig) -> Result<Self> {
         let lsm_config = memfuse_store::LsmConfig {
             path: path.as_ref().to_path_buf(),
-            encryption_passphrase: config.encryption_passphrase.clone(),
             ..Default::default()
         };
 
@@ -175,14 +170,18 @@ impl MemFuse {
         Ok(())
     }
 
+    /// Returns the next transaction ID (auto-incremented).
     /// Returns a specific collection (namespace).
     /// Creates the collection if it does not already exist.
-    // ANCHOR:TODO:COL-001 — Implementiere vollständige Persistenz und Isolation für `collection()`.
-    // WP:WP-1.2 PRIO:1 NEEDS:NONE
-    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
+    // ⬡ @JULES-04 | P1 | TODO:COL-001
+    // WHY:  WP-1.2 Collections erfordert Isolation der Datensätze.
+    // WHAT: Implementiere vollständige Persistenz und Isolation für `collection()`.
     // TEST: cargo test -p memfuse-db test_collections_are_isolated
     // DONE: `collection()` ist wal-gesichert, Isolation ist korrekt.
-    // SUCCESSOR: @JULES-04 — "Mach weiter mit COL-002 und COL-003, bis Collections-Modul fully featured ist."
+    // DEPS: NONE
+    // EST:  M | STATUS:OPEN
+    // AGENT:jules-04 DATE:2026-05-09 SPRINT:1
+    // CREATED:2026-05-09 DEADLINE:NONE
     pub async fn collection(&self, name: &str) -> Result<Collection> {
         // Validation
         if name.len() > 64 {
@@ -240,45 +239,33 @@ impl MemFuse {
         Ok(col)
     }
 
-    /// Lists all existing collection names (including those persisted in storage).
-    // ANCHOR:TODO:COL-002 — Erweitere `list_collections` so, dass es aus dem LSM-Store/Metadata ließt.
-    // WP:WP-1.2 PRIO:1 NEEDS:COL-001
-    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
+    /// Lists all existing collection names (those currently active in memory).
+    // ⬡ @JULES-04 | P1 | TODO:COL-002
+    // WHY:  WP-1.2 Collections Liste muss persistent geladen werden.
+    // WHAT: Erweitere `list_collections` so, dass es aus dem LSM-Store/Metadata ließt.
     // TEST: cargo test -p memfuse-db test_list_collections
     // DONE: list_collections gibt persistierte Collections zurück.
-    // SUCCESSOR: @JULES-04 — "Mache weiter mit COL-003."
+    // DEPS: COL-001
+    // EST:  S | STATUS:OPEN
+    // AGENT:jules-04 DATE:2026-05-09 SPRINT:1
+    // CREATED:2026-05-09 DEADLINE:NONE
     pub async fn list_collections(&self) -> Result<Vec<String>> {
-        let col_idx_prefix = b"__col_idx:\x00";
-        let entries = self.storage.scan_prefix(col_idx_prefix).await?;
-
-        let mut names = std::collections::HashSet::new();
-        names.insert("default".to_string());
-
-        for (k, _) in entries {
-            let name_bytes = &k[col_idx_prefix.len()..];
-            if let Ok(name) = String::from_utf8(name_bytes.to_vec()) {
-                names.insert(name);
-            }
-        }
-
-        // Also add active in-memory ones (should be covered by storage but just in case)
         let guard = self.collections.read().await;
-        for name in guard.keys() {
-            names.insert(name.clone());
-        }
-
-        let mut sorted_names: Vec<String> = names.into_iter().collect();
-        sorted_names.sort();
-        Ok(sorted_names)
+        let mut names: Vec<String> = guard.keys().cloned().collect();
+        names.sort();
+        Ok(names)
     }
 
     /// Drops a collection, removing all its data from storage.
-    // ANCHOR:TODO:COL-003 — Löschen der Collection-Keys aus LSM und des HNSW Graphen.
-    // WP:WP-1.2 PRIO:1 NEEDS:COL-001
-    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
+    // ⬡ @JULES-04 | P1 | TODO:COL-003
+    // WHY:  WP-1.2 fordert dass drop_collection komplette Daten entfernt.
+    // WHAT: Löschen der Collection-Keys aus LSM und des HNSW Graphen.
     // TEST: cargo test -p memfuse-db test_drop_removes_all_data
     // DONE: Alle Daten getilgt, re-öffnen führt zu leerer DB.
-    // SUCCESSOR: @JULES-05 — "Collections sind fertig. Beginne mit WP-2.1 SEARCH-001."
+    // DEPS: COL-001
+    // EST:  M | STATUS:OPEN
+    // AGENT:jules-04 DATE:2026-05-09 SPRINT:1
+    // CREATED:2026-05-09 DEADLINE:NONE
     pub async fn drop_collection(&self, name: &str) -> Result<()> {
         if name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(
@@ -344,25 +331,15 @@ impl MemFuse {
             .await
     }
 
-    /// Performs hybrid search combining BM25 and vector search.
-    // ANCHOR:TODO:SEARCH-001 — Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection.
-    // WP:WP-2.1 PRIO:1 NEEDS:COL-001
-    // AGENT:@JULES-05 DATE:2026-05-09 STATUS:DONE
+    // ⬡ @JULES-05 | P1 | TODO:SEARCH-001
+    // WHY:  WP-2.1 Hybrid Search benötigt eine API-Facade.
+    // WHAT: Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection::hybrid_search.
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
-    // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
-    /// Performs hybrid search combining BM25 and vector search.
-    pub async fn hybrid_search(
-        &self,
-        text: &str,
-        vector: &[f32],
-        k: usize,
-    ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .hybrid_search(text, vector, k)
-            .await
-    }
+    // DEPS: COL-001
+    // EST:  S | STATUS:OPEN
+    // AGENT:jules-05 DATE:2026-05-09 SPRINT:1
+    // CREATED:2026-05-09 DEADLINE:NONE
 
     /// Deletes a document by its string ID.
     pub async fn delete(&self, id: &str) -> Result<()> {
@@ -413,13 +390,6 @@ impl MemFuse {
 pub use memfuse_core::DistanceMetric;
 pub use serde_json::json;
 
-impl MemFuse {
-    /// Returns the underlying storage engine.
-    /// Internal use only for benchmarks and tests.
-    pub fn inner_storage(&self) -> Arc<LsmStorage> {
-        self.storage.clone()
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -430,8 +400,7 @@ mod tests {
         let config = MemFuseConfig {
             dimension: dim,
             max_elements: 10_000,
-            distance_metric: DistanceMetric::Cosine,
-            ..Default::default()
+            distance_metric: DistanceMetric::Cosine, encryption_passphrase: None,
         };
         let db = MemFuse::open_with_config(tmp.path(), config)
             .await

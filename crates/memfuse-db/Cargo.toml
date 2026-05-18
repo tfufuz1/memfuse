@@ -11,7 +11,6 @@ memfuse-core = { workspace = true }
 memfuse-store = { workspace = true }
 memfuse-index = { workspace = true }
 memfuse-text = { workspace = true }
-memfuse-checkpoint = { path = "../memfuse-checkpoint" }
 serde_json = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
@@ -20,12 +19,3 @@ tracing = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile = { workspace = true }
-criterion = { version = "0.5", features = ["async_tokio"] }
-
-[features]
-bench = []
-
-[[bench]]
-name = "migration_benchmarks"
-path = "../../benches/migration_benchmarks.rs"
-harness = false

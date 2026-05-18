@@ -1,7 +1,6 @@
-//! MemFuse Runtime — Sandboxing and Execution Layer.
 // ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:13 DATE:2026-05-13 STATUS:DONE
+// AGENT:13 DATE:2026-05-09 STATUS:READY
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:AUDIT:SAOS-022 — forbid(unsafe_code) fehlte → nachgerüstet
 // WP:NONE PRIO:3 NEEDS:NONE
@@ -14,8 +13,7 @@
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ZIEL: Sichere Ausführung von Agent-Tools ohne Host-Zugriff.
-// ANCHOR:INTEGRATION PRIO:2 STATUS:READY AGENT:07 DATE:2026-05-16
-// MISSING: Cross-Crate Integration Tests für WASM-Sandbox Isolation und Tool-Execution.
+//! MemFuse Runtime — Sandboxing and Execution Layer.
 
 #![forbid(unsafe_code)]
 

@@ -4,8 +4,7 @@
 
 set -e
 
-# Try to determine project root if not in it
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_DIR="/home/freddy/Arbeitsplatz/DEV/memfuse"
 cd "$REPO_DIR"
 
 echo "--- Jules Integration Check ---"

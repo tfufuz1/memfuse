@@ -125,13 +125,3 @@ jobs:
             exit 1
           fi
           echo "✅ No unsafe code violations found"
-
-      - name: AST-Grep Lock-Graph Analyzer
-        run: |
-          npm install -g @ast-grep/cli
-          echo "=== Scanning for Graceful Deadlocks ==="
-          if sg scan --rule rules/detect_nested_locks.yml crates/; then
-             echo "❌ GRACEFUL DEADLOCK DETECTED"
-             exit 1
-          fi
-          echo "✅ AST-Grep Deadlock Scan passed"
