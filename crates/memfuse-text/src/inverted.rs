@@ -680,8 +680,7 @@ mod tests {
         index.insert(tx, doc_id, "Das ist eine Heizung.").await?;
         storage.commit(tx).await?;
 
-        // Search for "ung" (suffix) should find the document because of morphological
-        // splitting
+        // Search for "ung" (suffix) should find the document because of morphological splitting
         let results = index.search("ung", 10).await?;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].doc_id, doc_id);

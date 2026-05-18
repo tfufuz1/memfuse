@@ -74,8 +74,8 @@ impl Tokenizer for GermanMorphTokenizer {
     }
 }
 
-/// Tokenizes text into lowercase words using Unicode word boundaries and
-/// filters stopwords. Deprecated: Use `DefaultTokenizer.tokenize()` instead.
+/// Tokenizes text into lowercase words using Unicode word boundaries and filters stopwords.
+/// Deprecated: Use `DefaultTokenizer.tokenize()` instead.
 pub fn tokenize(text: &str) -> Vec<String> {
     DefaultTokenizer.tokenize(text)
 }

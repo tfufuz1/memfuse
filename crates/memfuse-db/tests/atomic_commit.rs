@@ -4,7 +4,7 @@ use tempfile::TempDir;
 #[tokio::test]
 async fn test_collection_atomic_rollback_on_error() {
     let tmp = TempDir::new().unwrap();
-    let config = MemFuseConfig {
+    let config = MemFuseConfig { ..Default::default()
         dimension: 4,
         ..Default::default()
     };

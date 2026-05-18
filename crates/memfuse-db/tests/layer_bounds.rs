@@ -12,7 +12,7 @@ async fn test_layer_002_collection_persistence() {
     let tmp = TempDir::new().expect("temp dir");
     let path = tmp.path().to_owned();
 
-    let config = MemFuseConfig {
+    let config = MemFuseConfig { ..Default::default()
         dimension: 4,
         max_elements: 100,
         distance_metric: DistanceMetric::Cosine,
@@ -66,7 +66,7 @@ async fn test_layer_002_collection_persistence() {
 #[tokio::test]
 async fn test_layer_003_hybrid_bm25_search() {
     let tmp = TempDir::new().expect("temp dir");
-    let config = MemFuseConfig {
+    let config = MemFuseConfig { ..Default::default()
         dimension: 4,
         ..Default::default()
     };

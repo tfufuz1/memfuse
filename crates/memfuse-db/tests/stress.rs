@@ -9,7 +9,7 @@ use tokio::task::JoinHandle;
 #[tokio::test(flavor = "multi_thread")]
 async fn test_orchestrator_stress_concurrency() {
     let tmp = TempDir::new().expect("temp dir");
-    let config = MemFuseConfig {
+    let config = MemFuseConfig { ..Default::default()
         dimension: 4,
         max_elements: 10000,
         distance_metric: DistanceMetric::Cosine,
