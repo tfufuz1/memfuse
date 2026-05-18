@@ -429,7 +429,8 @@ mod tests {
         let tmp = TempDir::new().expect("temp dir");
         let config = MemFuseConfig {
             dimension: dim,
-            distance_metric: DistanceMetric::Cosine, ..Default::default()
+            distance_metric: DistanceMetric::Cosine,
+            ..Default::default()
         };
         let db = MemFuse::open_with_config(tmp.path(), config)
             .await

@@ -72,10 +72,7 @@ pub struct PySearchResult {
 #[pymethods]
 impl PySearchResult {
     fn __repr__(&self) -> String {
-        format!(
-            "SearchResult(id='{}', score={:.4})",
-            self.id, self.score
-        )
+        format!("SearchResult(id='{}', score={:.4})", self.id, self.score)
     }
 }
 
