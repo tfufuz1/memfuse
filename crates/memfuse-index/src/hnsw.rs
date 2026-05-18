@@ -113,12 +113,12 @@ pub enum VectorData {
 }
 
 /// A node in the HNSW graph.
-#[derive(Debug)]
-struct HnswNode {
-    doc_id: DocId,
-    vector: VectorData,
-    connections: Vec<Vec<usize>>,
-    _max_layer: usize,
+#[derive(Debug, Clone)]
+pub(crate) struct HnswNode {
+    pub(crate) doc_id: DocId,
+    pub(crate) vector: VectorData,
+    pub(crate) connections: Vec<Vec<usize>>,
+    pub(crate) _max_layer: usize,
 }
 
 /// Search candidate.
@@ -166,7 +166,7 @@ impl std::ops::Deref for HnswIndex {
 
 /// The core implementation of the HNSW index.
 pub struct HnswIndexCore {
-    config: HnswConfig,
+    pub(crate) config: HnswConfig,
     validation_error: Option<String>,
     nodes: RwLock<Vec<HnswNode>>,
     doc_to_node: RwLock<AHashMap<u64, usize>>,
@@ -675,6 +675,14 @@ impl HnswIndexCore {
     }
 
     // Kept for backward compatibility or direct calls if needed, though facade should use `HnswIndex` wrapper
+
+    pub(crate) fn get_nodes_for_diskann(&self) -> Vec<HnswNode> {
+        self.nodes.read().clone()
+    }
+
+    pub(crate) fn get_entry_point_for_diskann(&self) -> Option<usize> {
+        *self.entry_point.read()
+    }
 }
 
 #[async_trait]
