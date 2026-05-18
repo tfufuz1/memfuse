@@ -1,5 +1,5 @@
 //! End-to-End integration tests for the full MemFuse stack.
-// ANCHOR:INTEGRATION:E2E-001 STATUS:READY AGENT:12 DATE:2026-05-18
+// ANCHOR:INTEGRATION:E2E-001 STATUS:DONE AGENT:12 DATE:2026-05-18
 
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
@@ -12,6 +12,7 @@ async fn test_full_stack_document_lifecycle() {
         dimension: 3,
         max_elements: 100,
         distance_metric: DistanceMetric::Cosine,
+        encryption_passphrase: None,
     };
 
     let db = MemFuse::open_with_config(tmp.path(), config)
@@ -128,4 +129,33 @@ async fn test_full_stack_document_lifecycle() {
     // 8. Stats check
     let stats = db.stats().await.expect("Stats failed");
     assert!(stats.storage_stats.memtable_size_bytes > 0);
+
+    // 9. Collection Isolation Check (Robust)
+    let col_a = db.collection("isolation-a").await.expect("Failed to get col A");
+    let col_b = db.collection("isolation-b").await.expect("Failed to get col B");
+
+    col_a.insert("secret", &[0.1, 0.2, 0.3], Some(json!({"source": "A"})))
+        .await
+        .expect("Insert into A failed");
+    col_b.insert("secret", &[0.1, 0.2, 0.3], Some(json!({"source": "B"})))
+        .await
+        .expect("Insert into B failed");
+
+    let doc_a = col_a.get("secret").await.expect("Get from A failed").expect("Not found in A");
+    let doc_b = col_b.get("secret").await.expect("Get from B failed").expect("Not found in B");
+
+    assert_eq!(doc_a.metadata.unwrap()["source"], "A");
+    assert_eq!(doc_b.metadata.unwrap()["source"], "B");
+
+    // Search isolation
+    let search_a = col_a.search(&[0.1, 0.2, 0.3], 10).await.expect("Search A failed");
+    let search_b = col_b.search(&[0.1, 0.2, 0.3], 10).await.expect("Search B failed");
+
+    assert_eq!(search_a.len(), 1);
+    assert_eq!(search_a[0].id, "secret");
+    assert_eq!(search_a[0].metadata.as_ref().unwrap()["source"], "A");
+
+    assert_eq!(search_b.len(), 1);
+    assert_eq!(search_b[0].id, "secret");
+    assert_eq!(search_b[0].metadata.as_ref().unwrap()["source"], "B");
 }
