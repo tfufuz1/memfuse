@@ -51,7 +51,7 @@ fn extract_text(metadata: &Option<serde_json::Value>) -> Option<String> {
 /// while sharing the underlying LSM-Tree storage with other collections.
 #[derive(Clone)]
 pub struct Collection {
-    pub(crate) name: String,
+    pub name: String,
     pub(crate) prefix: Vec<u8>,
     pub(crate) index: Arc<HnswIndex>,
     pub(crate) text_index: InvertedIndex,
