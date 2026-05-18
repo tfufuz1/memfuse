@@ -86,7 +86,7 @@ dag-check:
         exit 1
     fi
     echo "Verifying memfuse-checkpoint (excluding tracked DAG-002)..."
-    if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
+    if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-checkpoint violates DAG."
         cargo tree -p memfuse-checkpoint --edges no-dev | grep "memfuse-"
         exit 1

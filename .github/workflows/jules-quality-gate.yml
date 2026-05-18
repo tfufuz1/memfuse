@@ -1,4 +1,6 @@
 name: Jules Quality Gate
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 on:
   pull_request:
@@ -13,16 +15,22 @@ env:
 jobs:
   quality-gate:
     name: Quality Gate (fmt + clippy + test)
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
       - name: Cache cargo registry
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         uses: actions/cache@v4
         with:
           path: |
@@ -33,24 +41,38 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Check formatting
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         run: cargo fmt --all -- --check
 
       - name: Clippy (warnings = errors)
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         run: cargo clippy --all-targets --workspace -- -D warnings
 
       - name: Build check
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         run: cargo check --all-targets --workspace
 
       - name: Run tests (pass 1/3)
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         run: cargo test --workspace 2>&1 | tee test-run-1.txt
 
       - name: Run tests (pass 2/3)
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         run: cargo test --workspace 2>&1 | tee test-run-2.txt
 
       - name: Run tests (pass 3/3)
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         run: cargo test --workspace 2>&1 | tee test-run-3.txt
 
       - name: Verify triple-pass consistency
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         run: |
           echo "=== Verifying all 3 test runs are green ==="
           for f in test-run-1.txt test-run-2.txt test-run-3.txt; do
@@ -63,25 +85,37 @@ jobs:
           echo "✅ Triple-Test Gate passed (3/3 runs green)"
 
       - name: Upload test artifacts
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: triple-test-results
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
           path: test-run-*.txt
 
   dependency-audit:
     name: Dependency Security Audit
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install cargo-audit
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         run: cargo install cargo-audit --locked
 
       - name: Security audit
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         run: cargo audit
 
       - name: Check for unused dependencies
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         run: |
           # Warn on unused deps (non-blocking for now)
           cargo install cargo-machete --locked 2>/dev/null || true
@@ -89,11 +123,15 @@ jobs:
 
   unwrap-guard:
     name: Zero-unwrap Guard
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Scan for .unwrap() in production code
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         run: |
           echo "=== Scanning for .unwrap() usage ==="
           # Allow unwrap only in test code (#[test] / #[cfg(test)])
@@ -112,6 +150,8 @@ jobs:
           echo "✅ No .unwrap() violations found"
 
       - name: Scan for unsafe code outside distance.rs
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         run: |
           echo "=== Scanning for unsafe code ==="
           VIOLATIONS=$(grep -rnE "unsafe (fn|block|impl|trait)" --include="*.rs" crates/ \
@@ -127,6 +167,8 @@ jobs:
           echo "✅ No unsafe code violations found"
 
       - name: AST-Grep Lock-Graph Analyzer
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         run: |
           npm install -g @ast-grep/cli
           echo "=== Scanning for Graceful Deadlocks ==="
