@@ -1,8 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use memfuse_text::tokenizer::{DefaultTokenizer, Tokenizer};
-use memfuse_text::inverted::InvertedIndex;
 use memfuse_core::{DocId, TxId};
 use memfuse_store::{LsmConfig, LsmStorage};
+use memfuse_text::inverted::InvertedIndex;
+use memfuse_text::tokenizer::{DefaultTokenizer, Tokenizer};
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
