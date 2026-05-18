@@ -186,11 +186,12 @@ impl HnswIndex {
     pub fn new(config: HnswConfig) -> Self {
         let validation_error = config.validate().err().map(|e| e.to_string());
         let ml = 1.0 / (config.m as f64).ln();
+        let initial_capacity = config.max_elements.min(10000);
         Self {
             inner: std::sync::Arc::new(HnswIndexCore {
                 config,
                 validation_error,
-                nodes: RwLock::new(Vec::new()),
+                nodes: RwLock::new(Vec::with_capacity(initial_capacity)),
                 doc_to_node: RwLock::new(AHashMap::new()),
                 entry_point: RwLock::new(None),
                 max_layer: AtomicU64::new(0),
@@ -705,7 +706,7 @@ impl VectorIndex for HnswIndex {
 
     // ANCHOR:PERF:LATENCY-002 — HNSW Search Hotspot (Optimiert)
     // WP:WP-0.0 PRIO:2 NEEDS:NONE
-    // AGENT:03 DATE:2026-05-15 STATUS:DONE
+    // AGENT:09 DATE:2026-05-18 STATUS:DONE
     // CREATED:2026-05-09 DEADLINE:NONE
     // TARGET: < 10ms bei 1M Vektoren
     // AKTUELL: Optimiert via Dynamic ef_search
@@ -934,6 +935,8 @@ impl VectorIndex for HnswIndex {
         // AGENT:03 DATE:2026-05-15 STATUS:DONE
         // CREATED:2026-05-09 DEADLINE:NONE
         if self.config.quantize && self.quantizer.read().is_none() {
+            // ANCHOR:PERF:ALLOC-005 — Pre-allocate training data buffer (Optimized)
+            // AGENT:09 DATE:2026-05-18 STATUS:DONE
             let mut train_data = Vec::with_capacity(256.min(ops.len()));
             for op in &ops {
                 if let IndexOp::Insert { data, .. } = op {

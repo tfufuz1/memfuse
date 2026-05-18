@@ -40,11 +40,11 @@
 //
 // ANCHOR:PERF:LATENCY-001 — WAL-Write-Path Hotspot
 // WP:WP-0.0 PRIO:2 NEEDS:NONE
-// AGENT:09 DATE:2026-05-09 STATUS:DONE
+// AGENT:09 DATE:2026-05-18 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // TARGET: < 2ms bei Peak-Load
-// AKTUELL: ~90 µs (Hybrid Search Latency)
-// VORHER: 105.19 µs → NACHHER: 89.96 µs (~14% gain)
+// AKTUELL: ~83 µs (Hybrid Search Latency)
+// VORHER: 89.96 µs → NACHHER: 83.26 µs (~7% gain)
 // BOTTLENECK: I/O (File::sync_all blockiert)
 // OPTIMIERUNG: sync_data() statt sync_all() (fdatasync)
 
