@@ -56,6 +56,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub mod collection;
+pub mod filter;
 pub mod fusion;
 pub mod transaction;
 
@@ -341,6 +342,19 @@ impl MemFuse {
         self.default_col()
             .await?
             .search_filtered(query, k, filter)
+            .await
+    }
+
+    /// Performs search with a structured metadata filter.
+    pub async fn search_with_filter(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: crate::filter::MetadataFilter,
+    ) -> Result<Vec<SearchResult>> {
+        self.default_col()
+            .await?
+            .search_with_filter(query, k, filter)
             .await
     }
 
@@ -758,6 +772,42 @@ mod tests {
 
         let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
         assert_eq!(results[0].id, "k");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_search_with_filter_adaptive() {
+        use crate::filter::MetadataFilter;
+        let (db, _tmp) = test_db(4).await;
+
+        for i in 0..100 {
+            let topic = if i < 5 { "rust" } else { "python" };
+            db.insert(
+                &format!("doc-{}", i),
+                &[1.0, 0.0, 0.0, 0.0],
+                Some(json!({"topic": topic, "idx": i})),
+            )
+            .await
+            .expect("insert");
+        }
+
+        // Low selectivity: PreFilter
+        let rust_filter = MetadataFilter::Eq("topic".to_string(), json!("rust"));
+        let results = db
+            .search_with_filter(&[1.0, 0.0, 0.0, 0.0], 10, rust_filter)
+            .await
+            .expect("search with filter");
+        assert_eq!(results.len(), 5);
+        for res in results {
+            assert_eq!(res.metadata.expect("meta")["topic"], "rust");
+        }
+
+        // High selectivity (via Contains or Or, just for testing coverage)
+        let python_filter = MetadataFilter::Eq("topic".to_string(), json!("python"));
+        let results_python = db
+            .search_with_filter(&[1.0, 0.0, 0.0, 0.0], 10, python_filter)
+            .await
+            .expect("search with filter");
+        assert_eq!(results_python.len(), 10);
     }
 
     #[tokio::test]

@@ -342,8 +342,74 @@ impl Collection {
         k: usize,
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<crate::SearchResult>> {
+        // For now, we still delegate to HNSW's internal filtering (PostFilter or internal PreFilter)
+        // But we want to implement the adaptive strategy here.
         let scored_docs = self.index.search_filtered(query, k, filter).await?;
         self.hydrate_from_scored(scored_docs).await
+    }
+
+    /// Performs search with a structured metadata filter, choosing the best strategy.
+    pub async fn search_with_filter(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: crate::filter::MetadataFilter,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let selectivity = filter.estimate_selectivity();
+        let index_size = self.len().await;
+        let strategy = crate::filter::FilterStrategy::choose(selectivity, index_size);
+
+        match strategy {
+            crate::filter::FilterStrategy::PreFilter => {
+                // 1. Scan all documents to find matches (inefficient but correct for now)
+                // In a real implementation, we would use a secondary index or a metadata cache.
+                let mut matched_ids = std::collections::HashSet::new();
+                let prefix = self.namespaced_key(&[], 1);
+
+                let entries = self.storage.scan_prefix(&prefix).await?;
+                for (_, v) in entries {
+                    let stored: StoredDocument = serde_json::from_slice(&v)?;
+                    if let Some(meta) = &stored.metadata {
+                        if filter.matches(meta) {
+                            matched_ids.insert(DocId::from_key(&stored.id));
+                        }
+                    }
+                }
+
+                if matched_ids.is_empty() {
+                    return Ok(Vec::new());
+                }
+
+                // 2. Perform vector search with BITSET filter
+                let filter_fn = move |id: DocId| matched_ids.contains(&id);
+                self.search_filtered(query, k, Some(&filter_fn)).await
+            }
+            crate::filter::FilterStrategy::PostFilter | crate::filter::FilterStrategy::Hybrid => {
+                // POST-FILTERING IMPLEMENTATION NOTE:
+                // We use block_in_place/block_on because the HNSW search closure is synchronous
+                // while our storage engine is asynchronous. This is a temporary measure (WP-4.2)
+                // and will be replaced by a bitset-based PreFilter or an async-native HNSW traversal.
+                // This requires a multi-threaded Tokio runtime to avoid panics.
+                let filter_fn = move |id: DocId| {
+                    tokio::task::block_in_place(|| {
+                        let handle = tokio::runtime::Handle::current();
+                        handle.block_on(async {
+                            let doc_key = self.namespaced_key(&id.inner().to_le_bytes(), 1);
+                            if let Ok(Some(bytes)) = self.storage.get(&doc_key).await {
+                                if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&bytes)
+                                {
+                                    if let Some(meta) = &stored.metadata {
+                                        return filter.matches(meta);
+                                    }
+                                }
+                            }
+                            false
+                        })
+                    })
+                };
+                self.search_filtered(query, k, Some(&filter_fn)).await
+            }
+        }
     }
 
     async fn hydrate_from_scored(
