@@ -127,7 +127,9 @@ impl CompactionEngine {
             // Remove old SSTables (reverse order to preserve indices)
             let mut sorted_indices = indices.clone();
             sorted_indices.sort_unstable_by(|a, b| b.cmp(a));
-            let insertion_point = sorted_indices[sorted_indices.len() - 1]; // Position of the oldest input
+            let insertion_point = *sorted_indices.last().ok_or_else(|| {
+                memfuse_core::MemFuseError::Internal("Empty compaction indices".into())
+            })?;
 
             for idx in sorted_indices {
                 ssts.remove(idx);
@@ -172,7 +174,8 @@ impl CompactionEngine {
             let mut placed = false;
 
             for tier in &mut tiers {
-                let tier_size = ssts[tier[0]].metadata().file_size;
+                let first_idx = *tier.first().unwrap_or(&0);
+                let tier_size = ssts.get(first_idx).map(|s| s.metadata().file_size).unwrap_or(0);
                 let ratio = if size > tier_size {
                     size as f64 / tier_size.max(1) as f64
                 } else {
@@ -487,7 +490,7 @@ mod tests {
         );
 
         // Verify all data is present in the compacted result
-        let last_sst = &ssts[ssts.len() - 1];
+        let last_sst = ssts.last().expect("SSTables should not be empty");
         let entries = last_sst.iter().await.expect("iter");
         assert_eq!(entries.len(), 6); // 3 SSTables × 2 entries each
     }
