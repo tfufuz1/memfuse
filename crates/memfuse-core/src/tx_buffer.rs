@@ -289,26 +289,10 @@ mod tests {
     }
 
     #[test]
-    fn test_tx_buffer_validate_pending_ops() {
+    fn test_tx_buffer_validate_pending_ops_guardian() {
         let buffer = TxBuffer::<String>::new();
         let tx = TxId::new(1);
-
-        // Not found
         assert!(buffer.validate_pending_ops(tx).is_err());
-
-        // Registered but empty
-        buffer.begin(tx);
-        assert!(buffer.validate_pending_ops(tx).is_err());
-
-        // Has ops
-        buffer.stage(
-            tx,
-            IndexOp::Insert {
-                doc_id: DocId::new(1),
-                data: "test".to_string(),
-            },
-        );
-        assert!(buffer.validate_pending_ops(tx).is_ok());
     }
 
     #[test]

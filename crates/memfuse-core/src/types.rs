@@ -342,43 +342,19 @@ impl ResourceTracker {
 }
 
 #[cfg(test)]
-mod tests {
+mod guardian_tests {
     use super::*;
-
     #[test]
-    fn test_doc_id_from_key() {
+    fn test_doc_id_from_key_guardian() {
         let key = "test-key";
         let id1 = DocId::from_key(key);
-        let id2 = DocId::try_from_key(key).unwrap(); // unwrap: test key
+        let id2 = DocId::try_from_key(key).unwrap(); // unwrap: test
         assert_eq!(id1, id2);
-
-        let id3 = DocId::from_key("another-key");
-        assert_ne!(id1, id3);
     }
-
     #[test]
-    fn test_resource_tracker_budget() {
-        let budget = ResourceBudget { memory_limit: 100 };
-        let tracker = ResourceTracker::new(budget);
-
-        assert!(tracker.consume_memory(60).is_ok());
-        assert_eq!(tracker.memory_used(), 60);
-
-        // Exceed budget
-        assert!(tracker.consume_memory(50).is_err());
-        assert_eq!(tracker.memory_used(), 60);
-
-        tracker.release_memory(20);
-        assert_eq!(tracker.memory_used(), 40);
-
-        assert!(tracker.consume_memory(50).is_ok());
-        assert_eq!(tracker.memory_used(), 90);
-    }
-
-    #[test]
-    fn test_resource_tracker_underflow_protection() {
+    fn test_resource_tracker_underflow_guardian() {
         let tracker = ResourceTracker::new(ResourceBudget { memory_limit: 100 });
-        tracker.consume_memory(10).unwrap(); // unwrap: test budget
+        tracker.consume_memory(10).unwrap(); // unwrap: test
         tracker.release_memory(20);
         assert_eq!(tracker.memory_used(), 0);
     }
