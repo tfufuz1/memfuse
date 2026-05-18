@@ -4,8 +4,8 @@
 //! that exceed the available RAM by utilizing memory-mapped I/O and sector-aligned storage.
 
 use async_trait::async_trait;
-use memfuse_core::{DocId, Result, ScoredDocument, TxId, VectorIndex, VectorIndexStats};
 use memfuse_core::DistanceMetric;
+use memfuse_core::{DocId, Result, ScoredDocument, TxId, VectorIndex, VectorIndexStats};
 
 /// Config for DiskANN index.
 #[derive(Debug, Clone)]
@@ -47,17 +47,23 @@ impl DiskAnnIndex {
 impl VectorIndex for DiskAnnIndex {
     async fn insert(&self, _tx: TxId, _id: DocId, _embedding: &[f32]) -> Result<()> {
         // TODO: Implement out-of-core insertion logic
-        Err(memfuse_core::MemFuseError::Storage("DiskANN insert not yet implemented".to_string()))
+        Err(memfuse_core::MemFuseError::Storage(
+            "DiskANN insert not yet implemented".to_string(),
+        ))
     }
 
     async fn search(&self, _query: &[f32], _k: usize) -> Result<Vec<ScoredDocument>> {
         // TODO: Implement beam-search on SSD
-        Err(memfuse_core::MemFuseError::Storage("DiskANN search not yet implemented".to_string()))
+        Err(memfuse_core::MemFuseError::Storage(
+            "DiskANN search not yet implemented".to_string(),
+        ))
     }
 
     async fn delete(&self, _tx: TxId, _id: DocId) -> Result<()> {
         // TODO: Implement out-of-core deletion
-        Err(memfuse_core::MemFuseError::Storage("DiskANN delete not yet implemented".to_string()))
+        Err(memfuse_core::MemFuseError::Storage(
+            "DiskANN delete not yet implemented".to_string(),
+        ))
     }
 
     async fn commit(&self, _tx: TxId) -> Result<()> {
@@ -92,6 +98,9 @@ mod tests {
 
         let result = index.search(&vec![0.0; 128], 10).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not yet implemented"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("not yet implemented"));
     }
 }
