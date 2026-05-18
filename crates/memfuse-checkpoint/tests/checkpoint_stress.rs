@@ -33,7 +33,10 @@ async fn test_checkpoint_stress_concurrent_ops() {
             for i in 0..ops_per_task {
                 let tx = TxId::new((t * ops_per_task + i + 1) as u64);
                 let key = format!("key-{}-{}", t, i);
-                storage.put(tx, key.as_bytes(), b"value").await.expect("put failed");
+                storage
+                    .put(tx, key.as_bytes(), b"value")
+                    .await
+                    .expect("put failed");
                 storage.commit(tx).await.expect("commit failed");
 
                 if i % 10 == 0 {
@@ -49,12 +52,18 @@ async fn test_checkpoint_stress_concurrent_ops() {
         handles.push(tokio::spawn(async move {
             for i in 0..ops_per_task {
                 let name = format!("cp-{}-{}", t, i);
-                let cp = manager.create_checkpoint(&name).await.expect("create checkpoint failed");
+                let cp = manager
+                    .create_checkpoint(&name)
+                    .await
+                    .expect("create checkpoint failed");
 
                 // Keep it for a bit then drop
                 tokio::task::yield_now().await;
 
-                manager.drop_checkpoint(&cp).await.expect("drop checkpoint failed");
+                manager
+                    .drop_checkpoint(&cp)
+                    .await
+                    .expect("drop checkpoint failed");
             }
         }));
     }

@@ -1,8 +1,8 @@
 // AGENT:12 STATUS:DONE
 // ANCHOR:INTEGRATION:E2E-002 AGENT:12 DATE:2026-05-22
-use memfuse_text::inverted::InvertedIndex;
 use memfuse_core::{DocId, Result, TextIndex, TxId};
 use memfuse_store::LsmStorage;
+use memfuse_text::inverted::InvertedIndex;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -13,10 +13,13 @@ async fn test_inverted_index_persistence_and_reload() -> Result<()> {
 
     // 1. Create index and insert data
     {
-        let storage = Arc::new(LsmStorage::new(memfuse_store::LsmConfig {
-            path: path.clone(),
-            ..Default::default()
-        }).await?);
+        let storage = Arc::new(
+            LsmStorage::new(memfuse_store::LsmConfig {
+                path: path.clone(),
+                ..Default::default()
+            })
+            .await?,
+        );
         let index = InvertedIndex::new(storage.clone(), "persistent");
 
         let tx = TxId::new(1);
@@ -30,10 +33,13 @@ async fn test_inverted_index_persistence_and_reload() -> Result<()> {
 
     // 2. Reload and verify
     {
-        let storage = Arc::new(LsmStorage::new(memfuse_store::LsmConfig {
-            path,
-            ..Default::default()
-        }).await?);
+        let storage = Arc::new(
+            LsmStorage::new(memfuse_store::LsmConfig {
+                path,
+                ..Default::default()
+            })
+            .await?,
+        );
         let index = InvertedIndex::new(storage, "persistent");
 
         let results = index.search("rust", 10).await?;
