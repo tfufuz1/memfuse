@@ -22,4 +22,4 @@
 ## Workspace Health Check
 - **Finding:** Critical compilation failure detected in `crates/memfuse-orchestrator/tests/e2e_integration.rs`.
 - **Details:** `MemFuseConfig` initializations are missing the `encryption_passphrase` field.
-- **Action:** This regression blocks the Triple-Test-Gate. Per AGENT:00 identity instructions, the Watchdog does not solve compilation problems. QA agents (e.g., AGENT:07 or AGENT:10) must apply the `..Default::default()` convention to restore workspace stability.
+- **Action:** This regression blocks the Triple-Test-Gate. Per AGENT:00 identity instructions, the Watchdog identifies but does NOT solve compilation problems. QA agents (e.g., AGENT:07 or AGENT:10) must apply the `..Default::default()` convention across all affected test files to restore workspace stability.
