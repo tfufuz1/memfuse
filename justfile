@@ -14,41 +14,33 @@ check:
     nix develop -c cargo clippy --all-targets -- -D warnings
     nix develop -c cargo check --all-targets --workspace
 
-# Modular check for memfuse-core
+# Modular checks for individual crates
 check-core:
     nix develop -c cargo check -p memfuse-core
 
-# Modular check for memfuse-store
 check-store:
     nix develop -c cargo check -p memfuse-store
 
-# Modular check for memfuse-index
 check-index:
     nix develop -c cargo check -p memfuse-index
 
-# Modular check for memfuse-db
 check-db:
     nix develop -c cargo check -p memfuse-db
 
-# Modular check for memfuse-text
 check-text:
     nix develop -c cargo check -p memfuse-text
 
-# Modular check for memfuse-runtime
-check-runtime:
-    nix develop -c cargo check -p memfuse-runtime
-
-# Modular check for memfuse-orchestrator
-check-orchestrator:
-    nix develop -c cargo check -p memfuse-orchestrator
-
-# Modular check for memfuse-py
 check-py:
     nix develop -c cargo check -p memfuse-py
 
-# Modular check for memfuse-checkpoint
 check-checkpoint:
     nix develop -c cargo check -p memfuse-checkpoint
+
+check-runtime:
+    nix develop -c cargo check -p memfuse-runtime
+
+check-orchestrator:
+    nix develop -c cargo check -p memfuse-orchestrator
 
 # Verifies the Directed Acyclic Graph (DAG) integrity of the workspace
 dag-check:
@@ -79,8 +71,8 @@ dag-check:
         cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
         exit 1
     fi
-    echo "Verifying memfuse-text (excluding tracked DAG-001)..."
-    if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
+    echo "Verifying memfuse-text..."
+    if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-text violates DAG."
         cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
         exit 1
@@ -100,17 +92,38 @@ dag-check:
         exit 1
     fi
 
+    echo "--- Phase 4: L4 Binding Isolation (py) ---"
+    echo "Verifying memfuse-py..."
+    if cargo tree -p memfuse-py --edges no-dev | grep -E -q "memfuse-runtime|memfuse-orchestrator"; then
+        echo "❌ ERROR: memfuse-py imports forbidden higher layers."
+        cargo tree -p memfuse-py --edges no-dev | grep -E "memfuse-runtime|memfuse-orchestrator"
+        exit 1
+    fi
+
     echo "--- Known DAG Violations (Tracking) ---"
-    for VIOLATION in "memfuse-text:memfuse-store:DAG-001" "memfuse-checkpoint:memfuse-store:DAG-002" "memfuse-py:memfuse-db:DAG-003"; do
-        CRATE=${VIOLATION%%:*}
-        TARGET=$(echo $VIOLATION | cut -d: -f2)
-        ID=$(echo $VIOLATION | cut -d: -f3)
-        if cargo tree -p "$CRATE" --edges no-dev | grep -q "$TARGET"; then
-            echo "⚠️  $ID still present ($CRATE → $TARGET)"
-        else
-            echo "✅ $ID resolved"
-        fi
-    done
+    # DAG-001 is now enforced as resolved
+    echo "Verifying DAG-001 (memfuse-text → memfuse-store) resolution..."
+    if cargo tree -p memfuse-text --edges no-dev | grep -q "memfuse-store"; then
+        echo "❌ ERROR: DAG-001 still present (memfuse-text → memfuse-store)"
+        exit 1
+    else
+        echo "✅ DAG-001 resolved"
+    fi
+
+    echo "Verifying DAG-002 (memfuse-checkpoint → memfuse-store) tracking..."
+    if cargo tree -p memfuse-checkpoint --edges no-dev | grep -q "memfuse-store"; then
+        echo "⚠️  DAG-002 still present (memfuse-checkpoint → memfuse-store)"
+    else
+        echo "✅ DAG-002 resolved"
+    fi
+
+    echo "Verifying DAG-003 (memfuse-py → memfuse-db) status..."
+    if cargo tree -p memfuse-py --edges no-dev | grep -q "memfuse-db"; then
+        echo "✅ DAG-003 still present (memfuse-py → memfuse-db) [EXPECTED]"
+    else
+        echo "⚠️  DAG-003 missing? (memfuse-py should import memfuse-db)"
+    fi
+
     echo "=== DAG-Check PASSED ==="
 
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)

@@ -42,8 +42,8 @@ jobs:
             cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
             exit 1
           fi
-          echo "Verifying memfuse-text (excluding tracked DAG-001)..."
-          if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
+          echo "Verifying memfuse-text..."
+          if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core" | grep -q "memfuse-"; then
             echo "ERROR: memfuse-text violates DAG."
             cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
             exit 1
@@ -65,6 +65,16 @@ jobs:
             exit 1
           fi
 
+      - name: Check L4 Binding Isolation (py)
+        run: |
+          set -e
+          echo "Verifying memfuse-py..."
+          if cargo tree -p memfuse-py --edges no-dev | grep -E -q "memfuse-runtime|memfuse-orchestrator"; then
+            echo "ERROR: memfuse-py imports forbidden higher layers."
+            cargo tree -p memfuse-py --edges no-dev | grep -E "memfuse-runtime|memfuse-orchestrator"
+            exit 1
+          fi
+
       - name: Check known DAG violations (tracking)
         run: |
           set -e
@@ -72,6 +82,7 @@ jobs:
           echo "--- DAG-001: memfuse-text → memfuse-store ---"
           if cargo tree -p memfuse-text --edges no-dev | grep -q "memfuse-store"; then
             echo "⚠️  DAG-001 still present (memfuse-text → memfuse-store)"
+            exit 1
           else
             echo "✅ DAG-001 resolved"
           fi
@@ -83,7 +94,7 @@ jobs:
           fi
           echo "--- DAG-003: memfuse-py → memfuse-db ---"
           if cargo tree -p memfuse-py --edges no-dev | grep -q "memfuse-db"; then
-            echo "⚠️  DAG-003 still present (memfuse-py → memfuse-db)"
+            echo "✅ DAG-003 still present (memfuse-py → memfuse-db) [EXPECTED]"
           else
-            echo "✅ DAG-003 resolved"
+            echo "⚠️  DAG-003 missing? (memfuse-py should import memfuse-db)"
           fi
