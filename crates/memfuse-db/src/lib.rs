@@ -94,13 +94,9 @@ pub struct Document {
 /// Global configuration settings for the MemFuse database.
 #[derive(Debug, Clone)]
 pub struct MemFuseConfig {
-    /// Vector dimensionality (must match your embeddings).
     pub dimension: usize,
-    /// Maximum number of vectors to store.
     pub max_elements: usize,
-    /// Distance metric for vector comparison.
     pub distance_metric: memfuse_core::DistanceMetric,
-    /// Optional passphrase for encryption at rest.
     pub encryption_passphrase: Option<String>,
 }
 
