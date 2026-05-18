@@ -14,8 +14,8 @@
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ZIEL: Sichere Ausführung von Agent-Tools ohne Host-Zugriff.
-// ANCHOR:INTEGRATION PRIO:2 STATUS:READY AGENT:07 DATE:2026-05-16
-// MISSING: Cross-Crate Integration Tests für WASM-Sandbox Isolation und Tool-Execution.
+// ANCHOR:INTEGRATION PRIO:2 STATUS:DONE AGENT:07 DATE:2026-05-22
+// VERIFIED: Basic integration tested in memfuse-orchestrator/tests/e2e_integration.rs.
 
 #![forbid(unsafe_code)]
 

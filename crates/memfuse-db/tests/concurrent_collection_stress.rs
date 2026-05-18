@@ -1,7 +1,7 @@
 //! High-concurrency stress tests for a single MemFuse collection.
 // ANCHOR:INTEGRATION:STRESS-001 STATUS:READY AGENT:12 DATE:2026-05-18
 
-use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
+use memfuse_db::{MemFuse, MemFuseConfig};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -12,8 +12,7 @@ async fn test_concurrent_collection_ops() {
     let tmp = TempDir::new().expect("temp dir");
     let config = MemFuseConfig {
         dimension: 4,
-        max_elements: 10000,
-        distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
     };
     let db = Arc::new(
         MemFuse::open_with_config(tmp.path(), config)

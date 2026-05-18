@@ -429,8 +429,6 @@ mod tests {
         let tmp = TempDir::new().expect("temp dir");
         let config = MemFuseConfig {
             dimension: dim,
-            max_elements: 10_000,
-            distance_metric: DistanceMetric::Cosine,
             ..Default::default()
         };
         let db = MemFuse::open_with_config(tmp.path(), config)

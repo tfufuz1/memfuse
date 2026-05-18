@@ -1,7 +1,7 @@
 // AGENT:12
 // ANCHOR:INTEGRATION STATUS:DONE
 // E2E Test: Full Stack Integration
-use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
+use memfuse_db::{MemFuse, MemFuseConfig};
 use memfuse_orchestrator::StateGraph;
 use memfuse_runtime::{SandboxConfig, WasmSandbox};
 use serde_json::json;
@@ -15,8 +15,7 @@ async fn test_e2e_agent_workflow() {
     let tmp = TempDir::new().expect("failed to create temp dir");
     let config = MemFuseConfig {
         dimension: 3,
-        max_elements: 1000,
-        distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
     };
     let db = MemFuse::open_with_config(tmp.path(), config)
         .await
@@ -117,8 +116,7 @@ async fn test_stress_concurrent_agent_ops() {
             tmp.path(),
             MemFuseConfig {
                 dimension: 4,
-                max_elements: 10000,
-                distance_metric: DistanceMetric::Cosine,
+                    ..Default::default()
             },
         )
         .await
