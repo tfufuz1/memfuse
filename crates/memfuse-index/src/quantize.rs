@@ -96,7 +96,11 @@ impl ScalarQuantizer {
 
         while i < n {
             let clamped = vector[i].clamp(self.min, self.max);
-            result.push(((clamped - self.min) * self.scale).round().clamp(0.0, 255.0) as u8);
+            result.push(
+                ((clamped - self.min) * self.scale)
+                    .round()
+                    .clamp(0.0, 255.0) as u8,
+            );
             i += 1;
         }
         result
@@ -150,7 +154,8 @@ impl ScalarQuantizer {
                 for &x in query {
                     norm_a += x * x;
                 }
-                let dot = parts.dot_f32_u8 * self.inv_scale + (query.iter().sum::<f32>() * self.min);
+                let dot =
+                    parts.dot_f32_u8 * self.inv_scale + (query.iter().sum::<f32>() * self.min);
                 let norm_b = (parts.norm_u8_sq as f32) * self.inv_scale * self.inv_scale
                     + 2.0 * self.inv_scale * self.min * (parts.sum_u8 as f32)
                     + (query.len() as f32) * self.min * self.min;
@@ -161,15 +166,13 @@ impl ScalarQuantizer {
                     1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
                 }
             }
-            DistanceMetric::Euclidean => {
-                crate::distance::euclidean_distance_sq_f32_u8(
-                    query,
-                    quantized,
-                    self.inv_scale,
-                    self.min,
-                )
-                .sqrt()
-            }
+            DistanceMetric::Euclidean => crate::distance::euclidean_distance_sq_f32_u8(
+                query,
+                quantized,
+                self.inv_scale,
+                self.min,
+            )
+            .sqrt(),
             DistanceMetric::DotProduct => {
                 let dot = crate::distance::dot_product_f32_u8(query, quantized);
                 let final_dot = dot * self.inv_scale + (query.iter().sum::<f32>() * self.min);
@@ -222,7 +225,10 @@ impl ScalarQuantizer {
             DistanceMetric::DotProduct => {
                 let dot = crate::distance::dot_product_u8(q1, q2);
                 let final_dot = (dot as f32) * self.inv_scale * self.inv_scale
-                    + self.inv_scale * self.min * (q1.iter().map(|&x| x as u32).sum::<u32>() as f32 + q2.iter().map(|&x| x as u32).sum::<u32>() as f32)
+                    + self.inv_scale
+                        * self.min
+                        * (q1.iter().map(|&x| x as u32).sum::<u32>() as f32
+                            + q2.iter().map(|&x| x as u32).sum::<u32>() as f32)
                     + (q1.len() as f32) * self.min * self.min;
                 -final_dot
             }

@@ -51,7 +51,9 @@ impl DiskAnnIndex {
 
         // Write header
         let header_bytes = bincode::serde::encode_to_vec(&header, bincode::config::standard())
-            .map_err(|e| memfuse_core::MemFuseError::Storage(format!("Header serialization failed: {}", e)))?;
+            .map_err(|e| {
+                memfuse_core::MemFuseError::Storage(format!("Header serialization failed: {}", e))
+            })?;
 
         let mut header_len_buf = [0u8; 4];
         header_len_buf.copy_from_slice(&(header_bytes.len() as u32).to_le_bytes());
