@@ -295,23 +295,48 @@ impl ResourceTracker {
     }
 
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
-        let current = self
-            .memory_used
-            .fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
-        if current + bytes > self.budget.memory_limit {
-            self.memory_used
-                .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
-            return Err(MemFuseError::MemoryBudgetExceeded {
-                used_mb: (current + bytes) / (1024 * 1024),
-                limit_mb: self.budget.memory_limit / (1024 * 1024),
-            });
+        // ANCHOR:SEC:OVERFLOW-001 — Atomic CAS Loop mit Checked-Arithmetic (Overflow-Schutz).
+        // WP:WP-0.0 PRIO:1 NEEDS:NONE
+        // AGENT:01 DATE:2026-05-22 STATUS:DONE
+        let mut current = self.memory_used.load(std::sync::atomic::Ordering::Acquire);
+        loop {
+            let new = current
+                .checked_add(bytes)
+                .ok_or_else(|| MemFuseError::Internal("Memory tracker overflow".to_string()))?;
+
+            if new > self.budget.memory_limit {
+                return Err(MemFuseError::MemoryBudgetExceeded {
+                    used_mb: new / (1024 * 1024),
+                    limit_mb: self.budget.memory_limit / (1024 * 1024),
+                });
+            }
+
+            match self.memory_used.compare_exchange_weak(
+                current,
+                new,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::Acquire,
+            ) {
+                Ok(_) => return Ok(()),
+                Err(actual) => current = actual,
+            }
         }
-        Ok(())
     }
 
     pub fn release_memory(&self, bytes: u64) {
-        self.memory_used
-            .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
+        let mut current = self.memory_used.load(std::sync::atomic::Ordering::Acquire);
+        loop {
+            let new = current.saturating_sub(bytes);
+            match self.memory_used.compare_exchange_weak(
+                current,
+                new,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::Acquire,
+            ) {
+                Ok(_) => return,
+                Err(actual) => current = actual,
+            }
+        }
     }
 
     pub fn memory_used(&self) -> u64 {

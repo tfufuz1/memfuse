@@ -114,3 +114,74 @@ impl Drop for SnapshotGuard {
         self.registry.release(self.seq_no);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_snapshot_registry_min_active() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+
+        let g1 = registry.register(100);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        let g2 = registry.register(50);
+        assert_eq!(registry.min_active_seqno(), 50);
+
+        let g3 = registry.register(150);
+        assert_eq!(registry.min_active_seqno(), 50);
+
+        drop(g2);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        drop(g1);
+        assert_eq!(registry.min_active_seqno(), 150);
+
+        drop(g3);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
+    fn test_snapshot_registry_tombstone_masking() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        // 100 with TOMBSTONE_BIT (bit 63) set
+        let seq_with_tombstone = 100 | TOMBSTONE_BIT;
+
+        let g = registry.register(seq_with_tombstone);
+        assert_eq!(g.seq_no(), 100);
+        assert_eq!(registry.min_active_seqno(), 100);
+    }
+
+    #[test]
+    fn test_snapshot_registry_pinning() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        registry.pin(200);
+        assert_eq!(registry.min_active_seqno(), 200);
+
+        let g = registry.register(300);
+        assert_eq!(registry.min_active_seqno(), 200);
+
+        registry.unpin(200);
+        assert_eq!(registry.min_active_seqno(), 300);
+
+        drop(g);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
+    fn test_snapshot_registry_multiple_guards_same_seq() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        let g1 = registry.register(100);
+        let g2 = registry.register(100);
+
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        drop(g1);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        drop(g2);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+}
