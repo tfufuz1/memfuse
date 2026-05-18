@@ -78,6 +78,9 @@ pub enum MemFuseError {
     // ═══ Text Engine ═══
     #[error("Text engine error: {0}")]
     Text(String),
+
+    #[error("Index not trained: {0}")]
+    IndexNotTrained(String),
 }
 
 impl MemFuseError {

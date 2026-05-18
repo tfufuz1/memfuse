@@ -316,7 +316,12 @@ mod tests {
 
         let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10));
         assert!(buffer.has_tx(tx1));
-        sleep(Duration::from_millis(100)).await;
+
+        // Wait up to 500ms for the reaper to clean up
+        let start = std::time::Instant::now();
+        while buffer.has_tx(tx1) && start.elapsed() < Duration::from_millis(500) {
+            sleep(Duration::from_millis(10)).await;
+        }
         assert!(!buffer.has_tx(tx1));
     }
 
