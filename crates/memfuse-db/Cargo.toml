@@ -11,7 +11,7 @@ memfuse-core = { workspace = true }
 memfuse-store = { workspace = true }
 memfuse-index = { workspace = true }
 memfuse-text = { workspace = true }
-memfuse-checkpoint = { path = "../memfuse-checkpoint" }
+memfuse-checkpoint = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
@@ -20,7 +20,7 @@ tracing = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile = { workspace = true }
-criterion = { version = "0.5", features = ["async_tokio"] }
+criterion = { workspace = true }
 
 [features]
 bench = []

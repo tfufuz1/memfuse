@@ -15,7 +15,7 @@ async fn test_ram_reduction_4x() {
         distance_metric: DistanceMetric::Cosine,
         rebuild_threshold: 0.8,
         quantize: false,
-    };
+     ..Default::default() };
 
     let index_f32 = HnswIndex::new(config.clone());
     config.quantize = true;
