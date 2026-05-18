@@ -9,75 +9,12 @@ static STOPWORDS: OnceLock<HashSet<String>> = OnceLock::new();
 fn get_stopwords() -> &'static HashSet<String> {
     STOPWORDS.get_or_init(|| {
         let words = vec![
-            "a",
-            "am",
-            "an",
-            "and",
-            "are",
-            "as",
-            "at",
-            "auf",
-            "be",
-            "but",
-            "by",
-            "das",
-            "dem",
-            "den",
-            "der",
-            "des",
-            "die",
-            "ein",
-            "eine",
-            "einer",
-            "eines",
-            "for",
-            "für",
-            "he",
-            "her",
-            "his",
-            "i",
-            "if",
-            "im",
-            "in",
-            "into",
-            "is",
-            "ist",
-            "it",
-            "its",
-            "me",
-            "mit",
-            "my",
-            "no",
-            "not",
-            "oder",
-            "of",
-            "on",
-            "or",
-            "our",
-            "she",
-            "sind",
-            "such",
-            "that",
-            "the",
-            "their",
-            "them",
-            "then",
-            "there",
-            "these",
-            "they",
-            "this",
-            "to",
-            "über",
-            "und",
-            "von",
-            "war",
-            "was",
-            "we",
-            "will",
-            "with",
-            "you",
-            "your",
-            "zu",
+            "a", "am", "an", "and", "are", "as", "at", "auf", "be", "but", "by", "das", "dem",
+            "den", "der", "des", "die", "ein", "eine", "einer", "eines", "for", "für", "he", "her",
+            "his", "i", "if", "im", "in", "into", "is", "ist", "it", "its", "me", "mit", "my",
+            "no", "not", "oder", "of", "on", "or", "our", "she", "sind", "such", "that", "the",
+            "their", "them", "then", "there", "these", "they", "this", "to", "über", "und", "von",
+            "war", "was", "we", "will", "with", "you", "your", "zu",
         ];
         words.into_iter().map(|w| w.to_string()).collect()
     })
@@ -137,8 +74,8 @@ impl Tokenizer for GermanMorphTokenizer {
     }
 }
 
-/// Tokenizes text into lowercase words using Unicode word boundaries and filters stopwords.
-/// Deprecated: Use `DefaultTokenizer.tokenize()` instead.
+/// Tokenizes text into lowercase words using Unicode word boundaries and
+/// filters stopwords. Deprecated: Use `DefaultTokenizer.tokenize()` instead.
 pub fn tokenize(text: &str) -> Vec<String> {
     DefaultTokenizer.tokenize(text)
 }
