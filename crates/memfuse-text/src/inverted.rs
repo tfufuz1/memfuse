@@ -46,6 +46,23 @@ impl InvertedIndex {
         k
     }
 
+    fn key_with_tag(&self, tag: &[u8], suffix: &str) -> Vec<u8> {
+        let mut k = Vec::with_capacity(self.prefix.len() + tag.len() + suffix.len());
+        k.extend_from_slice(&self.prefix);
+        k.extend_from_slice(tag);
+        k.extend_from_slice(suffix.as_bytes());
+        k
+    }
+
+    fn doc_key(&self, tag: &[u8], doc_id: DocId) -> Vec<u8> {
+        let mut k = Vec::with_capacity(self.prefix.len() + tag.len() + 20);
+        k.extend_from_slice(&self.prefix);
+        k.extend_from_slice(tag);
+        let mut itoa_buf = itoa::Buffer::new();
+        k.extend_from_slice(itoa_buf.format(doc_id.inner()).as_bytes());
+        k
+    }
+
     /// Appends and updates inverted index structures for a document.
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
         let tokens = self.tokenizer.tokenize(text);
@@ -57,8 +74,8 @@ impl InvertedIndex {
         }
 
         // Check if document already exists to adjust total_tokens and total_docs
-        let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
-        let fw_key = self.key(&format!("fw:{}", doc_id.inner()));
+        let dl_key = self.doc_key(b"dl:", doc_id);
+        let fw_key = self.doc_key(b"fw:", doc_id);
         let mut old_len = 0u32;
         let mut is_update = false;
 
@@ -79,7 +96,7 @@ impl InvertedIndex {
                         bincode::serde::decode_from_slice::<Vec<String>, _>(&fw_bytes, config)
                     {
                         for term in old_terms {
-                            let pl_key = self.key(&format!("pl:{}", term));
+                            let pl_key = self.key_with_tag(b"pl:", &term);
                             if let Some(pl_bytes) = self.storage.get(&pl_key).await? {
                                 if let Ok((mut pl, _)) =
                                     bincode::serde::decode_from_slice::<Vec<(DocId, u32)>, _>(
@@ -162,7 +179,7 @@ impl InvertedIndex {
 
         // Update posting lists
         for (term, tf) in tfs_vec {
-            let pl_key = self.key(&format!("pl:{}", term));
+            let pl_key = self.key_with_tag(b"pl:", &term);
             let mut pl: Vec<(DocId, u32)> = Vec::new();
 
             if let Some(bytes) = self.storage.get(&pl_key).await? {
@@ -188,8 +205,8 @@ impl InvertedIndex {
 
     /// Deletes a document from the index.
     pub async fn delete_document(&self, tx: TxId, doc_id: DocId) -> Result<()> {
-        let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
-        let fw_key = self.key(&format!("fw:{}", doc_id.inner()));
+        let dl_key = self.doc_key(b"dl:", doc_id);
+        let fw_key = self.doc_key(b"fw:", doc_id);
 
         let mut doc_len = 0u32;
         if let Some(bytes) = self.storage.get(&dl_key).await? {
@@ -215,7 +232,7 @@ impl InvertedIndex {
                 bincode::serde::decode_from_slice::<Vec<String>, _>(&fw_bytes, config)
             {
                 for term in old_terms {
-                    let pl_key = self.key(&format!("pl:{}", term));
+                    let pl_key = self.key_with_tag(b"pl:", &term);
                     if let Some(pl_bytes) = self.storage.get(&pl_key).await? {
                         if let Ok((mut pl, _)) = bincode::serde::decode_from_slice::<
                             Vec<(DocId, u32)>,
@@ -315,7 +332,7 @@ impl InvertedIndex {
         let mut scores: HashMap<DocId, f32> = HashMap::new();
 
         for term in &tokens {
-            let pl_key = self.key(&format!("pl:{}", term));
+            let pl_key = self.key_with_tag(b"pl:", term);
             if let Some(bytes) = self.storage.get(&pl_key).await? {
                 let config = bincode::config::standard();
                 if let Ok((pl, _)) =
@@ -325,7 +342,7 @@ impl InvertedIndex {
 
                     for (doc_id, tf) in pl {
                         // Fetch doc length
-                        let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
+                        let dl_key = self.doc_key(b"dl:", doc_id);
                         let mut doc_len = 0u32;
                         if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
                             if dl_bytes.len() == 4 {
