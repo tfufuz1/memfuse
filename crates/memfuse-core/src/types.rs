@@ -45,24 +45,19 @@ impl DocId {
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Self {
-        // ANCHOR:DEBT:TYPES-002 AGENT:01 STATUS:DONE PRIO:3
+        // ANCHOR:DEBT:TYPES-003 AGENT:01 STATUS:DONE PRIO:3
         // SAFETY: blake3::hash() always returns a 32-byte hash.
-        // try_from_key() only fails if the hash is shorter than 8 bytes.
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes") // unwrap: blake3 hash is always 32 bytes
+        let hash = blake3::hash(key.as_bytes());
+        let mut buf = [0u8; 8];
+        buf.copy_from_slice(&hash.as_bytes()[..8]);
+        Self(u64::from_le_bytes(buf))
     }
 
     /// Safely derive a DocId from a user-provided string key.
-    ///
-    /// Uses blake3 hash and safe slice indexing.
     pub fn try_from_key(key: &str) -> Result<Self> {
         let hash = blake3::hash(key.as_bytes());
-        let bytes = hash
-            .as_bytes()
-            .get(..8)
-            .ok_or_else(|| MemFuseError::Internal("Blake3 hash too short".to_string()))?;
-
-        let buf: [u8; 8] = bytes.try_into().map_err(|_| {
-            MemFuseError::Internal("Failed to convert hash slice to array".to_string())
+        let buf: [u8; 8] = hash.as_bytes()[..8].try_into().map_err(|_| {
+            MemFuseError::Internal("Failed to extract 8 bytes from blake3 hash".to_string())
         })?;
         Ok(Self(u64::from_le_bytes(buf)))
     }
@@ -295,23 +290,34 @@ impl ResourceTracker {
     }
 
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
-        let current = self
-            .memory_used
-            .fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
-        if current + bytes > self.budget.memory_limit {
-            self.memory_used
-                .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
-            return Err(MemFuseError::MemoryBudgetExceeded {
-                used_mb: (current + bytes) / (1024 * 1024),
+        let res = self.memory_used.fetch_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |current| {
+                let next = current.checked_add(bytes)?;
+                if next > self.budget.memory_limit {
+                    None
+                } else {
+                    Some(next)
+                }
+            },
+        );
+
+        match res {
+            Ok(_) => Ok(()),
+            Err(current) => Err(MemFuseError::MemoryBudgetExceeded {
+                used_mb: current.saturating_add(bytes) / (1024 * 1024),
                 limit_mb: self.budget.memory_limit / (1024 * 1024),
-            });
+            }),
         }
-        Ok(())
     }
 
     pub fn release_memory(&self, bytes: u64) {
-        self.memory_used
-            .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
+        let _ = self.memory_used.fetch_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |current| Some(current.saturating_sub(bytes)),
+        );
     }
 
     pub fn memory_used(&self) -> u64 {
@@ -332,5 +338,48 @@ impl ResourceTracker {
         if self.memory_used() >= (self.budget.memory_limit as f64 * 0.80) as u64 {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_doc_id_from_key() {
+        let key = "test-key";
+        let id1 = DocId::from_key(key);
+        let id2 = DocId::try_from_key(key).unwrap();
+        assert_eq!(id1, id2);
+
+        let id3 = DocId::from_key("another-key");
+        assert_ne!(id1, id3);
+    }
+
+    #[test]
+    fn test_resource_tracker_budget() {
+        let budget = ResourceBudget { memory_limit: 100 };
+        let tracker = ResourceTracker::new(budget);
+
+        assert!(tracker.consume_memory(60).is_ok());
+        assert_eq!(tracker.memory_used(), 60);
+
+        // Exceed budget
+        assert!(tracker.consume_memory(50).is_err());
+        assert_eq!(tracker.memory_used(), 60);
+
+        tracker.release_memory(20);
+        assert_eq!(tracker.memory_used(), 40);
+
+        assert!(tracker.consume_memory(50).is_ok());
+        assert_eq!(tracker.memory_used(), 90);
+    }
+
+    #[test]
+    fn test_resource_tracker_underflow_protection() {
+        let tracker = ResourceTracker::new(ResourceBudget { memory_limit: 100 });
+        tracker.consume_memory(10).unwrap();
+        tracker.release_memory(20);
+        assert_eq!(tracker.memory_used(), 0);
     }
 }
