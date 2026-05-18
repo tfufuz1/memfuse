@@ -12,7 +12,7 @@ async fn test_orchestrator_stress_concurrency() {
     let config = MemFuseConfig {
         dimension: 4,
         max_elements: 10000,
-        distance_metric: DistanceMetric::Cosine,
+        distance_metric: DistanceMetric::Cosine, encryption_passphrase: None,
         ..Default::default()
     };
     let db = Arc::new(
