@@ -9,12 +9,79 @@ static STOPWORDS: OnceLock<HashSet<String>> = OnceLock::new();
 fn get_stopwords() -> &'static HashSet<String> {
     STOPWORDS.get_or_init(|| {
         let words = vec![
-            "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "if", "in", "into",
-            "is", "it", "no", "not", "of", "on", "or", "such", "that", "the", "their", "then",
-            "there", "these", "they", "this", "to", "was", "will", "with", "i", "me", "my", "we",
-            "our", "you", "your", "he", "she", "his", "her", "it", "its", "they", "them", "their",
-            "der", "die", "das", "ein", "eine", "einer", "eines", "dem", "den", "des", "am", "im",
-            "in", "an", "zu", "für", "und", "oder", "ist", "sind", "war", "von", "mit", "auf",
+            "a",
+            "an",
+            "and",
+            "are",
+            "as",
+            "at",
+            "be",
+            "but",
+            "by",
+            "for",
+            "if",
+            "in",
+            "into",
+            "is",
+            "it",
+            "no",
+            "not",
+            "of",
+            "on",
+            "or",
+            "such",
+            "that",
+            "the",
+            "their",
+            "then",
+            "there",
+            "these",
+            "they",
+            "this",
+            "to",
+            "was",
+            "will",
+            "with",
+            "i",
+            "me",
+            "my",
+            "we",
+            "our",
+            "you",
+            "your",
+            "he",
+            "she",
+            "his",
+            "her",
+            "it",
+            "its",
+            "they",
+            "them",
+            "their",
+            "der",
+            "die",
+            "das",
+            "ein",
+            "eine",
+            "einer",
+            "eines",
+            "dem",
+            "den",
+            "des",
+            "am",
+            "im",
+            "in",
+            "an",
+            "zu",
+            "für",
+            "und",
+            "oder",
+            "ist",
+            "sind",
+            "war",
+            "von",
+            "mit",
+            "auf",
             "über",
         ];
         words.into_iter().map(|w| w.to_string()).collect()
@@ -54,12 +121,20 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
+            // Morphological splitting for German suffixes
             // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            // e.g., "Gesellschaft" -> ["gesellschaft", "schaft"]
+            let mut matched = false;
+            for suffix in &["gericht", "schaft", "keit", "ung"] {
+                if lower.ends_with(suffix) && lower.len() > suffix.len() + 3 {
+                    tokens.push(lower.clone());
+                    tokens.push(suffix.to_string());
+                    matched = true;
+                    break;
+                }
+            }
+
+            if !matched {
                 tokens.push(lower);
             }
         }
@@ -100,5 +175,27 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+
+        let tokens = tokenizer.tokenize("Die Gesellschaft");
+        assert!(tokens.contains(&"gesellschaft".to_string()));
+        assert!(tokens.contains(&"schaft".to_string()));
+
+        let tokens = tokenizer.tokenize("Einsamkeit");
+        assert!(tokens.contains(&"einsamkeit".to_string()));
+        assert!(tokens.contains(&"keit".to_string()));
+
+        let tokens = tokenizer.tokenize("Ordnung");
+        assert!(tokens.contains(&"ordnung".to_string()));
+        assert!(tokens.contains(&"ung".to_string()));
+
+        // Test stem length > 3 rule
+        // "Zeitung" -> "zeit" (len 4) + "ung" -> OK
+        let tokens = tokenizer.tokenize("Zeitung");
+        assert!(tokens.contains(&"zeitung".to_string()));
+        assert!(tokens.contains(&"ung".to_string()));
+
+        // "Dung" -> stem is empty or too short -> No split
+        let tokens = tokenizer.tokenize("Dung");
+        assert_eq!(tokens, vec!["dung"]);
     }
 }
