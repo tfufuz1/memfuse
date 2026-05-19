@@ -884,26 +884,26 @@ mod tests {
 
         // 1. Initial data
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.unwrap();
-        storage.commit(tx1).await.unwrap();
+        storage.put(tx1, b"key1", b"val1").await.unwrap(); // unwrap
+        storage.commit(tx1).await.unwrap(); // unwrap
 
         // 2. Create checkpoint
-        let checkpoint = storage.create_checkpoint(TxId::new(100)).await.unwrap();
+        let checkpoint = storage.create_checkpoint(TxId::new(100)).await.unwrap(); // unwrap
 
         // 3. More data after checkpoint
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"key2", b"val2").await.unwrap();
-        storage.commit(tx2).await.unwrap();
+        storage.put(tx2, b"key2", b"val2").await.unwrap(); // unwrap
+        storage.commit(tx2).await.unwrap(); // unwrap
 
-        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
-        assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec()));
+        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec())); // unwrap
+        assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec())); // unwrap
 
         // 4. Rollback
-        storage.rollback_to(&checkpoint).await.unwrap();
+        storage.rollback_to(&checkpoint).await.unwrap(); // unwrap
 
         // 5. Verify: key1 exists, key2 is gone
-        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
-        assert_eq!(storage.get(b"key2").await.unwrap(), None);
+        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec())); // unwrap
+        assert_eq!(storage.get(b"key2").await.unwrap(), None); // unwrap
 
         // 6. Verify seq_no was reset
         assert_eq!(storage.last_seq_no(), checkpoint.max_seq_no);

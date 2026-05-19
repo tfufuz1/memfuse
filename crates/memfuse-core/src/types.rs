@@ -319,7 +319,8 @@ impl ResourceTracker {
     }
 
     pub fn reset(&self) {
-        self.memory_used.store(0, std::sync::atomic::Ordering::SeqCst);
+        self.memory_used
+            .store(0, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn budget(&self) -> &ResourceBudget {

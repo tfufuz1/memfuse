@@ -13,7 +13,7 @@
 // ABHAENGIGKEIT: Braucht WAL-Ref (aktuell auskommentiert: `wal: Arc<Wal>`).
 // SPEC: docs/specs/SPEC-20260505-WP-4.x-Scale.md (State Checkpointing Sektion)
 
-use memfuse_core::{TxId, Result};
+use memfuse_core::{Result, TxId};
 use std::path::PathBuf;
 
 /// Represents a Point-in-Time snapshot of the agent's memory state.
@@ -43,7 +43,12 @@ impl Checkpointer {
     }
 
     /// Records a new checkpoint at the current transaction ID marking an agent step.
-    pub fn create_checkpoint(&self, tx_id: TxId, max_seq_no: u64, sstables: Vec<PathBuf>) -> StateCheckpoint {
+    pub fn create_checkpoint(
+        &self,
+        tx_id: TxId,
+        max_seq_no: u64,
+        sstables: Vec<PathBuf>,
+    ) -> StateCheckpoint {
         StateCheckpoint {
             tx_id,
             timestamp_ms: std::time::SystemTime::now()
