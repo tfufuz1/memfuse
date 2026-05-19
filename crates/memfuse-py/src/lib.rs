@@ -188,14 +188,17 @@ impl PyMemFuse {
     ) -> PyResult<()> {
         let rt = get_runtime()?;
 
-        #[allow(unused_assignments)] let mut temp_vec = None;
+        #[allow(unused_assignments)]
+        let mut temp_vec = None;
         let vec_slice = if let Some(v) = &vector {
             v.as_slice().map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
             })?
         } else if let (Some(provider), Some(t)) = (&self.embedding_provider, text) {
             temp_vec = Some(provider.borrow(py).embed(py, t)?);
-            temp_vec.as_ref().ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding"))?
+            temp_vec.as_ref().ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
+            })?
         } else {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "Either 'vector' or 'text' (with configured EmbeddingProvider) must be provided.",
@@ -257,14 +260,17 @@ impl PyMemFuse {
     ) -> PyResult<()> {
         let rt = get_runtime()?;
 
-        #[allow(unused_assignments)] let mut temp_vec = None;
+        #[allow(unused_assignments)]
+        let mut temp_vec = None;
         let vec_slice = if let Some(v) = &vector {
             v.as_slice().map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
             })?
         } else if let (Some(provider), Some(t)) = (&self.embedding_provider, text) {
             temp_vec = Some(provider.borrow(py).embed(py, t)?);
-            temp_vec.as_ref().ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding"))?
+            temp_vec.as_ref().ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
+            })?
         } else {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "Either 'vector' or 'text' (with configured EmbeddingProvider) must be provided.",
@@ -301,14 +307,17 @@ impl PyMemFuse {
     ) -> PyResult<Vec<PyObject>> {
         let rt = get_runtime()?;
 
-        #[allow(unused_assignments)] let mut temp_vec = None;
+        #[allow(unused_assignments)]
+        let mut temp_vec = None;
         let vec_slice = if let Some(v) = &vector {
             v.as_slice().map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
             })?
         } else if let (Some(provider), Some(t)) = (&self.embedding_provider, text) {
             temp_vec = Some(provider.borrow(py).embed(py, t)?);
-            temp_vec.as_ref().ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding"))?
+            temp_vec.as_ref().ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
+            })?
         } else {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "Either 'vector' or 'text' (with configured EmbeddingProvider) must be provided.",
@@ -358,14 +367,17 @@ impl PyMemFuse {
     ) -> PyResult<Vec<PyObject>> {
         let rt = get_runtime()?;
 
-        #[allow(unused_assignments)] let mut temp_vec = None;
+        #[allow(unused_assignments)]
+        let mut temp_vec = None;
         let vec_slice = if let Some(v) = &vector {
             v.as_slice().map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
             })?
         } else if let Some(provider) = &self.embedding_provider {
             temp_vec = Some(provider.borrow(py).embed(py, text)?);
-            temp_vec.as_ref().ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding"))?
+            temp_vec.as_ref().ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
+            })?
         } else {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "Either 'vector' or configured EmbeddingProvider must be provided.",
@@ -508,14 +520,17 @@ impl PyCollection {
     ) -> PyResult<()> {
         let rt = get_runtime()?;
 
-        #[allow(unused_assignments)] let mut temp_vec = None;
+        #[allow(unused_assignments)]
+        let mut temp_vec = None;
         let vec_slice = if let Some(v) = &vector {
             v.as_slice().map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
             })?
         } else if let (Some(provider), Some(t)) = (&self.embedding_provider, text) {
             temp_vec = Some(provider.borrow(py).embed(py, t)?);
-            temp_vec.as_ref().ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding"))?
+            temp_vec.as_ref().ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
+            })?
         } else {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "Either 'vector' or 'text' (with configured EmbeddingProvider) must be provided.",
@@ -577,14 +592,17 @@ impl PyCollection {
     ) -> PyResult<()> {
         let rt = get_runtime()?;
 
-        #[allow(unused_assignments)] let mut temp_vec = None;
+        #[allow(unused_assignments)]
+        let mut temp_vec = None;
         let vec_slice = if let Some(v) = &vector {
             v.as_slice().map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
             })?
         } else if let (Some(provider), Some(t)) = (&self.embedding_provider, text) {
             temp_vec = Some(provider.borrow(py).embed(py, t)?);
-            temp_vec.as_ref().ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding"))?
+            temp_vec.as_ref().ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
+            })?
         } else {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "Either 'vector' or 'text' (with configured EmbeddingProvider) must be provided.",
@@ -621,14 +639,17 @@ impl PyCollection {
     ) -> PyResult<Vec<PyObject>> {
         let rt = get_runtime()?;
 
-        #[allow(unused_assignments)] let mut temp_vec = None;
+        #[allow(unused_assignments)]
+        let mut temp_vec = None;
         let vec_slice = if let Some(v) = &vector {
             v.as_slice().map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
             })?
         } else if let (Some(provider), Some(t)) = (&self.embedding_provider, text) {
             temp_vec = Some(provider.borrow(py).embed(py, t)?);
-            temp_vec.as_ref().ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding"))?
+            temp_vec.as_ref().ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
+            })?
         } else {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "Either 'vector' or 'text' (with configured EmbeddingProvider) must be provided.",
@@ -679,14 +700,17 @@ impl PyCollection {
     ) -> PyResult<Vec<PyObject>> {
         let rt = get_runtime()?;
 
-        #[allow(unused_assignments)] let mut temp_vec = None;
+        #[allow(unused_assignments)]
+        let mut temp_vec = None;
         let vec_slice = if let Some(v) = &vector {
             v.as_slice().map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
             })?
         } else if let Some(provider) = &self.embedding_provider {
             temp_vec = Some(provider.borrow(py).embed(py, text)?);
-            temp_vec.as_ref().ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding"))?
+            temp_vec.as_ref().ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
+            })?
         } else {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "Either 'vector' or configured EmbeddingProvider must be provided.",
