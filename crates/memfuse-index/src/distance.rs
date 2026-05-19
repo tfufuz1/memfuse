@@ -511,7 +511,7 @@ unsafe fn euclidean_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
     let mut i = 0;
 
     while i + 16 <= n {
-        // ANCHOR:SAFETY:SIMD-031 — AVX-512 Load, Sub und FMA.
+        // ANCHOR:SAFETY:SIMD-031 — AVX-512 Load und FMA.
         // BEGRÜNDUNG: i + 16 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
         unsafe {
             let va = _mm512_loadu_ps(a.as_ptr().add(i));
@@ -659,21 +659,58 @@ pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarity
 }
 
 /// Computes the dot product between an f32 vector and a u8 vector.
+#[inline]
 pub fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
-    a.iter().zip(b.iter()).map(|(&x, &y)| x * (y as f32)).sum()
+    debug_assert_eq!(a.len(), b.len());
+    let mut i = 0;
+    let n = a.len();
+    let mut sum = f32x8::splat(0.0);
+
+    while i + 8 <= n {
+        let va = f32x8::from_slice(&a[i..i + 8]);
+        let vb_u8 = u8x8::from_slice(&b[i..i + 8]);
+        let vb_f32: f32x8 = vb_u8.cast();
+        sum += va * vb_f32;
+        i += 8;
+    }
+
+    let mut res = sum.reduce_sum();
+    while i < n {
+        res += a[i] * (b[i] as f32);
+        i += 1;
+    }
+    res
 }
 
 /// Computes the squared Euclidean distance between an f32 vector and a u8 vector
 /// performing inline dequantization.
+#[inline]
 pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {
-    a.iter()
-        .zip(b.iter())
-        .map(|(&x, &y)| {
-            let y_f32 = (y as f32) * alpha + min;
-            let diff = x - y_f32;
-            diff * diff
-        })
-        .sum()
+    debug_assert_eq!(a.len(), b.len());
+    let mut i = 0;
+    let n = a.len();
+    let mut sum = f32x8::splat(0.0);
+    let v_alpha = f32x8::splat(alpha);
+    let v_min = f32x8::splat(min);
+
+    while i + 8 <= n {
+        let va = f32x8::from_slice(&a[i..i + 8]);
+        let vb_u8 = u8x8::from_slice(&b[i..i + 8]);
+        let vb_f32: f32x8 = vb_u8.cast();
+        let y_f32 = vb_f32 * v_alpha + v_min;
+        let diff = va - y_f32;
+        sum += diff * diff;
+        i += 8;
+    }
+
+    let mut res = sum.reduce_sum();
+    while i < n {
+        let y_f32 = (b[i] as f32) * alpha + min;
+        let diff = a[i] - y_f32;
+        res += diff * diff;
+        i += 1;
+    }
+    res
 }
 
 /// Parts required to compute asymmetric cosine similarity.
@@ -685,16 +722,38 @@ pub struct CosineSimilarityPartsF32U8 {
 }
 
 /// Computes the parts required for asymmetric cosine similarity between an f32 and a u8 vector.
+#[inline]
 pub fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPartsF32U8 {
-    let mut dot_f32_u8 = 0.0;
-    let mut sum_u8 = 0;
-    let mut norm_u8_sq = 0;
+    debug_assert_eq!(a.len(), b.len());
+    let mut i = 0;
+    let n = a.len();
+    let mut dot_v = f32x8::splat(0.0);
+    let mut sum_u8_v = u32x8::splat(0);
+    let mut norm_u8_sq_v = u32x8::splat(0);
 
-    for (&x, &y) in a.iter().zip(b.iter()) {
-        let yu = y as u32;
-        dot_f32_u8 += x * (y as f32);
+    while i + 8 <= n {
+        let va = f32x8::from_slice(&a[i..i + 8]);
+        let vb_u8 = u8x8::from_slice(&b[i..i + 8]);
+        let vb_u32: u32x8 = vb_u8.cast();
+        let vb_f32: f32x8 = vb_u8.cast();
+
+        dot_v += va * vb_f32;
+        sum_u8_v += vb_u32;
+        norm_u8_sq_v += vb_u32 * vb_u32;
+        i += 8;
+    }
+
+    let mut dot_f32_u8 = dot_v.reduce_sum();
+    let mut sum_u8 = sum_u8_v.reduce_sum();
+    let mut norm_u8_sq = norm_u8_sq_v.reduce_sum();
+
+    while i < n {
+        let xu = a[i];
+        let yu = b[i] as u32;
+        dot_f32_u8 += xu * (yu as f32);
         sum_u8 += yu;
         norm_u8_sq += yu * yu;
+        i += 1;
     }
 
     CosineSimilarityPartsF32U8 {

@@ -726,10 +726,15 @@ impl VectorIndex for HnswIndex {
             )));
         }
 
-        let query_quantized = if self.config.quantize {
-            self.quantizer.read().as_ref().map(|q| q.quantize(query))
+        let (query_quantized, precomputed_query) = if self.config.quantize {
+            let guard = self.quantizer.read();
+            if let Some(q) = guard.as_ref() {
+                (Some(q.quantize(query)), Some(q.precompute_query(query)))
+            } else {
+                (None, None)
+            }
         } else {
-            None
+            (None, None)
         };
 
         let entry = *self.entry_point.read();
@@ -781,7 +786,16 @@ impl VectorIndex for HnswIndex {
                     let q = guard.as_ref().ok_or_else(|| {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                     })?;
-                    q.asymmetric_dist(query, v, self.config.distance_metric)?
+                    if let Some(pre) = &precomputed_query {
+                        q.asymmetric_dist_precomputed(
+                            query,
+                            pre,
+                            v,
+                            self.config.distance_metric,
+                        )?
+                    } else {
+                        q.asymmetric_dist(query, v, self.config.distance_metric)?
+                    }
                 } else {
                     c.distance
                 }
@@ -824,10 +838,15 @@ impl VectorIndex for HnswIndex {
             )));
         }
 
-        let query_quantized = if self.config.quantize {
-            self.quantizer.read().as_ref().map(|q| q.quantize(query))
+        let (query_quantized, precomputed_query) = if self.config.quantize {
+            let guard = self.quantizer.read();
+            if let Some(q) = guard.as_ref() {
+                (Some(q.quantize(query)), Some(q.precompute_query(query)))
+            } else {
+                (None, None)
+            }
         } else {
-            None
+            (None, None)
         };
 
         let entry = *self.entry_point.read();
@@ -878,7 +897,16 @@ impl VectorIndex for HnswIndex {
                     let q = guard.as_ref().ok_or_else(|| {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                     })?;
-                    q.asymmetric_dist(query, v, self.config.distance_metric)?
+                    if let Some(pre) = &precomputed_query {
+                        q.asymmetric_dist_precomputed(
+                            query,
+                            pre,
+                            v,
+                            self.config.distance_metric,
+                        )?
+                    } else {
+                        q.asymmetric_dist(query, v, self.config.distance_metric)?
+                    }
                 } else {
                     c.distance
                 }
