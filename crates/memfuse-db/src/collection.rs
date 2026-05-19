@@ -358,8 +358,6 @@ impl Collection {
 
         match strategy {
             FilterStrategy::PreFilter => {
-                // WP-4.2: Real Pre-filtering implementation.
-                // Scan all documents in the collection, check filter, and collect DocIds.
                 let doc_idx_prefix = if self.name == "default" {
                     b"__docid:".to_vec()
                 } else {
@@ -388,16 +386,12 @@ impl Collection {
                 self.search_filtered(query, k, Some(&filter_closure)).await
             }
             FilterStrategy::PostFilter | FilterStrategy::Hybrid => {
-                // Post-filtering trade-off: Fetch metadata during search traversal.
                 let filter_closure = move |doc_id: DocId| self.match_metadata_sync(doc_id, &filter);
-
                 self.search_filtered(query, k, Some(&filter_closure)).await
             }
         }
     }
 
-    /// Internal helper to match metadata synchronously (using block_in_place).
-    /// This is used in HNSW search closures for Post-Filtering.
     fn match_metadata_sync(&self, doc_id: DocId, filter: &MetadataFilter) -> bool {
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
 

@@ -157,10 +157,7 @@ async fn test_advanced_metadata_filtering_wp42() {
         .expect("insert");
     }
 
-    // AC-1: test_post_filter_returns_only_matching
     let filter = MetadataFilter::new(FilterExpr::Eq("topic".to_string(), json!("rust")));
-    // Selectivity is 0.01 (Eq), so it will choose PreFilter, but we implemented it as PostFilter fallback.
-
     let results = col
         .search_with_filter(&[1.0, 0.0, 0.0, 0.0], 10, filter)
         .await
@@ -171,8 +168,6 @@ async fn test_advanced_metadata_filtering_wp42() {
         assert_eq!(res.metadata.unwrap()["topic"], "rust");
     }
 
-    // AC-2: test_pre_filter_with_low_selectivity
-    // This is already covered by the selectivity logic in choose_strategy.
     let filter_low = MetadataFilter::new(FilterExpr::Eq("topic".to_string(), json!("rust")));
     assert_eq!(
         filter_low.choose_strategy(),
