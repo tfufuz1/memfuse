@@ -18,7 +18,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
-criterion = "0.5"
+criterion = { workspace = true }
 
 [[bench]]
 name = "distance_bench"

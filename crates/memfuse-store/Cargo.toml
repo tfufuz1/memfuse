@@ -11,21 +11,21 @@ memfuse-core = { workspace = true }
 bytes = { workspace = true }
 blake3 = { workspace = true }
 crc32fast = { workspace = true }
-sha2 = "0.10"
-hmac = "0.12"
-aes-gcm = "0.10"
-hkdf = "0.12"
+sha2 = { workspace = true }
+hmac = { workspace = true }
+aes-gcm = { workspace = true }
+hkdf = { workspace = true }
 parking_lot = { workspace = true }
 tokio = { workspace = true }
 memmap2 = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
-lru = "0.13"
+lru = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile = { workspace = true }
-criterion = { version = "0.5", features = ["async_tokio"] }
+criterion = { workspace = true, features = ["async_tokio"] }
 
 [[bench]]
 name = "sstable_bench"

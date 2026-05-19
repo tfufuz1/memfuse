@@ -30,15 +30,28 @@ tokio-stream = "0.1"
 
 # Data structures
 bytes = "1"
-memmap2 = "0.9"
+memmap2 = "0.9.10"
 ahash = "0.8"
 parking_lot = "0.12"
 roaring = "0.10"
-unicode-segmentation = "1"
+lru = "0.13.0"
+unicode-segmentation = "1.11.0"
+
+# Python Bindings
+pyo3 = "0.24.1"
+numpy = "0.24"
+pythonize = "0.24"
+
+# Benchmarking
+criterion = "0.5"
 
 # Crypto & hashing
 blake3 = "1"
-crc32fast = "1.3"
+crc32fast = "1.5.0"
+sha2 = "0.10.9"
+hmac = "0.12.1"
+aes-gcm = "0.10.3"
+hkdf = "0.12.4"
 
 # Concurrency
 rand = "0.8"

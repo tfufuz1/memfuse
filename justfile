@@ -79,8 +79,8 @@ dag-check:
         cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
         exit 1
     fi
-    echo "Verifying memfuse-text (excluding tracked DAG-001)..."
-    if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
+    echo "Verifying memfuse-text..."
+    if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-text violates DAG."
         cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
         exit 1
@@ -101,7 +101,7 @@ dag-check:
     fi
 
     echo "--- Known DAG Violations (Tracking) ---"
-    for VIOLATION in "memfuse-text:memfuse-store:DAG-001" "memfuse-checkpoint:memfuse-store:DAG-002" "memfuse-py:memfuse-db:DAG-003"; do
+    for VIOLATION in "memfuse-checkpoint:memfuse-store:DAG-002" "memfuse-py:memfuse-db:DAG-003"; do
         CRATE=${VIOLATION%%:*}
         TARGET=$(echo $VIOLATION | cut -d: -f2)
         ID=$(echo $VIOLATION | cut -d: -f3)

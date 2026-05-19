@@ -20,7 +20,7 @@ tracing = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile = { workspace = true }
-criterion = { version = "0.5", features = ["async_tokio"] }
+criterion = { workspace = true, features = ["async_tokio"] }
 
 [features]
 bench = []
