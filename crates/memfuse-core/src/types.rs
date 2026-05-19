@@ -45,10 +45,11 @@ impl DocId {
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Self {
-        // ANCHOR:DEBT:TYPES-002 AGENT:01 STATUS:DONE PRIO:3
-        // SAFETY: blake3::hash() always returns a 32-byte hash.
-        // try_from_key() only fails if the hash is shorter than 8 bytes.
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes") // unwrap: blake3 hash is always 32 bytes
+        let hash = blake3::hash(key.as_bytes());
+        let bytes = hash.as_bytes();
+        let mut buf = [0u8; 8];
+        buf.copy_from_slice(&bytes[..8]);
+        Self(u64::from_le_bytes(buf))
     }
 
     /// Safely derive a DocId from a user-provided string key.
@@ -295,23 +296,34 @@ impl ResourceTracker {
     }
 
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
-        let current = self
-            .memory_used
-            .fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
-        if current + bytes > self.budget.memory_limit {
-            self.memory_used
-                .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
-            return Err(MemFuseError::MemoryBudgetExceeded {
-                used_mb: (current + bytes) / (1024 * 1024),
+        let result = self.memory_used.fetch_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |current| {
+                let new_total = current.checked_add(bytes)?;
+                if new_total > self.budget.memory_limit {
+                    None
+                } else {
+                    Some(new_total)
+                }
+            },
+        );
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(current) => Err(MemFuseError::MemoryBudgetExceeded {
+                used_mb: current.saturating_add(bytes) / (1024 * 1024),
                 limit_mb: self.budget.memory_limit / (1024 * 1024),
-            });
+            }),
         }
-        Ok(())
     }
 
     pub fn release_memory(&self, bytes: u64) {
-        self.memory_used
-            .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
+        let _ = self.memory_used.fetch_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |current| Some(current.saturating_sub(bytes)),
+        );
     }
 
     pub fn memory_used(&self) -> u64 {
