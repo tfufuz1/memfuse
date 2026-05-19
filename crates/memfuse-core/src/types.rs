@@ -1,6 +1,8 @@
 //! Core type definitions for MemFuse.
 //!
 //! Simplified from ChimeraDB — no rkyv, no namespaces, string-based IDs.
+// ANCHOR:DOC:TYPES-001 — Added missing documentation.
+// AGENT:08 STATUS:DONE DATE:2026-05-19
 
 // ANCHOR:ARCH:TYPES-001 — Zentrale Datentypen für den gesamten Workspace.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -294,6 +296,9 @@ impl ResourceTracker {
         }
     }
 
+    /// Consumes memory from the budget.
+    ///
+    /// Returns `Err(MemFuseError::MemoryBudgetExceeded)` if the limit is reached.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         let current = self
             .memory_used
@@ -309,15 +314,18 @@ impl ResourceTracker {
         Ok(())
     }
 
+    /// Releases memory back to the budget.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Returns the current memory usage in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns the configured resource budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }

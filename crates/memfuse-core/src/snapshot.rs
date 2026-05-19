@@ -2,6 +2,8 @@
 //!
 //! Manages active read snapshots and computes the minimum active
 //! sequence number to prevent premature tombstone GC.
+// ANCHOR:DOC:SNAPSHOT-001 — Added missing documentation.
+// AGENT:08 STATUS:DONE DATE:2026-05-19
 
 // ANCHOR:ARCH:MVCC-001 — Snapshot-Registry schützt Reads vor Compaction-GC.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -104,6 +106,7 @@ pub struct SnapshotGuard {
 }
 
 impl SnapshotGuard {
+    /// Returns the sequence number associated with this snapshot.
     pub fn seq_no(&self) -> u64 {
         self.seq_no
     }
