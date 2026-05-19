@@ -51,8 +51,7 @@ fn bench_text_engine(c: &mut Criterion) {
         b.to_async(&rt).iter(|| {
             let index = index.clone();
             async move {
-                black_box(index.search_bm25("keyword5 common_word", 10).await.unwrap());
-                // unwrap
+                black_box(index.search_bm25("keyword5 common_word", 10).await.unwrap()); // unwrap
             }
         });
     });
