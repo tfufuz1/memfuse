@@ -76,6 +76,9 @@ impl<T: Clone> TxBuffer<T> {
 
     /// Creates a new buffer with custom settings.
     pub fn new_with_config(shard_count: usize, tx_timeout: Duration) -> Self {
+        // ANCHOR:SEC:PANIC-002 AGENT:10 PRIO:1 STATUS:REVIEW DATE:2026-06-10
+        // Ensure shard_count is at least 1 to prevent division-by-zero in shard_idx.
+        let shard_count = shard_count.max(1);
         let mut shards = Vec::with_capacity(shard_count);
         for _ in 0..shard_count {
             shards.push(RwLock::new(TxShard::new()));

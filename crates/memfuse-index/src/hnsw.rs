@@ -287,6 +287,8 @@ impl HnswIndexCore {
         ef: usize,
         layer: usize,
     ) -> Result<Vec<Candidate>> {
+        // ANCHOR:SEC:SLICE-003 AGENT:10 PRIO:1 STATUS:REVIEW DATE:2026-06-10
+        // Use safe indexing with .get() to prevent out-of-bounds panics during graph search.
         let nodes = self.nodes.read();
         let mut visited = AHashSet::new();
         let mut candidates = BinaryHeap::new();
@@ -294,14 +296,16 @@ impl HnswIndexCore {
 
         for &ep in entry_points {
             if visited.insert(ep) {
-                let dist =
-                    self.compute_distance_with_data(query, query_quantized, &nodes[ep].vector)?;
-                let cand = Candidate {
-                    index: ep,
-                    distance: dist,
-                };
-                candidates.push(Reverse(cand));
-                results.push(cand);
+                if let Some(node) = nodes.get(ep) {
+                    let dist =
+                        self.compute_distance_with_data(query, query_quantized, &node.vector)?;
+                    let cand = Candidate {
+                        index: ep,
+                        distance: dist,
+                    };
+                    candidates.push(Reverse(cand));
+                    results.push(cand);
+                }
             }
         }
 
@@ -312,28 +316,32 @@ impl HnswIndexCore {
                 }
             }
 
-            if layer < nodes[current.index].connections.len() {
-                for &neighbor in &nodes[current.index].connections[layer] {
-                    if visited.insert(neighbor) {
-                        let dist = self.compute_distance_with_data(
-                            query,
-                            query_quantized,
-                            &nodes[neighbor].vector,
-                        )?;
-                        let is_better = match results.peek() {
-                            Some(worst) => dist < worst.distance,
-                            None => true,
-                        };
+            if let Some(node) = nodes.get(current.index) {
+                if layer < node.connections.len() {
+                    for &neighbor in &node.connections[layer] {
+                        if visited.insert(neighbor) {
+                            if let Some(neighbor_node) = nodes.get(neighbor) {
+                                let dist = self.compute_distance_with_data(
+                                    query,
+                                    query_quantized,
+                                    &neighbor_node.vector,
+                                )?;
+                                let is_better = match results.peek() {
+                                    Some(worst) => dist < worst.distance,
+                                    None => true,
+                                };
 
-                        if results.len() < ef || is_better {
-                            let cand = Candidate {
-                                index: neighbor,
-                                distance: dist,
-                            };
-                            candidates.push(Reverse(cand));
-                            results.push(cand);
-                            if results.len() > ef {
-                                results.pop();
+                                if results.len() < ef || is_better {
+                                    let cand = Candidate {
+                                        index: neighbor,
+                                        distance: dist,
+                                    };
+                                    candidates.push(Reverse(cand));
+                                    results.push(cand);
+                                    if results.len() > ef {
+                                        results.pop();
+                                    }
+                                }
                             }
                         }
                     }
