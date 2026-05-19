@@ -54,12 +54,19 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            // Improved compound splitting for common legal/administrative suffixes
+            let suffixes = ["gericht", "ordnung", "gesetz", "vertrag", "recht"];
+            let mut split = false;
+            for suffix in suffixes {
+                if lower.ends_with(suffix) && lower.len() > 7 && lower != suffix {
+                    tokens.push(lower.clone());
+                    tokens.push(suffix.to_string());
+                    split = true;
+                    break;
+                }
+            }
+
+            if !split {
                 tokens.push(lower);
             }
         }
@@ -100,5 +107,31 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+    }
+
+    #[test]
+    fn test_german_morph_tokenizer_expanded() {
+        let tokenizer = GermanMorphTokenizer;
+        let examples = vec![
+            ("Grundgesetz", "gesetz"),
+            ("Hausordnung", "ordnung"),
+            ("Mietvertrag", "vertrag"),
+            ("Arbeitsrecht", "recht"),
+        ];
+
+        for (input, suffix) in examples {
+            let tokens = tokenizer.tokenize(input);
+            assert!(
+                tokens.contains(&input.to_lowercase()),
+                "Missing original word for {}",
+                input
+            );
+            assert!(
+                tokens.contains(&suffix.to_string()),
+                "Missing suffix {} for {}",
+                suffix,
+                input
+            );
+        }
     }
 }

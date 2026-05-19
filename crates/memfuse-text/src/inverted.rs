@@ -276,6 +276,10 @@ impl InvertedIndex {
 
     /// Searches the inverted index using BM25.
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
+        if k == 0 {
+            return Ok(Vec::new());
+        }
+
         let tokens = tokenize(query);
         if tokens.is_empty() {
             return Ok(Vec::new());
@@ -313,6 +317,7 @@ impl InvertedIndex {
         };
 
         let mut scores: HashMap<DocId, f32> = HashMap::new();
+        let mut doc_len_cache: HashMap<DocId, u32> = HashMap::new();
 
         for term in &tokens {
             let pl_key = self.key(&format!("pl:{}", term));
@@ -324,17 +329,22 @@ impl InvertedIndex {
                     let df = pl.len() as u32;
 
                     for (doc_id, tf) in pl {
-                        // Fetch doc length
-                        let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
-                        let mut doc_len = 0u32;
-                        if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
-                            if dl_bytes.len() == 4 {
-                                doc_len =
-                                    u32::from_le_bytes(dl_bytes.as_slice().try_into().map_err(
+                        // Fetch doc length with local cache
+                        let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
+                            len
+                        } else {
+                            let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
+                            let mut len = 0u32;
+                            if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
+                                if dl_bytes.len() == 4 {
+                                    len = u32::from_le_bytes(dl_bytes.as_slice().try_into().map_err(
                                         |_| MemFuseError::Storage("Invalid doc_len length".into()),
                                     )?);
+                                }
                             }
-                        }
+                            doc_len_cache.insert(doc_id, len);
+                            len
+                        };
 
                         let score = crate::bm25::score_term(
                             tf,
@@ -351,9 +361,17 @@ impl InvertedIndex {
         }
 
         let mut results: Vec<(DocId, f32)> = scores.into_iter().collect();
-        // Sort descending by score
+
+        if results.len() > k {
+            // Efficiently find the top k results using partial sort
+            results.select_nth_unstable_by(k - 1, |a, b| {
+                b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            results.truncate(k);
+        }
+
+        // Final sort of the top k
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        results.truncate(k);
 
         Ok(results)
     }
@@ -611,6 +629,29 @@ mod tests {
         storage.commit(tx3).await?;
 
         assert_eq!(index.search_bm25("python", 10).await?.len(), 0);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_search_k_zero() -> Result<()> {
+        let tmp = TempDir::new().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(
+            LsmStorage::new(config)
+                .await
+                .map_err(|e| MemFuseError::Storage(e.to_string()))?,
+        );
+        let index = InvertedIndex::new(storage.clone(), "default");
+
+        let tx = TxId::new(1);
+        index.insert(tx, DocId::new(1), "test").await?;
+        index.commit(tx).await?;
+
+        let results = index.search_bm25("test", 0).await?;
+        assert!(results.is_empty());
         Ok(())
     }
 
