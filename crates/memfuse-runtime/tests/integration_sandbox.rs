@@ -14,13 +14,17 @@ fn test_integration_sandbox_isolation() {
 
     // Test that the sandbox can be instantiated and executed.
     // In a real scenario, this would test memory limits and isolation.
-    let result = sandbox.execute(b"MOCK_WASM", "test_input").expect("Execution failed");
+    let result = sandbox
+        .execute(b"MOCK_WASM", "test_input")
+        .expect("Execution failed");
     assert_eq!(result, "sandbox_execution_result_placeholder");
 }
 
 #[test]
 fn test_sandbox_default_config() {
     let sandbox = WasmSandbox::new(SandboxConfig::default());
-    let result = sandbox.execute(b"MOCK_WASM", "hello").expect("Execution failed");
+    let result = sandbox
+        .execute(b"MOCK_WASM", "hello")
+        .expect("Execution failed");
     assert!(!result.is_empty());
 }
