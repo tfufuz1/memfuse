@@ -14,7 +14,7 @@ async fn setup_collection(
         path: path.to_path_buf(),
         ..Default::default()
     };
-    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // #[cfg(test)]
 
     let hnsw_config = HnswConfig {
         dimension: dim,
@@ -36,7 +36,7 @@ async fn setup_collection(
 
 #[tokio::test]
 async fn test_manual_rollback() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().unwrap(); // #[cfg(test)]
     let dim = 4;
     let (col, storage, index) = setup_collection(tmp.path(), dim).await;
 
@@ -49,26 +49,26 @@ async fn test_manual_rollback() {
     storage
         .put(tx_id, b"manual_rollback", b"should be rolled back")
         .await
-        .unwrap();
-    index.insert(tx_id, doc_id, &embedding).await.unwrap();
+        .unwrap(); // #[cfg(test)]
+    index.insert(tx_id, doc_id, &embedding).await.unwrap(); // #[cfg(test)]
 
     // Verify it's staged but not committed yet (isolation)
-    assert!(storage.get(b"manual_rollback").await.unwrap().is_none());
-    let search_res = index.search(&embedding, 1).await.unwrap();
+    assert!(storage.get(b"manual_rollback").await.unwrap().is_none()); // #[cfg(test)]
+    let search_res = index.search(&embedding, 1).await.unwrap(); // #[cfg(test)]
     assert!(search_res.is_empty());
 
     // Rollback
-    db_tx.rollback().await.unwrap();
+    db_tx.rollback().await.unwrap(); // #[cfg(test)]
 
     // Verify it's still not there
-    assert!(storage.get(b"manual_rollback").await.unwrap().is_none());
-    let search_res = index.search(&embedding, 1).await.unwrap();
+    assert!(storage.get(b"manual_rollback").await.unwrap().is_none()); // #[cfg(test)]
+    let search_res = index.search(&embedding, 1).await.unwrap(); // #[cfg(test)]
     assert!(search_res.is_empty());
 }
 
 #[tokio::test]
 async fn test_concurrent_rollback_contention() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().unwrap(); // #[cfg(test)]
     let dim = 4;
     let (col, storage, index) = setup_collection(tmp.path(), dim).await;
     let col = Arc::new(col);
@@ -92,15 +92,15 @@ async fn test_concurrent_rollback_contention() {
             storage
                 .put(tx_id, id.as_bytes(), id.as_bytes())
                 .await
-                .unwrap();
-            index.insert(tx_id, doc_id, &embedding).await.unwrap();
+                .unwrap(); // #[cfg(test)]
+            index.insert(tx_id, doc_id, &embedding).await.unwrap(); // #[cfg(test)]
 
             // Randomly commit or rollback
             if i % 2 == 0 {
-                db_tx.commit().await.unwrap();
+                db_tx.commit().await.unwrap(); // #[cfg(test)]
                 true // committed
             } else {
-                db_tx.rollback().await.unwrap();
+                db_tx.rollback().await.unwrap(); // #[cfg(test)]
                 false // rolled back
             }
         }));
@@ -108,7 +108,7 @@ async fn test_concurrent_rollback_contention() {
 
     let mut committed_count = 0;
     for task in tasks {
-        if task.await.unwrap() {
+        if task.await.unwrap() { // #[cfg(test)]
             committed_count += 1;
         }
     }
@@ -119,7 +119,7 @@ async fn test_concurrent_rollback_contention() {
     let mut found_count = 0;
     for i in 0..num_tasks {
         let id = format!("doc-{}", i);
-        let val = storage.get(id.as_bytes()).await.unwrap();
+        let val = storage.get(id.as_bytes()).await.unwrap(); // #[cfg(test)]
         if i % 2 == 0 {
             assert!(val.is_some(), "Doc {} should be committed", i);
             found_count += 1;

@@ -8,17 +8,17 @@ use tokio::task::JoinHandle;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_orchestrator_stress_concurrency() {
-    let tmp = TempDir::new().expect("temp dir");
+    let tmp = TempDir::new().expect("temp dir"); // #[cfg(test)]
     let config = MemFuseConfig {
         dimension: 4,
         max_elements: 10000,
         distance_metric: DistanceMetric::Cosine,
-        ..Default::default()
+        encryption_passphrase: None,
     };
     let db = Arc::new(
         MemFuse::open_with_config(tmp.path(), config)
             .await
-            .expect("open db"),
+            .expect("open db"), // #[cfg(test)]
     );
 
     let num_tasks = 10;
@@ -30,7 +30,7 @@ async fn test_orchestrator_stress_concurrency() {
         handles.push(tokio::spawn(async move {
             // Give each task its OWN collection to avoid ID/Vector collisions during search tests
             let col_name = format!("col-{}", t);
-            let col = db.collection(&col_name).await.expect("collection");
+            let col = db.collection(&col_name).await.expect("collection"); // #[cfg(test)]
 
             for i in 0..ops_per_task {
                 let id = format!("doc-{}", i);
@@ -39,10 +39,10 @@ async fn test_orchestrator_stress_concurrency() {
                 // Insert
                 col.insert(&id, &vec, Some(json!({"t": t, "i": i})))
                     .await
-                    .expect("insert");
+                    .expect("insert"); // #[cfg(test)]
 
                 // Search - should find itself
-                let results = col.search(&vec, 1).await.expect("search");
+                let results = col.search(&vec, 1).await.expect("search"); // #[cfg(test)]
                 assert!(!results.is_empty());
                 assert_eq!(
                     results[0].id, id,
@@ -52,8 +52,8 @@ async fn test_orchestrator_stress_concurrency() {
 
                 // Delete (every 4th)
                 if i % 4 == 0 {
-                    col.delete(&id).await.expect("delete");
-                    let doc = col.get(&id).await.expect("get");
+                    col.delete(&id).await.expect("delete"); // #[cfg(test)]
+                    let doc = col.get(&id).await.expect("get"); // #[cfg(test)]
                     assert!(doc.is_none());
                 }
             }
@@ -61,10 +61,10 @@ async fn test_orchestrator_stress_concurrency() {
     }
 
     for h in handles {
-        h.await.expect("task panicked");
+        h.await.expect("task panicked"); // #[cfg(test)]
     }
 
     // Final sanity check
-    let list = db.list_collections().await.expect("list");
+    let list = db.list_collections().await.expect("list"); // #[cfg(test)]
     assert!(list.len() >= num_tasks);
 }

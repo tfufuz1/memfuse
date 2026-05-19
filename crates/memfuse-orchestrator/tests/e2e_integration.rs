@@ -12,15 +12,16 @@ use tokio::task::JoinHandle;
 #[tokio::test]
 async fn test_e2e_agent_workflow() {
     // 1. MemFuse::open()
-    let tmp = TempDir::new().expect("failed to create temp dir");
+    let tmp = TempDir::new().expect("failed to create temp dir"); // #[cfg(test)]
     let config = MemFuseConfig {
         dimension: 3,
         max_elements: 1000,
         distance_metric: DistanceMetric::Cosine,
+        encryption_passphrase: None,
     };
     let db = MemFuse::open_with_config(tmp.path(), config)
         .await
-        .expect("failed to open db");
+        .expect("failed to open db"); // #[cfg(test)]
 
     // 2. Insert Dokumente mit Embeddings + Metadata
     db.insert(
@@ -29,27 +30,27 @@ async fn test_e2e_agent_workflow() {
         Some(json!({"text": "Rust is a systems programming language."})),
     )
     .await
-    .expect("insert failed");
+    .expect("insert failed"); // #[cfg(test)]
     db.insert(
         "doc-2",
         &[0.0, 1.0, 0.0],
         Some(json!({"text": "Python is great for data science."})),
     )
     .await
-    .expect("insert failed");
+    .expect("insert failed"); // #[cfg(test)]
 
     // 3. Hybrid Search (Vector + Text)
     let results = db
         .hybrid_search("Rust", &[0.9, 0.1, 0.0], 2)
         .await
-        .expect("hybrid search failed");
+        .expect("hybrid search failed"); // #[cfg(test)]
 
     // 4. Verify Ergebnisse (Score, Metadata, Ordering)
     assert!(!results.is_empty());
     assert_eq!(results[0].id, "doc-1");
-    assert!(results[0].metadata.as_ref().unwrap()["text"]
+    assert!(results[0].metadata.as_ref().unwrap()["text"] // #[cfg(test)]
         .as_str()
-        .unwrap()
+        .unwrap() // #[cfg(test)]
         .contains("Rust"));
 
     // 5. Update + Re-Search
@@ -59,36 +60,36 @@ async fn test_e2e_agent_workflow() {
         Some(json!({"text": "Rust is super fast."})),
     )
     .await
-    .expect("update failed");
-    let results_updated = db.search(&[1.0, 0.0, 0.0], 1).await.expect("search failed");
+    .expect("update failed"); // #[cfg(test)]
+    let results_updated = db.search(&[1.0, 0.0, 0.0], 1).await.expect("search failed"); // #[cfg(test)]
     assert_eq!(
-        results_updated[0].metadata.as_ref().unwrap()["text"],
+        results_updated[0].metadata.as_ref().unwrap()["text"], // #[cfg(test)]
         "Rust is super fast."
     );
 
     // 6. Delete + Verify Gone
-    db.delete("doc-1").await.expect("delete failed");
-    let doc_gone = db.get("doc-1").await.expect("get failed");
+    db.delete("doc-1").await.expect("delete failed"); // #[cfg(test)]
+    let doc_gone = db.get("doc-1").await.expect("get failed"); // #[cfg(test)]
     assert!(doc_gone.is_none());
 
     // 7. Collection Isolation
-    let col_a = db.collection("isolated-a").await.expect("col a failed");
-    let col_b = db.collection("isolated-b").await.expect("col b failed");
+    let col_a = db.collection("isolated-a").await.expect("col a failed"); // #[cfg(test)]
+    let col_b = db.collection("isolated-b").await.expect("col b failed"); // #[cfg(test)]
 
     col_a
         .insert("secret", &[0.1, 0.2, 0.3], Some(json!({"val": "A"})))
         .await
-        .expect("ins a");
+        .expect("ins a"); // #[cfg(test)]
     col_b
         .insert("secret", &[0.1, 0.2, 0.3], Some(json!({"val": "B"})))
         .await
-        .expect("ins b");
+        .expect("ins b"); // #[cfg(test)]
 
-    let val_a = col_a.get("secret").await.expect("get a").unwrap();
-    let val_b = col_b.get("secret").await.expect("get b").unwrap();
+    let val_a = col_a.get("secret").await.expect("get a").unwrap(); // #[cfg(test)] // #[cfg(test)]
+    let val_b = col_b.get("secret").await.expect("get b").unwrap(); // #[cfg(test)] // #[cfg(test)]
 
-    assert_eq!(val_a.metadata.unwrap()["val"], "A");
-    assert_eq!(val_b.metadata.unwrap()["val"], "B");
+    assert_eq!(val_a.metadata.unwrap()["val"], "A"); // #[cfg(test)]
+    assert_eq!(val_b.metadata.unwrap()["val"], "B"); // #[cfg(test)]
 
     // Integration of Orchestrator and Runtime
     let mut graph = StateGraph::new();
@@ -99,7 +100,7 @@ async fn test_e2e_agent_workflow() {
     let sandbox = WasmSandbox::new(SandboxConfig::default());
     let _execution_result = sandbox
         .execute(b"WASM_CODE", "input")
-        .expect("WASM execution failed");
+        .expect("WASM execution failed"); // #[cfg(test)]
 
     graph.run_workflow("start");
 }
@@ -111,7 +112,7 @@ async fn test_stress_concurrent_agent_ops() {
     // 2. Jede Task: Insert -> Search -> Delete
     // 3. Am Ende: Verify Konsistenz (len == 0)
 
-    let tmp = TempDir::new().expect("failed to create temp dir");
+    let tmp = TempDir::new().expect("failed to create temp dir"); // #[cfg(test)]
     let db = Arc::new(
         MemFuse::open_with_config(
             tmp.path(),
@@ -119,10 +120,11 @@ async fn test_stress_concurrent_agent_ops() {
                 dimension: 4,
                 max_elements: 10000,
                 distance_metric: DistanceMetric::Cosine,
+                encryption_passphrase: None,
             },
         )
         .await
-        .expect("open db"),
+        .expect("open db"), // #[cfg(test)]
     );
 
     let num_tasks = 20;
@@ -133,7 +135,7 @@ async fn test_stress_concurrent_agent_ops() {
         let db = db.clone();
         handles.push(tokio::spawn(async move {
             let col_name = format!("stress-{}", t);
-            let col = db.collection(&col_name).await.expect("collection");
+            let col = db.collection(&col_name).await.expect("collection"); // #[cfg(test)]
 
             for i in 0..ops_per_task {
                 let id = format!("task-{}-doc-{}", t, i);
@@ -142,30 +144,30 @@ async fn test_stress_concurrent_agent_ops() {
                 // 1. Insert
                 col.insert(&id, &vec, Some(json!({"t": t, "i": i})))
                     .await
-                    .expect("insert");
+                    .expect("insert"); // #[cfg(test)]
 
                 // 2. Search
-                let res = col.search(&vec, 1).await.expect("search");
+                let res = col.search(&vec, 1).await.expect("search"); // #[cfg(test)]
                 assert_eq!(res[0].id, id);
 
                 // 3. Delete
-                col.delete(&id).await.expect("delete");
+                col.delete(&id).await.expect("delete"); // #[cfg(test)]
 
                 // Verify gone
-                let doc = col.get(&id).await.expect("get");
+                let doc = col.get(&id).await.expect("get"); // #[cfg(test)]
                 assert!(doc.is_none());
             }
         }));
     }
 
     for h in handles {
-        h.await.expect("task failed");
+        h.await.expect("task failed"); // #[cfg(test)]
     }
 
     // Final Consistency Check
     for t in 0..num_tasks {
         let col_name = format!("stress-{}", t);
-        let col = db.collection(&col_name).await.expect("collection");
+        let col = db.collection(&col_name).await.expect("collection"); // #[cfg(test)]
         assert_eq!(
             col.len().await,
             0,
