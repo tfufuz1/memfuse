@@ -54,12 +54,27 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
+            // POC for compound splitting: common German suffixes
             // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            let mut split = false;
+            for suffix in &[
+                "gericht",
+                "gesellschaft",
+                "versicherung",
+                "entwicklung",
+                "zentrum",
+                "anlage",
+                "system",
+            ] {
+                if lower.ends_with(suffix) && lower.len() > suffix.len() + 2 {
+                    tokens.push(lower.clone());
+                    tokens.push(suffix.to_string());
+                    split = true;
+                    break;
+                }
+            }
+
+            if !split {
                 tokens.push(lower);
             }
         }
@@ -100,5 +115,9 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+
+        let tokens = tokenizer.tokenize("Rentenversicherung");
+        assert!(tokens.contains(&"rentenversicherung".to_string()));
+        assert!(tokens.contains(&"versicherung".to_string()));
     }
 }
