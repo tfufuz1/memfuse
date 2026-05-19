@@ -119,6 +119,8 @@ pub struct PyMemFuse {
 
 #[pymethods]
 impl PyMemFuse {
+    /// Returns a specific collection (namespace).
+    /// Creates the collection if it does not already exist.
     pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<PyCollection> {
         let rt = get_runtime()?;
         let col = py
@@ -129,12 +131,14 @@ impl PyMemFuse {
         })
     }
 
+    /// Lists all existing collection names.
     pub fn list_collections(&self, py: Python<'_>) -> PyResult<Vec<String>> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.list_collections()))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Drops a collection, removing all its data from storage.
     pub fn drop_collection(&self, name: &str, py: Python<'_>) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.drop_collection(name)))
@@ -167,6 +171,7 @@ impl PyMemFuse {
         Ok(())
     }
 
+    /// Retrieves a document by its string key from the default collection.
     pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
         let rt = get_runtime()?;
         let doc = py
@@ -224,6 +229,7 @@ impl PyMemFuse {
         Ok(())
     }
 
+    /// Deletes a document by its string ID from the default collection.
     pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.delete(id)))
@@ -322,6 +328,7 @@ impl PyMemFuse {
         Ok(py_res)
     }
 
+    /// Creates a bidirectional relationship between two documents in the default collection.
     pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
@@ -345,12 +352,14 @@ impl PyMemFuse {
         Ok(py_res)
     }
 
+    /// Returns the number of vectors in the default collection's index.
     pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.len()))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Returns true if the default collection is empty.
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.is_empty()))
@@ -383,6 +392,7 @@ impl PyMemFuse {
         Ok(py_res)
     }
 
+    /// Returns combined statistics for the vector index and storage engine (default collection).
     pub fn stats(&self, py: Python<'_>) -> PyResult<PyDbStats> {
         let rt = get_runtime()?;
         let stats = py
@@ -411,6 +421,7 @@ pub struct PyCollection {
 
 #[pymethods]
 impl PyCollection {
+    /// Inserts a document with an embedding and optional metadata into this collection.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
@@ -437,6 +448,7 @@ impl PyCollection {
         Ok(())
     }
 
+    /// Retrieves a document by its string key from this collection.
     pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
         let rt = get_runtime()?;
         let doc = py
@@ -494,6 +506,7 @@ impl PyCollection {
         Ok(())
     }
 
+    /// Deletes a document by its string ID from this collection.
     pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.delete(id)))
@@ -593,11 +606,13 @@ impl PyCollection {
         Ok(py_res)
     }
 
+    /// Returns the number of vectors in this collection's index.
     pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
         let rt = get_runtime()?;
         Ok(py.allow_threads(|| rt.block_on(self.inner.len())))
     }
 
+    /// Returns true if this collection is empty.
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
         Ok(py.allow_threads(|| rt.block_on(self.inner.is_empty())))
@@ -652,6 +667,7 @@ impl PyCollection {
         Ok(py_res)
     }
 
+    /// Returns statistics for the vector index of this collection.
     pub fn stats(&self, py: Python<'_>) -> PyResult<PyVectorIndexStats> {
         let rt = get_runtime()?;
         let stats = py

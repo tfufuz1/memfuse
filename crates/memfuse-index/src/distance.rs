@@ -1,3 +1,5 @@
+//! # Distance Computation Module
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 // ANCHOR:DOC:DOC-DISTANCE-001 — Module documentation added
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:03 DATE:2026-05-16 STATUS:DONE
@@ -19,8 +21,6 @@
 // CREATED:2026-05-05 DEADLINE:NONE
 // PRECEDENCE: AVX-512 > AVX2 > portable_simd > scalar.
 // INVARIANTE: Caller (hnsw.rs) validiert Vektor-Dimensionen VOR dem Aufruf.
-//! # Distance Computation Module
-//!
 //! This module provides highly optimized distance metrics for vector comparison,
 //! essential for the HNSW index performance.
 //!
@@ -575,6 +575,7 @@ pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
     dot_product_u8_scalar(a, b)
 }
 
+/// Scalar implementation of dot product for u8 vectors.
 pub fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
@@ -597,6 +598,7 @@ pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
     euclidean_distance_sq_u8_scalar(a, b)
 }
 
+/// Scalar implementation of squared Euclidean distance for u8 vectors.
 pub fn euclidean_distance_sq_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
@@ -632,6 +634,7 @@ pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8
     cosine_similarity_parts_u8_scalar(a, b)
 }
 
+/// Scalar implementation of cosine similarity parts for u8 vectors.
 pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
     let mut dot = 0;
     let mut sum_a = 0;
