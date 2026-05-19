@@ -65,7 +65,10 @@ async fn test_multi_collection_stress() {
     // Final check
     let mut total_docs = 0;
     for c in 0..num_collections {
-        let col = db.collection(&format!("col-{}", c)).await.expect("collection");
+        let col = db
+            .collection(&format!("col-{}", c))
+            .await
+            .expect("collection");
         total_docs += col.len().await;
     }
 

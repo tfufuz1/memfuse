@@ -22,12 +22,19 @@ async fn test_encryption_lifecycle() {
             .await
             .expect("Failed to open encrypted DB");
 
-        db.insert("secret-1", &[1.0, 2.0, 3.0], Some(json!({"msg": "top secret"})))
-            .await
-            .expect("Failed to insert secret");
+        db.insert(
+            "secret-1",
+            &[1.0, 2.0, 3.0],
+            Some(json!({"msg": "top secret"})),
+        )
+        .await
+        .expect("Failed to insert secret");
 
         // Use inner_storage() to force flush so we have an SSTable
-        db.inner_storage().force_flush().await.expect("Failed to flush");
+        db.inner_storage()
+            .force_flush()
+            .await
+            .expect("Failed to flush");
     }
 
     // 2. Try to open with WRONG passphrase (should fail during open or first operation)
@@ -52,7 +59,10 @@ async fn test_encryption_lifecycle() {
             ..Default::default()
         };
         let result = MemFuse::open_with_config(&path, config).await;
-        assert!(result.is_err(), "Opening encrypted DB without passphrase should fail");
+        assert!(
+            result.is_err(),
+            "Opening encrypted DB without passphrase should fail"
+        );
     }
 
     // 4. Open with CORRECT passphrase and verify data
