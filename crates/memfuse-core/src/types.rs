@@ -372,10 +372,8 @@ mod tests {
 
     #[test]
     fn test_resource_tracker_saturating_release() {
-        let tracker = ResourceTracker::new(ResourceBudget {
-            memory_limit: 1000,
-        });
-        tracker.consume_memory(100).unwrap();
+        let tracker = ResourceTracker::new(ResourceBudget { memory_limit: 1000 });
+        tracker.consume_memory(100).unwrap(); // unwrap: test
         assert_eq!(tracker.memory_used(), 100);
 
         tracker.release_memory(50);
