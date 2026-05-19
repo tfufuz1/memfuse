@@ -204,7 +204,11 @@ impl SstableBuilder {
         self.flush_block().await?;
 
         let index_offset = self.offset;
-        let mut index_builder = BytesMut::new();
+        // ANCHOR:PERF:ALLOC-006 — Pre-allocate SSTable index buffer
+        // WP:WP-0.0 PRIO:2 NEEDS:NONE
+        // AGENT:09 DATE:2026-05-19 STATUS:DONE
+        // Pre-allocate assuming minimum 12 bytes per index entry: 2b k_len + min 2b key + 8b offset.
+        let mut index_builder = BytesMut::with_capacity(self.index.len() * 12);
 
         for (key, offset) in &self.index {
             index_builder.put_u16_le(key.len() as u16);
@@ -326,9 +330,14 @@ impl SstableReader {
         }
 
         // Read index
-        let mut index = Vec::new();
         let mut pos = index_offset as usize;
         let index_end = (file_size - 12) as usize;
+
+        // ANCHOR:PERF:ALLOC-007 — Pre-allocate SSTable index vector
+        // WP:WP-0.0 PRIO:2 NEEDS:NONE
+        // AGENT:09 DATE:2026-05-19 STATUS:DONE
+        // Pre-allocate assuming minimum 12 bytes per index entry.
+        let mut index = Vec::with_capacity((index_end - pos) / 12);
 
         while pos + 10 <= index_end {
             let key_len = u16::from_le_bytes(

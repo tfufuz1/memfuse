@@ -231,10 +231,16 @@ impl Wal {
 
     /// Replays the WAL, returning all valid entries.
     pub async fn replay(&self) -> Result<Vec<(u64, WalEntry)>> {
-        let mut data = Vec::new();
         let mut file = tokio::fs::File::open(&self.path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("WAL replay open failed: {}", e)))?;
+
+        let metadata = file
+            .metadata()
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("WAL replay metadata failed: {}", e)))?;
+
+        let mut data = Vec::with_capacity(metadata.len() as usize);
         file.read_to_end(&mut data)
             .await
             .map_err(|e| MemFuseError::Storage(format!("WAL replay read failed: {}", e)))?;
