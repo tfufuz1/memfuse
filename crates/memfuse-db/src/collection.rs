@@ -386,9 +386,8 @@ impl Collection {
                 // In a production system, we'd want this to be async or use a more efficient metadata store.
                 // Since HNSW search_filtered is async, we can await here.
                 let data = tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(async {
-                        col_clone.storage.get(&doc_key).await.ok().flatten()
-                    })
+                    tokio::runtime::Handle::current()
+                        .block_on(async { col_clone.storage.get(&doc_key).await.ok().flatten() })
                 });
 
                 if let Some(bytes) = data {

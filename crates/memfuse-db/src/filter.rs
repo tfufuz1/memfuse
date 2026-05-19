@@ -32,12 +32,8 @@ impl MetadataFilter {
     /// Evaluates the filter against the provided metadata.
     pub fn matches(&self, metadata: &Value) -> bool {
         match self {
-            MetadataFilter::Eq(field, val) => {
-                metadata.get(field) == Some(val)
-            }
-            MetadataFilter::Ne(field, val) => {
-                metadata.get(field) != Some(val)
-            }
+            MetadataFilter::Eq(field, val) => metadata.get(field) == Some(val),
+            MetadataFilter::Ne(field, val) => metadata.get(field) != Some(val),
             MetadataFilter::Gt(field, val) => {
                 compare_numeric(metadata.get(field), val, |a, b| a > b)
             }
@@ -53,15 +49,9 @@ impl MetadataFilter {
             MetadataFilter::In(field, vals) => {
                 metadata.get(field).is_some_and(|v| vals.contains(v))
             }
-            MetadataFilter::And(filters) => {
-                filters.iter().all(|f| f.matches(metadata))
-            }
-            MetadataFilter::Or(filters) => {
-                filters.iter().any(|f| f.matches(metadata))
-            }
-            MetadataFilter::Not(filter) => {
-                !filter.matches(metadata)
-            }
+            MetadataFilter::And(filters) => filters.iter().all(|f| f.matches(metadata)),
+            MetadataFilter::Or(filters) => filters.iter().any(|f| f.matches(metadata)),
+            MetadataFilter::Not(filter) => !filter.matches(metadata),
         }
     }
 }

@@ -1,7 +1,7 @@
 //! Acceptance tests for WP-4.2 Advanced Metadata Filtering.
 
-use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use memfuse_db::filter::MetadataFilter;
+use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -30,14 +30,19 @@ async fn test_post_filter_returns_only_matching() {
             &format!("doc-{}", i),
             &[1.0, 0.0, 0.0, 0.0],
             Some(json!({"topic": topic, "id": i})),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
     }
 
     // Filter for topic == "rust"
     let filter = MetadataFilter::Eq("topic".to_string(), json!("rust"));
 
     // Search with k=10, should only return the 5 rust documents
-    let results = db.search_with_filter(&[1.0, 0.0, 0.0, 0.0], &filter, 10).await.unwrap();
+    let results = db
+        .search_with_filter(&[1.0, 0.0, 0.0, 0.0], &filter, 10)
+        .await
+        .unwrap();
 
     assert_eq!(results.len(), 5);
     for r in results {
@@ -56,7 +61,9 @@ async fn test_pre_filter_with_low_selectivity() {
             &format!("doc-{}", i),
             &[1.0, 0.0, 0.0, 0.0],
             Some(json!({"category": category})),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
     }
 
     // Filter for category == "special"
@@ -66,7 +73,10 @@ async fn test_pre_filter_with_low_selectivity() {
     // Total docs = 100, k=10. Heuristic: k/total = 0.1 -> should use Pre-filtering.
     // Even if it uses post-filtering with 5x oversample (50 docs), it might find them.
     // But Pre-filtering GUARANTEES it finds them if they exist in the graph.
-    let results = db.search_with_filter(&[1.0, 0.0, 0.0, 0.0], &filter, 10).await.unwrap();
+    let results = db
+        .search_with_filter(&[1.0, 0.0, 0.0, 0.0], &filter, 10)
+        .await
+        .unwrap();
 
     assert_eq!(results.len(), 2);
     let ids: Vec<String> = results.iter().map(|r| r.id.clone()).collect();
@@ -78,9 +88,27 @@ async fn test_pre_filter_with_low_selectivity() {
 async fn test_complex_logical_filter() {
     let (db, _tmp) = setup_db(4).await;
 
-    db.insert("d1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"val": 10, "tag": "a"}))).await.unwrap();
-    db.insert("d2", &[1.0, 0.0, 0.0, 0.0], Some(json!({"val": 20, "tag": "a"}))).await.unwrap();
-    db.insert("d3", &[1.0, 0.0, 0.0, 0.0], Some(json!({"val": 30, "tag": "b"}))).await.unwrap();
+    db.insert(
+        "d1",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(json!({"val": 10, "tag": "a"})),
+    )
+    .await
+    .unwrap();
+    db.insert(
+        "d2",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(json!({"val": 20, "tag": "a"})),
+    )
+    .await
+    .unwrap();
+    db.insert(
+        "d3",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(json!({"val": 30, "tag": "b"})),
+    )
+    .await
+    .unwrap();
 
     // (tag == "a" AND val > 15) OR (tag == "b")
     let filter = MetadataFilter::Or(vec![
@@ -91,7 +119,10 @@ async fn test_complex_logical_filter() {
         MetadataFilter::Eq("tag".to_string(), json!("b")),
     ]);
 
-    let results = db.search_with_filter(&[1.0, 0.0, 0.0, 0.0], &filter, 10).await.unwrap();
+    let results = db
+        .search_with_filter(&[1.0, 0.0, 0.0, 0.0], &filter, 10)
+        .await
+        .unwrap();
 
     // Should return d2 and d3
     assert_eq!(results.len(), 2);
