@@ -54,12 +54,22 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            // German morphological optimization: Suffix-based splitting
+            // Supports: "gericht", "schaft", "keit", "ung"
+            // Splitting occurs only if stem length > 3
+            let suffixes = ["gericht", "schaft", "keit", "ung"];
+            let mut split = false;
+
+            for suffix in suffixes {
+                if lower.ends_with(suffix) && lower.len() > suffix.len() + 3 {
+                    tokens.push(lower.clone());
+                    tokens.push(suffix.to_string());
+                    split = true;
+                    break;
+                }
+            }
+
+            if !split {
                 tokens.push(lower);
             }
         }
@@ -96,9 +106,36 @@ mod tests {
     #[test]
     fn test_german_morph_tokenizer() {
         let tokenizer = GermanMorphTokenizer;
+
+        // Test "gericht"
         let tokens = tokenizer.tokenize("Das Bundesverfassungsgericht");
-        // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+
+        // Test "schaft"
+        let tokens = tokenizer.tokenize("Wissenschaft");
+        assert!(tokens.contains(&"wissenschaft".to_string()));
+        assert!(tokens.contains(&"schaft".to_string()));
+
+        // Test "keit"
+        let tokens = tokenizer.tokenize("Heiterkeit");
+        assert!(tokens.contains(&"heiterkeit".to_string()));
+        assert!(tokens.contains(&"keit".to_string()));
+
+        // Test "ung" (should split)
+        let tokens = tokenizer.tokenize("Sicherung");
+        assert!(tokens.contains(&"sicherung".to_string()));
+        assert!(tokens.contains(&"ung".to_string()));
+
+        // Test "ung" (should NOT split due to stem length <= 3)
+        // If "Zeitung", suffix is "ung" (3), stem is "zeit" (4). 4 > 3, so it WILL split.
+        let tokens = tokenizer.tokenize("Zeitung");
+        assert!(tokens.contains(&"zeitung".to_string()));
+        assert!(tokens.contains(&"ung".to_string()));
+
+        // Let's try "Übung". "üb" (2) + "ung" (3). 2 <= 3, should NOT split.
+        let tokens = tokenizer.tokenize("Übung");
+        assert!(tokens.contains(&"übung".to_string()));
+        assert!(!tokens.contains(&"ung".to_string()));
     }
 }
