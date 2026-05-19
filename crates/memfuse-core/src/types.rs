@@ -46,9 +46,15 @@ impl DocId {
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Self {
         // ANCHOR:DEBT:TYPES-002 AGENT:01 STATUS:DONE PRIO:3
-        // SAFETY: blake3::hash() always returns a 32-byte hash.
-        // try_from_key() only fails if the hash is shorter than 8 bytes.
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes") // unwrap: blake3 hash is always 32 bytes
+        // SAFETY: blake3::hash() always returns a 32-byte hash (256 bits).
+        // We use the first 8 bytes for our 64-bit DocId.
+        let hash = blake3::hash(key.as_bytes());
+        let bytes = hash.as_bytes();
+        let mut buf = [0u8; 8];
+        // Manual copy to ensure zero-panic path even if API signatures changed.
+        let len = bytes.len().min(8);
+        buf[..len].copy_from_slice(&bytes[..len]);
+        Self(u64::from_le_bytes(buf))
     }
 
     /// Safely derive a DocId from a user-provided string key.
@@ -310,8 +316,11 @@ impl ResourceTracker {
     }
 
     pub fn release_memory(&self, bytes: u64) {
-        self.memory_used
-            .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
+        let _ = self.memory_used.fetch_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |current| Some(current.saturating_sub(bytes)),
+        );
     }
 
     pub fn memory_used(&self) -> u64 {
@@ -332,5 +341,48 @@ impl ResourceTracker {
         if self.memory_used() >= (self.budget.memory_limit as f64 * 0.80) as u64 {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_doc_id_from_key_zero_panic() {
+        // Test with various key lengths including empty string
+        let keys = [
+            "",
+            "a",
+            "short",
+            "exactly8",
+            "longer_than_8_bytes",
+            &"very_long_key_that_exceeds_blake3_block_size".repeat(10),
+        ];
+        for key in keys {
+            let doc_id = DocId::from_key(key);
+            assert_ne!(
+                doc_id.inner(),
+                0,
+                "DocId should likely be non-zero for key: {}",
+                key
+            );
+        }
+    }
+
+    #[test]
+    fn test_resource_tracker_saturating_release() {
+        let tracker = ResourceTracker::new(ResourceBudget {
+            memory_limit: 1000,
+        });
+        tracker.consume_memory(100).unwrap();
+        assert_eq!(tracker.memory_used(), 100);
+
+        tracker.release_memory(50);
+        assert_eq!(tracker.memory_used(), 50);
+
+        // This would underflow a normal fetch_sub
+        tracker.release_memory(100);
+        assert_eq!(tracker.memory_used(), 0);
     }
 }

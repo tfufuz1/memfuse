@@ -196,6 +196,19 @@ impl<T: Clone> TxBuffer<T> {
         let shard = self.shards[shard_idx].read();
         shard.ops.get(&tx).map(|(ops, _)| ops.clone())
     }
+
+    /// Inspects the pending operations for a transaction via a closure.
+    ///
+    /// This avoids cloning the entire vector of operations if only read-only
+    /// access is needed.
+    pub fn inspect_ops<F, R>(&self, tx: TxId, f: F) -> Option<R>
+    where
+        F: FnOnce(&[IndexOp<T>]) -> R,
+    {
+        let shard_idx = self.shard_idx(tx);
+        let shard = self.shards[shard_idx].read();
+        shard.ops.get(&tx).map(|(ops, _)| f(ops))
+    }
 }
 
 impl<T: Clone> Default for TxBuffer<T> {
@@ -279,6 +292,26 @@ mod tests {
         let ops = buffer.drain(tx);
         assert_eq!(ops.len(), 2);
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_tx_buffer_inspect_ops() {
+        let buffer = TxBuffer::<String>::new_with_config(64, Duration::from_secs(30));
+        let tx = TxId::new(1);
+
+        buffer.stage(
+            tx,
+            IndexOp::Insert {
+                doc_id: DocId::new(1),
+                data: "data1".to_string(),
+            },
+        );
+
+        let len = buffer.inspect_ops(tx, |ops| ops.len());
+        assert_eq!(len, Some(1));
+
+        let doc_id = buffer.inspect_ops(tx, |ops| ops[0].doc_id());
+        assert_eq!(doc_id, Some(DocId::new(1)));
     }
 
     #[test]

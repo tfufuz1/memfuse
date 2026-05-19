@@ -93,7 +93,9 @@ impl SnapshotRegistry {
         // It allows the LSM compaction to garbage collect ALL tombstones, as
         // all existing records will have seq_no < u64::MAX.
         let min = active.keys().next().copied().unwrap_or(u64::MAX);
-        self.min_active_seqno.store(min, Ordering::Release);
+        if self.min_active_seqno.load(Ordering::Relaxed) != min {
+            self.min_active_seqno.store(min, Ordering::Release);
+        }
     }
 }
 
