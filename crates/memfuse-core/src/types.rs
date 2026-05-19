@@ -294,24 +294,37 @@ impl ResourceTracker {
         }
     }
 
+    /// ANCHOR:SEC:OVERFLOW-001 — Sicherer Speicherverbrauch via fetch_update.
+    /// WP:WP-0.0 PRIO:1 AGENT:01 STATUS:DONE
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
-        let current = self
-            .memory_used
-            .fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
-        if current + bytes > self.budget.memory_limit {
-            self.memory_used
-                .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
-            return Err(MemFuseError::MemoryBudgetExceeded {
-                used_mb: (current + bytes) / (1024 * 1024),
-                limit_mb: self.budget.memory_limit / (1024 * 1024),
-            });
-        }
+        self.memory_used
+            .fetch_update(
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+                |current| {
+                    let next = current.checked_add(bytes)?;
+                    if next > self.budget.memory_limit {
+                        return None;
+                    }
+                    Some(next)
+                },
+            )
+            .map_err(|current| {
+                let attempted = current.saturating_add(bytes);
+                MemFuseError::MemoryBudgetExceeded {
+                    used_mb: attempted / (1024 * 1024),
+                    limit_mb: self.budget.memory_limit / (1024 * 1024),
+                }
+            })?;
         Ok(())
     }
 
     pub fn release_memory(&self, bytes: u64) {
-        self.memory_used
-            .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
+        let _ = self.memory_used.fetch_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |current| Some(current.saturating_sub(bytes)),
+        );
     }
 
     pub fn memory_used(&self) -> u64 {

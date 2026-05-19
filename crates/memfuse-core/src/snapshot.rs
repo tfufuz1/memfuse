@@ -80,7 +80,7 @@ impl SnapshotRegistry {
         let seq_no = seq_no & !TOMBSTONE_BIT;
         let mut active = self.active.lock();
         if let Some(count) = active.get_mut(&seq_no) {
-            *count -= 1;
+            *count = count.saturating_sub(1);
             if *count == 0 {
                 active.remove(&seq_no);
             }
@@ -112,5 +112,69 @@ impl SnapshotGuard {
 impl Drop for SnapshotGuard {
     fn drop(&mut self) {
         self.registry.release(self.seq_no);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_snapshot_registry_lifecycle() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+
+        let g1 = registry.register(100);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        let g2 = registry.register(50);
+        assert_eq!(registry.min_active_seqno(), 50);
+
+        let g3 = registry.register(150);
+        assert_eq!(registry.min_active_seqno(), 50);
+
+        drop(g2);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        drop(g1);
+        assert_eq!(registry.min_active_seqno(), 150);
+
+        drop(g3);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
+    fn test_snapshot_pinning() {
+        let registry = SnapshotRegistry::new();
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+
+        registry.pin(200);
+        assert_eq!(registry.min_active_seqno(), 200);
+
+        registry.pin(100);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        registry.unpin(100);
+        assert_eq!(registry.min_active_seqno(), 200);
+
+        registry.unpin(200);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
+    fn test_snapshot_tombstone_masking() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        let seq_with_tombstone = 100 | TOMBSTONE_BIT;
+
+        let g = registry.register(seq_with_tombstone);
+        assert_eq!(g.seq_no(), 100);
+        assert_eq!(registry.min_active_seqno(), 100);
+
+        registry.pin(200 | TOMBSTONE_BIT);
+        assert_eq!(registry.active.lock().contains_key(&200), true);
+        assert_eq!(registry.active.lock().contains_key(&(200 | TOMBSTONE_BIT)), false);
+
+        drop(g);
+        assert_eq!(registry.min_active_seqno(), 200);
     }
 }
