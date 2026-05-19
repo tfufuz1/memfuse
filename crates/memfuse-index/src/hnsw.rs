@@ -1340,7 +1340,10 @@ mod tests {
         let mut rng = rand::thread_rng();
         for i in 0..n {
             let v: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
-            index.insert(tx, DocId::new(i as u64), &v).await.expect("test"); // #[cfg(test)]
+            index
+                .insert(tx, DocId::new(i as u64), &v)
+                .await
+                .expect("test"); // #[cfg(test)]
         }
         index.commit(tx).await.expect("test"); // #[cfg(test)]
 
@@ -1375,6 +1378,10 @@ mod tests {
         }
 
         let total_active = index.len().await;
-        assert_eq!(visited.len(), total_active, "Graph is fragmented! Not all active nodes are reachable from the entry point.");
+        assert_eq!(
+            visited.len(),
+            total_active,
+            "Graph is fragmented! Not all active nodes are reachable from the entry point."
+        );
     }
 }
