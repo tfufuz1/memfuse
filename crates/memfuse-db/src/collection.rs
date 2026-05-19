@@ -346,6 +346,82 @@ impl Collection {
         self.hydrate_from_scored(scored_docs).await
     }
 
+    /// Performs semantic vector search with advanced metadata filtering.
+    ///
+    /// This method uses an adaptive strategy:
+    /// - For low selectivity (k is small compared to total docs), it uses Pre-filtering.
+    /// - For very high selectivity, it may fallback to other strategies (future optimization).
+    pub async fn search_with_filter(
+        &self,
+        query: &[f32],
+        filter: &crate::filter::MetadataFilter,
+        k: usize,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let total_docs = self.len().await;
+
+        // Simple heuristic: if we want few results (k is small), Pre-filtering is almost always better
+        // because it ensures we find k matches if they exist.
+        // Post-filtering might fail to find enough matches if the filter is selective.
+        let use_pre_filter = if total_docs < 100 {
+            true
+        } else {
+            // If k is less than 1% of total docs, pre-filtering is safer to ensure we get k results.
+            (k as f32) / (total_docs as f32) < 0.1
+        };
+
+        if use_pre_filter {
+            // PRE-FILTERING: Pass the filter closure to HNSW
+            let filter_clone = filter.clone();
+            let col_clone = self.clone();
+
+            let hnsw_filter = move |doc_id: DocId| {
+                // To evaluate metadata, we MUST fetch it from storage.
+                // This is expensive inside the HNSW hot loop, but necessary for correctness.
+                // TODO: Optimization - cache metadata or use specialized metadata indices.
+
+                // Construct doc_key
+                let doc_key = col_clone.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+
+                // Fetch from storage (blocking in HNSW loop - undesirable but current implementation requires it)
+                // In a production system, we'd want this to be async or use a more efficient metadata store.
+                // Since HNSW search_filtered is async, we can await here.
+                let data = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(async {
+                        col_clone.storage.get(&doc_key).await.ok().flatten()
+                    })
+                });
+
+                if let Some(bytes) = data {
+                    if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&bytes) {
+                        if let Some(meta) = stored.metadata {
+                            return filter_clone.matches(&meta);
+                        }
+                    }
+                }
+                false
+            };
+
+            self.search_filtered(query, k, Some(&hnsw_filter)).await
+        } else {
+            // POST-FILTERING: Search first, then filter.
+            // We request 5x more results to increase the chance of finding k matches after filtering.
+            let oversample = k * 5;
+            let raw_results = self.search(query, oversample).await?;
+            let mut filtered: Vec<_> = raw_results
+                .into_iter()
+                .filter(|r| {
+                    if let Some(meta) = &r.metadata {
+                        filter.matches(meta)
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+            filtered.truncate(k);
+            Ok(filtered)
+        }
+    }
+
     async fn hydrate_from_scored(
         &self,
         scored_docs: Vec<memfuse_core::ScoredDocument>,

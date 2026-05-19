@@ -56,6 +56,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub mod collection;
+pub mod filter;
 pub mod fusion;
 pub mod transaction;
 
@@ -341,6 +342,19 @@ impl MemFuse {
         self.default_col()
             .await?
             .search_filtered(query, k, filter)
+            .await
+    }
+
+    /// Performs semantic vector search with advanced metadata filtering.
+    pub async fn search_with_filter(
+        &self,
+        query: &[f32],
+        filter: &crate::filter::MetadataFilter,
+        k: usize,
+    ) -> Result<Vec<SearchResult>> {
+        self.default_col()
+            .await?
+            .search_with_filter(query, filter, k)
             .await
     }
 
