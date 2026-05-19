@@ -7,12 +7,15 @@ from datetime import datetime, timedelta
 
 # Configuration
 STALE_THRESHOLD_HOURS = 8
+# Path as specified in AGENT:00 requirements
+INTEGRATE_SCRIPT_PATH = "/home/freddy/Arbeitsplatz/DEV/memfuse/.agent/scripts/jules-integrate.sh"
+# Fallback to local path if absolute doesn't exist
+LOCAL_INTEGRATE_PATH = ".agent/scripts/jules-integrate.sh"
 
 def log(msg):
     print(f"[{datetime.now().isoformat()}] {msg}")
 
 def get_now():
-    # Allow simulation for testing
     env_now = os.getenv("WATCHDOG_NOW")
     if env_now:
         try:
@@ -74,7 +77,6 @@ def phase_2_deadlocks():
                     content = f.read()
             except: continue
 
-            # Match standard anchor format
             matches = re.finditer(r"// ANCHOR:([A-Z0-9_-]+):?([A-Z0-9_-]+)?.*", content)
             for m in matches:
                 full_match = m.group(0)
@@ -117,7 +119,6 @@ def phase_2_deadlocks():
     if cycles:
         for cycle in cycles:
             log(f"DETECTED CYCLE: {' -> '.join(cycle)}")
-            # Identify simplest node: minimal dependencies
             target_id = min(cycle, key=lambda x: len(anchors[x]["deps"]))
             target_path = anchors[target_id]["path"]
 
@@ -136,12 +137,10 @@ def phase_2_deadlocks():
             with open(target_path, "w") as f:
                 f.writelines(new_lines)
 
-            # Re-scan for more cycles
             return phase_2_deadlocks()
 
 def phase_3_fv_gate():
     log("Phase 3: Auditing Formal Verification Gates...")
-    # Components requiring FV: WAL, LSM, Encryption/Crypto
     critical_files = ["wal.rs", "lsm.rs", "crypto.rs", "sstable.rs"]
     missing_proofs = False
 
@@ -168,7 +167,7 @@ def phase_3_fv_gate():
             if "ARCH:GATE-FV" in line:
                 if missing_proofs and "STATUS:OPEN" not in line:
                     log("Enforcing ARCH:GATE-FV STATUS:OPEN")
-                    new_lines.append("// WATCHDOG: Blocking merges due to missing Kani/TLA+ proofs.\n")
+                    new_lines.append("// WATCHDOG: Blocking merges due to missing Kani/TLA+ proofs for REVIEW components (WAL/LSM).\n")
                     line = re.sub(r"STATUS:[A-Z]+", "STATUS:OPEN", line)
                     changed = True
             new_lines.append(line)
@@ -180,11 +179,10 @@ def phase_3_fv_gate():
 def phase_4_pr_integration():
     log("Phase 4: Checking PR Integration...")
     if subprocess.run(["which", "gh"], capture_output=True).returncode != 0:
-        log("gh CLI not found. Cannot monitor PRs.")
+        log("gh CLI not found. Skipping PR integration.")
         return
 
     try:
-        # Get PRs with label 'jules'
         cmd = ["gh", "pr", "list", "--label", "jules", "--json", "number,statusCheckRollup,mergeable"]
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
@@ -192,34 +190,43 @@ def phase_4_pr_integration():
             return
 
         prs = json.loads(result.stdout)
+        eligible_count = 0
         for pr in prs:
-            num = pr['number']
-            mergeable = pr['mergeable'] == 'MERGEABLE'
-
-            # Check if CI passed (Gate 1)
-            # statusCheckRollup contains an array of checks
             rollup = pr.get('statusCheckRollup', [])
             all_passed = len(rollup) > 0 and all(c.get('conclusion') == 'SUCCESS' or c.get('status') == 'COMPLETED' for c in rollup)
-            # Filter for failures
             has_failures = any(c.get('conclusion') in ['FAILURE', 'CANCELLED', 'TIMED_OUT'] for c in rollup)
 
-            if mergeable and all_passed and not has_failures:
-                log(f"PR #{num} passed Gate 1. Triggering integration...")
-                integrate_script = ".agent/scripts/jules-integrate.sh"
-                if os.path.exists(integrate_script):
-                    # In a real environment, we'd call the script
-                    # For safety in this sandbox, we log the attempt.
-                    subprocess.run(["bash", integrate_script], check=False)
+            if pr['mergeable'] == 'MERGEABLE' and all_passed and not has_failures:
+                eligible_count += 1
+
+        if eligible_count > 0:
+            log(f"Found {eligible_count} PRs ready for integration. Calling integration script...")
+            script = INTEGRATE_SCRIPT_PATH if os.path.exists(INTEGRATE_SCRIPT_PATH) else LOCAL_INTEGRATE_PATH
+            if os.path.exists(script):
+                res = subprocess.run(["bash", script], capture_output=True, text=True)
+                if res.returncode == 0:
+                    log("✅ PR Integration sequence completed successfully.")
                 else:
-                    log(f"Integration script {integrate_script} missing.")
+                    log(f"❌ PR Integration script failed (exit {res.returncode})")
             else:
-                log(f"PR #{num}: Mergeable={mergeable}, ChecksPassed={all_passed and not has_failures}")
+                log(f"Integration script missing at: {script}")
+        else:
+            log("No PRs currently eligible for integration.")
 
     except Exception as e:
         log(f"PR monitoring failed: {e}")
+
+def phase_5_stability_audit():
+    log("Phase 5: Workspace Stability Audit...")
+    result = subprocess.run(["cargo", "check", "--workspace"], capture_output=True, text=True)
+    if result.returncode != 0:
+        log("❌ Workspace is UNSTABLE.")
+    else:
+        log("✅ Workspace is STABLE.")
 
 if __name__ == "__main__":
     phase_1_stale_wip()
     phase_2_deadlocks()
     phase_3_fv_gate()
     phase_4_pr_integration()
+    phase_5_stability_audit()
