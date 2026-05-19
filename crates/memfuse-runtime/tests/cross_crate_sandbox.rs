@@ -18,7 +18,9 @@ fn test_sandbox_cross_crate_usage() {
     // Verify execution (placeholder)
     let wasm_code = b"\x00asm\x01\x00\x00\x00"; // Mock WASM header
     let input = "ping";
-    let output = sandbox.execute(wasm_code, input).expect("Sandbox execution failed");
+    let output = sandbox
+        .execute(wasm_code, input)
+        .expect("Sandbox execution failed");
 
     assert_eq!(output, "sandbox_execution_result_placeholder");
 }

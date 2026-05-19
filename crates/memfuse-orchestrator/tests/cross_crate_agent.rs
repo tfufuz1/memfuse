@@ -21,9 +21,13 @@ async fn test_agent_cross_crate_workflow() {
     .await
     .expect("db open");
 
-    db.insert("agent-knowledge", &[1.0, 0.0, 0.0], Some(json!({"info": "Rust is safe"})))
-        .await
-        .expect("insert");
+    db.insert(
+        "agent-knowledge",
+        &[1.0, 0.0, 0.0],
+        Some(json!({"info": "Rust is safe"})),
+    )
+    .await
+    .expect("insert");
 
     // 2. Setup Workflow (memfuse-orchestrator)
     let mut graph = StateGraph::new();
@@ -39,8 +43,12 @@ async fn test_agent_cross_crate_workflow() {
     assert_eq!(results[0].id, "agent-knowledge");
 
     // Simulating workflow step 2: WASM Processing
-    let wasm_input = results[0].metadata.as_ref().unwrap()["info"].as_str().unwrap();
-    let wasm_output = sandbox.execute(b"MOCK_WASM", wasm_input).expect("wasm exec");
+    let wasm_input = results[0].metadata.as_ref().unwrap()["info"]
+        .as_str()
+        .unwrap();
+    let wasm_output = sandbox
+        .execute(b"MOCK_WASM", wasm_input)
+        .expect("wasm exec");
 
     assert!(!wasm_output.is_empty());
 
