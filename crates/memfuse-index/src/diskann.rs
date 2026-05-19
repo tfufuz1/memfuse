@@ -126,11 +126,11 @@ mod tests {
         let index = DiskAnnIndex::new(config);
 
         assert_eq!(index.len().await, 0);
-        let stats = index.stats().await.unwrap();
+        let stats = index.stats().await.unwrap(); // unwrap
         assert_eq!(stats.num_vectors, 0);
 
         let query = vec![0.0; 128];
-        let results = index.search(&query, 10).await.unwrap();
+        let results = index.search(&query, 10).await.unwrap(); // unwrap
         assert!(results.is_empty());
     }
 
