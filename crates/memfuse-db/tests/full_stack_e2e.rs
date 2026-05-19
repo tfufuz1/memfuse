@@ -1,5 +1,5 @@
 //! End-to-End integration tests for the full MemFuse stack.
-// ANCHOR:INTEGRATION:E2E-001 STATUS:READY AGENT:12 DATE:2026-05-18
+// ANCHOR:INTEGRATION:E2E-001 STATUS:DONE AGENT:12 DATE:2026-05-19
 
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
@@ -12,6 +12,7 @@ async fn test_full_stack_document_lifecycle() {
         dimension: 3,
         max_elements: 100,
         distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
     };
 
     let db = MemFuse::open_with_config(tmp.path(), config)
@@ -128,4 +129,82 @@ async fn test_full_stack_document_lifecycle() {
     // 8. Stats check
     let stats = db.stats().await.expect("Stats failed");
     assert!(stats.storage_stats.memtable_size_bytes > 0);
+}
+
+#[tokio::test]
+async fn test_collection_isolation_and_persistence() {
+    let tmp = TempDir::new().expect("Failed to create temp dir");
+    let db_path = tmp.path().to_path_buf();
+    let config = MemFuseConfig {
+        dimension: 2,
+        ..Default::default()
+    };
+
+    // 1. Create collections and insert data
+    {
+        let db = MemFuse::open_with_config(&db_path, config.clone())
+            .await
+            .expect("Failed to open DB");
+        let col1 = db.collection("col1").await.expect("col1");
+        let col2 = db.collection("col2").await.expect("col2");
+
+        col1.insert("shared-id", &[1.0, 0.0], Some(json!({"source": "col1"})))
+            .await
+            .expect("insert col1");
+        col2.insert("shared-id", &[0.0, 1.0], Some(json!({"source": "col2"})))
+            .await
+            .expect("insert col2");
+
+        // Verify isolation
+        let doc1 = col1.get("shared-id").await.expect("get").unwrap();
+        let doc2 = col2.get("shared-id").await.expect("get").unwrap();
+        assert_eq!(doc1.metadata.unwrap()["source"], "col1");
+        assert_eq!(doc2.metadata.unwrap()["source"], "col2");
+
+        // Verify search isolation
+        let search1 = col1.search(&[1.0, 0.0], 1).await.expect("search");
+        assert_eq!(search1[0].id, "shared-id");
+        assert_eq!(search1[0].metadata.as_ref().unwrap()["source"], "col1");
+
+        let search2 = col2.search(&[0.0, 1.0], 1).await.expect("search");
+        assert_eq!(search2[0].id, "shared-id");
+        assert_eq!(search2[0].metadata.as_ref().unwrap()["source"], "col2");
+    }
+
+    // 2. Re-open and verify persistence
+    {
+        let db = MemFuse::open_with_config(&db_path, config.clone())
+            .await
+            .expect("Failed to re-open DB");
+
+        let collections = db.list_collections().await.expect("list");
+        assert!(collections.contains(&"col1".to_string()));
+        assert!(collections.contains(&"col2".to_string()));
+
+        let col1 = db.collection("col1").await.expect("get col1");
+        let doc1 = col1.get("shared-id").await.expect("get").unwrap();
+        assert_eq!(doc1.metadata.unwrap()["source"], "col1");
+
+        let search1 = col1.search(&[1.0, 0.0], 1).await.expect("search");
+        assert_eq!(search1[0].id, "shared-id");
+
+        // 3. Drop collection and verify
+        db.drop_collection("col1").await.expect("drop");
+        let collections_after = db.list_collections().await.expect("list");
+        assert!(!collections_after.contains(&"col1".to_string()));
+        assert!(collections_after.contains(&"col2".to_string()));
+
+        let col2 = db.collection("col2").await.expect("get col2");
+        assert!(col2.get("shared-id").await.expect("get").is_some());
+    }
+
+    // 4. Final verification after drop
+    {
+        let db = MemFuse::open_with_config(&db_path, config.clone())
+            .await
+            .expect("Failed to re-open DB again");
+        let collections = db.list_collections().await.expect("list");
+        assert!(!collections.contains(&"col1".to_string()));
+        assert!(collections.contains(&"col2".to_string()));
+    }
 }
