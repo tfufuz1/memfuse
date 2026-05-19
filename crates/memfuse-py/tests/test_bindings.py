@@ -204,3 +204,45 @@ def test_distance_metrics(db_path):
     # Invalid metric
     with pytest.raises(ValueError):
         memfuse.open(db_path + "_invalid", dimension=4, distance_metric="invalid")
+
+def test_magic_methods_and_repr(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("magic")
+    v = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+
+    # __repr__ for Db and Collection
+    assert "Db()" in repr(db)
+    assert "Collection(name='magic')" in repr(col)
+
+    # __len__ and __bool__
+    assert len(db) == 0
+    assert not db
+    assert len(col) == 0
+    assert not col
+
+    col.insert("k1", v)
+    assert len(col) == 1
+    assert col
+    # db.len() on default collection is still 0
+    assert len(db) == 0
+
+    # __repr__ for Document
+    doc = col.get("k1")
+    assert "Document(id='k1')" in repr(doc)
+
+    # __repr__ for SearchResult
+    results = col.search(v, k=1)
+    assert "SearchResult(id='k1'" in repr(results[0])
+
+    # __repr__ for Stats
+    c_stats = col.stats()
+    assert "VectorIndexStats" in repr(c_stats)
+
+    db_stats = db.stats()
+    assert "DbStats" in repr(db_stats)
+    assert "StorageStats" in repr(db_stats.storage_stats)
+
+def test_max_elements_config(db_path):
+    # Just verify the parameter is accepted
+    db = memfuse.open(db_path, dimension=4, max_elements=5000)
+    assert db is not None

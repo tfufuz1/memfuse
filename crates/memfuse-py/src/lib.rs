@@ -69,6 +69,13 @@ pub struct PySearchResult {
     pub metadata: Option<PyObject>,
 }
 
+#[pymethods]
+impl PySearchResult {
+    fn __repr__(&self) -> String {
+        format!("SearchResult(id='{}', score={:.4})", self.id, self.score)
+    }
+}
+
 /// A document retrieved from MemFuse.
 #[pyclass(get_all)]
 pub struct PyDocument {
@@ -76,6 +83,13 @@ pub struct PyDocument {
     pub id: String,
     /// Metadata associated with the document.
     pub metadata: Option<PyObject>,
+}
+
+#[pymethods]
+impl PyDocument {
+    fn __repr__(&self) -> String {
+        format!("Document(id='{}')", self.id)
+    }
 }
 
 /// Statistics for a vector index.
@@ -90,6 +104,16 @@ pub struct PyVectorIndexStats {
     pub num_layers: usize,
 }
 
+#[pymethods]
+impl PyVectorIndexStats {
+    fn __repr__(&self) -> String {
+        format!(
+            "VectorIndexStats(num_vectors={}, memory_usage_bytes={}, num_layers={})",
+            self.num_vectors, self.memory_usage_bytes, self.num_layers
+        )
+    }
+}
+
 /// Statistics for the storage engine.
 #[pyclass(get_all, name = "StorageStats")]
 #[derive(Clone)]
@@ -102,6 +126,16 @@ pub struct PyStorageStats {
     pub memtable_size_bytes: u64,
 }
 
+#[pymethods]
+impl PyStorageStats {
+    fn __repr__(&self) -> String {
+        format!(
+            "StorageStats(num_segments={}, total_size_bytes={}, memtable_size_bytes={})",
+            self.num_segments, self.total_size_bytes, self.memtable_size_bytes
+        )
+    }
+}
+
 /// Overall database statistics.
 #[pyclass(get_all, name = "DbStats")]
 #[derive(Clone)]
@@ -112,6 +146,17 @@ pub struct PyDbStats {
     pub storage_stats: PyStorageStats,
 }
 
+#[pymethods]
+impl PyDbStats {
+    fn __repr__(&self) -> String {
+        format!(
+            "DbStats(index_stats={}, storage_stats={})",
+            self.index_stats.__repr__(),
+            self.storage_stats.__repr__()
+        )
+    }
+}
+
 #[pyclass(unsendable, name = "Db")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
@@ -119,6 +164,18 @@ pub struct PyMemFuse {
 
 #[pymethods]
 impl PyMemFuse {
+    fn __repr__(&self) -> String {
+        "Db()".to_string()
+    }
+
+    fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        self.len(py)
+    }
+
+    fn __bool__(&self, py: Python<'_>) -> PyResult<bool> {
+        Ok(!self.is_empty(py)?)
+    }
+
     pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<PyCollection> {
         let rt = get_runtime()?;
         let col = py
@@ -411,6 +468,18 @@ pub struct PyCollection {
 
 #[pymethods]
 impl PyCollection {
+    fn __repr__(&self) -> String {
+        format!("Collection(name='{}')", self.inner.name)
+    }
+
+    fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        self.len(py)
+    }
+
+    fn __bool__(&self, py: Python<'_>) -> PyResult<bool> {
+        Ok(!self.is_empty(py)?)
+    }
+
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
@@ -667,18 +736,20 @@ impl PyCollection {
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536, encryption_passphrase=None, distance_metric=None))]
+#[pyo3(signature = (path, dimension=1536, encryption_passphrase=None, distance_metric=None, max_elements=1000000))]
 fn open(
     py: Python<'_>,
     path: &str,
     dimension: usize,
     encryption_passphrase: Option<String>,
     distance_metric: Option<String>,
+    max_elements: usize,
 ) -> PyResult<PyMemFuse> {
     let rt = get_runtime()?;
     let mut config = MemFuseConfig {
         dimension,
         encryption_passphrase,
+        max_elements,
         ..Default::default()
     };
 
