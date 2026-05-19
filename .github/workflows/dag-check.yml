@@ -42,8 +42,8 @@ jobs:
             cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
             exit 1
           fi
-          echo "Verifying memfuse-text (excluding tracked DAG-001)..."
-          if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
+          echo "Verifying memfuse-text..."
+          if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core" | grep -q "memfuse-"; then
             echo "ERROR: memfuse-text violates DAG."
             cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
             exit 1
@@ -62,6 +62,17 @@ jobs:
           if cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py|memfuse-runtime|memfuse-orchestrator"; then
             echo "ERROR: memfuse-db imports higher layers."
             cargo tree -p memfuse-db --edges no-dev | grep -E "memfuse-py|memfuse-runtime|memfuse-orchestrator"
+            exit 1
+          fi
+
+      - name: Check L4 Bindings Isolation (py) # AGENT:11
+        run: |
+          set -e
+          echo "Verifying memfuse-py..."
+          # L4 Bindings should not import Kernel crates directly (runtime, orchestrator)
+          if cargo tree -p memfuse-py --edges no-dev | grep -E -q "memfuse-runtime|memfuse-orchestrator"; then
+            echo "ERROR: memfuse-py imports kernel crates."
+            cargo tree -p memfuse-py --edges no-dev | grep -E "memfuse-runtime|memfuse-orchestrator"
             exit 1
           fi
 
