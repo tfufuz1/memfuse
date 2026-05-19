@@ -8,8 +8,10 @@
 
 use std::time::Duration;
 
+/// Configuration for the WebAssembly sandbox.
 #[derive(Debug)]
 pub struct SandboxConfig {
+    /// Maximum allowed memory in megabytes.
     pub max_memory_mb: usize,
     pub timeout: Duration,
     pub allow_network: bool,

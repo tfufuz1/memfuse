@@ -2,7 +2,7 @@
 
 > **Phase:** Feature Implementation & TDD  
 > **Doctrine:** Zero-Panic / Sovereign Core / Triple-Test-Gate  
-> **Updated:** 2026-05-05
+> **Updated:** 2026-05-18
 
 ---
 
@@ -14,8 +14,9 @@
 | **`memfuse-store`** | LSM-Storage, MemTables, WAL, Compaction | ~1400 | ✅ Stabil |
 | **`memfuse-index`** | HNSW-Graphen, SIMD Vektor-Distanz, Quantization | ~1300 | ✅ Stabil |
 | **`memfuse-db`** | Orchestrierung, Hybrid-Search Facade, Collections | ~700 | ✅ Stabil |
-| **`memfuse-text`** | BM25, Inverted Index, Tokenizer | — | 🔵 WP-2.1 geplant |
-| **`memfuse-py`** | PyO3 Bindings, maturin | — | 🔵 WP-3.1 geplant |
+| **`memfuse-text`** | BM25, Inverted Index, Tokenizer | ~600 | ✅ Stabil |
+| **`memfuse-py`** | PyO3 Bindings, maturin | ~700 | ✅ Stabil |
+| **`memfuse-checkpoint`** | Native State Checkpointing, Time-Travel | ~350 | ✅ Stabil |
 
 ---
 
@@ -84,9 +85,10 @@ just spec WP-X.Y-NAME
 | **WP-2.2** | Scalar Quantization (SQ8) | 🟡 MITTEL | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-2.2-Quantization.md) |
 | **WP-3.1** | Python Bindings (PyO3) | 🟠 HOCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-3.1-PythonBindings.md) |
 | **WP-3.2** | Encryption at Rest | 🟡 MITTEL | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-3.2-Encryption.md) |
-| **WP-4.1** | Memory-Mapped I/O | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
+| **WP-4.1** | Memory-Mapped I/O | 🟡 MITTEL | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
 | **WP-4.2** | Advanced Filtering | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
 | **WP-4.3** | DiskANN Out-of-Core | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
+| **WP-5.1** | State Checkpointing | 🟠 HOCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260508-WP-5.1-Checkpointing.md) |
 | **WP-6.1** | 4-Signal Fusion API | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
 | **WP-6.2** | Declarative StateGraph API | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
 | **WP-6.3** | Autonomes Kontext-Management | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
@@ -99,7 +101,7 @@ just spec WP-X.Y-NAME
 
 ## ⚠️ Autonomous Squad Protocol (13 Agents)
 
-MemFuse is built by a squad of 13 autonomous agents. Each agent has a specific domain and a staggered execution window.
+MemFuse is built by a squad of 13 autonomous agents. Each agent highlights its specific domain and a staggered execution window.
 
 | # | Role | Domain | Schedule |
 |---|---|---|---|

@@ -2,7 +2,7 @@
 
 **Sovereign Agentic Operating System (SAOS)**
 
-> "The ultimate runtime for AI Agents: Database, Saftey Layer, and Orchestrator in one crate."
+> "The ultimate runtime for AI Agents: Database, Safety Layer, and Orchestrator in one library."
 
 ## Quick Start
 
@@ -28,6 +28,9 @@ for res in results:
 
 # Hybrid Search (BM25 + Vector)
 hybrid_results = col.hybrid_search("AI search", v, k=5)
+
+# Relationship tracking
+col.relate("doc1", "doc2", "references")
 ```
 
 ## Architecture: The 3 SAOS Layers
@@ -81,9 +84,9 @@ bash .agent/scripts/jules-dashboard.sh
 - **LSM-Tree Persistence** — WAL + MemTable with crash recovery
 - **Transactional** — Sharded TxBuffer with orphan-reaping
 - **Relationship Tracking** — `relate()` API for graph-aware retrieval
-- **Hybrid Search** — Optimized BM25 + Vector Fusion (RRF)
-- **Scalar Quantization** — SQ8 compression for 4x reduced RAM footprint
 - **Deterministic Checkpointing** — Native state pinning for "Time-Travel" debugging
+- **Encryption at Rest** — AES-256-GCM for SSTables and WAL
+- **Memory-Mapped I/O** — Zero-copy vector access for high-throughput reads
 
 ## Building
 
