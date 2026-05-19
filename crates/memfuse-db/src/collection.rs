@@ -7,6 +7,7 @@
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 // STATUS: Full Implementation für WP-1.2.
 
+use crate::filter::{FilterStrategy, MetadataFilter};
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;
@@ -344,6 +345,78 @@ impl Collection {
     ) -> Result<Vec<crate::SearchResult>> {
         let scored_docs = self.index.search_filtered(query, k, filter).await?;
         self.hydrate_from_scored(scored_docs).await
+    }
+
+    /// Performs vector search with an advanced metadata filter (WP-4.2).
+    pub async fn search_with_filter(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: MetadataFilter,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let strategy = filter.choose_strategy();
+
+        match strategy {
+            FilterStrategy::PreFilter => {
+                // WP-4.2: Real Pre-filtering implementation.
+                // Scan all documents in the collection, check filter, and collect DocIds.
+                let doc_idx_prefix = if self.name == "default" {
+                    b"__docid:".to_vec()
+                } else {
+                    let mut p = self.prefix.clone();
+                    p.push(1);
+                    p
+                };
+
+                let kvs = self.storage.scan_prefix(&doc_idx_prefix).await?;
+                let mut matched_ids = std::collections::HashSet::new();
+
+                for (_, v) in kvs {
+                    let stored: StoredDocument = serde_json::from_slice(&v)?;
+                    if let Some(meta) = &stored.metadata {
+                        if filter.expr.matches(meta) {
+                            matched_ids.insert(DocId::from_key(&stored.id));
+                        }
+                    }
+                }
+
+                if matched_ids.is_empty() {
+                    return Ok(Vec::new());
+                }
+
+                let filter_closure = move |doc_id: DocId| matched_ids.contains(&doc_id);
+                self.search_filtered(query, k, Some(&filter_closure)).await
+            }
+            FilterStrategy::PostFilter | FilterStrategy::Hybrid => {
+                // Post-filtering trade-off: Fetch metadata during search traversal.
+                let filter_closure = move |doc_id: DocId| self.match_metadata_sync(doc_id, &filter);
+
+                self.search_filtered(query, k, Some(&filter_closure)).await
+            }
+        }
+    }
+
+    /// Internal helper to match metadata synchronously (using block_in_place).
+    /// This is used in HNSW search closures for Post-Filtering.
+    fn match_metadata_sync(&self, doc_id: DocId, filter: &MetadataFilter) -> bool {
+        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+
+        let res = tokio::task::block_in_place(|| {
+            let handle = tokio::runtime::Handle::current();
+            handle.block_on(async { self.storage.get(&doc_key).await })
+        });
+
+        match res {
+            Ok(Some(bytes)) => {
+                if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&bytes) {
+                    if let Some(meta) = stored.metadata {
+                        return filter.expr.matches(&meta);
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
     }
 
     async fn hydrate_from_scored(

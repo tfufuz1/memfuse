@@ -56,6 +56,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub mod collection;
+pub mod filter;
 pub mod fusion;
 pub mod transaction;
 

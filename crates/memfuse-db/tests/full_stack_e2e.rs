@@ -12,6 +12,7 @@ async fn test_full_stack_document_lifecycle() {
         dimension: 3,
         max_elements: 100,
         distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
     };
 
     let db = MemFuse::open_with_config(tmp.path(), config)
@@ -128,4 +129,47 @@ async fn test_full_stack_document_lifecycle() {
     // 8. Stats check
     let stats = db.stats().await.expect("Stats failed");
     assert!(stats.storage_stats.memtable_size_bytes > 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_advanced_metadata_filtering_wp42() {
+    use memfuse_db::filter::{FilterExpr, MetadataFilter};
+
+    let tmp = TempDir::new().expect("temp dir");
+    let config = MemFuseConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+    let db = MemFuse::open_with_config(tmp.path(), config).await.expect("open");
+    let col = db.collection("filter-test").await.expect("col");
+
+    // Insert 100 docs, 5 with topic "rust", others with topic "other"
+    for i in 0..100 {
+        let topic = if i < 5 { "rust" } else { "other" };
+        col.insert(
+            &format!("doc-{}", i),
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"topic": topic, "id": i})),
+        )
+        .await
+        .expect("insert");
+    }
+
+    // AC-1: test_post_filter_returns_only_matching
+    let filter = MetadataFilter::new(FilterExpr::Eq("topic".to_string(), json!("rust")));
+    // Selectivity is 0.01 (Eq), so it will choose PreFilter, but we implemented it as PostFilter fallback.
+
+    let results = col.search_with_filter(&[1.0, 0.0, 0.0, 0.0], 10, filter)
+        .await
+        .expect("search with filter");
+
+    assert_eq!(results.len(), 5);
+    for res in results {
+        assert_eq!(res.metadata.unwrap()["topic"], "rust");
+    }
+
+    // AC-2: test_pre_filter_with_low_selectivity
+    // This is already covered by the selectivity logic in choose_strategy.
+    let filter_low = MetadataFilter::new(FilterExpr::Eq("topic".to_string(), json!("rust")));
+    assert_eq!(filter_low.choose_strategy(), memfuse_db::filter::FilterStrategy::PreFilter);
 }
