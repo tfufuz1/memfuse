@@ -138,8 +138,13 @@ impl<T: Clone> TxBuffer<T> {
                     tx
                 )));
             }
+            Ok(())
+        } else {
+            Err(MemFuseError::Transaction(format!(
+                "Transaction {} not found in buffer",
+                tx
+            )))
         }
-        Ok(())
     }
 
     /// Drains and returns all buffered operations for a transaction.

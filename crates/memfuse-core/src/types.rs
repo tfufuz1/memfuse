@@ -11,6 +11,7 @@
 
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::Ordering;
 
 // ANCHOR:ARCH:TOMBSTONE-001 — Bit 63 der SeqNo markiert Tombstones.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -45,26 +46,20 @@ impl DocId {
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Self {
-        // ANCHOR:DEBT:TYPES-002 AGENT:01 STATUS:DONE PRIO:3
-        // SAFETY: blake3::hash() always returns a 32-byte hash.
-        // try_from_key() only fails if the hash is shorter than 8 bytes.
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes") // unwrap: blake3 hash is always 32 bytes
+        let hash = blake3::hash(key.as_bytes());
+        let bytes = hash.as_bytes();
+        let buf: [u8; 8] = [
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], bytes[6], bytes[7],
+        ];
+        Self(u64::from_le_bytes(buf))
     }
 
     /// Safely derive a DocId from a user-provided string key.
     ///
     /// Uses blake3 hash and safe slice indexing.
     pub fn try_from_key(key: &str) -> Result<Self> {
-        let hash = blake3::hash(key.as_bytes());
-        let bytes = hash
-            .as_bytes()
-            .get(..8)
-            .ok_or_else(|| MemFuseError::Internal("Blake3 hash too short".to_string()))?;
-
-        let buf: [u8; 8] = bytes.try_into().map_err(|_| {
-            MemFuseError::Internal("Failed to convert hash slice to array".to_string())
-        })?;
-        Ok(Self(u64::from_le_bytes(buf)))
+        Ok(Self::from_key(key))
     }
 }
 
@@ -295,23 +290,31 @@ impl ResourceTracker {
     }
 
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
-        let current = self
-            .memory_used
-            .fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
-        if current + bytes > self.budget.memory_limit {
-            self.memory_used
-                .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
-            return Err(MemFuseError::MemoryBudgetExceeded {
-                used_mb: (current + bytes) / (1024 * 1024),
-                limit_mb: self.budget.memory_limit / (1024 * 1024),
-            });
-        }
+        self.memory_used
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+                let next = current.checked_add(bytes)?;
+                if next > self.budget.memory_limit {
+                    None
+                } else {
+                    Some(next)
+                }
+            })
+            .map_err(|current| {
+                let attempted = current.saturating_add(bytes);
+                MemFuseError::MemoryBudgetExceeded {
+                    used_mb: attempted / (1024 * 1024),
+                    limit_mb: self.budget.memory_limit / (1024 * 1024),
+                }
+            })?;
         Ok(())
     }
 
     pub fn release_memory(&self, bytes: u64) {
-        self.memory_used
-            .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
+        let _ = self
+            .memory_used
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+                Some(current.saturating_sub(bytes))
+            });
     }
 
     pub fn memory_used(&self) -> u64 {
