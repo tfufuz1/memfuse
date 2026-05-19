@@ -675,11 +675,15 @@ mod test_f32u8 {
         assert!((dot_scalar - dot_simd).abs() < 1e-5);
 
         // Euclidean sq
-        let euc_scalar: f32 = a.iter().zip(b.iter()).map(|(&x, &y)| {
-            let y_f32 = (y as f32) * alpha + min;
-            let diff = x - y_f32;
-            diff * diff
-        }).sum();
+        let euc_scalar: f32 = a
+            .iter()
+            .zip(b.iter())
+            .map(|(&x, &y)| {
+                let y_f32 = (y as f32) * alpha + min;
+                let diff = x - y_f32;
+                diff * diff
+            })
+            .sum();
         let euc_simd = euclidean_distance_sq_f32_u8(&a, &b, alpha, min);
         assert!((euc_scalar - euc_simd).abs() < 1e-3);
 
@@ -1120,12 +1124,7 @@ pub unsafe fn dot_product_f32_u8_avx2(a: &[f32], b: &[u8]) -> f32 {
 /// # Safety
 /// This function is unsafe because it uses AVX2 and FMA intrinsics.
 /// The caller must ensure that the CPU supports both avx2 and fma.
-pub unsafe fn euclidean_distance_sq_f32_u8_avx2(
-    a: &[f32],
-    b: &[u8],
-    alpha: f32,
-    min: f32,
-) -> f32 {
+pub unsafe fn euclidean_distance_sq_f32_u8_avx2(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {
     let n = a.len();
     let mut i = 0;
     let mut sum_v = _mm256_setzero_ps();
