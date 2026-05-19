@@ -1,5 +1,7 @@
 //! End-to-End integration tests for the full MemFuse stack.
 // ANCHOR:INTEGRATION:E2E-001 STATUS:READY AGENT:12 DATE:2026-05-18
+// ANCHOR:FIXME PRIO:1 AGENT:12 STATUS:READY DATE:2026-05-19
+// REGRESSION: missing field `encryption_passphrase` in MemFuseConfig
 
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;

@@ -1,5 +1,7 @@
 // AGENT:12
 // ANCHOR:INTEGRATION STATUS:DONE
+// ANCHOR:FIXME PRIO:1 AGENT:12 STATUS:READY DATE:2026-05-19
+// REGRESSION: missing field `encryption_passphrase` in MemFuseConfig
 // E2E Test: Full Stack Integration
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use memfuse_orchestrator::StateGraph;
