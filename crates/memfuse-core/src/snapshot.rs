@@ -142,7 +142,7 @@ mod tests {
         }
 
         for h in handles {
-            h.await.unwrap();
+            h.await.unwrap(); // unwrap: test code
         }
 
         assert_eq!(registry.min_active_seqno(), u64::MAX);

@@ -328,7 +328,10 @@ mod tests {
             }
             sleep(Duration::from_millis(10)).await;
         }
-        assert!(cleaned, "Orphan reaper should have cleaned up the transaction");
+        assert!(
+            cleaned,
+            "Orphan reaper should have cleaned up the transaction"
+        );
     }
 
     #[tokio::test]
