@@ -172,7 +172,10 @@ mod tests {
 
         registry.pin(200 | TOMBSTONE_BIT);
         assert_eq!(registry.active.lock().contains_key(&200), true);
-        assert_eq!(registry.active.lock().contains_key(&(200 | TOMBSTONE_BIT)), false);
+        assert_eq!(
+            registry.active.lock().contains_key(&(200 | TOMBSTONE_BIT)),
+            false
+        );
 
         drop(g);
         assert_eq!(registry.min_active_seqno(), 200);
