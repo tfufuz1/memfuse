@@ -78,6 +78,10 @@ pub enum MemFuseError {
     // ═══ Text Engine ═══
     #[error("Text engine error: {0}")]
     Text(String),
+
+    // ANCHOR:DEBT:ERR-002 AGENT:01 STATUS:DONE PRIO:3
+    #[error("Index not trained: {0}")]
+    IndexNotTrained(String),
 }
 
 impl MemFuseError {

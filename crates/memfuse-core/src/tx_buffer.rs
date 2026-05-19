@@ -299,6 +299,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_orphan_reaper_removes_expired() {
+        // ANCHOR:DEBT:TXBUF-003 AGENT:01 STATUS:DONE PRIO:3
         let buffer = Arc::new(TxBuffer::<String>::new_with_config(
             64,
             Duration::from_millis(50),
@@ -316,8 +317,18 @@ mod tests {
 
         let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10));
         assert!(buffer.has_tx(tx1));
-        sleep(Duration::from_millis(100)).await;
-        assert!(!buffer.has_tx(tx1));
+
+        // Stable wait-loop for async orphan reaper
+        let start = Instant::now();
+        let mut cleaned = false;
+        while start.elapsed() < Duration::from_millis(500) {
+            if !buffer.has_tx(tx1) {
+                cleaned = true;
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+        assert!(cleaned, "Orphan reaper should have cleaned up the transaction");
     }
 
     #[tokio::test]

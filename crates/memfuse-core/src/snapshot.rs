@@ -77,10 +77,11 @@ impl SnapshotRegistry {
     }
 
     pub(crate) fn release(&self, seq_no: u64) {
+        // ANCHOR:DEBT:MVCC-002 AGENT:01 STATUS:DONE PRIO:3
         let seq_no = seq_no & !TOMBSTONE_BIT;
         let mut active = self.active.lock();
         if let Some(count) = active.get_mut(&seq_no) {
-            *count -= 1;
+            *count = count.saturating_sub(1);
             if *count == 0 {
                 active.remove(&seq_no);
             }
@@ -112,5 +113,51 @@ impl SnapshotGuard {
 impl Drop for SnapshotGuard {
     fn drop(&mut self) {
         self.registry.release(self.seq_no);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use tokio::task;
+
+    #[tokio::test]
+    async fn test_snapshot_registry_concurrency() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        let num_threads = 10;
+        let ops_per_thread = 100;
+
+        let mut handles = Vec::new();
+        for t in 0..num_threads {
+            let registry = registry.clone();
+            handles.push(task::spawn(async move {
+                for i in 0..ops_per_thread {
+                    let seq = (t * 1000 + i) as u64;
+                    let guard = registry.register(seq);
+                    assert!(registry.min_active_seqno() <= seq);
+                    drop(guard);
+                }
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
+    fn test_snapshot_registry_min_active() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        let g1 = registry.register(100);
+        let g2 = registry.register(200);
+
+        assert_eq!(registry.min_active_seqno(), 100);
+        drop(g1);
+        assert_eq!(registry.min_active_seqno(), 200);
+        drop(g2);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
     }
 }
