@@ -1,5 +1,5 @@
 //! End-to-End integration tests for the full MemFuse stack.
-// ANCHOR:INTEGRATION:E2E-001 STATUS:READY AGENT:12 DATE:2026-05-18
+// ANCHOR:INTEGRATION:E2E-001 STATUS:DONE AGENT:12 DATE:2026-05-18
 
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
@@ -12,6 +12,7 @@ async fn test_full_stack_document_lifecycle() {
         dimension: 3,
         max_elements: 100,
         distance_metric: DistanceMetric::Cosine,
+        encryption_passphrase: None,
     };
 
     let db = MemFuse::open_with_config(tmp.path(), config)
@@ -128,4 +129,29 @@ async fn test_full_stack_document_lifecycle() {
     // 8. Stats check
     let stats = db.stats().await.expect("Stats failed");
     assert!(stats.storage_stats.memtable_size_bytes > 0);
+
+    // 9. Collection Isolation verification
+    let other_col = db
+        .collection("other-col")
+        .await
+        .expect("Failed to create other-col");
+    other_col
+        .insert("doc1", &[0.0, 1.0, 0.0], Some(json!({"source": "other"})))
+        .await
+        .expect("Insert in other_col failed");
+
+    // doc1 in other_col should have different metadata than what we had in e2e-test
+    let other_doc = other_col
+        .get("doc1")
+        .await
+        .expect("Get from other_col failed")
+        .unwrap();
+    assert_eq!(other_doc.metadata.unwrap()["source"], "other");
+
+    // e2e-test collection should NOT see doc1 from other-col (it was deleted from e2e-test in step 7)
+    let original_col_doc = col.get("doc1").await.expect("Get from original col failed");
+    assert!(
+        original_col_doc.is_none(),
+        "Original collection should not see doc from other collection"
+    );
 }
