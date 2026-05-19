@@ -40,6 +40,7 @@
 //! 2. On `commit()`, operations are assigned sequence numbers, written to the WAL,
 //!    and then applied to the active MemTable.
 
+use crate::checkpoint::{Checkpointer, StateCheckpoint};
 use crate::compaction::{CompactionConfig, CompactionEngine};
 use crate::crypto::KeyManager;
 use crate::memtable::MemTable;
@@ -113,6 +114,7 @@ pub struct LsmStorage {
     next_seq_no: AtomicU64,
     /// Mutex to serialize commits and prevent snapshot inversion (parallel seq_no holes).
     commit_mutex: tokio::sync::Mutex<()>,
+    checkpointer: Checkpointer,
 }
 
 impl LsmStorage {
@@ -224,6 +226,7 @@ impl LsmStorage {
             snapshot_registry,
             next_seq_no: AtomicU64::new(max_seq + 1),
             commit_mutex: tokio::sync::Mutex::new(()),
+            checkpointer: Checkpointer::new(),
         })
     }
 
@@ -247,6 +250,83 @@ impl LsmStorage {
     /// Forces a flush (to be used by CheckpointManager or tests).
     pub async fn force_flush(&self) -> Result<()> {
         self.flush().await
+    }
+
+    /// Records a new checkpoint at the current transaction ID.
+    pub async fn create_checkpoint(&self, tx_id: TxId) -> Result<StateCheckpoint> {
+        let last_seq = self.last_seq_no();
+        let sstables = self.sstables.read().await;
+        let paths = sstables
+            .iter()
+            .map(|s| s.file_path().to_path_buf())
+            .collect();
+        Ok(self.checkpointer.create_checkpoint(tx_id, last_seq, paths))
+    }
+
+    /// Rolls the database state back to a specific checkpoint.
+    pub async fn rollback_to(&self, checkpoint: &StateCheckpoint) -> Result<()> {
+        let _commit_lock = self.commit_mutex.lock().await;
+        let mut state = self.state.write().await;
+        let mut sstables_lock = self.sstables.write().await;
+
+        tracing::info!(
+            "Rolling back LSM state to TX: {}, Seq: {}",
+            checkpoint.tx_id,
+            checkpoint.max_seq_no
+        );
+
+        // 1. Reset volatile state
+        state.memtable = Arc::new(MemTable::new());
+        state.immutable_memtables.clear();
+        self.budget.reset();
+
+        // 2. Restore SSTables from checkpoint
+        let mut new_sstables = Vec::new();
+        for path in &checkpoint.sstables {
+            let reader = SstableReader::open_with_key_manager(
+                path,
+                Arc::clone(&self.block_cache),
+                self.key_manager.clone(),
+            )
+            .await?;
+            new_sstables.push(Arc::new(reader));
+        }
+        *sstables_lock = new_sstables;
+
+        // 3. Reset sequence number
+        self.next_seq_no
+            .store(checkpoint.max_seq_no + 1, Ordering::SeqCst);
+
+        // 4. Replay current WAL up to max_seq_no
+        let wal_entries = state.wal.replay().await?;
+        let mut replayed_size = 0u64;
+
+        for (lsn, entry) in wal_entries {
+            if lsn > checkpoint.max_seq_no {
+                continue;
+            }
+
+            match entry.op {
+                WalOp::Put { key, value, .. } => {
+                    replayed_size += (key.len() + value.len() + 8) as u64;
+                    state
+                        .memtable
+                        .put(Bytes::from(key), Bytes::from(value), lsn);
+                }
+                WalOp::Delete { key, .. } => {
+                    replayed_size += (key.len() + 8) as u64;
+                    state
+                        .memtable
+                        .put(Bytes::from(key), Bytes::new(), lsn | TOMBSTONE_BIT);
+                }
+            }
+        }
+
+        if replayed_size > 0 {
+            let _ = self.budget.consume_memory(replayed_size);
+        }
+
+        Ok(())
     }
 }
 
@@ -796,5 +876,36 @@ mod tests {
             .await
             .expect("scan");
         assert_eq!(results.len(), 2); // d, f (e deleted)
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_rollback() {
+        let (storage, _tmp) = test_storage().await;
+
+        // 1. Initial data
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key1", b"val1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        // 2. Create checkpoint
+        let checkpoint = storage.create_checkpoint(TxId::new(100)).await.unwrap();
+
+        // 3. More data after checkpoint
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"key2", b"val2").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+
+        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
+        assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec()));
+
+        // 4. Rollback
+        storage.rollback_to(&checkpoint).await.unwrap();
+
+        // 5. Verify: key1 exists, key2 is gone
+        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
+        assert_eq!(storage.get(b"key2").await.unwrap(), None);
+
+        // 6. Verify seq_no was reset
+        assert_eq!(storage.last_seq_no(), checkpoint.max_seq_no);
     }
 }

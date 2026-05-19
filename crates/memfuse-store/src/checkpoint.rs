@@ -14,12 +14,15 @@
 // SPEC: docs/specs/SPEC-20260505-WP-4.x-Scale.md (State Checkpointing Sektion)
 
 use memfuse_core::{TxId, Result};
+use std::path::PathBuf;
 
 /// Represents a Point-in-Time snapshot of the agent's memory state.
 #[derive(Debug, Clone)]
 pub struct StateCheckpoint {
     pub tx_id: TxId,
     pub timestamp_ms: u64,
+    pub max_seq_no: u64,
+    pub sstables: Vec<PathBuf>,
 }
 
 /// The Checkpointer manages WAL replay bounds for deterministic time-travel.
@@ -40,10 +43,15 @@ impl Checkpointer {
     }
 
     /// Records a new checkpoint at the current transaction ID marking an agent step.
-    pub fn create_checkpoint(&self, tx_id: TxId) -> StateCheckpoint {
+    pub fn create_checkpoint(&self, tx_id: TxId, max_seq_no: u64, sstables: Vec<PathBuf>) -> StateCheckpoint {
         StateCheckpoint {
             tx_id,
-            timestamp_ms: 0, // std::time::SystemTime here
+            timestamp_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+            max_seq_no,
+            sstables,
         }
     }
 

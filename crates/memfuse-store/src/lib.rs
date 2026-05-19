@@ -16,6 +16,7 @@
 // BEGRÜNDUNG: memmap2 in sstable.rs benötigt unsafe für Performance.
 #![deny(unsafe_code)]
 
+pub mod checkpoint;
 pub mod compaction;
 pub mod crypto;
 pub mod lsm;
