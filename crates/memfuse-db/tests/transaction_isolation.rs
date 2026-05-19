@@ -108,7 +108,8 @@ async fn test_concurrent_rollback_contention() {
 
     let mut committed_count = 0;
     for task in tasks {
-        if task.await.unwrap() { // #[cfg(test)]
+        let res = task.await.unwrap(); // #[cfg(test)]
+        if res {
             committed_count += 1;
         }
     }

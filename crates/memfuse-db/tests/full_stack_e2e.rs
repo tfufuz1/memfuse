@@ -56,10 +56,12 @@ async fn test_full_stack_document_lifecycle() {
         .expect("Hybrid search failed"); // #[cfg(test)]
     assert!(!results.is_empty(), "Search results should not be empty");
     assert_eq!(results[0].id, "doc1");
-    assert!(results[0].metadata.as_ref().unwrap()["tags"] // #[cfg(test)]
-        .as_array()
-        .unwrap() // #[cfg(test)]
-        .contains(&json!("systems")));
+    assert!(
+        results[0].metadata.as_ref().unwrap()["tags"] // #[cfg(test)]
+            .as_array()
+            .unwrap() // #[cfg(test)]
+            .contains(&json!("systems"))
+    );
 
     // 3. Bidirectional Relationships
     col.relate("doc1", "doc2", "cousin")

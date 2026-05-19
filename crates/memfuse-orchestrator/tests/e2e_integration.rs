@@ -48,10 +48,12 @@ async fn test_e2e_agent_workflow() {
     // 4. Verify Ergebnisse (Score, Metadata, Ordering)
     assert!(!results.is_empty());
     assert_eq!(results[0].id, "doc-1");
-    assert!(results[0].metadata.as_ref().unwrap()["text"] // #[cfg(test)]
-        .as_str()
-        .unwrap() // #[cfg(test)]
-        .contains("Rust"));
+    assert!(
+        results[0].metadata.as_ref().unwrap()["text"] // #[cfg(test)]
+            .as_str()
+            .unwrap() // #[cfg(test)]
+            .contains("Rust")
+    );
 
     // 5. Update + Re-Search
     db.update(
