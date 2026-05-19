@@ -1,7 +1,7 @@
 //! End-to-End integration tests for the full MemFuse stack.
 // ANCHOR:INTEGRATION:E2E-001 STATUS:READY AGENT:12 DATE:2026-05-18
 
-use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
+use memfuse_db::{MemFuse, MemFuseConfig};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -10,8 +10,9 @@ async fn test_full_stack_document_lifecycle() {
     let tmp = TempDir::new().expect("Failed to create temp dir");
     let config = MemFuseConfig {
         dimension: 3,
-        max_elements: 100,
-        distance_metric: DistanceMetric::Cosine,
+
+        ..Default::default()
+
     };
 
     let db = MemFuse::open_with_config(tmp.path(), config)
