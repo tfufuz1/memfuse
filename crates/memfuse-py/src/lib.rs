@@ -112,43 +112,9 @@ pub struct PyDbStats {
     pub storage_stats: PyStorageStats,
 }
 
-/// Provides embeddings for text-to-vector resolution.
-#[pyclass(name = "EmbeddingProvider")]
-#[derive(Clone)]
-pub struct PyEmbeddingProvider {
-    #[allow(dead_code)]
-    model_path: String,
-    #[allow(dead_code)]
-    runtime: String,
-}
-
-#[pymethods]
-impl PyEmbeddingProvider {
-    #[staticmethod]
-    #[pyo3(signature = (model_path, runtime="ort"))]
-    pub fn local(model_path: &str, runtime: &str) -> Self {
-        Self {
-            model_path: model_path.to_string(),
-            runtime: runtime.to_string(),
-        }
-    }
-
-    pub fn embed(&self, _py: Python<'_>, _text: &str) -> PyResult<Vec<f32>> {
-        // In a real implementation, this would use ONNX runtime (ort)
-        // to generate an embedding for the given text.
-        // For WP-6.6 scaffold, we return a mock vector if it's not actually implemented.
-        // However, the GS-06 spec suggests this should be offline-capable.
-        Err(pyo3::exceptions::PyNotImplementedError::new_err(
-            "Local embedding inference not yet fully integrated in this build. Use provided vectors.",
-        ))
-    }
-}
-
 #[pyclass(unsendable, name = "Db")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
-    embedding_provider: Option<Py<PyEmbeddingProvider>>,
-    network_enabled: bool,
 }
 
 #[pymethods]
@@ -160,8 +126,6 @@ impl PyMemFuse {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(PyCollection {
             inner: Arc::new(col),
-            embedding_provider: self.embedding_provider.as_ref().map(|p| p.clone_ref(py)),
-            network_enabled: self.network_enabled,
         })
     }
 
@@ -177,33 +141,18 @@ impl PyMemFuse {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
-    #[pyo3(signature = (id, vector=None, metadata=None, text=None))]
+    #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
         py: Python<'py>,
         id: &str,
-        vector: Option<PyReadonlyArray1<'py, f32>>,
+        vector: PyReadonlyArray1<'py, f32>,
         metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
-        text: Option<&str>,
     ) -> PyResult<()> {
         let rt = get_runtime()?;
-
-        #[allow(unused_assignments)]
-        let mut temp_vec = None;
-        let vec_slice = if let Some(v) = &vector {
-            v.as_slice().map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?
-        } else if let (Some(provider), Some(t)) = (&self.embedding_provider, text) {
-            temp_vec = Some(provider.borrow(py).embed(py, t)?);
-            temp_vec.as_ref().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
-            })?
-        } else {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Either 'vector' or 'text' (with configured EmbeddingProvider) must be provided.",
-            ));
-        };
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
             Some(depythonize(&d).map_err(|e| {
@@ -249,33 +198,18 @@ impl PyMemFuse {
         }
     }
 
-    #[pyo3(signature = (id, vector=None, metadata=None, text=None))]
+    #[pyo3(signature = (id, vector, metadata=None))]
     pub fn update<'py>(
         &self,
         py: Python<'py>,
         id: &str,
-        vector: Option<PyReadonlyArray1<'py, f32>>,
+        vector: PyReadonlyArray1<'py, f32>,
         metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
-        text: Option<&str>,
     ) -> PyResult<()> {
         let rt = get_runtime()?;
-
-        #[allow(unused_assignments)]
-        let mut temp_vec = None;
-        let vec_slice = if let Some(v) = &vector {
-            v.as_slice().map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?
-        } else if let (Some(provider), Some(t)) = (&self.embedding_provider, text) {
-            temp_vec = Some(provider.borrow(py).embed(py, t)?);
-            temp_vec.as_ref().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
-            })?
-        } else {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Either 'vector' or 'text' (with configured EmbeddingProvider) must be provided.",
-            ));
-        };
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
             Some(depythonize(&d).map_err(|e| {
@@ -297,32 +231,17 @@ impl PyMemFuse {
         Ok(())
     }
 
-    #[pyo3(signature = (vector=None, k=5, text=None))]
+    #[pyo3(signature = (vector, k))]
     pub fn search<'py>(
         &self,
         py: Python<'py>,
-        vector: Option<PyReadonlyArray1<'py, f32>>,
+        vector: PyReadonlyArray1<'py, f32>,
         k: usize,
-        text: Option<&str>,
     ) -> PyResult<Vec<PyObject>> {
         let rt = get_runtime()?;
-
-        #[allow(unused_assignments)]
-        let mut temp_vec = None;
-        let vec_slice = if let Some(v) = &vector {
-            v.as_slice().map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?
-        } else if let (Some(provider), Some(t)) = (&self.embedding_provider, text) {
-            temp_vec = Some(provider.borrow(py).embed(py, t)?);
-            temp_vec.as_ref().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
-            })?
-        } else {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Either 'vector' or 'text' (with configured EmbeddingProvider) must be provided.",
-            ));
-        };
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let results = py
             .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
@@ -357,32 +276,18 @@ impl PyMemFuse {
         Ok(py_res)
     }
 
-    #[pyo3(signature = (text, vector=None, k=5))]
+    #[pyo3(signature = (text, vector, k))]
     pub fn hybrid_search<'py>(
         &self,
         py: Python<'py>,
         text: &str,
-        vector: Option<PyReadonlyArray1<'py, f32>>,
+        vector: PyReadonlyArray1<'py, f32>,
         k: usize,
     ) -> PyResult<Vec<PyObject>> {
         let rt = get_runtime()?;
-
-        #[allow(unused_assignments)]
-        let mut temp_vec = None;
-        let vec_slice = if let Some(v) = &vector {
-            v.as_slice().map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?
-        } else if let Some(provider) = &self.embedding_provider {
-            temp_vec = Some(provider.borrow(py).embed(py, text)?);
-            temp_vec.as_ref().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
-            })?
-        } else {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Either 'vector' or configured EmbeddingProvider must be provided.",
-            ));
-        };
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let results = py
             .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, vec_slice, k)))
@@ -502,40 +407,22 @@ impl PyMemFuse {
 #[pyclass(unsendable, name = "Collection")]
 pub struct PyCollection {
     inner: Arc<MemFuseCollection>,
-    embedding_provider: Option<Py<PyEmbeddingProvider>>,
-    #[allow(dead_code)]
-    network_enabled: bool,
 }
 
 #[pymethods]
 impl PyCollection {
-    #[pyo3(signature = (id, vector=None, metadata=None, text=None))]
+    #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
         py: Python<'py>,
         id: &str,
-        vector: Option<PyReadonlyArray1<'py, f32>>,
+        vector: PyReadonlyArray1<'py, f32>,
         metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
-        text: Option<&str>,
     ) -> PyResult<()> {
         let rt = get_runtime()?;
-
-        #[allow(unused_assignments)]
-        let mut temp_vec = None;
-        let vec_slice = if let Some(v) = &vector {
-            v.as_slice().map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?
-        } else if let (Some(provider), Some(t)) = (&self.embedding_provider, text) {
-            temp_vec = Some(provider.borrow(py).embed(py, t)?);
-            temp_vec.as_ref().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
-            })?
-        } else {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Either 'vector' or 'text' (with configured EmbeddingProvider) must be provided.",
-            ));
-        };
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
             Some(depythonize(&d).map_err(|e| {
@@ -581,33 +468,18 @@ impl PyCollection {
         }
     }
 
-    #[pyo3(signature = (id, vector=None, metadata=None, text=None))]
+    #[pyo3(signature = (id, vector, metadata=None))]
     pub fn update<'py>(
         &self,
         py: Python<'py>,
         id: &str,
-        vector: Option<PyReadonlyArray1<'py, f32>>,
+        vector: PyReadonlyArray1<'py, f32>,
         metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
-        text: Option<&str>,
     ) -> PyResult<()> {
         let rt = get_runtime()?;
-
-        #[allow(unused_assignments)]
-        let mut temp_vec = None;
-        let vec_slice = if let Some(v) = &vector {
-            v.as_slice().map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?
-        } else if let (Some(provider), Some(t)) = (&self.embedding_provider, text) {
-            temp_vec = Some(provider.borrow(py).embed(py, t)?);
-            temp_vec.as_ref().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
-            })?
-        } else {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Either 'vector' or 'text' (with configured EmbeddingProvider) must be provided.",
-            ));
-        };
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
             Some(depythonize(&d).map_err(|e| {
@@ -629,32 +501,17 @@ impl PyCollection {
         Ok(())
     }
 
-    #[pyo3(signature = (vector=None, k=5, text=None))]
+    #[pyo3(signature = (vector, k))]
     pub fn search<'py>(
         &self,
         py: Python<'py>,
-        vector: Option<PyReadonlyArray1<'py, f32>>,
+        vector: PyReadonlyArray1<'py, f32>,
         k: usize,
-        text: Option<&str>,
     ) -> PyResult<Vec<PyObject>> {
         let rt = get_runtime()?;
-
-        #[allow(unused_assignments)]
-        let mut temp_vec = None;
-        let vec_slice = if let Some(v) = &vector {
-            v.as_slice().map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?
-        } else if let (Some(provider), Some(t)) = (&self.embedding_provider, text) {
-            temp_vec = Some(provider.borrow(py).embed(py, t)?);
-            temp_vec.as_ref().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
-            })?
-        } else {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Either 'vector' or 'text' (with configured EmbeddingProvider) must be provided.",
-            ));
-        };
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let results = py
             .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
@@ -690,32 +547,18 @@ impl PyCollection {
     }
 
     /// Performs hybrid search (BM25 + Vector).
-    #[pyo3(signature = (text, vector=None, k=5))]
+    #[pyo3(signature = (text, vector, k))]
     pub fn hybrid_search<'py>(
         &self,
         py: Python<'py>,
         text: &str,
-        vector: Option<PyReadonlyArray1<'py, f32>>,
+        vector: PyReadonlyArray1<'py, f32>,
         k: usize,
     ) -> PyResult<Vec<PyObject>> {
         let rt = get_runtime()?;
-
-        #[allow(unused_assignments)]
-        let mut temp_vec = None;
-        let vec_slice = if let Some(v) = &vector {
-            v.as_slice().map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-            })?
-        } else if let Some(provider) = &self.embedding_provider {
-            temp_vec = Some(provider.borrow(py).embed(py, text)?);
-            temp_vec.as_ref().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve embedding")
-            })?
-        } else {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Either 'vector' or configured EmbeddingProvider must be provided.",
-            ));
-        };
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
 
         let results = py
             .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, vec_slice, k)))
@@ -824,21 +667,18 @@ impl PyCollection {
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536, encryption_passphrase=None, distance_metric=None, embedding_provider=None, network=true))]
+#[pyo3(signature = (path, dimension=1536, encryption_passphrase=None, distance_metric=None))]
 fn open(
     py: Python<'_>,
     path: &str,
     dimension: usize,
     encryption_passphrase: Option<String>,
     distance_metric: Option<String>,
-    embedding_provider: Option<Py<PyEmbeddingProvider>>,
-    network: bool,
 ) -> PyResult<PyMemFuse> {
     let rt = get_runtime()?;
     let mut config = MemFuseConfig {
         dimension,
         encryption_passphrase,
-        network_enabled: network,
         ..Default::default()
     };
 
@@ -863,8 +703,6 @@ fn open(
 
     Ok(PyMemFuse {
         inner: Arc::new(db),
-        embedding_provider,
-        network_enabled: network,
     })
 }
 
@@ -878,6 +716,5 @@ fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()
     m.add_class::<PyVectorIndexStats>()?;
     m.add_class::<PyStorageStats>()?;
     m.add_class::<PyDbStats>()?;
-    m.add_class::<PyEmbeddingProvider>()?;
     Ok(())
 }
