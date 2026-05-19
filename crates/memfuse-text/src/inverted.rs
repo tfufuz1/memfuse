@@ -46,6 +46,16 @@ impl InvertedIndex {
         k
     }
 
+    fn key_with_id(&self, prefix: &str, id: u64) -> Vec<u8> {
+        let mut itoa_buf = itoa::Buffer::new();
+        let id_str = itoa_buf.format(id);
+        let mut k = Vec::with_capacity(self.prefix.len() + prefix.len() + id_str.len());
+        k.extend_from_slice(&self.prefix);
+        k.extend_from_slice(prefix.as_bytes());
+        k.extend_from_slice(id_str.as_bytes());
+        k
+    }
+
     /// Appends and updates inverted index structures for a document.
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
         let tokens = self.tokenizer.tokenize(text);
@@ -57,8 +67,8 @@ impl InvertedIndex {
         }
 
         // Check if document already exists to adjust total_tokens and total_docs
-        let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
-        let fw_key = self.key(&format!("fw:{}", doc_id.inner()));
+        let dl_key = self.key_with_id("dl:", doc_id.inner());
+        let fw_key = self.key_with_id("fw:", doc_id.inner());
         let mut old_len = 0u32;
         let mut is_update = false;
 
@@ -188,8 +198,8 @@ impl InvertedIndex {
 
     /// Deletes a document from the index.
     pub async fn delete_document(&self, tx: TxId, doc_id: DocId) -> Result<()> {
-        let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
-        let fw_key = self.key(&format!("fw:{}", doc_id.inner()));
+        let dl_key = self.key_with_id("dl:", doc_id.inner());
+        let fw_key = self.key_with_id("fw:", doc_id.inner());
 
         let mut doc_len = 0u32;
         if let Some(bytes) = self.storage.get(&dl_key).await? {
@@ -325,7 +335,7 @@ impl InvertedIndex {
 
                     for (doc_id, tf) in pl {
                         // Fetch doc length
-                        let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
+                        let dl_key = self.key_with_id("dl:", doc_id.inner());
                         let mut doc_len = 0u32;
                         if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
                             if dl_bytes.len() == 4 {

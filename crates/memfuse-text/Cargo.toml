@@ -15,6 +15,7 @@ memfuse-core = { workspace = true }
 # VERLETZUNG: memfuse-text importiert memfuse-store gegen die DAG-Invariante
 # IMPACT: Verstößt gegen Layer-Architektur, verhindert saubere Kompilierung
 # SOFORTIGE AKTION: Abhängigkeit extrahieren nach memfuse-core oder neuen Crate
+itoa = "1.0"
 unicode-segmentation = "1.11.0"
 async-trait = { workspace = true }
 bincode = { workspace = true }

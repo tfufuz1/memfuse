@@ -93,7 +93,11 @@ impl Collection {
     pub(crate) fn namespaced_key(&self, key: &[u8], key_type: u8) -> Vec<u8> {
         if self.name == "default" {
             match key_type {
-                0 => key.to_vec(),
+                0 => {
+                    let mut k = Vec::with_capacity(key.len());
+                    k.extend_from_slice(key);
+                    k
+                }
                 1 => {
                     let mut k = Vec::with_capacity(8 + key.len());
                     k.extend_from_slice(b"__docid:");
@@ -107,11 +111,16 @@ impl Collection {
                     k
                 }
                 3 => {
-                    let mut k = b"__tx_intent:".to_vec();
+                    let mut k = Vec::with_capacity(12 + key.len());
+                    k.extend_from_slice(b"__tx_intent:");
                     k.extend_from_slice(key);
                     k
                 }
-                _ => key.to_vec(),
+                _ => {
+                    let mut k = Vec::with_capacity(key.len());
+                    k.extend_from_slice(key);
+                    k
+                }
             }
         } else {
             let mut k = Vec::with_capacity(self.prefix.len() + 1 + key.len());
