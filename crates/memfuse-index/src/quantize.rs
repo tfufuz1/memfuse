@@ -64,21 +64,9 @@ impl ScalarQuantizer {
 
     /// Quantizes an `f32` vector to `u8`.
     pub fn quantize(&self, vector: &[f32]) -> Vec<u8> {
-        vector
-            .iter()
-            .map(|&v| {
-                let clamped = v.clamp(self.min, self.max);
-                // ANCHOR:PERF:CAST-001 — Sicherer Integer-Cast mit Sättigung
-                // WP:WP-0.0 PRIO:2 NEEDS:NONE
-                // AGENT:03 DATE:2026-05-16 STATUS:DONE
-                // CREATED:2026-05-09 DEADLINE:NONE
-                // FUNDORT: memfuse-index/src/quantize.rs
-                // BEHEBUNG: Saturated casting via clamp and round.
-                ((clamped - self.min) * self.scale)
-                    .round()
-                    .clamp(0.0, 255.0) as u8
-            })
-            .collect()
+        let mut output = vec![0u8; vector.len()];
+        crate::distance::quantize_f32_to_u8(vector, self.min, self.scale, &mut output);
+        output
     }
 
     /// Dequantizes a `u8` vector back to `f32`.
@@ -103,41 +91,36 @@ impl ScalarQuantizer {
             ));
         }
 
-        let mut acc = 0.0;
-        match metric {
+        Ok(match metric {
             DistanceMetric::Cosine => {
-                let mut dot = 0.0;
-                let mut norm_a = 0.0;
-                let mut norm_b = 0.0;
-                for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    dot += x * y;
-                    norm_a += x * x;
-                    norm_b += y * y;
-                }
-                acc = if norm_a == 0.0 || norm_b == 0.0 {
+                let parts = crate::distance::cosine_similarity_parts_f32_u8(query, quantized);
+                let norm_q = (parts.norm_u8_sq as f32) * self.inv_scale * self.inv_scale
+                    + 2.0 * (parts.sum_u8 as f32) * self.inv_scale * self.min
+                    + (quantized.len() as f32) * self.min * self.min;
+
+                let dot = parts.dot_f32_u8 * self.inv_scale + query.iter().sum::<f32>() * self.min;
+
+                let norm_query = query.iter().map(|&x| x * x).sum::<f32>();
+
+                if norm_query == 0.0 || norm_q <= 0.0 {
                     1.0
                 } else {
-                    1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
-                };
-            }
-            DistanceMetric::Euclidean => {
-                for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    let diff = x - y;
-                    acc += diff * diff;
+                    1.0 - (dot / (norm_query.sqrt() * norm_q.sqrt()))
                 }
-                acc = acc.sqrt();
             }
+            DistanceMetric::Euclidean => crate::distance::euclidean_distance_sq_f32_u8(
+                query,
+                quantized,
+                self.inv_scale,
+                self.min,
+            )
+            .sqrt(),
             DistanceMetric::DotProduct => {
-                for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    acc += x * y;
-                }
-                acc = -acc;
+                let dot = crate::distance::dot_product_f32_u8(query, quantized) * self.inv_scale
+                    + query.iter().sum::<f32>() * self.min;
+                -dot
             }
-        }
-        Ok(acc)
+        })
     }
 
     /// Computes symmetric (approximate) distance purely in u8.
@@ -154,44 +137,39 @@ impl ScalarQuantizer {
             ));
         }
 
-        let mut acc = 0.0;
-        match metric {
+        Ok(match metric {
             DistanceMetric::Cosine => {
-                let mut dot = 0.0;
-                let mut norm_a = 0.0;
-                let mut norm_b = 0.0;
-                for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = (x_q as f32) * self.inv_scale + self.min;
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    dot += x * y;
-                    norm_a += x * x;
-                    norm_b += y * y;
-                }
-                acc = if norm_a == 0.0 || norm_b == 0.0 {
+                let parts = crate::distance::cosine_similarity_parts_u8(q1, q2);
+                let norm_a = (parts.norm_a_sq as f32) * self.inv_scale * self.inv_scale
+                    + 2.0 * (parts.sum_a as f32) * self.inv_scale * self.min
+                    + (q1.len() as f32) * self.min * self.min;
+                let norm_b = (parts.norm_b_sq as f32) * self.inv_scale * self.inv_scale
+                    + 2.0 * (parts.sum_b as f32) * self.inv_scale * self.min
+                    + (q2.len() as f32) * self.min * self.min;
+                let dot = (parts.dot as f32) * self.inv_scale * self.inv_scale
+                    + (parts.sum_a as f32 + parts.sum_b as f32) * self.inv_scale * self.min
+                    + (q1.len() as f32) * self.min * self.min;
+
+                if norm_a <= 0.0 || norm_b <= 0.0 {
                     1.0
                 } else {
                     1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
-                };
+                }
             }
             DistanceMetric::Euclidean => {
-                for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = (x_q as f32) * self.inv_scale + self.min;
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    let diff = x - y;
-                    acc += diff * diff;
-                }
-                acc = acc.sqrt();
+                let dist_sq = crate::distance::euclidean_distance_sq_u8(q1, q2);
+                (dist_sq as f32).sqrt() * self.inv_scale
             }
             DistanceMetric::DotProduct => {
-                for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = (x_q as f32) * self.inv_scale + self.min;
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    acc += x * y;
-                }
-                acc = -acc;
+                let dot_u8 = crate::distance::dot_product_u8(q1, q2);
+                let sum_a: u32 = q1.iter().map(|&x| x as u32).sum();
+                let sum_b: u32 = q2.iter().map(|&x| x as u32).sum();
+                let dot = (dot_u8 as f32) * self.inv_scale * self.inv_scale
+                    + (sum_a as f32 + sum_b as f32) * self.inv_scale * self.min
+                    + (q1.len() as f32) * self.min * self.min;
+                -dot
             }
-        }
-        Ok(acc)
+        })
     }
 }
 
