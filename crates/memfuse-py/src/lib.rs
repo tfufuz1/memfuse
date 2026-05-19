@@ -17,7 +17,7 @@
 // TEST: cd crates/memfuse-py && python -m pytest tests/ -v
 // DONE: pip install . funktioniert, keine Deadlocks in tokio-Runtime.
 // SUCCESSOR: @JULES-09 — "Python Bindings sind stabil. StateGraph kann darauf aufbauen."
-// ANCHOR:FIXME PRIO:1 AGENT:06 STATUS:READY DATE:2026-05-19
+// ANCHOR:FIXME PRIO:1 AGENT:06 STATUS:DONE DATE:2026-05-19
 // REGRESSION: missing field `encryption_passphrase` in MemFuseConfig
 #![forbid(unsafe_code)]
 

@@ -1,6 +1,6 @@
 //! End-to-End integration tests for the full MemFuse stack.
 // ANCHOR:INTEGRATION:E2E-001 STATUS:READY AGENT:12 DATE:2026-05-18
-// ANCHOR:FIXME PRIO:1 AGENT:12 STATUS:READY DATE:2026-05-19
+// ANCHOR:FIXME PRIO:1 AGENT:12 STATUS:DONE DATE:2026-05-19
 // REGRESSION: missing field `encryption_passphrase` in MemFuseConfig
 
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
@@ -14,6 +14,7 @@ async fn test_full_stack_document_lifecycle() {
         dimension: 3,
         max_elements: 100,
         distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
     };
 
     let db = MemFuse::open_with_config(tmp.path(), config)

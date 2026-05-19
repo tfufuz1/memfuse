@@ -1,4 +1,4 @@
-// ANCHOR:FIXME PRIO:1 AGENT:12 STATUS:READY DATE:2026-05-19
+// ANCHOR:FIXME PRIO:1 AGENT:12 STATUS:DONE DATE:2026-05-19
 // REGRESSION: missing field `encryption_passphrase` in MemFuseConfig
 //! Stress tests for MemFuse database orchestrator.
 

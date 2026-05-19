@@ -1,6 +1,6 @@
 // AGENT:12
 // ANCHOR:INTEGRATION STATUS:DONE
-// ANCHOR:FIXME PRIO:1 AGENT:12 STATUS:READY DATE:2026-05-19
+// ANCHOR:FIXME PRIO:1 AGENT:12 STATUS:DONE DATE:2026-05-19
 // REGRESSION: missing field `encryption_passphrase` in MemFuseConfig
 // E2E Test: Full Stack Integration
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
@@ -19,6 +19,7 @@ async fn test_e2e_agent_workflow() {
         dimension: 3,
         max_elements: 1000,
         distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
     };
     let db = MemFuse::open_with_config(tmp.path(), config)
         .await
@@ -121,6 +122,7 @@ async fn test_stress_concurrent_agent_ops() {
                 dimension: 4,
                 max_elements: 10000,
                 distance_metric: DistanceMetric::Cosine,
+                ..Default::default()
             },
         )
         .await
