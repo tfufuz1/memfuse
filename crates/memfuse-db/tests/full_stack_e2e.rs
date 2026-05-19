@@ -12,7 +12,6 @@ async fn test_full_stack_document_lifecycle() {
         dimension: 3,
 
         ..Default::default()
-
     };
 
     let db = MemFuse::open_with_config(tmp.path(), config)
