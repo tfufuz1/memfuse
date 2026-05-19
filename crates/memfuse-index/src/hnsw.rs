@@ -7,6 +7,7 @@
 // AGENT:03 DATE:2026-05-15 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:HNSW-001 — Hierarchical Navigable Small World Index.
+// ANCHOR:DEBT:NAV-001 — Missing HNSW graph connectivity validation (AGENT:03)
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
@@ -686,6 +687,13 @@ impl VectorIndex for HnswIndex {
                 err
             )));
         }
+
+        if embedding.iter().any(|x| x.is_nan() || x.is_infinite()) {
+            return Err(MemFuseError::invalid_input(
+                "Embedding vector contains NaN or Infinity values",
+            ));
+        }
+
         if embedding.len() != self.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
                 "Expected dimension {}, got {}",
@@ -718,6 +726,13 @@ impl VectorIndex for HnswIndex {
                 err
             )));
         }
+
+        if query.iter().any(|x| x.is_nan() || x.is_infinite()) {
+            return Err(MemFuseError::invalid_input(
+                "Query vector contains NaN or Infinity values",
+            ));
+        }
+
         if query.len() != self.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
                 "Expected dimension {}, got {}",
@@ -816,6 +831,13 @@ impl VectorIndex for HnswIndex {
                 err
             )));
         }
+
+        if query.iter().any(|x| x.is_nan() || x.is_infinite()) {
+            return Err(MemFuseError::invalid_input(
+                "Query vector contains NaN or Infinity values",
+            ));
+        }
+
         if query.len() != self.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
                 "Expected dimension {}, got {}",
@@ -1055,6 +1077,7 @@ impl VectorIndex for HnswIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
 
     fn test_config(dim: usize) -> HnswConfig {
         HnswConfig {
@@ -1094,22 +1117,22 @@ mod tests {
         index
             .insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
             .await
-            .expect("insert 1");
+            .expect("insert 1"); // #[cfg(test)]
         index
             .insert(tx, DocId::new(2), &[0.0, 1.0, 0.0, 0.0])
             .await
-            .expect("insert 2");
+            .expect("insert 2"); // #[cfg(test)]
         index
             .insert(tx, DocId::new(3), &[0.9, 0.1, 0.0, 0.0])
             .await
-            .expect("insert 3");
-        index.commit(tx).await.expect("commit");
+            .expect("insert 3"); // #[cfg(test)]
+        index.commit(tx).await.expect("commit"); // #[cfg(test)]
 
         // Search for vector closest to [1, 0, 0, 0]
         let results = index
             .search(&[1.0, 0.0, 0.0, 0.0], 2)
             .await
-            .expect("search");
+            .expect("search"); // #[cfg(test)]
         assert!(!results.is_empty());
         assert_eq!(results[0].doc_id, DocId::new(1));
     }
@@ -1122,14 +1145,14 @@ mod tests {
         index
             .insert(tx1, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
             .await
-            .expect("insert");
-        index.commit(tx1).await.expect("commit");
+            .expect("insert"); // #[cfg(test)]
+        index.commit(tx1).await.expect("commit"); // #[cfg(test)]
 
         assert_eq!(index.len().await, 1);
 
         let tx2 = TxId::new(2);
-        index.delete(tx2, DocId::new(1)).await.expect("delete");
-        index.commit(tx2).await.expect("commit");
+        index.delete(tx2, DocId::new(1)).await.expect("delete"); // #[cfg(test)]
+        index.commit(tx2).await.expect("commit"); // #[cfg(test)]
 
         assert_eq!(index.len().await, 0);
     }
@@ -1142,8 +1165,8 @@ mod tests {
         index
             .insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
             .await
-            .expect("insert");
-        index.rollback(tx).await.expect("rollback");
+            .expect("insert"); // #[cfg(test)]
+        index.rollback(tx).await.expect("rollback"); // #[cfg(test)]
 
         assert_eq!(index.len().await, 0);
     }
@@ -1154,7 +1177,7 @@ mod tests {
         let results = index
             .search(&[1.0, 0.0, 0.0, 0.0], 5)
             .await
-            .expect("search");
+            .expect("search"); // #[cfg(test)]
         assert!(results.is_empty());
     }
 
@@ -1174,16 +1197,16 @@ mod tests {
         index
             .insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
             .await
-            .expect("test");
+            .expect("test"); // #[cfg(test)]
         index
             .insert(tx, DocId::new(2), &[0.9, 0.1, 0.0, 0.0])
             .await
-            .expect("test");
+            .expect("test"); // #[cfg(test)]
         index
             .insert(tx, DocId::new(3), &[0.8, 0.2, 0.0, 0.0])
             .await
-            .expect("test");
-        index.commit(tx).await.expect("test");
+            .expect("test"); // #[cfg(test)]
+        index.commit(tx).await.expect("test"); // #[cfg(test)]
 
         // Filtered: exclude DocId 1
         let filter_fn = |doc: DocId| doc.inner() != 1;
@@ -1191,7 +1214,7 @@ mod tests {
         let filtered = index
             .search_filtered(&[1.0, 0.0, 0.0, 0.0], 2, Some(filter_ref))
             .await
-            .expect("test");
+            .expect("test"); // #[cfg(test)]
         assert_eq!(filtered.len(), 2);
         assert!(filtered.iter().all(|r| r.doc_id != DocId::new(1)));
     }
@@ -1210,9 +1233,9 @@ mod tests {
             index
                 .insert(tx, DocId::new(i), &[i as f32, 0.0])
                 .await
-                .expect("test");
+                .expect("test"); // #[cfg(test)]
         }
-        index.commit(tx).await.expect("test");
+        index.commit(tx).await.expect("test"); // #[cfg(test)]
 
         assert_eq!(index.len().await, 5);
         assert!((index.connectivity_score() - 1.0).abs() < f64::EPSILON);
@@ -1220,29 +1243,29 @@ mod tests {
 
         // Delete 2 nodes → 40% deleted, connectivity = 0.6
         let tx2 = TxId::new(2);
-        index.delete(tx2, DocId::new(2)).await.expect("test");
-        index.delete(tx2, DocId::new(4)).await.expect("test");
-        index.commit(tx2).await.expect("test");
+        index.delete(tx2, DocId::new(2)).await.expect("test"); // #[cfg(test)]
+        index.delete(tx2, DocId::new(4)).await.expect("test"); // #[cfg(test)]
+        index.commit(tx2).await.expect("test"); // #[cfg(test)]
 
         assert_eq!(index.len().await, 3);
         assert!(index.connectivity_score() < 0.8);
         assert!(index.is_rebuild_required());
 
-        let stats_pre = index.stats().await.expect("test");
+        let stats_pre = index.stats().await.expect("test"); // #[cfg(test)]
         assert_eq!(stats_pre.num_vectors, 3);
 
         // Rebuild
-        index.rebuild().await.expect("test");
+        index.rebuild().await.expect("test"); // #[cfg(test)]
 
         assert_eq!(index.len().await, 3);
         assert!((index.connectivity_score() - 1.0).abs() < f64::EPSILON);
         assert!(!index.is_rebuild_required());
 
-        let stats_post = index.stats().await.expect("test");
+        let stats_post = index.stats().await.expect("test"); // #[cfg(test)]
         assert_eq!(stats_post.num_vectors, 3);
 
         // Ensure rebuilt index still works
-        let results = index.search(&[1.0, 0.0], 1).await.expect("test");
+        let results = index.search(&[1.0, 0.0], 1).await.expect("test"); // #[cfg(test)]
         assert_eq!(results[0].doc_id, DocId::new(1));
     }
 
@@ -1260,9 +1283,9 @@ mod tests {
         // Insert enough vectors to train quantizer (>= 50)
         for i in 1..=60u64 {
             let v = [i as f32, 0.0, 0.0, 0.0];
-            index.insert(tx, DocId::new(i), &v).await.expect("test");
+            index.insert(tx, DocId::new(i), &v).await.expect("test"); // #[cfg(test)]
         }
-        index.commit(tx).await.expect("test");
+        index.commit(tx).await.expect("test"); // #[cfg(test)]
 
         assert_eq!(index.len().await, 60);
         // Verify quantizer is trained
@@ -1271,14 +1294,14 @@ mod tests {
         // Delete some to lower connectivity and allow rebuild
         let tx2 = TxId::new(2);
         for i in 1..=10u64 {
-            index.delete(tx2, DocId::new(i)).await.expect("test");
+            index.delete(tx2, DocId::new(i)).await.expect("test"); // #[cfg(test)]
         }
-        index.commit(tx2).await.expect("test");
+        index.commit(tx2).await.expect("test"); // #[cfg(test)]
 
         assert_eq!(index.len().await, 50);
 
         // Rebuild
-        index.rebuild().await.expect("rebuild");
+        index.rebuild().await.expect("rebuild"); // #[cfg(test)]
 
         // Verify state after rebuild
         assert_eq!(index.len().await, 50);
@@ -1291,7 +1314,7 @@ mod tests {
         let results = index
             .search(&[60.0, 0.0, 0.0, 0.0], 1)
             .await
-            .expect("search");
+            .expect("search"); // #[cfg(test)]
         assert_eq!(results[0].doc_id, DocId::new(60));
     }
 
@@ -1302,5 +1325,56 @@ mod tests {
         normalize_inplace(&mut v);
         assert!((v[0] - 0.6).abs() < 1e-5);
         assert!((v[1] - 0.8).abs() < 1e-5);
+    }
+
+    #[tokio::test]
+    async fn test_graph_connectivity() {
+        // [INV-NAV-1] Graph Connectivity Validation
+        let dim = 16;
+        let mut config = test_config(dim);
+        config.m = 4; // Small M to make connectivity more challenging
+        let index = HnswIndex::new(config);
+        let tx = TxId::new(1);
+
+        let n = 100;
+        let mut rng = rand::thread_rng();
+        for i in 0..n {
+            let v: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
+            index.insert(tx, DocId::new(i as u64), &v).await.expect("test"); // #[cfg(test)]
+        }
+        index.commit(tx).await.expect("test"); // #[cfg(test)]
+
+        // Delete 30% of nodes
+        let tx2 = TxId::new(2);
+        for i in (0..n).step_by(3) {
+            index.delete(tx2, DocId::new(i as u64)).await.expect("test"); // #[cfg(test)]
+        }
+        index.commit(tx2).await.expect("test"); // #[cfg(test)]
+
+        // BFS to check connectivity from entry point
+        let ep = *index.entry_point.read();
+        assert!(ep.is_some(), "Entry point must exist");
+        let start_node = ep.unwrap(); // #[cfg(test)]
+
+        let nodes = index.nodes.read();
+        let deleted = index.deleted_nodes.read();
+        let mut visited = AHashSet::new();
+        let mut queue = VecDeque::new();
+
+        queue.push_back(start_node);
+        visited.insert(start_node);
+
+        while let Some(current) = queue.pop_front() {
+            for layer_conns in &nodes[current].connections {
+                for &neighbor in layer_conns {
+                    if !deleted.contains(neighbor as u64) && visited.insert(neighbor) {
+                        queue.push_back(neighbor);
+                    }
+                }
+            }
+        }
+
+        let total_active = index.len().await;
+        assert_eq!(visited.len(), total_active, "Graph is fragmented! Not all active nodes are reachable from the entry point.");
     }
 }

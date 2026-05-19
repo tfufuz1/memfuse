@@ -14,6 +14,7 @@
 // MASSNAHME: SAFETY: Kommentare für alle 12 unsafe fn + 30 unsafe-Blöcke hinzufügen
 //
 // ANCHOR:ARCH:SIMD-001 — Hardware-beschleunigte Distanzberechnung.
+// ANCHOR:DEBT:SEC-001 — Missing NaN/Inf check in distance core (AGENT:03)
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
@@ -910,18 +911,18 @@ mod tests {
 
         // Dot product
         let dot_scalar = dot_product_scalar(&a, &b);
-        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test");
+        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test"); // #[cfg(test)]
         let dot_simd = -d;
         assert!((dot_scalar - dot_simd).abs() < 1e-3);
 
         // Euclidean
         let euc_scalar = euclidean_distance_scalar(&a, &b);
-        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test");
+        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test"); // #[cfg(test)]
         assert!((euc_scalar - euc_simd).abs() < 1e-3);
 
         // Cosine
         let cos_scalar = cosine_distance_scalar(&a, &b);
-        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test");
+        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test"); // #[cfg(test)]
         assert!((cos_scalar - cos_simd).abs() < 1e-3);
     }
 

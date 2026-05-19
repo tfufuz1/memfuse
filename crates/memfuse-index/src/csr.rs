@@ -1,4 +1,5 @@
 // ANCHOR:ARCH:CSR-001 — Compressed Sparse Row (CSR) Graph für Memory-optimierte Relationen.
+// ANCHOR:DEBT:SEC-002 — Missing node count overflow check in CSR (AGENT:03)
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
@@ -42,7 +43,11 @@ impl CsrGraph {
         if let Some(&idx) = self.node_map.get(id) {
             idx
         } else {
-            let idx = self.rev_map.len() as u32;
+            let len = self.rev_map.len();
+            if len >= u32::MAX as usize {
+                panic!("CsrGraph node limit reached (4B nodes)");
+            }
+            let idx = len as u32;
             self.node_map.insert(id.to_string(), idx);
             self.rev_map.push(id.to_string());
             idx
@@ -61,6 +66,13 @@ impl CsrGraph {
             self.offsets.push(current_offset);
             if let Some(neighbors) = adj_list.get(&(i as u32)) {
                 for &(target, rel) in neighbors {
+                    if (target as usize) >= num_nodes {
+                        tracing::warn!(
+                            "CsrGraph: Skipping edge to invalid target node ID: {}",
+                            target
+                        );
+                        continue;
+                    }
                     self.edges.push(target);
                     self.relation_types.push(rel);
                     current_offset += 1;
