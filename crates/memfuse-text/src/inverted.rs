@@ -1,6 +1,6 @@
 //! LSM-backed Inverted Index.
 
-use crate::tokenizer::{tokenize, DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
+use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use async_trait::async_trait;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
@@ -39,12 +39,40 @@ impl InvertedIndex {
         }
     }
 
-    fn key(&self, suffix: &str) -> Vec<u8> {
-        let mut k = Vec::with_capacity(self.prefix.len() + suffix.len());
+    fn key_dl(&self, doc_id: DocId) -> Result<Vec<u8>> {
+        let mut k = Vec::with_capacity(self.prefix.len() + 24);
         k.extend_from_slice(&self.prefix);
-        k.extend_from_slice(suffix.as_bytes());
+        use std::io::Write;
+        write!(&mut k, "dl:{}", doc_id.inner())
+            .map_err(|e| MemFuseError::Storage(format!("key_dl: {}", e)))?;
+        Ok(k)
+    }
+
+    fn key_fw(&self, doc_id: DocId) -> Result<Vec<u8>> {
+        let mut k = Vec::with_capacity(self.prefix.len() + 24);
+        k.extend_from_slice(&self.prefix);
+        use std::io::Write;
+        write!(&mut k, "fw:{}", doc_id.inner())
+            .map_err(|e| MemFuseError::Storage(format!("key_fw: {}", e)))?;
+        Ok(k)
+    }
+
+    fn key_pl(&self, term: &str) -> Vec<u8> {
+        let mut k = Vec::with_capacity(self.prefix.len() + 3 + term.len());
+        k.extend_from_slice(&self.prefix);
+        k.extend_from_slice(b"pl:");
+        k.extend_from_slice(term.as_bytes());
         k
     }
+
+    fn key_meta(&self, key: &str) -> Vec<u8> {
+        let mut k = Vec::with_capacity(self.prefix.len() + 5 + key.len());
+        k.extend_from_slice(&self.prefix);
+        k.extend_from_slice(b"meta:");
+        k.extend_from_slice(key.as_bytes());
+        k
+    }
+
 
     /// Appends and updates inverted index structures for a document.
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
@@ -57,8 +85,8 @@ impl InvertedIndex {
         }
 
         // Check if document already exists to adjust total_tokens and total_docs
-        let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
-        let fw_key = self.key(&format!("fw:{}", doc_id.inner()));
+        let dl_key = self.key_dl(doc_id)?;
+        let fw_key = self.key_fw(doc_id)?;
         let mut old_len = 0u32;
         let mut is_update = false;
 
@@ -79,7 +107,7 @@ impl InvertedIndex {
                         bincode::serde::decode_from_slice::<Vec<String>, _>(&fw_bytes, config)
                     {
                         for term in old_terms {
-                            let pl_key = self.key(&format!("pl:{}", term));
+                            let pl_key = self.key_pl(&term);
                             if let Some(pl_bytes) = self.storage.get(&pl_key).await? {
                                 if let Ok((mut pl, _)) =
                                     bincode::serde::decode_from_slice::<Vec<(DocId, u32)>, _>(
@@ -122,7 +150,7 @@ impl InvertedIndex {
         self.storage.put(tx, &fw_key, &fw_bytes).await?;
 
         // Update total tokens (global for avg_doc_len)
-        let total_tok_key = self.key("meta:total_tokens");
+        let total_tok_key = self.key_meta("total_tokens");
         let mut total_tokens = 0u64;
         if let Some(bytes) = self.storage.get(&total_tok_key).await? {
             if bytes.len() == 8 {
@@ -140,7 +168,7 @@ impl InvertedIndex {
             .await?;
 
         // Update total docs
-        let total_docs_key = self.key("meta:total_docs");
+        let total_docs_key = self.key_meta("total_docs");
         let mut total_docs = 0u64;
         if let Some(bytes) = self.storage.get(&total_docs_key).await? {
             if bytes.len() == 8 {
@@ -162,7 +190,7 @@ impl InvertedIndex {
 
         // Update posting lists
         for (term, tf) in tfs_vec {
-            let pl_key = self.key(&format!("pl:{}", term));
+            let pl_key = self.key_pl(&term);
             let mut pl: Vec<(DocId, u32)> = Vec::new();
 
             if let Some(bytes) = self.storage.get(&pl_key).await? {
@@ -188,8 +216,8 @@ impl InvertedIndex {
 
     /// Deletes a document from the index.
     pub async fn delete_document(&self, tx: TxId, doc_id: DocId) -> Result<()> {
-        let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
-        let fw_key = self.key(&format!("fw:{}", doc_id.inner()));
+        let dl_key = self.key_dl(doc_id)?;
+        let fw_key = self.key_fw(doc_id)?;
 
         let mut doc_len = 0u32;
         if let Some(bytes) = self.storage.get(&dl_key).await? {
@@ -215,7 +243,7 @@ impl InvertedIndex {
                 bincode::serde::decode_from_slice::<Vec<String>, _>(&fw_bytes, config)
             {
                 for term in old_terms {
-                    let pl_key = self.key(&format!("pl:{}", term));
+                    let pl_key = self.key_pl(&term);
                     if let Some(pl_bytes) = self.storage.get(&pl_key).await? {
                         if let Ok((mut pl, _)) = bincode::serde::decode_from_slice::<
                             Vec<(DocId, u32)>,
@@ -241,7 +269,7 @@ impl InvertedIndex {
         self.storage.delete(tx, &fw_key).await?;
 
         // Update global stats
-        let total_tok_key = self.key("meta:total_tokens");
+        let total_tok_key = self.key_meta("total_tokens");
         if let Some(bytes) = self.storage.get(&total_tok_key).await? {
             if bytes.len() == 8 {
                 let mut total_tokens =
@@ -255,7 +283,7 @@ impl InvertedIndex {
             }
         }
 
-        let total_docs_key = self.key("meta:total_docs");
+        let total_docs_key = self.key_meta("total_docs");
         if let Some(bytes) = self.storage.get(&total_docs_key).await? {
             if bytes.len() == 8 {
                 let mut total_docs = u64::from_le_bytes(
@@ -276,13 +304,13 @@ impl InvertedIndex {
 
     /// Searches the inverted index using BM25.
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
-        let tokens = tokenize(query);
+        let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
             return Ok(Vec::new());
         }
 
         // Fetch global stats
-        let total_docs_key = self.key("meta:total_docs");
+        let total_docs_key = self.key_meta("total_docs");
         let mut total_docs = 0u64;
         if let Some(bytes) = self.storage.get(&total_docs_key).await? {
             if bytes.len() == 8 {
@@ -295,7 +323,7 @@ impl InvertedIndex {
             }
         }
 
-        let total_tok_key = self.key("meta:total_tokens");
+        let total_tok_key = self.key_meta("total_tokens");
         let mut total_tokens = 0u64;
         if let Some(bytes) = self.storage.get(&total_tok_key).await? {
             if bytes.len() == 8 {
@@ -313,9 +341,10 @@ impl InvertedIndex {
         };
 
         let mut scores: HashMap<DocId, f32> = HashMap::new();
+        let mut doc_len_cache: HashMap<DocId, u32> = HashMap::new();
 
         for term in &tokens {
-            let pl_key = self.key(&format!("pl:{}", term));
+            let pl_key = self.key_pl(term);
             if let Some(bytes) = self.storage.get(&pl_key).await? {
                 let config = bincode::config::standard();
                 if let Ok((pl, _)) =
@@ -324,17 +353,24 @@ impl InvertedIndex {
                     let df = pl.len() as u32;
 
                     for (doc_id, tf) in pl {
-                        // Fetch doc length
-                        let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
-                        let mut doc_len = 0u32;
-                        if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
-                            if dl_bytes.len() == 4 {
-                                doc_len =
-                                    u32::from_le_bytes(dl_bytes.as_slice().try_into().map_err(
-                                        |_| MemFuseError::Storage("Invalid doc_len length".into()),
-                                    )?);
+                        // Fetch doc length with cache
+                        let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
+                            len
+                        } else {
+                            let dl_key = self.key_dl(doc_id)?;
+                            let mut len = 0u32;
+                            if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
+                                if dl_bytes.len() == 4 {
+                                    len = u32::from_le_bytes(
+                                        dl_bytes.as_slice().try_into().map_err(|_| {
+                                            MemFuseError::Storage("Invalid doc_len length".into())
+                                        })?,
+                                    );
+                                }
                             }
-                        }
+                            doc_len_cache.insert(doc_id, len);
+                            len
+                        };
 
                         let score = crate::bm25::score_term(
                             tf,
@@ -386,7 +422,7 @@ impl TextIndex for InvertedIndex {
     }
 
     async fn stats(&self) -> Result<TextIndexStats> {
-        let total_docs_key = self.key("meta:total_docs");
+        let total_docs_key = self.key_meta("total_docs");
         let mut total_docs = 0u64;
         if let Some(bytes) = self.storage.get(&total_docs_key).await? {
             if bytes.len() == 8 {
@@ -399,7 +435,7 @@ impl TextIndex for InvertedIndex {
             }
         }
 
-        let total_tok_key = self.key("meta:total_tokens");
+        let total_tok_key = self.key_meta("total_tokens");
         let mut total_tokens = 0u64;
         if let Some(bytes) = self.storage.get(&total_tok_key).await? {
             if bytes.len() == 8 {
@@ -499,8 +535,8 @@ mod tests {
         storage.commit(tx2).await?;
 
         // total_docs = 2, total_tokens = 5
-        let td_key = index.key("meta:total_docs");
-        let tt_key = index.key("meta:total_tokens");
+        let td_key = index.key_meta("total_docs");
+        let tt_key = index.key_meta("total_tokens");
 
         let td = u64::from_le_bytes(
             storage
@@ -656,6 +692,37 @@ mod tests {
 
         let stats_after = index.stats().await?;
         assert_eq!(stats_after.num_documents, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_german_search_uses_german_tokenizer() -> Result<()> {
+        let tmp = TempDir::new().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(
+            LsmStorage::new(config)
+                .await
+                .map_err(|e| MemFuseError::Storage(e.to_string()))?,
+        );
+        // Namespace "de_test" should trigger GermanMorphTokenizer
+        let index = InvertedIndex::new(storage.clone(), "de_test");
+
+        let tx = TxId::new(200);
+        let doc_id = DocId::new(200);
+
+        index
+            .upsert_document(tx, doc_id, "Die Wissenschaft ist wichtig.")
+            .await?;
+        storage.commit(tx).await?;
+
+        // Query for "schaft" should find "Wissenschaft" because of compound splitting
+        let results = index.search_bm25("schaft", 10).await?;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, doc_id);
 
         Ok(())
     }

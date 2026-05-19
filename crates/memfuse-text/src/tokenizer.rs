@@ -43,6 +43,24 @@ impl Tokenizer for DefaultTokenizer {
 /// German tokenizer with basic compound splitting POC.
 pub struct GermanMorphTokenizer;
 
+impl GermanMorphTokenizer {
+    fn split_compounds(&self, word: &str, tokens: &mut Vec<String>) {
+        let suffixes = ["gericht", "wesen", "schaft", "kraft"];
+        let mut split = false;
+        for suffix in suffixes {
+            if word.ends_with(suffix) && word.len() > suffix.len() + 2 {
+                tokens.push(word.to_string());
+                tokens.push(suffix.to_string());
+                split = true;
+                break;
+            }
+        }
+        if !split {
+            tokens.push(word.to_string());
+        }
+    }
+}
+
 impl Tokenizer for GermanMorphTokenizer {
     fn tokenize(&self, text: &str) -> Vec<String> {
         let stopwords = get_stopwords();
@@ -54,14 +72,7 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
-                tokens.push(lower);
-            }
+            self.split_compounds(&lower, &mut tokens);
         }
         tokens
     }
@@ -100,5 +111,27 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+    }
+
+    #[test]
+    fn test_german_morph_compounds() {
+        let tokenizer = GermanMorphTokenizer;
+
+        let tokens = tokenizer.tokenize("Wissenschaft");
+        assert!(tokens.contains(&"wissenschaft".to_string()));
+        assert!(tokens.contains(&"schaft".to_string()));
+
+        let tokens = tokenizer.tokenize("Feuerwehrwesen");
+        assert!(tokens.contains(&"feuerwehrwesen".to_string()));
+        assert!(tokens.contains(&"wesen".to_string()));
+
+        let tokens = tokenizer.tokenize("Lehrkraft");
+        assert!(tokens.contains(&"lehrkraft".to_string()));
+        assert!(tokens.contains(&"kraft".to_string()));
+
+        // Should NOT split short words
+        let tokens = tokenizer.tokenize("Kraft");
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0], "kraft");
     }
 }
