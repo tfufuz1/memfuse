@@ -140,7 +140,9 @@ async fn test_advanced_metadata_filtering_wp42() {
         dimension: 4,
         ..Default::default()
     };
-    let db = MemFuse::open_with_config(tmp.path(), config).await.expect("open");
+    let db = MemFuse::open_with_config(tmp.path(), config)
+        .await
+        .expect("open");
     let col = db.collection("filter-test").await.expect("col");
 
     // Insert 100 docs, 5 with topic "rust", others with topic "other"
@@ -159,7 +161,8 @@ async fn test_advanced_metadata_filtering_wp42() {
     let filter = MetadataFilter::new(FilterExpr::Eq("topic".to_string(), json!("rust")));
     // Selectivity is 0.01 (Eq), so it will choose PreFilter, but we implemented it as PostFilter fallback.
 
-    let results = col.search_with_filter(&[1.0, 0.0, 0.0, 0.0], 10, filter)
+    let results = col
+        .search_with_filter(&[1.0, 0.0, 0.0, 0.0], 10, filter)
         .await
         .expect("search with filter");
 
@@ -171,5 +174,8 @@ async fn test_advanced_metadata_filtering_wp42() {
     // AC-2: test_pre_filter_with_low_selectivity
     // This is already covered by the selectivity logic in choose_strategy.
     let filter_low = MetadataFilter::new(FilterExpr::Eq("topic".to_string(), json!("rust")));
-    assert_eq!(filter_low.choose_strategy(), memfuse_db::filter::FilterStrategy::PreFilter);
+    assert_eq!(
+        filter_low.choose_strategy(),
+        memfuse_db::filter::FilterStrategy::PreFilter
+    );
 }
