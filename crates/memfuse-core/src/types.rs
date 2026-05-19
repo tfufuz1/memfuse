@@ -49,8 +49,7 @@ impl DocId {
         let hash = blake3::hash(key.as_bytes());
         let bytes = hash.as_bytes();
         let buf: [u8; 8] = [
-            bytes[0], bytes[1], bytes[2], bytes[3],
-            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
         ];
         Self(u64::from_le_bytes(buf))
     }
