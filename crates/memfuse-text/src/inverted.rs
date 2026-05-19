@@ -333,9 +333,11 @@ impl InvertedIndex {
                             let mut len = 0u32;
                             if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
                                 if dl_bytes.len() == 4 {
-                                    len = u32::from_le_bytes(dl_bytes.as_slice().try_into().map_err(
-                                        |_| MemFuseError::Storage("Invalid doc_len length".into()),
-                                    )?);
+                                    len = u32::from_le_bytes(
+                                        dl_bytes.as_slice().try_into().map_err(|_| {
+                                            MemFuseError::Storage("Invalid doc_len length".into())
+                                        })?,
+                                    );
                                 }
                             }
                             doc_len_cache.insert(doc_id, len);
