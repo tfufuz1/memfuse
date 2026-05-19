@@ -22,7 +22,7 @@
 //! - `vector`: `dimension` * `sizeof(Scalar)`
 //! - `neighbors`: `m` * 4 bytes (u32 indices)
 
-use memfuse_core::{DocId, Result, ScoredDocument, DistanceMetric};
+use memfuse_core::{DistanceMetric, DocId, Result, ScoredDocument};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -94,8 +94,8 @@ mod tests {
             path: PathBuf::from("diskann.idx"),
         };
 
-        let index = DiskAnnIndex::open(config).unwrap();
-        let results = index.search(&vec![0.0; 128], 10).await.unwrap();
+        let index = DiskAnnIndex::open(config).expect("test");
+        let results = index.search(&vec![0.0; 128], 10).await.expect("test");
         assert!(results.is_empty());
     }
 }

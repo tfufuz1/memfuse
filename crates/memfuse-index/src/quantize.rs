@@ -164,13 +164,9 @@ impl ScalarQuantizer {
                     Ok(1.0 - (dot / (precomputed.norm_x_sq.sqrt() * norm_y_sq.sqrt())))
                 }
             }
-            DistanceMetric::Euclidean => Ok(euclidean_distance_sq_f32_u8(
-                query,
-                quantized,
-                self.inv_scale,
-                self.min,
-            )
-            .sqrt()),
+            DistanceMetric::Euclidean => {
+                Ok(euclidean_distance_sq_f32_u8(query, quantized, self.inv_scale, self.min).sqrt())
+            }
             DistanceMetric::DotProduct => {
                 let dot_f32_u8 = dot_product_f32_u8(query, quantized);
                 let dot = self.inv_scale * dot_f32_u8 + self.min * precomputed.sum_x;

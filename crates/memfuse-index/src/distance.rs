@@ -392,7 +392,7 @@ unsafe fn euclidean_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "fma")]
 // ANCHOR:SAFETY:SIMD-019 — Horizontale Summe AVX2.
-// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantiert.
 unsafe fn hsum256_ps_avx(v: __m256) -> f32 {
     // ANCHOR:SAFETY:SIMD-020 — AVX Extraktion und Addition.
     // BEGRÜNDUNG: Standard AVX/AVX2 Befehle zur horizontalen Reduktion.

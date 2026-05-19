@@ -787,12 +787,7 @@ impl VectorIndex for HnswIndex {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                     })?;
                     if let Some(pre) = &precomputed_query {
-                        q.asymmetric_dist_precomputed(
-                            query,
-                            pre,
-                            v,
-                            self.config.distance_metric,
-                        )?
+                        q.asymmetric_dist_precomputed(query, pre, v, self.config.distance_metric)?
                     } else {
                         q.asymmetric_dist(query, v, self.config.distance_metric)?
                     }
@@ -898,12 +893,7 @@ impl VectorIndex for HnswIndex {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                     })?;
                     if let Some(pre) = &precomputed_query {
-                        q.asymmetric_dist_precomputed(
-                            query,
-                            pre,
-                            v,
-                            self.config.distance_metric,
-                        )?
+                        q.asymmetric_dist_precomputed(query, pre, v, self.config.distance_metric)?
                     } else {
                         q.asymmetric_dist(query, v, self.config.distance_metric)?
                     }
