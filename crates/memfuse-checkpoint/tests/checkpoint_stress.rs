@@ -14,7 +14,11 @@ async fn test_checkpoint_concurrency_stress() {
         path: tmp.path().to_path_buf(),
         ..Default::default()
     };
-    let storage = Arc::new(LsmStorage::new(lsm_config).await.expect("failed to open storage"));
+    let storage = Arc::new(
+        LsmStorage::new(lsm_config)
+            .await
+            .expect("failed to open storage"),
+    );
     let manager = Arc::new(CheckpointManager::new(storage.clone()));
 
     let num_writer_tasks = 5;
@@ -32,7 +36,10 @@ async fn test_checkpoint_concurrency_stress() {
                 let tx = TxId::new(tx_id);
                 let key = format!("task-{}-key-{}", t, i);
                 let val = format!("val-{}", i);
-                storage.put(tx, key.as_bytes(), val.as_bytes()).await.expect("put failed");
+                storage
+                    .put(tx, key.as_bytes(), val.as_bytes())
+                    .await
+                    .expect("put failed");
                 storage.commit(tx).await.expect("commit failed");
 
                 if i % 10 == 0 {
@@ -48,12 +55,18 @@ async fn test_checkpoint_concurrency_stress() {
         handles.push(tokio::spawn(async move {
             for i in 0..(ops_per_task / 10) {
                 let name = format!("cp-{}-{}", t, i);
-                let cp = manager.create_checkpoint(&name).await.expect("create checkpoint failed");
+                let cp = manager
+                    .create_checkpoint(&name)
+                    .await
+                    .expect("create checkpoint failed");
 
                 // Keep it for a bit
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-                manager.drop_checkpoint(&cp).await.expect("drop checkpoint failed");
+                manager
+                    .drop_checkpoint(&cp)
+                    .await
+                    .expect("drop checkpoint failed");
             }
         }));
     }
