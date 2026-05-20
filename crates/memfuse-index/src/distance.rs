@@ -900,7 +900,10 @@ pub unsafe fn euclidean_distance_sq_f32_u8_avx2(a: &[f32], b: &[u8], alpha: f32,
 // BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
 /// # Safety
 /// This function is unsafe because it uses AVX2 intrinsics. The caller must ensure that the CPU supports AVX2.
-pub unsafe fn cosine_similarity_parts_f32_u8_avx2(a: &[f32], b: &[u8]) -> CosineSimilarityPartsF32U8 {
+pub unsafe fn cosine_similarity_parts_f32_u8_avx2(
+    a: &[f32],
+    b: &[u8],
+) -> CosineSimilarityPartsF32U8 {
     // ANCHOR:SAFETY:SIMD-F32U8-011 — Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_ps/si256 ist immer sicher.
     let (mut dot_v, mut sum_u8_v, mut norm_u8_sq_v) = unsafe {

@@ -134,15 +134,13 @@ impl ScalarQuantizer {
                     1.0 - (dot / (norm_a.sqrt() * norm_b_sq.sqrt()))
                 }
             }
-            DistanceMetric::Euclidean => {
-                crate::distance::euclidean_distance_sq_f32_u8(
-                    query,
-                    quantized,
-                    self.inv_scale,
-                    self.min,
-                )
-                .sqrt()
-            }
+            DistanceMetric::Euclidean => crate::distance::euclidean_distance_sq_f32_u8(
+                query,
+                quantized,
+                self.inv_scale,
+                self.min,
+            )
+            .sqrt(),
             DistanceMetric::DotProduct => {
                 let dot_raw = crate::distance::dot_product_f32_u8(query, quantized);
                 let mut sum_a = 0.0;
