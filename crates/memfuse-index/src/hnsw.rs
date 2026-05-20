@@ -294,8 +294,12 @@ impl HnswIndexCore {
 
         for &ep in entry_points {
             if visited.insert(ep) {
-                let dist =
-                    self.compute_distance_with_data(query, query_quantized, &nodes[ep].vector)?;
+                // ANCHOR:SEC:SLICE-003 AGENT:10 PRIO:1 STATUS:READY
+                // Safe access to nodes and connections.
+                let node = nodes.get(ep).ok_or_else(|| {
+                    MemFuseError::Index(format!("HNSW node missing at index {}", ep))
+                })?;
+                let dist = self.compute_distance_with_data(query, query_quantized, &node.vector)?;
                 let cand = Candidate {
                     index: ep,
                     distance: dist,
@@ -312,13 +316,19 @@ impl HnswIndexCore {
                 }
             }
 
-            if layer < nodes[current.index].connections.len() {
-                for &neighbor in &nodes[current.index].connections[layer] {
+            let current_node = nodes.get(current.index).ok_or_else(|| {
+                MemFuseError::Index(format!("HNSW current node missing at index {}", current.index))
+            })?;
+            if let Some(connections) = current_node.connections.get(layer) {
+                for &neighbor in connections {
                     if visited.insert(neighbor) {
+                        let neighbor_node = nodes.get(neighbor).ok_or_else(|| {
+                            MemFuseError::Index(format!("HNSW neighbor node missing at index {}", neighbor))
+                        })?;
                         let dist = self.compute_distance_with_data(
                             query,
                             query_quantized,
-                            &nodes[neighbor].vector,
+                            &neighbor_node.vector,
                         )?;
                         let is_better = match results.peek() {
                             Some(worst) => dist < worst.distance,
@@ -363,9 +373,15 @@ impl HnswIndexCore {
             }
             let mut keep = true;
             for selected in &result {
+                let closest_node = nodes.get(closest.index).ok_or_else(|| {
+                    MemFuseError::Index(format!("HNSW closest node missing at index {}", closest.index))
+                })?;
+                let selected_node = nodes.get(selected.index).ok_or_else(|| {
+                    MemFuseError::Index(format!("HNSW selected node missing at index {}", selected.index))
+                })?;
                 let dist_between = self.compute_symmetric_distance(
-                    &nodes[closest.index].vector,
-                    &nodes[selected.index].vector,
+                    &closest_node.vector,
+                    &selected_node.vector,
                 )?;
                 if closest.distance > dist_between {
                     keep = false;
@@ -472,8 +488,8 @@ impl HnswIndexCore {
         let mut ep = vec![ep_idx];
         for layer in (new_layer + 1..=current_max_layer).rev() {
             let best = self.search_layer(vector, query_quantized.as_deref(), &ep, 1, layer)?;
-            if !best.is_empty() {
-                ep = vec![best[0].index];
+            if let Some(closest) = best.first() {
+                ep = vec![closest.index];
             }
         }
 
@@ -503,30 +519,60 @@ impl HnswIndexCore {
 
         {
             let mut nodes = self.nodes.write();
-            nodes[new_idx].connections = final_connections.clone();
+            if let Some(new_node) = nodes.get_mut(new_idx) {
+                new_node.connections = final_connections.clone();
+            } else {
+                return Err(MemFuseError::Index(format!(
+                    "HNSW new node missing at index {}",
+                    new_idx
+                )));
+            }
 
             for layer in (0..=new_layer.min(current_max_layer)).rev() {
                 for &neighbor_idx in &final_connections[layer] {
-                    if layer < nodes[neighbor_idx].connections.len() {
-                        nodes[neighbor_idx].connections[layer].push(new_idx);
-                        if nodes[neighbor_idx].connections[layer].len() > self.config.m * 2 {
-                            let node_vec = nodes[neighbor_idx].vector.clone();
-                            let mut conn_cands =
-                                Vec::with_capacity(nodes[neighbor_idx].connections[layer].len());
-                            for &idx in &nodes[neighbor_idx].connections[layer] {
-                                let dist =
-                                    self.compute_symmetric_distance(&node_vec, &nodes[idx].vector)?;
-                                conn_cands.push(Candidate {
-                                    index: idx,
-                                    distance: dist,
-                                });
+                    // Scope for neighbor modification to release mutable borrow
+                    let (should_shrink, node_vec, conn_indices) = {
+                        let neighbor_node = nodes.get_mut(neighbor_idx).ok_or_else(|| {
+                            MemFuseError::Index(format!(
+                                "HNSW neighbor node missing at index {}",
+                                neighbor_idx
+                            ))
+                        })?;
+                        if let Some(conn_layer) = neighbor_node.connections.get_mut(layer) {
+                            conn_layer.push(new_idx);
+                            if conn_layer.len() > self.config.m * 2 {
+                                (true, neighbor_node.vector.clone(), conn_layer.clone())
+                            } else {
+                                (false, VectorData::F32(vec![]), vec![])
                             }
-                            nodes[neighbor_idx].connections[layer] = self
-                                .select_neighbors_heuristic(
-                                    &nodes,
-                                    &conn_cands,
-                                    self.config.m * 2,
-                                )?;
+                        } else {
+                            (false, VectorData::F32(vec![]), vec![])
+                        }
+                    };
+
+                    if should_shrink {
+                        let mut conn_cands = Vec::with_capacity(conn_indices.len());
+                        for &idx in conn_indices.iter() {
+                            let target_node = nodes.get(idx).ok_or_else(|| {
+                                MemFuseError::Index(format!(
+                                    "HNSW target node missing at index {}",
+                                    idx
+                                ))
+                            })?;
+                            let dist =
+                                self.compute_symmetric_distance(&node_vec, &target_node.vector)?;
+                            conn_cands.push(Candidate {
+                                index: idx,
+                                distance: dist,
+                            });
+                        }
+                        let selected =
+                            self.select_neighbors_heuristic(&nodes, &conn_cands, self.config.m * 2)?;
+
+                        if let Some(neighbor_node) = nodes.get_mut(neighbor_idx) {
+                            if let Some(cl) = neighbor_node.connections.get_mut(layer) {
+                                *cl = selected;
+                            }
                         }
                     }
                 }
@@ -569,8 +615,13 @@ impl HnswIndexCore {
                 }
                 *ep = best_node;
                 if let Some(new_idx) = best_node {
-                    self.max_layer
-                        .store(nodes[new_idx]._max_layer as u64, Ordering::SeqCst);
+                    let node = nodes.get(new_idx).ok_or_else(|| {
+                        MemFuseError::Index(format!("HNSW node missing at index {}", new_idx))
+                    });
+                    // do_delete returns (), so we use a safe fallback or log
+                    if let Ok(n) = node {
+                        self.max_layer.store(n._max_layer as u64, Ordering::SeqCst);
+                    }
                 } else {
                     self.max_layer.store(0, Ordering::SeqCst);
                 }
@@ -746,8 +797,8 @@ impl VectorIndex for HnswIndex {
             let layer_ef = if layer > 1 { 1 } else { 2 };
             let best =
                 self.search_layer(query, query_quantized.as_deref(), &ep, layer_ef, layer)?;
-            if !best.is_empty() {
-                ep = vec![best[0].index];
+            if let Some(closest) = best.first() {
+                ep = vec![closest.index];
             }
         }
 
@@ -772,11 +823,14 @@ impl VectorIndex for HnswIndex {
             if deleted.contains(c.index as u64) {
                 continue;
             }
-            let doc_id = nodes[c.index].doc_id;
+            let node = nodes.get(c.index).ok_or_else(|| {
+                MemFuseError::Index(format!("HNSW candidate node missing at index {}", c.index))
+            })?;
+            let doc_id = node.doc_id;
 
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
             let final_dist = if self.config.quantize {
-                if let VectorData::U8(v) = &nodes[c.index].vector {
+                if let VectorData::U8(v) = &node.vector {
                     let guard = self.quantizer.read();
                     let q = guard.as_ref().ok_or_else(|| {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
@@ -841,8 +895,8 @@ impl VectorIndex for HnswIndex {
 
         for layer in (1..=max_layer).rev() {
             let best = self.search_layer(query, query_quantized.as_deref(), &ep, 1, layer)?;
-            if !best.is_empty() {
-                ep = vec![best[0].index];
+            if let Some(closest) = best.first() {
+                ep = vec![closest.index];
             }
         }
 
@@ -864,7 +918,10 @@ impl VectorIndex for HnswIndex {
             if deleted.contains(c.index as u64) {
                 continue;
             }
-            let doc_id = nodes[c.index].doc_id;
+            let node = nodes.get(c.index).ok_or_else(|| {
+                MemFuseError::Index(format!("HNSW candidate node missing at index {}", c.index))
+            })?;
+            let doc_id = node.doc_id;
             if let Some(f) = filter {
                 if !f(doc_id) {
                     continue;
@@ -873,7 +930,7 @@ impl VectorIndex for HnswIndex {
 
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
             let final_dist = if self.config.quantize {
-                if let VectorData::U8(v) = &nodes[c.index].vector {
+                if let VectorData::U8(v) = &node.vector {
                     let guard = self.quantizer.read();
                     let q = guard.as_ref().ok_or_else(|| {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
