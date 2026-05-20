@@ -1,23 +1,22 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use memfuse_core::{DocId, TxId, StorageEngine};
+use memfuse_core::{DocId, StorageEngine, TxId};
 use memfuse_store::{LsmConfig, LsmStorage};
 use memfuse_text::inverted::InvertedIndex;
-use std::sync::Arc;
-use tokio::runtime::Runtime;
-use tempfile::TempDir;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use tempfile::TempDir;
+use tokio::runtime::Runtime;
 
 fn bench_inverted_index(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-    let tmp = TempDir::new().unwrap();
+    let rt = Runtime::new().expect("bench: runtime");
+    let tmp = TempDir::new().expect("bench: tempdir");
     let config = LsmConfig {
         path: tmp.path().to_path_buf(),
         ..Default::default()
     };
 
-    let storage = rt.block_on(async {
-        Arc::new(LsmStorage::new(config).await.unwrap())
-    });
+    let storage =
+        rt.block_on(async { Arc::new(LsmStorage::new(config).await.expect("bench: lsm")) });
 
     let index = InvertedIndex::new(storage.clone(), "default");
 
@@ -26,17 +25,23 @@ fn bench_inverted_index(c: &mut Criterion) {
         let tx = TxId::new(1);
         for i in 0..100 {
             let doc_id = DocId::new(i as u64);
-            let text = format!("This is document number {}. It contains some common words like rust and search.", i);
-            index.upsert_document(tx, doc_id, &text).await.unwrap();
+            let text = format!(
+                "This is document number {}. It contains some common words like rust and search.",
+                i
+            );
+            index
+                .upsert_document(tx, doc_id, &text)
+                .await
+                .expect("bench: upsert");
         }
-        storage.commit(tx).await.unwrap();
+        storage.commit(tx).await.expect("bench: commit");
     });
 
     let mut group = c.benchmark_group("InvertedIndex");
 
     group.bench_function("search_bm25", |b| {
         b.to_async(&rt).iter(|| async {
-            black_box(index.search_bm25("rust search", 10).await).unwrap();
+            black_box(index.search_bm25("rust search", 10).await).expect("bench: search");
         });
     });
 
@@ -46,7 +51,16 @@ fn bench_inverted_index(c: &mut Criterion) {
             let i = counter.fetch_add(1, Ordering::SeqCst);
             let doc_id = DocId::new(i);
             let tx = TxId::new(i);
-            black_box(index.upsert_document(tx, doc_id, "New document with some text for benchmarking purposes.").await).unwrap();
+            black_box(
+                index
+                    .upsert_document(
+                        tx,
+                        doc_id,
+                        "New document with some text for benchmarking purposes.",
+                    )
+                    .await,
+            )
+            .expect("bench: upsert");
         });
     });
 
