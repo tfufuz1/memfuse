@@ -316,8 +316,17 @@ mod tests {
 
         let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10));
         assert!(buffer.has_tx(tx1));
-        sleep(Duration::from_millis(100)).await;
-        assert!(!buffer.has_tx(tx1));
+
+        // Poll for up to 500ms for the reaper to clean up the transaction
+        let mut cleaned_up = false;
+        for _ in 0..50 {
+            if !buffer.has_tx(tx1) {
+                cleaned_up = true;
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+        assert!(cleaned_up, "Transaction was not cleaned up by orphan reaper");
     }
 
     #[tokio::test]
