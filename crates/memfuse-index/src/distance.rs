@@ -68,7 +68,7 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
 /// Computes cosine distance (1 - similarity).
 #[inline]
 pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
-    debug_assert_eq!(a.len(), b.len());
+    assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         // Try AVX-512 first for maximum performance
@@ -93,7 +93,7 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
 /// Computes Euclidean (L2) distance.
 #[inline]
 pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
-    debug_assert_eq!(a.len(), b.len());
+    assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         // Try AVX-512
@@ -118,7 +118,7 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
 /// Computes negative dot product.
 #[inline]
 pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
-    debug_assert_eq!(a.len(), b.len());
+    assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         // Try AVX-512
@@ -563,7 +563,7 @@ pub fn normalize_inplace(v: &mut [f32]) {
 /// Computes the dot product of two u8 vectors.
 #[inline]
 pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
-    debug_assert_eq!(a.len(), b.len());
+    assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
@@ -585,7 +585,7 @@ pub fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
 /// Computes the squared Euclidean distance between two u8 vectors.
 #[inline]
 pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
-    debug_assert_eq!(a.len(), b.len());
+    assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
@@ -620,7 +620,7 @@ pub struct CosineSimilarityPartsU8 {
 /// Computes the parts required for cosine similarity between two u8 vectors.
 #[inline]
 pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
-    debug_assert_eq!(a.len(), b.len());
+    assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
@@ -660,7 +660,7 @@ pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarity
 
 /// Computes the dot product between an f32 vector and a u8 vector.
 pub fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
-    debug_assert_eq!(a.len(), b.len());
+    assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
@@ -675,7 +675,7 @@ pub fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
 /// Computes the squared Euclidean distance between an f32 vector and a u8 vector
 /// performing inline dequantization.
 pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {
-    debug_assert_eq!(a.len(), b.len());
+    assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
@@ -704,7 +704,7 @@ pub struct CosineSimilarityPartsF32U8 {
 
 /// Computes the parts required for asymmetric cosine similarity between an f32 and a u8 vector.
 pub fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPartsF32U8 {
-    debug_assert_eq!(a.len(), b.len());
+    assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
