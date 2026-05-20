@@ -1,5 +1,5 @@
 //! End-to-End integration tests for the full MemFuse stack.
-// ANCHOR:INTEGRATION:E2E-001 STATUS:READY AGENT:12 DATE:2026-05-18
+// ANCHOR:INTEGRATION:E2E-001 STATUS:DONE AGENT:12 DATE:2026-05-18
 
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
@@ -12,6 +12,7 @@ async fn test_full_stack_document_lifecycle() {
         dimension: 3,
         max_elements: 100,
         distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
     };
 
     let db = MemFuse::open_with_config(tmp.path(), config)
@@ -128,4 +129,80 @@ async fn test_full_stack_document_lifecycle() {
     // 8. Stats check
     let stats = db.stats().await.expect("Stats failed");
     assert!(stats.storage_stats.memtable_size_bytes > 0);
+}
+
+#[tokio::test]
+async fn test_collection_isolation_and_persistence() {
+    let tmp = TempDir::new().expect("temp dir");
+    let config = MemFuseConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+
+    let db_path = tmp.path().to_path_buf();
+
+    {
+        let db = MemFuse::open_with_config(&db_path, config.clone())
+            .await
+            .expect("open db");
+        let col_a = db.collection("col-a").await.expect("col a");
+        let col_b = db.collection("col-b").await.expect("col b");
+
+        // 1. Insert same ID into different collections
+        col_a
+            .insert(
+                "shared-id",
+                &[1.0, 0.0, 0.0, 0.0],
+                Some(json!({"source": "a"})),
+            )
+            .await
+            .expect("insert a");
+        col_b
+            .insert(
+                "shared-id",
+                &[0.0, 1.0, 0.0, 0.0],
+                Some(json!({"source": "b"})),
+            )
+            .await
+            .expect("insert b");
+
+        // Verify isolation in-memory
+        let doc_a = col_a.get("shared-id").await.expect("get a").unwrap();
+        let doc_b = col_b.get("shared-id").await.expect("get b").unwrap();
+        assert_eq!(doc_a.metadata.unwrap()["source"], "a");
+        assert_eq!(doc_b.metadata.unwrap()["source"], "b");
+    }
+
+    // 2. Restart DB and verify persistence
+    {
+        let db = MemFuse::open_with_config(&db_path, config)
+            .await
+            .expect("open db restart");
+        let col_a = db.collection("col-a").await.expect("col a");
+        let col_b = db.collection("col-b").await.expect("col b");
+
+        let doc_a = col_a
+            .get("shared-id")
+            .await
+            .expect("get a after restart")
+            .expect("missing a");
+        let doc_b = col_b
+            .get("shared-id")
+            .await
+            .expect("get b after restart")
+            .expect("missing b");
+
+        assert_eq!(doc_a.metadata.unwrap()["source"], "a");
+        assert_eq!(doc_b.metadata.unwrap()["source"], "b");
+
+        // 3. Delete from one and verify other is still there
+        col_a.delete("shared-id").await.expect("delete a");
+        assert!(col_a.get("shared-id").await.expect("get a").is_none());
+        assert!(col_b.get("shared-id").await.expect("get b").is_some());
+
+        // 4. Drop collection and verify gone
+        db.drop_collection("col-b").await.expect("drop b");
+        let collections = db.list_collections().await.expect("list");
+        assert!(!collections.contains(&"col-b".to_string()));
+    }
 }
