@@ -339,8 +339,8 @@ impl InvertedIndex {
             0.0
         };
 
-        let mut scores: HashMap<DocId, f32> = HashMap::new();
-        let mut doc_len_cache: HashMap<DocId, u32> = HashMap::new();
+        let mut scores: HashMap<DocId, f32> = HashMap::with_capacity(k * tokens.len());
+        let mut doc_len_cache: HashMap<DocId, u32> = HashMap::with_capacity(k * tokens.len());
 
         for term in &tokens {
             let pl_key = self.key_with_term(term);
