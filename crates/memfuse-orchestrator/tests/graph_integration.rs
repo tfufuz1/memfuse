@@ -21,10 +21,17 @@ fn test_stategraph_complex_workflow() {
 
     // Check specific nodes
     assert!(graph.nodes.contains_key("ingress"));
-    assert_eq!(graph.nodes.get("ingress").unwrap().description, "Data Ingress");
+    assert_eq!(
+        graph.nodes.get("ingress").unwrap().description,
+        "Data Ingress"
+    );
 
     // Check specific edges
-    let edge_analyze_store = graph.edges.iter().find(|(s, t, _)| s == "analyze" && t == "store").unwrap();
+    let edge_analyze_store = graph
+        .edges
+        .iter()
+        .find(|(s, t, _)| s == "analyze" && t == "store")
+        .unwrap();
     assert_eq!(edge_analyze_store.2, Some("is_valid".to_string()));
 }
 

@@ -21,7 +21,9 @@ fn test_sandbox_isolation_and_execution() {
     // Test execution with placeholder bytes (simulating WASM payload)
     let wasm_bytes = b"\x00asm\x01\x00\x00\x00";
     let input = "ping";
-    let result = sandbox.execute(wasm_bytes, input).expect("execution failed");
+    let result = sandbox
+        .execute(wasm_bytes, input)
+        .expect("execution failed");
 
     // In the current placeholder implementation, it returns a static string
     assert_eq!(result, "sandbox_execution_result_placeholder");
