@@ -10,10 +10,10 @@
 //!   from synchronous Python calls.
 //! - **Zero-Copy**: Aims for minimal copying of vector data between Python and Rust.
 
-// AGENT:06 DATE:2026-05-15 STATUS:DONE
+// AGENT:06 DATE:2026-05-20 STATUS:DONE
 // ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
-// AGENT:@JULES-06 DATE:2026-05-15 STATUS:DONE
+// AGENT:@JULES-06 DATE:2026-05-20 STATUS:DONE
 // TEST: cd crates/memfuse-py && python -m pytest tests/ -v
 // DONE: pip install . funktioniert, keine Deadlocks in tokio-Runtime.
 // SUCCESSOR: @JULES-09 — "Python Bindings sind stabil. StateGraph kann darauf aufbauen."
@@ -22,7 +22,6 @@
 use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
 use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;
-use pyo3::IntoPyObjectExt;
 use pythonize::{depythonize, pythonize};
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -59,7 +58,7 @@ fn get_runtime() -> PyResult<&'static Runtime> {
 }
 
 /// A single search result from MemFuse.
-#[pyclass(get_all)]
+#[pyclass(get_all, name = "SearchResult")]
 pub struct PySearchResult {
     /// The document ID.
     pub id: String,
@@ -69,13 +68,42 @@ pub struct PySearchResult {
     pub metadata: Option<PyObject>,
 }
 
+#[pymethods]
+impl PySearchResult {
+    fn __repr__(&self, py: Python<'_>) -> String {
+        let meta_str = self
+            .metadata
+            .as_ref()
+            .and_then(|m| m.bind(py).repr().ok())
+            .map(|r| r.to_string())
+            .unwrap_or_else(|| "None".to_string());
+        format!(
+            "SearchResult(id='{}', score={:.4}, metadata={})",
+            self.id, self.score, meta_str
+        )
+    }
+}
+
 /// A document retrieved from MemFuse.
-#[pyclass(get_all)]
+#[pyclass(get_all, name = "Document")]
 pub struct PyDocument {
     /// The document ID.
     pub id: String,
     /// Metadata associated with the document.
     pub metadata: Option<PyObject>,
+}
+
+#[pymethods]
+impl PyDocument {
+    fn __repr__(&self, py: Python<'_>) -> String {
+        let meta_str = self
+            .metadata
+            .as_ref()
+            .and_then(|m| m.bind(py).repr().ok())
+            .map(|r| r.to_string())
+            .unwrap_or_else(|| "None".to_string());
+        format!("Document(id='{}', metadata={})", self.id, meta_str)
+    }
 }
 
 /// Statistics for a vector index.
@@ -90,6 +118,16 @@ pub struct PyVectorIndexStats {
     pub num_layers: usize,
 }
 
+#[pymethods]
+impl PyVectorIndexStats {
+    fn __repr__(&self) -> String {
+        format!(
+            "VectorIndexStats(num_vectors={}, memory_usage_bytes={}, num_layers={})",
+            self.num_vectors, self.memory_usage_bytes, self.num_layers
+        )
+    }
+}
+
 /// Statistics for the storage engine.
 #[pyclass(get_all, name = "StorageStats")]
 #[derive(Clone)]
@@ -102,6 +140,16 @@ pub struct PyStorageStats {
     pub memtable_size_bytes: u64,
 }
 
+#[pymethods]
+impl PyStorageStats {
+    fn __repr__(&self) -> String {
+        format!(
+            "StorageStats(num_segments={}, total_size_bytes={}, memtable_size_bytes={})",
+            self.num_segments, self.total_size_bytes, self.memtable_size_bytes
+        )
+    }
+}
+
 /// Overall database statistics.
 #[pyclass(get_all, name = "DbStats")]
 #[derive(Clone)]
@@ -110,6 +158,17 @@ pub struct PyDbStats {
     pub index_stats: PyVectorIndexStats,
     /// Statistics for the LSM storage engine.
     pub storage_stats: PyStorageStats,
+}
+
+#[pymethods]
+impl PyDbStats {
+    fn __repr__(&self) -> String {
+        format!(
+            "DbStats(index_stats={}, storage_stats={})",
+            self.index_stats.__repr__(),
+            self.storage_stats.__repr__()
+        )
+    }
 }
 
 #[pyclass(unsendable, name = "Db")]
@@ -237,7 +296,7 @@ impl PyMemFuse {
         py: Python<'py>,
         vector: PyReadonlyArray1<'py, f32>,
         k: usize,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<PySearchResult>> {
         let rt = get_runtime()?;
         let vec_slice = vector.as_slice().map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
@@ -264,14 +323,11 @@ impl PyMemFuse {
                 None
             };
 
-            py_res.push(
-                PySearchResult {
-                    id: r.id,
-                    score: r.score,
-                    metadata: meta_py,
-                }
-                .into_py_any(py)?,
-            );
+            py_res.push(PySearchResult {
+                id: r.id,
+                score: r.score,
+                metadata: meta_py,
+            });
         }
         Ok(py_res)
     }
@@ -283,7 +339,7 @@ impl PyMemFuse {
         text: &str,
         vector: PyReadonlyArray1<'py, f32>,
         k: usize,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<PySearchResult>> {
         let rt = get_runtime()?;
         let vec_slice = vector.as_slice().map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
@@ -310,14 +366,11 @@ impl PyMemFuse {
                 None
             };
 
-            py_res.push(
-                PySearchResult {
-                    id: r.id,
-                    score: r.score,
-                    metadata: meta_py,
-                }
-                .into_py_any(py)?,
-            );
+            py_res.push(PySearchResult {
+                id: r.id,
+                score: r.score,
+                metadata: meta_py,
+            });
         }
         Ok(py_res)
     }
@@ -507,7 +560,7 @@ impl PyCollection {
         py: Python<'py>,
         vector: PyReadonlyArray1<'py, f32>,
         k: usize,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<PySearchResult>> {
         let rt = get_runtime()?;
         let vec_slice = vector.as_slice().map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
@@ -534,14 +587,11 @@ impl PyCollection {
                 None
             };
 
-            py_res.push(
-                PySearchResult {
-                    id: r.id,
-                    score: r.score,
-                    metadata: meta_py,
-                }
-                .into_py_any(py)?,
-            );
+            py_res.push(PySearchResult {
+                id: r.id,
+                score: r.score,
+                metadata: meta_py,
+            });
         }
         Ok(py_res)
     }
@@ -554,7 +604,7 @@ impl PyCollection {
         text: &str,
         vector: PyReadonlyArray1<'py, f32>,
         k: usize,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<PySearchResult>> {
         let rt = get_runtime()?;
         let vec_slice = vector.as_slice().map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
@@ -581,14 +631,11 @@ impl PyCollection {
                 None
             };
 
-            py_res.push(
-                PySearchResult {
-                    id: r.id,
-                    score: r.score,
-                    metadata: meta_py,
-                }
-                .into_py_any(py)?,
-            );
+            py_res.push(PySearchResult {
+                id: r.id,
+                score: r.score,
+                metadata: meta_py,
+            });
         }
         Ok(py_res)
     }
@@ -667,13 +714,14 @@ impl PyCollection {
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536, encryption_passphrase=None, distance_metric=None))]
+#[pyo3(signature = (path, dimension=1536, encryption_passphrase=None, distance_metric=None, max_elements=None))]
 fn open(
     py: Python<'_>,
     path: &str,
     dimension: usize,
     encryption_passphrase: Option<String>,
     distance_metric: Option<String>,
+    max_elements: Option<usize>,
 ) -> PyResult<PyMemFuse> {
     let rt = get_runtime()?;
     let mut config = MemFuseConfig {
@@ -681,6 +729,10 @@ fn open(
         encryption_passphrase,
         ..Default::default()
     };
+
+    if let Some(m) = max_elements {
+        config.max_elements = m;
+    }
 
     if let Some(dm) = distance_metric {
         config.distance_metric = match dm.to_lowercase().as_str() {
@@ -716,5 +768,6 @@ fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()
     m.add_class::<PyVectorIndexStats>()?;
     m.add_class::<PyStorageStats>()?;
     m.add_class::<PyDbStats>()?;
+
     Ok(())
 }
