@@ -317,13 +317,19 @@ impl HnswIndexCore {
             }
 
             let current_node = nodes.get(current.index).ok_or_else(|| {
-                MemFuseError::Index(format!("HNSW current node missing at index {}", current.index))
+                MemFuseError::Index(format!(
+                    "HNSW current node missing at index {}",
+                    current.index
+                ))
             })?;
             if let Some(connections) = current_node.connections.get(layer) {
                 for &neighbor in connections {
                     if visited.insert(neighbor) {
                         let neighbor_node = nodes.get(neighbor).ok_or_else(|| {
-                            MemFuseError::Index(format!("HNSW neighbor node missing at index {}", neighbor))
+                            MemFuseError::Index(format!(
+                                "HNSW neighbor node missing at index {}",
+                                neighbor
+                            ))
                         })?;
                         let dist = self.compute_distance_with_data(
                             query,
@@ -374,15 +380,19 @@ impl HnswIndexCore {
             let mut keep = true;
             for selected in &result {
                 let closest_node = nodes.get(closest.index).ok_or_else(|| {
-                    MemFuseError::Index(format!("HNSW closest node missing at index {}", closest.index))
+                    MemFuseError::Index(format!(
+                        "HNSW closest node missing at index {}",
+                        closest.index
+                    ))
                 })?;
                 let selected_node = nodes.get(selected.index).ok_or_else(|| {
-                    MemFuseError::Index(format!("HNSW selected node missing at index {}", selected.index))
+                    MemFuseError::Index(format!(
+                        "HNSW selected node missing at index {}",
+                        selected.index
+                    ))
                 })?;
-                let dist_between = self.compute_symmetric_distance(
-                    &closest_node.vector,
-                    &selected_node.vector,
-                )?;
+                let dist_between =
+                    self.compute_symmetric_distance(&closest_node.vector, &selected_node.vector)?;
                 if closest.distance > dist_between {
                     keep = false;
                     break;
@@ -566,8 +576,11 @@ impl HnswIndexCore {
                                 distance: dist,
                             });
                         }
-                        let selected =
-                            self.select_neighbors_heuristic(&nodes, &conn_cands, self.config.m * 2)?;
+                        let selected = self.select_neighbors_heuristic(
+                            &nodes,
+                            &conn_cands,
+                            self.config.m * 2,
+                        )?;
 
                         if let Some(neighbor_node) = nodes.get_mut(neighbor_idx) {
                             if let Some(cl) = neighbor_node.connections.get_mut(layer) {
