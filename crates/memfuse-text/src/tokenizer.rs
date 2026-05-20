@@ -48,18 +48,37 @@ impl Tokenizer for GermanMorphTokenizer {
         let stopwords = get_stopwords();
         let mut tokens = Vec::new();
 
+        let suffixes = [
+            "gericht",
+            "gesellschaft",
+            "versicherung",
+            "entwicklung",
+            "zentrum",
+            "anlage",
+            "planung",
+            "system",
+            "bereich",
+        ];
+
         for word in text.unicode_words() {
             let lower = word.to_lowercase();
             if stopwords.contains(&lower) {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
+            // POC for compound splitting
             // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            let mut matched = false;
+            for suffix in suffixes {
+                if lower.ends_with(suffix) && lower.len() > suffix.len() {
+                    tokens.push(lower.clone());
+                    tokens.push(suffix.to_string());
+                    matched = true;
+                    break;
+                }
+            }
+
+            if !matched {
                 tokens.push(lower);
             }
         }
@@ -100,5 +119,34 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+    }
+
+    #[test]
+    fn test_german_morph_tokenizer_expanded() {
+        let tokenizer = GermanMorphTokenizer;
+        let cases = [
+            ("Rentenversicherung", "versicherung"),
+            ("Softwareentwicklung", "entwicklung"),
+            ("Forschungszentrum", "zentrum"),
+            ("Solaranlage", "anlage"),
+            ("Stadtplanung", "planung"),
+            ("Betriebssystem", "system"),
+            ("Fachbereich", "bereich"),
+        ];
+
+        for (word, suffix) in cases {
+            let tokens = tokenizer.tokenize(word);
+            assert!(
+                tokens.contains(&word.to_lowercase()),
+                "Missing original word: {}",
+                word
+            );
+            assert!(
+                tokens.contains(&suffix.to_string()),
+                "Missing suffix {} for word {}",
+                suffix,
+                word
+            );
+        }
     }
 }

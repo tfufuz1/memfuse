@@ -10,12 +10,14 @@ description = "MemFuse — Text processing and BM25 search for Hybrid Search"
 memfuse-core = { workspace = true }
 # ANCHOR:ARCH:DAG-001 — Architektur-Layer durchbrochen
 # WP:NONE PRIO:1 NEEDS:NONE
-# AGENT:05 DATE:2026-05-16 STATUS:FIXME
+# AGENT:05 DATE:2026-06-15 STATUS:DONE
 # CREATED:2026-05-09 DEADLINE:NONE
 # VERLETZUNG: memfuse-text importiert memfuse-store gegen die DAG-Invariante
 # IMPACT: Verstößt gegen Layer-Architektur, verhindert saubere Kompilierung
 # SOFORTIGE AKTION: Abhängigkeit extrahieren nach memfuse-core oder neuen Crate
+# RESOLVED: memfuse-store is now only a dev-dependency for testing.
 unicode-segmentation = "1.11.0"
+itoa = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
 serde = { workspace = true }
