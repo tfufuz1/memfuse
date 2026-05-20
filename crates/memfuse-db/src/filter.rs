@@ -48,10 +48,20 @@ impl MetadataFilter {
                     match op {
                         FilterOp::Eq => actual_value == value,
                         FilterOp::Ne => actual_value != value,
-                        FilterOp::Gt => compare_values(actual_value, value) == Some(std::cmp::Ordering::Greater),
-                        FilterOp::Gte => matches!(compare_values(actual_value, value), Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)),
-                        FilterOp::Lt => compare_values(actual_value, value) == Some(std::cmp::Ordering::Less),
-                        FilterOp::Lte => matches!(compare_values(actual_value, value), Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)),
+                        FilterOp::Gt => {
+                            compare_values(actual_value, value) == Some(std::cmp::Ordering::Greater)
+                        }
+                        FilterOp::Gte => matches!(
+                            compare_values(actual_value, value),
+                            Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)
+                        ),
+                        FilterOp::Lt => {
+                            compare_values(actual_value, value) == Some(std::cmp::Ordering::Less)
+                        }
+                        FilterOp::Lte => matches!(
+                            compare_values(actual_value, value),
+                            Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+                        ),
                         FilterOp::In => {
                             if let Some(arr) = actual_value.as_array() {
                                 arr.contains(value)

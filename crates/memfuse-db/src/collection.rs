@@ -363,7 +363,10 @@ impl Collection {
             }
 
             let filter_fn = move |id: DocId| matched_ids.contains(&id);
-            let scored_docs = self.index.search_filtered(query, k, Some(&filter_fn)).await?;
+            let scored_docs = self
+                .index
+                .search_filtered(query, k, Some(&filter_fn))
+                .await?;
             self.hydrate_from_scored(scored_docs).await
         } else {
             // Post-filtering approach for larger collections:
