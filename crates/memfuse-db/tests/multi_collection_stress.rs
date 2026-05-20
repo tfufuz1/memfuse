@@ -46,10 +46,23 @@ async fn test_multi_collection_concurrency_stress() {
 
                     // Search
                     let results = col.search(&vec, 10).await.expect("search failed");
-                    assert!(!results.is_empty(), "Search for {:?} in {} (task {}) returned no results", vec, col_name, t);
+                    assert!(
+                        !results.is_empty(),
+                        "Search for {:?} in {} (task {}) returned no results",
+                        vec,
+                        col_name,
+                        t
+                    );
                     // Check if it's our doc
                     let found_ids: Vec<String> = results.iter().map(|r| r.id.clone()).collect();
-                    assert!(found_ids.contains(&id), "Doc {} not found in results for task {} in {}. Found: {:?}", id, t, col_name, found_ids);
+                    assert!(
+                        found_ids.contains(&id),
+                        "Doc {} not found in results for task {} in {}. Found: {:?}",
+                        id,
+                        t,
+                        col_name,
+                        found_ids
+                    );
                 }
             }));
         }

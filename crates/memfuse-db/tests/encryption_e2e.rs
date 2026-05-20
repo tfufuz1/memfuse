@@ -22,13 +22,23 @@ async fn test_encryption_at_rest_security() {
         let db = MemFuse::open_with_config(&path, config.clone())
             .await
             .expect("failed to open encrypted db");
-        let col = db.collection("secret-col").await.expect("collection failed");
-
-        col.insert("secret-doc", &[1.0, 2.0, 3.0], Some(json!({"data": "classified"})))
+        let col = db
+            .collection("secret-col")
             .await
-            .expect("encrypted insert failed");
+            .expect("collection failed");
 
-        db.inner_storage().force_flush().await.expect("flush failed");
+        col.insert(
+            "secret-doc",
+            &[1.0, 2.0, 3.0],
+            Some(json!({"data": "classified"})),
+        )
+        .await
+        .expect("encrypted insert failed");
+
+        db.inner_storage()
+            .force_flush()
+            .await
+            .expect("flush failed");
     }
 
     // 2. Try to open with WRONG passphrase -> Should fail or at least be unable to read data correctly
@@ -43,9 +53,16 @@ async fn test_encryption_at_rest_security() {
         // Depending on implementation, open might succeed but subsequent reads fail,
         // or open might fail during WAL replay.
         if let Ok(db) = db_res {
-            let col = db.collection("secret-col").await.expect("collection failed");
+            let col = db
+                .collection("secret-col")
+                .await
+                .expect("collection failed");
             let res = col.get("secret-doc").await;
-            assert!(res.is_err(), "Reading with wrong passphrase should return error, got {:?}", res);
+            assert!(
+                res.is_err(),
+                "Reading with wrong passphrase should return error, got {:?}",
+                res
+            );
         }
     }
 
@@ -54,8 +71,15 @@ async fn test_encryption_at_rest_security() {
         let db = MemFuse::open_with_config(&path, config)
             .await
             .expect("failed to re-open encrypted db");
-        let col = db.collection("secret-col").await.expect("collection failed");
-        let doc = col.get("secret-doc").await.expect("get failed").expect("doc missing");
+        let col = db
+            .collection("secret-col")
+            .await
+            .expect("collection failed");
+        let doc = col
+            .get("secret-doc")
+            .await
+            .expect("get failed")
+            .expect("doc missing");
         assert_eq!(doc.metadata.unwrap()["data"], "classified");
     }
 }
