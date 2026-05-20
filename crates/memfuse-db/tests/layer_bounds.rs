@@ -16,6 +16,7 @@ async fn test_layer_002_collection_persistence() {
         dimension: 4,
         max_elements: 100,
         distance_metric: DistanceMetric::Cosine,
+        encryption_passphrase: None,
         ..Default::default()
     };
 

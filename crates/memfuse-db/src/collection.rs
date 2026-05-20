@@ -336,105 +336,14 @@ impl Collection {
     }
 
     /// Performs filtered semantic vector search in the collection.
-    /// Supports both closure-based filters and structured `FilterExpr`.
     pub async fn search_filtered(
         &self,
         query: &[f32],
         k: usize,
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<crate::SearchResult>> {
-        // If we have a complex filter, we might want to pre-filter or post-filter
         let scored_docs = self.index.search_filtered(query, k, filter).await?;
         self.hydrate_from_scored(scored_docs).await
-    }
-
-    /// Performs vector search with a structured metadata filter.
-    /// Automatically decides between Pre-filtering and Post-filtering based on selectivity.
-    pub async fn search_with_filter(
-        &self,
-        query: &[f32],
-        k: usize,
-        filter_expr: crate::FilterExpr,
-    ) -> Result<Vec<crate::SearchResult>> {
-        // 1. Estimation (Pseudo-selectivity for now)
-        // In a real system, we would use histograms or sample the storage.
-        // For WP-4.2, we implement the logic for both paths.
-
-        let total_docs = self.len().await;
-
-        // Threshold: if we expect < 10% of docs to match, pre-filter might be better
-        // but HNSW pre-filtering is only efficient if we have a small candidate set.
-        // If candidates are very few, we just brute-force search the filtered set.
-
-        // Path A: Post-filtering (Default for HNSW)
-        // We use the HNSW's internal filtered search which does post-filtering (or filtered traversal).
-        // Since we need to access metadata for evaluation, we need a way to pass the filter to the index.
-
-        // let _storage = Arc::clone(&self.storage);
-        // let _filter_expr_clone = filter_expr.clone();
-        // let _collection = self.clone();
-
-        // let _filter_fn = move |doc_id: DocId| -> bool {
-        //     let _doc_key = _collection.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-        // Synchronous block inside HNSW search might be problematic if storage is async
-        // but HNSW search_filtered takes a Fn(DocId) -> bool.
-        // THIS IS A KNOWN ARCHITECTURAL CHALLENGE: HNSW filter closure is sync, Storage is async.
-        // For now, we might need to use a pre-filtered list or a sync cache.
-
-        // Hack for WP-4.2: We pre-calculate the matching DocIds if the collection is small enough.
-        // Or we perform the search and filter results after (true post-filtering).
-        //     true // Placeholder
-        // };
-
-        // Real Implementation for WP-4.2 selectivity:
-        // If it's a small match set, we find all DocIds and then search them.
-
-        // For now, let's implement the "Post-filtering" by searching more and then filtering.
-        // And "Pre-filtering" by scanning and then brute-force.
-
-        if total_docs < 1000 {
-            // Brute force pre-filter path
-            let mut matching_ids = Vec::new();
-            let prefix = if self.name == "default" {
-                b"__docid:".to_vec()
-            } else {
-                [self.prefix.as_slice(), &[1]].concat()
-            };
-            let entries = self.storage.scan_prefix(&prefix).await?;
-            for (_, v) in entries {
-                let stored: StoredDocument = serde_json::from_slice(&v)?;
-                if let Some(meta) = &stored.metadata {
-                    if filter_expr.matches(meta) {
-                        matching_ids.push((DocId::from_key(&stored.id), stored.embedding));
-                    }
-                }
-            }
-
-            // Brute force distance calculation
-            let mut results = Vec::new();
-            for (doc_id, emb) in matching_ids {
-                let score = memfuse_index::distance::cosine_distance(&emb, query);
-                results.push((doc_id, score));
-            }
-            results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            results.truncate(k);
-            return self.hydrate_from_tuples(results).await;
-        }
-
-        // Default to index search with post-filter if large
-        let results = self.search(query, k * 5).await?; // Search more to account for filtering
-        let filtered: Vec<crate::SearchResult> = results
-            .into_iter()
-            .filter(|r| {
-                r.metadata
-                    .as_ref()
-                    .map(|m| filter_expr.matches(m))
-                    .unwrap_or(false)
-            })
-            .take(k)
-            .collect();
-
-        Ok(filtered)
     }
 
     async fn hydrate_from_scored(
@@ -490,118 +399,27 @@ impl Collection {
         vector: &[f32],
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
-        let query = crate::HybridQuery {
-            vector: Some(vector.to_vec()),
-            text: Some(text.to_string()),
-            graph_seed: None,
-            metadata_filter: None,
-            weights: None,
-            limit: k,
-        };
-        self.unified_search(query).await
-    }
+        let is_vector_zero = vector.iter().all(|&v| v == 0.0);
+        let is_text_empty = text.trim().is_empty();
 
-    /// Unified 4-Signal Fusion API (WP-6.1).
-    pub async fn unified_search(
-        &self,
-        query: crate::HybridQuery,
-    ) -> Result<Vec<crate::SearchResult>> {
-        let mut result_sets = Vec::new();
-        let mut weights = Vec::new();
-        let k = query.limit;
-        let query_weights = query.weights.unwrap_or_default();
-
-        // 1. Vector Signal
-        if let Some(vec) = query.vector {
-            if !vec.iter().all(|&v| v == 0.0) {
-                let vector_results = self.search(&vec, k).await?;
-                result_sets.push(vector_results);
-                weights.push(query_weights.vector);
-            }
-        }
-
-        // 2. Text Signal (BM25)
-        if let Some(text) = query.text {
-            if !text.trim().is_empty() {
-                let bm25_results = self.text_index.search_bm25(&text, k).await?;
+        match (is_text_empty, is_vector_zero) {
+            (true, true) => Ok(Vec::new()),
+            (true, false) => self.search(vector, k).await,
+            (false, is_v_zero) => {
+                let bm25_results = self.text_index.search_bm25(text, k).await?;
                 let text_results = self.hydrate_from_tuples(bm25_results).await?;
-                result_sets.push(text_results);
-                weights.push(query_weights.text);
-            }
-        }
 
-        // 3. Metadata Signal (Filtering)
-        if let Some(ref filter) = query.metadata_filter {
-            // We can treat the filter as a signal by giving it a constant score for matches
-            // or just using it to prune other results.
-            // For true 4-signal fusion as per GS-01, we should probably integrate it into RRF.
-            // If we only have a filter, we return matching docs.
-            if result_sets.is_empty() {
-                // Brute force scan for matching docs (signal only)
-                // In a real system, this would be an index scan.
-                let mut results = Vec::new();
-                let prefix = if self.name == "default" {
-                    b"__docid:".to_vec()
-                } else {
-                    [self.prefix.as_slice(), &[1]].concat()
-                };
-                let entries = self.storage.scan_prefix(&prefix).await?;
-                for (_, v) in entries {
-                    let stored: StoredDocument = serde_json::from_slice(&v)?;
-                    if let Some(meta) = &stored.metadata {
-                        if filter.matches(meta) {
-                            results.push(crate::SearchResult {
-                                id: stored.id,
-                                score: 1.0, // Constant score for filter matches
-                                metadata: stored.metadata,
-                            });
-                        }
-                    }
-                    if results.len() >= k {
-                        break;
-                    }
+                if is_v_zero {
+                    return Ok(text_results);
                 }
-                result_sets.push(results);
-                weights.push(query_weights.metadata);
+
+                let vector_results = self.search(vector, k).await?;
+                Ok(crate::fusion::reciprocal_rank_fusion(
+                    vec![vector_results, text_results],
+                    k,
+                ))
             }
-            // If result_sets is NOT empty, we currently use filter as a post-filter for fusion
-            // but the spec says "Native Verschmelzung aller vier Retrieval-Signale".
         }
-
-        // 4. Graph Signal (Stub for WP-6.1)
-        if let Some((_seed, _hops)) = query.graph_seed {
-            // CSR-Graph retrieval not yet fully integrated in this layer
-            // result_sets.push(graph_results);
-            // weights.push(query_weights.graph);
-        }
-
-        if result_sets.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        if result_sets.len() == 1 {
-            let mut res = result_sets.remove(0);
-            res.truncate(k);
-            return Ok(res);
-        }
-
-        let fused = crate::fusion::weighted_reciprocal_rank_fusion(result_sets, weights, k);
-
-        // Final post-filter if metadata_filter was provided and we had other signals
-        if let Some(ref filter) = query.metadata_filter {
-            let filtered: Vec<crate::SearchResult> = fused
-                .into_iter()
-                .filter(|r| {
-                    r.metadata
-                        .as_ref()
-                        .map(|m| filter.matches(m))
-                        .unwrap_or(false)
-                })
-                .collect();
-            return Ok(filtered);
-        }
-
-        Ok(fused)
     }
 
     /// Returns the number of documents in the collection.
