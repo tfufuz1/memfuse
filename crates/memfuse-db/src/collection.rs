@@ -7,6 +7,7 @@
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 // STATUS: Full Implementation für WP-1.2.
 
+use crate::filter::MetadataFilter;
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;
@@ -332,7 +333,94 @@ impl Collection {
         query_embedding: &[f32],
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
-        self.search_filtered(query_embedding, k, None).await
+        self.search_with_filter(query_embedding, k, None).await
+    }
+
+    /// Performs semantic search with an advanced metadata filter.
+    pub async fn search_with_filter(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: Option<MetadataFilter>,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let filter = match filter {
+            Some(f) => f,
+            None => return self.search_filtered(query, k, None).await,
+        };
+
+        let total_docs = self.len().await;
+
+        // ADAPTIVE STRATEGY (WP-4.2):
+        // If total documents are few, or if we suspect high selectivity,
+        // we use Pre-filtering by scanning metadata first.
+        // For now, we use a simple heuristic: if docs < 1000, always pre-filter.
+        if total_docs < 1000 {
+            let matched_ids = self.get_matching_doc_ids(&filter).await?;
+
+            // If no docs match the filter, return early
+            if matched_ids.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            let filter_fn = move |id: DocId| matched_ids.contains(&id);
+            let scored_docs = self
+                .index
+                .search_filtered(query, k, Some(&filter_fn))
+                .await?;
+            self.hydrate_from_scored(scored_docs).await
+        } else {
+            // Post-filtering approach for larger collections:
+            // 1. Search more than k (oversample) to account for filter drops.
+            let oversample = (k * 10).min(total_docs).max(k);
+            let scored_docs = self.index.search_filtered(query, oversample, None).await?;
+
+            let mut results = Vec::new();
+            for sd in scored_docs {
+                let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
+                if let Some(bytes) = self.storage.get(&doc_key).await? {
+                    let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                    let metadata = stored.metadata.as_ref().unwrap_or(&serde_json::Value::Null);
+                    if filter.matches(metadata) {
+                        results.push(crate::SearchResult {
+                            id: stored.id,
+                            score: sd.score,
+                            metadata: stored.metadata,
+                        });
+                        if results.len() >= k {
+                            break;
+                        }
+                    }
+                }
+            }
+            Ok(results)
+        }
+    }
+
+    /// Internal helper to find all DocIds matching a filter by scanning metadata.
+    async fn get_matching_doc_ids(
+        &self,
+        filter: &MetadataFilter,
+    ) -> Result<std::collections::HashSet<DocId>> {
+        let prefix = if self.name == "default" {
+            b"__docid:".to_vec()
+        } else {
+            let mut p = self.prefix.clone();
+            p.push(1); // docid mapping type
+            p
+        };
+
+        let entries = self.storage.scan_prefix(&prefix).await?;
+        let mut matched = std::collections::HashSet::new();
+
+        for (_, v) in entries {
+            let stored: StoredDocument = serde_json::from_slice(&v)?;
+            let metadata = stored.metadata.as_ref().unwrap_or(&serde_json::Value::Null);
+            if filter.matches(metadata) {
+                matched.insert(DocId::from_key(&stored.id));
+            }
+        }
+
+        Ok(matched)
     }
 
     /// Performs filtered semantic vector search in the collection.
