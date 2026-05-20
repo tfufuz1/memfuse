@@ -1,5 +1,5 @@
 //! High-concurrency stress tests for a single MemFuse collection.
-// ANCHOR:INTEGRATION:STRESS-001 STATUS:READY AGENT:12 DATE:2026-05-18
+// ANCHOR:INTEGRATION:STRESS-001 STATUS:DONE AGENT:12 DATE:2026-05-18
 
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
