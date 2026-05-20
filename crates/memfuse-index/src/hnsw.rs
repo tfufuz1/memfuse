@@ -599,7 +599,7 @@ impl HnswIndexCore {
         Ok(())
     }
 
-    fn do_delete(&self, id: DocId) {
+    fn do_delete(&self, id: DocId) -> Result<()> {
         let node_idx = self.doc_to_node.write().remove(&id.inner());
         if let Some(idx) = node_idx {
             self.deleted_nodes.write().insert(idx as u64);
@@ -630,16 +630,15 @@ impl HnswIndexCore {
                 if let Some(new_idx) = best_node {
                     let node = nodes.get(new_idx).ok_or_else(|| {
                         MemFuseError::Index(format!("HNSW node missing at index {}", new_idx))
-                    });
-                    // do_delete returns (), so we use a safe fallback or log
-                    if let Ok(n) = node {
-                        self.max_layer.store(n._max_layer as u64, Ordering::SeqCst);
-                    }
+                    })?;
+                    self.max_layer
+                        .store(node._max_layer as u64, Ordering::SeqCst);
                 } else {
                     self.max_layer.store(0, Ordering::SeqCst);
                 }
             }
         }
+        Ok(())
     }
 
     /// Graph connectivity score (1.0 = perfect, 0.0 = fully fragmented).
@@ -1048,7 +1047,7 @@ impl VectorIndex for HnswIndex {
                     self.do_insert(doc_id, &data)?;
                 }
                 IndexOp::Delete { doc_id, .. } => {
-                    self.do_delete(doc_id);
+                    self.do_delete(doc_id)?;
                     deleted_any = true;
                 }
             }
