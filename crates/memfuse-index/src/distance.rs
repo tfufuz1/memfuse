@@ -1,3 +1,8 @@
+//! Distance metrics for vector search.
+//!
+//! This module implements various distance metrics (Cosine, Euclidean, Dot Product)
+//! with hardware acceleration (AVX2, AVX-512) and fallback to portable-simd.
+//!
 // ANCHOR:DOC:DOC-DISTANCE-001 — Module documentation added
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:03 DATE:2026-05-16 STATUS:DONE

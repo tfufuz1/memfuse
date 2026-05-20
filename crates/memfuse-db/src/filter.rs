@@ -1,3 +1,8 @@
+//! Metadata filtering system for MemFuse.
+//!
+//! This module provides a flexible way to filter search results based on
+//! document metadata using various operators (Eq, Ne, Gt, Lt, In, etc.).
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

@@ -81,9 +81,9 @@ bash .agent/scripts/jules-dashboard.sh
 - **LSM-Tree Persistence** — WAL + MemTable with crash recovery
 - **Transactional** — Sharded TxBuffer with orphan-reaping
 - **Relationship Tracking** — `relate()` API for graph-aware retrieval
-- **Hybrid Search** — Optimized BM25 + Vector Fusion (RRF)
-- **Scalar Quantization** — SQ8 compression for 4x reduced RAM footprint
 - **Deterministic Checkpointing** — Native state pinning for "Time-Travel" debugging
+- **WASM Sandboxing** — Secure tool execution and plugin isolation
+- **German compound splitting** — Advanced morphology support for German language indexing
 
 ## Building
 
