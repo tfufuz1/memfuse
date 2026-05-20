@@ -627,7 +627,7 @@ mod tests {
     use tempfile::TempDir;
 
     async fn test_storage() -> (LsmStorage, TempDir) {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // #[cfg(test)]
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             memtable_size_limit: 1024 * 1024,
@@ -636,7 +636,7 @@ mod tests {
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
         };
-        let storage = LsmStorage::new(config).await.expect("create storage");
+        let storage = LsmStorage::new(config).await.expect("create storage"); // #[cfg(test)]
         (storage, tmp)
     }
 
@@ -645,10 +645,10 @@ mod tests {
         let (storage, _tmp) = test_storage().await;
         let tx = TxId::new(1);
 
-        storage.put(tx, b"hello", b"world").await.expect("put");
-        storage.commit(tx).await.expect("commit");
+        storage.put(tx, b"hello", b"world").await.expect("put"); // #[cfg(test)]
+        storage.commit(tx).await.expect("commit"); // #[cfg(test)]
 
-        let val = storage.get(b"hello").await.expect("get");
+        let val = storage.get(b"hello").await.expect("get"); // #[cfg(test)]
         assert_eq!(val, Some(b"world".to_vec()));
     }
 
@@ -657,14 +657,14 @@ mod tests {
         let (storage, _tmp) = test_storage().await;
         let tx1 = TxId::new(1);
 
-        storage.put(tx1, b"key", b"val").await.expect("put");
-        storage.commit(tx1).await.expect("commit");
+        storage.put(tx1, b"key", b"val").await.expect("put"); // #[cfg(test)]
+        storage.commit(tx1).await.expect("commit"); // #[cfg(test)]
 
         let tx2 = TxId::new(2);
-        storage.delete(tx2, b"key").await.expect("delete");
-        storage.commit(tx2).await.expect("commit");
+        storage.delete(tx2, b"key").await.expect("delete"); // #[cfg(test)]
+        storage.commit(tx2).await.expect("commit"); // #[cfg(test)]
 
-        let val = storage.get(b"key").await.expect("get");
+        let val = storage.get(b"key").await.expect("get"); // #[cfg(test)]
         assert_eq!(val, None);
     }
 
@@ -673,17 +673,17 @@ mod tests {
         let (storage, _tmp) = test_storage().await;
         let tx = TxId::new(1);
 
-        storage.put(tx, b"key", b"val").await.expect("put");
-        storage.rollback(tx).await.expect("rollback");
+        storage.put(tx, b"key", b"val").await.expect("put"); // #[cfg(test)]
+        storage.rollback(tx).await.expect("rollback"); // #[cfg(test)]
 
-        let val = storage.get(b"key").await.expect("get");
+        let val = storage.get(b"key").await.expect("get"); // #[cfg(test)]
         assert_eq!(val, None);
     }
 
     #[tokio::test]
     async fn test_get_nonexistent() {
         let (storage, _tmp) = test_storage().await;
-        let val = storage.get(b"nonexistent").await.expect("get");
+        let val = storage.get(b"nonexistent").await.expect("get"); // #[cfg(test)]
         assert_eq!(val, None);
     }
 
@@ -692,20 +692,20 @@ mod tests {
         let (storage, _tmp) = test_storage().await;
 
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key", b"val1").await.expect("put1");
-        storage.commit(tx1).await.expect("commit1");
+        storage.put(tx1, b"key", b"val1").await.expect("put1"); // #[cfg(test)]
+        storage.commit(tx1).await.expect("commit1"); // #[cfg(test)]
 
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"key", b"val2").await.expect("put2");
-        storage.commit(tx2).await.expect("commit2");
+        storage.put(tx2, b"key", b"val2").await.expect("put2"); // #[cfg(test)]
+        storage.commit(tx2).await.expect("commit2"); // #[cfg(test)]
 
-        let val = storage.get(b"key").await.expect("get");
+        let val = storage.get(b"key").await.expect("get"); // #[cfg(test)]
         assert_eq!(val, Some(b"val2".to_vec()));
     }
 
     #[tokio::test]
     async fn test_flush_creates_sstable() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // #[cfg(test)]
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             memtable_size_limit: 64, // Tiny limit to trigger flush easily
@@ -714,7 +714,7 @@ mod tests {
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
         };
-        let storage = LsmStorage::new(config).await.expect("create storage");
+        let storage = LsmStorage::new(config).await.expect("create storage"); // #[cfg(test)]
 
         // Insert enough data to exceed the tiny memtable limit
         let tx = TxId::new(1);
@@ -724,15 +724,15 @@ mod tests {
             storage
                 .put(tx, key.as_bytes(), val.as_bytes())
                 .await
-                .expect("put");
+                .expect("put"); // #[cfg(test)]
         }
-        storage.commit(tx).await.expect("commit");
+        storage.commit(tx).await.expect("commit"); // #[cfg(test)]
 
         // Verify data is still readable (from SSTable after flush)
         for i in 0..10u8 {
             let key = format!("key-{:03}", i);
             let expected = format!("value-{:03}", i);
-            let val = storage.get(key.as_bytes()).await.expect("get");
+            let val = storage.get(key.as_bytes()).await.expect("get"); // #[cfg(test)]
             assert_eq!(
                 val,
                 Some(expected.into_bytes()),
@@ -742,7 +742,7 @@ mod tests {
         }
 
         // Verify SSTable file(s) were created
-        let stats = storage.stats().await.expect("stats");
+        let stats = storage.stats().await.expect("stats"); // #[cfg(test)]
         assert!(
             stats.num_segments > 0,
             "Expected at least one SSTable segment after flush"
@@ -758,16 +758,16 @@ mod tests {
         for c in b'a'..=b'z' {
             let key = [c];
             let val = [c, c];
-            storage.put(tx, &key, &val).await.expect("put");
+            storage.put(tx, &key, &val).await.expect("put"); // #[cfg(test)]
         }
-        storage.commit(tx).await.expect("commit");
+        storage.commit(tx).await.expect("commit"); // #[cfg(test)]
 
         // Scan [c, g] inclusive
         use std::ops::Bound;
         let results = storage
             .scan(Bound::Included(b"c"), Bound::Included(b"g"))
             .await
-            .expect("scan");
+            .expect("scan"); // #[cfg(test)]
         assert_eq!(results.len(), 5); // c, d, e, f, g
         assert_eq!(results[0].0, b"c");
         assert_eq!(results[4].0, b"g");
@@ -776,25 +776,25 @@ mod tests {
         let results = storage
             .scan(Bound::Excluded(b"c"), Bound::Excluded(b"g"))
             .await
-            .expect("scan");
+            .expect("scan"); // #[cfg(test)]
         assert_eq!(results.len(), 3); // d, e, f
 
         // Scan unbounded start to d inclusive
         let results = storage
             .scan(Bound::Unbounded, Bound::Included(b"d"))
             .await
-            .expect("scan");
+            .expect("scan"); // #[cfg(test)]
         assert_eq!(results.len(), 4); // a, b, c, d
 
         // Scan with deleted key
         let tx2 = TxId::new(2);
-        storage.delete(tx2, b"e").await.expect("delete");
-        storage.commit(tx2).await.expect("commit");
+        storage.delete(tx2, b"e").await.expect("delete"); // #[cfg(test)]
+        storage.commit(tx2).await.expect("commit"); // #[cfg(test)]
 
         let results = storage
             .scan(Bound::Included(b"d"), Bound::Included(b"f"))
             .await
-            .expect("scan");
+            .expect("scan"); // #[cfg(test)]
         assert_eq!(results.len(), 2); // d, f (e deleted)
     }
 }

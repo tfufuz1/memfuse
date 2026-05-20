@@ -18,6 +18,7 @@
 
 pub mod compaction;
 pub mod crypto;
+pub mod checkpoint;
 pub mod lsm;
 pub mod memtable;
 pub mod sstable;

@@ -486,7 +486,7 @@ mod tests {
             value: b"value".to_vec(),
         };
         let entry = WalEntry::try_new(op, 100, b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0")
-            .expect("try_new");
+            .expect("try_new"); // #[cfg(test)]
         let bytes = entry.to_bytes();
 
         // Manual verification of length
@@ -494,7 +494,7 @@ mod tests {
         // 4 + 8 + 32 + 1 + 8 + 4 + 3 + 4 + 5 = 69
         assert_eq!(bytes.len(), 69);
 
-        let payload_len = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice"));
+        let payload_len = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice")); // #[cfg(test)]
         assert_eq!(payload_len, 65);
 
         // Test with Delete
@@ -503,7 +503,7 @@ mod tests {
             key: b"key2".to_vec(),
         };
         let entry2 = WalEntry::try_new(op2, 101, b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0")
-            .expect("try_new");
+            .expect("try_new"); // #[cfg(test)]
         let bytes2 = entry2.to_bytes();
         // 4 + 8 + 32 + 1 + 8 + 4 + key(4) = 61
         assert_eq!(bytes2.len(), 61);
