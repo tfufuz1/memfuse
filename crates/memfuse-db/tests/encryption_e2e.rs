@@ -32,7 +32,10 @@ async fn test_encryption_at_rest_full_stack() {
         .expect("Insert failed");
 
         // Force flush to ensure it's on disk (and thus encrypted)
-        db.inner_storage().force_flush().await.expect("Flush failed");
+        db.inner_storage()
+            .force_flush()
+            .await
+            .expect("Flush failed");
     }
 
     // 2. Attempt to open WITHOUT passphrase (should fail or be unable to read)
@@ -82,7 +85,11 @@ async fn test_encryption_at_rest_full_stack() {
             .await
             .expect("Failed to re-open with correct passphrase");
 
-        let doc = db.get("secret-doc").await.expect("Get failed").expect("Not found");
+        let doc = db
+            .get("secret-doc")
+            .await
+            .expect("Get failed")
+            .expect("Not found");
         assert_eq!(doc.metadata.unwrap()["secret"], "Top secret content");
 
         let search = db.search(&[1.0, 0.0, 0.0], 1).await.expect("Search failed");

@@ -34,7 +34,7 @@ async fn test_full_stack_concurrency_stress() {
 
             for i in 0..ops_per_task {
                 let id = format!("task-{}-doc-{}", t, i);
-                let vec = vec![t as f32, i as f32, (t+i) as f32, 0.0];
+                let vec = vec![t as f32, i as f32, (t + i) as f32, 0.0];
                 let text = format!("This is content for document {} in task {}", i, t);
 
                 // 1. Insert
@@ -43,18 +43,35 @@ async fn test_full_stack_concurrency_stress() {
                     .expect("insert");
 
                 // 2. Hybrid Search - should find itself by vector and text
-                let results = col.hybrid_search(&text, &vec, 5).await.expect("hybrid search");
-                assert!(!results.is_empty(), "Task {} doc {} search results empty", t, i);
+                let results = col
+                    .hybrid_search(&text, &vec, 5)
+                    .await
+                    .expect("hybrid search");
+                assert!(
+                    !results.is_empty(),
+                    "Task {} doc {} search results empty",
+                    t,
+                    i
+                );
 
                 let found = results.iter().any(|r| r.id == id);
-                assert!(found, "Task {} doc {} not found in its own hybrid search results", t, i);
+                assert!(
+                    found,
+                    "Task {} doc {} not found in its own hybrid search results",
+                    t, i
+                );
 
                 // 3. Delete
                 col.delete(&id).await.expect("delete");
 
                 // 4. Verify gone
                 let doc = col.get(&id).await.expect("get");
-                assert!(doc.is_none(), "Task {} doc {} still exists after delete", t, i);
+                assert!(
+                    doc.is_none(),
+                    "Task {} doc {} still exists after delete",
+                    t,
+                    i
+                );
             }
         }));
     }

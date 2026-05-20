@@ -50,10 +50,16 @@ async fn test_full_stack_persistence_roundtrip() {
         let res = db.search(&[1.0, 0.0, 0.0], 1).await.expect("Search failed");
         assert_eq!(res[0].id, "persist-1");
 
-        let hybrid = db.hybrid_search("Persistent", &[1.0, 0.0, 0.0], 1).await.expect("Hybrid failed");
+        let hybrid = db
+            .hybrid_search("Persistent", &[1.0, 0.0, 0.0], 1)
+            .await
+            .expect("Hybrid failed");
         assert_eq!(hybrid[0].id, "persist-1");
 
-        let rels = db.scan_prefix("__rel:persist-1:").await.expect("Scan failed");
+        let rels = db
+            .scan_prefix("__rel:persist-1:")
+            .await
+            .expect("Scan failed");
         assert_eq!(rels.len(), 1);
 
         // Drop DB to simulate restart
@@ -66,26 +72,42 @@ async fn test_full_stack_persistence_roundtrip() {
             .expect("Failed to re-open DB");
 
         // A. Verify Vector Index persistence
-        let res = db.search(&[1.0, 0.0, 0.0], 1).await.expect("Search after restart failed");
+        let res = db
+            .search(&[1.0, 0.0, 0.0], 1)
+            .await
+            .expect("Search after restart failed");
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].id, "persist-1");
 
         // B. Verify Text Index persistence
-        let hybrid = db.hybrid_search("Persistent", &[1.0, 0.0, 0.0], 1).await.expect("Hybrid after restart failed");
+        let hybrid = db
+            .hybrid_search("Persistent", &[1.0, 0.0, 0.0], 1)
+            .await
+            .expect("Hybrid after restart failed");
         assert_eq!(hybrid.len(), 1);
         assert_eq!(hybrid[0].id, "persist-1");
 
         // C. Verify Relationships persistence
-        let rels = db.scan_prefix("__rel:persist-1:").await.expect("Scan after restart failed");
+        let rels = db
+            .scan_prefix("__rel:persist-1:")
+            .await
+            .expect("Scan after restart failed");
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].1["to"], "persist-2");
 
         // D. Verify Metadata integrity
-        let doc = db.get("persist-1").await.expect("Get failed").expect("Not found");
+        let doc = db
+            .get("persist-1")
+            .await
+            .expect("Get failed")
+            .expect("Not found");
         assert_eq!(doc.metadata.unwrap()["category"], "test");
 
         // E. Verify Collection list persistence
-        let collections = db.list_collections().await.expect("List collections failed");
+        let collections = db
+            .list_collections()
+            .await
+            .expect("List collections failed");
         assert!(collections.contains(&"default".to_string()));
     }
 }
@@ -105,7 +127,10 @@ async fn test_named_collection_persistence() {
         let db = MemFuse::open_with_config(&db_path, config.clone())
             .await
             .expect("Failed to open DB");
-        let col = db.collection(col_name).await.expect("Failed to create collection");
+        let col = db
+            .collection(col_name)
+            .await
+            .expect("Failed to create collection");
 
         col.insert("col-doc-1", &[1.0, 1.0], Some(json!({"source": "col"})))
             .await
@@ -118,11 +143,21 @@ async fn test_named_collection_persistence() {
             .await
             .expect("Failed to re-open DB");
 
-        let collections = db.list_collections().await.expect("List collections failed");
+        let collections = db
+            .list_collections()
+            .await
+            .expect("List collections failed");
         assert!(collections.contains(&col_name.to_string()));
 
-        let col = db.collection(col_name).await.expect("Failed to get collection");
-        let doc = col.get("col-doc-1").await.expect("Get failed").expect("Not found");
+        let col = db
+            .collection(col_name)
+            .await
+            .expect("Failed to get collection");
+        let doc = col
+            .get("col-doc-1")
+            .await
+            .expect("Get failed")
+            .expect("Not found");
         assert_eq!(doc.id, "col-doc-1");
 
         let search = col.search(&[1.0, 1.0], 1).await.expect("Search failed");
