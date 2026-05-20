@@ -326,7 +326,10 @@ mod tests {
             }
             sleep(Duration::from_millis(10)).await;
         }
-        assert!(cleaned_up, "Transaction was not cleaned up by orphan reaper");
+        assert!(
+            cleaned_up,
+            "Transaction was not cleaned up by orphan reaper"
+        );
     }
 
     #[tokio::test]
