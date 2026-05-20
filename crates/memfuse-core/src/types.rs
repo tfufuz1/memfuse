@@ -224,7 +224,7 @@ mod tests {
     #[test]
     fn test_resource_tracker_underflow() {
         let tracker = ResourceTracker::new(ResourceBudget { memory_limit: 100 });
-        tracker.consume_memory(50).unwrap();
+        tracker.consume_memory(50).expect("test");
         tracker.release_memory(100);
         assert_eq!(tracker.memory_used(), 0);
     }
