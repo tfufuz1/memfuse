@@ -5,7 +5,8 @@ use tempfile::TempDir;
 async fn setup_db(dim: usize) -> (MemFuse, TempDir) {
     let tmp = TempDir::new().expect("temp dir");
     let config = MemFuseConfig {
-        dimension: dim, ..Default::default()
+        dimension: dim,
+        ..Default::default()
     };
     let db = MemFuse::open_with_config(tmp.path(), config)
         .await
