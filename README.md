@@ -84,6 +84,9 @@ bash .agent/scripts/jules-dashboard.sh
 - **Hybrid Search** — Optimized BM25 + Vector Fusion (RRF)
 - **Scalar Quantization** — SQ8 compression for 4x reduced RAM footprint
 - **Deterministic Checkpointing** — Native state pinning for "Time-Travel" debugging
+- **Memory-Mapped I/O** — High-performance SSTable access via `mmap`
+- **Zero-Panic Invariants** — Hardened Rust implementation with no unwrap/expect
+- **Encryption at Rest** — Secure storage with AES-GCM and HMAC-SHA256 integrity
 
 ## Building
 

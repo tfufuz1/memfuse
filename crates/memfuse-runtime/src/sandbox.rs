@@ -8,10 +8,14 @@
 
 use std::time::Duration;
 
+/// Configuration for the WebAssembly sandbox environment.
 #[derive(Debug)]
 pub struct SandboxConfig {
+    /// Maximum memory allowed for the WASM module in megabytes.
     pub max_memory_mb: usize,
+    /// Maximum execution time for a WASM call.
     pub timeout: Duration,
+    /// Whether to allow network access from within the sandbox.
     pub allow_network: bool,
 }
 

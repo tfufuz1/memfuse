@@ -84,14 +84,15 @@ just spec WP-X.Y-NAME
 | **WP-2.2** | Scalar Quantization (SQ8) | 🟡 MITTEL | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-2.2-Quantization.md) |
 | **WP-3.1** | Python Bindings (PyO3) | 🟠 HOCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-3.1-PythonBindings.md) |
 | **WP-3.2** | Encryption at Rest | 🟡 MITTEL | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-3.2-Encryption.md) |
-| **WP-4.1** | Memory-Mapped I/O | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
+| **WP-4.1** | Memory-Mapped I/O | 🟡 MITTEL | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
 | **WP-4.2** | Advanced Filtering | 🟡 MITTEL | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
 | **WP-4.3** | DiskANN Out-of-Core | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
+| **WP-5.1** | State Checkpointing | 🔴 KRITISCH | ✅ Stabil | [SPEC](./docs/specs/SPEC-SAOS-WP-5.1-Checkpointing.md) |
 | **WP-6.1** | 4-Signal Fusion API | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
 | **WP-6.2** | Declarative StateGraph API | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
 | **WP-6.3** | Autonomes Kontext-Management | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
 | **WP-6.4** | Multi-Agent Namespaces | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
-| **WP-6.5** | Morphologische Inferenz-Optimierung | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
+| **WP-6.5** | Morphologische Inferenz-Optimierung | 🔵 ZUKUNFT | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
 | **WP-6.6** | Air-Gap Deployment Profile | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
 | **WP-6.7** | Kryptografische WAL-Verifikation | 🔵 ZUKUNFT | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
 
