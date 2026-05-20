@@ -9,12 +9,12 @@
 //! It uses Beam-Search and sector-aligned I/O to minimize disk latency.
 
 use crate::hnsw::HnswConfig;
+use async_trait::async_trait;
 use memfuse_core::traits::{VectorIndex, VectorIndexStats};
 use memfuse_core::types::{DocId, ScoredDocument, TxId};
 use memfuse_core::Result;
-use async_trait::async_trait;
-use std::sync::Arc;
 use parking_lot::RwLock;
+use std::sync::Arc;
 
 /// DiskANN index implementation.
 pub struct DiskAnnIndex {
@@ -92,11 +92,14 @@ mod tests {
 
         assert_eq!(index.len().await, 0);
 
-        index.insert(TxId::new(1), DocId::new(1), &[1.0, 0.0]).await.unwrap();
+        index
+            .insert(TxId::new(1), DocId::new(1), &[1.0, 0.0])
+            .await
+            .unwrap(); // unwrap
         assert_eq!(index.len().await, 1);
 
-        let results = index.search(&[1.0, 0.0], 1).await.unwrap();
-        // Beam search is currently a stub
+        let results = index.search(&[1.0, 0.0], 1).await.unwrap(); // unwrap
+                                                                   // Beam search is currently a stub
         assert!(results.is_empty());
     }
 }
