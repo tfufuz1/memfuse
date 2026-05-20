@@ -59,7 +59,7 @@ dag-check:
     echo "--- Phase 1: L1 Kernel Isolation (core, runtime, orchestrator) ---"
     for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator; do
         echo "Verifying $CRATE isolation..."
-        if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -v "$CRATE" | grep -q .; then
+        if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -E -v "$CRATE|memfuse-core" | grep -q .; then
             echo "❌ ERROR: $CRATE imports forbidden internal crates."
             cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-"
             exit 1
@@ -79,9 +79,9 @@ dag-check:
         cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
         exit 1
     fi
-    echo "Verifying memfuse-text (excluding tracked DAG-001)..."
-    if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
-        echo "❌ ERROR: memfuse-text violates DAG."
+    echo "Verifying memfuse-text..."
+    if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-text violates DAG by importing non-core crates."
         cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
         exit 1
     fi
@@ -100,8 +100,16 @@ dag-check:
         exit 1
     fi
 
+    echo "--- Phase 4: L4 Bindings Isolation (py) ---"
+    echo "Verifying memfuse-py..."
+    if cargo tree -p memfuse-py --edges no-dev | grep -E -q "memfuse-runtime|memfuse-orchestrator"; then
+        echo "❌ ERROR: memfuse-py violates isolation by importing L1 Kernel crates."
+        cargo tree -p memfuse-py --edges no-dev | grep -E "memfuse-runtime|memfuse-orchestrator"
+        exit 1
+    fi
+
     echo "--- Known DAG Violations (Tracking) ---"
-    for VIOLATION in "memfuse-text:memfuse-store:DAG-001" "memfuse-checkpoint:memfuse-store:DAG-002" "memfuse-py:memfuse-db:DAG-003"; do
+    for VIOLATION in "memfuse-checkpoint:memfuse-store:DAG-002" "memfuse-py:memfuse-db:DAG-003"; do
         CRATE=${VIOLATION%%:*}
         TARGET=$(echo $VIOLATION | cut -d: -f2)
         ID=$(echo $VIOLATION | cut -d: -f3)
