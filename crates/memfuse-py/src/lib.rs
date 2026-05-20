@@ -22,7 +22,6 @@
 use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
 use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;
-use pyo3::IntoPyObjectExt;
 use pythonize::{depythonize, pythonize};
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -69,6 +68,13 @@ pub struct PySearchResult {
     pub metadata: Option<PyObject>,
 }
 
+#[pymethods]
+impl PySearchResult {
+    fn __repr__(&self) -> String {
+        format!("SearchResult(id='{}', score={:.4})", self.id, self.score)
+    }
+}
+
 /// A document retrieved from MemFuse.
 #[pyclass(get_all)]
 pub struct PyDocument {
@@ -76,6 +82,13 @@ pub struct PyDocument {
     pub id: String,
     /// Metadata associated with the document.
     pub metadata: Option<PyObject>,
+}
+
+#[pymethods]
+impl PyDocument {
+    fn __repr__(&self) -> String {
+        format!("Document(id='{}')", self.id)
+    }
 }
 
 /// Statistics for a vector index.
@@ -90,6 +103,16 @@ pub struct PyVectorIndexStats {
     pub num_layers: usize,
 }
 
+#[pymethods]
+impl PyVectorIndexStats {
+    fn __repr__(&self) -> String {
+        format!(
+            "VectorIndexStats(num_vectors={}, memory_usage_bytes={}, num_layers={})",
+            self.num_vectors, self.memory_usage_bytes, self.num_layers
+        )
+    }
+}
+
 /// Statistics for the storage engine.
 #[pyclass(get_all, name = "StorageStats")]
 #[derive(Clone)]
@@ -102,6 +125,16 @@ pub struct PyStorageStats {
     pub memtable_size_bytes: u64,
 }
 
+#[pymethods]
+impl PyStorageStats {
+    fn __repr__(&self) -> String {
+        format!(
+            "StorageStats(num_segments={}, total_size_bytes={}, memtable_size_bytes={})",
+            self.num_segments, self.total_size_bytes, self.memtable_size_bytes
+        )
+    }
+}
+
 /// Overall database statistics.
 #[pyclass(get_all, name = "DbStats")]
 #[derive(Clone)]
@@ -112,6 +145,17 @@ pub struct PyDbStats {
     pub storage_stats: PyStorageStats,
 }
 
+#[pymethods]
+impl PyDbStats {
+    fn __repr__(&self) -> String {
+        format!(
+            "DbStats(vectors={}, size_bytes={})",
+            self.index_stats.num_vectors,
+            self.storage_stats.total_size_bytes + self.storage_stats.memtable_size_bytes
+        )
+    }
+}
+
 #[pyclass(unsendable, name = "Db")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
@@ -119,6 +163,8 @@ pub struct PyMemFuse {
 
 #[pymethods]
 impl PyMemFuse {
+    /// Returns a specific collection (namespace).
+    /// Creates the collection if it does not already exist.
     pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<PyCollection> {
         let rt = get_runtime()?;
         let col = py
@@ -129,18 +175,21 @@ impl PyMemFuse {
         })
     }
 
+    /// Lists all existing collection names.
     pub fn list_collections(&self, py: Python<'_>) -> PyResult<Vec<String>> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.list_collections()))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Drops a collection, removing all its data from storage.
     pub fn drop_collection(&self, name: &str, py: Python<'_>) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.drop_collection(name)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Inserts a document with an embedding and optional metadata into the default collection.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
@@ -167,6 +216,7 @@ impl PyMemFuse {
         Ok(())
     }
 
+    /// Retrieves a document by its user-provided string ID from the default collection.
     pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
         let rt = get_runtime()?;
         let doc = py
@@ -198,6 +248,7 @@ impl PyMemFuse {
         }
     }
 
+    /// Updates an existing document in the default collection.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn update<'py>(
         &self,
@@ -224,6 +275,7 @@ impl PyMemFuse {
         Ok(())
     }
 
+    /// Deletes a document from the default collection by its ID.
     pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.delete(id)))
@@ -231,13 +283,14 @@ impl PyMemFuse {
         Ok(())
     }
 
+    /// Performs semantic k-NN search over the default collection's embeddings.
     #[pyo3(signature = (vector, k))]
     pub fn search<'py>(
         &self,
         py: Python<'py>,
         vector: PyReadonlyArray1<'py, f32>,
         k: usize,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<PySearchResult>> {
         let rt = get_runtime()?;
         let vec_slice = vector.as_slice().map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
@@ -264,18 +317,16 @@ impl PyMemFuse {
                 None
             };
 
-            py_res.push(
-                PySearchResult {
-                    id: r.id,
-                    score: r.score,
-                    metadata: meta_py,
-                }
-                .into_py_any(py)?,
-            );
+            py_res.push(PySearchResult {
+                id: r.id,
+                score: r.score,
+                metadata: meta_py,
+            });
         }
         Ok(py_res)
     }
 
+    /// Performs hybrid search combining BM25 and vector search results in the default collection.
     #[pyo3(signature = (text, vector, k))]
     pub fn hybrid_search<'py>(
         &self,
@@ -283,7 +334,7 @@ impl PyMemFuse {
         text: &str,
         vector: PyReadonlyArray1<'py, f32>,
         k: usize,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<PySearchResult>> {
         let rt = get_runtime()?;
         let vec_slice = vector.as_slice().map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
@@ -310,24 +361,23 @@ impl PyMemFuse {
                 None
             };
 
-            py_res.push(
-                PySearchResult {
-                    id: r.id,
-                    score: r.score,
-                    metadata: meta_py,
-                }
-                .into_py_any(py)?,
-            );
+            py_res.push(PySearchResult {
+                id: r.id,
+                score: r.score,
+                metadata: meta_py,
+            });
         }
         Ok(py_res)
     }
 
+    /// Creates a bidirectional relationship between two documents in the default collection.
     pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Scans documents in the default collection that match a given key prefix.
     #[pyo3(signature = (prefix=""))]
     pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<(String, PyObject)>> {
         let rt = get_runtime()?;
@@ -345,18 +395,21 @@ impl PyMemFuse {
         Ok(py_res)
     }
 
+    /// Returns the number of documents in the default collection.
     pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.len()))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Returns true if the default collection is empty.
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.is_empty()))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Performs a range scan of documents in the default collection.
     #[pyo3(signature = (start=None, end=None))]
     pub fn scan(
         &self,
@@ -383,6 +436,7 @@ impl PyMemFuse {
         Ok(py_res)
     }
 
+    /// Returns combined statistics for the vector index and storage engine.
     pub fn stats(&self, py: Python<'_>) -> PyResult<PyDbStats> {
         let rt = get_runtime()?;
         let stats = py
@@ -411,6 +465,7 @@ pub struct PyCollection {
 
 #[pymethods]
 impl PyCollection {
+    /// Inserts a document with an embedding and optional metadata into the collection.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
@@ -437,6 +492,7 @@ impl PyCollection {
         Ok(())
     }
 
+    /// Retrieves a document by its user-provided string ID from the collection.
     pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
         let rt = get_runtime()?;
         let doc = py
@@ -468,6 +524,7 @@ impl PyCollection {
         }
     }
 
+    /// Updates an existing document in the collection.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn update<'py>(
         &self,
@@ -494,6 +551,7 @@ impl PyCollection {
         Ok(())
     }
 
+    /// Deletes a document from the collection by its ID.
     pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.delete(id)))
@@ -501,13 +559,14 @@ impl PyCollection {
         Ok(())
     }
 
+    /// Performs semantic k-NN search over the collection's embeddings.
     #[pyo3(signature = (vector, k))]
     pub fn search<'py>(
         &self,
         py: Python<'py>,
         vector: PyReadonlyArray1<'py, f32>,
         k: usize,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<PySearchResult>> {
         let rt = get_runtime()?;
         let vec_slice = vector.as_slice().map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
@@ -534,19 +593,16 @@ impl PyCollection {
                 None
             };
 
-            py_res.push(
-                PySearchResult {
-                    id: r.id,
-                    score: r.score,
-                    metadata: meta_py,
-                }
-                .into_py_any(py)?,
-            );
+            py_res.push(PySearchResult {
+                id: r.id,
+                score: r.score,
+                metadata: meta_py,
+            });
         }
         Ok(py_res)
     }
 
-    /// Performs hybrid search (BM25 + Vector).
+    /// Performs hybrid search combining BM25 and vector search results in the collection.
     #[pyo3(signature = (text, vector, k))]
     pub fn hybrid_search<'py>(
         &self,
@@ -554,7 +610,7 @@ impl PyCollection {
         text: &str,
         vector: PyReadonlyArray1<'py, f32>,
         k: usize,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<PySearchResult>> {
         let rt = get_runtime()?;
         let vec_slice = vector.as_slice().map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
@@ -581,34 +637,35 @@ impl PyCollection {
                 None
             };
 
-            py_res.push(
-                PySearchResult {
-                    id: r.id,
-                    score: r.score,
-                    metadata: meta_py,
-                }
-                .into_py_any(py)?,
-            );
+            py_res.push(PySearchResult {
+                id: r.id,
+                score: r.score,
+                metadata: meta_py,
+            });
         }
         Ok(py_res)
     }
 
+    /// Returns the number of documents in the collection.
     pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
         let rt = get_runtime()?;
         Ok(py.allow_threads(|| rt.block_on(self.inner.len())))
     }
 
+    /// Returns true if the collection is empty.
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
         Ok(py.allow_threads(|| rt.block_on(self.inner.is_empty())))
     }
 
+    /// Creates a bidirectional relationship between two documents in the collection.
     pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Scans documents in the collection that match a given key prefix.
     #[pyo3(signature = (prefix=""))]
     pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<(String, PyObject)>> {
         let rt = get_runtime()?;
@@ -626,6 +683,7 @@ impl PyCollection {
         Ok(py_res)
     }
 
+    /// Performs a range scan of documents in the collection.
     #[pyo3(signature = (start=None, end=None))]
     pub fn scan(
         &self,
@@ -652,6 +710,7 @@ impl PyCollection {
         Ok(py_res)
     }
 
+    /// Returns statistics for the collection's vector index.
     pub fn stats(&self, py: Python<'_>) -> PyResult<PyVectorIndexStats> {
         let rt = get_runtime()?;
         let stats = py
@@ -666,12 +725,14 @@ impl PyCollection {
     }
 }
 
+/// Opens or creates a MemFuse database at the given path.
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536, encryption_passphrase=None, distance_metric=None))]
+#[pyo3(signature = (path, dimension=1536, max_elements=None, encryption_passphrase=None, distance_metric=None))]
 fn open(
     py: Python<'_>,
     path: &str,
     dimension: usize,
+    max_elements: Option<usize>,
     encryption_passphrase: Option<String>,
     distance_metric: Option<String>,
 ) -> PyResult<PyMemFuse> {
@@ -681,6 +742,10 @@ fn open(
         encryption_passphrase,
         ..Default::default()
     };
+
+    if let Some(me) = max_elements {
+        config.max_elements = me;
+    }
 
     if let Some(dm) = distance_metric {
         config.distance_metric = match dm.to_lowercase().as_str() {
@@ -708,6 +773,7 @@ fn open(
 
 #[pymodule]
 fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
+    m.add("__version__", "0.1.0")?;
     m.add_function(wrap_pyfunction!(open, m)?)?;
     m.add_class::<PyMemFuse>()?;
     m.add_class::<PyCollection>()?;

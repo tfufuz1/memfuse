@@ -204,3 +204,26 @@ def test_distance_metrics(db_path):
     # Invalid metric
     with pytest.raises(ValueError):
         memfuse.open(db_path + "_invalid", dimension=4, distance_metric="invalid")
+
+def test_version_and_repr(db_path):
+    assert memfuse.__version__ == "0.1.0"
+
+    db = memfuse.open(db_path, dimension=4, max_elements=5000)
+    col = db.collection("repr_test")
+    v = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
+    col.insert("d1", v)
+
+    # Test SearchResult repr
+    results = col.search(v, k=1)
+    assert "SearchResult(id='d1'" in repr(results[0])
+
+    # Test Document repr
+    doc = col.get("d1")
+    assert repr(doc) == "Document(id='d1')"
+
+    # Test Stats repr
+    stats = col.stats()
+    assert "VectorIndexStats(num_vectors=1" in repr(stats)
+
+    db_stats = db.stats()
+    assert "DbStats(vectors=0" in repr(db_stats) # default col is empty

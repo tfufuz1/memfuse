@@ -74,19 +74,6 @@ async fn test_full_stack_document_lifecycle() {
     assert_eq!(relations.len(), 1);
     assert_eq!(relations[0].1["to"], "doc2");
 
-    // Check backward relationship (relate in MemFuse facade is bidirectional, but here we used Collection::relate which is directional)
-    // Wait, Collection::relate in collection.rs is directional.
-    // MemFuse::relate calls Collection::relate twice.
-    // Let's check MemFuse::relate in lib.rs:
-    /*
-    pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
-        self.default_col().await?.relate(from, to, label).await?;
-        self.default_col().await?.relate(to, from, label).await?;
-        Ok(())
-    }
-    */
-    // Since I'm using 'col' directly, it's directional. That's fine for this test.
-
     // 4. Update Document
     col.update(
         "doc1",
