@@ -47,6 +47,7 @@ impl Tokenizer for GermanMorphTokenizer {
     fn tokenize(&self, text: &str) -> Vec<String> {
         let stopwords = get_stopwords();
         let mut tokens = Vec::new();
+        let suffixes = ["gericht", "schaft", "keit", "ung"];
 
         for word in text.unicode_words() {
             let lower = word.to_lowercase();
@@ -54,12 +55,21 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            let mut split = false;
+            for suffix in suffixes {
+                if lower.ends_with(suffix) {
+                    let word_char_count = lower.chars().count();
+                    let suffix_char_count = suffix.chars().count();
+                    if word_char_count > suffix_char_count + 3 {
+                        tokens.push(lower.clone());
+                        tokens.push(suffix.to_string());
+                        split = true;
+                        break;
+                    }
+                }
+            }
+
+            if !split {
                 tokens.push(lower);
             }
         }
@@ -100,5 +110,36 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+
+        let tokens = tokenizer.tokenize("Wissenschaft und Gerechtigkeit");
+        assert!(tokens.contains(&"wissenschaft".to_string()));
+        assert!(tokens.contains(&"schaft".to_string()));
+        assert!(tokens.contains(&"gerechtigkeit".to_string()));
+        assert!(tokens.contains(&"keit".to_string()));
+
+        let tokens = tokenizer.tokenize("Besserung");
+        assert!(tokens.contains(&"besserung".to_string()));
+        assert!(tokens.contains(&"ung".to_string()));
+
+        // Test stem length constraint (> 3)
+        // "Heilung" -> stem "heil" (length 4) -> split
+        let tokens = tokenizer.tokenize("Heilung");
+        assert!(tokens.contains(&"heilung".to_string()));
+        assert!(tokens.contains(&"ung".to_string()));
+
+        // "Übung" -> stem "üb" (length 2) -> NO split
+        let tokens = tokenizer.tokenize("Übung");
+        assert!(tokens.contains(&"übung".to_string()));
+        assert!(!tokens.contains(&"ung".to_string()));
+
+        // "Zeitung" -> stem "zeit" (length 4) -> split
+        let tokens = tokenizer.tokenize("Zeitung");
+        assert!(tokens.contains(&"zeitung".to_string()));
+        assert!(tokens.contains(&"ung".to_string()));
+
+        // "Dung" -> stem "d" (length 1) -> NO split
+        let tokens = tokenizer.tokenize("Dung");
+        assert!(tokens.contains(&"dung".to_string()));
+        assert!(!tokens.contains(&"ung".to_string()));
     }
 }
