@@ -376,13 +376,13 @@ impl Collection {
 
         // let _filter_fn = move |doc_id: DocId| -> bool {
         //     let _doc_key = _collection.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-            // Synchronous block inside HNSW search might be problematic if storage is async
-            // but HNSW search_filtered takes a Fn(DocId) -> bool.
-            // THIS IS A KNOWN ARCHITECTURAL CHALLENGE: HNSW filter closure is sync, Storage is async.
-            // For now, we might need to use a pre-filtered list or a sync cache.
+        // Synchronous block inside HNSW search might be problematic if storage is async
+        // but HNSW search_filtered takes a Fn(DocId) -> bool.
+        // THIS IS A KNOWN ARCHITECTURAL CHALLENGE: HNSW filter closure is sync, Storage is async.
+        // For now, we might need to use a pre-filtered list or a sync cache.
 
-            // Hack for WP-4.2: We pre-calculate the matching DocIds if the collection is small enough.
-            // Or we perform the search and filter results after (true post-filtering).
+        // Hack for WP-4.2: We pre-calculate the matching DocIds if the collection is small enough.
+        // Or we perform the search and filter results after (true post-filtering).
         //     true // Placeholder
         // };
 
@@ -393,34 +393,44 @@ impl Collection {
         // And "Pre-filtering" by scanning and then brute-force.
 
         if total_docs < 1000 {
-             // Brute force pre-filter path
-             let mut matching_ids = Vec::new();
-             let prefix = if self.name == "default" { b"__docid:".to_vec() } else { [self.prefix.as_slice(), &[1]].concat() };
-             let entries = self.storage.scan_prefix(&prefix).await?;
-             for (_, v) in entries {
-                 let stored: StoredDocument = serde_json::from_slice(&v)?;
-                 if let Some(meta) = &stored.metadata {
-                     if filter_expr.matches(meta) {
-                         matching_ids.push((DocId::from_key(&stored.id), stored.embedding));
-                     }
-                 }
-             }
+            // Brute force pre-filter path
+            let mut matching_ids = Vec::new();
+            let prefix = if self.name == "default" {
+                b"__docid:".to_vec()
+            } else {
+                [self.prefix.as_slice(), &[1]].concat()
+            };
+            let entries = self.storage.scan_prefix(&prefix).await?;
+            for (_, v) in entries {
+                let stored: StoredDocument = serde_json::from_slice(&v)?;
+                if let Some(meta) = &stored.metadata {
+                    if filter_expr.matches(meta) {
+                        matching_ids.push((DocId::from_key(&stored.id), stored.embedding));
+                    }
+                }
+            }
 
-             // Brute force distance calculation
-             let mut results = Vec::new();
-             for (doc_id, emb) in matching_ids {
-                 let score = memfuse_index::distance::cosine_distance(&emb, query);
-                 results.push((doc_id, score));
-             }
-             results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-             results.truncate(k);
-             return self.hydrate_from_tuples(results).await;
+            // Brute force distance calculation
+            let mut results = Vec::new();
+            for (doc_id, emb) in matching_ids {
+                let score = memfuse_index::distance::cosine_distance(&emb, query);
+                results.push((doc_id, score));
+            }
+            results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            results.truncate(k);
+            return self.hydrate_from_tuples(results).await;
         }
 
         // Default to index search with post-filter if large
         let results = self.search(query, k * 5).await?; // Search more to account for filtering
-        let filtered: Vec<crate::SearchResult> = results.into_iter()
-            .filter(|r| r.metadata.as_ref().map(|m| filter_expr.matches(m)).unwrap_or(false))
+        let filtered: Vec<crate::SearchResult> = results
+            .into_iter()
+            .filter(|r| {
+                r.metadata
+                    .as_ref()
+                    .map(|m| filter_expr.matches(m))
+                    .unwrap_or(false)
+            })
             .take(k)
             .collect();
 
@@ -530,7 +540,11 @@ impl Collection {
                 // Brute force scan for matching docs (signal only)
                 // In a real system, this would be an index scan.
                 let mut results = Vec::new();
-                let prefix = if self.name == "default" { b"__docid:".to_vec() } else { [self.prefix.as_slice(), &[1]].concat() };
+                let prefix = if self.name == "default" {
+                    b"__docid:".to_vec()
+                } else {
+                    [self.prefix.as_slice(), &[1]].concat()
+                };
                 let entries = self.storage.scan_prefix(&prefix).await?;
                 for (_, v) in entries {
                     let stored: StoredDocument = serde_json::from_slice(&v)?;
@@ -543,7 +557,9 @@ impl Collection {
                             });
                         }
                     }
-                    if results.len() >= k { break; }
+                    if results.len() >= k {
+                        break;
+                    }
                 }
                 result_sets.push(results);
                 weights.push(query_weights.metadata);
@@ -573,8 +589,14 @@ impl Collection {
 
         // Final post-filter if metadata_filter was provided and we had other signals
         if let Some(ref filter) = query.metadata_filter {
-            let filtered: Vec<crate::SearchResult> = fused.into_iter()
-                .filter(|r| r.metadata.as_ref().map(|m| filter.matches(m)).unwrap_or(false))
+            let filtered: Vec<crate::SearchResult> = fused
+                .into_iter()
+                .filter(|r| {
+                    r.metadata
+                        .as_ref()
+                        .map(|m| filter.matches(m))
+                        .unwrap_or(false)
+                })
                 .collect();
             return Ok(filtered);
         }

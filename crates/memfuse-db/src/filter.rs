@@ -46,7 +46,8 @@ impl FilterExpr {
             FilterExpr::Gte(key, val) => {
                 if let Some(m_val) = metadata.get(key) {
                     let ord = compare_values(m_val, val);
-                    return ord == Some(std::cmp::Ordering::Greater) || ord == Some(std::cmp::Ordering::Equal);
+                    return ord == Some(std::cmp::Ordering::Greater)
+                        || ord == Some(std::cmp::Ordering::Equal);
                 }
                 false
             }
@@ -59,7 +60,8 @@ impl FilterExpr {
             FilterExpr::Lte(key, val) => {
                 if let Some(m_val) = metadata.get(key) {
                     let ord = compare_values(m_val, val);
-                    return ord == Some(std::cmp::Ordering::Less) || ord == Some(std::cmp::Ordering::Equal);
+                    return ord == Some(std::cmp::Ordering::Less)
+                        || ord == Some(std::cmp::Ordering::Equal);
                 }
                 false
             }

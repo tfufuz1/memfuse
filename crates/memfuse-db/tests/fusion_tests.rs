@@ -1,4 +1,4 @@
-use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig, HybridQuery, FilterExpr, json};
+use memfuse_db::{json, DistanceMetric, FilterExpr, HybridQuery, MemFuse, MemFuseConfig};
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -10,17 +10,37 @@ async fn test_unified_4_signal_fusion() {
         distance_metric: DistanceMetric::Cosine,
         encryption_passphrase: None,
     };
-    let db = MemFuse::open_with_config(tmp.path(), config).await.expect("open");
+    let db = MemFuse::open_with_config(tmp.path(), config)
+        .await
+        .expect("open");
     let col = db.collection("fusion-test").await.expect("col");
 
     // doc-1: matches vector perfectly, no text match
-    col.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"text": "something else", "type": "A"}))).await.unwrap();
+    col.insert(
+        "doc-1",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(json!({"text": "something else", "type": "A"})),
+    )
+    .await
+    .unwrap();
 
     // doc-2: matches text perfectly ("rust"), vector is far
-    col.insert("doc-2", &[0.0, 0.0, 0.1, 0.9], Some(json!({"text": "Learning Rust is great", "type": "B"}))).await.unwrap();
+    col.insert(
+        "doc-2",
+        &[0.0, 0.0, 0.1, 0.9],
+        Some(json!({"text": "Learning Rust is great", "type": "B"})),
+    )
+    .await
+    .unwrap();
 
     // doc-3: matches both somewhat
-    col.insert("doc-3", &[0.8, 0.2, 0.0, 0.0], Some(json!({"text": "Rust performance", "type": "A"}))).await.unwrap();
+    col.insert(
+        "doc-3",
+        &[0.8, 0.2, 0.0, 0.0],
+        Some(json!({"text": "Rust performance", "type": "A"})),
+    )
+    .await
+    .unwrap();
 
     let query = HybridQuery {
         vector: Some(vec![1.0, 0.0, 0.0, 0.0]),
