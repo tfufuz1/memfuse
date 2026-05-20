@@ -56,10 +56,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub mod collection;
+pub mod filter;
 pub mod fusion;
 pub mod transaction;
 
 pub use collection::Collection;
+pub use filter::FilterExpr;
 pub use memfuse_checkpoint;
 
 /// User-facing search result containing the ID, score, and optional metadata.
@@ -89,6 +91,43 @@ pub struct Document {
     pub id: String,
     /// Metadata associated with the document.
     pub metadata: Option<Value>,
+}
+
+/// Unified Query for 4-Signal Fusion.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct HybridQuery {
+    /// Semantic vector (HNSW)
+    pub vector: Option<Vec<f32>>,
+    /// Keyword search (BM25)
+    pub text: Option<String>,
+    /// Causal traversal (CSR-Graph) — Start node ID and max hops
+    pub graph_seed: Option<(String, u8)>,
+    /// Metadata filter expression
+    pub metadata_filter: Option<FilterExpr>,
+    /// Fusion weights [vector, text, graph, metadata]
+    pub weights: Option<FusionWeights>,
+    /// Top-K results
+    pub limit: usize,
+}
+
+/// Weights for fusing retrieval signals.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FusionWeights {
+    pub vector: f32,
+    pub text: f32,
+    pub graph: f32,
+    pub metadata: f32,
+}
+
+impl Default for FusionWeights {
+    fn default() -> Self {
+        Self {
+            vector: 0.4,
+            text: 0.3,
+            graph: 0.2,
+            metadata: 0.1,
+        }
+    }
 }
 
 /// Global configuration settings for the MemFuse database.
