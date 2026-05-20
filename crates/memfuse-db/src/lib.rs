@@ -101,8 +101,7 @@ pub struct MemFuseConfig {
     /// Distance metric for vector comparison.
     pub distance_metric: memfuse_core::DistanceMetric,
     /// Optional passphrase for encryption at rest.
-    pub encryption_passphrase: Option<String>,
-}
+    pub encryption_passphrase: Option<String>, }
 
 impl Default for MemFuseConfig {
     fn default() -> Self {
@@ -110,8 +109,7 @@ impl Default for MemFuseConfig {
             dimension: 1536,
             max_elements: 1_000_000,
             distance_metric: memfuse_core::DistanceMetric::Cosine,
-            encryption_passphrase: None,
-        }
+            encryption_passphrase: None }
     }
 }
 

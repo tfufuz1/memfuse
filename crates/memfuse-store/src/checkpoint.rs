@@ -112,7 +112,7 @@ mod tests {
             key: b"key1".to_vec(),
             value: b"val1".to_vec(),
         };
-        wal.append(&WalEntry::try_new(op1, 1, integrity_key).expect("entry 1"))
+        wal.append(&WalEntry::try_new(op1, 1, integrity_key).expect("entry 1")) // #[cfg(test)]
             .await
             .expect("append 1"); // #[cfg(test)]
 
@@ -121,7 +121,7 @@ mod tests {
             key: b"key2".to_vec(),
             value: b"val2".to_vec(),
         };
-        wal.append(&WalEntry::try_new(op2, 2, integrity_key).expect("entry 2"))
+        wal.append(&WalEntry::try_new(op2, 2, integrity_key).expect("entry 2")) // #[cfg(test)]
             .await
             .expect("append 2"); // #[cfg(test)]
 
@@ -134,7 +134,7 @@ mod tests {
             key: b"key1".to_vec(),
             value: b"val1-updated".to_vec(),
         };
-        wal.append(&WalEntry::try_new(op3, 3, integrity_key).expect("entry 3"))
+        wal.append(&WalEntry::try_new(op3, 3, integrity_key).expect("entry 3")) // #[cfg(test)]
             .await
             .expect("append 3"); // #[cfg(test)]
 
