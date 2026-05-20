@@ -13,7 +13,6 @@ async fn test_full_stack_document_lifecycle() {
         max_elements: 100,
         distance_metric: DistanceMetric::Cosine,
         encryption_passphrase: None,
-        ..Default::default()
     };
 
     let db = MemFuse::open_with_config(tmp.path(), config)

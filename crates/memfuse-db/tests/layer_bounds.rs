@@ -17,7 +17,6 @@ async fn test_layer_002_collection_persistence() {
         max_elements: 100,
         distance_metric: DistanceMetric::Cosine,
         encryption_passphrase: None,
-        ..Default::default()
     };
 
     // 1. Create collection and insert data
