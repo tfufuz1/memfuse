@@ -14,6 +14,8 @@ async fn test_concurrent_collection_ops() {
         dimension: 4,
         max_elements: 10000,
         distance_metric: DistanceMetric::Cosine,
+        encryption_passphrase: None,
+        ..Default::default()
     };
     let db = Arc::new(
         MemFuse::open_with_config(tmp.path(), config)
