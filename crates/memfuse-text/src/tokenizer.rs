@@ -109,7 +109,8 @@ mod tests {
     #[test]
     fn test_german_morph_tokenizer() {
         let tokenizer = GermanMorphTokenizer;
-        let tokens = tokenizer.tokenize("Das Bundesverfassungsgericht Gesundheitswesen Wissenschaft Lehrkraft");
+        let tokens = tokenizer
+            .tokenize("Das Bundesverfassungsgericht Gesundheitswesen Wissenschaft Lehrkraft");
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
