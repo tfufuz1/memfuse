@@ -204,7 +204,8 @@ impl SstableBuilder {
         self.flush_block().await?;
 
         let index_offset = self.offset;
-        let mut index_builder = BytesMut::new();
+        // Pre-allocate index builder: ~12 bytes per entry (key length + offset).
+        let mut index_builder = BytesMut::with_capacity(self.index.len() * 12);
 
         for (key, offset) in &self.index {
             index_builder.put_u16_le(key.len() as u16);
@@ -325,8 +326,8 @@ impl SstableReader {
             ));
         }
 
-        // Read index
-        let mut index = Vec::new();
+        // Read index. Heuristic: ~12 bytes per entry.
+        let mut index = Vec::with_capacity((file_size - index_offset) as usize / 12);
         let mut pos = index_offset as usize;
         let index_end = (file_size - 12) as usize;
 

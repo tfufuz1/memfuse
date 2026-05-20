@@ -15,8 +15,7 @@ async fn test_layer_002_collection_persistence() {
     let config = MemFuseConfig {
         dimension: 4,
         max_elements: 100,
-        distance_metric: DistanceMetric::Cosine,
-        ..Default::default()
+        distance_metric: DistanceMetric::Cosine, ..MemFuseConfig::default()
     };
 
     // 1. Create collection and insert data
@@ -68,7 +67,7 @@ async fn test_layer_003_hybrid_bm25_search() {
     let tmp = TempDir::new().expect("temp dir");
     let config = MemFuseConfig {
         dimension: 4,
-        ..Default::default()
+        ..MemFuseConfig::default()
     };
     let db = MemFuse::open_with_config(tmp.path(), config)
         .await

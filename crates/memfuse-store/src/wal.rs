@@ -231,7 +231,10 @@ impl Wal {
 
     /// Replays the WAL, returning all valid entries.
     pub async fn replay(&self) -> Result<Vec<(u64, WalEntry)>> {
-        let mut data = Vec::new();
+        let metadata = tokio::fs::metadata(&self.path)
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let mut data = Vec::with_capacity(metadata.len() as usize);
         let mut file = tokio::fs::File::open(&self.path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("WAL replay open failed: {}", e)))?;
@@ -239,7 +242,8 @@ impl Wal {
             .await
             .map_err(|e| MemFuseError::Storage(format!("WAL replay read failed: {}", e)))?;
 
-        let mut entries = Vec::new();
+        // Heuristic: average entry size is roughly 64 bytes.
+        let mut entries = Vec::with_capacity(data.len() / 64);
         let mut pos = 0;
 
         let integrity_key = if let Some(km) = &self.key_manager {
