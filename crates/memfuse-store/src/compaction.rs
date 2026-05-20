@@ -605,7 +605,7 @@ mod tests {
         for _ in 0..100 {
             tokio::time::sleep(Duration::from_millis(100)).await;
             let stats = storage.stats().await.expect("stats"); // #[cfg(test)]
-            // If we have few segments, compaction is doing its job
+                                                               // If we have few segments, compaction is doing its job
             if stats.num_segments <= 5 {
                 stabilized = true;
                 break;

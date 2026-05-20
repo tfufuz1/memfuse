@@ -52,7 +52,10 @@ impl Checkpointer {
     /// Rolls the database state back to a specific checkpoint.
     /// This is the foundation for Time-Travel Debugging in SAOS.
     /// Returns a new MemTable representing the reconstructed state.
-    pub async fn rollback_to(&self, checkpoint: &StateCheckpoint) -> Result<crate::memtable::MemTable> {
+    pub async fn rollback_to(
+        &self,
+        checkpoint: &StateCheckpoint,
+    ) -> Result<crate::memtable::MemTable> {
         tracing::info!(
             "Initiating Time-Travel Rollback to TX: {}",
             checkpoint.tx_id
@@ -91,7 +94,7 @@ impl Checkpointer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wal::{WalOp, WalEntry};
+    use crate::wal::{WalEntry, WalOp};
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -109,14 +112,18 @@ mod tests {
             key: b"key1".to_vec(),
             value: b"val1".to_vec(),
         };
-        wal.append(&WalEntry::try_new(op1, 1, integrity_key).expect("entry 1")).await.expect("append 1"); // #[cfg(test)]
+        wal.append(&WalEntry::try_new(op1, 1, integrity_key).expect("entry 1"))
+            .await
+            .expect("append 1"); // #[cfg(test)]
 
         let op2 = WalOp::Put {
             tx_id: TxId::new(2),
             key: b"key2".to_vec(),
             value: b"val2".to_vec(),
         };
-        wal.append(&WalEntry::try_new(op2, 2, integrity_key).expect("entry 2")).await.expect("append 2"); // #[cfg(test)]
+        wal.append(&WalEntry::try_new(op2, 2, integrity_key).expect("entry 2"))
+            .await
+            .expect("append 2"); // #[cfg(test)]
 
         // Create checkpoint at TX 2
         let checkpoint = checkpointer.create_checkpoint(TxId::new(2));
@@ -127,10 +134,15 @@ mod tests {
             key: b"key1".to_vec(),
             value: b"val1-updated".to_vec(),
         };
-        wal.append(&WalEntry::try_new(op3, 3, integrity_key).expect("entry 3")).await.expect("append 3"); // #[cfg(test)]
+        wal.append(&WalEntry::try_new(op3, 3, integrity_key).expect("entry 3"))
+            .await
+            .expect("append 3"); // #[cfg(test)]
 
         // 3. Rollback
-        let rolled_back_memtable = checkpointer.rollback_to(&checkpoint).await.expect("rollback"); // #[cfg(test)]
+        let rolled_back_memtable = checkpointer
+            .rollback_to(&checkpoint)
+            .await
+            .expect("rollback"); // #[cfg(test)]
 
         // 4. Verification
         let val1 = rolled_back_memtable.get(b"key1").expect("key1 exists"); // #[cfg(test)]
