@@ -1,4 +1,4 @@
-//! LSM-backed Inverted Index with optimized key generation and BM25 scoring.
+//! LSM-backed Inverted Index.
 
 use crate::tokenizer::{tokenize, DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use async_trait::async_trait;

@@ -1,4 +1,4 @@
-//! Tokenizer using `unicode-segmentation` with morphological splitting for German.
+//! Tokenizer using `unicode-segmentation`.
 
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -109,8 +109,7 @@ mod tests {
     #[test]
     fn test_german_morph_tokenizer() {
         let tokenizer = GermanMorphTokenizer;
-        let tokens = tokenizer
-            .tokenize("Das Bundesverfassungsgericht Gesundheitswesen Wissenschaft Lehrkraft");
+        let tokens = tokenizer.tokenize("Das Bundesverfassungsgericht Gesundheitswesen Wissenschaft Lehrkraft");
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
@@ -124,7 +123,7 @@ mod tests {
         assert!(tokens.contains(&"lehrkraft".to_string()));
         assert!(tokens.contains(&"kraft".to_string()));
 
-        // Should not split if it's just the suffix
+        // Should not split if it is just the suffix
         let tokens2 = tokenizer.tokenize("gericht");
         assert_eq!(tokens2.len(), 1);
         assert_eq!(tokens2[0], "gericht");
