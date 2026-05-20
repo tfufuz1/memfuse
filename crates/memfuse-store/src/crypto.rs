@@ -106,4 +106,5 @@ mod tests {
 
         assert_ne!(enc1, enc2);
     }
+
 }

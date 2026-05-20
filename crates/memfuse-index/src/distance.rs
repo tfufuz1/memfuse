@@ -713,11 +713,14 @@ pub fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPa
 // ANCHOR:SAFETY:SIMD-U8-001 — AVX2 Dot Product for u8.
 // BEGRÜNDUNG: Caller muss Hardware-Support garantieren. Dimensionen müssen gleich sein.
 /// # Safety
-/// This function is unsafe because it uses AVX2 intrinsics. The caller must ensure that the CPU supports AVX2.
+/// This function is unsafe because it uses AVX2 intrinsics. The caller must ensure that the CPU supports AVX2 via runtime detection.
+/// Both slices `a` and `b` must have the same length.
 pub unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
     let n = a.len();
     let mut i = 0;
-    let mut sum_v = _mm256_setzero_si256();
+    // ANCHOR:SAFETY:SIMD-U8-017 — Initialisierung.
+    // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
+    let mut sum_v = unsafe { _mm256_setzero_si256() };
 
     while i + 32 <= n {
         // ANCHOR:SAFETY:SIMD-U8-002 — AVX2 Load und Madd.
@@ -753,11 +756,14 @@ pub unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
 // ANCHOR:SAFETY:SIMD-U8-003 — AVX2 Squared Euclidean for u8.
 // BEGRÜNDUNG: Caller muss Hardware-Support garantieren. Dimensionen müssen gleich sein.
 /// # Safety
-/// This function is unsafe because it uses AVX2 intrinsics. The caller must ensure that the CPU supports AVX2.
+/// This function is unsafe because it uses AVX2 intrinsics. The caller must ensure that the CPU supports AVX2 via runtime detection.
+/// Both slices `a` and `b` must have the same length.
 pub unsafe fn euclidean_distance_sq_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
     let n = a.len();
     let mut i = 0;
-    let mut sum_v = _mm256_setzero_si256();
+    // ANCHOR:SAFETY:SIMD-U8-018 — Initialisierung.
+    // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
+    let mut sum_v = unsafe { _mm256_setzero_si256() };
 
     while i + 32 <= n {
         // ANCHOR:SAFETY:SIMD-U8-004 — AVX2 Load und Sub/Madd.
@@ -796,16 +802,23 @@ pub unsafe fn euclidean_distance_sq_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
 // ANCHOR:SAFETY:SIMD-U8-005 — AVX2 Cosine Similarity Parts for u8.
 // BEGRÜNDUNG: Caller muss Hardware-Support garantieren. Dimensionen müssen gleich sein.
 /// # Safety
-/// This function is unsafe because it uses AVX2 intrinsics. The caller must ensure that the CPU supports AVX2.
+/// This function is unsafe because it uses AVX2 intrinsics. The caller must ensure that the CPU supports AVX2 via runtime detection.
+/// Both slices `a` and `b` must have the same length.
 pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
     let n = a.len();
     let mut i = 0;
 
-    let mut dot_v = _mm256_setzero_si256();
-    let mut sum_a_v = _mm256_setzero_si256();
-    let mut sum_b_v = _mm256_setzero_si256();
-    let mut norm_a_v = _mm256_setzero_si256();
-    let mut norm_b_v = _mm256_setzero_si256();
+    // ANCHOR:SAFETY:SIMD-U8-019 — Initialisierung.
+    // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
+    let (mut dot_v, mut sum_a_v, mut sum_b_v, mut norm_a_v, mut norm_b_v) = unsafe {
+        (
+            _mm256_setzero_si256(),
+            _mm256_setzero_si256(),
+            _mm256_setzero_si256(),
+            _mm256_setzero_si256(),
+            _mm256_setzero_si256(),
+        )
+    };
 
     while i + 32 <= n {
         // ANCHOR:SAFETY:SIMD-U8-006 — AVX2 Loads und Accumulation.
