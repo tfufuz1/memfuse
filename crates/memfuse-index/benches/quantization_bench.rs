@@ -14,9 +14,7 @@ fn bench_quantization(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("Quantization");
 
-    group.bench_function("quantize", |b| {
-        b.iter(|| quantizer.quantize(black_box(&v)))
-    });
+    group.bench_function("quantize", |b| b.iter(|| quantizer.quantize(black_box(&v))));
 
     group.bench_function("dequantize", |b| {
         b.iter(|| quantizer.dequantize(black_box(&quantized)))

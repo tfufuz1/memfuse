@@ -13,7 +13,8 @@ async fn test_concurrent_collection_ops() {
     let config = MemFuseConfig {
         dimension: 4,
         max_elements: 10000,
-        distance_metric: DistanceMetric::Cosine, ..MemFuseConfig::default()
+        distance_metric: DistanceMetric::Cosine,
+        ..MemFuseConfig::default()
     };
     let db = Arc::new(
         MemFuse::open_with_config(tmp.path(), config)
