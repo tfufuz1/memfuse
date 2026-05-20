@@ -196,6 +196,16 @@ impl<T: Clone> TxBuffer<T> {
         let shard = self.shards[shard_idx].read();
         shard.ops.get(&tx).map(|(ops, _)| ops.clone())
     }
+
+    /// Provides closure-based read access to staged operations to avoid cloning.
+    pub fn inspect_ops<F, R>(&self, tx: TxId, f: F) -> Option<R>
+    where
+        F: FnOnce(&[IndexOp<T>]) -> R,
+    {
+        let shard_idx = self.shard_idx(tx);
+        let shard = self.shards[shard_idx].read();
+        shard.ops.get(&tx).map(|(ops, _)| f(ops))
+    }
 }
 
 impl<T: Clone> Default for TxBuffer<T> {
@@ -359,5 +369,24 @@ mod tests {
             assert_eq!(ops.len(), ops_per_tx);
         }
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_inspect_ops() {
+        let buffer = TxBuffer::<String>::new();
+        let tx = TxId::new(1);
+        buffer.stage(
+            tx,
+            IndexOp::Insert {
+                doc_id: DocId::new(1),
+                data: "data1".to_string(),
+            },
+        );
+
+        let count = buffer.inspect_ops(tx, |ops| ops.len());
+        assert_eq!(count, Some(1));
+
+        let non_existent = buffer.inspect_ops(TxId::new(2), |ops| ops.len());
+        assert_eq!(non_existent, None);
     }
 }
