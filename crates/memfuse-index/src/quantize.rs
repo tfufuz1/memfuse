@@ -90,7 +90,7 @@ impl ScalarQuantizer {
     }
 
     /// Computes the asymmetric distance between an exact query and a quantized vector.
-    /// Optimized for zero allocations via inline dequantization.
+    /// Optimized for zero allocations via inline dequantization and SIMD.
     pub fn asymmetric_dist(
         &self,
         query: &[f32],
@@ -103,45 +103,38 @@ impl ScalarQuantizer {
             ));
         }
 
-        let mut acc = 0.0;
-        match metric {
+        use crate::distance::*;
+
+        let acc = match metric {
             DistanceMetric::Cosine => {
-                let mut dot = 0.0;
-                let mut norm_a = 0.0;
-                let mut norm_b = 0.0;
-                for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    dot += x * y;
-                    norm_a += x * x;
-                    norm_b += y * y;
-                }
-                acc = if norm_a == 0.0 || norm_b == 0.0 {
+                let parts = cosine_similarity_parts_f32_u8(query, quantized);
+                let dot = parts.dot_f32_u8 * self.inv_scale + query.iter().sum::<f32>() * self.min;
+
+                let norm_a_sq: f32 = query.iter().map(|&x| x * x).sum();
+                let norm_b_sq = (parts.norm_u8_sq as f32) * self.inv_scale * self.inv_scale
+                    + 2.0 * (parts.sum_u8 as f32) * self.inv_scale * self.min
+                    + (self.dimension as f32) * self.min * self.min;
+
+                if norm_a_sq <= 0.0 || norm_b_sq <= 0.0 {
                     1.0
                 } else {
-                    1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
-                };
+                    1.0 - (dot / (norm_a_sq.sqrt() * norm_b_sq.sqrt()))
+                }
             }
             DistanceMetric::Euclidean => {
-                for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    let diff = x - y;
-                    acc += diff * diff;
-                }
-                acc = acc.sqrt();
+                euclidean_distance_sq_f32_u8(query, quantized, self.inv_scale, self.min).sqrt()
             }
             DistanceMetric::DotProduct => {
-                for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    acc += x * y;
-                }
-                acc = -acc;
+                let dot = dot_product_f32_u8(query, quantized) * self.inv_scale
+                    + query.iter().sum::<f32>() * self.min;
+                -dot
             }
-        }
+        };
         Ok(acc)
     }
 
     /// Computes symmetric (approximate) distance purely in u8.
-    /// Optimized for zero allocations via inline dequantization.
+    /// Optimized for zero allocations via inline dequantization and SIMD.
     pub fn symmetric_dist(
         &self,
         q1: &[u8],
@@ -154,43 +147,42 @@ impl ScalarQuantizer {
             ));
         }
 
-        let mut acc = 0.0;
-        match metric {
+        use crate::distance::*;
+
+        let acc = match metric {
             DistanceMetric::Cosine => {
-                let mut dot = 0.0;
-                let mut norm_a = 0.0;
-                let mut norm_b = 0.0;
-                for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = (x_q as f32) * self.inv_scale + self.min;
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    dot += x * y;
-                    norm_a += x * x;
-                    norm_b += y * y;
-                }
-                acc = if norm_a == 0.0 || norm_b == 0.0 {
+                let parts = cosine_similarity_parts_u8(q1, q2);
+                let dot = (parts.dot as f32) * self.inv_scale * self.inv_scale
+                    + (parts.sum_a as f32 + parts.sum_b as f32) * self.inv_scale * self.min
+                    + (self.dimension as f32) * self.min * self.min;
+
+                let norm_a_sq = (parts.norm_a_sq as f32) * self.inv_scale * self.inv_scale
+                    + 2.0 * (parts.sum_a as f32) * self.inv_scale * self.min
+                    + (self.dimension as f32) * self.min * self.min;
+
+                let norm_b_sq = (parts.norm_b_sq as f32) * self.inv_scale * self.inv_scale
+                    + 2.0 * (parts.sum_b as f32) * self.inv_scale * self.min
+                    + (self.dimension as f32) * self.min * self.min;
+
+                if norm_a_sq <= 0.0 || norm_b_sq <= 0.0 {
                     1.0
                 } else {
-                    1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
-                };
+                    1.0 - (dot / (norm_a_sq.sqrt() * norm_b_sq.sqrt()))
+                }
             }
             DistanceMetric::Euclidean => {
-                for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = (x_q as f32) * self.inv_scale + self.min;
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    let diff = x - y;
-                    acc += diff * diff;
-                }
-                acc = acc.sqrt();
+                (euclidean_distance_sq_u8(q1, q2) as f32 * self.inv_scale * self.inv_scale).sqrt()
             }
             DistanceMetric::DotProduct => {
-                for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = (x_q as f32) * self.inv_scale + self.min;
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    acc += x * y;
-                }
-                acc = -acc;
+                let dot = (dot_product_u8(q1, q2) as f32) * self.inv_scale * self.inv_scale
+                    + (q1.iter().map(|&x| x as u32).sum::<u32>()
+                        + q2.iter().map(|&x| x as u32).sum::<u32>()) as f32
+                        * self.inv_scale
+                        * self.min
+                    + (self.dimension as f32) * self.min * self.min;
+                -dot
             }
-        }
+        };
         Ok(acc)
     }
 }
