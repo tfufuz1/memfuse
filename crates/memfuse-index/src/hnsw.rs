@@ -279,6 +279,10 @@ impl HnswIndexCore {
         }
     }
 
+    // ANCHOR:DEBT:HNSW-002 — search_layer Reallocations
+    // WP:WP-0.0 PRIO:2 NEEDS:NONE
+    // AGENT:03 DATE:2026-05-21 STATUS:DONE
+    // BEHEBUNG: Pre-allocate visited, candidates, results with ef capacity.
     fn search_layer(
         &self,
         query: &[f32],
@@ -288,9 +292,9 @@ impl HnswIndexCore {
         layer: usize,
     ) -> Result<Vec<Candidate>> {
         let nodes = self.nodes.read();
-        let mut visited = AHashSet::new();
-        let mut candidates = BinaryHeap::new();
-        let mut results = BinaryHeap::new();
+        let mut visited = AHashSet::with_capacity(ef);
+        let mut candidates = BinaryHeap::with_capacity(ef);
+        let mut results = BinaryHeap::with_capacity(ef);
 
         for &ep in entry_points {
             if visited.insert(ep) {
