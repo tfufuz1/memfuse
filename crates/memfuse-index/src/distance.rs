@@ -575,6 +575,7 @@ pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
     dot_product_u8_scalar(a, b)
 }
 
+/// Computes the dot product of two u8 slices using a scalar implementation.
 pub fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
@@ -597,6 +598,7 @@ pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
     euclidean_distance_sq_u8_scalar(a, b)
 }
 
+/// Computes the squared Euclidean distance of two u8 slices using a scalar implementation.
 pub fn euclidean_distance_sq_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
@@ -632,6 +634,7 @@ pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8
     cosine_similarity_parts_u8_scalar(a, b)
 }
 
+/// Computes the components of cosine similarity for two u8 slices using a scalar implementation.
 pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
     let mut dot = 0;
     let mut sum_a = 0;

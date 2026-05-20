@@ -1,6 +1,7 @@
 # SPEC-SAOS-WP-5.4 — Adaptive Filter-Strategie (Pre/Post-Filter Heuristik)
 
 > **Priority:** 🟡 MITTEL  
+> **Status:** ✅ DONE
 > **Dependency:** WP-1.2 DONE, WP-4.2 (ergänzt und präzisiert diesen WP)  
 > **Crate:** `memfuse-db` (Erweiterung)  
 > **DONE-Definition:** 3 Tests 3× grün. Automatische Strategie-Wahl validiert.

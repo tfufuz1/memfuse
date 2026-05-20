@@ -2,7 +2,7 @@
 
 **Sovereign Agentic Operating System (SAOS)**
 
-> "The ultimate runtime for AI Agents: Database, Saftey Layer, and Orchestrator in one crate."
+> "The ultimate runtime for AI Agents: Database, Safety Layer, and Orchestrator in one crate."
 
 ## Quick Start
 

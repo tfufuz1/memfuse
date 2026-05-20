@@ -9,6 +9,7 @@
 use std::time::Duration;
 
 #[derive(Debug)]
+/// Configuration for the WebAssembly sandbox.
 pub struct SandboxConfig {
     pub max_memory_mb: usize,
     pub timeout: Duration,
