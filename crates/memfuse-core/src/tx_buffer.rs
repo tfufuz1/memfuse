@@ -76,6 +76,10 @@ impl<T: Clone> TxBuffer<T> {
 
     /// Creates a new buffer with custom settings.
     pub fn new_with_config(shard_count: usize, tx_timeout: Duration) -> Self {
+        // ANCHOR:SEC:PANIC-002 — shard_count .max(1) verhindert Division-durch-Null.
+        // WP:WP-0.0 PRIO:3 NEEDS:NONE
+        // AGENT:01 DATE:2026-06-05 STATUS:DONE
+        let shard_count = shard_count.max(1);
         let mut shards = Vec::with_capacity(shard_count);
         for _ in 0..shard_count {
             shards.push(RwLock::new(TxShard::new()));
@@ -241,6 +245,14 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tokio::time::sleep;
+
+    #[test]
+    fn test_shard_count_min_one() {
+        let buffer = TxBuffer::<String>::new_with_config(0, Duration::from_secs(30));
+        assert_eq!(buffer.shards.len(), 1);
+        // Should not panic
+        let _ = buffer.shard_idx(TxId::new(1));
+    }
 
     #[test]
     fn test_sharding_distributes_evenly() {
