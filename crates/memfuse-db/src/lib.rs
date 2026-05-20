@@ -56,10 +56,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub mod collection;
+pub mod filter;
 pub mod fusion;
 pub mod transaction;
 
 pub use collection::Collection;
+pub use filter::MetadataFilter;
 pub use memfuse_checkpoint;
 
 /// User-facing search result containing the ID, score, and optional metadata.
@@ -329,6 +331,19 @@ impl MemFuse {
     /// Performs semantic k-NN search over stored embeddings.
     pub async fn search(&self, query: &[f32], k: usize) -> Result<Vec<SearchResult>> {
         self.default_col().await?.search(query, k).await
+    }
+
+    /// Performs semantic search with an advanced metadata filter.
+    pub async fn search_with_filter(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: Option<MetadataFilter>,
+    ) -> Result<Vec<SearchResult>> {
+        self.default_col()
+            .await?
+            .search_with_filter(query, k, filter)
+            .await
     }
 
     /// Performs semantic k-NN search with an optional filter function over documents.
