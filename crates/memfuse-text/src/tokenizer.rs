@@ -1,4 +1,4 @@
-//! Tokenizer using `unicode-segmentation`.
+//! Tokenizer using `unicode-segmentation` with morphological splitting for German.
 
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -43,6 +43,26 @@ impl Tokenizer for DefaultTokenizer {
 /// German tokenizer with basic compound splitting POC.
 pub struct GermanMorphTokenizer;
 
+impl GermanMorphTokenizer {
+    fn split_compounds(&self, tokens: &mut Vec<String>, word: String) {
+        let suffixes = ["gericht", "wesen", "schaft", "kraft"];
+        let mut split = false;
+
+        for suffix in suffixes {
+            if word.ends_with(suffix) && word.len() > suffix.len() {
+                tokens.push(word.clone());
+                tokens.push(suffix.to_string());
+                split = true;
+                break;
+            }
+        }
+
+        if !split {
+            tokens.push(word);
+        }
+    }
+}
+
 impl Tokenizer for GermanMorphTokenizer {
     fn tokenize(&self, text: &str) -> Vec<String> {
         let stopwords = get_stopwords();
@@ -54,14 +74,7 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
-                tokens.push(lower);
-            }
+            self.split_compounds(&mut tokens, lower);
         }
         tokens
     }
@@ -96,9 +109,24 @@ mod tests {
     #[test]
     fn test_german_morph_tokenizer() {
         let tokenizer = GermanMorphTokenizer;
-        let tokens = tokenizer.tokenize("Das Bundesverfassungsgericht");
+        let tokens = tokenizer
+            .tokenize("Das Bundesverfassungsgericht Gesundheitswesen Wissenschaft Lehrkraft");
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+
+        assert!(tokens.contains(&"gesundheitswesen".to_string()));
+        assert!(tokens.contains(&"wesen".to_string()));
+
+        assert!(tokens.contains(&"wissenschaft".to_string()));
+        assert!(tokens.contains(&"schaft".to_string()));
+
+        assert!(tokens.contains(&"lehrkraft".to_string()));
+        assert!(tokens.contains(&"kraft".to_string()));
+
+        // Should not split if it's just the suffix
+        let tokens2 = tokenizer.tokenize("gericht");
+        assert_eq!(tokens2.len(), 1);
+        assert_eq!(tokens2[0], "gericht");
     }
 }
