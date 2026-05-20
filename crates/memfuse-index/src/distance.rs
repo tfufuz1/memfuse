@@ -266,7 +266,11 @@ pub fn cosine_distance_std_simd(a: &[f32], b: &[f32]) -> f32 {
 unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-008 — Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_ps ist immer sicher.
-    let mut sum_v = unsafe { _mm256_setzero_ps() };
+    let mut sum_v = unsafe {
+        // ANCHOR:SAFETY:SIMD-036 — Initialisierung.
+        // BEGRÜNDUNG: _mm256_setzero_ps ist immer sicher.
+        _mm256_setzero_ps()
+    };
     let n = a.len();
     let mut i = 0;
 
@@ -283,7 +287,11 @@ unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
 
     // ANCHOR:SAFETY:SIMD-010 — Horizontale Summe.
     // BEGRÜNDUNG: hsum256_ps_avx benötigt AVX Support, der hier durch target_feature garantiert ist.
-    let mut sum = unsafe { hsum256_ps_avx(sum_v) };
+    let mut sum = unsafe {
+        // ANCHOR:SAFETY:SIMD-035 — Horizontale Summe.
+        // BEGRÜNDUNG: AVX Support durch target_feature garantiert.
+        hsum256_ps_avx(sum_v)
+    };
 
     while i < n {
         sum += a[i] * b[i];
@@ -359,7 +367,11 @@ unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
 unsafe fn euclidean_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-016 — Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_ps ist immer sicher.
-    let mut sum_v = unsafe { _mm256_setzero_ps() };
+    let mut sum_v = unsafe {
+        // ANCHOR:SAFETY:SIMD-037 — Initialisierung.
+        // BEGRÜNDUNG: _mm256_setzero_ps ist immer sicher.
+        _mm256_setzero_ps()
+    };
     let n = a.len();
     let mut i = 0;
 
@@ -415,7 +427,11 @@ unsafe fn hsum256_ps_avx(v: __m256) -> f32 {
 unsafe fn dot_product_avx512(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-022 — Initialisierung.
     // BEGRÜNDUNG: _mm512_setzero_ps ist immer sicher.
-    let mut sum_v = unsafe { _mm512_setzero_ps() };
+    let mut sum_v = unsafe {
+        // ANCHOR:SAFETY:SIMD-038 — Initialisierung.
+        // BEGRÜNDUNG: _mm512_setzero_ps ist immer sicher.
+        _mm512_setzero_ps()
+    };
     let n = a.len();
     let mut i = 0;
 
@@ -506,7 +522,11 @@ unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
 unsafe fn euclidean_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-030 — Initialisierung.
     // BEGRÜNDUNG: _mm512_setzero_ps ist immer sicher.
-    let mut sum_v = unsafe { _mm512_setzero_ps() };
+    let mut sum_v = unsafe {
+        // ANCHOR:SAFETY:SIMD-039 — Initialisierung.
+        // BEGRÜNDUNG: _mm512_setzero_ps ist immer sicher.
+        _mm512_setzero_ps()
+    };
     let n = a.len();
     let mut i = 0;
 

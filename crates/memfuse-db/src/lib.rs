@@ -1,3 +1,9 @@
+//! # MemFuse DB — Embedded Hybrid-Search Database
+//!
+//! This crate is the primary entry point for the MemFuse database,
+//! providing a high-level API for vector search, full-text search,
+//! and relationship tracking.
+
 // ANCHOR:ARCH:DB-001 — Orchestrator Facade (Getriebe — Layer 2).
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE

@@ -1,3 +1,8 @@
+//! # MemFuse Checkpoint — State Persistence and Time-Travel
+//!
+//! This crate provides the `CheckpointManager` which orchestrates point-in-time
+//! snapshots of the database state for consistency and recovery.
+
 // ANCHOR:ARCH:CHECKPOINT-001 — Checkpoint Manager
 // WP:NONE PRIO:2 NEEDS:NONE
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
