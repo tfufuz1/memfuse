@@ -48,18 +48,26 @@ impl Tokenizer for GermanMorphTokenizer {
         let stopwords = get_stopwords();
         let mut tokens = Vec::new();
 
+        // Legal and administrative suffixes for compound splitting
+        let suffixes = ["gericht", "ordnung", "gesetz", "vertrag", "recht"];
+
         for word in text.unicode_words() {
             let lower = word.to_lowercase();
             if stopwords.contains(&lower) {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            let mut split = false;
+            for suffix in suffixes {
+                if lower.ends_with(suffix) && lower.len() > suffix.len() + 3 {
+                    tokens.push(lower.clone());
+                    tokens.push(suffix.to_string());
+                    split = true;
+                    break;
+                }
+            }
+
+            if !split {
                 tokens.push(lower);
             }
         }

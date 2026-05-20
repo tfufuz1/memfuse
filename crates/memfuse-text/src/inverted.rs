@@ -1,6 +1,6 @@
 //! LSM-backed Inverted Index.
 
-use crate::tokenizer::{tokenize, DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
+use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use async_trait::async_trait;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
@@ -276,7 +276,7 @@ impl InvertedIndex {
 
     /// Searches the inverted index using BM25.
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
-        let tokens = tokenize(query);
+        let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
             return Ok(Vec::new());
         }
@@ -313,6 +313,7 @@ impl InvertedIndex {
         };
 
         let mut scores: HashMap<DocId, f32> = HashMap::new();
+        let mut doc_len_cache: HashMap<DocId, u32> = HashMap::new();
 
         for term in &tokens {
             let pl_key = self.key(&format!("pl:{}", term));
@@ -325,16 +326,21 @@ impl InvertedIndex {
 
                     for (doc_id, tf) in pl {
                         // Fetch doc length
-                        let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
-                        let mut doc_len = 0u32;
-                        if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
-                            if dl_bytes.len() == 4 {
-                                doc_len =
-                                    u32::from_le_bytes(dl_bytes.as_slice().try_into().map_err(
+                        let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
+                            len
+                        } else {
+                            let dl_key = self.key(&format!("dl:{}", doc_id.inner()));
+                            let mut len = 0u32;
+                            if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
+                                if dl_bytes.len() == 4 {
+                                    len = u32::from_le_bytes(dl_bytes.as_slice().try_into().map_err(
                                         |_| MemFuseError::Storage("Invalid doc_len length".into()),
                                     )?);
+                                }
                             }
-                        }
+                            doc_len_cache.insert(doc_id, len);
+                            len
+                        };
 
                         let score = crate::bm25::score_term(
                             tf,
@@ -656,6 +662,40 @@ mod tests {
 
         let stats_after = index.stats().await?;
         assert_eq!(stats_after.num_documents, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_german_namespace_uses_morph_tokenizer() -> Result<()> {
+        let tmp = TempDir::new().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(
+            LsmStorage::new(config)
+                .await
+                .map_err(|e| MemFuseError::Storage(e.to_string()))?,
+        );
+        // Namespace "de_legal" should trigger GermanMorphTokenizer
+        let index = InvertedIndex::new(storage.clone(), "de_legal");
+
+        let tx = TxId::new(1);
+        let d1 = DocId::new(1);
+        // "Arbeitsgerichtsgesetz" should split into ["arbeitsgerichtsgesetz", "gesetz"]
+        index
+            .upsert_document(tx, d1, "Das Arbeitsgerichtsgesetz ist wichtig.")
+            .await?;
+        storage.commit(tx).await?;
+
+        // Search for the compound
+        let res1 = index.search_bm25("Arbeitsgerichtsgesetz", 10).await?;
+        assert_eq!(res1.len(), 1);
+
+        // Search for the suffix part "gesetz"
+        let res2 = index.search_bm25("gesetz", 10).await?;
+        assert_eq!(res2.len(), 1, "Should find document via suffix 'gesetz'");
 
         Ok(())
     }
