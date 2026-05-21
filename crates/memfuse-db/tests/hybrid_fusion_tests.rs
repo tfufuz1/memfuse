@@ -98,11 +98,17 @@ async fn test_hybrid_graph_signal_boost() {
     let (db, _tmp) = setup_db(4).await;
 
     // doc-1 (seed)
-    db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None).await.unwrap();
+    db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
+        .await
+        .unwrap();
     // doc-2 (related to doc-1)
-    db.insert("doc-2", &[0.0, 1.0, 0.0, 0.0], None).await.unwrap();
+    db.insert("doc-2", &[0.0, 1.0, 0.0, 0.0], None)
+        .await
+        .unwrap();
     // doc-3 (unrelated)
-    db.insert("doc-3", &[0.0, 0.0, 1.0, 0.0], None).await.unwrap();
+    db.insert("doc-3", &[0.0, 0.0, 1.0, 0.0], None)
+        .await
+        .unwrap();
 
     db.relate("doc-1", "doc-2", "references").await.unwrap();
 

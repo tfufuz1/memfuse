@@ -440,14 +440,8 @@ impl MemFuse {
     }
 
     /// Performs a 4-Signal Fusion hybrid search.
-    pub async fn hybrid_search_v2(
-        &self,
-        query: HybridQuery,
-    ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .hybrid_search_v2(query)
-            .await
+    pub async fn hybrid_search_v2(&self, query: HybridQuery) -> Result<Vec<SearchResult>> {
+        self.default_col().await?.hybrid_search_v2(query).await
     }
 
     /// Deletes a document by its string ID.

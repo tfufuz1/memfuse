@@ -545,8 +545,16 @@ impl Collection {
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
         let query = crate::HybridQuery {
-            text: if text.is_empty() { None } else { Some(text.to_string()) },
-            vector: if vector.iter().all(|&v| v == 0.0) { None } else { Some(vector.to_vec()) },
+            text: if text.is_empty() {
+                None
+            } else {
+                Some(text.to_string())
+            },
+            vector: if vector.iter().all(|&v| v == 0.0) {
+                None
+            } else {
+                Some(vector.to_vec())
+            },
             limit: k,
             ..Default::default()
         };
@@ -562,7 +570,9 @@ impl Collection {
 
         // 1. Vector Signal
         if let Some(vector) = &query.vector {
-            let vec_results = self.search_with_filter(vector, query.limit * 2, query.metadata_filter.clone()).await?;
+            let vec_results = self
+                .search_with_filter(vector, query.limit * 2, query.metadata_filter.clone())
+                .await?;
             signals.push((vec_results, query.weights.vector));
         }
 
@@ -573,9 +583,10 @@ impl Collection {
 
             // Apply filter manually for text results if present
             let filtered_text_results = if let Some(filter) = &query.metadata_filter {
-                text_results.into_iter().filter(|r| {
-                    r.metadata.as_ref().is_some_and(|m| filter.matches(m))
-                }).collect()
+                text_results
+                    .into_iter()
+                    .filter(|r| r.metadata.as_ref().is_some_and(|m| filter.matches(m)))
+                    .collect()
             } else {
                 text_results
             };
@@ -589,9 +600,10 @@ impl Collection {
 
             // Apply filter manually for graph results if present
             let filtered_graph_results = if let Some(filter) = &query.metadata_filter {
-                graph_results.into_iter().filter(|r| {
-                    r.metadata.as_ref().is_some_and(|m| filter.matches(m))
-                }).collect()
+                graph_results
+                    .into_iter()
+                    .filter(|r| r.metadata.as_ref().is_some_and(|m| filter.matches(m)))
+                    .collect()
             } else {
                 graph_results
             };
@@ -751,11 +763,11 @@ impl Collection {
                 if let (Some(from), Some(to)) = (rel_val["from"].as_str(), rel_val["to"].as_str()) {
                     let from_idx = graph.get_or_create_node(from);
                     let to_idx = graph.get_or_create_node(to);
-                    let rel_type = rel_val["rel_type"]
-                        .as_u64()
-                        .map(|u| u as u8)
-                        .unwrap_or(0);
-                    adj_list.entry(from_idx).or_default().push((to_idx, rel_type));
+                    let rel_type = rel_val["rel_type"].as_u64().map(|u| u as u8).unwrap_or(0);
+                    adj_list
+                        .entry(from_idx)
+                        .or_default()
+                        .push((to_idx, rel_type));
                 }
             }
         }
