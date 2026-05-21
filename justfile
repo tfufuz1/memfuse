@@ -1,54 +1,61 @@
 # AGENT:11
 set shell := ["bash", "-uc"]
 
+# Fallback to direct cargo if nix is not available
+nix_prefix := if `command -v nix > /dev/null && echo 1 || echo 0` == "1" { "nix develop -c " } else { "" }
+cargo := nix_prefix + "cargo"
+
 default:
     @just --list
 
 # Runs the TDD Validation Loop (Red -> Green -> Refactor)
 test: check
-    nix develop -c cargo nextest run --workspace || nix develop -c cargo test --workspace
+    {{cargo}} nextest run --workspace || {{cargo}} test --workspace
 
 # Runs formatting, clippy and checks compilation
-check:
-    nix develop -c cargo fmt --all -- --check
-    nix develop -c cargo clippy --all-targets -- -D warnings
-    nix develop -c cargo check --all-targets --workspace
+check: lint
+    {{cargo}} check --all-targets --workspace
+
+# Runs clippy and fmt check
+lint:
+    {{cargo}} fmt --all -- --check
+    {{cargo}} clippy --all-targets --workspace -- -D warnings
 
 # Modular check for memfuse-core
 check-core:
-    nix develop -c cargo check -p memfuse-core
+    {{cargo}} check -p memfuse-core
 
 # Modular check for memfuse-store
 check-store:
-    nix develop -c cargo check -p memfuse-store
+    {{cargo}} check -p memfuse-store
 
 # Modular check for memfuse-index
 check-index:
-    nix develop -c cargo check -p memfuse-index
+    {{cargo}} check -p memfuse-index
 
 # Modular check for memfuse-db
 check-db:
-    nix develop -c cargo check -p memfuse-db
+    {{cargo}} check -p memfuse-db
 
 # Modular check for memfuse-text
 check-text:
-    nix develop -c cargo check -p memfuse-text
+    {{cargo}} check -p memfuse-text
 
 # Modular check for memfuse-runtime
 check-runtime:
-    nix develop -c cargo check -p memfuse-runtime
+    {{cargo}} check -p memfuse-runtime
 
 # Modular check for memfuse-orchestrator
 check-orchestrator:
-    nix develop -c cargo check -p memfuse-orchestrator
+    {{cargo}} check -p memfuse-orchestrator
 
 # Modular check for memfuse-py
 check-py:
-    nix develop -c cargo check -p memfuse-py
+    {{cargo}} check -p memfuse-py
 
 # Modular check for memfuse-checkpoint
 check-checkpoint:
-    nix develop -c cargo check -p memfuse-checkpoint
+    {{cargo}} check -p memfuse-checkpoint
 
 # Verifies the Directed Acyclic Graph (DAG) integrity of the workspace
 dag-check:
@@ -59,52 +66,52 @@ dag-check:
     echo "--- Phase 1: L1 Kernel Isolation (core, runtime, orchestrator) ---"
     for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator; do
         echo "Verifying $CRATE isolation..."
-        if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -E -v "$CRATE|memfuse-core" | grep -q .; then
+        if {{cargo}} tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -E -v "$CRATE|memfuse-core" | grep -q .; then
             echo "❌ ERROR: $CRATE imports forbidden internal crates."
-            cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-"
+            {{cargo}} tree -p "$CRATE" --edges no-dev | grep "memfuse-"
             exit 1
         fi
     done
 
     echo "--- Phase 2: L2 Peer Isolation (store, index, text, checkpoint) ---"
     echo "Verifying memfuse-store..."
-    if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core" | grep -q "memfuse-"; then
+    if {{cargo}} tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-store violates DAG by importing non-core crates."
-        cargo tree -p memfuse-store --edges no-dev | grep "memfuse-"
+        {{cargo}} tree -p memfuse-store --edges no-dev | grep "memfuse-"
         exit 1
     fi
     echo "Verifying memfuse-index..."
-    if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core" | grep -q "memfuse-"; then
+    if {{cargo}} tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-index violates DAG by importing non-core crates."
-        cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
+        {{cargo}} tree -p memfuse-index --edges no-dev | grep "memfuse-"
         exit 1
     fi
     echo "Verifying memfuse-text..."
-    if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core" | grep -q "memfuse-"; then
+    if {{cargo}} tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-text violates DAG by importing non-core crates."
-        cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
+        {{cargo}} tree -p memfuse-text --edges no-dev | grep "memfuse-"
         exit 1
     fi
     echo "Verifying memfuse-checkpoint (excluding tracked DAG-002)..."
-    if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
+    if {{cargo}} tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-checkpoint violates DAG."
-        cargo tree -p memfuse-checkpoint --edges no-dev | grep "memfuse-"
+        {{cargo}} tree -p memfuse-checkpoint --edges no-dev | grep "memfuse-"
         exit 1
     fi
 
     echo "--- Phase 3: L3 Orchestration Isolation (db) ---"
     echo "Verifying memfuse-db..."
-    if cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py|memfuse-runtime|memfuse-orchestrator"; then
+    if {{cargo}} tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py|memfuse-runtime|memfuse-orchestrator"; then
         echo "❌ ERROR: memfuse-db imports higher layers."
-        cargo tree -p memfuse-db --edges no-dev | grep -E "memfuse-py|memfuse-runtime|memfuse-orchestrator"
+        {{cargo}} tree -p memfuse-db --edges no-dev | grep -E "memfuse-py|memfuse-runtime|memfuse-orchestrator"
         exit 1
     fi
 
     echo "--- Phase 4: L4 Bindings Isolation (py) ---"
     echo "Verifying memfuse-py..."
-    if cargo tree -p memfuse-py --edges no-dev | grep -E -q "memfuse-runtime|memfuse-orchestrator"; then
+    if {{cargo}} tree -p memfuse-py --edges no-dev | grep -E -q "memfuse-runtime|memfuse-orchestrator"; then
         echo "❌ ERROR: memfuse-py violates isolation by importing L1 Kernel crates."
-        cargo tree -p memfuse-py --edges no-dev | grep -E "memfuse-runtime|memfuse-orchestrator"
+        {{cargo}} tree -p memfuse-py --edges no-dev | grep -E "memfuse-runtime|memfuse-orchestrator"
         exit 1
     fi
 
@@ -113,7 +120,7 @@ dag-check:
         CRATE=${VIOLATION%%:*}
         TARGET=$(echo $VIOLATION | cut -d: -f2)
         ID=$(echo $VIOLATION | cut -d: -f3)
-        if cargo tree -p "$CRATE" --edges no-dev | grep -q "$TARGET"; then
+        if {{cargo}} tree -p "$CRATE" --edges no-dev | grep -q "$TARGET"; then
             echo "⚠️  $ID still present ($CRATE → $TARGET)"
         else
             echo "✅ $ID resolved"
@@ -128,7 +135,7 @@ triple-test: check
     echo "=== Triple-Test-Gate ==="
     for RUN in 1 2 3; do
         echo "--- Run $RUN/3 ---"
-        if ! nix develop -c cargo test --workspace; then
+        if ! {{cargo}} test --workspace; then
             echo "❌ FAILED on run $RUN/3. Fix all failures before this WP is DONE."
             exit 1
         fi
@@ -188,8 +195,8 @@ debt-audit:
     fi
 
     echo "--- [5/5] Security & Audit ---"
-    if cargo audit --version &>/dev/null 2>&1; then
-        cargo audit || echo "⚠️ Audit warnings — manuell prüfen"
+    if {{cargo}} audit --version &>/dev/null 2>&1; then
+        {{cargo}} audit || echo "⚠️ Audit warnings — manuell prüfen"
     else
         echo "⚠️ cargo-audit nicht installiert: cargo install cargo-audit"
     fi
