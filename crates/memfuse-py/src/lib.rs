@@ -12,6 +12,7 @@
 
 // AGENT:06 DATE:2026-05-15 STATUS:DONE
 // ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
+// ANCHOR:INTEGRATION STATUS:READY PRIO:2 AGENT:06
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
 // AGENT:@JULES-06 DATE:2026-05-15 STATUS:DONE
 // TEST: cd crates/memfuse-py && python -m pytest tests/ -v
