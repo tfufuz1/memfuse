@@ -65,14 +65,74 @@ pub use filter::MetadataFilter;
 pub use memfuse_checkpoint;
 
 /// User-facing search result containing the ID, score, and optional metadata.
+/// Also referred to as ScoredEntry in internal specifications.
 #[derive(Debug, Clone)]
 pub struct SearchResult {
     /// The string ID provided during insert.
     pub id: String,
     /// Similarity score (higher = more similar).
+    /// In RRF fusion, this is the fused RRF score.
     pub score: f32,
     /// Metadata associated with the document (if any).
     pub metadata: Option<Value>,
+}
+
+/// Weights for fusing multiple retrieval signals.
+/// The sum of weights should ideally be 1.0.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FusionWeights {
+    /// Weight for semantic vector search (default 0.4).
+    pub vector: f32,
+    /// Weight for BM25 text search (default 0.3).
+    pub text: f32,
+    /// Weight for graph traversal (default 0.2).
+    pub graph: f32,
+    /// Weight for metadata filter signal (default 0.1).
+    pub metadata: f32,
+}
+
+impl Default for FusionWeights {
+    fn default() -> Self {
+        Self {
+            vector: 0.4,
+            text: 0.3,
+            graph: 0.2,
+            metadata: 0.1,
+        }
+    }
+}
+
+/// Unified query structure for 4-Signal Fusion (Hybrid RAG).
+#[derive(Debug, Clone)]
+pub struct HybridQuery {
+    /// Semantic vector (HNSW) — normalized embedding.
+    pub vector: Option<Vec<f32>>,
+    /// Keyword search (BM25) — query string.
+    pub text: Option<String>,
+    /// Causal traversal (CSR-Graph) — Start-Node ID + Max-Hop-Depth (max 3).
+    pub graph_seed: Option<(String, u8)>,
+    /// Advanced metadata filter.
+    pub metadata_filter: Option<MetadataFilter>,
+    /// Fusion weights for the signals.
+    pub weights: FusionWeights,
+    /// Top-K results to return.
+    pub limit: usize,
+    /// Maximum latency guarantee in milliseconds (soft limit).
+    pub timeout_ms: Option<u64>,
+}
+
+impl Default for HybridQuery {
+    fn default() -> Self {
+        Self {
+            vector: None,
+            text: None,
+            graph_seed: None,
+            metadata_filter: None,
+            weights: FusionWeights::default(),
+            limit: 10,
+            timeout_ms: None,
+        }
+    }
 }
 
 /// Overall database statistics.
@@ -376,6 +436,17 @@ impl MemFuse {
         self.default_col()
             .await?
             .hybrid_search(text, vector, k)
+            .await
+    }
+
+    /// Performs a 4-Signal Fusion hybrid search.
+    pub async fn hybrid_search_v2(
+        &self,
+        query: HybridQuery,
+    ) -> Result<Vec<SearchResult>> {
+        self.default_col()
+            .await?
+            .hybrid_search_v2(query)
             .await
     }
 

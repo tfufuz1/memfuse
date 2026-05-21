@@ -3,10 +3,10 @@
 use crate::SearchResult;
 use std::collections::HashMap;
 
-/// Fuses multiple sets of ranked search results into a single ranked list using Reciprocal Rank Fusion (RRF).
-/// RRF score = sum(1 / (k + rank)) for each result set, where k = 60 by default.
+/// Fuses multiple sets of ranked search results into a single ranked list using weighted Reciprocal Rank Fusion (RRF).
+/// RRF score = sum(weight * (1 / (k + rank))) for each result set, where k = 60 by default.
 pub fn reciprocal_rank_fusion(
-    result_sets: Vec<Vec<SearchResult>>,
+    result_sets: Vec<(Vec<SearchResult>, f32)>,
     max_results: usize,
 ) -> Vec<SearchResult> {
     let k = 60;
@@ -14,10 +14,13 @@ pub fn reciprocal_rank_fusion(
     // id -> (total_score, metadata)
     let mut fused_scores: HashMap<String, (f32, Option<serde_json::Value>)> = HashMap::new();
 
-    for cur_set in result_sets {
+    for (cur_set, weight) in result_sets {
+        if weight <= 0.0 || cur_set.is_empty() {
+            continue;
+        }
         for (rank, cur_doc) in cur_set.into_iter().enumerate() {
             // Rank is 1-indexed for the formula usually, so rank + 1
-            let score = 1.0 / ((k + rank + 1) as f32);
+            let score = weight * (1.0 / ((k + rank + 1) as f32));
             let entry = fused_scores
                 .entry(cur_doc.id)
                 .or_insert((0.0, cur_doc.metadata));
@@ -82,7 +85,7 @@ mod tests {
             },
         ];
 
-        let fused = reciprocal_rank_fusion(vec![vectors, keywords], 5);
+        let fused = reciprocal_rank_fusion(vec![(vectors, 1.0), (keywords, 1.0)], 5);
 
         let ids: Vec<&str> = fused.iter().map(|r| r.id.as_str()).collect();
         // doc_b appears in both sets, rank 1 and rank 0 respectively.

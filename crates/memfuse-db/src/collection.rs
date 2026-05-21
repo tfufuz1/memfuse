@@ -56,6 +56,7 @@ pub struct Collection {
     pub(crate) prefix: Vec<u8>,
     pub(crate) index: Arc<HnswIndex>,
     pub(crate) text_index: InvertedIndex,
+    pub(crate) graph_index: Arc<tokio::sync::RwLock<memfuse_index::CsrGraph>>,
     pub(crate) storage: Arc<LsmStorage>,
     pub(crate) next_tx: Arc<AtomicU64>,
     pub(crate) dimension: usize,
@@ -77,12 +78,14 @@ impl Collection {
         };
 
         let text_index = InvertedIndex::new(storage.clone(), &name);
+        let graph_index = Arc::new(tokio::sync::RwLock::new(memfuse_index::CsrGraph::new()));
 
         Self {
             name,
             prefix,
             index,
             text_index,
+            graph_index,
             storage,
             next_tx,
             dimension,
@@ -287,6 +290,9 @@ impl Collection {
 
         self.storage.put(tx, &key, &bytes).await?;
         self.storage.commit(tx).await?;
+
+        // Refresh graph to include new relationship
+        self.refresh_graph().await?;
         Ok(())
     }
 
@@ -334,6 +340,57 @@ impl Collection {
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
         self.search_with_filter(query_embedding, k, None).await
+    }
+
+    /// Performs a graph-based BFS search starting from a seed document.
+    pub async fn graph_search(
+        &self,
+        seed_id: &str,
+        max_hop: u8,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let max_hop = max_hop.min(3);
+        let graph = self.graph_index.read().await;
+
+        let mut visited = std::collections::HashMap::new();
+        let mut queue = std::collections::VecDeque::new();
+
+        queue.push_back((seed_id.to_string(), 0u8));
+        visited.insert(seed_id.to_string(), 1.0f32);
+
+        while let Some((current_id, hop)) = queue.pop_front() {
+            if hop >= max_hop {
+                continue;
+            }
+
+            if let Ok(neighbors) = graph.get_neighbors(&current_id) {
+                let next_score = (0.7f32).powi((hop + 1) as i32);
+                for (neighbor_id, _) in neighbors {
+                    let nid = neighbor_id.to_string();
+                    if !visited.contains_key(&nid) {
+                        visited.insert(nid.clone(), next_score);
+                        queue.push_back((nid, hop + 1));
+                    }
+                }
+            }
+        }
+
+        drop(graph);
+
+        let mut results = Vec::with_capacity(visited.len());
+        for (id, score) in visited {
+            if let Some(doc) = self.get(&id).await? {
+                results.push(crate::SearchResult {
+                    id: doc.id,
+                    score,
+                    metadata: doc.metadata,
+                });
+            }
+        }
+
+        // Sort by score descending to provide a meaningful rank for RRF
+        results.sort_by(|a, b| b.score.total_cmp(&a.score));
+
+        Ok(results)
     }
 
     /// Performs semantic search with an advanced metadata filter.
@@ -487,27 +544,89 @@ impl Collection {
         vector: &[f32],
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
-        let is_vector_zero = vector.iter().all(|&v| v == 0.0);
-        let is_text_empty = text.trim().is_empty();
+        let query = crate::HybridQuery {
+            text: if text.is_empty() { None } else { Some(text.to_string()) },
+            vector: if vector.iter().all(|&v| v == 0.0) { None } else { Some(vector.to_vec()) },
+            limit: k,
+            ..Default::default()
+        };
+        self.hybrid_search_v2(query).await
+    }
 
-        match (is_text_empty, is_vector_zero) {
-            (true, true) => Ok(Vec::new()),
-            (true, false) => self.search(vector, k).await,
-            (false, is_v_zero) => {
-                let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let text_results = self.hydrate_from_tuples(bm25_results).await?;
+    /// Performs a 4-Signal Fusion hybrid search.
+    pub async fn hybrid_search_v2(
+        &self,
+        query: crate::HybridQuery,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let mut signals = Vec::new();
 
-                if is_v_zero {
-                    return Ok(text_results);
+        // 1. Vector Signal
+        if let Some(vector) = &query.vector {
+            let vec_results = self.search_with_filter(vector, query.limit * 2, query.metadata_filter.clone()).await?;
+            signals.push((vec_results, query.weights.vector));
+        }
+
+        // 2. Text Signal
+        if let Some(text) = &query.text {
+            let bm25_results = self.text_index.search_bm25(text, query.limit * 2).await?;
+            let text_results = self.hydrate_from_tuples(bm25_results).await?;
+
+            // Apply filter manually for text results if present
+            let filtered_text_results = if let Some(filter) = &query.metadata_filter {
+                text_results.into_iter().filter(|r| {
+                    r.metadata.as_ref().is_some_and(|m| filter.matches(m))
+                }).collect()
+            } else {
+                text_results
+            };
+
+            signals.push((filtered_text_results, query.weights.text));
+        }
+
+        // 3. Graph Signal
+        if let Some((seed_id, max_hop)) = &query.graph_seed {
+            let graph_results = self.graph_search(seed_id, *max_hop).await?;
+
+            // Apply filter manually for graph results if present
+            let filtered_graph_results = if let Some(filter) = &query.metadata_filter {
+                graph_results.into_iter().filter(|r| {
+                    r.metadata.as_ref().is_some_and(|m| filter.matches(m))
+                }).collect()
+            } else {
+                graph_results
+            };
+
+            signals.push((filtered_graph_results, query.weights.graph));
+        }
+
+        // 4. Metadata Signal (Boost/Rank Contribution)
+        if let Some(filter) = &query.metadata_filter {
+            if query.weights.metadata > 0.0 {
+                let matched_ids = self.get_matching_doc_ids(filter).await?;
+                let mut meta_results = Vec::new();
+                for doc_id in matched_ids {
+                    let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+                    if let Some(bytes) = self.storage.get(&doc_key).await? {
+                        let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                        meta_results.push(crate::SearchResult {
+                            id: stored.id,
+                            score: 1.0,
+                            metadata: stored.metadata,
+                        });
+                    }
                 }
-
-                let vector_results = self.search(vector, k).await?;
-                Ok(crate::fusion::reciprocal_rank_fusion(
-                    vec![vector_results, text_results],
-                    k,
-                ))
+                if !meta_results.is_empty() {
+                    signals.push((meta_results, query.weights.metadata));
+                }
             }
         }
+
+        if signals.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Fusion
+        Ok(crate::fusion::reciprocal_rank_fusion(signals, query.limit))
     }
 
     /// Returns the number of documents in the collection.
@@ -593,7 +712,7 @@ impl Collection {
         self.index.stats().await
     }
 
-    /// Rebuilds the HNSW index from storage.
+    /// Rebuilds the HNSW index and CSR graph from storage.
     pub async fn load_index(&self) -> Result<()> {
         let prefix = if self.name == "default" {
             b"__docid:".to_vec()
@@ -611,6 +730,36 @@ impl Collection {
             self.index.insert(tx, doc_id, &stored.embedding).await?;
         }
         self.index.commit(tx).await?;
+
+        // Load relationships into CsrGraph
+        self.refresh_graph().await?;
+
+        Ok(())
+    }
+
+    /// Refreshes the in-memory CSR graph from relationships stored in LSM.
+    pub async fn refresh_graph(&self) -> Result<()> {
+        let rel_prefix = self.namespaced_key(b"", 2);
+        let rel_entries = self.storage.scan_prefix(&rel_prefix).await?;
+
+        let mut adj_list: std::collections::HashMap<u32, Vec<(u32, u8)>> =
+            std::collections::HashMap::new();
+        let mut graph = self.graph_index.write().await;
+
+        for (_, v) in rel_entries {
+            if let Ok(rel_val) = serde_json::from_slice::<serde_json::Value>(&v) {
+                if let (Some(from), Some(to)) = (rel_val["from"].as_str(), rel_val["to"].as_str()) {
+                    let from_idx = graph.get_or_create_node(from);
+                    let to_idx = graph.get_or_create_node(to);
+                    let rel_type = rel_val["rel_type"]
+                        .as_u64()
+                        .map(|u| u as u8)
+                        .unwrap_or(0);
+                    adj_list.entry(from_idx).or_default().push((to_idx, rel_type));
+                }
+            }
+        }
+        graph.build_from_dynamic(&adj_list);
         Ok(())
     }
 
