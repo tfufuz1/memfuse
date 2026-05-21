@@ -192,10 +192,7 @@ impl CompactionEngine {
             for tier in &mut tiers {
                 // ANCHOR:SEC:SLICE-007 AGENT:10 PRIO:1 STATUS:REVIEW
                 let first_in_tier = *tier.first()?;
-                let tier_size = ssts
-                    .get(first_in_tier)?
-                    .metadata()
-                    .file_size;
+                let tier_size = ssts.get(first_in_tier)?.metadata().file_size;
 
                 let ratio = if size > tier_size {
                     size as f64 / tier_size.max(1) as f64

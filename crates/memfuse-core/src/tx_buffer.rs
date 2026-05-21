@@ -139,9 +139,16 @@ impl<T: Clone> TxBuffer<T> {
     /// Validates that the transaction has pending operations.
     pub fn validate_pending_ops(&self, tx: TxId) -> Result<()> {
         let shard_idx = self.shard_idx(tx);
-        let shard = self.shards.get(shard_idx).ok_or_else(|| {
-            MemFuseError::Transaction(format!("Invalid shard index {} for transaction {}", shard_idx, tx))
-        })?.read();
+        let shard = self
+            .shards
+            .get(shard_idx)
+            .ok_or_else(|| {
+                MemFuseError::Transaction(format!(
+                    "Invalid shard index {} for transaction {}",
+                    shard_idx, tx
+                ))
+            })?
+            .read();
 
         if let Some((ops, _)) = shard.ops.get(&tx) {
             if ops.is_empty() {
