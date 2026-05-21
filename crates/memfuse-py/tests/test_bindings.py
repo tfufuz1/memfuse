@@ -205,6 +205,34 @@ def test_distance_metrics(db_path):
     with pytest.raises(ValueError):
         memfuse.open(db_path + "_invalid", dimension=4, distance_metric="invalid")
 
+def test_search_with_filter(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("filter_test")
+    v = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+
+    col.insert("doc1", v, metadata={"category": "A", "value": 10})
+    col.insert("doc2", v, metadata={"category": "B", "value": 20})
+
+    # Filter for category A
+    filter_a = {"Condition": {"field": "category", "op": "Eq", "value": "A"}}
+    results = col.search_with_filter(v, k=10, filter=filter_a)
+    assert len(results) == 1
+    assert results[0].id == "doc1"
+
+    # Filter for value > 15
+    filter_gt = {"Condition": {"field": "value", "op": "Gt", "value": 15}}
+    results = col.search_with_filter(v, k=10, filter=filter_gt)
+    assert len(results) == 1
+    assert results[0].id == "doc2"
+
+    # Complex filter: category A OR value > 15
+    filter_or = {"Or": [filter_a, filter_gt]}
+    results = col.search_with_filter(v, k=10, filter=filter_or)
+    assert len(results) == 2
+    ids = [r.id for r in results]
+    assert "doc1" in ids
+    assert "doc2" in ids
+
 def test_version_and_repr(db_path):
     assert memfuse.__version__ == "0.1.0"
 
