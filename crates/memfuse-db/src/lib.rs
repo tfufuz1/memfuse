@@ -844,11 +844,31 @@ mod tests {
         let (db, _tmp) = test_db(4).await;
 
         // 1. Setup Data
-        db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"text": "rust database", "type": "agent"}))).await.unwrap();
-        db.insert("doc-2", &[0.0, 1.0, 0.0, 0.0], Some(json!({"text": "python library", "type": "tool"}))).await.unwrap();
-        db.insert("doc-3", &[0.5, 0.5, 0.0, 0.0], Some(json!({"text": "rust library", "type": "agent"}))).await.unwrap();
+        db.insert(
+            "doc-1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"text": "rust database", "type": "agent"})),
+        )
+        .await
+        .expect("ins");
+        db.insert(
+            "doc-2",
+            &[0.0, 1.0, 0.0, 0.0],
+            Some(json!({"text": "python library", "type": "tool"})),
+        )
+        .await
+        .expect("ins");
+        db.insert(
+            "doc-3",
+            &[0.5, 0.5, 0.0, 0.0],
+            Some(json!({"text": "rust library", "type": "agent"})),
+        )
+        .await
+        .expect("ins");
 
-        db.relate("doc-1", "doc-3", "version_of").await.unwrap();
+        db.relate("doc-1", "doc-3", "version_of")
+            .await
+            .expect("ins");
 
         // 2. Query with 4 signals
         let query = HybridQuery {
@@ -869,7 +889,10 @@ mod tests {
             limit: 5,
         };
 
-        let results = db.hybrid_search_fusion(query).await.expect("hybrid search fusion");
+        let results = db
+            .hybrid_search_fusion(query)
+            .await
+            .expect("hybrid search fusion");
 
         // doc-1 matches: vector (rank 0), text (none), graph (none), metadata (yes)
         // doc-3 matches: vector (rank 1), text (rank 0), graph (rank 0), metadata (yes)

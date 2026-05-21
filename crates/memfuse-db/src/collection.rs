@@ -545,7 +545,11 @@ impl Collection {
                 }
             }
             // Sort graph results by score
-            results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+            results.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             signals.push((results, query.weights.graph));
         }
 
