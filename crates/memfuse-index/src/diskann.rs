@@ -141,7 +141,12 @@ impl DiskAnnIndex {
         for (i, node_graph) in graph.iter().enumerate() {
             let offset = file.stream_position().map_err(MemFuseError::Io)?;
 
-            for &val in &vectors[i] {
+            // ANCHOR:SEC:SLICE-004 AGENT:10 PRIO:1 STATUS:REVIEW
+            // Replace direct indexing with safe access to prevent panics.
+            let vector = vectors.get(i).ok_or_else(|| {
+                MemFuseError::Index(format!("DiskANN vector missing for index {}", i))
+            })?;
+            for &val in vector {
                 file.write_all(&val.to_le_bytes())
                     .map_err(MemFuseError::Io)?;
             }
@@ -155,7 +160,10 @@ impl DiskAnnIndex {
             file.write_all(&vec![0u8; padding_neighbors * 4])
                 .map_err(MemFuseError::Io)?;
 
-            file.write_all(&ids[i].inner().to_le_bytes())
+            let id = ids.get(i).ok_or_else(|| {
+                MemFuseError::Index(format!("DiskANN DocId missing for index {}", i))
+            })?;
+            file.write_all(&id.inner().to_le_bytes())
                 .map_err(MemFuseError::Io)?;
 
             let current_pos = file.stream_position().map_err(MemFuseError::Io)?;

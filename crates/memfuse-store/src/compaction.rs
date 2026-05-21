@@ -101,7 +101,16 @@ impl CompactionEngine {
         // 2. Collect input SSTables (under read-lock, just clone Arcs)
         let input_ssts: Vec<Arc<SstableReader>> = {
             let ssts = sstables.read().await;
-            indices.iter().map(|&i| Arc::clone(&ssts[i])).collect()
+            // ANCHOR:SEC:SLICE-005 AGENT:10 PRIO:1 STATUS:REVIEW
+            // Replace direct indexing with safe access to prevent panics.
+            let mut result = Vec::with_capacity(indices.len());
+            for &i in &indices {
+                let sst = ssts.get(i).ok_or_else(|| {
+                    memfuse_core::MemFuseError::Storage(format!("SSTable missing at index {}", i))
+                })?;
+                result.push(Arc::clone(sst));
+            }
+            result
         };
 
         // 3. Perform the merge (no lock held — this is the expensive part)
@@ -119,10 +128,14 @@ impl CompactionEngine {
             let mut ssts = sstables.write().await;
 
             // Collect paths of old SSTables before removing them
-            let old_paths: Vec<PathBuf> = indices
-                .iter()
-                .map(|&i| ssts[i].file_path().to_path_buf())
-                .collect();
+            // ANCHOR:SEC:SLICE-005 AGENT:10 PRIO:1 STATUS:REVIEW
+            let mut old_paths = Vec::with_capacity(indices.len());
+            for &i in &indices {
+                let sst = ssts.get(i).ok_or_else(|| {
+                    memfuse_core::MemFuseError::Storage(format!("SSTable missing at index {}", i))
+                })?;
+                old_paths.push(sst.file_path().to_path_buf());
+            }
 
             // Remove old SSTables (reverse order to preserve indices)
             let mut sorted_indices = indices.clone();
