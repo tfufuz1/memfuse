@@ -229,10 +229,15 @@ mod tests {
 
     #[test]
     fn test_doc_id_from_key_zero_panic() {
-        let keys = vec!["", "a", "short", "very_long_key_that_is_much_longer_than_eight_bytes"];
+        let keys = vec![
+            "",
+            "a",
+            "short",
+            "very_long_key_that_is_much_longer_than_eight_bytes",
+        ];
         for key in keys {
             let id = DocId::from_key(key);
-            let try_id = DocId::try_from_key(key).unwrap();
+            let try_id = DocId::try_from_key(key).expect("DocId::try_from_key failed");
             assert_eq!(id, try_id);
         }
     }

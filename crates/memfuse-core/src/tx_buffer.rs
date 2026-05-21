@@ -385,12 +385,14 @@ mod tests {
             },
         );
 
-        let count = buffer.inspect_ops(tx, |ops| ops.len()).unwrap();
+        let count = buffer
+            .inspect_ops(tx, |ops| ops.len())
+            .expect("inspect_ops failed");
         assert_eq!(count, 1);
 
-        let exists = buffer.inspect_ops(tx, |ops| {
-            ops.iter().any(|op| op.doc_id() == DocId::new(1))
-        }).unwrap();
+        let exists = buffer
+            .inspect_ops(tx, |ops| ops.iter().any(|op| op.doc_id() == DocId::new(1)))
+            .expect("inspect_ops failed");
         assert!(exists);
 
         let non_existent = buffer.inspect_ops(TxId::new(999), |ops| ops.len());
