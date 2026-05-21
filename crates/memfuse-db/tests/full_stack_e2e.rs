@@ -117,3 +117,95 @@ async fn test_full_stack_document_lifecycle() {
     let stats = db.stats().await.expect("Stats failed");
     assert!(stats.storage_stats.memtable_size_bytes > 0);
 }
+
+#[tokio::test]
+async fn test_collection_persistence_and_isolation() {
+    // ANCHOR:INTEGRATION:E2E-002 STATUS:READY AGENT:12 DATE:2026-05-21
+    let tmp = TempDir::new().expect("Failed to create temp dir");
+    let db_path = tmp.path().to_path_buf();
+    let config = MemFuseConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+
+    // 1. Initial Insert into two different collections
+    {
+        let db = MemFuse::open_with_config(&db_path, config.clone())
+            .await
+            .expect("Failed to open DB");
+        let col_a = db.collection("col-a").await.expect("Failed to get col-a");
+        let col_b = db.collection("col-b").await.expect("Failed to get col-b");
+
+        // Same ID, different data
+        col_a
+            .insert(
+                "shared-id",
+                &[1.0, 0.0, 0.0, 0.0],
+                Some(json!({"source": "A"})),
+            )
+            .await
+            .expect("Insert A failed");
+
+        col_b
+            .insert(
+                "shared-id",
+                &[0.0, 1.0, 0.0, 0.0],
+                Some(json!({"source": "B"})),
+            )
+            .await
+            .expect("Insert B failed");
+
+        // Force a flush to ensure persistence in SSTables (simulated via drop later)
+    }
+
+    // 2. Restart DB and verify persistence
+    {
+        let db = MemFuse::open_with_config(&db_path, config.clone())
+            .await
+            .expect("Failed to reopen DB");
+
+        let collections = db
+            .list_collections()
+            .await
+            .expect("List collections failed");
+        assert!(collections.iter().any(|c| c == "col-a"));
+        assert!(collections.iter().any(|c| c == "col-b"));
+
+        let col_a = db.collection("col-a").await.expect("Failed to get col-a");
+        let col_b = db.collection("col-b").await.expect("Failed to get col-b");
+
+        let doc_a = col_a
+            .get("shared-id")
+            .await
+            .expect("Get A failed")
+            .expect("Doc A missing");
+        let doc_b = col_b
+            .get("shared-id")
+            .await
+            .expect("Get B failed")
+            .expect("Doc B missing");
+
+        assert_eq!(doc_a.metadata.unwrap()["source"], "A");
+        assert_eq!(doc_b.metadata.unwrap()["source"], "B");
+
+        // 3. Drop col-a and verify isolation
+        db.drop_collection("col-a")
+            .await
+            .expect("Drop col-a failed");
+
+        let collections_after = db
+            .list_collections()
+            .await
+            .expect("List collections failed");
+        assert!(!collections_after.iter().any(|c| c == "col-a"));
+        assert!(collections_after.iter().any(|c| c == "col-b"));
+
+        // col-b should still have its data
+        let doc_b_still_here = col_b
+            .get("shared-id")
+            .await
+            .expect("Get B failed")
+            .expect("Doc B missing after drop A");
+        assert_eq!(doc_b_still_here.metadata.unwrap()["source"], "B");
+    }
+}
