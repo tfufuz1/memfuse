@@ -45,7 +45,10 @@ impl KeyManager {
             .map_err(|e| MemFuseError::Storage(format!("Crypto error: {}", e)))?;
 
         let mut nonce_bytes = [0u8; 12];
-        nonce_bytes[4..12].copy_from_slice(&nonce_val.to_le_bytes());
+        nonce_bytes
+            .get_mut(4..12)
+            .ok_or_else(|| MemFuseError::Storage("Crypto nonce buffer overflow".into()))?
+            .copy_from_slice(&nonce_val.to_le_bytes());
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         cipher
@@ -59,7 +62,10 @@ impl KeyManager {
             .map_err(|e| MemFuseError::Storage(format!("Crypto error: {}", e)))?;
 
         let mut nonce_bytes = [0u8; 12];
-        nonce_bytes[4..12].copy_from_slice(&nonce_val.to_le_bytes());
+        nonce_bytes
+            .get_mut(4..12)
+            .ok_or_else(|| MemFuseError::Storage("Crypto nonce buffer overflow".into()))?
+            .copy_from_slice(&nonce_val.to_le_bytes());
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         cipher

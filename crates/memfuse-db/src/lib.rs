@@ -169,7 +169,9 @@ impl MemFuse {
         let col_idx_prefix = b"__col_idx:\x00";
         let entries = self.storage.scan_prefix(col_idx_prefix).await?;
         for (k, _) in entries {
-            let name_bytes = &k[col_idx_prefix.len()..];
+            let name_bytes = k.get(col_idx_prefix.len()..).ok_or_else(|| {
+                memfuse_core::MemFuseError::Storage("corrupted collection index key".into())
+            })?;
             if let Ok(name) = String::from_utf8(name_bytes.to_vec()) {
                 let _ = self.collection(&name).await?;
             }
@@ -257,7 +259,9 @@ impl MemFuse {
         names.insert("default".to_string());
 
         for (k, _) in entries {
-            let name_bytes = &k[col_idx_prefix.len()..];
+            let name_bytes = k.get(col_idx_prefix.len()..).ok_or_else(|| {
+                memfuse_core::MemFuseError::Storage("corrupted collection index key".into())
+            })?;
             if let Ok(name) = String::from_utf8(name_bytes.to_vec()) {
                 names.insert(name);
             }

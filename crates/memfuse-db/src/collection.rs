@@ -314,7 +314,7 @@ impl Collection {
                 // Strip the internal prefix: self.prefix (variable) + 1 byte (key_type)
                 let prefix_len = self.prefix.len() + 1;
                 if key_str.len() >= prefix_len {
-                    key_str[prefix_len..].to_string()
+                    key_str.get(prefix_len..).unwrap_or("").to_string()
                 } else {
                     key_str
                 }
@@ -576,7 +576,7 @@ impl Collection {
             } else {
                 let prefix_len = self.prefix.len() + 1;
                 if key_str.len() >= prefix_len {
-                    key_str[prefix_len..].to_string()
+                    key_str.get(prefix_len..).unwrap_or("").to_string()
                 } else {
                     key_str
                 }

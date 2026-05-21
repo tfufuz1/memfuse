@@ -294,7 +294,7 @@ impl HnswIndexCore {
 
         for &ep in entry_points {
             if visited.insert(ep) {
-                // ANCHOR:SEC:SLICE-003 AGENT:10 PRIO:1 STATUS:READY
+                // ANCHOR:SEC:SLICE-003 AGENT:10 PRIO:1 STATUS:REVIEW
                 // Safe access to nodes and connections.
                 let node = nodes.get(ep).ok_or_else(|| {
                     MemFuseError::Index(format!("HNSW node missing at index {}", ep))
@@ -523,7 +523,9 @@ impl HnswIndexCore {
                 let nodes = self.nodes.read();
                 self.select_neighbors_heuristic(&nodes, &neighbors, self.config.m)?
             };
-            final_connections[layer] = selected;
+            *final_connections.get_mut(layer).ok_or_else(|| {
+                MemFuseError::Index(format!("HNSW final_connections missing for layer {}", layer))
+            })? = selected;
             ep = neighbors.iter().map(|c| c.index).collect();
         }
 
@@ -539,7 +541,10 @@ impl HnswIndexCore {
             }
 
             for layer in (0..=new_layer.min(current_max_layer)).rev() {
-                for &neighbor_idx in &final_connections[layer] {
+                let current_layer_connections = final_connections.get(layer).ok_or_else(|| {
+                    MemFuseError::Index(format!("HNSW final_connections missing for layer {}", layer))
+                })?;
+                for &neighbor_idx in current_layer_connections {
                     // Scope for neighbor modification to release mutable borrow
                     let (should_shrink, node_vec, conn_indices) = {
                         let neighbor_node = nodes.get_mut(neighbor_idx).ok_or_else(|| {

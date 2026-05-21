@@ -197,7 +197,9 @@ impl Wal {
         if let Some(km) = &self.key_manager {
             // Encrypt the payload (everything after the length prefix)
             if bytes.len() > 4 {
-                let payload = &bytes[4..];
+                let payload = bytes.get(4..).ok_or_else(|| {
+                    MemFuseError::Storage("WAL entry serialization failed (payload missing)".into())
+                })?;
                 let offset = self.size();
                 let encrypted = km.encrypt(payload, offset)?;
                 let mut new_bytes = Vec::with_capacity(4 + encrypted.len());

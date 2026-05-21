@@ -292,7 +292,9 @@ impl StorageEngine for LsmStorage {
         let doc_id = {
             let hash = blake3::hash(key);
             let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&hash.as_bytes()[..8]);
+            bytes.copy_from_slice(hash.as_bytes().get(..8).ok_or_else(|| {
+                MemFuseError::Storage("blake3 hash slicing failed".into())
+            })?);
             DocId::new(u64::from_le_bytes(bytes))
         };
 
@@ -310,7 +312,9 @@ impl StorageEngine for LsmStorage {
         let doc_id = {
             let hash = blake3::hash(key);
             let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&hash.as_bytes()[..8]);
+            bytes.copy_from_slice(hash.as_bytes().get(..8).ok_or_else(|| {
+                MemFuseError::Storage("blake3 hash slicing failed".into())
+            })?);
             DocId::new(u64::from_le_bytes(bytes))
         };
 
