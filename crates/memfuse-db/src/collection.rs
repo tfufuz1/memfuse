@@ -26,7 +26,7 @@ pub(crate) struct StoredDocument {
     pub metadata: Option<serde_json::Value>,
 }
 
-/// Fusions weights for 4-Signal Fusion.
+/// Fusion weights for 4-Signal Fusion.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FusionWeights {
     pub vector: f32,

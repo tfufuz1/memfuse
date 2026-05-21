@@ -1,4 +1,8 @@
-use memfuse_db::{MemFuse, MemFuseConfig, collection::{HybridQuery, FusionWeights}, filter::{MetadataFilter, FilterOp}};
+use memfuse_db::{
+    collection::{FusionWeights, HybridQuery},
+    filter::{FilterOp, MetadataFilter},
+    MemFuse, MemFuseConfig,
+};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -12,9 +16,27 @@ async fn test_4_signal_fusion_smoke() {
     let db = MemFuse::open_with_config(tmp.path(), config).await.unwrap(); // unwrap
 
     // 1. Setup data
-    db.insert("doc-1", &[1.0, 0.0, 0.0], Some(json!({"text": "rust programming", "category": "tech"}))).await.unwrap(); // unwrap
-    db.insert("doc-2", &[0.0, 1.0, 0.0], Some(json!({"text": "python scripting", "category": "tech"}))).await.unwrap(); // unwrap
-    db.insert("doc-3", &[0.0, 0.0, 1.0], Some(json!({"text": "gardening tips", "category": "hobby"}))).await.unwrap(); // unwrap
+    db.insert(
+        "doc-1",
+        &[1.0, 0.0, 0.0],
+        Some(json!({"text": "rust programming", "category": "tech"})),
+    )
+    .await
+    .unwrap(); // unwrap
+    db.insert(
+        "doc-2",
+        &[0.0, 1.0, 0.0],
+        Some(json!({"text": "python scripting", "category": "tech"})),
+    )
+    .await
+    .unwrap(); // unwrap
+    db.insert(
+        "doc-3",
+        &[0.0, 0.0, 1.0],
+        Some(json!({"text": "gardening tips", "category": "hobby"})),
+    )
+    .await
+    .unwrap(); // unwrap
 
     db.relate("doc-1", "doc-2", "related").await.unwrap(); // unwrap
 
@@ -56,7 +78,9 @@ async fn test_fusion_weights_influence() {
     let db = MemFuse::open_with_config(tmp.path(), config).await.unwrap(); // unwrap
 
     db.insert("doc-v", &[1.0, 0.0, 0.0], None).await.unwrap(); // unwrap
-    db.insert("doc-t", &[0.0, 0.0, 0.0], Some(json!({"text": "keyword"}))).await.unwrap(); // unwrap
+    db.insert("doc-t", &[0.0, 0.0, 0.0], Some(json!({"text": "keyword"})))
+        .await
+        .unwrap(); // unwrap
 
     // Vector heavy
     let query_v = HybridQuery {
