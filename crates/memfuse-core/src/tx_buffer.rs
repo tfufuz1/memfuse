@@ -196,6 +196,18 @@ impl<T: Clone> TxBuffer<T> {
         let shard = self.shards[shard_idx].read();
         shard.ops.get(&tx).map(|(ops, _)| ops.clone())
     }
+
+    /// Provides read access to the operations of a transaction via a closure.
+    ///
+    /// This avoids unnecessary cloning of the operations vector.
+    pub fn inspect_ops<F, R>(&self, tx: TxId, f: F) -> Option<R>
+    where
+        F: FnOnce(&[IndexOp<T>]) -> R,
+    {
+        let shard_idx = self.shard_idx(tx);
+        let shard = self.shards[shard_idx].read();
+        shard.ops.get(&tx).map(|(ops, _)| f(ops))
+    }
 }
 
 impl<T: Clone> Default for TxBuffer<T> {
@@ -359,5 +371,29 @@ mod tests {
             assert_eq!(ops.len(), ops_per_tx);
         }
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_inspect_ops() {
+        let buffer = TxBuffer::<String>::new();
+        let tx = TxId::new(1);
+        buffer.stage(
+            tx,
+            IndexOp::Insert {
+                doc_id: DocId::new(1),
+                data: "test".to_string(),
+            },
+        );
+
+        let count = buffer.inspect_ops(tx, |ops| ops.len()).unwrap();
+        assert_eq!(count, 1);
+
+        let exists = buffer.inspect_ops(tx, |ops| {
+            ops.iter().any(|op| op.doc_id() == DocId::new(1))
+        }).unwrap();
+        assert!(exists);
+
+        let non_existent = buffer.inspect_ops(TxId::new(999), |ops| ops.len());
+        assert!(non_existent.is_none());
     }
 }

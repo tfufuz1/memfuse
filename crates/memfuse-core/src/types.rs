@@ -28,7 +28,9 @@ pub const TOMBSTONE_BIT: u64 = 1 << 63;
 pub struct DocId(pub u64);
 
 impl DocId {
+    /// Maximum possible DocId value.
     pub const MAX: Self = Self(u64::MAX);
+    /// Minimum possible DocId value.
     pub const MIN: Self = Self(0);
 
     /// Creates a new DocId from a raw u64.
@@ -44,27 +46,22 @@ impl DocId {
     }
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
+    ///
+    /// This implementation is zero-panic as blake3 always produces 32 bytes.
     pub fn from_key(key: &str) -> Self {
         // ANCHOR:DEBT:TYPES-002 AGENT:01 STATUS:DONE PRIO:3
-        // SAFETY: blake3::hash() always returns a 32-byte hash.
-        // try_from_key() only fails if the hash is shorter than 8 bytes.
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes") // unwrap: blake3 hash is always 32 bytes
+        let hash = blake3::hash(key.as_bytes());
+        let bytes = hash.as_bytes();
+        let mut buf = [0u8; 8];
+        buf.copy_from_slice(&bytes[..8]);
+        Self(u64::from_le_bytes(buf))
     }
 
     /// Safely derive a DocId from a user-provided string key.
     ///
     /// Uses blake3 hash and safe slice indexing.
     pub fn try_from_key(key: &str) -> Result<Self> {
-        let hash = blake3::hash(key.as_bytes());
-        let bytes = hash
-            .as_bytes()
-            .get(..8)
-            .ok_or_else(|| MemFuseError::Internal("Blake3 hash too short".to_string()))?;
-
-        let buf: [u8; 8] = bytes.try_into().map_err(|_| {
-            MemFuseError::Internal("Failed to convert hash slice to array".to_string())
-        })?;
-        Ok(Self(u64::from_le_bytes(buf)))
+        Ok(Self::from_key(key))
     }
 }
 
@@ -226,6 +223,29 @@ impl Entity {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_doc_id_from_key_zero_panic() {
+        let keys = vec!["", "a", "short", "very_long_key_that_is_much_longer_than_eight_bytes"];
+        for key in keys {
+            let id = DocId::from_key(key);
+            let try_id = DocId::try_from_key(key).unwrap();
+            assert_eq!(id, try_id);
+        }
+    }
+
+    #[test]
+    fn test_doc_id_determinism() {
+        let key = "test_key";
+        let id1 = DocId::from_key(key);
+        let id2 = DocId::from_key(key);
+        assert_eq!(id1, id2);
+    }
+}
+
 /// Graph edge (relation) between two entities.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Edge {
@@ -294,6 +314,9 @@ impl ResourceTracker {
         }
     }
 
+    /// Attempts to consume the specified amount of memory.
+    ///
+    /// Returns `Err(MemFuseError::MemoryBudgetExceeded)` if the budget is exceeded.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         let current = self
             .memory_used
@@ -309,15 +332,18 @@ impl ResourceTracker {
         Ok(())
     }
 
+    /// Releases the specified amount of memory.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Returns the current memory usage in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns a reference to the configured budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }
