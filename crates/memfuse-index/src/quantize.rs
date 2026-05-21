@@ -7,8 +7,8 @@
 // SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
 
 use crate::distance::{
-    cosine_similarity_parts_f32_u8, dot_product_f32_u8, dot_product_u8, euclidean_distance_sq_f32_u8,
-    euclidean_distance_sq_u8,
+    cosine_similarity_parts_f32_u8, dot_product_f32_u8, dot_product_u8,
+    euclidean_distance_sq_f32_u8, euclidean_distance_sq_u8,
 };
 use memfuse_core::DistanceMetric;
 
@@ -167,8 +167,7 @@ impl ScalarQuantizer {
                 for &x in query {
                     sum_q += x;
                 }
-                let dot =
-                    self.inv_scale * dot_product_f32_u8(query, quantized) + self.min * sum_q;
+                let dot = self.inv_scale * dot_product_f32_u8(query, quantized) + self.min * sum_q;
                 Ok(-dot)
             }
         }
@@ -201,8 +200,8 @@ impl ScalarQuantizer {
                 Ok(dist_sq.sqrt())
             }
             DistanceMetric::DotProduct => {
-                let dot =
-                    self.inv_scale * dot_product_f32_u8(&pre.query, quantized) + self.min * pre.sum_q;
+                let dot = self.inv_scale * dot_product_f32_u8(&pre.query, quantized)
+                    + self.min * pre.sum_q;
                 Ok(-dot)
             }
         }

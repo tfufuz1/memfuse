@@ -311,7 +311,11 @@ impl HnswIndexCore {
                     (crate::hnsw::VectorData::U8(v), Some(pre), Some(q)) => {
                         q.asymmetric_dist_precomputed(pre, v, self.config.distance_metric)?
                     }
-                    _ => self.compute_distance_with_data(ctx.query, ctx.query_quantized, &node.vector)?,
+                    _ => self.compute_distance_with_data(
+                        ctx.query,
+                        ctx.query_quantized,
+                        &node.vector,
+                    )?,
                 };
                 let cand = Candidate {
                     index: ep,
