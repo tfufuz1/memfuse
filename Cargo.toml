@@ -4,7 +4,7 @@ members = [
     "crates/memfuse-core",
     "crates/memfuse-store",
     "crates/memfuse-index",
-    "crates/memfuse-db", "crates/memfuse-text", "crates/memfuse-runtime", "crates/memfuse-orchestrator", "crates/memfuse-py", "crates/memfuse-checkpoint",
+    "crates/memfuse-db", "crates/memfuse-text", "crates/memfuse-runtime", "crates/memfuse-orchestrator", "crates/memfuse-py", "crates/memfuse-checkpoint", "crates/memfuse-graph"
 ]
 
 [workspace.package]
@@ -25,8 +25,6 @@ bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
-async-stream = "0.3"
-tokio-stream = "0.1"
 
 # Data structures
 bytes = "1"
@@ -35,7 +33,6 @@ ahash = "0.8"
 itoa = "1"
 parking_lot = "0.12"
 roaring = "0.10"
-unicode-segmentation = "1"
 
 # Crypto & hashing
 blake3 = "1"
@@ -46,7 +43,6 @@ rand = "0.8"
 
 # Observability
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Testing
 tempfile = "3"
@@ -55,7 +51,6 @@ tempfile = "3"
 memfuse-core = { path = "crates/memfuse-core" }
 memfuse-store = { path = "crates/memfuse-store" }
 memfuse-index = { path = "crates/memfuse-index" }
-memfuse-db = { path = "crates/memfuse-db" }
 memfuse-text = { path = "crates/memfuse-text" }
 memfuse-runtime = { path = "crates/memfuse-runtime" }
 memfuse-orchestrator = { path = "crates/memfuse-orchestrator" }

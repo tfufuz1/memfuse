@@ -44,7 +44,7 @@ use crate::compaction::{CompactionConfig, CompactionEngine};
 use crate::crypto::KeyManager;
 use crate::memtable::MemTable;
 use crate::sstable::{create_block_cache, BlockCache, SstableBuilder, SstableReader};
-use crate::wal::{Wal, WalEntry, WalOp};
+use crate::wal::{Wal, WalOp};
 use async_trait::async_trait;
 use bytes::Bytes;
 use memfuse_core::{
@@ -341,27 +341,23 @@ impl StorageEngine for LsmStorage {
         let ops = self.tx_buffer.drain(tx_id);
         let state = self.state.read().await;
 
-        let integrity_key = if let Some(km) = &self.key_manager {
-            km.integrity_key()?
-        } else {
-            *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0"
-        };
-
         for op in ops {
             let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
 
             match op {
                 IndexOp::Insert { data, .. } => {
                     let (key, value) = data;
-                    let entry = WalEntry::try_new(
-                        WalOp::Put {
-                            tx_id,
-                            key: key.clone(),
-                            value: value.clone(),
-                        },
-                        seq_no,
-                        &integrity_key,
-                    )?;
+                    let entry = state
+                        .wal
+                        .create_entry(
+                            WalOp::Put {
+                                tx_id,
+                                key: key.clone(),
+                                value: value.clone(),
+                            },
+                            seq_no,
+                        )
+                        .await?;
                     let entry_size = key.len() + value.len() + 8;
                     let _ = self.budget.consume_memory(entry_size as u64);
                     state.wal.append(&entry).await?;
@@ -371,14 +367,16 @@ impl StorageEngine for LsmStorage {
                 }
                 IndexOp::Delete { data, .. } => {
                     if let Some((key, _)) = data {
-                        let entry = WalEntry::try_new(
-                            WalOp::Delete {
-                                tx_id,
-                                key: key.clone(),
-                            },
-                            seq_no,
-                            &integrity_key,
-                        )?;
+                        let entry = state
+                            .wal
+                            .create_entry(
+                                WalOp::Delete {
+                                    tx_id,
+                                    key: key.clone(),
+                                },
+                                seq_no,
+                            )
+                            .await?;
                         let _ = self.budget.consume_memory(key.len() as u64 + 8);
                         state.wal.append(&entry).await?;
                         state

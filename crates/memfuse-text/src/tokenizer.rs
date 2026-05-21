@@ -40,11 +40,28 @@ impl Tokenizer for DefaultTokenizer {
     }
 }
 
-/// German tokenizer with basic compound splitting POC.
-pub struct GermanMorphTokenizer;
+/// German tokenizer with morphological compound splitting.
+pub struct GermanMorphTokenizer {
+    splitter: crate::morphology::GermanCompoundSplitter,
+}
+
+impl GermanMorphTokenizer {
+    pub fn new() -> Self {
+        Self {
+            splitter: crate::morphology::GermanCompoundSplitter::new(),
+        }
+    }
+}
+
+impl Default for GermanMorphTokenizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Tokenizer for GermanMorphTokenizer {
     fn tokenize(&self, text: &str) -> Vec<String> {
+        use crate::morphology::MorphologicalTokenizer;
         let stopwords = get_stopwords();
         let mut tokens = Vec::new();
 
@@ -54,11 +71,14 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
+            let components = self.splitter.decompose(&lower);
+            if components.len() > 1 {
+                // Collect component strings first to avoid borrow issues with lower
+                let comp_strs: Vec<String> = components.iter().map(|s| s.to_string()).collect();
+                // Keep original compound for exact matches
+                tokens.push(lower);
+                // Add decomposed components for recall
+                tokens.extend(comp_strs);
             } else {
                 tokens.push(lower);
             }
@@ -95,7 +115,7 @@ mod tests {
 
     #[test]
     fn test_german_morph_tokenizer() {
-        let tokenizer = GermanMorphTokenizer;
+        let tokenizer = GermanMorphTokenizer::new();
         let tokens = tokenizer.tokenize("Das Bundesverfassungsgericht");
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));

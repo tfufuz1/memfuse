@@ -85,11 +85,72 @@ mod tests {
         let fused = reciprocal_rank_fusion(vec![vectors, keywords], 5);
 
         let ids: Vec<&str> = fused.iter().map(|r| r.id.as_str()).collect();
-        // doc_b appears in both sets, rank 1 and rank 0 respectively.
-        // score for doc_b: 1/(60+2) + 1/(60+1) = 1/62 + 1/61 = ~0.0325
-        // score for doc_a: 1/(60+1) = 1/61 = ~0.0163
-        // score for doc_d: 1/(60+2) = 1/62 = ~0.0161
-        // score for doc_c: 1/(60+3) = 1/63 = ~0.0158
         assert_eq!(ids, vec!["doc_b", "doc_a", "doc_d", "doc_c"]);
+    }
+
+    #[test]
+    fn test_rrf_empty_inputs_return_empty() {
+        let fused = reciprocal_rank_fusion(vec![], 5);
+        assert!(
+            fused.is_empty(),
+            "Empty input sets should return empty results"
+        );
+
+        let fused2 = reciprocal_rank_fusion(vec![vec![], vec![]], 5);
+        assert!(
+            fused2.is_empty(),
+            "Inputs with empty inner sets should return empty results"
+        );
+    }
+
+    #[test]
+    fn test_rrf_truncates_max_results() {
+        let vectors: Vec<SearchResult> = (0..10)
+            .map(|i| SearchResult {
+                id: format!("doc_{}", i),
+                score: 0.99,
+                metadata: None,
+            })
+            .collect();
+
+        let keywords: Vec<SearchResult> = (5..15)
+            .map(|i| SearchResult {
+                id: format!("doc_{}", i),
+                score: 0.88,
+                metadata: None,
+            })
+            .collect();
+
+        // Pass 10 + 10 elements. The limit is exclusively 3.
+        let fused = reciprocal_rank_fusion(vec![vectors, keywords], 3);
+        assert_eq!(
+            fused.len(),
+            3,
+            "Result must be strictly truncated to max_results"
+        );
+    }
+
+    #[test]
+    fn test_rrf_identical_ranks() {
+        let vectors = vec![SearchResult {
+            id: "X".to_string(),
+            score: 0.9,
+            metadata: None,
+        }];
+        let keywords = vec![SearchResult {
+            id: "Y".to_string(),
+            score: 0.9,
+            metadata: None,
+        }];
+        let fused = reciprocal_rank_fusion(vec![vectors, keywords], 2);
+
+        assert_eq!(fused.len(), 2);
+        // Both hit rank 0. Score = 1 / (60 + 0 + 1) = 1/61 = ~0.01639
+        assert!(
+            (fused[0].score - (1.0 / 61.0)).abs() < f32::EPSILON,
+            "Score mismatch: expected {}",
+            1.0 / 61.0
+        );
+        assert!((fused[1].score - (1.0 / 61.0)).abs() < f32::EPSILON);
     }
 }

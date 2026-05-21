@@ -145,8 +145,27 @@ impl Collection {
         }
 
         let db_tx = self.begin_transaction();
+
+        match self.insert_op(&db_tx, id, embedding, metadata).await {
+            Ok(_) => db_tx.commit().await,
+            Err(e) => {
+                if let Err(rollback_err) = db_tx.rollback().await {
+                    tracing::error!("[INV-DB-3] Failed to rollback insert: {}", rollback_err);
+                }
+                Err(e)
+            }
+        }
+    }
+
+    async fn insert_op(
+        &self,
+        db_tx: &crate::transaction::DbTransaction<'_>,
+        id: &str,
+        embedding: &[f32],
+        metadata: Option<serde_json::Value>,
+    ) -> Result<()> {
         let tx = db_tx.tx_id;
-        let doc_id = DocId::from_key(id);
+        let doc_id = DocId::from_key(id)?;
 
         let stored = StoredDocument {
             id: id.to_string(),
@@ -173,8 +192,6 @@ impl Collection {
         if let Some(text) = extract_text(&metadata) {
             self.text_index.upsert_document(tx, doc_id, &text).await?;
         }
-
-        db_tx.commit().await?;
 
         Ok(())
     }
@@ -208,8 +225,27 @@ impl Collection {
         }
 
         let db_tx = self.begin_transaction();
+
+        match self.update_op(&db_tx, id, embedding, metadata).await {
+            Ok(_) => db_tx.commit().await,
+            Err(e) => {
+                if let Err(rollback_err) = db_tx.rollback().await {
+                    tracing::error!("[INV-DB-3] Failed to rollback update: {}", rollback_err);
+                }
+                Err(e)
+            }
+        }
+    }
+
+    async fn update_op(
+        &self,
+        db_tx: &crate::transaction::DbTransaction<'_>,
+        id: &str,
+        embedding: &[f32],
+        metadata: Option<serde_json::Value>,
+    ) -> Result<()> {
         let tx = db_tx.tx_id;
-        let doc_id = DocId::from_key(id);
+        let doc_id = DocId::from_key(id)?;
 
         let user_key = self.namespaced_key(id.as_bytes(), 0);
 
@@ -242,16 +278,31 @@ impl Collection {
         let _ = self.index.delete(tx, doc_id).await;
         self.index.insert(tx, doc_id, embedding).await?;
 
-        db_tx.commit().await?;
-
         Ok(())
     }
 
     /// Deletes a document from the collection by its ID.
     pub async fn delete(&self, id: &str) -> Result<()> {
         let db_tx = self.begin_transaction();
+
+        match self.delete_op(&db_tx, id).await {
+            Ok(_) => db_tx.commit().await,
+            Err(e) => {
+                if let Err(rollback_err) = db_tx.rollback().await {
+                    tracing::error!("[INV-DB-3] Failed to rollback delete: {}", rollback_err);
+                }
+                Err(e)
+            }
+        }
+    }
+
+    async fn delete_op(
+        &self,
+        db_tx: &crate::transaction::DbTransaction<'_>,
+        id: &str,
+    ) -> Result<()> {
         let tx = db_tx.tx_id;
-        let doc_id = DocId::from_key(id);
+        let doc_id = DocId::from_key(id)?;
 
         let user_key = self.namespaced_key(id.as_bytes(), 0);
 
@@ -266,8 +317,6 @@ impl Collection {
         db_tx.record_keys(user_key, doc_key, doc_id);
 
         let _ = self.index.delete(tx, doc_id).await;
-
-        db_tx.commit().await?;
 
         Ok(())
     }
@@ -607,7 +656,7 @@ impl Collection {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         for (_, v) in entries {
             let stored: StoredDocument = serde_json::from_slice(&v)?;
-            let doc_id = DocId::from_key(&stored.id);
+            let doc_id = DocId::from_key(&stored.id)?;
             self.index.insert(tx, doc_id, &stored.embedding).await?;
         }
         self.index.commit(tx).await?;

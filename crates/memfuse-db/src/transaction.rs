@@ -3,26 +3,16 @@
 //! This module provides `DbTransaction`, an orchestrator for atomic multi-index commits
 //! between the LSM-Tree storage engine (`memfuse-store`) and the HNSW vector index (`memfuse-index`).
 //! It implements a 2-phase commit protocol and provides compensating transactions for rollbacks.
+//!
+//! # Safety & Reliability Invariants
+//! - **[INV-DB-3] Strict Error Visibility in Rollbacks**: Compensating transactions during
+//!   rollback must never silently drop errors. Discovered during Forensic Audit (HARD-004),
+//!   any rollback failure must log explicitly to `tracing::error!` mapping out a potential Split-Brain.
 
-// ANCHOR:DOC:DOC-TRANSACTION-001 — Missing module documentation
-// WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:04 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-09 DEADLINE:NONE
 use crate::Collection;
 use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId, VectorIndex};
 use std::sync::Mutex;
 
-// ANCHOR:ARCH:DB-TX-001 — Atomic Multi-Index Commit Orchestrierung.
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-09 DEADLINE:NONE
-// MECHANISMUS: 2-Phase Commit zwischen LSM-Store und HNSW-Index.
-// ROLLBACK: Führt Compensating Transactions für den LSM-Store aus, falls HNSW failt.
-//
-// ANCHOR:GREEN:WP-1.2-TX-001 — Isolation-Tests für DbTransaction::rollback unter Contention.
-// WP:WP-1.2 PRIO:2 NEEDS:NONE
-// AGENT:12 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-09 DEADLINE:NONE
 /// A transaction wrapper that ensures atomic multi-index commits across LSM-Store and HNSW-Index.
 pub struct DbTransaction<'a> {
     pub tx_id: TxId,
@@ -65,6 +55,13 @@ impl<'a> DbTransaction<'a> {
     }
 
     /// Commits the transaction atomically across both LSM and HNSW.
+    ///
+    /// Follows a 3-step sequence:
+    /// 1. Write Intent WAL entry to LSM.
+    /// 2. Commit Storage (LSM).
+    /// 3. Commit Index (HNSW).
+    ///
+    /// If 3 fails, it performs a compensating transaction on the LSM store.
     pub async fn commit(self) -> Result<()> {
         let intent_key = self
             .collection
@@ -79,13 +76,27 @@ impl<'a> DbTransaction<'a> {
         // 2. Commit Storage (LSM)
         if let Err(storage_err) = self.collection.storage.commit(self.tx_id).await {
             // Roll back the index since storage failed
-            let _ = self.collection.index.rollback(self.tx_id).await;
+            if let Err(e) = self.collection.index.rollback(self.tx_id).await {
+                tracing::error!(
+                    "[INV-DB-3] CRITICAL: Failed to rollback index during transaction abort. \
+                     Index DB split-brain possible! Error: {}",
+                    e
+                );
+            }
+            // Also explicitly rollback storage in-memory state
+            if let Err(e) = self.collection.storage.rollback(self.tx_id).await {
+                tracing::error!(
+                    "[INV-DB-3] CRITICAL: Failed to rollback storage in-memory state after commit failure. \
+                     Error: {}",
+                    e
+                );
+            }
             return Err(MemFuseError::Transaction(storage_err.to_string()));
         }
 
         // 3. Commit Index (HNSW)
         if let Err(index_err) = self.collection.index.commit(self.tx_id).await {
-            // Compensating transaction to rollback the LSM Storage
+            // Compensating transaction to rollback the LSM Storage since it's already committed
             let rollback_tx = TxId::new(
                 self.collection
                     .next_tx
@@ -100,7 +111,14 @@ impl<'a> DbTransaction<'a> {
                 std::mem::take(&mut *guard)
             };
             for f_key in f_keys {
-                let _ = self.collection.storage.delete(rollback_tx, &f_key).await;
+                if let Err(e) = self.collection.storage.delete(rollback_tx, &f_key).await {
+                    tracing::error!(
+                        "[INV-DB-3] CRITICAL: Compensating transaction failed to delete forward key: {:?}. \
+                         Error: {}",
+                        f_key,
+                        e
+                    );
+                }
             }
 
             let r_keys = {
@@ -111,17 +129,39 @@ impl<'a> DbTransaction<'a> {
                 std::mem::take(&mut *guard)
             };
             for r_key in r_keys {
-                let _ = self.collection.storage.delete(rollback_tx, &r_key).await;
+                if let Err(e) = self.collection.storage.delete(rollback_tx, &r_key).await {
+                    tracing::error!(
+                        "[INV-DB-3] CRITICAL: Compensating transaction failed to delete reverse key: {:?}. \
+                         Error: {}",
+                        r_key,
+                        e
+                    );
+                }
             }
 
-            let _ = self
+            if let Err(e) = self
                 .collection
                 .storage
                 .put(rollback_tx, &intent_key, b"aborted")
-                .await;
-            let _ = self.collection.storage.commit(rollback_tx).await;
+                .await
+            {
+                tracing::error!(
+                    "[INV-DB-3] CRITICAL: Failed to write aborted intent marker: {}",
+                    e
+                );
+            }
 
-            return Err(MemFuseError::Transaction(index_err.to_string()));
+            if let Err(e) = self.collection.storage.commit(rollback_tx).await {
+                tracing::error!(
+                    "[INV-DB-3] CRITICAL: Compensating transaction commit failed: {}",
+                    e
+                );
+            }
+
+            return Err(MemFuseError::Transaction(format!(
+                "Index commit failed, storage rolled back via compensating tx. Error: {}",
+                index_err
+            )));
         }
 
         // 4. Finalize / Cleanup
@@ -130,20 +170,36 @@ impl<'a> DbTransaction<'a> {
                 .next_tx
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
         );
-        let _ = self
+        if let Err(e) = self
             .collection
             .storage
             .put(cleanup_tx, &intent_key, b"committed")
-            .await;
-        let _ = self.collection.storage.commit(cleanup_tx).await;
+            .await
+        {
+            tracing::warn!("Failed to write committed intent marker: {}", e);
+        }
+
+        if let Err(e) = self.collection.storage.commit(cleanup_tx).await {
+            tracing::warn!("Failed to commit cleanup transaction: {}", e);
+        }
 
         Ok(())
     }
 
-    /// Rolls back any changes entirely from memory before commit is called.
+    /// Rolls back any changes applied to the sub-systems in-memory.
     pub async fn rollback(self) -> Result<()> {
-        self.collection.storage.rollback(self.tx_id).await?;
-        self.collection.index.rollback(self.tx_id).await?;
+        let storage_res = self.collection.storage.rollback(self.tx_id).await;
+        let index_res = self.collection.index.rollback(self.tx_id).await;
+
+        if let Err(ref e) = storage_res {
+            tracing::error!("[INV-DB-3] Storage rollback failed: {}", e);
+        }
+        if let Err(ref e) = index_res {
+            tracing::error!("[INV-DB-3] Index rollback failed: {}", e);
+        }
+
+        storage_res?;
+        index_res?;
         Ok(())
     }
 }

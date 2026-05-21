@@ -42,7 +42,7 @@ async fn test_manual_rollback() {
 
     let db_tx = col.begin_transaction();
     let tx_id = db_tx.tx_id;
-    let doc_id = DocId::from_key("manual_rollback");
+    let doc_id = DocId::from_key("manual_rollback").unwrap();
     let embedding = vec![1.0, 0.0, 0.0, 0.0];
 
     // Manually put into storage and index using the transaction ID
@@ -83,7 +83,7 @@ async fn test_concurrent_rollback_contention() {
 
         tasks.push(tokio::spawn(async move {
             let id = format!("doc-{}", i);
-            let doc_id = DocId::from_key(&id);
+            let doc_id = DocId::from_key(&id).unwrap();
             let embedding = vec![i as f32, 0.0, 0.0, 0.0];
 
             let db_tx = col.begin_transaction();

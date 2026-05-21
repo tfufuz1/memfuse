@@ -49,7 +49,7 @@ async fn test_layer_001_fork_diverge_merge() {
     }
 
     // 2. Checkpoint erstellen (Simuliert durch CheckpointManager auf ruhenden Daten)
-    let cp_v1;
+    let _cp_v1;
     {
         let lsm_config = memfuse_store::LsmConfig {
             path: db_path.clone(),
@@ -62,8 +62,8 @@ async fn test_layer_001_fork_diverge_merge() {
         );
         let cp_manager = CheckpointManager::new(storage.clone());
 
-        cp_v1 = cp_manager
-            .create_checkpoint("v1")
+        _cp_v1 = cp_manager
+            .create_checkpoint("v1", "main", 0, json!({}))
             .await
             .expect("checkpoint");
         // Storage wird gedroppt, Lock frei.
@@ -140,6 +140,6 @@ async fn test_layer_001_fork_diverge_merge() {
                 .expect("storage"),
         );
         let cp_manager = CheckpointManager::new(storage.clone());
-        cp_manager.drop_checkpoint(&cp_v1).await.expect("drop cp");
+        cp_manager.drop_checkpoint("v1").await.expect("drop cp");
     }
 }

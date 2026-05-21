@@ -12,6 +12,15 @@
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
+/// Defines a frozen workflow state acting as a savepoint.
+#[derive(Debug, Clone)]
+pub struct WorkflowState {
+    /// Associated transaction.
+    pub tx: TxId,
+    /// Agent memory graph state footprint.
+    pub graph_hash: String,
+}
+
 // ANCHOR:ARCH:TOMBSTONE-001 — Bit 63 der SeqNo markiert Tombstones.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -44,11 +53,11 @@ impl DocId {
     }
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
-    pub fn from_key(key: &str) -> Self {
+    pub fn from_key(key: &str) -> Result<Self> {
         // ANCHOR:DEBT:TYPES-002 AGENT:01 STATUS:DONE PRIO:3
         // SAFETY: blake3::hash() always returns a 32-byte hash.
         // try_from_key() only fails if the hash is shorter than 8 bytes.
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes") // unwrap: blake3 hash is always 32 bytes
+        Self::try_from_key(key)
     }
 
     /// Safely derive a DocId from a user-provided string key.
@@ -249,6 +258,12 @@ impl Edge {
             weight: 1.0,
         }
     }
+
+    /// Builder pattern to set the weight.
+    pub fn with_weight(mut self, weight: f32) -> Self {
+        self.weight = weight;
+        self
+    }
 }
 
 // ANCHOR:ARCH:BUDGET-001 — Memory-Budgeting verhindert OOM in Produktionsumgebungen.
@@ -295,18 +310,27 @@ impl ResourceTracker {
     }
 
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
-        let current = self
-            .memory_used
-            .fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
-        if current + bytes > self.budget.memory_limit {
-            self.memory_used
-                .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
-            return Err(MemFuseError::MemoryBudgetExceeded {
-                used_mb: (current + bytes) / (1024 * 1024),
-                limit_mb: self.budget.memory_limit / (1024 * 1024),
-            });
+        loop {
+            let current = self.memory_used.load(std::sync::atomic::Ordering::Acquire);
+            if current + bytes > self.budget.memory_limit {
+                return Err(MemFuseError::MemoryBudgetExceeded {
+                    used_mb: (current + bytes) / (1024 * 1024),
+                    limit_mb: self.budget.memory_limit / (1024 * 1024),
+                });
+            }
+            if self
+                .memory_used
+                .compare_exchange(
+                    current,
+                    current + bytes,
+                    std::sync::atomic::Ordering::AcqRel,
+                    std::sync::atomic::Ordering::Relaxed,
+                )
+                .is_ok()
+            {
+                return Ok(());
+            }
         }
-        Ok(())
     }
 
     pub fn release_memory(&self, bytes: u64) {
@@ -332,5 +356,310 @@ impl ResourceTracker {
         if self.memory_used() >= (self.budget.memory_limit as f64 * 0.80) as u64 {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
+    }
+}
+
+// ANCHOR:ARCH:TYPES-001 — SAOS Domain Types (WP-6.x)
+
+/// Unique identifier for a Namespace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct NamespaceId(u64);
+
+impl NamespaceId {
+    /// Creates a new NamespaceId.
+    pub fn new(id: u64) -> Self {
+        Self(id)
+    }
+
+    /// Returns the inner u64 value.
+    pub fn inner(&self) -> u64 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for NamespaceId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NS-{}", self.0)
+    }
+}
+
+/// Token budget configuration for LLM context management.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenBudget {
+    /// Maximum total tokens allowed.
+    pub max_tokens: usize,
+    /// Number of tokens to reserve.
+    pub reserve_tokens: usize,
+}
+
+impl TokenBudget {
+    /// Creates a new token budget.
+    pub fn new(max_tokens: usize, reserve_tokens: usize) -> Self {
+        Self {
+            max_tokens,
+            reserve_tokens,
+        }
+    }
+
+    /// Returns the number of tokens available for allocation without underflowing.
+    pub fn available(&self) -> usize {
+        self.max_tokens.saturating_sub(self.reserve_tokens)
+    }
+}
+
+impl Default for TokenBudget {
+    fn default() -> Self {
+        Self {
+            max_tokens: 4096,
+            reserve_tokens: 512,
+        }
+    }
+}
+
+/// Normalized fusion weights for hybrid search.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FusionWeights {
+    vector: f32,
+    text: f32,
+    graph: f32,
+    metadata: f32,
+}
+
+impl FusionWeights {
+    /// Creates normalized fusion weights. Returns error if weights do not sum exactly to 1.0.
+    pub fn new(vector: f32, text: f32, graph: f32, metadata: f32) -> Result<Self> {
+        let sum = vector + text + graph + metadata;
+        if (sum - 1.0).abs() > f32::EPSILON {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Fusion weights must sum exactly to 1.0, got {}",
+                sum
+            )));
+        }
+        Ok(Self {
+            vector,
+            text,
+            graph,
+            metadata,
+        })
+    }
+
+    /// Returns the vector weight.
+    pub fn vector(&self) -> f32 {
+        self.vector
+    }
+
+    /// Returns the text weight.
+    pub fn text(&self) -> f32 {
+        self.text
+    }
+}
+
+/// Defines cross-namespace isolation guarantees.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum IsolationLevel {
+    /// No cross-namespace access allowed.
+    Strict,
+    /// Shared read access allowed, but strict write isolation.
+    SharedRead,
+    /// Logical separation, full cross-access allowed.
+    Logical,
+}
+
+/// Metadata filter expressions for pre/post filtering.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum FilterExpr {
+    /// Exact match: field == value
+    Eq {
+        field: String,
+        value: serde_json::Value,
+    },
+    /// Greater than: field > value
+    Gt {
+        field: String,
+        value: serde_json::Value,
+    },
+    /// Less than: field < value
+    Lt {
+        field: String,
+        value: serde_json::Value,
+    },
+    /// In set: field IN (values)
+    In {
+        field: String,
+        values: Vec<serde_json::Value>,
+    },
+    /// Logical AND
+    And(Box<FilterExpr>, Box<FilterExpr>),
+    /// Logical OR
+    Or(Box<FilterExpr>, Box<FilterExpr>),
+    /// Logical NOT
+    Not(Box<FilterExpr>),
+}
+
+/// A chunk of context for LLM budget allocation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextChunk {
+    /// Document ID this chunk belongs to.
+    pub doc_id: DocId,
+    /// Raw text content.
+    pub content: String,
+    /// Relevance score (0.0 to 1.0).
+    pub relevance: f32,
+    /// Estimated token count.
+    pub token_count: usize,
+}
+
+/// An aggregated context window constrained by a token budget.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextWindow {
+    /// The selected chunks.
+    pub chunks: Vec<ContextChunk>,
+    /// Total tokens across all chunks.
+    pub total_tokens: usize,
+    /// Whether chunks were truncated to meet budget.
+    pub truncated: bool,
+}
+
+/// Evaluated result for hybrid/4-signal search.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScoredEntry {
+    /// The document or entity ID.
+    pub id: String,
+    /// The finalized score after weight fusion.
+    pub final_score: f32,
+    /// Optional structured metadata.
+    pub metadata: Option<serde_json::Value>,
+}
+
+/// A unified query traversing multiple index signals.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HybridQuery {
+    /// Natural language text query (for BM25).
+    pub text_query: Option<String>,
+    /// Dense vector embedding (for HNSW).
+    pub vector_query: Option<Vec<f32>>,
+    /// Node ID for graph traversal (for CSR).
+    pub graph_start_node: Option<String>,
+    /// Weights dictating signal fusion.
+    pub fusion_weights: FusionWeights,
+    /// Metadata filter to apply.
+    pub filter: Option<FilterExpr>,
+    /// Number of results to return.
+    pub k: usize,
+}
+
+// ----------------------------------------------------------------------------
+// TESTING
+// ----------------------------------------------------------------------------
+
+#[cfg(test)]
+mod saos_tests {
+    use super::*;
+
+    // --- TokenBudget Tests ---
+    #[test]
+    fn test_token_budget_available_calculation() {
+        let budget = TokenBudget::new(100, 20);
+        assert_eq!(
+            budget.available(),
+            80,
+            "Available tokens should subtract reserve."
+        );
+
+        let tight_budget = TokenBudget::new(10, 15);
+        assert_eq!(
+            tight_budget.available(),
+            0,
+            "Available tokens should not underflow."
+        );
+    }
+
+    #[test]
+    fn test_token_budget_defaults() {
+        let budget = TokenBudget::default();
+        assert_eq!(budget.max_tokens, 4096);
+        assert_eq!(budget.reserve_tokens, 512);
+        assert_eq!(budget.available(), 3584);
+    }
+
+    // --- FusionWeights Tests ---
+    #[test]
+    fn test_fusion_weights_normalization_valid() {
+        let weights = FusionWeights::new(0.6, 0.4, 0.0, 0.0).expect("valid weights");
+        assert_eq!(weights.vector(), 0.6);
+        assert_eq!(weights.text(), 0.4);
+    }
+
+    #[test]
+    fn test_fusion_weights_invalid_sum() {
+        let err = FusionWeights::new(1.0, 1.0, 0.0, 0.0).expect_err("should reject >1.0 sum");
+        match err {
+            MemFuseError::InvalidInput(msg) => {
+                assert!(msg.contains("must sum exactly to 1.0"));
+            }
+            _ => panic!("Expected InvalidInput, got {:?}", err),
+        }
+    }
+
+    // --- NamespaceId Tests ---
+    #[test]
+    fn test_namespace_id_format() {
+        let ns = NamespaceId::new(42);
+        assert_eq!(ns.inner(), 42);
+        assert_eq!(format!("{}", ns), "NS-42");
+    }
+
+    // --- IsolationLevel Tests ---
+    #[test]
+    fn test_isolation_level_equality() {
+        assert_eq!(IsolationLevel::Strict, IsolationLevel::Strict);
+        assert_ne!(IsolationLevel::Strict, IsolationLevel::SharedRead);
+    }
+
+    // --- FilterExpr Tests ---
+    #[test]
+    fn test_filter_expr_and_construction() {
+        let eq = FilterExpr::Eq {
+            field: "lang".to_string(),
+            value: serde_json::Value::String("rust".to_string()),
+        };
+        let expr = FilterExpr::Not(Box::new(eq.clone()));
+
+        let complex = FilterExpr::And(Box::new(eq), Box::new(expr));
+
+        match complex {
+            FilterExpr::And(left, right) => {
+                assert!(matches!(*left, FilterExpr::Eq { .. }));
+                assert!(matches!(*right, FilterExpr::Not(..)));
+            }
+            _ => panic!("Expected And expression"),
+        }
+    }
+
+    // --- ContextChunk & Window Tests ---
+    #[test]
+    fn test_context_window_truncation_flag() {
+        let window = ContextWindow {
+            chunks: vec![],
+            total_tokens: 500,
+            truncated: true,
+        };
+        assert!(window.truncated);
+        assert_eq!(window.total_tokens, 500);
+    }
+
+    // --- ScoredEntry Tests ---
+    #[test]
+    fn test_scored_entry_metadata() {
+        let entry = ScoredEntry {
+            id: "doc-x".to_string(),
+            final_score: 0.99,
+            metadata: Some(serde_json::json!({"version": 2})),
+        };
+        assert_eq!(entry.final_score, 0.99);
+        assert_eq!(
+            entry.metadata.expect("metadata should be present")["version"],
+            2
+        );
     }
 }

@@ -14,6 +14,22 @@ use crate::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+/// Abstract contract for generating consistent checkpoints.
+#[async_trait]
+pub trait Checkpoint: Send + Sync {
+    /// Takes a deterministic snapshot of the current state.
+    async fn take_snapshot(&self, tx: TxId) -> Result<WorkflowState>;
+
+    /// Rolls the state back to the specified checkpoint.
+    async fn restore(&self, state: &WorkflowState) -> Result<()>;
+}
+
+/// Represents a point-in-time view of the database.
+pub trait Snapshot: Send + Sync {
+    /// Returns the sequence number for this snapshot.
+    fn seq_no(&self) -> u64;
+}
+
 /// Statistics for a vector index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VectorIndexStats {
@@ -175,4 +191,51 @@ pub trait TextIndex: Send + Sync {
 
     /// Returns index statistics.
     async fn stats(&self) -> Result<TextIndexStats>;
+}
+
+// ANCHOR:ARCH:TRAIT-003 — Graph Engine Trait (Signal 3)
+// WP:WP-6.x PRIO:4 NEEDS:WP-2.1
+// STATUS:SCAFFOLD DATE:2026-05-17
+
+/// Defines the contract for the CSR Graph traverse capabilities (Signal 3).
+#[async_trait]
+pub trait GraphIndex: Send + Sync {
+    /// Traverses the entity graph using BFS up to a maximum number of hops.
+    /// Distributes traversing decay weights across related entities.
+    async fn traverse(
+        &self,
+        start_node: crate::types::EntityId,
+        max_hops: usize,
+    ) -> crate::Result<Vec<(crate::types::EntityId, f32)>>;
+
+    /// Inserts or updates a node entity.
+    async fn add_entity(
+        &self,
+        tx: crate::types::TxId,
+        entity: crate::types::Entity,
+    ) -> crate::Result<()>;
+
+    /// Inserts or updates an edge between two entities.
+    async fn add_edge(&self, tx: crate::types::TxId, edge: crate::types::Edge)
+        -> crate::Result<()>;
+
+    /// Commits a transaction.
+    async fn commit(&self, tx: crate::types::TxId) -> crate::Result<()>;
+
+    /// Rolls back a transaction.
+    async fn rollback(&self, tx: crate::types::TxId) -> crate::Result<()>;
+
+    /// Collects statistics for the Graph.
+    async fn stats(&self) -> crate::Result<GraphIndexStats>;
+}
+
+/// Statistics for the GraphIndex layer.
+#[derive(Debug, Clone)]
+pub struct GraphIndexStats {
+    /// Number of active nodes (Entities).
+    pub num_entities: usize,
+    /// Number of active edges.
+    pub num_edges: usize,
+    /// Total bytes allocated by CSR representation.
+    pub memory_usage_bytes: usize,
 }

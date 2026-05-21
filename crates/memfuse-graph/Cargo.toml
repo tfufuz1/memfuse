@@ -1,26 +1,18 @@
 [package]
-name = "memfuse-index"
+name = "memfuse-graph"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "HNSW vector index with SIMD distance computation for MemFuse"
+description = "CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion)"
 
 [dependencies]
 memfuse-core = { workspace = true }
-ahash = { workspace = true }
 parking_lot = { workspace = true }
-rand = { workspace = true }
-roaring = { workspace = true }
+tracing = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
-tracing = { workspace = true }
-memmap2 = "0.9"
+ahash = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
-criterion = "0.5"
-
-[[bench]]
-name = "distance_bench"
-harness = false
