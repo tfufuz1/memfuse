@@ -45,26 +45,19 @@ impl DocId {
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Self {
-        // ANCHOR:DEBT:TYPES-002 AGENT:01 STATUS:DONE PRIO:3
+        let hash = blake3::hash(key.as_bytes());
         // SAFETY: blake3::hash() always returns a 32-byte hash.
-        // try_from_key() only fails if the hash is shorter than 8 bytes.
-        Self::try_from_key(key).expect("Blake3 hash must be 32 bytes") // unwrap: blake3 hash is always 32 bytes
+        // Slicing the first 8 bytes for a u64 is always safe.
+        let mut buf = [0u8; 8];
+        buf.copy_from_slice(&hash.as_bytes()[..8]);
+        Self(u64::from_le_bytes(buf))
     }
 
     /// Safely derive a DocId from a user-provided string key.
     ///
-    /// Uses blake3 hash and safe slice indexing.
+    /// This method is now infallible as blake3 always produces sufficient bytes.
     pub fn try_from_key(key: &str) -> Result<Self> {
-        let hash = blake3::hash(key.as_bytes());
-        let bytes = hash
-            .as_bytes()
-            .get(..8)
-            .ok_or_else(|| MemFuseError::Internal("Blake3 hash too short".to_string()))?;
-
-        let buf: [u8; 8] = bytes.try_into().map_err(|_| {
-            MemFuseError::Internal("Failed to convert hash slice to array".to_string())
-        })?;
-        Ok(Self(u64::from_le_bytes(buf)))
+        Ok(Self::from_key(key))
     }
 }
 
@@ -294,6 +287,7 @@ impl ResourceTracker {
         }
     }
 
+    /// Consumes memory from the budget. Returns an error if the limit is exceeded.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         let current = self
             .memory_used
@@ -309,15 +303,18 @@ impl ResourceTracker {
         Ok(())
     }
 
+    /// Releases memory back to the budget.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Returns the current memory usage in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns the configured resource budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }

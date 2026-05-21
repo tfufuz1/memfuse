@@ -316,7 +316,16 @@ mod tests {
 
         let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10));
         assert!(buffer.has_tx(tx1));
-        sleep(Duration::from_millis(100)).await;
+
+        // Poll until transaction is removed, with a timeout
+        let result = tokio::time::timeout(Duration::from_secs(2), async {
+            while buffer.has_tx(tx1) {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+
+        assert!(result.is_ok(), "Transaction was not reaped within timeout");
         assert!(!buffer.has_tx(tx1));
     }
 
