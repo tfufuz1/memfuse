@@ -26,7 +26,10 @@ async fn test_checkpoint_pinning_across_restarts() {
         storage.commit(tx).await.expect("commit");
         storage.force_flush().await.expect("flush");
 
-        let cp = manager.create_checkpoint("stable-v1").await.expect("create cp");
+        let cp = manager
+            .create_checkpoint("stable-v1")
+            .await
+            .expect("create cp");
         cp.seq_no
     };
 
