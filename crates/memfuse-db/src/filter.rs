@@ -1,3 +1,5 @@
+//! Metadata filtering for search queries.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
