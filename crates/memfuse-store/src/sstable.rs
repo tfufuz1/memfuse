@@ -286,6 +286,7 @@ impl SstableReader {
                 // AGENT:02 DATE:2026-05-16 STATUS:REVIEW
                 // BEGRÜNDUNG: SSTables sind im LSM-Tree unveränderlich. Memory Mapping
                 // ermöglicht effizienten Zugriff ohne explizite Syscalls.
+                // ANCHOR:FIXME:UNSAFE-001 PRIO:3 AGENT:02 STATUS:READY
                 #[allow(unsafe_code)]
                 let mmap = unsafe { memmap2::Mmap::map(&file)? };
                 Ok((mmap, file_size))

@@ -104,6 +104,7 @@ pub struct SnapshotGuard {
 }
 
 impl SnapshotGuard {
+    // ANCHOR:FIXME:DOC-002 PRIO:3 AGENT:08 STATUS:READY
     pub fn seq_no(&self) -> u64 {
         self.seq_no
     }

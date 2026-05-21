@@ -287,6 +287,7 @@ pub struct ResourceTracker {
 
 impl ResourceTracker {
     /// Creates a new ResourceTracker with the given budget.
+    // ANCHOR:FIXME:DOC-001 PRIO:3 AGENT:08 STATUS:READY
     pub fn new(budget: ResourceBudget) -> Self {
         Self {
             budget,

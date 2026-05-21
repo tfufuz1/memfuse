@@ -1,3 +1,4 @@
+// ANCHOR:FIXME:DOC-003 PRIO:3 AGENT:08 STATUS:READY
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
