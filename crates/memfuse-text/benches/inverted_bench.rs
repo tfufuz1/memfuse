@@ -1,12 +1,12 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use memfuse_core::{DocId, TxId, StorageEngine};
+use memfuse_core::{DocId, StorageEngine, TxId};
 use memfuse_store::{LsmConfig, LsmStorage};
 use memfuse_text::inverted::InvertedIndex;
-use std::sync::Arc;
+use rand::Rng;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
-use rand::Rng;
 
 fn bench_inverted_index(c: &mut Criterion) {
     let rt = Runtime::new().expect("Failed to create Tokio runtime");
@@ -15,12 +15,29 @@ fn bench_inverted_index(c: &mut Criterion) {
         path: tmp.path().to_path_buf(),
         ..Default::default()
     };
-    let storage = rt.block_on(async { Arc::new(LsmStorage::new(config).await.expect("Failed to open storage")) });
+    let storage = rt.block_on(async {
+        Arc::new(
+            LsmStorage::new(config)
+                .await
+                .expect("Failed to open storage"),
+        )
+    });
     let index = InvertedIndex::new(storage.clone(), "bench");
 
     let mut group = c.benchmark_group("InvertedIndex");
 
-    let words = vec!["rust", "fast", "search", "engine", "database", "performance", "benchmarking", "vector", "index", "storage"];
+    let words = vec![
+        "rust",
+        "fast",
+        "search",
+        "engine",
+        "database",
+        "performance",
+        "benchmarking",
+        "vector",
+        "index",
+        "storage",
+    ];
     let id_gen = Arc::new(AtomicU64::new(0));
 
     group.bench_function("upsert_document", |b| {
@@ -42,7 +59,10 @@ fn bench_inverted_index(c: &mut Criterion) {
                     text.push(' ');
                 }
 
-                index.upsert_document(tx, doc_id, black_box(&text)).await.expect("Upsert failed");
+                index
+                    .upsert_document(tx, doc_id, black_box(&text))
+                    .await
+                    .expect("Upsert failed");
             }
         })
     });
@@ -60,14 +80,20 @@ fn bench_inverted_index(c: &mut Criterion) {
 
     group.bench_function("search_bm25_common", |b| {
         b.to_async(&rt).iter(|| async {
-            let results = index.search_bm25(black_box("rust fast"), 10).await.expect("Search failed");
+            let results = index
+                .search_bm25(black_box("rust fast"), 10)
+                .await
+                .expect("Search failed");
             black_box(results);
         })
     });
 
     group.bench_function("search_bm25_rare", |b| {
         b.to_async(&rt).iter(|| async {
-            let results = index.search_bm25(black_box("unique_500"), 10).await.expect("Search failed");
+            let results = index
+                .search_bm25(black_box("unique_500"), 10)
+                .await
+                .expect("Search failed");
             black_box(results);
         })
     });
