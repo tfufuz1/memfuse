@@ -524,7 +524,10 @@ impl HnswIndexCore {
                 self.select_neighbors_heuristic(&nodes, &neighbors, self.config.m)?
             };
             *final_connections.get_mut(layer).ok_or_else(|| {
-                MemFuseError::Index(format!("HNSW final_connections missing for layer {}", layer))
+                MemFuseError::Index(format!(
+                    "HNSW final_connections missing for layer {}",
+                    layer
+                ))
             })? = selected;
             ep = neighbors.iter().map(|c| c.index).collect();
         }
@@ -542,7 +545,10 @@ impl HnswIndexCore {
 
             for layer in (0..=new_layer.min(current_max_layer)).rev() {
                 let current_layer_connections = final_connections.get(layer).ok_or_else(|| {
-                    MemFuseError::Index(format!("HNSW final_connections missing for layer {}", layer))
+                    MemFuseError::Index(format!(
+                        "HNSW final_connections missing for layer {}",
+                        layer
+                    ))
                 })?;
                 for &neighbor_idx in current_layer_connections {
                     // Scope for neighbor modification to release mutable borrow
