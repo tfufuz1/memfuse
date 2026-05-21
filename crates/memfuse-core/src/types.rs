@@ -416,6 +416,8 @@ impl Default for TokenBudget {
     }
 }
 
+// ANCHOR:DEBT:TYPES-003 AGENT:01 STATUS:DONE PRIO:3
+// Missing getters for graph and metadata weights.
 /// Normalized fusion weights for hybrid search.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FusionWeights {
@@ -451,6 +453,16 @@ impl FusionWeights {
     /// Returns the text weight.
     pub fn text(&self) -> f32 {
         self.text
+    }
+
+    /// Returns the graph weight.
+    pub fn graph(&self) -> f32 {
+        self.graph
+    }
+
+    /// Returns the metadata weight.
+    pub fn metadata(&self) -> f32 {
+        self.metadata
     }
 }
 

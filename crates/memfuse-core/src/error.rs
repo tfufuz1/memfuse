@@ -13,6 +13,8 @@ use thiserror::Error;
 pub type Result<T> = std::result::Result<T, MemFuseError>;
 
 /// Unified error type for all MemFuse operations.
+// ANCHOR:DEBT:ERR-002 AGENT:01 STATUS:DONE PRIO:3
+// Add Conflict and AlreadyExists variants for better storage/tx handling.
 #[derive(Error, Debug)]
 pub enum MemFuseError {
     // ═══ Storage ═══
@@ -39,6 +41,9 @@ pub enum MemFuseError {
     #[error("Transaction {tx_id} timed out after {elapsed_ms}ms")]
     TransactionTimeout { tx_id: u64, elapsed_ms: u64 },
 
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
     // ═══ Resource ═══
     #[error("Memory budget exceeded: {used_mb}MB / {limit_mb}MB")]
     MemoryBudgetExceeded { used_mb: u64, limit_mb: u64 },
@@ -46,6 +51,9 @@ pub enum MemFuseError {
     // ═══ Input ═══
     #[error("Invalid input: {0}")]
     InvalidInput(String),
+
+    #[error("Already exists: {0}")]
+    AlreadyExists(String),
 
     #[error("Not found: {0}")]
     NotFound(String),
@@ -84,5 +92,10 @@ impl MemFuseError {
     /// Creates an `InvalidInput` error from any displayable value.
     pub fn invalid_input(msg: impl Into<String>) -> Self {
         Self::InvalidInput(msg.into())
+    }
+
+    /// Creates an `AlreadyExists` error from any displayable value.
+    pub fn already_exists(msg: impl Into<String>) -> Self {
+        Self::AlreadyExists(msg.into())
     }
 }

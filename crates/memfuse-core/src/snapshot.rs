@@ -76,11 +76,13 @@ impl SnapshotRegistry {
         self.release(seq_no);
     }
 
+    // ANCHOR:DEBT:SNAP-001 AGENT:01 STATUS:DONE PRIO:3
+    // Use saturating_sub for safety.
     pub(crate) fn release(&self, seq_no: u64) {
         let seq_no = seq_no & !TOMBSTONE_BIT;
         let mut active = self.active.lock();
         if let Some(count) = active.get_mut(&seq_no) {
-            *count -= 1;
+            *count = count.saturating_sub(1);
             if *count == 0 {
                 active.remove(&seq_no);
             }
