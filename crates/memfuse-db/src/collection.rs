@@ -568,7 +568,7 @@ impl Collection {
         };
 
         let kvs = self.storage.scan(start_bytes, end_bytes).await?;
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(kvs.len());
         for (k, v) in kvs {
             let key_str = String::from_utf8_lossy(&k).to_string();
             let user_key = if self.name == "default" {

@@ -12,7 +12,9 @@ pub fn reciprocal_rank_fusion(
     let k = 60;
 
     // id -> (total_score, metadata)
-    let mut fused_scores: HashMap<String, (f32, Option<serde_json::Value>)> = HashMap::new();
+    let total_results: usize = result_sets.iter().map(|s| s.len()).sum();
+    let mut fused_scores: HashMap<String, (f32, Option<serde_json::Value>)> =
+        HashMap::with_capacity(total_results);
 
     for cur_set in result_sets {
         for (rank, cur_doc) in cur_set.into_iter().enumerate() {
@@ -25,14 +27,14 @@ pub fn reciprocal_rank_fusion(
         }
     }
 
-    let mut final_results: Vec<SearchResult> = fused_scores
-        .into_iter()
-        .map(|(id, (score, metadata))| SearchResult {
+    let mut final_results: Vec<SearchResult> = Vec::with_capacity(fused_scores.len());
+    for (id, (score, metadata)) in fused_scores {
+        final_results.push(SearchResult {
             id,
             score,
             metadata,
-        })
-        .collect();
+        });
+    }
 
     // Sort descending by score
     final_results.sort_by(|a, b| {
