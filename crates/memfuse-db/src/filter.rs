@@ -1,6 +1,13 @@
+//! Metadata filtering system for MemFuse.
+//!
+//! This module provides a flexible filtering engine to narrow down search results
+//! based on document metadata. It supports basic comparison operators and complex
+//! logical combinations (AND, OR, NOT).
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+// ANCHOR:DOC:FILTER-001 AGENT:08 STATUS:DONE
 /// Operators for metadata filtering.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum FilterOp {
@@ -22,6 +29,7 @@ pub enum FilterOp {
     NotIn,
 }
 
+// ANCHOR:DOC:FILTER-002 AGENT:08 STATUS:DONE
 /// Advanced metadata filter for document retrieval and search.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum MetadataFilter {

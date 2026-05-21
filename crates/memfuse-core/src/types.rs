@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 /// Bit mask for identifying tombstones in sequence numbers.
 pub const TOMBSTONE_BIT: u64 = 1 << 63;
 
+// ANCHOR:DOC:CORE-TYPES-001 AGENT:08 STATUS:DONE
 /// Internal document identifier (u64, not exposed to users).
 ///
 /// `DocId` is typically derived from a string key via hashing (blake3).
@@ -80,6 +81,7 @@ impl std::fmt::Display for DocId {
     }
 }
 
+// ANCHOR:DOC:CORE-TYPES-002 AGENT:08 STATUS:DONE
 /// Internal entity identifier for graph nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
@@ -111,6 +113,7 @@ impl std::fmt::Display for EntityId {
     }
 }
 
+// ANCHOR:DOC:CORE-TYPES-003 AGENT:08 STATUS:DONE
 /// Transaction identifier used to coordinate atomic writes and isolation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
@@ -136,6 +139,7 @@ impl std::fmt::Display for TxId {
     }
 }
 
+// ANCHOR:DOC:CORE-TYPES-004 AGENT:08 STATUS:DONE
 /// Distance metric for vector comparison.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 pub enum DistanceMetric {
@@ -148,6 +152,7 @@ pub enum DistanceMetric {
     DotProduct,
 }
 
+// ANCHOR:DOC:CORE-TYPES-005 AGENT:08 STATUS:DONE
 /// Vector embedding representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Embedding {
@@ -188,6 +193,7 @@ impl Embedding {
     }
 }
 
+// ANCHOR:DOC:CORE-TYPES-006 AGENT:08 STATUS:DONE
 /// A scored search result.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ScoredDocument {
@@ -204,6 +210,7 @@ impl ScoredDocument {
     }
 }
 
+// ANCHOR:DOC:CORE-TYPES-007 AGENT:08 STATUS:DONE
 /// Graph entity (node) representing a concept.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
@@ -226,6 +233,7 @@ impl Entity {
     }
 }
 
+// ANCHOR:DOC:CORE-TYPES-008 AGENT:08 STATUS:DONE
 /// Graph edge (relation) between two entities.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Edge {
@@ -261,6 +269,7 @@ impl Edge {
 // WP:WP-4.1 PRIO:4 NEEDS:NONE
 // AGENT:02 DATE:2026-05-09 STATUS:READY
 // CREATED:2026-05-09 DEADLINE:NONE
+// ANCHOR:DOC:CORE-TYPES-009 AGENT:08 STATUS:DONE
 /// Resource budget for memory management.
 #[derive(Debug, Clone, Copy)]
 pub struct ResourceBudget {
@@ -276,6 +285,7 @@ impl Default for ResourceBudget {
     }
 }
 
+// ANCHOR:DOC:CORE-TYPES-010 AGENT:08 STATUS:DONE
 /// Tracks resource usage against a budget.
 #[derive(Debug)]
 pub struct ResourceTracker {

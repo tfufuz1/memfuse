@@ -1,17 +1,8 @@
-// ANCHOR:ARCH:DB-001 — Orchestrator Facade (Getriebe — Layer 2).
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
-// ROLLE: Verbindet memfuse-core (Traits), memfuse-store (LSM) und memfuse-index (HNSW).
-// DESIGN: Zero-Boilerplate API für Nutzer. Intern wird alles über die Collection-Abstraktion geroutet.
-// ABWÄRTSKOMPATIBILITÄT: Bietet weiterhin top-level insert/search an, die intern auf die "default" Collection leiten.
 //! # MemFuse — Embedded Hybrid-Search for AI Agents
 //!
 //! MemFuse is a zero-boilerplate embedded database for AI agent memory.
 //! It combines vector search (HNSW), persistent storage (LSM-Tree),
 //! and relationship tracking in a single library.
-//!
-// AGENT:08 DATE:2026-05-18 STATUS:DONE
 //!
 //! ## Quick Start
 //!
@@ -45,6 +36,15 @@
 //! # }
 //! ```
 
+// ANCHOR:ARCH:DB-001 — Orchestrator Facade (Getriebe — Layer 2).
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// ROLLE: Verbindet memfuse-core (Traits), memfuse-store (LSM) und memfuse-index (HNSW).
+// DESIGN: Zero-Boilerplate API für Nutzer. Intern wird alles über die Collection-Abstraktion geroutet.
+// ABWÄRTSKOMPATIBILITÄT: Bietet weiterhin top-level insert/search an, die intern auf die "default" Collection leiten.
+// AGENT:08 DATE:2026-05-18 STATUS:DONE
+
 #![forbid(unsafe_code)]
 
 use memfuse_core::{DocId, Result, StorageEngine, TxId};
@@ -64,6 +64,7 @@ pub use collection::Collection;
 pub use filter::MetadataFilter;
 pub use memfuse_checkpoint;
 
+// ANCHOR:DOC:DB-TYPES-001 AGENT:08 STATUS:DONE
 /// User-facing search result containing the ID, score, and optional metadata.
 #[derive(Debug, Clone)]
 pub struct SearchResult {
@@ -75,6 +76,7 @@ pub struct SearchResult {
     pub metadata: Option<Value>,
 }
 
+// ANCHOR:DOC:DB-TYPES-002 AGENT:08 STATUS:DONE
 /// Overall database statistics.
 #[derive(Debug, Clone)]
 pub struct DbStats {
@@ -84,6 +86,7 @@ pub struct DbStats {
     pub storage_stats: memfuse_core::StorageStats,
 }
 
+// ANCHOR:DOC:DB-TYPES-003 AGENT:08 STATUS:DONE
 /// User-facing document structure.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Document {
@@ -93,6 +96,7 @@ pub struct Document {
     pub metadata: Option<Value>,
 }
 
+// ANCHOR:DOC:DB-TYPES-004 AGENT:08 STATUS:DONE
 /// Global configuration settings for the MemFuse database.
 #[derive(Debug, Clone)]
 pub struct MemFuseConfig {
@@ -185,6 +189,8 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_collections_are_isolated
     // DONE: `collection()` ist wal-gesichert, Isolation ist korrekt.
     // SUCCESSOR: @JULES-04 — "Mach weiter mit COL-002 und COL-003, bis Collections-Modul fully featured ist."
+    /// Returns a specific collection (namespace).
+    /// Creates the collection if it does not already exist.
     pub async fn collection(&self, name: &str) -> Result<Collection> {
         // Validation
         if name.len() > 64 {
@@ -249,6 +255,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_list_collections
     // DONE: list_collections gibt persistierte Collections zurück.
     // SUCCESSOR: @JULES-04 — "Mache weiter mit COL-003."
+    /// Lists all existing collection names (including those persisted in storage).
     pub async fn list_collections(&self) -> Result<Vec<String>> {
         let col_idx_prefix = b"__col_idx:\x00";
         let entries = self.storage.scan_prefix(col_idx_prefix).await?;
@@ -281,6 +288,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_drop_removes_all_data
     // DONE: Alle Daten getilgt, re-öffnen führt zu leerer DB.
     // SUCCESSOR: @JULES-05 — "Collections sind fertig. Beginne mit WP-2.1 SEARCH-001."
+    /// Drops a collection, removing all its data from storage.
     pub async fn drop_collection(&self, name: &str) -> Result<()> {
         if name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(

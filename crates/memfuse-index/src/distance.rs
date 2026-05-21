@@ -1,24 +1,3 @@
-// ANCHOR:DOC:DOC-DISTANCE-001 — Module documentation added
-// WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:03 DATE:2026-05-16 STATUS:DONE
-// CREATED:2026-05-09 DEADLINE:NONE
-// ANCHOR:SEC:UNSAFE-001 — Dokumentierte unsafe-Blöcke in SIMD-Zone
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:03 DATE:2026-05-16 STATUS:DONE
-// CREATED:2026-05-08 DEADLINE:NONE
-// GEFUNDEN: 42 unsafe-Blöcke (AVX2 + AVX-512) ohne SAFETY: Kommentare
-// ERWARTET: Jeder unsafe-Block braucht SAFETY: Kommentar mit:
-//   1. Warum die Operation sicher ist (Slice-Bounds, Alignment)
-//   2. Welche Invarianten vom Caller garantiert werden
-// RISIKO: Release-Blocker — undokumentiertes unsafe verhindert qualifiziertes Review
-// MASSNAHME: SAFETY: Kommentare für alle 12 unsafe fn + 30 unsafe-Blöcke hinzufügen
-//
-// ANCHOR:ARCH:SIMD-001 — Hardware-beschleunigte Distanzberechnung.
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
-// PRECEDENCE: AVX-512 > AVX2 > portable_simd > scalar.
-// INVARIANTE: Caller (hnsw.rs) validiert Vektor-Dimensionen VOR dem Aufruf.
 //! # Distance Computation Module
 //!
 //! This module provides highly optimized distance metrics for vector comparison,
@@ -40,6 +19,28 @@
 //! This module contains `unsafe` code for hardware-specific intrinsics. All `unsafe` blocks
 //! are guarded by runtime feature detection and documented with safety justifications.
 
+// ANCHOR:DOC:DOC-DISTANCE-001 — Module documentation added
+// WP:WP-0.0 PRIO:3 NEEDS:NONE
+// AGENT:03 DATE:2026-05-16 STATUS:DONE
+// CREATED:2026-05-09 DEADLINE:NONE
+// ANCHOR:SEC:UNSAFE-001 — Dokumentierte unsafe-Blöcke in SIMD-Zone
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:03 DATE:2026-05-16 STATUS:DONE
+// CREATED:2026-05-08 DEADLINE:NONE
+// GEFUNDEN: 42 unsafe-Blöcke (AVX2 + AVX-512) ohne SAFETY: Kommentare
+// ERWARTET: Jeder unsafe-Block braucht SAFETY: Kommentar mit:
+//   1. Warum die Operation sicher ist (Slice-Bounds, Alignment)
+//   2. Welche Invarianten vom Caller garantiert werden
+// RISIKO: Release-Blocker — undokumentiertes unsafe verhindert qualifiziertes Review
+// MASSNAHME: SAFETY: Kommentare für alle 12 unsafe fn + 30 unsafe-Blöcke hinzufügen
+//
+// ANCHOR:ARCH:SIMD-001 — Hardware-beschleunigte Distanzberechnung.
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// PRECEDENCE: AVX-512 > AVX2 > portable_simd > scalar.
+// INVARIANTE: Caller (hnsw.rs) validiert Vektor-Dimensionen VOR dem Aufruf.
+
 #![allow(unused_unsafe)]
 #![allow(unsafe_code)]
 
@@ -49,6 +50,7 @@ use std::simd::prelude::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
+// ANCHOR:DOC:DISTANCE-002 AGENT:08 STATUS:DONE
 /// Computes distance between two vectors using the specified metric.
 #[inline]
 pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse_core::Result<f32> {
@@ -65,6 +67,7 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
     })
 }
 
+// ANCHOR:DOC:DISTANCE-003 AGENT:08 STATUS:DONE
 /// Computes cosine distance (1 - similarity).
 #[inline]
 pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
@@ -90,6 +93,7 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
     cosine_distance_std_simd(a, b)
 }
 
+// ANCHOR:DOC:DISTANCE-004 AGENT:08 STATUS:DONE
 /// Computes Euclidean (L2) distance.
 #[inline]
 pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
@@ -115,6 +119,7 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
     euclidean_distance_std_simd(a, b)
 }
 
+// ANCHOR:DOC:DISTANCE-005 AGENT:08 STATUS:DONE
 /// Computes negative dot product.
 #[inline]
 pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
@@ -560,6 +565,7 @@ pub fn normalize_inplace(v: &mut [f32]) {
     }
 }
 
+// ANCHOR:DOC:DISTANCE-006 AGENT:08 STATUS:DONE
 /// Computes the dot product of two u8 vectors.
 #[inline]
 pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
@@ -582,6 +588,7 @@ pub fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
         .sum()
 }
 
+// ANCHOR:DOC:DISTANCE-007 AGENT:08 STATUS:DONE
 /// Computes the squared Euclidean distance between two u8 vectors.
 #[inline]
 pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
@@ -617,6 +624,7 @@ pub struct CosineSimilarityPartsU8 {
     pub norm_b_sq: u32,
 }
 
+// ANCHOR:DOC:DISTANCE-008 AGENT:08 STATUS:DONE
 /// Computes the parts required for cosine similarity between two u8 vectors.
 #[inline]
 pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
