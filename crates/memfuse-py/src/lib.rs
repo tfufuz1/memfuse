@@ -68,10 +68,7 @@ fn results_to_py(
             Some(
                 pythonize(py, &m)
                     .map_err(|e| {
-                        pyo3::exceptions::PyRuntimeError::new_err(format!(
-                            "Metadata error: {}",
-                            e
-                        ))
+                        pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
                     })?
                     .unbind(),
             )
