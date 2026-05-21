@@ -64,6 +64,10 @@ pub use collection::Collection;
 pub use filter::MetadataFilter;
 pub use memfuse_checkpoint;
 
+// ANCHOR:INTEGRATION:CHECKPOINT-DB STATUS:READY PRIO:2 AGENT:12
+// Gap: memfuse-checkpoint is re-exported but not exercised in memfuse-db integration tests.
+// Required: Add E2E test verifying checkpoint pinning/rollback via the MemFuse facade.
+
 /// User-facing search result containing the ID, score, and optional metadata.
 #[derive(Debug, Clone)]
 pub struct SearchResult {
