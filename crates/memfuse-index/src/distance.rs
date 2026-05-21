@@ -45,6 +45,7 @@
 
 use memfuse_core::DistanceMetric;
 use std::simd::prelude::*;
+use std::simd::{f32x8, u32x8, u8x8};
 
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
@@ -660,20 +661,64 @@ pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarity
 
 /// Computes the dot product between an f32 vector and a u8 vector.
 pub fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
-    a.iter().zip(b.iter()).map(|(&x, &y)| x * (y as f32)).sum()
+    debug_assert_eq!(a.len(), b.len());
+    dot_product_f32_u8_std_simd(a, b)
+}
+
+/// SIMD implementation of dot product between f32 and u8.
+pub fn dot_product_f32_u8_std_simd(a: &[f32], b: &[u8]) -> f32 {
+    let mut i = 0;
+    let n = a.len();
+    let mut sum = f32x8::splat(0.0);
+
+    while i + 8 <= n {
+        let va = f32x8::from_slice(&a[i..i + 8]);
+        let vb_u8 = u8x8::from_slice(&b[i..i + 8]);
+        let vb_f32 = vb_u8.cast::<f32>();
+        sum += va * vb_f32;
+        i += 8;
+    }
+
+    let mut res = sum.reduce_sum();
+    while i < n {
+        res += a[i] * (b[i] as f32);
+        i += 1;
+    }
+    res
 }
 
 /// Computes the squared Euclidean distance between an f32 vector and a u8 vector
 /// performing inline dequantization.
 pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {
-    a.iter()
-        .zip(b.iter())
-        .map(|(&x, &y)| {
-            let y_f32 = (y as f32) * alpha + min;
-            let diff = x - y_f32;
-            diff * diff
-        })
-        .sum()
+    debug_assert_eq!(a.len(), b.len());
+    euclidean_distance_sq_f32_u8_std_simd(a, b, alpha, min)
+}
+
+/// SIMD implementation of squared Euclidean distance between f32 and u8.
+pub fn euclidean_distance_sq_f32_u8_std_simd(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {
+    let mut i = 0;
+    let n = a.len();
+    let mut sum = f32x8::splat(0.0);
+    let valpha = f32x8::splat(alpha);
+    let vmin = f32x8::splat(min);
+
+    while i + 8 <= n {
+        let va = f32x8::from_slice(&a[i..i + 8]);
+        let vb_u8 = u8x8::from_slice(&b[i..i + 8]);
+        let vb_f32 = vb_u8.cast::<f32>() * valpha + vmin;
+        let diff = va - vb_f32;
+        sum += diff * diff;
+        i += 8;
+    }
+
+    let mut res = sum.reduce_sum();
+    while i < n {
+        let y_f32 = (b[i] as f32) * alpha + min;
+        let diff = a[i] - y_f32;
+        res += diff * diff;
+        i += 1;
+    }
+    res
 }
 
 /// Parts required to compute asymmetric cosine similarity.
@@ -686,15 +731,40 @@ pub struct CosineSimilarityPartsF32U8 {
 
 /// Computes the parts required for asymmetric cosine similarity between an f32 and a u8 vector.
 pub fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPartsF32U8 {
-    let mut dot_f32_u8 = 0.0;
-    let mut sum_u8 = 0;
-    let mut norm_u8_sq = 0;
+    debug_assert_eq!(a.len(), b.len());
+    cosine_similarity_parts_f32_u8_std_simd(a, b)
+}
 
-    for (&x, &y) in a.iter().zip(b.iter()) {
-        let yu = y as u32;
-        dot_f32_u8 += x * (y as f32);
+/// SIMD implementation of asymmetric cosine similarity parts.
+pub fn cosine_similarity_parts_f32_u8_std_simd(a: &[f32], b: &[u8]) -> CosineSimilarityPartsF32U8 {
+    let mut i = 0;
+    let n = a.len();
+    let mut dot_v = f32x8::splat(0.0);
+    let mut sum_u8_v = u32x8::splat(0);
+    let mut norm_u8_sq_v = u32x8::splat(0);
+
+    while i + 8 <= n {
+        let va = f32x8::from_slice(&a[i..i + 8]);
+        let vb_u8 = u8x8::from_slice(&b[i..i + 8]);
+        let vb_u32 = vb_u8.cast::<u32>();
+        let vb_f32 = vb_u8.cast::<f32>();
+
+        dot_v += va * vb_f32;
+        sum_u8_v += vb_u32;
+        norm_u8_sq_v += vb_u32 * vb_u32;
+        i += 8;
+    }
+
+    let mut dot_f32_u8 = dot_v.reduce_sum();
+    let mut sum_u8 = sum_u8_v.reduce_sum();
+    let mut norm_u8_sq = norm_u8_sq_v.reduce_sum();
+
+    while i < n {
+        let yu = b[i] as u32;
+        dot_f32_u8 += a[i] * (b[i] as f32);
         sum_u8 += yu;
         norm_u8_sq += yu * yu;
+        i += 1;
     }
 
     CosineSimilarityPartsF32U8 {

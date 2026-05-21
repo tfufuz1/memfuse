@@ -35,6 +35,7 @@
 //! - Transactional inserts/deletes via TxBuffer
 
 use crate::distance::compute_distance;
+use crate::quantize::PrecomputedQuery;
 use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
 use memfuse_core::{
@@ -119,6 +120,14 @@ struct HnswNode {
     vector: VectorData,
     connections: Vec<Vec<usize>>,
     _max_layer: usize,
+}
+
+/// Internal search context to group parameters.
+struct SearchContext<'a> {
+    query: &'a [f32],
+    query_quantized: Option<&'a [u8]>,
+    precomputed: Option<&'a PrecomputedQuery>,
+    quantizer: Option<&'a crate::quantize::ScalarQuantizer>,
 }
 
 /// Search candidate.
@@ -281,8 +290,7 @@ impl HnswIndexCore {
 
     fn search_layer(
         &self,
-        query: &[f32],
-        query_quantized: Option<&[u8]>,
+        ctx: &SearchContext,
         entry_points: &[usize],
         ef: usize,
         layer: usize,
@@ -299,7 +307,12 @@ impl HnswIndexCore {
                 let node = nodes.get(ep).ok_or_else(|| {
                     MemFuseError::Index(format!("HNSW node missing at index {}", ep))
                 })?;
-                let dist = self.compute_distance_with_data(query, query_quantized, &node.vector)?;
+                let dist = match (&node.vector, ctx.precomputed, ctx.quantizer) {
+                    (crate::hnsw::VectorData::U8(v), Some(pre), Some(q)) => {
+                        q.asymmetric_dist_precomputed(pre, v, self.config.distance_metric)?
+                    }
+                    _ => self.compute_distance_with_data(ctx.query, ctx.query_quantized, &node.vector)?,
+                };
                 let cand = Candidate {
                     index: ep,
                     distance: dist,
@@ -331,11 +344,16 @@ impl HnswIndexCore {
                                 neighbor
                             ))
                         })?;
-                        let dist = self.compute_distance_with_data(
-                            query,
-                            query_quantized,
-                            &neighbor_node.vector,
-                        )?;
+                        let dist = match (&neighbor_node.vector, ctx.precomputed, ctx.quantizer) {
+                            (crate::hnsw::VectorData::U8(v), Some(pre), Some(q)) => {
+                                q.asymmetric_dist_precomputed(pre, v, self.config.distance_metric)?
+                            }
+                            _ => self.compute_distance_with_data(
+                                ctx.query,
+                                ctx.query_quantized,
+                                &neighbor_node.vector,
+                            )?,
+                        };
                         let is_better = match results.peek() {
                             Some(worst) => dist < worst.distance,
                             None => true,
@@ -496,8 +514,15 @@ impl HnswIndexCore {
         };
 
         let mut ep = vec![ep_idx];
+        let ctx = SearchContext {
+            query: vector,
+            query_quantized: query_quantized.as_deref(),
+            precomputed: None,
+            quantizer: None,
+        };
+
         for layer in (new_layer + 1..=current_max_layer).rev() {
-            let best = self.search_layer(vector, query_quantized.as_deref(), &ep, 1, layer)?;
+            let best = self.search_layer(&ctx, &ep, 1, layer)?;
             if let Some(closest) = best.first() {
                 ep = vec![closest.index];
             }
@@ -512,13 +537,7 @@ impl HnswIndexCore {
         let mut final_connections = vec![vec![]; new_layer + 1];
 
         for layer in (0..=new_layer.min(current_max_layer)).rev() {
-            let neighbors = self.search_layer(
-                vector,
-                query_quantized.as_deref(),
-                &ep,
-                self.config.ef_construction,
-                layer,
-            )?;
+            let neighbors = self.search_layer(&ctx, &ep, self.config.ef_construction, layer)?;
             let selected = {
                 let nodes = self.nodes.read();
                 self.select_neighbors_heuristic(&nodes, &neighbors, self.config.m)?
@@ -789,10 +808,15 @@ impl VectorIndex for HnswIndex {
             )));
         }
 
-        let query_quantized = if self.config.quantize {
-            self.quantizer.read().as_ref().map(|q| q.quantize(query))
+        let guard = self.quantizer.read();
+        let (query_quantized, precomputed) = if self.config.quantize {
+            if let Some(q) = guard.as_ref() {
+                (Some(q.quantize(query)), Some(q.precompute(query)))
+            } else {
+                (None, None)
+            }
         } else {
-            None
+            (None, None)
         };
 
         let entry = *self.entry_point.read();
@@ -803,12 +827,17 @@ impl VectorIndex for HnswIndex {
 
         let max_layer = self.max_layer.load(Ordering::SeqCst) as usize;
         let mut ep = vec![entry_idx];
+        let ctx = SearchContext {
+            query,
+            query_quantized: query_quantized.as_deref(),
+            precomputed: precomputed.as_ref(),
+            quantizer: guard.as_ref(),
+        };
 
         for layer in (1..=max_layer).rev() {
             // Dynamische ef für Zwischenlayer (meist 1 ist ausreichend, aber für sehr tiefe Graphen kann leichtes Scaling helfen)
             let layer_ef = if layer > 1 { 1 } else { 2 };
-            let best =
-                self.search_layer(query, query_quantized.as_deref(), &ep, layer_ef, layer)?;
+            let best = self.search_layer(&ctx, &ep, layer_ef, layer)?;
             if let Some(closest) = best.first() {
                 ep = vec![closest.index];
             }
@@ -820,7 +849,7 @@ impl VectorIndex for HnswIndex {
         } else {
             self.config.ef_search.max(k)
         };
-        let candidates = self.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
+        let candidates = self.search_layer(&ctx, &ep, ef, 0)?;
 
         let score = self.connectivity_score();
         if score < self.config.rebuild_threshold {
@@ -843,11 +872,14 @@ impl VectorIndex for HnswIndex {
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
             let final_dist = if self.config.quantize {
                 if let VectorData::U8(v) = &node.vector {
-                    let guard = self.quantizer.read();
                     let q = guard.as_ref().ok_or_else(|| {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                     })?;
-                    q.asymmetric_dist(query, v, self.config.distance_metric)?
+                    if let Some(pre) = &precomputed {
+                        q.asymmetric_dist_precomputed(pre, v, self.config.distance_metric)?
+                    } else {
+                        q.asymmetric_dist(query, v, self.config.distance_metric)?
+                    }
                 } else {
                     c.distance
                 }
@@ -890,10 +922,15 @@ impl VectorIndex for HnswIndex {
             )));
         }
 
-        let query_quantized = if self.config.quantize {
-            self.quantizer.read().as_ref().map(|q| q.quantize(query))
+        let guard = self.quantizer.read();
+        let (query_quantized, precomputed) = if self.config.quantize {
+            if let Some(q) = guard.as_ref() {
+                (Some(q.quantize(query)), Some(q.precompute(query)))
+            } else {
+                (None, None)
+            }
         } else {
-            None
+            (None, None)
         };
 
         let entry = *self.entry_point.read();
@@ -904,9 +941,15 @@ impl VectorIndex for HnswIndex {
 
         let max_layer = self.max_layer.load(Ordering::SeqCst) as usize;
         let mut ep = vec![entry_idx];
+        let ctx = SearchContext {
+            query,
+            query_quantized: query_quantized.as_deref(),
+            precomputed: precomputed.as_ref(),
+            quantizer: guard.as_ref(),
+        };
 
         for layer in (1..=max_layer).rev() {
-            let best = self.search_layer(query, query_quantized.as_deref(), &ep, 1, layer)?;
+            let best = self.search_layer(&ctx, &ep, 1, layer)?;
             if let Some(closest) = best.first() {
                 ep = vec![closest.index];
             }
@@ -915,7 +958,7 @@ impl VectorIndex for HnswIndex {
         // Over-fetch to compensate for filtered-out results and reranking
         let factor = if self.config.quantize { 4 } else { 2 };
         let ef = self.config.ef_search.max(k) * factor;
-        let candidates = self.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
+        let candidates = self.search_layer(&ctx, &ep, ef, 0)?;
 
         let score = self.connectivity_score();
         if score < self.config.rebuild_threshold {
@@ -943,11 +986,14 @@ impl VectorIndex for HnswIndex {
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
             let final_dist = if self.config.quantize {
                 if let VectorData::U8(v) = &node.vector {
-                    let guard = self.quantizer.read();
                     let q = guard.as_ref().ok_or_else(|| {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                     })?;
-                    q.asymmetric_dist(query, v, self.config.distance_metric)?
+                    if let Some(pre) = &precomputed {
+                        q.asymmetric_dist_precomputed(pre, v, self.config.distance_metric)?
+                    } else {
+                        q.asymmetric_dist(query, v, self.config.distance_metric)?
+                    }
                 } else {
                     c.distance
                 }

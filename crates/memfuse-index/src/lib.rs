@@ -13,6 +13,7 @@
 #![deny(unsafe_code)]
 
 pub mod csr;
+pub mod diskann;
 pub mod distance;
 pub mod hnsw;
 pub mod quantize;
