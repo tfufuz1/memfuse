@@ -268,7 +268,7 @@ impl Wal {
             let decrypted_data;
             let entry_data = if let Some(km) = &self.key_manager {
                 // The offset used for encryption was the file size before writing the 4-byte length prefix.
-                let offset = (pos - len - 4) as u64;
+                let offset = pos - len as u64 - 4;
                 decrypted_data = km.decrypt(&entry_data_raw, offset)?;
                 &decrypted_data
             } else {

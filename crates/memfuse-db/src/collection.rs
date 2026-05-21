@@ -465,7 +465,7 @@ impl Collection {
             let stored: StoredDocument = serde_json::from_slice(&v)?;
             let metadata = stored.metadata.as_ref().unwrap_or(&serde_json::Value::Null);
             if filter.matches(metadata) {
-                matched.insert(DocId::from_key(&stored.id));
+                matched.insert(DocId::from_key(&stored.id)?);
             }
         }
 
