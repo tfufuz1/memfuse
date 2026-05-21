@@ -617,7 +617,7 @@ impl PyCollection {
         })?;
 
         let results = py
-            .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, vec_slice, k)))
+            .allow_threads(|| rt.block_on(self.inner.hybrid_search_legacy(text, vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let mut py_res = Vec::new();
