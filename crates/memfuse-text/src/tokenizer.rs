@@ -54,12 +54,22 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            let mut split = false;
+            // Morphological suffixes for German (WP-6.5)
+            for suffix in &["gericht", "schaft", "keit", "ung"] {
+                if lower.ends_with(suffix) {
+                    let full_count = lower.chars().count();
+                    let suffix_count = suffix.chars().count();
+                    if full_count > suffix_count + 3 {
+                        tokens.push(lower.clone());
+                        tokens.push(suffix.to_string());
+                        split = true;
+                        break;
+                    }
+                }
+            }
+
+            if !split {
                 tokens.push(lower);
             }
         }
@@ -96,9 +106,35 @@ mod tests {
     #[test]
     fn test_german_morph_tokenizer() {
         let tokenizer = GermanMorphTokenizer;
+
+        // Test "gericht"
         let tokens = tokenizer.tokenize("Das Bundesverfassungsgericht");
-        // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+
+        // Test "schaft"
+        let tokens = tokenizer.tokenize("Wissenschaft");
+        assert!(tokens.contains(&"wissenschaft".to_string()));
+        assert!(tokens.contains(&"schaft".to_string()));
+
+        // Test "keit"
+        let tokens = tokenizer.tokenize("Einsamkeit");
+        assert!(tokens.contains(&"einsamkeit".to_string()));
+        assert!(tokens.contains(&"keit".to_string()));
+
+        // Test "ung"
+        let tokens = tokenizer.tokenize("Bedeutung");
+        assert!(tokens.contains(&"bedeutung".to_string()));
+        assert!(tokens.contains(&"ung".to_string()));
+
+        // Test stem length constraint: "Zeitung" -> stem "zeit" (4 chars) > 3, should split
+        let tokens = tokenizer.tokenize("Zeitung");
+        assert!(tokens.contains(&"zeitung".to_string()));
+        assert!(tokens.contains(&"ung".to_string()));
+
+        // Test stem length constraint: "Übung" -> stem "üb" (2 chars) <= 3, should NOT split
+        let tokens = tokenizer.tokenize("Übung");
+        assert!(tokens.contains(&"übung".to_string()));
+        assert!(!tokens.contains(&"ung".to_string()));
     }
 }

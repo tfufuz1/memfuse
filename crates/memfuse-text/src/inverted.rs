@@ -449,6 +449,7 @@ impl TextIndex for InvertedIndex {
             num_documents: total_docs as usize,
             num_tokens: total_tokens as usize,
             memory_usage_bytes: 0,
+            token_reduction_ratio: 0.0,
         })
     }
 }
