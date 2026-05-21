@@ -17,3 +17,7 @@
 ## Phase 4: PR Integration
 - **Finding:** `gh` CLI is unavailable in the current execution environment.
 - **Actions:** Automated PR integration via `jules-integrate.sh` skipped. Manual verification and integration required by authorized environment.
+
+## Workspace Health Alert (External to Phases)
+- **Finding:** The CI has reported `cargo test --workspace` failures and Zero-unwrap violations.
+- **Status:** These issues are acknowledged but remain unfixed as per the Orchestrator-Watchdog constraint: *NIEMALS Compile-Probleme lösen*.
