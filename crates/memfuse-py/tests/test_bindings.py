@@ -227,3 +227,55 @@ def test_version_and_repr(db_path):
 
     db_stats = db.stats()
     assert "DbStats(vectors=0" in repr(db_stats) # default col is empty
+
+def test_metadata_filtering(db_path):
+    from memfuse import MetadataFilter, FilterOp
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("filter_test")
+
+    v = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
+    col.insert("d1", v, metadata={"category": "A", "value": 10})
+    col.insert("d2", v, metadata={"category": "A", "value": 20})
+    col.insert("d3", v, metadata={"category": "B", "value": 30})
+
+    # Simple Eq filter
+    f1 = MetadataFilter.condition("category", FilterOp.Eq, "A")
+    res = col.search_with_filter(v, k=10, filter=f1)
+    assert len(res) == 2
+    assert set(r.id for r in res) == {"d1", "d2"}
+
+    # Gt filter
+    f2 = MetadataFilter.condition("value", FilterOp.Gt, 15)
+    res = col.search_with_filter(v, k=10, filter=f2)
+    assert len(res) == 2
+    assert set(r.id for r in res) == {"d2", "d3"}
+
+    # And filter
+    f3 = MetadataFilter.all_of([
+        MetadataFilter.condition("category", FilterOp.Eq, "A"),
+        MetadataFilter.condition("value", FilterOp.Gte, 20)
+    ])
+    res = col.search_with_filter(v, k=10, filter=f3)
+    assert len(res) == 1
+    assert res[0].id == "d2"
+
+    # Or filter
+    f4 = MetadataFilter.any_of([
+        MetadataFilter.condition("category", FilterOp.Eq, "B"),
+        MetadataFilter.condition("value", FilterOp.Lt, 15)
+    ])
+    res = col.search_with_filter(v, k=10, filter=f4)
+    assert len(res) == 2
+    assert set(r.id for r in res) == {"d1", "d3"}
+
+    # None_of (Not) filter
+    f5 = MetadataFilter.none_of(MetadataFilter.condition("category", FilterOp.Eq, "A"))
+    res = col.search_with_filter(v, k=10, filter=f5)
+    assert len(res) == 1
+    assert res[0].id == "d3"
+
+    # In filter
+    f6 = MetadataFilter.condition("category", FilterOp.In, ["B", "C"])
+    res = col.search_with_filter(v, k=10, filter=f6)
+    assert len(res) == 1
+    assert res[0].id == "d3"
