@@ -1,11 +1,11 @@
 //! Integration tests for Checkpoint pinning and rollback through the DB facade.
 // ANCHOR:INTEGRATION:CHECKPOINT-DB STATUS:DONE AGENT:12 DATE:2026-06-21
 
-use memfuse_db::{MemFuse, MemFuseConfig};
 use memfuse_checkpoint::CheckpointManager;
+use memfuse_db::{MemFuse, MemFuseConfig};
 use serde_json::json;
-use tempfile::TempDir;
 use std::sync::Arc;
+use tempfile::TempDir;
 use tokio::task::JoinHandle;
 
 #[tokio::test]
@@ -15,26 +15,41 @@ async fn test_db_checkpoint_lifecycle() {
         dimension: 3,
         ..Default::default()
     };
-    let db = MemFuse::open_with_config(tmp.path(), config).await.expect("failed to open db");
+    let db = MemFuse::open_with_config(tmp.path(), config)
+        .await
+        .expect("failed to open db");
 
     // 1. Insert initial data
-    db.insert("doc-1", &[1.0, 0.0, 0.0], Some(json!({"v": 1}))).await.expect("insert failed");
+    db.insert("doc-1", &[1.0, 0.0, 0.0], Some(json!({"v": 1})))
+        .await
+        .expect("insert failed");
 
     // 2. Setup CheckpointManager via inner storage
     let storage = db.inner_storage();
     let manager = CheckpointManager::new(storage);
 
     // 3. Create Checkpoint
-    let cp = manager.create_checkpoint("initial-state").await.expect("checkpoint failed");
+    let cp = manager
+        .create_checkpoint("initial-state")
+        .await
+        .expect("checkpoint failed");
     assert!(cp.seq_no > 0);
 
     // 4. Perform more operations
-    db.insert("doc-2", &[0.0, 1.0, 0.0], Some(json!({"v": 2}))).await.expect("insert failed");
-    db.update("doc-1", &[1.0, 0.0, 0.0], Some(json!({"v": 1.1}))).await.expect("update failed");
+    db.insert("doc-2", &[0.0, 1.0, 0.0], Some(json!({"v": 2})))
+        .await
+        .expect("insert failed");
+    db.update("doc-1", &[1.0, 0.0, 0.0], Some(json!({"v": 1.1})))
+        .await
+        .expect("update failed");
 
     // 5. Verify current state
     assert_eq!(db.len().await.expect("len failed"), 2);
-    let doc1 = db.get("doc-1").await.expect("get failed").expect("missing doc");
+    let doc1 = db
+        .get("doc-1")
+        .await
+        .expect("get failed")
+        .expect("missing doc");
     assert_eq!(doc1.metadata.unwrap()["v"], 1.1);
 
     // 6. Rollback (Note: currently rollback is a STUB in CheckpointManager, but we test the API flow)
@@ -51,7 +66,11 @@ async fn test_concurrent_ops_during_checkpointing() {
         dimension: 3,
         ..Default::default()
     };
-    let db = Arc::new(MemFuse::open_with_config(tmp.path(), config).await.expect("failed to open db"));
+    let db = Arc::new(
+        MemFuse::open_with_config(tmp.path(), config)
+            .await
+            .expect("failed to open db"),
+    );
     let manager = Arc::new(CheckpointManager::new(db.inner_storage()));
 
     let num_tasks = 5;
@@ -64,7 +83,9 @@ async fn test_concurrent_ops_during_checkpointing() {
         handles.push(tokio::spawn(async move {
             for i in 0..ops_per_task {
                 let id = format!("task-{}-doc-{}", t, i);
-                db.insert(&id, &[0.1, 0.2, 0.3], Some(json!({"t": t, "i": i}))).await.expect("insert failed");
+                db.insert(&id, &[0.1, 0.2, 0.3], Some(json!({"t": t, "i": i})))
+                    .await
+                    .expect("insert failed");
 
                 if i % 10 == 0 {
                     let _ = db.get(&id).await.expect("get failed");
@@ -100,5 +121,8 @@ async fn test_concurrent_ops_during_checkpointing() {
     stop_checkpointer.notify_one();
     checkpointer_handle.await.expect("checkpointer task failed");
 
-    assert_eq!(db.len().await.expect("len failed"), num_tasks * ops_per_task);
+    assert_eq!(
+        db.len().await.expect("len failed"),
+        num_tasks * ops_per_task
+    );
 }
