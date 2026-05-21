@@ -109,6 +109,15 @@ dag-check:
     fi
 
     echo "--- Known DAG Violations (Tracking) ---"
+    # DAG-001 (text -> store) is special because it's only in dev-dependencies in Cargo.toml
+    # but the production code in inverted.rs still imports it (using StorageEngine trait).
+    # We check for the explicit import in the source code.
+    if grep -r "memfuse_store" crates/memfuse-text/src/ | grep -v "mod tests" | grep -q .; then
+        echo "⚠️  DAG-001 still present (memfuse-text source → memfuse-store)"
+    else
+        echo "✅ DAG-001 resolved"
+    fi
+
     for VIOLATION in "memfuse-checkpoint:memfuse-store:DAG-002" "memfuse-py:memfuse-db:DAG-003"; do
         CRATE=${VIOLATION%%:*}
         TARGET=$(echo $VIOLATION | cut -d: -f2)

@@ -79,6 +79,12 @@ jobs:
         run: |
           set -e
           echo "=== Known DAG Violations (tracked via ANKERs) ==="
+          echo "--- DAG-001: memfuse-text → memfuse-store ---"
+          if grep -r "memfuse_store" crates/memfuse-text/src/ | grep -v "mod tests" | grep -q .; then
+            echo "⚠️  DAG-001 still present (memfuse-text source → memfuse-store)"
+          else
+            echo "✅ DAG-001 resolved"
+          fi
           echo "--- DAG-002: memfuse-checkpoint → memfuse-store ---"
           if cargo tree -p memfuse-checkpoint --edges no-dev | grep -q "memfuse-store"; then
             echo "⚠️  DAG-002 still present (memfuse-checkpoint → memfuse-store)"
