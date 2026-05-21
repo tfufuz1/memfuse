@@ -1,3 +1,7 @@
+//! Metadata filtering for document retrieval.
+
+#![forbid(unsafe_code)]
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -72,10 +76,12 @@ impl MetadataFilter {
                             }
                         }
                         FilterOp::NotIn => {
-                            if let Some(arr) = value.as_array() {
+                            if let Some(arr) = actual_value.as_array() {
+                                !arr.contains(value)
+                            } else if let Some(arr) = value.as_array() {
                                 !arr.contains(actual_value)
                             } else {
-                                true
+                                actual_value != value
                             }
                         }
                     }
@@ -102,5 +108,143 @@ fn compare_values(a: &Value, b: &Value) -> Option<std::cmp::Ordering> {
         }
         (Value::String(as_str), Value::String(bs_str)) => as_str.partial_cmp(bs_str),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_filter_eq_ne() {
+        let meta = json!({"category": "rust", "priority": 1});
+
+        let f_eq = MetadataFilter::Condition {
+            field: "category".to_string(),
+            op: FilterOp::Eq,
+            value: json!("rust"),
+        };
+        assert!(f_eq.matches(&meta));
+
+        let f_ne = MetadataFilter::Condition {
+            field: "category".to_string(),
+            op: FilterOp::Ne,
+            value: json!("python"),
+        };
+        assert!(f_ne.matches(&meta));
+    }
+
+    #[test]
+    fn test_filter_comparison() {
+        let meta = json!({"priority": 10});
+
+        let f_gt = MetadataFilter::Condition {
+            field: "priority".to_string(),
+            op: FilterOp::Gt,
+            value: json!(5),
+        };
+        assert!(f_gt.matches(&meta));
+
+        let f_lt = MetadataFilter::Condition {
+            field: "priority".to_string(),
+            op: FilterOp::Lt,
+            value: json!(20),
+        };
+        assert!(f_lt.matches(&meta));
+
+        let f_gte = MetadataFilter::Condition {
+            field: "priority".to_string(),
+            op: FilterOp::Gte,
+            value: json!(10),
+        };
+        assert!(f_gte.matches(&meta));
+    }
+
+    #[test]
+    fn test_filter_in_notin() {
+        let meta = json!({"tag": "ai"});
+
+        let f_in = MetadataFilter::Condition {
+            field: "tag".to_string(),
+            op: FilterOp::In,
+            value: json!(["ai", "db"]),
+        };
+        assert!(f_in.matches(&meta));
+
+        let f_notin = MetadataFilter::Condition {
+            field: "tag".to_string(),
+            op: FilterOp::NotIn,
+            value: json!(["web", "mobile"]),
+        };
+        assert!(f_notin.matches(&meta));
+    }
+
+    #[test]
+    fn test_filter_logical() {
+        let meta = json!({"category": "rust", "priority": 10});
+
+        let f_and = MetadataFilter::And(vec![
+            MetadataFilter::Condition {
+                field: "category".to_string(),
+                op: FilterOp::Eq,
+                value: json!("rust"),
+            },
+            MetadataFilter::Condition {
+                field: "priority".to_string(),
+                op: FilterOp::Gt,
+                value: json!(5),
+            },
+        ]);
+        assert!(f_and.matches(&meta));
+
+        let f_or = MetadataFilter::Or(vec![
+            MetadataFilter::Condition {
+                field: "category".to_string(),
+                op: FilterOp::Eq,
+                value: json!("python"),
+            },
+            MetadataFilter::Condition {
+                field: "priority".to_string(),
+                op: FilterOp::Eq,
+                value: json!(10),
+            },
+        ]);
+        assert!(f_or.matches(&meta));
+
+        let f_not = MetadataFilter::Not(Box::new(MetadataFilter::Condition {
+            field: "category".to_string(),
+            op: FilterOp::Eq,
+            value: json!("python"),
+        }));
+        assert!(f_not.matches(&meta));
+    }
+
+    #[test]
+    fn test_nested_filters() {
+        let meta = json!({"type": "agent", "status": "active", "load": 5});
+
+        // (type == agent AND status == active) AND NOT (load > 10)
+        let f = MetadataFilter::And(vec![
+            MetadataFilter::And(vec![
+                MetadataFilter::Condition {
+                    field: "type".to_string(),
+                    op: FilterOp::Eq,
+                    value: json!("agent"),
+                },
+                MetadataFilter::Condition {
+                    field: "status".to_string(),
+                    op: FilterOp::Eq,
+                    value: json!("active"),
+                },
+            ]),
+            MetadataFilter::Not(Box::new(MetadataFilter::Condition {
+                field: "load".to_string(),
+                op: FilterOp::Gt,
+                value: json!(10),
+            })),
+        ]);
+
+        assert!(f.matches(&meta));
     }
 }

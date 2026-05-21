@@ -1,4 +1,6 @@
 //! Logically isolated Collections inside the MemFuse database.
+
+#![forbid(unsafe_code)]
 // ANCHOR:ARCH:COLLECTION-001 — Logische Isolation (Namespaces).
 // WP:WP-1.2 PRIO:1 NEEDS:NONE
 // AGENT:04 DATE:2026-05-09 STATUS:DONE
@@ -478,6 +480,101 @@ impl Collection {
             }
         }
         Ok(results)
+    }
+
+    /// Performs a unified 4-signal hybrid search.
+    pub async fn hybrid_search_fusion(
+        &self,
+        query: crate::HybridQuery,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let mut signals = Vec::new();
+
+        // Signal 1: Semantic Vector (HNSW)
+        if let Some(vector) = &query.vector {
+            let results = self.search(vector, query.limit * 2).await?;
+            signals.push((results, query.weights.vector));
+        }
+
+        // Signal 2: Keyword Text (BM25)
+        if let Some(text) = &query.text {
+            let bm25_results = self.text_index.search_bm25(text, query.limit * 2).await?;
+            let text_results = self.hydrate_from_tuples(bm25_results).await?;
+            signals.push((text_results, query.weights.text));
+        }
+
+        // Signal 3: Graph / Relationships
+        if let Some((seed_id, max_hops)) = &query.graph_seed {
+            let mut graph_results = std::collections::HashMap::new();
+            let mut current_level = vec![seed_id.clone()];
+            let mut visited = std::collections::HashSet::new();
+            visited.insert(seed_id.clone());
+
+            let mut current_score = 1.0f32;
+            let decay = 0.7f32;
+
+            for _ in 0..*max_hops {
+                let mut next_level = Vec::new();
+                for node_id in current_level {
+                    let prefix = format!("__rel:{}:", node_id);
+                    let edges = self.scan_prefix(&prefix).await?;
+                    for (_, edge_val) in edges {
+                        if let Some(to_id) = edge_val["to"].as_str() {
+                            if !visited.contains(to_id) {
+                                visited.insert(to_id.to_string());
+                                next_level.push(to_id.to_string());
+                                graph_results.insert(to_id.to_string(), current_score * decay);
+                            }
+                        }
+                    }
+                }
+                if next_level.is_empty() {
+                    break;
+                }
+                current_level = next_level;
+                current_score *= decay;
+            }
+
+            let mut results = Vec::new();
+            for (id, score) in graph_results {
+                if let Some(doc) = self.get(&id).await? {
+                    results.push(crate::SearchResult {
+                        id,
+                        score,
+                        metadata: doc.metadata,
+                    });
+                }
+            }
+            // Sort graph results by score
+            results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+            signals.push((results, query.weights.graph));
+        }
+
+        // Signal 4: Metadata Filter
+        if let Some(filter) = &query.metadata_filter {
+            let matched_ids = self.get_matching_doc_ids(filter).await?;
+            let mut results = Vec::new();
+            for doc_id in matched_ids {
+                let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+                if let Some(bytes) = self.storage.get(&doc_key).await? {
+                    let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                    results.push(crate::SearchResult {
+                        id: stored.id,
+                        score: 1.0, // Binary relevance for filter
+                        metadata: stored.metadata,
+                    });
+                }
+            }
+            signals.push((results, query.weights.metadata));
+        }
+
+        if signals.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        Ok(crate::fusion::reciprocal_rank_fusion_weighted(
+            signals,
+            query.limit,
+        ))
     }
 
     /// Performs hybrid search combining BM25 and vector search results via RRF.

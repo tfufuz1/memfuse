@@ -1,4 +1,6 @@
 //! # Database Transactions
+
+#![forbid(unsafe_code)]
 //!
 //! This module provides `DbTransaction`, an orchestrator for atomic multi-index commits
 //! between the LSM-Tree storage engine (`memfuse-store`) and the HNSW vector index (`memfuse-index`).

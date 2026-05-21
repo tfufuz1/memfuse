@@ -1,3 +1,8 @@
+//! # MemFuse — Embedded Hybrid-Search for AI Agents
+//!
+//! MemFuse is a zero-boilerplate embedded database for AI agent memory.
+//! It combines vector search (HNSW), persistent storage (LSM-Tree),
+//! and relationship tracking in a single library.
 // ANCHOR:ARCH:DB-001 — Orchestrator Facade (Getriebe — Layer 2).
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -5,9 +10,6 @@
 // ROLLE: Verbindet memfuse-core (Traits), memfuse-store (LSM) und memfuse-index (HNSW).
 // DESIGN: Zero-Boilerplate API für Nutzer. Intern wird alles über die Collection-Abstraktion geroutet.
 // ABWÄRTSKOMPATIBILITÄT: Bietet weiterhin top-level insert/search an, die intern auf die "default" Collection leiten.
-//! # MemFuse — Embedded Hybrid-Search for AI Agents
-//!
-//! MemFuse is a zero-boilerplate embedded database for AI agent memory.
 //! It combines vector search (HNSW), persistent storage (LSM-Tree),
 //! and relationship tracking in a single library.
 //!
@@ -91,6 +93,47 @@ pub struct Document {
     pub id: String,
     /// Metadata associated with the document.
     pub metadata: Option<Value>,
+}
+
+/// Weights for each of the four retrieval signals.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FusionWeights {
+    /// Semantic vector signal weight (default 0.4).
+    pub vector: f32,
+    /// Keyword text signal weight (default 0.3).
+    pub text: f32,
+    /// Graph/Relationship signal weight (default 0.2).
+    pub graph: f32,
+    /// Metadata filter signal weight (default 0.1).
+    pub metadata: f32,
+}
+
+impl Default for FusionWeights {
+    fn default() -> Self {
+        Self {
+            vector: 0.4,
+            text: 0.3,
+            graph: 0.2,
+            metadata: 0.1,
+        }
+    }
+}
+
+/// Unified query structure for the 4-signal fusion API.
+#[derive(Debug, Clone)]
+pub struct HybridQuery {
+    /// Optional semantic vector query.
+    pub vector: Option<Vec<f32>>,
+    /// Optional keyword text query.
+    pub text: Option<String>,
+    /// Optional graph seed node and max hop depth.
+    pub graph_seed: Option<(String, u8)>,
+    /// Optional metadata filter.
+    pub metadata_filter: Option<MetadataFilter>,
+    /// Fusions weights for each signal (should sum to 1.0).
+    pub weights: FusionWeights,
+    /// Maximum number of results to return.
+    pub limit: usize,
 }
 
 /// Global configuration settings for the MemFuse database.
@@ -359,6 +402,11 @@ impl MemFuse {
             .await
     }
 
+    /// Performs a unified 4-signal hybrid search.
+    pub async fn hybrid_search_fusion(&self, query: HybridQuery) -> Result<Vec<SearchResult>> {
+        self.default_col().await?.hybrid_search_fusion(query).await
+    }
+
     /// Performs hybrid search combining BM25 and vector search.
     // ANCHOR:TODO:SEARCH-001 — Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection.
     // WP:WP-2.1 PRIO:1 NEEDS:COL-001
@@ -438,6 +486,7 @@ impl MemFuse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::filter::FilterOp;
     use tempfile::TempDir;
 
     async fn test_db(dim: usize) -> (MemFuse, TempDir) {
@@ -788,5 +837,47 @@ mod tests {
         assert!(list.contains(&"c2".to_string()));
         assert!(list.contains(&"c3".to_string()));
         assert_eq!(list.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_hybrid_search_fusion_4_signals() {
+        let (db, _tmp) = test_db(4).await;
+
+        // 1. Setup Data
+        db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"text": "rust database", "type": "agent"}))).await.unwrap();
+        db.insert("doc-2", &[0.0, 1.0, 0.0, 0.0], Some(json!({"text": "python library", "type": "tool"}))).await.unwrap();
+        db.insert("doc-3", &[0.5, 0.5, 0.0, 0.0], Some(json!({"text": "rust library", "type": "agent"}))).await.unwrap();
+
+        db.relate("doc-1", "doc-3", "version_of").await.unwrap();
+
+        // 2. Query with 4 signals
+        let query = HybridQuery {
+            vector: Some(vec![1.0, 0.0, 0.0, 0.0]),
+            text: Some("library".to_string()),
+            graph_seed: Some(("doc-1".to_string(), 1)),
+            metadata_filter: Some(MetadataFilter::Condition {
+                field: "type".to_string(),
+                op: FilterOp::Eq,
+                value: json!("agent"),
+            }),
+            weights: FusionWeights {
+                vector: 0.4,
+                text: 0.3,
+                graph: 0.2,
+                metadata: 0.1,
+            },
+            limit: 5,
+        };
+
+        let results = db.hybrid_search_fusion(query).await.expect("hybrid search fusion");
+
+        // doc-1 matches: vector (rank 0), text (none), graph (none), metadata (yes)
+        // doc-3 matches: vector (rank 1), text (rank 0), graph (rank 0), metadata (yes)
+        // doc-2 matches: vector (rank 2), text (rank 1), graph (none), metadata (no)
+
+        assert!(results.len() >= 2);
+        // doc-3 should be very high due to multiple strong signal matches
+        assert!(results.iter().any(|r| r.id == "doc-3"));
+        assert!(results.iter().any(|r| r.id == "doc-1"));
     }
 }
