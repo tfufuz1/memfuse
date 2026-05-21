@@ -40,8 +40,20 @@ impl Tokenizer for DefaultTokenizer {
     }
 }
 
-/// German tokenizer with basic compound splitting POC.
+/// German tokenizer with basic compound splitting.
 pub struct GermanMorphTokenizer;
+
+impl GermanMorphTokenizer {
+    fn split_compounds(&self, word: &str) -> Vec<String> {
+        let suffixes = ["gericht", "wesen", "schaft", "kraft"];
+        for suffix in suffixes {
+            if word.ends_with(suffix) && word.len() > suffix.len() {
+                return vec![word.to_string(), suffix.to_string()];
+            }
+        }
+        vec![word.to_string()]
+    }
+}
 
 impl Tokenizer for GermanMorphTokenizer {
     fn tokenize(&self, text: &str) -> Vec<String> {
@@ -54,14 +66,7 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
-                tokens.push(lower);
-            }
+            tokens.extend(self.split_compounds(&lower));
         }
         tokens
     }
@@ -100,5 +105,36 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+    }
+
+    #[test]
+    fn test_german_morph_suffixes() {
+        let tokenizer = GermanMorphTokenizer;
+
+        // Test "wesen"
+        let tokens = tokenizer.tokenize("Gesundheitswesen");
+        assert_eq!(tokens, vec!["gesundheitswesen", "wesen"]);
+
+        // Test "schaft"
+        let tokens = tokenizer.tokenize("Wissenschaft");
+        assert_eq!(tokens, vec!["wissenschaft", "schaft"]);
+
+        // Test "kraft"
+        let tokens = tokenizer.tokenize("Lehrkraft");
+        assert_eq!(tokens, vec!["lehrkraft", "kraft"]);
+    }
+
+    #[test]
+    fn test_german_morph_length_guard() {
+        let tokenizer = GermanMorphTokenizer;
+
+        // "kraft" as a standalone word (or small word) should NOT be split if it equals the suffix
+        // Our logic says lower.len() > suffix.len(), so "kraft" should stay "kraft"
+        let tokens = tokenizer.tokenize("kraft");
+        assert_eq!(tokens, vec!["kraft"]);
+
+        // "wesen" should stay "wesen"
+        let tokens = tokenizer.tokenize("wesen");
+        assert_eq!(tokens, vec!["wesen"]);
     }
 }

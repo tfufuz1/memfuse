@@ -9,3 +9,6 @@
 pub mod bm25;
 pub mod inverted;
 pub mod tokenizer;
+
+pub use inverted::InvertedIndex;
+pub use tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
