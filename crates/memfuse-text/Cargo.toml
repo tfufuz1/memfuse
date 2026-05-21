@@ -25,5 +25,11 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 memfuse-store = { workspace = true }
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["test-util", "full"] }
 tempfile = { workspace = true }
+criterion = "0.5"
+rand = { workspace = true }
+
+[[bench]]
+name = "inverted_bench"
+harness = false
