@@ -2,7 +2,7 @@
 
 **Sovereign Agentic Operating System (SAOS)**
 
-> "The ultimate runtime for AI Agents: Database, Saftey Layer, and Orchestrator in one crate."
+> "The ultimate runtime for AI Agents: Database, Safety Layer, and Orchestrator in one crate."
 
 ## Quick Start
 
@@ -73,16 +73,16 @@ bash .agent/scripts/jules-dashboard.sh
 ## Features
 
 - **Zero Boilerplate** — String IDs, auto-commit, no configuration needed
-- **HNSW Vector Search** — Approximate nearest neighbor with diversity heuristic
+- **HNSW Vector Search** — Approximate nearest neighbor with SIMD acceleration
 - **Scalar Quantization (SQ8)** — 4x RAM reduction for large-scale vector indices
 - **Hybrid Search** — Combined BM25 (text) and Vector search via RRF (Reciprocal Rank Fusion)
+- **Language-Aware Search** — Specialized tokenizers (e.g., German morphological splitting)
+- **Encryption at Rest** — AES-GCM encryption for all persistent data
 - **Multi-Tenancy** — Logically isolated collections (namespaces) for different agents/tasks
-- **SIMD Acceleration** — portable-simd for distance computation
-- **LSM-Tree Persistence** — WAL + MemTable with crash recovery
+- **SIMD Acceleration** — Optimized AVX-512, AVX2 and portable-simd distance metrics
+- **LSM-Tree Persistence** — WAL + MemTable with crash recovery and MMap-accelerated SSTables
 - **Transactional** — Sharded TxBuffer with orphan-reaping
-- **Relationship Tracking** — `relate()` API for graph-aware retrieval
-- **Hybrid Search** — Optimized BM25 + Vector Fusion (RRF)
-- **Scalar Quantization** — SQ8 compression for 4x reduced RAM footprint
+- **Relationship Tracking** — `relate()` API for graph-aware retrieval via CSR Graph
 - **Deterministic Checkpointing** — Native state pinning for "Time-Travel" debugging
 
 ## Building

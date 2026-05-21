@@ -8,6 +8,7 @@
 
 use std::time::Duration;
 
+/// Configuration for the Wasm sandbox environment.
 #[derive(Debug)]
 pub struct SandboxConfig {
     pub max_memory_mb: usize,
