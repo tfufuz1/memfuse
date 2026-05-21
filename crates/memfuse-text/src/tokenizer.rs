@@ -54,12 +54,20 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
+            // Compound splitting for common legal/administrative suffixes (WP-6.5)
             // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            let suffixes = ["ordnung", "gesetz", "vertrag", "recht", "gericht"];
+            let mut split = false;
+            for suffix in suffixes {
+                if lower.ends_with(suffix) && lower.len() > suffix.len() + 2 {
+                    tokens.push(lower.clone());
+                    tokens.push(suffix.to_string());
+                    split = true;
+                    break;
+                }
+            }
+
+            if !split {
                 tokens.push(lower);
             }
         }
@@ -100,5 +108,24 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+    }
+
+    #[test]
+    fn test_german_morph_tokenizer_expanded() {
+        let tokenizer = GermanMorphTokenizer;
+        let text = "Datenschutzverordnung, Betriebsverfassungsgesetz, Mietvertrag, Arbeitsrecht";
+        let tokens = tokenizer.tokenize(text);
+
+        assert!(tokens.contains(&"datenschutzverordnung".to_string()));
+        assert!(tokens.contains(&"ordnung".to_string()));
+
+        assert!(tokens.contains(&"betriebsverfassungsgesetz".to_string()));
+        assert!(tokens.contains(&"gesetz".to_string()));
+
+        assert!(tokens.contains(&"mietvertrag".to_string()));
+        assert!(tokens.contains(&"vertrag".to_string()));
+
+        assert!(tokens.contains(&"arbeitsrecht".to_string()));
+        assert!(tokens.contains(&"recht".to_string()));
     }
 }

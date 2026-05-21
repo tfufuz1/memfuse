@@ -339,8 +339,10 @@ impl InvertedIndex {
             0.0
         };
 
-        let mut scores: HashMap<DocId, f32> = HashMap::new();
-        let mut doc_len_cache: HashMap<DocId, u32> = HashMap::new();
+        // Pre-allocate to reduce heap churn (AGENT:09 / PERF-ANKER)
+        let capacity = k * tokens.len();
+        let mut scores: HashMap<DocId, f32> = HashMap::with_capacity(capacity);
+        let mut doc_len_cache: HashMap<DocId, u32> = HashMap::with_capacity(capacity);
 
         for term in &tokens {
             let pl_key = self.key_with_term(term);
