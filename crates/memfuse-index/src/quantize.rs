@@ -316,7 +316,9 @@ mod tests {
                 }
             }
 
-            let actual = q.symmetric_dist(&q1, &q2, metric).unwrap();
+            let actual = q
+                .symmetric_dist(&q1, &q2, metric)
+                .expect("test"); // #[cfg(test)]
             assert!(
                 (actual - expected).abs() < 1e-4,
                 "Metric {:?} failed: expected {}, got {}",
