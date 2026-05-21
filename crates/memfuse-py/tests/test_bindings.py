@@ -227,3 +227,34 @@ def test_version_and_repr(db_path):
 
     db_stats = db.stats()
     assert "DbStats(vectors=0" in repr(db_stats) # default col is empty
+
+def test_container_protocols(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("container")
+    v = np.zeros(4, dtype=np.float32)
+
+    # Test empty
+    assert len(db) == 0
+    assert len(col) == 0
+    assert "k1" not in db
+    assert "k1" not in col
+    with pytest.raises(KeyError):
+        db["k1"]
+    with pytest.raises(KeyError):
+        col["k1"]
+
+    # Insert
+    db.insert("k1", v)
+    col.insert("c1", v)
+
+    # Test filled
+    assert len(db) == 1
+    assert len(col) == 1
+    assert "k1" in db
+    assert "c1" in col
+    assert db["k1"].id == "k1"
+    assert col["c1"].id == "c1"
+
+    # Repr
+    assert repr(db) == "Db()"
+    assert repr(col) == "Collection(name='container')"

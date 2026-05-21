@@ -456,6 +456,23 @@ impl PyMemFuse {
             },
         })
     }
+
+    fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        self.len(py)
+    }
+
+    fn __contains__(&self, py: Python<'_>, id: &str) -> PyResult<bool> {
+        Ok(self.get(py, id)?.is_some())
+    }
+
+    fn __getitem__(&self, py: Python<'_>, id: &str) -> PyResult<PyDocument> {
+        self.get(py, id)?
+            .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(id.to_string()))
+    }
+
+    fn __repr__(&self) -> String {
+        "Db()".to_string()
+    }
 }
 
 #[pyclass(unsendable, name = "Collection")]
@@ -722,6 +739,23 @@ impl PyCollection {
             memory_usage_bytes: stats.memory_usage_bytes,
             num_layers: stats.num_layers,
         })
+    }
+
+    fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        self.len(py)
+    }
+
+    fn __contains__(&self, py: Python<'_>, id: &str) -> PyResult<bool> {
+        Ok(self.get(py, id)?.is_some())
+    }
+
+    fn __getitem__(&self, py: Python<'_>, id: &str) -> PyResult<PyDocument> {
+        self.get(py, id)?
+            .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(id.to_string()))
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Collection(name='{}')", self.inner.name())
     }
 }
 

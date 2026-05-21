@@ -62,6 +62,11 @@ pub struct Collection {
 }
 
 impl Collection {
+    /// Returns the name of the collection.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     /// Creates a new `Collection` instance.
     pub fn new(
         name: String,
