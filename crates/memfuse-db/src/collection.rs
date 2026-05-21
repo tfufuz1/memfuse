@@ -42,7 +42,12 @@ fn extract_text(metadata: &Option<serde_json::Value>) -> Option<String> {
     if document_text.is_empty() {
         None
     } else {
-        Some(document_text.trim().to_string())
+        let trimmed = document_text.trim();
+        if trimmed.len() == document_text.len() {
+            Some(document_text)
+        } else {
+            Some(trimmed.to_string())
+        }
     }
 }
 

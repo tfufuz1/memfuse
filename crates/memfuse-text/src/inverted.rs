@@ -10,11 +10,11 @@
 // OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
 
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
+use ahash::AHashMap;
 use async_trait::async_trait;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
 };
-use std::collections::HashMap;
 use std::sync::Arc;
 
 /// An inverted index stored in the LSM engine.
@@ -78,7 +78,7 @@ impl InvertedIndex {
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
 
-        let mut tfs = HashMap::with_capacity(tokens.len());
+        let mut tfs = AHashMap::with_capacity(tokens.len());
         for t in tokens {
             *tfs.entry(t).or_insert(0u32) += 1;
         }
@@ -339,8 +339,8 @@ impl InvertedIndex {
             0.0
         };
 
-        let mut scores: HashMap<DocId, f32> = HashMap::new();
-        let mut doc_len_cache: HashMap<DocId, u32> = HashMap::new();
+        let mut scores: AHashMap<DocId, f32> = AHashMap::new();
+        let mut doc_len_cache: AHashMap<DocId, u32> = AHashMap::new();
 
         for term in &tokens {
             let pl_key = self.key_with_term(term);
@@ -385,7 +385,8 @@ impl InvertedIndex {
             }
         }
 
-        let mut results: Vec<(DocId, f32)> = scores.into_iter().collect();
+        let mut results: Vec<(DocId, f32)> = Vec::with_capacity(scores.len());
+        results.extend(scores);
         // Sort descending by score
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         results.truncate(k);
