@@ -31,7 +31,10 @@ async fn test_agent_12_concurrent_multi_collection_stress() {
         handles.push(tokio::spawn(async move {
             // Tasks work on different collections to stress the orchestrator and shared LSM
             let col_name = format!("stress-col-{}", t % 5);
-            let col = db.collection(&col_name).await.expect("Failed to get collection");
+            let col = db
+                .collection(&col_name)
+                .await
+                .expect("Failed to get collection");
 
             for i in 0..ops_per_task {
                 let id = format!("task-{}-doc-{}", t, i);
@@ -64,7 +67,10 @@ async fn test_agent_12_concurrent_multi_collection_stress() {
     // Final Consistency Check: all stress collections should be empty
     for t in 0..5 {
         let col_name = format!("stress-col-{}", t);
-        let col = db.collection(&col_name).await.expect("Failed to get collection");
+        let col = db
+            .collection(&col_name)
+            .await
+            .expect("Failed to get collection");
         assert_eq!(col.len().await, 0, "Collection {} is not empty", col_name);
     }
 }
