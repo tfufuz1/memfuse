@@ -78,16 +78,14 @@ jobs:
       - name: Check known DAG violations (tracking)
         run: |
           set -e
-          echo "=== Known DAG Violations (tracked via ANKERs) ==="
-          echo "--- DAG-002: memfuse-checkpoint → memfuse-store ---"
-          if cargo tree -p memfuse-checkpoint --edges no-dev | grep -q "memfuse-store"; then
-            echo "⚠️  DAG-002 still present (memfuse-checkpoint → memfuse-store)"
-          else
-            echo "✅ DAG-002 resolved"
-          fi
-          echo "--- DAG-003: memfuse-py → memfuse-db ---"
-          if cargo tree -p memfuse-py --edges no-dev | grep -q "memfuse-db"; then
-            echo "⚠️  DAG-003 still present (memfuse-py → memfuse-db)"
-          else
-            echo "✅ DAG-003 resolved"
-          fi
+          echo "=== Known DAG Violations (Tracking) ==="
+          for VIOLATION in "memfuse-checkpoint:memfuse-store:DAG-002" "memfuse-py:memfuse-db:DAG-003"; do
+            CRATE=${VIOLATION%%:*}
+            TARGET=$(echo $VIOLATION | cut -d: -f2)
+            ID=$(echo $VIOLATION | cut -d: -f3)
+            if cargo tree -p "$CRATE" --edges no-dev | grep -q "$TARGET"; then
+              echo "⚠️  $ID still present ($CRATE → $TARGET)"
+            else
+              echo "✅ $ID resolved"
+            fi
+          done

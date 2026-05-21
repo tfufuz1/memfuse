@@ -95,13 +95,23 @@ jobs:
             REPORT+="❌ Clippy FAILED\n"; FAIL=1
           fi
 
-          echo "=== [3/5] Zero-Unwrap Guard ==="
-          UNWRAP=$(grep -rn "\.unwrap()" crates/ --include="*.rs" \
-            | grep -v "/tests/" | grep -v "#\[cfg(test)\]" || true)
+          echo "=== [3/5] Zero-Unwrap/Expect Guard ==="
+          # Policy: Erlaubt in tests, doc-tests. In benches und Prod NUR mit // unwrap bzw. // expect Kommentar.
+          UNWRAP=$(grep -HrnE "\.unwrap\(\)|\.expect\(" crates/ --include="*.rs" | while IFS=: read -r file lineno content; do
+            if echo "$file" | grep -qE "_test\.rs:|/tests/|::tests::"; then continue; fi
+            limit=$((lineno - 1))
+            if [ "$limit" -gt 0 ] && head -n "$limit" "$file" | tac | grep -m1 -E "mod tests|#\[cfg\(test\)\]" | grep -q "mod tests"; then
+              start_line=$(head -n "$limit" "$file" | grep -nE "mod tests|#\[cfg\(test\)\]" | tail -1 | cut -d: -f1)
+              if ! head -n "$limit" "$file" | tail -n +$start_line | grep -q "^}"; then continue; fi
+            fi
+            if echo "$content" | grep -qE "//.*(unwrap|expect)"; then continue; fi
+            if echo "$content" | grep -qE "///|//!"; then continue; fi
+            echo "$file:$lineno:$content"
+          done || true)
           if [ -n "$UNWRAP" ]; then
-            REPORT+="❌ UNWRAP VIOLATIONS:\n$UNWRAP\n"; FAIL=1
+            REPORT+="❌ UNWRAP/EXPECT VIOLATIONS:\n$UNWRAP\n"; FAIL=1
           else
-            REPORT+="✅ Zero-.unwrap() OK\n"
+            REPORT+="✅ Zero-.unwrap()/.expect() OK\n"
           fi
 
           echo "=== [4/5] Triple-Test Gate ==="

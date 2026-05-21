@@ -1,54 +1,65 @@
 # AGENT:11
 set shell := ["bash", "-uc"]
 
+# Execution wrapper to support Nix environments and standard environments
+RUN := `if command -v nix >/dev/null; then echo "nix develop -c"; else echo ""; fi`
+
 default:
     @just --list
 
 # Runs the TDD Validation Loop (Red -> Green -> Refactor)
 test: check
-    nix develop -c cargo nextest run --workspace || nix develop -c cargo test --workspace
+    {{RUN}} cargo nextest run --workspace || {{RUN}} cargo test --workspace
 
 # Runs formatting, clippy and checks compilation
 check:
-    nix develop -c cargo fmt --all -- --check
-    nix develop -c cargo clippy --all-targets -- -D warnings
-    nix develop -c cargo check --all-targets --workspace
+    {{RUN}} cargo fmt --all -- --check
+    {{RUN}} cargo clippy --all-targets -- -D warnings
+    {{RUN}} cargo check --all-targets --workspace
 
 # Modular check for memfuse-core
 check-core:
-    nix develop -c cargo check -p memfuse-core
+    {{RUN}} cargo check -p memfuse-core
 
 # Modular check for memfuse-store
 check-store:
-    nix develop -c cargo check -p memfuse-store
+    {{RUN}} cargo check -p memfuse-store
 
 # Modular check for memfuse-index
 check-index:
-    nix develop -c cargo check -p memfuse-index
+    {{RUN}} cargo check -p memfuse-index
 
 # Modular check for memfuse-db
 check-db:
-    nix develop -c cargo check -p memfuse-db
+    {{RUN}} cargo check -p memfuse-db
 
 # Modular check for memfuse-text
 check-text:
-    nix develop -c cargo check -p memfuse-text
+    {{RUN}} cargo check -p memfuse-text
 
 # Modular check for memfuse-runtime
 check-runtime:
-    nix develop -c cargo check -p memfuse-runtime
+    {{RUN}} cargo check -p memfuse-runtime
 
 # Modular check for memfuse-orchestrator
 check-orchestrator:
-    nix develop -c cargo check -p memfuse-orchestrator
+    {{RUN}} cargo check -p memfuse-orchestrator
 
 # Modular check for memfuse-py
 check-py:
-    nix develop -c cargo check -p memfuse-py
+    {{RUN}} cargo check -p memfuse-py
 
 # Modular check for memfuse-checkpoint
 check-checkpoint:
-    nix develop -c cargo check -p memfuse-checkpoint
+    {{RUN}} cargo check -p memfuse-checkpoint
+
+# Runs benchmarks
+bench:
+    {{RUN}} cargo bench --workspace
+
+# Generates and opens documentation
+doc:
+    {{RUN}} cargo doc --workspace --no-deps --all-features
 
 # Verifies the Directed Acyclic Graph (DAG) integrity of the workspace
 dag-check:
@@ -128,7 +139,7 @@ triple-test: check
     echo "=== Triple-Test-Gate ==="
     for RUN in 1 2 3; do
         echo "--- Run $RUN/3 ---"
-        if ! nix develop -c cargo test --workspace; then
+        if ! {{RUN}} cargo test --workspace; then
             echo "❌ FAILED on run $RUN/3. Fix all failures before this WP is DONE."
             exit 1
         fi
@@ -142,16 +153,25 @@ debt-audit:
     FAIL=0
     echo "=== Tech-Debt Audit ==="
 
-    echo "--- [1/4] .unwrap() außerhalb von Test-Code ---"
-    UNWRAP=$(grep -rn "\.unwrap()" crates/ --include="*.rs" \
-        | grep -v "_test\.rs:" \
-        | grep -v "/tests/" \
-        | grep -v "::tests::" \
-        | grep -v "//.*unwrap" \
-        || true)
+    echo "--- [1/4] .unwrap()/.expect() außerhalb von Test-Code ---"
+    # Policy: Erlaubt in tests, doc-tests. In benches und Prod NUR mit // unwrap bzw. // expect Kommentar.
+    UNWRAP=$(grep -HrnE "\.unwrap\(\)|\.expect\(" crates/ --include="*.rs" | while IFS=: read -r file lineno content; do
+        if echo "$file" | grep -qE "_test\.rs:|/tests/|::tests::"; then continue; fi
+        # Check if the line is inside a 'mod tests' block
+        limit=$((lineno - 1))
+        if [ "$limit" -gt 0 ] && head -n "$limit" "$file" | tac | grep -m1 -E "mod tests|#\[cfg\(test\)\]" | grep -q "mod tests"; then
+            start_line=$(head -n "$limit" "$file" | grep -nE "mod tests|#\[cfg\(test\)\]" | tail -1 | cut -d: -f1)
+            if ! head -n "$limit" "$file" | tail -n +$start_line | grep -q "^}"; then continue; fi
+        fi
+        # Check for allowed comments
+        if echo "$line" | grep -qE "//.*(unwrap|expect)"; then continue; fi
+        # Check for doc comments (which might contain examples with unwraps)
+        if echo "$line" | grep -qE "///|//!"; then continue; fi
+        echo "$line"
+    done || true)
     if [ -n "$UNWRAP" ]; then
         UNWRAP_COUNT=$(echo "$UNWRAP" | wc -l)
-        echo "❌ UNWRAP VIOLATIONS ($UNWRAP_COUNT Treffer — fix in WP-0.0):"
+        echo "❌ UNWRAP/EXPECT VIOLATIONS ($UNWRAP_COUNT Treffer — fix in WP-0.0):"
         echo "$UNWRAP" | head -15
         FAIL=1
     else echo "✅ Kein .unwrap() in Produktionscode"; fi
