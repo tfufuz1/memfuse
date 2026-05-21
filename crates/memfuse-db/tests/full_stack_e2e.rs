@@ -51,7 +51,7 @@ async fn test_full_stack_document_lifecycle() {
     // 2. Hybrid Search (Vector + Text)
     // Querying for "Rust" should rank doc1 first due to text match and vector match (if vector is close)
     let results = col
-        .hybrid_search("Rust", &[1.0, 0.1, 0.0], 2)
+        .hybrid_search_legacy("Rust", &[1.0, 0.1, 0.0], 2)
         .await
         .expect("Hybrid search failed");
     assert!(!results.is_empty(), "Search results should not be empty");
@@ -95,7 +95,7 @@ async fn test_full_stack_document_lifecycle() {
 
     // 5. Search after update
     let results_after = col
-        .hybrid_search("incredibly", &[0.9, 0.1, 0.0], 1)
+        .hybrid_search_legacy("incredibly", &[0.9, 0.1, 0.0], 1)
         .await
         .expect("Search after update failed");
     assert_eq!(results_after[0].id, "doc1");

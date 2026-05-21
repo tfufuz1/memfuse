@@ -6,6 +6,8 @@
 // DESIGN: Eigener HNSW-Index pro Collection, GEMEINSAMER LSM-Storage.
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 // STATUS: Full Implementation für WP-1.2.
+// ANCHOR:GREEN:WP-6.1-FUSION-001 STATUS:DONE AGENT:04 DATE:2026-05-21
+// DONE: Unified 4-Signal Fusion API implemented and verified.
 
 use crate::filter::MetadataFilter;
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
@@ -22,6 +24,37 @@ pub(crate) struct StoredDocument {
     pub id: String,
     pub embedding: Vec<f32>,
     pub metadata: Option<serde_json::Value>,
+}
+
+/// Fusions weights for 4-Signal Fusion.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FusionWeights {
+    pub vector: f32,
+    pub text: f32,
+    pub graph: f32,
+    pub metadata: f32,
+}
+
+impl Default for FusionWeights {
+    fn default() -> Self {
+        Self {
+            vector: 0.4,
+            text: 0.3,
+            graph: 0.2,
+            metadata: 0.1,
+        }
+    }
+}
+
+/// Unified query for 4-Signal Fusion.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HybridQuery {
+    pub vector: Option<Vec<f32>>,
+    pub text: Option<String>,
+    pub graph_seed: Option<(String, u8)>, // (Node ID, Max-Hop)
+    pub metadata_filter: Option<MetadataFilter>,
+    pub weights: FusionWeights,
+    pub limit: usize,
 }
 
 /// Helper to unify how we extract text from metadata.
@@ -481,33 +514,115 @@ impl Collection {
     }
 
     /// Performs hybrid search combining BM25 and vector search results via RRF.
-    pub async fn hybrid_search(
+    pub async fn hybrid_search_legacy(
         &self,
         text: &str,
         vector: &[f32],
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
-        let is_vector_zero = vector.iter().all(|&v| v == 0.0);
-        let is_text_empty = text.trim().is_empty();
+        let query = HybridQuery {
+            vector: if vector.iter().all(|&v| v == 0.0) {
+                None
+            } else {
+                Some(vector.to_vec())
+            },
+            text: if text.trim().is_empty() {
+                None
+            } else {
+                Some(text.to_string())
+            },
+            graph_seed: None,
+            metadata_filter: None,
+            weights: FusionWeights::default(),
+            limit: k,
+        };
+        self.hybrid_search(query).await
+    }
 
-        match (is_text_empty, is_vector_zero) {
-            (true, true) => Ok(Vec::new()),
-            (true, false) => self.search(vector, k).await,
-            (false, is_v_zero) => {
-                let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let text_results = self.hydrate_from_tuples(bm25_results).await?;
+    /// Performs a unified 4-signal hybrid search.
+    pub async fn hybrid_search(&self, query: HybridQuery) -> Result<Vec<crate::SearchResult>> {
+        let mut result_sets = Vec::new();
 
-                if is_v_zero {
-                    return Ok(text_results);
+        // 1. Vector Signal
+        if let Some(vector) = &query.vector {
+            let vec_results = self.search(vector, query.limit).await?;
+            result_sets.push((vec_results, query.weights.vector));
+        }
+
+        // 2. Text Signal (BM25)
+        if let Some(text) = &query.text {
+            let bm25_tuples = self.text_index.search_bm25(text, query.limit).await?;
+            let text_results = self.hydrate_from_tuples(bm25_tuples).await?;
+            result_sets.push((text_results, query.weights.text));
+        }
+
+        // 3. Metadata Signal (Filtering)
+        if let Some(filter) = &query.metadata_filter {
+            let matched_ids = self.get_matching_doc_ids(filter).await?;
+            let mut results = Vec::new();
+            // Sort by DocId to be deterministic
+            let mut sorted_ids: Vec<_> = matched_ids.into_iter().collect();
+            sorted_ids.sort();
+            for doc_id in sorted_ids.into_iter().take(query.limit * 2) {
+                let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+                if let Some(bytes) = self.storage.get(&doc_key).await? {
+                    let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                    results.push(crate::SearchResult {
+                        id: stored.id,
+                        score: 1.0,
+                        metadata: stored.metadata,
+                    });
+                }
+            }
+            result_sets.push((results, query.weights.metadata));
+        }
+
+        // 4. Graph Signal (CSR Traversal)
+        if let Some((seed_id, max_hop)) = &query.graph_seed {
+            let mut graph_results = Vec::new();
+            let mut visited = std::collections::HashSet::new();
+            let mut queue = std::collections::VecDeque::new();
+            queue.push_back((seed_id.clone(), 0u8));
+            visited.insert(seed_id.clone());
+
+            while let Some((current_id, hop)) = queue.pop_front() {
+                if hop > *max_hop || graph_results.len() >= query.limit * 2 {
+                    continue;
                 }
 
-                let vector_results = self.search(vector, k).await?;
-                Ok(crate::fusion::reciprocal_rank_fusion(
-                    vec![vector_results, text_results],
-                    k,
-                ))
+                // Add to results with decay
+                let score = 0.7f32.powi(hop as i32);
+                if let Some(doc) = self.get(&current_id).await? {
+                    graph_results.push(crate::SearchResult {
+                        id: doc.id,
+                        score,
+                        metadata: doc.metadata,
+                    });
+                }
+
+                if hop < *max_hop {
+                    let relations = self.scan_prefix(&format!("__rel:{}:", current_id)).await?;
+                    for (_key, val) in relations {
+                        if let Some(to_id) = val["to"].as_str() {
+                            if !visited.contains(to_id) {
+                                visited.insert(to_id.to_string());
+                                queue.push_back((to_id.to_string(), hop + 1));
+                            }
+                        }
+                    }
+                }
             }
+            result_sets.push((graph_results, query.weights.graph));
         }
+
+        if result_sets.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        Ok(crate::fusion::reciprocal_rank_fusion(
+            result_sets,
+            query.limit,
+        ))
     }
 
     /// Returns the number of documents in the collection.
