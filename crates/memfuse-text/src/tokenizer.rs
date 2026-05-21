@@ -40,8 +40,34 @@ impl Tokenizer for DefaultTokenizer {
     }
 }
 
-/// German tokenizer with basic compound splitting POC.
+/// German tokenizer with morphological compound splitting.
+/// Implementation for WP-6.5 / GS-05.
 pub struct GermanMorphTokenizer;
+
+static GERMAN_SUFFIXES: &[&str] = &[
+    "ministerium",
+    "gesellschaft",
+    "verwaltung",
+    "verordnung",
+    "präsident",
+    "institut",
+    "behörde",
+    "anstalt",
+    "zentrum",
+    "minister",
+    "gericht",
+    "kammer",
+    "stelle",
+    "dienst",
+    "gesetz",
+    "vertrag",
+    "system",
+    "schutz",
+    "wesen",
+    "bund",
+    "rat",
+    "amt",
+];
 
 impl Tokenizer for GermanMorphTokenizer {
     fn tokenize(&self, text: &str) -> Vec<String> {
@@ -54,12 +80,30 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            // POC for compound splitting: "gericht"
-            // e.g., "Bundesverfassungsgericht" -> ["bundesverfassungsgericht", "gericht"]
-            if lower.ends_with("gericht") && lower.len() > 7 {
-                tokens.push(lower.clone());
-                tokens.push("gericht".to_string());
-            } else {
+            let mut split = false;
+            for suffix in GERMAN_SUFFIXES {
+                // Minimum prefix length of 3 to avoid over-splitting short words.
+                if lower.ends_with(suffix) && lower.len() >= suffix.len() + 3 {
+                    tokens.push(lower.clone());
+
+                    let prefix_end = lower.len() - suffix.len();
+                    let prefix = &lower[..prefix_end];
+
+                    // Handle Fugen-S (connecting 's' in German compounds)
+                    if prefix.ends_with('s') && prefix.len() > 3 {
+                        tokens.push(prefix[..prefix.len() - 1].to_string());
+                        tokens.push(prefix.to_string());
+                    } else {
+                        tokens.push(prefix.to_string());
+                    }
+
+                    tokens.push(suffix.to_string());
+                    split = true;
+                    break;
+                }
+            }
+
+            if !split {
                 tokens.push(lower);
             }
         }
@@ -100,5 +144,23 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+        assert!(tokens.contains(&"bundesverfassung".to_string()));
+        assert!(tokens.contains(&"bundesverfassungs".to_string()));
+    }
+
+    #[test]
+    fn test_german_morph_tokenizer_more_compounds() {
+        let tokenizer = GermanMorphTokenizer;
+
+        let tokens = tokenizer.tokenize("Datenschutzverordnung");
+        assert!(tokens.contains(&"datenschutzverordnung".to_string()));
+        assert!(tokens.contains(&"datenschutz".to_string()));
+        assert!(tokens.contains(&"verordnung".to_string()));
+
+        let tokens = tokenizer.tokenize("Arbeitsvertrag");
+        assert!(tokens.contains(&"arbeitsvertrag".to_string()));
+        assert!(tokens.contains(&"arbeit".to_string()));
+        assert!(tokens.contains(&"arbeits".to_string()));
+        assert!(tokens.contains(&"vertrag".to_string()));
     }
 }
