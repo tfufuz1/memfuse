@@ -659,13 +659,41 @@ pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarity
 }
 
 /// Computes the dot product between an f32 vector and a u8 vector.
+#[inline]
 pub fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
+    debug_assert_eq!(a.len(), b.len());
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // ANCHOR:SAFETY:SIMD-F32U8-014 — AVX2 Dispatch.
+            // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
+            return unsafe { dot_product_f32_u8_avx2(a, b) };
+        }
+    }
+    dot_product_f32_u8_scalar(a, b)
+}
+
+pub fn dot_product_f32_u8_scalar(a: &[f32], b: &[u8]) -> f32 {
     a.iter().zip(b.iter()).map(|(&x, &y)| x * (y as f32)).sum()
 }
 
 /// Computes the squared Euclidean distance between an f32 vector and a u8 vector
 /// performing inline dequantization.
+#[inline]
 pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {
+    debug_assert_eq!(a.len(), b.len());
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // ANCHOR:SAFETY:SIMD-F32U8-015 — AVX2 Dispatch.
+            // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
+            return unsafe { euclidean_distance_sq_f32_u8_avx2(a, b, alpha, min) };
+        }
+    }
+    euclidean_distance_sq_f32_u8_scalar(a, b, alpha, min)
+}
+
+pub fn euclidean_distance_sq_f32_u8_scalar(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {
     a.iter()
         .zip(b.iter())
         .map(|(&x, &y)| {
@@ -685,7 +713,21 @@ pub struct CosineSimilarityPartsF32U8 {
 }
 
 /// Computes the parts required for asymmetric cosine similarity between an f32 and a u8 vector.
+#[inline]
 pub fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPartsF32U8 {
+    debug_assert_eq!(a.len(), b.len());
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // ANCHOR:SAFETY:SIMD-F32U8-016 — AVX2 Dispatch.
+            // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
+            return unsafe { cosine_similarity_parts_f32_u8_avx2(a, b) };
+        }
+    }
+    cosine_similarity_parts_f32_u8_scalar(a, b)
+}
+
+pub fn cosine_similarity_parts_f32_u8_scalar(a: &[f32], b: &[u8]) -> CosineSimilarityPartsF32U8 {
     let mut dot_f32_u8 = 0.0;
     let mut sum_u8 = 0;
     let mut norm_u8_sq = 0;
@@ -695,6 +737,138 @@ pub fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPa
         dot_f32_u8 += x * (y as f32);
         sum_u8 += yu;
         norm_u8_sq += yu * yu;
+    }
+
+    CosineSimilarityPartsF32U8 {
+        dot_f32_u8,
+        sum_u8,
+        norm_u8_sq,
+    }
+}
+
+// -----------------------------------------------------------------------------
+// AVX2 Implementations for f32/u8 Mixed
+// -----------------------------------------------------------------------------
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+#[target_feature(enable = "fma")]
+// ANCHOR:SAFETY:SIMD-F32U8-001 — AVX2 Dot Product for f32/u8.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren. Dimensionen müssen gleich sein.
+/// # Safety
+/// This function is unsafe because it uses AVX2 and FMA intrinsics.
+pub unsafe fn dot_product_f32_u8_avx2(a: &[f32], b: &[u8]) -> f32 {
+    let n = a.len();
+    let mut i = 0;
+    let mut sum_v = _mm256_setzero_ps();
+
+    while i + 8 <= n {
+        // ANCHOR:SAFETY:SIMD-F32U8-002 — AVX2 Load und FMA.
+        // BEGRÜNDUNG: i + 8 <= n garantiert In-Bounds Zugriff.
+        unsafe {
+            let va = _mm256_loadu_ps(a.as_ptr().add(i));
+            let vb_u8 = _mm_loadl_epi64(b.as_ptr().add(i) as *const __m128i);
+            let vb_i32 = _mm256_cvtepu8_epi32(vb_u8);
+            let vb_f32 = _mm256_cvtepi32_ps(vb_i32);
+
+            sum_v = _mm256_fmadd_ps(va, vb_f32, sum_v);
+        }
+        i += 8;
+    }
+
+    let mut sum = hsum256_ps_avx(sum_v);
+    while i < n {
+        sum += a[i] * (b[i] as f32);
+        i += 1;
+    }
+    sum
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+#[target_feature(enable = "fma")]
+// ANCHOR:SAFETY:SIMD-F32U8-003 — AVX2 Squared Euclidean for f32/u8.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren. Dimensionen müssen gleich sein.
+/// # Safety
+/// This function is unsafe because it uses AVX2 and FMA intrinsics.
+pub unsafe fn euclidean_distance_sq_f32_u8_avx2(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {
+    let n = a.len();
+    let mut i = 0;
+    let mut sum_v = _mm256_setzero_ps();
+    let alpha_v = _mm256_set1_ps(alpha);
+    let min_v = _mm256_set1_ps(min);
+
+    while i + 8 <= n {
+        // ANCHOR:SAFETY:SIMD-F32U8-004 — AVX2 Load, Dequant und Sub/Madd.
+        // BEGRÜNDUNG: i + 8 <= n garantiert In-Bounds Zugriff.
+        unsafe {
+            let va = _mm256_loadu_ps(a.as_ptr().add(i));
+            let vb_u8 = _mm_loadl_epi64(b.as_ptr().add(i) as *const __m128i);
+            let vb_i32 = _mm256_cvtepu8_epi32(vb_u8);
+            let vb_f32_raw = _mm256_cvtepi32_ps(vb_i32);
+
+            let vb_f32 = _mm256_fmadd_ps(vb_f32_raw, alpha_v, min_v);
+
+            let diff = _mm256_sub_ps(va, vb_f32);
+            sum_v = _mm256_fmadd_ps(diff, diff, sum_v);
+        }
+        i += 8;
+    }
+
+    let mut sum = hsum256_ps_avx(sum_v);
+    while i < n {
+        let y_f32 = (b[i] as f32) * alpha + min;
+        let diff = a[i] - y_f32;
+        sum += diff * diff;
+        i += 1;
+    }
+    sum
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+#[target_feature(enable = "fma")]
+// ANCHOR:SAFETY:SIMD-F32U8-005 — AVX2 Cosine Similarity Parts for f32/u8.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren. Dimensionen müssen gleich sein.
+/// # Safety
+/// This function is unsafe because it uses AVX2 and FMA intrinsics.
+pub unsafe fn cosine_similarity_parts_f32_u8_avx2(
+    a: &[f32],
+    b: &[u8],
+) -> CosineSimilarityPartsF32U8 {
+    let n = a.len();
+    let mut i = 0;
+    let mut dot_v = _mm256_setzero_ps();
+    let mut sum_u8_v = _mm256_setzero_si256();
+    let mut norm_u8_sq_v = _mm256_setzero_si256();
+
+    while i + 8 <= n {
+        // ANCHOR:SAFETY:SIMD-F32U8-006 — AVX2 Loads und Accumulation.
+        // BEGRÜNDUNG: i + 8 <= n garantiert In-Bounds Zugriff.
+        unsafe {
+            let va = _mm256_loadu_ps(a.as_ptr().add(i));
+            let vb_u8_raw = _mm_loadl_epi64(b.as_ptr().add(i) as *const __m128i);
+            let vb_i32 = _mm256_cvtepu8_epi32(vb_u8_raw);
+            let vb_f32 = _mm256_cvtepi32_ps(vb_i32);
+
+            dot_v = _mm256_fmadd_ps(va, vb_f32, dot_v);
+
+            sum_u8_v = _mm256_add_epi32(sum_u8_v, vb_i32);
+            norm_u8_sq_v = _mm256_add_epi32(norm_u8_sq_v, _mm256_mullo_epi32(vb_i32, vb_i32));
+        }
+        i += 8;
+    }
+
+    let mut dot_f32_u8 = hsum256_ps_avx(dot_v);
+    let mut sum_u8 = hsum256_epi32_avx2(sum_u8_v) as u32;
+    let mut norm_u8_sq = hsum256_epi32_avx2(norm_u8_sq_v) as u32;
+
+    while i < n {
+        let yu = b[i] as u32;
+        dot_f32_u8 += a[i] * (b[i] as f32);
+        sum_u8 += yu;
+        norm_u8_sq += yu * yu;
+        i += 1;
     }
 
     CosineSimilarityPartsF32U8 {
@@ -910,18 +1084,18 @@ mod tests {
 
         // Dot product
         let dot_scalar = dot_product_scalar(&a, &b);
-        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test");
+        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test"); // unwrap
         let dot_simd = -d;
         assert!((dot_scalar - dot_simd).abs() < 1e-3);
 
         // Euclidean
         let euc_scalar = euclidean_distance_scalar(&a, &b);
-        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test");
+        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test"); // unwrap
         assert!((euc_scalar - euc_simd).abs() < 1e-3);
 
         // Cosine
         let cos_scalar = cosine_distance_scalar(&a, &b);
-        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test");
+        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test"); // unwrap
         assert!((cos_scalar - cos_simd).abs() < 1e-3);
     }
 
@@ -993,6 +1167,31 @@ mod tests {
                 assert_eq!(parts_scalar.norm_b_sq, parts_simd.norm_b_sq);
             }
         }
+    }
+
+    #[test]
+    fn test_f32_u8_metrics_match_scalar() {
+        let a = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let b = vec![1, 2, 3, 4, 5, 6, 7, 8];
+
+        // Dot product
+        let dot_scalar = dot_product_f32_u8_scalar(&a, &b);
+        let dot_dispatch = dot_product_f32_u8(&a, &b);
+        assert!((dot_scalar - dot_dispatch).abs() < 1e-3);
+
+        // Euclidean
+        let alpha = 0.5;
+        let min = -1.0;
+        let euc_scalar = euclidean_distance_sq_f32_u8_scalar(&a, &b, alpha, min);
+        let euc_dispatch = euclidean_distance_sq_f32_u8(&a, &b, alpha, min);
+        assert!((euc_scalar - euc_dispatch).abs() < 1e-3);
+
+        // Cosine parts
+        let parts_scalar = cosine_similarity_parts_f32_u8_scalar(&a, &b);
+        let parts_dispatch = cosine_similarity_parts_f32_u8(&a, &b);
+        assert!((parts_scalar.dot_f32_u8 - parts_dispatch.dot_f32_u8).abs() < 1e-3);
+        assert_eq!(parts_scalar.sum_u8, parts_dispatch.sum_u8);
+        assert_eq!(parts_scalar.norm_u8_sq, parts_dispatch.norm_u8_sq);
     }
 
     #[test]
