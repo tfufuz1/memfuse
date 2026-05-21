@@ -4,7 +4,7 @@
 //! This module implements the HNSW algorithm for efficient approximate nearest neighbor (ANN) search.
 // ANCHOR:DOC:DOC-HNSW-001 — Module documentation added
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:03 DATE:2026-05-15 STATUS:DONE
+// AGENT:03 DATE:2026-05-21 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:HNSW-001 — Hierarchical Navigable Small World Index.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -294,7 +294,7 @@ impl HnswIndexCore {
 
         for &ep in entry_points {
             if visited.insert(ep) {
-                // ANCHOR:SEC:SLICE-003 AGENT:10 PRIO:1 STATUS:READY
+                // ANCHOR:SEC:SLICE-003 AGENT:03 PRIO:1 STATUS:DONE
                 // Safe access to nodes and connections.
                 let node = nodes.get(ep).ok_or_else(|| {
                     MemFuseError::Index(format!("HNSW node missing at index {}", ep))
@@ -768,7 +768,7 @@ impl VectorIndex for HnswIndex {
 
     // ANCHOR:PERF:LATENCY-002 — HNSW Search Hotspot (Optimiert)
     // WP:WP-0.0 PRIO:2 NEEDS:NONE
-    // AGENT:03 DATE:2026-05-15 STATUS:DONE
+    // AGENT:03 DATE:2026-05-21 STATUS:DONE
     // CREATED:2026-05-09 DEADLINE:NONE
     // TARGET: < 10ms bei 1M Vektoren
     // AKTUELL: Optimiert via Dynamic ef_search
@@ -1000,7 +1000,7 @@ impl VectorIndex for HnswIndex {
 
         // ANCHOR:SPEC:WP-2.2-SQ8TRAIN-001 — Lazy Training logic (Stabilized)
         // WP:WP-2.2 PRIO:2 NEEDS:NONE
-        // AGENT:03 DATE:2026-05-15 STATUS:DONE
+        // AGENT:03 DATE:2026-05-21 STATUS:DONE
         // CREATED:2026-05-09 DEADLINE:NONE
         if self.config.quantize && self.quantizer.read().is_none() {
             let mut train_data = Vec::with_capacity(256.min(ops.len()));
