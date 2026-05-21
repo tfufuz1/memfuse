@@ -2,6 +2,9 @@
 // ANCHOR:TODO:QUANT-001 — Optimiere und finalisiere die SQ8 Quantization impl, repariere Cast-Bugs.
 // WP:WP-2.2 PRIO:1 NEEDS:NONE
 // AGENT:03 DATE:2026-05-16 STATUS:DONE
+// ANCHOR:DEBT:QUANT-002 — symmetric_dist nutzt keine SIMD-Metriken für u8.
+// WP:WP-2.2 PRIO:1 NEEDS:NONE
+// AGENT:03 DATE:2026-06-12 STATUS:READY
 // TEST: cargo bench -p memfuse-index -- quantization
 // DONE: Performance- und Recall Metriken sind stabil.
 // SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
@@ -140,8 +143,8 @@ impl ScalarQuantizer {
         Ok(acc)
     }
 
-    /// Computes symmetric (approximate) distance purely in u8.
-    /// Optimized for zero allocations via inline dequantization.
+    /// Computes symmetric (approximate) distance purely in u8 using SIMD.
+    /// Optimized via mathematical transformations to stay in u8 space as long as possible.
     pub fn symmetric_dist(
         &self,
         q1: &[u8],
@@ -154,44 +157,45 @@ impl ScalarQuantizer {
             ));
         }
 
-        let mut acc = 0.0;
+        use crate::distance::*;
+
         match metric {
-            DistanceMetric::Cosine => {
-                let mut dot = 0.0;
-                let mut norm_a = 0.0;
-                let mut norm_b = 0.0;
-                for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = (x_q as f32) * self.inv_scale + self.min;
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    dot += x * y;
-                    norm_a += x * x;
-                    norm_b += y * y;
-                }
-                acc = if norm_a == 0.0 || norm_b == 0.0 {
-                    1.0
-                } else {
-                    1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
-                };
-            }
             DistanceMetric::Euclidean => {
-                for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = (x_q as f32) * self.inv_scale + self.min;
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    let diff = x - y;
-                    acc += diff * diff;
-                }
-                acc = acc.sqrt();
+                let d2_u8 = euclidean_distance_sq_u8(q1, q2);
+                Ok((d2_u8 as f32).sqrt() * self.inv_scale)
             }
             DistanceMetric::DotProduct => {
-                for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
-                    let x = (x_q as f32) * self.inv_scale + self.min;
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    acc += x * y;
+                let parts = cosine_similarity_parts_u8(q1, q2);
+                let n = q1.len() as f32;
+                let dot_real = (parts.dot as f32) * self.inv_scale.powi(2)
+                    + self.min * self.inv_scale * (parts.sum_a + parts.sum_b) as f32
+                    + n * self.min.powi(2);
+                Ok(-dot_real)
+            }
+            DistanceMetric::Cosine => {
+                let parts = cosine_similarity_parts_u8(q1, q2);
+                let n = q1.len() as f32;
+
+                let dot_real = (parts.dot as f32) * self.inv_scale.powi(2)
+                    + self.min * self.inv_scale * (parts.sum_a + parts.sum_b) as f32
+                    + n * self.min.powi(2);
+
+                let norm_a_sq_real = (parts.norm_a_sq as f32) * self.inv_scale.powi(2)
+                    + 2.0 * self.min * self.inv_scale * (parts.sum_a as f32)
+                    + n * self.min.powi(2);
+
+                let norm_b_sq_real = (parts.norm_b_sq as f32) * self.inv_scale.powi(2)
+                    + 2.0 * self.min * self.inv_scale * (parts.sum_b as f32)
+                    + n * self.min.powi(2);
+
+                if norm_a_sq_real <= 0.0 || norm_b_sq_real <= 0.0 {
+                    Ok(1.0)
+                } else {
+                    let sim = dot_real / (norm_a_sq_real.sqrt() * norm_b_sq_real.sqrt());
+                    Ok(1.0 - sim.clamp(-1.0, 1.0))
                 }
-                acc = -acc;
             }
         }
-        Ok(acc)
     }
 }
 
@@ -255,6 +259,71 @@ mod tests {
                 }
             }
             assert!(top < 100);
+        }
+    }
+
+    #[test]
+    fn test_symmetric_dist_equivalence() {
+        let v1 = vec![0.1, -0.5, 0.8, 1.2, -0.3, 0.4, 0.9, -0.1];
+        let v2 = vec![-1.0, 0.0, 0.5, 2.0, 0.1, -0.2, 0.4, 0.8];
+        let dim = v1.len();
+
+        let q = ScalarQuantizer::train(&[v1.as_slice(), v2.as_slice()], dim);
+        let q1 = q.quantize(&v1);
+        let q2 = q.quantize(&v2);
+
+        for metric in [
+            DistanceMetric::Euclidean,
+            DistanceMetric::DotProduct,
+            DistanceMetric::Cosine,
+        ] {
+            // Old-style (manual dequantization)
+            let mut expected = 0.0;
+            match metric {
+                DistanceMetric::Cosine => {
+                    let mut dot = 0.0;
+                    let mut norm_a = 0.0;
+                    let mut norm_b = 0.0;
+                    for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
+                        let x = (x_q as f32) * q.inv_scale + q.min;
+                        let y = (y_q as f32) * q.inv_scale + q.min;
+                        dot += x * y;
+                        norm_a += x * x;
+                        norm_b += y * y;
+                    }
+                    expected = if norm_a == 0.0 || norm_b == 0.0 {
+                        1.0
+                    } else {
+                        1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
+                    };
+                }
+                DistanceMetric::Euclidean => {
+                    for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
+                        let x = (x_q as f32) * q.inv_scale + q.min;
+                        let y = (y_q as f32) * q.inv_scale + q.min;
+                        let diff = x - y;
+                        expected += diff * diff;
+                    }
+                    expected = expected.sqrt();
+                }
+                DistanceMetric::DotProduct => {
+                    for (&x_q, &y_q) in q1.iter().zip(q2.iter()) {
+                        let x = (x_q as f32) * q.inv_scale + q.min;
+                        let y = (y_q as f32) * q.inv_scale + q.min;
+                        expected += x * y;
+                    }
+                    expected = -expected;
+                }
+            }
+
+            let actual = q.symmetric_dist(&q1, &q2, metric).unwrap();
+            assert!(
+                (actual - expected).abs() < 1e-4,
+                "Metric {:?} failed: expected {}, got {}",
+                metric,
+                expected,
+                actual
+            );
         }
     }
 

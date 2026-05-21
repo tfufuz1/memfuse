@@ -78,8 +78,8 @@ impl CsrGraph {
         let mut result = Vec::new();
         if let Some(&idx) = self.node_map.get(id) {
             let idx = idx as usize;
-            // ANCHOR:SEC:SLICE-002 AGENT:10 PRIO:1 STATUS:READY
-            // Replace direct indexing with safe access to prevent panics.
+            // ANCHOR:SEC:SLICE-002 AGENT:10 PRIO:1 STATUS:DONE
+            // BEGRÜNDUNG: Direkter Index-Zugriff durch sichere .get() Aufrufe mit Fehlerbehandlung ersetzt.
             let start = *self.offsets.get(idx).ok_or_else(|| {
                 memfuse_core::MemFuseError::Index(format!("CSR offset missing for index {}", idx))
             })?;
