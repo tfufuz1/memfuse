@@ -1,3 +1,30 @@
+//! # Metadata Filtering Engine
+//!
+//! This module provides a robust and flexible engine for filtering documents
+//! based on their associated metadata. It supports complex query logic including
+//! nested AND/OR/NOT conditions and various comparison operators.
+//!
+//! ## Example
+//! ```rust
+//! # use memfuse_db::filter::{MetadataFilter, FilterOp};
+//! # use serde_json::json;
+//! let filter = MetadataFilter::And(vec![
+//!     MetadataFilter::Condition {
+//!         field: "topic".to_string(),
+//!         op: FilterOp::Eq,
+//!         value: json!("rust"),
+//!     },
+//!     MetadataFilter::Condition {
+//!         field: "priority".to_string(),
+//!         op: FilterOp::Gt,
+//!         value: json!(5),
+//!     },
+//! ]);
+//!
+//! let metadata = json!({"topic": "rust", "priority": 10});
+//! assert!(filter.matches(&metadata));
+//! ```
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

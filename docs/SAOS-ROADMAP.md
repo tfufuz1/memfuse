@@ -1,6 +1,6 @@
 # MemFuse SAOS — Goldstandard-Roadmap
 
-> **Updated:** 2026-05-08  
+> **Updated:** 2026-05-21
 > **Basis:** Audit Report + SAOS Architecture
 
 ## Sprint 0 — Foundations (Blocking Everything)
@@ -19,22 +19,22 @@ Hybrid-Search nutzen. Dies ist die "Wow-Moment"-Milestone.
 | WP | Assignee | Dependency | Status |
 |----|---------|-----------|--------|
 | WP-1.1 Compaction | Jules Account 02 | WP-0.0 | ✅ Stabil |
-| WP-1.2 Collections | Jules Account 04 | WP-1.1 | 🔄 Partial |
-| WP-2.1 Hybrid Search | Jules Account 05 | WP-1.2 | ⬜ Stub |
-| WP-3.1 Python Bindings | Jules Account 06 | WP-2.1 | 🔄 Partial |
+| WP-1.2 Collections | Jules Account 04 | WP-1.1 | ✅ Stabil |
+| WP-2.1 Hybrid Search | Jules Account 05 | WP-1.2 | ✅ Stabil |
+| WP-3.1 Python Bindings | Jules Account 06 | WP-2.1 | ✅ Stabil |
 
 ## Sprint 2 — Sovereign Security & Efficiency
 
 | WP | Assignee | Dependency | Status |
 |----|---------|-----------|--------|
-| WP-2.2 SQ8 Quantization | Jules Account 03 | WP-2.1 | ⬜ Offen |
-| WP-3.2 Encryption | Jules Account 10 | WP-1.1 | ⬜ Offen |
+| WP-2.2 SQ8 Quantization | Jules Account 03 | WP-2.1 | ✅ Stabil |
+| WP-3.2 Encryption | Jules Account 10 | WP-1.1 | ✅ Stabil |
 
 ## Sprint 3 — SAOS Core (Migrations-Hebel)
 
 | WP | Assignee | Dependency | Status |
 |----|---------|-----------|--------|
-| WP-5.1 Checkpointing | Jules Account 07 | WP-1.2 + MVCC | ⬜ Designed |
+| WP-5.1 Checkpointing | Jules Account 07 | WP-1.2 + MVCC | ✅ Stabil |
 | WP-5.2 WASM Sandbox | Jules Account 08 | WP-3.1 | ⬜ Designed |
 | WP-5.3 Agent Orchestration | Jules Account 09 | WP-5.1 + WP-5.2 | ⬜ Designed |
 
@@ -44,7 +44,7 @@ Hybrid-Search nutzen. Dies ist die "Wow-Moment"-Milestone.
 |----|---------|-----------|--------|
 | WP-4.1 mmap | Jules Account 02 | WP-1.1 + WP-3.2 | ⬜ Offen |
 | WP-4.2/5.4 Adaptive Filter | Jules Account 04 | WP-1.2 | ⬜ Designed |
-| WP-4.3 DiskANN | Jules Account 03 | WP-2.2 + WP-4.1 | ⬜ Offen |
+| WP-4.3 DiskANN | Jules Account 03 | WP-2.2 + WP-4.1 | 🔄 Partial |
 
 ---
 

@@ -8,10 +8,14 @@
 
 use std::time::Duration;
 
+/// Configuration for the WASM sandbox environment.
 #[derive(Debug)]
 pub struct SandboxConfig {
+    /// Maximum memory allowed for the WASM instance in megabytes.
     pub max_memory_mb: usize,
+    /// Maximum execution time for a single call.
     pub timeout: Duration,
+    /// Whether to allow network access within the sandbox.
     pub allow_network: bool,
 }
 

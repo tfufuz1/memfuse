@@ -2,7 +2,7 @@
 
 **Sovereign Agentic Operating System (SAOS)**
 
-> "The ultimate runtime for AI Agents: Database, Saftey Layer, and Orchestrator in one crate."
+> "The ultimate runtime for AI Agents: Database, Safety Layer, and Orchestrator in one crate."
 
 ## Quick Start
 
@@ -76,13 +76,13 @@ bash .agent/scripts/jules-dashboard.sh
 - **HNSW Vector Search** — Approximate nearest neighbor with diversity heuristic
 - **Scalar Quantization (SQ8)** — 4x RAM reduction for large-scale vector indices
 - **Hybrid Search** — Combined BM25 (text) and Vector search via RRF (Reciprocal Rank Fusion)
+- **4-Signal Fusion** — Integrates Vector, Text, Graph, and Metadata signals
 - **Multi-Tenancy** — Logically isolated collections (namespaces) for different agents/tasks
-- **SIMD Acceleration** — portable-simd for distance computation
+- **SIMD Acceleration** — AVX-512, AVX2, and portable-simd optimizations
 - **LSM-Tree Persistence** — WAL + MemTable with crash recovery
-- **Transactional** — Sharded TxBuffer with orphan-reaping
+- **Encryption at Rest** — AES-256-GCM protection for your data
+- **Transactional** — Sharded TxBuffer with orphan-reaping and 2PC
 - **Relationship Tracking** — `relate()` API for graph-aware retrieval
-- **Hybrid Search** — Optimized BM25 + Vector Fusion (RRF)
-- **Scalar Quantization** — SQ8 compression for 4x reduced RAM footprint
 - **Deterministic Checkpointing** — Native state pinning for "Time-Travel" debugging
 
 ## Building

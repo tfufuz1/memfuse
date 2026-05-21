@@ -264,7 +264,7 @@ pub fn cosine_distance_std_simd(a: &[f32], b: &[f32]) -> f32 {
 // ANCHOR:SAFETY:SIMD-007 — AVX2/FMA Dot Product.
 // BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
 unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
-    // ANCHOR:SAFETY:SIMD-008 — Initialisierung.
+    // ANCHOR:SAFETY:SIMD-012 — Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_ps ist immer sicher.
     let mut sum_v = unsafe { _mm256_setzero_ps() };
     let n = a.len();
@@ -575,6 +575,7 @@ pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
     dot_product_u8_scalar(a, b)
 }
 
+/// Scalar implementation of dot product for u8 vectors.
 pub fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
@@ -597,6 +598,7 @@ pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
     euclidean_distance_sq_u8_scalar(a, b)
 }
 
+/// Scalar implementation of squared Euclidean distance for u8 vectors.
 pub fn euclidean_distance_sq_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
@@ -632,6 +634,7 @@ pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8
     cosine_similarity_parts_u8_scalar(a, b)
 }
 
+/// Scalar implementation of cosine similarity parts for u8 vectors.
 pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
     let mut dot = 0;
     let mut sum_a = 0;

@@ -93,6 +93,10 @@ impl WalEntry {
         })
     }
 
+    /// Computes an HMAC-SHA256 checksum for a WAL operation and sequence number.
+    ///
+    /// # Errors
+    /// Returns `MemFuseError::Storage` if there is an error with the HMAC key.
     pub fn compute_checksum(op: &WalOp, seq_no: u64, integrity_key: &[u8]) -> Result<[u8; 32]> {
         let mut mac = HmacSha256::new_from_slice(integrity_key)
             .map_err(|e| MemFuseError::Storage(format!("HMAC key error: {}", e)))?;

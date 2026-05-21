@@ -27,6 +27,7 @@ pub struct CsrGraph {
 }
 
 impl CsrGraph {
+    /// Creates a new empty `CsrGraph`.
     pub fn new() -> Self {
         Self {
             offsets: vec![0],

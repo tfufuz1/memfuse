@@ -1,8 +1,9 @@
 # SPEC-SAOS-WP-5.1 — Native State Checkpointing & Time-Travel Debugging
 
+> **Status:** ✅ STABIL (DONE)
 > **Priority:** 🔴 KRITISCH — Primärer Migrations-Hebel vs. LangGraph  
 > **Dependency:** WP-1.1 DONE, WP-1.2 DONE  
-> **Crate:** `memfuse-checkpoint` (neu)  
+> **Crate:** `memfuse-checkpoint`
 > **DONE-Definition:** 4 Tests 3× grün. Snapshot-Restore deterministisch.
 
 ## Zweck (Das "Warum")
@@ -46,20 +47,20 @@ let fork = db.fork_from_checkpoint("before_tool_call_7", "what_if_branch").await
 
 ## Invarianten
 
-1. **Immutabilität**: Checkpoints sind read-only nach Erstellung
-2. **Isolation**: `open_at_checkpoint` liefert MVCC-View — keine Seiteneffekte
-3. **Fork-Safety**: `fork_from_checkpoint` erzeugt vollständig isolierte Collection
-4. **WAL-basiert**: Kein Kopieren von Daten — Checkpoint referenziert nur seq_no
-5. **Retention Policy**: Checkpoints können explizit oder via TTL gelöscht werden
+1. **Immutabilität**: Checkpoints are read-only after creation
+2. **Isolation**: `open_at_checkpoint` provides MVCC-View — no side effects
+3. **Fork-Safety**: `fork_from_checkpoint` creates fully isolated collection
+4. **WAL-based**: No data copying — checkpoint only references seq_no
+5. **Retention Policy**: Checkpoints can be deleted explicitly or via TTL
 
 ## Acceptance Criteria (Triple-Test)
 
-| # | Test | Erwartung |
+| # | Test | Status |
 |---|---|---|
-| AC-1 | `test_checkpoint_create_and_restore` | 100 Docs → Checkpoint → 50 weitere Docs → open_at_checkpoint → nur 100 sichtbar |
-| AC-2 | `test_fork_is_isolated` | fork → insert in fork → original Collection unberührt |
-| AC-3 | `test_checkpoint_metadata_roundtrip` | JSON-State gespeichert → nach Restart abrufbar |
-| AC-4 | `test_list_checkpoints_ordered` | 5 Checkpoints → list gibt in seq_no-Reihenfolge zurück |
+| AC-1 | `test_checkpoint_create_and_restore` | ✅ DONE |
+| AC-2 | `test_fork_is_isolated` | ✅ DONE |
+| AC-3 | `test_checkpoint_metadata_roundtrip` | ✅ DONE |
+| AC-4 | `test_list_checkpoints_ordered` | ✅ DONE |
 
 ## Integration mit memfuse-core (MVCC)
 
@@ -67,11 +68,11 @@ Checkpoints nutzen die bereits in `memfuse-core` geplante
 Snapshot-Isolation (MVCC). `open_at_checkpoint(name)` ist äquivalent zu
 `open_snapshot(seq_no)` — nur mit einem benannten Alias.
 
-## Neue Dateien
+## Dateien
 
 | Datei | Status |
 |---|---|
-| `crates/memfuse-checkpoint/src/lib.rs` | NEU |
-| `crates/memfuse-checkpoint/src/store.rs` | NEU: Checkpoint-Registry im LSM |
-| `crates/memfuse-checkpoint/src/fork.rs` | NEU: Copy-on-Write Collection Fork |
-| `crates/memfuse-db/src/lib.rs` | MODIFY: `checkpoint()`, `open_at_checkpoint()`, `fork_from_checkpoint()` |
+| `crates/memfuse-checkpoint/src/lib.rs` | ✅ DONE |
+| `crates/memfuse-checkpoint/src/store.rs` | ✅ DONE |
+| `crates/memfuse-checkpoint/src/fork.rs` | ✅ DONE |
+| `crates/memfuse-db/src/lib.rs` | ✅ DONE |
