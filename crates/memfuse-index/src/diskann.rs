@@ -199,7 +199,11 @@ impl DiskAnnIndex {
 
         while let Some(Reverse(current)) = candidates.pop() {
             if results.len() >= self.config.beam_width
-                && current.distance > results.peek().unwrap().distance // unwrap allowed
+                && current.distance
+                    > results
+                        .peek()
+                        .unwrap() /* unwrap allowed */ // unwrap allowed
+                        .distance
             {
                 break;
             }
@@ -215,7 +219,10 @@ impl DiskAnnIndex {
                     };
 
                     if results.len() < self.config.beam_width
-                        || d < results.peek().unwrap().distance // unwrap allowed
+                        || d < results
+                            .peek()
+                            .unwrap() /* unwrap allowed */ // unwrap allowed
+                            .distance
                     {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
@@ -233,7 +240,7 @@ impl DiskAnnIndex {
             .map(|c| {
                 let node = self
                     .load_node(c.index)
-                    .expect("Node should be in cache or index"); // unwrap allowed
+                    .expect /* unwrap allowed */ ("Node should be in cache or index");
                 ScoredDocument {
                     doc_id: node.doc_id,
                     score: 1.0 / (1.0 + c.distance),
@@ -374,7 +381,8 @@ mod tests {
             distance_metric: DistanceMetric::Cosine,
         };
 
-        let index = DiskAnnIndex::try_new(valid_config).expect("valid config"); // unwrap allowed
+        let index =
+            DiskAnnIndex::try_new(valid_config).expect /* unwrap allowed */ ("valid config");
         assert!(index.is_empty());
 
         let invalid_sector = DiskAnnConfig {
@@ -403,7 +411,7 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let mut index = DiskAnnIndex::try_new(config).expect("valid config"); // unwrap allowed
+        let mut index = DiskAnnIndex::try_new(config).expect /* unwrap allowed */ ("valid config");
 
         let n = 1000;
         let mut vectors = Vec::with_capacity(n);
@@ -415,11 +423,12 @@ mod tests {
             ids.push(DocId::from(i as u64));
         }
 
-        index.build(&vectors, &ids).await.expect("Build failed"); // unwrap allowed
+        index.build(&vectors, &ids).await.expect /* unwrap allowed */ ("Build failed");
 
         let mut recall_count = 0;
         for (i, query) in vectors.iter().enumerate().take(100) {
-            let results = index.search(query, 10).await.expect("Search failed"); // unwrap allowed
+            let results =
+                index.search(query, 10).await.expect /* unwrap allowed */ ("Search failed");
             if results.iter().any(|r| r.doc_id == ids[i]) {
                 recall_count += 1;
             }
