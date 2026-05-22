@@ -27,7 +27,10 @@ async fn test_checkpoint_lifecycle_with_real_storage() {
     assert_eq!(meta.seq_no, 10);
 
     // 2. List Checkpoints
-    let list = manager.list_checkpoints().await.expect("Failed to list checkpoints");
+    let list = manager
+        .list_checkpoints()
+        .await
+        .expect("Failed to list checkpoints");
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].name, cp_name);
 
@@ -38,12 +41,21 @@ async fn test_checkpoint_lifecycle_with_real_storage() {
     let storage2 = Arc::new(LsmStorage::new(config).await.unwrap());
     let manager2 = CheckpointManager::new(storage2);
 
-    let list2 = manager2.list_checkpoints().await.expect("Failed to list checkpoints after reload");
+    let list2 = manager2
+        .list_checkpoints()
+        .await
+        .expect("Failed to list checkpoints after reload");
     assert_eq!(list2.len(), 1);
     assert_eq!(list2[0].name, cp_name);
 
     // 4. Drop Checkpoint
-    manager2.drop_checkpoint(cp_name).await.expect("Failed to drop checkpoint");
-    let list3 = manager2.list_checkpoints().await.expect("Failed to list checkpoints after drop");
+    manager2
+        .drop_checkpoint(cp_name)
+        .await
+        .expect("Failed to drop checkpoint");
+    let list3 = manager2
+        .list_checkpoints()
+        .await
+        .expect("Failed to list checkpoints after drop");
     assert_eq!(list3.len(), 0);
 }

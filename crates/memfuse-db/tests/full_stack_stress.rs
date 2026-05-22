@@ -1,8 +1,8 @@
 //! Workspace-wide stress test involving DB, Index, Store, and Checkpoint.
 // ANCHOR:INTEGRATION:FULL-STACK-STRESS STATUS:READY AGENT:12 DATE:2026-05-22
 
-use memfuse_db::{MemFuse, MemFuseConfig};
 use memfuse_checkpoint::CheckpointManager;
+use memfuse_db::{MemFuse, MemFuseConfig};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -18,7 +18,11 @@ async fn test_full_stack_concurrency_with_checkpoints() {
         ..Default::default()
     };
 
-    let db = Arc::new(MemFuse::open_with_config(&db_path, config).await.expect("open db"));
+    let db = Arc::new(
+        MemFuse::open_with_config(&db_path, config)
+            .await
+            .expect("open db"),
+    );
     let storage = db.inner_storage();
     let cp_manager = Arc::new(CheckpointManager::new(storage));
 
@@ -35,7 +39,9 @@ async fn test_full_stack_concurrency_with_checkpoints() {
                 let id = format!("doc-{}", i);
                 let vec = vec![1.0, (t as f32) / 10.0, (i as f32) / 100.0, 0.0];
 
-                col.insert(&id, &vec, Some(json!({"task": t, "idx": i}))).await.unwrap();
+                col.insert(&id, &vec, Some(json!({"task": t, "idx": i})))
+                    .await
+                    .unwrap();
 
                 if i % 10 == 0 {
                     // Periodic Hybrid Search
@@ -50,12 +56,15 @@ async fn test_full_stack_concurrency_with_checkpoints() {
     let cp_handle = tokio::spawn(async move {
         for i in 0..5 {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            cp_manager_clone.create_checkpoint(
-                &format!("cp-{}", i),
-                "col-0",
-                i * 10,
-                json!({"stress": true})
-            ).await.unwrap();
+            cp_manager_clone
+                .create_checkpoint(
+                    &format!("cp-{}", i),
+                    "col-0",
+                    i * 10,
+                    json!({"stress": true}),
+                )
+                .await
+                .unwrap();
         }
     });
 
@@ -75,7 +84,15 @@ async fn test_full_stack_concurrency_with_checkpoints() {
     drop(db);
     drop(cp_manager);
 
-    let db2 = MemFuse::open_with_config(&db_path, MemFuseConfig { dimension: 4, ..Default::default() }).await.unwrap();
+    let db2 = MemFuse::open_with_config(
+        &db_path,
+        MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     let cp_manager2 = CheckpointManager::new(db2.inner_storage());
 
     let reloaded_cols = db2.list_collections().await.unwrap();
