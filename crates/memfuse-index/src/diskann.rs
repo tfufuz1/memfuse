@@ -1,6 +1,8 @@
 //! DiskANN Out-of-Core Vector Search (WP-4.3).
 
 #![allow(unsafe_code)]
+// ANCHOR:FIXME:DEBT-UNSAFE STATUS:TODO PRIO:2 AGENT:03 DATE:2026-05-22
+// FIXME: unsafe code usage in diskann.rs violates Sovereign Core doctrine.
 
 use crate::distance::compute_distance;
 use ahash::AHashMap;
@@ -198,6 +200,7 @@ impl DiskAnnIndex {
         visited.insert(ep);
 
         while let Some(Reverse(current)) = candidates.pop() {
+            // ANCHOR:FIXME:DEBT-UNWRAP STATUS:TODO PRIO:2 AGENT:03 DATE:2026-05-22
             if results.len() >= self.config.beam_width
                 && current.distance > results.peek().unwrap().distance
             {
@@ -214,6 +217,7 @@ impl DiskAnnIndex {
                         distance: d,
                     };
 
+                    // ANCHOR:FIXME:DEBT-UNWRAP STATUS:TODO PRIO:2 AGENT:03 DATE:2026-05-22
                     if results.len() < self.config.beam_width
                         || d < results.peek().unwrap().distance
                     {

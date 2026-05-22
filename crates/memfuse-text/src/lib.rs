@@ -5,6 +5,9 @@
 
 #![forbid(unsafe_code)]
 
+// ANCHOR:FIXME:WP-2.1-REGRESSION STATUS:TODO PRIO:2 AGENT:05 DATE:2026-05-22
+// FIXME: memfuse-text integration tests fail due to unresolved import of memfuse-store.
+
 pub mod bm25;
 pub mod inverted;
 pub mod morphology;

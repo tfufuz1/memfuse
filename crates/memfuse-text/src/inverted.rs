@@ -529,9 +529,11 @@ mod tests {
     #[async_trait::async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+            // ANCHOR:FIXME:DEBT-UNWRAP STATUS:TODO PRIO:2 AGENT:05 DATE:2026-05-22
             Ok(self.store.read().unwrap().get(key).cloned())
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+            // ANCHOR:FIXME:DEBT-UNWRAP STATUS:TODO PRIO:2 AGENT:05 DATE:2026-05-22
             self.store
                 .write()
                 .unwrap()
@@ -539,6 +541,7 @@ mod tests {
             Ok(())
         }
         async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
+            // ANCHOR:FIXME:DEBT-UNWRAP STATUS:TODO PRIO:2 AGENT:05 DATE:2026-05-22
             self.store.write().unwrap().remove(key);
             Ok(())
         }

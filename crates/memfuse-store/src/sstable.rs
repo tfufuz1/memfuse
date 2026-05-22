@@ -278,6 +278,7 @@ impl SstableReader {
         let path_buf = path.as_ref().to_path_buf();
         let (mmap, file_size) =
             tokio::task::spawn_blocking(move || -> std::io::Result<(memmap2::Mmap, u64)> {
+                // ANCHOR:FIXME:DEBT-STDFS STATUS:TODO PRIO:3 AGENT:02 DATE:2026-05-22
                 let file = std::fs::File::open(&path_buf)?; // std::fs justification: required for memmap2
                 let metadata = file.metadata()?;
                 let file_size = metadata.len();

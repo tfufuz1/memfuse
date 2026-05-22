@@ -34,11 +34,13 @@ impl CheckpointRegistry {
     }
 
     pub fn register(&self, tx_id: TxId, state: WorkflowState) {
+        // ANCHOR:FIXME:DEBT-UNWRAP STATUS:TODO PRIO:2 AGENT:13 DATE:2026-05-22
         let mut cache = self.checkpoints.write().unwrap();
         cache.insert(tx_id, state);
     }
 
     pub fn get(&self, tx_id: TxId) -> Option<WorkflowState> {
+        // ANCHOR:FIXME:DEBT-UNWRAP STATUS:TODO PRIO:2 AGENT:13 DATE:2026-05-22
         let cache = self.checkpoints.read().unwrap();
         cache.get(&tx_id).cloned()
     }
