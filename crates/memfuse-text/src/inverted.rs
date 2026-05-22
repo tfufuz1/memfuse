@@ -532,21 +532,21 @@ mod tests {
             Ok(self
                 .store
                 .read()
-                .unwrap() /* unwrap */
+                .unwrap() // unwrap
                 .get(key)
                 .cloned())
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
             self.store
                 .write()
-                .unwrap() /* unwrap */
+                .unwrap() // unwrap
                 .insert(key.to_vec(), value.to_vec());
             Ok(())
         }
         async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
             self.store
                 .write()
-                .unwrap() /* unwrap */
+                .unwrap() // unwrap
                 .remove(key);
             Ok(())
         }
@@ -567,7 +567,7 @@ mod tests {
             })
         }
         async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            let store = self.store.read().unwrap() /* unwrap */;
+            let store = self.store.read().unwrap(); // unwrap
             Ok(store
                 .iter()
                 .filter(|(k, _)| k.starts_with(prefix))

@@ -202,7 +202,7 @@ impl DiskAnnIndex {
                 && current.distance
                     > results
                         .peek()
-                        .unwrap() /* unwrap */
+                        .unwrap() // unwrap
                         .distance
             {
                 break;
@@ -221,7 +221,7 @@ impl DiskAnnIndex {
                     if results.len() < self.config.beam_width
                         || d < results
                             .peek()
-                            .unwrap() /* unwrap */
+                            .unwrap() // unwrap
                             .distance
                     {
                         candidates.push(Reverse(new_cand.clone()));
