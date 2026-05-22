@@ -9,9 +9,8 @@ use memmap2::Mmap;
 use parking_lot::RwLock;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashSet};
-use std::fs::OpenOptions;
-use std::io::{Seek, Write};
 use std::path::PathBuf;
+use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 /// Configuration for DiskANN index.
 #[derive(Debug, Clone)]
@@ -79,6 +78,11 @@ impl DiskAnnIndex {
                 "Memory budget must be at least sector_size".to_string(),
             ));
         }
+        if config.beam_width == 0 {
+            return Err(MemFuseError::InvalidInput(
+                "Beam width must be at least 1".to_string(),
+            ));
+        }
 
         let raw_node_size = (config.dimension * 4) + 4 + (config.max_degree * 4) + 8;
         let node_size_bytes = raw_node_size.div_ceil(config.sector_size) * config.sector_size;
@@ -116,60 +120,80 @@ impl DiskAnnIndex {
             }
         }
 
-        let mut file = OpenOptions::new()
+        let mut file = tokio::fs::OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(true)
             .open(&self.config.index_path)
+            .await
             .map_err(MemFuseError::Io)?;
 
-        file.write_all(b"DANN").map_err(MemFuseError::Io)?;
+        file.write_all(b"DANN").await.map_err(MemFuseError::Io)?;
         file.write_all(&(n as u64).to_le_bytes())
+            .await
             .map_err(MemFuseError::Io)?;
         file.write_all(&0u32.to_le_bytes())
+            .await
             .map_err(MemFuseError::Io)?;
         file.write_all(&(self.config.dimension as u32).to_le_bytes())
+            .await
             .map_err(MemFuseError::Io)?;
         file.write_all(&(self.config.max_degree as u32).to_le_bytes())
+            .await
             .map_err(MemFuseError::Io)?;
 
         let header_size: usize = 4 + 8 + 4 + 4 + 4;
         let padding = vec![0u8; self.config.sector_size - (header_size % self.config.sector_size)];
-        file.write_all(&padding).map_err(MemFuseError::Io)?;
+        file.write_all(&padding).await.map_err(MemFuseError::Io)?;
 
         for (i, node_graph) in graph.iter().enumerate() {
-            let offset = file.stream_position().map_err(MemFuseError::Io)?;
+            let offset = file
+                .seek(std::io::SeekFrom::Current(0))
+                .await
+                .map_err(MemFuseError::Io)?;
 
             for &val in &vectors[i] {
                 file.write_all(&val.to_le_bytes())
+                    .await
                     .map_err(MemFuseError::Io)?;
             }
             file.write_all(&(node_graph.len() as u32).to_le_bytes())
+                .await
                 .map_err(MemFuseError::Io)?;
             for &neighbor in node_graph {
                 file.write_all(&neighbor.to_le_bytes())
+                    .await
                     .map_err(MemFuseError::Io)?;
             }
             let padding_neighbors = self.config.max_degree - node_graph.len();
             file.write_all(&vec![0u8; padding_neighbors * 4])
+                .await
                 .map_err(MemFuseError::Io)?;
 
             file.write_all(&ids[i].inner().to_le_bytes())
+                .await
                 .map_err(MemFuseError::Io)?;
 
-            let current_pos = file.stream_position().map_err(MemFuseError::Io)?;
+            let current_pos = file
+                .seek(std::io::SeekFrom::Current(0))
+                .await
+                .map_err(MemFuseError::Io)?;
             let used = current_pos - offset;
             if used < self.node_size_bytes as u64 {
                 let node_padding = vec![0u8; self.node_size_bytes - used as usize];
-                file.write_all(&node_padding).map_err(MemFuseError::Io)?;
+                file.write_all(&node_padding)
+                    .await
+                    .map_err(MemFuseError::Io)?;
             }
         }
 
-        file.sync_all().map_err(MemFuseError::Io)?;
+        file.flush().await.map_err(MemFuseError::Io)?;
+        file.sync_all().await.map_err(MemFuseError::Io)?;
 
         // SAFETY: Mapping a file that we just wrote and synced is safe as long as the file is not truncated while mapped.
-        self.mmap = Some(unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? });
+        let std_file = file.into_std().await;
+        self.mmap = Some(unsafe { Mmap::map(&std_file).map_err(MemFuseError::Io)? });
         self.entry_point = 0;
 
         Ok(())
@@ -198,10 +222,12 @@ impl DiskAnnIndex {
         visited.insert(ep);
 
         while let Some(Reverse(current)) = candidates.pop() {
-            if results.len() >= self.config.beam_width
-                && current.distance > results.peek().unwrap().distance
-            {
-                break;
+            if results.len() >= self.config.beam_width {
+                if let Some(worst_result) = results.peek() {
+                    if current.distance > worst_result.distance {
+                        break;
+                    }
+                }
             }
 
             let node = self.load_node(current.index)?;
@@ -214,9 +240,15 @@ impl DiskAnnIndex {
                         distance: d,
                     };
 
-                    if results.len() < self.config.beam_width
-                        || d < results.peek().unwrap().distance
-                    {
+                    let should_add = if results.len() < self.config.beam_width {
+                        true
+                    } else if let Some(worst_result) = results.peek() {
+                        d < worst_result.distance
+                    } else {
+                        false
+                    };
+
+                    if should_add {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
                         if results.len() > self.config.beam_width {
@@ -227,19 +259,19 @@ impl DiskAnnIndex {
             }
         }
 
-        let mut final_results: Vec<ScoredDocument> = results
-            .into_iter()
-            .take(k)
-            .map(|c| {
-                let node = self
-                    .load_node(c.index)
-                    .expect("Node should be in cache or index");
-                ScoredDocument {
+        let mut final_results: Vec<ScoredDocument> = Vec::with_capacity(k.min(results.len()));
+        let mut results_iter = results.into_iter();
+        for _ in 0..k {
+            if let Some(c) = results_iter.next() {
+                let node = self.load_node(c.index)?;
+                final_results.push(ScoredDocument {
                     doc_id: node.doc_id,
                     score: 1.0 / (1.0 + c.distance),
-                }
-            })
-            .collect();
+                });
+            } else {
+                break;
+            }
+        }
 
         final_results.sort_by(|a, b| b.score.total_cmp(&a.score));
         Ok(final_results)

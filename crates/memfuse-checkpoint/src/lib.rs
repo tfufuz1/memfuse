@@ -23,23 +23,23 @@ pub struct CheckpointMeta {
 
 /// In-memory MVCC checkpoint abstraction.
 pub struct CheckpointRegistry {
-    checkpoints: std::sync::RwLock<HashMap<TxId, WorkflowState>>,
+    checkpoints: parking_lot::RwLock<HashMap<TxId, WorkflowState>>,
 }
 
 impl CheckpointRegistry {
     pub fn new() -> Self {
         Self {
-            checkpoints: std::sync::RwLock::new(HashMap::new()),
+            checkpoints: parking_lot::RwLock::new(HashMap::new()),
         }
     }
 
     pub fn register(&self, tx_id: TxId, state: WorkflowState) {
-        let mut cache = self.checkpoints.write().unwrap();
+        let mut cache = self.checkpoints.write();
         cache.insert(tx_id, state);
     }
 
     pub fn get(&self, tx_id: TxId) -> Option<WorkflowState> {
-        let cache = self.checkpoints.read().unwrap();
+        let cache = self.checkpoints.read();
         cache.get(&tx_id).cloned()
     }
 }
