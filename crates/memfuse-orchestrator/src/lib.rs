@@ -12,6 +12,9 @@
 // CREATED:2026-05-09 DEADLINE:NONE
 // AGENT:saos-audit DATE:2026-05-08 STATUS:FIXED
 //
+// ANCHOR:FIXME:AGENT:00 PRIO:1 STATUS:READY
+// REASON: Conflicting StateGraph definitions in lib.rs and graph.rs.
+// Integration tests are failing because lib.rs exports a stub StateGraph.
 // ANCHOR:ARCH:ORCHESTRATOR-001 — Agent Workflow Engine (Cockpit — Layer 3).
 // WP:NONE PRIO:2 NEEDS:NONE
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
