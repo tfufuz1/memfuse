@@ -16,6 +16,7 @@ use memfuse_core::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// An inverted index stored in the LSM engine.
 #[derive(Clone)]
@@ -75,6 +76,13 @@ impl InvertedIndex {
 
     /// Appends and updates inverted index structures for a document.
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
+        let orig_tokens: Vec<String> = text
+            .unicode_words()
+            .map(|w| w.to_lowercase())
+            .filter(|w| !crate::tokenizer::get_stopwords().contains(w))
+            .collect();
+        let orig_len = orig_tokens.len() as u32;
+
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
 
@@ -85,8 +93,10 @@ impl InvertedIndex {
 
         // Check if document already exists to adjust total_tokens and total_docs
         let dl_key = self.key_with_id("dl:", doc_id.inner());
+        let odl_key = self.key_with_id("odl:", doc_id.inner());
         let fw_key = self.key_with_id("fw:", doc_id.inner());
         let mut old_len = 0u32;
+        let mut old_orig_len = 0u32;
         let mut is_update = false;
 
         if let Some(bytes) = self.storage.get(&dl_key).await? {
@@ -97,6 +107,16 @@ impl InvertedIndex {
                         .try_into()
                         .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
                 );
+
+                if let Some(ob) = self.storage.get(&odl_key).await? {
+                    if ob.len() == 4 {
+                        old_orig_len =
+                            u32::from_le_bytes(ob.as_slice().try_into().map_err(|_| {
+                                MemFuseError::Storage("Invalid old_orig_len length".into())
+                            })?);
+                    }
+                }
+
                 is_update = true;
 
                 // Remove from old posting lists if update
@@ -134,9 +154,12 @@ impl InvertedIndex {
             }
         }
 
-        // Store new document length
+        // Store new document lengths
         self.storage
             .put(tx, &dl_key, &new_len.to_le_bytes())
+            .await?;
+        self.storage
+            .put(tx, &odl_key, &orig_len.to_le_bytes())
             .await?;
 
         // Store forward index (unique terms)
@@ -164,6 +187,24 @@ impl InvertedIndex {
 
         self.storage
             .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
+            .await?;
+
+        // Update original tokens (meta:orig_tokens)
+        let orig_tok_key = self.key("meta:orig_tokens");
+        let mut total_orig_tokens = 0u64;
+        if let Some(bytes) = self.storage.get(&orig_tok_key).await? {
+            if bytes.len() == 8 {
+                total_orig_tokens = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid orig_tokens length".into()))?,
+                );
+            }
+        }
+        total_orig_tokens = total_orig_tokens.saturating_sub(old_orig_len as u64) + orig_len as u64;
+        self.storage
+            .put(tx, &orig_tok_key, &total_orig_tokens.to_le_bytes())
             .await?;
 
         // Update total docs
@@ -216,9 +257,11 @@ impl InvertedIndex {
     /// Deletes a document from the index.
     pub async fn delete_document(&self, tx: TxId, doc_id: DocId) -> Result<()> {
         let dl_key = self.key_with_id("dl:", doc_id.inner());
+        let odl_key = self.key_with_id("odl:", doc_id.inner());
         let fw_key = self.key_with_id("fw:", doc_id.inner());
 
         let mut doc_len = 0u32;
+        let mut orig_doc_len = 0u32;
         if let Some(bytes) = self.storage.get(&dl_key).await? {
             if bytes.len() == 4 {
                 doc_len = u32::from_le_bytes(
@@ -233,7 +276,17 @@ impl InvertedIndex {
             return Ok(());
         }
 
+        if let Some(ob) = self.storage.get(&odl_key).await? {
+            if ob.len() == 4 {
+                orig_doc_len =
+                    u32::from_le_bytes(ob.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid orig_doc_len length".into())
+                    })?);
+            }
+        }
+
         self.storage.delete(tx, &dl_key).await?;
+        self.storage.delete(tx, &odl_key).await?;
 
         // Remove from posting lists using forward index
         if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
@@ -278,6 +331,22 @@ impl InvertedIndex {
                 total_tokens = total_tokens.saturating_sub(doc_len as u64);
                 self.storage
                     .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
+                    .await?;
+            }
+        }
+
+        let orig_tok_key = self.key("meta:orig_tokens");
+        if let Some(bytes) = self.storage.get(&orig_tok_key).await? {
+            if bytes.len() == 8 {
+                let mut total_orig_tokens = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid orig_tokens length".into()))?,
+                );
+                total_orig_tokens = total_orig_tokens.saturating_sub(orig_doc_len as u64);
+                self.storage
+                    .put(tx, &orig_tok_key, &total_orig_tokens.to_le_bytes())
                     .await?;
             }
         }
@@ -445,10 +514,30 @@ impl TextIndex for InvertedIndex {
             }
         }
 
+        let orig_tok_key = self.key("meta:orig_tokens");
+        let mut total_orig_tokens = 0u64;
+        if let Some(bytes) = self.storage.get(&orig_tok_key).await? {
+            if bytes.len() == 8 {
+                total_orig_tokens = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid orig_tokens length".into()))?,
+                );
+            }
+        }
+
+        let token_reduction_ratio = if total_orig_tokens > 0 {
+            total_tokens as f32 / total_orig_tokens as f32
+        } else {
+            0.0
+        };
+
         Ok(TextIndexStats {
             num_documents: total_docs as usize,
             num_tokens: total_tokens as usize,
             memory_usage_bytes: 0,
+            token_reduction_ratio,
         })
     }
 }
@@ -529,17 +618,17 @@ mod tests {
     #[async_trait::async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            Ok(self.store.read().unwrap().get(key).cloned())
+            Ok(self.store.read().expect("test").get(key).cloned())
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
             self.store
                 .write()
-                .unwrap()
+                .expect("test")
                 .insert(key.to_vec(), value.to_vec());
             Ok(())
         }
         async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
-            self.store.write().unwrap().remove(key);
+            self.store.write().expect("test").remove(key);
             Ok(())
         }
         async fn commit(&self, _tx_id: TxId) -> Result<()> {
@@ -559,7 +648,7 @@ mod tests {
             })
         }
         async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            let store = self.store.read().unwrap();
+            let store = self.store.read().expect("test");
             Ok(store
                 .iter()
                 .filter(|(k, _)| k.starts_with(prefix))
@@ -776,6 +865,40 @@ mod tests {
 
         let stats_after = index.stats().await?;
         assert_eq!(stats_after.num_documents, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_token_reduction_ratio_stats() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        // Use "de" in namespace to trigger GermanMorphTokenizer
+        let index = InvertedIndex::new(storage.clone(), "test-de");
+
+        let tx = TxId::new(1);
+        let doc_id = DocId::new(1);
+        // "gesellschaft" -> ["gesell", "schaft"] (2 tokens) vs 1 original
+        index.insert(tx, doc_id, "gesellschaft").await?;
+        storage.commit(tx).await?;
+
+        let stats = index.stats().await?;
+        assert_eq!(stats.num_documents, 1);
+        // Original: "gesellschaft" (1)
+        // Decomposed: "gesellschaft", "gesell", "schaft" (3) -> Wait, InvertedIndex::upsert_document
+        // tokens = tokenizer.tokenize(text) -> ["gesellschaft", "gesell", "schaft"]
+        // new_len = tokens.len() = 3
+        // orig_tokens = ["gesellschaft"] -> orig_len = 1
+        assert_eq!(stats.num_tokens, 3);
+        assert_eq!(stats.token_reduction_ratio, 3.0);
+
+        // Update with something that doesn't split
+        let tx2 = TxId::new(2);
+        index.insert(tx2, doc_id, "test").await?;
+        storage.commit(tx2).await?;
+
+        let stats2 = index.stats().await?;
+        assert_eq!(stats2.num_tokens, 1);
+        assert_eq!(stats2.token_reduction_ratio, 1.0);
 
         Ok(())
     }
