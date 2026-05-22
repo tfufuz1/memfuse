@@ -47,6 +47,13 @@ pub enum MemFuseError {
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
+    // ANCHOR:DEBT:ERR-002 AGENT:01 STATUS:DONE PRIO:3
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
+    #[error("Already exists: {0}")]
+    AlreadyExists(String),
+
     #[error("Not found: {0}")]
     NotFound(String),
 

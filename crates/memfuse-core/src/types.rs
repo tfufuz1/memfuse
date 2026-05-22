@@ -452,6 +452,16 @@ impl FusionWeights {
     pub fn text(&self) -> f32 {
         self.text
     }
+
+    /// Returns the graph weight.
+    pub fn graph(&self) -> f32 {
+        self.graph
+    }
+
+    /// Returns the metadata weight.
+    pub fn metadata(&self) -> f32 {
+        self.metadata
+    }
 }
 
 /// Defines cross-namespace isolation guarantees.
@@ -585,7 +595,7 @@ mod saos_tests {
     // --- FusionWeights Tests ---
     #[test]
     fn test_fusion_weights_normalization_valid() {
-        let weights = FusionWeights::new(0.6, 0.4, 0.0, 0.0).expect("valid weights");
+        let weights = FusionWeights::new(0.6, 0.4, 0.0, 0.0).expect("valid weights"); // unwrap allowed
         assert_eq!(weights.vector(), 0.6);
         assert_eq!(weights.text(), 0.4);
     }
@@ -658,7 +668,7 @@ mod saos_tests {
         };
         assert_eq!(entry.final_score, 0.99);
         assert_eq!(
-            entry.metadata.expect("metadata should be present")["version"],
+            entry.metadata.expect("metadata should be present")["version"], // unwrap allowed
             2
         );
     }
