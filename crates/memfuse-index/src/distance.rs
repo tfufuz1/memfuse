@@ -2,17 +2,6 @@
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:03 DATE:2026-05-16 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
-// ANCHOR:SEC:UNSAFE-001 — Dokumentierte unsafe-Blöcke in SIMD-Zone
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:03 DATE:2026-05-16 STATUS:DONE
-// CREATED:2026-05-08 DEADLINE:NONE
-// GEFUNDEN: 42 unsafe-Blöcke (AVX2 + AVX-512) ohne SAFETY: Kommentare
-// ERWARTET: Jeder unsafe-Block braucht SAFETY: Kommentar mit:
-//   1. Warum die Operation sicher ist (Slice-Bounds, Alignment)
-//   2. Welche Invarianten vom Caller garantiert werden
-// RISIKO: Release-Blocker — undokumentiertes unsafe verhindert qualifiziertes Review
-// MASSNAHME: SAFETY: Kommentare für alle 12 unsafe fn + 30 unsafe-Blöcke hinzufügen
-//
 // ANCHOR:ARCH:SIMD-001 — Hardware-beschleunigte Distanzberechnung.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -717,7 +706,9 @@ pub fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPa
 pub unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
     let n = a.len();
     let mut i = 0;
-    let mut sum_v = _mm256_setzero_si256();
+    // ANCHOR:SAFETY:SIMD-U8-017 — Initialisierung.
+    // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
+    let mut sum_v = unsafe { _mm256_setzero_si256() };
 
     while i + 32 <= n {
         // ANCHOR:SAFETY:SIMD-U8-002 — AVX2 Load und Madd.
@@ -757,7 +748,9 @@ pub unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
 pub unsafe fn euclidean_distance_sq_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
     let n = a.len();
     let mut i = 0;
-    let mut sum_v = _mm256_setzero_si256();
+    // ANCHOR:SAFETY:SIMD-U8-018 — Initialisierung.
+    // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
+    let mut sum_v = unsafe { _mm256_setzero_si256() };
 
     while i + 32 <= n {
         // ANCHOR:SAFETY:SIMD-U8-004 — AVX2 Load und Sub/Madd.
@@ -801,11 +794,17 @@ pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimil
     let n = a.len();
     let mut i = 0;
 
-    let mut dot_v = _mm256_setzero_si256();
-    let mut sum_a_v = _mm256_setzero_si256();
-    let mut sum_b_v = _mm256_setzero_si256();
-    let mut norm_a_v = _mm256_setzero_si256();
-    let mut norm_b_v = _mm256_setzero_si256();
+    // ANCHOR:SAFETY:SIMD-U8-019 — Initialisierung.
+    // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
+    let (mut dot_v, mut sum_a_v, mut sum_b_v, mut norm_a_v, mut norm_b_v) = unsafe {
+        (
+            _mm256_setzero_si256(),
+            _mm256_setzero_si256(),
+            _mm256_setzero_si256(),
+            _mm256_setzero_si256(),
+            _mm256_setzero_si256(),
+        )
+    };
 
     while i + 32 <= n {
         // ANCHOR:SAFETY:SIMD-U8-006 — AVX2 Loads und Accumulation.

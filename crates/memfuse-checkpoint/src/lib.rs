@@ -6,12 +6,10 @@
 #![forbid(unsafe_code)]
 
 use memfuse_core::{Result, StorageEngine, TxId, WorkflowState};
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
-
-/// Metadata for a persistent checkpoint.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CheckpointMeta {
     pub name: String,
@@ -23,23 +21,23 @@ pub struct CheckpointMeta {
 
 /// In-memory MVCC checkpoint abstraction.
 pub struct CheckpointRegistry {
-    checkpoints: std::sync::RwLock<HashMap<TxId, WorkflowState>>,
+    checkpoints: RwLock<HashMap<TxId, WorkflowState>>,
 }
 
 impl CheckpointRegistry {
     pub fn new() -> Self {
         Self {
-            checkpoints: std::sync::RwLock::new(HashMap::new()),
+            checkpoints: RwLock::new(HashMap::new()),
         }
     }
 
     pub fn register(&self, tx_id: TxId, state: WorkflowState) {
-        let mut cache = self.checkpoints.write().unwrap();
+        let mut cache = self.checkpoints.write();
         cache.insert(tx_id, state);
     }
 
     pub fn get(&self, tx_id: TxId) -> Option<WorkflowState> {
-        let cache = self.checkpoints.read().unwrap();
+        let cache = self.checkpoints.read();
         cache.get(&tx_id).cloned()
     }
 }
@@ -54,7 +52,7 @@ impl Default for CheckpointRegistry {
 pub struct CheckpointManager {
     storage: Arc<dyn StorageEngine>,
     // In-memory cache of checkpoints for fast lookups
-    persistent_checkpoints: RwLock<Vec<CheckpointMeta>>,
+    persistent_checkpoints: tokio::sync::RwLock<Vec<CheckpointMeta>>,
     registry: Arc<CheckpointRegistry>,
 }
 
@@ -62,7 +60,7 @@ impl CheckpointManager {
     pub fn new(storage: Arc<dyn StorageEngine>) -> Self {
         Self {
             storage,
-            persistent_checkpoints: RwLock::new(Vec::new()),
+            persistent_checkpoints: tokio::sync::RwLock::new(Vec::new()),
             registry: Arc::new(CheckpointRegistry::new()),
         }
     }
@@ -171,7 +169,7 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use memfuse_core::{Result, StorageStats};
-    use std::sync::Mutex;
+    use parking_lot::Mutex;
 
     // Mock StorageEngine for testing
     struct MockStorage {
@@ -191,17 +189,14 @@ mod tests {
     #[async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            Ok(self.data.lock().unwrap().get(key).cloned())
+            Ok(self.data.lock().get(key).cloned())
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-            self.data
-                .lock()
-                .unwrap()
-                .insert(key.to_vec(), value.to_vec());
+            self.data.lock().insert(key.to_vec(), value.to_vec());
             Ok(())
         }
         async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
-            self.data.lock().unwrap().remove(key);
+            self.data.lock().remove(key);
             Ok(())
         }
         async fn commit(&self, _tx_id: TxId) -> Result<()> {
@@ -221,15 +216,15 @@ mod tests {
             })
         }
         async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.pinned.lock().unwrap().insert(seq_no);
+            self.pinned.lock().insert(seq_no);
             Ok(())
         }
         async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.pinned.lock().unwrap().remove(&seq_no);
+            self.pinned.lock().remove(&seq_no);
             Ok(())
         }
         async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            let data = self.data.lock().unwrap();
+            let data = self.data.lock();
             Ok(data
                 .iter()
                 .filter(|(k, _)| k.starts_with(prefix))
@@ -252,7 +247,7 @@ mod tests {
         assert_eq!(meta.seq_no, 100);
 
         // Verify it was pinned
-        assert!(storage.pinned.lock().unwrap().contains(&100));
+        assert!(storage.pinned.lock().contains(&100));
 
         // Verify it exists in manager
         let retrieved = manager.get_checkpoint("test_cp").await.unwrap().unwrap();

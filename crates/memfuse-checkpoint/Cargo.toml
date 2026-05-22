@@ -9,6 +9,7 @@ description = "Backup and snapshot management for MemFuse storage"
 [dependencies]
 memfuse-core = { version = "0.1.0", path = "../memfuse-core" }
 tokio = { workspace = true }
+parking_lot = { workspace = true }
 tracing = { workspace = true }
 async-trait.workspace = true
 serde = { workspace = true, features = ["derive"] }
