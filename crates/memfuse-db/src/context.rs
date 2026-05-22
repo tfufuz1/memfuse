@@ -7,9 +7,7 @@
 // WP:WP-6.3 PRIO:2 NEEDS:GS-01
 // AGENT:04 DATE:2026-05-22 STATUS:DONE
 
-use memfuse_core::{
-    ContextChunk, ContextWindow, Result, TokenBudget,
-};
+use memfuse_core::{ContextChunk, ContextWindow, Result, TokenBudget};
 
 /// Manages autonomous context preparation for LLM consumption.
 ///
@@ -51,10 +49,7 @@ impl ContextManager {
     /// Prepares a context window from retrieved chunks.
     ///
     /// Filters by relevance threshold, sorts by score, and truncates to budget.
-    pub fn prepare_context(
-        &self,
-        mut chunks: Vec<ContextChunk>,
-    ) -> Result<ContextWindow> {
+    pub fn prepare_context(&self, mut chunks: Vec<ContextChunk>) -> Result<ContextWindow> {
         // Filter by relevance threshold
         chunks.retain(|c| c.relevance >= self.relevance_threshold);
 

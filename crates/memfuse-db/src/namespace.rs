@@ -25,11 +25,7 @@ pub struct Namespace {
 
 impl Namespace {
     /// Creates a new namespace with the given isolation level.
-    pub fn new(
-        id: NamespaceId,
-        name: impl Into<String>,
-        isolation_level: IsolationLevel,
-    ) -> Self {
+    pub fn new(id: NamespaceId, name: impl Into<String>, isolation_level: IsolationLevel) -> Self {
         Self {
             id,
             name: name.into(),
@@ -88,11 +84,7 @@ impl NamespaceRegistry {
     }
 
     /// Creates a new namespace.
-    pub fn create(
-        &mut self,
-        name: &str,
-        level: IsolationLevel,
-    ) -> Result<NamespaceId> {
+    pub fn create(&mut self, name: &str, level: IsolationLevel) -> Result<NamespaceId> {
         let id = NamespaceId::new(self.next_id);
         self.next_id += 1;
 
@@ -107,10 +99,7 @@ impl NamespaceRegistry {
             .namespaces
             .get(&id.inner())
             .ok_or_else(|| {
-                memfuse_core::MemFuseError::NotFound(format!(
-                    "Namespace {} not found",
-                    id
-                ))
+                memfuse_core::MemFuseError::NotFound(format!("Namespace {} not found", id))
             })?
             .clone();
 
@@ -119,46 +108,28 @@ impl NamespaceRegistry {
 
     /// Archives a namespace (makes it read-only).
     pub fn archive(&mut self, id: NamespaceId) -> Result<()> {
-        let ns = self
-            .namespaces
-            .get_mut(&id.inner())
-            .ok_or_else(|| {
-                memfuse_core::MemFuseError::NotFound(format!(
-                    "Namespace {} not found",
-                    id
-                ))
-            })?;
+        let ns = self.namespaces.get_mut(&id.inner()).ok_or_else(|| {
+            memfuse_core::MemFuseError::NotFound(format!("Namespace {} not found", id))
+        })?;
         ns.archived = true;
         Ok(())
     }
 
     /// Validates cross-namespace access permission.
-    pub fn validate_cross_access(
-        &self,
-        from: NamespaceId,
-        to: NamespaceId,
-    ) -> Result<()> {
+    pub fn validate_cross_access(&self, from: NamespaceId, to: NamespaceId) -> Result<()> {
         if from == to {
             return Ok(());
         }
 
-        let target = self
-            .namespaces
-            .get(&to.inner())
-            .ok_or_else(|| {
-                memfuse_core::MemFuseError::NotFound(format!(
-                    "Namespace {} not found",
-                    to
-                ))
-            })?;
+        let target = self.namespaces.get(&to.inner()).ok_or_else(|| {
+            memfuse_core::MemFuseError::NotFound(format!("Namespace {} not found", to))
+        })?;
 
         match target.isolation_level {
-            IsolationLevel::Strict => {
-                Err(memfuse_core::MemFuseError::NamespaceViolation(format!(
-                    "Cross-namespace access denied: {} -> {} (Strict isolation)",
-                    from, to
-                )))
-            }
+            IsolationLevel::Strict => Err(memfuse_core::MemFuseError::NamespaceViolation(format!(
+                "Cross-namespace access denied: {} -> {} (Strict isolation)",
+                from, to
+            ))),
             IsolationLevel::SharedRead | IsolationLevel::Logical => Ok(()),
         }
     }
@@ -182,8 +153,12 @@ mod tests {
     #[test]
     fn test_namespace_isolation() {
         let mut reg = NamespaceRegistry::new();
-        let ns_a = reg.create("research", IsolationLevel::Strict).expect("valid test value");
-        let ns_b = reg.create("code", IsolationLevel::SharedRead).expect("valid test value");
+        let ns_a = reg
+            .create("research", IsolationLevel::Strict)
+            .expect("valid test value");
+        let ns_b = reg
+            .create("code", IsolationLevel::SharedRead)
+            .expect("valid test value");
 
         // Strict -> deny cross-access TO strict namespace
         assert!(reg.validate_cross_access(ns_b, ns_a).is_err());
@@ -194,7 +169,9 @@ mod tests {
     #[test]
     fn test_namespace_archive() {
         let mut reg = NamespaceRegistry::new();
-        let ns = reg.create("test", IsolationLevel::Logical).expect("valid test value");
+        let ns = reg
+            .create("test", IsolationLevel::Logical)
+            .expect("valid test value");
         reg.archive(ns).expect("valid test value");
 
         let handle = reg.get(ns).expect("valid test value");
