@@ -462,6 +462,7 @@ pub struct BM25MorphIndex {
 }
 
 impl BM25MorphIndex {
+    /// Creates a new `InvertedIndex` instance.
     pub fn new(
         storage: Arc<dyn StorageEngine>,
         namespace: &str,
@@ -473,6 +474,7 @@ impl BM25MorphIndex {
         }
     }
 
+    /// Returns a reference to the tokenizer used by this index.
     pub fn tokenizer(&self) -> &dyn MorphologicalTokenizer {
         self.tokenizer.as_ref()
     }
@@ -534,7 +536,7 @@ mod tests {
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
             self.store
                 .write()
-                .expect("lock poisoned")
+                .expect("lock poisoned") // unwrap
                 .insert(key.to_vec(), value.to_vec());
             Ok(())
         }

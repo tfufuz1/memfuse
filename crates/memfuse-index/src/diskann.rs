@@ -199,7 +199,7 @@ impl DiskAnnIndex {
 
         while let Some(Reverse(current)) = candidates.pop() {
             if results.len() >= self.config.beam_width
-                && current.distance > results.peek().expect("invariant violated").distance
+                && current.distance > results.peek().expect("invariant violated").distance // unwrap
             {
                 break;
             }
@@ -215,7 +215,7 @@ impl DiskAnnIndex {
                     };
 
                     if results.len() < self.config.beam_width
-                        || d < results.peek().expect("invariant violated").distance
+                        || d < results.peek().expect("invariant violated").distance // unwrap
                     {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
@@ -324,10 +324,12 @@ impl DiskAnnIndex {
         Ok(node)
     }
 
+    /// Returns the number of documents in the index.
     pub fn len(&self) -> usize {
         self.node_count
     }
 
+    /// Returns true if the index contains no documents.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

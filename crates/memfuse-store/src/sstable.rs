@@ -50,6 +50,7 @@ pub struct BlockBuilder {
 }
 
 impl BlockBuilder {
+    /// Creates a new `SstableBuilder` with the specified block size.
     pub fn new(block_size: usize) -> Self {
         Self {
             data: BytesMut::new(),
@@ -74,6 +75,7 @@ impl BlockBuilder {
         }
     }
 
+    /// Adds a key-value pair to the SSTable. Returns false if the current block is full.
     pub fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64) -> bool {
         // size: key_len(2) + key + seq_no(8) + val_len(2) + value + bloom(8) + offsets + offset count (2 bytes)
         if !self.data.is_empty()
@@ -92,11 +94,13 @@ impl BlockBuilder {
         true
     }
 
+    /// Returns the current estimated size of the SSTable in bytes.
     pub fn current_size(&self) -> usize {
         // data + bloom(8) + offsets + offset count (2 bytes)
         self.data.len() + 8 + self.offsets.len() * 2 + 2
     }
 
+    /// Returns true if no data has been added to the SSTable yet.
     pub fn is_empty(&self) -> bool {
         self.offsets.is_empty()
     }

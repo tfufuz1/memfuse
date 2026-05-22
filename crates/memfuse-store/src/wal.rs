@@ -460,10 +460,12 @@ impl Wal {
         Ok(entries)
     }
 
+    /// Returns the current size of the WAL file in bytes.
     pub fn size(&self) -> u64 {
         self.size.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Returns the filesystem path to the WAL file.
     pub fn path(&self) -> &Path {
         &self.path
     }
