@@ -54,26 +54,20 @@ impl DocId {
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
     pub fn from_key(key: &str) -> Result<Self> {
-        // ANCHOR:DEBT:TYPES-002 AGENT:01 STATUS:DONE PRIO:3
+        // ANCHOR:DEBT:TYPES-003 AGENT:01 STATUS:DONE PRIO:3
         // SAFETY: blake3::hash() always returns a 32-byte hash.
-        // try_from_key() only fails if the hash is shorter than 8 bytes.
-        Self::try_from_key(key)
+        let hash = blake3::hash(key.as_bytes());
+        let mut buf = [0u8; 8];
+        buf.copy_from_slice(&hash.as_bytes()[..8]);
+        Ok(Self(u64::from_le_bytes(buf)))
     }
 
     /// Safely derive a DocId from a user-provided string key.
     ///
-    /// Uses blake3 hash and safe slice indexing.
+    /// This method is deprecated as `from_key` is now infallible, but remains
+    /// for API compatibility.
     pub fn try_from_key(key: &str) -> Result<Self> {
-        let hash = blake3::hash(key.as_bytes());
-        let bytes = hash
-            .as_bytes()
-            .get(..8)
-            .ok_or_else(|| MemFuseError::Internal("Blake3 hash too short".to_string()))?;
-
-        let buf: [u8; 8] = bytes.try_into().map_err(|_| {
-            MemFuseError::Internal("Failed to convert hash slice to array".to_string())
-        })?;
-        Ok(Self(u64::from_le_bytes(buf)))
+        Self::from_key(key)
     }
 }
 
@@ -334,8 +328,13 @@ impl ResourceTracker {
     }
 
     pub fn release_memory(&self, bytes: u64) {
-        self.memory_used
-            .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
+        // ANCHOR:DEBT:TYPES-004 AGENT:01 STATUS:DONE PRIO:3
+        // SAFETY: saturating_sub prevents underflow if multiple threads release same memory.
+        self.memory_used.fetch_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |current| Some(current.saturating_sub(bytes))
+        ).ok();
     }
 
     pub fn memory_used(&self) -> u64 {
@@ -585,6 +584,7 @@ mod saos_tests {
     // --- FusionWeights Tests ---
     #[test]
     fn test_fusion_weights_normalization_valid() {
+        // ANCHOR:DEBT:TYPES-005 — intentional expect in tests
         let weights = FusionWeights::new(0.6, 0.4, 0.0, 0.0).expect("valid weights");
         assert_eq!(weights.vector(), 0.6);
         assert_eq!(weights.text(), 0.4);
@@ -658,6 +658,7 @@ mod saos_tests {
         };
         assert_eq!(entry.final_score, 0.99);
         assert_eq!(
+            // ANCHOR:DEBT:TYPES-006 — intentional expect in tests
             entry.metadata.expect("metadata should be present")["version"],
             2
         );
