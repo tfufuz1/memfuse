@@ -250,85 +250,31 @@ impl LsmStorage {
     }
 
     /// Rolls the database state back to a specific transaction ID.
-    /// This is used for Time-Travel Debugging (WP-5.1).
     pub async fn rollback_to_tx(&self, target_tx_id: TxId) -> Result<()> {
-        // 1. Halt all active writes
         let _commit_lock = self.commit_mutex.lock().await;
-
-        // 2. Take write lock on state to clear memtables
         let mut state = self.state.write().await;
-
-        tracing::info!("Rolling back storage state to TX: {}", target_tx_id);
-
-        // 3. Reset volatile state
-        let old_memtable_size = state.memtable.size() as u64;
-        let mut old_imm_size = 0u64;
-        for mt in &state.immutable_memtables {
-            old_imm_size += mt.size() as u64;
-        }
-
-        state.memtable = Arc::new(MemTable::new());
+        state.memtable = std::sync::Arc::new(MemTable::new());
         state.immutable_memtables.clear();
-
-        // 4. Replay WAL up to target_tx_id
         let wal_entries = state.wal.replay().await?;
-        let mut max_seq = 0u64;
-        let mut replayed_size = 0u64;
-
-        for (lsn, entry) in &wal_entries {
+        let mut max_seq = 0;
+        for (_, entry) in wal_entries {
             let entry_tx_id = match &entry.op {
                 WalOp::Put { tx_id, .. } => *tx_id,
                 WalOp::Delete { tx_id, .. } => *tx_id,
             };
-
-            // Only replay entries that belong to target_tx_id or older
             if entry_tx_id.0 <= target_tx_id.0 {
-                if lsn | TOMBSTONE_BIT > max_seq {
-                    max_seq = lsn | (entry.seq_no & TOMBSTONE_BIT);
-                }
-                if entry.seq_no > max_seq {
-                    max_seq = entry.seq_no;
-                }
-
-                match &entry.op {
+                if entry.seq_no > max_seq { max_seq = entry.seq_no; }
+                match entry.op {
                     WalOp::Put { key, value, .. } => {
-                        replayed_size += (key.len() + value.len()) as u64;
-                        state.memtable.put(
-                            Bytes::from(key.clone()),
-                            Bytes::from(value.clone()),
-                            entry.seq_no,
-                        );
+                        state.memtable.put(bytes::Bytes::from(key), bytes::Bytes::from(value), entry.seq_no);
                     }
                     WalOp::Delete { key, .. } => {
-                        replayed_size += key.len() as u64;
-                        state.memtable.put(
-                            Bytes::from(key.clone()),
-                            Bytes::new(),
-                            entry.seq_no | TOMBSTONE_BIT,
-                        );
+                        state.memtable.put(bytes::Bytes::from(key), bytes::Bytes::new(), entry.seq_no | TOMBSTONE_BIT);
                     }
                 }
             }
         }
-
-        // 5. Update metadata
-        self.next_seq_no.store(
-            (max_seq & !TOMBSTONE_BIT) + 1,
-            std::sync::atomic::Ordering::SeqCst,
-        );
-
-        // 6. Update resource budget
-        self.budget.release_memory(old_memtable_size + old_imm_size);
-        if replayed_size > 0 {
-            let _ = self.budget.consume_memory(replayed_size);
-        }
-
-        tracing::info!(
-            "Rollback complete. Restored {} entries, next_seq_no={}",
-            wal_entries.len(),
-            self.next_seq_no.load(std::sync::atomic::Ordering::Relaxed)
-        );
-
+        self.next_seq_no.store(max_seq + 1, std::sync::atomic::Ordering::SeqCst);
         Ok(())
     }
 }

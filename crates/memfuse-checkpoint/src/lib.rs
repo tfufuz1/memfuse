@@ -23,23 +23,23 @@ pub struct CheckpointMeta {
 
 /// In-memory MVCC checkpoint abstraction.
 pub struct CheckpointRegistry {
-    checkpoints: parking_lot::RwLock<HashMap<TxId, WorkflowState>>,
+    checkpoints: std::sync::RwLock<HashMap<TxId, WorkflowState>>,
 }
 
 impl CheckpointRegistry {
     pub fn new() -> Self {
         Self {
-            checkpoints: parking_lot::RwLock::new(HashMap::new()),
+            checkpoints: std::sync::RwLock::new(HashMap::new()),
         }
     }
 
     pub fn register(&self, tx_id: TxId, state: WorkflowState) {
-        let mut cache = self.checkpoints.write();
+        let mut cache = self.checkpoints.write().unwrap();
         cache.insert(tx_id, state);
     }
 
     pub fn get(&self, tx_id: TxId) -> Option<WorkflowState> {
-        let cache = self.checkpoints.read();
+        let cache = self.checkpoints.read().unwrap();
         cache.get(&tx_id).cloned()
     }
 }
@@ -171,7 +171,7 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use memfuse_core::{Result, StorageStats};
-    use parking_lot::Mutex;
+    use std::sync::Mutex;
 
     // Mock StorageEngine for testing
     struct MockStorage {
@@ -191,14 +191,17 @@ mod tests {
     #[async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            Ok(self.data.lock().get(key).cloned())
+            Ok(self.data.lock().unwrap().get(key).cloned())
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-            self.data.lock().insert(key.to_vec(), value.to_vec());
+            self.data
+                .lock()
+                .unwrap()
+                .insert(key.to_vec(), value.to_vec());
             Ok(())
         }
         async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
-            self.data.lock().remove(key);
+            self.data.lock().unwrap().remove(key);
             Ok(())
         }
         async fn commit(&self, _tx_id: TxId) -> Result<()> {
@@ -218,15 +221,15 @@ mod tests {
             })
         }
         async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.pinned.lock().insert(seq_no);
+            self.pinned.lock().unwrap().insert(seq_no);
             Ok(())
         }
         async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.pinned.lock().remove(&seq_no);
+            self.pinned.lock().unwrap().remove(&seq_no);
             Ok(())
         }
         async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            let data = self.data.lock();
+            let data = self.data.lock().unwrap();
             Ok(data
                 .iter()
                 .filter(|(k, _)| k.starts_with(prefix))
@@ -243,20 +246,16 @@ mod tests {
         let meta = manager
             .create_checkpoint("test_cp", "coll_1", 100, serde_json::json!({"state": "ok"}))
             .await
-            .expect("test failure");
+            .unwrap();
 
         assert_eq!(meta.name, "test_cp");
         assert_eq!(meta.seq_no, 100);
 
         // Verify it was pinned
-        assert!(storage.pinned.lock().contains(&100));
+        assert!(storage.pinned.lock().unwrap().contains(&100));
 
         // Verify it exists in manager
-        let retrieved = manager
-            .get_checkpoint("test_cp")
-            .await
-            .expect("async op failed")
-            .expect("test failure");
+        let retrieved = manager.get_checkpoint("test_cp").await.unwrap().unwrap();
         assert_eq!(retrieved, meta);
     }
 
@@ -269,13 +268,9 @@ mod tests {
         manager
             .create_checkpoint("cp1", "c1", 10, metadata.clone())
             .await
-            .expect("test failure");
+            .unwrap();
 
-        let retrieved = manager
-            .get_checkpoint("cp1")
-            .await
-            .expect("async op failed")
-            .expect("test failure");
+        let retrieved = manager.get_checkpoint("cp1").await.unwrap().unwrap();
         assert_eq!(retrieved.metadata, metadata);
     }
 
@@ -287,17 +282,17 @@ mod tests {
         manager
             .create_checkpoint("cp2", "c1", 20, serde_json::json!({}))
             .await
-            .expect("test failure");
+            .unwrap();
         manager
             .create_checkpoint("cp1", "c1", 10, serde_json::json!({}))
             .await
-            .expect("test failure");
+            .unwrap();
         manager
             .create_checkpoint("cp3", "c1", 30, serde_json::json!({}))
             .await
-            .expect("test failure");
+            .unwrap();
 
-        let list = manager.list_checkpoints().await.expect("async op failed");
+        let list = manager.list_checkpoints().await.unwrap();
         assert_eq!(list.len(), 3);
         assert_eq!(list[0].name, "cp1");
         assert_eq!(list[1].name, "cp2");
@@ -312,11 +307,11 @@ mod tests {
         manager1
             .create_checkpoint("persist_me", "c1", 50, serde_json::json!({}))
             .await
-            .expect("test failure");
+            .unwrap();
 
         // New manager sharing the same storage
         let manager2 = CheckpointManager::new(storage.clone());
-        let list = manager2.list_checkpoints().await.expect("async op failed");
+        let list = manager2.list_checkpoints().await.unwrap();
 
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "persist_me");
@@ -333,7 +328,7 @@ mod tests {
         };
 
         registry.register(tx_id, state.clone());
-        let retrieved = registry.get(tx_id).expect("tx exists");
+        let retrieved = registry.get(tx_id).unwrap();
         assert_eq!(retrieved.graph_hash, "hash");
     }
 }
