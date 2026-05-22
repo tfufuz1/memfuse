@@ -547,7 +547,10 @@ impl HnswIndexCore {
 
             for layer in (0..=new_layer.min(current_max_layer)).rev() {
                 let layer_neighbors = final_connections.get(layer).ok_or_else(|| {
-                    MemFuseError::Index(format!("HNSW final_connections missing for layer {}", layer))
+                    MemFuseError::Index(format!(
+                        "HNSW final_connections missing for layer {}",
+                        layer
+                    ))
                 })?;
                 for &neighbor_idx in layer_neighbors {
                     // Scope for neighbor modification to release mutable borrow

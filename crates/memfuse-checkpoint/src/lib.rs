@@ -34,12 +34,12 @@ impl CheckpointRegistry {
     }
 
     pub fn register(&self, tx_id: TxId, state: WorkflowState) {
-        let mut cache = self.checkpoints.write().unwrap();
+        let mut cache = self.checkpoints.write().expect("lock acquired");
         cache.insert(tx_id, state);
     }
 
     pub fn get(&self, tx_id: TxId) -> Option<WorkflowState> {
-        let cache = self.checkpoints.read().unwrap();
+        let cache = self.checkpoints.read().expect("lock acquired");
         cache.get(&tx_id).cloned()
     }
 }
@@ -191,17 +191,17 @@ mod tests {
     #[async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            Ok(self.data.lock().unwrap().get(key).cloned())
+            Ok(self.data.lock().expect("lock acquired").get(key).cloned())
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
             self.data
                 .lock()
-                .unwrap()
+                .expect("put succeeded")
                 .insert(key.to_vec(), value.to_vec());
             Ok(())
         }
         async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
-            self.data.lock().unwrap().remove(key);
+            self.data.lock().expect("lock acquired").remove(key);
             Ok(())
         }
         async fn commit(&self, _tx_id: TxId) -> Result<()> {
@@ -221,15 +221,15 @@ mod tests {
             })
         }
         async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.pinned.lock().unwrap().insert(seq_no);
+            self.pinned.lock().expect("lock acquired").insert(seq_no);
             Ok(())
         }
         async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.pinned.lock().unwrap().remove(&seq_no);
+            self.pinned.lock().expect("lock acquired").remove(&seq_no);
             Ok(())
         }
         async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            let data = self.data.lock().unwrap();
+            let data = self.data.lock().expect("lock acquired");
             Ok(data
                 .iter()
                 .filter(|(k, _)| k.starts_with(prefix))
@@ -246,16 +246,16 @@ mod tests {
         let meta = manager
             .create_checkpoint("test_cp", "coll_1", 100, serde_json::json!({"state": "ok"}))
             .await
-            .unwrap();
+            .expect("test");
 
         assert_eq!(meta.name, "test_cp");
         assert_eq!(meta.seq_no, 100);
 
         // Verify it was pinned
-        assert!(storage.pinned.lock().unwrap().contains(&100));
+        assert!(storage.pinned.lock().expect("lock acquired").contains(&100));
 
         // Verify it exists in manager
-        let retrieved = manager.get_checkpoint("test_cp").await.unwrap().unwrap();
+        let retrieved = manager.get_checkpoint("test_cp").await.expect("test").expect("test");
         assert_eq!(retrieved, meta);
     }
 
@@ -268,9 +268,9 @@ mod tests {
         manager
             .create_checkpoint("cp1", "c1", 10, metadata.clone())
             .await
-            .unwrap();
+            .expect("test");
 
-        let retrieved = manager.get_checkpoint("cp1").await.unwrap().unwrap();
+        let retrieved = manager.get_checkpoint("cp1").await.expect("test").expect("test");
         assert_eq!(retrieved.metadata, metadata);
     }
 
@@ -282,17 +282,17 @@ mod tests {
         manager
             .create_checkpoint("cp2", "c1", 20, serde_json::json!({}))
             .await
-            .unwrap();
+            .expect("test");
         manager
             .create_checkpoint("cp1", "c1", 10, serde_json::json!({}))
             .await
-            .unwrap();
+            .expect("test");
         manager
             .create_checkpoint("cp3", "c1", 30, serde_json::json!({}))
             .await
-            .unwrap();
+            .expect("test");
 
-        let list = manager.list_checkpoints().await.unwrap();
+        let list = manager.list_checkpoints().await.expect("test");
         assert_eq!(list.len(), 3);
         assert_eq!(list[0].name, "cp1");
         assert_eq!(list[1].name, "cp2");
@@ -307,11 +307,11 @@ mod tests {
         manager1
             .create_checkpoint("persist_me", "c1", 50, serde_json::json!({}))
             .await
-            .unwrap();
+            .expect("test");
 
         // New manager sharing the same storage
         let manager2 = CheckpointManager::new(storage.clone());
-        let list = manager2.list_checkpoints().await.unwrap();
+        let list = manager2.list_checkpoints().await.expect("test");
 
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "persist_me");
@@ -328,7 +328,7 @@ mod tests {
         };
 
         registry.register(tx_id, state.clone());
-        let retrieved = registry.get(tx_id).unwrap();
+        let retrieved = registry.get(tx_id).expect("test");
         assert_eq!(retrieved.graph_hash, "hash");
     }
 }
