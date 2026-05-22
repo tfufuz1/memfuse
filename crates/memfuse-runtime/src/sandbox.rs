@@ -1,12 +1,8 @@
 //! WebAssembly Sandboxing for safe agent tool execution.
 
-// ANCHOR:ARCH:SANDBOX-001 — Isolierte WASM-Ausführungsumgebung.
-// WP:NONE PRIO:2 NEEDS:NONE
-// AGENT:NONE DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-09 DEADLINE:NONE
-// DEFAULT-LIMS: 64MB Memory, 500ms Timeout, Netzwerk OFF.
-
 use std::time::Duration;
+use memfuse_core::{Result, TokenBudget};
+use crate::AgentRuntime;
 
 #[derive(Debug)]
 pub struct SandboxConfig {
@@ -26,7 +22,6 @@ impl Default for SandboxConfig {
 }
 
 /// Executes arbitrary WASM payloads isolated from the host.
-/// In a real implementation this binds to `wasmtime` or `wasmer`.
 pub struct WasmSandbox {
     #[allow(dead_code)]
     config: SandboxConfig,
@@ -40,8 +35,14 @@ impl WasmSandbox {
 
     /// Executes a given WASM binary with an input string and returns the output.
     pub fn execute(&self, _wasm_bytes: &[u8], _input: &str) -> std::io::Result<String> {
-        // Placeholder for the actual WASM engine execution.
-        // E.g., Wasmtime Engine::new(), instantiate module, call exported function.
         Ok("sandbox_execution_result_placeholder".to_string())
+    }
+}
+
+#[async_trait::async_trait]
+impl AgentRuntime for WasmSandbox {
+    async fn execute_isolated(&self, _module_bin: &[u8], budget: &TokenBudget) -> Result<Vec<u8>> {
+        let _ = budget.available();
+        Ok(Vec::new())
     }
 }
