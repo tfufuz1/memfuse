@@ -439,7 +439,9 @@ impl PyMemFuse {
         let internal_filter = filter.map(|f| f.inner);
 
         let results = py
-            .allow_threads(|| rt.block_on(self.inner.search_with_filter(vec_slice, k, internal_filter)))
+            .allow_threads(|| {
+                rt.block_on(self.inner.search_with_filter(vec_slice, k, internal_filter))
+            })
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let mut py_res = Vec::new();
@@ -761,7 +763,9 @@ impl PyCollection {
         let internal_filter = filter.map(|f| f.inner);
 
         let results = py
-            .allow_threads(|| rt.block_on(self.inner.search_with_filter(vec_slice, k, internal_filter)))
+            .allow_threads(|| {
+                rt.block_on(self.inner.search_with_filter(vec_slice, k, internal_filter))
+            })
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let mut py_res = Vec::new();

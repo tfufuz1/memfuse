@@ -198,9 +198,8 @@ impl DiskAnnIndex {
         visited.insert(ep);
 
         while let Some(Reverse(current)) = candidates.pop() {
-            if results.len() >= self.config.beam_width
-                && current.distance > results.peek().unwrap().distance
-            {
+            let max_dist = results.peek().map(|c| c.distance).unwrap_or(f32::MAX);
+            if results.len() >= self.config.beam_width && current.distance > max_dist {
                 break;
             }
 
@@ -214,9 +213,8 @@ impl DiskAnnIndex {
                         distance: d,
                     };
 
-                    if results.len() < self.config.beam_width
-                        || d < results.peek().unwrap().distance
-                    {
+                    let max_dist = results.peek().map(|c| c.distance).unwrap_or(f32::MAX);
+                    if results.len() < self.config.beam_width || d < max_dist {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
                         if results.len() > self.config.beam_width {
