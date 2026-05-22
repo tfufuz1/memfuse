@@ -91,6 +91,10 @@ impl CheckpointManager {
 
         // 2. Persist checkpoint metadata
         let key = format!("__checkpoint:{}", name);
+        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
+        // BEGRÜNDUNG: Checkpoint-Metadaten werden unverschlüsselt serialisiert, aber via
+        // self.storage (LsmStorage) persistiert. LsmStorage implementiert AES-256-GCM
+        // auf Block- und WAL-Ebene, wodurch die Daten "at rest" geschützt sind.
         let value = serde_json::to_vec(&checkpoint)
             .map_err(|e| memfuse_core::error::MemFuseError::Internal(e.to_string()))?;
 

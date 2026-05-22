@@ -1,6 +1,6 @@
 //! DiskANN Out-of-Core Vector Search (WP-4.3).
 
-#![allow(unsafe_code)]
+#![deny(unsafe_code)]
 
 use crate::distance::compute_distance;
 use ahash::AHashMap;
@@ -168,8 +168,13 @@ impl DiskAnnIndex {
 
         file.sync_all().map_err(MemFuseError::Io)?;
 
-        // SAFETY: Mapping a file that we just wrote and synced is safe as long as the file is not truncated while mapped.
-        self.mmap = Some(unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? });
+        // ANCHOR:SAFETY:MEMMAP-002 AGENT:10 PRIO:1 STATUS:REVIEW
+        // BEGRÜNDUNG: DiskANN nutzt Memory Mapping für Out-of-Core Zugriff auf den Vektor-Graphen.
+        // Das Mapping erfolgt auf eine gerade synchronisierte Datei und bleibt über die Lebensdauer
+        // des Index bestehen.
+        #[allow(unsafe_code)]
+        let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? };
+        self.mmap = Some(mmap);
         self.entry_point = 0;
 
         Ok(())
@@ -198,10 +203,12 @@ impl DiskAnnIndex {
         visited.insert(ep);
 
         while let Some(Reverse(current)) = candidates.pop() {
-            if results.len() >= self.config.beam_width
-                && current.distance > results.peek().unwrap().distance
-            {
-                break;
+            if results.len() >= self.config.beam_width {
+                if let Some(peek) = results.peek() {
+                    if current.distance > peek.distance {
+                        break;
+                    }
+                }
             }
 
             let node = self.load_node(current.index)?;
@@ -227,19 +234,14 @@ impl DiskAnnIndex {
             }
         }
 
-        let mut final_results: Vec<ScoredDocument> = results
-            .into_iter()
-            .take(k)
-            .map(|c| {
-                let node = self
-                    .load_node(c.index)
-                    .expect("Node should be in cache or index");
-                ScoredDocument {
-                    doc_id: node.doc_id,
-                    score: 1.0 / (1.0 + c.distance),
-                }
-            })
-            .collect();
+        let mut final_results: Vec<ScoredDocument> = Vec::with_capacity(k);
+        for c in results.into_iter().take(k) {
+            let node = self.load_node(c.index)?;
+            final_results.push(ScoredDocument {
+                doc_id: node.doc_id,
+                score: 1.0 / (1.0 + c.distance),
+            });
+        }
 
         final_results.sort_by(|a, b| b.score.total_cmp(&a.score));
         Ok(final_results)
@@ -265,13 +267,17 @@ impl DiskAnnIndex {
             return Err(MemFuseError::Index("Node offset out of bounds".into()));
         }
 
-        let node_data = &mmap[node_offset..node_offset + self.node_size_bytes];
+        let node_data = mmap
+            .get(node_offset..node_offset + self.node_size_bytes)
+            .ok_or_else(|| MemFuseError::Index("Node offset out of bounds".into()))?;
         let mut cursor = 0;
 
         let mut vector = Vec::with_capacity(self.config.dimension);
         for _ in 0..self.config.dimension {
             let val = f32::from_le_bytes(
-                node_data[cursor..cursor + 4]
+                node_data
+                    .get(cursor..cursor + 4)
+                    .ok_or_else(|| MemFuseError::Index("Malformed node vector".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Index("Malformed node vector".into()))?,
             );
@@ -280,7 +286,9 @@ impl DiskAnnIndex {
         }
 
         let num_neighbors = u32::from_le_bytes(
-            node_data[cursor..cursor + 4]
+            node_data
+                .get(cursor..cursor + 4)
+                .ok_or_else(|| MemFuseError::Index("Malformed node neighbor count".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Index("Malformed node neighbor count".into()))?,
         ) as usize;
@@ -289,7 +297,9 @@ impl DiskAnnIndex {
         let mut neighbors = Vec::with_capacity(num_neighbors);
         for _ in 0..num_neighbors {
             let neighbor = u32::from_le_bytes(
-                node_data[cursor..cursor + 4]
+                node_data
+                    .get(cursor..cursor + 4)
+                    .ok_or_else(|| MemFuseError::Index("Malformed node neighbor".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Index("Malformed node neighbor".into()))?,
             );
@@ -297,11 +307,13 @@ impl DiskAnnIndex {
             cursor += 4;
         }
 
-        let padding_neighbors = self.config.max_degree - num_neighbors;
-        cursor += padding_neighbors * 4;
+        let padding_neighbors = self.config.max_degree.saturating_sub(num_neighbors);
+        cursor = cursor.saturating_add(padding_neighbors.saturating_mul(4));
 
         let doc_id_raw = u64::from_le_bytes(
-            node_data[cursor..cursor + 8]
+            node_data
+                .get(cursor..cursor + 8)
+                .ok_or_else(|| MemFuseError::Index("Malformed node doc id".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Index("Malformed node doc id".into()))?,
         );
