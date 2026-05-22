@@ -30,9 +30,12 @@ fn test_stategraph_complex_workflow() {
     let edge_analyze_store = graph
         .edges
         .iter()
-        .find(|(s, t, _)| s == "analyze" && t == "store")
+        .find(|e| e.from == "analyze" && e.to == "store")
         .unwrap();
-    assert_eq!(edge_analyze_store.2, Some("is_valid".to_string()));
+    assert_eq!(
+        edge_analyze_store.condition_evaluator,
+        Some("is_valid".to_string())
+    );
 }
 
 #[test]
