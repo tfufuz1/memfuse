@@ -595,7 +595,8 @@ mod saos_tests {
     // --- FusionWeights Tests ---
     // ANCHOR:DEBT:TYPES-005 AGENT:01 STATUS:DONE PRIO:3
     #[test]
-    fn test_fusion_weights_normalization_valid() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    fn test_fusion_weights_normalization_valid(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let weights = FusionWeights::new(0.6, 0.4, 0.0, 0.0)?;
         assert_eq!(weights.vector(), 0.6);
         assert_eq!(weights.text(), 0.4);
@@ -671,9 +672,7 @@ mod saos_tests {
         };
         assert_eq!(entry.final_score, 0.99);
         assert_eq!(
-            entry
-                .metadata
-                .ok_or("metadata should be present")?["version"],
+            entry.metadata.ok_or("metadata should be present")?["version"],
             2
         );
         Ok(())
