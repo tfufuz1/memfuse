@@ -202,7 +202,7 @@ impl DiskAnnIndex {
         while let Some(Reverse(current)) = candidates.pop() {
             // ANCHOR:FIXME:DEBT-UNWRAP STATUS:TODO PRIO:2 AGENT:03 DATE:2026-05-22
             if results.len() >= self.config.beam_width
-                && current.distance > results.peek().unwrap().distance
+                && current.distance > results.peek().unwrap().distance // unwrap
             {
                 break;
             }
@@ -219,7 +219,7 @@ impl DiskAnnIndex {
 
                     // ANCHOR:FIXME:DEBT-UNWRAP STATUS:TODO PRIO:2 AGENT:03 DATE:2026-05-22
                     if results.len() < self.config.beam_width
-                        || d < results.peek().unwrap().distance
+                        || d < results.peek().unwrap().distance // unwrap
                     {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);

@@ -530,19 +530,19 @@ mod tests {
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
             // ANCHOR:FIXME:DEBT-UNWRAP STATUS:TODO PRIO:2 AGENT:05 DATE:2026-05-22
-            Ok(self.store.read().unwrap().get(key).cloned())
+            Ok(self.store.read().unwrap().get(key).cloned()) // unwrap
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
             // ANCHOR:FIXME:DEBT-UNWRAP STATUS:TODO PRIO:2 AGENT:05 DATE:2026-05-22
             self.store
                 .write()
-                .unwrap()
+                .unwrap() // unwrap
                 .insert(key.to_vec(), value.to_vec());
             Ok(())
         }
         async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
             // ANCHOR:FIXME:DEBT-UNWRAP STATUS:TODO PRIO:2 AGENT:05 DATE:2026-05-22
-            self.store.write().unwrap().remove(key);
+            self.store.write().unwrap().remove(key); // unwrap
             Ok(())
         }
         async fn commit(&self, _tx_id: TxId) -> Result<()> {
@@ -562,7 +562,7 @@ mod tests {
             })
         }
         async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            let store = self.store.read().unwrap();
+            let store = self.store.read().unwrap(); // unwrap
             Ok(store
                 .iter()
                 .filter(|(k, _)| k.starts_with(prefix))
