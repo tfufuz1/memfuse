@@ -161,7 +161,8 @@ impl DiskAnnIndex {
                 .map_err(MemFuseError::Io)?;
             file.write_all(&(self.config.dimension as u32).to_le_bytes())
                 .map_err(MemFuseError::Io)?;
-            file.write_all(&0u64.to_le_bytes()).map_err(MemFuseError::Io)?;
+            file.write_all(&0u64.to_le_bytes())
+                .map_err(MemFuseError::Io)?;
 
             for &val in &vectors[i] {
                 file.write_all(&val.to_le_bytes())
@@ -416,8 +417,7 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let err =
-            DiskAnnIndex::try_new(invalid_sector).expect_err("test");
+        let err = DiskAnnIndex::try_new(invalid_sector).expect_err("test");
         match err {
             MemFuseError::InvalidInput(msg) => {
                 assert!(msg.contains("Sector size must be a power of 2"));
