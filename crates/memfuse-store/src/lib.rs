@@ -18,10 +18,12 @@
 
 pub mod compaction;
 pub mod crypto;
+pub mod checkpoint;
 pub mod lsm;
 pub mod memtable;
 pub mod sstable;
 pub mod wal;
 
+pub use checkpoint::{Checkpointer, StateCheckpoint};
 pub use compaction::{CompactionConfig, CompactionEngine};
 pub use lsm::{LsmConfig, LsmStorage};

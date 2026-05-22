@@ -438,11 +438,23 @@ impl Wal {
             let recomputed_checksum =
                 WalEntry::compute_checksum(&op, seq_no, &integrity_key, prev_hmac)?;
             if recomputed_checksum != stored_checksum || prev_hmac != current_chain_hmac {
-                tracing::warn!(
-                    "WAL entry at offset {} has invalid checksum or broken chain, truncating replay",
-                    pos
-                );
-                break;
+                // If we are at the end of the file, this might just be a partial write (truncation)
+                let remaining_in_file = reader.get_ref().metadata().await?.len().saturating_sub(pos);
+                if remaining_in_file == 0 {
+                    tracing::warn!(
+                        "WAL entry at offset {} has invalid checksum or broken chain, truncating replay at EOF",
+                        pos
+                    );
+                    break;
+                } else {
+                    return Err(MemFuseError::WalCorruption {
+                        offset: pos,
+                        reason: format!(
+                            "Checksum mismatch or broken chain in middle of WAL. Recomputed={:?}, stored={:?}, prev_hmac={:?}, current_chain={:?}",
+                            recomputed_checksum, stored_checksum, prev_hmac, current_chain_hmac
+                        ),
+                    });
+                }
             }
             current_chain_hmac = stored_checksum;
 
@@ -556,8 +568,7 @@ mod tests {
             fs::write(&wal_path, data).await.expect("write");
         }
 
-        let wal2 = Wal::open(&wal_path).await.expect("open");
-        let entries = wal2.replay().await.expect("replay");
-        assert_eq!(entries.len(), 0);
+        let wal2 = Wal::open(&wal_path).await;
+        assert!(wal2.is_err());
     }
 }
