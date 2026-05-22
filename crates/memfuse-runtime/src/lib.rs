@@ -21,6 +21,10 @@
 // DONE: Cross-Crate Integration Tests für WASM-Sandbox Isolation und Tool-Execution implementiert.
 
 #![forbid(unsafe_code)]
+pub mod sandbox;
+pub mod airgap;
+
+pub use sandbox::{SandboxConfig, WasmSandbox};
 
 use memfuse_core::{Result, TokenBudget};
 

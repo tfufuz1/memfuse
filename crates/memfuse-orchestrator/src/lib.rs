@@ -21,6 +21,9 @@
 // DONE: Cross-Crate Integration Tests für StateGraph und Agent-Interaktion implementiert.
 
 #![forbid(unsafe_code)]
+pub mod graph;
+
+pub use graph::StateGraph;
 
 use memfuse_core::Result;
 
