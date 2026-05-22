@@ -198,10 +198,12 @@ impl DiskAnnIndex {
         visited.insert(ep);
 
         while let Some(Reverse(current)) = candidates.pop() {
-            if results.len() >= self.config.beam_width
-                && current.distance > results.peek().unwrap().distance
-            {
-                break;
+            if results.len() >= self.config.beam_width {
+                if let Some(worst) = results.peek() {
+                    if current.distance > worst.distance {
+                        break;
+                    }
+                }
             }
 
             let node = self.load_node(current.index)?;
@@ -214,9 +216,15 @@ impl DiskAnnIndex {
                         distance: d,
                     };
 
-                    if results.len() < self.config.beam_width
-                        || d < results.peek().unwrap().distance
-                    {
+                    let should_add = if results.len() < self.config.beam_width {
+                        true
+                    } else if let Some(worst) = results.peek() {
+                        d < worst.distance
+                    } else {
+                        true
+                    };
+
+                    if should_add {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
                         if results.len() > self.config.beam_width {
@@ -298,7 +306,9 @@ impl DiskAnnIndex {
                     .get(cursor..cursor + 4)
                     .ok_or_else(|| MemFuseError::Index("Malformed node neighbor".into()))?
                     .try_into()
-                    .map_err(|_| MemFuseError::Index("Malformed node neighbor conversion".into()))?,
+                    .map_err(|_| {
+                        MemFuseError::Index("Malformed node neighbor conversion".into())
+                    })?,
             );
             neighbors.push(neighbor);
             cursor += 4;
