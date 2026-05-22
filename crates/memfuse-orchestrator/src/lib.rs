@@ -81,7 +81,6 @@ impl StateGraph {
     }
 }
 
-
 /// Async executor engine applying nodes to the WasmSandbox in Sequence.
 pub struct OrchestratorEngine;
 
