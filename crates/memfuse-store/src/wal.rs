@@ -439,7 +439,8 @@ impl Wal {
                 WalEntry::compute_checksum(&op, seq_no, &integrity_key, prev_hmac)?;
             if recomputed_checksum != stored_checksum || prev_hmac != current_chain_hmac {
                 // If we are at the end of the file, this might just be a partial write (truncation)
-                let remaining_in_file = reader.get_ref().metadata().await?.len().saturating_sub(pos);
+                let remaining_in_file =
+                    reader.get_ref().metadata().await?.len().saturating_sub(pos);
                 if remaining_in_file == 0 {
                     tracing::warn!(
                         "WAL entry at offset {} has invalid checksum or broken chain, truncating replay at EOF",
