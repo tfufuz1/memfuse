@@ -1,6 +1,6 @@
 // AGENT:12
 // ANCHOR:INTEGRATION STATUS:DONE
-use memfuse_runtime::{SandboxConfig, WasmSandbox};
+use memfuse_runtime::sandbox::{SandboxConfig, WasmSandbox};
 use std::time::Duration;
 
 #[test]

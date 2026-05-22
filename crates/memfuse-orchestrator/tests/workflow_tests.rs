@@ -1,6 +1,6 @@
 // AGENT:12
 // ANCHOR:INTEGRATION STATUS:DONE
-use memfuse_orchestrator::StateGraph;
+use memfuse_orchestrator::graph::StateGraph;
 
 #[test]
 fn test_stategraph_construction() {

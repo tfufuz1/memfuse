@@ -22,6 +22,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod graph;
+
 use memfuse_core::Result;
 
 /// A node within the deterministic agent graph.

@@ -2,8 +2,8 @@
 // ANCHOR:INTEGRATION STATUS:DONE
 // E2E Test: Full Stack Integration
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
-use memfuse_orchestrator::StateGraph;
-use memfuse_runtime::{SandboxConfig, WasmSandbox};
+use memfuse_orchestrator::graph::StateGraph;
+use memfuse_runtime::sandbox::{SandboxConfig, WasmSandbox};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
