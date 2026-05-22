@@ -26,7 +26,7 @@ fn test_sandbox_isolation_and_execution() {
         .expect("execution failed");
 
     // In the current placeholder implementation, it returns a static string
-    assert_eq!(result, "sandbox_execution_result_placeholder");
+    assert_eq!(result, b"sandbox_execution_result_placeholder".to_vec());
 }
 
 #[test]
