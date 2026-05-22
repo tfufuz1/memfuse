@@ -59,6 +59,8 @@ pub struct CheckpointManager {
 }
 
 impl CheckpointManager {
+    // ANCHOR:DOC:CHECKPOINT-001 AGENT:08 STATUS:DONE
+    /// Creates a new CheckpointManager using the provided storage engine.
     pub fn new(storage: Arc<dyn StorageEngine>) -> Self {
         Self {
             storage,
