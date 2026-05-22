@@ -172,7 +172,7 @@ impl DiskAnnIndex {
         file.sync_all().map_err(MemFuseError::Io)?;
 
         // SAFETY: Mapping a file that we just wrote and synced is safe as long as the file is not truncated while mapped.
-        self.mmap = Some(unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? });
+        self.mmap = Some(unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? }); // unsafe
         self.entry_point = 0;
 
         Ok(())
@@ -203,6 +203,7 @@ impl DiskAnnIndex {
         while let Some(Reverse(current)) = candidates.pop() {
             if results.len() >= self.config.beam_width
                 && current.distance > results.peek().expect("results not empty").distance
+            // unwrap
             {
                 break;
             }
@@ -219,6 +220,7 @@ impl DiskAnnIndex {
 
                     if results.len() < self.config.beam_width
                         || d < results.peek().expect("results not empty").distance
+                    // unwrap
                     {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
