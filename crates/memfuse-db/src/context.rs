@@ -5,7 +5,7 @@
 
 // ANCHOR:ARCH:CONTEXT-001 — Autonomes Kontext-Management (WP-6.3)
 // WP:WP-6.3 PRIO:2 NEEDS:GS-01
-// STATUS:SCAFFOLD DATE:2026-05-17
+// AGENT:04 DATE:2026-05-22 STATUS:DONE
 
 use memfuse_core::{
     ContextChunk, ContextWindow, Result, TokenBudget,
@@ -120,15 +120,22 @@ impl SpatialFence {
     }
 
     /// Checks if a chunk's metadata matches this spatial fence.
-    pub fn matches(&self, _chunk: &ContextChunk) -> bool {
-        // TODO(WP-6.3): Check chunk metadata for geo_region field match.
-        true
+    pub fn matches(&self, chunk: &ContextChunk) -> bool {
+        if let Some(metadata) = &chunk.metadata {
+            if let Some(val) = metadata.get(&self.field_name) {
+                if let Some(s) = val.as_str() {
+                    return s == self.region;
+                }
+            }
+        }
+        false
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use memfuse_core::DocId;
 
     #[test]
     fn test_context_manager_budget_truncation() {
@@ -144,18 +151,21 @@ mod tests {
                 content: "high relevance".into(),
                 relevance: 0.9,
                 token_count: 50,
+                metadata: None,
             },
             ContextChunk {
                 doc_id: DocId::new(2),
                 content: "medium relevance".into(),
                 relevance: 0.5,
                 token_count: 50,
+                metadata: None,
             },
             ContextChunk {
                 doc_id: DocId::new(3),
                 content: "should be excluded".into(),
                 relevance: 0.3,
                 token_count: 50,
+                metadata: None,
             },
         ];
 
@@ -173,5 +183,38 @@ mod tests {
     fn test_token_estimation() {
         let tokens = ContextManager::estimate_tokens("hello world foo bar");
         assert!(tokens >= 4); // At least 4 words
+    }
+
+    #[test]
+    fn test_spatial_fence_matches() {
+        let fence = SpatialFence::new("berlin");
+
+        let chunk_match = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "matches".into(),
+            relevance: 1.0,
+            token_count: 10,
+            metadata: Some(serde_json::json!({"geo_region": "berlin"})),
+        };
+
+        let chunk_mismatch = ContextChunk {
+            doc_id: DocId::new(2),
+            content: "mismatch".into(),
+            relevance: 1.0,
+            token_count: 10,
+            metadata: Some(serde_json::json!({"geo_region": "munich"})),
+        };
+
+        let chunk_no_meta = ContextChunk {
+            doc_id: DocId::new(3),
+            content: "no meta".into(),
+            relevance: 1.0,
+            token_count: 10,
+            metadata: None,
+        };
+
+        assert!(fence.matches(&chunk_match));
+        assert!(!fence.matches(&chunk_mismatch));
+        assert!(!fence.matches(&chunk_no_meta));
     }
 }

@@ -72,6 +72,9 @@ pub enum MemFuseError {
     #[error("Internal error: {0}")]
     Internal(String),
 
+    #[error("Namespace violation: {0}")]
+    NamespaceViolation(String),
+
     #[error("Crypto error: {0}")]
     Crypto(String),
 

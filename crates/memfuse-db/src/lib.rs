@@ -56,8 +56,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub mod collection;
+pub mod context;
 pub mod filter;
 pub mod fusion;
+pub mod namespace;
 pub mod transaction;
 
 pub use collection::Collection;
@@ -181,7 +183,7 @@ impl MemFuse {
     /// Creates the collection if it does not already exist.
     // ANCHOR:TODO:COL-001 — Implementiere vollständige Persistenz und Isolation für `collection()`.
     // WP:WP-1.2 PRIO:1 NEEDS:NONE
-    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
+    // AGENT:@JULES-04 DATE:2026-05-22 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_collections_are_isolated
     // DONE: `collection()` ist wal-gesichert, Isolation ist korrekt.
     // SUCCESSOR: @JULES-04 — "Mach weiter mit COL-002 und COL-003, bis Collections-Modul fully featured ist."
@@ -245,7 +247,7 @@ impl MemFuse {
     /// Lists all existing collection names (including those persisted in storage).
     // ANCHOR:TODO:COL-002 — Erweitere `list_collections` so, dass es aus dem LSM-Store/Metadata ließt.
     // WP:WP-1.2 PRIO:1 NEEDS:COL-001
-    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
+    // AGENT:@JULES-04 DATE:2026-05-22 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_list_collections
     // DONE: list_collections gibt persistierte Collections zurück.
     // SUCCESSOR: @JULES-04 — "Mache weiter mit COL-003."
@@ -277,7 +279,7 @@ impl MemFuse {
     /// Drops a collection, removing all its data from storage.
     // ANCHOR:TODO:COL-003 — Löschen der Collection-Keys aus LSM und des HNSW Graphen.
     // WP:WP-1.2 PRIO:1 NEEDS:COL-001
-    // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
+    // AGENT:@JULES-04 DATE:2026-05-22 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_drop_removes_all_data
     // DONE: Alle Daten getilgt, re-öffnen führt zu leerer DB.
     // SUCCESSOR: @JULES-05 — "Collections sind fertig. Beginne mit WP-2.1 SEARCH-001."

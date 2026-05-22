@@ -507,6 +507,8 @@ pub struct ContextChunk {
     pub relevance: f32,
     /// Estimated token count.
     pub token_count: usize,
+    /// Optional metadata for filtering.
+    pub metadata: Option<serde_json::Value>,
 }
 
 /// An aggregated context window constrained by a token budget.
