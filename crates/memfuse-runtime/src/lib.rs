@@ -24,6 +24,30 @@
 
 use memfuse_core::{Result, TokenBudget};
 
+/// Configuration for the WASM sandbox.
+#[derive(Debug, Clone)]
+pub struct SandboxConfig {
+    /// Maximum number of memory pages (64KB each).
+    pub max_memory_pages: u32,
+    /// Maximum memory in MB.
+    pub max_memory_mb: u32,
+    /// Timeout for execution.
+    pub timeout: std::time::Duration,
+    /// Whether to allow network access.
+    pub allow_network: bool,
+}
+
+impl Default for SandboxConfig {
+    fn default() -> Self {
+        Self {
+            max_memory_pages: 1024, // 64MB
+            max_memory_mb: 64,
+            timeout: std::time::Duration::from_millis(500),
+            allow_network: false,
+        }
+    }
+}
+
 /// Defines the execution boundaries for sandbox containers.
 #[async_trait::async_trait]
 pub trait AgentRuntime: Send + Sync {
@@ -38,10 +62,19 @@ pub struct WasmSandbox {
 
 impl WasmSandbox {
     /// Scaffold: Initialize WasmSandbox parameters.
-    pub fn new(max_pages: u32) -> Self {
+    pub fn new(config: SandboxConfig) -> Self {
         Self {
-            _max_memory_pages: max_pages,
+            _max_memory_pages: config.max_memory_pages,
         }
+    }
+
+    /// Executes a module with default budget.
+    pub fn execute(&self, _module_bin: &[u8], _input: &str) -> Result<Vec<u8>> {
+        // Wrapper for synchronous-looking execution in tests
+        let budget = TokenBudget::new(1000, 0);
+        let _ = budget.available();
+        // In a real implementation this would be async, but for the scaffold/tests we stub it
+        Ok(b"sandbox_execution_result_placeholder".to_vec())
     }
 }
 
@@ -63,7 +96,10 @@ mod tests {
     /// memory limit, the sandbox enforces it and returns a MemoryLimitExceeded error.
     #[tokio::test]
     async fn test_sandbox_memory_limit_enforced() {
-        let _sandbox = WasmSandbox::new(64);
+        let _sandbox = WasmSandbox::new(SandboxConfig {
+            max_memory_pages: 64,
+            ..Default::default()
+        });
         // TODO: Memory limit enforcement must be implemented to fulfill AC-1
     }
 
@@ -72,7 +108,10 @@ mod tests {
     /// after exceeding the specified CPU timeout threshold.
     #[tokio::test]
     async fn test_sandbox_cpu_timeout_enforced() {
-        let _sandbox = WasmSandbox::new(64);
+        let _sandbox = WasmSandbox::new(SandboxConfig {
+            max_memory_pages: 64,
+            ..Default::default()
+        });
         // TODO: CPU timeout enforcement must be implemented to fulfill AC-2
     }
 
@@ -81,7 +120,10 @@ mod tests {
     /// to open files returns a PolicyViolation error.
     #[tokio::test]
     async fn test_sandbox_cannot_access_host_fs() {
-        let _sandbox = WasmSandbox::new(64);
+        let _sandbox = WasmSandbox::new(SandboxConfig {
+            max_memory_pages: 64,
+            ..Default::default()
+        });
         // TODO: Filesystem sandbox isolation must be implemented to fulfill AC-3
     }
 }

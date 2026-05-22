@@ -29,6 +29,7 @@ use memfuse_core::Result;
 pub struct GraphNode {
     pub name: String,
     pub executable_identifier: String,
+    pub description: String,
 }
 
 /// Conditional routing logic representing edges in the StateGraph.
@@ -41,7 +42,7 @@ pub struct WorkflowEdge {
 
 /// Core declarative structure mapping workflows.
 pub struct StateGraph {
-    pub nodes: Vec<GraphNode>,
+    pub nodes: std::collections::HashMap<String, GraphNode>,
     pub edges: Vec<WorkflowEdge>,
 }
 
@@ -49,9 +50,35 @@ impl StateGraph {
     /// Build an empty StateGraph.
     pub fn new() -> Self {
         Self {
-            nodes: Vec::new(),
+            nodes: std::collections::HashMap::new(),
             edges: Vec::new(),
         }
+    }
+
+    /// Adds a node to the workflow graph.
+    pub fn add_node(&mut self, id: &str, description: &str) {
+        self.nodes.insert(
+            id.to_string(),
+            GraphNode {
+                name: id.to_string(),
+                executable_identifier: description.to_string(),
+                description: description.to_string(),
+            },
+        );
+    }
+
+    /// Adds a directed edge between two nodes with an optional condition.
+    pub fn add_edge(&mut self, source: &str, target: &str, condition: Option<&str>) {
+        self.edges.push(WorkflowEdge {
+            from: source.to_string(),
+            to: target.to_string(),
+            condition_evaluator: condition.map(|s| s.to_string()),
+        });
+    }
+
+    /// Executes the workflow starting from the given node.
+    pub fn run_workflow(&self, _initial_state: &str) {
+        // Placeholder
     }
 }
 

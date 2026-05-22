@@ -12,6 +12,7 @@ fn test_sandbox_config_defaults() {
 #[test]
 fn test_sandbox_isolation_and_execution() {
     let config = SandboxConfig {
+        max_memory_pages: 2048,
         max_memory_mb: 128,
         timeout: Duration::from_secs(1),
         allow_network: false,
@@ -26,7 +27,7 @@ fn test_sandbox_isolation_and_execution() {
         .expect("execution failed");
 
     // In the current placeholder implementation, it returns a static string
-    assert_eq!(result, "sandbox_execution_result_placeholder");
+    assert_eq!(result, b"sandbox_execution_result_placeholder");
 }
 
 #[test]

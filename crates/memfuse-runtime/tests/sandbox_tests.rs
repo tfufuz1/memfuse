@@ -6,6 +6,7 @@ use std::time::Duration;
 #[test]
 fn test_sandbox_initialization() {
     let config = SandboxConfig {
+        max_memory_pages: 2048,
         max_memory_mb: 128,
         timeout: Duration::from_secs(1),
         allow_network: false,
@@ -21,5 +22,5 @@ fn test_sandbox_execution_placeholder() {
         .execute(&wasm_bytes, "input data")
         .expect("execution failed");
 
-    assert_eq!(result, "sandbox_execution_result_placeholder");
+    assert_eq!(result, b"sandbox_execution_result_placeholder");
 }
