@@ -529,7 +529,10 @@ mod tests {
     #[async_trait::async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            Ok(self.store.read().unwrap() // unwrap allowed in tests
+            Ok(self
+                .store
+                .read()
+                .unwrap() // unwrap allowed in tests
                 .get(key)
                 .cloned())
         }
