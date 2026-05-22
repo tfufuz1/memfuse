@@ -69,7 +69,13 @@ impl CheckpointManager {
 
     /// Simplified constructor for compatibility.
     pub async fn create_checkpoint_simple(&self, name: &str) -> Result<CheckpointMeta> {
-        self.create_checkpoint(name, "default", self.storage.stats().await?.total_size_bytes as u64, serde_json::Value::Null).await
+        self.create_checkpoint(
+            name,
+            "default",
+            self.storage.stats().await?.total_size_bytes as u64,
+            serde_json::Value::Null,
+        )
+        .await
     }
 
     /// Creates a new persistent checkpoint at the specified sequence number.
@@ -260,7 +266,11 @@ mod tests {
         assert!(storage.pinned.lock().expect("lock poisoned").contains(&100));
 
         // Verify it exists in manager
-        let retrieved = manager.get_checkpoint("test_cp").await.expect("get_checkpoint failed").expect("not found");
+        let retrieved = manager
+            .get_checkpoint("test_cp")
+            .await
+            .expect("get_checkpoint failed")
+            .expect("not found");
         assert_eq!(retrieved, meta);
     }
 
@@ -275,7 +285,11 @@ mod tests {
             .await
             .expect("create_checkpoint failed");
 
-        let retrieved = manager.get_checkpoint("cp1").await.expect("get_checkpoint failed").expect("not found");
+        let retrieved = manager
+            .get_checkpoint("cp1")
+            .await
+            .expect("get_checkpoint failed")
+            .expect("not found");
         assert_eq!(retrieved.metadata, metadata);
     }
 
@@ -297,7 +311,10 @@ mod tests {
             .await
             .expect("create_checkpoint failed");
 
-        let list = manager.list_checkpoints().await.expect("list_checkpoints failed");
+        let list = manager
+            .list_checkpoints()
+            .await
+            .expect("list_checkpoints failed");
         assert_eq!(list.len(), 3);
         assert_eq!(list[0].name, "cp1");
         assert_eq!(list[1].name, "cp2");
@@ -316,7 +333,10 @@ mod tests {
 
         // New manager sharing the same storage
         let manager2 = CheckpointManager::new(storage.clone());
-        let list = manager2.list_checkpoints().await.expect("list_checkpoints failed");
+        let list = manager2
+            .list_checkpoints()
+            .await
+            .expect("list_checkpoints failed");
 
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "persist_me");
