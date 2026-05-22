@@ -5,11 +5,11 @@
 
 #![forbid(unsafe_code)]
 
-pub mod sandbox;
 pub mod airgap;
+pub mod sandbox;
 
-pub use sandbox::{SandboxConfig, WasmSandbox};
 use memfuse_core::{Result, TokenBudget};
+pub use sandbox::{SandboxConfig, WasmSandbox};
 
 /// Defines the execution boundaries for sandbox containers.
 #[async_trait::async_trait]

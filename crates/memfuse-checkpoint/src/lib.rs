@@ -255,7 +255,11 @@ mod tests {
         assert!(storage.pinned.lock().expect("lock poisoned").contains(&100));
 
         // Verify it exists in manager
-        let retrieved = manager.get_checkpoint("test_cp").await.expect("query failed").expect("missing");
+        let retrieved = manager
+            .get_checkpoint("test_cp")
+            .await
+            .expect("query failed")
+            .expect("missing");
         assert_eq!(retrieved, meta);
     }
 
@@ -270,7 +274,11 @@ mod tests {
             .await
             .expect("op failed");
 
-        let retrieved = manager.get_checkpoint("cp1").await.expect("query failed").expect("missing");
+        let retrieved = manager
+            .get_checkpoint("cp1")
+            .await
+            .expect("query failed")
+            .expect("missing");
         assert_eq!(retrieved.metadata, metadata);
     }
 
