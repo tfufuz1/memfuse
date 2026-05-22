@@ -11,8 +11,12 @@ pub fn reciprocal_rank_fusion(
 ) -> Vec<SearchResult> {
     let k = 60;
 
+    // ANCHOR:PERF:ALLOC-001 — Pre-allocate for RRF (AGENT:09)
+    let total_candidates: usize = result_sets.iter().map(|s| s.len()).sum();
+
     // id -> (total_score, metadata)
-    let mut fused_scores: HashMap<String, (f32, Option<serde_json::Value>)> = HashMap::new();
+    let mut fused_scores: HashMap<String, (f32, Option<serde_json::Value>)> =
+        HashMap::with_capacity(total_candidates);
 
     for cur_set in result_sets {
         for (rank, cur_doc) in cur_set.into_iter().enumerate() {
