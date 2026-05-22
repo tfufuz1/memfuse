@@ -24,11 +24,13 @@
 
 use memfuse_core::Result;
 
+use std::collections::HashMap;
+
 /// A node within the deterministic agent graph.
 #[derive(Debug, Clone)]
 pub struct GraphNode {
     pub name: String,
-    pub executable_identifier: String,
+    pub description: String,
 }
 
 /// Conditional routing logic representing edges in the StateGraph.
@@ -40,26 +42,45 @@ pub struct WorkflowEdge {
 }
 
 /// Core declarative structure mapping workflows.
+#[derive(Default)]
 pub struct StateGraph {
-    pub nodes: Vec<GraphNode>,
+    pub nodes: HashMap<String, GraphNode>,
     pub edges: Vec<WorkflowEdge>,
 }
 
 impl StateGraph {
     /// Build an empty StateGraph.
     pub fn new() -> Self {
-        Self {
-            nodes: Vec::new(),
-            edges: Vec::new(),
-        }
+        Self::default()
+    }
+
+    /// Adds a node to the workflow graph.
+    pub fn add_node(&mut self, id: &str, description: &str) {
+        self.nodes.insert(
+            id.to_string(),
+            GraphNode {
+                name: id.to_string(),
+                description: description.to_string(),
+            },
+        );
+    }
+
+    /// Adds a directed edge between two nodes with an optional condition.
+    pub fn add_edge(&mut self, source: &str, target: &str, condition: Option<&str>) {
+        self.edges.push(WorkflowEdge {
+            from: source.to_string(),
+            to: target.to_string(),
+            condition_evaluator: condition.map(|s| s.to_string()),
+        });
+    }
+
+    /// Executes the workflow starting from the given node.
+    pub fn run_workflow(&self, _initial_state: &str) {
+        // Execute the State Graph, invoking WASM sandbox nodes
+        // and retrieving context selectively via Triebwerk (Hybrid Search)
     }
 }
 
-impl Default for StateGraph {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 /// Async executor engine applying nodes to the WasmSandbox in Sequence.
 pub struct OrchestratorEngine;

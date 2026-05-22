@@ -9,12 +9,13 @@ fn test_sandbox_config_defaults() {
     assert!(!config.allow_network);
 }
 
-#[test]
-fn test_sandbox_isolation_and_execution() {
+#[tokio::test]
+async fn test_sandbox_isolation_and_execution() {
     let config = SandboxConfig {
         max_memory_mb: 128,
         timeout: Duration::from_secs(1),
         allow_network: false,
+        ..Default::default()
     };
     let sandbox = WasmSandbox::new(config);
 
@@ -23,19 +24,20 @@ fn test_sandbox_isolation_and_execution() {
     let input = "ping";
     let result = sandbox
         .execute(wasm_bytes, input)
+        .await
         .expect("execution failed");
 
     // In the current placeholder implementation, it returns a static string
     assert_eq!(result, "sandbox_execution_result_placeholder");
 }
 
-#[test]
-fn test_sandbox_multiple_instances() {
+#[tokio::test]
+async fn test_sandbox_multiple_instances() {
     let s1 = WasmSandbox::new(SandboxConfig::default());
     let s2 = WasmSandbox::new(SandboxConfig::default());
 
-    let res1 = s1.execute(b"", "1").unwrap();
-    let res2 = s2.execute(b"", "2").unwrap();
+    let res1 = s1.execute(b"", "1").await.unwrap();
+    let res2 = s2.execute(b"", "2").await.unwrap();
 
     assert_eq!(res1, res2);
 }
