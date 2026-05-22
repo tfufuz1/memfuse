@@ -13,6 +13,21 @@ use std::fs::OpenOptions;
 use std::io::{Seek, Write};
 use std::path::PathBuf;
 
+/// Alignment for DiskANN nodes.
+pub const DISKANN_ALIGNMENT: usize = 16;
+
+/// On-disk header for a DiskANN node.
+#[repr(C, align(16))]
+#[derive(Debug, Clone, Copy)]
+pub struct DiskNodeHeader {
+    /// Number of neighbors for this node.
+    pub num_neighbors: u32,
+    /// Vector dimension.
+    pub dimension: u32,
+    /// 8-byte padding to maintain 16-byte alignment and for future SQ8 use.
+    pub padding: u64,
+}
+
 /// Configuration for DiskANN index.
 #[derive(Debug, Clone)]
 pub struct DiskAnnConfig {
@@ -80,7 +95,8 @@ impl DiskAnnIndex {
             ));
         }
 
-        let raw_node_size = (config.dimension * 4) + 4 + (config.max_degree * 4) + 8;
+        let header_size = std::mem::size_of::<DiskNodeHeader>();
+        let raw_node_size = header_size + (config.dimension * 4) + (config.max_degree * 4) + 8;
         let node_size_bytes = raw_node_size.div_ceil(config.sector_size) * config.sector_size;
 
         Ok(Self {
@@ -141,12 +157,16 @@ impl DiskAnnIndex {
         for (i, node_graph) in graph.iter().enumerate() {
             let offset = file.stream_position().map_err(MemFuseError::Io)?;
 
+            file.write_all(&(node_graph.len() as u32).to_le_bytes())
+                .map_err(MemFuseError::Io)?;
+            file.write_all(&(self.config.dimension as u32).to_le_bytes())
+                .map_err(MemFuseError::Io)?;
+            file.write_all(&0u64.to_le_bytes()).map_err(MemFuseError::Io)?;
+
             for &val in &vectors[i] {
                 file.write_all(&val.to_le_bytes())
                     .map_err(MemFuseError::Io)?;
             }
-            file.write_all(&(node_graph.len() as u32).to_le_bytes())
-                .map_err(MemFuseError::Io)?;
             for &neighbor in node_graph {
                 file.write_all(&neighbor.to_le_bytes())
                     .map_err(MemFuseError::Io)?;
@@ -168,7 +188,9 @@ impl DiskAnnIndex {
 
         file.sync_all().map_err(MemFuseError::Io)?;
 
-        // SAFETY: Mapping a file that we just wrote and synced is safe as long as the file is not truncated while mapped.
+        // ANCHOR:SAFETY:MMAP-001 — Mapping index file.
+        // BEGRÜNDUNG: Mapping a file that we just wrote and synced is safe as long as the file is not truncated while mapped.
+        // This is the standard pattern for DiskANN to achieve out-of-core performance.
         self.mmap = Some(unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? });
         self.entry_point = 0;
 
@@ -198,10 +220,12 @@ impl DiskAnnIndex {
         visited.insert(ep);
 
         while let Some(Reverse(current)) = candidates.pop() {
-            if results.len() >= self.config.beam_width
-                && current.distance > results.peek().unwrap().distance
-            {
-                break;
+            if results.len() >= self.config.beam_width {
+                if let Some(worst) = results.peek() {
+                    if current.distance > worst.distance {
+                        break;
+                    }
+                }
             }
 
             let node = self.load_node(current.index)?;
@@ -214,9 +238,12 @@ impl DiskAnnIndex {
                         distance: d,
                     };
 
-                    if results.len() < self.config.beam_width
-                        || d < results.peek().unwrap().distance
-                    {
+                    let is_better = match results.peek() {
+                        Some(worst) => d < worst.distance,
+                        None => true,
+                    };
+
+                    if results.len() < self.config.beam_width || is_better {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
                         if results.len() > self.config.beam_width {
@@ -227,21 +254,18 @@ impl DiskAnnIndex {
             }
         }
 
-        let mut final_results: Vec<ScoredDocument> = results
-            .into_iter()
-            .take(k)
-            .map(|c| {
-                let node = self
-                    .load_node(c.index)
-                    .expect("Node should be in cache or index");
-                ScoredDocument {
-                    doc_id: node.doc_id,
-                    score: 1.0 / (1.0 + c.distance),
-                }
-            })
-            .collect();
+        let mut sorted_results = results.into_sorted_vec();
+        sorted_results.truncate(k);
 
-        final_results.sort_by(|a, b| b.score.total_cmp(&a.score));
+        let mut final_results = Vec::with_capacity(sorted_results.len());
+        for c in sorted_results {
+            let node = self.load_node(c.index)?;
+            final_results.push(ScoredDocument {
+                doc_id: node.doc_id,
+                score: 1.0 / (1.0 + c.distance),
+            });
+        }
+
         Ok(final_results)
     }
 
@@ -268,8 +292,25 @@ impl DiskAnnIndex {
         let node_data = &mmap[node_offset..node_offset + self.node_size_bytes];
         let mut cursor = 0;
 
-        let mut vector = Vec::with_capacity(self.config.dimension);
-        for _ in 0..self.config.dimension {
+        let num_neighbors = u32::from_le_bytes(
+            node_data[cursor..cursor + 4]
+                .try_into()
+                .map_err(|_| MemFuseError::Index("Malformed node neighbor count".into()))?,
+        ) as usize;
+        cursor += 4;
+
+        let dimension = u32::from_le_bytes(
+            node_data[cursor..cursor + 4]
+                .try_into()
+                .map_err(|_| MemFuseError::Index("Malformed node dimension".into()))?,
+        ) as usize;
+        cursor += 4;
+
+        // Skip padding
+        cursor += 8;
+
+        let mut vector = Vec::with_capacity(dimension);
+        for _ in 0..dimension {
             let val = f32::from_le_bytes(
                 node_data[cursor..cursor + 4]
                     .try_into()
@@ -278,13 +319,6 @@ impl DiskAnnIndex {
             vector.push(val);
             cursor += 4;
         }
-
-        let num_neighbors = u32::from_le_bytes(
-            node_data[cursor..cursor + 4]
-                .try_into()
-                .map_err(|_| MemFuseError::Index("Malformed node neighbor count".into()))?,
-        ) as usize;
-        cursor += 4;
 
         let mut neighbors = Vec::with_capacity(num_neighbors);
         for _ in 0..num_neighbors {
@@ -363,7 +397,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_diskann_config_validation() {
+    async fn test_diskann_config_validation() -> Result<()> {
         let valid_config = DiskAnnConfig {
             index_path: PathBuf::from("dummy.idx"),
             dimension: 128,
@@ -374,7 +408,7 @@ mod tests {
             distance_metric: DistanceMetric::Cosine,
         };
 
-        let index = DiskAnnIndex::try_new(valid_config).expect("valid config");
+        let index = DiskAnnIndex::try_new(valid_config).expect("test");
         assert!(index.is_empty());
 
         let invalid_sector = DiskAnnConfig {
@@ -383,17 +417,18 @@ mod tests {
         };
 
         let err =
-            DiskAnnIndex::try_new(invalid_sector).expect_err("Should reject unaligned sector size");
+            DiskAnnIndex::try_new(invalid_sector).expect_err("test");
         match err {
             MemFuseError::InvalidInput(msg) => {
                 assert!(msg.contains("Sector size must be a power of 2"));
             }
             _ => panic!("Expected InvalidInput for sector size, got {:?}", err),
         }
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_diskann_recall_at_10() {
+    async fn test_diskann_recall_at_10() -> Result<()> {
         let config = DiskAnnConfig {
             index_path: PathBuf::from("recall_test.idx"),
             dimension: 16,
@@ -403,7 +438,7 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let mut index = DiskAnnIndex::try_new(config).expect("valid config");
+        let mut index = DiskAnnIndex::try_new(config).expect("test");
 
         let n = 1000;
         let mut vectors = Vec::with_capacity(n);
@@ -415,11 +450,11 @@ mod tests {
             ids.push(DocId::from(i as u64));
         }
 
-        index.build(&vectors, &ids).await.expect("Build failed");
+        index.build(&vectors, &ids).await.expect("test");
 
         let mut recall_count = 0;
         for (i, query) in vectors.iter().enumerate().take(100) {
-            let results = index.search(query, 10).await.expect("Search failed");
+            let results = index.search(query, 10).await.expect("test");
             if results.iter().any(|r| r.doc_id == ids[i]) {
                 recall_count += 1;
             }
@@ -428,5 +463,6 @@ mod tests {
         assert!(recall_count >= 1, "Should find at least some results");
 
         let _ = std::fs::remove_file("recall_test.idx");
+        Ok(())
     }
 }
