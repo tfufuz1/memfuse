@@ -75,7 +75,11 @@ impl<T: Clone> TxBuffer<T> {
     }
 
     /// Creates a new buffer with custom settings.
+    ///
+    /// # Panics
+    /// Panics if `shard_count` is 0.
     pub fn new_with_config(shard_count: usize, tx_timeout: Duration) -> Self {
+        assert!(shard_count > 0, "shard_count must be at least 1");
         let mut shards = Vec::with_capacity(shard_count);
         for _ in 0..shard_count {
             shards.push(RwLock::new(TxShard::new()));

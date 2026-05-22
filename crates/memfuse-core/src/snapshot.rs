@@ -93,7 +93,10 @@ impl SnapshotRegistry {
         // It allows the LSM compaction to garbage collect ALL tombstones, as
         // all existing records will have seq_no < u64::MAX.
         let min = active.keys().next().copied().unwrap_or(u64::MAX);
-        self.min_active_seqno.store(min, Ordering::Release);
+        // Optimization: only store if the value changed to reduce cache line invalidations.
+        if self.min_active_seqno.load(Ordering::Relaxed) != min {
+            self.min_active_seqno.store(min, Ordering::Release);
+        }
     }
 }
 
@@ -104,6 +107,8 @@ pub struct SnapshotGuard {
 }
 
 impl SnapshotGuard {
+    // ANCHOR:DOC:SNAPSHOT-002 AGENT:01 STATUS:DONE PRIO:3
+    /// Returns the sequence number associated with this snapshot.
     pub fn seq_no(&self) -> u64 {
         self.seq_no
     }

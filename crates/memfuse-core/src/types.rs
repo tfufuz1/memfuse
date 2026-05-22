@@ -37,7 +37,10 @@ pub const TOMBSTONE_BIT: u64 = 1 << 63;
 pub struct DocId(pub u64);
 
 impl DocId {
+    // ANCHOR:DOC:TYPES-003 AGENT:01 STATUS:DONE PRIO:3
+    /// The maximum possible document identifier.
     pub const MAX: Self = Self(u64::MAX);
+    /// The minimum possible document identifier.
     pub const MIN: Self = Self(0);
 
     /// Creates a new DocId from a raw u64.
@@ -309,6 +312,10 @@ impl ResourceTracker {
         }
     }
 
+    // ANCHOR:DOC:TYPES-004 AGENT:01 STATUS:DONE PRIO:3
+    /// Consumes the specified number of bytes from the budget.
+    ///
+    /// Returns an error if the consumption would exceed the memory limit.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         loop {
             let current = self.memory_used.load(std::sync::atomic::Ordering::Acquire);
@@ -333,15 +340,18 @@ impl ResourceTracker {
         }
     }
 
+    /// Releases the specified number of bytes back to the budget.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Returns the current memory usage in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns a reference to the configured resource budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }
@@ -583,11 +593,13 @@ mod saos_tests {
     }
 
     // --- FusionWeights Tests ---
+    // ANCHOR:DEBT:TYPES-005 AGENT:01 STATUS:DONE PRIO:3
     #[test]
-    fn test_fusion_weights_normalization_valid() {
-        let weights = FusionWeights::new(0.6, 0.4, 0.0, 0.0).expect("valid weights");
+    fn test_fusion_weights_normalization_valid() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let weights = FusionWeights::new(0.6, 0.4, 0.0, 0.0)?;
         assert_eq!(weights.vector(), 0.6);
         assert_eq!(weights.text(), 0.4);
+        Ok(())
     }
 
     #[test]
@@ -649,8 +661,9 @@ mod saos_tests {
     }
 
     // --- ScoredEntry Tests ---
+    // ANCHOR:DEBT:TYPES-006 AGENT:01 STATUS:DONE PRIO:3
     #[test]
-    fn test_scored_entry_metadata() {
+    fn test_scored_entry_metadata() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let entry = ScoredEntry {
             id: "doc-x".to_string(),
             final_score: 0.99,
@@ -658,8 +671,11 @@ mod saos_tests {
         };
         assert_eq!(entry.final_score, 0.99);
         assert_eq!(
-            entry.metadata.expect("metadata should be present")["version"],
+            entry
+                .metadata
+                .ok_or("metadata should be present")?["version"],
             2
         );
+        Ok(())
     }
 }
