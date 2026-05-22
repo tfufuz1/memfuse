@@ -8,7 +8,6 @@ description = "MemFuse — Text processing and BM25 search for Hybrid Search"
 
 [dependencies]
 memfuse-core = { workspace = true }
-memfuse-store = { workspace = true }
 itoa = { workspace = true }
 # ANCHOR:ARCH:DAG-001 — Architektur-Layer durchbrochen
 # WP:NONE PRIO:1 NEEDS:NONE
@@ -25,5 +24,6 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+memfuse-store = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }

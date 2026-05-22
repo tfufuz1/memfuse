@@ -1,8 +1,8 @@
 //! WebAssembly Sandboxing for safe agent tool execution.
 
-use std::time::Duration;
-use memfuse_core::{Result, TokenBudget};
 use crate::AgentRuntime;
+use memfuse_core::{Result, TokenBudget};
+use std::time::Duration;
 
 #[derive(Debug)]
 pub struct SandboxConfig {

@@ -2,8 +2,8 @@
 
 #![forbid(unsafe_code)]
 
-pub mod sandbox;
 pub mod airgap;
+pub mod sandbox;
 
 pub use sandbox::{SandboxConfig, WasmSandbox};
 
