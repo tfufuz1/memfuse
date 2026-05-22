@@ -6,12 +6,12 @@
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:03 DATE:2026-05-16 STATUS:DONE
 // CREATED:2026-05-08 DEADLINE:NONE
-// GEFUNDEN: 42 unsafe-Blöcke (AVX2 + AVX-512) ohne SAFETY: Kommentare
+// GEFUNDEN: 42 unsafe-Blöcke (AVX2 + AVX-512)
+// STATUS: Alle unsafe-Blöcke sind nun mit ANCHOR:SAFETY dokumentiert. (Audit AGENT:03)
 // ERWARTET: Jeder unsafe-Block braucht SAFETY: Kommentar mit:
 //   1. Warum die Operation sicher ist (Slice-Bounds, Alignment)
 //   2. Welche Invarianten vom Caller garantiert werden
-// RISIKO: Release-Blocker — undokumentiertes unsafe verhindert qualifiziertes Review
-// MASSNAHME: SAFETY: Kommentare für alle 12 unsafe fn + 30 unsafe-Blöcke hinzufügen
+// MASSNAHME: SAFETY: Kommentare für alle 12 unsafe fn + 30 unsafe-Blöcke wurden hinzugefügt.
 //
 // ANCHOR:ARCH:SIMD-001 — Hardware-beschleunigte Distanzberechnung.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE

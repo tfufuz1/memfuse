@@ -168,7 +168,9 @@ impl DiskAnnIndex {
 
         file.sync_all().map_err(MemFuseError::Io)?;
 
-        // SAFETY: Mapping a file that we just wrote and synced is safe as long as the file is not truncated while mapped.
+        // ANCHOR:SAFETY:MEMMAP-001 — Mapping index file.
+        // BEGRÜNDUNG: Mapping a file that we just wrote and synced is safe as long as the file is not truncated while mapped.
+        // We hold the file handle and the mapping is only internal to this struct.
         self.mmap = Some(unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? });
         self.entry_point = 0;
 
@@ -198,9 +200,9 @@ impl DiskAnnIndex {
         visited.insert(ep);
 
         while let Some(Reverse(current)) = candidates.pop() {
-            if results.len() >= self.config.beam_width
-                && current.distance > results.peek().unwrap().distance
-            {
+            // ANCHOR:DEBT:PANIC-002 — Replacing unwrap() with safe peek (AGENT:03)
+            let worst_dist = results.peek().map(|c| c.distance).unwrap_or(f32::MAX);
+            if results.len() >= self.config.beam_width && current.distance > worst_dist {
                 break;
             }
 
@@ -214,9 +216,9 @@ impl DiskAnnIndex {
                         distance: d,
                     };
 
-                    if results.len() < self.config.beam_width
-                        || d < results.peek().unwrap().distance
-                    {
+                    // ANCHOR:DEBT:PANIC-003 — Replacing unwrap() with safe peek (AGENT:03)
+                    let worst_dist = results.peek().map(|c| c.distance).unwrap_or(f32::MAX);
+                    if results.len() < self.config.beam_width || d < worst_dist {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
                         if results.len() > self.config.beam_width {
@@ -227,19 +229,15 @@ impl DiskAnnIndex {
             }
         }
 
-        let mut final_results: Vec<ScoredDocument> = results
-            .into_iter()
-            .take(k)
-            .map(|c| {
-                let node = self
-                    .load_node(c.index)
-                    .expect("Node should be in cache or index");
-                ScoredDocument {
-                    doc_id: node.doc_id,
-                    score: 1.0 / (1.0 + c.distance),
-                }
-            })
-            .collect();
+        // ANCHOR:DEBT:PANIC-004 — Replacing expect() with proper Result propagation (AGENT:03)
+        let mut final_results = Vec::with_capacity(k);
+        for c in results.into_iter().take(k) {
+            let node = self.load_node(c.index)?;
+            final_results.push(ScoredDocument {
+                doc_id: node.doc_id,
+                score: 1.0 / (1.0 + c.distance),
+            });
+        }
 
         final_results.sort_by(|a, b| b.score.total_cmp(&a.score));
         Ok(final_results)
