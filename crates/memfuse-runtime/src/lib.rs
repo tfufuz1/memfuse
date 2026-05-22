@@ -1,3 +1,4 @@
+// AGENT:11
 //! MemFuse Runtime — Sandboxing and Execution Layer (WP-5.2).
 //!
 //! Enforces Zero-Trust boundaries for untrusted Agent Tools.
@@ -33,7 +34,6 @@ pub trait AgentRuntime: Send + Sync {
     /// Executes a binary module with isolated constraints.
     async fn execute_isolated(&self, module_bin: &[u8], budget: &TokenBudget) -> Result<Vec<u8>>;
 }
-
 
 #[cfg(test)]
 mod tests {

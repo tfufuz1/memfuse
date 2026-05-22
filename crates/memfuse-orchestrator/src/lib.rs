@@ -1,3 +1,4 @@
+// AGENT:11
 //! MemFuse Orchestrator — Declarative StateGraphs and Agent execution (WP-5.3).
 //!
 //! Sovereign, declarative alternative to LangGraph/AutoGen.
