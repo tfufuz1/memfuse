@@ -330,11 +330,13 @@ impl ResourceTracker {
     pub fn release_memory(&self, bytes: u64) {
         // ANCHOR:DEBT:TYPES-004 AGENT:01 STATUS:DONE PRIO:3
         // SAFETY: saturating_sub prevents underflow if multiple threads release same memory.
-        self.memory_used.fetch_update(
-            std::sync::atomic::Ordering::SeqCst,
-            std::sync::atomic::Ordering::SeqCst,
-            |current| Some(current.saturating_sub(bytes))
-        ).ok();
+        self.memory_used
+            .fetch_update(
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+                |current| Some(current.saturating_sub(bytes)),
+            )
+            .ok();
     }
 
     pub fn memory_used(&self) -> u64 {
