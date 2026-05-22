@@ -116,6 +116,9 @@ impl DiskAnnIndex {
             }
         }
 
+        // ANCHOR:FIXME PRIO:3 AGENT:03
+        // std::fs in production code, should be migrated to tokio::fs if possible,
+        // although memmap2 requires std::fs::File.
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -199,7 +202,7 @@ impl DiskAnnIndex {
 
         while let Some(Reverse(current)) = candidates.pop() {
             if results.len() >= self.config.beam_width
-                && current.distance > results.peek().unwrap().distance
+                && current.distance > results.peek().expect("results not empty").distance
             {
                 break;
             }
@@ -215,7 +218,7 @@ impl DiskAnnIndex {
                     };
 
                     if results.len() < self.config.beam_width
-                        || d < results.peek().unwrap().distance
+                        || d < results.peek().expect("results not empty").distance
                     {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
@@ -427,6 +430,6 @@ mod tests {
 
         assert!(recall_count >= 1, "Should find at least some results");
 
-        let _ = std::fs::remove_file("recall_test.idx");
+        let _ = tokio::fs::remove_file("recall_test.idx").await;
     }
 }
