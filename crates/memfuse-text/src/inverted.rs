@@ -106,9 +106,10 @@ impl InvertedIndex {
 
                 if let Some(ol_bytes) = self.storage.get(&ol_key).await? {
                     if ol_bytes.len() == 4 {
-                        old_orig_len = u32::from_le_bytes(ol_bytes.as_slice().try_into().map_err(
-                            |_| MemFuseError::Storage("Invalid orig_len length".into()),
-                        )?);
+                        old_orig_len =
+                            u32::from_le_bytes(ol_bytes.as_slice().try_into().map_err(|_| {
+                                MemFuseError::Storage("Invalid orig_len length".into())
+                            })?);
                     }
                 }
 
@@ -185,13 +186,16 @@ impl InvertedIndex {
         let mut orig_tokens_total = 0u64;
         if let Some(bytes) = self.storage.get(&orig_tok_key).await? {
             if bytes.len() == 8 {
-                orig_tokens_total =
-                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                        MemFuseError::Storage("Invalid orig_tokens length".into())
-                    })?);
+                orig_tokens_total = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid orig_tokens length".into()))?,
+                );
             }
         }
-        orig_tokens_total = orig_tokens_total.saturating_sub(old_orig_len as u64) + new_orig_len as u64;
+        orig_tokens_total =
+            orig_tokens_total.saturating_sub(old_orig_len as u64) + new_orig_len as u64;
         self.storage
             .put(tx, &orig_tok_key, &orig_tokens_total.to_le_bytes())
             .await?;
@@ -262,12 +266,10 @@ impl InvertedIndex {
             }
             if let Some(ol_bytes) = self.storage.get(&ol_key).await? {
                 if ol_bytes.len() == 4 {
-                    orig_len = u32::from_le_bytes(
-                        ol_bytes
-                            .as_slice()
-                            .try_into()
-                            .map_err(|_| MemFuseError::Storage("Invalid orig_len length".into()))?,
-                    );
+                    orig_len =
+                        u32::from_le_bytes(ol_bytes.as_slice().try_into().map_err(|_| {
+                            MemFuseError::Storage("Invalid orig_len length".into())
+                        })?);
                 }
             }
         } else {
@@ -328,10 +330,12 @@ impl InvertedIndex {
         let orig_tok_key = self.key("meta:orig_tokens");
         if let Some(bytes) = self.storage.get(&orig_tok_key).await? {
             if bytes.len() == 8 {
-                let mut orig_tokens =
-                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                        MemFuseError::Storage("Invalid orig_tokens length".into())
-                    })?);
+                let mut orig_tokens = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid orig_tokens length".into()))?,
+                );
                 orig_tokens = orig_tokens.saturating_sub(orig_len as u64);
                 self.storage
                     .put(tx, &orig_tok_key, &orig_tokens.to_le_bytes())
@@ -506,10 +510,12 @@ impl TextIndex for InvertedIndex {
         let mut orig_tokens = 0u64;
         if let Some(bytes) = self.storage.get(&orig_tok_key).await? {
             if bytes.len() == 8 {
-                orig_tokens =
-                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                        MemFuseError::Storage("Invalid orig_tokens length".into())
-                    })?);
+                orig_tokens = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid orig_tokens length".into()))?,
+                );
             }
         }
 
