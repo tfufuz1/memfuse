@@ -1,3 +1,9 @@
+// ANCHOR:DOC AGENT:08 STATUS:DONE
+//! Metadata filtering logic for MemFuse.
+//!
+//! Provides `MetadataFilter` for advanced queries combining logical
+//! operators (And, Or, Not) with field comparisons.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

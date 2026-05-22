@@ -1,3 +1,4 @@
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 //! Checkpointing & Time-Travel (WP-5.1)
 //!
 //! Enables deterministic freezing and restarting of agent workflows.
@@ -21,23 +22,26 @@ pub struct CheckpointMeta {
     pub created_at: u64,
 }
 
-/// In-memory MVCC checkpoint abstraction.
+/// In-memory MVCC checkpoint abstraction for tracking workflow states.
 pub struct CheckpointRegistry {
     checkpoints: std::sync::RwLock<HashMap<TxId, WorkflowState>>,
 }
 
 impl CheckpointRegistry {
+    /// Creates a new empty checkpoint registry.
     pub fn new() -> Self {
         Self {
             checkpoints: std::sync::RwLock::new(HashMap::new()),
         }
     }
 
+    /// Registers a workflow state for a given transaction ID.
     pub fn register(&self, tx_id: TxId, state: WorkflowState) {
         let mut cache = self.checkpoints.write().unwrap();
         cache.insert(tx_id, state);
     }
 
+    /// Retrieves a workflow state by transaction ID.
     pub fn get(&self, tx_id: TxId) -> Option<WorkflowState> {
         let cache = self.checkpoints.read().unwrap();
         cache.get(&tx_id).cloned()
@@ -59,6 +63,7 @@ pub struct CheckpointManager {
 }
 
 impl CheckpointManager {
+    /// Creates a new `CheckpointManager` using the provided storage engine.
     pub fn new(storage: Arc<dyn StorageEngine>) -> Self {
         Self {
             storage,
