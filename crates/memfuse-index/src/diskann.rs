@@ -198,10 +198,10 @@ impl DiskAnnIndex {
         visited.insert(ep);
 
         while let Some(Reverse(current)) = candidates.pop() {
-            if results.len() >= self.config.beam_width
-                && current.distance > results.peek().unwrap().distance
-            {
-                break;
+            if let Some(best) = results.peek() {
+                if results.len() >= self.config.beam_width && current.distance > best.distance {
+                    break;
+                }
             }
 
             let node = self.load_node(current.index)?;
@@ -214,9 +214,15 @@ impl DiskAnnIndex {
                         distance: d,
                     };
 
-                    if results.len() < self.config.beam_width
-                        || d < results.peek().unwrap().distance
-                    {
+                    let should_add = if results.len() < self.config.beam_width {
+                        true
+                    } else if let Some(best) = results.peek() {
+                        d < best.distance
+                    } else {
+                        false
+                    };
+
+                    if should_add {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
                         if results.len() > self.config.beam_width {
@@ -227,19 +233,15 @@ impl DiskAnnIndex {
             }
         }
 
-        let mut final_results: Vec<ScoredDocument> = results
-            .into_iter()
-            .take(k)
-            .map(|c| {
-                let node = self
-                    .load_node(c.index)
-                    .expect("Node should be in cache or index");
-                ScoredDocument {
+        let mut final_results: Vec<ScoredDocument> = Vec::with_capacity(results.len().min(k));
+        for c in results.into_iter().take(k) {
+            if let Ok(node) = self.load_node(c.index) {
+                final_results.push(ScoredDocument {
                     doc_id: node.doc_id,
                     score: 1.0 / (1.0 + c.distance),
-                }
-            })
-            .collect();
+                });
+            }
+        }
 
         final_results.sort_by(|a, b| b.score.total_cmp(&a.score));
         Ok(final_results)

@@ -32,7 +32,10 @@ async fn test_multi_collection_stress() {
         let collection_name = format!("col-{}", t % num_collections);
 
         handles.push(tokio::spawn(async move {
-            let col = db.collection(&collection_name).await.expect("get collection");
+            let col = db
+                .collection(&collection_name)
+                .await
+                .expect("get collection");
 
             for i in 0..ops_per_task {
                 let id = format!("task-{}-doc-{}", t, i);
@@ -40,9 +43,13 @@ async fn test_multi_collection_stress() {
                 let vec = vec![1.0, (t + 1) as f32, (i + 1) as f32, (t * i) as f32];
 
                 // 1. Insert
-                col.insert(&id, &vec, Some(json!({"t": t, "i": i, "col": collection_name})))
-                    .await
-                    .expect("insert");
+                col.insert(
+                    &id,
+                    &vec,
+                    Some(json!({"t": t, "i": i, "col": collection_name})),
+                )
+                .await
+                .expect("insert");
 
                 // 2. Search
                 let results = col.search(&vec, 1).await.expect("search");
@@ -59,7 +66,8 @@ async fn test_multi_collection_stress() {
                 assert!(
                     results_k.iter().any(|r| r.id == id),
                     "Doc {} not found in search results for col {}",
-                    id, collection_name
+                    id,
+                    collection_name
                 );
 
                 // 3. Delete
@@ -67,7 +75,12 @@ async fn test_multi_collection_stress() {
 
                 // 4. Verify gone
                 let doc = col.get(&id).await.expect("get");
-                assert!(doc.is_none(), "Doc {} should be deleted from col {}", id, collection_name);
+                assert!(
+                    doc.is_none(),
+                    "Doc {} should be deleted from col {}",
+                    id,
+                    collection_name
+                );
             }
         }));
     }
