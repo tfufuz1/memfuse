@@ -191,12 +191,7 @@ mod tests {
     #[async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            Ok(self
-                .data
-                .lock()
-                .unwrap() // unwrap
-                .get(key)
-                .cloned())
+            Ok(self.data.lock().unwrap().get(key).cloned()) // unwrap
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
             self.data
@@ -206,10 +201,7 @@ mod tests {
             Ok(())
         }
         async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
-            self.data
-                .lock()
-                .unwrap() // unwrap
-                .remove(key);
+            self.data.lock().unwrap().remove(key); // unwrap
             Ok(())
         }
         async fn commit(&self, _tx_id: TxId) -> Result<()> {
@@ -229,17 +221,11 @@ mod tests {
             })
         }
         async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.pinned
-                .lock()
-                .unwrap() // unwrap
-                .insert(seq_no);
+            self.pinned.lock().unwrap().insert(seq_no); // unwrap
             Ok(())
         }
         async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.pinned
-                .lock()
-                .unwrap() // unwrap
-                .remove(&seq_no);
+            self.pinned.lock().unwrap().remove(&seq_no); // unwrap
             Ok(())
         }
         async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
@@ -266,14 +252,10 @@ mod tests {
         assert_eq!(meta.seq_no, 100);
 
         // Verify it was pinned
-        assert!(storage
-            .pinned
-            .lock()
-            .unwrap() // unwrap
-            .contains(&100));
+        assert!(storage.pinned.lock().unwrap().contains(&100)); // unwrap
 
         // Verify it exists in manager
-        let retrieved = manager.get_checkpoint("test_cp").await.unwrap(); // unwrap .unwrap(); // unwrap
+        let retrieved = manager.get_checkpoint("test_cp").await.unwrap(); // unwrap
         assert_eq!(retrieved, Some(meta));
     }
 
@@ -288,8 +270,8 @@ mod tests {
             .await
             .unwrap(); // unwrap
 
-        let retrieved = manager.get_checkpoint("cp1").await.unwrap(); // unwrap .unwrap(); // unwrap
-        assert_eq!(retrieved.unwrap().metadata, metadata);
+        let retrieved = manager.get_checkpoint("cp1").await.unwrap(); // unwrap
+        assert_eq!(retrieved.unwrap().metadata, metadata); // unwrap
     }
 
     #[tokio::test]
