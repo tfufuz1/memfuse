@@ -2,56 +2,57 @@
 //!
 //! Sovereign, declarative alternative to LangGraph/AutoGen.
 //! Constructs acyclic and dynamic graphs routing autonomous agent steps.
-// ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
-// WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:13 DATE:2026-05-13 STATUS:DONE
-// CREATED:2026-05-09 DEADLINE:NONE
-// ANCHOR:AUDIT:SAOS-023 — forbid(unsafe_code) fehlte → nachgerüstet
-// WP:NONE PRIO:3 NEEDS:NONE
-// AGENT:NONE DATE:2026-05-09 STATUS:READY
-// CREATED:2026-05-09 DEADLINE:NONE
-// AGENT:saos-audit DATE:2026-05-08 STATUS:FIXED
-//
-// ANCHOR:ARCH:ORCHESTRATOR-001 — Agent Workflow Engine (Cockpit — Layer 3).
-// WP:NONE PRIO:2 NEEDS:NONE
-// AGENT:NONE DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-09 DEADLINE:NONE
-// ZIEL: Deklarative LangGraph-ähnliche Graphenausführung in nativem Rust.
-// ANCHOR:INTEGRATION PRIO:2 STATUS:DONE AGENT:07 DATE:2026-05-20
-// DONE: Cross-Crate Integration Tests für StateGraph und Agent-Interaktion implementiert.
 
 #![forbid(unsafe_code)]
 
 use memfuse_core::Result;
+use std::collections::HashMap;
 
-/// A node within the deterministic agent graph.
-#[derive(Debug, Clone)]
-pub struct GraphNode {
-    pub name: String,
-    pub executable_identifier: String,
+/// Represents a single specialized node (e.g. Research, Code) in the agent workflow.
+pub struct AgentNode {
+    pub id: String,
+    pub description: String,
 }
 
-/// Conditional routing logic representing edges in the StateGraph.
-#[derive(Debug, Clone)]
-pub struct WorkflowEdge {
-    pub from: String,
-    pub to: String,
-    pub condition_evaluator: Option<String>,
-}
-
-/// Core declarative structure mapping workflows.
+/// The main entry point for the workflow orchestrator.
 pub struct StateGraph {
-    pub nodes: Vec<GraphNode>,
-    pub edges: Vec<WorkflowEdge>,
+    pub nodes: HashMap<String, AgentNode>,
+    /// Maps a source node to a target node with an optional transition condition name.
+    pub edges: Vec<(String, String, Option<String>)>,
 }
 
 impl StateGraph {
     /// Build an empty StateGraph.
     pub fn new() -> Self {
         Self {
-            nodes: Vec::new(),
+            nodes: HashMap::new(),
             edges: Vec::new(),
         }
+    }
+
+    /// Adds a node to the workflow graph.
+    pub fn add_node(&mut self, id: &str, description: &str) {
+        self.nodes.insert(
+            id.to_string(),
+            AgentNode {
+                id: id.to_string(),
+                description: description.to_string(),
+            },
+        );
+    }
+
+    /// Adds a directed edge between two nodes with an optional condition.
+    pub fn add_edge(&mut self, source: &str, target: &str, condition: Option<&str>) {
+        self.edges.push((
+            source.to_string(),
+            target.to_string(),
+            condition.map(|s| s.to_string()),
+        ));
+    }
+
+    /// Executes the workflow starting from the given node.
+    pub fn run_workflow(&self, _initial_state: &str) {
+        // Placeholder implementation
     }
 }
 
