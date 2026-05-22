@@ -91,6 +91,8 @@ impl CheckpointManager {
 
         // 2. Persist checkpoint metadata
         let key = format!("__checkpoint:{}", name);
+        // ANCHOR:SEC:ENCRYPT-002 AGENT:10 PRIO:1 STATUS:REVIEW
+        // Checkpoint metadata serialization is unencrypted.
         let value = serde_json::to_vec(&checkpoint)
             .map_err(|e| memfuse_core::error::MemFuseError::Internal(e.to_string()))?;
 

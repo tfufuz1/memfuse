@@ -246,6 +246,7 @@ impl DiskAnnIndex {
     }
 
     fn load_node(&self, index: u32) -> Result<CachedNode> {
+        // ANCHOR:SEC:SLICE-004 AGENT:10 PRIO:1 STATUS:REVIEW
         {
             let cache = self.cache.read();
             if let Some(node) = cache.get(&index) {
@@ -261,37 +262,43 @@ impl DiskAnnIndex {
         let start_offset = header_size.div_ceil(self.config.sector_size) * self.config.sector_size;
         let node_offset = start_offset + (index as usize * self.node_size_bytes);
 
-        if node_offset + self.node_size_bytes > mmap.len() {
-            return Err(MemFuseError::Index("Node offset out of bounds".into()));
-        }
-
-        let node_data = &mmap[node_offset..node_offset + self.node_size_bytes];
+        let node_data = mmap
+            .get(node_offset..node_offset + self.node_size_bytes)
+            .ok_or_else(|| MemFuseError::Index("Node offset out of bounds".into()))?;
         let mut cursor = 0;
 
         let mut vector = Vec::with_capacity(self.config.dimension);
         for _ in 0..self.config.dimension {
             let val = f32::from_le_bytes(
-                node_data[cursor..cursor + 4]
+                node_data
+                    .get(cursor..cursor + 4)
+                    .ok_or_else(|| MemFuseError::Index("Malformed node vector".into()))?
                     .try_into()
-                    .map_err(|_| MemFuseError::Index("Malformed node vector".into()))?,
+                    .map_err(|_| MemFuseError::Index("Malformed node vector conversion".into()))?,
             );
             vector.push(val);
             cursor += 4;
         }
 
         let num_neighbors = u32::from_le_bytes(
-            node_data[cursor..cursor + 4]
+            node_data
+                .get(cursor..cursor + 4)
+                .ok_or_else(|| MemFuseError::Index("Malformed node neighbor count".into()))?
                 .try_into()
-                .map_err(|_| MemFuseError::Index("Malformed node neighbor count".into()))?,
+                .map_err(|_| {
+                    MemFuseError::Index("Malformed node neighbor count conversion".into())
+                })?,
         ) as usize;
         cursor += 4;
 
         let mut neighbors = Vec::with_capacity(num_neighbors);
         for _ in 0..num_neighbors {
             let neighbor = u32::from_le_bytes(
-                node_data[cursor..cursor + 4]
+                node_data
+                    .get(cursor..cursor + 4)
+                    .ok_or_else(|| MemFuseError::Index("Malformed node neighbor".into()))?
                     .try_into()
-                    .map_err(|_| MemFuseError::Index("Malformed node neighbor".into()))?,
+                    .map_err(|_| MemFuseError::Index("Malformed node neighbor conversion".into()))?,
             );
             neighbors.push(neighbor);
             cursor += 4;
@@ -301,9 +308,11 @@ impl DiskAnnIndex {
         cursor += padding_neighbors * 4;
 
         let doc_id_raw = u64::from_le_bytes(
-            node_data[cursor..cursor + 8]
+            node_data
+                .get(cursor..cursor + 8)
+                .ok_or_else(|| MemFuseError::Index("Malformed node doc id".into()))?
                 .try_into()
-                .map_err(|_| MemFuseError::Index("Malformed node doc id".into()))?,
+                .map_err(|_| MemFuseError::Index("Malformed node doc id conversion".into()))?,
         );
         let doc_id = DocId::from(doc_id_raw);
 

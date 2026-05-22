@@ -294,7 +294,7 @@ impl HnswIndexCore {
 
         for &ep in entry_points {
             if visited.insert(ep) {
-                // ANCHOR:SEC:SLICE-003 AGENT:10 PRIO:1 STATUS:READY
+                // ANCHOR:SEC:SLICE-003 AGENT:10 PRIO:1 STATUS:REVIEW
                 // Safe access to nodes and connections.
                 let node = nodes.get(ep).ok_or_else(|| {
                     MemFuseError::Index(format!("HNSW node missing at index {}", ep))
