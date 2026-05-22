@@ -88,7 +88,7 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
         ];
 
         for &word in &dictionary {
-            if token.len() > word.len() && token.starts_with(word) {
+            if token.len() >= word.len() + self.min_component_len && token.starts_with(word) {
                 let rest = &token[word.len()..];
 
                 // Handle Fugen-s (e.g., Verfassung-s-gericht)
@@ -101,6 +101,26 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
                 if actual_rest.len() >= self.min_component_len {
                     let mut result = vec![&token[..word.len()]];
                     result.extend(self.decompose(actual_rest));
+                    return result;
+                }
+            }
+        }
+
+        // Suffix splitting for common German suffixes
+        let suffixes = ["gericht", "schaft", "keit", "ung"];
+        for &suffix in &suffixes {
+            if token.len() >= suffix.len() + self.min_component_len && token.ends_with(suffix) {
+                let stem = &token[..token.len() - suffix.len()];
+                // Handle Fugen-s before suffix (e.g., Verfassung-s-gericht)
+                let actual_stem = if stem.ends_with('s') && stem.len() > self.min_component_len {
+                    &stem[..stem.len() - 1]
+                } else {
+                    stem
+                };
+
+                if actual_stem.len() >= self.min_component_len {
+                    let mut result = self.decompose(actual_stem);
+                    result.push(&token[token.len() - suffix.len()..]);
                     return result;
                 }
             }
@@ -166,9 +186,9 @@ mod tests {
     #[test]
     fn test_german_splitter_scaffold() {
         let splitter = GermanCompoundSplitter::new();
-        // Fallback: returns original token
-        let result = splitter.decompose("Bundesverfassungsgericht");
-        assert_eq!(result, vec!["Bundesverfassungsgericht"]);
+        // Now it should split correctly if lowercase
+        let result = splitter.decompose("bundesverfassungsgericht");
+        assert_eq!(result, vec!["bundes", "verfassungs", "gericht"]);
         assert_eq!(splitter.language(), "de");
     }
 
