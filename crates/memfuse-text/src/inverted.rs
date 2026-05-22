@@ -11,8 +11,8 @@
 // OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
 
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
-use async_trait::async_trait;
 use ahash::AHashMap;
+use async_trait::async_trait;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
 };
