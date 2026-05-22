@@ -362,11 +362,7 @@ impl Collection {
             } else {
                 // Strip the internal prefix: self.prefix (variable) + 1 byte (key_type)
                 let prefix_len = self.prefix.len() + 1;
-                if key_str.len() >= prefix_len {
-                    key_str[prefix_len..].to_string()
-                } else {
-                    key_str
-                }
+                key_str.get(prefix_len..).unwrap_or(&key_str).to_string()
             };
 
             if let Ok(val) = serde_json::from_slice(&v) {
@@ -624,11 +620,7 @@ impl Collection {
                 key_str
             } else {
                 let prefix_len = self.prefix.len() + 1;
-                if key_str.len() >= prefix_len {
-                    key_str[prefix_len..].to_string()
-                } else {
-                    key_str
-                }
+                key_str.get(prefix_len..).unwrap_or(&key_str).to_string()
             };
             if let Ok(val) = serde_json::from_slice(&v) {
                 results.push((user_key, val));
