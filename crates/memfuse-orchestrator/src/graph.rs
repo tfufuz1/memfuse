@@ -11,6 +11,7 @@ use std::collections::HashMap;
 pub type NodeId = String;
 
 /// Represents a single specialized node (e.g. Research, Code) in the agent workflow.
+#[derive(Debug, Clone)]
 pub struct AgentNode {
     pub id: NodeId,
     pub description: String,
@@ -18,7 +19,7 @@ pub struct AgentNode {
 
 /// The main entry point for the workflow orchestrator.
 /// Developers build this graph declaration in Rust or via Python bindings.
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub struct StateGraph {
     pub nodes: HashMap<NodeId, AgentNode>,
     /// Maps a source node to a target node with an optional transition condition name.

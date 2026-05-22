@@ -9,17 +9,19 @@ fn test_sandbox_initialization() {
         max_memory_mb: 128,
         timeout: Duration::from_secs(1),
         allow_network: false,
+        ..Default::default()
     };
     let _sandbox = WasmSandbox::new(config);
 }
 
-#[test]
-fn test_sandbox_execution_placeholder() {
+#[tokio::test]
+async fn test_sandbox_execution_placeholder() {
     let sandbox = WasmSandbox::new(SandboxConfig::default());
     let wasm_bytes = vec![0, 1, 2, 3]; // Mock WASM
     let result = sandbox
         .execute(&wasm_bytes, "input data")
+        .await
         .expect("execution failed");
 
-    assert_eq!(result, "sandbox_execution_result_placeholder");
+    assert_eq!(result, b"sandbox_execution_result_placeholder");
 }

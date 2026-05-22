@@ -199,7 +199,7 @@ impl DiskAnnIndex {
 
         while let Some(Reverse(current)) = candidates.pop() {
             if results.len() >= self.config.beam_width
-                && current.distance > results.peek().unwrap().distance
+                && results.peek().is_some_and(|worst| current.distance > worst.distance)
             {
                 break;
             }
@@ -215,7 +215,7 @@ impl DiskAnnIndex {
                     };
 
                     if results.len() < self.config.beam_width
-                        || d < results.peek().unwrap().distance
+                        || results.peek().is_none_or(|worst| d < worst.distance)
                     {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
