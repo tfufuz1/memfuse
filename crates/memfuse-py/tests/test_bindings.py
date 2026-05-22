@@ -227,3 +227,59 @@ def test_version_and_repr(db_path):
 
     db_stats = db.stats()
     assert "DbStats(vectors=0" in repr(db_stats) # default col is empty
+
+def test_metadata_filtering(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("filtered")
+
+    # Insert multiple documents with different metadata
+    v = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    col.insert("doc1", v, metadata={"category": "A", "value": 10})
+    col.insert("doc2", v, metadata={"category": "B", "value": 20})
+    col.insert("doc3", v, metadata={"category": "A", "value": 30})
+
+    # 1. Simple condition: category == "A"
+    f1 = memfuse.MetadataFilter.condition("category", memfuse.FilterOp.Eq, "A")
+    results = col.search_with_filter(v, k=10, filter=f1)
+    assert len(results) == 2
+    assert {r.id for r in results} == {"doc1", "doc3"}
+
+    # 2. Comparison: value > 15
+    f2 = memfuse.MetadataFilter.condition("value", memfuse.FilterOp.Gt, 15)
+    results = col.search_with_filter(v, k=10, filter=f2)
+    assert len(results) == 2
+    assert {r.id for r in results} == {"doc2", "doc3"}
+
+    # 3. AND filter: category == "A" AND value > 15
+    f3 = memfuse.MetadataFilter.all_of([f1, f2])
+    results = col.search_with_filter(v, k=10, filter=f3)
+    assert len(results) == 1
+    assert results[0].id == "doc3"
+
+    # 4. OR filter: category == "B" OR value < 15
+    f4_1 = memfuse.MetadataFilter.condition("category", memfuse.FilterOp.Eq, "B")
+    f4_2 = memfuse.MetadataFilter.condition("value", memfuse.FilterOp.Lt, 15)
+    f4 = memfuse.MetadataFilter.any_of([f4_1, f4_2])
+    results = col.search_with_filter(v, k=10, filter=f4)
+    assert len(results) == 2
+    assert {r.id for r in results} == {"doc1", "doc2"}
+
+    # 5. NOT filter: NOT (category == "A")
+    f5 = memfuse.MetadataFilter.none_of(f1)
+    results = col.search_with_filter(v, k=10, filter=f5)
+    assert len(results) == 1
+    assert results[0].id == "doc2"
+
+    # 6. IN filter
+    f6 = memfuse.MetadataFilter.condition("category", memfuse.FilterOp.In, ["A", "C"])
+    results = col.search_with_filter(v, k=10, filter=f6)
+    assert len(results) == 2
+    assert {r.id for r in results} == {"doc1", "doc3"}
+
+    # 7. Search with filter on DB level (default collection)
+    db.insert("def_doc1", v, metadata={"tag": "test"})
+    db.insert("def_doc2", v, metadata={"tag": "prod"})
+    f7 = memfuse.MetadataFilter.condition("tag", memfuse.FilterOp.Eq, "test")
+    results = db.search_with_filter(v, k=10, filter=f7)
+    assert len(results) == 1
+    assert results[0].id == "def_doc1"
