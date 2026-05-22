@@ -575,6 +575,7 @@ pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
     dot_product_u8_scalar(a, b)
 }
 
+/// Scalar implementation of u8 dot product.
 pub fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
@@ -597,6 +598,7 @@ pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
     euclidean_distance_sq_u8_scalar(a, b)
 }
 
+/// Scalar implementation of u8 squared Euclidean distance.
 pub fn euclidean_distance_sq_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
@@ -610,10 +612,15 @@ pub fn euclidean_distance_sq_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
 /// Parts required to compute cosine similarity for quantized vectors.
 #[derive(Debug, Clone, Copy)]
 pub struct CosineSimilarityPartsU8 {
+    /// Dot product of the two vectors.
     pub dot: u32,
+    /// Sum of elements in vector A.
     pub sum_a: u32,
+    /// Sum of elements in vector B.
     pub sum_b: u32,
+    /// Squared L2 norm of vector A.
     pub norm_a_sq: u32,
+    /// Squared L2 norm of vector B.
     pub norm_b_sq: u32,
 }
 
@@ -632,6 +639,7 @@ pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8
     cosine_similarity_parts_u8_scalar(a, b)
 }
 
+/// Scalar implementation of u8 cosine similarity parts.
 pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
     let mut dot = 0;
     let mut sum_a = 0;
@@ -679,8 +687,11 @@ pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alpha: f32, min: f32) -
 /// Parts required to compute asymmetric cosine similarity.
 #[derive(Debug, Clone, Copy)]
 pub struct CosineSimilarityPartsF32U8 {
+    /// Dot product between f32 and u8 vectors.
     pub dot_f32_u8: f32,
+    /// Sum of elements in the u8 vector.
     pub sum_u8: u32,
+    /// Squared L2 norm of the u8 vector.
     pub norm_u8_sq: u32,
 }
 

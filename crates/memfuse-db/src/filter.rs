@@ -1,3 +1,8 @@
+//! Metadata filtering engine for MemFuse.
+//!
+//! This module provides the `MetadataFilter` and `FilterOp` types used to perform
+//! advanced filtering on document metadata during retrieval and search.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -27,8 +32,11 @@ pub enum FilterOp {
 pub enum MetadataFilter {
     /// A single condition on a metadata field.
     Condition {
+        /// The name of the metadata field to filter on.
         field: String,
+        /// The operator to use for comparison.
         op: FilterOp,
+        /// The value to compare against.
         value: Value,
     },
     /// Logical AND of multiple filters.
@@ -41,6 +49,8 @@ pub enum MetadataFilter {
 
 impl MetadataFilter {
     /// Evaluates the filter against a metadata object.
+    ///
+    /// Returns `true` if the metadata matches the filter criteria.
     pub fn matches(&self, metadata: &Value) -> bool {
         match self {
             MetadataFilter::Condition { field, op, value } => {
@@ -91,6 +101,10 @@ impl MetadataFilter {
     }
 }
 
+/// Compares two JSON values for ordering.
+///
+/// Supports comparing numbers (as f64) and strings. Returns `None` for other types
+/// or if types are mismatched.
 fn compare_values(a: &Value, b: &Value) -> Option<std::cmp::Ordering> {
     match (a, b) {
         (Value::Number(an), Value::Number(bn)) => {

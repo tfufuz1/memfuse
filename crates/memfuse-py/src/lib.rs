@@ -156,6 +156,7 @@ impl PyDbStats {
     }
 }
 
+/// Primary database handle for MemFuse in Python.
 #[pyclass(unsendable, name = "Db")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
@@ -189,7 +190,7 @@ impl PyMemFuse {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
-    /// Inserts a document with an embedding and optional metadata into the default collection.
+    /// Inserts a document into the default collection.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
@@ -283,7 +284,7 @@ impl PyMemFuse {
         Ok(())
     }
 
-    /// Performs semantic k-NN search over the default collection's embeddings.
+    /// Performs semantic k-NN search over the default collection.
     #[pyo3(signature = (vector, k))]
     pub fn search<'py>(
         &self,
@@ -326,7 +327,7 @@ impl PyMemFuse {
         Ok(py_res)
     }
 
-    /// Performs hybrid search combining BM25 and vector search results in the default collection.
+    /// Performs hybrid search combining BM25 and vector search in the default collection.
     #[pyo3(signature = (text, vector, k))]
     pub fn hybrid_search<'py>(
         &self,
@@ -436,7 +437,7 @@ impl PyMemFuse {
         Ok(py_res)
     }
 
-    /// Returns combined statistics for the vector index and storage engine.
+    /// Returns combined statistics for the database.
     pub fn stats(&self, py: Python<'_>) -> PyResult<PyDbStats> {
         let rt = get_runtime()?;
         let stats = py
@@ -458,6 +459,7 @@ impl PyMemFuse {
     }
 }
 
+/// A specific collection (namespace) handle in Python.
 #[pyclass(unsendable, name = "Collection")]
 pub struct PyCollection {
     inner: Arc<MemFuseCollection>,
@@ -465,7 +467,7 @@ pub struct PyCollection {
 
 #[pymethods]
 impl PyCollection {
-    /// Inserts a document with an embedding and optional metadata into the collection.
+    /// Inserts a document into the collection.
     #[pyo3(signature = (id, vector, metadata=None))]
     pub fn insert<'py>(
         &self,
@@ -559,7 +561,7 @@ impl PyCollection {
         Ok(())
     }
 
-    /// Performs semantic k-NN search over the collection's embeddings.
+    /// Performs semantic k-NN search over the collection.
     #[pyo3(signature = (vector, k))]
     pub fn search<'py>(
         &self,
@@ -602,7 +604,7 @@ impl PyCollection {
         Ok(py_res)
     }
 
-    /// Performs hybrid search combining BM25 and vector search results in the collection.
+    /// Performs hybrid search combining BM25 and vector search in the collection.
     #[pyo3(signature = (text, vector, k))]
     pub fn hybrid_search<'py>(
         &self,

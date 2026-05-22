@@ -37,7 +37,9 @@ pub const TOMBSTONE_BIT: u64 = 1 << 63;
 pub struct DocId(pub u64);
 
 impl DocId {
+    /// Maximum possible DocId.
     pub const MAX: Self = Self(u64::MAX);
+    /// Minimum possible DocId.
     pub const MIN: Self = Self(0);
 
     /// Creates a new DocId from a raw u64.
@@ -53,6 +55,8 @@ impl DocId {
     }
 
     /// Derive a DocId from a user-provided string key via blake3 hash.
+    ///
+    /// This is the primary way to generate `DocId`s from user-facing string IDs.
     pub fn from_key(key: &str) -> Result<Self> {
         // ANCHOR:DEBT:TYPES-002 AGENT:01 STATUS:DONE PRIO:3
         // SAFETY: blake3::hash() always returns a 32-byte hash.
@@ -170,24 +174,24 @@ impl Embedding {
         Self { data }
     }
 
-    /// Returns the dimension of the embedding.
+    /// Returns the dimension (length) of the embedding vector.
     #[inline]
     pub fn dim(&self) -> usize {
         self.data.len()
     }
 
-    /// Returns the data as a slice.
+    /// Returns the underlying vector data as a slice.
     #[inline]
     pub fn as_slice(&self) -> &[f32] {
         &self.data
     }
 
-    /// Computes the L2 norm of the embedding.
+    /// Computes the L2 norm (magnitude) of the embedding.
     pub fn l2_norm(&self) -> f32 {
         self.data.iter().map(|x| x * x).sum::<f32>().sqrt()
     }
 
-    /// Returns a normalized copy of this embedding.
+    /// Returns a normalized copy of this embedding (L2 norm = 1.0).
     pub fn normalize(&self) -> Self {
         let norm = self.l2_norm();
         if norm == 0.0 {
@@ -197,7 +201,7 @@ impl Embedding {
     }
 }
 
-/// A scored search result.
+/// A scored search result representing a document and its similarity score.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ScoredDocument {
     /// The document identifier.
@@ -213,14 +217,14 @@ impl ScoredDocument {
     }
 }
 
-/// Graph entity (node) representing a concept.
+/// Graph entity (node) representing a concept or object.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
     /// Unique identifier for the entity.
     pub id: EntityId,
     /// Human-readable name of the entity.
     pub name: String,
-    /// Type categorization of the entity.
+    /// Type categorization of the entity (e.g., "Person", "Location").
     pub entity_type: String,
 }
 
@@ -242,7 +246,7 @@ pub struct Edge {
     pub from: EntityId,
     /// Target entity identifier.
     pub to: EntityId,
-    /// Relationship label.
+    /// Relationship label (e.g., "WORKS_AT", "LOCATED_IN").
     pub label: String,
     /// Strength or weight of the relationship.
     pub weight: f32,
@@ -259,7 +263,7 @@ impl Edge {
         }
     }
 
-    /// Builder pattern to set the weight.
+    /// Builder pattern to set the weight of the edge.
     pub fn with_weight(mut self, weight: f32) -> Self {
         self.weight = weight;
         self
@@ -309,6 +313,8 @@ impl ResourceTracker {
         }
     }
 
+    /// Records the consumption of a certain amount of memory.
+    /// Returns error if the budget is exceeded.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         loop {
             let current = self.memory_used.load(std::sync::atomic::Ordering::Acquire);
@@ -333,15 +339,18 @@ impl ResourceTracker {
         }
     }
 
+    /// Records the release of memory.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Returns the current amount of memory used in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns the configured budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }
@@ -470,22 +479,30 @@ pub enum IsolationLevel {
 pub enum FilterExpr {
     /// Exact match: field == value
     Eq {
+        /// Field name.
         field: String,
+        /// Expected value.
         value: serde_json::Value,
     },
     /// Greater than: field > value
     Gt {
+        /// Field name.
         field: String,
+        /// Minimum value (exclusive).
         value: serde_json::Value,
     },
     /// Less than: field < value
     Lt {
+        /// Field name.
         field: String,
+        /// Maximum value (exclusive).
         value: serde_json::Value,
     },
     /// In set: field IN (values)
     In {
+        /// Field name.
         field: String,
+        /// List of allowed values.
         values: Vec<serde_json::Value>,
     },
     /// Logical AND

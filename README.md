@@ -2,7 +2,7 @@
 
 **Sovereign Agentic Operating System (SAOS)**
 
-> "The ultimate runtime for AI Agents: Database, Saftey Layer, and Orchestrator in one crate."
+> "The ultimate runtime for AI Agents: Database, Safety Layer, and Orchestrator in one crate."
 
 ## Quick Start
 
@@ -72,18 +72,17 @@ bash .agent/scripts/jules-dashboard.sh
 
 ## Features
 
-- **Zero Boilerplate** — String IDs, auto-commit, no configuration needed
-- **HNSW Vector Search** — Approximate nearest neighbor with diversity heuristic
-- **Scalar Quantization (SQ8)** — 4x RAM reduction for large-scale vector indices
-- **Hybrid Search** — Combined BM25 (text) and Vector search via RRF (Reciprocal Rank Fusion)
-- **Multi-Tenancy** — Logically isolated collections (namespaces) for different agents/tasks
-- **SIMD Acceleration** — portable-simd for distance computation
-- **LSM-Tree Persistence** — WAL + MemTable with crash recovery
-- **Transactional** — Sharded TxBuffer with orphan-reaping
-- **Relationship Tracking** — `relate()` API for graph-aware retrieval
-- **Hybrid Search** — Optimized BM25 + Vector Fusion (RRF)
-- **Scalar Quantization** — SQ8 compression for 4x reduced RAM footprint
-- **Deterministic Checkpointing** — Native state pinning for "Time-Travel" debugging
+- **Zero Boilerplate** — String IDs, auto-commit, no configuration needed.
+- **4-Signal Fusion** — Native merging of Vector (HNSW), Text (BM25), Graph (CSR), and Metadata signals.
+- **HNSW Vector Search** — Approximate nearest neighbor with diversity heuristic and SIMD acceleration.
+- **Scalar Quantization (SQ8)** — 4x RAM reduction for large-scale vector indices.
+- **Hybrid Search** — Combined BM25 (text) and Vector search via Reciprocal Rank Fusion (RRF).
+- **Multi-Tenancy** — Logically isolated collections (namespaces) for different agents/tasks.
+- **Advanced Metadata Filtering** — Robust engine for complex boolean logic on document metadata.
+- **LSM-Tree Persistence** — WAL + MemTable with crash recovery and encryption at rest.
+- **Transactional** — Sharded TxBuffer with orphan-reaping for atomic operations.
+- **Relationship Tracking** — `relate()` API for graph-aware retrieval and multi-hop traversal.
+- **Deterministic Checkpointing** — Native state pinning for "Time-Travel" debugging and agent state recovery.
 
 ## Building
 
