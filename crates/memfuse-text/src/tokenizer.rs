@@ -121,4 +121,15 @@ mod tests {
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
     }
+
+    #[test]
+    fn test_german_morph_tokenizer_expanded() {
+        let tokenizer = GermanMorphTokenizer::new();
+        let tokens = tokenizer.tokenize("Kaufvertrag und Hausordnung");
+        // "und" is stopword
+        assert!(tokens.contains(&"kaufvertrag".to_string()));
+        assert!(tokens.contains(&"vertrag".to_string()));
+        assert!(tokens.contains(&"hausordnung".to_string()));
+        assert!(tokens.contains(&"ordnung".to_string()));
+    }
 }

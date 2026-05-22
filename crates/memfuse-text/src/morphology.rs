@@ -85,6 +85,11 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             "sicherheit",
             "zugriff",
             "rechte",
+            "ordnung",
+            "vertrag",
+            "recht",
+            "kauf",
+            "haus",
         ];
 
         for &word in &dictionary {
