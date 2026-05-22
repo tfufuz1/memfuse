@@ -1,4 +1,6 @@
 //! SSTable (Sorted String Table) implementation.
+//! ANCHOR:DEBT:UNSAFE STATUS:READY AGENT:02
+//! ANCHOR:DEBT:STDFS STATUS:READY AGENT:02
 //!
 //! SSTables are persistent, immutable files containing sorted key-value pairs.
 //!

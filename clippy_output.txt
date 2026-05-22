@@ -1,1 +1,106 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.12s
+    Checking zerocopy v0.8.48
+    Checking tokio v1.52.3
+    Checking crossbeam-utils v0.8.21
+    Checking linux-raw-sys v0.12.1
+    Checking bitflags v2.11.1
+    Checking crossbeam-epoch v0.9.18
+    Checking rustix v1.1.4
+    Checking getrandom v0.4.2
+    Checking either v1.16.0
+    Checking futures-core v0.3.32
+    Checking fastrand v2.4.1
+    Checking futures-sink v0.3.32
+    Checking crossbeam-deque v0.8.6
+    Checking clap_lex v1.1.0
+    Checking ciborium-io v0.2.2
+    Checking plotters-backend v0.3.7
+    Checking futures-task v0.3.32
+    Checking anstyle v1.0.14
+    Checking regex-syntax v0.8.10
+    Checking tempfile v3.27.0
+    Checking clap_builder v4.6.0
+    Checking regex-automata v0.4.14
+    Checking futures-util v0.3.32
+    Checking ahash v0.8.12
+    Checking ppv-lite86 v0.2.21
+    Checking half v2.7.1
+    Checking rand_chacha v0.3.1
+    Checking memfuse-core v0.1.0 (/app/crates/memfuse-core)
+    Checking rand v0.8.6
+    Checking ciborium-ll v0.2.2
+    Checking plotters-svg v0.3.7
+    Checking rayon-core v1.13.0
+    Checking futures-channel v0.3.32
+    Checking itertools v0.10.5
+    Checking futures-io v0.3.32
+    Checking same-file v1.0.6
+    Checking cast v0.3.0
+    Checking walkdir v2.5.0
+    Checking futures v0.3.32
+    Checking rayon v1.12.0
+    Checking plotters v0.3.7
+    Checking memfuse-index v0.1.0 (/app/crates/memfuse-index)
+    Checking memfuse-store v0.1.0 (/app/crates/memfuse-store)
+    Checking criterion-plot v0.5.0
+    Checking memfuse-text v0.1.0 (/app/crates/memfuse-text)
+    Checking ciborium v0.2.2
+    Checking regex v1.12.3
+    Checking clap v4.6.1
+    Checking tinytemplate v1.2.1
+    Checking is-terminal v0.4.17
+    Checking anes v0.1.6
+    Checking oorandom v11.1.5
+    Checking memfuse-checkpoint v0.1.0 (/app/crates/memfuse-checkpoint)
+    Checking memfuse-runtime v0.1.0 (/app/crates/memfuse-runtime)
+    Checking criterion v0.5.1
+    Checking memfuse-orchestrator v0.1.0 (/app/crates/memfuse-orchestrator)
+    Checking memfuse-db v0.1.0 (/app/crates/memfuse-db)
+error[E0432]: unresolved import `memfuse_runtime::SandboxConfig`
+ --> crates/memfuse-runtime/tests/sandbox_tests.rs:3:23
+  |
+3 | use memfuse_runtime::{SandboxConfig, WasmSandbox};
+  |                       ^^^^^^^^^^^^^ no `SandboxConfig` in the root
+
+error[E0432]: unresolved import `memfuse_runtime::SandboxConfig`
+ --> crates/memfuse-runtime/tests/sandbox_isolation_integration.rs:1:23
+  |
+1 | use memfuse_runtime::{SandboxConfig, WasmSandbox};
+  |                       ^^^^^^^^^^^^^ no `SandboxConfig` in the root
+
+error[E0599]: no method named `execute` found for struct `memfuse_runtime::WasmSandbox` in the current scope
+  --> crates/memfuse-runtime/tests/sandbox_tests.rs:21:10
+   |
+20 |       let result = sandbox
+   |  __________________-
+21 | |         .execute(&wasm_bytes, "input data")
+   | |         -^^^^^^^ method not found in `memfuse_runtime::WasmSandbox`
+   | |_________|
+   |
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `memfuse-runtime` (test "sandbox_tests") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error[E0599]: no method named `execute` found for struct `memfuse_runtime::WasmSandbox` in the current scope
+  --> crates/memfuse-runtime/tests/sandbox_isolation_integration.rs:25:10
+   |
+24 |       let result = sandbox
+   |  __________________-
+25 | |         .execute(wasm_bytes, input)
+   | |         -^^^^^^^ method not found in `memfuse_runtime::WasmSandbox`
+   | |_________|
+   |
+
+error[E0599]: no method named `execute` found for struct `memfuse_runtime::WasmSandbox` in the current scope
+  --> crates/memfuse-runtime/tests/sandbox_isolation_integration.rs:37:19
+   |
+37 |     let res1 = s1.execute(b"", "1").unwrap();
+   |                   ^^^^^^^ method not found in `memfuse_runtime::WasmSandbox`
+
+error[E0599]: no method named `execute` found for struct `memfuse_runtime::WasmSandbox` in the current scope
+  --> crates/memfuse-runtime/tests/sandbox_isolation_integration.rs:38:19
+   |
+38 |     let res2 = s2.execute(b"", "2").unwrap();
+   |                   ^^^^^^^ method not found in `memfuse_runtime::WasmSandbox`
+
+error: could not compile `memfuse-runtime` (test "sandbox_isolation_integration") due to 4 previous errors

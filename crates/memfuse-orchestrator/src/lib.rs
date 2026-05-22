@@ -19,6 +19,8 @@
 // ZIEL: Deklarative LangGraph-ähnliche Graphenausführung in nativem Rust.
 // ANCHOR:INTEGRATION PRIO:2 STATUS:DONE AGENT:07 DATE:2026-05-20
 // DONE: Cross-Crate Integration Tests für StateGraph und Agent-Interaktion implementiert.
+// ANCHOR:FIXME:ORCH-001 STATUS:READY PRIO:1 AGENT:10
+// FIXME: StateGraph API conflict between lib.rs and graph.rs causing integration test failures.
 
 #![forbid(unsafe_code)]
 

@@ -1,6 +1,8 @@
 //! Checkpointing & Time-Travel (WP-5.1)
 //!
 //! Enables deterministic freezing and restarting of agent workflows.
+//! ANCHOR:DEBT:UNWRAP STATUS:READY AGENT:01
+//! ANCHOR:INTEGRATION:MISSING STATUS:READY AGENT:07
 //! Implements a SnapshotRegistry abstracting over Multi-Version Concurrency Control (MVCC).
 
 #![forbid(unsafe_code)]
