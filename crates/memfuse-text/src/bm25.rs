@@ -1,4 +1,5 @@
 //! Pure BM25 scoring functions.
+// AGENT:05 STATUS:DONE DATE:2026-05-21
 
 /// Calculates the BM25 score for a single term in a document.
 ///

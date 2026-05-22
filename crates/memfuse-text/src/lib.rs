@@ -2,6 +2,7 @@
 //!
 //! Evaluates Inverse Document Frequencies integrating natively into the
 //! `fusion.rs` layer in `memfuse-db`.
+// AGENT:05 STATUS:DONE DATE:2026-05-21
 
 #![forbid(unsafe_code)]
 

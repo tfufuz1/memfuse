@@ -1,4 +1,5 @@
 //! Tokenizer using `unicode-segmentation`.
+// AGENT:05 STATUS:DONE DATE:2026-05-21
 
 use std::collections::HashSet;
 use std::sync::OnceLock;

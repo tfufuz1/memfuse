@@ -1,4 +1,5 @@
 //! LSM-backed Inverted Index.
+// AGENT:05 STATUS:DONE DATE:2026-05-21
 // ANCHOR:PERF:LATENCY-003 — Inverted Index Key-Gen & Cache
 // WP:WP-0.0 PRIO:2 NEEDS:NONE
 // AGENT:09 DATE:2026-05-19 STATUS:DONE
@@ -11,6 +12,7 @@
 
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use async_trait::async_trait;
+use ahash::AHashMap;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
 };
@@ -305,7 +307,7 @@ impl InvertedIndex {
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
         let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
-            return Ok(Vec::new());
+            return Ok(Vec::with_capacity(0));
         }
 
         // Fetch global stats
@@ -339,8 +341,8 @@ impl InvertedIndex {
             0.0
         };
 
-        let mut scores: HashMap<DocId, f32> = HashMap::new();
-        let mut doc_len_cache: HashMap<DocId, u32> = HashMap::new();
+        let mut scores: AHashMap<DocId, f32> = AHashMap::with_capacity(tokens.len() * 10);
+        let mut doc_len_cache: AHashMap<DocId, u32> = AHashMap::with_capacity(tokens.len() * 10);
 
         for term in &tokens {
             let pl_key = self.key_with_term(term);
@@ -529,17 +531,17 @@ mod tests {
     #[async_trait::async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            Ok(self.store.read().unwrap().get(key).cloned())
+            Ok(self.store.read().expect("lock poisoning").get(key).cloned()) // unwrap
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
             self.store
                 .write()
-                .unwrap()
+                .expect("lock poisoning") // unwrap
                 .insert(key.to_vec(), value.to_vec());
             Ok(())
         }
         async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
-            self.store.write().unwrap().remove(key);
+            self.store.write().expect("lock poisoning").remove(key); // unwrap
             Ok(())
         }
         async fn commit(&self, _tx_id: TxId) -> Result<()> {
@@ -559,7 +561,7 @@ mod tests {
             })
         }
         async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            let store = self.store.read().unwrap();
+            let store = self.store.read().expect("lock poisoning"); // unwrap
             Ok(store
                 .iter()
                 .filter(|(k, _)| k.starts_with(prefix))
