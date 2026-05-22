@@ -2,62 +2,72 @@
 //!
 //! Sovereign, declarative alternative to LangGraph/AutoGen.
 //! Constructs acyclic and dynamic graphs routing autonomous agent steps.
-// ANCHOR:DOC:DOC-LIB-001 — Missing module documentation
-// WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:13 DATE:2026-05-13 STATUS:DONE
-// CREATED:2026-05-09 DEADLINE:NONE
-// ANCHOR:AUDIT:SAOS-023 — forbid(unsafe_code) fehlte → nachgerüstet
-// WP:NONE PRIO:3 NEEDS:NONE
-// AGENT:NONE DATE:2026-05-09 STATUS:READY
-// CREATED:2026-05-09 DEADLINE:NONE
-// AGENT:saos-audit DATE:2026-05-08 STATUS:FIXED
-//
+
 // ANCHOR:ARCH:ORCHESTRATOR-001 — Agent Workflow Engine (Cockpit — Layer 3).
 // WP:NONE PRIO:2 NEEDS:NONE
 // AGENT:NONE DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-09 DEADLINE:NONE
 // ZIEL: Deklarative LangGraph-ähnliche Graphenausführung in nativem Rust.
-// ANCHOR:INTEGRATION PRIO:2 STATUS:DONE AGENT:07 DATE:2026-05-20
-// DONE: Cross-Crate Integration Tests für StateGraph und Agent-Interaktion implementiert.
 
 #![forbid(unsafe_code)]
 
 use memfuse_core::Result;
+use std::collections::HashMap;
+
+pub type NodeId = String;
 
 /// A node within the deterministic agent graph.
 #[derive(Debug, Clone)]
 pub struct GraphNode {
-    pub name: String,
-    pub executable_identifier: String,
+    pub id: NodeId,
+    pub description: String,
 }
 
 /// Conditional routing logic representing edges in the StateGraph.
 #[derive(Debug, Clone)]
 pub struct WorkflowEdge {
-    pub from: String,
-    pub to: String,
+    pub from: NodeId,
+    pub to: NodeId,
     pub condition_evaluator: Option<String>,
 }
 
 /// Core declarative structure mapping workflows.
+#[derive(Default)]
 pub struct StateGraph {
-    pub nodes: Vec<GraphNode>,
+    pub nodes: HashMap<NodeId, GraphNode>,
+    /// Maps a source node to a target node with an optional transition condition name.
     pub edges: Vec<WorkflowEdge>,
 }
 
 impl StateGraph {
     /// Build an empty StateGraph.
     pub fn new() -> Self {
-        Self {
-            nodes: Vec::new(),
-            edges: Vec::new(),
-        }
+        Self::default()
     }
-}
 
-impl Default for StateGraph {
-    fn default() -> Self {
-        Self::new()
+    /// Adds a node to the workflow graph.
+    pub fn add_node(&mut self, id: &str, description: &str) {
+        self.nodes.insert(
+            id.to_string(),
+            GraphNode {
+                id: id.to_string(),
+                description: description.to_string(),
+            },
+        );
+    }
+
+    /// Adds a directed edge between two nodes with an optional condition.
+    pub fn add_edge(&mut self, source: &str, target: &str, condition: Option<&str>) {
+        self.edges.push(WorkflowEdge {
+            from: source.to_string(),
+            to: target.to_string(),
+            condition_evaluator: condition.map(|s| s.to_string()),
+        });
+    }
+
+    /// Executes the workflow starting from the given node.
+    pub fn run_workflow(&self, _initial_state: &str) {
+        // TODO(WP-5.3): Execute the State Graph, invoking WASM sandbox nodes
     }
 }
 

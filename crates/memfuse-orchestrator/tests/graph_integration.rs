@@ -10,13 +10,14 @@ fn test_stategraph_complex_workflow() {
     graph.add_node("store", "Store in MemFuse");
     graph.add_node("notify", "Notify Agent");
 
+    assert_eq!(graph.nodes.len(), 4);
+
     // Define edges with conditions
     graph.add_edge("ingress", "analyze", None);
     graph.add_edge("analyze", "store", Some("is_valid"));
     graph.add_edge("analyze", "notify", Some("is_invalid"));
     graph.add_edge("store", "notify", None);
 
-    assert_eq!(graph.nodes.len(), 4);
     assert_eq!(graph.edges.len(), 4);
 
     // Check specific nodes
@@ -30,9 +31,9 @@ fn test_stategraph_complex_workflow() {
     let edge_analyze_store = graph
         .edges
         .iter()
-        .find(|(s, t, _)| s == "analyze" && t == "store")
+        .find(|e| e.from == "analyze" && e.to == "store")
         .unwrap();
-    assert_eq!(edge_analyze_store.2, Some("is_valid".to_string()));
+    assert_eq!(edge_analyze_store.condition_evaluator, Some("is_valid".to_string()));
 }
 
 #[test]

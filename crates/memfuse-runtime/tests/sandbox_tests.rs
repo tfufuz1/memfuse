@@ -21,5 +21,5 @@ fn test_sandbox_execution_placeholder() {
         .execute(&wasm_bytes, "input data")
         .expect("execution failed");
 
-    assert_eq!(result, "sandbox_execution_result_placeholder");
+    assert_eq!(result, b"sandbox_execution_result_placeholder");
 }
