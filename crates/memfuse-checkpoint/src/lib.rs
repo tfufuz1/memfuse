@@ -34,18 +34,12 @@ impl CheckpointRegistry {
     }
 
     pub fn register(&self, tx_id: TxId, state: WorkflowState) {
-        let mut cache = self
-            .checkpoints
-            .write()
-            .expect("lock poisoning");
+        let mut cache = self.checkpoints.write().expect("lock poisoning");
         cache.insert(tx_id, state);
     }
 
     pub fn get(&self, tx_id: TxId) -> Option<WorkflowState> {
-        let cache = self
-            .checkpoints
-            .read()
-            .expect("lock poisoning");
+        let cache = self.checkpoints.read().expect("lock poisoning");
         cache.get(&tx_id).cloned()
     }
 }
@@ -250,12 +244,7 @@ mod tests {
         let manager = CheckpointManager::new(storage.clone());
 
         let meta = manager
-            .create_checkpoint(
-                "test_cp",
-                "coll_1",
-                100,
-                serde_json::json!({"state": "ok"}),
-            )
+            .create_checkpoint("test_cp", "coll_1", 100, serde_json::json!({"state": "ok"}))
             .await
             .unwrap(); // unwrap
 
