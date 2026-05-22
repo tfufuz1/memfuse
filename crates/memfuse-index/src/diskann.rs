@@ -1,4 +1,3 @@
-// AGENT:11
 //! DiskANN Out-of-Core Vector Search (WP-4.3).
 
 #![allow(unsafe_code)]
@@ -200,7 +199,7 @@ impl DiskAnnIndex {
 
         while let Some(Reverse(current)) = candidates.pop() {
             if results.len() >= self.config.beam_width
-                && current.distance > results.peek().expect("results not empty").distance // unwrap
+                && current.distance > results.peek().expect("results not empty").distance
             // unwrap
             {
                 break;
@@ -217,7 +216,7 @@ impl DiskAnnIndex {
                     };
 
                     if results.len() < self.config.beam_width
-                        || d < results.peek().expect("results not empty").distance // unwrap
+                        || d < results.peek().expect("results not empty").distance
                     // unwrap
                     {
                         candidates.push(Reverse(new_cand.clone()));
