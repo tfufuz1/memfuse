@@ -198,10 +198,12 @@ impl DiskAnnIndex {
         visited.insert(ep);
 
         while let Some(Reverse(current)) = candidates.pop() {
-            if results.len() >= self.config.beam_width
-                && current.distance > results.peek().unwrap().distance
-            {
-                break;
+            if results.len() >= self.config.beam_width {
+                if let Some(top) = results.peek() {
+                    if current.distance > top.distance {
+                        break;
+                    }
+                }
             }
 
             let node = self.load_node(current.index)?;
@@ -214,9 +216,13 @@ impl DiskAnnIndex {
                         distance: d,
                     };
 
-                    if results.len() < self.config.beam_width
-                        || d < results.peek().unwrap().distance
-                    {
+                    let should_push = if results.len() < self.config.beam_width {
+                        true
+                    } else {
+                        results.peek().is_some_and(|top| d < top.distance)
+                    };
+
+                    if should_push {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
                         if results.len() > self.config.beam_width {
@@ -227,19 +233,17 @@ impl DiskAnnIndex {
             }
         }
 
-        let mut final_results: Vec<ScoredDocument> = results
-            .into_iter()
-            .take(k)
-            .map(|c| {
-                let node = self
-                    .load_node(c.index)
-                    .expect("Node should be in cache or index");
-                ScoredDocument {
-                    doc_id: node.doc_id,
-                    score: 1.0 / (1.0 + c.distance),
-                }
-            })
-            .collect();
+        let mut final_results = Vec::with_capacity(results.len().min(k));
+        let mut results_vec: Vec<_> = results.into_iter().collect();
+        results_vec.sort_by(|a, b| a.distance.total_cmp(&b.distance));
+
+        for c in results_vec.into_iter().take(k) {
+            let node = self.load_node(c.index)?;
+            final_results.push(ScoredDocument {
+                doc_id: node.doc_id,
+                score: 1.0 / (1.0 + c.distance),
+            });
+        }
 
         final_results.sort_by(|a, b| b.score.total_cmp(&a.score));
         Ok(final_results)
@@ -374,7 +378,7 @@ mod tests {
             distance_metric: DistanceMetric::Cosine,
         };
 
-        let index = DiskAnnIndex::try_new(valid_config).expect("valid config");
+        let index = DiskAnnIndex::try_new(valid_config).expect("valid config"); // expect #[cfg(test)]
         assert!(index.is_empty());
 
         let invalid_sector = DiskAnnConfig {
@@ -403,7 +407,7 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let mut index = DiskAnnIndex::try_new(config).expect("valid config");
+        let mut index = DiskAnnIndex::try_new(config).expect("valid config"); // expect #[cfg(test)]
 
         let n = 1000;
         let mut vectors = Vec::with_capacity(n);
@@ -415,11 +419,11 @@ mod tests {
             ids.push(DocId::from(i as u64));
         }
 
-        index.build(&vectors, &ids).await.expect("Build failed");
+        index.build(&vectors, &ids).await.expect("Build failed"); // expect #[cfg(test)]
 
         let mut recall_count = 0;
         for (i, query) in vectors.iter().enumerate().take(100) {
-            let results = index.search(query, 10).await.expect("Search failed");
+            let results = index.search(query, 10).await.expect("Search failed"); // expect #[cfg(test)]
             if results.iter().any(|r| r.doc_id == ids[i]) {
                 recall_count += 1;
             }
