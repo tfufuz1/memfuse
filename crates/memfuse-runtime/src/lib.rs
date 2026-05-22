@@ -31,6 +31,24 @@ pub trait AgentRuntime: Send + Sync {
     async fn execute_isolated(&self, module_bin: &[u8], budget: &TokenBudget) -> Result<Vec<u8>>;
 }
 
+/// Configuration for the WASM Sandbox.
+#[derive(Debug, Clone)]
+pub struct SandboxConfig {
+    pub max_memory_mb: u32,
+    pub timeout: std::time::Duration,
+    pub allow_network: bool,
+}
+
+impl Default for SandboxConfig {
+    fn default() -> Self {
+        Self {
+            max_memory_mb: 64,
+            timeout: std::time::Duration::from_millis(500),
+            allow_network: false,
+        }
+    }
+}
+
 /// Boilerplate implementation tracking token utilization.
 pub struct WasmSandbox {
     _max_memory_pages: u32,
@@ -38,10 +56,18 @@ pub struct WasmSandbox {
 
 impl WasmSandbox {
     /// Scaffold: Initialize WasmSandbox parameters.
-    pub fn new(max_pages: u32) -> Self {
+    pub fn new(config: SandboxConfig) -> Self {
         Self {
-            _max_memory_pages: max_pages,
+            _max_memory_pages: config.max_memory_mb * 16, // approximate pages
         }
+    }
+
+    /// Executes a module with an input string (scaffold for integration tests).
+    pub async fn execute(&self, module_bin: &[u8], _input: &str) -> Result<String> {
+        use memfuse_core::TokenBudget;
+        let budget = TokenBudget::new(1000, 0);
+        let _ = self.execute_isolated(module_bin, &budget).await?;
+        Ok("sandbox_execution_result_placeholder".to_string())
     }
 }
 
@@ -63,7 +89,7 @@ mod tests {
     /// memory limit, the sandbox enforces it and returns a MemoryLimitExceeded error.
     #[tokio::test]
     async fn test_sandbox_memory_limit_enforced() {
-        let _sandbox = WasmSandbox::new(64);
+        let _sandbox = WasmSandbox::new(SandboxConfig::default());
         // TODO: Memory limit enforcement must be implemented to fulfill AC-1
     }
 
@@ -72,7 +98,7 @@ mod tests {
     /// after exceeding the specified CPU timeout threshold.
     #[tokio::test]
     async fn test_sandbox_cpu_timeout_enforced() {
-        let _sandbox = WasmSandbox::new(64);
+        let _sandbox = WasmSandbox::new(SandboxConfig::default());
         // TODO: CPU timeout enforcement must be implemented to fulfill AC-2
     }
 
@@ -81,7 +107,7 @@ mod tests {
     /// to open files returns a PolicyViolation error.
     #[tokio::test]
     async fn test_sandbox_cannot_access_host_fs() {
-        let _sandbox = WasmSandbox::new(64);
+        let _sandbox = WasmSandbox::new(SandboxConfig::default());
         // TODO: Filesystem sandbox isolation must be implemented to fulfill AC-3
     }
 }

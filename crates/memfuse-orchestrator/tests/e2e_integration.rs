@@ -100,6 +100,7 @@ async fn test_e2e_agent_workflow() {
     let sandbox = WasmSandbox::new(SandboxConfig::default());
     let _execution_result = sandbox
         .execute(b"WASM_CODE", "input")
+        .await
         .expect("WASM execution failed");
 
     graph.run_workflow("start");
