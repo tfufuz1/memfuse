@@ -43,6 +43,10 @@ pub enum MemFuseError {
     #[error("Memory budget exceeded: {used_mb}MB / {limit_mb}MB")]
     MemoryBudgetExceeded { used_mb: u64, limit_mb: u64 },
 
+    // ═══ Namespace ═══
+    #[error("Namespace isolation violation: {0}")]
+    NamespaceViolation(String),
+
     // ═══ Input ═══
     #[error("Invalid input: {0}")]
     InvalidInput(String),

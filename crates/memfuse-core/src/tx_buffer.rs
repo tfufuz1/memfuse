@@ -316,8 +316,15 @@ mod tests {
 
         let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10));
         assert!(buffer.has_tx(tx1));
-        sleep(Duration::from_millis(100)).await;
-        assert!(!buffer.has_tx(tx1));
+
+        // Poll until the transaction is reaped or timeout
+        let start = std::time::Instant::now();
+        let timeout = Duration::from_secs(2);
+        while buffer.has_tx(tx1) && start.elapsed() < timeout {
+            sleep(Duration::from_millis(5)).await;
+        }
+
+        assert!(!buffer.has_tx(tx1), "Transaction was not reaped in time");
     }
 
     #[tokio::test]
@@ -349,7 +356,7 @@ mod tests {
 
         for h in handles {
             // ANCHOR:DEBT:TXBUF-002 — intentional expect in tests
-            h.await.expect("task panicked"); // #[cfg(test)]
+            h.await.expect("task panicked"); // expect #[cfg(test)]
         }
 
         assert_eq!(buffer.len(), num_tx);

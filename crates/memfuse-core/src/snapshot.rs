@@ -79,11 +79,15 @@ impl SnapshotRegistry {
     pub(crate) fn release(&self, seq_no: u64) {
         let seq_no = seq_no & !TOMBSTONE_BIT;
         let mut active = self.active.lock();
-        if let Some(count) = active.get_mut(&seq_no) {
-            *count -= 1;
-            if *count == 0 {
-                active.remove(&seq_no);
-            }
+        let should_remove = if let Some(count) = active.get_mut(&seq_no) {
+            *count = count.saturating_sub(1);
+            *count == 0
+        } else {
+            false
+        };
+
+        if should_remove {
+            active.remove(&seq_no);
         }
         self.update_min(&active);
     }
