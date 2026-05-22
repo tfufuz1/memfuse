@@ -233,16 +233,21 @@ impl DiskAnnIndex {
             }
         }
 
-        let mut final_results = Vec::with_capacity(results.len().min(k));
-        for c in results.into_iter().take(k) {
+        // Correct top-k extraction: results is a max-heap on distance,
+        // we want the smallest distances. after beam search, the heap
+        // contains the beam_width best results.
+        let sorted_candidates = results.into_sorted_vec();
+        // into_sorted_vec for max-heap gives ascending order.
+        // So sorted_candidates[0] is smallest distance.
+
+        let mut final_results = Vec::with_capacity(sorted_candidates.len().min(k));
+        for c in sorted_candidates.into_iter().take(k) {
             let node = self.load_node(c.index)?;
             final_results.push(ScoredDocument {
                 doc_id: node.doc_id,
                 score: 1.0 / (1.0 + c.distance),
             });
         }
-
-        final_results.sort_by(|a, b| b.score.total_cmp(&a.score));
         Ok(final_results)
     }
 
@@ -383,8 +388,8 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let err = DiskAnnIndex::try_new(invalid_sector)
-            .expect_err("Should reject unaligned sector size"); // unwrap allowed in tests
+        let err =
+            DiskAnnIndex::try_new(invalid_sector).expect_err("Should reject unaligned sector size"); // unwrap allowed in tests
         match err {
             MemFuseError::InvalidInput(msg) => {
                 assert!(msg.contains("Sector size must be a power of 2"));
