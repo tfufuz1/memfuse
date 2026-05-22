@@ -244,30 +244,6 @@ impl LsmStorage {
         Ok(())
     }
 
-    /// Truncates the database state to a specific sequence number.
-    /// Internal use for rollback.
-    #[allow(dead_code)]
-    pub(crate) async fn truncate_to(&self, seq_no: u64) -> Result<()> {
-        let mut state = self.state.write().await;
-        let mut sstables = self.sstables.write().await;
-
-        // 1. Clear MemTables
-        state.memtable = Arc::new(MemTable::new());
-        state.immutable_memtables.clear();
-
-        // 2. Filter SSTables (keep only those that DON'T contain data newer than seq_no)
-        // This is a simplification. Ideally, we'd only filter entries during read.
-        // For a full rollback, we might need to delete SSTables that were created after seq_no.
-        sstables.retain(|sst| {
-            sst.metadata().first_key.is_empty() || sst.metadata().last_key.is_empty()
-        }); // Stub logic
-
-        // 3. Reset sequence number
-        self.next_seq_no.store(seq_no + 1, Ordering::SeqCst);
-
-        Ok(())
-    }
-
     /// Forces a flush (to be used by CheckpointManager or tests).
     pub async fn force_flush(&self) -> Result<()> {
         self.flush().await

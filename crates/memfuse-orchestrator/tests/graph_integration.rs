@@ -22,7 +22,7 @@ fn test_stategraph_complex_workflow() {
     // Check specific nodes
     assert!(graph.nodes.contains_key("ingress"));
     assert_eq!(
-        graph.nodes.get("ingress").unwrap().description,
+        graph.nodes.get("ingress").expect("test").description,
         "Data Ingress"
     );
 
@@ -31,7 +31,7 @@ fn test_stategraph_complex_workflow() {
         .edges
         .iter()
         .find(|(s, t, _)| s == "analyze" && t == "store")
-        .unwrap();
+        .expect("test");
     assert_eq!(edge_analyze_store.2, Some("is_valid".to_string()));
 }
 

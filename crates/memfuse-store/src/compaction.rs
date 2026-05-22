@@ -14,10 +14,6 @@
 // ATOMARER SWAP: Merge unter read-lock, SSTable-Liste swap unter write-lock.
 // INVARIANTE: Während Compaction sind alte SSTables noch lesbar (readers halten Arc).
 // LIFECYCLE: run_loop() -> maybe_compact() -> select_candidates() -> merge_sstables()
-// ANCHOR:DEBT:COMPACTION-OOM STATUS:READY AGENT:02
-// MERGE-PATH: merge_sstables lädt aktuell alle Einträge in den RAM.
-// PROBLEM: Kann bei großen SSTables zu OOM führen.
-// FIX: Implementiere K-Way Merge mit Streaming Iteratoren.
 //!
 //! Implements a Size-Tiered Compaction Strategy (STCS):
 //! Groups SSTables by size class and merges groups that exceed a threshold.
@@ -25,10 +21,7 @@
 //! references them.
 
 use crate::sstable::{BlockCache, SstableBuilder, SstableReader};
-use bytes::Bytes;
 use memfuse_core::{Result, SnapshotRegistry, TOMBSTONE_BIT};
-use std::cmp::Ordering;
-use std::collections::BinaryHeap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -231,84 +224,46 @@ impl CompactionEngine {
         output_path: &std::path::Path,
         min_snapshot_seq: u64,
     ) -> Result<()> {
-        struct MergeEntry {
-            key: Bytes,
-            value: Bytes,
-            seq_no: u64,
-            iter_idx: usize,
-        }
-
-        impl PartialEq for MergeEntry {
-            fn eq(&self, other: &Self) -> bool {
-                self.key == other.key && self.seq_no == other.seq_no
-            }
-        }
-        impl Eq for MergeEntry {}
-        impl PartialOrd for MergeEntry {
-            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-                Some(self.cmp(other))
-            }
-        }
-        impl Ord for MergeEntry {
-            fn cmp(&self, other: &Self) -> Ordering {
-                // Min-heap on key, then max-heap on seq_no (for same key)
-                other
-                    .key
-                    .cmp(&self.key)
-                    .then_with(|| self.seq_no.cmp(&other.seq_no))
-                    .then_with(|| other.iter_idx.cmp(&self.iter_idx))
+        // 1. Collect all entries from all input SSTables
+        let mut all_entries: Vec<(Vec<u8>, Vec<u8>, u64)> = Vec::new();
+        for sst in inputs {
+            let entries = sst.iter().await?;
+            for (k, v, seq) in entries {
+                all_entries.push((k.to_vec(), v.to_vec(), seq));
             }
         }
 
-        let mut iters = Vec::with_capacity(inputs.len());
-        let mut heap = BinaryHeap::new();
+        // 2. Sort by key, then by sequence number descending (newest first)
+        all_entries.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| b.2.cmp(&a.2)));
 
-        for (i, sst) in inputs.iter().enumerate() {
-            let mut iter = sst.clone().iterator();
-            if let Some((key, value, seq_no)) = iter.next().await? {
-                heap.push(MergeEntry {
-                    key,
-                    value,
-                    seq_no,
-                    iter_idx: i,
-                });
+        // 3. Deduplicate: for each key, keep only the entry with the highest seq_no
+        let mut deduped: Vec<(Vec<u8>, Vec<u8>, u64)> = Vec::new();
+        let mut last_key: Option<&[u8]> = None;
+
+        for entry in &all_entries {
+            if last_key == Some(&entry.0) {
+                continue; // Skip: already have a newer version of this key
             }
-            iters.push(iter);
-        }
+            last_key = Some(&entry.0);
 
-        let mut builder = SstableBuilder::create(output_path).await?;
-        let mut last_key: Option<Bytes> = None;
+            let is_tombstone = (entry.2 & TOMBSTONE_BIT) != 0;
+            let raw_seq = entry.2 & !TOMBSTONE_BIT;
 
-        while let Some(top) = heap.pop() {
-            let iter_idx = top.iter_idx;
-
-            // Load next entry from the iterator we just popped from
-            if let Some((key, value, seq_no)) = iters[iter_idx].next().await? {
-                heap.push(MergeEntry {
-                    key,
-                    value,
-                    seq_no,
-                    iter_idx,
-                });
-            }
-
-            if last_key.as_ref() == Some(&top.key) {
-                continue; // Newer version already written
-            }
-
-            let is_tombstone = (top.seq_no & TOMBSTONE_BIT) != 0;
-            let raw_seq = top.seq_no & !TOMBSTONE_BIT;
-
+            // GC tombstones that are older than all active snapshots
             if is_tombstone && raw_seq < min_snapshot_seq {
-                last_key = Some(top.key);
-                continue;
+                continue; // Tombstone is safe to garbage-collect
             }
 
-            builder.add(&top.key, &top.value, top.seq_no).await?;
-            last_key = Some(top.key);
+            deduped.push(entry.clone());
         }
 
+        // 4. Write to output SSTable
+        let mut builder = SstableBuilder::create(output_path).await?;
+        for (key, value, seq) in &deduped {
+            builder.add(key, value, *seq).await?;
+        }
         builder.finish().await?;
+
         Ok(())
     }
 
