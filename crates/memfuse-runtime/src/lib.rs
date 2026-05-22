@@ -36,7 +36,6 @@ pub trait AgentRuntime: Send + Sync {
     async fn execute_isolated(&self, module_bin: &[u8], budget: &TokenBudget) -> Result<Vec<u8>>;
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
