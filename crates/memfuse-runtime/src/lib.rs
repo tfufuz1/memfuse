@@ -53,7 +53,10 @@ mod tests {
     /// memory limit, the sandbox enforces it and returns a MemoryLimitExceeded error.
     #[tokio::test]
     async fn test_sandbox_memory_limit_enforced() {
-        let _sandbox = WasmSandbox::new(SandboxConfig { max_memory_mb: 64, ..Default::default() });
+        let _sandbox = WasmSandbox::new(SandboxConfig {
+            max_memory_mb: 64,
+            ..Default::default()
+        });
         // TODO: Memory limit enforcement must be implemented to fulfill AC-1
     }
 
@@ -62,7 +65,10 @@ mod tests {
     /// after exceeding the specified CPU timeout threshold.
     #[tokio::test]
     async fn test_sandbox_cpu_timeout_enforced() {
-        let _sandbox = WasmSandbox::new(SandboxConfig { max_memory_mb: 64, ..Default::default() });
+        let _sandbox = WasmSandbox::new(SandboxConfig {
+            max_memory_mb: 64,
+            ..Default::default()
+        });
         // TODO: CPU timeout enforcement must be implemented to fulfill AC-2
     }
 
@@ -71,7 +77,10 @@ mod tests {
     /// to open files returns a PolicyViolation error.
     #[tokio::test]
     async fn test_sandbox_cannot_access_host_fs() {
-        let _sandbox = WasmSandbox::new(SandboxConfig { max_memory_mb: 64, ..Default::default() });
+        let _sandbox = WasmSandbox::new(SandboxConfig {
+            max_memory_mb: 64,
+            ..Default::default()
+        });
         // TODO: Filesystem sandbox isolation must be implemented to fulfill AC-3
     }
 }
