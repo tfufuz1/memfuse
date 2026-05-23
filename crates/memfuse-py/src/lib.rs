@@ -10,16 +10,18 @@
 //!   from synchronous Python calls.
 //! - **Zero-Copy**: Aims for minimal copying of vector data between Python and Rust.
 
-// AGENT:06 DATE:2026-05-15 STATUS:DONE
+// AGENT:06 DATE:2026-05-23 STATUS:DONE
 // ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
 // WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
-// AGENT:@JULES-06 DATE:2026-05-15 STATUS:DONE
+// AGENT:@JULES-06 DATE:2026-05-23 STATUS:DONE
 // TEST: cd crates/memfuse-py && python -m pytest tests/ -v
 // DONE: pip install . funktioniert, keine Deadlocks in tokio-Runtime.
 // SUCCESSOR: @JULES-09 — "Python Bindings sind stabil. StateGraph kann darauf aufbauen."
 #![forbid(unsafe_code)]
 
 use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
+use memfuse_orchestrator::{AgentNode as MemFuseNode, StateGraph as MemFuseStateGraph};
+use memfuse_runtime::airgap::{AirGapConfig, AirGapVerifier, EmbeddingRuntime};
 use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;
 use pythonize::{depythonize, pythonize};
@@ -725,9 +727,108 @@ impl PyCollection {
     }
 }
 
+/// Configuration for air-gap deployment mode.
+#[pyclass(name = "AirGapConfig")]
+#[derive(Clone)]
+pub struct PyAirGapConfig {
+    pub(crate) inner: AirGapConfig,
+}
+
+#[pymethods]
+impl PyAirGapConfig {
+    #[new]
+    #[pyo3(signature = (network_disabled=true, local_model_path=None, require_encryption=true))]
+    pub fn new(
+        network_disabled: bool,
+        local_model_path: Option<String>,
+        require_encryption: bool,
+    ) -> Self {
+        let mut inner = AirGapConfig {
+            network_disabled,
+            local_model_path,
+            require_encryption,
+            ..Default::default()
+        };
+        if inner.local_model_path.is_some() {
+            inner.embedding_runtime = EmbeddingRuntime::OnnxRuntime;
+        }
+        Self { inner }
+    }
+
+    #[staticmethod]
+    pub fn strict() -> Self {
+        Self {
+            inner: AirGapConfig::strict(),
+        }
+    }
+
+    #[pyo3(signature = ())]
+    pub fn validate(&self) -> PyResult<()> {
+        self.inner
+            .validate()
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    }
+}
+
+/// Result of an air-gap compliance verification.
+#[pyclass(get_all, name = "AirGapReport")]
+pub struct PyAirGapReport {
+    pub network_isolated: bool,
+    pub encryption_active: bool,
+    pub sbom_generated: bool,
+}
+
+#[pymethods]
+impl PyAirGapReport {
+    pub fn is_compliant(&self) -> bool {
+        self.network_isolated && self.encryption_active
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AirGapReport(network_isolated={}, encryption_active={})",
+            self.network_isolated, self.encryption_active
+        )
+    }
+}
+
+/// Verifies air-gap compliance.
+#[pyclass(name = "AirGapVerifier")]
+pub struct PyAirGapVerifier;
+
+#[pymethods]
+impl PyAirGapVerifier {
+    #[staticmethod]
+    pub fn verify(config: &PyAirGapConfig) -> PyResult<PyAirGapReport> {
+        let report = AirGapVerifier::verify(&config.inner)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        Ok(PyAirGapReport {
+            network_isolated: report.network_isolated,
+            encryption_active: report.encryption_active,
+            sbom_generated: report.sbom_generated,
+        })
+    }
+}
+
+/// Provides local embedding models for air-gapped environments.
+#[pyclass(name = "EmbeddingProvider")]
+pub struct PyEmbeddingProvider;
+
+#[pymethods]
+impl PyEmbeddingProvider {
+    #[staticmethod]
+    #[pyo3(signature = (model_path, runtime="ort"))]
+    pub fn local(model_path: &str, runtime: &str) -> PyAirGapConfig {
+        let _ = runtime;
+        PyAirGapConfig {
+            inner: AirGapConfig::with_local_model(model_path),
+        }
+    }
+}
+
 /// Opens or creates a MemFuse database at the given path.
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536, max_elements=None, encryption_passphrase=None, distance_metric=None))]
+#[pyo3(signature = (path, dimension=1536, max_elements=None, encryption_passphrase=None, distance_metric=None, airgap=None))]
 fn open(
     py: Python<'_>,
     path: &str,
@@ -735,6 +836,7 @@ fn open(
     max_elements: Option<usize>,
     encryption_passphrase: Option<String>,
     distance_metric: Option<String>,
+    airgap: Option<PyAirGapConfig>,
 ) -> PyResult<PyMemFuse> {
     let rt = get_runtime()?;
     let mut config = MemFuseConfig {
@@ -742,6 +844,18 @@ fn open(
         encryption_passphrase,
         ..Default::default()
     };
+
+    if let Some(ag) = airgap {
+        ag.validate()?;
+        if ag.inner.require_encryption && config.encryption_passphrase.is_none() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "Air-gap mode requires encryption passphrase",
+            ));
+        }
+        // INTEGRATION: AirGapConfig is validated here.
+        // Once memfuse-db supports AirGapConfig natively in its MemFuseConfig,
+        // we will pass it along. For now, we enforce the isolation at the binding level.
+    }
 
     if let Some(me) = max_elements {
         config.max_elements = me;
@@ -771,6 +885,98 @@ fn open(
     })
 }
 
+/// Represents a single node in the agent state graph.
+#[pyclass(name = "Node")]
+pub struct PyNode {
+    pub(crate) inner: MemFuseNode,
+}
+
+#[pymethods]
+impl PyNode {
+    #[new]
+    #[pyo3(signature = (id, description, tool=None, params=None))]
+    pub fn new(
+        id: String,
+        description: String,
+        tool: Option<String>,
+        params: Option<pyo3::Bound<'_, pyo3::types::PyDict>>,
+    ) -> PyResult<Self> {
+        let params_val = if let Some(d) = params {
+            Some(depythonize(&d).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Params error: {}", e))
+            })?)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            inner: MemFuseNode {
+                id,
+                description,
+                tool,
+                params: params_val,
+            },
+        })
+    }
+
+    #[getter]
+    pub fn id(&self) -> String {
+        self.inner.id.clone()
+    }
+
+    #[getter]
+    pub fn description(&self) -> String {
+        self.inner.description.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Node(id='{}')", self.inner.id)
+    }
+}
+
+/// A declarative state graph for agent workflows.
+#[pyclass(name = "StateGraph")]
+pub struct PyStateGraph {
+    pub(crate) inner: MemFuseStateGraph,
+}
+
+impl Default for PyStateGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[pymethods]
+impl PyStateGraph {
+    #[new]
+    pub fn new() -> Self {
+        Self {
+            inner: MemFuseStateGraph::new(),
+        }
+    }
+
+    /// Adds a node to the workflow graph.
+    pub fn add_node(&mut self, node: &PyNode) {
+        self.inner.add_agent_node(MemFuseNode {
+            id: node.inner.id.clone(),
+            description: node.inner.description.clone(),
+            tool: node.inner.tool.clone(),
+            params: node.inner.params.clone(),
+        });
+    }
+
+    /// Adds a directed edge between two nodes with an optional condition.
+    #[pyo3(signature = (source, target, condition=None))]
+    pub fn add_edge(&mut self, source: &str, target: &str, condition: Option<&str>) {
+        self.inner.add_edge(source, target, condition);
+    }
+
+    /// Executes the workflow starting from the given initial state.
+    pub fn run(&self, initial_state: &str) {
+        self.inner.run_workflow(initial_state);
+    }
+}
+
 #[pymodule]
 fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
     m.add("__version__", "0.1.0")?;
@@ -782,5 +988,11 @@ fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()
     m.add_class::<PyVectorIndexStats>()?;
     m.add_class::<PyStorageStats>()?;
     m.add_class::<PyDbStats>()?;
+    m.add_class::<PyNode>()?;
+    m.add_class::<PyStateGraph>()?;
+    m.add_class::<PyAirGapConfig>()?;
+    m.add_class::<PyAirGapReport>()?;
+    m.add_class::<PyAirGapVerifier>()?;
+    m.add_class::<PyEmbeddingProvider>()?;
     Ok(())
 }

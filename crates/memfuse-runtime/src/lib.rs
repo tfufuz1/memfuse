@@ -22,6 +22,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod airgap;
+
 use memfuse_core::{Result, TokenBudget};
 
 /// Defines the execution boundaries for sandbox containers.

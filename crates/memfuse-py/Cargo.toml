@@ -22,5 +22,7 @@ tokio = { version = "1", features = ["full"] }
 # auf die orchestrating Facade in memfuse-db. Dies ist eine beabsichtigte Ausnahme
 # vom Sovereign Core DAG, da Bindings per Definition an der Grenze zum Nutzer stehen.
 memfuse-db = { workspace = true }
+memfuse-orchestrator = { workspace = true }
+memfuse-runtime = { workspace = true }
 serde_json.workspace = true
 pythonize = "0.24"
