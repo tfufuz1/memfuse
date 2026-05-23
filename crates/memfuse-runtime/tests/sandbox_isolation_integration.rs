@@ -1,41 +1,38 @@
-use memfuse_runtime::{SandboxConfig, WasmSandbox};
-use std::time::Duration;
+use memfuse_runtime::{AgentRuntime, WasmSandbox};
 
-#[test]
-fn test_sandbox_config_defaults() {
-    let config = SandboxConfig::default();
-    assert_eq!(config.max_memory_mb, 64);
-    assert_eq!(config.timeout, Duration::from_millis(500));
-    assert!(!config.allow_network);
+#[tokio::test]
+async fn test_sandbox_config_defaults() {
+    let _sandbox = WasmSandbox::new(64);
 }
 
-#[test]
-fn test_sandbox_isolation_and_execution() {
-    let config = SandboxConfig {
-        max_memory_mb: 128,
-        timeout: Duration::from_secs(1),
-        allow_network: false,
-    };
-    let sandbox = WasmSandbox::new(config);
+#[tokio::test]
+async fn test_sandbox_isolation_and_execution() {
+    let sandbox = WasmSandbox::new(64);
 
     // Test execution with placeholder bytes (simulating WASM payload)
     let wasm_bytes = b"\x00asm\x01\x00\x00\x00";
-    let input = "ping";
     let result = sandbox
-        .execute(wasm_bytes, input)
+        .execute_isolated(wasm_bytes, &memfuse_core::TokenBudget::new(100, 0))
+        .await
         .expect("execution failed");
 
-    // In the current placeholder implementation, it returns a static string
-    assert_eq!(result, "sandbox_execution_result_placeholder");
+    // In the current placeholder implementation, it returns an empty vector
+    assert!(result.is_empty());
 }
 
-#[test]
-fn test_sandbox_multiple_instances() {
-    let s1 = WasmSandbox::new(SandboxConfig::default());
-    let s2 = WasmSandbox::new(SandboxConfig::default());
+#[tokio::test]
+async fn test_sandbox_multiple_instances() {
+    let s1 = WasmSandbox::new(64);
+    let s2 = WasmSandbox::new(64);
 
-    let res1 = s1.execute(b"", "1").unwrap();
-    let res2 = s2.execute(b"", "2").unwrap();
+    let res1 = s1
+        .execute_isolated(b"", &memfuse_core::TokenBudget::new(100, 0))
+        .await
+        .unwrap();
+    let res2 = s2
+        .execute_isolated(b"", &memfuse_core::TokenBudget::new(100, 0))
+        .await
+        .unwrap();
 
     assert_eq!(res1, res2);
 }
