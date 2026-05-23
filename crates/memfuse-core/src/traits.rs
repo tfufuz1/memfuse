@@ -173,6 +173,9 @@ pub struct TextIndexStats {
     pub num_documents: usize,
     /// Total number of tokens across all documents.
     pub num_tokens: usize,
+    /// Token reduction ratio (tokens after expansion / original tokens).
+    /// Used for measuring Morphological Optimization (WP-6.5) effectiveness.
+    pub token_reduction_ratio: f32,
     /// Estimated memory usage in bytes.
     pub memory_usage_bytes: usize,
 }
