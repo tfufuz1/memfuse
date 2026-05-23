@@ -1,24 +1,25 @@
-# Implementation Plan
+# MVCC MemTable Refactoring
 
-## Goal Description
-Fix the two critical architectural logic flaws found during the forensic audit of [memfuse-store/src/compaction.rs](file:///home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-store/src/compaction.rs) to ensure full LSM MVCC integrity and prevent data corruption (MVCC inversion and Tombstone Resurrection).
+This plan implements point-in-time reads (Snapshot Isolation) by ensuring `MemTable` correctly handles multiple versions of keys and fixing a critical bug in version retrieval.
 
 ## Proposed Changes
 
 ### `memfuse-store`
-#### [MODIFY] [compaction.rs](file:///home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-store/src/compaction.rs)
-- **Fix ARCH-COMPACTION-001 (Contiguous Generation)**: Rewrite the [maybe_compact()](file:///home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-store/src/compaction.rs#76-158) logic where size tiers are grouped. Replace the naive `tiers` bucket mapping with a sliding window mechanism that scans `ssts` (from newest to oldest) and evaluates contiguous windows of SSTables. Ensure that any candidate grouping represents a strictly contiguous sequence of SSTable indices.
-- **Fix ARCH-COMPACTION-002 (Tombstone Resurrection)**: Modify the GC logic (`is_tombstone && raw_seq < min_snapshot_seq`). A tombstone can only be safely omitted from the output SSTable if the compaction process covers the **deepest (oldest) end** of the [sstables](file:///home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-store/src/compaction.rs#216-269) bounds (e.g. `indices` includes index 0, assuming index 0 is oldest), OR we guarantee no older table has the key (which is too expensive generically for STCS without a bloom filter check on all older files). The simplest bullet-proof path: Only GC tombstones if `insertion_point == 0` (meaning this compaction run incorporates the oldest SSTable in the system) or enforce that tombstones are flushed down.
 
-### `docs/specs`
-#### [MODIFY] `SPEC-20260505-WP-1.1-Compaction.md`
-- Update the STCS group mapping algorithm under section 5 ("Implementierungsdetail") to mandate chronologically adjacent windows.
-- Update the tombstone drop rules to explicitly state that `seq_no < min_snapshot_seq` is only valid if the compaction includes the deepest/oldest SSTable in the system.
+#### [MODIFY] [memtable.rs](file:///home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-store/src/memtable.rs)
+- **Fix `get_at_seq`**: Update binary search to mask `TOMBSTONE_BIT` when comparing sequence numbers. Currently, it compares the clean search `seq_no` with the raw `seq_no` from the entry, which causes incorrect results when the tombstone bit is set (bit 63).
+- **Optimize `iter_latest`**: Add a method to iterate only the latest version of each key. This will be used by `LsmStorage::flush` as per the "Correction" in the task description.
+
+#### [MODIFY] [lsm.rs](file:///home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-store/src/lsm.rs)
+- **Update `flush`**: Use `memtable.iter_latest()` instead of `memtable.iter()` to ensure only the most recent version of each key is written to a single SSTable. This keeps the SSTable structure simple and consistent with standard LSM segments.
+- **Note**: Versioning is still preserved because different versions of the same key will exist across different SSTables (or between the memtable and SSTables).
 
 ## Verification Plan
 
 ### Automated Tests
-- Run the full workspace unit tests `cargo test --workspace` to ensure existing stress tests and compaction tests continue to pass with the corrected logic mapping.
+- `cargo test -p memfuse-store --lib memtable::tests::test_mvcc_tombstone_binary_search` (New test to be added)
+- `cargo test -p memfuse-db --test transaction_isolation test_snapshot_stability`
+- `cargo test -p memfuse-store` (Full suite)
 
 ### Manual Verification
-- Re-run `clippy -D warnings` to ensure zero-warnings are maintained as part of the Sovereign Core doctrine.
+- None required beyond automated tests.

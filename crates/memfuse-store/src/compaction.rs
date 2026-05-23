@@ -577,7 +577,7 @@ mod tests {
         }
 
         // 3. Register a Snapshot [INV-C1]
-        let snapshot_seq = storage.last_seq_no();
+        let snapshot_seq = storage.last_seq_no().await.expect("last_seq_no");
         let _guard = storage.snapshot_registry.register(snapshot_seq);
 
         // 4. Heavy Load: 10,000 Inserts to trigger churn and background compaction

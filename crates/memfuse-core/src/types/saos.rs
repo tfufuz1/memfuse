@@ -189,17 +189,76 @@ impl HybridQueryBuilder {
             text_query: self.text_query,
             vector_query: self.vector_query,
             graph_start_node: self.graph_start_node,
-            fusion_weights: self.fusion_weights.unwrap_or_else(|| {
+            fusion_weights: self.fusion_weights.unwrap_or(
                 // Use a known-safe default to avoid unwrap()
                 FusionWeights {
                     vector: 1.0,
                     text: 0.0,
                     graph: 0.0,
                     metadata: 0.0,
-                }
-            }),
+                },
+            ),
             filter: self.filter,
             k: self.k.unwrap_or(10),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fusion_weights_valid() {
+        let w = FusionWeights::new(0.5, 0.5, 0.0, 0.0).expect("valid");
+        assert_eq!(w.vector(), 0.5);
+        assert_eq!(w.text(), 0.5);
+    }
+
+    #[test]
+    fn test_fusion_weights_invalid_sum() {
+        let result = FusionWeights::new(0.5, 0.6, 0.0, 0.0);
+        assert!(result.is_err());
+        if let Err(MemFuseError::InvalidInput(msg)) = result {
+            assert!(msg.contains("must sum exactly to 1.0"));
+        } else {
+            panic!("Expected InvalidInput error");
+        }
+    }
+
+    #[test]
+    fn test_hybrid_query_builder_happy_path() {
+        let query = HybridQuery::builder()
+            .with_text_query("test query")
+            .with_vector_query(vec![0.1, 0.2])
+            .with_k(5)
+            .build()
+            .expect("build ok");
+
+        assert_eq!(query.text_query.unwrap(), "test query");
+        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]);
+        assert_eq!(query.k, 5);
+        // Default weights: vector=1.0, others=0.0
+        assert_eq!(query.fusion_weights.vector(), 1.0);
+    }
+
+    #[test]
+    fn test_hybrid_query_builder_custom_weights() {
+        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap();
+        let query = HybridQuery::builder()
+            .with_fusion_weights(weights.clone())
+            .build()
+            .unwrap();
+
+        assert_eq!(query.fusion_weights, weights);
+    }
+
+    #[test]
+    fn test_hybrid_query_builder_defaults() {
+        let query = HybridQuery::builder().build().unwrap();
+        assert_eq!(query.k, 10);
+        assert_eq!(query.fusion_weights.vector(), 1.0);
+        assert!(query.text_query.is_none());
+        assert!(query.vector_query.is_none());
     }
 }

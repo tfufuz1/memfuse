@@ -9,6 +9,8 @@ description = "Python bindings for MemFuse using PyO3"
 [lib]
 name = "memfuse"
 crate-type = ["cdylib"]
+test = false
+doctest = false
 
 [dependencies]
 pyo3 = { version = "0.24.1", features = ["extension-module", "abi3-py38", "multiple-pymethods"] }

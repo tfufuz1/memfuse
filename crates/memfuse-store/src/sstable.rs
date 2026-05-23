@@ -15,10 +15,10 @@
 //! - **Async I/O**: All disk operations use `tokio::fs` or `memmap2` with `spawn_blocking`.
 //! - **Zero Panic**: Production code paths avoid `unwrap()` and `expect()`, favoring explicit error handling.
 
-use memfuse_crypto::crypto::KeyManager;
 use bytes::{BufMut, Bytes, BytesMut};
 use lru::LruCache;
 use memfuse_core::{MemFuseError, Result};
+use memfuse_crypto::crypto::KeyManager;
 use parking_lot::RwLock;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -1106,5 +1106,75 @@ mod tests {
         for h in handles {
             h.await.expect("task failed");
         }
+    }
+
+    #[tokio::test]
+    async fn test_sstable_scan_prefix() {
+        let tmp = TempDir::new().expect("temp dir");
+        let path = tmp.path().join("scan_prefix.sst");
+        let bc = create_block_cache(1);
+
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder");
+        builder.add(b"apple/1", b"a1", 1).await.expect("add");
+        builder.add(b"apple/2", b"a2", 2).await.expect("add");
+        builder.add(b"banana/1", b"b1", 3).await.expect("add");
+        builder.add(b"cherry/1", b"c1", 4).await.expect("add");
+        builder.finish().await.expect("finish");
+
+        let reader = SstableReader::open(&path, bc).await.expect("open");
+
+        let apples = reader.scan_prefix(b"apple/").await.expect("scan");
+        assert_eq!(apples.len(), 2);
+        assert_eq!(apples[0].0.as_ref(), b"apple/1");
+        assert_eq!(apples[1].0.as_ref(), b"apple/2");
+
+        let bananas = reader.scan_prefix(b"banana/").await.expect("scan");
+        assert_eq!(bananas.len(), 1);
+        assert_eq!(bananas[0].0.as_ref(), b"banana/1");
+
+        let non = reader.scan_prefix(b"zebra").await.expect("scan");
+        assert!(non.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_sstable_scan_range() {
+        use std::ops::Bound;
+        let tmp = TempDir::new().expect("temp dir");
+        let path = tmp.path().join("scan_range.sst");
+        let bc = create_block_cache(1);
+
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder");
+        builder.add(b"a", b"1", 1).await.expect("add");
+        builder.add(b"b", b"2", 2).await.expect("add");
+        builder.add(b"c", b"3", 3).await.expect("add");
+        builder.add(b"d", b"4", 4).await.expect("add");
+        builder.finish().await.expect("finish");
+
+        let reader = SstableReader::open(&path, bc).await.expect("open");
+
+        // Included Range [b, c]
+        let res = reader
+            .scan_range(Bound::Included(b"b"), Bound::Included(b"c"))
+            .await
+            .expect("scan");
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0].0.as_ref(), b"b");
+        assert_eq!(res[1].0.as_ref(), b"c");
+
+        // Excluded Range (b, d) -> only c
+        let res = reader
+            .scan_range(Bound::Excluded(b"b"), Bound::Excluded(b"d"))
+            .await
+            .expect("scan");
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].0.as_ref(), b"c");
+
+        // Unbounded
+        let res = reader
+            .scan_range(Bound::Unbounded, Bound::Included(b"b"))
+            .await
+            .expect("scan");
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0].0.as_ref(), b"a");
     }
 }

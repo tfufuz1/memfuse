@@ -97,12 +97,7 @@ impl<'a> DbTransaction<'a> {
         // 3. Commit Index (HNSW)
         if let Err(index_err) = self.collection.index.commit(self.tx_id).await {
             // Compensating transaction to rollback the LSM Storage since it's already committed
-            let rollback_tx = TxId::new(
-                self.collection
-                    .next_tx
-                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
-            );
-
+            // Implemented Durable Retry to prevent Split-Brain (HARD-004)
             let f_keys = {
                 let mut guard = match self.staged_forward_keys.lock() {
                     Ok(g) => g,
@@ -110,17 +105,6 @@ impl<'a> DbTransaction<'a> {
                 };
                 std::mem::take(&mut *guard)
             };
-            for f_key in f_keys {
-                if let Err(e) = self.collection.storage.delete(rollback_tx, &f_key).await {
-                    tracing::error!(
-                        "[INV-DB-3] CRITICAL: Compensating transaction failed to delete forward key: {:?}. \
-                         Error: {}",
-                        f_key,
-                        e
-                    );
-                }
-            }
-
             let r_keys = {
                 let mut guard = match self.staged_reverse_keys.lock() {
                     Ok(g) => g,
@@ -128,33 +112,67 @@ impl<'a> DbTransaction<'a> {
                 };
                 std::mem::take(&mut *guard)
             };
-            for r_key in r_keys {
-                if let Err(e) = self.collection.storage.delete(rollback_tx, &r_key).await {
-                    tracing::error!(
-                        "[INV-DB-3] CRITICAL: Compensating transaction failed to delete reverse key: {:?}. \
-                         Error: {}",
-                        r_key,
-                        e
+
+            let mut success = false;
+            let mut attempts = 0;
+            let max_attempts = 3;
+
+            while attempts < max_attempts && !success {
+                attempts += 1;
+                let rollback_tx = TxId::new(
+                    self.collection
+                        .next_tx
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                );
+
+                let mut comp_failed = false;
+
+                for f_key in &f_keys {
+                    if let Err(e) = self.collection.storage.delete(rollback_tx, f_key).await {
+                        tracing::error!("[INV-DB-3] Compensating delete failed (forward): {}", e);
+                        comp_failed = true;
+                    }
+                }
+
+                for r_key in &r_keys {
+                    if let Err(e) = self.collection.storage.delete(rollback_tx, r_key).await {
+                        tracing::error!("[INV-DB-3] Compensating delete failed (reverse): {}", e);
+                        comp_failed = true;
+                    }
+                }
+
+                if let Err(e) = self
+                    .collection
+                    .storage
+                    .put(rollback_tx, &intent_key, b"aborted")
+                    .await
+                {
+                    tracing::error!("[INV-DB-3] Failed to write aborted intent marker: {}", e);
+                    comp_failed = true;
+                }
+
+                if let Err(e) = self.collection.storage.commit(rollback_tx).await {
+                    tracing::error!("[INV-DB-3] Compensating commit failed: {}", e);
+                    comp_failed = true;
+                }
+
+                if !comp_failed {
+                    success = true;
+                    tracing::info!(
+                        "[INV-DB-3] Compensating transaction succeeded on attempt {}",
+                        attempts
                     );
+                } else if attempts < max_attempts {
+                    tracing::warn!("[INV-DB-3] Compensating transaction attempt {} failed. Retrying in 100ms...", attempts);
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 }
             }
 
-            if let Err(e) = self
-                .collection
-                .storage
-                .put(rollback_tx, &intent_key, b"aborted")
-                .await
-            {
+            if !success {
                 tracing::error!(
-                    "[INV-DB-3] CRITICAL: Failed to write aborted intent marker: {}",
-                    e
-                );
-            }
-
-            if let Err(e) = self.collection.storage.commit(rollback_tx).await {
-                tracing::error!(
-                    "[INV-DB-3] CRITICAL: Compensating transaction commit failed: {}",
-                    e
+                    "[INV-DB-3] FATAL: Compensating transaction failed after {} attempts. \
+                     Index DB potential split-brain detected! Repair-on-Open required.",
+                    max_attempts
                 );
             }
 

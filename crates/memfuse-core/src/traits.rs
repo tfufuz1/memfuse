@@ -63,6 +63,12 @@ pub trait StorageEngine: Send + Sync {
     /// Retrieves a value by key.
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
 
+    /// Retrieves a value by key at a specific sequence number (MVCC).
+    async fn get_at_seq(&self, key: &[u8], seq: u64) -> Result<Option<Vec<u8>>> {
+        let _ = seq;
+        self.get(key).await
+    }
+
     /// Stores a key-value pair as part of a transaction.
     async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()>;
 

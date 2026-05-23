@@ -338,6 +338,16 @@ impl MemFuse {
         self.default_col().await?.get(id).await
     }
 
+    /// Retrieves a document at a specific point in time.
+    pub async fn get_at_snapshot(&self, id: &str, seq_no: u64) -> Result<Option<Document>> {
+        self.default_col().await?.get_at_snapshot(id, seq_no).await
+    }
+
+    /// Returns the last committed sequence number.
+    pub async fn last_committed_seq(&self) -> Result<u64> {
+        self.storage.last_seq_no().await
+    }
+
     /// Updates a document's embedding and/or metadata.
     pub async fn update(&self, id: &str, embedding: &[f32], metadata: Option<Value>) -> Result<()> {
         self.default_col()
@@ -464,7 +474,8 @@ pub use serde_json::json;
 impl MemFuse {
     /// Returns the underlying storage engine.
     /// Internal use only for benchmarks and tests.
-    pub(crate) fn inner_storage(&self) -> Arc<LsmStorage> {
+    #[doc(hidden)]
+    pub fn inner_storage(&self) -> Arc<LsmStorage> {
         self.storage.clone()
     }
 }
@@ -787,6 +798,35 @@ mod tests {
         assert_eq!(search_a.len(), 1);
         assert_eq!(search_a[0].id, "k1");
         assert_eq!(search_a[0].metadata.as_ref().expect("test")["val"], "a");
+    }
+
+    #[tokio::test]
+    async fn test_close_and_reopen() {
+        let tmp = TempDir::new().expect("temp dir");
+        let path = tmp.path().to_path_buf();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+
+        {
+            let db = MemFuse::open_with_config(&path, config.clone())
+                .await
+                .expect("open 1");
+            db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"v": 1})))
+                .await
+                .expect("insert");
+            db.close().await.expect("close");
+        }
+
+        {
+            let db = MemFuse::open_with_config(&path, config)
+                .await
+                .expect("open 2");
+            let doc = db.get("doc-1").await.expect("get").expect("exists");
+            assert_eq!(doc.id, "doc-1");
+            assert_eq!(doc.metadata.expect("valid")["v"], 1);
+        }
     }
 
     #[tokio::test]

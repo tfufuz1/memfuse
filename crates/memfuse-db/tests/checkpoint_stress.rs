@@ -76,6 +76,6 @@ async fn test_checkpoint_concurrency_stress() {
     }
 
     // Final sanity check
-    let last_seq = storage.last_seq_no();
+    let last_seq = storage.last_seq_no().await.expect("get last seq");
     assert!(last_seq > 0);
 }

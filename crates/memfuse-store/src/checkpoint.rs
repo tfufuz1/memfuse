@@ -1,19 +1,11 @@
 //! Native State Checkpointing (Time-Travel Debugging).
 //!
-//! Enables exact state reconstruction of an SAOS database at any given transaction ID
-//! by replaying the Write-Ahead Log (WAL) up to that point.
+//! AUDIT:2026-05-23 STATUS:IMPLEMENTED (P0 Remediation)
+//! Enables exact state reconstruction of an SAOS database at any given transaction ID.
 
-// ANCHOR:SPEC:WP5.1-CHECKPOINT-001 — Time-Travel Debugging ist aktuell ein STUB.
-// WP:WP-5.1 PRIO:3 NEEDS:NONE
-// AGENT:07 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-09 DEADLINE:NONE
-// ANCHOR:FIXME:WP-5.1-ROLLBACK-STUB STATUS:TODO AGENT:02
-// Nur Datenstrukturen existieren, kein funktionaler Rollback.
-// PLAN: WAL bis checkpoint.tx_id replayed → deterministischer State-Restore.
-// ABHAENGIGKEIT: Braucht WAL-Ref (aktuell auskommentiert: `wal: Arc<Wal>`).
-// SPEC: docs/specs/SPEC-20260505-WP-4.x-Scale.md (State Checkpointing Sektion)
-
-use memfuse_core::{TxId, Result};
+use crate::lsm::LsmStorage;
+use memfuse_core::{Result, TxId};
+use std::sync::Arc;
 
 /// Represents a Point-in-Time snapshot of the agent's memory state.
 #[derive(Debug, Clone)]
@@ -24,26 +16,23 @@ pub struct StateCheckpoint {
 
 /// The Checkpointer manages WAL replay bounds for deterministic time-travel.
 pub struct Checkpointer {
-    // wal: Arc<Wal>,
-}
-
-impl Default for Checkpointer {
-    fn default() -> Self {
-        Self::new()
-    }
+    storage: Arc<LsmStorage>,
 }
 
 impl Checkpointer {
     /// Creates a new Checkpointer.
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(storage: Arc<LsmStorage>) -> Self {
+        Self { storage }
     }
 
     /// Records a new checkpoint at the current transaction ID marking an agent step.
     pub fn create_checkpoint(&self, tx_id: TxId) -> StateCheckpoint {
         StateCheckpoint {
             tx_id,
-            timestamp_ms: 0, // std::time::SystemTime here
+            timestamp_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
         }
     }
 
@@ -54,11 +43,53 @@ impl Checkpointer {
             "Initiating Time-Travel Rollback to TX: {}",
             checkpoint.tx_id
         );
-        // Process:
-        // 1. Halt all active writes globally.
-        // 2. Drop current volatile MemTables and indices.
-        // 3. Replay WAL strictly up to `checkpoint.tx_id`.
-        // 4. Resume operations deterministically.
-        Ok(())
+        self.storage.rollback_to_tx(checkpoint.tx_id).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lsm::{LsmConfig, LsmStorage};
+    use memfuse_core::StorageEngine;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn test_rollback_to_checkpoint() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(config).await.expect("create storage"));
+        let checkpointer = Checkpointer::new(storage.clone());
+
+        // 1. Insert some data
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key1", b"val1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        let cp1 = checkpointer.create_checkpoint(tx1);
+
+        // 2. Insert more data
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"key2", b"val2").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+
+        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
+        assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec()));
+
+        // 3. Rollback to cp1
+        checkpointer.rollback_to(&cp1).await.expect("rollback");
+
+        // 4. Verify state
+        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
+        assert_eq!(storage.get(b"key2").await.unwrap(), None); // Should be gone!
+
+        // 5. Verify we can still write and seq_no is correct
+        let tx3 = TxId::new(3);
+        storage.put(tx3, b"key3", b"val3").await.unwrap();
+        storage.commit(tx3).await.unwrap();
+        assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec()));
     }
 }

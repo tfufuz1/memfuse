@@ -298,8 +298,13 @@ impl Collection {
 
     /// Retrieves a document by its user-provided string ID.
     pub async fn get(&self, id: &str) -> Result<Option<crate::Document>> {
+        self.get_at_snapshot(id, u64::MAX).await
+    }
+
+    /// Retrieves a document at a specific snapshot point.
+    pub async fn get_at_snapshot(&self, id: &str, seq_no: u64) -> Result<Option<crate::Document>> {
         let key = self.namespaced_key(id.as_bytes(), 0);
-        if let Some(data) = self.storage.get(&key).await? {
+        if let Some(data) = self.storage.get_at_seq(&key, seq_no).await? {
             let stored: StoredDocument = serde_json::from_slice(&data)?;
             return Ok(Some(crate::Document {
                 id: stored.id,

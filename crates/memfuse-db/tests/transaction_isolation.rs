@@ -1,7 +1,8 @@
 use memfuse_core::{DocId, StorageEngine, VectorIndex};
-use memfuse_db::Collection;
+use memfuse_db::{Collection, MemFuse};
 use memfuse_index::{HnswConfig, HnswIndex};
 use memfuse_store::{LsmConfig, LsmStorage};
+use serde_json::json;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -131,4 +132,48 @@ async fn test_concurrent_rollback_contention() {
 
     // Verify index state
     assert_eq!(index.len().await, committed_count);
+}
+
+#[tokio::test]
+async fn test_snapshot_stability() {
+    let tmp = TempDir::new().unwrap();
+    let config = memfuse_db::MemFuseConfig {
+        dimension: 3,
+        ..Default::default()
+    };
+    let (db, _tmp) = (
+        MemFuse::open_with_config(tmp.path(), config).await.unwrap(),
+        tmp,
+    );
+    let col = db.collection("snapshot_test").await.unwrap();
+
+    // 1. Initial state
+    col.insert("base", &[0.0, 0.0, 0.0], Some(json!({"v": 0})))
+        .await
+        .unwrap();
+
+    let snap_seq = db.last_committed_seq().await.unwrap();
+
+    // 2. Modify "base" and insert "new" in a new transaction
+    col.insert("base", &[1.0, 1.0, 1.0], Some(json!({"v": 1})))
+        .await
+        .unwrap();
+    col.insert("new", &[0.5, 0.5, 0.5], None).await.unwrap();
+
+    let _latest_seq = db.last_committed_seq().await.unwrap();
+
+    // 3. Read from snapshot
+    let base_snap = col.get_at_snapshot("base", snap_seq).await.unwrap();
+    let base_snap = base_snap.expect("Base doc missing in snapshot");
+    assert_eq!(base_snap.metadata.unwrap()["v"], 0);
+
+    let new_snap = col.get_at_snapshot("new", snap_seq).await.unwrap();
+    assert!(
+        new_snap.is_none(),
+        "New doc should not be visible in old snapshot"
+    );
+
+    // 4. Read latest
+    let base_latest = col.get("base").await.unwrap().unwrap();
+    assert_eq!(base_latest.metadata.unwrap()["v"], 1);
 }

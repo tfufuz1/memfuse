@@ -1,8 +1,8 @@
 //! Write-Ahead Log (WAL) for durability and crash recovery with HMAC chaining.
 
+use memfuse_core::{MemFuseError, Result, TxId};
 use memfuse_crypto::crypto::KeyManager;
 use memfuse_crypto::wal_crypto::WalHmac;
-use memfuse_core::{MemFuseError, Result, TxId};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -20,6 +20,15 @@ pub enum WalOp {
     Delete { tx_id: TxId, key: Vec<u8> },
 }
 
+impl WalOp {
+    pub fn tx_id(&self) -> TxId {
+        match self {
+            WalOp::Put { tx_id, .. } => *tx_id,
+            WalOp::Delete { tx_id, .. } => *tx_id,
+        }
+    }
+}
+
 /// A single entry in the Write-Ahead Log.
 #[derive(Debug, Clone)]
 pub struct WalEntry {
@@ -31,6 +40,12 @@ pub struct WalEntry {
     pub checksum: [u8; 32],
     /// HMAC of the previous entry (the chain link).
     pub prev_hmac: [u8; 32],
+}
+
+impl WalEntry {
+    pub fn tx_id(&self) -> TxId {
+        self.op.tx_id()
+    }
 }
 
 impl WalEntry {
@@ -220,10 +235,15 @@ impl Wal {
 
     /// Replays the WAL, returning all valid entries.
     pub async fn replay(&self) -> Result<Vec<(u64, WalEntry)>> {
-        let file = tokio::fs::File::open(&self.path)
+        let mut file = self.file.lock().await;
+        use tokio::io::AsyncSeekExt;
+        file.seek(std::io::SeekFrom::Start(0))
             .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL replay open failed: {}", e)))?;
-        let mut reader = tokio::io::BufReader::new(file);
+            .map_err(|e| MemFuseError::Storage(format!("WAL replay seek failed: {}", e)))?;
+
+        // We use a separate reader but on a cloned handle to not disturb the original file pointer too much?
+        // Actually, we are holding the lock, so we can just use a BufReader on the existing file.
+        let mut reader = tokio::io::BufReader::new(&mut *file);
 
         let mut entries = Vec::new();
         let mut pos = 0u64;
@@ -555,5 +575,35 @@ mod tests {
         let wal2 = Wal::open(&wal_path).await.expect("open");
         let entries = wal2.replay().await.expect("replay");
         assert_eq!(entries.len(), 0);
+    }
+    #[tokio::test]
+    async fn test_wal_replay_truncation() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("trunc_wal.log");
+
+        {
+            let wal = Wal::open(&wal_path).await.expect("open");
+            for i in 0..5 {
+                let op = WalOp::Put {
+                    tx_id: TxId::new(i),
+                    key: b"key".to_vec(),
+                    value: b"val".to_vec(),
+                };
+                let entry = wal.create_entry(op, i).await.expect("entry");
+                wal.append(&entry).await.expect("append");
+            }
+        }
+
+        // Truncate the file in the middle of the last entry
+        let mut data = fs::read(&wal_path).await.expect("read");
+        let new_size = data.len() - 10; // Chop off 10 bytes from the last entry
+        data.truncate(new_size);
+        fs::write(&wal_path, data).await.expect("write");
+
+        let wal2 = Wal::open(&wal_path).await.expect("open");
+        let entries = wal2.replay().await.expect("replay");
+
+        // Should have replayed the first 4 entries successfully
+        assert_eq!(entries.len(), 4);
     }
 }
