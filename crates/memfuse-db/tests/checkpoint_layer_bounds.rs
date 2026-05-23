@@ -126,7 +126,8 @@ async fn test_layer_001_fork_diverge_merge() {
             .await
             .expect("get merged")
             .unwrap();
-        assert_eq!(merged_doc.metadata.unwrap()["origin"], "fork");
+        assert_eq!(merged_doc.metadata.expect("test")["origin"], "fork");
+        db.close().await.expect("close db");
     }
 
     // 6. Cleanup Checkpoint

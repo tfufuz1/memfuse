@@ -532,7 +532,7 @@ impl TextIndex for InvertedIndex {
         Ok(TextIndexStats {
             num_documents: total_docs as usize,
             num_tokens: total_tokens as usize,
-            token_reduction_ratio: ratio,
+            token_expansion_ratio: ratio,
             memory_usage_bytes: memory_usage,
         })
     }
