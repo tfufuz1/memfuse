@@ -2,8 +2,6 @@
 //!
 //! Enables deterministic freezing and restarting of agent workflows.
 //! Implements a SnapshotRegistry abstracting over Multi-Version Concurrency Control (MVCC).
-// ANCHOR:INTEGRATION:MISSING STATUS:READY AGENT:07
-// FIXME: Missing formal integration tests in crates/memfuse-checkpoint/tests/
 
 #![forbid(unsafe_code)]
 
@@ -36,13 +34,11 @@ impl CheckpointRegistry {
     }
 
     pub fn register(&self, tx_id: TxId, state: WorkflowState) {
-        // ANCHOR:DEBT:POISON-001 — Poisoned lock unwrap (AGENT:13)
         let mut cache = self.checkpoints.write().unwrap(); // unwrap allowed
         cache.insert(tx_id, state);
     }
 
     pub fn get(&self, tx_id: TxId) -> Option<WorkflowState> {
-        // ANCHOR:DEBT:POISON-001 — Poisoned lock unwrap (AGENT:13)
         let cache = self.checkpoints.read().unwrap(); // unwrap allowed
         cache.get(&tx_id).cloned()
     }

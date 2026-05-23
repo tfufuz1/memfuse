@@ -6,8 +6,6 @@ use tempfile::TempDir;
 use tokio::task::JoinHandle;
 
 // ANCHOR:INTEGRATION:CHECKPOINT-STRESS STATUS:DONE AGENT:12 DATE:2026-06-20
-// ANCHOR:FIXME PRIO:2 STATUS:FIXED AGENT:04
-// FIXED: create_checkpoint and drop_checkpoint calls do not match CheckpointManager API.
 // Stress test for concurrent checkpoint creation and deletion during active writes.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_checkpoint_concurrency_stress() {
