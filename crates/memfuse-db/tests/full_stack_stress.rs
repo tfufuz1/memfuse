@@ -16,7 +16,11 @@ async fn test_full_stack_stress_concurrency() {
         ..Default::default()
     };
 
-    let db = Arc::new(MemFuse::open_with_config(&db_path, config).await.expect("open db"));
+    let db = Arc::new(
+        MemFuse::open_with_config(&db_path, config)
+            .await
+            .expect("open db"),
+    );
 
     let num_tasks = 10;
     let ops_per_task = 50;
@@ -33,7 +37,9 @@ async fn test_full_stack_stress_concurrency() {
                 let vec = vec![i as f32; 128];
 
                 // 1. Insert
-                col.insert(&id, &vec, Some(json!({"t": t, "i": i}))).await.expect("insert");
+                col.insert(&id, &vec, Some(json!({"t": t, "i": i})))
+                    .await
+                    .expect("insert");
 
                 // 2. Random Get
                 if i % 5 == 0 {
@@ -61,7 +67,9 @@ async fn test_full_stack_stress_concurrency() {
         assert!(stats.num_vectors > 0);
     }
 
-    let db_owned = Arc::try_unwrap(db).map_err(|_| "Arc still has references").expect("last reference");
+    let db_owned = Arc::try_unwrap(db)
+        .map_err(|_| "Arc still has references")
+        .expect("last reference");
     db_owned.close().await.expect("close db");
 }
 
@@ -76,7 +84,9 @@ async fn test_full_stack_document_lifecycle() {
     let meta = json!({"status": "active"});
 
     // Create
-    col.insert(id, &vec, Some(meta.clone())).await.expect("insert");
+    col.insert(id, &vec, Some(meta.clone()))
+        .await
+        .expect("insert");
 
     // Read
     let doc = col.get(id).await.expect("get").unwrap();
@@ -85,7 +95,9 @@ async fn test_full_stack_document_lifecycle() {
 
     // Update
     let meta2 = json!({"status": "updated"});
-    col.insert(id, &vec, Some(meta2.clone())).await.expect("update");
+    col.insert(id, &vec, Some(meta2.clone()))
+        .await
+        .expect("update");
     let doc2 = col.get(id).await.expect("get updated").unwrap();
     assert_eq!(doc2.metadata.unwrap(), meta2);
 

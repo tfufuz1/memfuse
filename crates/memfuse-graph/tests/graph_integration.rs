@@ -20,16 +20,43 @@ async fn test_graph_complex_traversal_integration() {
     ];
 
     for (id, name, kind) in entities {
-        graph.add_entity(tx, Entity::new(EntityId::new(id), name, kind)).await.expect("add entity");
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(id), name, kind))
+            .await
+            .expect("add entity");
     }
 
     // Path 1: User -> AI -> Book (weight 1.0, 0.9)
-    graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "interested_in").with_weight(1.0)).await.expect("edge 1-2");
-    graph.add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(3), "recommends").with_weight(0.9)).await.expect("edge 2-3");
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(1), EntityId::new(2), "interested_in").with_weight(1.0),
+        )
+        .await
+        .expect("edge 1-2");
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(2), EntityId::new(3), "recommends").with_weight(0.9),
+        )
+        .await
+        .expect("edge 2-3");
 
     // Path 2: User -> Search -> Book (weight 0.5, 0.5)
-    graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(4), "searched").with_weight(0.5)).await.expect("edge 1-4");
-    graph.add_edge(tx, Edge::new(EntityId::new(4), EntityId::new(3), "related").with_weight(0.5)).await.expect("edge 4-3");
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(1), EntityId::new(4), "searched").with_weight(0.5),
+        )
+        .await
+        .expect("edge 1-4");
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(4), EntityId::new(3), "related").with_weight(0.5),
+        )
+        .await
+        .expect("edge 4-3");
 
     // Traverse from User (1)
     let results = graph.traverse(EntityId::new(1), 2).await.expect("traverse");
@@ -51,7 +78,11 @@ async fn test_graph_complex_traversal_integration() {
     // Hop 1 (Node 4): 1.0 * 0.7 * 0.5 = 0.35
     // Hop 2 (Node 3 via 4): 0.35 * 0.7 * 0.5 = 0.1225
 
-    let score_3 = results.iter().find(|(id, _)| id.inner() == 3).map(|(_, s)| *s).unwrap();
+    let score_3 = results
+        .iter()
+        .find(|(id, _)| id.inner() == 3)
+        .map(|(_, s)| *s)
+        .unwrap();
     assert!((score_3 - 0.441).abs() < f32::EPSILON);
 }
 
@@ -60,8 +91,14 @@ async fn test_graph_stats_and_isolation() {
     let graph = CsrGraph::new();
     let tx1 = TxId::new(1);
 
-    graph.add_entity(tx1, Entity::new(EntityId::new(1), "E1", "T1")).await.expect("add");
-    graph.add_edge(tx1, Edge::new(EntityId::new(1), EntityId::new(1), "self")).await.expect("edge");
+    graph
+        .add_entity(tx1, Entity::new(EntityId::new(1), "E1", "T1"))
+        .await
+        .expect("add");
+    graph
+        .add_edge(tx1, Edge::new(EntityId::new(1), EntityId::new(1), "self"))
+        .await
+        .expect("edge");
 
     let stats = graph.stats().await.expect("stats");
     assert_eq!(stats.num_entities, 1);

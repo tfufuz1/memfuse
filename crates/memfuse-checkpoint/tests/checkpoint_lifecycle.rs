@@ -38,7 +38,10 @@ async fn test_checkpoint_lifecycle_full() {
 
     // 3. Reload from storage (simulating restart)
     let manager2 = CheckpointManager::new(storage.clone());
-    let list2 = manager2.list_checkpoints().await.expect("list after restart");
+    let list2 = manager2
+        .list_checkpoints()
+        .await
+        .expect("list after restart");
     assert_eq!(list2.len(), 2);
     assert_eq!(list2[0], meta1);
     assert_eq!(list2[1], meta2);
@@ -88,6 +91,10 @@ async fn test_checkpoint_storage_integration() {
     assert!(storage.get(b"key1").await.expect("get").is_none());
 
     // Checkpoint meta still exists
-    let cp = manager.get_checkpoint("stable").await.expect("get cp").unwrap();
+    let cp = manager
+        .get_checkpoint("stable")
+        .await
+        .expect("get cp")
+        .unwrap();
     assert_eq!(cp.seq_no, 1);
 }

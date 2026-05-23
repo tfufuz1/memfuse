@@ -9,8 +9,20 @@ fn test_core_tx_buffer_isolation() {
     let tx1 = TxId::new(1);
     let tx2 = TxId::new(2);
 
-    buffer.stage(tx1, IndexOp::Insert { doc_id: DocId::new(1), data: b"val1".to_vec() });
-    buffer.stage(tx2, IndexOp::Insert { doc_id: DocId::new(1), data: b"val2".to_vec() });
+    buffer.stage(
+        tx1,
+        IndexOp::Insert {
+            doc_id: DocId::new(1),
+            data: b"val1".to_vec(),
+        },
+    );
+    buffer.stage(
+        tx2,
+        IndexOp::Insert {
+            doc_id: DocId::new(1),
+            data: b"val2".to_vec(),
+        },
+    );
 
     // Verify isolation in buffer
     let ops1 = buffer.drain(tx1);
