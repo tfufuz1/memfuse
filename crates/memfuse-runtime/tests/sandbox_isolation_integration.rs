@@ -23,7 +23,7 @@ fn test_sandbox_isolation_and_execution() {
     let input = "ping";
     let result = sandbox
         .execute(wasm_bytes, input)
-        .expect("execution failed");
+        .expect("execution failed"); // unwrap allowed
 
     // In the current placeholder implementation, it returns a static string
     assert_eq!(result, "sandbox_execution_result_placeholder");
@@ -34,8 +34,8 @@ fn test_sandbox_multiple_instances() {
     let s1 = WasmSandbox::new(SandboxConfig::default());
     let s2 = WasmSandbox::new(SandboxConfig::default());
 
-    let res1 = s1.execute(b"", "1").unwrap();
-    let res2 = s2.execute(b"", "2").unwrap();
+    let res1 = s1.execute(b"", "1").unwrap(); // unwrap allowed
+    let res2 = s2.execute(b"", "2").unwrap(); // unwrap allowed
 
     assert_eq!(res1, res2);
 }

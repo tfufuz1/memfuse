@@ -80,8 +80,7 @@ impl SnapshotRegistry {
         let seq_no = seq_no & !TOMBSTONE_BIT;
         let mut active = self.active.lock();
         if let Some(count) = active.get_mut(&seq_no) {
-            // ANCHOR:DEBT:SNAP-001 AGENT:01 STATUS:DONE PRIO:3
-            *count = count.saturating_sub(1);
+            *count = count.saturating_sub(1); // ANCHOR:DEBT:SNAP-001 AGENT:01 STATUS:DONE PRIO:3
             if *count == 0 {
                 active.remove(&seq_no);
             }

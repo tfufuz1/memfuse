@@ -9,7 +9,7 @@ use tokio::task::JoinHandle;
 // Stress test for concurrent checkpoint creation and deletion during active writes.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_checkpoint_concurrency_stress() {
-    let tmp = TempDir::new().expect("failed to create temp dir");
+    let tmp = TempDir::new().expect("failed to create temp dir"); // unwrap allowed
     let lsm_config = LsmConfig {
         path: tmp.path().to_path_buf(),
         ..Default::default()
@@ -17,7 +17,7 @@ async fn test_checkpoint_concurrency_stress() {
     let storage = Arc::new(
         LsmStorage::new(lsm_config)
             .await
-            .expect("failed to open storage"),
+            .expect("failed to open storage"), // unwrap allowed
     );
     let manager = Arc::new(CheckpointManager::new(storage.clone()));
 
@@ -39,11 +39,11 @@ async fn test_checkpoint_concurrency_stress() {
                 storage
                     .put(tx, key.as_bytes(), val.as_bytes())
                     .await
-                    .expect("put failed");
-                storage.commit(tx).await.expect("commit failed");
+                    .expect("put failed"); // unwrap allowed
+                storage.commit(tx).await.expect("commit failed"); // unwrap allowed
 
                 if i % 10 == 0 {
-                    storage.force_flush().await.expect("flush failed");
+                    storage.force_flush().await.expect("flush failed"); // unwrap allowed
                 }
             }
         }));
@@ -56,9 +56,9 @@ async fn test_checkpoint_concurrency_stress() {
             for i in 0..(ops_per_task / 10) {
                 let name = format!("cp-{}-{}", t, i);
                 let cp = manager
-                    .create_checkpoint(&name, "coll_1", 0, serde_json::json!({}))
+                    .create_checkpoint(&name, "coll", 0, serde_json::json!({}))
                     .await
-                    .expect("create checkpoint failed");
+                    .expect("create checkpoint failed"); // unwrap allowed
 
                 // Keep it for a bit
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -66,13 +66,13 @@ async fn test_checkpoint_concurrency_stress() {
                 manager
                     .drop_checkpoint(&cp.name)
                     .await
-                    .expect("drop checkpoint failed");
+                    .expect("drop checkpoint failed"); // unwrap allowed
             }
         }));
     }
 
     for h in handles {
-        h.await.expect("task panicked");
+        h.await.expect("task panicked"); // unwrap allowed
     }
 
     // Final sanity check

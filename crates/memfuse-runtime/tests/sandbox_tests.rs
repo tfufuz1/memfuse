@@ -19,7 +19,7 @@ fn test_sandbox_execution_placeholder() {
     let wasm_bytes = vec![0, 1, 2, 3]; // Mock WASM
     let result = sandbox
         .execute(&wasm_bytes, "input data")
-        .expect("execution failed");
+        .expect("execution failed"); // unwrap allowed
 
     assert_eq!(result, "sandbox_execution_result_placeholder");
 }
