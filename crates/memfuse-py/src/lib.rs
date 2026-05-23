@@ -421,7 +421,10 @@ impl PyMemFuse {
 
         let results = py
             .allow_threads(|| {
-                rt.block_on(self.inner.search_with_filter(vec_slice, k, Some(filter.inner)))
+                rt.block_on(
+                    self.inner
+                        .search_with_filter(vec_slice, k, Some(filter.inner)),
+                )
             })
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -450,7 +453,6 @@ impl PyMemFuse {
         }
         Ok(py_res)
     }
-
 
     /// Performs hybrid search combining BM25 and vector search results in the default collection.
     #[pyo3(signature = (text, vector, k))]
@@ -495,7 +497,6 @@ impl PyMemFuse {
         }
         Ok(py_res)
     }
-
 
     /// Creates a bidirectional relationship between two documents in the default collection.
     pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
@@ -745,7 +746,10 @@ impl PyCollection {
 
         let results = py
             .allow_threads(|| {
-                rt.block_on(self.inner.search_with_filter(vec_slice, k, Some(filter.inner)))
+                rt.block_on(
+                    self.inner
+                        .search_with_filter(vec_slice, k, Some(filter.inner)),
+                )
             })
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
