@@ -181,7 +181,9 @@ impl Wal {
 
         if let Some(km) = &self.key_manager {
             if bytes.len() > 4 {
-                let payload = &bytes[4..];
+                let payload = bytes.get(4..).ok_or_else(|| {
+                    MemFuseError::Storage("WAL internal error: bytes truncated".into())
+                })?;
                 let offset = self.size();
                 let encrypted = km.encrypt(payload, offset)?;
                 let mut new_bytes = Vec::with_capacity(4 + encrypted.len());
@@ -268,7 +270,12 @@ impl Wal {
             let decrypted_data;
             let entry_data = if let Some(km) = &self.key_manager {
                 // The offset used for encryption was the file size before writing the 4-byte length prefix.
-                let offset = pos - len as u64 - 4;
+                let offset = pos.checked_sub(len as u64).and_then(|p| p.checked_sub(4)).ok_or_else(|| {
+                    MemFuseError::WalCorruption {
+                        offset: pos,
+                        reason: "Invalid offset calculation".into(),
+                    }
+                })?;
                 decrypted_data = km.decrypt(&entry_data_raw, offset)?;
                 &decrypted_data
             } else {

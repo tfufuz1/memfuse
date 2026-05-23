@@ -21,7 +21,7 @@
 //! references them.
 
 use crate::sstable::{BlockCache, SstableBuilder, SstableReader};
-use memfuse_core::{Result, SnapshotRegistry, TOMBSTONE_BIT};
+use memfuse_core::{MemFuseError, Result, SnapshotRegistry, TOMBSTONE_BIT};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -121,13 +121,15 @@ impl CompactionEngine {
             // Collect paths of old SSTables before removing them
             let old_paths: Vec<PathBuf> = indices
                 .iter()
-                .map(|&i| ssts[i].file_path().to_path_buf())
+                .filter_map(|&i| ssts.get(i).map(|s| s.file_path().to_path_buf()))
                 .collect();
 
             // Remove old SSTables (reverse order to preserve indices)
             let mut sorted_indices = indices.clone();
             sorted_indices.sort_unstable_by(|a, b| b.cmp(a));
-            let insertion_point = sorted_indices[sorted_indices.len() - 1]; // Position of the oldest input
+            let insertion_point = *sorted_indices.last().ok_or_else(|| {
+                MemFuseError::Storage("Compaction error: no indices provided".into())
+            })?;
 
             for idx in sorted_indices {
                 ssts.remove(idx);
@@ -172,7 +174,14 @@ impl CompactionEngine {
             let mut placed = false;
 
             for tier in &mut tiers {
-                let tier_size = ssts[tier[0]].metadata().file_size;
+                let first_idx = match tier.first() {
+                    Some(&idx) => idx,
+                    None => continue,
+                };
+                let tier_size = match ssts.get(first_idx) {
+                    Some(s) => s.metadata().file_size,
+                    None => continue,
+                };
                 let ratio = if size > tier_size {
                     size as f64 / tier_size.max(1) as f64
                 } else {
