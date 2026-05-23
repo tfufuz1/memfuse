@@ -49,6 +49,18 @@ use std::simd::prelude::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
+/// Helper to safely map a file into memory.
+///
+/// # Safety
+/// Mapping a file into memory is unsafe because the file could be modified concurrently,
+/// leading to undefined behavior. The caller must ensure the file is not modified while mapped.
+pub fn mmap_file(file: &std::fs::File) -> memfuse_core::Result<memmap2::Mmap> {
+    // ANCHOR:SAFETY:MMAP-001 — Encapsulated Mmap for DiskANN/SSTables.
+    // BEGRÜNDUNG: Die Datei wird exklusiv vom LSM-Engine oder Index-Builder verwaltet.
+    // Synchronisierung wird durch übergeordnete Locks (RwLock in DiskAnnIndex) garantiert.
+    unsafe { memmap2::Mmap::map(file).map_err(memfuse_core::MemFuseError::Io) }
+}
+
 /// Computes distance between two vectors using the specified metric.
 #[inline]
 pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse_core::Result<f32> {
