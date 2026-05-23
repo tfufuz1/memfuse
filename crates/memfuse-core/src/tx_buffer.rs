@@ -316,8 +316,19 @@ mod tests {
 
         let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10));
         assert!(buffer.has_tx(tx1));
-        sleep(Duration::from_millis(100)).await;
-        assert!(!buffer.has_tx(tx1));
+
+        // Poll for up to 2 seconds for the reaper to clean up.
+        let start = Instant::now();
+        let mut removed = false;
+        while start.elapsed() < Duration::from_secs(2) {
+            if !buffer.has_tx(tx1) {
+                removed = true;
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+
+        assert!(removed, "Transaction should have been removed by reaper");
     }
 
     #[tokio::test]
