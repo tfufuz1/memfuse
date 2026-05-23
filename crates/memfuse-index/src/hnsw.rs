@@ -842,8 +842,7 @@ impl VectorIndex for HnswIndex {
         for layer in (1..=max_layer).rev() {
             // Dynamische ef für Zwischenlayer (meist 1 ist ausreichend, aber für sehr tiefe Graphen kann leichtes Scaling helfen)
             let layer_ef = if layer > 1 { 1 } else { 2 };
-            let best =
-                self.search_layer(&ctx, query_quantized.as_deref(), &ep, layer_ef, layer)?;
+            let best = self.search_layer(&ctx, query_quantized.as_deref(), &ep, layer_ef, layer)?;
             if let Some(closest) = best.first() {
                 ep = vec![closest.index];
             }
