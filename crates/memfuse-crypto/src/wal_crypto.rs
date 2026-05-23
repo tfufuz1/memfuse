@@ -6,7 +6,6 @@
 
 use memfuse_core::Result;
 
-
 /// Provides Key Management Strategy hooks.
 pub trait KmsProvider {
     /// Retrieves the Data Encryption Key (DEK).
@@ -54,4 +53,3 @@ impl WalHmac {
         self.mac.finalize().into_bytes().into()
     }
 }
-
