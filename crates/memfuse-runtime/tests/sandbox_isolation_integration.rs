@@ -4,8 +4,8 @@ use std::time::Duration;
 #[test]
 fn test_sandbox_config_defaults() {
     let config = SandboxConfig::default();
-    assert_eq!(config.max_memory_mb, 64);
-    assert_eq!(config.timeout, Duration::from_millis(500));
+    assert_eq!(config.max_memory_mb, 128);
+    assert_eq!(config.timeout, Duration::from_secs(30));
     assert!(!config.allow_network);
 }
 

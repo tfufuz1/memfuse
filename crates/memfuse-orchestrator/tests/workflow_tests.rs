@@ -12,8 +12,8 @@ fn test_stategraph_construction() {
 
     assert_eq!(graph.nodes.len(), 2);
     assert_eq!(graph.edges.len(), 1);
-    assert!(graph.nodes.contains_key("research"));
-    assert!(graph.nodes.contains_key("code"));
+    assert!(graph.nodes.iter().any(|n| n.name == "research"));
+    assert!(graph.nodes.iter().any(|n| n.name == "code"));
 }
 
 #[test]

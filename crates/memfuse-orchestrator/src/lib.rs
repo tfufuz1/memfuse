@@ -53,6 +53,28 @@ impl StateGraph {
             edges: Vec::new(),
         }
     }
+
+    /// Adds a new node to the graph.
+    pub fn add_node(&mut self, name: &str, executable: &str) {
+        self.nodes.push(GraphNode {
+            name: name.to_string(),
+            executable_identifier: executable.to_string(),
+        });
+    }
+
+    /// Adds a directional edge between two nodes.
+    pub fn add_edge(&mut self, from: &str, to: &str, condition: Option<&str>) {
+        self.edges.push(WorkflowEdge {
+            from: from.to_string(),
+            to: to.to_string(),
+            condition_evaluator: condition.map(|s| s.to_string()),
+        });
+    }
+
+    /// Entry point for workflow execution.
+    pub fn run_workflow(&self, _start_node: &str) {
+        // Placeholder for future execution logic.
+    }
 }
 
 impl Default for StateGraph {

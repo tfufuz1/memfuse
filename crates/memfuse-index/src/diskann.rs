@@ -216,7 +216,7 @@ impl DiskAnnIndex {
                         distance: d,
                     };
 
-                    let is_better = results.peek().map_or(true, |worst| d < worst.distance);
+                    let is_better = results.peek().is_none_or(|worst| d < worst.distance);
 
                     if results.len() < self.config.beam_width || is_better {
                         candidates.push(Reverse(new_cand.clone()));

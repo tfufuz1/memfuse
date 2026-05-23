@@ -20,19 +20,19 @@ fn test_stategraph_complex_workflow() {
     assert_eq!(graph.edges.len(), 4);
 
     // Check specific nodes
-    assert!(graph.nodes.contains_key("ingress"));
-    assert_eq!(
-        graph.nodes.get("ingress").unwrap().description,
-        "Data Ingress"
-    );
+    let ingress_node = graph.nodes.iter().find(|n| n.name == "ingress").unwrap();
+    assert_eq!(ingress_node.executable_identifier, "Data Ingress");
 
     // Check specific edges
     let edge_analyze_store = graph
         .edges
         .iter()
-        .find(|(s, t, _)| s == "analyze" && t == "store")
+        .find(|e| e.from == "analyze" && e.to == "store")
         .unwrap();
-    assert_eq!(edge_analyze_store.2, Some("is_valid".to_string()));
+    assert_eq!(
+        edge_analyze_store.condition_evaluator,
+        Some("is_valid".to_string())
+    );
 }
 
 #[test]
