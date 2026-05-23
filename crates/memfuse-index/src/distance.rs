@@ -659,21 +659,66 @@ pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarity
 }
 
 /// Computes the dot product between an f32 vector and a u8 vector.
+#[inline]
 pub fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
-    a.iter().zip(b.iter()).map(|(&x, &y)| x * (y as f32)).sum()
+    debug_assert_eq!(a.len(), b.len());
+    dot_product_f32_u8_std_simd(a, b)
+}
+
+pub fn dot_product_f32_u8_std_simd(a: &[f32], b: &[u8]) -> f32 {
+    let n = a.len();
+    let mut i = 0;
+    let mut sum = f32x8::splat(0.0);
+
+    while i + 8 <= n {
+        let va = f32x8::from_slice(&a[i..i + 8]);
+        let vb_u8 = u8x8::from_slice(&b[i..i + 8]);
+        let vb = vb_u8.cast::<f32>();
+        sum += va * vb;
+        i += 8;
+    }
+
+    let mut res = sum.reduce_sum();
+    while i < n {
+        res += a[i] * (b[i] as f32);
+        i += 1;
+    }
+    res
 }
 
 /// Computes the squared Euclidean distance between an f32 vector and a u8 vector
 /// performing inline dequantization.
+#[inline]
 pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {
-    a.iter()
-        .zip(b.iter())
-        .map(|(&x, &y)| {
-            let y_f32 = (y as f32) * alpha + min;
-            let diff = x - y_f32;
-            diff * diff
-        })
-        .sum()
+    debug_assert_eq!(a.len(), b.len());
+    euclidean_distance_sq_f32_u8_std_simd(a, b, alpha, min)
+}
+
+pub fn euclidean_distance_sq_f32_u8_std_simd(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {
+    let n = a.len();
+    let mut i = 0;
+    let mut sum = f32x8::splat(0.0);
+    let v_alpha = f32x8::splat(alpha);
+    let v_min = f32x8::splat(min);
+
+    while i + 8 <= n {
+        let va = f32x8::from_slice(&a[i..i + 8]);
+        let vb_u8 = u8x8::from_slice(&b[i..i + 8]);
+        let vb_f32 = vb_u8.cast::<f32>();
+        let vb = vb_f32 * v_alpha + v_min;
+        let diff = va - vb;
+        sum += diff * diff;
+        i += 8;
+    }
+
+    let mut res = sum.reduce_sum();
+    while i < n {
+        let y_f32 = (b[i] as f32) * alpha + min;
+        let diff = a[i] - y_f32;
+        res += diff * diff;
+        i += 1;
+    }
+    res
 }
 
 /// Parts required to compute asymmetric cosine similarity.
@@ -685,16 +730,42 @@ pub struct CosineSimilarityPartsF32U8 {
 }
 
 /// Computes the parts required for asymmetric cosine similarity between an f32 and a u8 vector.
+#[inline]
 pub fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPartsF32U8 {
-    let mut dot_f32_u8 = 0.0;
-    let mut sum_u8 = 0;
-    let mut norm_u8_sq = 0;
+    debug_assert_eq!(a.len(), b.len());
+    cosine_similarity_parts_f32_u8_std_simd(a, b)
+}
 
-    for (&x, &y) in a.iter().zip(b.iter()) {
-        let yu = y as u32;
-        dot_f32_u8 += x * (y as f32);
+pub fn cosine_similarity_parts_f32_u8_std_simd(a: &[f32], b: &[u8]) -> CosineSimilarityPartsF32U8 {
+    let n = a.len();
+    let mut i = 0;
+    let mut dot_v = f32x8::splat(0.0);
+    let mut sum_u8_v = u32x8::splat(0);
+    let mut norm_u8_sq_v = u32x8::splat(0);
+
+    while i + 8 <= n {
+        let va = f32x8::from_slice(&a[i..i + 8]);
+        let vb_u8 = u8x8::from_slice(&b[i..i + 8]);
+        let vb_f32 = vb_u8.cast::<f32>();
+        let vb_u32 = vb_u8.cast::<u32>();
+
+        dot_v += va * vb_f32;
+        sum_u8_v += vb_u32;
+        norm_u8_sq_v += vb_u32 * vb_u32;
+        i += 8;
+    }
+
+    let mut dot_f32_u8 = dot_v.reduce_sum();
+    let mut sum_u8 = sum_u8_v.reduce_sum();
+    let mut norm_u8_sq = norm_u8_sq_v.reduce_sum();
+
+    while i < n {
+        let xu = a[i];
+        let yu = b[i] as u32;
+        dot_f32_u8 += xu * (b[i] as f32);
         sum_u8 += yu;
         norm_u8_sq += yu * yu;
+        i += 1;
     }
 
     CosineSimilarityPartsF32U8 {
@@ -961,8 +1032,10 @@ mod tests {
             if is_x86_feature_detected!("avx2") {
                 // ANCHOR:SAFETY:SIMD-U8-TEST-001 — AVX2 Test Dispatch.
                 // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
-                let dot_simd = unsafe { dot_product_u8_avx2(&a, &b) };
-                assert_eq!(dot_scalar, dot_simd);
+                unsafe {
+                    let dot_simd = dot_product_u8_avx2(&a, &b);
+                    assert_eq!(dot_scalar, dot_simd);
+                }
             }
         }
 
@@ -973,8 +1046,10 @@ mod tests {
             if is_x86_feature_detected!("avx2") {
                 // ANCHOR:SAFETY:SIMD-U8-TEST-002 — AVX2 Test Dispatch.
                 // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
-                let euc_simd = unsafe { euclidean_distance_sq_u8_avx2(&a, &b) };
-                assert_eq!(euc_scalar, euc_simd);
+                unsafe {
+                    let euc_simd = euclidean_distance_sq_u8_avx2(&a, &b);
+                    assert_eq!(euc_scalar, euc_simd);
+                }
             }
         }
 
@@ -985,12 +1060,14 @@ mod tests {
             if is_x86_feature_detected!("avx2") {
                 // ANCHOR:SAFETY:SIMD-U8-TEST-003 — AVX2 Test Dispatch.
                 // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
-                let parts_simd = unsafe { cosine_similarity_parts_u8_avx2(&a, &b) };
-                assert_eq!(parts_scalar.dot, parts_simd.dot);
-                assert_eq!(parts_scalar.sum_a, parts_simd.sum_a);
-                assert_eq!(parts_scalar.sum_b, parts_simd.sum_b);
-                assert_eq!(parts_scalar.norm_a_sq, parts_simd.norm_a_sq);
-                assert_eq!(parts_scalar.norm_b_sq, parts_simd.norm_b_sq);
+                unsafe {
+                    let parts_simd = cosine_similarity_parts_u8_avx2(&a, &b);
+                    assert_eq!(parts_scalar.dot, parts_simd.dot);
+                    assert_eq!(parts_scalar.sum_a, parts_simd.sum_a);
+                    assert_eq!(parts_scalar.sum_b, parts_simd.sum_b);
+                    assert_eq!(parts_scalar.norm_a_sq, parts_simd.norm_a_sq);
+                    assert_eq!(parts_scalar.norm_b_sq, parts_simd.norm_b_sq);
+                }
             }
         }
     }

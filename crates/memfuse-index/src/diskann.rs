@@ -184,7 +184,8 @@ impl DiskAnnIndex {
 
         file.sync_all().await.map_err(MemFuseError::Io)?;
 
-        // SAFETY: Mapping a file that we just wrote and synced is safe as long as the file is not
+        // ANCHOR:SAFETY:MMAP-001 — File mapping safety.
+        // BEGRÜNDUNG: Mapping a file that we just wrote and synced is safe as long as the file is not
         // truncated or modified concurrently while mapped. Since this is an embedded database
         // with exclusive file locks (managed by storage/LSM), this is safe.
         let std_file = file.into_std().await;

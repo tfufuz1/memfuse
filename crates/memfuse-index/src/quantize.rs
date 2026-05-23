@@ -6,7 +6,18 @@
 // DONE: Performance- und Recall Metriken sind stabil.
 // SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
 
+use crate::distance::{
+    cosine_similarity_parts_f32_u8, dot_product_f32_u8, euclidean_distance_sq_f32_u8,
+};
 use memfuse_core::DistanceMetric;
+
+/// Precomputed query values for fast asymmetric distance calculation.
+#[derive(Debug, Clone)]
+pub struct PrecomputedQuery {
+    pub query: Vec<f32>,
+    pub norm_q_sq: f32,
+    pub sum_q: f32,
+}
 
 /// An 8-bit Scalar Quantizer (SQ8) that maps `f32` vectors into `u8` bounds.
 ///
@@ -89,6 +100,21 @@ impl ScalarQuantizer {
             .collect()
     }
 
+    /// Precomputes query values for faster asymmetric distance calculations.
+    pub fn precompute_query(&self, query: &[f32]) -> PrecomputedQuery {
+        let mut norm_q_sq = 0.0;
+        let mut sum_q = 0.0;
+        for &x in query {
+            norm_q_sq += x * x;
+            sum_q += x;
+        }
+        PrecomputedQuery {
+            query: query.to_vec(),
+            norm_q_sq,
+            sum_q,
+        }
+    }
+
     /// Computes the asymmetric distance between an exact query and a quantized vector.
     /// Optimized for zero allocations via inline dequantization.
     pub fn asymmetric_dist(
@@ -97,46 +123,50 @@ impl ScalarQuantizer {
         quantized: &[u8],
         metric: DistanceMetric,
     ) -> memfuse_core::Result<f32> {
-        if query.len() != quantized.len() {
+        let precomputed = self.precompute_query(query);
+        self.asymmetric_dist_precomputed(&precomputed, quantized, metric)
+    }
+
+    /// Computes asymmetric distance using precomputed query values and SIMD.
+    pub fn asymmetric_dist_precomputed(
+        &self,
+        pre: &PrecomputedQuery,
+        quantized: &[u8],
+        metric: DistanceMetric,
+    ) -> memfuse_core::Result<f32> {
+        if pre.query.len() != quantized.len() {
             return Err(memfuse_core::MemFuseError::invalid_input(
                 "Vector dimensions must match",
             ));
         }
 
-        let mut acc = 0.0;
-        match metric {
+        let acc = match metric {
             DistanceMetric::Cosine => {
-                let mut dot = 0.0;
-                let mut norm_a = 0.0;
-                let mut norm_b = 0.0;
-                for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    dot += x * y;
-                    norm_a += x * x;
-                    norm_b += y * y;
-                }
-                acc = if norm_a == 0.0 || norm_b == 0.0 {
+                let parts = cosine_similarity_parts_f32_u8(&pre.query, quantized);
+                // dequantize parts:
+                // dot(x, y) = dot(x, y_q * scale + min) = scale * dot(x, y_q) + min * sum(x)
+                let dot = self.inv_scale * parts.dot_f32_u8 + self.min * pre.sum_q;
+                // norm(y)^2 = sum((y_q * scale + min)^2) = scale^2 * sum(y_q^2) + 2 * scale * min * sum(y_q) + n * min^2
+                let n = quantized.len() as f32;
+                let norm_y_sq = self.inv_scale * self.inv_scale * parts.norm_u8_sq as f32
+                    + 2.0 * self.inv_scale * self.min * parts.sum_u8 as f32
+                    + n * self.min * self.min;
+
+                if pre.norm_q_sq <= 0.0 || norm_y_sq <= 0.0 {
                     1.0
                 } else {
-                    1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
-                };
+                    1.0 - (dot / (pre.norm_q_sq.sqrt() * norm_y_sq.sqrt()))
+                }
             }
             DistanceMetric::Euclidean => {
-                for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    let diff = x - y;
-                    acc += diff * diff;
-                }
-                acc = acc.sqrt();
+                euclidean_distance_sq_f32_u8(&pre.query, quantized, self.inv_scale, self.min).sqrt()
             }
             DistanceMetric::DotProduct => {
-                for (x, &y_q) in query.iter().zip(quantized.iter()) {
-                    let y = (y_q as f32) * self.inv_scale + self.min;
-                    acc += x * y;
-                }
-                acc = -acc;
+                let dot_f32_u8 = dot_product_f32_u8(&pre.query, quantized);
+                let dot = self.inv_scale * dot_f32_u8 + self.min * pre.sum_q;
+                -dot
             }
-        }
+        };
         Ok(acc)
     }
 
