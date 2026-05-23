@@ -3,36 +3,16 @@
 //! Sprachbewusste Tokenisierung für europäische Sprachen.
 //! Compound-Splitting für Deutsch zur Token-Reduktion.
 
+use std::sync::OnceLock;
+
 // ANCHOR:ARCH:MORPH-001 — Morphologische Inferenz-Optimierung (WP-6.5)
 // WP:WP-6.5 PRIO:2 NEEDS:WP-2.1
 // STATUS:DONE DATE:2026-05-23
 
-/// Trait for morphological tokenization.
-///
-/// Decomposes compound words into constituent morphemes.
-/// Example: "Bundesverfassungsgericht" -> ["Bundes", "verfassungs", "gericht"]
-pub trait MorphologicalTokenizer: Send + Sync {
-    /// Decomposes a token into its morphological components.
-    fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str>;
+static GERMAN_DICTIONARY: OnceLock<Vec<&'static str>> = OnceLock::new();
 
-    /// Returns the language code of this tokenizer (e.g. "de", "en").
-    fn language(&self) -> &str;
-}
-
-/// German compound word splitter.
-///
-/// Uses dictionary-based approach with longest-match strategy.
-/// Fallback: returns the original token unsplit.
-pub struct GermanCompoundSplitter {
-    /// Minimum component length for splitting.
-    min_component_len: usize,
-    /// Static dictionary for splitting.
-    dictionary: Vec<&'static str>,
-}
-
-impl GermanCompoundSplitter {
-    /// Creates a new German compound splitter with default dictionary.
-    pub fn new() -> Self {
+fn get_german_dictionary() -> &'static Vec<&'static str> {
+    GERMAN_DICTIONARY.get_or_init(|| {
         let mut dictionary = vec![
             "bundes",
             "verfassungs",
@@ -75,18 +55,44 @@ impl GermanCompoundSplitter {
         ];
         // Sort by length descending for longest-match strategy
         dictionary.sort_by_key(|b| std::cmp::Reverse(b.len()));
+        dictionary
+    })
+}
 
+/// Trait for morphological tokenization.
+///
+/// Decomposes compound words into constituent morphemes.
+/// Example: "Bundesverfassungsgericht" -> ["Bundes", "verfassungs", "gericht"]
+pub trait MorphologicalTokenizer: Send + Sync {
+    /// Decomposes a token into its morphological components.
+    fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str>;
+
+    /// Returns the language code of this tokenizer (e.g. "de", "en").
+    fn language(&self) -> &str;
+}
+
+/// German compound word splitter.
+///
+/// Uses dictionary-based approach with longest-match strategy.
+/// Fallback: returns the original token unsplit.
+pub struct GermanCompoundSplitter {
+    /// Minimum component length for splitting.
+    min_component_len: usize,
+}
+
+impl GermanCompoundSplitter {
+    /// Creates a new German compound splitter with default dictionary.
+    pub fn new() -> Self {
         Self {
             min_component_len: 3,
-            dictionary,
         }
     }
 
     /// Creates a splitter with custom minimum component length.
     pub fn with_min_length(min_len: usize) -> Self {
-        let mut s = Self::new();
-        s.min_component_len = min_len;
-        s
+        Self {
+            min_component_len: min_len,
+        }
     }
 
     /// Returns the minimum component length.
@@ -107,8 +113,10 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             return vec![token];
         }
 
+        let dictionary = get_german_dictionary();
+
         // Longest-match strategy: try to find the longest matching prefix from dictionary
-        for &word in &self.dictionary {
+        for &word in dictionary {
             if token.len() > word.len() && token.starts_with(word) {
                 let rest = &token[word.len()..];
 
@@ -118,7 +126,7 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
                     // Only strip 's' if the rest doesn't already match a dictionary word
                     // and the stripped version DOES match one.
                     let mut rest_matches = false;
-                    for &w in &self.dictionary {
+                    for &w in dictionary {
                         if rest.starts_with(w) {
                             rest_matches = true;
                             break;
@@ -127,7 +135,7 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
 
                     if !rest_matches {
                         let tentative_rest = &rest[1..];
-                        for &w in &self.dictionary {
+                        for &w in dictionary {
                             if tentative_rest.starts_with(w) {
                                 actual_rest = tentative_rest;
                                 break;
@@ -204,7 +212,6 @@ mod tests {
     #[test]
     fn test_german_splitter_verification() {
         let splitter = GermanCompoundSplitter::new();
-        // The splitter expects lowercase input as per tokenize() implementation
         let result = splitter.decompose("bundesverfassungsgericht");
         assert_eq!(result, vec!["bundes", "verfassungs", "gericht"]);
         assert_eq!(splitter.language(), "de");
@@ -213,7 +220,6 @@ mod tests {
     #[test]
     fn test_german_morph_tokenizer_expanded() {
         let splitter = GermanCompoundSplitter::new();
-        // WP-6.5 expansion verification
         let result = splitter.decompose("kaufvertrag");
         assert_eq!(result, vec!["kauf", "vertrag"]);
         let result = splitter.decompose("datenschutzverordnung");
@@ -251,7 +257,6 @@ mod tests {
             decomposed_tokens: decomposed_count,
         };
 
-        println!("Expansion Ratio: {}", metrics.expansion_ratio());
         assert!(metrics.expansion_ratio() > 1.2, "Expansion should be > 20%");
     }
 }

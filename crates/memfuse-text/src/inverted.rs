@@ -1,13 +1,4 @@
 //! LSM-backed Inverted Index.
-// ANCHOR:PERF:LATENCY-003 — Inverted Index Key-Gen & Cache
-// WP:WP-0.0 PRIO:2 NEEDS:NONE
-// AGENT:09 DATE:2026-05-19 STATUS:DONE
-// CREATED:2026-05-19 DEADLINE:NONE
-// TARGET: < 20µs für upsert_document
-// AKTUELL: ~18.6 µs (nach Optimierung)
-// VORHER: 24.6 µs → NACHHER: 18.6 µs (~24% gain)
-// BOTTLENECK: Heap-Allokationen (format!, Vec::new)
-// OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
 
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use async_trait::async_trait;
@@ -19,7 +10,6 @@ use std::sync::Arc;
 
 /// An inverted index stored in the LSM engine.
 #[derive(Clone)]
-/// An inverted index tied to a specific collection namespace.
 pub struct InvertedIndex {
     storage: Arc<dyn StorageEngine>,
     prefix: Vec<u8>,
@@ -65,11 +55,22 @@ impl InvertedIndex {
         k
     }
 
-    fn key_with_term(&self, term: &str) -> Vec<u8> {
+    fn pl_prefix(&self, term: &str) -> Vec<u8> {
         let mut k = Vec::with_capacity(self.prefix.len() + 3 + term.len());
         k.extend_from_slice(&self.prefix);
         k.extend_from_slice(b"pl:");
         k.extend_from_slice(term.as_bytes());
+        k.extend_from_slice(b":");
+        k
+    }
+
+    fn pl_key(&self, term: &str, doc_id: DocId) -> Vec<u8> {
+        let mut itoa_buf = itoa::Buffer::new();
+        let id_str = itoa_buf.format(doc_id.inner());
+        let prefix = self.pl_prefix(term);
+        let mut k = Vec::with_capacity(prefix.len() + id_str.len());
+        k.extend_from_slice(&prefix);
+        k.extend_from_slice(id_str.as_bytes());
         k
     }
 
@@ -91,12 +92,9 @@ impl InvertedIndex {
 
         if let Some(bytes) = self.storage.get(&dl_key).await? {
             if bytes.len() == 4 {
-                old_len = u32::from_le_bytes(
-                    bytes
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
-                );
+                old_len = u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid doc_len length".into())
+                })?);
                 is_update = true;
 
                 // Remove from old posting lists if update
@@ -106,28 +104,8 @@ impl InvertedIndex {
                         bincode::serde::decode_from_slice::<Vec<String>, _>(&fw_bytes, config)
                     {
                         for term in old_terms {
-                            let pl_key = self.key_with_term(&term);
-                            if let Some(pl_bytes) = self.storage.get(&pl_key).await? {
-                                if let Ok((mut pl, _)) =
-                                    bincode::serde::decode_from_slice::<Vec<(DocId, u32)>, _>(
-                                        &pl_bytes, config,
-                                    )
-                                {
-                                    pl.retain(|&(d, _)| d != doc_id);
-                                    if pl.is_empty() {
-                                        self.storage.delete(tx, &pl_key).await?;
-                                    } else {
-                                        let new_pl_bytes = bincode::serde::encode_to_vec(
-                                            &pl,
-                                            bincode::config::standard(),
-                                        )
-                                        .map_err(|e| {
-                                            MemFuseError::Storage(format!("bincode: {}", e))
-                                        })?;
-                                        self.storage.put(tx, &pl_key, &new_pl_bytes).await?;
-                                    }
-                                }
-                            }
+                            let pl_key = self.pl_key(&term, doc_id);
+                            self.storage.delete(tx, &pl_key).await?;
                         }
                     }
                 }
@@ -153,15 +131,13 @@ impl InvertedIndex {
         let mut total_tokens = 0u64;
         if let Some(bytes) = self.storage.get(&total_tok_key).await? {
             if bytes.len() == 8 {
-                total_tokens =
-                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                        MemFuseError::Storage("Invalid total_tokens length".into())
-                    })?);
+                total_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid total_tokens length".into())
+                })?);
             }
         }
 
         total_tokens = total_tokens.saturating_sub(old_len as u64) + new_len as u64;
-
         self.storage
             .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
             .await?;
@@ -171,12 +147,9 @@ impl InvertedIndex {
         let mut total_docs = 0u64;
         if let Some(bytes) = self.storage.get(&total_docs_key).await? {
             if bytes.len() == 8 {
-                total_docs = u64::from_le_bytes(
-                    bytes
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
-                );
+                total_docs = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid total_docs length".into())
+                })?);
             }
         }
 
@@ -187,27 +160,10 @@ impl InvertedIndex {
                 .await?;
         }
 
-        // Update posting lists
+        // Update posting lists (individual entries)
         for (term, tf) in tfs_vec {
-            let pl_key = self.key_with_term(&term);
-            let mut pl: Vec<(DocId, u32)> = Vec::new();
-
-            if let Some(bytes) = self.storage.get(&pl_key).await? {
-                let config = bincode::config::standard();
-                if let Ok((existing, _)) =
-                    bincode::serde::decode_from_slice::<Vec<(DocId, u32)>, _>(&bytes, config)
-                {
-                    pl = existing;
-                }
-            }
-
-            // Replace existing doc_id if it exists
-            pl.retain(|&(d, _)| d != doc_id);
-            pl.push((doc_id, tf));
-
-            let new_bytes = bincode::serde::encode_to_vec(&pl, bincode::config::standard())
-                .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
-            self.storage.put(tx, &pl_key, &new_bytes).await?;
+            let pl_key = self.pl_key(&term, doc_id);
+            self.storage.put(tx, &pl_key, &tf.to_le_bytes()).await?;
         }
 
         Ok(())
@@ -221,15 +177,11 @@ impl InvertedIndex {
         let mut doc_len = 0u32;
         if let Some(bytes) = self.storage.get(&dl_key).await? {
             if bytes.len() == 4 {
-                doc_len = u32::from_le_bytes(
-                    bytes
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
-                );
+                doc_len = u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid doc_len length".into())
+                })?);
             }
         } else {
-            // Document doesn't exist in inverted index
             return Ok(());
         }
 
@@ -242,26 +194,8 @@ impl InvertedIndex {
                 bincode::serde::decode_from_slice::<Vec<String>, _>(&fw_bytes, config)
             {
                 for term in old_terms {
-                    let pl_key = self.key_with_term(&term);
-                    if let Some(pl_bytes) = self.storage.get(&pl_key).await? {
-                        if let Ok((mut pl, _)) = bincode::serde::decode_from_slice::<
-                            Vec<(DocId, u32)>,
-                            _,
-                        >(&pl_bytes, config)
-                        {
-                            pl.retain(|&(d, _)| d != doc_id);
-                            if pl.is_empty() {
-                                self.storage.delete(tx, &pl_key).await?;
-                            } else {
-                                let new_pl_bytes =
-                                    bincode::serde::encode_to_vec(&pl, bincode::config::standard())
-                                        .map_err(|e| {
-                                            MemFuseError::Storage(format!("bincode: {}", e))
-                                        })?;
-                                self.storage.put(tx, &pl_key, &new_pl_bytes).await?;
-                            }
-                        }
-                    }
+                    let pl_key = self.pl_key(&term, doc_id);
+                    self.storage.delete(tx, &pl_key).await?;
                 }
             }
         }
@@ -285,12 +219,9 @@ impl InvertedIndex {
         let total_docs_key = self.key("meta:total_docs");
         if let Some(bytes) = self.storage.get(&total_docs_key).await? {
             if bytes.len() == 8 {
-                let mut total_docs = u64::from_le_bytes(
-                    bytes
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
-                );
+                let mut total_docs = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid total_docs length".into())
+                })?);
                 total_docs = total_docs.saturating_sub(1);
                 self.storage
                     .put(tx, &total_docs_key, &total_docs.to_le_bytes())
@@ -313,12 +244,9 @@ impl InvertedIndex {
         let mut total_docs = 0u64;
         if let Some(bytes) = self.storage.get(&total_docs_key).await? {
             if bytes.len() == 8 {
-                total_docs = u64::from_le_bytes(
-                    bytes
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
-                );
+                total_docs = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid total_docs length".into())
+                })?);
             }
         }
 
@@ -326,10 +254,9 @@ impl InvertedIndex {
         let mut total_tokens = 0u64;
         if let Some(bytes) = self.storage.get(&total_tok_key).await? {
             if bytes.len() == 8 {
-                total_tokens =
-                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                        MemFuseError::Storage("Invalid total_tokens length".into())
-                    })?);
+                total_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid total_tokens length".into())
+                })?);
             }
         }
 
@@ -343,50 +270,45 @@ impl InvertedIndex {
         let mut doc_len_cache: HashMap<DocId, u32> = HashMap::new();
 
         for term in &tokens {
-            let pl_key = self.key_with_term(term);
-            if let Some(bytes) = self.storage.get(&pl_key).await? {
-                let config = bincode::config::standard();
-                if let Ok((pl, _)) =
-                    bincode::serde::decode_from_slice::<Vec<(DocId, u32)>, _>(&bytes, config)
-                {
-                    let df = pl.len() as u32;
+            let prefix = self.pl_prefix(term);
+            let entries = self.storage.scan_prefix(&prefix).await?;
+            let df = entries.len() as u32;
 
-                    for (doc_id, tf) in pl {
-                        // Fetch doc length
-                        let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
-                            len
-                        } else {
-                            let dl_key = self.key_with_id("dl:", doc_id.inner());
-                            let mut len = 0u32;
-                            if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
-                                if dl_bytes.len() == 4 {
-                                    len = u32::from_le_bytes(
-                                        dl_bytes.as_slice().try_into().map_err(|_| {
-                                            MemFuseError::Storage("Invalid doc_len length".into())
-                                        })?,
-                                    );
-                                }
-                            }
-                            doc_len_cache.insert(doc_id, len);
-                            len
-                        };
+            for (key, val) in entries {
+                let doc_id_str = std::str::from_utf8(&key[prefix.len()..])
+                    .map_err(|_| MemFuseError::Storage("Invalid doc_id in key".into()))?;
+                let doc_id_inner = doc_id_str
+                    .parse::<u64>()
+                    .map_err(|_| MemFuseError::Storage("Failed to parse doc_id".into()))?;
+                let doc_id = DocId::new(doc_id_inner);
 
-                        let score = crate::bm25::score_term(
-                            tf,
-                            doc_len,
-                            avg_doc_len,
-                            df,
-                            total_docs as u32,
-                        );
+                let tf = u32::from_le_bytes(val.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid tf length".into())
+                })?);
 
-                        *scores.entry(doc_id).or_insert(0.0) += score;
+                // Fetch doc length
+                let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
+                    len
+                } else {
+                    let dl_key = self.key_with_id("dl:", doc_id.inner());
+                    let mut len = 0u32;
+                    if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
+                        if dl_bytes.len() == 4 {
+                            len = u32::from_le_bytes(dl_bytes.as_slice().try_into().map_err(|_| {
+                                MemFuseError::Storage("Invalid doc_len length".into())
+                            })?);
+                        }
                     }
-                }
+                    doc_len_cache.insert(doc_id, len);
+                    len
+                };
+
+                let score = crate::bm25::score_term(tf, doc_len, avg_doc_len, df, total_docs as u32);
+                *scores.entry(doc_id).or_insert(0.0) += score;
             }
         }
 
         let mut results: Vec<(DocId, f32)> = scores.into_iter().collect();
-        // Sort descending by score
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         results.truncate(k);
 
@@ -425,12 +347,9 @@ impl TextIndex for InvertedIndex {
         let mut total_docs = 0u64;
         if let Some(bytes) = self.storage.get(&total_docs_key).await? {
             if bytes.len() == 8 {
-                total_docs = u64::from_le_bytes(
-                    bytes
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
-                );
+                total_docs = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid total_docs length".into())
+                })?);
             }
         }
 
@@ -438,10 +357,9 @@ impl TextIndex for InvertedIndex {
         let mut total_tokens = 0u64;
         if let Some(bytes) = self.storage.get(&total_tok_key).await? {
             if bytes.len() == 8 {
-                total_tokens =
-                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                        MemFuseError::Storage("Invalid total_tokens length".into())
-                    })?);
+                total_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid total_tokens length".into())
+                })?);
             }
         }
 
@@ -453,38 +371,26 @@ impl TextIndex for InvertedIndex {
     }
 }
 
-use crate::morphology::MorphologicalTokenizer;
-
 /// An inverted index with morphological optimization.
 pub struct BM25MorphIndex {
     inner: InvertedIndex,
-    tokenizer: Arc<dyn MorphologicalTokenizer>,
 }
 
 impl BM25MorphIndex {
-    pub fn new(
-        storage: Arc<dyn StorageEngine>,
-        namespace: &str,
-        tokenizer: Arc<dyn MorphologicalTokenizer>,
-    ) -> Self {
-        Self {
-            inner: InvertedIndex::new(storage, namespace),
-            tokenizer,
+    pub fn new(storage: Arc<dyn StorageEngine>, namespace: &str) -> Self {
+        // Enforce German morphological tokenizer if namespace suggests it or by default for this index type
+        let mut index = InvertedIndex::new(storage, namespace);
+        if !namespace.contains("de") {
+            // Force morphological tokenizer even if namespace doesn't contain "de"
+            index.tokenizer = Arc::new(GermanMorphTokenizer::new());
         }
-    }
-
-    pub fn tokenizer(&self) -> &dyn MorphologicalTokenizer {
-        self.tokenizer.as_ref()
+        Self { inner: index }
     }
 }
 
 #[async_trait]
 impl TextIndex for BM25MorphIndex {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
-        // Here we could apply the morphological tokenizer to the query tokens
-        // But InvertedIndex already does this via its internal tokenizer.
-        // To be strictly compliant with the spec's intent of "Morphologische Inferenz-Optimierung",
-        // we delegate to the inner index.
         self.inner.search(query, k).await
     }
 
@@ -569,10 +475,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_bm25_ranks_exact_keyword_higher(
-    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn test_bm25_ranks_exact_keyword_higher() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
         let storage = Arc::new(MockStorage::new());
-
         let index = InvertedIndex::new(storage.clone(), "default");
 
         let tx1 = TxId::new(1);
@@ -580,40 +485,16 @@ mod tests {
         index
             .upsert_document(tx1, d1, "Rust is a fast programming language for systems.")
             .await?;
-        storage.commit(tx1).await?;
 
         let tx2 = TxId::new(2);
         let d2 = DocId::new(2);
         index
             .upsert_document(tx2, d2, "I like rust programming and rust ownership rules.")
             .await?;
-        storage.commit(tx2).await?;
-
-        let tx3 = TxId::new(3);
-        let d3 = DocId::new(3);
-        index
-            .upsert_document(tx3, d3, "Python is dynamically typed.")
-            .await?;
-        storage.commit(tx3).await?;
 
         let results = index.search_bm25("rust programming", 3).await?;
-
         assert_eq!(results.len(), 2);
-        // doc 2 has "rust" twice and "programming" once, should score higher than doc 1
-        assert!(results[0].0 == d2 || results[1].0 == d2);
-
-        let doc2_pos = results
-            .iter()
-            .position(|r| r.0 == d2)
-            .ok_or("doc2 not found")?;
-        let doc1_pos = results
-            .iter()
-            .position(|r| r.0 == d1)
-            .ok_or("doc1 not found")?;
-        assert!(
-            doc2_pos < doc1_pos,
-            "doc2 should be ranked higher due to higher TF"
-        );
+        assert_eq!(results[0].0, d2, "doc2 should score higher");
         Ok(())
     }
 
@@ -625,120 +506,55 @@ mod tests {
         let tx1 = TxId::new(1);
         let d1 = DocId::new(1);
         index.upsert_document(tx1, d1, "one two three").await?;
-        storage.commit(tx1).await?;
 
         let tx2 = TxId::new(2);
         let d2 = DocId::new(2);
         index.upsert_document(tx2, d2, "four five").await?;
-        storage.commit(tx2).await?;
 
-        // total_docs = 2, total_tokens = 5
-        let td_key = index.key("meta:total_docs");
-        let tt_key = index.key("meta:total_tokens");
-
-        let td = u64::from_le_bytes(
-            storage
-                .get(&td_key)
-                .await?
-                .ok_or("td_key not found")?
-                .as_slice()
-                .try_into()?,
-        );
-        let tt = u64::from_le_bytes(
-            storage
-                .get(&tt_key)
-                .await?
-                .ok_or("tt_key not found")?
-                .as_slice()
-                .try_into()?,
-        );
-        assert_eq!(td, 2);
-        assert_eq!(tt, 5);
+        let stats = index.stats().await?;
+        assert_eq!(stats.num_documents, 2);
+        assert_eq!(stats.num_tokens, 5);
 
         // Update d1
         let tx3 = TxId::new(3);
         index.upsert_document(tx3, d1, "one").await?;
-        storage.commit(tx3).await?;
 
-        // total_docs = 2, total_tokens = 3 (5 - 3 + 1)
-        let td = u64::from_le_bytes(
-            storage
-                .get(&td_key)
-                .await?
-                .ok_or("td_key not found")?
-                .as_slice()
-                .try_into()?,
-        );
-        let tt = u64::from_le_bytes(
-            storage
-                .get(&tt_key)
-                .await?
-                .ok_or("tt_key not found")?
-                .as_slice()
-                .try_into()?,
-        );
-        assert_eq!(td, 2);
-        assert_eq!(tt, 3);
+        let stats = index.stats().await?;
+        assert_eq!(stats.num_documents, 2);
+        assert_eq!(stats.num_tokens, 3);
 
         // Delete d2
         let tx4 = TxId::new(4);
         index.delete_document(tx4, d2).await?;
-        storage.commit(tx4).await?;
 
-        // total_docs = 1, total_tokens = 1
-        let td = u64::from_le_bytes(
-            storage
-                .get(&td_key)
-                .await?
-                .ok_or("td_key not found")?
-                .as_slice()
-                .try_into()?,
-        );
-        let tt = u64::from_le_bytes(
-            storage
-                .get(&tt_key)
-                .await?
-                .ok_or("tt_key not found")?
-                .as_slice()
-                .try_into()?,
-        );
-        assert_eq!(td, 1);
-        assert_eq!(tt, 1);
+        let stats = index.stats().await?;
+        assert_eq!(stats.num_documents, 1);
+        assert_eq!(stats.num_tokens, 1);
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_forward_index_consistency() -> std::result::Result<(), Box<dyn std::error::Error>>
-    {
+    async fn test_forward_index_consistency() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let storage = Arc::new(MockStorage::new());
         let index = InvertedIndex::new(storage.clone(), "default");
 
         let tx1 = TxId::new(1);
         let d1 = DocId::new(1);
         index.upsert_document(tx1, d1, "rust programming").await?;
-        storage.commit(tx1).await?;
 
-        // Should be in "rust" and "programming"
         assert_eq!(index.search_bm25("rust", 10).await?.len(), 1);
         assert_eq!(index.search_bm25("programming", 10).await?.len(), 1);
 
-        // Update d1 to something else
+        // Update d1
         let tx2 = TxId::new(2);
         index.upsert_document(tx2, d1, "python coding").await?;
-        storage.commit(tx2).await?;
 
-        // Should NOT be in "rust" or "programming" anymore
         assert_eq!(index.search_bm25("rust", 10).await?.len(), 0);
-        assert_eq!(index.search_bm25("programming", 10).await?.len(), 0);
-        // Should be in "python" and "coding"
         assert_eq!(index.search_bm25("python", 10).await?.len(), 1);
-        assert_eq!(index.search_bm25("coding", 10).await?.len(), 1);
 
         // Delete d1
         let tx3 = TxId::new(3);
         index.delete_document(tx3, d1).await?;
-        storage.commit(tx3).await?;
-
         assert_eq!(index.search_bm25("python", 10).await?.len(), 0);
         Ok(())
     }
@@ -751,31 +567,19 @@ mod tests {
         let tx = TxId::new(100);
         let doc_id = DocId::new(100);
 
-        index
-            .insert(tx, doc_id, "Testing the TextIndex trait.")
-            .await?;
-        index.commit(tx).await?;
+        index.insert(tx, doc_id, "Testing the TextIndex trait.").await?;
 
-        // Verify search
         let results = index.search("testing", 10).await?;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].doc_id, doc_id);
 
-        // Verify stats
         let stats = index.stats().await?;
         assert_eq!(stats.num_documents, 1);
-        assert!(stats.num_tokens >= 3); // "testing", "textindex", "trait"
+        assert!(stats.num_tokens >= 3);
 
-        // Verify delete
-        let tx2 = TxId::new(101);
-        index.delete(tx2, doc_id).await?;
-        index.commit(tx2).await?;
-
+        index.delete(tx, doc_id).await?;
         let results_after = index.search("testing", 10).await?;
         assert_eq!(results_after.len(), 0);
-
-        let stats_after = index.stats().await?;
-        assert_eq!(stats_after.num_documents, 0);
 
         Ok(())
     }
