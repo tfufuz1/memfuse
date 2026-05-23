@@ -201,7 +201,9 @@ impl DiskAnnIndex {
         // AGENT:03 STATUS:READY
         while let Some(Reverse(current)) = candidates.pop() {
             if results.len() >= self.config.beam_width
-                && results.peek().is_some_and(|top| current.distance > top.distance)
+                && results
+                    .peek()
+                    .is_some_and(|top| current.distance > top.distance)
             {
                 break;
             }
@@ -230,7 +232,8 @@ impl DiskAnnIndex {
         }
 
         let sorted_results = results.into_sorted_vec();
-        let mut final_results: Vec<ScoredDocument> = Vec::with_capacity(sorted_results.len().min(k));
+        let mut final_results: Vec<ScoredDocument> =
+            Vec::with_capacity(sorted_results.len().min(k));
         for c in sorted_results.into_iter().take(k) {
             let node = self.load_node(c.index)?;
             final_results.push(ScoredDocument {
