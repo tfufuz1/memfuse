@@ -9,8 +9,8 @@ use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 /// Unique identifier for a Namespace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NamespaceId(u64);
 
 impl NamespaceId {
@@ -31,8 +31,8 @@ impl std::fmt::Display for NamespaceId {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 /// Token budget configuration for LLM context management.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenBudget {
     /// Maximum allowed tokens.
     pub max_tokens: usize,
@@ -64,8 +64,8 @@ impl Default for TokenBudget {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Normalized fusion weights for hybrid search.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FusionWeights {
     vector: f32,
     text: f32,
@@ -105,8 +105,8 @@ impl FusionWeights {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 /// Defines cross-namespace isolation guarantees.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IsolationLevel {
     /// No shared data between namespaces.
     Strict,
@@ -116,8 +116,8 @@ pub enum IsolationLevel {
     Logical,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 /// A chunk of context for LLM budget allocation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextChunk {
     /// Document ID.
     pub doc_id: DocId,
@@ -129,8 +129,8 @@ pub struct ContextChunk {
     pub token_count: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 /// An aggregated context window constrained by a token budget.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextWindow {
     /// List of context chunks.
     pub chunks: Vec<ContextChunk>,
@@ -140,8 +140,8 @@ pub struct ContextWindow {
     pub truncated: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Evaluated result for hybrid/4-signal search.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScoredEntry {
     /// Unique identifier.
     pub id: String,
@@ -151,8 +151,8 @@ pub struct ScoredEntry {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 /// A unified query traversing multiple index signals.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HybridQuery {
     /// Optional keyword search query.
     pub text_query: Option<String>,
@@ -175,8 +175,8 @@ impl HybridQuery {
     }
 }
 
-#[derive(Default)]
 /// Builder for HybridQuery to improve DX.
+#[derive(Default)]
 pub struct HybridQueryBuilder {
     text_query: Option<String>,
     vector_query: Option<Vec<f32>>,
@@ -280,8 +280,8 @@ mod tests {
             .build()
             .expect("build ok");
 
-        assert_eq!(query.text_query.unwrap() // unwrap, "test query");
-        assert_eq!(query.vector_query.unwrap() // unwrap, vec![0.1, 0.2]);
+        assert_eq!(query.text_query.as_ref().unwrap(), "test query"); // unwrap
+        assert_eq!(query.vector_query.as_ref().unwrap(), &vec![0.1, 0.2]); // unwrap
         assert_eq!(query.k, 5);
         // Default weights: vector=1.0, others=0.0
         assert_eq!(query.fusion_weights.vector(), 1.0);
@@ -289,18 +289,18 @@ mod tests {
 
     #[test]
     fn test_hybrid_query_builder_custom_weights() {
-        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap() // unwrap;
+        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap(); // unwrap
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())
             .build()
-            .unwrap() // unwrap;
+            .unwrap(); // unwrap
 
         assert_eq!(query.fusion_weights, weights);
     }
 
     #[test]
     fn test_hybrid_query_builder_defaults() {
-        let query = HybridQuery::builder().build().unwrap() // unwrap;
+        let query = HybridQuery::builder().build().unwrap(); // unwrap
         assert_eq!(query.k, 10);
         assert_eq!(query.fusion_weights.vector(), 1.0);
         assert!(query.text_query.is_none());
