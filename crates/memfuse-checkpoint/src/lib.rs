@@ -1,6 +1,6 @@
 //! Checkpointing & Time-Travel (WP-5.1)
 //!
-//! // ANCHOR:INTEGRATION AGENT:12 DATE:2026-05-23 STATUS:FIXME
+//! // ANCHOR:INTEGRATION AGENT:12 DATE:2026-05-23 STATUS:FIXME — Missing integration test folder
 //!
 //! Enables deterministic freezing and restarting of agent workflows.
 //! Implements a SnapshotRegistry abstracting over Multi-Version Concurrency Control (MVCC).
@@ -240,7 +240,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_checkpoint_create_and_restore() {
-        // ANCHOR:FIXME AGENT:12 PRIO:1 (UNWRAP)
+        // ANCHOR:FIXME AGENT:12 PRIO:2 (UNWRAP)
         let storage = Arc::new(MockStorage::new());
         let manager = CheckpointManager::new(storage.clone());
 
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn test_checkpoint_registry_in_memory() {
-        // ANCHOR:FIXME AGENT:12 PRIO:1 (UNWRAP)
+        // ANCHOR:FIXME AGENT:12 PRIO:2 (UNWRAP)
         let registry = CheckpointRegistry::new();
         let tx_id = TxId::new(42);
         let state = WorkflowState {

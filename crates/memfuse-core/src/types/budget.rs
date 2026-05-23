@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_budget_exceeded() {
-        // ANCHOR:FIXME AGENT:01 PRIO:1 (UNWRAP)
+        // ANCHOR:FIXME AGENT:01 PRIO:2 (UNWRAP)
         let budget = ResourceBudget { memory_limit: 1000 };
         let tracker = ResourceTracker::new(budget);
 
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn test_concurrent_consumption() {
-        // ANCHOR:FIXME AGENT:01 PRIO:1 (UNWRAP)
+        // ANCHOR:FIXME AGENT:01 PRIO:2 (UNWRAP)
         let budget = ResourceBudget {
             memory_limit: 10000,
         };

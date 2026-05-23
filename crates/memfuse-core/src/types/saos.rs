@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     fn test_hybrid_query_builder_happy_path() {
-        // ANCHOR:FIXME AGENT:01 PRIO:1 (UNWRAP)
+        // ANCHOR:FIXME AGENT:01 PRIO:2 (UNWRAP)
         let query = HybridQuery::builder()
             .with_text_query("test query")
             .with_vector_query(vec![0.1, 0.2])
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn test_hybrid_query_builder_custom_weights() {
-        // ANCHOR:FIXME AGENT:01 PRIO:1 (UNWRAP)
+        // ANCHOR:FIXME AGENT:01 PRIO:2 (UNWRAP)
         let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap();
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())
@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn test_hybrid_query_builder_defaults() {
-        // ANCHOR:FIXME AGENT:01 PRIO:1 (UNWRAP)
+        // ANCHOR:FIXME AGENT:01 PRIO:2 (UNWRAP)
         let query = HybridQuery::builder().build().unwrap();
         assert_eq!(query.k, 10);
         assert_eq!(query.fusion_weights.vector(), 1.0);

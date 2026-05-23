@@ -113,7 +113,7 @@ mod tests {
     // STATUS:DONE (Audited 2026-05-23)
     #[test]
     fn test_wal_hmac_basic() {
-        // ANCHOR:FIXME AGENT:10 PRIO:1 (UNWRAP)
+        // ANCHOR:FIXME AGENT:10 PRIO:2 (UNWRAP)
         let key = b"test-key-32-bytes-long-----------";
         let mut hmac = WalHmac::new(key).unwrap();
         hmac.update(b"data");
@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn test_integrity_verifier_chain() {
-        // ANCHOR:FIXME AGENT:10 PRIO:1 (UNWRAP)
+        // ANCHOR:FIXME AGENT:10 PRIO:2 (UNWRAP)
         let key = b"test-key-32-bytes-long-----------";
         let mut verifier = IntegrityVerifier::new(key);
 

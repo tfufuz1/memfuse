@@ -188,7 +188,7 @@ impl DiskAnnIndex {
         // truncated or modified concurrently while mapped. Since this is an embedded database
         // with exclusive file locks (managed by storage/LSM), this is safe.
         let std_file = file.into_std().await;
-        // ANCHOR:FIXME AGENT:03 PRIO:1 (UNSAFE)
+        // ANCHOR:FIXME AGENT:03 PRIO:2 (UNSAFE)
         self.mmap = Some(unsafe { Mmap::map(&std_file).map_err(MemFuseError::Io)? });
         self.entry_point = 0;
 
