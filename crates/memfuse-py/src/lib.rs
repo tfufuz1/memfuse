@@ -19,7 +19,7 @@
 // SUCCESSOR: @JULES-09 — "Python Bindings sind stabil. StateGraph kann darauf aufbauen."
 #![forbid(unsafe_code)]
 
-use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
+use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig, MetadataFilter};
 use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;
 use pythonize::{depythonize, pythonize};
@@ -153,6 +153,85 @@ impl PyDbStats {
             self.index_stats.num_vectors,
             self.storage_stats.total_size_bytes + self.storage_stats.memtable_size_bytes
         )
+    }
+}
+
+/// Operators for metadata filtering.
+#[pyclass(eq, eq_int, rename_all = "SCREAMING_SNAKE_CASE", name = "FilterOp")]
+#[derive(Clone, PartialEq)]
+pub enum PyFilterOp {
+    Eq,
+    Ne,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    In,
+    NotIn,
+}
+
+impl From<PyFilterOp> for memfuse_db::filter::FilterOp {
+    fn from(op: PyFilterOp) -> Self {
+        match op {
+            PyFilterOp::Eq => memfuse_db::filter::FilterOp::Eq,
+            PyFilterOp::Ne => memfuse_db::filter::FilterOp::Ne,
+            PyFilterOp::Gt => memfuse_db::filter::FilterOp::Gt,
+            PyFilterOp::Gte => memfuse_db::filter::FilterOp::Gte,
+            PyFilterOp::Lt => memfuse_db::filter::FilterOp::Lt,
+            PyFilterOp::Lte => memfuse_db::filter::FilterOp::Lte,
+            PyFilterOp::In => memfuse_db::filter::FilterOp::In,
+            PyFilterOp::NotIn => memfuse_db::filter::FilterOp::NotIn,
+        }
+    }
+}
+
+/// Advanced metadata filter for document retrieval and search.
+#[pyclass(name = "MetadataFilter")]
+#[derive(Clone)]
+pub struct PyMetadataFilter {
+    pub(crate) inner: MetadataFilter,
+}
+
+#[pymethods]
+impl PyMetadataFilter {
+    #[staticmethod]
+    pub fn condition(
+        py: Python<'_>,
+        field: String,
+        op: PyFilterOp,
+        value: PyObject,
+    ) -> PyResult<Self> {
+        let val_serde: serde_json::Value = depythonize(value.bind(py)).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid filter value: {}", e))
+        })?;
+        Ok(Self {
+            inner: MetadataFilter::Condition {
+                field,
+                op: op.into(),
+                value: val_serde,
+            },
+        })
+    }
+
+    #[staticmethod]
+    pub fn all_of(filters: Vec<PyMetadataFilter>) -> Self {
+        Self {
+            inner: MetadataFilter::And(filters.into_iter().map(|f| f.inner).collect()),
+        }
+    }
+
+    #[staticmethod]
+    pub fn any_of(filters: Vec<PyMetadataFilter>) -> Self {
+        Self {
+            inner: MetadataFilter::Or(filters.into_iter().map(|f| f.inner).collect()),
+        }
+    }
+
+    #[staticmethod]
+    pub fn negate(filter: PyMetadataFilter) -> Self {
+        Self {
+            inner: MetadataFilter::Not(Box::new(filter.inner)),
+        }
     }
 }
 
@@ -326,6 +405,53 @@ impl PyMemFuse {
         Ok(py_res)
     }
 
+    /// Performs semantic search with an advanced metadata filter in the default collection.
+    #[pyo3(signature = (vector, k, filter))]
+    pub fn search_with_filter<'py>(
+        &self,
+        py: Python<'py>,
+        vector: PyReadonlyArray1<'py, f32>,
+        k: usize,
+        filter: PyMetadataFilter,
+    ) -> PyResult<Vec<PySearchResult>> {
+        let rt = get_runtime()?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
+
+        let results = py
+            .allow_threads(|| {
+                rt.block_on(self.inner.search_with_filter(vec_slice, k, Some(filter.inner)))
+            })
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut py_res = Vec::new();
+        for r in results {
+            let meta_py = if let Some(m) = r.metadata {
+                Some(
+                    pythonize(py, &m)
+                        .map_err(|e| {
+                            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                "Metadata error: {}",
+                                e
+                            ))
+                        })?
+                        .unbind(),
+                )
+            } else {
+                None
+            };
+
+            py_res.push(PySearchResult {
+                id: r.id,
+                score: r.score,
+                metadata: meta_py,
+            });
+        }
+        Ok(py_res)
+    }
+
+
     /// Performs hybrid search combining BM25 and vector search results in the default collection.
     #[pyo3(signature = (text, vector, k))]
     pub fn hybrid_search<'py>(
@@ -369,6 +495,7 @@ impl PyMemFuse {
         }
         Ok(py_res)
     }
+
 
     /// Creates a bidirectional relationship between two documents in the default collection.
     pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
@@ -602,6 +729,52 @@ impl PyCollection {
         Ok(py_res)
     }
 
+    /// Performs semantic search with an advanced metadata filter in the collection.
+    #[pyo3(signature = (vector, k, filter))]
+    pub fn search_with_filter<'py>(
+        &self,
+        py: Python<'py>,
+        vector: PyReadonlyArray1<'py, f32>,
+        k: usize,
+        filter: PyMetadataFilter,
+    ) -> PyResult<Vec<PySearchResult>> {
+        let rt = get_runtime()?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
+
+        let results = py
+            .allow_threads(|| {
+                rt.block_on(self.inner.search_with_filter(vec_slice, k, Some(filter.inner)))
+            })
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut py_res = Vec::new();
+        for r in results {
+            let meta_py = if let Some(m) = r.metadata {
+                Some(
+                    pythonize(py, &m)
+                        .map_err(|e| {
+                            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                "Metadata error: {}",
+                                e
+                            ))
+                        })?
+                        .unbind(),
+                )
+            } else {
+                None
+            };
+
+            py_res.push(PySearchResult {
+                id: r.id,
+                score: r.score,
+                metadata: meta_py,
+            });
+        }
+        Ok(py_res)
+    }
+
     /// Performs hybrid search combining BM25 and vector search results in the collection.
     #[pyo3(signature = (text, vector, k))]
     pub fn hybrid_search<'py>(
@@ -778,6 +951,8 @@ fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()
     m.add_class::<PyMemFuse>()?;
     m.add_class::<PyCollection>()?;
     m.add_class::<PySearchResult>()?;
+    m.add_class::<PyFilterOp>()?;
+    m.add_class::<PyMetadataFilter>()?;
     m.add_class::<PyDocument>()?;
     m.add_class::<PyVectorIndexStats>()?;
     m.add_class::<PyStorageStats>()?;

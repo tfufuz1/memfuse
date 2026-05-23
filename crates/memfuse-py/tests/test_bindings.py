@@ -227,3 +227,51 @@ def test_version_and_repr(db_path):
 
     db_stats = db.stats()
     assert "DbStats(vectors=0" in repr(db_stats) # default col is empty
+
+def test_metadata_filtering(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    v = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+
+    db.insert("d1", v, metadata={"category": "fruit", "price": 10})
+    db.insert("d2", v, metadata={"category": "vegetable", "price": 20})
+    db.insert("d3", v, metadata={"category": "fruit", "price": 30})
+
+    # Simple equality filter
+    filter_fruit = memfuse.MetadataFilter.condition("category", memfuse.FilterOp.EQ, "fruit")
+    results = db.search_with_filter(v, k=10, filter=filter_fruit)
+    assert len(results) == 2
+    for r in results:
+        assert r.metadata["category"] == "fruit"
+
+    # Numeric range filter (price > 15)
+    filter_expensive = memfuse.MetadataFilter.condition("price", memfuse.FilterOp.GT, 15)
+    results = db.search_with_filter(v, k=10, filter=filter_expensive)
+    assert len(results) == 2
+    assert any(r.id == "d2" for r in results)
+    assert any(r.id == "d3" for r in results)
+
+    # Composite filter (category == "fruit" AND price > 15)
+    filter_combined = memfuse.MetadataFilter.all_of([
+        filter_fruit,
+        filter_expensive
+    ])
+    results = db.search_with_filter(v, k=10, filter=filter_combined)
+    assert len(results) == 1
+    assert results[0].id == "d3"
+
+    # OR filter
+    filter_or = memfuse.MetadataFilter.any_of([
+        memfuse.MetadataFilter.condition("category", memfuse.FilterOp.EQ, "vegetable"),
+        memfuse.MetadataFilter.condition("price", memfuse.FilterOp.LT, 15)
+    ])
+    results = db.search_with_filter(v, k=10, filter=filter_or)
+    assert len(results) == 2 # d1 (price 10) and d2 (vegetable)
+    ids = [r.id for r in results]
+    assert "d1" in ids
+    assert "d2" in ids
+
+    # NOT filter
+    filter_not = memfuse.MetadataFilter.negate(filter_fruit)
+    results = db.search_with_filter(v, k=10, filter=filter_not)
+    assert len(results) == 1
+    assert results[0].id == "d2"
