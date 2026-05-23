@@ -69,7 +69,7 @@ impl ContextManager {
         let available = self.budget.available();
         let mut total_tokens = 0;
         let mut truncated = false;
-        let mut selected = Vec::new();
+        let mut selected = Vec::with_capacity(chunks.len());
 
         for chunk in chunks {
             if total_tokens + chunk.token_count > available {

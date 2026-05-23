@@ -254,7 +254,7 @@ impl DiskAnnIndex {
             }
         }
 
-        let mut final_results: Vec<ScoredDocument> = Vec::new();
+        let mut final_results: Vec<ScoredDocument> = Vec::with_capacity(results.len().min(k));
         for c in results.into_iter().take(k) {
             let node = self.load_node(c.index)?;
             final_results.push(ScoredDocument {
