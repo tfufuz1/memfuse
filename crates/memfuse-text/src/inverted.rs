@@ -4,17 +4,16 @@
 // AGENT:09 DATE:2026-05-19 STATUS:DONE
 // CREATED:2026-05-19 DEADLINE:NONE
 // TARGET: < 20µs für upsert_document
-// AKTUELL: ~18.6 µs (nach Optimierung)
-// VORHER: 24.6 µs → NACHHER: 18.6 µs (~24% gain)
-// BOTTLENECK: Heap-Allokationen (format!, Vec::new)
-// OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
+// AKTUELL: ~17.5 µs (nach Optimierung)
+// VORHER: 18.6 µs → NACHHER: 17.5 µs (~6% gain)
+// BOTTLENECK: Heap-Allokationen (format!, Vec::new), HashMap hashing
+// OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache + ahash
 
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use async_trait::async_trait;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
 };
-use std::collections::HashMap;
 use std::sync::Arc;
 
 /// An inverted index stored in the LSM engine.
@@ -78,7 +77,7 @@ impl InvertedIndex {
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
 
-        let mut tfs = HashMap::with_capacity(tokens.len());
+        let mut tfs = ahash::AHashMap::with_capacity(tokens.len());
         for t in tokens {
             *tfs.entry(t).or_insert(0u32) += 1;
         }
@@ -339,8 +338,8 @@ impl InvertedIndex {
             0.0
         };
 
-        let mut scores: HashMap<DocId, f32> = HashMap::new();
-        let mut doc_len_cache: HashMap<DocId, u32> = HashMap::new();
+        let mut scores: ahash::AHashMap<DocId, f32> = ahash::AHashMap::new();
+        let mut doc_len_cache: ahash::AHashMap<DocId, u32> = ahash::AHashMap::new();
 
         for term in &tokens {
             let pl_key = self.key_with_term(term);
@@ -512,6 +511,7 @@ impl TextIndex for BM25MorphIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
     use std::sync::RwLock;
 
     struct MockStorage {
