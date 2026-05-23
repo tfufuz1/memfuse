@@ -57,6 +57,35 @@ fn get_runtime() -> PyResult<&'static Runtime> {
     })
 }
 
+/// Central helper to convert `serde_json::Value` to `PyObject`.
+fn val_to_py(py: Python<'_>, val: serde_json::Value) -> PyResult<PyObject> {
+    pythonize(py, &val)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e)))
+        .map(|o| o.unbind())
+}
+
+/// Central helper to hydrate search results from Rust to Python.
+fn results_to_py(
+    py: Python<'_>,
+    results: Vec<memfuse_db::SearchResult>,
+) -> PyResult<Vec<PySearchResult>> {
+    let mut py_res = Vec::with_capacity(results.len());
+    for r in results {
+        let metadata = if let Some(m) = r.metadata {
+            Some(val_to_py(py, m)?)
+        } else {
+            None
+        };
+
+        py_res.push(PySearchResult {
+            id: r.id,
+            score: r.score,
+            metadata,
+        });
+    }
+    Ok(py_res)
+}
+
 /// A single search result from MemFuse.
 #[pyclass(get_all)]
 pub struct PySearchResult {
@@ -300,30 +329,36 @@ impl PyMemFuse {
             .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        let mut py_res = Vec::new();
-        for r in results {
-            let meta_py = if let Some(m) = r.metadata {
-                Some(
-                    pythonize(py, &m)
-                        .map_err(|e| {
-                            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                                "Metadata error: {}",
-                                e
-                            ))
-                        })?
-                        .unbind(),
-                )
-            } else {
-                None
-            };
+        results_to_py(py, results)
+    }
 
-            py_res.push(PySearchResult {
-                id: r.id,
-                score: r.score,
-                metadata: meta_py,
-            });
-        }
-        Ok(py_res)
+    /// Performs semantic search with an advanced metadata filter over the default collection.
+    #[pyo3(signature = (vector, k, filter=None))]
+    pub fn search_with_filter<'py>(
+        &self,
+        py: Python<'py>,
+        vector: PyReadonlyArray1<'py, f32>,
+        k: usize,
+        filter: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+    ) -> PyResult<Vec<PySearchResult>> {
+        let rt = get_runtime()?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
+
+        let filter_val: Option<memfuse_db::MetadataFilter> = if let Some(d) = filter {
+            Some(depythonize(&d).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Filter error: {}", e))
+            })?)
+        } else {
+            None
+        };
+
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.search_with_filter(vec_slice, k, filter_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        results_to_py(py, results)
     }
 
     /// Performs hybrid search combining BM25 and vector search results in the default collection.
@@ -344,30 +379,7 @@ impl PyMemFuse {
             .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        let mut py_res = Vec::new();
-        for r in results {
-            let meta_py = if let Some(m) = r.metadata {
-                Some(
-                    pythonize(py, &m)
-                        .map_err(|e| {
-                            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                                "Metadata error: {}",
-                                e
-                            ))
-                        })?
-                        .unbind(),
-                )
-            } else {
-                None
-            };
-
-            py_res.push(PySearchResult {
-                id: r.id,
-                score: r.score,
-                metadata: meta_py,
-            });
-        }
-        Ok(py_res)
+        results_to_py(py, results)
     }
 
     /// Creates a bidirectional relationship between two documents in the default collection.
@@ -576,30 +588,36 @@ impl PyCollection {
             .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        let mut py_res = Vec::new();
-        for r in results {
-            let meta_py = if let Some(m) = r.metadata {
-                Some(
-                    pythonize(py, &m)
-                        .map_err(|e| {
-                            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                                "Metadata error: {}",
-                                e
-                            ))
-                        })?
-                        .unbind(),
-                )
-            } else {
-                None
-            };
+        results_to_py(py, results)
+    }
 
-            py_res.push(PySearchResult {
-                id: r.id,
-                score: r.score,
-                metadata: meta_py,
-            });
-        }
-        Ok(py_res)
+    /// Performs semantic search with an advanced metadata filter over the collection.
+    #[pyo3(signature = (vector, k, filter=None))]
+    pub fn search_with_filter<'py>(
+        &self,
+        py: Python<'py>,
+        vector: PyReadonlyArray1<'py, f32>,
+        k: usize,
+        filter: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+    ) -> PyResult<Vec<PySearchResult>> {
+        let rt = get_runtime()?;
+        let vec_slice = vector.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
+        })?;
+
+        let filter_val: Option<memfuse_db::MetadataFilter> = if let Some(d) = filter {
+            Some(depythonize(&d).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Filter error: {}", e))
+            })?)
+        } else {
+            None
+        };
+
+        let results = py
+            .allow_threads(|| rt.block_on(self.inner.search_with_filter(vec_slice, k, filter_val)))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        results_to_py(py, results)
     }
 
     /// Performs hybrid search combining BM25 and vector search results in the collection.
@@ -620,30 +638,7 @@ impl PyCollection {
             .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, vec_slice, k)))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        let mut py_res = Vec::new();
-        for r in results {
-            let meta_py = if let Some(m) = r.metadata {
-                Some(
-                    pythonize(py, &m)
-                        .map_err(|e| {
-                            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                                "Metadata error: {}",
-                                e
-                            ))
-                        })?
-                        .unbind(),
-                )
-            } else {
-                None
-            };
-
-            py_res.push(PySearchResult {
-                id: r.id,
-                score: r.score,
-                metadata: meta_py,
-            });
-        }
-        Ok(py_res)
+        results_to_py(py, results)
     }
 
     /// Returns the number of documents in the collection.
@@ -727,7 +722,7 @@ impl PyCollection {
 
 /// Opens or creates a MemFuse database at the given path.
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536, max_elements=None, encryption_passphrase=None, distance_metric=None))]
+#[pyo3(signature = (path, dimension=1536, max_elements=None, encryption_passphrase=None, distance_metric=None, network_enabled=None))]
 fn open(
     py: Python<'_>,
     path: &str,
@@ -735,6 +730,7 @@ fn open(
     max_elements: Option<usize>,
     encryption_passphrase: Option<String>,
     distance_metric: Option<String>,
+    network_enabled: Option<bool>,
 ) -> PyResult<PyMemFuse> {
     let rt = get_runtime()?;
     let mut config = MemFuseConfig {
@@ -742,6 +738,10 @@ fn open(
         encryption_passphrase,
         ..Default::default()
     };
+
+    if let Some(ne) = network_enabled {
+        config.network_enabled = ne;
+    }
 
     if let Some(me) = max_elements {
         config.max_elements = me;

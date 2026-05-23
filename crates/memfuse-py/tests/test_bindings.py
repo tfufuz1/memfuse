@@ -227,3 +227,37 @@ def test_version_and_repr(db_path):
 
     db_stats = db.stats()
     assert "DbStats(vectors=0" in repr(db_stats) # default col is empty
+
+def test_search_with_filter(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("filter_test")
+
+    col.insert("d1", np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32), metadata={"category": "A", "value": 10})
+    col.insert("d2", np.array([0.9, 0.1, 0.0, 0.0], dtype=np.float32), metadata={"category": "B", "value": 20})
+    col.insert("d3", np.array([0.8, 0.2, 0.0, 0.0], dtype=np.float32), metadata={"category": "A", "value": 30})
+
+    # Simple Eq filter
+    results = col.search_with_filter(
+        np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32),
+        k=10,
+        filter={"Condition": {"field": "category", "op": "Eq", "value": "A"}}
+    )
+    assert len(results) == 2
+    assert all(r.metadata["category"] == "A" for r in results)
+
+    # And filter
+    results = col.search_with_filter(
+        np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32),
+        k=10,
+        filter={"And": [
+            {"Condition": {"field": "category", "op": "Eq", "value": "A"}},
+            {"Condition": {"field": "value", "op": "Gt", "value": 15}}
+        ]}
+    )
+    assert len(results) == 1
+    assert results[0].id == "d3"
+
+def test_network_enabled_config(db_path):
+    # Verify we can pass network_enabled
+    db = memfuse.open(db_path + "_network", dimension=4, network_enabled=False)
+    assert db is not None
