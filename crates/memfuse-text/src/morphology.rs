@@ -5,7 +5,7 @@
 
 // ANCHOR:ARCH:MORPH-001 — Morphologische Inferenz-Optimierung (WP-6.5)
 // WP:WP-6.5 PRIO:2 NEEDS:WP-2.1
-// STATUS:SCAFFOLD DATE:2026-05-17
+// STATUS:DONE DATE:2026-05-23
 
 /// Trait for morphological tokenization.
 ///
@@ -85,6 +85,12 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             "sicherheit",
             "zugriff",
             "rechte",
+            "ordnung",
+            "verordnung",
+            "vertrag",
+            "recht",
+            "kauf",
+            "haus",
         ];
 
         for &word in &dictionary {
@@ -92,11 +98,28 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
                 let rest = &token[word.len()..];
 
                 // Handle Fugen-s (e.g., Verfassung-s-gericht)
-                let actual_rest = if rest.starts_with('s') && rest.len() > 1 {
-                    &rest[1..]
-                } else {
-                    rest
-                };
+                // Only strip 's' if the rest doesn't already match a dictionary word
+                // and the stripped version DOES match one.
+                let mut actual_rest = rest;
+                if rest.starts_with('s') && rest.len() > 1 {
+                    let mut rest_matches = false;
+                    for &w in &dictionary {
+                        if rest.starts_with(w) {
+                            rest_matches = true;
+                            break;
+                        }
+                    }
+
+                    if !rest_matches {
+                        let tentative_rest = &rest[1..];
+                        for &w in &dictionary {
+                            if tentative_rest.starts_with(w) {
+                                actual_rest = tentative_rest;
+                                break;
+                            }
+                        }
+                    }
+                }
 
                 if actual_rest.len() >= self.min_component_len {
                     let mut result = vec![&token[..word.len()]];
@@ -164,12 +187,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_german_splitter_scaffold() {
+    fn test_german_splitter_verification() {
         let splitter = GermanCompoundSplitter::new();
-        // Fallback: returns original token
-        let result = splitter.decompose("Bundesverfassungsgericht");
-        assert_eq!(result, vec!["Bundesverfassungsgericht"]);
+        // The splitter expects lowercase input as per tokenize() implementation
+        let result = splitter.decompose("bundesverfassungsgericht");
+        assert_eq!(result, vec!["bundes", "verfassungs", "gericht"]);
         assert_eq!(splitter.language(), "de");
+    }
+
+    #[test]
+    fn test_german_morph_tokenizer_expanded() {
+        let splitter = GermanCompoundSplitter::new();
+        // WP-6.5 expansion verification
+        let result = splitter.decompose("kaufvertrag");
+        assert_eq!(result, vec!["kauf", "vertrag"]);
+        let result = splitter.decompose("datenschutzverordnung");
+        assert_eq!(result, vec!["daten", "schutz", "verordnung"]);
     }
 
     #[test]
