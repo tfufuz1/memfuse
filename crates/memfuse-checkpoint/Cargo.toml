@@ -16,5 +16,6 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 memfuse-core = { workspace = true }
+memfuse-store = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
