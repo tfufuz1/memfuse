@@ -1,3 +1,8 @@
+//! Resource budget and memory tracking.
+
+// ANCHOR:DOC — Missing module documentation
+// AGENT:01 STATUS:DONE PRIO:3
+
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.

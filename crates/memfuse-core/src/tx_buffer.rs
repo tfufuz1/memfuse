@@ -1,3 +1,6 @@
+// ANCHOR:DEBT — Division by zero risk in TxBuffer
+// AGENT:01 STATUS:DONE PRIO:3
+
 //! Transactional buffer for staging index operations.
 //!
 //! Sharded into sub-buffers to reduce lock contention.
@@ -76,6 +79,7 @@ impl<T: Clone> TxBuffer<T> {
 
     /// Creates a new buffer with custom settings.
     pub fn new_with_config(shard_count: usize, tx_timeout: Duration) -> Self {
+        assert!(shard_count > 0, "shard_count must be greater than 0");
         let mut shards = Vec::with_capacity(shard_count);
         for _ in 0..shard_count {
             shards.push(RwLock::new(TxShard::new()));

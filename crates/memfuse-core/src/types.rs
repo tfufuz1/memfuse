@@ -1,3 +1,8 @@
+//! Domain types and resource management.
+
+// ANCHOR:DOC — Missing module documentation
+// AGENT:01 STATUS:DONE PRIO:3
+
 pub mod budget;
 pub mod domain;
 pub mod filter;

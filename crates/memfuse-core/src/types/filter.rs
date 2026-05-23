@@ -1,3 +1,8 @@
+//! Metadata filtering expressions.
+
+// ANCHOR:DOC — Missing module documentation
+// AGENT:01 STATUS:DONE PRIO:3
+
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.

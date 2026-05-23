@@ -1,3 +1,8 @@
+//! SAOS (Situational Awareness Operating System) context and fusion types.
+
+// ANCHOR:DOC — Missing module documentation
+// AGENT:01 STATUS:DONE PRIO:3
+
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
@@ -189,14 +194,11 @@ impl HybridQueryBuilder {
             text_query: self.text_query,
             vector_query: self.vector_query,
             graph_start_node: self.graph_start_node,
-            fusion_weights: self.fusion_weights.unwrap_or_else(|| {
-                // Use a known-safe default to avoid unwrap()
-                FusionWeights {
-                    vector: 1.0,
-                    text: 0.0,
-                    graph: 0.0,
-                    metadata: 0.0,
-                }
+            fusion_weights: self.fusion_weights.unwrap_or(FusionWeights {
+                vector: 1.0,
+                text: 0.0,
+                graph: 0.0,
+                metadata: 0.0,
             }),
             filter: self.filter,
             k: self.k.unwrap_or(10),
