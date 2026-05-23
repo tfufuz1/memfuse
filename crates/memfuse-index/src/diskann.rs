@@ -201,7 +201,7 @@ impl DiskAnnIndex {
             if results.len() >= self.config.beam_width
                 && results
                     .peek()
-                    .map_or(false, |best| current.distance > best.distance)
+                    .is_some_and(|best| current.distance > best.distance)
             {
                 break;
             }
@@ -217,7 +217,7 @@ impl DiskAnnIndex {
                     };
 
                     if results.len() < self.config.beam_width
-                        || results.peek().map_or(true, |best| d < best.distance)
+                        || results.peek().is_none_or(|best| d < best.distance)
                     {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
