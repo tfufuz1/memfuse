@@ -298,7 +298,10 @@ mod tests {
             .await
             .expect("failed to retrieve checkpoint");
 
-        let list = manager.list_checkpoints().await.expect("failed to retrieve checkpoint");
+        let list = manager
+            .list_checkpoints()
+            .await
+            .expect("failed to retrieve checkpoint");
         assert_eq!(list.len(), 3);
         assert_eq!(list[0].name, "cp1");
         assert_eq!(list[1].name, "cp2");
@@ -317,7 +320,10 @@ mod tests {
 
         // New manager sharing the same storage
         let manager2 = CheckpointManager::new(storage.clone());
-        let list = manager2.list_checkpoints().await.expect("failed to retrieve checkpoint");
+        let list = manager2
+            .list_checkpoints()
+            .await
+            .expect("failed to retrieve checkpoint");
 
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "persist_me");
