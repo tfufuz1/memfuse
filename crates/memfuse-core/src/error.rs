@@ -78,6 +78,14 @@ pub enum MemFuseError {
     // ═══ Text Engine ═══
     #[error("Text engine error: {0}")]
     Text(String),
+
+    // ANCHOR:DEBT:ERR-002 — Added variants for conflict and existence checks.
+    // AGENT:01 STATUS:DONE
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
+    #[error("Already exists: {0}")]
+    AlreadyExists(String),
 }
 
 impl MemFuseError {
