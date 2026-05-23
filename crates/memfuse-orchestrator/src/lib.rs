@@ -22,6 +22,9 @@
 
 #![forbid(unsafe_code)]
 
+pub mod graph;
+pub use graph::StateGraph;
+
 use memfuse_core::Result;
 
 /// A node within the deterministic agent graph.
@@ -37,28 +40,6 @@ pub struct WorkflowEdge {
     pub from: String,
     pub to: String,
     pub condition_evaluator: Option<String>,
-}
-
-/// Core declarative structure mapping workflows.
-pub struct StateGraph {
-    pub nodes: Vec<GraphNode>,
-    pub edges: Vec<WorkflowEdge>,
-}
-
-impl StateGraph {
-    /// Build an empty StateGraph.
-    pub fn new() -> Self {
-        Self {
-            nodes: Vec::new(),
-            edges: Vec::new(),
-        }
-    }
-}
-
-impl Default for StateGraph {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 /// Async executor engine applying nodes to the WasmSandbox in Sequence.
