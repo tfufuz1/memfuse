@@ -34,7 +34,6 @@ pub trait AgentRuntime: Send + Sync {
     async fn execute_isolated(&self, module_bin: &[u8], budget: &TokenBudget) -> Result<Vec<u8>>;
 }
 
-
 #[async_trait::async_trait]
 impl AgentRuntime for WasmSandbox {
     async fn execute_isolated(&self, _module_bin: &[u8], budget: &TokenBudget) -> Result<Vec<u8>> {

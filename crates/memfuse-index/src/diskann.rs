@@ -199,7 +199,9 @@ impl DiskAnnIndex {
 
         while let Some(Reverse(current)) = candidates.pop() {
             if results.len() >= self.config.beam_width
-                && results.peek().map_or(false, |best| current.distance > best.distance)
+                && results
+                    .peek()
+                    .map_or(false, |best| current.distance > best.distance)
             {
                 break;
             }

@@ -252,10 +252,18 @@ mod tests {
         assert_eq!(meta.seq_no, 100);
 
         // Verify it was pinned
-        assert!(storage.pinned.lock().expect("lock poisoning").contains(&100)); // unwrap
+        assert!(storage
+            .pinned
+            .lock()
+            .expect("lock poisoning")
+            .contains(&100)); // unwrap
 
         // Verify it exists in manager
-        let retrieved = manager.get_checkpoint("test_cp").await.expect("get checkpoint").expect("exists"); // unwrap
+        let retrieved = manager
+            .get_checkpoint("test_cp")
+            .await
+            .expect("get checkpoint")
+            .expect("exists"); // unwrap
         assert_eq!(retrieved, meta);
     }
 
@@ -270,7 +278,11 @@ mod tests {
             .await
             .expect("create cp1"); // unwrap
 
-        let retrieved = manager.get_checkpoint("cp1").await.expect("get cp1").expect("exists"); // unwrap
+        let retrieved = manager
+            .get_checkpoint("cp1")
+            .await
+            .expect("get cp1")
+            .expect("exists"); // unwrap
         assert_eq!(retrieved.metadata, metadata);
     }
 
@@ -311,7 +323,10 @@ mod tests {
 
         // New manager sharing the same storage
         let manager2 = CheckpointManager::new(storage.clone());
-        let list = manager2.list_checkpoints().await.expect("list checkpoints from manager2"); // unwrap
+        let list = manager2
+            .list_checkpoints()
+            .await
+            .expect("list checkpoints from manager2"); // unwrap
 
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "persist_me");
