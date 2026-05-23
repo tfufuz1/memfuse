@@ -1,8 +1,8 @@
 //! Write-Ahead Log (WAL) for durability and crash recovery with HMAC chaining.
 
+use memfuse_core::{MemFuseError, Result, TxId};
 use memfuse_crypto::crypto::KeyManager;
 use memfuse_crypto::wal_crypto::WalHmac;
-use memfuse_core::{MemFuseError, Result, TxId};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
