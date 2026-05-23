@@ -218,9 +218,8 @@ impl DiskAnnIndex {
                         distance: d,
                     };
 
-                    if results.len() < self.config.beam_width
-                        || d < results.peek().unwrap().distance
-                    {
+                    let threshold = results.peek().expect("not empty").distance; // unwrap
+                    if results.len() < self.config.beam_width || d < threshold {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
                         if results.len() > self.config.beam_width {
@@ -277,9 +276,13 @@ impl DiskAnnIndex {
             let val = f32::from_le_bytes(
                 node_data
                     .get(cursor..cursor + 4)
-                    .ok_or_else(|| MemFuseError::Index("Malformed node vector: unexpected EOF".into()))?
+                    .ok_or_else(|| {
+                        MemFuseError::Index("Malformed node vector: unexpected EOF".into())
+                    })?
                     .try_into()
-                    .map_err(|_| MemFuseError::Index("Malformed node vector: try_into failed".into()))?,
+                    .map_err(|_| {
+                        MemFuseError::Index("Malformed node vector: try_into failed".into())
+                    })?,
             );
             vector.push(val);
             cursor += 4;
@@ -303,7 +306,9 @@ impl DiskAnnIndex {
             let neighbor = u32::from_le_bytes(
                 node_data
                     .get(cursor..cursor + 4)
-                    .ok_or_else(|| MemFuseError::Index("Malformed node neighbor: unexpected EOF".into()))?
+                    .ok_or_else(|| {
+                        MemFuseError::Index("Malformed node neighbor: unexpected EOF".into())
+                    })?
                     .try_into()
                     .map_err(|_| {
                         MemFuseError::Index("Malformed node neighbor: try_into failed".into())
@@ -321,7 +326,9 @@ impl DiskAnnIndex {
                 .get(cursor..cursor + 8)
                 .ok_or_else(|| MemFuseError::Index("Malformed node doc id: unexpected EOF".into()))?
                 .try_into()
-                .map_err(|_| MemFuseError::Index("Malformed node doc id: try_into failed".into()))?,
+                .map_err(|_| {
+                    MemFuseError::Index("Malformed node doc id: try_into failed".into())
+                })?,
         );
         let doc_id = DocId::from(doc_id_raw);
 

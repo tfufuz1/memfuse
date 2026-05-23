@@ -42,7 +42,6 @@ pub struct WorkflowEdge {
     pub condition_evaluator: Option<String>,
 }
 
-
 /// Async executor engine applying nodes to the WasmSandbox in Sequence.
 pub struct OrchestratorEngine;
 
