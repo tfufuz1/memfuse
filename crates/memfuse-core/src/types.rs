@@ -334,8 +334,11 @@ impl ResourceTracker {
     }
 
     pub fn release_memory(&self, bytes: u64) {
-        self.memory_used
-            .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
+        let _ = self.memory_used.fetch_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |curr| Some(curr.saturating_sub(bytes)),
+        );
     }
 
     pub fn memory_used(&self) -> u64 {
@@ -585,7 +588,8 @@ mod saos_tests {
     // --- FusionWeights Tests ---
     #[test]
     fn test_fusion_weights_normalization_valid() {
-        let weights = FusionWeights::new(0.6, 0.4, 0.0, 0.0).expect("valid weights");
+        // ANCHOR:DEBT:TYPES-003 — intentional expect in tests
+        let weights = FusionWeights::new(0.6, 0.4, 0.0, 0.0).expect("valid weights"); // #[cfg(test)]
         assert_eq!(weights.vector(), 0.6);
         assert_eq!(weights.text(), 0.4);
     }
@@ -657,8 +661,9 @@ mod saos_tests {
             metadata: Some(serde_json::json!({"version": 2})),
         };
         assert_eq!(entry.final_score, 0.99);
+        // ANCHOR:DEBT:TYPES-004 — intentional expect in tests
         assert_eq!(
-            entry.metadata.expect("metadata should be present")["version"],
+            entry.metadata.expect("metadata should be present")["version"], // #[cfg(test)]
             2
         );
     }
