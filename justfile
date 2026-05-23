@@ -123,7 +123,7 @@ dag-check:
         CRATE=${VIOLATION%%:*}
         TARGET=$(echo $VIOLATION | cut -d: -f2)
         ID=$(echo $VIOLATION | cut -d: -f3)
-        if cargo tree -p "$CRATE" --edges no-dev | grep -q "$TARGET"; then
+        if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -q "$TARGET"; then
             echo "⚠️  $ID still present ($CRATE → $TARGET)"
         else
             echo "✅ $ID resolved"
