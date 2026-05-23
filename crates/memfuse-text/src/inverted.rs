@@ -529,17 +529,17 @@ mod tests {
     #[async_trait::async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            Ok(self.store.read().unwrap().get(key).cloned())
+            Ok(self.store.read().expect("lock not poisoned").get(key).cloned())
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
             self.store
                 .write()
-                .unwrap()
+                .expect("lock not poisoned")
                 .insert(key.to_vec(), value.to_vec());
             Ok(())
         }
         async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
-            self.store.write().unwrap().remove(key);
+            self.store.write().expect("lock not poisoned").remove(key);
             Ok(())
         }
         async fn commit(&self, _tx_id: TxId) -> Result<()> {
@@ -559,7 +559,7 @@ mod tests {
             })
         }
         async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            let store = self.store.read().unwrap();
+            let store = self.store.read().expect("lock not poisoned");
             Ok(store
                 .iter()
                 .filter(|(k, _)| k.starts_with(prefix))

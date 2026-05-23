@@ -52,11 +52,12 @@ async fn test_checkpoint_concurrency_stress() {
     // Checkpoint tasks
     for t in 0..num_checkpoint_tasks {
         let manager = manager.clone();
+        let storage = storage.clone();
         handles.push(tokio::spawn(async move {
             for i in 0..(ops_per_task / 10) {
                 let name = format!("cp-{}-{}", t, i);
                 let cp = manager
-                    .create_checkpoint(&name)
+                    .create_checkpoint(&name, "test-collection", storage.last_seq_no(), serde_json::json!({}))
                     .await
                     .expect("create checkpoint failed");
 
@@ -64,7 +65,7 @@ async fn test_checkpoint_concurrency_stress() {
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
                 manager
-                    .drop_checkpoint(&cp)
+                    .drop_checkpoint(&cp.name)
                     .await
                     .expect("drop checkpoint failed");
             }
