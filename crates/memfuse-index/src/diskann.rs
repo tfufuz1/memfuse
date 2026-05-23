@@ -205,7 +205,9 @@ impl DiskAnnIndex {
 
         while let Some(Reverse(current)) = candidates.pop() {
             if results.len() >= self.config.beam_width
-                && current.distance > results.peek().unwrap().distance
+                && results
+                    .peek()
+                    .is_some_and(|worst| current.distance > worst.distance)
             {
                 break;
             }
@@ -221,7 +223,7 @@ impl DiskAnnIndex {
                     };
 
                     if results.len() < self.config.beam_width
-                        || d < results.peek().unwrap().distance
+                        || results.peek().is_some_and(|worst| d < worst.distance)
                     {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
@@ -236,14 +238,11 @@ impl DiskAnnIndex {
         let mut final_results: Vec<ScoredDocument> = results
             .into_iter()
             .take(k)
-            .map(|c| {
-                let node = self
-                    .load_node(c.index)
-                    .expect("Node should be in cache or index");
-                ScoredDocument {
+            .filter_map(|c| {
+                self.load_node(c.index).ok().map(|node| ScoredDocument {
                     doc_id: node.doc_id,
                     score: 1.0 / (1.0 + c.distance),
-                }
+                })
             })
             .collect();
 
