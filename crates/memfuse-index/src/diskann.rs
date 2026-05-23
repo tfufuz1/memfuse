@@ -197,9 +197,11 @@ impl DiskAnnIndex {
         results.push(cand);
         visited.insert(ep);
 
+        // ANCHOR:DEBT:DISKANN-SEARCH-001 — Removed unwrap/expect and fixed heap sorting.
+        // AGENT:03 STATUS:READY
         while let Some(Reverse(current)) = candidates.pop() {
             if results.len() >= self.config.beam_width
-                && current.distance > results.peek().unwrap().distance
+                && results.peek().is_some_and(|top| current.distance > top.distance)
             {
                 break;
             }
@@ -215,7 +217,7 @@ impl DiskAnnIndex {
                     };
 
                     if results.len() < self.config.beam_width
-                        || d < results.peek().unwrap().distance
+                        || results.peek().is_none_or(|top| d < top.distance)
                     {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
@@ -227,21 +229,16 @@ impl DiskAnnIndex {
             }
         }
 
-        let mut final_results: Vec<ScoredDocument> = results
-            .into_iter()
-            .take(k)
-            .map(|c| {
-                let node = self
-                    .load_node(c.index)
-                    .expect("Node should be in cache or index");
-                ScoredDocument {
-                    doc_id: node.doc_id,
-                    score: 1.0 / (1.0 + c.distance),
-                }
-            })
-            .collect();
+        let sorted_results = results.into_sorted_vec();
+        let mut final_results: Vec<ScoredDocument> = Vec::with_capacity(sorted_results.len().min(k));
+        for c in sorted_results.into_iter().take(k) {
+            let node = self.load_node(c.index)?;
+            final_results.push(ScoredDocument {
+                doc_id: node.doc_id,
+                score: 1.0 / (1.0 + c.distance),
+            });
+        }
 
-        final_results.sort_by(|a, b| b.score.total_cmp(&a.score));
         Ok(final_results)
     }
 
