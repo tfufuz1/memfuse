@@ -173,7 +173,7 @@ impl PyVectorIndexStats {
     }
 }
 
-/// Statistics for the LSM storage engine.
+/// Statistics for the storage engine.
 #[pyclass(get_all, name = "StorageStats")]
 #[derive(Clone)]
 pub struct PyStorageStats {
@@ -484,7 +484,6 @@ macro_rules! memfuse_batch_methods {
 
 // ─── PyMemFuse (Database Facade) ────────────────────────────────────────────
 
-/// Primary Python entry point for MemFuse.
 #[pyclass(name = "Db")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
@@ -591,7 +590,6 @@ memfuse_batch_methods!(PyMemFuse);
 
 // ─── PyCollection ───────────────────────────────────────────────────────────
 
-/// Represents a named collection (namespace) in MemFuse.
 #[pyclass(name = "Collection")]
 pub struct PyCollection {
     inner: Arc<MemFuseCollection>,

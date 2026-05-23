@@ -327,22 +327,22 @@ impl MemFuse {
             .await
     }
 
-    /// Inserts multiple documents in a single transaction in the default collection.
+    /// Inserts multiple documents in a single transaction.
     pub async fn insert_many(&self, docs: &[(String, Vec<f32>, Option<Value>)]) -> Result<()> {
         self.default_col().await?.insert_many(docs).await
     }
 
-    /// Upserts multiple documents in a single transaction in the default collection.
+    /// Upserts multiple documents in a single transaction.
     pub async fn upsert_many(&self, docs: &[(String, Vec<f32>, Option<Value>)]) -> Result<()> {
         self.default_col().await?.upsert_many(docs).await
     }
 
-    /// Retrieves a document by its string key from the default collection.
+    /// Retrieves a document by its string key.
     pub async fn get(&self, id: &str) -> Result<Option<Document>> {
         self.default_col().await?.get(id).await
     }
 
-    /// Retrieves a document at a specific point in time from the default collection.
+    /// Retrieves a document at a specific point in time.
     pub async fn get_at_snapshot(&self, id: &str, seq_no: u64) -> Result<Option<Document>> {
         self.default_col().await?.get_at_snapshot(id, seq_no).await
     }
@@ -352,7 +352,7 @@ impl MemFuse {
         self.storage.last_seq_no().await
     }
 
-    /// Updates a document in the default collection.
+    /// Updates a document's embedding and/or metadata.
     pub async fn update(&self, id: &str, embedding: &[f32], metadata: Option<Value>) -> Result<()> {
         self.default_col()
             .await?
@@ -360,12 +360,12 @@ impl MemFuse {
             .await
     }
 
-    /// Performs semantic k-NN search in the default collection.
+    /// Performs semantic k-NN search over stored embeddings.
     pub async fn search(&self, query: &[f32], k: usize) -> Result<Vec<SearchResult>> {
         self.default_col().await?.search(query, k).await
     }
 
-    /// Performs semantic search with an advanced metadata filter in the default collection.
+    /// Performs semantic search with an advanced metadata filter.
     pub async fn search_with_filter(
         &self,
         query: &[f32],
@@ -378,7 +378,7 @@ impl MemFuse {
             .await
     }
 
-    /// Performs semantic k-NN search with an optional filter function in the default collection.
+    /// Performs semantic k-NN search with an optional filter function over documents.
     pub async fn search_filtered(
         &self,
         query: &[f32],
@@ -398,7 +398,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
-    /// Performs hybrid search (BM25 + Vector) in the default collection.
+    /// Performs hybrid search combining BM25 and vector search.
     pub async fn hybrid_search(
         &self,
         text: &str,
@@ -411,18 +411,18 @@ impl MemFuse {
             .await
     }
 
-    /// Deletes a document by ID from the default collection.
+    /// Deletes a document by its string ID.
     pub async fn delete(&self, id: &str) -> Result<()> {
         self.default_col().await?.delete(id).await
     }
 
-    /// Creates a bidirectional relationship between two documents in the default collection.
+    /// Creates a bidirectional relationship between two documents.
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
         let col = self.default_col().await?;
         col.relate_bidirectional(from, to, label).await
     }
 
-    /// Scans the default collection for key-value pairs matching a prefix.
+    /// Scans storage for key-value pairs matching a prefix.
     pub async fn scan_prefix(&self, prefix: &str) -> Result<Vec<(String, Value)>> {
         self.default_col().await?.scan_prefix(prefix).await
     }
