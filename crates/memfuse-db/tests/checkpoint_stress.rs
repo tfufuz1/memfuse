@@ -8,7 +8,6 @@ use tokio::task::JoinHandle;
 // ANCHOR:INTEGRATION:CHECKPOINT-STRESS STATUS:DONE AGENT:12 DATE:2026-06-20
 // Stress test for concurrent checkpoint creation and deletion during active writes.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "AGENT:11: CI validation loop - fixing unrelated test failures is out of scope for AGENT:11 peer isolation focus"]
 async fn test_checkpoint_concurrency_stress() {
     let tmp = TempDir::new().expect("failed to create temp dir");
     let lsm_config = LsmConfig {
@@ -57,7 +56,7 @@ async fn test_checkpoint_concurrency_stress() {
             for i in 0..(ops_per_task / 10) {
                 let name = format!("cp-{}-{}", t, i);
                 let _cp = manager
-                    .create_checkpoint(&name, "collection_id", 0, serde_json::Value::Null)
+                    .create_checkpoint(&name, "coll", 0, serde_json::Value::Null)
                     .await
                     .expect("create checkpoint failed");
 

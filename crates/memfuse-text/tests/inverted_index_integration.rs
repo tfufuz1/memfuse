@@ -1,16 +1,13 @@
 /*
 use memfuse_core::{DocId, StorageEngine, TextIndex, TxId};
-use memfuse_core::{LsmConfig, LsmStorage};
+use memfuse_store::{LsmConfig, LsmStorage};
 use memfuse_text::inverted::InvertedIndex;
 use std::sync::Arc;
 use tempfile::TempDir;
 
 // ANCHOR:INTEGRATION:TEXT-001 STATUS:DONE AGENT:12 DATE:2026-06-20
 // Test that InvertedIndex correctly persists and retrieves data using LsmStorage.
-// #[tokio::test]
-#[ignore]
-#[ignore = "Technical Debt: This test is currently disabled due to architectural API mismatches in the orchestration layer (see Workspace Health memory 2026-05-21). CI/DevOps maintenance focus: Peer Isolation & DAG Integrity."]
-#[ignore = "AGENT:11: CI validation loop - fixing unrelated test failures is out of scope for AGENT:11 peer isolation focus"]
+#[tokio::test]
 async fn test_inverted_index_persistence() {
     let tmp = TempDir::new().expect("failed to create temp dir");
     let lsm_config = LsmConfig {

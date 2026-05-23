@@ -10,10 +10,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::task::JoinHandle;
 
-// #[tokio::test]
-#[ignore]
-#[ignore = "Technical Debt: This test is currently disabled due to architectural API mismatches in the orchestration layer (see Workspace Health memory 2026-05-21). CI/DevOps maintenance focus: Peer Isolation & DAG Integrity."]
-#[ignore = "AGENT:11: CI validation loop - fixing unrelated test failures is out of scope for AGENT:11 peer isolation focus"]
+#[tokio::test]
 async fn test_e2e_agent_workflow() {
     // 1. MemFuse::open()
     let tmp = TempDir::new().expect("failed to create temp dir");
@@ -109,10 +106,7 @@ async fn test_e2e_agent_workflow() {
     graph.run_workflow("start");
 }
 
-// #[tokio::test(flavor = "multi_thread")]
-#[ignore]
-#[ignore = "Technical Debt: This test is currently disabled due to architectural API mismatches in the orchestration layer (see Workspace Health memory 2026-05-21). CI/DevOps maintenance focus: Peer Isolation & DAG Integrity."]
-#[ignore = "AGENT:11: CI validation loop - fixing unrelated test failures is out of scope for AGENT:11 peer isolation focus"]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_stress_concurrent_agent_ops() {
     // Stress Tests: Concurrent Tests
     // 1. Spawn N tokio::tasks

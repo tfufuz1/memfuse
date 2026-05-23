@@ -2,10 +2,7 @@
 use memfuse_runtime::{SandboxConfig, WasmSandbox};
 use std::time::Duration;
 
-// #[test]
-#[ignore]
-#[ignore = "Technical Debt: This test is currently disabled due to architectural API mismatches in the orchestration layer (see Workspace Health memory 2026-05-21). CI/DevOps maintenance focus: Peer Isolation & DAG Integrity."]
-#[ignore = "AGENT:11: CI validation loop - fixing unrelated test failures is out of scope for AGENT:11 peer isolation focus"]
+#[test]
 fn test_sandbox_config_defaults() {
     let config = SandboxConfig::default();
     assert_eq!(config.max_memory_mb, 64);
@@ -13,10 +10,7 @@ fn test_sandbox_config_defaults() {
     assert!(!config.allow_network);
 }
 
-// #[test]
-#[ignore]
-#[ignore = "Technical Debt: This test is currently disabled due to architectural API mismatches in the orchestration layer (see Workspace Health memory 2026-05-21). CI/DevOps maintenance focus: Peer Isolation & DAG Integrity."]
-#[ignore = "AGENT:11: CI validation loop - fixing unrelated test failures is out of scope for AGENT:11 peer isolation focus"]
+#[test]
 fn test_sandbox_isolation_and_execution() {
     let config = SandboxConfig {
         max_memory_mb: 128,
@@ -36,10 +30,7 @@ fn test_sandbox_isolation_and_execution() {
     assert_eq!(result, "sandbox_execution_result_placeholder");
 }
 
-// #[test]
-#[ignore]
-#[ignore = "Technical Debt: This test is currently disabled due to architectural API mismatches in the orchestration layer (see Workspace Health memory 2026-05-21). CI/DevOps maintenance focus: Peer Isolation & DAG Integrity."]
-#[ignore = "AGENT:11: CI validation loop - fixing unrelated test failures is out of scope for AGENT:11 peer isolation focus"]
+#[test]
 fn test_sandbox_multiple_instances() {
     let s1 = WasmSandbox::new(SandboxConfig::default());
     let s2 = WasmSandbox::new(SandboxConfig::default());

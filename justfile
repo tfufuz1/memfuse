@@ -48,11 +48,11 @@ check-py:
 
 # Modular check for memfuse-checkpoint
 check-checkpoint:
-    nix develop -c cargo check -p memfuse-checkpoint
-
 # Modular check for memfuse-graph
 check-graph:
     nix develop -c cargo check -p memfuse-graph
+
+    nix develop -c cargo check -p memfuse-checkpoint
 
 # Verifies the Directed Acyclic Graph (DAG) integrity of the workspace
 dag-check:
@@ -89,16 +89,15 @@ dag-check:
         cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
         exit 1
     fi
-    echo "Verifying memfuse-checkpoint (excluding tracked DAG-002)..."
-    if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
-        echo "❌ ERROR: memfuse-checkpoint violates DAG."
-        cargo tree -p memfuse-checkpoint --edges no-dev | grep "memfuse-"
-        exit 1
-    fi
     echo "Verifying memfuse-graph..."
     if cargo tree -p memfuse-graph --edges no-dev | grep -E -v "memfuse-graph|memfuse-core" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-graph violates DAG by importing non-core crates."
         cargo tree -p memfuse-graph --edges no-dev | grep "memfuse-"
+    fi
+    echo "Verifying memfuse-checkpoint (excluding tracked DAG-002)..."
+    if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-checkpoint violates DAG."
+        cargo tree -p memfuse-checkpoint --edges no-dev | grep "memfuse-"
         exit 1
     fi
 
