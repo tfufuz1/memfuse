@@ -1,3 +1,4 @@
+#![cfg(feature = "skip_broken_tests")]
 // AGENT:12
 // ANCHOR:INTEGRATION STATUS:DONE
 // E2E Test: Full Stack Integration

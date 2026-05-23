@@ -203,11 +203,10 @@ impl DiskAnnIndex {
         visited.insert(ep);
 
         while let Some(Reverse(current)) = candidates.pop() {
-            // ANCHOR:DEBT:DISKANN-001 AGENT:03 PRIO:2 STATUS:DONE
-            if let Some(worst) = results.peek() {
-                if results.len() >= self.config.beam_width && current.distance > worst.distance {
-                    break;
-                }
+            if results.len() >= self.config.beam_width
+                && results.peek().is_some_and(|worst| current.distance > worst.distance)
+            {
+                break;
             }
 
             let node = self.load_node(current.index)?;
@@ -220,14 +219,9 @@ impl DiskAnnIndex {
                         distance: d,
                     };
 
-                    // ANCHOR:DEBT:DISKANN-002 AGENT:03 PRIO:2 STATUS:DONE
-                    let should_push = if results.len() < self.config.beam_width {
-                        true
-                    } else {
-                        results.peek().is_some_and(|worst| d < worst.distance)
-                    };
-
-                    if should_push {
+                    if results.len() < self.config.beam_width
+                        || results.peek().is_some_and(|worst| d < worst.distance)
+                    {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
                         if results.len() > self.config.beam_width {
@@ -240,7 +234,6 @@ impl DiskAnnIndex {
 
         let mut final_results = Vec::with_capacity(results.len().min(k));
         for c in results.into_iter().take(k) {
-            // ANCHOR:DEBT:DISKANN-003 AGENT:03 PRIO:2 STATUS:DONE
             let node = self.load_node(c.index)?;
             final_results.push(ScoredDocument {
                 doc_id: node.doc_id,
@@ -381,7 +374,7 @@ mod tests {
             distance_metric: DistanceMetric::Cosine,
         };
 
-        let index = DiskAnnIndex::try_new(valid_config).expect("valid config"); // #[cfg(test)]
+        let index = DiskAnnIndex::try_new(valid_config).expect("valid config"); // unwrap
         assert!(index.is_empty());
 
         let invalid_sector = DiskAnnConfig {
@@ -410,7 +403,7 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let mut index = DiskAnnIndex::try_new(config).expect("valid config"); // #[cfg(test)]
+        let mut index = DiskAnnIndex::try_new(config).expect("valid config"); // unwrap
 
         let n = 1000;
         let mut vectors = Vec::with_capacity(n);
@@ -422,11 +415,11 @@ mod tests {
             ids.push(DocId::from(i as u64));
         }
 
-        index.build(&vectors, &ids).await.expect("Build failed"); // #[cfg(test)]
+        index.build(&vectors, &ids).await.expect("Build failed"); // unwrap
 
         let mut recall_count = 0;
         for (i, query) in vectors.iter().enumerate().take(100) {
-            let results = index.search(query, 10).await.expect("Search failed"); // #[cfg(test)]
+            let results = index.search(query, 10).await.expect("Search failed"); // unwrap
             if results.iter().any(|r| r.doc_id == ids[i]) {
                 recall_count += 1;
             }

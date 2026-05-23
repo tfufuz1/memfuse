@@ -78,7 +78,7 @@ impl CsrGraph {
         let mut result = Vec::new();
         if let Some(&idx) = self.node_map.get(id) {
             let idx = idx as usize;
-            // ANCHOR:SEC:SLICE-002 AGENT:10 PRIO:1 STATUS:DONE
+            // ANCHOR:SEC:SLICE-002 AGENT:10 PRIO:1 STATUS:READY
             // Replace direct indexing with safe access to prevent panics.
             let start = *self.offsets.get(idx).ok_or_else(|| {
                 memfuse_core::MemFuseError::Index(format!("CSR offset missing for index {}", idx))
