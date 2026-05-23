@@ -123,6 +123,20 @@ impl Collection {
         }
     }
 
+    pub(crate) fn strip_namespaced_prefix(&self, key: &[u8]) -> String {
+        if self.name == "default" {
+            String::from_utf8_lossy(key).to_string()
+        } else {
+            // Strip the internal prefix: self.prefix (variable) + 1 byte (key_type)
+            let prefix_len = self.prefix.len() + 1;
+            if key.len() >= prefix_len {
+                String::from_utf8_lossy(&key[prefix_len..]).to_string()
+            } else {
+                String::from_utf8_lossy(key).to_string()
+            }
+        }
+    }
+
     /// Begins a new atomic transaction for this collection.
     pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<'_> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
@@ -352,27 +366,14 @@ impl Collection {
 
         let kvs = self.storage.scan_prefix(&real_prefix).await?;
 
-        let mut results = Vec::with_capacity(kvs.len());
-        for (k, v) in kvs {
-            let key_str = String::from_utf8_lossy(&k).to_string();
-            // We should ideally strip the prefix to return the user-facing key
-            // but for simplicity and compatibility with existing tests we keep it as is or strip carefully
-            let user_key = if self.name == "default" {
-                key_str
-            } else {
-                // Strip the internal prefix: self.prefix (variable) + 1 byte (key_type)
-                let prefix_len = self.prefix.len() + 1;
-                if key_str.len() >= prefix_len {
-                    key_str[prefix_len..].to_string()
-                } else {
-                    key_str
-                }
-            };
+        let results = kvs
+            .into_iter()
+            .filter_map(|(k, v)| {
+                let user_key = self.strip_namespaced_prefix(&k);
+                serde_json::from_slice(&v).ok().map(|val| (user_key, val))
+            })
+            .collect();
 
-            if let Ok(val) = serde_json::from_slice(&v) {
-                results.push((user_key, val));
-            }
-        }
         Ok(results)
     }
 
@@ -617,23 +618,13 @@ impl Collection {
         };
 
         let kvs = self.storage.scan(start_bytes, end_bytes).await?;
-        let mut results = Vec::new();
-        for (k, v) in kvs {
-            let key_str = String::from_utf8_lossy(&k).to_string();
-            let user_key = if self.name == "default" {
-                key_str
-            } else {
-                let prefix_len = self.prefix.len() + 1;
-                if key_str.len() >= prefix_len {
-                    key_str[prefix_len..].to_string()
-                } else {
-                    key_str
-                }
-            };
-            if let Ok(val) = serde_json::from_slice(&v) {
-                results.push((user_key, val));
-            }
-        }
+        let results = kvs
+            .into_iter()
+            .filter_map(|(k, v)| {
+                let user_key = self.strip_namespaced_prefix(&k);
+                serde_json::from_slice(&v).ok().map(|val| (user_key, val))
+            })
+            .collect();
         Ok(results)
     }
 
