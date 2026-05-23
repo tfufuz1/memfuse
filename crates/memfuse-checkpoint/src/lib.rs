@@ -6,10 +6,10 @@
 #![forbid(unsafe_code)]
 
 use memfuse_core::{Result, StorageEngine, TxId, WorkflowState};
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::RwLock;
 
 /// Metadata for a persistent checkpoint.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -194,9 +194,7 @@ mod tests {
             Ok(self.data.lock().get(key).cloned())
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-            self.data
-                .lock()
-                .insert(key.to_vec(), value.to_vec());
+            self.data.lock().insert(key.to_vec(), value.to_vec());
             Ok(())
         }
         async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
