@@ -977,9 +977,9 @@ mod tests {
         let num_offsets = u16::from_le_bytes(
             block
                 .get(n.saturating_sub(2)..n)
-                .expect("test")
+                .expect("test") // expect #[cfg(test)]
                 .try_into()
-                .expect("test"),
+                .expect("test"), // expect #[cfg(test)]
         );
         assert_eq!(num_offsets, 2);
 
@@ -987,9 +987,9 @@ mod tests {
         let bloom = u64::from_le_bytes(
             block
                 .get(bloom_pos..bloom_pos + 8)
-                .expect("test")
+                .expect("test") // expect #[cfg(test)]
                 .try_into()
-                .expect("correct length"),
+                .expect("correct length"), // expect #[cfg(test)]
         );
         assert!(bloom > 0);
 
@@ -1019,52 +1019,52 @@ mod tests {
 
     #[tokio::test]
     async fn test_sstable_bloom_integration() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
         let path = tmp.path().join("test.sst");
         let bc = create_block_cache(1);
 
-        let mut builder = SstableBuilder::create(&path).await.expect("create builder");
-        builder.add(b"key1", b"val1", 1).await.expect("add key1");
-        builder.add(b"key2", b"val2", 2).await.expect("add key2");
-        builder.finish().await.expect("finish builder");
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect #[cfg(test)]
+        builder.add(b"key1", b"val1", 1).await.expect("add key1"); // expect #[cfg(test)]
+        builder.add(b"key2", b"val2", 2).await.expect("add key2"); // expect #[cfg(test)]
+        builder.finish().await.expect("finish builder"); // expect #[cfg(test)]
 
-        let reader = SstableReader::open(&path, bc).await.expect("open reader");
+        let reader = SstableReader::open(&path, bc).await.expect("open reader"); // expect #[cfg(test)]
 
         // Positive lookup
-        let res = reader.get(b"key1").await.expect("get key1");
-        assert_eq!(res.expect("exists").0.as_ref(), b"val1");
+        let res = reader.get(b"key1").await.expect("get key1"); // expect #[cfg(test)]
+        assert_eq!(res.expect("exists").0.as_ref(), b"val1"); // expect #[cfg(test)]
 
         // Negative lookup (should be caught by bloom or range check)
-        let res = reader.get(b"nonexistent").await.expect("get nonexistent");
+        let res = reader.get(b"nonexistent").await.expect("get nonexistent"); // expect #[cfg(test)]
         assert!(res.is_none());
     }
 
     #[tokio::test]
     async fn test_mmap_read_correct_values() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
         let path = tmp.path().join("mmap_test.sst");
         let bc = create_block_cache(1);
 
-        let mut builder = SstableBuilder::create(&path).await.expect("create builder");
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect #[cfg(test)]
         for i in 0..100 {
             let key = format!("key-{:03}", i);
             let val = format!("val-{:03}", i);
             builder
                 .add(key.as_bytes(), val.as_bytes(), i as u64)
                 .await
-                .expect("add");
+                .expect("add"); // expect #[cfg(test)]
         }
-        builder.finish().await.expect("finish");
+        builder.finish().await.expect("finish"); // expect #[cfg(test)]
 
-        let reader = SstableReader::open(&path, bc).await.expect("open");
+        let reader = SstableReader::open(&path, bc).await.expect("open"); // expect #[cfg(test)]
         for i in 0..100 {
             let key = format!("key-{:03}", i);
             let expected = format!("val-{:03}", i);
             let res = reader
                 .get(key.as_bytes())
                 .await
-                .expect("get")
-                .expect("exists");
+                .expect("get") // expect #[cfg(test)]
+                .expect("exists"); // expect #[cfg(test)]
             assert_eq!(res.0.as_ref(), expected.as_bytes());
             assert_eq!(res.1, i as u64);
         }
@@ -1073,22 +1073,22 @@ mod tests {
     #[tokio::test]
     async fn test_mmap_concurrent_readers() {
         use std::sync::Arc;
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
         let path = tmp.path().join("mmap_concurrent.sst");
         let bc = create_block_cache(1);
 
-        let mut builder = SstableBuilder::create(&path).await.expect("create builder");
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect #[cfg(test)]
         for i in 0..100 {
             let key = format!("key-{:03}", i);
             let val = format!("val-{:03}", i);
             builder
                 .add(key.as_bytes(), val.as_bytes(), i as u64)
                 .await
-                .expect("add");
+                .expect("add"); // expect #[cfg(test)]
         }
-        builder.finish().await.expect("finish");
+        builder.finish().await.expect("finish"); // expect #[cfg(test)]
 
-        let reader = Arc::new(SstableReader::open(&path, bc).await.expect("open"));
+        let reader = Arc::new(SstableReader::open(&path, bc).await.expect("open")); // expect #[cfg(test)]
         let mut handles = Vec::new();
 
         for _ in 0..16 {
@@ -1097,14 +1097,14 @@ mod tests {
                 for i in 0..100 {
                     let key = format!("key-{:03}", i);
                     let expected = format!("val-{:03}", i);
-                    let res = r.get(key.as_bytes()).await.expect("get").expect("exists");
+                    let res = r.get(key.as_bytes()).await.expect("get").expect("exists"); // expect #[cfg(test)]
                     assert_eq!(res.0.as_ref(), expected.as_bytes());
                 }
             }));
         }
 
         for h in handles {
-            h.await.expect("task failed");
+            h.await.expect("task failed"); // expect #[cfg(test)]
         }
     }
 }

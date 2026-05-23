@@ -34,12 +34,12 @@ impl CheckpointRegistry {
     }
 
     pub fn register(&self, tx_id: TxId, state: WorkflowState) {
-        let mut cache = self.checkpoints.write().expect("lock poisoning") ; // unwrap
+        let mut cache = self.checkpoints.write().expect("lock poisoning"); // unwrap
         cache.insert(tx_id, state);
     }
 
     pub fn get(&self, tx_id: TxId) -> Option<WorkflowState> {
-        let cache = self.checkpoints.read().expect("lock poisoning") ; // unwrap
+        let cache = self.checkpoints.read().expect("lock poisoning"); // unwrap
         cache.get(&tx_id).cloned()
     }
 }
@@ -252,10 +252,18 @@ mod tests {
         assert_eq!(meta.seq_no, 100);
 
         // Verify it was pinned
-        assert!(storage.pinned.lock().expect("lock poisoning").contains(&100)); // expect #[cfg(test)]
+        assert!(storage
+            .pinned
+            .lock()
+            .expect("lock poisoning") // expect #[cfg(test)]
+            .contains(&100)); // expect #[cfg(test)]
 
         // Verify it exists in manager
-        let retrieved = manager.get_checkpoint("test_cp").await.expect("ok").expect("exists"); // expect #[cfg(test)]
+        let retrieved = manager
+            .get_checkpoint("test_cp")
+            .await
+            .expect("ok") // expect #[cfg(test)]
+            .expect("exists"); // expect #[cfg(test)]
         assert_eq!(retrieved, meta);
     }
 
@@ -270,7 +278,11 @@ mod tests {
             .await
             .expect("ok"); // expect #[cfg(test)]
 
-        let retrieved = manager.get_checkpoint("cp1").await.expect("ok").expect("exists"); // expect #[cfg(test)]
+        let retrieved = manager
+            .get_checkpoint("cp1")
+            .await
+            .expect("ok") // expect #[cfg(test)]
+            .expect("exists"); // expect #[cfg(test)]
         assert_eq!(retrieved.metadata, metadata);
     }
 

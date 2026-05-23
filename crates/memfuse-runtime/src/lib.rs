@@ -22,10 +22,12 @@
 
 #![forbid(unsafe_code)]
 
+#[allow(unused_imports)]
 mod airgap;
 mod sandbox;
 
-pub use sandbox::{SandboxConfig, WasmSandbox};
+pub use airgap::*;
+pub use sandbox::*;
 
 use memfuse_core::{Result, TokenBudget};
 

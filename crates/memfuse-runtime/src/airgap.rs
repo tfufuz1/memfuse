@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Air-Gap Deployment Profile (WP-6.6).
 //!
 //! Enforces complete network isolation for sovereign AI deployments.
@@ -143,7 +144,7 @@ mod tests {
     #[test]
     fn test_airgap_verifier() {
         let config = AirGapConfig::strict();
-        let report = AirGapVerifier::verify(&config).expect("valid test value");
+        let report = AirGapVerifier::verify(&config).expect("valid test value"); // expect #[cfg(test)]
         assert!(report.is_compliant());
     }
 }
