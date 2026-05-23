@@ -29,16 +29,24 @@ pub struct InvertedIndex {
 impl InvertedIndex {
     /// Creates a new InvertedIndex tied to a specific collection namespace.
     pub fn new(storage: Arc<dyn StorageEngine>, namespace: &str) -> Self {
-        let prefix = if namespace == "default" {
-            b"__txt:default:".to_vec()
-        } else {
-            format!("__txt:{}:", namespace).into_bytes()
-        };
-
         let tokenizer: Arc<dyn Tokenizer> = if namespace.contains("de") {
             Arc::new(GermanMorphTokenizer::new())
         } else {
             Arc::new(DefaultTokenizer)
+        };
+        Self::with_tokenizer(storage, namespace, tokenizer)
+    }
+
+    /// Creates a new InvertedIndex with a custom tokenizer.
+    pub fn with_tokenizer(
+        storage: Arc<dyn StorageEngine>,
+        namespace: &str,
+        tokenizer: Arc<dyn Tokenizer>,
+    ) -> Self {
+        let prefix = if namespace == "default" {
+            b"__txt:default:".to_vec()
+        } else {
+            format!("__txt:{}:", namespace).into_bytes()
         };
 
         Self {
@@ -467,8 +475,9 @@ impl BM25MorphIndex {
         namespace: &str,
         tokenizer: Arc<dyn MorphologicalTokenizer>,
     ) -> Self {
+        let wrapped_tokenizer = Arc::new(GermanMorphTokenizer::with_splitter(tokenizer.clone()));
         Self {
-            inner: InvertedIndex::new(storage, namespace),
+            inner: InvertedIndex::with_tokenizer(storage, namespace, wrapped_tokenizer),
             tokenizer,
         }
     }
@@ -529,17 +538,17 @@ mod tests {
     #[async_trait::async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            Ok(self.store.read().unwrap().get(key).cloned())
+            Ok(self.store.read().unwrap().get(key).cloned()) // unwrap allowed in tests
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
             self.store
                 .write()
-                .unwrap()
+                .unwrap() // unwrap allowed in tests
                 .insert(key.to_vec(), value.to_vec());
             Ok(())
         }
         async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
-            self.store.write().unwrap().remove(key);
+            self.store.write().unwrap().remove(key); // unwrap allowed in tests
             Ok(())
         }
         async fn commit(&self, _tx_id: TxId) -> Result<()> {
@@ -559,7 +568,7 @@ mod tests {
             })
         }
         async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            let store = self.store.read().unwrap();
+            let store = self.store.read().unwrap(); // unwrap allowed in tests
             Ok(store
                 .iter()
                 .filter(|(k, _)| k.starts_with(prefix))
