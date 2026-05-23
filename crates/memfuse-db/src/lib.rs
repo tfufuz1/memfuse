@@ -463,8 +463,9 @@ pub use serde_json::json;
 
 impl MemFuse {
     /// Returns the underlying storage engine.
+    #[doc(hidden)]
     /// Internal use only for benchmarks and tests.
-    pub(crate) fn inner_storage(&self) -> Arc<LsmStorage> {
+    pub fn inner_storage(&self) -> Arc<LsmStorage> {
         self.storage.clone()
     }
 }
