@@ -41,7 +41,6 @@
 //!    and then applied to the active MemTable.
 
 use crate::compaction::{CompactionConfig, CompactionEngine};
-use memfuse_crypto::crypto::KeyManager;
 use crate::memtable::MemTable;
 use crate::sstable::{create_block_cache, BlockCache, SstableBuilder, SstableReader};
 use crate::wal::{Wal, WalOp};
@@ -51,6 +50,7 @@ use memfuse_core::{
     DocId, IndexOp, MemFuseError, ResourceBudget, ResourceTracker, Result, SnapshotRegistry,
     StorageEngine, TxBuffer, TxId, TOMBSTONE_BIT,
 };
+use memfuse_crypto::crypto::KeyManager;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;

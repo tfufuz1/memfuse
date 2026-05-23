@@ -66,9 +66,9 @@ dag-check:
         fi
     done
 
-    echo "--- Phase 2: L2 Peer Isolation (store, index, text, checkpoint) ---"
+    echo "--- Phase 2: L2 Peer Isolation (store, index, text, graph, checkpoint) ---"
     echo "Verifying memfuse-store..."
-    if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core" | grep -q "memfuse-"; then
+    if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core|memfuse-crypto" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-store violates DAG by importing non-core crates."
         cargo tree -p memfuse-store --edges no-dev | grep "memfuse-"
         exit 1
@@ -83,6 +83,12 @@ dag-check:
     if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-text violates DAG by importing non-core crates."
         cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
+        exit 1
+    fi
+    echo "Verifying memfuse-graph..."
+    if cargo tree -p memfuse-graph --edges no-dev | grep -E -v "memfuse-graph|memfuse-core" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-graph violates DAG."
+        cargo tree -p memfuse-graph --edges no-dev | grep "memfuse-"
         exit 1
     fi
     echo "Verifying memfuse-checkpoint (excluding tracked DAG-002)..."

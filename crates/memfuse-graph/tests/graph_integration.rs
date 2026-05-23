@@ -13,23 +13,43 @@ async fn test_graph_traversal_decay_and_cycles() {
     // A -> B (1.0), B -> C (1.0), C -> A (1.0)
     // A -> D (0.5)
 
-    let nodes = vec![
-        (1, "A"), (2, "B"), (3, "C"), (4, "D")
-    ];
+    let nodes = vec![(1, "A"), (2, "B"), (3, "C"), (4, "D")];
 
     for (id, name) in nodes {
-        graph.add_entity(tx, Entity::new(EntityId::new(id), name, "Node"))
-            .await.expect("add entity");
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(id), name, "Node"))
+            .await
+            .expect("add entity");
     }
 
-    graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "link").with_weight(1.0))
-        .await.expect("add edge 1-2");
-    graph.add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(3), "link").with_weight(1.0))
-        .await.expect("add edge 2-3");
-    graph.add_edge(tx, Edge::new(EntityId::new(3), EntityId::new(1), "link").with_weight(1.0))
-        .await.expect("add edge 3-1");
-    graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(4), "link").with_weight(0.5))
-        .await.expect("add edge 1-4");
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(1), EntityId::new(2), "link").with_weight(1.0),
+        )
+        .await
+        .expect("add edge 1-2");
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(2), EntityId::new(3), "link").with_weight(1.0),
+        )
+        .await
+        .expect("add edge 2-3");
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(3), EntityId::new(1), "link").with_weight(1.0),
+        )
+        .await
+        .expect("add edge 3-1");
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(1), EntityId::new(4), "link").with_weight(0.5),
+        )
+        .await
+        .expect("add edge 1-4");
 
     // Traverse from A with 2 hops
     // Hop 1: B (Score: 1.0 * 0.7 * 1.0 = 0.7), D (Score: 1.0 * 0.7 * 0.5 = 0.35)
@@ -62,9 +82,18 @@ async fn test_graph_max_hops_enforcement() {
 
     // Line: 1 -> 2 -> 3 -> 4 -> 5
     for id in 1..=5 {
-        graph.add_entity(tx, Entity::new(EntityId::new(id), "N", "T")).await.unwrap();
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(id), "N", "T"))
+            .await
+            .unwrap();
         if id > 1 {
-            graph.add_edge(tx, Edge::new(EntityId::new(id-1), EntityId::new(id), "next")).await.unwrap();
+            graph
+                .add_edge(
+                    tx,
+                    Edge::new(EntityId::new(id - 1), EntityId::new(id), "next"),
+                )
+                .await
+                .unwrap();
         }
     }
 

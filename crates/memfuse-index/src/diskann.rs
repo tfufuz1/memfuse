@@ -4,7 +4,11 @@
 
 use crate::distance::compute_distance;
 use ahash::AHashMap;
-use memfuse_core::{DistanceMetric, DocId, MemFuseError, Result, ScoredDocument, VectorIndex, VectorIndexStats, TxId};
+use async_trait::async_trait;
+use memfuse_core::{
+    DistanceMetric, DocId, MemFuseError, Result, ScoredDocument, TxId, VectorIndex,
+    VectorIndexStats,
+};
 use memmap2::Mmap;
 use parking_lot::RwLock;
 use std::cmp::Reverse;
@@ -12,7 +16,6 @@ use std::collections::{BinaryHeap, HashSet};
 use std::path::PathBuf;
 use tokio::fs::OpenOptions;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
-use async_trait::async_trait;
 
 /// Configuration for DiskANN index.
 #[derive(Debug, Clone)]
@@ -181,8 +184,8 @@ impl DiskAnnIndex {
 
         file.sync_all().await.map_err(MemFuseError::Io)?;
 
-        // SAFETY: Mapping a file that we just wrote and synced is safe as long as the file is not 
-        // truncated or modified concurrently while mapped. Since this is an embedded database 
+        // SAFETY: Mapping a file that we just wrote and synced is safe as long as the file is not
+        // truncated or modified concurrently while mapped. Since this is an embedded database
         // with exclusive file locks (managed by storage/LSM), this is safe.
         let std_file = file.into_std().await;
         self.mmap = Some(unsafe { Mmap::map(&std_file).map_err(MemFuseError::Io)? });

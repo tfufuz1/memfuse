@@ -18,4 +18,3 @@ pub mod hnsw;
 pub mod quantize;
 
 pub use hnsw::{HnswConfig, HnswIndex};
-pub use memfuse_graph::CsrGraph;

@@ -23,18 +23,38 @@ async fn test_agent_12_comprehensive_lifecycle_and_persistence() {
             .await
             .expect("Failed to open DB");
 
-        let col = db.collection("test-col").await.expect("Failed to get collection");
+        let col = db
+            .collection("test-col")
+            .await
+            .expect("Failed to get collection");
 
         // Insert docs
-        col.insert("doc1", &[1.0, 0.0, 0.0], Some(json!({"text": "Rust is fast", "category": "tech"})))
-            .await.expect("Insert doc1");
-        col.insert("doc2", &[0.0, 1.0, 0.0], Some(json!({"text": "Python is flexible", "category": "tech"})))
-            .await.expect("Insert doc2");
-        col.insert("doc3", &[0.0, 0.0, 1.0], Some(json!({"text": "Cooking is an art", "category": "hobby"})))
-            .await.expect("Insert doc3");
+        col.insert(
+            "doc1",
+            &[1.0, 0.0, 0.0],
+            Some(json!({"text": "Rust is fast", "category": "tech"})),
+        )
+        .await
+        .expect("Insert doc1");
+        col.insert(
+            "doc2",
+            &[0.0, 1.0, 0.0],
+            Some(json!({"text": "Python is flexible", "category": "tech"})),
+        )
+        .await
+        .expect("Insert doc2");
+        col.insert(
+            "doc3",
+            &[0.0, 0.0, 1.0],
+            Some(json!({"text": "Cooking is an art", "category": "hobby"})),
+        )
+        .await
+        .expect("Insert doc3");
 
         // Relate
-        col.relate("doc1", "doc2", "friend").await.expect("Relate docs");
+        col.relate("doc1", "doc2", "friend")
+            .await
+            .expect("Relate docs");
 
         db.close().await.expect("Failed to close DB");
     }
@@ -45,7 +65,10 @@ async fn test_agent_12_comprehensive_lifecycle_and_persistence() {
             .await
             .expect("Failed to re-open DB");
 
-        let col = db.collection("test-col").await.expect("Failed to get collection");
+        let col = db
+            .collection("test-col")
+            .await
+            .expect("Failed to get collection");
 
         // Verify docs exist
         assert_eq!(col.len().await, 3);
@@ -58,19 +81,33 @@ async fn test_agent_12_comprehensive_lifecycle_and_persistence() {
 
         // Hybrid search
         // "fast" should match doc1
-        let results = col.hybrid_search("fast", &[1.0, 0.0, 0.0], 2).await.expect("hybrid search");
+        let results = col
+            .hybrid_search("fast", &[1.0, 0.0, 0.0], 2)
+            .await
+            .expect("hybrid search");
         assert!(!results.is_empty());
         assert_eq!(results[0].id, "doc1");
 
         // 3. Update and Partial Verification
-        col.update("doc1", &[1.0, 0.0, 0.0], Some(json!({"text": "Rust is very fast", "category": "performance"})))
-            .await.expect("Update doc1");
+        col.update(
+            "doc1",
+            &[1.0, 0.0, 0.0],
+            Some(json!({"text": "Rust is very fast", "category": "performance"})),
+        )
+        .await
+        .expect("Update doc1");
 
         let doc1_updated = col.get("doc1").await.expect("get").expect("exists");
-        assert_eq!(doc1_updated.metadata.as_ref().unwrap()["category"], "performance");
+        assert_eq!(
+            doc1_updated.metadata.as_ref().unwrap()["category"],
+            "performance"
+        );
 
         // Hybrid search with updated text
-        let results_updated = col.hybrid_search("performance", &[1.0, 0.0, 0.0], 1).await.expect("hybrid search");
+        let results_updated = col
+            .hybrid_search("performance", &[1.0, 0.0, 0.0], 1)
+            .await
+            .expect("hybrid search");
         assert_eq!(results_updated[0].id, "doc1");
 
         // 4. Collection Isolation
@@ -85,7 +122,10 @@ async fn test_agent_12_comprehensive_lifecycle_and_persistence() {
         let db = MemFuse::open_with_config(&db_path, config)
             .await
             .expect("Failed to re-open DB third time");
-        let col = db.collection("test-col").await.expect("Failed to get collection");
+        let col = db
+            .collection("test-col")
+            .await
+            .expect("Failed to get collection");
 
         // Check update persisted
         let doc1 = col.get("doc1").await.expect("get").expect("exists");
