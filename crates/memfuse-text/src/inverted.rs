@@ -92,9 +92,12 @@ impl InvertedIndex {
 
         if let Some(bytes) = self.storage.get(&dl_key).await? {
             if bytes.len() == 4 {
-                old_len = u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid doc_len length".into())
-                })?);
+                old_len = u32::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
+                );
                 is_update = true;
 
                 // Remove from old posting lists if update
@@ -131,9 +134,10 @@ impl InvertedIndex {
         let mut total_tokens = 0u64;
         if let Some(bytes) = self.storage.get(&total_tok_key).await? {
             if bytes.len() == 8 {
-                total_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid total_tokens length".into())
-                })?);
+                total_tokens =
+                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid total_tokens length".into())
+                    })?);
             }
         }
 
@@ -147,9 +151,12 @@ impl InvertedIndex {
         let mut total_docs = 0u64;
         if let Some(bytes) = self.storage.get(&total_docs_key).await? {
             if bytes.len() == 8 {
-                total_docs = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid total_docs length".into())
-                })?);
+                total_docs = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
+                );
             }
         }
 
@@ -177,9 +184,12 @@ impl InvertedIndex {
         let mut doc_len = 0u32;
         if let Some(bytes) = self.storage.get(&dl_key).await? {
             if bytes.len() == 4 {
-                doc_len = u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid doc_len length".into())
-                })?);
+                doc_len = u32::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
+                );
             }
         } else {
             return Ok(());
@@ -219,9 +229,12 @@ impl InvertedIndex {
         let total_docs_key = self.key("meta:total_docs");
         if let Some(bytes) = self.storage.get(&total_docs_key).await? {
             if bytes.len() == 8 {
-                let mut total_docs = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid total_docs length".into())
-                })?);
+                let mut total_docs = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
+                );
                 total_docs = total_docs.saturating_sub(1);
                 self.storage
                     .put(tx, &total_docs_key, &total_docs.to_le_bytes())
@@ -244,9 +257,12 @@ impl InvertedIndex {
         let mut total_docs = 0u64;
         if let Some(bytes) = self.storage.get(&total_docs_key).await? {
             if bytes.len() == 8 {
-                total_docs = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid total_docs length".into())
-                })?);
+                total_docs = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
+                );
             }
         }
 
@@ -254,9 +270,10 @@ impl InvertedIndex {
         let mut total_tokens = 0u64;
         if let Some(bytes) = self.storage.get(&total_tok_key).await? {
             if bytes.len() == 8 {
-                total_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid total_tokens length".into())
-                })?);
+                total_tokens =
+                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid total_tokens length".into())
+                    })?);
             }
         }
 
@@ -282,9 +299,11 @@ impl InvertedIndex {
                     .map_err(|_| MemFuseError::Storage("Failed to parse doc_id".into()))?;
                 let doc_id = DocId::new(doc_id_inner);
 
-                let tf = u32::from_le_bytes(val.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid tf length".into())
-                })?);
+                let tf = u32::from_le_bytes(
+                    val.as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid tf length".into()))?,
+                );
 
                 // Fetch doc length
                 let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
@@ -294,16 +313,17 @@ impl InvertedIndex {
                     let mut len = 0u32;
                     if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
                         if dl_bytes.len() == 4 {
-                            len = u32::from_le_bytes(dl_bytes.as_slice().try_into().map_err(|_| {
-                                MemFuseError::Storage("Invalid doc_len length".into())
-                            })?);
+                            len = u32::from_le_bytes(dl_bytes.as_slice().try_into().map_err(
+                                |_| MemFuseError::Storage("Invalid doc_len length".into()),
+                            )?);
                         }
                     }
                     doc_len_cache.insert(doc_id, len);
                     len
                 };
 
-                let score = crate::bm25::score_term(tf, doc_len, avg_doc_len, df, total_docs as u32);
+                let score =
+                    crate::bm25::score_term(tf, doc_len, avg_doc_len, df, total_docs as u32);
                 *scores.entry(doc_id).or_insert(0.0) += score;
             }
         }
@@ -347,9 +367,12 @@ impl TextIndex for InvertedIndex {
         let mut total_docs = 0u64;
         if let Some(bytes) = self.storage.get(&total_docs_key).await? {
             if bytes.len() == 8 {
-                total_docs = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid total_docs length".into())
-                })?);
+                total_docs = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
+                );
             }
         }
 
@@ -357,9 +380,10 @@ impl TextIndex for InvertedIndex {
         let mut total_tokens = 0u64;
         if let Some(bytes) = self.storage.get(&total_tok_key).await? {
             if bytes.len() == 8 {
-                total_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid total_tokens length".into())
-                })?);
+                total_tokens =
+                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid total_tokens length".into())
+                    })?);
             }
         }
 
@@ -475,8 +499,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_bm25_ranks_exact_keyword_higher() -> std::result::Result<(), Box<dyn std::error::Error>>
-    {
+    async fn test_bm25_ranks_exact_keyword_higher(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let storage = Arc::new(MockStorage::new());
         let index = InvertedIndex::new(storage.clone(), "default");
 
@@ -534,7 +558,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_forward_index_consistency() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn test_forward_index_consistency() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
         let storage = Arc::new(MockStorage::new());
         let index = InvertedIndex::new(storage.clone(), "default");
 
@@ -567,7 +592,9 @@ mod tests {
         let tx = TxId::new(100);
         let doc_id = DocId::new(100);
 
-        index.insert(tx, doc_id, "Testing the TextIndex trait.").await?;
+        index
+            .insert(tx, doc_id, "Testing the TextIndex trait.")
+            .await?;
 
         let results = index.search("testing", 10).await?;
         assert_eq!(results.len(), 1);
