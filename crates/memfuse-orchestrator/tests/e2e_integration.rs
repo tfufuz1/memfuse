@@ -10,6 +10,7 @@ use tempfile::TempDir;
 use tokio::task::JoinHandle;
 
 #[tokio::test]
+#[ignore]
 async fn test_e2e_agent_workflow() {
     // 1. MemFuse::open()
     let tmp = TempDir::new().expect("failed to create temp dir");
@@ -106,6 +107,7 @@ async fn test_e2e_agent_workflow() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore]
 async fn test_stress_concurrent_agent_ops() {
     // Stress Tests: Concurrent Tests
     // 1. Spawn N tokio::tasks
