@@ -46,6 +46,7 @@ pub struct GermanMorphTokenizer {
 }
 
 impl GermanMorphTokenizer {
+    /// Creates a new GermanMorphTokenizer.
     pub fn new() -> Self {
         Self {
             splitter: crate::morphology::GermanCompoundSplitter::new(),

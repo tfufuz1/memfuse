@@ -462,6 +462,7 @@ pub struct BM25MorphIndex {
 }
 
 impl BM25MorphIndex {
+    /// Creates a new InvertedIndex with the given storage and namespace.
     pub fn new(
         storage: Arc<dyn StorageEngine>,
         namespace: &str,
@@ -473,6 +474,7 @@ impl BM25MorphIndex {
         }
     }
 
+    /// Returns a reference to the tokenizer used by this index.
     pub fn tokenizer(&self) -> &dyn MorphologicalTokenizer {
         self.tokenizer.as_ref()
     }

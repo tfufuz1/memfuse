@@ -1,5 +1,5 @@
 # memfuse-text Specification
-Status: PLANNING
+Status: DONE
 
 <!-- 
 // ANCHOR:TODO:SPEC-104 — Spec für memfuse-text fehlt

@@ -1,5 +1,5 @@
 # memfuse-store Specification
-Status: PLANNING
+Status: DONE
 
 <!-- 
 // ANCHOR:TODO:SPEC-101 — Spec für memfuse-store fehlt

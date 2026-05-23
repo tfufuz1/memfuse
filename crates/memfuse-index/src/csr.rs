@@ -1,3 +1,4 @@
+//! Compressed Sparse Row (CSR) Graph for memory-optimized relationship tracking.
 // ANCHOR:ARCH:CSR-001 — Compressed Sparse Row (CSR) Graph für Memory-optimierte Relationen.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -27,6 +28,7 @@ pub struct CsrGraph {
 }
 
 impl CsrGraph {
+    /// Creates a new empty CsrGraph.
     pub fn new() -> Self {
         Self {
             offsets: vec![0],

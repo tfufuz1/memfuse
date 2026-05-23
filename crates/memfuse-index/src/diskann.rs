@@ -324,10 +324,12 @@ impl DiskAnnIndex {
         Ok(node)
     }
 
+    /// Returns the number of documents in the index.
     pub fn len(&self) -> usize {
         self.node_count
     }
 
+    /// Returns true if the index is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

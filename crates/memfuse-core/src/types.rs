@@ -309,6 +309,7 @@ impl ResourceTracker {
         }
     }
 
+    /// Consumes a given amount of memory from the budget.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         loop {
             let current = self.memory_used.load(std::sync::atomic::Ordering::Acquire);
@@ -333,15 +334,18 @@ impl ResourceTracker {
         }
     }
 
+    /// Releases a given amount of memory back to the budget.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Returns the current amount of memory used.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns the total resource budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }

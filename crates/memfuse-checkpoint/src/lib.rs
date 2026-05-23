@@ -27,17 +27,20 @@ pub struct CheckpointRegistry {
 }
 
 impl CheckpointRegistry {
+    /// Creates a new empty CheckpointRegistry.
     pub fn new() -> Self {
         Self {
             checkpoints: std::sync::RwLock::new(HashMap::new()),
         }
     }
 
+    /// Registers a new workflow state for a given transaction ID.
     pub fn register(&self, tx_id: TxId, state: WorkflowState) {
         let mut cache = self.checkpoints.write().unwrap();
         cache.insert(tx_id, state);
     }
 
+    /// Retrieves the workflow state for a given transaction ID.
     pub fn get(&self, tx_id: TxId) -> Option<WorkflowState> {
         let cache = self.checkpoints.read().unwrap();
         cache.get(&tx_id).cloned()
@@ -59,6 +62,7 @@ pub struct CheckpointManager {
 }
 
 impl CheckpointManager {
+    /// Creates a new Checkpointer with the given storage engine.
     pub fn new(storage: Arc<dyn StorageEngine>) -> Self {
         Self {
             storage,

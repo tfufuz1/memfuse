@@ -22,6 +22,7 @@ pub struct Bm25Scorer {
 }
 
 impl Bm25Scorer {
+    /// Creates a new Bm25Scorer with the given storage and namespace.
     pub fn new(storage: std::sync::Arc<dyn memfuse_core::StorageEngine>, namespace: &str) -> Self {
         Self {
             index: InvertedIndex::new(storage, namespace),

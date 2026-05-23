@@ -53,6 +53,7 @@ impl WalEntry {
         })
     }
 
+    /// Computes the CRC32 checksum for a given operation and payload.
     pub fn compute_checksum(
         op: &WalOp,
         seq_no: u64,
@@ -460,10 +461,12 @@ impl Wal {
         Ok(entries)
     }
 
+    /// Returns the size of the WAL file in bytes.
     pub fn size(&self) -> u64 {
         self.size.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Returns the path to the WAL file.
     pub fn path(&self) -> &Path {
         &self.path
     }

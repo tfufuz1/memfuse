@@ -1,5 +1,5 @@
 # memfuse-db Specification
-Status: PLANNING
+Status: DONE
 
 <!-- 
 // ANCHOR:TODO:SPEC-103 — Spec für memfuse-db fehlt

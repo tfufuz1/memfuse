@@ -1,5 +1,5 @@
 # memfuse-orchestrator Specification
-Status: PLANNING
+Status: DONE
 
 <!-- 
 // ANCHOR:TODO:SPEC-107 — Spec für memfuse-orchestrator fehlt
