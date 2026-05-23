@@ -20,4 +20,4 @@
 ## System Health Audit (Orchestration)
 - **Warning:** Workspace compilation failure detected.
 - **Detail:** Compilation conflicts in `memfuse-orchestrator` and `memfuse-runtime` are blocking the system quality gate.
-- **Recommendation:** Specialized agents (Jules-10, Jules-13) must address technical debt and structural conflicts.
+- **Recommendation:** Specialized agents (Jules-10, Jules-13) must address technical debt and structural conflicts. These failures are documented as system deadlocks.
