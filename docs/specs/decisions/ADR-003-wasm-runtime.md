@@ -1,5 +1,5 @@
 # ADR-003-wasm-runtime
-Status: PLANNING
+Status: DONE
 
 <!--
 // ANCHOR:TODO:ADR-003 — ADR fehlt: WASM-Runtime-Wahl (wasmtime vs wasmer vs wasm3)

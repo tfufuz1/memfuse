@@ -1,5 +1,5 @@
 # ADR-001-lsm-vs-btree
-Status: PLANNING
+Status: DONE
 
 <!--
 // ANCHOR:TODO:ADR-001 — ADR fehlt: Wahl von LSM-Tree über B-Tree für memfuse-store

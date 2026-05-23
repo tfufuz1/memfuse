@@ -1,5 +1,5 @@
 # memfuse-runtime Specification
-Status: PLANNING
+Status: DONE
 
 <!-- 
 // ANCHOR:TODO:SPEC-108 — Spec für memfuse-runtime fehlt

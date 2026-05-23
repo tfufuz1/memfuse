@@ -1,5 +1,5 @@
 # ADR-006-python-bindings
-Status: PLANNING
+Status: DONE
 
 <!--
 // ANCHOR:TODO:ADR-006 — ADR fehlt: Python-Binding-Strategie (PyO3 vs uniffi)

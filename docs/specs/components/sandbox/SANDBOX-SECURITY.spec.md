@@ -1,5 +1,5 @@
 # SANDBOX SECURITY SPECIFICATION
-Status: PLANNING
+Status: DONE
 
 <!--
 // ANCHOR:TODO:SEC-001 — WASM Sandbox Escape Vectors müssen dokumentiert werden

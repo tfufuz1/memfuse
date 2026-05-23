@@ -1,5 +1,5 @@
 # ADR-005-license
-Status: PLANNING
+Status: DONE
 
 <!--
 // ANCHOR:TODO:ADR-005 — ADR fehlt: Lizenzstrategie (MIT / Apache-2.0 / BSL / proprietär)

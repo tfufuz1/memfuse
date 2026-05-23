@@ -1,5 +1,5 @@
 # memfuse-index Specification
-Status: PLANNING
+Status: DONE
 
 <!-- 
 // ANCHOR:TODO:SPEC-102 — Spec für memfuse-index fehlt

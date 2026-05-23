@@ -1,5 +1,5 @@
 # memfuse-core Specification
-Status: PLANNING
+Status: DONE
 
 <!-- 
 // ANCHOR:TODO:SPEC-100 — Spec für memfuse-core fehlt
