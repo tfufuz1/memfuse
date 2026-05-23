@@ -1,0 +1,41 @@
+        };
+        candidates.push(Reverse(cand.clone()));
+        results.push(cand);
+        visited.insert(ep);
+
+        while let Some(Reverse(current)) = candidates.pop() {
+            if results.len() >= self.config.beam_width
+                && current.distance > results.peek(). /* unwrap */ unwrap().distance
+            // unwrap
+            // unwrap
+            {
+                break;
+            }
+
+            let node = self.load_node(current.index)?;
+            for &neighbor in &node.neighbors {
+                if visited.insert(neighbor) {
+                    let n_node = self.load_node(neighbor)?;
+                    let d = compute_distance(query, &n_node.vector, self.config.distance_metric)?;
+                    let new_cand = SearchCandidate {
+                        index: neighbor,
+                        distance: d,
+                    };
+
+                    if results.len() < self.config.beam_width
+                        || d < results.peek(). /* unwrap */ unwrap().distance
+                    // unwrap
+                    // unwrap
+                    {
+                        candidates.push(Reverse(new_cand.clone()));
+                        results.push(new_cand);
+                        if results.len() > self.config.beam_width {
+                            results.pop();
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut final_results: Vec<ScoredDocument> = results
+            .into_iter()
