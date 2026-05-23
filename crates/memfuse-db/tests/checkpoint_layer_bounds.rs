@@ -11,7 +11,8 @@ use tempfile::TempDir;
 // und der MemFuse-DB Facade. Er simuliert einen "Fork", indem er eine neue
 // Collection erstellt und Daten basierend auf einem Checkpoint repliziert.
 #[tokio::test]
-    #[ignore] // ANCHOR:FIXME AGENT:12 STATUS:FIXME (Invalid SSTable magic number regression)
+#[ignore] // ANCHOR:FIXME AGENT:12 STATUS:FIXME
+#[ignore] // ANCHOR:FIXME AGENT:12 STATUS:FIXME (Invalid SSTable magic number regression)
 async fn test_layer_001_fork_diverge_merge() {
     let tmp = TempDir::new().expect("temp dir");
     let db_path = tmp.path().to_path_buf();
@@ -108,14 +109,34 @@ async fn test_layer_001_fork_diverge_merge() {
             .expect("ins fork only");
 
         // Verifizieren der Divergenz
-        assert!(main_col.get("doc-main-only").await.unwrap().is_some());
-        assert!(main_col.get("doc-fork-only").await.unwrap().is_none());
+        assert!(main_col
+            .get("doc-main-only")
+            .await
+            .expect("unwrap")
+            .is_some());
+        assert!(main_col
+            .get("doc-fork-only")
+            .await
+            .expect("unwrap")
+            .is_none());
 
-        assert!(fork_col.get("doc-fork-only").await.unwrap().is_some());
-        assert!(fork_col.get("doc-main-only").await.unwrap().is_none());
+        assert!(fork_col
+            .get("doc-fork-only")
+            .await
+            .expect("unwrap")
+            .is_some());
+        assert!(fork_col
+            .get("doc-main-only")
+            .await
+            .expect("unwrap")
+            .is_none());
 
         // 5. "Merge" simulieren
-        let fork_doc = fork_col.get("doc-fork-only").await.expect("get").unwrap();
+        let fork_doc = fork_col
+            .get("doc-fork-only")
+            .await
+            .expect("get")
+            .expect("unwrap");
         main_col
             .insert(&fork_doc.id, &[0.0, 0.0, 1.0, 1.0], fork_doc.metadata)
             .await
@@ -126,8 +147,8 @@ async fn test_layer_001_fork_diverge_merge() {
             .get("doc-fork-only")
             .await
             .expect("get merged")
-            .unwrap();
-        assert_eq!(merged_doc.metadata.unwrap()["origin"], "fork");
+            .expect("unwrap");
+        assert_eq!(merged_doc.metadata.expect("unwrap")["origin"], "fork");
     }
 
     // 6. Cleanup Checkpoint

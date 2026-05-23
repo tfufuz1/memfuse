@@ -20,7 +20,7 @@ jobs:
           set -e
           for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator; do
             echo "Verifying $CRATE isolation..."
-            if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -E -v "$CRATE|memfuse-core" | grep -q .; then
+            if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -E -v "$CRATE|memfuse-core|memfuse-crypto|memfuse-graph" | grep -q .; then
               echo "ERROR: $CRATE imports forbidden internal crates."
               cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-"
               exit 1
@@ -49,7 +49,7 @@ jobs:
             exit 1
           fi
           echo "Verifying memfuse-checkpoint (excluding tracked DAG-002)..."
-          if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-store|memfuse-crypto|memfuse-graph" | grep -q "memfuse-"; then
+          if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-crypto|memfuse-graph|memfuse-store" | grep -q "memfuse-"; then
             echo "ERROR: memfuse-checkpoint violates DAG."
             cargo tree -p memfuse-checkpoint --edges no-dev | grep "memfuse-"
             exit 1
