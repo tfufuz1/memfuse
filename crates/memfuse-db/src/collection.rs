@@ -423,7 +423,9 @@ impl Collection {
             let oversample = (k * 10).min(total_docs).max(k);
             let scored_docs = self.index.search_filtered(query, oversample, None).await?;
 
-            let mut results = Vec::new();
+            // ANCHOR:PERF:ALLOC-005 AGENT:09 STATUS:DONE
+            // Pre-allocate results vector for post-filtering path.
+            let mut results = Vec::with_capacity(k);
             for sd in scored_docs {
                 let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
                 if let Some(bytes) = self.storage.get(&doc_key).await? {
@@ -617,7 +619,9 @@ impl Collection {
         };
 
         let kvs = self.storage.scan(start_bytes, end_bytes).await?;
-        let mut results = Vec::new();
+        // ANCHOR:PERF:ALLOC-004 AGENT:09 STATUS:DONE
+        // Pre-allocate results vector based on the number of scanned items.
+        let mut results = Vec::with_capacity(kvs.len());
         for (k, v) in kvs {
             let key_str = String::from_utf8_lossy(&k).to_string();
             let user_key = if self.name == "default" {
