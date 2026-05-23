@@ -1,3 +1,4 @@
+//! // ANCHOR:INTEGRATION AGENT:12 DATE:2026-05-23 STATUS:FIXME
 //! MemFuse Graph — CSR-Graph for Entity-Relation Traversal.
 //!
 //! This crate provides the graph signal (Signal 3) for the 4-Signal Fusion

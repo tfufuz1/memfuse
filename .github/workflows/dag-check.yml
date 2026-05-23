@@ -30,6 +30,7 @@ jobs:
       - name: Check L2 peer isolation (store, index, text, checkpoint)
         run: |
           set -e
+      # ANCHOR:FIXME AGENT:11 PRIO:2 (CI)
           echo "Verifying memfuse-store..."
           if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core" | grep -q "memfuse-"; then
             echo "ERROR: memfuse-store violates DAG by importing non-core crates."

@@ -236,8 +236,8 @@ mod tests {
             .build()
             .expect("build ok");
 
-        assert_eq!(query.text_query.unwrap(), "test query");
-        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]);
+        assert_eq!(query.text_query.unwrap(), "test query"); // ANCHOR:FIXME AGENT:01 PRIO:2 (unwrap)
+        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]); // ANCHOR:FIXME AGENT:01 PRIO:2 (unwrap)
         assert_eq!(query.k, 5);
         // Default weights: vector=1.0, others=0.0
         assert_eq!(query.fusion_weights.vector(), 1.0);
@@ -246,11 +246,11 @@ mod tests {
     #[test]
     fn test_hybrid_query_builder_custom_weights() {
         // ANCHOR:FIXME AGENT:01 PRIO:2 (UNWRAP)
-        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap();
+        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap(); // ANCHOR:FIXME AGENT:01 PRIO:2 (unwrap)
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())
             .build()
-            .unwrap();
+            .unwrap(); // ANCHOR:FIXME AGENT:01 PRIO:2 (unwrap)
 
         assert_eq!(query.fusion_weights, weights);
     }
@@ -258,7 +258,7 @@ mod tests {
     #[test]
     fn test_hybrid_query_builder_defaults() {
         // ANCHOR:FIXME AGENT:01 PRIO:2 (UNWRAP)
-        let query = HybridQuery::builder().build().unwrap();
+        let query = HybridQuery::builder().build().unwrap(); // ANCHOR:FIXME AGENT:01 PRIO:2 (unwrap)
         assert_eq!(query.k, 10);
         assert_eq!(query.fusion_weights.vector(), 1.0);
         assert!(query.text_query.is_none());
