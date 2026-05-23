@@ -199,13 +199,13 @@ debt-audit:
     fi
     echo ""; echo "✅ Debt-Audit PASSED"
 
-# Bootstrap a new feature using the Atomic Spec Template
+# Bootstrap a new feature using the Micro-Spec Template
 spec NAME:
     #!/usr/bin/env bash
     set -euo pipefail
     TIMESTAMP=$(date +%Y%m%d)
-    TARGET="docs/specs/SPEC-${TIMESTAMP}-{{NAME}}.md"
-    mkdir -p docs/specs
-    cp docs/specs/TEMPLATE_ATOMIC_SPEC.md "$TARGET"
-    echo "Created new atomic spec at $TARGET"
-    echo "Please fill out the spec and follow the TDD-Loop!"
+    TARGET=".agent/specs/modules/MOD-${TIMESTAMP}-{{NAME}}.md"
+    mkdir -p .agent/specs/modules
+    cp .agent/specs/modules/TEMPLATE_MICRO_SPEC.md "$TARGET"
+    echo "Created new micro-spec at $TARGET"
+    echo "Please fill out the spec and follow the SDD-Process (Spec -> Test -> Impl)!"

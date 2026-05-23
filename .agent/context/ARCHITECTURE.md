@@ -3,13 +3,40 @@
 ## Das Ziel (The "Why")
 MemFuse ist eine in-process, einbettbare und extrem performante Vektor/Hybrid-Suchdatenbank für lokale LLM-RAG-Systeme ("SQLite for AI Agents").
 
-## The doctrine: Zero-Panic & Async Safety
-1. **Kein `unwrap()`, kein `expect()`, kein `panic!()`** in Hot-Paths. Alles muss über das zentrale `memfuse_core::MemFuseError` via `?` propagiert werden.
-2. **Keine blockierende I/O.** In `memfuse-store` ist ausschließlich `tokio::fs` erlaubt.
-3. **Unsicheres Rust (`unsafe`) nur isoliert:** `unsafe` Blöcke sind nur für FFI oder SIMD in `memfuse-index` gestattet und MÜSSEN durch einen formalen Kommentar `// SAFETY: [Reasoning]` begründet werden.
+## Kern-Philosophie: Sovereign Core Doctrine
+1. **Zero-Panic Policy:** Absolut kein `.unwrap()`, `.expect()` oder `panic!()` in Hot-Paths. Fehlerfortpflanzung erfolgt strikt über `memfuse_core::MemFuseError`.
+2. **Keine blockierende I/O:** Es wird ausschließlich `tokio::fs` und `tokio::io` verwendet. Standard `std::fs` ist in asynchronen Kontexten verboten.
+3. **Isolierte Unsicherheit:** `unsafe` ist nur für SIMD-Optimierungen in `memfuse-index` gestattet und muss zwingend mit `// SAFETY: [Begründung]` dokumentiert werden.
+4. **Triple-Test-Gate:** Qualität wird durch 3x aufeinanderfolgende erfolgreiche Testläufe und Zero-Clippy-Warnings sichergestellt.
 
-## Crate-Hierarchie & Abhängigkeiten
-- Die Architektur muss strickt hierarchisch bleiben (DAG):
-  `memfuse-core` -> wird von allen genutzt.
-  `memfuse-store` & `memfuse-index` greifen auf `memfuse-core` zu, aber niemals aufeinander.
-  `memfuse-db` orchestriert beide Systeme (`store` und `index`) und reicht die API nach außen (`memfuse` root).
+## Crate-Hierarchie (4-Layer DAG)
+
+MemFuse folgt einer strikten Schichtenarchitektur. Abhängigkeiten dürfen nur nach unten zeigen.
+
+### Schicht 3: Interface (User-Facing)
+- **`memfuse-py`**: Python-Bindings (PyO3). Das primäre Tor für Anwendungsentwickler.
+
+### Schicht 2: Orchestration & SAOS
+- **`memfuse-db`**: Die zentrale Facade. Orchestriert Storage, Index und Text-Suche. Handhabt Collections und Fusion (RRF).
+- **`memfuse-orchestrator`**: Agent-Workflow-Engine (StateGraph). Deterministische Schrittfolge für autonome Agenten.
+- **`memfuse-checkpoint`**: Snapshot-Registry für Time-Travel und MVCC-basiertes Workflow-Freezing.
+- **`memfuse-runtime`**: WASM-Sandbox zur sicheren Ausführung von Agent-Tools ohne Host-Zugriff.
+
+### Schicht 1: Sub-Engines (Engine Room)
+- **`memfuse-store`**: LSM-Storage (MemTables, SSTables, WAL). Zuständig für Persistenz und atomare Schreibvorgänge.
+- **`memfuse-index`**: Semantische Suche (HNSW-Graph, SQ8 Quantization).
+- **`memfuse-text`**: Lexikalische Suche (BM25 Inverted Index, Tokenizer).
+- **`memfuse-graph`**: CSR-Graph für Entity-Relation Traversal (Signal 3 der Fusion).
+- **`memfuse-crypto`**: Ver- und Entschlüsselung (AES-GCM) für Encryption-at-Rest.
+
+### Schicht 0: Kernel
+- **`memfuse-core`**: Das schlagende Herz. Definiert `MemFuseError`, fundamentale Traits (`StorageEngine`, `VectorIndex`), `TxBuffer` und `DocId`. Importiert keine anderen Crates aus dem Projekt.
+
+## Concurrency & State Management
+- **Async First:** Alles ist auf `tokio` optimiert.
+- **Thread-Safety:** Einsatz von `parking_lot::RwLock` für effiziente Lesezugriffe.
+- **Atomarität:** Commits erfolgen transaktional über den `TxBuffer` in `memfuse-core`, synchronisiert durch `memfuse-db`.
+
+## Data Flow
+1. **Write:** `Collection::insert` → `TxBuffer` → `WAL` (store) → `MemTable` (store) + `Index/Text Update`.
+2. **Search:** `Collection::search` → `HybridSearch` (db) → Parallel: `HnswSearch` (index) + `BM25Search` (text) → `RRF Fusion` (db) → Ergebnisliste.
