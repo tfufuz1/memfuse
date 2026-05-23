@@ -105,12 +105,10 @@ impl InvertedIndex {
 
                 if let Some(ol_bytes) = self.storage.get(&ol_key).await? {
                     if ol_bytes.len() == 4 {
-                        old_orig_len = u32::from_le_bytes(
-                            ol_bytes
-                                .as_slice()
-                                .try_into()
-                                .map_err(|_| MemFuseError::Storage("Invalid ol_len length".into()))?,
-                        );
+                        old_orig_len =
+                            u32::from_le_bytes(ol_bytes.as_slice().try_into().map_err(|_| {
+                                MemFuseError::Storage("Invalid ol_len length".into())
+                            })?);
                     }
                 }
 
@@ -191,9 +189,10 @@ impl InvertedIndex {
         let mut total_orig_tokens = 0u64;
         if let Some(bytes) = self.storage.get(&total_orig_tok_key).await? {
             if bytes.len() == 8 {
-                total_orig_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid total_orig_tokens length".into())
-                })?);
+                total_orig_tokens =
+                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid total_orig_tokens length".into())
+                    })?);
             }
         }
 
@@ -514,9 +513,10 @@ impl TextIndex for InvertedIndex {
         let mut total_orig_tokens = 0u64;
         if let Some(bytes) = self.storage.get(&total_orig_tok_key).await? {
             if bytes.len() == 8 {
-                total_orig_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid total_orig_tokens length".into())
-                })?);
+                total_orig_tokens =
+                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid total_orig_tokens length".into())
+                    })?);
             }
         }
 
