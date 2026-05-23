@@ -1,3 +1,8 @@
+//! # MemFuse Metadata Filters
+//!
+//! This module defines the expressions used for filtering documents based on
+//! their metadata during search operations.
+
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.

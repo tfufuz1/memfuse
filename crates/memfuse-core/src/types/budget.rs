@@ -1,3 +1,9 @@
+//! # MemFuse Resource Budgeting
+//!
+//! This module provides mechanisms for managing and tracking resource usage,
+//! particularly memory, to ensure that the system operates within defined limits
+//! and applies backpressure when necessary.
+
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.

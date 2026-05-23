@@ -1,17 +1,25 @@
+//! # MemFuse SAOS Data Structures
+//!
+//! This module defines the high-level data structures and types used by the
+//! Sovereign Agentic Operating System (SAOS) layer of MemFuse, including
+//! namespaces, token budgets, fusion weights, and hybrid query builders.
+
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
-/// Unique identifier for a Namespace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Unique identifier for a Namespace.
 pub struct NamespaceId(u64);
 
 impl NamespaceId {
+    /// Creates a new NamespaceId from a raw u64.
     pub fn new(id: u64) -> Self {
         Self(id)
     }
 
+    /// Returns the raw u64 value.
     pub fn inner(&self) -> u64 {
         self.0
     }
@@ -23,14 +31,17 @@ impl std::fmt::Display for NamespaceId {
     }
 }
 
-/// Token budget configuration for LLM context management.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Token budget configuration for LLM context management.
 pub struct TokenBudget {
+    /// Maximum allowed tokens.
     pub max_tokens: usize,
+    /// Reserved tokens for system prompts or output.
     pub reserve_tokens: usize,
 }
 
 impl TokenBudget {
+    /// Creates a new TokenBudget.
     pub fn new(max_tokens: usize, reserve_tokens: usize) -> Self {
         Self {
             max_tokens,
@@ -38,6 +49,7 @@ impl TokenBudget {
         }
     }
 
+    /// Returns the available tokens (max - reserve).
     pub fn available(&self) -> usize {
         self.max_tokens.saturating_sub(self.reserve_tokens)
     }
@@ -52,8 +64,8 @@ impl Default for TokenBudget {
     }
 }
 
-/// Normalized fusion weights for hybrid search.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Normalized fusion weights for hybrid search.
 pub struct FusionWeights {
     vector: f32,
     text: f32,
@@ -62,6 +74,9 @@ pub struct FusionWeights {
 }
 
 impl FusionWeights {
+    /// Creates a new FusionWeights instance.
+    ///
+    /// Weights must sum exactly to 1.0.
     pub fn new(vector: f32, text: f32, graph: f32, metadata: f32) -> Result<Self> {
         let sum = vector + text + graph + metadata;
         if (sum - 1.0).abs() > 1e-6 {
@@ -79,67 +94,89 @@ impl FusionWeights {
         })
     }
 
+    /// Returns the vector signal weight.
     pub fn vector(&self) -> f32 {
         self.vector
     }
 
+    /// Returns the text (BM25) signal weight.
     pub fn text(&self) -> f32 {
         self.text
     }
 }
 
-/// Defines cross-namespace isolation guarantees.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Defines cross-namespace isolation guarantees.
 pub enum IsolationLevel {
+    /// No shared data between namespaces.
     Strict,
+    /// Namespaces can read shared global data.
     SharedRead,
+    /// Logical isolation within the same physical storage.
     Logical,
 }
 
-/// A chunk of context for LLM budget allocation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// A chunk of context for LLM budget allocation.
 pub struct ContextChunk {
+    /// Document ID.
     pub doc_id: DocId,
+    /// Text content.
     pub content: String,
+    /// Relevance score.
     pub relevance: f32,
+    /// Calculated token count.
     pub token_count: usize,
 }
 
-/// An aggregated context window constrained by a token budget.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// An aggregated context window constrained by a token budget.
 pub struct ContextWindow {
+    /// List of context chunks.
     pub chunks: Vec<ContextChunk>,
+    /// Total tokens in the window.
     pub total_tokens: usize,
+    /// Whether the context was truncated to fit the budget.
     pub truncated: bool,
 }
 
-/// Evaluated result for hybrid/4-signal search.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Evaluated result for hybrid/4-signal search.
 pub struct ScoredEntry {
+    /// Unique identifier.
     pub id: String,
+    /// Aggregated similarity score.
     pub final_score: f32,
+    /// Associated metadata.
     pub metadata: Option<serde_json::Value>,
 }
 
-/// A unified query traversing multiple index signals.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// A unified query traversing multiple index signals.
 pub struct HybridQuery {
+    /// Optional keyword search query.
     pub text_query: Option<String>,
+    /// Optional semantic search vector.
     pub vector_query: Option<Vec<f32>>,
+    /// Optional starting node for graph traversal.
     pub graph_start_node: Option<String>,
+    /// Weights for signal fusion.
     pub fusion_weights: FusionWeights,
+    /// Optional metadata filter.
     pub filter: Option<FilterExpr>,
+    /// Number of results to return.
     pub k: usize,
 }
 
 impl HybridQuery {
+    /// Returns a new HybridQueryBuilder.
     pub fn builder() -> HybridQueryBuilder {
         HybridQueryBuilder::default()
     }
 }
 
-/// Builder for HybridQuery to improve DX.
 #[derive(Default)]
+/// Builder for HybridQuery to improve DX.
 pub struct HybridQueryBuilder {
     text_query: Option<String>,
     vector_query: Option<Vec<f32>>,
@@ -150,40 +187,48 @@ pub struct HybridQueryBuilder {
 }
 
 impl HybridQueryBuilder {
+    /// Creates a new HybridQueryBuilder.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Sets the text query.
     pub fn with_text_query(mut self, q: impl Into<String>) -> Self {
         self.text_query = Some(q.into());
         self
     }
 
+    /// Sets the vector query.
     pub fn with_vector_query(mut self, v: Vec<f32>) -> Self {
         self.vector_query = Some(v);
         self
     }
 
+    /// Sets the graph starting node.
     pub fn with_graph_start_node(mut self, start: impl Into<String>) -> Self {
         self.graph_start_node = Some(start.into());
         self
     }
 
+    /// Sets the fusion weights.
     pub fn with_fusion_weights(mut self, weights: FusionWeights) -> Self {
         self.fusion_weights = Some(weights);
         self
     }
 
+    /// Sets the metadata filter.
     pub fn with_filter(mut self, filter: FilterExpr) -> Self {
         self.filter = Some(filter);
         self
     }
 
+    /// Sets the number of results to return.
     pub fn with_k(mut self, k: usize) -> Self {
         self.k = Some(k);
         self
     }
 
+    /// Builds the HybridQuery.
     pub fn build(self) -> Result<HybridQuery> {
         Ok(HybridQuery {
             text_query: self.text_query,

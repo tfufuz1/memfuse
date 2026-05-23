@@ -1,3 +1,9 @@
+//! # MemFuse Domain Identifiers
+//!
+//! This module defines the fundamental identifiers and types used across the
+//! MemFuse domain, including document, entity, and transaction IDs,
+//! as well as vector embeddings and distance metrics.
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 

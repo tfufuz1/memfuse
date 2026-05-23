@@ -1,3 +1,9 @@
+//! # MemFuse Metadata Filters
+//!
+//! This module provides a flexible metadata filtering engine that allows
+//! for complex logical expressions (AND, OR, NOT) and comparison operators
+//! (Eq, Ne, Gt, Gte, Lt, Lte, In, NotIn) to be evaluated against JSON metadata.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
