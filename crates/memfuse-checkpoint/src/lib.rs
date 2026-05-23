@@ -252,7 +252,11 @@ mod tests {
         assert_eq!(meta.seq_no, 100);
 
         // Verify it was pinned
-        assert!(storage.pinned.lock().expect("lock poisoning").contains(&100)); // unwrap
+        assert!(storage
+            .pinned
+            .lock()
+            .expect("lock poisoning")
+            .contains(&100)); // unwrap
 
         // Verify it exists in manager
         let retrieved = manager
