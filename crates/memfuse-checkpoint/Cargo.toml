@@ -8,6 +8,7 @@ description = "Backup and snapshot management for MemFuse storage"
 
 [dependencies]
 memfuse-core = { version = "0.1.0", path = "../memfuse-core" }
+parking_lot = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 async-trait.workspace = true
