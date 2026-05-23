@@ -11,7 +11,6 @@ use tempfile::TempDir;
 // und der MemFuse-DB Facade. Er simuliert einen "Fork", indem er eine neue
 // Collection erstellt und Daten basierend auf einem Checkpoint repliziert.
 #[tokio::test]
-#[ignore] // ANCHOR:FIXME AGENT:12 STATUS:FIXME
 #[ignore] // ANCHOR:FIXME AGENT:12 STATUS:FIXME (Invalid SSTable magic number regression)
 async fn test_layer_001_fork_diverge_merge() {
     let tmp = TempDir::new().expect("temp dir");
