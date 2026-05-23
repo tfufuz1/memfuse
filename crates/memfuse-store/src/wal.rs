@@ -270,12 +270,13 @@ impl Wal {
             let decrypted_data;
             let entry_data = if let Some(km) = &self.key_manager {
                 // The offset used for encryption was the file size before writing the 4-byte length prefix.
-                let offset = pos.checked_sub(len as u64).and_then(|p| p.checked_sub(4)).ok_or_else(|| {
-                    MemFuseError::WalCorruption {
+                let offset = pos
+                    .checked_sub(len as u64)
+                    .and_then(|p| p.checked_sub(4))
+                    .ok_or_else(|| MemFuseError::WalCorruption {
                         offset: pos,
                         reason: "Invalid offset calculation".into(),
-                    }
-                })?;
+                    })?;
                 decrypted_data = km.decrypt(&entry_data_raw, offset)?;
                 &decrypted_data
             } else {

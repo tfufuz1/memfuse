@@ -110,7 +110,11 @@ impl<T: Clone> TxBuffer<T> {
     /// Registers a new transaction in the buffer.
     pub fn begin(&self, tx: TxId) {
         let shard_idx = self.shard_idx(tx);
-        let mut shard = self.shards.get(shard_idx).expect("Shard index out of bounds").write();
+        let mut shard = self
+            .shards
+            .get(shard_idx)
+            .expect("Shard index out of bounds")
+            .write();
         shard
             .ops
             .entry(tx)
@@ -123,7 +127,11 @@ impl<T: Clone> TxBuffer<T> {
     /// it will be implicitly created on the first `stage` call.
     pub fn stage(&self, tx: TxId, op: IndexOp<T>) {
         let shard_idx = self.shard_idx(tx);
-        let mut shard = self.shards.get(shard_idx).expect("Shard index out of bounds").write();
+        let mut shard = self
+            .shards
+            .get(shard_idx)
+            .expect("Shard index out of bounds")
+            .write();
         let entry = shard
             .ops
             .entry(tx)
@@ -134,9 +142,13 @@ impl<T: Clone> TxBuffer<T> {
     /// Validates that the transaction has pending operations.
     pub fn validate_pending_ops(&self, tx: TxId) -> Result<()> {
         let shard_idx = self.shard_idx(tx);
-        let shard = self.shards.get(shard_idx).ok_or_else(|| {
-            MemFuseError::Internal(format!("Shard index {} out of bounds", shard_idx))
-        })?.read();
+        let shard = self
+            .shards
+            .get(shard_idx)
+            .ok_or_else(|| {
+                MemFuseError::Internal(format!("Shard index {} out of bounds", shard_idx))
+            })?
+            .read();
 
         if let Some((ops, _)) = shard.ops.get(&tx) {
             if ops.is_empty() {
