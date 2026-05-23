@@ -16,6 +16,5 @@ pub mod diskann;
 pub mod distance;
 pub mod hnsw;
 pub mod quantize;
-pub use memfuse_graph::CsrGraph;
 
 pub use hnsw::{HnswConfig, HnswIndex};
