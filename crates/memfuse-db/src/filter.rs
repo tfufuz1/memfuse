@@ -1,3 +1,7 @@
+//! Logical and comparison operators for metadata filtering.
+// ANCHOR:DOC:DOC-FILTER-DB-001
+// AGENT:08 STATUS:READY
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

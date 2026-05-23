@@ -5,6 +5,8 @@
 //!
 //! ## Architecture Role
 //!
+// ANCHOR:DOC:DOC-PY-LIB-001
+// AGENT:08 STATUS:READY
 //! - **Python Bridge (Layer 3)**: Exposes the core functionality of MemFuse to Python.
 //! - **Async Orchestration**: Manages a shared Tokio runtime for executing async Rust code
 //!   from synchronous Python calls.
@@ -171,7 +173,7 @@ impl PyVectorIndexStats {
     }
 }
 
-/// Statistics for the storage engine.
+/// Statistics for the LSM storage engine.
 #[pyclass(get_all, name = "StorageStats")]
 #[derive(Clone)]
 pub struct PyStorageStats {
@@ -482,6 +484,7 @@ macro_rules! memfuse_batch_methods {
 
 // ─── PyMemFuse (Database Facade) ────────────────────────────────────────────
 
+/// Primary Python entry point for MemFuse.
 #[pyclass(name = "Db")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
@@ -588,6 +591,7 @@ memfuse_batch_methods!(PyMemFuse);
 
 // ─── PyCollection ───────────────────────────────────────────────────────────
 
+/// Represents a named collection (namespace) in MemFuse.
 #[pyclass(name = "Collection")]
 pub struct PyCollection {
     inner: Arc<MemFuseCollection>,

@@ -1,3 +1,7 @@
+//! Resource and token budget management for agent memory.
+// ANCHOR:DOC:DOC-BUDGET-001
+// AGENT:08 STATUS:READY
+
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.

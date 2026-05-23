@@ -1,10 +1,16 @@
+//! Distance metrics and SIMD-accelerated distance computations for vector search.
+
 // ANCHOR:DOC:DOC-DISTANCE-001 — Module documentation added
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:03 DATE:2026-05-16 STATUS:DONE
+// ANCHOR:DOC:DOC-DISTANCE-002
+// AGENT:08 STATUS:READY
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:SEC:UNSAFE-001 — Dokumentierte unsafe-Blöcke in SIMD-Zone
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:03 DATE:2026-05-16 STATUS:DONE
+// ANCHOR:DOC:DOC-DISTANCE-002
+// AGENT:08 STATUS:READY
 // CREATED:2026-05-08 DEADLINE:NONE
 // GEFUNDEN: 42 unsafe-Blöcke (AVX2 + AVX-512) ohne SAFETY: Kommentare
 // ERWARTET: Jeder unsafe-Block braucht SAFETY: Kommentar mit:

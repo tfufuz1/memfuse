@@ -1,3 +1,7 @@
+//! Metadata filtering expressions and evaluation.
+// ANCHOR:DOC:DOC-FILTER-CORE-001
+// AGENT:08 STATUS:READY
+
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.

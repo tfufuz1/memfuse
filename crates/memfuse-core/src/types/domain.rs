@@ -1,3 +1,7 @@
+//! Document IDs and basic domain types.
+// ANCHOR:DOC:DOC-DOMAIN-001
+// AGENT:08 STATUS:READY
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
