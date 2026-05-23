@@ -3,7 +3,7 @@
 // E2E Test: Full Stack Integration
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use memfuse_orchestrator::StateGraph;
-use memfuse_runtime::{SandboxConfig, WasmSandbox};
+use memfuse_runtime::{WasmSandbox, AgentRuntime};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -97,10 +97,10 @@ async fn test_e2e_agent_workflow() {
     graph.add_node("process", "Process with WASM");
     graph.add_edge("search", "process", None);
 
-    let sandbox = WasmSandbox::new(SandboxConfig::default());
+    let sandbox = WasmSandbox::new(u32::default());
     let _execution_result = sandbox
-        .execute(b"WASM_CODE", "input")
-        .expect("WASM execution failed");
+        .execute_isolated(b"WASM_CODE", &memfuse_core::TokenBudget::new(100, 0))
+        .await.expect("WASM execution failed");
 
     graph.run_workflow("start");
 }
