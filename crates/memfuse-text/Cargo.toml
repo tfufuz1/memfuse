@@ -26,3 +26,4 @@ thiserror = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
+memfuse-store = { workspace = true }
