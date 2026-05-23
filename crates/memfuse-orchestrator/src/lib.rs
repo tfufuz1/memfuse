@@ -23,6 +23,7 @@
 #![forbid(unsafe_code)]
 
 use memfuse_core::Result;
+use std::collections::HashMap;
 
 /// A node within the deterministic agent graph.
 #[derive(Debug, Clone)]
@@ -41,7 +42,7 @@ pub struct WorkflowEdge {
 
 /// Core declarative structure mapping workflows.
 pub struct StateGraph {
-    pub nodes: Vec<GraphNode>,
+    pub nodes: HashMap<String, GraphNode>,
     pub edges: Vec<WorkflowEdge>,
 }
 
@@ -49,9 +50,34 @@ impl StateGraph {
     /// Build an empty StateGraph.
     pub fn new() -> Self {
         Self {
-            nodes: Vec::new(),
+            nodes: HashMap::new(),
             edges: Vec::new(),
         }
+    }
+
+    /// Adds a node to the graph.
+    pub fn add_node(&mut self, name: &str, executable: &str) {
+        self.nodes.insert(
+            name.to_string(),
+            GraphNode {
+                name: name.to_string(),
+                executable_identifier: executable.to_string(),
+            },
+        );
+    }
+
+    /// Adds an edge between two nodes.
+    pub fn add_edge(&mut self, from: &str, to: &str, condition: Option<&str>) {
+        self.edges.push(WorkflowEdge {
+            from: from.to_string(),
+            to: to.to_string(),
+            condition_evaluator: condition.map(|c| c.to_string()),
+        });
+    }
+
+    /// Executes the workflow starting from the given node.
+    pub fn run_workflow(&self, _start_node: &str) {
+        // Implementation placeholder
     }
 }
 
