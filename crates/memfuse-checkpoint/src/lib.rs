@@ -255,7 +255,7 @@ mod tests {
         assert!(storage.pinned.lock().unwrap().contains(&100)); // unwrap
 
         // Verify it exists in manager
-        let retrieved = manager.get_checkpoint("test_cp").await.unwrap().unwrap(); // unwrap // unwrap
+        let retrieved = manager.get_checkpoint("test_cp").await.unwrap().unwrap(); // unwrap
         assert_eq!(retrieved, meta);
     }
 
@@ -270,7 +270,7 @@ mod tests {
             .await
             .unwrap(); // unwrap
 
-        let retrieved = manager.get_checkpoint("cp1").await.unwrap().unwrap(); // unwrap // unwrap
+        let retrieved = manager.get_checkpoint("cp1").await.unwrap().unwrap(); // unwrap
         assert_eq!(retrieved.metadata, metadata);
     }
 
