@@ -218,10 +218,7 @@ impl DiskAnnIndex {
                     };
 
                     if results.len() < self.config.beam_width
-                        || results
-                            .peek()
-                            .map(|top| d < top.distance)
-                            .unwrap_or(true)
+                        || results.peek().map(|top| d < top.distance).unwrap_or(true)
                     {
                         candidates.push(Reverse(new_cand.clone()));
                         results.push(new_cand);
