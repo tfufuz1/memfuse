@@ -44,17 +44,27 @@ async fn test_checkpoint_persistence_real_storage() {
     let manager2 = CheckpointManager::new(storage2);
 
     // 3. Verify checkpoint is still there
-    let list = manager2.list_checkpoints().await.expect("failed to list checkpoints");
+    let list = manager2
+        .list_checkpoints()
+        .await
+        .expect("failed to list checkpoints");
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].name, "integration-test");
     assert_eq!(list[0].seq_no, 42);
     assert_eq!(list[0].metadata, metadata);
 
-    let retrieved = manager2.get_checkpoint("integration-test").await.unwrap().expect("checkpoint not found");
+    let retrieved = manager2
+        .get_checkpoint("integration-test")
+        .await
+        .unwrap()
+        .expect("checkpoint not found");
     assert_eq!(retrieved, list[0]);
 
     // 4. Drop checkpoint
-    manager2.drop_checkpoint("integration-test").await.expect("failed to drop");
+    manager2
+        .drop_checkpoint("integration-test")
+        .await
+        .expect("failed to drop");
     let list_after = manager2.list_checkpoints().await.expect("failed to list");
     assert!(list_after.is_empty());
 }
