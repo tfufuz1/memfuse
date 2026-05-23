@@ -1,3 +1,13 @@
+//! # Metadata Filtering Module
+//!
+//! This module provides the core types and logic for advanced metadata filtering
+//! in MemFuse. It supports complex filter expressions including logical AND/OR/NOT
+//! and a variety of comparison operators.
+//!
+//! ## Key Components
+//! - [`MetadataFilter`]: The main enum representing a filter expression.
+//! - [`FilterOp`]: Supported comparison operators (Eq, Ne, Gt, Gte, etc.).
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

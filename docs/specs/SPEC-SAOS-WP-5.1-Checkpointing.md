@@ -1,6 +1,6 @@
 # SPEC-SAOS-WP-5.1 — Native State Checkpointing & Time-Travel Debugging
 
-> **Priority:** 🔴 KRITISCH — Primärer Migrations-Hebel vs. LangGraph  
+> **Status:** DONE
 > **Dependency:** WP-1.1 DONE, WP-1.2 DONE  
 > **Crate:** `memfuse-checkpoint` (neu)  
 > **DONE-Definition:** 4 Tests 3× grün. Snapshot-Restore deterministisch.

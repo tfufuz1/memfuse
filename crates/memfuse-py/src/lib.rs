@@ -156,6 +156,7 @@ impl PyDbStats {
     }
 }
 
+/// The primary database handle for MemFuse in Python.
 #[pyclass(unsendable, name = "Db")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
@@ -458,6 +459,7 @@ impl PyMemFuse {
     }
 }
 
+/// A handle to a specific collection within a MemFuse database.
 #[pyclass(unsendable, name = "Collection")]
 pub struct PyCollection {
     inner: Arc<MemFuseCollection>,

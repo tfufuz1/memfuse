@@ -82,6 +82,8 @@ bash .agent/scripts/jules-dashboard.sh
 - **Transactional** — Sharded TxBuffer with orphan-reaping
 - **Relationship Tracking** — `relate()` API for graph-aware retrieval
 - **Hybrid Search** — Optimized BM25 + Vector Fusion (RRF)
+- **4-Signal Fusion** — Native fusion of Vector, Text, Graph, and Metadata signals
+- **Advanced Metadata Filtering** — Complex boolean logic and comparison operators for metadata
 - **Scalar Quantization** — SQ8 compression for 4x reduced RAM footprint
 - **Deterministic Checkpointing** — Native state pinning for "Time-Travel" debugging
 
