@@ -82,6 +82,19 @@ pub enum MemFuseError {
     // ═══ Graph Engine ═══
     #[error("Graph error: {0}")]
     Graph(String),
+
+    #[error("Max cycles exceeded for edge {edge_id}: {cycles} cycles")]
+    MaxCyclesExceeded { edge_id: String, cycles: usize },
+
+    // ═══ Security & Policy ═══
+    #[error("Namespace violation: {0}")]
+    NamespaceViolation(String),
+
+    #[error("Data corruption detected")]
+    Corruption,
+
+    #[error("Transaction aborted")]
+    TransactionAborted,
 }
 
 impl MemFuseError {
