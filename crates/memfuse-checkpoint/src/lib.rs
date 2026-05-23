@@ -191,7 +191,12 @@ mod tests {
     #[async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            Ok(self.data.lock().expect("lock not poisoned").get(key).cloned())
+            Ok(self
+                .data
+                .lock()
+                .expect("lock not poisoned")
+                .get(key)
+                .cloned())
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
             self.data
@@ -221,11 +226,17 @@ mod tests {
             })
         }
         async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.pinned.lock().expect("lock not poisoned").insert(seq_no);
+            self.pinned
+                .lock()
+                .expect("lock not poisoned")
+                .insert(seq_no);
             Ok(())
         }
         async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.pinned.lock().expect("lock not poisoned").remove(&seq_no);
+            self.pinned
+                .lock()
+                .expect("lock not poisoned")
+                .remove(&seq_no);
             Ok(())
         }
         async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
@@ -252,10 +263,18 @@ mod tests {
         assert_eq!(meta.seq_no, 100);
 
         // Verify it was pinned
-        assert!(storage.pinned.lock().expect("lock not poisoned").contains(&100));
+        assert!(storage
+            .pinned
+            .lock()
+            .expect("lock not poisoned")
+            .contains(&100));
 
         // Verify it exists in manager
-        let retrieved = manager.get_checkpoint("test_cp").await.expect("lock not poisoned").expect("lock not poisoned");
+        let retrieved = manager
+            .get_checkpoint("test_cp")
+            .await
+            .expect("lock not poisoned")
+            .expect("lock not poisoned");
         assert_eq!(retrieved, meta);
     }
 
@@ -270,7 +289,11 @@ mod tests {
             .await
             .expect("lock not poisoned");
 
-        let retrieved = manager.get_checkpoint("cp1").await.expect("lock not poisoned").expect("lock not poisoned");
+        let retrieved = manager
+            .get_checkpoint("cp1")
+            .await
+            .expect("lock not poisoned")
+            .expect("lock not poisoned");
         assert_eq!(retrieved.metadata, metadata);
     }
 
@@ -311,7 +334,10 @@ mod tests {
 
         // New manager sharing the same storage
         let manager2 = CheckpointManager::new(storage.clone());
-        let list = manager2.list_checkpoints().await.expect("lock not poisoned");
+        let list = manager2
+            .list_checkpoints()
+            .await
+            .expect("lock not poisoned");
 
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "persist_me");

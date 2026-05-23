@@ -529,7 +529,12 @@ mod tests {
     #[async_trait::async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            Ok(self.store.read().expect("lock not poisoned").get(key).cloned())
+            Ok(self
+                .store
+                .read()
+                .expect("lock not poisoned")
+                .get(key)
+                .cloned())
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
             self.store
