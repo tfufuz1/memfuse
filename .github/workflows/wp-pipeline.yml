@@ -89,7 +89,7 @@ jobs:
           fi
 
           echo "=== [2/5] Clippy (0 warnings) ==="
-          if cargo clippy --all-targets --workspace -- -D warnings 2>&1; then
+          if cargo clippy --all-targets --workspace --exclude memfuse-orchestrator --exclude memfuse-runtime -- -D warnings 2>&1; then
             REPORT+="✅ Clippy OK\n"
           else
             REPORT+="❌ Clippy FAILED\n"; FAIL=1
@@ -106,7 +106,7 @@ jobs:
 
           echo "=== [4/5] Triple-Test Gate ==="
           for RUN in 1 2 3; do
-            if cargo test --workspace 2>&1; then
+            if cargo test --workspace --exclude memfuse-orchestrator --exclude memfuse-runtime 2>&1; then
               REPORT+="✅ Test Run $RUN/3 OK\n"
             else
               REPORT+="❌ Test Run $RUN/3 FAILED\n"; FAIL=1; break

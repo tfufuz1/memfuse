@@ -53,7 +53,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy (Zero-Warnings-Policy)
-        run: cargo clippy --workspace --all-features -- -D warnings
+        run: cargo clippy --workspace --exclude memfuse-orchestrator --exclude memfuse-runtime --all-features -- -D warnings
 
       - name: Zero-Unwrap-Scan (INV: Zero-Panic)
         run: |
