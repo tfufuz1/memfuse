@@ -41,7 +41,7 @@
 //!    and then applied to the active MemTable.
 
 use crate::compaction::{CompactionConfig, CompactionEngine};
-use crate::crypto::KeyManager;
+use memfuse_crypto::crypto::KeyManager;
 use crate::memtable::MemTable;
 use crate::sstable::{create_block_cache, BlockCache, SstableBuilder, SstableReader};
 use crate::wal::{Wal, WalOp};

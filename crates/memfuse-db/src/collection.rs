@@ -196,6 +196,106 @@ impl Collection {
         Ok(())
     }
 
+    /// Inserts multiple documents in a single transaction.
+    pub async fn insert_many(
+        &self,
+        docs: &[(String, Vec<f32>, Option<serde_json::Value>)],
+    ) -> Result<()> {
+        let db_tx = self.begin_transaction();
+        for (id, embedding, metadata) in docs {
+            if let Err(e) = self
+                .insert_op(&db_tx, id, embedding, metadata.clone())
+                .await
+            {
+                if let Err(rollback_err) = db_tx.rollback().await {
+                    tracing::error!(
+                        "[INV-DB-3] Failed to rollback insert_many: {}",
+                        rollback_err
+                    );
+                }
+                return Err(e);
+            }
+        }
+        db_tx.commit().await
+    }
+
+    /// Upserts a document (inserts if missing, updates if exists) atomically.
+    pub async fn upsert(
+        &self,
+        id: &str,
+        embedding: &[f32],
+        metadata: Option<serde_json::Value>,
+    ) -> Result<()> {
+        if embedding.len() != self.dimension {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Dimension mismatch: expected {}, got {}",
+                self.dimension,
+                embedding.len()
+            )));
+        }
+
+        let db_tx = self.begin_transaction();
+        let exists = {
+            let key = self.namespaced_key(id.as_bytes(), 0);
+            self.storage.get(&key).await?.is_some()
+        };
+
+        let result = if exists {
+            self.update_op(&db_tx, id, embedding, metadata).await
+        } else {
+            self.insert_op(&db_tx, id, embedding, metadata).await
+        };
+
+        match result {
+            Ok(_) => db_tx.commit().await,
+            Err(e) => {
+                if let Err(rollback_err) = db_tx.rollback().await {
+                    tracing::error!("[INV-DB-3] Failed to rollback upsert: {}", rollback_err);
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// Upserts multiple documents in a single transaction.
+    pub async fn upsert_many(
+        &self,
+        docs: &[(String, Vec<f32>, Option<serde_json::Value>)],
+    ) -> Result<()> {
+        let db_tx = self.begin_transaction();
+        for (id, embedding, metadata) in docs {
+            if embedding.len() != self.dimension {
+                let _ = db_tx.rollback().await;
+                return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                    "Dimension mismatch: expected {}, got {}",
+                    self.dimension,
+                    embedding.len()
+                )));
+            }
+            let exists = {
+                let key = self.namespaced_key(id.as_bytes(), 0);
+                self.storage.get(&key).await?.is_some()
+            };
+            let result = if exists {
+                self.update_op(&db_tx, id, embedding, metadata.clone())
+                    .await
+            } else {
+                self.insert_op(&db_tx, id, embedding, metadata.clone())
+                    .await
+            };
+            if let Err(e) = result {
+                if let Err(rollback_err) = db_tx.rollback().await {
+                    tracing::error!(
+                        "[INV-DB-3] Failed to rollback upsert_many: {}",
+                        rollback_err
+                    );
+                }
+                return Err(e);
+            }
+        }
+        db_tx.commit().await
+    }
+
     /// Retrieves a document by its user-provided string ID.
     pub async fn get(&self, id: &str) -> Result<Option<crate::Document>> {
         let key = self.namespaced_key(id.as_bytes(), 0);
@@ -336,6 +436,27 @@ impl Collection {
 
         self.storage.put(tx, &key, &bytes).await?;
         self.storage.commit(tx).await?;
+        Ok(())
+    }
+
+    /// Creates a bidirectional relationship atomically.
+    pub async fn relate_bidirectional(&self, from: &str, to: &str, label: &str) -> Result<()> {
+        let db_tx = self.begin_transaction();
+        let tx = db_tx.tx_id;
+
+        let key1_str = format!("{}:{}:{}", from, label, to);
+        let key1 = self.namespaced_key(key1_str.as_bytes(), 2);
+        let val1 = serde_json::json!({"from": from, "to": to, "label": label});
+        let bytes1 = serde_json::to_vec(&val1)?;
+        self.storage.put(tx, &key1, &bytes1).await?;
+
+        let key2_str = format!("{}:{}:{}", to, label, from);
+        let key2 = self.namespaced_key(key2_str.as_bytes(), 2);
+        let val2 = serde_json::json!({"from": to, "to": from, "label": label});
+        let bytes2 = serde_json::to_vec(&val2)?;
+        self.storage.put(tx, &key2, &bytes2).await?;
+
+        db_tx.commit().await?;
         Ok(())
     }
 

@@ -1,25 +1,20 @@
-// AGENT:12
-// ANCHOR:INTEGRATION STATUS:DONE
-use memfuse_runtime::{SandboxConfig, WasmSandbox};
-use std::time::Duration;
+use memfuse_core::{Result, TokenBudget};
+use memfuse_runtime::AgentRuntime;
+use memfuse_runtime::WasmSandbox;
 
-#[test]
-fn test_sandbox_initialization() {
-    let config = SandboxConfig {
-        max_memory_mb: 128,
-        timeout: Duration::from_secs(1),
-        allow_network: false,
-    };
-    let _sandbox = WasmSandbox::new(config);
+#[tokio::test]
+async fn test_sandbox_initialization() {
+    let _sandbox = WasmSandbox::new(128);
 }
 
-#[test]
-fn test_sandbox_execution_placeholder() {
-    let sandbox = WasmSandbox::new(SandboxConfig::default());
+#[tokio::test]
+async fn test_sandbox_execution_placeholder() -> Result<()> {
+    let sandbox = WasmSandbox::new(128);
     let wasm_bytes = vec![0, 1, 2, 3]; // Mock WASM
-    let result = sandbox
-        .execute(&wasm_bytes, "input data")
-        .expect("execution failed");
+    let budget = TokenBudget::new(100, 0);
 
-    assert_eq!(result, "sandbox_execution_result_placeholder");
+    let result = sandbox.execute_isolated(&wasm_bytes, &budget).await?;
+
+    assert!(result.is_empty()); // Current scaffold returns empty Vec
+    Ok(())
 }

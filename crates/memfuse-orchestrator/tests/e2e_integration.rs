@@ -1,9 +1,10 @@
 // AGENT:12
 // ANCHOR:INTEGRATION STATUS:DONE
 // E2E Test: Full Stack Integration
+use memfuse_core::TokenBudget;
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
-use memfuse_orchestrator::StateGraph;
-use memfuse_runtime::{SandboxConfig, WasmSandbox};
+use memfuse_orchestrator::{GraphNode, OrchestratorEngine, StateGraph, WorkflowEdge};
+use memfuse_runtime::{AgentRuntime, WasmSandbox};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -93,25 +94,33 @@ async fn test_e2e_agent_workflow() {
 
     // Integration of Orchestrator and Runtime
     let mut graph = StateGraph::new();
-    graph.add_node("search", "Search in MemFuse");
-    graph.add_node("process", "Process with WASM");
-    graph.add_edge("search", "process", None);
+    graph.nodes.push(GraphNode {
+        name: "search".to_string(),
+        executable_identifier: "search_tool".to_string(),
+    });
+    graph.nodes.push(GraphNode {
+        name: "process".to_string(),
+        executable_identifier: "process_tool".to_string(),
+    });
+    graph.edges.push(WorkflowEdge {
+        from: "search".to_string(),
+        to: "process".to_string(),
+        condition_evaluator: None,
+    });
 
-    let sandbox = WasmSandbox::new(SandboxConfig::default());
+    let sandbox = WasmSandbox::new(128);
+    let budget = TokenBudget::new(100, 0);
     let _execution_result = sandbox
-        .execute(b"WASM_CODE", "input")
+        .execute_isolated(b"WASM_CODE", &budget)
+        .await
         .expect("WASM execution failed");
 
-    graph.run_workflow("start");
+    let engine = OrchestratorEngine;
+    engine.execute(&graph).await.expect("workflow failed");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_stress_concurrent_agent_ops() {
-    // Stress Tests: Concurrent Tests
-    // 1. Spawn N tokio::tasks
-    // 2. Jede Task: Insert -> Search -> Delete
-    // 3. Am Ende: Verify Konsistenz (len == 0)
-
     let tmp = TempDir::new().expect("failed to create temp dir");
     let db = Arc::new(
         MemFuse::open_with_config(

@@ -12,11 +12,10 @@
 // BEGRÜNDUNG: SIMD-Intrinsics in distance.rs benötigen unsafe für Performance.
 #![deny(unsafe_code)]
 
-pub mod csr;
 pub mod diskann;
 pub mod distance;
 pub mod hnsw;
 pub mod quantize;
 
-pub use csr::CsrGraph;
 pub use hnsw::{HnswConfig, HnswIndex};
+pub use memfuse_graph::CsrGraph;

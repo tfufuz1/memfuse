@@ -315,6 +315,24 @@ impl MemFuse {
             .await
     }
 
+    /// Upserts a document (inserts if missing, updates if exists).
+    pub async fn upsert(&self, id: &str, embedding: &[f32], metadata: Option<Value>) -> Result<()> {
+        self.default_col()
+            .await?
+            .upsert(id, embedding, metadata)
+            .await
+    }
+
+    /// Inserts multiple documents in a single transaction.
+    pub async fn insert_many(&self, docs: &[(String, Vec<f32>, Option<Value>)]) -> Result<()> {
+        self.default_col().await?.insert_many(docs).await
+    }
+
+    /// Upserts multiple documents in a single transaction.
+    pub async fn upsert_many(&self, docs: &[(String, Vec<f32>, Option<Value>)]) -> Result<()> {
+        self.default_col().await?.upsert_many(docs).await
+    }
+
     /// Retrieves a document by its string key.
     pub async fn get(&self, id: &str) -> Result<Option<Document>> {
         self.default_col().await?.get(id).await
@@ -386,9 +404,8 @@ impl MemFuse {
 
     /// Creates a bidirectional relationship between two documents.
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
-        self.default_col().await?.relate(from, to, label).await?;
-        self.default_col().await?.relate(to, from, label).await?;
-        Ok(())
+        let col = self.default_col().await?;
+        col.relate_bidirectional(from, to, label).await
     }
 
     /// Scans storage for key-value pairs matching a prefix.
@@ -422,6 +439,22 @@ impl MemFuse {
             storage_stats: self.storage.stats().await?,
         })
     }
+    /// Flushes all pending writes to disk.
+    ///
+    /// This ensures that the WAL is synced and memtables are persisted as SSTables.
+    pub async fn flush(&self) -> Result<()> {
+        self.storage.flush().await?;
+        Ok(())
+    }
+
+    /// Gracefully closes the database, ensuring all data is persisted.
+    ///
+    /// This consumes the `MemFuse` instance. It is highly recommended to call
+    /// this before application exit to ensure zero data loss.
+    pub async fn close(self) -> Result<()> {
+        self.flush().await?;
+        Ok(())
+    }
 }
 
 // Re-export for convenience
@@ -431,8 +464,18 @@ pub use serde_json::json;
 impl MemFuse {
     /// Returns the underlying storage engine.
     /// Internal use only for benchmarks and tests.
-    pub fn inner_storage(&self) -> Arc<LsmStorage> {
+    pub(crate) fn inner_storage(&self) -> Arc<LsmStorage> {
         self.storage.clone()
+    }
+}
+
+impl Drop for MemFuse {
+    fn drop(&mut self) {
+        let storage = Arc::clone(&self.storage);
+        // Best effort flush on drop to ensure zero data loss if `close()` is forgotten.
+        tokio::spawn(async move {
+            let _ = storage.flush().await;
+        });
     }
 }
 #[cfg(test)]

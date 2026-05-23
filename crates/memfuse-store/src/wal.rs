@@ -1,14 +1,11 @@
 //! Write-Ahead Log (WAL) for durability and crash recovery with HMAC chaining.
 
-use crate::crypto::KeyManager;
-use hmac::{Hmac, Mac};
+use memfuse_crypto::crypto::KeyManager;
+use memfuse_crypto::wal_crypto::WalHmac;
 use memfuse_core::{MemFuseError, Result, TxId};
-use sha2::Sha256;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-type HmacSha256 = Hmac<Sha256>;
 
 /// WAL entry operation.
 #[derive(Debug, Clone)]
@@ -59,8 +56,7 @@ impl WalEntry {
         integrity_key: &[u8],
         prev_hmac: [u8; 32],
     ) -> Result<[u8; 32]> {
-        let mut mac = HmacSha256::new_from_slice(integrity_key)
-            .map_err(|e| MemFuseError::Storage(format!("HMAC key error: {}", e)))?;
+        let mut mac = WalHmac::new(integrity_key)?;
 
         // Hash Chaining: binding to the previous entry
         mac.update(&prev_hmac);
@@ -77,7 +73,7 @@ impl WalEntry {
                 mac.update(key);
             }
         }
-        Ok(mac.finalize().into_bytes().into())
+        Ok(mac.finalize())
     }
 
     /// Serializes the entry to bytes.

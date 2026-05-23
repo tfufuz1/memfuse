@@ -10,13 +10,6 @@
 //!   from synchronous Python calls.
 //! - **Zero-Copy**: Aims for minimal copying of vector data between Python and Rust.
 
-// AGENT:06 DATE:2026-05-15 STATUS:DONE
-// ANCHOR:TODO:PY-001 — Stelle sicher, dass die zero-copy Vektor-Anbindung via numpy stabil ist.
-// WP:WP-3.1 PRIO:1 NEEDS:SEARCH-001
-// AGENT:@JULES-06 DATE:2026-05-15 STATUS:DONE
-// TEST: cd crates/memfuse-py && python -m pytest tests/ -v
-// DONE: pip install . funktioniert, keine Deadlocks in tokio-Runtime.
-// SUCCESSOR: @JULES-09 — "Python Bindings sind stabil. StateGraph kann darauf aufbauen."
 #![forbid(unsafe_code)]
 
 use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
@@ -26,6 +19,8 @@ use pythonize::{depythonize, pythonize};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::runtime::Runtime;
+
+// ─── Shared Tokio Runtime ───────────────────────────────────────────────────
 
 /// Returns a reference to the shared Tokio runtime.
 ///
@@ -49,13 +44,76 @@ fn get_runtime() -> PyResult<&'static Runtime> {
 
     if let Err(_rt_existing) = RUNTIME.set(rt) {
         // Another thread already initialized it, just return the existing one.
-        // The newly created runtime will be dropped here.
     }
 
     RUNTIME.get().ok_or_else(|| {
         pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve initialized tokio runtime")
     })
 }
+
+// ─── Shared Helper Functions ────────────────────────────────────────────────
+
+/// Converts a Python dict to a serde_json::Value.
+fn dict_to_json(d: &pyo3::Bound<'_, pyo3::types::PyDict>) -> PyResult<serde_json::Value> {
+    depythonize(d)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Metadata error: {}", e)))
+}
+
+/// Converts an optional Python dict to an optional serde_json::Value.
+fn opt_dict_to_json(
+    metadata: Option<&pyo3::Bound<'_, pyo3::types::PyDict>>,
+) -> PyResult<Option<serde_json::Value>> {
+    match metadata {
+        Some(d) => Ok(Some(dict_to_json(d)?)),
+        None => Ok(None),
+    }
+}
+
+/// Converts a serde_json::Value to a Python object.
+fn json_to_py(py: Python<'_>, val: &serde_json::Value) -> PyResult<PyObject> {
+    pythonize(py, val)
+        .map(|o| o.unbind())
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e)))
+}
+
+/// Converts a memfuse_db::Document to a PyDocument.
+fn doc_to_py(py: Python<'_>, d: memfuse_db::Document) -> PyResult<PyDocument> {
+    let meta_py = match d.metadata {
+        Some(ref m) => Some(json_to_py(py, m)?),
+        None => None,
+    };
+    Ok(PyDocument {
+        id: d.id,
+        metadata: meta_py,
+    })
+}
+
+/// Converts a Vec of SearchResult to Vec of PySearchResult.
+fn results_to_py(
+    py: Python<'_>,
+    results: Vec<memfuse_db::SearchResult>,
+) -> PyResult<Vec<PySearchResult>> {
+    let mut py_res = Vec::with_capacity(results.len());
+    for r in results {
+        let meta_py = match r.metadata {
+            Some(ref m) => Some(json_to_py(py, m)?),
+            None => None,
+        };
+        py_res.push(PySearchResult {
+            id: r.id,
+            score: r.score,
+            metadata: meta_py,
+        });
+    }
+    Ok(py_res)
+}
+
+/// Maps any error implementing Display to a PyRuntimeError.
+fn memfuse_err<E: std::fmt::Display>(e: E) -> PyErr {
+    pyo3::exceptions::PyRuntimeError::new_err(e.to_string())
+}
+
+// ─── Python Types ───────────────────────────────────────────────────────────
 
 /// A single search result from MemFuse.
 #[pyclass(get_all)]
@@ -156,20 +214,312 @@ impl PyDbStats {
     }
 }
 
-#[pyclass(unsendable, name = "Db")]
+// ─── Macro: Shared CRUD Methods ─────────────────────────────────────────────
+//
+// This macro generates the common CRUD, search, and scan methods that are
+// shared between PyMemFuse (default collection facade) and PyCollection.
+// It eliminates ~400 LoC of duplication.
+
+macro_rules! memfuse_crud_methods {
+    ($struct_type:ty) => {
+        #[pymethods]
+        impl $struct_type {
+            /// Inserts a document with an embedding and optional metadata.
+            #[pyo3(signature = (id, vector, metadata=None))]
+            pub fn insert<'py>(
+                &self,
+                py: Python<'py>,
+                id: &str,
+                vector: PyReadonlyArray1<'py, f32>,
+                metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+            ) -> PyResult<()> {
+                let rt = get_runtime()?;
+                let v = vector.as_slice().map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
+                })?;
+                let m = opt_dict_to_json(metadata.as_ref())?;
+                py.allow_threads(|| rt.block_on(self.inner.insert(id, v, m)))
+                    .map_err(memfuse_err)
+            }
+
+            /// Retrieves a document by its user-provided string ID.
+            pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
+                let rt = get_runtime()?;
+                let doc = py
+                    .allow_threads(|| rt.block_on(self.inner.get(id)))
+                    .map_err(memfuse_err)?;
+                match doc {
+                    Some(d) => Ok(Some(doc_to_py(py, d)?)),
+                    None => Ok(None),
+                }
+            }
+
+            /// Updates an existing document.
+            #[pyo3(signature = (id, vector, metadata=None))]
+            pub fn update<'py>(
+                &self,
+                py: Python<'py>,
+                id: &str,
+                vector: PyReadonlyArray1<'py, f32>,
+                metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+            ) -> PyResult<()> {
+                let rt = get_runtime()?;
+                let v = vector.as_slice().map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
+                })?;
+                let m = opt_dict_to_json(metadata.as_ref())?;
+                py.allow_threads(|| rt.block_on(self.inner.update(id, v, m)))
+                    .map_err(memfuse_err)
+            }
+
+            /// Upserts a document (inserts if missing, updates if exists).
+            #[pyo3(signature = (id, vector, metadata=None))]
+            pub fn upsert<'py>(
+                &self,
+                py: Python<'py>,
+                id: &str,
+                vector: PyReadonlyArray1<'py, f32>,
+                metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+            ) -> PyResult<()> {
+                let rt = get_runtime()?;
+                let v = vector.as_slice().map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
+                })?;
+                let m = opt_dict_to_json(metadata.as_ref())?;
+                py.allow_threads(|| rt.block_on(self.inner.upsert(id, v, m)))
+                    .map_err(memfuse_err)
+            }
+
+            /// Deletes a document by its ID.
+            pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
+                let rt = get_runtime()?;
+                py.allow_threads(|| rt.block_on(self.inner.delete(id)))
+                    .map_err(memfuse_err)
+            }
+
+            /// Performs semantic k-NN search over the embeddings.
+            #[pyo3(signature = (vector, k))]
+            pub fn search<'py>(
+                &self,
+                py: Python<'py>,
+                vector: PyReadonlyArray1<'py, f32>,
+                k: usize,
+            ) -> PyResult<Vec<PySearchResult>> {
+                let rt = get_runtime()?;
+                let v = vector.as_slice().map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
+                })?;
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.search(v, k)))
+                    .map_err(memfuse_err)?;
+                results_to_py(py, results)
+            }
+
+            /// Performs hybrid search combining BM25 and vector search results.
+            #[pyo3(signature = (text, vector, k))]
+            pub fn hybrid_search<'py>(
+                &self,
+                py: Python<'py>,
+                text: &str,
+                vector: PyReadonlyArray1<'py, f32>,
+                k: usize,
+            ) -> PyResult<Vec<PySearchResult>> {
+                let rt = get_runtime()?;
+                let v = vector.as_slice().map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
+                })?;
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, v, k)))
+                    .map_err(memfuse_err)?;
+                results_to_py(py, results)
+            }
+
+            /// Creates a bidirectional relationship between two documents.
+            pub fn relate(
+                &self,
+                py: Python<'_>,
+                from: &str,
+                to: &str,
+                label: &str,
+            ) -> PyResult<()> {
+                let rt = get_runtime()?;
+                py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
+                    .map_err(memfuse_err)
+            }
+
+            /// Scans documents matching a given key prefix.
+            #[pyo3(signature = (prefix=""))]
+            pub fn scan_prefix(
+                &self,
+                py: Python<'_>,
+                prefix: &str,
+            ) -> PyResult<Vec<(String, PyObject)>> {
+                let rt = get_runtime()?;
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.scan_prefix(prefix)))
+                    .map_err(memfuse_err)?;
+                let mut py_res = Vec::with_capacity(results.len());
+                for (k, v) in results {
+                    py_res.push((k, json_to_py(py, &v)?));
+                }
+                Ok(py_res)
+            }
+
+            /// Performs a range scan of documents.
+            ///
+            /// Accepts optional string keys for start and end bounds (inclusive).
+            /// Pass `None` for unbounded.
+            #[pyo3(signature = (start=None, end=None))]
+            pub fn scan(
+                &self,
+                py: Python<'_>,
+                start: Option<&str>,
+                end: Option<&str>,
+            ) -> PyResult<Vec<(String, PyObject)>> {
+                let rt = get_runtime()?;
+                use std::ops::Bound;
+
+                let start_bytes: Option<Vec<u8>> = start.map(|s| s.as_bytes().to_vec());
+                let end_bytes: Option<Vec<u8>> = end.map(|s| s.as_bytes().to_vec());
+
+                let start_bound = match &start_bytes {
+                    Some(b) => Bound::Included(b.as_slice()),
+                    None => Bound::Unbounded,
+                };
+                let end_bound = match &end_bytes {
+                    Some(b) => Bound::Included(b.as_slice()),
+                    None => Bound::Unbounded,
+                };
+
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.scan(start_bound, end_bound)))
+                    .map_err(memfuse_err)?;
+                let mut py_res = Vec::with_capacity(results.len());
+                for (k, v) in results {
+                    py_res.push((k, json_to_py(py, &v)?));
+                }
+                Ok(py_res)
+            }
+        }
+    };
+}
+
+// ─── Macro: Batch Methods ───────────────────────────────────────────────────
+//
+// Batch insert/upsert operations. Separated because the inner types
+// (MemFuse vs Collection) share identical batch signatures.
+
+macro_rules! memfuse_batch_methods {
+    ($struct_type:ty) => {
+        #[pymethods]
+        impl $struct_type {
+            /// Inserts multiple documents in a single transaction.
+            ///
+            /// Each doc is a tuple of `(id: str, vector: np.ndarray, metadata: dict | None)`.
+            pub fn insert_many<'py>(
+                &self,
+                py: Python<'py>,
+                docs: Vec<(
+                    String,
+                    PyReadonlyArray1<'py, f32>,
+                    Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+                )>,
+            ) -> PyResult<()> {
+                let rt = get_runtime()?;
+                let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
+                    Vec::with_capacity(docs.len());
+                for (id, vector, metadata) in &docs {
+                    let v = vector
+                        .as_slice()
+                        .map_err(|e| {
+                            pyo3::exceptions::PyValueError::new_err(format!(
+                                "Invalid vector: {}",
+                                e
+                            ))
+                        })?
+                        .to_vec();
+                    let m = opt_dict_to_json(metadata.as_ref())?;
+                    batch.push((id.clone(), v, m));
+                }
+                py.allow_threads(|| rt.block_on(self.inner.insert_many(&batch)))
+                    .map_err(memfuse_err)
+            }
+
+            /// Upserts multiple documents in a single transaction.
+            ///
+            /// Each doc is a tuple of `(id: str, vector: np.ndarray, metadata: dict | None)`.
+            pub fn upsert_many<'py>(
+                &self,
+                py: Python<'py>,
+                docs: Vec<(
+                    String,
+                    PyReadonlyArray1<'py, f32>,
+                    Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+                )>,
+            ) -> PyResult<()> {
+                let rt = get_runtime()?;
+                let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
+                    Vec::with_capacity(docs.len());
+                for (id, vector, metadata) in &docs {
+                    let v = vector
+                        .as_slice()
+                        .map_err(|e| {
+                            pyo3::exceptions::PyValueError::new_err(format!(
+                                "Invalid vector: {}",
+                                e
+                            ))
+                        })?
+                        .to_vec();
+                    let m = opt_dict_to_json(metadata.as_ref())?;
+                    batch.push((id.clone(), v, m));
+                }
+                py.allow_threads(|| rt.block_on(self.inner.upsert_many(&batch)))
+                    .map_err(memfuse_err)
+            }
+        }
+    };
+}
+
+// ─── PyMemFuse (Database Facade) ────────────────────────────────────────────
+
+#[pyclass(name = "Db")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
 }
 
 #[pymethods]
 impl PyMemFuse {
+    // ── Context Manager Protocol ──
+
+    /// Enters the context manager. Returns `self`.
+    fn __enter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    /// Exits the context manager, flushing all pending writes.
+    #[pyo3(signature = (_exc_type=None, _exc_val=None, _exc_tb=None))]
+    fn __exit__(
+        &self,
+        py: Python<'_>,
+        _exc_type: Option<&Bound<'_, PyAny>>,
+        _exc_val: Option<&Bound<'_, PyAny>>,
+        _exc_tb: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<bool> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.flush()))
+            .map_err(memfuse_err)?;
+        Ok(false) // Do not suppress exceptions
+    }
+
+    // ── Collection Management ──
+
     /// Returns a specific collection (namespace).
     /// Creates the collection if it does not already exist.
     pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<PyCollection> {
         let rt = get_runtime()?;
         let col = py
             .allow_threads(|| rt.block_on(self.inner.collection(name)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+            .map_err(memfuse_err)?;
         Ok(PyCollection {
             inner: Arc::new(col),
         })
@@ -179,261 +529,21 @@ impl PyMemFuse {
     pub fn list_collections(&self, py: Python<'_>) -> PyResult<Vec<String>> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.list_collections()))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+            .map_err(memfuse_err)
     }
 
     /// Drops a collection, removing all its data from storage.
     pub fn drop_collection(&self, name: &str, py: Python<'_>) -> PyResult<()> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.drop_collection(name)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+            .map_err(memfuse_err)
     }
 
-    /// Inserts a document with an embedding and optional metadata into the default collection.
-    #[pyo3(signature = (id, vector, metadata=None))]
-    pub fn insert<'py>(
-        &self,
-        py: Python<'py>,
-        id: &str,
-        vector: PyReadonlyArray1<'py, f32>,
-        metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
-    ) -> PyResult<()> {
+    /// Flushes all pending writes to disk.
+    pub fn flush(&self, py: Python<'_>) -> PyResult<()> {
         let rt = get_runtime()?;
-        let vec_slice = vector.as_slice().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-        })?;
-
-        let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
-            Some(depythonize(&d).map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Metadata error: {}", e))
-            })?)
-        } else {
-            None
-        };
-
-        py.allow_threads(|| rt.block_on(self.inner.insert(id, vec_slice, meta_val)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        Ok(())
-    }
-
-    /// Retrieves a document by its user-provided string ID from the default collection.
-    pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
-        let rt = get_runtime()?;
-        let doc = py
-            .allow_threads(|| rt.block_on(self.inner.get(id)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-        if let Some(d) = doc {
-            let meta_py = if let Some(m) = d.metadata {
-                Some(
-                    pythonize(py, &m)
-                        .map_err(|e| {
-                            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                                "Metadata error: {}",
-                                e
-                            ))
-                        })?
-                        .unbind(),
-                )
-            } else {
-                None
-            };
-
-            Ok(Some(PyDocument {
-                id: d.id,
-                metadata: meta_py,
-            }))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Updates an existing document in the default collection.
-    #[pyo3(signature = (id, vector, metadata=None))]
-    pub fn update<'py>(
-        &self,
-        py: Python<'py>,
-        id: &str,
-        vector: PyReadonlyArray1<'py, f32>,
-        metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
-    ) -> PyResult<()> {
-        let rt = get_runtime()?;
-        let vec_slice = vector.as_slice().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-        })?;
-
-        let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
-            Some(depythonize(&d).map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Metadata error: {}", e))
-            })?)
-        } else {
-            None
-        };
-
-        py.allow_threads(|| rt.block_on(self.inner.update(id, vec_slice, meta_val)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        Ok(())
-    }
-
-    /// Deletes a document from the default collection by its ID.
-    pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
-        let rt = get_runtime()?;
-        py.allow_threads(|| rt.block_on(self.inner.delete(id)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        Ok(())
-    }
-
-    /// Performs semantic k-NN search over the default collection's embeddings.
-    #[pyo3(signature = (vector, k))]
-    pub fn search<'py>(
-        &self,
-        py: Python<'py>,
-        vector: PyReadonlyArray1<'py, f32>,
-        k: usize,
-    ) -> PyResult<Vec<PySearchResult>> {
-        let rt = get_runtime()?;
-        let vec_slice = vector.as_slice().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-        })?;
-
-        let results = py
-            .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-        let mut py_res = Vec::new();
-        for r in results {
-            let meta_py = if let Some(m) = r.metadata {
-                Some(
-                    pythonize(py, &m)
-                        .map_err(|e| {
-                            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                                "Metadata error: {}",
-                                e
-                            ))
-                        })?
-                        .unbind(),
-                )
-            } else {
-                None
-            };
-
-            py_res.push(PySearchResult {
-                id: r.id,
-                score: r.score,
-                metadata: meta_py,
-            });
-        }
-        Ok(py_res)
-    }
-
-    /// Performs hybrid search combining BM25 and vector search results in the default collection.
-    #[pyo3(signature = (text, vector, k))]
-    pub fn hybrid_search<'py>(
-        &self,
-        py: Python<'py>,
-        text: &str,
-        vector: PyReadonlyArray1<'py, f32>,
-        k: usize,
-    ) -> PyResult<Vec<PySearchResult>> {
-        let rt = get_runtime()?;
-        let vec_slice = vector.as_slice().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-        })?;
-
-        let results = py
-            .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, vec_slice, k)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-        let mut py_res = Vec::new();
-        for r in results {
-            let meta_py = if let Some(m) = r.metadata {
-                Some(
-                    pythonize(py, &m)
-                        .map_err(|e| {
-                            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                                "Metadata error: {}",
-                                e
-                            ))
-                        })?
-                        .unbind(),
-                )
-            } else {
-                None
-            };
-
-            py_res.push(PySearchResult {
-                id: r.id,
-                score: r.score,
-                metadata: meta_py,
-            });
-        }
-        Ok(py_res)
-    }
-
-    /// Creates a bidirectional relationship between two documents in the default collection.
-    pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
-        let rt = get_runtime()?;
-        py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
-    }
-
-    /// Scans documents in the default collection that match a given key prefix.
-    #[pyo3(signature = (prefix=""))]
-    pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<(String, PyObject)>> {
-        let rt = get_runtime()?;
-        let results = py
-            .allow_threads(|| rt.block_on(self.inner.scan_prefix(prefix)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-        let mut py_res = Vec::new();
-        for (k, v) in results {
-            let val_py = pythonize(py, &v).map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
-            })?;
-            py_res.push((k, val_py.unbind()));
-        }
-        Ok(py_res)
-    }
-
-    /// Returns the number of documents in the default collection.
-    pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
-        let rt = get_runtime()?;
-        py.allow_threads(|| rt.block_on(self.inner.len()))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
-    }
-
-    /// Returns true if the default collection is empty.
-    pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
-        let rt = get_runtime()?;
-        py.allow_threads(|| rt.block_on(self.inner.is_empty()))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
-    }
-
-    /// Performs a range scan of documents in the default collection.
-    #[pyo3(signature = (start=None, end=None))]
-    pub fn scan(
-        &self,
-        py: Python<'_>,
-        start: Option<&[u8]>,
-        end: Option<&[u8]>,
-    ) -> PyResult<Vec<(String, PyObject)>> {
-        let rt = get_runtime()?;
-        use std::ops::Bound;
-        let start_bound = start.map_or(Bound::Unbounded, Bound::Included);
-        let end_bound = end.map_or(Bound::Unbounded, Bound::Included);
-
-        let results = py
-            .allow_threads(|| rt.block_on(self.inner.scan(start_bound, end_bound)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-        let mut py_res = Vec::new();
-        for (k, v) in results {
-            let val_py = pythonize(py, &v).map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
-            })?;
-            py_res.push((k, val_py.unbind()));
-        }
-        Ok(py_res)
+        py.allow_threads(|| rt.block_on(self.inner.flush()))
+            .map_err(memfuse_err)
     }
 
     /// Returns combined statistics for the vector index and storage engine.
@@ -441,7 +551,7 @@ impl PyMemFuse {
         let rt = get_runtime()?;
         let stats = py
             .allow_threads(|| rt.block_on(self.inner.stats()))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+            .map_err(memfuse_err)?;
 
         Ok(PyDbStats {
             index_stats: PyVectorIndexStats {
@@ -456,197 +566,50 @@ impl PyMemFuse {
             },
         })
     }
+
+    /// Returns the number of documents.
+    pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.len()))
+            .map_err(memfuse_err)
+    }
+
+    /// Returns true if the collection/database is empty.
+    pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.is_empty()))
+            .map_err(memfuse_err)
+    }
 }
 
-#[pyclass(unsendable, name = "Collection")]
+// ── Generated CRUD + Batch Methods ──
+memfuse_crud_methods!(PyMemFuse);
+memfuse_batch_methods!(PyMemFuse);
+
+// ─── PyCollection ───────────────────────────────────────────────────────────
+
+#[pyclass(name = "Collection")]
 pub struct PyCollection {
     inner: Arc<MemFuseCollection>,
 }
 
 #[pymethods]
 impl PyCollection {
-    /// Inserts a document with an embedding and optional metadata into the collection.
-    #[pyo3(signature = (id, vector, metadata=None))]
-    pub fn insert<'py>(
-        &self,
-        py: Python<'py>,
-        id: &str,
-        vector: PyReadonlyArray1<'py, f32>,
-        metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
-    ) -> PyResult<()> {
+    /// Returns statistics for the collection's vector index.
+    pub fn stats(&self, py: Python<'_>) -> PyResult<PyVectorIndexStats> {
         let rt = get_runtime()?;
-        let vec_slice = vector.as_slice().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-        })?;
+        let stats = py
+            .allow_threads(|| rt.block_on(self.inner.stats()))
+            .map_err(memfuse_err)?;
 
-        let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
-            Some(depythonize(&d).map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Metadata error: {}", e))
-            })?)
-        } else {
-            None
-        };
-
-        py.allow_threads(|| rt.block_on(self.inner.insert(id, vec_slice, meta_val)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        Ok(())
+        Ok(PyVectorIndexStats {
+            num_vectors: stats.num_vectors,
+            memory_usage_bytes: stats.memory_usage_bytes,
+            num_layers: stats.num_layers,
+        })
     }
 
-    /// Retrieves a document by its user-provided string ID from the collection.
-    pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
-        let rt = get_runtime()?;
-        let doc = py
-            .allow_threads(|| rt.block_on(self.inner.get(id)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-        if let Some(d) = doc {
-            let meta_py = if let Some(m) = d.metadata {
-                Some(
-                    pythonize(py, &m)
-                        .map_err(|e| {
-                            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                                "Metadata error: {}",
-                                e
-                            ))
-                        })?
-                        .unbind(),
-                )
-            } else {
-                None
-            };
-
-            Ok(Some(PyDocument {
-                id: d.id,
-                metadata: meta_py,
-            }))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Updates an existing document in the collection.
-    #[pyo3(signature = (id, vector, metadata=None))]
-    pub fn update<'py>(
-        &self,
-        py: Python<'py>,
-        id: &str,
-        vector: PyReadonlyArray1<'py, f32>,
-        metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
-    ) -> PyResult<()> {
-        let rt = get_runtime()?;
-        let vec_slice = vector.as_slice().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-        })?;
-
-        let meta_val: Option<serde_json::Value> = if let Some(d) = metadata {
-            Some(depythonize(&d).map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Metadata error: {}", e))
-            })?)
-        } else {
-            None
-        };
-
-        py.allow_threads(|| rt.block_on(self.inner.update(id, vec_slice, meta_val)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        Ok(())
-    }
-
-    /// Deletes a document from the collection by its ID.
-    pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
-        let rt = get_runtime()?;
-        py.allow_threads(|| rt.block_on(self.inner.delete(id)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        Ok(())
-    }
-
-    /// Performs semantic k-NN search over the collection's embeddings.
-    #[pyo3(signature = (vector, k))]
-    pub fn search<'py>(
-        &self,
-        py: Python<'py>,
-        vector: PyReadonlyArray1<'py, f32>,
-        k: usize,
-    ) -> PyResult<Vec<PySearchResult>> {
-        let rt = get_runtime()?;
-        let vec_slice = vector.as_slice().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-        })?;
-
-        let results = py
-            .allow_threads(|| rt.block_on(self.inner.search(vec_slice, k)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-        let mut py_res = Vec::new();
-        for r in results {
-            let meta_py = if let Some(m) = r.metadata {
-                Some(
-                    pythonize(py, &m)
-                        .map_err(|e| {
-                            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                                "Metadata error: {}",
-                                e
-                            ))
-                        })?
-                        .unbind(),
-                )
-            } else {
-                None
-            };
-
-            py_res.push(PySearchResult {
-                id: r.id,
-                score: r.score,
-                metadata: meta_py,
-            });
-        }
-        Ok(py_res)
-    }
-
-    /// Performs hybrid search combining BM25 and vector search results in the collection.
-    #[pyo3(signature = (text, vector, k))]
-    pub fn hybrid_search<'py>(
-        &self,
-        py: Python<'py>,
-        text: &str,
-        vector: PyReadonlyArray1<'py, f32>,
-        k: usize,
-    ) -> PyResult<Vec<PySearchResult>> {
-        let rt = get_runtime()?;
-        let vec_slice = vector.as_slice().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid vector format: {}", e))
-        })?;
-
-        let results = py
-            .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, vec_slice, k)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-        let mut py_res = Vec::new();
-        for r in results {
-            let meta_py = if let Some(m) = r.metadata {
-                Some(
-                    pythonize(py, &m)
-                        .map_err(|e| {
-                            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                                "Metadata error: {}",
-                                e
-                            ))
-                        })?
-                        .unbind(),
-                )
-            } else {
-                None
-            };
-
-            py_res.push(PySearchResult {
-                id: r.id,
-                score: r.score,
-                metadata: meta_py,
-            });
-        }
-        Ok(py_res)
-    }
-
-    /// Returns the number of documents in the collection.
+    /// Returns the number of documents.
     pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
         let rt = get_runtime()?;
         Ok(py.allow_threads(|| rt.block_on(self.inner.len())))
@@ -657,75 +620,21 @@ impl PyCollection {
         let rt = get_runtime()?;
         Ok(py.allow_threads(|| rt.block_on(self.inner.is_empty())))
     }
-
-    /// Creates a bidirectional relationship between two documents in the collection.
-    pub fn relate(&self, py: Python<'_>, from: &str, to: &str, label: &str) -> PyResult<()> {
-        let rt = get_runtime()?;
-        py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
-    }
-
-    /// Scans documents in the collection that match a given key prefix.
-    #[pyo3(signature = (prefix=""))]
-    pub fn scan_prefix(&self, py: Python<'_>, prefix: &str) -> PyResult<Vec<(String, PyObject)>> {
-        let rt = get_runtime()?;
-        let results = py
-            .allow_threads(|| rt.block_on(self.inner.scan_prefix(prefix)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-        let mut py_res = Vec::new();
-        for (k, v) in results {
-            let val_py = pythonize(py, &v).map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
-            })?;
-            py_res.push((k, val_py.unbind()));
-        }
-        Ok(py_res)
-    }
-
-    /// Performs a range scan of documents in the collection.
-    #[pyo3(signature = (start=None, end=None))]
-    pub fn scan(
-        &self,
-        py: Python<'_>,
-        start: Option<&[u8]>,
-        end: Option<&[u8]>,
-    ) -> PyResult<Vec<(String, PyObject)>> {
-        let rt = get_runtime()?;
-        use std::ops::Bound;
-        let start_bound = start.map_or(Bound::Unbounded, Bound::Included);
-        let end_bound = end.map_or(Bound::Unbounded, Bound::Included);
-
-        let results = py
-            .allow_threads(|| rt.block_on(self.inner.scan(start_bound, end_bound)))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-        let mut py_res = Vec::new();
-        for (k, v) in results {
-            let val_py = pythonize(py, &v).map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e))
-            })?;
-            py_res.push((k, val_py.unbind()));
-        }
-        Ok(py_res)
-    }
-
-    /// Returns statistics for the collection's vector index.
-    pub fn stats(&self, py: Python<'_>) -> PyResult<PyVectorIndexStats> {
-        let rt = get_runtime()?;
-        let stats = py
-            .allow_threads(|| rt.block_on(self.inner.stats()))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-        Ok(PyVectorIndexStats {
-            num_vectors: stats.num_vectors,
-            memory_usage_bytes: stats.memory_usage_bytes,
-            num_layers: stats.num_layers,
-        })
-    }
 }
 
+// ── Generated CRUD + Batch Methods ──
+memfuse_crud_methods!(PyCollection);
+memfuse_batch_methods!(PyCollection);
+
+// ─── Module Entry Point ─────────────────────────────────────────────────────
+
 /// Opens or creates a MemFuse database at the given path.
+///
+/// Supports Python context manager protocol:
+/// ```python
+/// with memfuse.open("./data") as db:
+///     db.insert("doc1", vector, {"key": "value"})
+/// ```
 #[pyfunction]
 #[pyo3(signature = (path, dimension=1536, max_elements=None, encryption_passphrase=None, distance_metric=None))]
 fn open(
@@ -764,7 +673,7 @@ fn open(
     let path_string = path.to_string();
     let db = py
         .allow_threads(|| rt.block_on(MemFuse::open_with_config(path_string, config)))
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        .map_err(memfuse_err)?;
 
     Ok(PyMemFuse {
         inner: Arc::new(db),
@@ -773,7 +682,7 @@ fn open(
 
 #[pymodule]
 fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
-    m.add("__version__", "0.1.0")?;
+    m.add("__version__", "0.2.0")?;
     m.add_function(wrap_pyfunction!(open, m)?)?;
     m.add_class::<PyMemFuse>()?;
     m.add_class::<PyCollection>()?;

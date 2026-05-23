@@ -8,6 +8,7 @@ description = "HNSW vector index with SIMD distance computation for MemFuse"
 
 [dependencies]
 memfuse-core = { workspace = true }
+memfuse-graph = { workspace = true }
 ahash = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }

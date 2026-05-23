@@ -5,7 +5,7 @@ members = [
     "crates/memfuse-store",
     "crates/memfuse-index",
     "crates/memfuse-db", "crates/memfuse-text", "crates/memfuse-runtime", "crates/memfuse-orchestrator", "crates/memfuse-py", "crates/memfuse-checkpoint", "crates/memfuse-graph"
-]
+, "crates/memfuse-crypto"]
 
 [workspace.package]
 version = "0.1.0"
@@ -58,6 +58,7 @@ memfuse-orchestrator = { path = "crates/memfuse-orchestrator" }
 memfuse-py = { path = "crates/memfuse-py" }
 memfuse-checkpoint = { path = "crates/memfuse-checkpoint" }
 memfuse-graph = { path = "crates/memfuse-graph" }
+memfuse-crypto = { path = "crates/memfuse-crypto" }
 
 [profile.release]
 opt-level = 3

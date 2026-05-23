@@ -1,26 +1,33 @@
-// AGENT:12
-// ANCHOR:INTEGRATION STATUS:DONE
-use memfuse_orchestrator::StateGraph;
+use memfuse_orchestrator::{GraphNode, OrchestratorEngine, StateGraph, WorkflowEdge};
 
-#[test]
-fn test_stategraph_construction() {
+#[tokio::test]
+async fn test_stategraph_construction() {
     let mut graph = StateGraph::new();
-    graph.add_node("research", "Researches a topic using search tools");
-    graph.add_node("code", "Generates Rust code based on research");
+    graph.nodes.push(GraphNode {
+        name: "research".to_string(),
+        executable_identifier: "search_tool".to_string(),
+    });
+    graph.nodes.push(GraphNode {
+        name: "code".to_string(),
+        executable_identifier: "code_gen_tool".to_string(),
+    });
 
-    graph.add_edge("research", "code", Some("research_complete"));
+    graph.edges.push(WorkflowEdge {
+        from: "research".to_string(),
+        to: "code".to_string(),
+        condition_evaluator: Some("research_complete".to_string()),
+    });
 
     assert_eq!(graph.nodes.len(), 2);
     assert_eq!(graph.edges.len(), 1);
-    assert!(graph.nodes.contains_key("research"));
-    assert!(graph.nodes.contains_key("code"));
 }
 
-#[test]
-fn test_stategraph_run_placeholder() {
-    let mut graph = StateGraph::new();
-    graph.add_node("entry", "Entry point");
+#[tokio::test]
+async fn test_stategraph_run_placeholder() {
+    let graph = StateGraph::new();
+    let engine = OrchestratorEngine;
 
     // The current implementation is a placeholder, but we verify it can be called.
-    graph.run_workflow("initial context");
+    let result = engine.execute(&graph).await;
+    assert!(result.is_ok());
 }

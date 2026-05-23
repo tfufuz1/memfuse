@@ -22,7 +22,9 @@ bincode = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+parking_lot = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["test-util", "macros"] }
 tempfile = { workspace = true }
+memfuse-store = { version = "0.1.0", path = "../memfuse-store" }

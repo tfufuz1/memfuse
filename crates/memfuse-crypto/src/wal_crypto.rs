@@ -6,6 +6,7 @@
 
 use memfuse_core::Result;
 
+
 /// Provides Key Management Strategy hooks.
 pub trait KmsProvider {
     /// Retrieves the Data Encryption Key (DEK).
@@ -30,3 +31,27 @@ impl EncryptedWal {
         Ok(payload.to_vec())
     }
 }
+
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+
+pub struct WalHmac {
+    mac: Hmac<Sha256>,
+}
+
+impl WalHmac {
+    pub fn new(integrity_key: &[u8]) -> Result<Self> {
+        let mac = Hmac::<Sha256>::new_from_slice(integrity_key)
+            .map_err(|e| memfuse_core::MemFuseError::Storage(format!("HMAC key error: {}", e)))?;
+        Ok(Self { mac })
+    }
+
+    pub fn update(&mut self, data: &[u8]) {
+        self.mac.update(data);
+    }
+
+    pub fn finalize(self) -> [u8; 32] {
+        self.mac.finalize().into_bytes().into()
+    }
+}
+
