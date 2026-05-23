@@ -663,6 +663,18 @@ pub fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
     a.iter().zip(b.iter()).map(|(&x, &y)| x * (y as f32)).sum()
 }
 
+/// Maps a file into memory.
+///
+/// This function is safe because it encapsulates the unsafe memory mapping operation.
+/// The caller should still ensure the file is not truncated while mapped.
+pub fn mmap_file(file: &std::fs::File) -> memfuse_core::Result<memmap2::Mmap> {
+    // ANCHOR:SAFETY:SIMD-035 — File mapping for out-of-core indexing.
+    // BEGRÜNDUNG: Die Datei wird schreibgeschützt oder mit Schreibzugriff gemappt.
+    // Der Aufrufer muss sicherstellen, dass die Datei während des Mappings nicht von anderen Prozessen
+    // in einer Weise modifiziert wird, die gegen Rusts Memory Safety verstößt (z.B. Truncation).
+    unsafe { memmap2::Mmap::map(file).map_err(memfuse_core::MemFuseError::Io) }
+}
+
 /// Computes the squared Euclidean distance between an f32 vector and a u8 vector
 /// performing inline dequantization.
 pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {
@@ -910,18 +922,18 @@ mod tests {
 
         // Dot product
         let dot_scalar = dot_product_scalar(&a, &b);
-        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test");
+        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test"); // #[cfg(test)]
         let dot_simd = -d;
         assert!((dot_scalar - dot_simd).abs() < 1e-3);
 
         // Euclidean
         let euc_scalar = euclidean_distance_scalar(&a, &b);
-        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test");
+        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test"); // #[cfg(test)]
         assert!((euc_scalar - euc_simd).abs() < 1e-3);
 
         // Cosine
         let cos_scalar = cosine_distance_scalar(&a, &b);
-        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test");
+        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test"); // #[cfg(test)]
         assert!((cos_scalar - cos_simd).abs() < 1e-3);
     }
 

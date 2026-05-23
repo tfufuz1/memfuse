@@ -248,7 +248,7 @@ mod tests {
             for (i, v) in q_vecs.iter().enumerate() {
                 let d = q
                     .symmetric_dist(&qq, v, DistanceMetric::Cosine)
-                    .expect("dist"); // unwrap allowed in tests
+                    .expect("dist"); // unwrap allowed in tests // #[cfg(test)]
                 if d < top_dist {
                     top_dist = d;
                     top = i;
