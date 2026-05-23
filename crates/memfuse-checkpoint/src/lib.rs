@@ -91,6 +91,9 @@ impl CheckpointManager {
 
         // 2. Persist checkpoint metadata
         let key = format!("__checkpoint:{}", name);
+        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
+        // Checkpoint metadata is serialized unencrypted before storage.
+        // Encryption-at-Rest is handled by the underlying LSM storage layer (WP-3.2).
         let value = serde_json::to_vec(&checkpoint)
             .map_err(|e| memfuse_core::error::MemFuseError::Internal(e.to_string()))?;
 

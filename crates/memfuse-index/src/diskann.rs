@@ -1,6 +1,6 @@
 //! DiskANN Out-of-Core Vector Search (WP-4.3).
 
-#![allow(unsafe_code)]
+#![deny(unsafe_code)]
 
 use crate::distance::compute_distance;
 use ahash::AHashMap;
@@ -168,8 +168,14 @@ impl DiskAnnIndex {
 
         file.sync_all().map_err(MemFuseError::Io)?;
 
-        // SAFETY: Mapping a file that we just wrote and synced is safe as long as the file is not truncated while mapped.
-        self.mmap = Some(unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? });
+        // ANCHOR:SAFETY:MEMMAP-002 — Memory Mapping of DiskANN index file
+        // WP:WP-4.3 PRIO:1 NEEDS:NONE
+        // AGENT:10 DATE:2026-08-16 STATUS:REVIEW
+        // BEGRÜNDUNG: Mapping a file that we just wrote and synced is safe as long as
+        // the file is not truncated while mapped. Allows zero-copy out-of-core access.
+        #[allow(unsafe_code)]
+        let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? };
+        self.mmap = Some(mmap);
         self.entry_point = 0;
 
         Ok(())
@@ -261,17 +267,17 @@ impl DiskAnnIndex {
         let start_offset = header_size.div_ceil(self.config.sector_size) * self.config.sector_size;
         let node_offset = start_offset + (index as usize * self.node_size_bytes);
 
-        if node_offset + self.node_size_bytes > mmap.len() {
-            return Err(MemFuseError::Index("Node offset out of bounds".into()));
-        }
-
-        let node_data = &mmap[node_offset..node_offset + self.node_size_bytes];
+        let node_data = mmap
+            .get(node_offset..node_offset + self.node_size_bytes)
+            .ok_or_else(|| MemFuseError::Index("Node offset out of bounds".into()))?;
         let mut cursor = 0;
 
         let mut vector = Vec::with_capacity(self.config.dimension);
         for _ in 0..self.config.dimension {
             let val = f32::from_le_bytes(
-                node_data[cursor..cursor + 4]
+                node_data
+                    .get(cursor..cursor + 4)
+                    .ok_or_else(|| MemFuseError::Index("Malformed node vector (too short)".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Index("Malformed node vector".into()))?,
             );
@@ -280,7 +286,11 @@ impl DiskAnnIndex {
         }
 
         let num_neighbors = u32::from_le_bytes(
-            node_data[cursor..cursor + 4]
+            node_data
+                .get(cursor..cursor + 4)
+                .ok_or_else(|| {
+                    MemFuseError::Index("Malformed node neighbor count (too short)".into())
+                })?
                 .try_into()
                 .map_err(|_| MemFuseError::Index("Malformed node neighbor count".into()))?,
         ) as usize;
@@ -289,7 +299,11 @@ impl DiskAnnIndex {
         let mut neighbors = Vec::with_capacity(num_neighbors);
         for _ in 0..num_neighbors {
             let neighbor = u32::from_le_bytes(
-                node_data[cursor..cursor + 4]
+                node_data
+                    .get(cursor..cursor + 4)
+                    .ok_or_else(|| {
+                        MemFuseError::Index("Malformed node neighbor (too short)".into())
+                    })?
                     .try_into()
                     .map_err(|_| MemFuseError::Index("Malformed node neighbor".into()))?,
             );
@@ -301,7 +315,9 @@ impl DiskAnnIndex {
         cursor += padding_neighbors * 4;
 
         let doc_id_raw = u64::from_le_bytes(
-            node_data[cursor..cursor + 8]
+            node_data
+                .get(cursor..cursor + 8)
+                .ok_or_else(|| MemFuseError::Index("Malformed node doc id (too short)".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Index("Malformed node doc id".into()))?,
         );
