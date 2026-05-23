@@ -19,6 +19,8 @@
 // ZIEL: Sichere Ausführung von Agent-Tools ohne Host-Zugriff.
 // ANCHOR:INTEGRATION PRIO:2 STATUS:DONE AGENT:07 DATE:2026-05-20
 // DONE: Cross-Crate Integration Tests für WASM-Sandbox Isolation und Tool-Execution implementiert.
+// ANCHOR:FIXME PRIO:1 STATUS:READY AGENT:12
+// FIXME: SandboxConfig missing and WasmSandbox::execute missing, causing test failures.
 
 #![forbid(unsafe_code)]
 

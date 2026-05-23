@@ -2,6 +2,8 @@
 //!
 //! Enables deterministic freezing and restarting of agent workflows.
 //! Implements a SnapshotRegistry abstracting over Multi-Version Concurrency Control (MVCC).
+// ANCHOR:INTEGRATION:MISSING STATUS:READY AGENT:07
+// FIXME: Missing formal integration tests in crates/memfuse-checkpoint/tests/
 
 #![forbid(unsafe_code)]
 
