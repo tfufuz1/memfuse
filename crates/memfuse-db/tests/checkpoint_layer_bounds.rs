@@ -7,9 +7,7 @@ use tempfile::TempDir;
 // AGENT:12 DATE:2026-05-09 STATUS:DONE
 // ANCHOR:FIXME AGENT:12 PRIO:2 (TEST FAILURE)
 // ZIEL: memfuse-checkpoint -> memfuse-db (Fork + Diverge + Merge)
-// ANCHOR:FIXME AGENT:12 PRIO:2 (TEST FAILURE)
 //
-// ANCHOR:FIXME AGENT:12 PRIO:2 (TEST FAILURE)
 //
 // Dieser Test verifiziert die Zusammenarbeit zwischen dem CheckpointManager
 // und der MemFuse-DB Facade. Er simuliert einen "Fork", indem er eine neue

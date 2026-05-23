@@ -1,4 +1,3 @@
-//! // ANCHOR:INTEGRATION AGENT:12 DATE:2026-05-23 STATUS:FIXME
 //! Checkpointing & Time-Travel (WP-5.1)
 //!
 //! // ANCHOR:INTEGRATION AGENT:12 DATE:2026-05-23 STATUS:FIXME — Missing integration test folder

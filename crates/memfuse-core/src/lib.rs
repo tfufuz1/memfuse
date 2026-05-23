@@ -12,7 +12,6 @@
 //! - **Error**: [`MemFuseError`] — unified error enum, zero-panic via `?` propagation
 //! - **TxBuffer**: Sharded transaction staging with orphan reaper
 //! - **Snapshots**: MVCC read isolation via [`SnapshotRegistry`]
-// ANCHOR:INTEGRATION AGENT:12 DATE:2026-05-23 STATUS:FIXME
 
 // ANCHOR:INTEGRATION STATUS:DONE AGENT:01
 // ANCHOR:INTEGRATION AGENT:12 DATE:2026-05-23 STATUS:FIXME — Missing integration test folder
