@@ -14,6 +14,7 @@
 //! - **Snapshots**: MVCC read isolation via [`SnapshotRegistry`]
 
 // ANCHOR:INTEGRATION STATUS:DONE AGENT:01
+// ANCHOR:INTEGRATION AGENT:12 DATE:2026-05-23 STATUS:FIXME — Missing integration test folder
 // ANCHOR:ARCH:GATE-FV STATUS:OPEN
 // WATCHDOG: Blocking merges due to missing Kani/TLA+ proofs for REVIEW components (WAL/LSM).
 // ANCHOR:ARCH:CORE-001 — Triebwerk-Fundament: Alle anderen Crates hängen von memfuse-core ab.

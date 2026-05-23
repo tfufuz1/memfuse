@@ -143,6 +143,7 @@ mod tests {
 
     #[test]
     fn test_mvcc_get_at_seq() {
+        // ANCHOR:FIXME AGENT:02 PRIO:1 (UNWRAP)
         let mt = MemTable::new();
         mt.put(Bytes::from("key1"), Bytes::from("v1"), 10);
         mt.put(Bytes::from("key1"), Bytes::from("v2"), 20);

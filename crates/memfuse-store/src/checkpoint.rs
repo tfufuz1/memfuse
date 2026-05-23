@@ -56,6 +56,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rollback_to_checkpoint() {
+        // ANCHOR:FIXME AGENT:02 PRIO:1 (UNWRAP)
         let tmp = TempDir::new().expect("temp dir");
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
