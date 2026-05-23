@@ -168,8 +168,10 @@ impl DiskAnnIndex {
 
         file.sync_all().map_err(MemFuseError::Io)?;
 
-        // SAFETY: Mapping a file that we just wrote and synced is safe as long as the file is not truncated while mapped.
-        self.mmap = Some(unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? });
+        // ANCHOR:SAFETY:MMAP-DANN-001
+        // BEGRÜNDUNG: Mapping a file that we just wrote and synced is safe as long as the file is not truncated while mapped.
+        // The SSTable/Index file is immutable once created.
+        self.mmap = Some(unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? }); // unsafe
         self.entry_point = 0;
 
         Ok(())
@@ -198,10 +200,12 @@ impl DiskAnnIndex {
         visited.insert(ep);
 
         while let Some(Reverse(current)) = candidates.pop() {
-            if results.len() >= self.config.beam_width
-                && current.distance > results.peek().unwrap().distance
-            {
-                break;
+            if results.len() >= self.config.beam_width {
+                if let Some(worst) = results.peek() {
+                    if current.distance > worst.distance {
+                        break;
+                    }
+                }
             }
 
             let node = self.load_node(current.index)?;
@@ -227,19 +231,17 @@ impl DiskAnnIndex {
             }
         }
 
-        let mut final_results: Vec<ScoredDocument> = results
-            .into_iter()
-            .take(k)
-            .map(|c| {
-                let node = self
-                    .load_node(c.index)
-                    .expect("Node should be in cache or index");
-                ScoredDocument {
-                    doc_id: node.doc_id,
-                    score: 1.0 / (1.0 + c.distance),
-                }
-            })
-            .collect();
+        let mut final_results = Vec::with_capacity(k);
+        let mut results_vec: Vec<_> = results.into_iter().collect();
+        results_vec.sort_by(|a, b| a.distance.total_cmp(&b.distance));
+
+        for c in results_vec.into_iter().take(k) {
+            let node = self.load_node(c.index)?;
+            final_results.push(ScoredDocument {
+                doc_id: node.doc_id,
+                score: 1.0 / (1.0 + c.distance),
+            });
+        }
 
         final_results.sort_by(|a, b| b.score.total_cmp(&a.score));
         Ok(final_results)
@@ -265,33 +267,47 @@ impl DiskAnnIndex {
             return Err(MemFuseError::Index("Node offset out of bounds".into()));
         }
 
-        let node_data = &mmap[node_offset..node_offset + self.node_size_bytes];
+        let node_data = mmap
+            .get(node_offset..node_offset + self.node_size_bytes)
+            .ok_or_else(|| MemFuseError::Index("Node data out of bounds".into()))?;
         let mut cursor = 0;
 
         let mut vector = Vec::with_capacity(self.config.dimension);
         for _ in 0..self.config.dimension {
             let val = f32::from_le_bytes(
-                node_data[cursor..cursor + 4]
+                node_data
+                    .get(cursor..cursor + 4)
+                    .ok_or_else(|| MemFuseError::Index("Malformed node vector: unexpected EOF".into()))?
                     .try_into()
-                    .map_err(|_| MemFuseError::Index("Malformed node vector".into()))?,
+                    .map_err(|_| MemFuseError::Index("Malformed node vector: try_into failed".into()))?,
             );
             vector.push(val);
             cursor += 4;
         }
 
         let num_neighbors = u32::from_le_bytes(
-            node_data[cursor..cursor + 4]
+            node_data
+                .get(cursor..cursor + 4)
+                .ok_or_else(|| {
+                    MemFuseError::Index("Malformed node neighbor count: unexpected EOF".into())
+                })?
                 .try_into()
-                .map_err(|_| MemFuseError::Index("Malformed node neighbor count".into()))?,
+                .map_err(|_| {
+                    MemFuseError::Index("Malformed node neighbor count: try_into failed".into())
+                })?,
         ) as usize;
         cursor += 4;
 
         let mut neighbors = Vec::with_capacity(num_neighbors);
         for _ in 0..num_neighbors {
             let neighbor = u32::from_le_bytes(
-                node_data[cursor..cursor + 4]
+                node_data
+                    .get(cursor..cursor + 4)
+                    .ok_or_else(|| MemFuseError::Index("Malformed node neighbor: unexpected EOF".into()))?
                     .try_into()
-                    .map_err(|_| MemFuseError::Index("Malformed node neighbor".into()))?,
+                    .map_err(|_| {
+                        MemFuseError::Index("Malformed node neighbor: try_into failed".into())
+                    })?,
             );
             neighbors.push(neighbor);
             cursor += 4;
@@ -301,9 +317,11 @@ impl DiskAnnIndex {
         cursor += padding_neighbors * 4;
 
         let doc_id_raw = u64::from_le_bytes(
-            node_data[cursor..cursor + 8]
+            node_data
+                .get(cursor..cursor + 8)
+                .ok_or_else(|| MemFuseError::Index("Malformed node doc id: unexpected EOF".into()))?
                 .try_into()
-                .map_err(|_| MemFuseError::Index("Malformed node doc id".into()))?,
+                .map_err(|_| MemFuseError::Index("Malformed node doc id: try_into failed".into()))?,
         );
         let doc_id = DocId::from(doc_id_raw);
 
