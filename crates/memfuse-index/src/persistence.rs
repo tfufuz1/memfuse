@@ -144,14 +144,19 @@ impl MmapIndex {
 
         let mut current_pos = offset + 1;
         for _ in 0..layer {
-            let len =
-                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().expect("test"))
-                    as usize;
+            let len = u32::from_le_bytes(
+                self.mmap[current_pos..current_pos + 4]
+                    .try_into()
+                    .expect("test"),
+            ) as usize;
             current_pos += 4 + len * 4;
         }
 
-        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().expect("test"))
-            as usize;
+        let len = u32::from_le_bytes(
+            self.mmap[current_pos..current_pos + 4]
+                .try_into()
+                .expect("test"),
+        ) as usize;
         let start = current_pos + 4;
         let end = start + len * 4;
 

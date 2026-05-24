@@ -253,7 +253,11 @@ mod tests {
         assert!(storage.pinned.lock().contains(&100));
 
         // Verify it exists in manager
-        let retrieved = manager.get_checkpoint("test_cp").await.expect("test").expect("test");
+        let retrieved = manager
+            .get_checkpoint("test_cp")
+            .await
+            .expect("test")
+            .expect("test");
         assert_eq!(retrieved, meta);
     }
 
@@ -268,7 +272,11 @@ mod tests {
             .await
             .expect("test");
 
-        let retrieved = manager.get_checkpoint("cp1").await.expect("test").expect("test");
+        let retrieved = manager
+            .get_checkpoint("cp1")
+            .await
+            .expect("test")
+            .expect("test");
         assert_eq!(retrieved.metadata, metadata);
     }
 
