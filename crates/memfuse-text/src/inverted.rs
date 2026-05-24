@@ -29,17 +29,27 @@ pub struct InvertedIndex {
 impl InvertedIndex {
     /// Creates a new InvertedIndex tied to a specific collection namespace.
     pub fn new(storage: Arc<dyn StorageEngine>, namespace: &str) -> Self {
-        let prefix = if namespace == "default" {
-            b"__txt:default:".to_vec()
-        } else {
-            format!("__txt:{}:", namespace).into_bytes()
-        };
+        let prefix = format!("__txt:{}:", namespace).into_bytes();
 
         let tokenizer: Arc<dyn Tokenizer> = if namespace.contains("de") {
             Arc::new(GermanMorphTokenizer::new())
         } else {
             Arc::new(DefaultTokenizer)
         };
+
+        Self {
+            storage,
+            prefix,
+            tokenizer,
+        }
+    }
+
+    pub fn with_tokenizer(
+        storage: Arc<dyn StorageEngine>,
+        namespace: &str,
+        tokenizer: Arc<dyn Tokenizer>,
+    ) -> Self {
+        let prefix = format!("__txt:{}:", namespace).into_bytes();
 
         Self {
             storage,
@@ -467,8 +477,9 @@ impl BM25MorphIndex {
         namespace: &str,
         tokenizer: Arc<dyn MorphologicalTokenizer>,
     ) -> Self {
+        let morph_tokenizer = Arc::new(GermanMorphTokenizer::with_splitter(tokenizer.clone()));
         Self {
-            inner: InvertedIndex::new(storage, namespace),
+            inner: InvertedIndex::with_tokenizer(storage, namespace, morph_tokenizer),
             tokenizer,
         }
     }

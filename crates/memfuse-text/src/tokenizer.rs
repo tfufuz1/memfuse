@@ -40,16 +40,22 @@ impl Tokenizer for DefaultTokenizer {
     }
 }
 
+use std::sync::Arc;
+
 /// German tokenizer with morphological compound splitting.
 pub struct GermanMorphTokenizer {
-    splitter: crate::morphology::GermanCompoundSplitter,
+    splitter: Arc<dyn crate::morphology::MorphologicalTokenizer>,
 }
 
 impl GermanMorphTokenizer {
     pub fn new() -> Self {
         Self {
-            splitter: crate::morphology::GermanCompoundSplitter::new(),
+            splitter: Arc::new(crate::morphology::GermanCompoundSplitter::new()),
         }
+    }
+
+    pub fn with_splitter(splitter: Arc<dyn crate::morphology::MorphologicalTokenizer>) -> Self {
+        Self { splitter }
     }
 }
 
@@ -61,7 +67,6 @@ impl Default for GermanMorphTokenizer {
 
 impl Tokenizer for GermanMorphTokenizer {
     fn tokenize(&self, text: &str) -> Vec<String> {
-        use crate::morphology::MorphologicalTokenizer;
         let stopwords = get_stopwords();
         let mut tokens = Vec::new();
 
