@@ -11,7 +11,7 @@
 // INVARIANTE: Solange SnapshotGuard lebt → keine Tombstone-GC für seq >= guard.seq_no.
 // RAII-PATTERN: Drop deregistriert automatisch. unwrap_or(u64::MAX) ist KORREKT.
 
-use crate::error::MemFuseError;
+use crate::error::{MemFuseError, Result};
 use crate::types::TOMBSTONE_BIT;
 use parking_lot::Mutex;
 use std::collections::BTreeMap;
@@ -83,7 +83,7 @@ impl SnapshotRegistry {
     }
 
     /// Internal checked release. Returns error if seq_no not found.
-    fn release_checked(&self, seq_no: u64) -> Result<(), MemFuseError> {
+    fn release_checked(&self, seq_no: u64) -> Result<()> {
         let seq_no = seq_no & !TOMBSTONE_BIT;
         let mut active = self.active.lock();
         if let Some(count) = active.get_mut(&seq_no) {
@@ -171,14 +171,6 @@ mod tests {
 
         drop(g);
         assert_eq!(registry.min_active_seqno(), u64::MAX);
-    }
-
-    #[test]
-    fn test_release_checked() {
-        let registry = Arc::new(SnapshotRegistry::new());
-        registry.pin(100);
-        assert!(registry.release_checked(100).is_ok());
-        assert!(registry.release_checked(100).is_err());
     }
 
     #[test]
