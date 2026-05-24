@@ -1,5 +1,5 @@
 // ANCHOR:INTEGRATION:STRESS-001 STATUS:READY AGENT:12
-use memfuse_db::{MemFuse, MemFuseConfig, DistanceMetric};
+use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -13,7 +13,11 @@ async fn test_global_concurrency_stress() {
         distance_metric: DistanceMetric::Cosine,
         ..Default::default()
     };
-    let db = Arc::new(MemFuse::open_with_config(tmp.path(), config).await.expect("open db"));
+    let db = Arc::new(
+        MemFuse::open_with_config(tmp.path(), config)
+            .await
+            .expect("open db"),
+    );
 
     let n_tasks = 10;
     let ops_per_task = 50;
@@ -30,7 +34,9 @@ async fn test_global_concurrency_stress() {
                 let vec = vec![t as f32, i as f32, 0.0, 0.0];
 
                 // Insert -> Search -> Delete
-                col.insert(&id, &vec, Some(json!({"t": t, "i": i}))).await.expect("insert");
+                col.insert(&id, &vec, Some(json!({"t": t, "i": i})))
+                    .await
+                    .expect("insert");
                 let res = col.search(&vec, 1).await.expect("search");
                 assert_eq!(res[0].id, id);
                 col.delete(&id).await.expect("delete");

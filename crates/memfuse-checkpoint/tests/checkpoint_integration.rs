@@ -19,7 +19,12 @@ async fn test_checkpoint_with_lsm_storage() {
     let manager = CheckpointManager::new(storage.clone());
 
     let meta = manager
-        .create_checkpoint("real_lsm_cp", "col1", 123, serde_json::json!({"test": true}))
+        .create_checkpoint(
+            "real_lsm_cp",
+            "col1",
+            123,
+            serde_json::json!({"test": true}),
+        )
         .await
         .expect("failed to create checkpoint");
 
@@ -33,7 +38,13 @@ async fn test_checkpoint_with_lsm_storage() {
         .expect("checkpoint not found");
     assert_eq!(retrieved, meta);
 
-    manager.drop_checkpoint("real_lsm_cp").await.expect("failed to drop checkpoint");
-    let none = manager.get_checkpoint("real_lsm_cp").await.expect("failed to get after drop");
+    manager
+        .drop_checkpoint("real_lsm_cp")
+        .await
+        .expect("failed to drop checkpoint");
+    let none = manager
+        .get_checkpoint("real_lsm_cp")
+        .await
+        .expect("failed to get after drop");
     assert!(none.is_none());
 }

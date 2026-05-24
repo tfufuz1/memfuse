@@ -15,16 +15,49 @@ async fn test_graph_complex_traversal() {
 
     let nodes = ["A", "B", "C", "D"];
     for (i, name) in nodes.iter().enumerate() {
-        graph.add_entity(tx, Entity::new(EntityId::new(i as u64), name.to_string(), "Node")).await.unwrap();
+        graph
+            .add_entity(
+                tx,
+                Entity::new(EntityId::new(i as u64), name.to_string(), "Node"),
+            )
+            .await
+            .unwrap();
     }
 
-    graph.add_edge(tx, Edge::new(EntityId::new(0), EntityId::new(1), "link").with_weight(1.0)).await.unwrap();
-    graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "link").with_weight(1.0)).await.unwrap();
-    graph.add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(3), "link").with_weight(1.0)).await.unwrap();
-    graph.add_edge(tx, Edge::new(EntityId::new(0), EntityId::new(3), "link").with_weight(0.1)).await.unwrap();
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(0), EntityId::new(1), "link").with_weight(1.0),
+        )
+        .await
+        .unwrap();
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(1), EntityId::new(2), "link").with_weight(1.0),
+        )
+        .await
+        .unwrap();
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(2), EntityId::new(3), "link").with_weight(1.0),
+        )
+        .await
+        .unwrap();
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(0), EntityId::new(3), "link").with_weight(0.1),
+        )
+        .await
+        .unwrap();
 
     // Traverse from A
-    let results = graph.traverse(EntityId::new(0), 3).await.expect("traverse failed");
+    let results = graph
+        .traverse(EntityId::new(0), 3)
+        .await
+        .expect("traverse failed");
 
     // Expected scores:
     // B (1 hop): 1.0 * 0.7 * 1.0 = 0.7

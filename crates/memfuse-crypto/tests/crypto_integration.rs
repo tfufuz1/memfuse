@@ -28,12 +28,17 @@ fn test_crypto_wal_integrity_verification_logic() {
 
     // In a real integration, we'd use the WAL writer to produce entries.
     // Here we just verify the verifier is accessible and constructible.
-    assert!(verifier.verify_and_update(&WalEntrySnapshot {
-        seq_no: 1,
-        op_type: 0,
-        key: b"k1".to_vec(),
-        value: b"v1".to_vec(),
-        checksum: [0u8; 32],
-        prev_hmac: [0u8; 32],
-    }).is_err(), "Should fail with zeroed checksum");
+    assert!(
+        verifier
+            .verify_and_update(&WalEntrySnapshot {
+                seq_no: 1,
+                op_type: 0,
+                key: b"k1".to_vec(),
+                value: b"v1".to_vec(),
+                checksum: [0u8; 32],
+                prev_hmac: [0u8; 32],
+            })
+            .is_err(),
+        "Should fail with zeroed checksum"
+    );
 }

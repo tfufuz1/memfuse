@@ -8,7 +8,13 @@ fn test_core_tx_buffer_lifecycle() {
     let tx = TxId::new(42);
 
     buffer.begin(tx);
-    buffer.stage(tx, IndexOp::Insert { doc_id: DocId::new(1), data: vec![1, 2, 3] });
+    buffer.stage(
+        tx,
+        IndexOp::Insert {
+            doc_id: DocId::new(1),
+            data: vec![1, 2, 3],
+        },
+    );
 
     assert!(buffer.has_tx(tx));
     let ops = buffer.drain(tx);
