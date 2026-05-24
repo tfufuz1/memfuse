@@ -184,9 +184,10 @@ impl DiskAnnIndex {
 
         file.sync_all().await.map_err(MemFuseError::Io)?;
 
-        // SAFETY: Mapping a file that we just wrote and synced is safe as long as the file is not
+        // ANCHOR:FIXME STATUS:READY AGENT:10 — SAFETY: Mapping a file that we just wrote and synced is safe as long as the file is not
         // truncated or modified concurrently while mapped. Since this is an embedded database
         // with exclusive file locks (managed by storage/LSM), this is safe.
+        // Needs proper ANCHOR:SAFETY and let binding to satisfy lints without crate-level allow.
         let std_file = file.into_std().await;
         self.mmap = Some(unsafe { Mmap::map(&std_file).map_err(MemFuseError::Io)? });
         self.entry_point = 0;

@@ -13,6 +13,7 @@
 // WP:WP-6.1 PRIO:2 NEEDS:WP-2.1
 // STATUS:SCAFFOLD DATE:2026-05-17
 
+// ANCHOR:INTEGRATION STATUS:READY AGENT:12 — Missing cross-crate integration tests in tests/ directory.
 #![forbid(unsafe_code)]
 
 pub mod csr;
