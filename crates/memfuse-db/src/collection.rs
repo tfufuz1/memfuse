@@ -108,7 +108,9 @@ impl Collection {
                     k
                 }
                 3 => {
-                    let mut k = b"__tx_intent:".to_vec();
+                    let prefix = b"__tx_intent:";
+                    let mut k = Vec::with_capacity(prefix.len() + key.len());
+                    k.extend_from_slice(prefix);
                     k.extend_from_slice(key);
                     k
                 }
