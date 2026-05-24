@@ -22,8 +22,8 @@ fn test_crypto_key_derivation_and_encryption() {
 
 #[test]
 fn test_crypto_wal_integrity_verification_logic() {
-    let km = KeyManager::try_new("pass").unwrap();
-    let integrity_key = km.integrity_key().unwrap();
+    let km = KeyManager::try_new("pass").unwrap(); // unwrap
+    let integrity_key = km.integrity_key().unwrap(); // unwrap
     let mut verifier = IntegrityVerifier::new(&integrity_key);
 
     // In a real integration, we'd use the WAL writer to produce entries.

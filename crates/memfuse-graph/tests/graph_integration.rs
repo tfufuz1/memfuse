@@ -21,7 +21,7 @@ async fn test_graph_complex_traversal() {
                 Entity::new(EntityId::new(i as u64), name.to_string(), "Node"),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap
     }
 
     graph
@@ -30,28 +30,28 @@ async fn test_graph_complex_traversal() {
             Edge::new(EntityId::new(0), EntityId::new(1), "link").with_weight(1.0),
         )
         .await
-        .unwrap();
+        .unwrap(); // unwrap
     graph
         .add_edge(
             tx,
             Edge::new(EntityId::new(1), EntityId::new(2), "link").with_weight(1.0),
         )
         .await
-        .unwrap();
+        .unwrap(); // unwrap
     graph
         .add_edge(
             tx,
             Edge::new(EntityId::new(2), EntityId::new(3), "link").with_weight(1.0),
         )
         .await
-        .unwrap();
+        .unwrap(); // unwrap
     graph
         .add_edge(
             tx,
             Edge::new(EntityId::new(0), EntityId::new(3), "link").with_weight(0.1),
         )
         .await
-        .unwrap();
+        .unwrap(); // unwrap
 
     // Traverse from A
     let results = graph

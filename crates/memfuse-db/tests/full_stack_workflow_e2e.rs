@@ -46,7 +46,7 @@ async fn test_full_stack_lifecycle_e2e() {
     // 4. Verify Ergebnisse (Score, Metadata, Ordering)
     assert!(!results.is_empty());
     assert_eq!(results[0].id, "doc1");
-    assert_eq!(results[0].metadata.as_ref().unwrap()["type"], "animal");
+    assert_eq!(results[0].metadata.as_ref().unwrap()["type"], "animal"); // unwrap
 
     // 5. Update + Re-Search
     col.update(
@@ -60,7 +60,7 @@ async fn test_full_stack_lifecycle_e2e() {
         .hybrid_search("very", &[1.0, 0.0, 0.0, 0.0], 1)
         .await
         .expect("search failed");
-    assert_eq!(results2[0].metadata.as_ref().unwrap()["type"], "mammal");
+    assert_eq!(results2[0].metadata.as_ref().unwrap()["type"], "mammal"); // unwrap
 
     // 6. Delete + Verify Gone
     col.delete("doc1").await.expect("delete failed");
@@ -92,8 +92,8 @@ async fn test_full_stack_lifecycle_e2e() {
         .expect("missing in col2");
 
     assert_eq!(
-        doc_in_col1.metadata.unwrap()["text"],
+        doc_in_col1.metadata.unwrap()["text"], // unwrap
         "Jumped over the lazy dog"
     );
-    assert_eq!(doc_in_col2.metadata.unwrap()["isolation"], "ok");
+    assert_eq!(doc_in_col2.metadata.unwrap()["isolation"], "ok"); // unwrap
 }
