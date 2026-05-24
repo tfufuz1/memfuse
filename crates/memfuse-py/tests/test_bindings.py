@@ -206,7 +206,7 @@ def test_distance_metrics(db_path):
         memfuse.open(db_path + "_invalid", dimension=4, distance_metric="invalid")
 
 def test_version_and_repr(db_path):
-    assert memfuse.__version__ == "0.1.0"
+    assert memfuse.__version__ == "0.2.0"
 
     db = memfuse.open(db_path, dimension=4, max_elements=5000)
     col = db.collection("repr_test")
@@ -227,3 +227,31 @@ def test_version_and_repr(db_path):
 
     db_stats = db.stats()
     assert "DbStats(vectors=0" in repr(db_stats) # default col is empty
+
+def test_search_with_filter(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("filtered")
+    v1 = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    v2 = np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float32)
+
+    col.insert("d1", v1, metadata={"category": "A", "val": 10})
+    col.insert("d2", v2, metadata={"category": "B", "val": 20})
+
+    # Filter for category A
+    results = col.search_with_filter(v1, k=2, filter={
+        "Condition": {"field": "category", "op": "Eq", "value": "A"}
+    })
+    assert len(results) == 1
+    assert results[0].id == "d1"
+
+    # Filter for val > 15
+    results = col.search_with_filter(v1, k=2, filter={
+        "Condition": {"field": "val", "op": "Gt", "value": 15}
+    })
+    assert len(results) == 1
+    assert results[0].id == "d2"
+
+def test_network_enabled_config(db_path):
+    # Just verify it accepts the flag
+    db = memfuse.open(db_path + "_airgap", dimension=4, network_enabled=False)
+    assert db is not None

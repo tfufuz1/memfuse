@@ -69,6 +69,12 @@ fn opt_dict_to_json(
     }
 }
 
+/// Converts a Python dict to a MetadataFilter.
+fn dict_to_filter(d: &pyo3::Bound<'_, pyo3::types::PyDict>) -> PyResult<memfuse_db::MetadataFilter> {
+    depythonize(d)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Filter error: {}", e)))
+}
+
 /// Converts a serde_json::Value to a Python object.
 fn json_to_py(py: Python<'_>, val: &serde_json::Value) -> PyResult<PyObject> {
     pythonize(py, val)
@@ -311,6 +317,29 @@ macro_rules! memfuse_crud_methods {
                 })?;
                 let results = py
                     .allow_threads(|| rt.block_on(self.inner.search(v, k)))
+                    .map_err(memfuse_err)?;
+                results_to_py(py, results)
+            }
+
+            /// Performs semantic search with an advanced metadata filter.
+            #[pyo3(signature = (vector, k, filter=None))]
+            pub fn search_with_filter<'py>(
+                &self,
+                py: Python<'py>,
+                vector: PyReadonlyArray1<'py, f32>,
+                k: usize,
+                filter: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+            ) -> PyResult<Vec<PySearchResult>> {
+                let rt = get_runtime()?;
+                let v = vector.as_slice().map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
+                })?;
+                let f = match filter {
+                    Some(d) => Some(dict_to_filter(&d)?),
+                    None => None,
+                };
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.search_with_filter(v, k, f)))
                     .map_err(memfuse_err)?;
                 results_to_py(py, results)
             }
@@ -636,7 +665,7 @@ memfuse_batch_methods!(PyCollection);
 ///     db.insert("doc1", vector, {"key": "value"})
 /// ```
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536, max_elements=None, encryption_passphrase=None, distance_metric=None))]
+#[pyo3(signature = (path, dimension=1536, max_elements=None, encryption_passphrase=None, distance_metric=None, network_enabled=true))]
 fn open(
     py: Python<'_>,
     path: &str,
@@ -644,11 +673,13 @@ fn open(
     max_elements: Option<usize>,
     encryption_passphrase: Option<String>,
     distance_metric: Option<String>,
+    network_enabled: bool,
 ) -> PyResult<PyMemFuse> {
     let rt = get_runtime()?;
     let mut config = MemFuseConfig {
         dimension,
         encryption_passphrase,
+        network_enabled,
         ..Default::default()
     };
 

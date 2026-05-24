@@ -104,6 +104,8 @@ pub struct MemFuseConfig {
     pub distance_metric: memfuse_core::DistanceMetric,
     /// Optional passphrase for encryption at rest.
     pub encryption_passphrase: Option<String>,
+    /// Whether network operations are enabled (WP-6.6 Air-Gap).
+    pub network_enabled: bool,
 }
 
 impl Default for MemFuseConfig {
@@ -113,6 +115,7 @@ impl Default for MemFuseConfig {
             max_elements: 1_000_000,
             distance_metric: memfuse_core::DistanceMetric::Cosine,
             encryption_passphrase: None,
+            network_enabled: true,
         }
     }
 }
