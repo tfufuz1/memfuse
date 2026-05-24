@@ -104,9 +104,9 @@ impl CompactionEngine {
             indices
                 .iter()
                 .map(|&i| {
-                    ssts.get(i)
-                        .map(Arc::clone)
-                        .ok_or_else(|| MemFuseError::Storage(format!("SSTable at index {} missing", i)))
+                    ssts.get(i).map(Arc::clone).ok_or_else(|| {
+                        MemFuseError::Storage(format!("SSTable at index {} missing", i))
+                    })
                 })
                 .collect::<Result<Vec<_>>>()?
         };
@@ -140,9 +140,9 @@ impl CompactionEngine {
             // Remove old SSTables (reverse order to preserve indices)
             let mut sorted_indices = indices.clone();
             sorted_indices.sort_unstable_by(|a, b| b.cmp(a));
-            let insertion_point = *sorted_indices.last().ok_or_else(|| {
-                MemFuseError::Storage("No SSTables to compact".to_string())
-            })?; // Position of the oldest input
+            let insertion_point = *sorted_indices
+                .last()
+                .ok_or_else(|| MemFuseError::Storage("No SSTables to compact".to_string()))?; // Position of the oldest input
 
             for idx in sorted_indices {
                 ssts.remove(idx);
