@@ -46,7 +46,6 @@ async fn test_layer_001_fork_diverge_merge() {
             .expect("insert 2");
 
         // Explizites Drop/Close damit Filesystem-Locks frei werden
-        db.close().await.expect("close db");
     }
 
     // 2. Checkpoint erstellen (Simuliert durch CheckpointManager auf ruhenden Daten)
@@ -127,6 +126,7 @@ async fn test_layer_001_fork_diverge_merge() {
             .expect("get merged")
             .unwrap();
         assert_eq!(merged_doc.metadata.unwrap()["origin"], "fork");
+        db.close().await.expect("close db");
     }
 
     // 6. Cleanup Checkpoint
