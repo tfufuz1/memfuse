@@ -38,6 +38,7 @@
 use crate::distance::compute_distance;
 use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
+use std::io::Write;
 use memfuse_core::{
     DistanceMetric, DocId, IndexOp, MemFuseError, Result, ScoredDocument, TxBuffer, TxId,
     VectorIndex, VectorIndexStats,
@@ -47,7 +48,6 @@ use rand::Rng;
 use roaring::RoaringTreemap;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::Mutex;
 
@@ -405,7 +405,6 @@ impl HnswIndexCore {
             }
         }
     }
-
     fn compute_distance_with_mmap(
         &self,
         query_exact: &[f32],
@@ -677,14 +676,10 @@ impl HnswIndexCore {
         let new_idx = {
             let mut nodes = self.nodes.write();
             let idx = nodes.len();
-            let mut connections = Vec::with_capacity(new_layer + 1);
-            for _ in 0..=new_layer {
-                connections.push(Vec::with_capacity(self.config.m));
-            }
             nodes.push(HnswNode {
                 doc_id: id,
                 vector: vector_data,
-                connections,
+                connections: vec![vec![]; new_layer + 1],
                 _max_layer: new_layer,
             });
             idx
@@ -721,11 +716,7 @@ impl HnswIndexCore {
         // CREATED:2026-05-08 DEADLINE:NONE
         // INVARIANTE: ∀ Knoten v die während Search traversiert werden: v.neighbors ist vollständig
         // FIX: Insert generiert alle Kanten offline und committed in einem write-lock.
-        let mut final_connections = Vec::with_capacity(new_layer + 1);
-        // Fill with dummy vectors to allow indexed assignment
-        for _ in 0..=new_layer {
-            final_connections.push(Vec::new());
-        }
+        let mut final_connections = vec![vec![]; new_layer + 1];
 
         for layer in (0..=new_layer.min(current_max_layer)).rev() {
             let neighbors = self.search_layer(
@@ -1301,8 +1292,7 @@ impl VectorIndex for HnswIndex {
         let deleted = self.deleted_count.load(Ordering::SeqCst) as usize;
         total.saturating_sub(deleted)
     }
-
-    async fn stats(&self) -> Result<VectorIndexStats> {
+   async fn stats(&self) -> Result<VectorIndexStats> {
         let nodes = self.nodes.read();
         let deleted_count = self.deleted_count.load(Ordering::SeqCst) as usize;
         let num_vectors = nodes.len().saturating_sub(deleted_count);
