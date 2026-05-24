@@ -4,10 +4,10 @@
 // AGENT:09 DATE:2026-05-19 STATUS:DONE
 // CREATED:2026-05-19 DEADLINE:NONE
 // TARGET: < 20µs für upsert_document
-// AKTUELL: ~18.6 µs (nach Optimierung)
-// VORHER: 24.6 µs → NACHHER: 18.6 µs (~24% gain)
 // ANCHOR:PERF:SEARCH-001 — AHashMap & Vec::with_capacity
 // VORHER: ~32.4µs → NACHHER: ~26.3µs (~19% gain for search_bm25 with 100 docs)
+// AKTUELL: ~18.6 µs (nach Optimierung)
+// VORHER: 24.6 µs → NACHHER: 18.6 µs (~24% gain)
 // BOTTLENECK: Heap-Allokationen (format!, Vec::new)
 // OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
 
@@ -524,7 +524,7 @@ mod tests {
     impl MockStorage {
         fn new() -> Self {
             Self {
-                store: RwLock::new(HashMap::new()),
+                store: RwLock::new(AHashMap::new()),
             }
         }
     }
