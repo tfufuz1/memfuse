@@ -114,7 +114,7 @@ mod tests {
     #[test]
     fn test_wal_hmac_basic() {
         let key = b"test-key-32-bytes-long-----------";
-        let mut hmac = WalHmac::new(key).unwrap();
+        let mut hmac = WalHmac::new(key).unwrap(); // unwrap allowed
         hmac.update(b"data");
         let result = hmac.finalize();
         assert_ne!(result, [0u8; 32]);
