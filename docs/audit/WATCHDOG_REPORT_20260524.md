@@ -15,7 +15,10 @@
 - **Audit:** Recent changes (Commit 831e97d) to `memfuse-store` (WAL) and `memfuse-crypto` (Encryption) have been reviewed, but lack formal Kani/TLA+ proofs in the workspace.
 - **Actions:** Gate remains `OPEN`. Added watchdog comment to `crates/memfuse-core/src/lib.rs` to clarify the blocking reason.
 
-## Workspace Health
+## Workspace Health & CI Status
 - `memfuse-core` unit tests: 20 passed.
 - `memfuse-core` clippy: Clean.
-- Note: Full workspace build is currently failing due to unrelated issues in `memfuse-index` (missing `Write` trait imports and method mismatches).
+- **CI Alert:** `verify-dag` is failing due to unauthorized dependency: `memfuse-store` -> `memfuse-crypto`.
+- **CI Alert:** `Zero-unwrap Guard` is failing due to multiple `.unwrap()` calls in production code (`wal_crypto.rs`, `persistence.rs`, etc.).
+- **CI Alert:** `Quality Gate` is failing due to pre-existing compilation errors in `memfuse-index/src/hnsw.rs`.
+- **Watchdog Note:** Per doctrine, AGENT:00 does not implement fixes for these issues. Owners of Layer 1 and Layer 2 components must resolve these violations.

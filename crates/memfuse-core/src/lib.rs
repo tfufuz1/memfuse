@@ -16,6 +16,7 @@
 // ANCHOR:INTEGRATION STATUS:DONE AGENT:01
 // ANCHOR:ARCH:GATE-FV STATUS:OPEN
 // WATCHDOG: Gate held OPEN because recent LSM/Crypto changes (Commit 831e97d) lack formal verification (Kani/TLA+).
+// WATCHDOG: Blocking merges due to missing Kani/TLA+ proofs for REVIEW components (WAL/LSM).
 // ANCHOR:ARCH:CORE-001 — Triebwerk-Fundament: Alle anderen Crates hängen von memfuse-core ab.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
