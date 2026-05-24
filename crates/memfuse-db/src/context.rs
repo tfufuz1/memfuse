@@ -159,7 +159,7 @@ mod tests {
             },
         ];
 
-        let window = mgr.prepare_context(chunks).expect("valid test value");
+        let window = mgr.prepare_context(chunks).expect("valid test value"); // unwrap allowed
         // Budget: 100 - 20 = 80 available. Should fit 50 (chunk1) but not 50+50=100.
         // Actually 50+50=100 > 80, so only first chunk should fit... but let's check:
         // chunk1: 50 <= 80 -> included, total=50

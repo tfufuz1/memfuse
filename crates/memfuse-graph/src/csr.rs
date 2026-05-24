@@ -162,7 +162,7 @@ mod tests {
                     Entity::new(EntityId::new(id), format!("P{}", id), "Person"),
                 )
                 .await
-                .expect("valid setup");
+                .expect("valid setup"); // unwrap allowed
         }
 
         // Define Edges (Weights)
@@ -173,35 +173,35 @@ mod tests {
                 Edge::new(EntityId::new(1), EntityId::new(2), "knows").with_weight(1.0),
             )
             .await
-            .expect("valid edge");
+            .expect("valid edge"); // unwrap allowed
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(2), EntityId::new(3), "knows").with_weight(0.8),
             )
             .await
-            .expect("valid edge");
+            .expect("valid edge"); // unwrap allowed
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(3), EntityId::new(4), "knows").with_weight(0.6),
             )
             .await
-            .expect("valid edge");
+            .expect("valid edge"); // unwrap allowed
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(4), EntityId::new(5), "knows").with_weight(0.5),
             )
             .await
-            .expect("valid edge");
+            .expect("valid edge"); // unwrap allowed
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(2), EntityId::new(5), "knows").with_weight(0.4),
             )
             .await
-            .expect("valid edge");
+            .expect("valid edge"); // unwrap allowed
 
         graph
     }
@@ -214,20 +214,20 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(EntityId::new(1), "Alice", "Person"))
             .await
-            .expect("valid test value");
+            .expect("valid test value"); // unwrap allowed
         graph
             .add_entity(tx, Entity::new(EntityId::new(2), "Bob", "Person"))
             .await
-            .expect("valid test value");
+            .expect("valid test value"); // unwrap allowed
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "knows"))
             .await
-            .expect("valid test value");
+            .expect("valid test value"); // unwrap allowed
 
         let results = graph
             .traverse(EntityId::new(1), 2)
             .await
-            .expect("valid test value");
+            .expect("valid test value"); // unwrap allowed
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, EntityId::new(2));
     }
@@ -237,7 +237,7 @@ mod tests {
         let graph = setup_test_graph().await;
 
         // Traverse from 1 with max 3 hops (effectively visits 2, 3, 4, 5)
-        let results = graph.traverse(EntityId::new(1), 3).await.expect("traverse");
+        let results = graph.traverse(EntityId::new(1), 3).await.expect("traverse"); // unwrap allowed
 
         // Results should contain 2, 3, 4, 5
         assert_eq!(
@@ -257,10 +257,10 @@ mod tests {
         // Convert to map for easy lookup
         let score_map: std::collections::HashMap<_, _> = results.into_iter().collect();
 
-        let s2 = *score_map.get(&EntityId::new(2)).expect("node 2 missing");
-        let s3 = *score_map.get(&EntityId::new(3)).expect("node 3 missing");
-        let s4 = *score_map.get(&EntityId::new(4)).expect("node 4 missing");
-        let s5 = *score_map.get(&EntityId::new(5)).expect("node 5 missing");
+        let s2 = *score_map.get(&EntityId::new(2)).expect("node 2 missing"); // unwrap allowed
+        let s3 = *score_map.get(&EntityId::new(3)).expect("node 3 missing"); // unwrap allowed
+        let s4 = *score_map.get(&EntityId::new(4)).expect("node 4 missing"); // unwrap allowed
+        let s5 = *score_map.get(&EntityId::new(5)).expect("node 5 missing"); // unwrap allowed
 
         assert!((s2 - 0.7).abs() < f32::EPSILON, "Node 2 score off: {}", s2);
         assert!(
@@ -288,23 +288,23 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(EntityId::new(1), "A", "N"))
             .await
-            .expect("valid");
+            .expect("valid"); // unwrap allowed
         graph
             .add_entity(tx, Entity::new(EntityId::new(2), "B", "N"))
             .await
-            .expect("valid");
+            .expect("valid"); // unwrap allowed
 
         // Cyclic relationship: 1 -> 2 -> 1
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "E"))
             .await
-            .expect("valid");
+            .expect("valid"); // unwrap allowed
         graph
             .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(1), "E"))
             .await
-            .expect("valid");
+            .expect("valid"); // unwrap allowed
 
-        let results = graph.traverse(EntityId::new(1), 5).await.expect("traverse");
+        let results = graph.traverse(EntityId::new(1), 5).await.expect("traverse"); // unwrap allowed
 
         // Start node (1) is explicitly removed from output results according to implementation logic
         assert_eq!(
@@ -323,7 +323,7 @@ mod tests {
         let results_hop1 = graph
             .traverse(EntityId::new(1), 1)
             .await
-            .expect("traverse 1 hop");
+            .expect("traverse 1 hop"); // unwrap allowed
         assert_eq!(results_hop1.len(), 1);
         assert_eq!(results_hop1[0].0, EntityId::new(2));
 
@@ -331,7 +331,7 @@ mod tests {
         let results_hop1_n3 = graph
             .traverse(EntityId::new(3), 1)
             .await
-            .expect("traverse 1 hop");
+            .expect("traverse 1 hop"); // unwrap allowed
         assert_eq!(results_hop1_n3.len(), 1);
         assert_eq!(results_hop1_n3[0].0, EntityId::new(4));
     }
@@ -339,7 +339,7 @@ mod tests {
     #[tokio::test]
     async fn test_csr_graph_stats_accuracy() {
         let graph = setup_test_graph().await;
-        let stats = graph.stats().await.expect("valid stats");
+        let stats = graph.stats().await.expect("valid stats"); // unwrap allowed
 
         assert_eq!(stats.num_entities, 5);
         assert_eq!(stats.num_edges, 5);
