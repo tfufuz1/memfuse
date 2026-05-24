@@ -554,12 +554,13 @@ impl HnswIndexCore {
                                 neighbor_idx
                             ))
                         })?;
-                        let conn_layer = neighbor_node.connections.get_mut(layer).ok_or_else(|| {
-                            MemFuseError::Index(format!(
-                                "HNSW neighbor node connections missing at layer {}",
-                                layer
-                            ))
-                        })?;
+                        let conn_layer =
+                            neighbor_node.connections.get_mut(layer).ok_or_else(|| {
+                                MemFuseError::Index(format!(
+                                    "HNSW neighbor node connections missing at layer {}",
+                                    layer
+                                ))
+                            })?;
                         conn_layer.push(new_idx);
                         if conn_layer.len() > self.config.m * 2 {
                             (true, neighbor_node.vector.clone(), conn_layer.clone())
