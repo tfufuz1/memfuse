@@ -121,4 +121,25 @@ mod tests {
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
     }
+
+    #[test]
+    fn test_german_morph_tokenizer_expanded() {
+        let tokenizer = GermanMorphTokenizer::new();
+
+        let test_cases = vec![
+            ("Gesetzentwurf", vec!["gesetzentwurf", "gesetz", "entwurf"]),
+            ("Datensicherheit", vec!["datensicherheit", "daten", "sicherheit"]),
+            ("Gemeindeverwaltung", vec!["gemeindeverwaltung", "gemeinde", "verwaltung"]),
+            ("Landesverordnung", vec!["landesverordnung", "verordnung"]), // "landes" not in dict, so it stays but "verordnung" is split out if it was a compound
+            // Actually if "landes" is not in dict, it won't split.
+            ("Bundesdatenschutzgesetz", vec!["bundesdatenschutzgesetz", "bundes", "daten", "schutz", "gesetz"]),
+        ];
+
+        for (input, expected) in test_cases {
+            let tokens = tokenizer.tokenize(input);
+            for exp in expected {
+                assert!(tokens.contains(&exp.to_string()), "Missing '{}' in tokens for '{}': {:?}", exp, input, tokens);
+            }
+        }
+    }
 }

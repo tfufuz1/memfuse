@@ -22,9 +22,22 @@ pub struct Bm25Scorer {
 }
 
 impl Bm25Scorer {
+    /// Creates a new Bm25Scorer with default BM25 parameters (k1=1.2, b=0.75).
     pub fn new(storage: std::sync::Arc<dyn memfuse_core::StorageEngine>, namespace: &str) -> Self {
         Self {
             index: InvertedIndex::new(storage, namespace),
+        }
+    }
+
+    /// Creates a new Bm25Scorer with custom BM25 parameters.
+    pub fn with_params(
+        storage: std::sync::Arc<dyn memfuse_core::StorageEngine>,
+        namespace: &str,
+        k1: f32,
+        b: f32,
+    ) -> Self {
+        Self {
+            index: InvertedIndex::new(storage, namespace).with_params(k1, b),
         }
     }
 }

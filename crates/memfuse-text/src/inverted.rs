@@ -24,6 +24,8 @@ pub struct InvertedIndex {
     storage: Arc<dyn StorageEngine>,
     prefix: Vec<u8>,
     tokenizer: Arc<dyn Tokenizer>,
+    k1: f32,
+    b: f32,
 }
 
 impl InvertedIndex {
@@ -45,7 +47,16 @@ impl InvertedIndex {
             storage,
             prefix,
             tokenizer,
+            k1: 1.2,
+            b: 0.75,
         }
+    }
+
+    /// Sets the BM25 parameters.
+    pub fn with_params(mut self, k1: f32, b: f32) -> Self {
+        self.k1 = k1;
+        self.b = b;
+        self
     }
 
     fn key(&self, suffix: &str) -> Vec<u8> {
@@ -55,9 +66,9 @@ impl InvertedIndex {
         k
     }
 
-    fn key_with_id(&self, type_prefix: &str, id: u64) -> Vec<u8> {
+    fn key_with_id(&self, type_prefix: &str, id: DocId) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
-        let id_str = itoa_buf.format(id);
+        let id_str = itoa_buf.format(id.inner());
         let mut k = Vec::with_capacity(self.prefix.len() + type_prefix.len() + id_str.len());
         k.extend_from_slice(&self.prefix);
         k.extend_from_slice(type_prefix.as_bytes());
@@ -84,8 +95,8 @@ impl InvertedIndex {
         }
 
         // Check if document already exists to adjust total_tokens and total_docs
-        let dl_key = self.key_with_id("dl:", doc_id.inner());
-        let fw_key = self.key_with_id("fw:", doc_id.inner());
+        let dl_key = self.key_with_id("dl:", doc_id);
+        let fw_key = self.key_with_id("fw:", doc_id);
         let mut old_len = 0u32;
         let mut is_update = false;
 
@@ -215,8 +226,8 @@ impl InvertedIndex {
 
     /// Deletes a document from the index.
     pub async fn delete_document(&self, tx: TxId, doc_id: DocId) -> Result<()> {
-        let dl_key = self.key_with_id("dl:", doc_id.inner());
-        let fw_key = self.key_with_id("fw:", doc_id.inner());
+        let dl_key = self.key_with_id("dl:", doc_id);
+        let fw_key = self.key_with_id("fw:", doc_id);
 
         let mut doc_len = 0u32;
         if let Some(bytes) = self.storage.get(&dl_key).await? {
@@ -356,7 +367,7 @@ impl InvertedIndex {
                         let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
                             len
                         } else {
-                            let dl_key = self.key_with_id("dl:", doc_id.inner());
+                            let dl_key = self.key_with_id("dl:", doc_id);
                             let mut len = 0u32;
                             if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
                                 if dl_bytes.len() == 4 {
@@ -377,6 +388,8 @@ impl InvertedIndex {
                             avg_doc_len,
                             df,
                             total_docs as u32,
+                            self.k1,
+                            self.b,
                         );
 
                         *scores.entry(doc_id).or_insert(0.0) += score;

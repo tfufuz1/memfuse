@@ -5,7 +5,7 @@
 
 // ANCHOR:ARCH:MORPH-001 — Morphologische Inferenz-Optimierung (WP-6.5)
 // WP:WP-6.5 PRIO:2 NEEDS:WP-2.1
-// STATUS:SCAFFOLD DATE:2026-05-17
+// STATUS:DONE DATE:2026-05-24
 
 /// Trait for morphological tokenization.
 ///
@@ -64,44 +64,79 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             return vec![token];
         }
 
-        // Common components in technical/legal German compounds
+        // Common components in technical/legal German compounds, sorted by length descending for longest-match
         let dictionary = [
-            "bundes",
             "verfassungs",
-            "gericht",
-            "gesetz",
-            "entwurf",
-            "daten",
-            "bank",
+            "verordnung",
+            "verwaltung",
+            "sicherheit",
+            "verfassung",
+            "steuerung",
+            "gemeinde",
             "speicher",
+            "prüfung",
+            "zugriff",
+            "vertrag",
+            "bericht",
+            "gericht",
+            "entwurf",
+            "ordnung",
+            "bundes",
+            "gesetz",
+            "system",
+            "schutz",
+            "rechte",
             "vektor",
             "suche",
-            "system",
-            "steuerung",
-            "verwaltung",
-            "bericht",
-            "prüfung",
-            "schutz",
-            "sicherheit",
-            "zugriff",
-            "rechte",
+            "daten",
+            "recht",
+            "bank",
         ];
 
         for &word in &dictionary {
             if token.len() > word.len() && token.starts_with(word) {
                 let rest = &token[word.len()..];
 
+                // Try to split without consuming Fugen-s first
+                if rest.len() >= self.min_component_len {
+                    let sub_components = self.decompose(rest);
+                    if sub_components.len() > 1 || dictionary.contains(&rest) {
+                        let mut result = vec![&token[..word.len()]];
+                        result.extend(sub_components);
+                        return result;
+                    }
+                }
+
                 // Handle Fugen-s (e.g., Verfassung-s-gericht)
-                let actual_rest = if rest.starts_with('s') && rest.len() > 1 {
-                    &rest[1..]
+                if rest.starts_with('s') && rest.len() > 1 {
+                    let actual_rest = &rest[1..];
+                    if actual_rest.len() >= self.min_component_len {
+                        let sub_components = self.decompose(actual_rest);
+                        if sub_components.len() > 1 || dictionary.contains(&actual_rest) {
+                            let mut result = vec![&token[..word.len()]];
+                            result.extend(sub_components);
+                            return result;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try suffix splitting if no prefix splitting worked, using longest-match
+        for &word in &dictionary {
+            if token.len() > word.len() && token.ends_with(word) {
+                let prefix = &token[..token.len() - word.len()];
+
+                // Handle Fugen-s
+                let actual_prefix = if prefix.ends_with('s') && prefix.len() > 1 {
+                    &prefix[..prefix.len() - 1]
                 } else {
-                    rest
+                    prefix
                 };
 
-                if actual_rest.len() >= self.min_component_len {
-                    let mut result = vec![&token[..word.len()]];
-                    result.extend(self.decompose(actual_rest));
-                    return result;
+                if actual_prefix.len() >= self.min_component_len {
+                    // We don't recurse on prefix for now to keep it simple and avoid infinite loops
+                    return vec![actual_prefix, word];
                 }
             }
         }
@@ -166,9 +201,9 @@ mod tests {
     #[test]
     fn test_german_splitter_scaffold() {
         let splitter = GermanCompoundSplitter::new();
-        // Fallback: returns original token
-        let result = splitter.decompose("Bundesverfassungsgericht");
-        assert_eq!(result, vec!["Bundesverfassungsgericht"]);
+        let result = splitter.decompose("bundesverfassungsgericht");
+        assert!(result.len() > 1);
+        assert!(result.contains(&"gericht"));
         assert_eq!(splitter.language(), "de");
     }
 
