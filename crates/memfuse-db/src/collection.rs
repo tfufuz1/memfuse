@@ -123,6 +123,21 @@ impl Collection {
         }
     }
 
+    /// Centralized helper to strip namespaced prefixes from storage keys.
+    fn strip_namespaced_prefix(&self, key: &[u8]) -> String {
+        let key_str = String::from_utf8_lossy(key).to_string();
+        if self.name == "default" {
+            key_str
+        } else {
+            let prefix_len = self.prefix.len() + 1; // prefix + key_type byte
+            if key_str.len() >= prefix_len {
+                key_str[prefix_len..].to_string()
+            } else {
+                key_str
+            }
+        }
+    }
+
     /// Begins a new atomic transaction for this collection.
     pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<'_> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
@@ -478,28 +493,15 @@ impl Collection {
 
         let kvs = self.storage.scan_prefix(&real_prefix).await?;
 
-        let mut results = Vec::with_capacity(kvs.len());
-        for (k, v) in kvs {
-            let key_str = String::from_utf8_lossy(&k).to_string();
-            // We should ideally strip the prefix to return the user-facing key
-            // but for simplicity and compatibility with existing tests we keep it as is or strip carefully
-            let user_key = if self.name == "default" {
-                key_str
-            } else {
-                // Strip the internal prefix: self.prefix (variable) + 1 byte (key_type)
-                let prefix_len = self.prefix.len() + 1;
-                if key_str.len() >= prefix_len {
-                    key_str[prefix_len..].to_string()
-                } else {
-                    key_str
-                }
-            };
-
-            if let Ok(val) = serde_json::from_slice(&v) {
-                results.push((user_key, val));
-            }
-        }
-        Ok(results)
+        Ok(kvs
+            .into_iter()
+            .filter_map(|(k, v)| {
+                let user_key = self.strip_namespaced_prefix(&k);
+                serde_json::from_slice(&v)
+                    .ok()
+                    .map(|val| (user_key, val))
+            })
+            .collect())
     }
 
     /// Performs semantic k-NN search over the collection's embeddings.
@@ -542,7 +544,8 @@ impl Collection {
                 .index
                 .search_filtered(query, k, Some(&filter_fn))
                 .await?;
-            self.hydrate_from_scored(scored_docs).await
+            self.hydrate_results(scored_docs.into_iter().map(|sd| (sd.doc_id, sd.score)))
+                .await
         } else {
             // Post-filtering approach for larger collections:
             // 1. Search more than k (oversample) to account for filter drops.
@@ -606,42 +609,22 @@ impl Collection {
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<crate::SearchResult>> {
         let scored_docs = self.index.search_filtered(query, k, filter).await?;
-        self.hydrate_from_scored(scored_docs).await
+        self.hydrate_results(scored_docs.into_iter().map(|sd| (sd.doc_id, sd.score)))
+            .await
     }
 
-    async fn hydrate_from_scored(
+    /// Internal helper to hydrate `SearchResult` from scored document identifiers.
+    async fn hydrate_results(
         &self,
-        scored_docs: Vec<memfuse_core::ScoredDocument>,
+        scored: impl IntoIterator<Item = (DocId, f32)>,
     ) -> Result<Vec<crate::SearchResult>> {
-        if scored_docs.is_empty() {
+        let scored_vec: Vec<_> = scored.into_iter().collect();
+        if scored_vec.is_empty() {
             return Ok(Vec::new());
         }
 
-        let mut results = Vec::with_capacity(scored_docs.len());
-        for sd in scored_docs {
-            let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
-            if let Some(bytes) = self.storage.get(&doc_key).await? {
-                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                results.push(crate::SearchResult {
-                    id: stored.id,
-                    score: sd.score,
-                    metadata: stored.metadata,
-                });
-            }
-        }
-        Ok(results)
-    }
-
-    async fn hydrate_from_tuples(
-        &self,
-        scored_tuples: Vec<(DocId, f32)>,
-    ) -> Result<Vec<crate::SearchResult>> {
-        if scored_tuples.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut results = Vec::with_capacity(scored_tuples.len());
-        for (doc_id, score) in scored_tuples {
+        let mut results = Vec::with_capacity(scored_vec.len());
+        for (doc_id, score) in scored_vec {
             let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
             if let Some(bytes) = self.storage.get(&doc_key).await? {
                 let stored: StoredDocument = serde_json::from_slice(&bytes)?;
@@ -670,7 +653,7 @@ impl Collection {
             (true, false) => self.search(vector, k).await,
             (false, is_v_zero) => {
                 let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let text_results = self.hydrate_from_tuples(bm25_results).await?;
+                let text_results = self.hydrate_results(bm25_results).await?;
 
                 if is_v_zero {
                     return Ok(text_results);
@@ -743,24 +726,16 @@ impl Collection {
         };
 
         let kvs = self.storage.scan(start_bytes, end_bytes).await?;
-        let mut results = Vec::new();
-        for (k, v) in kvs {
-            let key_str = String::from_utf8_lossy(&k).to_string();
-            let user_key = if self.name == "default" {
-                key_str
-            } else {
-                let prefix_len = self.prefix.len() + 1;
-                if key_str.len() >= prefix_len {
-                    key_str[prefix_len..].to_string()
-                } else {
-                    key_str
-                }
-            };
-            if let Ok(val) = serde_json::from_slice(&v) {
-                results.push((user_key, val));
-            }
-        }
-        Ok(results)
+
+        Ok(kvs
+            .into_iter()
+            .filter_map(|(k, v)| {
+                let user_key = self.strip_namespaced_prefix(&k);
+                serde_json::from_slice(&v)
+                    .ok()
+                    .map(|val| (user_key, val))
+            })
+            .collect())
     }
 
     /// Returns statistics for the collection's vector index.

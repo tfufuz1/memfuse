@@ -11,8 +11,12 @@ pub fn reciprocal_rank_fusion(
 ) -> Vec<SearchResult> {
     let k = 60;
 
+    // Pre-calculate total number of unique results to estimate capacity.
+    // This reduces re-allocations during the fusion process (ANCHOR:PERF:ALLOC-001).
+    let estimated_capacity = result_sets.iter().map(|s| s.len()).sum::<usize>();
+
     // id -> (total_score, metadata)
-    let mut fused_scores: HashMap<String, (f32, Option<serde_json::Value>)> = HashMap::new();
+    let mut fused_scores: HashMap<String, (f32, Option<serde_json::Value>)> = HashMap::with_capacity(estimated_capacity);
 
     for cur_set in result_sets {
         for (rank, cur_doc) in cur_set.into_iter().enumerate() {
