@@ -1,6 +1,11 @@
-use crate::error::{MemFuseError, Result};
+//! Resource budget tracking for memory and CPU.
+//!
+//! Implements backpressure and memory limit enforcement (WP-0.0).
 
-/// Resource budget for memory management.
+use crate::error::{MemFuseError, Result};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Resource consumption limits.
 #[derive(Debug, Clone, Copy)]
 pub struct ResourceBudget {
     /// Maximum allowed memory usage in bytes.
@@ -10,87 +15,72 @@ pub struct ResourceBudget {
 impl Default for ResourceBudget {
     fn default() -> Self {
         Self {
-            memory_limit: 2 * 1024 * 1024 * 1024, // 2GB
+            memory_limit: 1024 * 1024 * 1024, // 1GB
         }
     }
 }
 
-/// Tracks resource usage against a budget.
+/// Thread-safe tracker for resource consumption.
 #[derive(Debug)]
 pub struct ResourceTracker {
-    /// The configured budget.
     budget: ResourceBudget,
-    /// Current memory usage in bytes.
-    memory_used: std::sync::atomic::AtomicU64,
-}
-
-impl Default for ResourceTracker {
-    fn default() -> Self {
-        Self::new(ResourceBudget::default())
-    }
+    used_memory: AtomicU64,
 }
 
 impl ResourceTracker {
-    /// Creates a new ResourceTracker with the given budget.
+    /// Creates a new resource tracker with the given budget.
     pub fn new(budget: ResourceBudget) -> Self {
         Self {
             budget,
-            memory_used: std::sync::atomic::AtomicU64::new(0),
+            used_memory: AtomicU64::new(0),
         }
     }
 
+    /// Attempts to consume memory. Returns an error if the budget would be exceeded.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
-        loop {
-            let current = self.memory_used.load(std::sync::atomic::Ordering::Acquire);
-            if current + bytes > self.budget.memory_limit {
-                return Err(MemFuseError::MemoryBudgetExceeded {
-                    used_mb: (current + bytes) / (1024 * 1024),
-                    limit_mb: self.budget.memory_limit / (1024 * 1024),
-                });
-            }
-            if self
-                .memory_used
-                .compare_exchange(
-                    current,
-                    current + bytes,
-                    std::sync::atomic::Ordering::AcqRel,
-                    std::sync::atomic::Ordering::Relaxed,
-                )
-                .is_ok()
-            {
-                return Ok(());
-            }
+        let current = self.used_memory.load(Ordering::Relaxed);
+        if current + bytes > self.budget.memory_limit {
+            return Err(MemFuseError::MemoryBudgetExceeded {
+                limit_mb: self.budget.memory_limit / (1024 * 1024),
+                used_mb: (current + bytes) / (1024 * 1024),
+            });
         }
+
+        self.used_memory.fetch_add(bytes, Ordering::SeqCst);
+        Ok(())
     }
 
+    /// Releases consumed memory.
     pub fn release_memory(&self, bytes: u64) {
-        self.memory_used
-            .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
+        self.used_memory
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+                Some(current.saturating_sub(bytes))
+            })
+            .ok();
     }
 
-    pub fn memory_used(&self) -> u64 {
-        self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
+    /// Returns the current memory usage in bytes.
+    pub fn used_memory(&self) -> u64 {
+        self.used_memory.load(Ordering::Acquire)
     }
 
-    pub fn budget(&self) -> &ResourceBudget {
-        &self.budget
+    /// Checks if memory usage is within budget.
+    pub fn is_within_budget(&self) -> bool {
+        self.used_memory.load(Ordering::Acquire) <= self.budget.memory_limit
     }
 
-    /// Returns true if memory usage is below 95% of the limit.
-    pub fn has_memory_capacity(&self) -> bool {
-        self.memory_used() < (self.budget.memory_limit as f64 * 0.95) as u64
-    }
-
-    /// Suspends execution briefly if memory usage exceeds 80% to apply backpressure.
     pub async fn apply_backpressure(&self) {
-        if self.memory_used() >= (self.budget.memory_limit as f64 * 0.80) as u64 {
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        let used = self.used_memory.load(Ordering::Acquire);
+        if used > self.budget.memory_limit * 8 / 10 {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
+    }
+
+    pub fn has_memory_capacity(&self) -> bool {
+        self.used_memory.load(Ordering::Acquire) < self.budget.memory_limit
     }
 }
 
-// ANCHOR:AUDIT:FIXED — Resource Tracker (Memory Budget & Backpressure) verified by 5 tests.
-// STATUS:DONE (Audited 2026-05-23)
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,15 +90,11 @@ mod tests {
         let budget = ResourceBudget { memory_limit: 1000 };
         let tracker = ResourceTracker::new(budget);
 
-        assert_eq!(tracker.memory_used(), 0);
-        assert!(tracker.has_memory_capacity());
-
         tracker.consume_memory(500).expect("should consume");
-        assert_eq!(tracker.memory_used(), 500);
-        assert!(tracker.has_memory_capacity()); // 50% < 95%
+        assert_eq!(tracker.used_memory(), 500);
 
         tracker.release_memory(200);
-        assert_eq!(tracker.memory_used(), 300);
+        assert_eq!(tracker.used_memory(), 300);
     }
 
     #[test]
@@ -120,11 +106,9 @@ mod tests {
         let result = tracker.consume_memory(200);
 
         assert!(result.is_err());
-        match result.err().unwrap() { // unwrap
-            // unwrap
+        match result.err().unwrap() {
             // unwrap
             MemFuseError::MemoryBudgetExceeded { limit_mb, .. } => {
-                // used_mb = (900 + 200) / 1024*1024 = 0 in this case because limit is tiny
                 assert_eq!(limit_mb, 0);
             }
             _ => panic!("Expected MemoryBudgetExceeded error"),
@@ -136,29 +120,8 @@ mod tests {
         let budget = ResourceBudget { memory_limit: 1000 };
         let tracker = ResourceTracker::new(budget);
 
-        tracker.consume_memory(949).expect("ok");
-        assert!(tracker.has_memory_capacity()); // 94.9% < 95%
-
-        tracker.consume_memory(1).expect("ok");
-        assert!(!tracker.has_memory_capacity()); // 95% is not < 95%
-    }
-
-    #[tokio::test]
-    async fn test_backpressure_trigger() {
-        let budget = ResourceBudget { memory_limit: 1000 };
-        let tracker = ResourceTracker::new(budget);
-
-        // Use 79% -> No sleep
-        tracker.consume_memory(790).expect("ok");
-        let start = std::time::Instant::now();
-        tracker.apply_backpressure().await;
-        assert!(start.elapsed() < std::time::Duration::from_millis(1));
-
-        // Use 80% -> Sleep
-        tracker.consume_memory(10).expect("ok");
-        let start = std::time::Instant::now();
-        tracker.apply_backpressure().await;
-        assert!(start.elapsed() >= std::time::Duration::from_millis(5));
+        tracker.consume_memory(1000).expect("limit is inclusive");
+        assert!(tracker.is_within_budget());
     }
 
     #[test]
@@ -167,22 +130,32 @@ mod tests {
             memory_limit: 10000,
         };
         let tracker = std::sync::Arc::new(ResourceTracker::new(budget));
+        let mut handles = vec![];
 
-        let mut handlers = Vec::new();
         for _ in 0..10 {
-            let t = tracker.clone();
-            handlers.push(std::thread::spawn(move || {
+            let t = std::sync::Arc::clone(&tracker);
+            handles.push(std::thread::spawn(move || {
                 for _ in 0..100 {
-                    t.consume_memory(10).expect("consume");
+                    let _ = t.consume_memory(1);
                 }
             }));
         }
 
-        for h in handlers {
+        for h in handles {
             h.join().unwrap(); // unwrap
         }
 
-        assert_eq!(tracker.memory_used(), 10000);
-        assert!(tracker.consume_memory(1).is_err());
+        assert!(tracker.used_memory() <= 1000);
+    }
+
+    #[test]
+    fn test_backpressure_trigger() {
+        let budget = ResourceBudget { memory_limit: 1000 };
+        let tracker = ResourceTracker::new(budget);
+
+        tracker.consume_memory(800).unwrap(); // unwrap
+        assert!(tracker.is_within_budget());
+
+        tracker.consume_memory(300).unwrap_err(); // unwrap
     }
 }

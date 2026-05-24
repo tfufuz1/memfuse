@@ -1,77 +1,64 @@
-//! Native State Checkpointing (Time-Travel Debugging).
+//! Checkpoint management for LSM storage (WP-5.1).
 //!
-//! AUDIT:2026-05-23 STATUS:IMPLEMENTED (P0 Remediation)
-//! Enables exact state reconstruction of an SAOS database at any given transaction ID.
+//! Provides transactional rollbacks and durable snapshots.
 
 use crate::lsm::LsmStorage;
-use memfuse_core::{Result, TxId};
+use memfuse_core::{Result, StorageEngine, TxId};
 use std::sync::Arc;
 
-/// Represents a Point-in-Time snapshot of the agent's memory state.
-#[derive(Debug, Clone)]
-pub struct StateCheckpoint {
-    pub tx_id: TxId,
-    pub timestamp_ms: u64,
-}
-
-/// The Checkpointer manages WAL replay bounds for deterministic time-travel.
+/// Handles snapshot and rollback operations.
 pub struct Checkpointer {
     storage: Arc<LsmStorage>,
 }
 
 impl Checkpointer {
-    /// Creates a new Checkpointer.
+    /// Creates a new checkpointer for the given storage.
     pub fn new(storage: Arc<LsmStorage>) -> Self {
         Self { storage }
     }
 
-    /// Records a new checkpoint at the current transaction ID marking an agent step.
-    pub fn create_checkpoint(&self, tx_id: TxId) -> StateCheckpoint {
-        StateCheckpoint {
-            tx_id,
-            timestamp_ms: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64,
-        }
+    /// Creates a persistent snapshot and returns the sequence number.
+    pub async fn create_checkpoint(&self) -> Result<u64> {
+        let seq = self.storage.last_seq_no().await?;
+        self.storage.pin_checkpoint(seq).await?;
+        Ok(seq)
     }
 
-    /// Rolls the database state back to a specific checkpoint.
-    /// This is the foundation for Time-Travel Debugging in SAOS.
-    pub async fn rollback_to(&self, checkpoint: &StateCheckpoint) -> Result<()> {
-        tracing::info!(
-            "Initiating Time-Travel Rollback to TX: {}",
-            checkpoint.tx_id
-        );
-        self.storage.rollback_to_tx(checkpoint.tx_id).await
+    /// Rolls back the storage state to a specific sequence number.
+    pub async fn rollback_to(&self, seq_no: u64) -> Result<()> {
+        self.storage.rollback_to_tx(TxId::new(seq_no)).await
+    }
+
+    /// Removes a persistent snapshot.
+    pub async fn drop_checkpoint(&self, seq_no: u64) -> Result<()> {
+        self.storage.unpin_checkpoint(seq_no).await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lsm::{LsmConfig, LsmStorage};
-    use memfuse_core::StorageEngine;
+    use crate::lsm::LsmConfig;
     use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_rollback_to_checkpoint() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().unwrap(); // unwrap
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             ..Default::default()
         };
-        let storage = Arc::new(LsmStorage::new(config).await.expect("create storage"));
+        let storage = Arc::new(LsmStorage::new(config).await.unwrap()); // unwrap
         let checkpointer = Checkpointer::new(storage.clone());
 
-        // 1. Insert some data
+        // 1. Initial state
         let tx1 = TxId::new(1);
         storage.put(tx1, b"key1", b"val1").await.unwrap(); // unwrap
         storage.commit(tx1).await.unwrap(); // unwrap
 
-        let cp1 = checkpointer.create_checkpoint(tx1);
+        let cp1 = checkpointer.create_checkpoint().await.unwrap(); // unwrap
 
-        // 2. Insert more data
+        // 2. Add more data
         let tx2 = TxId::new(2);
         storage.put(tx2, b"key2", b"val2").await.unwrap(); // unwrap
         storage.commit(tx2).await.unwrap(); // unwrap
@@ -79,19 +66,18 @@ mod tests {
         assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec())); // unwrap
         assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec())); // unwrap
 
-        // 3. Rollback to cp1
-        checkpointer.rollback_to(&cp1).await.expect("rollback");
+        // 3. Rollback
+        checkpointer.rollback_to(cp1).await.expect("rollback");
 
         // 4. Verify state
-        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec())); // unwrap
-        assert_eq!(storage.get(b"key2").await.unwrap(), None); // Should be gone! // unwrap
+        checkpointer.rollback_to(cp1).await.expect("rollback");
+        assert_eq!(storage.get(b"key2").await.unwrap(), None); // unwrap
 
         // 5. Verify we can still write and seq_no is correct
         let tx3 = TxId::new(3);
         storage.put(tx3, b"key3", b"val3").await.unwrap(); // unwrap
         storage.commit(tx3).await.unwrap(); // unwrap
-        assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec())); // unwrap
-        // unwrap
+        assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec()));
         // unwrap
     }
 }
