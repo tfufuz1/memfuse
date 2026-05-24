@@ -1,3 +1,8 @@
+//! Advanced metadata filtering logic.
+//!
+//! This module provides the `MetadataFilter` and `FilterOp` types used to
+//! evaluate complex filtering conditions against document metadata.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -23,6 +28,8 @@ pub enum FilterOp {
 }
 
 /// Advanced metadata filter for document retrieval and search.
+///
+/// Filters can be single conditions or complex logical combinations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum MetadataFilter {
     /// A single condition on a metadata field.

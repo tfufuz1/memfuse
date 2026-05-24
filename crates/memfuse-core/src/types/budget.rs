@@ -1,3 +1,8 @@
+//! Resource budget and tracking for memory management.
+//!
+//! This module provides the `ResourceBudget` configuration and the `ResourceTracker`
+//! for monitoring and enforcing memory limits within the system.
+
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.
@@ -39,6 +44,7 @@ impl ResourceTracker {
         }
     }
 
+    /// Records consumption of memory. Returns error if budget is exceeded.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         loop {
             let current = self.memory_used.load(std::sync::atomic::Ordering::Acquire);
@@ -63,15 +69,18 @@ impl ResourceTracker {
         }
     }
 
+    /// Releases previously consumed memory.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Returns the current memory usage in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns the configured budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }

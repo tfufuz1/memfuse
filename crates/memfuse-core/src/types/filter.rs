@@ -1,3 +1,8 @@
+//! Filter expressions for metadata-based retrieval.
+//!
+//! This module defines the `FilterExpr` enum used to construct complex
+//! filtering logic for document search.
+
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.

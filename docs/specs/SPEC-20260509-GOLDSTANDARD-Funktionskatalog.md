@@ -1,7 +1,7 @@
 # MemFuse SAOS — Goldstandard Funktionskatalog
 ## Formale Spezifikation der Zukunftsfähigen Erweiterungen
 
-> **Status:** PLANNING  
+> **Status:** IN_PROGRESS
 > **Basis:** SAOS-ARCHITECTURE.md + SAOS-ROADMAP.md + Goldstandard-Vision  
 > **Erstellt:** 2026-05-08 | **Agent:** Context-Architekt (ANTIGRAVITY-Analyse)
 
@@ -22,6 +22,13 @@
 ---
 
 ## GS-01 — 4-Signal Fusion API (Hybrid RAG)
+
+### Status (May 2026)
+- **Vector Signal:** DONE (HNSW integration complete)
+- **Text Signal:** DONE (BM25 integration complete)
+- **Graph Signal:** IN_ISOLATION (memfuse-graph exists, but not yet integrated into `hybrid_search`)
+- **Metadata Signal:** DONE (Structured filtering implemented)
+- **Fusion Logic:** DONE (RRF-60 implemented)
 
 ### Zweck
 Native Verschmelzung aller vier Retrieval-Signale in einer einzigen,

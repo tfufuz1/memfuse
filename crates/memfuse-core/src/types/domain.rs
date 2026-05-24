@@ -1,3 +1,8 @@
+//! Domain-specific identifiers and data structures for MemFuse.
+//!
+//! This module defines core entities such as `DocId`, `TxId`, `Embedding`,
+//! and graph-related structures like `Entity` and `Edge`.
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
