@@ -1,5 +1,5 @@
-// ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
 //! SAOS (Situation-Aware Orchestration Schema) types for unified querying and context management.
+// ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
 //! SAOS (Situation-Aware Orchestration Schema) types for unified querying and context management.
 // ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
 use super::domain::DocId;
@@ -214,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_fusion_weights_valid() {
-        let w = FusionWeights::new(0.5, 0.5, 0.0, 0.0).expect("valid"); // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
+        let w = FusionWeights::new(0.5, 0.5, 0.0, 0.0).expect("valid"); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
         assert_eq!(w.vector(), 0.5);
         assert_eq!(w.text(), 0.5);
     }
@@ -237,10 +237,10 @@ mod tests {
             .with_vector_query(vec![0.1, 0.2])
             .with_k(5)
             .build()
-            .expect("build ok"); // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
+            .expect("build ok"); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
 
-        assert_eq!(query.text_query.unwrap(), "test query"); // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
-        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]); // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
+        assert_eq!(query.text_query.unwrap(), "test query"); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
+        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
         assert_eq!(query.k, 5);
         // Default weights: vector=1.0, others=0.0
         assert_eq!(query.fusion_weights.vector(), 1.0);
@@ -248,18 +248,18 @@ mod tests {
 
     #[test]
     fn test_hybrid_query_builder_custom_weights() {
-        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap(); // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
+        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap(); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())
             .build()
-            .unwrap(); // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
+            .unwrap(); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
 
         assert_eq!(query.fusion_weights, weights);
     }
 
     #[test]
     fn test_hybrid_query_builder_defaults() {
-        let query = HybridQuery::builder().build().unwrap(); // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
+        let query = HybridQuery::builder().build().unwrap(); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
         assert_eq!(query.k, 10);
         assert_eq!(query.fusion_weights.vector(), 1.0);
         assert!(query.text_query.is_none());

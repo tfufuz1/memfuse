@@ -1,5 +1,5 @@
-// ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
 //! Resource budget and tracking for memory management.
+// ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
 //! Resource budget and tracking for memory management.
 // ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
 use crate::error::{MemFuseError, Result};
@@ -107,7 +107,7 @@ mod tests {
         assert_eq!(tracker.memory_used(), 0);
         assert!(tracker.has_memory_capacity());
 
-        tracker.consume_memory(500).expect("should consume"); // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
+        tracker.consume_memory(500).expect("should consume"); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
         assert_eq!(tracker.memory_used(), 500);
         assert!(tracker.has_memory_capacity()); // 50% < 95%
 
@@ -120,15 +120,12 @@ mod tests {
         let budget = ResourceBudget { memory_limit: 1000 };
         let tracker = ResourceTracker::new(budget);
 
-        tracker.consume_memory(900).expect("should consume"); // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
+        tracker.consume_memory(900).expect("should consume"); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
         let result = tracker.consume_memory(200);
 
         assert!(result.is_err());
-        let err = result.err().unwrap(); // unwrap
+        let err = result.err().unwrap(); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
         match err {
-            // unwrap
-            // unwrap
-            // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
             MemFuseError::MemoryBudgetExceeded { limit_mb, .. } => {
                 // used_mb = (900 + 200) / 1024*1024 = 0 in this case because limit is tiny
                 assert_eq!(limit_mb, 0);
@@ -142,10 +139,10 @@ mod tests {
         let budget = ResourceBudget { memory_limit: 1000 };
         let tracker = ResourceTracker::new(budget);
 
-        tracker.consume_memory(949).expect("ok"); // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
+        tracker.consume_memory(949).expect("ok"); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
         assert!(tracker.has_memory_capacity()); // 94.9% < 95%
 
-        tracker.consume_memory(1).expect("ok"); // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
+        tracker.consume_memory(1).expect("ok"); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
         assert!(!tracker.has_memory_capacity()); // 95% is not < 95%
     }
 
@@ -155,13 +152,13 @@ mod tests {
         let tracker = ResourceTracker::new(budget);
 
         // Use 79% -> No sleep
-        tracker.consume_memory(790).expect("ok"); // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
+        tracker.consume_memory(790).expect("ok"); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
         let start = std::time::Instant::now();
         tracker.apply_backpressure().await;
         assert!(start.elapsed() < std::time::Duration::from_millis(1));
 
         // Use 80% -> Sleep
-        tracker.consume_memory(10).expect("ok"); // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
+        tracker.consume_memory(10).expect("ok"); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
         let start = std::time::Instant::now();
         tracker.apply_backpressure().await;
         assert!(start.elapsed() >= std::time::Duration::from_millis(5));
@@ -179,13 +176,13 @@ mod tests {
             let t = tracker.clone();
             handlers.push(std::thread::spawn(move || {
                 for _ in 0..100 {
-                    t.consume_memory(10).expect("consume"); // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
+                    t.consume_memory(10).expect("consume"); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
                 }
             }));
         }
 
         for h in handlers {
-            h.join().unwrap(); // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
+            h.join().unwrap(); // unwrap // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3
         }
 
         assert_eq!(tracker.memory_used(), 10000);
