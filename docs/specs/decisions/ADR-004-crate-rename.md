@@ -1,5 +1,5 @@
 # ADR-004-crate-rename
-Status: PLANNING
+Status: DONE
 
 <!--
 // ANCHOR:TODO:ADR-004 — ADR fehlt: Crate-Rename-Strategie (memfuse-runtime -> memfuse-sandbox)

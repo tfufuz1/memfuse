@@ -1,17 +1,8 @@
-// ANCHOR:ARCH:DB-001 — Orchestrator Facade (Getriebe — Layer 2).
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
-// ROLLE: Verbindet memfuse-core (Traits), memfuse-store (LSM) und memfuse-index (HNSW).
-// DESIGN: Zero-Boilerplate API für Nutzer. Intern wird alles über die Collection-Abstraktion geroutet.
-// ABWÄRTSKOMPATIBILITÄT: Bietet weiterhin top-level insert/search an, die intern auf die "default" Collection leiten.
 //! # MemFuse — Embedded Hybrid-Search for AI Agents
 //!
 //! MemFuse is a zero-boilerplate embedded database for AI agent memory.
 //! It combines vector search (HNSW), persistent storage (LSM-Tree),
 //! and relationship tracking in a single library.
-//!
-// AGENT:08 DATE:2026-05-18 STATUS:DONE
 //!
 //! ## Quick Start
 //!
@@ -44,6 +35,15 @@
 //! # Ok(())
 //! # }
 //! ```
+
+// ANCHOR:ARCH:DB-001 — Orchestrator Facade (Getriebe — Layer 2).
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:01 DATE:2026-05-09 STATUS:DONE
+// CREATED:2026-05-05 DEADLINE:NONE
+// ROLLE: Verbindet memfuse-core (Traits), memfuse-store (LSM) und memfuse-index (HNSW).
+// DESIGN: Zero-Boilerplate API für Nutzer. Intern wird alles über die Collection-Abstraktion geroutet.
+// ABWÄRTSKOMPATIBILITÄT: Bietet weiterhin top-level insert/search an, die intern auf die "default" Collection leiten.
+// AGENT:08 DATE:2026-05-18 STATUS:DONE
 
 #![forbid(unsafe_code)]
 
@@ -178,7 +178,8 @@ impl MemFuse {
     }
 
     /// Returns a specific collection (namespace).
-    /// Creates the collection if it does not already exist.
+    ///
+    /// If the collection does not exist, it will be created.
     // ANCHOR:TODO:COL-001 — Implementiere vollständige Persistenz und Isolation für `collection()`.
     // WP:WP-1.2 PRIO:1 NEEDS:NONE
     // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
@@ -242,7 +243,9 @@ impl MemFuse {
         Ok(col)
     }
 
-    /// Lists all existing collection names (including those persisted in storage).
+    /// Lists all existing collection names.
+    ///
+    /// This includes both active in-memory collections and those persisted in storage.
     // ANCHOR:TODO:COL-002 — Erweitere `list_collections` so, dass es aus dem LSM-Store/Metadata ließt.
     // WP:WP-1.2 PRIO:1 NEEDS:COL-001
     // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
@@ -275,6 +278,8 @@ impl MemFuse {
     }
 
     /// Drops a collection, removing all its data from storage.
+    ///
+    /// All documents, embeddings, and relationships within this collection will be permanently deleted.
     // ANCHOR:TODO:COL-003 — Löschen der Collection-Keys aus LSM und des HNSW Graphen.
     // WP:WP-1.2 PRIO:1 NEEDS:COL-001
     // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE

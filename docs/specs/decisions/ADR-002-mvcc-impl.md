@@ -1,5 +1,5 @@
 # ADR-002-mvcc-impl
-Status: PLANNING
+Status: DONE
 
 <!--
 // ANCHOR:TODO:ADR-002 — ADR fehlt: MVCC-Implementierung in memfuse-core (Scope, Garantien)

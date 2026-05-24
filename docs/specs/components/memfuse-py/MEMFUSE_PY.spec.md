@@ -1,5 +1,5 @@
 # memfuse-py Specification
-Status: PLANNING
+Status: DONE
 
 <!-- 
 // ANCHOR:TODO:SPEC-105 — Spec für memfuse-py fehlt

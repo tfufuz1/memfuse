@@ -1,3 +1,9 @@
+//! # Sovereign Agentic Operating System (SAOS) Types
+//!
+//! This module defines the core types used by the SAOS layers, including
+//! token budgeting for LLM context, hybrid search fusion weights, and
+//! cross-namespace isolation levels.
+
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
@@ -53,6 +59,8 @@ impl Default for TokenBudget {
 }
 
 /// Normalized fusion weights for hybrid search.
+///
+/// Weights must sum to 1.0 (within 1e-6 tolerance).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FusionWeights {
     vector: f32,
@@ -62,6 +70,9 @@ pub struct FusionWeights {
 }
 
 impl FusionWeights {
+    /// Creates a new `FusionWeights` instance.
+    ///
+    /// Errors if the weights do not sum to 1.0.
     pub fn new(vector: f32, text: f32, graph: f32, metadata: f32) -> Result<Self> {
         let sum = vector + text + graph + metadata;
         if (sum - 1.0).abs() > 1e-6 {
@@ -91,54 +102,74 @@ impl FusionWeights {
 /// Defines cross-namespace isolation guarantees.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IsolationLevel {
+    /// Full isolation — no access to other namespaces.
     Strict,
+    /// Shared reading allowed — writing is isolated.
     SharedRead,
+    /// Fully shared — only logical separation.
     Logical,
 }
 
 /// A chunk of context for LLM budget allocation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextChunk {
+    /// Unique document ID.
     pub doc_id: DocId,
+    /// Text content of the chunk.
     pub content: String,
+    /// Relevance score.
     pub relevance: f32,
+    /// Number of tokens in this chunk.
     pub token_count: usize,
 }
 
 /// An aggregated context window constrained by a token budget.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextWindow {
+    /// List of retrieved chunks.
     pub chunks: Vec<ContextChunk>,
+    /// Total token count across all chunks.
     pub total_tokens: usize,
+    /// Indicates if the results were truncated due to budget constraints.
     pub truncated: bool,
 }
 
 /// Evaluated result for hybrid/4-signal search.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScoredEntry {
+    /// Unique string ID.
     pub id: String,
+    /// Combined fusion score.
     pub final_score: f32,
+    /// Associated metadata.
     pub metadata: Option<serde_json::Value>,
 }
 
 /// A unified query traversing multiple index signals.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HybridQuery {
+    /// Keyword search (BM25) string.
     pub text_query: Option<String>,
+    /// Semantic vector (HNSW) embedding.
     pub vector_query: Option<Vec<f32>>,
+    /// Graph traversal start node.
     pub graph_start_node: Option<String>,
+    /// Weights for fusion scoring.
     pub fusion_weights: FusionWeights,
+    /// Metadata filter expression.
     pub filter: Option<FilterExpr>,
+    /// Number of results to return.
     pub k: usize,
 }
 
 impl HybridQuery {
+    /// Returns a new `HybridQueryBuilder`.
     pub fn builder() -> HybridQueryBuilder {
         HybridQueryBuilder::default()
     }
 }
 
-/// Builder for HybridQuery to improve DX.
+/// Builder for `HybridQuery` to improve developer experience.
 #[derive(Default)]
 pub struct HybridQueryBuilder {
     text_query: Option<String>,

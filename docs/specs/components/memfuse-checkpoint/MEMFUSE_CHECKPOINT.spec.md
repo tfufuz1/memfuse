@@ -1,5 +1,5 @@
 # memfuse-checkpoint Specification
-Status: PLANNING
+Status: DONE
 
 <!-- 
 // ANCHOR:TODO:SPEC-106 — Spec für memfuse-checkpoint fehlt

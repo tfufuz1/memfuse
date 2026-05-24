@@ -1,5 +1,5 @@
 # ADR-007-python-distribution
-Status: PLANNING
+Status: DONE
 
 <!--
 // ANCHOR:TODO:ADR-007 — ADR fehlt: Wheel-Distribution-Strategie (manylinux, cross-compilation)
