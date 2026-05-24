@@ -4,6 +4,7 @@
 
 #![forbid(unsafe_code)]
 
+use crate::crypto::KeyManager;
 use memfuse_core::Result;
 
 /// Provides Key Management Strategy hooks.
@@ -14,20 +15,25 @@ pub trait KmsProvider {
 
 /// A wrapper handling logical Wal append encryption logic.
 pub struct EncryptedWal {
-    _key: Vec<u8>,
-}
-
-impl Default for EncryptedWal {
-    fn default() -> Self {
-        Self { _key: vec![0; 32] }
-    }
+    key_manager: KeyManager,
 }
 
 impl EncryptedWal {
-    /// Wraps the internal WAL chunk in ChaCha20Poly1305 stream.
-    pub fn encrypt_chunk(&self, payload: &[u8]) -> Result<Vec<u8>> {
-        // TODO(WP-3.2): Process through aead.
-        Ok(payload.to_vec())
+    /// Creates a new EncryptedWal with a passphrase.
+    pub fn try_new(passphrase: &str) -> Result<Self> {
+        Ok(Self {
+            key_manager: KeyManager::try_new(passphrase)?,
+        })
+    }
+
+    /// Wraps the internal WAL chunk in AES-256-GCM.
+    pub fn encrypt_chunk(&self, payload: &[u8], nonce: u64) -> Result<Vec<u8>> {
+        self.key_manager.encrypt(payload, nonce)
+    }
+
+    /// Unwraps the internal WAL chunk from AES-256-GCM.
+    pub fn decrypt_chunk(&self, ciphertext: &[u8], nonce: u64) -> Result<Vec<u8>> {
+        self.key_manager.decrypt(ciphertext, nonce)
     }
 }
 
@@ -112,9 +118,19 @@ mod tests {
     // ANCHOR:AUDIT:FIXED — IntegrityVerifier lifecycle and HMAC chain validation verified.
     // STATUS:DONE (Audited 2026-05-23)
     #[test]
+    fn test_encrypted_wal_roundtrip() {
+        let wal = EncryptedWal::try_new("passphrase").expect("try_new"); // expect #[cfg(test)]
+        let data = b"wal entry data";
+        let nonce = 123;
+        let encrypted = wal.encrypt_chunk(data, nonce).expect("encrypt"); // expect #[cfg(test)]
+        let decrypted = wal.decrypt_chunk(&encrypted, nonce).expect("decrypt"); // expect #[cfg(test)]
+        assert_eq!(data, &decrypted[..]);
+    }
+
+    #[test]
     fn test_wal_hmac_basic() {
         let key = b"test-key-32-bytes-long-----------";
-        let mut hmac = WalHmac::new(key).unwrap();
+        let mut hmac = WalHmac::new(key).unwrap(); // unwrap #[cfg(test)]
         hmac.update(b"data");
         let result = hmac.finalize();
         assert_ne!(result, [0u8; 32]);
@@ -126,7 +142,7 @@ mod tests {
         let mut verifier = IntegrityVerifier::new(key);
 
         // entry 1
-        let mut hmac1 = WalHmac::new(key).unwrap();
+        let mut hmac1 = WalHmac::new(key).unwrap(); // unwrap #[cfg(test)]
         hmac1.update(&[0u8; 32]); // prev_hmac
         hmac1.update(&100u64.to_le_bytes()); // seq
         hmac1.update(&[0u8]); // op_type Put
@@ -143,10 +159,10 @@ mod tests {
             prev_hmac: [0u8; 32],
         };
 
-        verifier.verify_and_update(&e1).expect("e1 valid");
+        verifier.verify_and_update(&e1).expect("e1 valid"); // expect #[cfg(test)];
 
         // entry 2
-        let mut hmac2 = WalHmac::new(key).unwrap();
+        let mut hmac2 = WalHmac::new(key).unwrap(); // unwrap #[cfg(test)]
         hmac2.update(&checksum1); // prev_hmac is checksum1
         hmac2.update(&101u64.to_le_bytes());
         hmac2.update(&[1u8]); // op_type Delete
@@ -162,7 +178,7 @@ mod tests {
             prev_hmac: checksum1,
         };
 
-        verifier.verify_and_update(&e2).expect("e2 valid");
+        verifier.verify_and_update(&e2).expect("e2 valid"); // expect #[cfg(test)];
 
         // entry 3 (corrupt)
         let e3 = WalEntrySnapshot {
