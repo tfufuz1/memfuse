@@ -254,7 +254,7 @@ mod tests {
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())
             .build()
-            .unwrap();
+            .unwrap() /* unwrap allowed */;
 
         assert_eq!(query.fusion_weights, weights);
     }

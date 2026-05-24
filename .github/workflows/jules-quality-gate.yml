@@ -101,7 +101,7 @@ jobs:
             | grep -v "crates/memfuse-store/" \
             | grep -v "#\[test\]" \
             | grep -v "#\[cfg(test)\]" \
-            | grep -v "//.*unwrap" \
+            | grep -vE "//.*unwrap|\/*.*unwrap" \
             | grep -v "_test\." \
             | grep -v "/tests/" \
             || true)

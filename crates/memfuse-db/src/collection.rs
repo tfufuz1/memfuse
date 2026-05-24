@@ -62,6 +62,21 @@ pub struct Collection {
 }
 
 impl Collection {
+    /// Centralized helper to strip namespaced prefixes from storage keys.
+    fn strip_namespaced_prefix(&self, key: &[u8]) -> String {
+        let key_str = String::from_utf8_lossy(key).to_string();
+        if self.name == "default" {
+            key_str
+        } else {
+            let prefix_len = self.prefix.len() + 1; // prefix + key_type byte
+            if key_str.len() >= prefix_len {
+                key_str[prefix_len..].to_string()
+            } else {
+                key_str
+            }
+        }
+    }
+
     /// Creates a new `Collection` instance.
     pub fn new(
         name: String,
@@ -120,21 +135,6 @@ impl Collection {
             k.push(key_type);
             k.extend_from_slice(key);
             k
-        }
-    }
-
-    /// Centralized helper to strip namespaced prefixes from storage keys.
-    fn strip_namespaced_prefix(&self, key: &[u8]) -> String {
-        let key_str = String::from_utf8_lossy(key).to_string();
-        if self.name == "default" {
-            key_str
-        } else {
-            let prefix_len = self.prefix.len() + 1; // prefix + key_type byte
-            if key_str.len() >= prefix_len {
-                key_str[prefix_len..].to_string()
-            } else {
-                key_str
-            }
         }
     }
 
