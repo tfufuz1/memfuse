@@ -27,4 +27,4 @@ parking_lot = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
 tempfile = { workspace = true }
-memfuse-store = { version = "0.1.0", path = "../memfuse-store" }
+memfuse-store = { workspace = true }

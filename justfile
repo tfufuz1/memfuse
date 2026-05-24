@@ -66,25 +66,30 @@ dag-check:
         fi
     done
 
-    echo "--- Phase 2: L2 Peer Isolation (store, index, text, checkpoint) ---"
-    echo "Verifying memfuse-store..."
-    if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core" | grep -q "memfuse-"; then
-        echo "❌ ERROR: memfuse-store violates DAG by importing non-core crates."
+    echo "--- Phase 2: L2 Peer Isolation (store, index, text, checkpoint, crypto, graph) ---"
+    for CRATE in memfuse-text memfuse-crypto memfuse-graph; do
+        echo "Verifying $CRATE isolation..."
+        if cargo tree -p "$CRATE" --edges no-dev | grep -E -v "$CRATE|memfuse-core" | grep -q "memfuse-"; then
+            echo "❌ ERROR: $CRATE violates DAG by importing non-core crates."
+            cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-"
+            exit 1
+        fi
+    done
+
+    echo "Verifying memfuse-store (allowing memfuse-crypto)..."
+    if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core|memfuse-crypto" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-store violates DAG by importing forbidden crates."
         cargo tree -p memfuse-store --edges no-dev | grep "memfuse-"
         exit 1
     fi
-    echo "Verifying memfuse-index..."
-    if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core" | grep -q "memfuse-"; then
-        echo "❌ ERROR: memfuse-index violates DAG by importing non-core crates."
+
+    echo "Verifying memfuse-index (allowing memfuse-graph)..."
+    if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core|memfuse-graph" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-index violates DAG by importing forbidden crates."
         cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
         exit 1
     fi
-    echo "Verifying memfuse-text..."
-    if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core" | grep -q "memfuse-"; then
-        echo "❌ ERROR: memfuse-text violates DAG by importing non-core crates."
-        cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
-        exit 1
-    fi
+
     echo "Verifying memfuse-checkpoint (excluding tracked DAG-002)..."
     if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-checkpoint violates DAG."
