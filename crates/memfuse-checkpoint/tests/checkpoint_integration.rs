@@ -12,7 +12,11 @@ async fn setup_storage(path: &std::path::Path) -> Arc<LsmStorage> {
         path: path.to_path_buf(),
         ..Default::default()
     };
-    Arc::new(LsmStorage::new(config).await.expect("Failed to open storage"))
+    Arc::new(
+        LsmStorage::new(config)
+            .await
+            .expect("Failed to open storage"),
+    )
 }
 
 #[tokio::test]
@@ -32,18 +36,30 @@ async fn test_checkpoint_manager_e2e() {
     assert_eq!(meta.seq_no, 10);
 
     // 2. List checkpoints
-    let list = manager.list_checkpoints().await.expect("Failed to list checkpoints");
+    let list = manager
+        .list_checkpoints()
+        .await
+        .expect("Failed to list checkpoints");
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].name, "v1");
 
     // 3. Get checkpoint
-    let retrieved = manager.get_checkpoint("v1").await.expect("Failed to get checkpoint");
+    let retrieved = manager
+        .get_checkpoint("v1")
+        .await
+        .expect("Failed to get checkpoint");
     assert!(retrieved.is_some());
-    assert_eq!(retrieved.unwrap().metadata, json!({"purpose": "test"}));
+    assert_eq!(retrieved.expect("test").metadata, json!({"purpose": "test"}));
 
     // 4. Drop checkpoint
-    manager.drop_checkpoint("v1").await.expect("Failed to drop checkpoint");
-    let list_after_drop = manager.list_checkpoints().await.expect("Failed to list checkpoints");
+    manager
+        .drop_checkpoint("v1")
+        .await
+        .expect("Failed to drop checkpoint");
+    let list_after_drop = manager
+        .list_checkpoints()
+        .await
+        .expect("Failed to list checkpoints");
     assert!(list_after_drop.is_empty());
 }
 
@@ -66,7 +82,10 @@ async fn test_checkpoint_manager_persistence() {
     {
         let storage = setup_storage(&db_path).await;
         let manager = CheckpointManager::new(storage.clone());
-        let list = manager.list_checkpoints().await.expect("Failed to list checkpoints");
+        let list = manager
+            .list_checkpoints()
+            .await
+            .expect("Failed to list checkpoints");
 
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "persist_test");

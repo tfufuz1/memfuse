@@ -16,7 +16,7 @@ serde_json = { workspace = true }
 parking_lot = { workspace = true }
 
 [dev-dependencies]
-memfuse-core = { workspace = true }
 memfuse-store = { workspace = true }
+memfuse-core = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
