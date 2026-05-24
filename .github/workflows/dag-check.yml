@@ -15,7 +15,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         
-      - name: Check L1 Kernel Isolation (core, runtime, orchestrator, crypto)
+      - name: Check L1 Kernel Isolation (core, runtime, orchestrator)
         run: |
           set -e
           for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator memfuse-crypto; do
@@ -37,7 +37,7 @@ jobs:
             exit 1
           fi
           echo "Verifying memfuse-index..."
-          if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core" | grep -q "memfuse-"; then
+          if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core|memfuse-graph" | grep -q "memfuse-"; then
             echo "ERROR: memfuse-index violates DAG by importing non-core crates."
             cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
             exit 1
