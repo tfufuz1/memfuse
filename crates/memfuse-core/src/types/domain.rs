@@ -1,3 +1,5 @@
+//! Domain-specific identifiers and core data structures.
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
