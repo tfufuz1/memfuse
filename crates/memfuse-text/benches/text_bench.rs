@@ -1,10 +1,10 @@
+use async_trait::async_trait;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use memfuse_core::{DocId, StorageEngine, TxId, Result};
+use memfuse_core::{DocId, Result, StorageEngine, TxId};
 use memfuse_text::inverted::InvertedIndex;
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::RwLock;
-use async_trait::async_trait;
 
 struct MockStorage {
     store: RwLock<HashMap<Vec<u8>, Vec<u8>>>,
@@ -58,7 +58,7 @@ impl StorageEngine for MockStorage {
 }
 
 fn bench_text_engine(c: &mut Criterion) {
-    let runtime = tokio::runtime::Runtime::new().unwrap(); // expect #[cfg(test)]
+    let runtime = tokio::runtime::Runtime::new().unwrap(); // unwrap
     let storage = Arc::new(MockStorage::new());
     let index = InvertedIndex::new(storage.clone(), "default");
 
@@ -67,22 +67,23 @@ fn bench_text_engine(c: &mut Criterion) {
     let tx = TxId::new(1);
 
     c.bench_function("upsert_document", |b| {
-        b.to_async(&runtime).iter(|| {
-            index.upsert_document(black_box(tx), black_box(doc_id), black_box(text))
-        })
+        b.to_async(&runtime)
+            .iter(|| index.upsert_document(black_box(tx), black_box(doc_id), black_box(text)))
     });
 
     // Ingest some data for search bench
     runtime.block_on(async {
         for i in 1..=100 {
-            index.upsert_document(TxId::new(i), DocId::new(i), text).await.unwrap(); // expect #[cfg(test)]
+            index
+                .upsert_document(TxId::new(i), DocId::new(i), text)
+                .await
+                .unwrap(); // unwrap
         }
     });
 
     c.bench_function("search_bm25", |b| {
-        b.to_async(&runtime).iter(|| {
-            index.search_bm25(black_box("rust programming"), black_box(10))
-        })
+        b.to_async(&runtime)
+            .iter(|| index.search_bm25(black_box("rust programming"), black_box(10)))
     });
 }
 
