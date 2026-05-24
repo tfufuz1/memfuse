@@ -47,6 +47,7 @@ use rand::Rng;
 use roaring::RoaringTreemap;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::Mutex;
 
@@ -403,6 +404,8 @@ impl HnswIndexCore {
                 }
             }
         }
+    }
+
     fn compute_distance_with_mmap(
         &self,
         query_exact: &[f32],
@@ -674,10 +677,14 @@ impl HnswIndexCore {
         let new_idx = {
             let mut nodes = self.nodes.write();
             let idx = nodes.len();
+            let mut connections = Vec::with_capacity(new_layer + 1);
+            for _ in 0..=new_layer {
+                connections.push(Vec::with_capacity(self.config.m));
+            }
             nodes.push(HnswNode {
                 doc_id: id,
                 vector: vector_data,
-                connections: vec![vec![]; new_layer + 1],
+                connections,
                 _max_layer: new_layer,
             });
             idx
@@ -714,7 +721,11 @@ impl HnswIndexCore {
         // CREATED:2026-05-08 DEADLINE:NONE
         // INVARIANTE: ∀ Knoten v die während Search traversiert werden: v.neighbors ist vollständig
         // FIX: Insert generiert alle Kanten offline und committed in einem write-lock.
-        let mut final_connections = vec![vec![]; new_layer + 1];
+        let mut final_connections = Vec::with_capacity(new_layer + 1);
+        // Fill with dummy vectors to allow indexed assignment
+        for _ in 0..=new_layer {
+            final_connections.push(Vec::new());
+        }
 
         for layer in (0..=new_layer.min(current_max_layer)).rev() {
             let neighbors = self.search_layer(
@@ -744,7 +755,8 @@ impl HnswIndexCore {
             }
 
             for layer in (0..=new_layer.min(current_max_layer)).rev() {
-                for &neighbor_idx in &final_connections[layer] {
+                for &neighbor_idx_u32 in &final_connections[layer] {
+                    let neighbor_idx = neighbor_idx_u32 as usize;
                     // Scope for neighbor modification to release mutable borrow
                     let (should_shrink, node_vec, conn_indices) = {
                         let neighbor_node = nodes.get_mut(neighbor_idx).ok_or_else(|| {
@@ -754,7 +766,7 @@ impl HnswIndexCore {
                             ))
                         })?;
                         if let Some(conn_layer) = neighbor_node.connections.get_mut(layer) {
-                            conn_layer.push(new_idx);
+                            conn_layer.push(new_idx as u32);
                             if conn_layer.len() > self.config.m * 2 {
                                 (true, neighbor_node.vector.clone(), conn_layer.clone())
                             } else {
@@ -767,7 +779,8 @@ impl HnswIndexCore {
 
                     if should_shrink {
                         let mut conn_cands = Vec::with_capacity(conn_indices.len());
-                        for &idx in conn_indices.iter() {
+                        for &idx_u32 in conn_indices.iter() {
+                            let idx = idx_u32 as usize;
                             let target_node = nodes.get(idx).ok_or_else(|| {
                                 MemFuseError::Index(format!(
                                     "HNSW target node missing at index {}",
@@ -1288,6 +1301,8 @@ impl VectorIndex for HnswIndex {
         let deleted = self.deleted_count.load(Ordering::SeqCst) as usize;
         total.saturating_sub(deleted)
     }
+
+    async fn stats(&self) -> Result<VectorIndexStats> {
         let nodes = self.nodes.read();
         let deleted_count = self.deleted_count.load(Ordering::SeqCst) as usize;
         let num_vectors = nodes.len().saturating_sub(deleted_count);
