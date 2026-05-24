@@ -231,15 +231,22 @@ mod tests {
     }
 
     #[test]
-    fn test_hybrid_query_builder_happy_path() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    fn test_hybrid_query_builder_happy_path() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
         let query = HybridQuery::builder()
             .with_text_query("test query")
             .with_vector_query(vec![0.1, 0.2])
             .with_k(5)
             .build()?;
 
-        assert_eq!(query.text_query.expect("Text query should be present"), "test query");
-        assert_eq!(query.vector_query.expect("Vector query should be present"), vec![0.1, 0.2]);
+        assert_eq!(
+            query.text_query.expect("Text query should be present"),
+            "test query"
+        );
+        assert_eq!(
+            query.vector_query.expect("Vector query should be present"),
+            vec![0.1, 0.2]
+        );
         assert_eq!(query.k, 5);
         // Default weights: vector=1.0, others=0.0
         assert_eq!(query.fusion_weights.vector(), 1.0);
@@ -247,7 +254,8 @@ mod tests {
     }
 
     #[test]
-    fn test_hybrid_query_builder_custom_weights() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    fn test_hybrid_query_builder_custom_weights(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1)?;
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())

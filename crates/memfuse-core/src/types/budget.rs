@@ -177,7 +177,8 @@ mod tests {
             let t = tracker.clone();
             handlers.push(std::thread::spawn(move || {
                 for _ in 0..100 {
-                    t.consume_memory(10).expect("Concurrent memory consumption failed");
+                    t.consume_memory(10)
+                        .expect("Concurrent memory consumption failed");
                 }
             }));
         }

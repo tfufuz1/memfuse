@@ -74,14 +74,15 @@ impl SnapshotRegistry {
     }
 
     /// Removes a persistent pin.
-    pub fn unpin(&self, seq_no: u64) -> Result<(), MemFuseError> {
-        self.release_checked(seq_no)
+    pub fn unpin(&self, seq_no: u64) {
+        let _ = self.release_checked(seq_no);
     }
 
     pub(crate) fn release(&self, seq_no: u64) {
         let _ = self.release_checked(seq_no);
     }
 
+    /// Internal checked release. Returns error if seq_no not found.
     fn release_checked(&self, seq_no: u64) -> Result<(), MemFuseError> {
         let seq_no = seq_no & !TOMBSTONE_BIT;
         let mut active = self.active.lock();
@@ -157,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pin_unpin() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_pin_unpin() {
         let registry = Arc::new(SnapshotRegistry::new());
         registry.pin(50);
         assert_eq!(registry.min_active_seqno(), 50);
@@ -165,19 +166,19 @@ mod tests {
         let g = registry.register(100);
         assert_eq!(registry.min_active_seqno(), 50);
 
-        registry.unpin(50)?;
+        registry.unpin(50);
         assert_eq!(registry.min_active_seqno(), 100);
 
         drop(g);
         assert_eq!(registry.min_active_seqno(), u64::MAX);
-        Ok(())
     }
 
     #[test]
-    fn test_unpin_invalid() {
+    fn test_release_checked() {
         let registry = Arc::new(SnapshotRegistry::new());
-        let result = registry.unpin(100);
-        assert!(result.is_err());
+        registry.pin(100);
+        assert!(registry.release_checked(100).is_ok());
+        assert!(registry.release_checked(100).is_err());
     }
 
     #[test]
