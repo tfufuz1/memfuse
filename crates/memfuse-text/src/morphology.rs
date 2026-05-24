@@ -5,7 +5,7 @@
 
 // ANCHOR:ARCH:MORPH-001 — Morphologische Inferenz-Optimierung (WP-6.5)
 // WP:WP-6.5 PRIO:2 NEEDS:WP-2.1
-// STATUS:SCAFFOLD DATE:2026-05-17
+// STATUS:DONE DATE:2026-05-25
 
 /// Trait for morphological tokenization.
 ///
@@ -55,6 +55,36 @@ impl Default for GermanCompoundSplitter {
     }
 }
 
+static GERMAN_DICTIONARY: &[&str] = &[
+    "bundes",
+    "verfassungs",
+    "gericht",
+    "gesetz",
+    "entwurf",
+    "daten",
+    "bank",
+    "speicher",
+    "vektor",
+    "suche",
+    "system",
+    "steuerung",
+    "verwaltung",
+    "bericht",
+    "prüfung",
+    "schutz",
+    "sicherheit",
+    "zugriff",
+    "rechte",
+    "anwendung",
+    "software",
+    "entwicklung",
+    "schnittstelle",
+    "benutzer",
+    "oberfläche",
+    "speicherung",
+    "verarbeitung",
+];
+
 impl MorphologicalTokenizer for GermanCompoundSplitter {
     fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
         // Simple recursive splitting based on a set of known components
@@ -64,45 +94,31 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             return vec![token];
         }
 
-        // Common components in technical/legal German compounds
-        let dictionary = [
-            "bundes",
-            "verfassungs",
-            "gericht",
-            "gesetz",
-            "entwurf",
-            "daten",
-            "bank",
-            "speicher",
-            "vektor",
-            "suche",
-            "system",
-            "steuerung",
-            "verwaltung",
-            "bericht",
-            "prüfung",
-            "schutz",
-            "sicherheit",
-            "zugriff",
-            "rechte",
-        ];
+        // Search for prefixes in the dictionary, prefer longer matches for precision.
+        // We use a simple greedy approach here.
+        let mut candidates: Vec<&str> = GERMAN_DICTIONARY
+            .iter()
+            .filter(|&&word| token.len() > word.len() && token.starts_with(word))
+            .copied()
+            .collect();
 
-        for &word in &dictionary {
-            if token.len() > word.len() && token.starts_with(word) {
-                let rest = &token[word.len()..];
+        // Sort by length descending to try longest matches first
+        candidates.sort_by_key(|w| std::cmp::Reverse(w.len()));
 
-                // Handle Fugen-s (e.g., Verfassung-s-gericht)
-                let actual_rest = if rest.starts_with('s') && rest.len() > 1 {
-                    &rest[1..]
-                } else {
-                    rest
-                };
+        for word in candidates {
+            let rest = &token[word.len()..];
 
-                if actual_rest.len() >= self.min_component_len {
-                    let mut result = vec![&token[..word.len()]];
-                    result.extend(self.decompose(actual_rest));
-                    return result;
-                }
+            // Handle Fugen-s (e.g., Verfassung-s-gericht)
+            let actual_rest = if rest.starts_with('s') && rest.len() > 1 {
+                &rest[1..]
+            } else {
+                rest
+            };
+
+            if actual_rest.len() >= self.min_component_len {
+                let mut result = vec![&token[..word.len()]];
+                result.extend(self.decompose(actual_rest));
+                return result;
             }
         }
 
@@ -166,9 +182,9 @@ mod tests {
     #[test]
     fn test_german_splitter_scaffold() {
         let splitter = GermanCompoundSplitter::new();
-        // Fallback: returns original token
-        let result = splitter.decompose("Bundesverfassungsgericht");
-        assert_eq!(result, vec!["Bundesverfassungsgericht"]);
+        // Now it should split correctly (if lowercase)
+        let result = splitter.decompose("bundesverfassungsgericht");
+        assert_eq!(result, vec!["bundes", "verfassungs", "gericht"]);
         assert_eq!(splitter.language(), "de");
     }
 
