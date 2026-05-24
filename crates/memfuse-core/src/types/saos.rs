@@ -1,3 +1,5 @@
+// ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
+//! SAOS (Situation-Aware Orchestration Schema) types for unified querying and context management.
 //! SAOS (Situation-Aware Orchestration Schema) types for unified querying and context management.
 // ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
 use super::domain::DocId;

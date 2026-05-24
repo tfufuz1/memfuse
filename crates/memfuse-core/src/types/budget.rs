@@ -1,3 +1,5 @@
+// ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
+//! Resource budget and tracking for memory management.
 //! Resource budget and tracking for memory management.
 // ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
 use crate::error::{MemFuseError, Result};
@@ -122,7 +124,10 @@ mod tests {
         let result = tracker.consume_memory(200);
 
         assert!(result.is_err());
-        match result.err().unwrap() { // unwrap
+        let err = result.err().unwrap(); // unwrap
+        match err {
+            // unwrap
+            // unwrap
             // ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 // unwrap
             MemFuseError::MemoryBudgetExceeded { limit_mb, .. } => {
                 // used_mb = (900 + 200) / 1024*1024 = 0 in this case because limit is tiny

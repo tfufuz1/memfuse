@@ -1,3 +1,5 @@
+// ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
+//! Shared data types for the MemFuse ecosystem.
 //! Shared data types for the MemFuse ecosystem.
 // ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
 pub mod budget;

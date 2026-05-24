@@ -1,3 +1,5 @@
+// ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
+//! Domain-specific identifiers and core structures.
 //! Domain-specific identifiers and core structures.
 // ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
 use crate::error::{MemFuseError, Result};
