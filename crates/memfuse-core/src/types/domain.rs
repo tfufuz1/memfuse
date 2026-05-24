@@ -1,3 +1,9 @@
+//! Domain Models — Core identifiers and basic data types.
+//!
+//! Defines `DocId`, `TxId`, `EntityId`, and other fundamental types used
+//! throughout the MemFuse ecosystem.
+
+// ANCHOR:DOC:AGENT:01 STATUS:DONE PRIO:3
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 

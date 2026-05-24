@@ -1,3 +1,9 @@
+//! Metadata Filtering — Expressions for structured data queries.
+//!
+//! Provides `FilterExpr` for defining complex metadata filters used in
+//! search and retrieval operations.
+
+// ANCHOR:DOC:AGENT:01 STATUS:DONE PRIO:3
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.
