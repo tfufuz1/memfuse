@@ -226,15 +226,16 @@ impl HnswIndex {
         let _lock = self.write_mutex.lock().await;
         let nodes = self.nodes.read();
         let entry_point = self.entry_point.read();
-        
+
         let file = std::fs::File::create(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
         let mut writer = std::io::BufWriter::new(file);
 
         let node_count = nodes.len();
         let nodes_offset = 48u64; // After header
-        let vectors_offset = nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
-        
+        let vectors_offset =
+            nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
+
         // Initial header
         let mut header = crate::persistence::HnswHeader {
             magic: crate::persistence::HNSW_MAGIC,
@@ -246,11 +247,13 @@ impl HnswIndex {
             node_count: node_count as u64,
             entry_point: entry_point.map(|i| i as i64).unwrap_or(-1),
             nodes_offset,
-            connections_offset: 0, 
+            connections_offset: 0,
         };
 
         // 1. Placeholder Header
-        writer.write_all(&header.to_bytes()).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        writer
+            .write_all(&header.to_bytes())
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
 
         // 2. Nodes Metadata (Placeholders)
         let mut node_records = Vec::with_capacity(node_count);
@@ -263,7 +266,9 @@ impl HnswIndex {
             });
         }
         for record in &node_records {
-            writer.write_all(&record.to_bytes()).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+            writer
+                .write_all(&record.to_bytes())
+                .map_err(|e| MemFuseError::Storage(e.to_string()))?;
         }
 
         // 3. Vectors Block
@@ -272,17 +277,20 @@ impl HnswIndex {
             node_records[i].doc_id = node.doc_id.inner();
             node_records[i].max_layer = node.connections.len() as u8;
             node_records[i].vector_offset = current_pos;
-            
+
             match &node.vector {
                 VectorData::F32(v) => {
-                    let bytes: &[u8] = unsafe {
-                        std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4)
-                    };
-                    writer.write_all(bytes).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                    let bytes: &[u8] =
+                        unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
+                    writer
+                        .write_all(bytes)
+                        .map_err(|e| MemFuseError::Storage(e.to_string()))?;
                     current_pos += bytes.len() as u64;
                 }
                 VectorData::U8(v) => {
-                    writer.write_all(v).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                    writer
+                        .write_all(v)
+                        .map_err(|e| MemFuseError::Storage(e.to_string()))?;
                     current_pos += v.len() as u64;
                 }
             }
@@ -291,50 +299,66 @@ impl HnswIndex {
         // 4. Connections Block (Align to 4 bytes)
         let connections_offset = (current_pos + 3) & !3;
         header.connections_offset = connections_offset;
-        
+
         if connections_offset > current_pos {
             let padding = [0u8; 4];
-            writer.write_all(&padding[.. (connections_offset - current_pos) as usize])
+            writer
+                .write_all(&padding[..(connections_offset - current_pos) as usize])
                 .map_err(|e| MemFuseError::Storage(e.to_string()))?;
         }
-        
+
         let mut conn_pos = connections_offset;
         for (i, node) in nodes.iter().enumerate() {
             node_records[i].connections_offset = conn_pos;
             let num_layers = node.connections.len() as u8;
-            writer.write_all(&[num_layers]).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+            writer
+                .write_all(&[num_layers])
+                .map_err(|e| MemFuseError::Storage(e.to_string()))?;
             conn_pos += 1;
-            
+
             for layer in 0..num_layers as usize {
                 let conns = &node.connections[layer];
                 let len = conns.len() as u32;
-                writer.write_all(&len.to_le_bytes()).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                writer
+                    .write_all(&len.to_le_bytes())
+                    .map_err(|e| MemFuseError::Storage(e.to_string()))?;
                 let bytes: &[u8] = unsafe {
                     std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
                 };
-                writer.write_all(bytes).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                writer
+                    .write_all(bytes)
+                    .map_err(|e| MemFuseError::Storage(e.to_string()))?;
                 conn_pos += 4 + bytes.len() as u64;
             }
         }
-        writer.flush().map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        let mut file = writer.into_inner().map_err(|_| MemFuseError::Storage("Writer error".into()))?;
+        writer
+            .flush()
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let mut file = writer
+            .into_inner()
+            .map_err(|_| MemFuseError::Storage("Writer error".into()))?;
 
         // 5. Final Updates
         use std::io::Seek;
-        file.seek(std::io::SeekFrom::Start(0)).map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        file.write_all(&header.to_bytes()).map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        file.seek(std::io::SeekFrom::Start(nodes_offset)).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        file.seek(std::io::SeekFrom::Start(0))
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        file.write_all(&header.to_bytes())
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        file.seek(std::io::SeekFrom::Start(nodes_offset))
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
         for record in &node_records {
-            file.write_all(&record.to_bytes()).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+            file.write_all(&record.to_bytes())
+                .map_err(|e| MemFuseError::Storage(e.to_string()))?;
         }
-        file.sync_all().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        file.sync_all()
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
         Ok(())
     }
 
     /// Loads an HNSW index from a flat file via memory-mapping.
     pub fn load_mmap(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let mmap_index = crate::persistence::MmapIndex::open(path)?;
-        
+
         let ep = if mmap_index.header.entry_point >= 0 {
             Some(mmap_index.header.entry_point as usize)
         } else {
@@ -416,9 +440,9 @@ impl HnswIndexCore {
         let vector_bytes = mmap.get_vector(record);
         if mmap.header.quantized != 0 {
             let guard = self.quantizer.read();
-            let q = guard.as_ref().ok_or_else(|| {
-                memfuse_core::MemFuseError::Index("Quantizer not trained".into())
-            })?;
+            let q = guard
+                .as_ref()
+                .ok_or_else(|| memfuse_core::MemFuseError::Index("Quantizer not trained".into()))?;
             if let Some(qq) = query_quantized {
                 q.symmetric_dist(qq, vector_bytes, self.config.distance_metric)
             } else {
@@ -427,7 +451,10 @@ impl HnswIndexCore {
         } else {
             // F32 cast
             let v: &[f32] = unsafe {
-                std::slice::from_raw_parts(vector_bytes.as_ptr() as *const f32, self.config.dimension)
+                std::slice::from_raw_parts(
+                    vector_bytes.as_ptr() as *const f32,
+                    self.config.dimension,
+                )
             };
             compute_distance(query_exact, v, self.config.distance_metric)
         }
@@ -488,13 +515,19 @@ impl HnswIndexCore {
                 return Ok(mmap.get_connections(&record, layer));
             }
             let ram_idx = idx - ctx.mmap_node_count;
-            return ctx.nodes[ram_idx].connections.get(layer).map(|c| c.as_slice()).ok_or_else(|| {
-                MemFuseError::Index(format!("Missing layer {} in RAM node {}", layer, idx))
-            });
+            return ctx.nodes[ram_idx]
+                .connections
+                .get(layer)
+                .map(|c| c.as_slice())
+                .ok_or_else(|| {
+                    MemFuseError::Index(format!("Missing layer {} in RAM node {}", layer, idx))
+                });
         }
-        ctx.nodes[idx].connections.get(layer).map(|c| c.as_slice()).ok_or_else(|| {
-            MemFuseError::Index(format!("Missing layer {} in node {}", layer, idx))
-        })
+        ctx.nodes[idx]
+            .connections
+            .get(layer)
+            .map(|c| c.as_slice())
+            .ok_or_else(|| MemFuseError::Index(format!("Missing layer {} in node {}", layer, idx)))
     }
 
     fn search_layer(
@@ -507,8 +540,11 @@ impl HnswIndexCore {
     ) -> Result<Vec<Candidate>> {
         let nodes_guard = self.nodes.read();
         let mmap_guard = self.mmap_index.read();
-        let mmap_node_count = mmap_guard.as_ref().map(|m| m.header.node_count as usize).unwrap_or(0);
-        
+        let mmap_node_count = mmap_guard
+            .as_ref()
+            .map(|m| m.header.node_count as usize)
+            .unwrap_or(0);
+
         let ctx = SearchContext {
             nodes: &nodes_guard,
             mmap: mmap_guard.as_ref(),
@@ -792,7 +828,7 @@ impl HnswIndexCore {
                             self.config.m * 2,
                         )?;
 
-                        if let Some(neighbor_node) = nodes.get_mut(neighbor_idx as usize) {
+                        if let Some(neighbor_node) = nodes.get_mut(neighbor_idx) {
                             if let Some(cl) = neighbor_node.connections.get_mut(layer) {
                                 *cl = selected;
                             }
