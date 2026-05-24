@@ -3,7 +3,6 @@
 
 #![forbid(unsafe_code)]
 
-use async_trait::async_trait;
 use memfuse_core::{MemFuseError, Result, StorageEngine, TxId};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -145,6 +144,7 @@ impl CheckpointManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use parking_lot::Mutex as SyncMutex;
     use std::collections::HashSet;
 
