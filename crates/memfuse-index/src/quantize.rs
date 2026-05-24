@@ -1,5 +1,4 @@
 //! Scalar Quantization (SQ8) for HNSW Index.
-// ANCHOR:TODO:QUANT-001 — Optimiere und finalisiere die SQ8 Quantization impl, repariere Cast-Bugs.
 // WP:WP-2.2 PRIO:1 NEEDS:NONE
 // AGENT:03 DATE:2026-05-16 STATUS:DONE
 // TEST: cargo bench -p memfuse-index -- quantization
@@ -38,6 +37,9 @@ impl ScalarQuantizer {
 
         for vec in batch {
             for &val in *vec {
+                if !val.is_finite() {
+                    continue;
+                }
                 if val < min {
                     min = val;
                 }
@@ -45,6 +47,16 @@ impl ScalarQuantizer {
                     max = val;
                 }
             }
+        }
+
+        if min == f32::MAX || max == f32::MIN {
+            return Self {
+                min: 0.0,
+                max: 1.0,
+                scale: 255.0,
+                inv_scale: 1.0 / 255.0,
+                dimension,
+            };
         }
 
         // Prevent div by zero if max == min
@@ -271,5 +283,18 @@ mod tests {
         for &val in &quantized {
             assert!(val > 120 && val < 135); // Close to 127
         }
+    }
+
+    #[test]
+    fn test_train_nan_inf_safety() {
+        let v1 = vec![f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.5];
+        let q = ScalarQuantizer::train(&[v1.as_slice()], 4);
+
+        // Should ignore NaN/Inf and only see 0.5
+        assert_eq!(q.min, 0.5);
+        assert!(q.max > 0.5); // Due to max = min + 1e-6 guard
+
+        let quantized = q.quantize(&[0.5]);
+        assert_eq!(quantized[0], 0); // (0.5 - 0.5) * scale = 0
     }
 }
