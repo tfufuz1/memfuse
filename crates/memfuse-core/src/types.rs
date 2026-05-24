@@ -1,6 +1,5 @@
 //! Core type definitions for MemFuse.
 
-//! Core type definitions for MemFuse.
 pub mod budget;
 pub mod domain;
 pub mod filter;

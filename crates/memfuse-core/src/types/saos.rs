@@ -1,6 +1,5 @@
 //! SAOS (Self-Assembling OS) specific types for context and hybrid search.
 
-//! SAOS (Self-Assembling OS) specific types for context and hybrid search.
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
