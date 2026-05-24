@@ -145,8 +145,8 @@ impl CheckpointManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
     use parking_lot::Mutex as SyncMutex;
+    use std::collections::HashSet;
 
     struct MockStorage {
         data: SyncMutex<std::collections::HashMap<Vec<u8>, Vec<u8>>>,
@@ -186,9 +186,15 @@ mod tests {
             results.sort_by(|a, b| a.0.cmp(&b.0));
             Ok(results)
         }
-        async fn commit(&self, _tx_id: TxId) -> Result<()> { Ok(()) }
-        async fn rollback(&self, _tx_id: TxId) -> Result<()> { Ok(()) }
-        async fn flush(&self) -> Result<()> { Ok(()) }
+        async fn commit(&self, _tx_id: TxId) -> Result<()> {
+            Ok(())
+        }
+        async fn rollback(&self, _tx_id: TxId) -> Result<()> {
+            Ok(())
+        }
+        async fn flush(&self) -> Result<()> {
+            Ok(())
+        }
         async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
             self.pinned.lock().insert(seq_no);
             Ok(())
@@ -197,7 +203,9 @@ mod tests {
             self.pinned.lock().remove(&seq_no);
             Ok(())
         }
-        async fn last_seq_no(&self) -> Result<u64> { Ok(0) }
+        async fn last_seq_no(&self) -> Result<u64> {
+            Ok(0)
+        }
         async fn stats(&self) -> Result<memfuse_core::StorageStats> {
             Ok(memfuse_core::StorageStats {
                 num_segments: 0,

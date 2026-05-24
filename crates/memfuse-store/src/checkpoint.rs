@@ -76,20 +76,25 @@ mod tests {
         storage.put(tx2, b"key2", b"val2").await.unwrap(); // unwrap
         storage.commit(tx2).await.unwrap(); // unwrap
 
-        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec())); // unwrap
-        assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec())); // unwrap
+        let res1 = storage.get(b"key1").await.unwrap(); // unwrap
+        assert_eq!(res1, Some(b"val1".to_vec()));
+        let res2 = storage.get(b"key2").await.unwrap(); // unwrap
+        assert_eq!(res2, Some(b"val2".to_vec()));
 
         // 3. Rollback to cp1
         checkpointer.rollback_to(&cp1).await.expect("rollback");
 
         // 4. Verify state
-        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec())); // unwrap
-        assert_eq!(storage.get(b"key2").await.unwrap(), None); // unwrap
+        let res1_after = storage.get(b"key1").await.unwrap(); // unwrap
+        assert_eq!(res1_after, Some(b"val1".to_vec()));
+        let res2_after = storage.get(b"key2").await.unwrap(); // unwrap
+        assert_eq!(res2_after, None); // Should be gone!
 
         // 5. Verify we can still write and seq_no is correct
         let tx3 = TxId::new(3);
         storage.put(tx3, b"key3", b"val3").await.unwrap(); // unwrap
         storage.commit(tx3).await.unwrap(); // unwrap
-        assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec())); // unwrap
+        let res3 = storage.get(b"key3").await.unwrap(); // unwrap
+        assert_eq!(res3, Some(b"val3".to_vec()));
     }
 }
