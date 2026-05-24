@@ -977,7 +977,7 @@ mod tests {
         let num_offsets = u16::from_le_bytes(
             block
                 .get(n.saturating_sub(2)..n)
-                .expect("test") // unwrap allowed;
+                .expect("test") // unwrap allowed
                 .try_into()
                 .expect("test"), // unwrap allowed
         );
@@ -987,7 +987,7 @@ mod tests {
         let bloom = u64::from_le_bytes(
             block
                 .get(bloom_pos..bloom_pos + 8)
-                .expect("test") // unwrap allowed;
+                .expect("test") // unwrap allowed
                 .try_into()
                 .expect("correct length"), // unwrap allowed
         );
@@ -1063,7 +1063,7 @@ mod tests {
             let res = reader
                 .get(key.as_bytes())
                 .await
-                .expect("get") // unwrap allowed;
+                .expect("get") // unwrap allowed
                 .expect("exists"); // unwrap allowed
             assert_eq!(res.0.as_ref(), expected.as_bytes());
             assert_eq!(res.1, i as u64);

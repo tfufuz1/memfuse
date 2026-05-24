@@ -678,7 +678,7 @@ mod tests {
 
         let related_ids: Vec<String> = results
             .into_iter()
-            .map(|(_, v)| v["to"].as_str().expect("valid").to_string()) // unwrap allowed;
+            .map(|(_, v)| v["to"].as_str().expect("valid").to_string()) // unwrap allowed
             .collect();
         assert!(related_ids.contains(&"doc-2".to_string()));
         assert!(related_ids.contains(&"doc-3".to_string()));
@@ -767,7 +767,7 @@ mod tests {
         // 7. Verify empty search and missing doc
         let get_agent = db.get("agent-1").await.expect("get"); // unwrap allowed
         assert!(get_agent.is_none());
-        assert_eq!(db.len().await.expect("len"), 2); // 3 inserted, 1 deleted // unwrap allowed
+        assert_eq!(db.len().await.expect("len"), 2); // unwrap allowed
     }
 
     #[tokio::test]

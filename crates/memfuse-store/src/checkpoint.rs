@@ -86,7 +86,7 @@ mod tests {
         );
 
         // 3. Rollback to cp1
-        checkpointer.rollback_to(&cp1).await.expect("rollback"); // unwrap allowed // unwrap allowed
+        checkpointer.rollback_to(&cp1).await.expect("rollback"); // unwrap allowed
 
         // 4. Verify state
         assert_eq!(

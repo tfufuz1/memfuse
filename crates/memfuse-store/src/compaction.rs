@@ -323,7 +323,7 @@ mod tests {
             builder.add(k, v, *seq).await.expect("add entry"); // unwrap allowed
         }
         builder.finish().await.expect("finish sst"); // unwrap allowed
-        Arc::new(SstableReader::open(&path, bc).await.expect("open sst")) // unwrap allowed;
+        Arc::new(SstableReader::open(&path, bc).await.expect("open sst")) // unwrap allowed
     }
 
     #[tokio::test]
@@ -605,7 +605,7 @@ mod tests {
         for _ in 0..100 {
             tokio::time::sleep(Duration::from_millis(100)).await;
             let stats = storage.stats().await.expect("stats"); // unwrap allowed
-            // If we have few segments, compaction is doing its job
+                                                               // If we have few segments, compaction is doing its job
             if stats.num_segments <= 5 {
                 stabilized = true;
                 break;
@@ -629,7 +629,7 @@ mod tests {
             let val = storage
                 .get(key.as_bytes())
                 .await
-                .expect("get final") // unwrap allowed;
+                .expect("get final") // unwrap allowed
                 .unwrap_or_else(|| panic!("missing key {}", key));
             assert_eq!(val[0], (i % 255) as u8);
         }
