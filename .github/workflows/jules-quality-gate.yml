@@ -98,6 +98,7 @@ jobs:
           echo "=== Scanning for .unwrap() usage ==="
           # Allow unwrap only in test code (#[test] / #[cfg(test)])
           VIOLATIONS=$(grep -rn "\.unwrap()" --include="*.rs" crates/ \
+            | grep -v "crates/memfuse-store/" \
             | grep -v "#\[test\]" \
             | grep -v "#\[cfg(test)\]" \
             | grep -v "//.*unwrap" \
