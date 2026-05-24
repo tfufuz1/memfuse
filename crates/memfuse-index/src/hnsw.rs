@@ -223,7 +223,6 @@ impl HnswIndex {
     /// Persists the index to a flat file.
     pub async fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let _lock = self.write_mutex.lock().await;
-    async fn stats(&self) -> Result<VectorIndexStats> {
         let nodes = self.nodes.read();
         let entry_point = self.entry_point.read();
         
@@ -404,7 +403,6 @@ impl HnswIndexCore {
                 }
             }
         }
-    }
     fn compute_distance_with_mmap(
         &self,
         query_exact: &[f32],
