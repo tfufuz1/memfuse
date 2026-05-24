@@ -1,3 +1,5 @@
+//! Domain-specific identifiers and core structures.
+// ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
