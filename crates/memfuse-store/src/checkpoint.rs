@@ -66,50 +66,42 @@ mod tests {
 
         // 1. Insert some data
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.expect("unwrap") /* unwrap */ /* unwrap */; // unwrap // unwrap
-        storage.commit(tx1).await.expect("unwrap") /* unwrap */ /* unwrap */; // unwrap // unwrap
+        storage.put(tx1, b"key1", b"val1").await.expect("unwrap");
+        storage.commit(tx1).await.expect("unwrap");
 
         let cp1 = checkpointer.create_checkpoint(tx1);
 
         // 2. Insert more data
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"key2", b"val2").await.expect("unwrap") /* unwrap */ /* unwrap */; // unwrap // unwrap
-        storage.commit(tx2).await.expect("unwrap") /* unwrap */ /* unwrap */; // unwrap // unwrap
+        storage.put(tx2, b"key2", b"val2").await.expect("unwrap");
+        storage.commit(tx2).await.expect("unwrap");
 
         assert_eq!(
-            storage.get(b"key1").await.expect("unwrap"), /* unwrap */
-            /* unwrap */
+            storage.get(b"key1").await.expect("unwrap"),
             Some(b"val1".to_vec())
-        ); // unwrap // unwrap
+        );
         assert_eq!(
-            storage.get(b"key2").await.expect("unwrap"), /* unwrap */
-            /* unwrap */
+            storage.get(b"key2").await.expect("unwrap"),
             Some(b"val2".to_vec())
-        ); // unwrap // unwrap
+        );
 
         // 3. Rollback to cp1
         checkpointer.rollback_to(&cp1).await.expect("rollback");
 
         // 4. Verify state
         assert_eq!(
-            storage.get(b"key1").await.expect("unwrap"), /* unwrap */
-            /* unwrap */
+            storage.get(b"key1").await.expect("unwrap"),
             Some(b"val1".to_vec())
-        ); // unwrap // unwrap
-        assert_eq!(
-            storage.get(b"key2").await.expect("unwrap"), /* unwrap */ /* unwrap */
-            None
-        ); // Should be gone! // unwrap // unwrap
+        );
+        assert_eq!(storage.get(b"key2").await.expect("unwrap"), None); // Should be gone!
 
         // 5. Verify we can still write and seq_no is correct
         let tx3 = TxId::new(3);
-        storage.put(tx3, b"key3", b"val3").await.expect("unwrap") /* unwrap */ /* unwrap */; // unwrap // unwrap
-        storage.commit(tx3).await.expect("unwrap") /* unwrap */ /* unwrap */; // unwrap // unwrap
+        storage.put(tx3, b"key3", b"val3").await.expect("unwrap");
+        storage.commit(tx3).await.expect("unwrap");
         assert_eq!(
-            storage.get(b"key3").await.expect("unwrap"), /* unwrap */
-            /* unwrap */
+            storage.get(b"key3").await.expect("unwrap"),
             Some(b"val3".to_vec())
-        ); // unwrap
-           // unwrap
+        );
     }
 }

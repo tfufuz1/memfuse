@@ -49,9 +49,9 @@ async fn test_e2e_agent_workflow() {
     // 4. Verify Ergebnisse (Score, Metadata, Ordering)
     assert!(!results.is_empty());
     assert_eq!(results[0].id, "doc-1");
-    assert!(results[0].metadata.as_ref().unwrap()["text"] // unwrap
+    assert!(results[0].metadata.as_ref().expect("unwrap")["text"]
         .as_str()
-        .unwrap() // unwrap
+        .expect("unwrap")
         .contains("Rust"));
 
     // 5. Update + Re-Search
@@ -64,7 +64,7 @@ async fn test_e2e_agent_workflow() {
     .expect("update failed");
     let results_updated = db.search(&[1.0, 0.0, 0.0], 1).await.expect("search failed");
     assert_eq!(
-        results_updated[0].metadata.as_ref().unwrap()["text"], // unwrap
+        results_updated[0].metadata.as_ref().expect("unwrap")["text"],
         "Rust is super fast."
     );
 
@@ -86,11 +86,11 @@ async fn test_e2e_agent_workflow() {
         .await
         .expect("ins b");
 
-    let val_a = col_a.get("secret").await.expect("get a").unwrap(); // unwrap
-    let val_b = col_b.get("secret").await.expect("get b").unwrap(); // unwrap
+    let val_a = col_a.get("secret").await.expect("get a").expect("unwrap");
+    let val_b = col_b.get("secret").await.expect("get b").expect("unwrap");
 
-    assert_eq!(val_a.metadata.unwrap()["val"], "A"); // unwrap
-    assert_eq!(val_b.metadata.unwrap()["val"], "B"); // unwrap
+    assert_eq!(val_a.metadata.expect("unwrap")["val"], "A");
+    assert_eq!(val_b.metadata.expect("unwrap")["val"], "B");
 
     // Integration of Orchestrator and Runtime
     let mut graph = StateGraph::new();

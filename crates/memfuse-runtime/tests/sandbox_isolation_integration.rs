@@ -26,8 +26,8 @@ async fn test_sandbox_multiple_instances() {
     let s2 = WasmSandbox::new(64);
     let budget = TokenBudget::new(10, 0);
 
-    let res1 = s1.execute_isolated(b"", &budget).await.unwrap(); // unwrap
-    let res2 = s2.execute_isolated(b"", &budget).await.unwrap(); // unwrap
+    let res1 = s1.execute_isolated(b"", &budget).await.expect("unwrap");
+    let res2 = s2.execute_isolated(b"", &budget).await.expect("unwrap");
 
     assert_eq!(res1, res2);
 }

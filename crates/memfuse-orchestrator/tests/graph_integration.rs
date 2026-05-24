@@ -55,7 +55,7 @@ fn test_stategraph_complex_workflow() {
         .edges
         .iter()
         .find(|e| e.from == "analyze" && e.to == "store")
-        .unwrap(); // unwrap
+        .expect("unwrap");
     assert_eq!(
         edge_analyze_store.condition_evaluator,
         Some("is_valid".to_string())

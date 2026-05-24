@@ -77,7 +77,7 @@ async fn test_pre_filter_with_low_selectivity() {
     assert_eq!(results.len(), 2);
     assert!(results
         .iter()
-        .all(|r| r.metadata.as_ref().unwrap()["topic"] == "special")); // unwrap
+        .all(|r| r.metadata.as_ref().expect("unwrap")["topic"] == "special"));
 }
 
 #[tokio::test]
@@ -90,21 +90,21 @@ async fn test_complex_logical_filter() {
         Some(json!({"tags": ["a", "b"], "val": 10})),
     )
     .await
-    .unwrap(); // unwrap
+    .expect("unwrap");
     db.insert(
         "d2",
         &[1.0, 0.0, 0.0, 0.0],
         Some(json!({"tags": ["a"], "val": 20})),
     )
     .await
-    .unwrap(); // unwrap
+    .expect("unwrap");
     db.insert(
         "d3",
         &[1.0, 0.0, 0.0, 0.0],
         Some(json!({"tags": ["b"], "val": 30})),
     )
     .await
-    .unwrap(); // unwrap
+    .expect("unwrap");
 
     // (val > 15) AND (NOT tags contains "b") -> should only be d2
     let filter = MetadataFilter::And(vec![
@@ -123,7 +123,7 @@ async fn test_complex_logical_filter() {
     let results = db
         .search_with_filter(&[1.0, 0.0, 0.0, 0.0], 10, Some(filter))
         .await
-        .unwrap(); // unwrap
+        .expect("unwrap");
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].id, "d2");
 }
