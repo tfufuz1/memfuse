@@ -70,7 +70,9 @@ fn opt_dict_to_json(
 }
 
 /// Converts a Python dict to a MetadataFilter.
-fn dict_to_filter(d: &pyo3::Bound<'_, pyo3::types::PyDict>) -> PyResult<memfuse_db::MetadataFilter> {
+fn dict_to_filter(
+    d: &pyo3::Bound<'_, pyo3::types::PyDict>,
+) -> PyResult<memfuse_db::MetadataFilter> {
     depythonize(d)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Filter error: {}", e)))
 }
