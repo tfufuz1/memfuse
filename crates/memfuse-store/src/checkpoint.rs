@@ -66,30 +66,35 @@ mod tests {
 
         // 1. Insert some data
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.unwrap(); // unwrap allowed in tests
-        storage.commit(tx1).await.unwrap(); // unwrap allowed in tests
+        storage.put(tx1, b"key1", b"val1").await.unwrap(); // unwrap allowed
+        storage.commit(tx1).await.unwrap(); // unwrap allowed
 
         let cp1 = checkpointer.create_checkpoint(tx1);
 
         // 2. Insert more data
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"key2", b"val2").await.unwrap(); // unwrap allowed in tests
-        storage.commit(tx2).await.unwrap(); // unwrap allowed in tests
+        storage.put(tx2, b"key2", b"val2").await.unwrap(); // unwrap allowed
+        storage.commit(tx2).await.unwrap(); // unwrap allowed
 
-        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec())); // unwrap allowed in tests
-        assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec())); // unwrap allowed in tests
+        let val1 = storage.get(b"key1").await.unwrap(); // unwrap allowed
+        assert_eq!(val1, Some(b"val1".to_vec()));
+        let val2 = storage.get(b"key2").await.unwrap(); // unwrap allowed
+        assert_eq!(val2, Some(b"val2".to_vec()));
 
         // 3. Rollback to cp1
         checkpointer.rollback_to(&cp1).await.expect("rollback");
 
         // 4. Verify state
-        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec())); // unwrap allowed in tests
-        assert_eq!(storage.get(b"key2").await.unwrap(), None); // unwrap allowed in tests
+        let val1_post = storage.get(b"key1").await.unwrap(); // unwrap allowed
+        assert_eq!(val1_post, Some(b"val1".to_vec()));
+        let val2_post = storage.get(b"key2").await.unwrap(); // unwrap allowed
+        assert_eq!(val2_post, None);
 
         // 5. Verify we can still write and seq_no is correct
         let tx3 = TxId::new(3);
-        storage.put(tx3, b"key3", b"val3").await.unwrap(); // unwrap allowed in tests
-        storage.commit(tx3).await.unwrap(); // unwrap allowed in tests
-        assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec())); // unwrap allowed in tests
+        storage.put(tx3, b"key3", b"val3").await.unwrap(); // unwrap allowed
+        storage.commit(tx3).await.unwrap(); // unwrap allowed
+        let val3 = storage.get(b"key3").await.unwrap(); // unwrap allowed
+        assert_eq!(val3, Some(b"val3".to_vec()));
     }
 }
