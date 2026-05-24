@@ -156,19 +156,16 @@ impl LsmStorage {
         // Replay WAL
         let wal_entries = wal.replay().await?;
         let mut max_seq = 0u64;
-        let mut replayed_size = 0u64;
 
-        for (lsn, entry) in &wal_entries {
+        for (lsn, entry, _) in &wal_entries {
             if *lsn > max_seq {
                 max_seq = *lsn;
             }
             match &entry.op {
                 WalOp::Put { key, value, .. } => {
-                    replayed_size += (key.len() + value.len()) as u64;
                     memtable.put(Bytes::from(key.clone()), Bytes::from(value.clone()), *lsn);
                 }
                 WalOp::Delete { key, .. } => {
-                    replayed_size += key.len() as u64;
                     memtable.put(Bytes::from(key.clone()), Bytes::new(), lsn | TOMBSTONE_BIT);
                 }
             }
@@ -178,8 +175,9 @@ impl LsmStorage {
             memory_limit: config.max_ram_mb * 1024 * 1024,
         };
         let resource_tracker = Arc::new(ResourceTracker::new(budget_config));
-        if replayed_size > 0 {
-            let _ = resource_tracker.consume_memory(replayed_size);
+        let memtable_size = memtable.size() as u64;
+        if memtable_size > 0 {
+            let _ = resource_tracker.consume_memory(memtable_size);
         }
 
         let tx_buffer = TxBuffer::new_with_config(16, config.tx_timeout);
@@ -260,65 +258,75 @@ impl LsmStorage {
         let _commit_lock = self.commit_mutex.lock().await;
         let mut state = self.state.write().await;
 
-        // 1. Replay WAL to find the last valid seq_no and the file offset
+        // 1. Replay WAL to find entries and offsets
         let entries = state.wal.replay().await?;
-        let mut _target_seq = 0;
-        let mut found = false;
+        let mut target_offset = 0u64;
+        let mut target_hmac = [0u8; 32];
+        let mut max_seq = 0u64;
+        let mut found = target_tx.inner() == 0;
 
-        // We need to find the offset in the file to truncate.
-        // Replay doesn't currently give us offsets, but we can re-read.
-        for (seq, entry) in &entries {
-            if entry.tx_id() == target_tx {
-                _target_seq = *seq;
-                found = true;
+        // 2. Filter entries and find the truncation point
+        let mut valid_entries = Vec::new();
+        for (seq, entry, offset) in entries {
+            if entry.tx_id().inner() <= target_tx.inner() {
+                if entry.tx_id() == target_tx {
+                    found = true;
+                }
+                if seq > max_seq {
+                    max_seq = seq;
+                }
+                target_offset = offset;
+                target_hmac = entry.checksum;
+                valid_entries.push((seq, entry));
             }
         }
 
-        if !found && target_tx.inner() != 0 {
+        if !found {
             return Err(MemFuseError::Storage(format!(
                 "Target TX {} not found in WAL",
                 target_tx
             )));
         }
 
-        // 2. Clear current memtable (it might have data > target_tx)
+        // 3. Physically truncate the WAL
+        state.wal.truncate(target_offset, target_hmac).await?;
+
+        // 4. Rebuild MemTable and clear resource budget
+        let mut total_freed = state.memtable.size() as u64;
+        for mt in &state.immutable_memtables {
+            total_freed += mt.size() as u64;
+        }
         state.memtable = Arc::new(MemTable::new());
         state.immutable_memtables.clear();
+        self.budget.release_memory(total_freed);
 
-        // 3. Re-replay WAL up to target_tx into the new memtable
-        let mut max_seq = 0;
-        for (seq, entry) in entries {
-            if entry.tx_id().inner() <= target_tx.inner() {
-                if seq > max_seq {
-                    max_seq = seq;
+        for (seq, entry) in valid_entries {
+            match entry.op {
+                WalOp::Put { key, value, .. } => {
+                    state
+                        .memtable
+                        .put(bytes::Bytes::from(key), bytes::Bytes::from(value), seq);
                 }
-                match entry.op {
-                    WalOp::Put { key, value, .. } => {
-                        state
-                            .memtable
-                            .put(bytes::Bytes::from(key), bytes::Bytes::from(value), seq);
-                    }
-                    WalOp::Delete { key, .. } => {
-                        state.memtable.put(
-                            bytes::Bytes::from(key),
-                            bytes::Bytes::new(),
-                            seq | TOMBSTONE_BIT,
-                        );
-                    }
+                WalOp::Delete { key, .. } => {
+                    state.memtable.put(
+                        bytes::Bytes::from(key),
+                        bytes::Bytes::new(),
+                        seq | TOMBSTONE_BIT,
+                    );
                 }
             }
         }
 
-        // 4. Update next_seq_no
+        // 5. Update next_seq_no and memory budget
         self.next_seq_no.store(max_seq + 1, Ordering::SeqCst);
-
-        // 5. Truncate WAL (Simple version: just keep it as is, but any new writes will have lower seq_nos? No, we should truncate.)
-        // TODO: Real truncation involves knowing the byte offset of the last valid entry.
+        let new_memtable_size = state.memtable.size() as u64;
+        let _ = self.budget.consume_memory(new_memtable_size);
 
         tracing::info!(
-            "Rollback to TX {} successful. Max seq: {}",
+            "Rollback to TX {} successful. Max seq: {}, WAL truncated to {}",
             target_tx,
-            max_seq
+            max_seq,
+            target_offset
         );
         Ok(())
     }
