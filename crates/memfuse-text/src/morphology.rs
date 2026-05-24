@@ -85,6 +85,14 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             "sicherheit",
             "zugriff",
             "rechte",
+            "arbeits",
+            "wirtschafts",
+            "justiz",
+            "finanz",
+            "umwelt",
+            "bildungs",
+            "forschungs",
+            "gesundheits",
         ];
 
         for &word in &dictionary {
