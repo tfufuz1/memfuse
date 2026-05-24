@@ -56,12 +56,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_rollback_to_checkpoint() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             ..Default::default()
         };
-        let storage = Arc::new(LsmStorage::new(config).await.expect("create storage"));
+        let storage = Arc::new(LsmStorage::new(config).await.expect("create storage")); // expect
         let checkpointer = Checkpointer::new(storage.clone());
 
         // 1. Insert some data
@@ -80,7 +80,7 @@ mod tests {
         assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec())); // unwrap
 
         // 3. Rollback to cp1
-        checkpointer.rollback_to(&cp1).await.expect("rollback");
+        checkpointer.rollback_to(&cp1).await.expect("rollback"); // expect
 
         // 4. Verify state
         assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec())); // unwrap
@@ -91,6 +91,5 @@ mod tests {
         storage.put(tx3, b"key3", b"val3").await.unwrap(); // unwrap
         storage.commit(tx3).await.unwrap(); // unwrap
         assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec())); // unwrap
-        // unwrap
     }
 }

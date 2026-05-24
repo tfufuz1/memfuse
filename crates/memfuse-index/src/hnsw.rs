@@ -36,6 +36,7 @@
 //! - Transactional inserts/deletes via TxBuffer
 
 use crate::distance::compute_distance;
+use std::io::Write;
 use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
 use memfuse_core::{
@@ -403,6 +404,7 @@ impl HnswIndexCore {
                 }
             }
         }
+    }
     fn compute_distance_with_mmap(
         &self,
         query_exact: &[f32],
@@ -747,14 +749,14 @@ impl HnswIndexCore {
                 for &neighbor_idx in &final_connections[layer] {
                     // Scope for neighbor modification to release mutable borrow
                     let (should_shrink, node_vec, conn_indices) = {
-                        let neighbor_node = nodes.get_mut(neighbor_idx).ok_or_else(|| {
+                        let neighbor_node = nodes.get_mut(neighbor_idx as usize).ok_or_else(|| {
                             MemFuseError::Index(format!(
                                 "HNSW neighbor node missing at index {}",
                                 neighbor_idx
                             ))
                         })?;
                         if let Some(conn_layer) = neighbor_node.connections.get_mut(layer) {
-                            conn_layer.push(new_idx);
+                            conn_layer.push(new_idx as u32);
                             if conn_layer.len() > self.config.m * 2 {
                                 (true, neighbor_node.vector.clone(), conn_layer.clone())
                             } else {
@@ -768,7 +770,7 @@ impl HnswIndexCore {
                     if should_shrink {
                         let mut conn_cands = Vec::with_capacity(conn_indices.len());
                         for &idx in conn_indices.iter() {
-                            let target_node = nodes.get(idx).ok_or_else(|| {
+                            let target_node = nodes.get(idx as usize).ok_or_else(|| {
                                 MemFuseError::Index(format!(
                                     "HNSW target node missing at index {}",
                                     idx
@@ -777,7 +779,7 @@ impl HnswIndexCore {
                             let dist =
                                 self.compute_symmetric_distance(&node_vec, &target_node.vector)?;
                             conn_cands.push(Candidate {
-                                index: idx,
+                                index: idx as usize,
                                 distance: dist,
                             });
                         }
@@ -787,7 +789,7 @@ impl HnswIndexCore {
                             self.config.m * 2,
                         )?;
 
-                        if let Some(neighbor_node) = nodes.get_mut(neighbor_idx) {
+                        if let Some(neighbor_node) = nodes.get_mut(neighbor_idx as usize) {
                             if let Some(cl) = neighbor_node.connections.get_mut(layer) {
                                 *cl = selected;
                             }
@@ -1288,6 +1290,8 @@ impl VectorIndex for HnswIndex {
         let deleted = self.deleted_count.load(Ordering::SeqCst) as usize;
         total.saturating_sub(deleted)
     }
+
+    async fn stats(&self) -> Result<VectorIndexStats> {
         let nodes = self.nodes.read();
         let deleted_count = self.deleted_count.load(Ordering::SeqCst) as usize;
         let num_vectors = nodes.len().saturating_sub(deleted_count);

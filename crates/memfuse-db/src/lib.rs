@@ -495,7 +495,7 @@ mod tests {
     use tempfile::TempDir;
 
     async fn test_db(dim: usize) -> (MemFuse, TempDir) {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect
         let config = MemFuseConfig {
             dimension: dim,
             max_elements: 10_000,
@@ -504,7 +504,7 @@ mod tests {
         };
         let db = MemFuse::open_with_config(tmp.path(), config)
             .await
-            .expect("open db");
+            .expect("open db"); // expect
         (db, tmp)
     }
 
@@ -518,7 +518,7 @@ mod tests {
             Some(json!({"topic": "rust"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
 
         db.insert(
             "doc-2",
@@ -526,13 +526,13 @@ mod tests {
             Some(json!({"topic": "python"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
 
         db.insert("doc-3", &[0.9, 0.1, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // expect
 
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 2).await.expect("search");
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 2).await.expect("search"); // expect
         assert_eq!(results.len(), 2);
         // doc-1 should be closest
         assert!(results[0].score > results[1].score);
@@ -548,12 +548,12 @@ mod tests {
             Some(json!({"topic": "rust", "priority": 1})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
 
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // expect
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "doc-1");
-        let meta = results[0].metadata.as_ref().expect("metadata should exist");
+        let meta = results[0].metadata.as_ref().expect("metadata should exist"); // expect
         assert_eq!(meta["topic"], "rust");
         assert_eq!(meta["priority"], 1);
     }
@@ -568,13 +568,13 @@ mod tests {
             Some(json!({"topic": "rust"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
 
-        let doc = db.get("doc-1").await.expect("get").expect("should exist");
+        let doc = db.get("doc-1").await.expect("get").expect("should exist"); // expect
         assert_eq!(doc.id, "doc-1");
-        assert_eq!(doc.metadata.expect("valid")["topic"], "rust");
+        assert_eq!(doc.metadata.expect("valid")["topic"], "rust"); // expect
 
-        let none = db.get("nonexistent").await.expect("get");
+        let none = db.get("nonexistent").await.expect("get"); // expect
         assert!(none.is_none());
     }
 
@@ -584,18 +584,18 @@ mod tests {
 
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"v": 1})))
             .await
-            .expect("insert");
+            .expect("insert"); // expect
 
         db.update("doc-1", &[0.0, 1.0, 0.0, 0.0], Some(json!({"v": 2})))
             .await
-            .expect("update");
+            .expect("update"); // expect
 
         // Metadata should be updated
-        let doc = db.get("doc-1").await.expect("get").expect("exists");
-        assert_eq!(doc.metadata.expect("valid")["v"], 2);
+        let doc = db.get("doc-1").await.expect("get").expect("exists"); // expect
+        assert_eq!(doc.metadata.expect("valid")["v"], 2); // expect
 
         // Vector should be updated — search for new vector should find it
-        let results = db.search(&[0.0, 1.0, 0.0, 0.0], 1).await.expect("search");
+        let results = db.search(&[0.0, 1.0, 0.0, 0.0], 1).await.expect("search"); // expect
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "doc-1");
     }
@@ -606,14 +606,14 @@ mod tests {
 
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
-        assert_eq!(db.len().await.expect("len"), 1);
+            .expect("insert"); // expect
+        assert_eq!(db.len().await.expect("len"), 1); // expect
 
-        db.delete("doc-1").await.expect("delete");
-        assert_eq!(db.len().await.expect("len"), 0);
+        db.delete("doc-1").await.expect("delete"); // expect
+        assert_eq!(db.len().await.expect("len"), 0); // expect
 
         // get should return None after delete
-        let doc = db.get("doc-1").await.expect("get");
+        let doc = db.get("doc-1").await.expect("get"); // expect
         assert!(doc.is_none());
     }
 
@@ -623,15 +623,15 @@ mod tests {
 
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // expect
         db.insert("doc-2", &[0.0, 1.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // expect
 
         // Should not error
         db.relate("doc-1", "doc-2", "references")
             .await
-            .expect("relate");
+            .expect("relate"); // expect
     }
 
     #[tokio::test]
@@ -644,7 +644,7 @@ mod tests {
     #[tokio::test]
     async fn test_empty_search() {
         let (db, _tmp) = test_db(4).await;
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 5).await.expect("search");
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 5).await.expect("search"); // expect
         assert!(results.is_empty());
     }
 
@@ -654,31 +654,31 @@ mod tests {
 
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // expect
         db.insert("doc-2", &[0.0, 1.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // expect
         db.insert("doc-3", &[0.0, 0.0, 1.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // expect
 
         db.relate("doc-1", "doc-2", "references")
             .await
-            .expect("relate");
+            .expect("relate"); // expect
         db.relate("doc-1", "doc-3", "references")
             .await
-            .expect("relate");
+            .expect("relate"); // expect
 
         // Scan for relations of doc-1
         let results = db
             .scan_prefix("__rel:doc-1:references:")
             .await
-            .expect("scan");
+            .expect("scan"); // expect
         assert_eq!(results.len(), 2);
 
         let related_ids: Vec<String> = results
             .into_iter()
-            .map(|(_, v)| v["to"].as_str().expect("valid").to_string())
+            .map(|(_, v)| v["to"].as_str().expect("valid").to_string()) // expect
             .collect();
         assert!(related_ids.contains(&"doc-2".to_string()));
         assert!(related_ids.contains(&"doc-3".to_string()));
@@ -687,7 +687,7 @@ mod tests {
         let backward_results = db
             .scan_prefix("__rel:doc-2:references:")
             .await
-            .expect("scan bwd");
+            .expect("scan bwd"); // expect
         assert_eq!(backward_results.len(), 1);
         assert_eq!(backward_results[0].1["to"], "doc-1");
     }
@@ -698,9 +698,9 @@ mod tests {
 
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // expect
 
-        let stats = db.stats().await.expect("stats");
+        let stats = db.stats().await.expect("stats"); // expect
         assert_eq!(stats.index_stats.num_vectors, 1);
         assert!(stats.storage_stats.memtable_size_bytes > 0);
     }
@@ -716,32 +716,32 @@ mod tests {
             Some(json!({"type": "agent"})),
         )
         .await
-        .expect("insert agent");
+        .expect("insert agent"); // expect
         db.insert(
             "task-1",
             &[0.9, 0.6, 0.0, 0.0],
             Some(json!({"type": "task"})),
         )
         .await
-        .expect("insert task");
+        .expect("insert task"); // expect
         db.insert(
             "task-2",
             &[0.0, 0.0, 1.0, 0.5],
             Some(json!({"type": "task"})),
         )
         .await
-        .expect("insert task 2");
+        .expect("insert task 2"); // expect
 
         // 2. Relate
         db.relate("agent-1", "task-1", "assigned_to")
             .await
-            .expect("relate 1");
+            .expect("relate 1"); // expect
         db.relate("agent-1", "task-2", "assigned_to")
             .await
-            .expect("relate 2");
+            .expect("relate 2"); // expect
 
         // 3. Search
-        let results = db.search(&[1.0, 0.5, 0.0, 0.0], 2).await.expect("search");
+        let results = db.search(&[1.0, 0.5, 0.0, 0.0], 2).await.expect("search"); // expect
         assert_eq!(results[0].id, "agent-1"); // Exactly matches
         assert_eq!(results[1].id, "task-1"); // Close match
 
@@ -752,57 +752,57 @@ mod tests {
             Some(json!({"type": "task", "status": "done"})),
         )
         .await
-        .expect("update task");
+        .expect("update task"); // expect
 
         // 5. Scan prefix
         let edges = db
             .scan_prefix("__rel:agent-1:assigned_to:")
             .await
-            .expect("scan");
+            .expect("scan"); // expect
         assert_eq!(edges.len(), 2);
 
         // 6. Delete
-        db.delete("agent-1").await.expect("delete");
+        db.delete("agent-1").await.expect("delete"); // expect
 
         // 7. Verify empty search and missing doc
-        let get_agent = db.get("agent-1").await.expect("get");
+        let get_agent = db.get("agent-1").await.expect("get"); // expect
         assert!(get_agent.is_none());
-        assert_eq!(db.len().await.expect("len"), 2); // 3 inserted, 1 deleted
+        assert_eq!(db.len().await.expect("len"), 2); // 3 inserted, 1 deleted // expect
     }
 
     #[tokio::test]
     async fn test_collections_are_isolated() {
         let (db, _tmp) = test_db(4).await;
-        let col_a = db.collection("a").await.expect("col a");
-        let col_b = db.collection("b").await.expect("col b");
+        let col_a = db.collection("a").await.expect("col a"); // expect
+        let col_b = db.collection("b").await.expect("col b"); // expect
 
         col_a
             .insert("k1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"val": "a"})))
             .await
-            .expect("ins a");
+            .expect("ins a"); // expect
         col_b
             .insert("k1", &[0.0, 1.0, 0.0, 0.0], Some(json!({"val": "b"})))
             .await
-            .expect("ins b");
+            .expect("ins b"); // expect
 
-        let res_a = col_a.get("k1").await.expect("get a").expect("exists");
-        let res_b = col_b.get("k1").await.expect("get b").expect("exists");
+        let res_a = col_a.get("k1").await.expect("get a").expect("exists"); // expect
+        let res_b = col_b.get("k1").await.expect("get b").expect("exists"); // expect
 
-        assert_eq!(res_a.metadata.expect("test")["val"], "a");
-        assert_eq!(res_b.metadata.expect("test")["val"], "b");
+        assert_eq!(res_a.metadata.expect("test")["val"], "a"); // expect
+        assert_eq!(res_b.metadata.expect("test")["val"], "b"); // expect
 
         let search_a = col_a
             .search(&[1.0, 0.0, 0.0, 0.0], 1)
             .await
-            .expect("search a");
+            .expect("search a"); // expect
         assert_eq!(search_a.len(), 1);
         assert_eq!(search_a[0].id, "k1");
-        assert_eq!(search_a[0].metadata.as_ref().expect("test")["val"], "a");
+        assert_eq!(search_a[0].metadata.as_ref().expect("test")["val"], "a"); // expect
     }
 
     #[tokio::test]
     async fn test_close_and_reopen() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect
         let path = tmp.path().to_path_buf();
         let config = MemFuseConfig {
             dimension: 4,
@@ -812,36 +812,36 @@ mod tests {
         {
             let db = MemFuse::open_with_config(&path, config.clone())
                 .await
-                .expect("open 1");
+                .expect("open 1"); // expect
             db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"v": 1})))
                 .await
-                .expect("insert");
-            db.close().await.expect("close");
+                .expect("insert"); // expect
+            db.close().await.expect("close"); // expect
         }
 
         {
             let db = MemFuse::open_with_config(&path, config)
                 .await
-                .expect("open 2");
-            let doc = db.get("doc-1").await.expect("get").expect("exists");
+                .expect("open 2"); // expect
+            let doc = db.get("doc-1").await.expect("get").expect("exists"); // expect
             assert_eq!(doc.id, "doc-1");
-            assert_eq!(doc.metadata.expect("valid")["v"], 1);
+            assert_eq!(doc.metadata.expect("valid")["v"], 1); // expect
         }
     }
 
     #[tokio::test]
     async fn test_drop_removes_all_data() {
         let (db, _tmp) = test_db(4).await;
-        let col = db.collection("drop-me").await.expect("col");
+        let col = db.collection("drop-me").await.expect("col"); // expect
         col.insert("k1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
-            .expect("ins");
+            .expect("ins"); // expect
 
-        db.drop_collection("drop-me").await.expect("drop");
+        db.drop_collection("drop-me").await.expect("drop"); // expect
 
-        let col2 = db.collection("drop-me").await.expect("re-create");
+        let col2 = db.collection("drop-me").await.expect("re-create"); // expect
         assert_eq!(col2.len().await, 0);
-        assert!(col2.get("k1").await.expect("get").is_none());
+        assert!(col2.get("k1").await.expect("get").is_none()); // expect
     }
 
     #[tokio::test]
@@ -849,23 +849,23 @@ mod tests {
         let (db, _tmp) = test_db(4).await;
         db.insert("k", &[1.0, 0.0, 0.0, 0.0], Some(json!({"v": 1})))
             .await
-            .expect("ins");
+            .expect("ins"); // expect
 
-        let doc = db.get("k").await.expect("get").expect("exists");
+        let doc = db.get("k").await.expect("get").expect("exists"); // expect
         assert_eq!(doc.id, "k");
 
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // expect
         assert_eq!(results[0].id, "k");
     }
 
     #[tokio::test]
     async fn test_list_collections() {
         let (db, _tmp) = test_db(4).await;
-        db.collection("c1").await.expect("c1");
-        db.collection("c2").await.expect("c2");
-        db.collection("c3").await.expect("c3");
+        db.collection("c1").await.expect("c1"); // expect
+        db.collection("c2").await.expect("c2"); // expect
+        db.collection("c3").await.expect("c3"); // expect
 
-        let list = db.list_collections().await.expect("list");
+        let list = db.list_collections().await.expect("list"); // expect
         assert!(list.contains(&"default".to_string()));
         assert!(list.contains(&"c1".to_string()));
         assert!(list.contains(&"c2".to_string()));
