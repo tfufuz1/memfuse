@@ -1,3 +1,5 @@
+//! Domain-specific types for MemFuse (DocId, TxId, etc.).
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 

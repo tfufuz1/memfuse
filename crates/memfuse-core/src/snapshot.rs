@@ -11,6 +11,7 @@
 // INVARIANTE: Solange SnapshotGuard lebt → keine Tombstone-GC für seq >= guard.seq_no.
 // RAII-PATTERN: Drop deregistriert automatisch. unwrap_or(u64::MAX) ist KORREKT.
 
+use crate::error::MemFuseError;
 use crate::types::TOMBSTONE_BIT;
 use parking_lot::Mutex;
 use std::collections::BTreeMap;
@@ -73,20 +74,27 @@ impl SnapshotRegistry {
     }
 
     /// Removes a persistent pin.
-    pub fn unpin(&self, seq_no: u64) {
-        self.release(seq_no);
+    pub fn unpin(&self, seq_no: u64) -> Result<(), MemFuseError> {
+        self.release_checked(seq_no)
     }
 
     pub(crate) fn release(&self, seq_no: u64) {
+        let _ = self.release_checked(seq_no);
+    }
+
+    fn release_checked(&self, seq_no: u64) -> Result<(), MemFuseError> {
         let seq_no = seq_no & !TOMBSTONE_BIT;
         let mut active = self.active.lock();
         if let Some(count) = active.get_mut(&seq_no) {
-            *count -= 1;
+            *count = count.saturating_sub(1);
             if *count == 0 {
                 active.remove(&seq_no);
             }
+            self.update_min(&active);
+            Ok(())
+        } else {
+            Err(MemFuseError::InvalidSequenceNumber(seq_no))
         }
-        self.update_min(&active);
     }
 
     fn update_min(&self, active: &BTreeMap<u64, usize>) {
@@ -149,7 +157,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pin_unpin() {
+    fn test_pin_unpin() -> Result<(), Box<dyn std::error::Error>> {
         let registry = Arc::new(SnapshotRegistry::new());
         registry.pin(50);
         assert_eq!(registry.min_active_seqno(), 50);
@@ -157,11 +165,19 @@ mod tests {
         let g = registry.register(100);
         assert_eq!(registry.min_active_seqno(), 50);
 
-        registry.unpin(50);
+        registry.unpin(50)?;
         assert_eq!(registry.min_active_seqno(), 100);
 
         drop(g);
         assert_eq!(registry.min_active_seqno(), u64::MAX);
+        Ok(())
+    }
+
+    #[test]
+    fn test_unpin_invalid() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        let result = registry.unpin(100);
+        assert!(result.is_err());
     }
 
     #[test]
