@@ -30,7 +30,7 @@ pub trait Snapshot: Send + Sync {
     fn seq_no(&self) -> u64;
 }
 
-/// Statistics for a vector index.
+/// Statistics for a vector index, providing insights into its size and health.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VectorIndexStats {
     /// Number of active (non-deleted) vectors.
@@ -41,7 +41,7 @@ pub struct VectorIndexStats {
     pub num_layers: usize,
 }
 
-/// Statistics for the storage engine.
+/// Statistics for the LSM storage engine, including segment count and sizes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageStats {
     /// Number of SSTable segments.
@@ -166,7 +166,7 @@ pub trait VectorIndex: Send + Sync {
     async fn stats(&self) -> Result<VectorIndexStats>;
 }
 
-/// Statistics for a text index.
+/// Statistics for a text index, including document and token counts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextIndexStats {
     /// Total number of documents indexed.
@@ -235,7 +235,7 @@ pub trait GraphIndex: Send + Sync {
     async fn stats(&self) -> crate::Result<GraphIndexStats>;
 }
 
-/// Statistics for the GraphIndex layer.
+/// Statistics for the GraphIndex layer, including entity and edge counts.
 #[derive(Debug, Clone)]
 pub struct GraphIndexStats {
     /// Number of active nodes (Entities).

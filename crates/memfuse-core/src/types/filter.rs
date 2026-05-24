@@ -1,3 +1,11 @@
+//! # Metadata Filtering Expressions
+//!
+//! Defines declarative filter expressions for metadata-based retrieval.
+//! These expressions allow for complex logical queries (AND, OR, NOT)
+//! combined with comparison operators (Eq, Gt, Lt, In).
+// ANCHOR:DOC:FILTER-EXPR-001 — Module documentation added
+// AGENT:08 STATUS:DONE
+
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.

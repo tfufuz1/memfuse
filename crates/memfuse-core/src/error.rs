@@ -12,7 +12,7 @@ use thiserror::Error;
 /// Convenience alias for `Result<T, MemFuseError>`.
 pub type Result<T> = std::result::Result<T, MemFuseError>;
 
-/// Unified error type for all MemFuse operations.
+/// Unified error type for all MemFuse operations across the entire workspace.
 #[derive(Error, Debug)]
 pub enum MemFuseError {
     // ═══ Storage ═══

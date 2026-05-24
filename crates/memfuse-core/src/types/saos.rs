@@ -1,3 +1,11 @@
+//! # SAOS Types
+//!
+//! Contains high-level types related to the Sovereign Agentic Operating System
+//! architecture, such as Namespaces for multi-tenancy, Hybrid Queries for
+//! 4-signal fusion search, and context management for LLM integration.
+// ANCHOR:DOC:SAOS-TYPES-001 — Module documentation added
+// AGENT:08 STATUS:DONE
+
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};

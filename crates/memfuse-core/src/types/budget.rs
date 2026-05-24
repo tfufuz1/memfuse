@@ -1,3 +1,11 @@
+//! # Resource Budgeting
+//!
+//! Provides mechanism for tracking and enforcing resource limits (e.g., memory)
+//! within the system. It includes support for backpressure to prevent out-of-memory
+//! conditions during heavy write or search loads.
+// ANCHOR:DOC:BUDGET-TYPES-001 — Module documentation added
+// AGENT:08 STATUS:DONE
+
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.

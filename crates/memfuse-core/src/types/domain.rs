@@ -1,3 +1,11 @@
+//! # Domain Types
+//!
+//! Defines the fundamental domain models for MemFuse, including document and
+//! transaction identifiers, vector embeddings, search results, and graph entities.
+//! These types are used as building blocks for storage and indexing operations.
+// ANCHOR:DOC:DOMAIN-TYPES-001 — Module documentation added
+// AGENT:08 STATUS:DONE
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 

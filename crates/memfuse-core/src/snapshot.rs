@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-/// Registry for active read snapshots.
+/// Registry for managing active read snapshots in an MVCC system.
 ///
 /// ### Locking Strategy
 /// Uses a single `parking_lot::Mutex` to protect the map of active snapshots.
@@ -58,7 +58,8 @@ impl SnapshotRegistry {
         }
     }
 
-    /// Returns the minimum active sequence number (u64::MAX if none).
+    /// Returns the minimum active sequence number currently registered.
+    /// Returns `u64::MAX` if no snapshots are active.
     #[inline]
     pub fn min_active_seqno(&self) -> u64 {
         self.min_active_seqno.load(Ordering::Acquire)
@@ -105,6 +106,7 @@ pub struct SnapshotGuard {
 }
 
 impl SnapshotGuard {
+    /// Returns the sequence number associated with this snapshot guard.
     pub fn seq_no(&self) -> u64 {
         self.seq_no
     }

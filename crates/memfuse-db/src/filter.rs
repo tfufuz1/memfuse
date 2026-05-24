@@ -1,3 +1,11 @@
+//! # Database Metadata Filtering
+//!
+//! Implementation of advanced metadata filtering for the MemFuse database facade.
+//! This module provides the logic to evaluate filters against JSON metadata
+//! stored alongside documents.
+// ANCHOR:DOC:DB-FILTER-001 — Module documentation added
+// AGENT:08 STATUS:DONE
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

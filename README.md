@@ -28,6 +28,11 @@ for res in results:
 
 # Hybrid Search (BM25 + Vector)
 hybrid_results = col.hybrid_search("AI search", v, k=5)
+
+# Advanced Metadata Filtering
+from memfuse import MetadataFilter
+f = MetadataFilter.where_eq("topic", "AI")
+filtered_results = col.search_with_filter(v, k=5, filter=f)
 ```
 
 ## Architecture: The 3 SAOS Layers
@@ -82,6 +87,7 @@ bash .agent/scripts/jules-dashboard.sh
 - **Transactional** — Sharded TxBuffer with orphan-reaping
 - **Relationship Tracking** — `relate()` API for graph-aware retrieval
 - **Hybrid Search** — Optimized BM25 + Vector Fusion (RRF)
+- **Advanced Metadata Filtering** — Complex logical queries on JSON metadata
 - **Scalar Quantization** — SQ8 compression for 4x reduced RAM footprint
 - **Deterministic Checkpointing** — Native state pinning for "Time-Travel" debugging
 

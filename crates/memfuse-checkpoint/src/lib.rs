@@ -12,17 +12,22 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// Metadata for a persistent checkpoint.
+/// Metadata for a persistent checkpoint acting as a durable savepoint.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CheckpointMeta {
+    /// Unique human-readable name of the checkpoint.
     pub name: String,
+    /// Associated collection identifier.
     pub collection_id: String,
+    /// Sequence number at which the checkpoint was taken.
     pub seq_no: u64,
+    /// Custom user-defined metadata associated with the checkpoint.
     pub metadata: serde_json::Value,
+    /// Unix timestamp when the checkpoint was created.
     pub created_at: u64,
 }
 
-/// In-memory MVCC checkpoint abstraction.
+/// In-memory MVCC checkpoint abstraction for tracking active workflow states.
 pub struct CheckpointRegistry {
     checkpoints: SyncRwLock<HashMap<TxId, WorkflowState>>,
 }
@@ -34,11 +39,13 @@ impl CheckpointRegistry {
         }
     }
 
+    /// Registers a workflow state for a given transaction ID.
     pub fn register(&self, tx_id: TxId, state: WorkflowState) {
         let mut cache = self.checkpoints.write();
         cache.insert(tx_id, state);
     }
 
+    /// Retrieves the workflow state for a given transaction ID if it exists.
     pub fn get(&self, tx_id: TxId) -> Option<WorkflowState> {
         let cache = self.checkpoints.read();
         cache.get(&tx_id).cloned()
@@ -60,6 +67,7 @@ pub struct CheckpointManager {
 }
 
 impl CheckpointManager {
+    /// Creates a new CheckpointManager using the provided storage engine.
     pub fn new(storage: Arc<dyn StorageEngine>) -> Self {
         Self {
             storage,
