@@ -49,7 +49,10 @@ async fn test_checkpoint_manager_e2e() {
         .await
         .expect("Failed to get checkpoint");
     assert!(retrieved.is_some());
-    assert_eq!(retrieved.expect("test").metadata, json!({"purpose": "test"}));
+    assert_eq!(
+        retrieved.expect("test").metadata,
+        json!({"purpose": "test"})
+    );
 
     // 4. Drop checkpoint
     manager
