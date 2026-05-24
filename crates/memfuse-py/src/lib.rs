@@ -69,6 +69,172 @@ fn opt_dict_to_json(
     }
 }
 
+/// Advanced metadata filter for document retrieval and search.
+#[pyclass(name = "MetadataFilter")]
+#[derive(Clone, Debug)]
+pub struct PyMetadataFilter {
+    inner: memfuse_db::MetadataFilter,
+}
+
+#[pymethods]
+impl PyMetadataFilter {
+    /// Creates a condition filter: field == value
+    #[allow(clippy::should_implement_trait)]
+    #[staticmethod]
+    pub fn where_eq(py: Python<'_>, field: String, value: PyObject) -> PyResult<Self> {
+        let value_json: serde_json::Value = depythonize(value.bind(py)).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid filter value: {}", e))
+        })?;
+        Ok(Self {
+            inner: memfuse_db::MetadataFilter::Condition {
+                field,
+                op: memfuse_db::FilterOp::Eq,
+                value: value_json,
+            },
+        })
+    }
+
+    /// Creates a condition filter: field != value
+    #[staticmethod]
+    pub fn where_ne(py: Python<'_>, field: String, value: PyObject) -> PyResult<Self> {
+        let value_json: serde_json::Value = depythonize(value.bind(py)).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid filter value: {}", e))
+        })?;
+        Ok(Self {
+            inner: memfuse_db::MetadataFilter::Condition {
+                field,
+                op: memfuse_db::FilterOp::Ne,
+                value: value_json,
+            },
+        })
+    }
+
+    /// Creates a condition filter: field > value
+    #[staticmethod]
+    pub fn where_gt(py: Python<'_>, field: String, value: PyObject) -> PyResult<Self> {
+        let value_json: serde_json::Value = depythonize(value.bind(py)).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid filter value: {}", e))
+        })?;
+        Ok(Self {
+            inner: memfuse_db::MetadataFilter::Condition {
+                field,
+                op: memfuse_db::FilterOp::Gt,
+                value: value_json,
+            },
+        })
+    }
+
+    /// Creates a condition filter: field >= value
+    #[staticmethod]
+    pub fn where_gte(py: Python<'_>, field: String, value: PyObject) -> PyResult<Self> {
+        let value_json: serde_json::Value = depythonize(value.bind(py)).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid filter value: {}", e))
+        })?;
+        Ok(Self {
+            inner: memfuse_db::MetadataFilter::Condition {
+                field,
+                op: memfuse_db::FilterOp::Gte,
+                value: value_json,
+            },
+        })
+    }
+
+    /// Creates a condition filter: field < value
+    #[staticmethod]
+    pub fn where_lt(py: Python<'_>, field: String, value: PyObject) -> PyResult<Self> {
+        let value_json: serde_json::Value = depythonize(value.bind(py)).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid filter value: {}", e))
+        })?;
+        Ok(Self {
+            inner: memfuse_db::MetadataFilter::Condition {
+                field,
+                op: memfuse_db::FilterOp::Lt,
+                value: value_json,
+            },
+        })
+    }
+
+    /// Creates a condition filter: field <= value
+    #[staticmethod]
+    pub fn where_lte(py: Python<'_>, field: String, value: PyObject) -> PyResult<Self> {
+        let value_json: serde_json::Value = depythonize(value.bind(py)).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid filter value: {}", e))
+        })?;
+        Ok(Self {
+            inner: memfuse_db::MetadataFilter::Condition {
+                field,
+                op: memfuse_db::FilterOp::Lte,
+                value: value_json,
+            },
+        })
+    }
+
+    /// Creates a condition filter: field IN [values]
+    #[staticmethod]
+    pub fn where_in(py: Python<'_>, field: String, values: Vec<PyObject>) -> PyResult<Self> {
+        let mut vals = Vec::with_capacity(values.len());
+        for v in values {
+            let value_json: serde_json::Value = depythonize(v.bind(py)).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Invalid filter value: {}", e))
+            })?;
+            vals.push(value_json);
+        }
+        Ok(Self {
+            inner: memfuse_db::MetadataFilter::Condition {
+                field,
+                op: memfuse_db::FilterOp::In,
+                value: serde_json::Value::Array(vals),
+            },
+        })
+    }
+
+    /// Creates a condition filter: field NOT IN [values]
+    #[staticmethod]
+    pub fn where_not_in(py: Python<'_>, field: String, values: Vec<PyObject>) -> PyResult<Self> {
+        let mut vals = Vec::with_capacity(values.len());
+        for v in values {
+            let value_json: serde_json::Value = depythonize(v.bind(py)).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Invalid filter value: {}", e))
+            })?;
+            vals.push(value_json);
+        }
+        Ok(Self {
+            inner: memfuse_db::MetadataFilter::Condition {
+                field,
+                op: memfuse_db::FilterOp::NotIn,
+                value: serde_json::Value::Array(vals),
+            },
+        })
+    }
+
+    /// Combines multiple filters with logical AND.
+    #[staticmethod]
+    pub fn all_of(filters: Vec<Self>) -> Self {
+        Self {
+            inner: memfuse_db::MetadataFilter::And(filters.into_iter().map(|f| f.inner).collect()),
+        }
+    }
+
+    /// Combines multiple filters with logical OR.
+    #[staticmethod]
+    pub fn any_of(filters: Vec<Self>) -> Self {
+        Self {
+            inner: memfuse_db::MetadataFilter::Or(filters.into_iter().map(|f| f.inner).collect()),
+        }
+    }
+
+    /// Negates a filter.
+    pub fn negate(&self) -> Self {
+        Self {
+            inner: memfuse_db::MetadataFilter::Not(Box::new(self.inner.clone())),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("MetadataFilter({:?})", self.inner)
+    }
+}
+
 /// Converts a serde_json::Value to a Python object.
 fn json_to_py(py: Python<'_>, val: &serde_json::Value) -> PyResult<PyObject> {
     pythonize(py, val)
@@ -214,6 +380,35 @@ impl PyDbStats {
     }
 }
 
+/// Operators for metadata filtering.
+#[pyclass(name = "FilterOp")]
+#[derive(Clone, Copy, Debug)]
+pub enum PyFilterOp {
+    Eq,
+    Ne,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    In,
+    NotIn,
+}
+
+impl From<PyFilterOp> for memfuse_db::FilterOp {
+    fn from(op: PyFilterOp) -> Self {
+        match op {
+            PyFilterOp::Eq => memfuse_db::FilterOp::Eq,
+            PyFilterOp::Ne => memfuse_db::FilterOp::Ne,
+            PyFilterOp::Gt => memfuse_db::FilterOp::Gt,
+            PyFilterOp::Gte => memfuse_db::FilterOp::Gte,
+            PyFilterOp::Lt => memfuse_db::FilterOp::Lt,
+            PyFilterOp::Lte => memfuse_db::FilterOp::Lte,
+            PyFilterOp::In => memfuse_db::FilterOp::In,
+            PyFilterOp::NotIn => memfuse_db::FilterOp::NotIn,
+        }
+    }
+}
+
 // ─── Macro: Shared CRUD Methods ─────────────────────────────────────────────
 //
 // This macro generates the common CRUD, search, and scan methods that are
@@ -311,6 +506,26 @@ macro_rules! memfuse_crud_methods {
                 })?;
                 let results = py
                     .allow_threads(|| rt.block_on(self.inner.search(v, k)))
+                    .map_err(memfuse_err)?;
+                results_to_py(py, results)
+            }
+
+            /// Performs semantic k-NN search over the embeddings with a metadata filter.
+            #[pyo3(signature = (vector, k, filter=None))]
+            pub fn search_with_filter<'py>(
+                &self,
+                py: Python<'py>,
+                vector: PyReadonlyArray1<'py, f32>,
+                k: usize,
+                filter: Option<PyMetadataFilter>,
+            ) -> PyResult<Vec<PySearchResult>> {
+                let rt = get_runtime()?;
+                let v = vector.as_slice().map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
+                })?;
+                let f = filter.map(|pf| pf.inner);
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.search_with_filter(v, k, f)))
                     .map_err(memfuse_err)?;
                 results_to_py(py, results)
             }
@@ -691,5 +906,7 @@ fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()
     m.add_class::<PyVectorIndexStats>()?;
     m.add_class::<PyStorageStats>()?;
     m.add_class::<PyDbStats>()?;
+    m.add_class::<PyFilterOp>()?;
+    m.add_class::<PyMetadataFilter>()?;
     Ok(())
 }

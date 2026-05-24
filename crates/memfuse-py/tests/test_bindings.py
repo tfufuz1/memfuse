@@ -205,8 +205,56 @@ def test_distance_metrics(db_path):
     with pytest.raises(ValueError):
         memfuse.open(db_path + "_invalid", dimension=4, distance_metric="invalid")
 
+def test_metadata_filtering(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    v = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
+    db.insert("d1", v, metadata={"category": "A", "priority": 1})
+    db.insert("d2", v, metadata={"category": "B", "priority": 2})
+    db.insert("d3", v, metadata={"category": "A", "priority": 3})
+
+    # Test where_eq
+    filter_a = memfuse.MetadataFilter.where_eq("category", "A")
+    results = db.search_with_filter(v, k=10, filter=filter_a)
+    assert len(results) == 2
+    assert all(r.metadata["category"] == "A" for r in results)
+
+    # Test where_gt
+    filter_high_prio = memfuse.MetadataFilter.where_gt("priority", 1)
+    results = db.search_with_filter(v, k=10, filter=filter_high_prio)
+    assert len(results) == 2
+    assert all(r.metadata["priority"] > 1 for r in results)
+
+    # Test all_of
+    filter_combined = memfuse.MetadataFilter.all_of([
+        memfuse.MetadataFilter.where_eq("category", "A"),
+        memfuse.MetadataFilter.where_gt("priority", 2)
+    ])
+    results = db.search_with_filter(v, k=10, filter=filter_combined)
+    assert len(results) == 1
+    assert results[0].id == "d3"
+
+    # Test any_of
+    filter_or = memfuse.MetadataFilter.any_of([
+        memfuse.MetadataFilter.where_eq("category", "B"),
+        memfuse.MetadataFilter.where_eq("priority", 1)
+    ])
+    results = db.search_with_filter(v, k=10, filter=filter_or)
+    assert len(results) == 2
+
+    # Test where_in
+    filter_in = memfuse.MetadataFilter.where_in("category", ["B", "C"])
+    results = db.search_with_filter(v, k=10, filter=filter_in)
+    assert len(results) == 1
+    assert results[0].id == "d2"
+
+    # Test negate
+    filter_not_a = memfuse.MetadataFilter.where_eq("category", "A").negate()
+    results = db.search_with_filter(v, k=10, filter=filter_not_a)
+    assert len(results) == 1
+    assert results[0].id == "d2"
+
 def test_version_and_repr(db_path):
-    assert memfuse.__version__ == "0.1.0"
+    assert memfuse.__version__ == "0.2.0"
 
     db = memfuse.open(db_path, dimension=4, max_elements=5000)
     col = db.collection("repr_test")
