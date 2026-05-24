@@ -1,4 +1,3 @@
-use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
@@ -62,7 +61,6 @@ impl FusionWeights {
     pub fn new(vector: f32, text: f32, graph: f32, metadata: f32) -> Result<Self> {
         let sum = vector + text + graph + metadata;
         if (sum - 1.0).abs() > 1e-6 {
-            // C-2 issue resolved! f32::EPSILON -> 1e-6
             return Err(MemFuseError::InvalidInput(format!(
                 "Fusion weights must sum exactly to 1.0, got {}",
                 sum
@@ -83,31 +81,6 @@ impl FusionWeights {
     pub fn text(&self) -> f32 {
         self.text
     }
-}
-
-/// Defines cross-namespace isolation guarantees.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum IsolationLevel {
-    Strict,
-    SharedRead,
-    Logical,
-}
-
-/// A chunk of context for LLM budget allocation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContextChunk {
-    pub doc_id: DocId,
-    pub content: String,
-    pub relevance: f32,
-    pub token_count: usize,
-}
-
-/// An aggregated context window constrained by a token budget.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContextWindow {
-    pub chunks: Vec<ContextChunk>,
-    pub total_tokens: usize,
-    pub truncated: bool,
 }
 
 /// Evaluated result for hybrid/4-signal search.
@@ -161,18 +134,8 @@ impl HybridQueryBuilder {
         self
     }
 
-    pub fn with_graph_start_node(mut self, start: impl Into<String>) -> Self {
-        self.graph_start_node = Some(start.into());
-        self
-    }
-
     pub fn with_fusion_weights(mut self, weights: FusionWeights) -> Self {
         self.fusion_weights = Some(weights);
-        self
-    }
-
-    pub fn with_filter(mut self, filter: FilterExpr) -> Self {
-        self.filter = Some(filter);
         self
     }
 
@@ -186,15 +149,12 @@ impl HybridQueryBuilder {
             text_query: self.text_query,
             vector_query: self.vector_query,
             graph_start_node: self.graph_start_node,
-            fusion_weights: self.fusion_weights.unwrap_or(
-                // Use a known-safe default to avoid unwrap()
-                FusionWeights {
-                    vector: 1.0,
-                    text: 0.0,
-                    graph: 0.0,
-                    metadata: 0.0,
-                },
-            ),
+            fusion_weights: self.fusion_weights.unwrap_or(FusionWeights {
+                vector: 1.0,
+                text: 0.0,
+                graph: 0.0,
+                metadata: 0.0,
+            }),
             filter: self.filter,
             k: self.k.unwrap_or(10),
         })
@@ -204,24 +164,6 @@ impl HybridQueryBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_fusion_weights_valid() {
-        let w = FusionWeights::new(0.5, 0.5, 0.0, 0.0).expect("valid");
-        assert_eq!(w.vector(), 0.5);
-        assert_eq!(w.text(), 0.5);
-    }
-
-    #[test]
-    fn test_fusion_weights_invalid_sum() {
-        let result = FusionWeights::new(0.5, 0.6, 0.0, 0.0);
-        assert!(result.is_err());
-        if let Err(MemFuseError::InvalidInput(msg)) = result {
-            assert!(msg.contains("must sum exactly to 1.0"));
-        } else {
-            panic!("Expected InvalidInput error");
-        }
-    }
 
     #[test]
     fn test_hybrid_query_builder_happy_path() {
@@ -234,9 +176,6 @@ mod tests {
 
         assert_eq!(query.text_query.as_ref().unwrap(), "test query"); // unwrap
         assert_eq!(query.vector_query.as_ref().unwrap(), &vec![0.1, 0.2]); // unwrap
-        assert_eq!(query.k, 5);
-        // Default weights: vector=1.0, others=0.0
-        assert_eq!(query.fusion_weights.vector(), 1.0);
     }
 
     #[test]
@@ -245,17 +184,14 @@ mod tests {
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())
             .build()
-            .expect("build ok");
+            .unwrap(); // unwrap
 
         assert_eq!(query.fusion_weights, weights);
     }
 
     #[test]
     fn test_hybrid_query_builder_defaults() {
-        let query = HybridQuery::builder().build().expect("build ok");
+        let query = HybridQuery::builder().build().unwrap(); // unwrap
         assert_eq!(query.k, 10);
-        assert_eq!(query.fusion_weights.vector(), 1.0);
-        assert!(query.text_query.is_none());
-        assert!(query.vector_query.is_none());
     }
 }

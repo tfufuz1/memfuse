@@ -65,7 +65,12 @@ impl ResourceTracker {
 
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
-            .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
+            .fetch_update(
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+                |v| Some(v.saturating_sub(bytes)),
+            )
+            .ok();
     }
 
     pub fn memory_used(&self) -> u64 {
@@ -97,9 +102,8 @@ mod tests {
     fn test_resource_tracker_basic() {
         let budget = ResourceBudget { memory_limit: 1000 };
         let tracker = ResourceTracker::new(budget);
-
         assert_eq!(tracker.memory_used(), 0);
-        tracker.consume_memory(500).expect("should consume");
+        tracker.consume_memory(500).expect("ok");
         assert_eq!(tracker.memory_used(), 500);
         tracker.release_memory(200);
         assert_eq!(tracker.memory_used(), 300);
@@ -109,9 +113,13 @@ mod tests {
     fn test_budget_exceeded() {
         let budget = ResourceBudget { memory_limit: 1000 };
         let tracker = ResourceTracker::new(budget);
-        tracker.consume_memory(900).expect("should consume");
+        tracker.consume_memory(900).expect("ok");
         let result = tracker.consume_memory(200);
         assert!(result.is_err());
+        match result.err().unwrap() { // unwrap
+            MemFuseError::MemoryBudgetExceeded { .. } => {}
+            _ => panic!("wrong error"),
+        }
     }
 
     #[test]
@@ -122,14 +130,10 @@ mod tests {
         for _ in 0..10 {
             let t = tracker.clone();
             handlers.push(std::thread::spawn(move || {
-                for _ in 0..100 {
-                    t.consume_memory(10).expect("consume");
-                }
+                for _ in 0..100 { t.consume_memory(10).expect("ok"); }
             }));
         }
-        for h in handlers {
-            h.join().unwrap(); // unwrap
-        }
+        for h in handlers { h.join().unwrap(); } // unwrap
         assert_eq!(tracker.memory_used(), 10000);
     }
 }

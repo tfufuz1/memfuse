@@ -1,5 +1,4 @@
 use crate::error::{MemFuseError, Result};
-use memfuse_core::DocId;
 use std::convert::TryInto;
 
 pub struct IndexHeader {
@@ -53,12 +52,11 @@ impl NodeRecord {
 
 pub struct IndexMmap {
     pub mmap: memmap2::Mmap,
-    pub header: IndexHeader,
 }
 
 impl IndexMmap {
-    pub fn get_connections(&self, record: &NodeRecord, layer: usize) -> &[u32] {
-        let mut current_pos = record.connections_offset as usize;
+    pub fn get_connections(&self, offset: usize, layer: usize) -> &[u32] {
+        let mut current_pos = offset;
         for _ in 0..layer {
             let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) as usize; // unwrap
             current_pos += 4 + len * 4;
@@ -66,8 +64,6 @@ impl IndexMmap {
         let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) as usize; // unwrap
         let start = current_pos + 4;
         let end = start + len * 4;
-        
-        // SAFETY: Casting u8 slice to u32 slice. This assumes proper alignment and endianness.
         unsafe {
             let ptr = self.mmap[start..end].as_ptr() as *const u32;
             std::slice::from_raw_parts(ptr, len)
