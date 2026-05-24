@@ -50,7 +50,7 @@ async fn test_checkpoint_manager_e2e() {
         .expect("Failed to get checkpoint");
     assert!(retrieved.is_some());
     assert_eq!(
-        retrieved.expect("test").metadata,
+        retrieved.expect("checkpoint should be present").metadata,
         json!({"purpose": "test"})
     );
 

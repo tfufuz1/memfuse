@@ -244,7 +244,7 @@ mod tests {
         let meta = manager
             .create_checkpoint("test_cp", "coll_1", 100, serde_json::json!({"state": "ok"}))
             .await
-            .expect("unit test failure");
+            .expect("unit test failure in memfuse-checkpoint");
 
         assert_eq!(meta.name, "test_cp");
         assert_eq!(meta.seq_no, 100);
@@ -256,8 +256,8 @@ mod tests {
         let retrieved = manager
             .get_checkpoint("test_cp")
             .await
-            .expect("unit test failure")
-            .expect("unit test failure");
+            .expect("unit test failure in memfuse-checkpoint")
+            .expect("unit test failure in memfuse-checkpoint");
         assert_eq!(retrieved, meta);
     }
 
@@ -270,13 +270,13 @@ mod tests {
         manager
             .create_checkpoint("cp1", "c1", 10, metadata.clone())
             .await
-            .expect("unit test failure");
+            .expect("unit test failure in memfuse-checkpoint");
 
         let retrieved = manager
             .get_checkpoint("cp1")
             .await
-            .expect("unit test failure")
-            .expect("unit test failure");
+            .expect("unit test failure in memfuse-checkpoint")
+            .expect("unit test failure in memfuse-checkpoint");
         assert_eq!(retrieved.metadata, metadata);
     }
 
@@ -288,17 +288,20 @@ mod tests {
         manager
             .create_checkpoint("cp2", "c1", 20, serde_json::json!({}))
             .await
-            .expect("unit test failure");
+            .expect("unit test failure in memfuse-checkpoint");
         manager
             .create_checkpoint("cp1", "c1", 10, serde_json::json!({}))
             .await
-            .expect("unit test failure");
+            .expect("unit test failure in memfuse-checkpoint");
         manager
             .create_checkpoint("cp3", "c1", 30, serde_json::json!({}))
             .await
-            .expect("unit test failure");
+            .expect("unit test failure in memfuse-checkpoint");
 
-        let list = manager.list_checkpoints().await.expect("unit test failure");
+        let list = manager
+            .list_checkpoints()
+            .await
+            .expect("unit test failure in memfuse-checkpoint");
         assert_eq!(list.len(), 3);
         assert_eq!(list[0].name, "cp1");
         assert_eq!(list[1].name, "cp2");
@@ -313,14 +316,14 @@ mod tests {
         manager1
             .create_checkpoint("persist_me", "c1", 50, serde_json::json!({}))
             .await
-            .expect("unit test failure");
+            .expect("unit test failure in memfuse-checkpoint");
 
         // New manager sharing the same storage
         let manager2 = CheckpointManager::new(storage.clone());
         let list = manager2
             .list_checkpoints()
             .await
-            .expect("unit test failure");
+            .expect("unit test failure in memfuse-checkpoint");
 
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "persist_me");
@@ -337,7 +340,9 @@ mod tests {
         };
 
         registry.register(tx_id, state.clone());
-        let retrieved = registry.get(tx_id).expect("unit test failure");
+        let retrieved = registry
+            .get(tx_id)
+            .expect("unit test failure in memfuse-checkpoint");
         assert_eq!(retrieved.graph_hash, "hash");
     }
 }
