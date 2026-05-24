@@ -150,7 +150,8 @@ impl MmapIndex {
 
         // ANCHOR:SAFETY:MMAP-002 — transmute connections slice from u8 to u32
         // WP:WP-7.2 PRIO:1 NEEDS:NONE
-        // AGENT:03 DATE:2026-05-24 STATUS:WIP
+        // WATCHDOG: Reset WIP due to timeout.
+        // AGENT:03 DATE:2026-05-24 STATUS:OPEN
         // BEGRÜNDUNG: HNSW-Kanten sind u32 Indizes. Memory-Mapped Files liefern u8.
         // Die Konvertierung ist sicher, solange das Alignment gewahrt ist (was hier nicht garantiert ist).
         // Bessere Alternative: Kopieren oder Indexing über u8.
