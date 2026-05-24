@@ -1,9 +1,9 @@
 use memfuse_checkpoint::CheckpointManager;
-use memfuse_store::{LsmStorage, LsmConfig};
-use std::sync::Arc;
+use memfuse_store::{LsmConfig, LsmStorage};
 use serde_json::json;
-use tokio::task::JoinHandle;
+use std::sync::Arc;
 use tempfile::TempDir;
+use tokio::task::JoinHandle;
 
 // AGENT:12 STATUS:READY
 // This integration test verifies the full lifecycle of checkpoints using the real LsmStorage implementation.
@@ -24,12 +24,10 @@ async fn test_checkpoint_real_storage_lifecycle() {
 
     // 1. Create multiple checkpoints
     for i in 1..=5 {
-        manager.create_checkpoint(
-            &format!("cp-{}", i),
-            "coll-1",
-            i * 10,
-            json!({"index": i})
-        ).await.expect("Failed to create checkpoint");
+        manager
+            .create_checkpoint(&format!("cp-{}", i), "coll-1", i * 10, json!({"index": i}))
+            .await
+            .expect("Failed to create checkpoint");
     }
 
     // 2. Verify listing and ordering
@@ -47,13 +45,22 @@ async fn test_checkpoint_real_storage_lifecycle() {
     drop(manager);
 
     let manager2 = CheckpointManager::new(storage.clone());
-    let list2 = manager2.list_checkpoints().await.expect("Failed to reload list");
+    let list2 = manager2
+        .list_checkpoints()
+        .await
+        .expect("Failed to reload list");
     assert_eq!(list2.len(), 5);
     assert_eq!(list2[0].name, "cp-1");
 
     // 4. Delete a checkpoint and verify
-    manager2.drop_checkpoint("cp-3").await.expect("Failed to drop");
-    let list3 = manager2.list_checkpoints().await.expect("Failed to list after drop");
+    manager2
+        .drop_checkpoint("cp-3")
+        .await
+        .expect("Failed to drop");
+    let list3 = manager2
+        .list_checkpoints()
+        .await
+        .expect("Failed to list after drop");
     assert_eq!(list3.len(), 4);
     assert!(list3.iter().all(|c| c.name != "cp-3"));
 }
@@ -81,12 +88,16 @@ async fn test_checkpoint_real_storage_stress() {
         handles.push(tokio::spawn(async move {
             for i in 0..ops_per_task {
                 let name = format!("task-{}-cp-{}", t, i);
-                manager.create_checkpoint(&name, "default", (t * 100 + i) as u64, json!({}))
+                manager
+                    .create_checkpoint(&name, "default", (t * 100 + i) as u64, json!({}))
                     .await
                     .expect("Concurrent create failed");
 
                 if i % 2 == 0 {
-                    manager.drop_checkpoint(&name).await.expect("Concurrent drop failed");
+                    manager
+                        .drop_checkpoint(&name)
+                        .await
+                        .expect("Concurrent drop failed");
                 }
             }
         }));
