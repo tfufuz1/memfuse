@@ -497,9 +497,7 @@ impl Collection {
             .into_iter()
             .filter_map(|(k, v)| {
                 let user_key = self.strip_namespaced_prefix(&k);
-                serde_json::from_slice(&v)
-                    .ok()
-                    .map(|val| (user_key, val))
+                serde_json::from_slice(&v).ok().map(|val| (user_key, val))
             })
             .collect())
     }
@@ -731,9 +729,7 @@ impl Collection {
             .into_iter()
             .filter_map(|(k, v)| {
                 let user_key = self.strip_namespaced_prefix(&k);
-                serde_json::from_slice(&v)
-                    .ok()
-                    .map(|val| (user_key, val))
+                serde_json::from_slice(&v).ok().map(|val| (user_key, val))
             })
             .collect())
     }

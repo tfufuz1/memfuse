@@ -16,7 +16,8 @@ pub fn reciprocal_rank_fusion(
     let estimated_capacity = result_sets.iter().map(|s| s.len()).sum::<usize>();
 
     // id -> (total_score, metadata)
-    let mut fused_scores: HashMap<String, (f32, Option<serde_json::Value>)> = HashMap::with_capacity(estimated_capacity);
+    let mut fused_scores: HashMap<String, (f32, Option<serde_json::Value>)> =
+        HashMap::with_capacity(estimated_capacity);
 
     for cur_set in result_sets {
         for (rank, cur_doc) in cur_set.into_iter().enumerate() {
