@@ -20,8 +20,9 @@ Das Endprodukt wird iterativ von Coding Agenten gebaut und ist in isolierte Crat
 
 ### Level 2: Die Sub-Engines (Isoliert, kommunizieren NIE direkt miteinander)
 - **`memfuse-store` (WP-1.1, WP-4.1)**: Die Persistenzschicht. Implementiert als Log-Structured Merge Tree (LSM) mit Background Compaction. Verwaltet MemTables, Write-Ahead-Logs (WAL) und SSTables. In Zukunft optimiert mit Memory-Mapped I/O.
-- **`memfuse-index` (WP-2.2, WP-4.3)**: Die Vektor-Engine. Implementiert HNSW-Graphen für Approximate Nearest Neighbor (ANN) Search. Beinhaltet SIMD-optimierte Distanzfunktionen und Scalar Quantization (SQ8) für RAM-Reduzierung.
-- **`memfuse-text` (WP-2.1)**: Die Volltext-Engine. Stellt einen Inverted Index mit BM25-Scoring zur Verfügung, der mit Tokenizern arbeitet, um exakte lexikalische Suche zu ermöglichen.
+- **`memfuse-index` (WP-2.2, WP-4.3, WP-7.2)**: Die Vektor-Engine. Implementiert HNSW-Graphen für Approximate Nearest Neighbor (ANN) Search. Beinhaltet SIMD-optimierte Distanzfunktionen und Scalar Quantization (SQ8) für RAM-Reduzierung. **NEU:** mmap-basierte HNSW-Persistence.
+- **`memfuse-embed` (WP-6.6)**: Lokale Inferenz-Engine via ONNX Runtime. Ermöglicht Air-Gap Deployments ohne externe API-Key Abhängigkeit.
+- **`memfuse-text` (WP-2.1)**: Die Volltext-Engine. Stellt einen Inverted Index mit BM25-Scoring zur Verfügung, der mit Tokenizern arbeitet.
 
 ### Level 3: Der Shared Kernel (Das Rückgrat)
 - **`memfuse-core` (WP-0.0)**: Enthält `MemFuseError` (für Zero-Panic), `TxBuffer`, `MemBank`, Paging-Strukturen und Snapshot-Isolation (MVCC). Dies ist die einzige Crate, die von allen anderen Domänen importiert werden darf. Keine anderen Crates dürfen Abhängigkeiten aus Level 1 oder 2 haben.
@@ -71,11 +72,11 @@ Beim Schreiben des Codes gelten die **Absoluten Gesetze**:
    - Eliminierung jeglicher Altlasten. Refactoring hin zu 100% Zero-Panic und asynchronem I/O.
 2. **PHASE 1: Core Stabilität & LSM (WP-1.1, WP-1.2, WP-4.1)**
    - Implementierung der Background Compaction für die LSM Trees. Storage und Namespaces müssen ohne Memory Leaks und Tombstone-Überschreitungen laufen.
-3. **PHASE 2: Hybrid Search & Indexing (WP-2.1, WP-2.2)**
-   - Aufbau des Inverted Text-Indexes (BM25) und SIMD Quantization (SQ8) für effiziente Ram-Nutzung.
-4. **PHASE 3: Python API & Security (WP-3.1, WP-3.2)**
-   - Bereitstellung der `PyO3` Bindings. Implementierung von Encryption-at-Rest vor Markteinführung.
-5. **PHASE 4: Hyper-Scale (WP-4.2, WP-4.3)**
-   - Out-of-Core Vector Search. Filtered HNSW Graphen. Limitierte Disk-Auslagerung.
+3. **PHASE 2: Hybrid Search & RAG Pipeline (WP-2.1, WP-2.2, WP-7.1)**
+   - Aufbau des Inverted Text-Indexes (BM25) und SIMD Quantization (SQ8). Implementierung des Markdown Chunker für semantisches Retrieval.
+4. **PHASE 3: Python API, Security & Connectivity (WP-3.1, WP-3.2, WP-7.3)**
+   - Bereitstellung der `PyO3` Bindings. Implementierung von Encryption-at-Rest und MCP-Server Support.
+5. **PHASE 4: Hyper-Scale & Persistence (WP-4.2, WP-4.3, WP-7.2)**
+   - Out-of-Core Vector Search. HNSW Persistence via mmap zur Eliminierung von RAM-Bottlenecks und Cold-Starts.
 
 *End of Spec - Agent, please acknowledge and proceed.*

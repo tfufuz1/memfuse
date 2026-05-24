@@ -98,32 +98,40 @@ impl WalEntry {
             WalOp::Delete { key, .. } => 1 + 8 + 4 + key.len(),
         };
 
-        // payload = seq_no(8) + checksum(32) + prev_hmac(32) + op
+        // total_payload = CRC32(4) + seq_no(8) + checksum(32) + prev_hmac(32) + op
         let payload_size = 8 + 32 + 32 + op_size;
-        let total_size = 4 + payload_size; // length prefix + payload
+        let total_payload_size = 4 + payload_size; // CRC32 + payload
+        let total_size = 4 + total_payload_size; // length prefix + total_payload
 
         let mut buf = Vec::with_capacity(total_size);
-        buf.extend_from_slice(&(payload_size as u32).to_le_bytes());
-        buf.extend_from_slice(&self.seq_no.to_le_bytes());
-        buf.extend_from_slice(&self.checksum);
-        buf.extend_from_slice(&self.prev_hmac);
+        buf.extend_from_slice(&(total_payload_size as u32).to_le_bytes());
+
+        // Prepare payload to compute CRC
+        let mut payload = Vec::with_capacity(payload_size);
+        payload.extend_from_slice(&self.seq_no.to_le_bytes());
+        payload.extend_from_slice(&self.checksum);
+        payload.extend_from_slice(&self.prev_hmac);
 
         match &self.op {
             WalOp::Put { tx_id, key, value } => {
-                buf.push(0u8);
-                buf.extend_from_slice(&tx_id.inner().to_le_bytes());
-                buf.extend_from_slice(&(key.len() as u32).to_le_bytes());
-                buf.extend_from_slice(key);
-                buf.extend_from_slice(&(value.len() as u32).to_le_bytes());
-                buf.extend_from_slice(value);
+                payload.push(0u8);
+                payload.extend_from_slice(&tx_id.inner().to_le_bytes());
+                payload.extend_from_slice(&(key.len() as u32).to_le_bytes());
+                payload.extend_from_slice(key);
+                payload.extend_from_slice(&(value.len() as u32).to_le_bytes());
+                payload.extend_from_slice(value);
             }
             WalOp::Delete { tx_id, key } => {
-                buf.push(1u8);
-                buf.extend_from_slice(&tx_id.inner().to_le_bytes());
-                buf.extend_from_slice(&(key.len() as u32).to_le_bytes());
-                buf.extend_from_slice(key);
+                payload.push(1u8);
+                payload.extend_from_slice(&tx_id.inner().to_le_bytes());
+                payload.extend_from_slice(&(key.len() as u32).to_le_bytes());
+                payload.extend_from_slice(key);
             }
         }
+
+        let crc = crc32fast::hash(&payload);
+        buf.extend_from_slice(&crc.to_le_bytes());
+        buf.extend_from_slice(&payload);
         buf
     }
 }
@@ -291,12 +299,30 @@ impl Wal {
                 &entry_data_raw
             };
 
-            if entry_data.len() < 73 {
+            if entry_data.len() < 4 + 73 {
+                tracing::warn!("WAL entry too small at offset {}", pos);
                 continue;
             }
 
+            let stored_crc = u32::from_le_bytes(entry_data[0..4].try_into().map_err(|_| {
+                MemFuseError::WalCorruption {
+                    offset: pos,
+                    reason: "Invalid CRC format".into(),
+                }
+            })?);
+            let payload = &entry_data[4..];
+            let computed_crc = crc32fast::hash(payload);
+
+            if stored_crc != computed_crc {
+                tracing::warn!(
+                    "WAL entry at offset {} has CRC mismatch (stored={}, computed={}), truncating replay",
+                    pos, stored_crc, computed_crc
+                );
+                break;
+            }
+
             let seq_no = u64::from_le_bytes(
-                entry_data
+                payload
                     .get(0..8)
                     .ok_or(MemFuseError::WalCorruption {
                         offset: pos,
@@ -308,7 +334,7 @@ impl Wal {
                         reason: "Invalid seq_no format".into(),
                     })?,
             );
-            let stored_checksum: [u8; 32] = entry_data
+            let stored_checksum: [u8; 32] = payload
                 .get(8..40)
                 .ok_or(MemFuseError::WalCorruption {
                     offset: pos,
@@ -319,7 +345,7 @@ impl Wal {
                     offset: pos,
                     reason: "Invalid checksum format".into(),
                 })?;
-            let prev_hmac: [u8; 32] = entry_data
+            let prev_hmac: [u8; 32] = payload
                 .get(40..72)
                 .ok_or(MemFuseError::WalCorruption {
                     offset: pos,
@@ -330,12 +356,12 @@ impl Wal {
                     offset: pos,
                     reason: "Invalid prev_hmac format".into(),
                 })?;
-            let op_type = *entry_data.get(72).ok_or(MemFuseError::WalCorruption {
+            let op_type = *payload.get(72).ok_or(MemFuseError::WalCorruption {
                 offset: pos,
                 reason: "Invalid op_type".into(),
             })?;
 
-            let remaining = entry_data.get(73..).ok_or(MemFuseError::WalCorruption {
+            let remaining = payload.get(73..).ok_or(MemFuseError::WalCorruption {
                 offset: pos,
                 reason: "Unexpected end of entry".into(),
             })?;
@@ -507,9 +533,9 @@ mod tests {
         .expect("try_new");
         let bytes = entry.to_bytes();
 
-        assert_eq!(bytes.len(), 101);
+        assert_eq!(bytes.len(), 105);
         let payload_len = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice"));
-        assert_eq!(payload_len, 97);
+        assert_eq!(payload_len, 101);
     }
 
     #[tokio::test]

@@ -15,7 +15,9 @@
 pub mod diskann;
 pub mod distance;
 pub mod hnsw;
+pub mod persistence;
 pub mod quantize;
 
 pub use hnsw::{HnswConfig, HnswIndex};
+pub use persistence::{MmapIndex, HnswHeader};
 pub use memfuse_graph::CsrGraph;

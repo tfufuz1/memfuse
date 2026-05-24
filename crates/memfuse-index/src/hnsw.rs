@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 //! HNSW (Hierarchical Navigable Small World) vector index.
 //! # Hierarchical Navigable Small World (HNSW) Index
 //!
@@ -80,7 +81,7 @@ impl Default for HnswConfig {
             ef_search: 50,
             distance_metric: DistanceMetric::Cosine,
             rebuild_threshold: 0.8,
-            quantize: false,
+            quantize: true,
         }
     }
 }
@@ -117,7 +118,7 @@ pub enum VectorData {
 struct HnswNode {
     doc_id: DocId,
     vector: VectorData,
-    connections: Vec<Vec<usize>>,
+    connections: Vec<Vec<u32>>,
     _max_layer: usize,
 }
 
@@ -179,6 +180,7 @@ pub struct HnswIndexCore {
     rebuilding: AtomicBool,
     write_mutex: Mutex<()>,
     quantizer: RwLock<Option<crate::quantize::ScalarQuantizer>>,
+    mmap_index: RwLock<Option<crate::persistence::MmapIndex>>,
 }
 
 impl HnswIndex {
@@ -201,6 +203,7 @@ impl HnswIndex {
                 rebuilding: AtomicBool::new(false),
                 write_mutex: Mutex::new(()),
                 quantizer: RwLock::new(None),
+                mmap_index: RwLock::new(None),
             }),
         }
     }
@@ -216,6 +219,154 @@ impl HnswIndex {
             });
         }
     }
+
+    /// Persists the index to a flat file.
+    pub async fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
+        let _lock = self.write_mutex.lock().await;
+        let nodes = self.nodes.read();
+        let entry_point = self.entry_point.read();
+        
+        let file = std::fs::File::create(path)
+            .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
+        let mut writer = std::io::BufWriter::new(file);
+
+        let node_count = nodes.len();
+        let nodes_offset = 48u64; // After header
+        let vectors_offset = nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
+        
+        // Initial header
+        let mut header = crate::persistence::HnswHeader {
+            magic: crate::persistence::HNSW_MAGIC,
+            version: crate::persistence::HNSW_VERSION,
+            dimension: self.config.dimension as u32,
+            m: self.config.m as u32,
+            metric: self.config.distance_metric as u8,
+            quantized: if self.config.quantize { 1 } else { 0 },
+            node_count: node_count as u64,
+            entry_point: entry_point.map(|i| i as i64).unwrap_or(-1),
+            nodes_offset,
+            connections_offset: 0, 
+        };
+
+        // 1. Placeholder Header
+        writer.write_all(&header.to_bytes()).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        // 2. Nodes Metadata (Placeholders)
+        let mut node_records = Vec::with_capacity(node_count);
+        for _ in 0..node_count {
+            node_records.push(crate::persistence::NodeRecord {
+                doc_id: 0,
+                max_layer: 0,
+                vector_offset: 0,
+                connections_offset: 0,
+            });
+        }
+        for record in &node_records {
+            writer.write_all(&record.to_bytes()).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        }
+
+        // 3. Vectors Block
+        let mut current_pos = vectors_offset;
+        for (i, node) in nodes.iter().enumerate() {
+            node_records[i].doc_id = node.doc_id.inner();
+            node_records[i].max_layer = node.connections.len() as u8;
+            node_records[i].vector_offset = current_pos;
+            
+            match &node.vector {
+                VectorData::F32(v) => {
+                    let bytes: &[u8] = unsafe {
+                        std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4)
+                    };
+                    writer.write_all(bytes).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                    current_pos += bytes.len() as u64;
+                }
+                VectorData::U8(v) => {
+                    writer.write_all(v).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                    current_pos += v.len() as u64;
+                }
+            }
+        }
+
+        // 4. Connections Block (Align to 4 bytes)
+        let connections_offset = (current_pos + 3) & !3;
+        header.connections_offset = connections_offset;
+        
+        if connections_offset > current_pos {
+            let padding = [0u8; 4];
+            writer.write_all(&padding[.. (connections_offset - current_pos) as usize])
+                .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        }
+        
+        let mut conn_pos = connections_offset;
+        for (i, node) in nodes.iter().enumerate() {
+            node_records[i].connections_offset = conn_pos;
+            let num_layers = node.connections.len() as u8;
+            writer.write_all(&[num_layers]).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+            conn_pos += 1;
+            
+            for layer in 0..num_layers as usize {
+                let conns = &node.connections[layer];
+                let len = conns.len() as u32;
+                writer.write_all(&len.to_le_bytes()).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                let bytes: &[u8] = unsafe {
+                    std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
+                };
+                writer.write_all(bytes).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                conn_pos += 4 + bytes.len() as u64;
+            }
+        }
+        writer.flush().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let mut file = writer.into_inner().map_err(|_| MemFuseError::Storage("Writer error".into()))?;
+
+        // 5. Final Updates
+        use std::io::Seek;
+        file.seek(std::io::SeekFrom::Start(0)).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        file.write_all(&header.to_bytes()).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        file.seek(std::io::SeekFrom::Start(nodes_offset)).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        for record in &node_records {
+            file.write_all(&record.to_bytes()).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        }
+        file.sync_all().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Loads an HNSW index from a flat file via memory-mapping.
+    pub fn load_mmap(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
+        let mmap_index = crate::persistence::MmapIndex::open(path)?;
+        
+        let ep = if mmap_index.header.entry_point >= 0 {
+            Some(mmap_index.header.entry_point as usize)
+        } else {
+            None
+        };
+
+        // Determine max_layer from the nodes (this is more robust than storing it in header)
+        // For simplicity, we can also store it in header (as we do in save).
+        // Let's use the node metadata of the entry point if available.
+        let max_layer = if let Some(e) = ep {
+            let record = mmap_index.get_node_record(e);
+            record.max_layer as u64
+        } else {
+            0
+        };
+
+        {
+            let mut ep_guard = self.entry_point.write();
+            *ep_guard = ep;
+            self.max_layer.store(max_layer, Ordering::SeqCst);
+        }
+
+        let mut guard = self.mmap_index.write();
+        *guard = Some(mmap_index);
+        Ok(())
+    }
+}
+
+/// Helper for hybrid resolution of nodes (RAM vs Mmap).
+struct SearchContext<'a> {
+    nodes: &'a [HnswNode],
+    mmap: Option<&'a crate::persistence::MmapIndex>,
+    mmap_node_count: usize,
 }
 
 impl HnswIndexCore {
@@ -252,6 +403,31 @@ impl HnswIndexCore {
                 }
             }
         }
+    fn compute_distance_with_mmap(
+        &self,
+        query_exact: &[f32],
+        query_quantized: Option<&[u8]>,
+        mmap: &crate::persistence::MmapIndex,
+        record: &crate::persistence::NodeRecord,
+    ) -> Result<f32> {
+        let vector_bytes = mmap.get_vector(record);
+        if mmap.header.quantized != 0 {
+            let guard = self.quantizer.read();
+            let q = guard.as_ref().ok_or_else(|| {
+                memfuse_core::MemFuseError::Index("Quantizer not trained".into())
+            })?;
+            if let Some(qq) = query_quantized {
+                q.symmetric_dist(qq, vector_bytes, self.config.distance_metric)
+            } else {
+                q.asymmetric_dist(query_exact, vector_bytes, self.config.distance_metric)
+            }
+        } else {
+            // F32 cast
+            let v: &[f32] = unsafe {
+                std::slice::from_raw_parts(vector_bytes.as_ptr() as *const f32, self.config.dimension)
+            };
+            compute_distance(query_exact, v, self.config.distance_metric)
+        }
     }
 
     fn compute_symmetric_distance(&self, data_a: &VectorData, data_b: &VectorData) -> Result<f32> {
@@ -279,6 +455,45 @@ impl HnswIndexCore {
         }
     }
 
+    fn resolve_dist(
+        &self,
+        idx: usize,
+        query: &[f32],
+        query_q: Option<&[u8]>,
+        ctx: &SearchContext,
+    ) -> Result<f32> {
+        if let Some(mmap) = ctx.mmap {
+            if idx < ctx.mmap_node_count {
+                let record = mmap.get_node_record(idx);
+                return self.compute_distance_with_mmap(query, query_q, mmap, &record);
+            }
+            let ram_idx = idx - ctx.mmap_node_count;
+            return self.compute_distance_with_data(query, query_q, &ctx.nodes[ram_idx].vector);
+        }
+        self.compute_distance_with_data(query, query_q, &ctx.nodes[idx].vector)
+    }
+
+    fn resolve_connections<'a>(
+        &self,
+        idx: usize,
+        layer: usize,
+        ctx: &'a SearchContext,
+    ) -> Result<&'a [u32]> {
+        if let Some(mmap) = ctx.mmap {
+            if idx < ctx.mmap_node_count {
+                let record = mmap.get_node_record(idx);
+                return Ok(mmap.get_connections(&record, layer));
+            }
+            let ram_idx = idx - ctx.mmap_node_count;
+            return ctx.nodes[ram_idx].connections.get(layer).map(|c| c.as_slice()).ok_or_else(|| {
+                MemFuseError::Index(format!("Missing layer {} in RAM node {}", layer, idx))
+            });
+        }
+        ctx.nodes[idx].connections.get(layer).map(|c| c.as_slice()).ok_or_else(|| {
+            MemFuseError::Index(format!("Missing layer {} in node {}", layer, idx))
+        })
+    }
+
     fn search_layer(
         &self,
         query: &[f32],
@@ -287,19 +502,23 @@ impl HnswIndexCore {
         ef: usize,
         layer: usize,
     ) -> Result<Vec<Candidate>> {
-        let nodes = self.nodes.read();
+        let nodes_guard = self.nodes.read();
+        let mmap_guard = self.mmap_index.read();
+        let mmap_node_count = mmap_guard.as_ref().map(|m| m.header.node_count as usize).unwrap_or(0);
+        
+        let ctx = SearchContext {
+            nodes: &nodes_guard,
+            mmap: mmap_guard.as_ref(),
+            mmap_node_count,
+        };
+
         let mut visited = AHashSet::new();
         let mut candidates = BinaryHeap::new();
         let mut results = BinaryHeap::new();
 
         for &ep in entry_points {
             if visited.insert(ep) {
-                // ANCHOR:SEC:SLICE-003 AGENT:10 PRIO:1 STATUS:READY
-                // Safe access to nodes and connections.
-                let node = nodes.get(ep).ok_or_else(|| {
-                    MemFuseError::Index(format!("HNSW node missing at index {}", ep))
-                })?;
-                let dist = self.compute_distance_with_data(query, query_quantized, &node.vector)?;
+                let dist = self.resolve_dist(ep, query, query_quantized, &ctx)?;
                 let cand = Candidate {
                     index: ep,
                     distance: dist,
@@ -316,47 +535,33 @@ impl HnswIndexCore {
                 }
             }
 
-            let current_node = nodes.get(current.index).ok_or_else(|| {
-                MemFuseError::Index(format!(
-                    "HNSW current node missing at index {}",
-                    current.index
-                ))
-            })?;
-            if let Some(connections) = current_node.connections.get(layer) {
-                for &neighbor in connections {
-                    if visited.insert(neighbor) {
-                        let neighbor_node = nodes.get(neighbor).ok_or_else(|| {
-                            MemFuseError::Index(format!(
-                                "HNSW neighbor node missing at index {}",
-                                neighbor
-                            ))
-                        })?;
-                        let dist = self.compute_distance_with_data(
-                            query,
-                            query_quantized,
-                            &neighbor_node.vector,
-                        )?;
-                        let is_better = match results.peek() {
-                            Some(worst) => dist < worst.distance,
-                            None => true,
-                        };
+            let connections = self.resolve_connections(current.index, layer, &ctx)?;
+            for &neighbor_u32 in connections {
+                let neighbor = neighbor_u32 as usize;
+                if visited.insert(neighbor) {
+                    let dist = self.resolve_dist(neighbor, query, query_quantized, &ctx)?;
+                    let is_better = match results.peek() {
+                        Some(worst) => dist < worst.distance,
+                        None => true,
+                    };
 
-                        if results.len() < ef || is_better {
-                            let cand = Candidate {
-                                index: neighbor,
-                                distance: dist,
-                            };
-                            candidates.push(Reverse(cand));
-                            results.push(cand);
-                            if results.len() > ef {
-                                results.pop();
-                            }
+                    if is_better || results.len() < ef {
+                        let cand = Candidate {
+                            index: neighbor,
+                            distance: dist,
+                        };
+                        candidates.push(Reverse(cand));
+                        results.push(cand);
+                        if results.len() > ef {
+                            results.pop();
                         }
                     }
                 }
             }
         }
-        Ok(results.into_sorted_vec())
+        let mut vec = results.into_vec();
+        vec.sort_by(|a, b| a.distance.total_cmp(&b.distance));
+        Ok(vec)
     }
 
     fn select_neighbors_heuristic(
@@ -364,9 +569,9 @@ impl HnswIndexCore {
         nodes: &[HnswNode],
         candidates: &[Candidate],
         m: usize,
-    ) -> Result<Vec<usize>> {
+    ) -> Result<Vec<u32>> {
         if candidates.len() <= m {
-            return Ok(candidates.iter().map(|c| c.index).collect());
+            return Ok(candidates.iter().map(|c| c.index as u32).collect());
         }
 
         let mut result: Vec<Candidate> = Vec::with_capacity(m);
@@ -425,10 +630,10 @@ impl HnswIndexCore {
                     fallback.push(*cand);
                 }
             }
-            return Ok(fallback.iter().map(|c| c.index).collect());
+            return Ok(fallback.iter().map(|c| c.index as u32).collect());
         }
 
-        Ok(result.iter().map(|c| c.index).collect())
+        Ok(result.iter().map(|c| c.index as u32).collect())
     }
 
     fn do_insert(&self, id: DocId, vector: &[f32]) -> Result<()> {
@@ -1083,14 +1288,6 @@ impl VectorIndex for HnswIndex {
         let deleted = self.deleted_count.load(Ordering::SeqCst) as usize;
         total.saturating_sub(deleted)
     }
-
-    async fn stats(&self) -> Result<VectorIndexStats> {
-        if let Some(ref err) = self.validation_error {
-            return Err(MemFuseError::invalid_input(format!(
-                "Invalid index configuration: {}",
-                err
-            )));
-        }
         let nodes = self.nodes.read();
         let deleted_count = self.deleted_count.load(Ordering::SeqCst) as usize;
         let num_vectors = nodes.len().saturating_sub(deleted_count);

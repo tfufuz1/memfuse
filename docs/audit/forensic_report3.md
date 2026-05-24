@@ -48,4 +48,4 @@ A deep forensic architectural review of `memfuse-store` identified two **Critica
 ## 3. Recommended Remediation & Refactoring
 1. Update [compaction.rs](file:///home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-store/src/compaction.rs) candidate selection to enforce contiguous grouping rather than naive bucket aggregation.
 2. Update tombstone processing logic in [compaction.rs](file:///home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-store/src/compaction.rs) to require complete coverage guarantees before pruning a deleted entry.
-3. Update [SPEC-20260505-WP-1.1-Compaction.md](file:///home/freddy/Arbeitsplatz/DEV/memfuse/docs/specs/SPEC-20260505-WP-1.1-Compaction.md) to enshrine these non-negotiable invariants to prevent regression.
+3. Update [SPEC-20260505-WP-1.1-Compaction_done.md](file:///home/freddy/Arbeitsplatz/DEV/memfuse/docs/specs/SPEC-20260505-WP-1.1-Compaction_done.md) to enshrine these non-negotiable invariants to prevent regression.

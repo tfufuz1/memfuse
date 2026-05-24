@@ -253,32 +253,32 @@ just spec WP-X.Y-NAME  # Atomic Spec erstellen (Pflicht vor Implementierung)
 
 | WP | Name | Crate(s) | Status | Spec |
 |---|---|---|---|---|
-| **WP-0.0** | Dependency Audit & Tech Debt | alle | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-0.0-DependencyAudit.md) |
-| **WP-1.1** | Background Compaction | `memfuse-store` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-1.1-Compaction.md) |
-| **WP-1.2** | Collections / Namespaces | `memfuse-db` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-1.2-Collections.md) |
-| **WP-1.3** | Atomic Commit | `memfuse-db` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260509-WP-1.3-AtomicCommit.md) |
+| **WP-0.0** | Dependency Audit & Tech Debt | alle | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-0.0-DependencyAudit_done.md) |
+| **WP-1.1** | Background Compaction | `memfuse-store` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-1.1-Compaction_done.md) |
+| **WP-1.2** | Collections / Namespaces | `memfuse-db` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-1.2-Collections_done.md) |
+| **WP-1.3** | Atomic Commit | `memfuse-db` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260509-WP-1.3-AtomicCommit_done.md) |
 
 ### Phase 2 — Search & Retrieval
 
 | WP | Name | Crate(s) | Status | Spec |
 |---|---|---|---|---|
-| **WP-2.1** | Hybrid Search (BM25+RRF) | `memfuse-text`, `memfuse-db` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-2.1-HybridSearch.md) |
-| **WP-2.2** | Scalar Quantization (SQ8) | `memfuse-index` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-2.2-Quantization.md) |
+| **WP-2.1** | Hybrid Search (BM25+RRF) | `memfuse-text`, `memfuse-db` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-2.1-HybridSearch_done.md) |
+| **WP-2.2** | Scalar Quantization (SQ8) | `memfuse-index` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-2.2-Quantization_done.md) |
 
 ### Phase 3 — User Interface & Security
 
 | WP | Name | Crate(s) | Status | Spec |
 |---|---|---|---|---|
-| **WP-3.1** | Python Bindings (PyO3) | `memfuse-py` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-3.1-PythonBindings.md) |
-| **WP-3.2** | Encryption at Rest | `memfuse-crypto` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-3.2-Encryption.md) |
+| **WP-3.1** | Python Bindings (PyO3) | `memfuse-py` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-3.1-PythonBindings_done.md) |
+| **WP-3.2** | Encryption at Rest | `memfuse-crypto` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-3.2-Encryption_done.md) |
 
-### Phase 4 — Hyper-Scale (Offen)
+### Phase 4 — Hyper-Scale
 
 | WP | Name | Crate(s) | Status | Spec |
 |---|---|---|---|---|
-| **WP-4.1** | Memory-Mapped I/O | `memfuse-store` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
-| **WP-4.2** | Advanced Filtering | `memfuse-db` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
-| **WP-4.3** | DiskANN Out-of-Core | `memfuse-index` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
+| **WP-4.1** | Memory-Mapped I/O | `memfuse-store` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
+| **WP-4.2** | Advanced Filtering | `memfuse-db` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
+| **WP-4.3** | DiskANN Out-of-Core | `memfuse-index` | 🟡 Refactor | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
 
 ### Phase 5 — SAOS (Agent OS)
 
@@ -300,9 +300,17 @@ just spec WP-X.Y-NAME  # Atomic Spec erstellen (Pflicht vor Implementierung)
 | **WP-6.6** | Air-Gap Deployment Profile | `memfuse-runtime` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
 | **WP-6.7** | Kryptografische WAL-Verifikation | `memfuse-crypto` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
 
+### Phase 7 — RAG & Connectivity (NEU)
+
+| WP | Name | Crate(s) | Status | Spec |
+|---|---|---|---|---|
+| **WP-7.1** | Markdown Chunker | `memfuse-db` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260524-WP-7.1-MarkdownChunker.md) |
+| **WP-7.2** | HNSW Persistence | `memfuse-index` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260524-WP-7.2-HnswPersistence.md) |
+| **WP-7.3** | MCP Provider | `memfuse-py` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260524-WP-7.3-MCPProvider.md) |
+
 ---
 
-## Bekannte Offene Audit-Findings (Stand: 2026-05-20)
+## Bekannte Offene Audit-Findings (Stand: 2026-05-24)
 
 | ID | Severity | Crate | Beschreibung |
 |---|---|---|---|
