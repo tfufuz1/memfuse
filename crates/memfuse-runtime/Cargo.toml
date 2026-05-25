@@ -8,7 +8,7 @@ description = "Lightweight runtime environment for MemFuse agents"
 
 [dependencies]
 async-trait.workspace = true
-memfuse-core = { version = "0.1.0", path = "../memfuse-core" }
+memfuse-core = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
