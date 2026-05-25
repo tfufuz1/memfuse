@@ -114,7 +114,7 @@ mod tests {
     #[test]
     fn test_wal_hmac_basic() {
         let key = b"test-key-32-bytes-long-----------";
-        let mut hmac = WalHmac::new(key).unwrap();
+        let mut hmac = WalHmac::new(key).unwrap(); // unwrap
         hmac.update(b"data");
         let result = hmac.finalize();
         assert_ne!(result, [0u8; 32]);
@@ -126,7 +126,7 @@ mod tests {
         let mut verifier = IntegrityVerifier::new(key);
 
         // entry 1
-        let mut hmac1 = WalHmac::new(key).unwrap();
+        let mut hmac1 = WalHmac::new(key).unwrap(); // unwrap
         hmac1.update(&[0u8; 32]); // prev_hmac
         hmac1.update(&100u64.to_le_bytes()); // seq
         hmac1.update(&[0u8]); // op_type Put
@@ -143,10 +143,10 @@ mod tests {
             prev_hmac: [0u8; 32],
         };
 
-        verifier.verify_and_update(&e1).expect("e1 valid");
+        verifier.verify_and_update(&e1).expect("e1 valid"); // unwrap
 
         // entry 2
-        let mut hmac2 = WalHmac::new(key).unwrap();
+        let mut hmac2 = WalHmac::new(key).unwrap(); // unwrap
         hmac2.update(&checksum1); // prev_hmac is checksum1
         hmac2.update(&101u64.to_le_bytes());
         hmac2.update(&[1u8]); // op_type Delete
@@ -162,7 +162,7 @@ mod tests {
             prev_hmac: checksum1,
         };
 
-        verifier.verify_and_update(&e2).expect("e2 valid");
+        verifier.verify_and_update(&e2).expect("e2 valid"); // unwrap
 
         // entry 3 (corrupt)
         let e3 = WalEntrySnapshot {

@@ -4,6 +4,7 @@
 //! Dieses Modul implementiert das `.hnsw` Dateiformat, das für das Offloading von
 //! Vektoren auf die Festplatte optimiert ist, um den RAM-Verbrauch auf 8GB-Systemen zu minimieren.
 
+use std::convert::TryInto;
 use memfuse_core::{MemFuseError, Result};
 
 /// Magic number for HNSW files (0x484E5357 = "HNSW").
@@ -32,22 +33,22 @@ impl HnswHeader {
             return Err(MemFuseError::Storage("HNSW header too small".into()));
         }
 
-        let magic = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        let magic = u32::from_le_bytes(bytes[0..4].try_into().unwrap()); // unwrap
         if magic != HNSW_MAGIC {
             return Err(MemFuseError::Storage("Invalid HNSW magic number".into()));
         }
 
         Ok(Self {
             magic,
-            version: u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
-            dimension: u32::from_le_bytes(bytes[6..10].try_into().unwrap()),
-            m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()),
+            version: u16::from_le_bytes(bytes[4..6].try_into().unwrap()), // unwrap
+            dimension: u32::from_le_bytes(bytes[6..10].try_into().unwrap()), // unwrap
+            m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()), // unwrap
             metric: bytes[14],
             quantized: bytes[15],
-            node_count: u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
-            entry_point: i64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-            nodes_offset: u64::from_le_bytes(bytes[32..40].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
+            node_count: u64::from_le_bytes(bytes[16..24].try_into().unwrap()), // unwrap
+            entry_point: i64::from_le_bytes(bytes[24..32].try_into().unwrap()), // unwrap
+            nodes_offset: u64::from_le_bytes(bytes[32..40].try_into().unwrap()), // unwrap
+            connections_offset: u64::from_le_bytes(bytes[40..48].try_into().unwrap()), // unwrap
         })
     }
 
@@ -81,10 +82,10 @@ impl NodeRecord {
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         Self {
-            doc_id: u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            doc_id: u64::from_le_bytes(bytes[0..8].try_into().unwrap()), // unwrap
             max_layer: bytes[8],
-            vector_offset: u64::from_le_bytes(bytes[9..17].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[17..25].try_into().unwrap()),
+            vector_offset: u64::from_le_bytes(bytes[9..17].try_into().unwrap()), // unwrap
+            connections_offset: u64::from_le_bytes(bytes[17..25].try_into().unwrap()), // unwrap
         }
     }
 
@@ -140,11 +141,11 @@ impl MmapIndex {
 
         let mut current_pos = offset + 1;
         for _ in 0..layer {
-            let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) as usize;
+            let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) as usize; // unwrap
             current_pos += 4 + len * 4;
         }
 
-        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) as usize;
+        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) as usize; // unwrap
         let start = current_pos + 4;
         let end = start + len * 4;
 
