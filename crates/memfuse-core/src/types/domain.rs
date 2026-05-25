@@ -1,3 +1,4 @@
+//! Domain identifiers and basic types for MemFuse.
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 

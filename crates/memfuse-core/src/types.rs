@@ -1,3 +1,4 @@
+//! Domain types for the MemFuse workspace.
 pub mod budget;
 pub mod domain;
 pub mod filter;
