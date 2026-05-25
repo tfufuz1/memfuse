@@ -297,6 +297,13 @@ impl HnswIndex {
 
             match &node.vector {
                 VectorData::F32(v) => {
+                    // ANCHOR:SEC:UNSAFE-003 — Slice-Casting f32→u8 für Serialisierung
+                    // WP:WP-0.0 PRIO:2 NEEDS:NONE
+                    // AGENT:10 DATE:2026-05-09 STATUS:REVIEW
+                    // CREATED:2026-05-09 DEADLINE:NONE
+                    // SAFETY: Casting f32 slice to u8 slice is safe as f32 is 4 bytes
+                    // and u8 has no alignment requirements. The length is correctly
+                    // multiplied by 4 to reflect the byte size.
                     let bytes: &[u8] =
                         unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
                     writer
@@ -339,6 +346,13 @@ impl HnswIndex {
                 writer
                     .write_all(&len.to_le_bytes())
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                // ANCHOR:SEC:UNSAFE-004 — Slice-Casting u32→u8 für Serialisierung
+                // WP:WP-0.0 PRIO:2 NEEDS:NONE
+                // AGENT:10 DATE:2026-05-09 STATUS:REVIEW
+                // CREATED:2026-05-09 DEADLINE:NONE
+                // SAFETY: Casting u32 slice to u8 slice is safe as u32 is 4 bytes
+                // and u8 has no alignment requirements. The length is correctly
+                // multiplied by 4 to reflect the byte size.
                 let bytes: &[u8] = unsafe {
                     std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
                 };
