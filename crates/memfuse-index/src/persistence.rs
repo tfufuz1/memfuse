@@ -4,8 +4,8 @@
 //! Dieses Modul implementiert das `.hnsw` Dateiformat, das für das Offloading von
 //! Vektoren auf die Festplatte optimiert ist, um den RAM-Verbrauch auf 8GB-Systemen zu minimieren.
 
-use std::convert::TryInto;
 use memfuse_core::{MemFuseError, Result};
+use std::convert::TryInto;
 
 /// Magic number for HNSW files (0x484E5357 = "HNSW").
 pub const HNSW_MAGIC: u32 = 0x484E5357;
@@ -42,7 +42,7 @@ impl HnswHeader {
             magic,
             version: u16::from_le_bytes(bytes[4..6].try_into().unwrap()), // unwrap
             dimension: u32::from_le_bytes(bytes[6..10].try_into().unwrap()), // unwrap
-            m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()), // unwrap
+            m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()),     // unwrap
             metric: bytes[14],
             quantized: bytes[15],
             node_count: u64::from_le_bytes(bytes[16..24].try_into().unwrap()), // unwrap
@@ -123,7 +123,11 @@ impl MmapIndex {
 
     pub fn get_vector(&self, record: &NodeRecord) -> &[u8] {
         let dim = self.header.dimension as usize;
-        let size = if self.header.quantized != 0 { dim } else { dim * 4 };
+        let size = if self.header.quantized != 0 {
+            dim
+        } else {
+            dim * 4
+        };
         let offset = record.vector_offset as usize;
         &self.mmap[offset..offset + size]
     }
@@ -141,11 +145,13 @@ impl MmapIndex {
 
         let mut current_pos = offset + 1;
         for _ in 0..layer {
-            let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) as usize; // unwrap
+            let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap
+                    as usize; // unwrap
             current_pos += 4 + len * 4;
         }
 
-        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) as usize; // unwrap
+        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap
+            as usize; // unwrap
         let start = current_pos + 4;
         let end = start + len * 4;
 
@@ -158,16 +164,14 @@ impl MmapIndex {
         // Bessere Alternative: Kopieren oder Indexing über u8.
         // Wir nutzen hier bytemuck oder eine sichere Abstraktion, falls verfügbar.
         // Da bytemuck nicht in AGENTS.md steht, nutzen wir safe slice indexing.
-        
+
         // Re-implementing with safe indexing for now to avoid unsafe alignment issues.
         let raw = &self.mmap[start..end];
         // Note: For real performance, we should use a proper pod-based casting or ensured alignment.
         // However, we want to avoid unsafe where possible.
         // We'll return a helper or just stay with &[u8] for now and convert in the search loop.
         // Actually, return Vec<u32> for now, or use a custom iterator.
-        
-        unsafe {
-            std::slice::from_raw_parts(raw.as_ptr() as *const u32, len)
-        }
+
+        unsafe { std::slice::from_raw_parts(raw.as_ptr() as *const u32, len) }
     }
 }
