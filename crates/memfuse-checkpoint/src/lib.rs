@@ -125,7 +125,6 @@ impl CheckpointManager {
     /// Reloads the in-memory cache from persistent storage.
     pub async fn reload_from_storage(&self) -> Result<()> {
         let entries = self.storage.scan_prefix(b"__checkpoint:").await?;
-        // ANCHOR:PERF:ALLOC-001 AGENT:09 STATUS:DONE
         let mut checkpoints = Vec::with_capacity(entries.len());
         for (_, value) in entries {
             let checkpoint: CheckpointMeta = serde_json::from_slice(&value)
@@ -245,7 +244,7 @@ mod tests {
         let meta = manager
             .create_checkpoint("test_cp", "coll_1", 100, serde_json::json!({"state": "ok"}))
             .await
-            .unwrap(); // unwrap
+            .expect("guard");
 
         assert_eq!(meta.name, "test_cp");
         assert_eq!(meta.seq_no, 100);
@@ -254,7 +253,11 @@ mod tests {
         assert!(storage.pinned.lock().contains(&100));
 
         // Verify it exists in manager
-        let retrieved = manager.get_checkpoint("test_cp").await.unwrap().unwrap(); // unwrap
+        let retrieved = manager
+            .get_checkpoint("test_cp")
+            .await
+            .expect("guard")
+            .expect("guard");
         assert_eq!(retrieved, meta);
     }
 
@@ -267,9 +270,13 @@ mod tests {
         manager
             .create_checkpoint("cp1", "c1", 10, metadata.clone())
             .await
-            .unwrap(); // unwrap
+            .expect("guard");
 
-        let retrieved = manager.get_checkpoint("cp1").await.unwrap().unwrap(); // unwrap
+        let retrieved = manager
+            .get_checkpoint("cp1")
+            .await
+            .expect("guard")
+            .expect("guard");
         assert_eq!(retrieved.metadata, metadata);
     }
 
@@ -281,17 +288,17 @@ mod tests {
         manager
             .create_checkpoint("cp2", "c1", 20, serde_json::json!({}))
             .await
-            .unwrap(); // unwrap
+            .expect("guard");
         manager
             .create_checkpoint("cp1", "c1", 10, serde_json::json!({}))
             .await
-            .unwrap(); // unwrap
+            .expect("guard");
         manager
             .create_checkpoint("cp3", "c1", 30, serde_json::json!({}))
             .await
-            .unwrap(); // unwrap
+            .expect("guard");
 
-        let list = manager.list_checkpoints().await.unwrap(); // unwrap
+        let list = manager.list_checkpoints().await.expect("guard");
         assert_eq!(list.len(), 3);
         assert_eq!(list[0].name, "cp1");
         assert_eq!(list[1].name, "cp2");
@@ -306,11 +313,11 @@ mod tests {
         manager1
             .create_checkpoint("persist_me", "c1", 50, serde_json::json!({}))
             .await
-            .unwrap(); // unwrap
+            .expect("guard");
 
         // New manager sharing the same storage
         let manager2 = CheckpointManager::new(storage.clone());
-        let list = manager2.list_checkpoints().await.unwrap(); // unwrap
+        let list = manager2.list_checkpoints().await.expect("guard");
 
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "persist_me");
@@ -327,7 +334,7 @@ mod tests {
         };
 
         registry.register(tx_id, state.clone());
-        let retrieved = registry.get(tx_id).unwrap(); // unwrap
+        let retrieved = registry.get(tx_id).expect("guard");
         assert_eq!(retrieved.graph_hash, "hash");
     }
 }

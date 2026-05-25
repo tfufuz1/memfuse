@@ -655,7 +655,6 @@ impl Collection {
         };
 
         let entries = self.storage.scan_prefix(&prefix).await?;
-        // ANCHOR:PERF:ALLOC-002 AGENT:09 STATUS:DONE
         let mut matched = std::collections::HashSet::with_capacity(entries.len());
 
         for (_, v) in entries {
