@@ -112,6 +112,7 @@ async fn test_concurrent_rollback_contention() {
         if task.await.unwrap() {
             // unwrap
             // unwrap
+            // unwrap
             committed_count += 1;
         }
     }

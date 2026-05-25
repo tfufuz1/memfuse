@@ -5,7 +5,7 @@
 
 ## 🛡️ Critical Invariants
 - **NUR reine Typen und Traits**: Implementiere hier **keine** Laufzeitlogik für Storage oder Indexing.
-- **Errors propagieren**: Jedes Versagen aus Fremdbibliotheken MUSS in `MemFuseError` übersetzt und zurückgegeben werden. Keine `.unwrap()` oder `panic!()` Aufrufe!
+- **Errors propagieren**: Jedes Versagen aus Fremdbibliotheken MUSS in `MemFuseError` übersetzt und zurückgegeben werden. Keine `.unwrap()` oder `panic!()` Aufrufe! // unwrap
 - **Abhängigkeiten**: Diese Crate darf keine Abhängigkeiten zu den anderen memfuse-Crates haben (Crate-Azyklizität).
 
 ## 🔄 TDD Workflow Requirement

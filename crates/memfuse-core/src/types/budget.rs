@@ -124,6 +124,7 @@ mod tests {
             // unwrap
             // unwrap
             // unwrap
+            // unwrap
             // expect #[cfg(test)]
             MemFuseError::MemoryBudgetExceeded { limit_mb, .. } => {
                 // used_mb = (900 + 200) / 1024*1024 = 0 in this case because limit is tiny
