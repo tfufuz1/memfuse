@@ -43,6 +43,7 @@ use memfuse_core::{
     VectorIndex, VectorIndexStats,
 };
 use parking_lot::RwLock;
+use std::io::Write;
 use rand::Rng;
 use roaring::RoaringTreemap;
 use std::cmp::Reverse;
@@ -403,6 +404,8 @@ impl HnswIndexCore {
                 }
             }
         }
+    }
+
     fn compute_distance_with_mmap(
         &self,
         query_exact: &[f32],
@@ -744,7 +747,8 @@ impl HnswIndexCore {
             }
 
             for layer in (0..=new_layer.min(current_max_layer)).rev() {
-                for &neighbor_idx in &final_connections[layer] {
+                for &neighbor_idx_u32 in &final_connections[layer] {
+                    let neighbor_idx = neighbor_idx_u32 as usize;
                     // Scope for neighbor modification to release mutable borrow
                     let (should_shrink, node_vec, conn_indices) = {
                         let neighbor_node = nodes.get_mut(neighbor_idx).ok_or_else(|| {
@@ -754,7 +758,7 @@ impl HnswIndexCore {
                             ))
                         })?;
                         if let Some(conn_layer) = neighbor_node.connections.get_mut(layer) {
-                            conn_layer.push(new_idx);
+                            conn_layer.push(new_idx as u32);
                             if conn_layer.len() > self.config.m * 2 {
                                 (true, neighbor_node.vector.clone(), conn_layer.clone())
                             } else {
@@ -767,7 +771,8 @@ impl HnswIndexCore {
 
                     if should_shrink {
                         let mut conn_cands = Vec::with_capacity(conn_indices.len());
-                        for &idx in conn_indices.iter() {
+                        for &idx_u32 in conn_indices.iter() {
+                            let idx = idx_u32 as usize;
                             let target_node = nodes.get(idx).ok_or_else(|| {
                                 MemFuseError::Index(format!(
                                     "HNSW target node missing at index {}",
@@ -853,7 +858,7 @@ impl HnswIndexCore {
         if total == 0 {
             return 1.0;
         }
-        (1.0 - deleted as f64 / total as f64).max(0.0)
+        (1.0 - deleted as f64 / total as f64).max(0.0f64)
     }
 
     /// Checks if a rebuild is required based on the deletion ratio.
@@ -1288,6 +1293,14 @@ impl VectorIndex for HnswIndex {
         let deleted = self.deleted_count.load(Ordering::SeqCst) as usize;
         total.saturating_sub(deleted)
     }
+
+    async fn stats(&self) -> Result<VectorIndexStats> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
         let nodes = self.nodes.read();
         let deleted_count = self.deleted_count.load(Ordering::SeqCst) as usize;
         let num_vectors = nodes.len().saturating_sub(deleted_count);
