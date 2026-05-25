@@ -78,6 +78,10 @@ impl InvertedIndex {
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
 
+        // Track original tokens using DefaultTokenizer
+        let orig_tokens = DefaultTokenizer.tokenize(text);
+        let orig_len = orig_tokens.len() as u32;
+
         let mut tfs = HashMap::with_capacity(tokens.len());
         for t in tokens {
             *tfs.entry(t).or_insert(0u32) += 1;
@@ -85,8 +89,10 @@ impl InvertedIndex {
 
         // Check if document already exists to adjust total_tokens and total_docs
         let dl_key = self.key_with_id("dl:", doc_id.inner());
+        let ol_key = self.key_with_id("ol:", doc_id.inner());
         let fw_key = self.key_with_id("fw:", doc_id.inner());
         let mut old_len = 0u32;
+        let mut old_orig_len = 0u32;
         let mut is_update = false;
 
         if let Some(bytes) = self.storage.get(&dl_key).await? {
@@ -97,6 +103,17 @@ impl InvertedIndex {
                         .try_into()
                         .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
                 );
+
+                if let Some(ol_bytes) = self.storage.get(&ol_key).await? {
+                    if ol_bytes.len() == 4 {
+                        old_orig_len = u32::from_le_bytes(
+                            ol_bytes.as_slice().try_into().map_err(|_| {
+                                MemFuseError::Storage("Invalid orig_len length".into())
+                            })?,
+                        );
+                    }
+                }
+
                 is_update = true;
 
                 // Remove from old posting lists if update
@@ -139,6 +156,11 @@ impl InvertedIndex {
             .put(tx, &dl_key, &new_len.to_le_bytes())
             .await?;
 
+        // Store original document length
+        self.storage
+            .put(tx, &ol_key, &orig_len.to_le_bytes())
+            .await?;
+
         // Store forward index (unique terms)
         let mut tfs_vec: Vec<(String, u32)> = tfs.into_iter().collect();
         tfs_vec.sort_by(|a, b| a.0.cmp(&b.0));
@@ -164,6 +186,21 @@ impl InvertedIndex {
 
         self.storage
             .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
+            .await?;
+
+        // Update total original tokens
+        let total_orig_tok_key = self.key("meta:orig_tokens");
+        let mut total_orig_tokens = 0u64;
+        if let Some(bytes) = self.storage.get(&total_orig_tok_key).await? {
+            if bytes.len() == 8 {
+                total_orig_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid total_orig_tokens length".into())
+                })?);
+            }
+        }
+        total_orig_tokens = total_orig_tokens.saturating_sub(old_orig_len as u64) + orig_len as u64;
+        self.storage
+            .put(tx, &total_orig_tok_key, &total_orig_tokens.to_le_bytes())
             .await?;
 
         // Update total docs
@@ -216,9 +253,12 @@ impl InvertedIndex {
     /// Deletes a document from the index.
     pub async fn delete_document(&self, tx: TxId, doc_id: DocId) -> Result<()> {
         let dl_key = self.key_with_id("dl:", doc_id.inner());
+        let ol_key = self.key_with_id("ol:", doc_id.inner());
         let fw_key = self.key_with_id("fw:", doc_id.inner());
 
         let mut doc_len = 0u32;
+        let mut orig_len = 0u32;
+
         if let Some(bytes) = self.storage.get(&dl_key).await? {
             if bytes.len() == 4 {
                 doc_len = u32::from_le_bytes(
@@ -227,6 +267,16 @@ impl InvertedIndex {
                         .try_into()
                         .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
                 );
+
+                if let Some(ol_bytes) = self.storage.get(&ol_key).await? {
+                    if ol_bytes.len() == 4 {
+                        orig_len = u32::from_le_bytes(
+                            ol_bytes.as_slice().try_into().map_err(|_| {
+                                MemFuseError::Storage("Invalid orig_len length".into())
+                            })?,
+                        );
+                    }
+                }
             }
         } else {
             // Document doesn't exist in inverted index
@@ -234,6 +284,7 @@ impl InvertedIndex {
         }
 
         self.storage.delete(tx, &dl_key).await?;
+        self.storage.delete(tx, &ol_key).await?;
 
         // Remove from posting lists using forward index
         if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
@@ -278,6 +329,19 @@ impl InvertedIndex {
                 total_tokens = total_tokens.saturating_sub(doc_len as u64);
                 self.storage
                     .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
+                    .await?;
+            }
+        }
+
+        let total_orig_tok_key = self.key("meta:orig_tokens");
+        if let Some(bytes) = self.storage.get(&total_orig_tok_key).await? {
+            if bytes.len() == 8 {
+                let mut total_orig_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(
+                    |_| MemFuseError::Storage("Invalid total_orig_tokens length".into()),
+                )?);
+                total_orig_tokens = total_orig_tokens.saturating_sub(orig_len as u64);
+                self.storage
+                    .put(tx, &total_orig_tok_key, &total_orig_tokens.to_le_bytes())
                     .await?;
             }
         }
@@ -445,10 +509,30 @@ impl TextIndex for InvertedIndex {
             }
         }
 
+        let total_orig_tok_key = self.key("meta:orig_tokens");
+        let mut total_orig_tokens = 0u64;
+        if let Some(bytes) = self.storage.get(&total_orig_tok_key).await? {
+            if bytes.len() == 8 {
+                total_orig_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid total_orig_tokens length".into())
+                })?);
+            }
+        }
+
+        let token_reduction_ratio = if total_orig_tokens > 0 {
+            total_tokens as f32 / total_orig_tokens as f32
+        } else {
+            1.0
+        };
+
+        // Heuristic: 24 bytes per token
+        let memory_usage_bytes = (total_tokens as usize).saturating_mul(24);
+
         Ok(TextIndexStats {
             num_documents: total_docs as usize,
             num_tokens: total_tokens as usize,
-            memory_usage_bytes: 0,
+            memory_usage_bytes,
+            token_reduction_ratio,
         })
     }
 }
@@ -773,6 +857,83 @@ mod tests {
 
         let stats_after = index.stats().await?;
         assert_eq!(stats_after.num_documents, 0);
+        assert_eq!(stats_after.num_tokens, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_expansion_ratio_stats() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        // Use German namespace to trigger morphological splitting
+        let index = InvertedIndex::new(storage.clone(), "de_test");
+
+        let tx = TxId::new(1);
+        let doc_id = DocId::new(1);
+        // "Bundesverfassungsgericht" should split into 3 parts
+        index.insert(tx, doc_id, "Bundesverfassungsgericht").await?;
+        storage.commit(tx).await?;
+
+        let stats = index.stats().await?;
+        // Original: 1 ("bundesverfassungsgericht" lowercased)
+        // Expanded: 4 ("bundesverfassungsgericht", "bundes", "verfassungs", "gericht")
+        assert_eq!(stats.num_tokens, 4);
+        assert_eq!(stats.token_reduction_ratio, 4.0);
+        assert_eq!(stats.memory_usage_bytes, 4 * 24);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_bm25_doc_len_influence() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "default");
+
+        let tx1 = TxId::new(1);
+        let d1 = DocId::new(1);
+        // Short document with term "rust"
+        index.insert(tx1, d1, "rust").await?;
+        storage.commit(tx1).await?;
+
+        let tx2 = TxId::new(2);
+        let d2 = DocId::new(2);
+        // Long document with same term "rust"
+        index.insert(tx2, d2, "rust is a programming language that focuses on safety and performance and has many cool features like ownership and borrowing.").await?;
+        storage.commit(tx2).await?;
+
+        let results = index.search_bm25("rust", 10).await?;
+        assert_eq!(results.len(), 2);
+        // "rust" in a shorter document should score higher
+        assert_eq!(results[0].0, d1);
+        assert_eq!(results[1].0, d2);
+        assert!(results[0].1 > results[1].1);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_bm25_tf_influence() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "default");
+
+        let tx1 = TxId::new(1);
+        let d1 = DocId::new(1);
+        // "rust" appears once
+        index.insert(tx1, d1, "rust is fast").await?;
+        storage.commit(tx1).await?;
+
+        let tx2 = TxId::new(2);
+        let d2 = DocId::new(2);
+        // "rust" appears twice, similar length
+        index.insert(tx2, d2, "rust rust fast").await?;
+        storage.commit(tx2).await?;
+
+        let results = index.search_bm25("rust", 10).await?;
+        assert_eq!(results.len(), 2);
+        // "rust" twice should score higher
+        assert_eq!(results[0].0, d2);
+        assert_eq!(results[1].0, d1);
+        assert!(results[0].1 > results[1].1);
 
         Ok(())
     }

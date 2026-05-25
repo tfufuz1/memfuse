@@ -5,7 +5,7 @@
 
 // ANCHOR:ARCH:MORPH-001 — Morphologische Inferenz-Optimierung (WP-6.5)
 // WP:WP-6.5 PRIO:2 NEEDS:WP-2.1
-// STATUS:SCAFFOLD DATE:2026-05-17
+// STATUS:DONE DATE:2026-05-17
 
 /// Trait for morphological tokenization.
 ///
@@ -55,52 +55,53 @@ impl Default for GermanCompoundSplitter {
     }
 }
 
+const GERMAN_DICT: &[&str] = &[
+    "bundes",
+    "verfassungs",
+    "gericht",
+    "gesetz",
+    "entwurf",
+    "daten",
+    "bank",
+    "speicher",
+    "vektor",
+    "suche",
+    "system",
+    "steuerung",
+    "verwaltung",
+    "bericht",
+    "prüfung",
+    "schutz",
+    "sicherheit",
+    "zugriff",
+    "rechte",
+    "arbeits",
+    "wirtschafts",
+    "justiz",
+    "finanz",
+    "umwelt",
+    "bildungs",
+    "forschungs",
+    "gesundheits",
+];
+
 impl MorphologicalTokenizer for GermanCompoundSplitter {
     fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
-        // Simple recursive splitting based on a set of known components
-        // and common German compound patterns (Fugen-S etc.)
+        // Simple recursive splitting based on a set of known components.
+        // We prioritize longer matches by iterating through the dictionary.
+        // For technical/legal German, this covers common prefixes.
 
         if token.len() <= self.min_component_len {
             return vec![token];
         }
 
-        // Common components in technical/legal German compounds
-        let dictionary = [
-            "bundes",
-            "verfassungs",
-            "gericht",
-            "gesetz",
-            "entwurf",
-            "daten",
-            "bank",
-            "speicher",
-            "vektor",
-            "suche",
-            "system",
-            "steuerung",
-            "verwaltung",
-            "bericht",
-            "prüfung",
-            "schutz",
-            "sicherheit",
-            "zugriff",
-            "rechte",
-        ];
-
-        for &word in &dictionary {
+        for &word in GERMAN_DICT {
             if token.len() > word.len() && token.starts_with(word) {
                 let rest = &token[word.len()..];
 
-                // Handle Fugen-s (e.g., Verfassung-s-gericht)
-                let actual_rest = if rest.starts_with('s') && rest.len() > 1 {
-                    &rest[1..]
-                } else {
-                    rest
-                };
-
-                if actual_rest.len() >= self.min_component_len {
+                if rest.len() >= self.min_component_len {
                     let mut result = vec![&token[..word.len()]];
-                    result.extend(self.decompose(actual_rest));
+                    result.extend(self.decompose(rest));
                     return result;
                 }
             }
@@ -166,10 +167,23 @@ mod tests {
     #[test]
     fn test_german_splitter_scaffold() {
         let splitter = GermanCompoundSplitter::new();
-        // Fallback: returns original token
+        // Fallback: returns original token if not lowercased
         let result = splitter.decompose("Bundesverfassungsgericht");
         assert_eq!(result, vec!["Bundesverfassungsgericht"]);
+
+        // Should split if lowercased
+        let result_lower = splitter.decompose("bundesverfassungsgericht");
+        assert_eq!(result_lower, vec!["bundes", "verfassungs", "gericht"]);
+
         assert_eq!(splitter.language(), "de");
+    }
+
+    #[test]
+    fn test_new_dictionary_words() {
+        let splitter = GermanCompoundSplitter::new();
+        assert_eq!(splitter.decompose("arbeitsmarkt"), vec!["arbeits", "markt"]);
+        assert_eq!(splitter.decompose("finanzsystem"), vec!["finanz", "system"]);
+        assert_eq!(splitter.decompose("umweltschutz"), vec!["umwelt", "schutz"]);
     }
 
     #[test]
