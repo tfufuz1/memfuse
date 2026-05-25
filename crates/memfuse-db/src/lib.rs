@@ -163,7 +163,7 @@ impl MemFuse {
         db.repair_on_open().await?;
 
         // Initialize the default collection backwards compatibility
-        let _ = db.collection("default").await?;
+        db.collection("default").await?;
 
         Ok(db)
     }
@@ -587,9 +587,12 @@ impl Drop for MemFuse {
     fn drop(&mut self) {
         let storage = Arc::clone(&self.storage);
         // Best effort flush on drop to ensure zero data loss if `close()` is forgotten.
-        tokio::spawn(async move {
-            let _ = storage.flush().await;
-        });
+        // We check if we are inside a tokio runtime before spawning.
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let _ = storage.flush().await;
+            });
+        }
     }
 }
 #[cfg(test)]
