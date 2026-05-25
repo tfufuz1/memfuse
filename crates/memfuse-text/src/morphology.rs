@@ -5,7 +5,7 @@
 
 // ANCHOR:ARCH:MORPH-001 — Morphologische Inferenz-Optimierung (WP-6.5)
 // WP:WP-6.5 PRIO:2 NEEDS:WP-2.1
-// STATUS:SCAFFOLD DATE:2026-05-17
+// STATUS:DONE DATE:2026-05-17
 
 /// Trait for morphological tokenization.
 ///
@@ -19,9 +19,33 @@ pub trait MorphologicalTokenizer: Send + Sync {
     fn language(&self) -> &str;
 }
 
+/// Common components in technical/legal German compounds, sorted by length (DESC)
+/// to support greedy longest-match prefix search.
+const GERMAN_DICTIONARY: &[&str] = &[
+    "bundesverfassungs",
+    "verfassungs",
+    "verwaltung",
+    "steuerung",
+    "sicherheit",
+    "speicher",
+    "bericht",
+    "prüfung",
+    "zugriff",
+    "gericht",
+    "system",
+    "gesetz",
+    "entwurf",
+    "rechte",
+    "vektor",
+    "schutz",
+    "suche",
+    "daten",
+    "bank",
+];
+
 /// German compound word splitter.
 ///
-/// Uses dictionary-based + frequency statistics approach.
+/// Uses dictionary-based approach with greedy longest-match prefix search.
 /// Fallback: returns the original token unsplit.
 pub struct GermanCompoundSplitter {
     /// Minimum component length for splitting.
@@ -58,48 +82,25 @@ impl Default for GermanCompoundSplitter {
 impl MorphologicalTokenizer for GermanCompoundSplitter {
     fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
         // Simple recursive splitting based on a set of known components
-        // and common German compound patterns (Fugen-S etc.)
+        // and common German compound patterns.
 
         if token.len() <= self.min_component_len {
             return vec![token];
         }
 
-        // Common components in technical/legal German compounds
-        let dictionary = [
-            "bundes",
-            "verfassungs",
-            "gericht",
-            "gesetz",
-            "entwurf",
-            "daten",
-            "bank",
-            "speicher",
-            "vektor",
-            "suche",
-            "system",
-            "steuerung",
-            "verwaltung",
-            "bericht",
-            "prüfung",
-            "schutz",
-            "sicherheit",
-            "zugriff",
-            "rechte",
-        ];
-
-        for &word in &dictionary {
+        for &word in GERMAN_DICTIONARY {
             if token.len() > word.len() && token.starts_with(word) {
                 let rest = &token[word.len()..];
 
                 // Handle Fugen-s (e.g., Verfassung-s-gericht)
-                let actual_rest = if rest.starts_with('s') && rest.len() > 1 {
-                    &rest[1..]
+                let (consumed_s, actual_rest) = if rest.starts_with('s') && rest.len() > 1 {
+                    (1, &rest[1..])
                 } else {
-                    rest
+                    (0, rest)
                 };
 
                 if actual_rest.len() >= self.min_component_len {
-                    let mut result = vec![&token[..word.len()]];
+                    let mut result = vec![&token[..word.len() + consumed_s]];
                     result.extend(self.decompose(actual_rest));
                     return result;
                 }
