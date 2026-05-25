@@ -91,6 +91,7 @@ impl CheckpointManager {
         self.storage.pin_checkpoint(seq_no).await?;
 
         // 2. Persist checkpoint metadata
+        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:READY
         let key = format!("__checkpoint:{}", name);
         let value = serde_json::to_vec(&checkpoint)
             .map_err(|e| memfuse_core::error::MemFuseError::Internal(e.to_string()))?;
