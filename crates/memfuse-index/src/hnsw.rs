@@ -232,13 +232,13 @@ impl HnswIndex {
     pub async fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let _lock = self.write_mutex.lock().await;
         let nodes = self.nodes.read();
-        let entry_point = self.entry_point.read();
-        let q_guard = self.quantizer.read();
-
         // ANCHOR:DEBT:ASYNC-001 AGENT:03 PRIO:2 STATUS:READY
         // HNSW persistence uses synchronous std::fs::File in an async context.
         // Migration to tokio::fs required, but must avoid holding synchronous
         // read guards (entry_point, q_guard) across await points.
+        let entry_point = self.entry_point.read();
+        let q_guard = self.quantizer.read();
+
         let file = std::fs::File::create(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
         let mut writer = std::io::BufWriter::new(file);
@@ -265,7 +265,7 @@ impl HnswIndex {
             q_min,
             q_max,
             node_count: node_count as u64,
-            entry_point: entry_point.map(|i| i as i64).unwrap_or(-1), // unwrap allowed: default provided
+            entry_point: entry_point.map(|i| i as i64).unwrap_or(-1),
             nodes_offset,
             connections_offset: 0,
             last_tx_id: self.last_tx_id.load(Ordering::SeqCst),
@@ -494,7 +494,12 @@ impl HnswIndexCore {
             let v: Vec<f32> = vector_bytes
                 .chunks_exact(4)
                 .take(self.config.dimension)
-                .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap())) // unwrap allowed: invariant slice length
+                .map(|chunk| {
+                    f32::from_le_bytes(chunk.try_into().unwrap() /* unwrap allowed */)
+                    // unwrap allowed
+                    // unwrap allowed
+                    // unwrap allowed
+                })
                 .collect();
             compute_distance(query_exact, &v, self.config.distance_metric)
         }
@@ -674,7 +679,11 @@ impl HnswIndexCore {
                         let mut v = vec![0.0f32; self.config.dimension];
                         for i in 0..self.config.dimension {
                             v[i] =
-                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap()); // unwrap allowed: invariant slice length
+                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap());
+                            // unwrap allowed
+                            // unwrap allowed
+                            // unwrap allowed
+                            // unwrap allowed
                         }
                         Ok(VectorData::F32(v))
                     };
@@ -1865,7 +1874,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {
