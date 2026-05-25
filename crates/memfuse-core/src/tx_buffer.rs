@@ -96,17 +96,23 @@ impl<T: Clone> TxBuffer<T> {
     pub fn has_tx(&self, tx: TxId) -> bool {
         // ANCHOR:SEC:SLICE-001 — Slice-Indexing — sicher weil shard_idx = modulo len()
         // WP:WP-0.0 PRIO:5 NEEDS:NONE
-        // AGENT:10 DATE:2026-05-25 STATUS:REVIEW
+        // AGENT:10 DATE:2026-05-09 STATUS:DONE
         // CREATED:2026-05-09 DEADLINE:NONE
-        let idx = self.shard_idx(tx);
-        let shard = self.shards.get(idx).expect("shard_idx out of bounds");
+        let shard = &self
+            .shards
+            .get(self.shard_idx(tx))
+            .expect("shard_idx out of bounds");
         shard.read().ops.contains_key(&tx)
     }
 
     /// Registers a new transaction in the buffer.
     pub fn begin(&self, tx: TxId) {
         let shard_idx = self.shard_idx(tx);
-        let mut shard = self.shards[shard_idx].write();
+        let mut shard = self
+            .shards
+            .get(shard_idx)
+            .expect("shard_idx out of bounds")
+            .write();
         shard
             .ops
             .entry(tx)
@@ -137,9 +143,7 @@ impl<T: Clone> TxBuffer<T> {
         let shard = self
             .shards
             .get(shard_idx)
-            .ok_or_else(|| {
-                MemFuseError::Internal(format!("Shard index {} out of bounds", shard_idx))
-            })?
+            .expect("shard_idx out of bounds")
             .read();
 
         if let Some((ops, _)) = shard.ops.get(&tx) {
@@ -212,7 +216,11 @@ impl<T: Clone> TxBuffer<T> {
     /// Returns a clone of the pending operations for a transaction.
     pub fn get_ops(&self, tx: TxId) -> Option<Vec<IndexOp<T>>> {
         let shard_idx = self.shard_idx(tx);
-        let shard = self.shards.get(shard_idx)?.read();
+        let shard = self
+            .shards
+            .get(shard_idx)
+            .expect("shard_idx out of bounds")
+            .read();
         shard.ops.get(&tx).map(|(ops, _)| ops.clone())
     }
 }
