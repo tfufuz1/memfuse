@@ -32,30 +32,75 @@ pub struct HnswHeader {
 impl HnswHeader {
     pub const SIZE: usize = 64;
 
+    /// ANCHOR:DEBT:HNSW-HEADER-PARSE (AGENT:13 STATUS:DONE DATE:2026-06-01)
     pub fn try_from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < Self::SIZE {
             return Err(MemFuseError::Storage("Header too small".into()));
         }
 
-        let magic = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        let magic = u32::from_le_bytes(
+            bytes[0..4]
+                .try_into()
+                .map_err(|e| MemFuseError::Storage(format!("Invalid header magic: {}", e)))?,
+        );
         if magic != HNSW_MAGIC {
             return Err(MemFuseError::Storage("Invalid HNSW magic".into()));
         }
 
         Ok(Self {
             magic,
-            version: u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
-            dimension: u32::from_le_bytes(bytes[6..10].try_into().unwrap()),
-            m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()),
+            version: u16::from_le_bytes(
+                bytes[4..6]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Invalid version: {}", e)))?,
+            ),
+            dimension: u32::from_le_bytes(
+                bytes[6..10]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Invalid dimension: {}", e)))?,
+            ),
+            m: u32::from_le_bytes(
+                bytes[10..14]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Invalid M: {}", e)))?,
+            ),
             metric: bytes[14],
             quantized: bytes[15],
-            q_min: f32::from_le_bytes(bytes[16..20].try_into().unwrap()),
-            q_max: f32::from_le_bytes(bytes[20..24].try_into().unwrap()),
-            node_count: u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-            entry_point: i64::from_le_bytes(bytes[32..40].try_into().unwrap()),
-            nodes_offset: u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
-            last_tx_id: u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
+            q_min: f32::from_le_bytes(
+                bytes[16..20]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Invalid q_min: {}", e)))?,
+            ),
+            q_max: f32::from_le_bytes(
+                bytes[20..24]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Invalid q_max: {}", e)))?,
+            ),
+            node_count: u64::from_le_bytes(
+                bytes[24..32]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Invalid node_count: {}", e)))?,
+            ),
+            entry_point: i64::from_le_bytes(
+                bytes[32..40]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Invalid entry_point: {}", e)))?,
+            ),
+            nodes_offset: u64::from_le_bytes(
+                bytes[40..48]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Invalid nodes_offset: {}", e)))?,
+            ),
+            connections_offset: u64::from_le_bytes(
+                bytes[48..56].try_into().map_err(|e| {
+                    MemFuseError::Storage(format!("Invalid connections_offset: {}", e))
+                })?,
+            ),
+            last_tx_id: u64::from_le_bytes(
+                bytes[56..64]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Invalid last_tx_id: {}", e)))?,
+            ),
         })
     }
 
@@ -90,12 +135,14 @@ pub struct NodeRecord {
 impl NodeRecord {
     pub const SIZE: usize = 8 + 1 + 8 + 8; // 25 bytes
 
+    /// ANCHOR:DEBT:NODERECORD-PARSE (AGENT:03 STATUS:READY DATE:2026-06-01)
+    /// Debt: This function panics on invalid input size. Should return Result, but requires API change.
     pub fn from_bytes(bytes: &[u8]) -> Self {
         Self {
-            doc_id: u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            doc_id: u64::from_le_bytes(bytes[0..8].try_into().unwrap()), // unwrap
             max_layer: bytes[8],
-            vector_offset: u64::from_le_bytes(bytes[9..17].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[17..25].try_into().unwrap()),
+            vector_offset: u64::from_le_bytes(bytes[9..17].try_into().unwrap()), // unwrap
+            connections_offset: u64::from_le_bytes(bytes[17..25].try_into().unwrap()), // unwrap
         }
     }
 
@@ -117,8 +164,9 @@ pub struct MmapIndex {
 }
 
 impl MmapIndex {
+    /// ANCHOR:DEBT:MMAP-INDEX-OPEN (AGENT:13 STATUS:DONE DATE:2026-06-01)
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
-        let file = std::fs::File::open(path)
+        let file = std::fs::File::open(path) // std::fs justification: required for memmap2
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
         let mmap = unsafe { memmap2::Mmap::map(&file) }
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
@@ -146,6 +194,8 @@ impl MmapIndex {
         &self.mmap[offset..offset + size]
     }
 
+    /// ANCHOR:DEBT:MMAP-INDEX-CONNECTIONS (AGENT:03 STATUS:READY DATE:2026-06-01)
+    /// Debt: This function panics on invalid input size. Should return Result, but requires API change.
     pub fn get_connections(&self, record: &NodeRecord, layer: usize) -> Vec<u32> {
         let offset = record.connections_offset as usize;
         if offset >= self.mmap.len() {
@@ -160,12 +210,12 @@ impl MmapIndex {
         let mut current_pos = offset + 1;
         for _ in 0..layer {
             let len =
-                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap())
+                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap
                     as usize;
             current_pos += 4 + len * 4;
         }
 
-        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap())
+        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap
             as usize;
         let start = current_pos + 4;
         let end = start + len * 4;
@@ -173,7 +223,7 @@ impl MmapIndex {
         let raw = &self.mmap[start..end];
         let mut connections = Vec::with_capacity(len);
         for i in 0..len {
-            let val = u32::from_le_bytes(raw[i * 4..(i + 1) * 4].try_into().unwrap());
+            let val = u32::from_le_bytes(raw[i * 4..(i + 1) * 4].try_into().unwrap()); // unwrap
             connections.push(val);
         }
 

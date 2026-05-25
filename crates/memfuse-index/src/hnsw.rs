@@ -235,7 +235,7 @@ impl HnswIndex {
         let entry_point = self.entry_point.read();
         let q_guard = self.quantizer.read();
 
-        let file = std::fs::File::create(path)
+        let file = std::fs::File::create(path) // std::fs justification: non-async path
             .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
         let mut writer = std::io::BufWriter::new(file);
 
