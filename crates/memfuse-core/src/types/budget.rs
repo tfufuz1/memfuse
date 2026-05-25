@@ -120,7 +120,7 @@ mod tests {
         let result = tracker.consume_memory(200);
 
         assert!(result.is_err());
-        match result.err().unwrap() {
+        match result.err().expect("test") {
             MemFuseError::MemoryBudgetExceeded { limit_mb, .. } => {
                 // used_mb = (900 + 200) / 1024*1024 = 0 in this case because limit is tiny
                 assert_eq!(limit_mb, 0);
@@ -160,7 +160,7 @@ mod tests {
     }
 
     #[test]
-    fn test_concurrent_consumption() {
+    fn test_concurrent_consumption() -> std::result::Result<(), String> {
         let budget = ResourceBudget {
             memory_limit: 10000,
         };
@@ -171,16 +171,17 @@ mod tests {
             let t = tracker.clone();
             handlers.push(std::thread::spawn(move || {
                 for _ in 0..100 {
-                    t.consume_memory(10).expect("consume");
+                    t.consume_memory(10).expect("test");
                 }
             }));
         }
 
         for h in handlers {
-            h.join().unwrap();
+            h.join().map_err(|e| format!("thread panicked: {:?}", e))?;
         }
 
         assert_eq!(tracker.memory_used(), 10000);
         assert!(tracker.consume_memory(1).is_err());
+        Ok(())
     }
 }
