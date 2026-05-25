@@ -50,6 +50,14 @@ check-py:
 check-checkpoint:
     nix develop -c cargo check -p memfuse-checkpoint
 
+# Modular check for memfuse-crypto
+check-crypto:
+    nix develop -c cargo check -p memfuse-crypto
+
+# Modular check for memfuse-graph
+check-graph:
+    nix develop -c cargo check -p memfuse-graph
+
 # Verifies the Directed Acyclic Graph (DAG) integrity of the workspace
 dag-check:
     #!/usr/bin/env bash
@@ -66,16 +74,25 @@ dag-check:
         fi
     done
 
-    echo "--- Phase 2: L2 Peer Isolation (store, index, text, checkpoint) ---"
+    echo "--- Phase 2: L2 Peer Isolation (store, index, text, checkpoint, crypto, graph) ---"
+    for CRATE in memfuse-crypto memfuse-graph; do
+        echo "Verifying $CRATE isolation..."
+        if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -E -v "$CRATE|memfuse-core" | grep -q .; then
+            echo "❌ ERROR: $CRATE imports forbidden internal crates."
+            cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-"
+            exit 1
+        fi
+    done
+
     echo "Verifying memfuse-store..."
-    if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core" | grep -q "memfuse-"; then
-        echo "❌ ERROR: memfuse-store violates DAG by importing non-core crates."
+    if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core|memfuse-crypto" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-store violates DAG by importing non-core/non-crypto crates."
         cargo tree -p memfuse-store --edges no-dev | grep "memfuse-"
         exit 1
     fi
     echo "Verifying memfuse-index..."
-    if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core" | grep -q "memfuse-"; then
-        echo "❌ ERROR: memfuse-index violates DAG by importing non-core crates."
+    if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core|memfuse-graph" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-index violates DAG by importing non-core/non-graph crates."
         cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
         exit 1
     fi
