@@ -127,6 +127,9 @@ async fn test_layer_001_fork_diverge_merge() {
             .expect("get merged")
             .unwrap();
         assert_eq!(merged_doc.metadata.unwrap()["origin"], "fork");
+
+        // Explizites Drop/Close damit Filesystem-Locks frei werden und alle Writes beendet sind
+        db.close().await.expect("close db");
     }
 
     // 6. Cleanup Checkpoint

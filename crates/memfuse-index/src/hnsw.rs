@@ -235,9 +235,11 @@ impl HnswIndex {
         let entry_point = self.entry_point.read();
         let q_guard = self.quantizer.read();
 
-        let file = std::fs::File::create(path) // std::fs justification: non-async path
+        let file = tokio::fs::File::create(path)
+            .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
-        let mut writer = std::io::BufWriter::new(file);
+        let std_file = file.into_std().await;
+        let mut writer = std::io::BufWriter::new(std_file);
 
         let node_count = nodes.len();
         let nodes_offset = crate::persistence::HnswHeader::SIZE as u64;
@@ -487,11 +489,17 @@ impl HnswIndexCore {
             }
         } else {
             // Safe unaligned F32 read
-            let v: Vec<f32> = vector_bytes
+            let v: Result<Vec<f32>> = vector_bytes
                 .chunks_exact(4)
                 .take(self.config.dimension)
-                .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap())) // unwrap
+                .map(|chunk| {
+                    chunk
+                        .try_into()
+                        .map(f32::from_le_bytes)
+                        .map_err(|_| MemFuseError::Storage("invalid dimension".into()))
+                })
                 .collect();
+            let v = v?;
             compute_distance(query_exact, &v, self.config.distance_metric)
         }
     }
@@ -670,7 +678,9 @@ impl HnswIndexCore {
                         let mut v = vec![0.0f32; self.config.dimension];
                         for i in 0..self.config.dimension {
                             let val =
-                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap()); // unwrap
+                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().map_err(
+                                    |_| MemFuseError::Storage("invalid dimension".into()),
+                                )?);
                             v[i] = val;
                         }
                         Ok(VectorData::F32(v))
