@@ -22,19 +22,46 @@ async fn test_graph_traversal_integration() {
     ];
 
     for (id, name, kind) in nodes {
-        graph.add_entity(tx, Entity::new(EntityId::new(id), name, kind)).await.unwrap();
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(id), name, kind))
+            .await
+            .unwrap(); // expect #[cfg(test)]
     }
 
-    graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "knows").with_weight(0.9)).await.unwrap();
-    graph.add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(3), "knows").with_weight(0.8)).await.unwrap();
-    graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(4), "works_at").with_weight(1.0)).await.unwrap();
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(1), EntityId::new(2), "knows").with_weight(0.9),
+        )
+        .await
+        .unwrap(); // expect #[cfg(test)]
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(2), EntityId::new(3), "knows").with_weight(0.8),
+        )
+        .await
+        .unwrap(); // expect #[cfg(test)]
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(1), EntityId::new(4), "works_at").with_weight(1.0),
+        )
+        .await
+        .unwrap(); // expect #[cfg(test)]
 
     // 2. Test 1-hop traversal from Alice (1)
-    let results_1hop = graph.traverse(EntityId::new(1), 1).await.expect("traverse failed");
-    // Should find Bob (2) and TechCorp (4)
+    let results_1hop = graph
+        .traverse(EntityId::new(1), 1)
+        .await
+        .expect("traverse failed"); // expect #[cfg(test)]
+                                    // Should find Bob (2) and TechCorp (4)
     assert_eq!(results_1hop.len(), 2);
 
-    let map_1hop: std::collections::HashMap<u64, f32> = results_1hop.into_iter().map(|(id, s)| (id.inner(), s)).collect();
+    let map_1hop: std::collections::HashMap<u64, f32> = results_1hop
+        .into_iter()
+        .map(|(id, s)| (id.inner(), s))
+        .collect();
 
     // Scores:
     // Bob: 1.0 (start) * 0.7 (decay) * 0.9 (weight) = 0.63
@@ -43,11 +70,17 @@ async fn test_graph_traversal_integration() {
     assert!((map_1hop[&4] - 0.7).abs() < 1e-6);
 
     // 3. Test 2-hop traversal from Alice (1)
-    let results_2hop = graph.traverse(EntityId::new(1), 2).await.expect("traverse failed");
-    // Should find Bob (2), TechCorp (4) AND Charlie (3)
+    let results_2hop = graph
+        .traverse(EntityId::new(1), 2)
+        .await
+        .expect("traverse failed"); // expect #[cfg(test)]
+                                    // Should find Bob (2), TechCorp (4) AND Charlie (3)
     assert_eq!(results_2hop.len(), 3);
 
-    let map_2hop: std::collections::HashMap<u64, f32> = results_2hop.into_iter().map(|(id, s)| (id.inner(), s)).collect();
+    let map_2hop: std::collections::HashMap<u64, f32> = results_2hop
+        .into_iter()
+        .map(|(id, s)| (id.inner(), s))
+        .collect();
 
     // Charlie Score: Score(Bob) * 0.7 (decay) * 0.8 (weight) = 0.63 * 0.7 * 0.8 = 0.3528
     assert!((map_2hop[&3] - 0.3528).abs() < 1e-6);
@@ -64,17 +97,45 @@ async fn test_graph_cycle_and_multipath() {
     // 2 -> 1 (1.0) cycle
 
     for id in 1..=3 {
-        graph.add_entity(tx, Entity::new(EntityId::new(id), id.to_string(), "Node")).await.unwrap();
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(id), id.to_string(), "Node"))
+            .await
+            .unwrap(); // expect #[cfg(test)]
     }
 
-    graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "e").with_weight(0.5)).await.unwrap();
-    graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(3), "e").with_weight(0.9)).await.unwrap();
-    graph.add_edge(tx, Edge::new(EntityId::new(3), EntityId::new(2), "e").with_weight(0.8)).await.unwrap();
-    graph.add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(1), "e").with_weight(1.0)).await.unwrap();
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(1), EntityId::new(2), "e").with_weight(0.5),
+        )
+        .await
+        .unwrap(); // expect #[cfg(test)]
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(1), EntityId::new(3), "e").with_weight(0.9),
+        )
+        .await
+        .unwrap(); // expect #[cfg(test)]
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(3), EntityId::new(2), "e").with_weight(0.8),
+        )
+        .await
+        .unwrap(); // expect #[cfg(test)]
+    graph
+        .add_edge(
+            tx,
+            Edge::new(EntityId::new(2), EntityId::new(1), "e").with_weight(1.0),
+        )
+        .await
+        .unwrap(); // expect #[cfg(test)]
 
     // Traverse from 1, max 2 hops
-    let results = graph.traverse(EntityId::new(1), 2).await.unwrap();
-    let map: std::collections::HashMap<u64, f32> = results.into_iter().map(|(id, s)| (id.inner(), s)).collect();
+    let results = graph.traverse(EntityId::new(1), 2).await.unwrap(); // expect #[cfg(test)]
+    let map: std::collections::HashMap<u64, f32> =
+        results.into_iter().map(|(id, s)| (id.inner(), s)).collect();
 
     // Node 2 can be reached via two paths:
     // P1: 1 -> 2 : 1.0 * 0.7 * 0.5 = 0.35
@@ -91,11 +152,20 @@ async fn test_graph_stats() {
     let graph = CsrGraph::new();
     let tx = TxId::new(1);
 
-    graph.add_entity(tx, Entity::new(EntityId::new(1), "A", "N")).await.unwrap();
-    graph.add_entity(tx, Entity::new(EntityId::new(2), "B", "N")).await.unwrap();
-    graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "E")).await.unwrap();
+    graph
+        .add_entity(tx, Entity::new(EntityId::new(1), "A", "N"))
+        .await
+        .unwrap(); // expect #[cfg(test)]
+    graph
+        .add_entity(tx, Entity::new(EntityId::new(2), "B", "N"))
+        .await
+        .unwrap(); // expect #[cfg(test)]
+    graph
+        .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "E"))
+        .await
+        .unwrap(); // expect #[cfg(test)]
 
-    let stats = graph.stats().await.unwrap();
+    let stats = graph.stats().await.unwrap(); // expect #[cfg(test)]
     assert_eq!(stats.num_entities, 2);
     assert_eq!(stats.num_edges, 1);
 }
