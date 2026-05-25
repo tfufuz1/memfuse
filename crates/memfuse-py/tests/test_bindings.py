@@ -59,6 +59,29 @@ def test_hybrid_search(db_path):
     assert len(results) == 1
     assert results[0].id == "doc1"
 
+def test_search_with_filter(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("filter_test")
+    v1 = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    v2 = np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float32)
+
+    col.insert("d1", v1, metadata={"tag": "red", "val": 10})
+    col.insert("d2", v2, metadata={"tag": "blue", "val": 20})
+
+    # Filter: tag == "red"
+    res = col.search_with_filter(v1, k=10, filter={"Condition": {"field": "tag", "op": "Eq", "value": "red"}})
+    assert len(res) == 1
+    assert res[0].id == "d1"
+
+    # Filter: val > 15
+    res = col.search_with_filter(v1, k=10, filter={"Condition": {"field": "val", "op": "Gt", "value": 15}})
+    assert len(res) == 1
+    assert res[0].id == "d2"
+
+    # Filter: tag == "green" (no match)
+    res = col.search_with_filter(v1, k=10, filter={"Condition": {"field": "tag", "op": "Eq", "value": "green"}})
+    assert len(res) == 0
+
 def test_collection_management(db_path):
     db = memfuse.open(db_path, dimension=4)
     db.collection("col1")
@@ -115,9 +138,6 @@ def test_relationships_and_scanning(db_path):
     col.relate("a", "b", "friend")
 
     # scan_prefix for relations
-    # Note: internal prefixing might be visible or stripped depending on implementation
-    # The Rust side for collection prepends __col:{name}:\x00
-    # But scan_prefix in Collection handles it.
     rels = col.scan_prefix("__rel:a:friend:")
     assert len(rels) == 1
     assert rels[0][1]["to"] == "b"
@@ -128,8 +148,6 @@ def test_relationships_and_scanning(db_path):
 
     # Scan all
     all_docs = db.scan()
-    # db.scan() on default collection sees EVERYTHING because it has no prefix.
-    # We just check that our keys are in there.
     doc_ids = [k for k, v in all_docs]
     assert "x" in doc_ids
     assert "y" in doc_ids
@@ -152,7 +170,6 @@ def test_statistics(db_path):
     assert isinstance(c_stats.memory_usage_bytes, int)
 
     db_stats = db.stats()
-    # db.stats() currently aggregates default collection
     assert db_stats.index_stats.num_vectors == 0 # because s1 is in "stats_col"
     assert db_stats.storage_stats.num_segments >= 0
 
@@ -166,7 +183,6 @@ def test_encryption_at_rest(tmp_path):
     v = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
     col.insert("k1", v, metadata={"secret": "data"})
 
-    # Close by deleting object (though it doesn't strictly close the file until dropped)
     del col
     del db
 
@@ -177,8 +193,7 @@ def test_encryption_at_rest(tmp_path):
     assert doc is not None
     assert doc.metadata["secret"] == "data"
 
-    # Re-open with WRONG passphrase should fail to decrypt or at least fail to verify integrity
-    # LsmStorage::new tries to open WAL which will fail integrity check or decryption
+    # Re-open with WRONG passphrase should fail
     with pytest.raises(Exception):
          memfuse.open(path, dimension=4, encryption_passphrase="wrong-password")
 
@@ -188,9 +203,6 @@ def test_distance_metrics(db_path):
     col = db_l2.collection("test")
     v1 = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
     col.insert("v1", v1)
-    # Search with exact same vector, should have score 0.0 (distance) or 1.0 (similarity)
-    # Actually HNSW usually returns distance. In memfuse-db SearchResult it is called "score".
-    # For Cosine it is 1.0 - cosine_dist.
     results = col.search(v1, k=1)
     assert results[0].id == "v1"
 
@@ -206,7 +218,7 @@ def test_distance_metrics(db_path):
         memfuse.open(db_path + "_invalid", dimension=4, distance_metric="invalid")
 
 def test_version_and_repr(db_path):
-    assert memfuse.__version__ == "0.1.0"
+    assert memfuse.__version__ == "0.2.0"
 
     db = memfuse.open(db_path, dimension=4, max_elements=5000)
     col = db.collection("repr_test")
