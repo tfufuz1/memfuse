@@ -155,7 +155,10 @@ impl Collection {
                 Err(_) => continue, // Skip invalid entries
             };
 
-            let doc_id = DocId::from_string(&stored.id);
+            let doc_id = match DocId::from_key(&stored.id) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
 
             // Check if present in index
             // We use k=1 search to check presence (if we find it with distance 0, it's there)
@@ -652,7 +655,8 @@ impl Collection {
         };
 
         let entries = self.storage.scan_prefix(&prefix).await?;
-        let mut matched = std::collections::HashSet::new();
+        // ANCHOR:PERF:ALLOC-002 AGENT:09 STATUS:DONE
+        let mut matched = std::collections::HashSet::with_capacity(entries.len());
 
         for (_, v) in entries {
             let stored: StoredDocument = serde_json::from_slice(&v)?;
