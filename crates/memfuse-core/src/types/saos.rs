@@ -229,7 +229,8 @@ mod tests {
     }
 
     #[test]
-    fn test_hybrid_query_builder_happy_path() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    fn test_hybrid_query_builder_happy_path() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
         let query = HybridQuery::builder()
             .with_text_query("test query")
             .with_vector_query(vec![0.1, 0.2])
@@ -245,7 +246,8 @@ mod tests {
     }
 
     #[test]
-    fn test_hybrid_query_builder_custom_weights() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    fn test_hybrid_query_builder_custom_weights(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1)?;
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())

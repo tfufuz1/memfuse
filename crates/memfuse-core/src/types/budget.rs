@@ -174,12 +174,14 @@ mod tests {
         let mut handlers = Vec::new();
         for _ in 0..10 {
             let t = tracker.clone();
-            handlers.push(std::thread::spawn(move || -> std::result::Result<(), String> {
-                for _ in 0..100 {
-                    t.consume_memory(10).map_err(|e| e.to_string())?;
-                }
-                Ok(())
-            }));
+            handlers.push(std::thread::spawn(
+                move || -> std::result::Result<(), String> {
+                    for _ in 0..100 {
+                        t.consume_memory(10).map_err(|e| e.to_string())?;
+                    }
+                    Ok(())
+                },
+            ));
         }
 
         for h in handlers {
