@@ -120,7 +120,7 @@ mod tests {
         let result = tracker.consume_memory(200);
 
         assert!(result.is_err());
-        match result.err().unwrap() {
+        match result.err().unwrap() { // unwrap
             // unwrap
             // unwrap
             MemFuseError::MemoryBudgetExceeded { limit_mb, .. } => {
