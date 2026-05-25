@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 /// Fuses multiple sets of ranked search results into a single ranked list using Reciprocal Rank Fusion (RRF).
 /// RRF score = sum(1 / (k + rank)) for each result set, where k = 60 by default.
+/// Performs Reciprocal Rank Fusion.
 pub fn reciprocal_rank_fusion(
     result_sets: Vec<Vec<SearchResult>>,
     max_results: usize,

@@ -14,6 +14,7 @@ use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId, VectorIndex
 use std::sync::Mutex;
 
 /// A transaction wrapper that ensures atomic multi-index commits across LSM-Store and HNSW-Index.
+/// Database transaction orchestrator.
 pub struct DbTransaction<'a> {
     pub tx_id: TxId,
     collection: &'a Collection,

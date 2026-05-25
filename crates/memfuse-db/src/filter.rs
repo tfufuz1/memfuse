@@ -1,8 +1,14 @@
+//! Advanced metadata filtering (WP-4.2).
+//!
+//! Provides structured filtering for document retrieval based on
+//! metadata fields and values.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Operators for metadata filtering.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Metadata comparison operators.
 pub enum FilterOp {
     /// Equal to
     Eq,
@@ -24,6 +30,7 @@ pub enum FilterOp {
 
 /// Advanced metadata filter for document retrieval and search.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Metadata filtering criteria.
 pub enum MetadataFilter {
     /// A single condition on a metadata field.
     Condition {

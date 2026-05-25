@@ -17,6 +17,7 @@ use memfuse_core::{
 /// 1. Find small, precise chunks (Small Retrieval)
 /// 2. Load parent documents (Big Context)
 /// 3. Trim to token budget (relevance-weighted)
+/// Manages autonomous context preparation.
 pub struct ContextManager {
     /// Token budget configuration.
     budget: TokenBudget,
@@ -103,6 +104,7 @@ impl ContextManager {
 ///
 /// Filters context by geographic region metadata field.
 #[derive(Debug, Clone)]
+/// Spatial fencing for geographically constrained context.
 pub struct SpatialFence {
     /// The region identifier to filter by.
     pub region: String,
@@ -159,7 +161,7 @@ mod tests {
             },
         ];
 
-        let window = mgr.prepare_context(chunks).expect("valid test value");
+        let window = mgr.prepare_context(chunks).expect("valid test value"); // unwrap
         // Budget: 100 - 20 = 80 available. Should fit 50 (chunk1) but not 50+50=100.
         // Actually 50+50=100 > 80, so only first chunk should fit... but let's check:
         // chunk1: 50 <= 80 -> included, total=50
