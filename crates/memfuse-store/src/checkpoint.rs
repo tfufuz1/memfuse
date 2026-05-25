@@ -85,8 +85,7 @@ mod tests {
         // 5. Verify we can still write and seq_no is correct
         let tx3 = TxId::new(3);
         storage.put(tx3, b"key3", b"val3").await.unwrap(); // unwrap
-        assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec())); // unwrap
-        // unwrap
-        // unwrap
+        let val = storage.get(b"key3").await.unwrap(); // unwrap
+        assert_eq!(val, Some(b"val3".to_vec())); // unwrap
     }
 }
