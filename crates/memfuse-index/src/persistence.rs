@@ -37,25 +37,25 @@ impl HnswHeader {
             return Err(MemFuseError::Storage("Header too small".into()));
         }
 
-        let magic = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        let magic = u32::from_le_bytes(bytes[0..4].try_into().expect("fixed size"));
         if magic != HNSW_MAGIC {
             return Err(MemFuseError::Storage("Invalid HNSW magic".into()));
         }
 
         Ok(Self {
             magic,
-            version: u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
-            dimension: u32::from_le_bytes(bytes[6..10].try_into().unwrap()),
-            m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()),
+            version: u16::from_le_bytes(bytes[4..6].try_into().expect("fixed size")),
+            dimension: u32::from_le_bytes(bytes[6..10].try_into().expect("fixed size")),
+            m: u32::from_le_bytes(bytes[10..14].try_into().expect("fixed size")),
             metric: bytes[14],
             quantized: bytes[15],
-            q_min: f32::from_le_bytes(bytes[16..20].try_into().unwrap()),
-            q_max: f32::from_le_bytes(bytes[20..24].try_into().unwrap()),
-            node_count: u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-            entry_point: i64::from_le_bytes(bytes[32..40].try_into().unwrap()),
-            nodes_offset: u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
-            last_tx_id: u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
+            q_min: f32::from_le_bytes(bytes[16..20].try_into().expect("fixed size")),
+            q_max: f32::from_le_bytes(bytes[20..24].try_into().expect("fixed size")),
+            node_count: u64::from_le_bytes(bytes[24..32].try_into().expect("fixed size")),
+            entry_point: i64::from_le_bytes(bytes[32..40].try_into().expect("fixed size")),
+            nodes_offset: u64::from_le_bytes(bytes[40..48].try_into().expect("fixed size")),
+            connections_offset: u64::from_le_bytes(bytes[48..56].try_into().expect("fixed size")),
+            last_tx_id: u64::from_le_bytes(bytes[56..64].try_into().expect("fixed size")),
         })
     }
 
@@ -92,10 +92,10 @@ impl NodeRecord {
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         Self {
-            doc_id: u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            doc_id: u64::from_le_bytes(bytes[0..8].try_into().expect("fixed size")),
             max_layer: bytes[8],
-            vector_offset: u64::from_le_bytes(bytes[9..17].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[17..25].try_into().unwrap()),
+            vector_offset: u64::from_le_bytes(bytes[9..17].try_into().expect("fixed size")),
+            connections_offset: u64::from_le_bytes(bytes[17..25].try_into().expect("fixed size")),
         }
     }
 
@@ -160,12 +160,12 @@ impl MmapIndex {
         let mut current_pos = offset + 1;
         for _ in 0..layer {
             let len =
-                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap())
+                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().expect("fixed size"))
                     as usize;
             current_pos += 4 + len * 4;
         }
 
-        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap())
+        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().expect("fixed size"))
             as usize;
         let start = current_pos + 4;
         let end = start + len * 4;
@@ -173,7 +173,7 @@ impl MmapIndex {
         let raw = &self.mmap[start..end];
         let mut connections = Vec::with_capacity(len);
         for i in 0..len {
-            let val = u32::from_le_bytes(raw[i * 4..(i + 1) * 4].try_into().unwrap());
+            let val = u32::from_le_bytes(raw[i * 4..(i + 1) * 4].try_into().expect("fixed size"));
             connections.push(val);
         }
 

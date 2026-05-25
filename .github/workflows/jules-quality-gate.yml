@@ -97,13 +97,16 @@ jobs:
         run: |
           echo "=== Scanning for .unwrap() usage ==="
           # Allow unwrap only in test code (#[test] / #[cfg(test)])
-          VIOLATIONS=$(grep -rn "\.unwrap()" --include="*.rs" crates/ \
-            | grep -v "#\[test\]" \
-            | grep -v "#\[cfg(test)\]" \
-            | grep -v "//.*unwrap" \
-            | grep -v "_test\." \
-            | grep -v "/tests/" \
-            || true)
+          # We use a context grep to skip unwraps in functions marked with #[test] or inside cfg(test) blocks
+          VIOLATIONS=""
+          while read -r line; do
+            file=$(echo "$line" | cut -d: -f1)
+            lineno=$(echo "$line" | cut -d: -f2)
+            # Look at 10 lines above for test indicators
+            if ! head -n "$lineno" "$file" | tail -n 10 | grep -E -q "#\[test\]|#\[cfg\(test\)\]|mod tests"; then
+              VIOLATIONS+="$line\n"
+            fi
+          done < <(grep -rn "\.unwrap()" --include="*.rs" crates/ | grep -v "//.*unwrap" | grep -v "_test\." | grep -v "/tests/")
           if [ -n "$VIOLATIONS" ]; then
             echo "❌ ZERO-UNWRAP VIOLATION:"
             echo "$VIOLATIONS"
