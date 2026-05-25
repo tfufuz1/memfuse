@@ -297,8 +297,11 @@ impl HnswIndex {
 
             match &node.vector {
                 VectorData::F32(v) => {
-                    let bytes: &[u8] =
-                        unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
+                    let bytes: &[u8] = unsafe {
+                        // ANCHOR:SAFETY:HNSW-001 — f32-Slices sind immer 4-Byte aligned.
+                        // BEGRÜNDUNG: Performance-kritische Serialisierung ohne Kopie.
+                        std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4)
+                    };
                     writer
                         .write_all(bytes)
                         .map_err(|e| MemFuseError::Storage(e.to_string()))?;
@@ -340,6 +343,8 @@ impl HnswIndex {
                     .write_all(&len.to_le_bytes())
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
                 let bytes: &[u8] = unsafe {
+                    // ANCHOR:SAFETY:HNSW-002 — u32-Slices sind immer 4-Byte aligned.
+                    // BEGRÜNDUNG: Effiziente Serialisierung der Graph-Kanten.
                     std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
                 };
                 writer
