@@ -16,12 +16,19 @@ async fn test_checkpoint_manager_with_real_storage() {
         ..Default::default()
     };
 
-    let storage = Arc::new(LsmStorage::new(config).await.expect("Failed to create LSM storage"));
+    let storage = Arc::new(
+        LsmStorage::new(config)
+            .await
+            .expect("Failed to create LSM storage"),
+    );
     let manager = CheckpointManager::new(storage.clone());
 
     // 1. Insert some initial data
     let tx1 = TxId::new(1);
-    storage.put(tx1, b"key1", b"value1").await.expect("Put failed");
+    storage
+        .put(tx1, b"key1", b"value1")
+        .await
+        .expect("Put failed");
     storage.commit(tx1).await.expect("Commit failed");
 
     // 2. Create a checkpoint
@@ -34,7 +41,11 @@ async fn test_checkpoint_manager_with_real_storage() {
     assert_eq!(meta.seq_no, 1);
 
     // 3. Verify checkpoint metadata is persisted and retrievable
-    let retrieved = manager.get_checkpoint("cp1").await.expect("Get failed").expect("Not found");
+    let retrieved = manager
+        .get_checkpoint("cp1")
+        .await
+        .expect("Get failed")
+        .expect("Not found");
     assert_eq!(retrieved.metadata["version"], "1.0");
 
     // 4. Reload from storage with a new manager instance
@@ -62,7 +73,11 @@ async fn test_checkpoint_concurrency() {
         ..Default::default()
     };
 
-    let storage = Arc::new(LsmStorage::new(config).await.expect("Failed to create LSM storage"));
+    let storage = Arc::new(
+        LsmStorage::new(config)
+            .await
+            .expect("Failed to create LSM storage"),
+    );
     let manager = Arc::new(CheckpointManager::new(storage.clone()));
 
     let mut tasks = Vec::new();
