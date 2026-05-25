@@ -11,8 +11,8 @@ pub const HNSW_MAGIC: u32 = 0x484E5357;
 /// Current file format version.
 pub const HNSW_VERSION: u16 = 1;
 
-/// File header for the persistent HNSW index.
-#[derive(Debug, Clone, Copy)]
+/// The header of an HNSW persistent file.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HnswHeader {
     pub magic: u32,
     pub version: u16,
@@ -20,21 +20,26 @@ pub struct HnswHeader {
     pub m: u32,
     pub metric: u8,
     pub quantized: u8,
+    pub q_min: f32, // Added for ScalarQuantizer
+    pub q_max: f32, // Added for ScalarQuantizer
     pub node_count: u64,
-    pub entry_point: i64, // -1 if None
+    pub entry_point: i64,
     pub nodes_offset: u64,
     pub connections_offset: u64,
+    pub last_tx_id: u64, // Added for Repair-on-Open
 }
 
 impl HnswHeader {
+    pub const SIZE: usize = 64;
+
     pub fn try_from_bytes(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() < 46 {
-            return Err(MemFuseError::Storage("HNSW header too small".into()));
+        if bytes.len() < Self::SIZE {
+            return Err(MemFuseError::Storage("Header too small".into()));
         }
 
         let magic = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
         if magic != HNSW_MAGIC {
-            return Err(MemFuseError::Storage("Invalid HNSW magic number".into()));
+            return Err(MemFuseError::Storage("Invalid HNSW magic".into()));
         }
 
         Ok(Self {
@@ -44,25 +49,31 @@ impl HnswHeader {
             m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()),
             metric: bytes[14],
             quantized: bytes[15],
-            node_count: u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
-            entry_point: i64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-            nodes_offset: u64::from_le_bytes(bytes[32..40].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
+            q_min: f32::from_le_bytes(bytes[16..20].try_into().unwrap()),
+            q_max: f32::from_le_bytes(bytes[20..24].try_into().unwrap()),
+            node_count: u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
+            entry_point: i64::from_le_bytes(bytes[32..40].try_into().unwrap()),
+            nodes_offset: u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
+            connections_offset: u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
+            last_tx_id: u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
         })
     }
 
-    pub fn to_bytes(&self) -> [u8; 48] {
-        let mut buf = [0u8; 48];
+    pub fn to_bytes(&self) -> [u8; Self::SIZE] {
+        let mut buf = [0u8; Self::SIZE];
         buf[0..4].copy_from_slice(&self.magic.to_le_bytes());
         buf[4..6].copy_from_slice(&self.version.to_le_bytes());
         buf[6..10].copy_from_slice(&self.dimension.to_le_bytes());
         buf[10..14].copy_from_slice(&self.m.to_le_bytes());
         buf[14] = self.metric;
         buf[15] = self.quantized;
-        buf[16..24].copy_from_slice(&self.node_count.to_le_bytes());
-        buf[24..32].copy_from_slice(&self.entry_point.to_le_bytes());
-        buf[32..40].copy_from_slice(&self.nodes_offset.to_le_bytes());
-        buf[40..48].copy_from_slice(&self.connections_offset.to_le_bytes());
+        buf[16..20].copy_from_slice(&self.q_min.to_le_bytes());
+        buf[20..24].copy_from_slice(&self.q_max.to_le_bytes());
+        buf[24..32].copy_from_slice(&self.node_count.to_le_bytes());
+        buf[32..40].copy_from_slice(&self.entry_point.to_le_bytes());
+        buf[40..48].copy_from_slice(&self.nodes_offset.to_le_bytes());
+        buf[48..56].copy_from_slice(&self.connections_offset.to_le_bytes());
+        buf[56..64].copy_from_slice(&self.last_tx_id.to_le_bytes());
         buf
     }
 }
@@ -98,9 +109,10 @@ impl NodeRecord {
     }
 }
 
+#[derive(Clone)]
 /// A reader for memory-mapped HNSW indices.
 pub struct MmapIndex {
-    pub mmap: memmap2::Mmap,
+    pub mmap: std::sync::Arc<memmap2::Mmap>,
     pub header: HnswHeader,
 }
 
@@ -111,8 +123,11 @@ impl MmapIndex {
         let mmap = unsafe { memmap2::Mmap::map(&file) }
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
-        let header = HnswHeader::try_from_bytes(&mmap[0..48])?;
-        Ok(Self { mmap, header })
+        let header = HnswHeader::try_from_bytes(&mmap[0..HnswHeader::SIZE])?;
+        Ok(Self {
+            mmap: std::sync::Arc::new(mmap),
+            header,
+        })
     }
 
     pub fn get_node_record(&self, index: usize) -> NodeRecord {
@@ -122,50 +137,49 @@ impl MmapIndex {
 
     pub fn get_vector(&self, record: &NodeRecord) -> &[u8] {
         let dim = self.header.dimension as usize;
-        let size = if self.header.quantized != 0 { dim } else { dim * 4 };
+        let size = if self.header.quantized != 0 {
+            dim
+        } else {
+            dim * 4
+        };
         let offset = record.vector_offset as usize;
         &self.mmap[offset..offset + size]
     }
 
-    pub fn get_connections(&self, record: &NodeRecord, layer: usize) -> &[u32] {
+    pub fn get_connections(&self, record: &NodeRecord, layer: usize) -> Vec<u32> {
         let offset = record.connections_offset as usize;
         if offset >= self.mmap.len() {
-            return &[];
+            return Vec::new();
         }
 
         let num_layers = self.mmap[offset] as usize;
         if layer >= num_layers {
-            return &[];
+            return Vec::new();
         }
 
         let mut current_pos = offset + 1;
         for _ in 0..layer {
-            let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) as usize;
+            let len =
+                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap())
+                    as usize;
             current_pos += 4 + len * 4;
         }
 
-        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) as usize;
+        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap())
+            as usize;
         let start = current_pos + 4;
         let end = start + len * 4;
 
-        // ANCHOR:SAFETY:MMAP-002 — transmute connections slice from u8 to u32
-        // WP:WP-7.2 PRIO:1 NEEDS:NONE
-        // AGENT:03 DATE:2026-05-24 STATUS:WIP
-        // BEGRÜNDUNG: HNSW-Kanten sind u32 Indizes. Memory-Mapped Files liefern u8.
-        // Die Konvertierung ist sicher, solange das Alignment gewahrt ist (was hier nicht garantiert ist).
-        // Bessere Alternative: Kopieren oder Indexing über u8.
-        // Wir nutzen hier bytemuck oder eine sichere Abstraktion, falls verfügbar.
-        // Da bytemuck nicht in AGENTS.md steht, nutzen wir safe slice indexing.
-        
-        // Re-implementing with safe indexing for now to avoid unsafe alignment issues.
         let raw = &self.mmap[start..end];
-        // Note: For real performance, we should use a proper pod-based casting or ensured alignment.
-        // However, we want to avoid unsafe where possible.
-        // We'll return a helper or just stay with &[u8] for now and convert in the search loop.
-        // Actually, return Vec<u32> for now, or use a custom iterator.
-        
-        unsafe {
-            std::slice::from_raw_parts(raw.as_ptr() as *const u32, len)
+        let mut connections = Vec::with_capacity(len);
+        for i in 0..len {
+            let val = u32::from_le_bytes(raw[i * 4..(i + 1) * 4].try_into().unwrap());
+            connections.push(val);
         }
+
+        // This is a temporary copy. For long-term performance, we should ensure alignment
+        // in the file format or use a safe abstraction.
+        // But for 8GB RAM remediation, this loop is acceptable.
+        connections
     }
 }

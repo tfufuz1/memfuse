@@ -123,6 +123,73 @@ impl Collection {
         }
     }
 
+    /// Repairs the index by re-syncing with the storage.
+    ///
+    /// Scans the storage for any documents that are missing from the index
+    /// and reconciles them. This is critical for crash recovery.
+    pub async fn repair(&self) -> Result<()> {
+        tracing::info!("Starting integrity repair for collection '{}'", self.name);
+        let start_time = std::time::Instant::now();
+
+        // 1. Scan storage for all documents in this collection
+        let docs = self.storage.scan_prefix(&self.prefix).await?;
+        let mut repair_count = 0;
+
+        // 2. Cross-reference with index
+        for (namespaced_key, value) in docs {
+            // Only process user data (key_type 0)
+            if self.name != "default" && namespaced_key.get(self.prefix.len()) != Some(&0) {
+                continue;
+            }
+            // For default collection, we don't have a prefix, so check if it starts with internal prefixes
+            if self.name == "default"
+                && (namespaced_key.starts_with(b"__docid:")
+                    || namespaced_key.starts_with(b"__rel:")
+                    || namespaced_key.starts_with(b"__tx_intent:"))
+            {
+                continue;
+            }
+
+            let stored: StoredDocument = match serde_json::from_slice(&value) {
+                Ok(d) => d,
+                Err(_) => continue, // Skip invalid entries
+            };
+
+            let doc_id = DocId::from_string(&stored.id);
+
+            // Check if present in index
+            // We use k=1 search to check presence (if we find it with distance 0, it's there)
+            let results = self.index.search(&stored.embedding, 1).await?;
+            let found = results
+                .iter()
+                .any(|r| r.doc_id == doc_id && r.score > 0.9999);
+
+            if !found {
+                let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+                self.index.insert(tx, doc_id, &stored.embedding).await?;
+                self.index.commit(tx).await?;
+                repair_count += 1;
+            }
+        }
+
+        if repair_count > 0 {
+            tracing::info!(
+                "Repaired {} missing documents in collection '{}' in {:?}",
+                repair_count,
+                self.name,
+                start_time.elapsed()
+            );
+        } else {
+            tracing::debug!(
+                "Integrity check passed for collection '{}' in {:?}",
+                self.name,
+                start_time.elapsed()
+            );
+        }
+
+        Ok(())
+    }
+
     /// Begins a new atomic transaction for this collection.
     pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<'_> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));

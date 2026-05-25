@@ -159,6 +159,9 @@ impl MemFuse {
         // Initialize already existing collections from storage
         db.initialize_collections().await?;
 
+        // Repair-on-Open: resolve pending transaction intents and re-sync indices
+        db.repair_on_open().await?;
+
         // Initialize the default collection backwards compatibility
         let _ = db.collection("default").await?;
 
@@ -175,6 +178,106 @@ impl MemFuse {
             }
         }
         Ok(())
+    }
+
+    /// Repair-on-Open pipeline: scans for unresolved transaction intents and
+    /// re-syncs HNSW indices from LSM storage to recover from crash scenarios.
+    ///
+    /// Recovery strategy:
+    /// 1. Scan all `__tx_intent:` keys for `"pending"` status (incomplete commits).
+    /// 2. For each pending intent, use forward-commit: replay missing HNSW entries
+    ///    from LSM via `Collection::repair()`, then mark the intent as `"repaired"`.
+    /// 3. Run `Collection::repair()` on all loaded collections to ensure LSM↔HNSW parity.
+    async fn repair_on_open(&self) -> Result<()> {
+        let start_time = std::time::Instant::now();
+
+        // 1. Scan for pending transaction intents across all namespaces
+        //    Default collection uses `__tx_intent:` prefix, named collections use
+        //    their own namespaced prefix with key_type=3.
+        let pending_intents = self.scan_pending_intents().await?;
+
+        if !pending_intents.is_empty() {
+            tracing::warn!(
+                "repair_on_open: found {} pending transaction intent(s), initiating recovery",
+                pending_intents.len()
+            );
+
+            // 2. Mark each pending intent as "repaired" to prevent re-processing.
+            //    The actual data reconciliation happens in step 3 via Collection::repair().
+            for intent_key in &pending_intents {
+                let tx = TxId::new(self.next_tx.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+                if let Err(e) = self.storage.put(tx, intent_key, b"repaired").await {
+                    tracing::error!("repair_on_open: failed to mark intent as repaired: {}", e);
+                    continue;
+                }
+                if let Err(e) = self.storage.commit(tx).await {
+                    tracing::error!("repair_on_open: failed to commit repaired marker: {}", e);
+                }
+            }
+        }
+
+        // 3. Forward-commit: repair all loaded collections by re-syncing HNSW from LSM.
+        //    This deterministically replays any missing index entries that were lost
+        //    due to the crash (LSM committed but HNSW didn't).
+        let collections = self.collections.read().await;
+        let mut total_repairs = 0u64;
+        for (name, col) in collections.iter() {
+            if let Err(e) = col.repair().await {
+                tracing::error!(
+                    "repair_on_open: failed to repair collection '{}': {}",
+                    name,
+                    e
+                );
+            } else {
+                total_repairs += 1;
+            }
+        }
+
+        let elapsed = start_time.elapsed();
+        if !pending_intents.is_empty() || total_repairs > 0 {
+            tracing::info!(
+                "repair_on_open: completed in {:?} — {} intents resolved, {} collections verified",
+                elapsed,
+                pending_intents.len(),
+                total_repairs
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Scans storage for all transaction intent keys with `"pending"` status.
+    async fn scan_pending_intents(&self) -> Result<Vec<Vec<u8>>> {
+        let mut pending = Vec::new();
+
+        // Scan default collection's intent namespace
+        let default_prefix = b"__tx_intent:";
+        let entries = self.storage.scan_prefix(default_prefix).await?;
+        for (key, value) in entries {
+            if value == b"pending" {
+                pending.push(key);
+            }
+        }
+
+        // Scan named collections' intent namespaces (key_type=3 within each prefix)
+        let col_idx_prefix = b"__col_idx:\x00";
+        let col_entries = self.storage.scan_prefix(col_idx_prefix).await?;
+        for (k, _) in col_entries {
+            let name_bytes = &k[col_idx_prefix.len()..];
+            if let Ok(name) = String::from_utf8(name_bytes.to_vec()) {
+                let prefix = format!("__col:{}:\x00", name);
+                let mut ns_prefix = prefix.into_bytes();
+                ns_prefix.push(3); // key_type=3 for tx intents
+                let ns_entries = self.storage.scan_prefix(&ns_prefix).await?;
+                for (ns_key, ns_value) in ns_entries {
+                    if ns_value == b"pending" {
+                        pending.push(ns_key);
+                    }
+                }
+            }
+        }
+
+        Ok(pending)
     }
 
     /// Returns a specific collection (namespace).

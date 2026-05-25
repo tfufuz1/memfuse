@@ -21,6 +21,7 @@ memmap2 = "0.9"
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 criterion = "0.5"
+tempfile = "3"
 
 [[bench]]
 name = "distance_bench"

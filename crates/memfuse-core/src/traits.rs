@@ -154,6 +154,11 @@ pub trait VectorIndex: Send + Sync {
     /// Rolls back a transaction.
     async fn rollback(&self, tx: TxId) -> Result<()>;
 
+    /// Returns the last transaction ID processed by the index.
+    async fn last_tx_id(&self) -> Result<u64> {
+        Ok(0)
+    }
+
     /// Returns the number of vectors in the index.
     async fn len(&self) -> usize;
 
