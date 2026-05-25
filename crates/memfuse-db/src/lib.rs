@@ -586,15 +586,6 @@ impl MemFuse {
     }
 }
 
-impl Drop for MemFuse {
-    fn drop(&mut self) {
-        let storage = Arc::clone(&self.storage);
-        // Best effort flush on drop to ensure zero data loss if `close()` is forgotten.
-        tokio::spawn(async move {
-            let _ = storage.flush().await;
-        });
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;

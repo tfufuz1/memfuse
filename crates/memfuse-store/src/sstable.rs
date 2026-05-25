@@ -122,6 +122,7 @@ pub struct SstableMetadata {
 /// A builder for creating new SSTables.
 pub struct SstableBuilder {
     file: File,
+    path: PathBuf,
     block_builder: BlockBuilder,
     index: Vec<(Bytes, u64)>, // (last_key, offset)
     first_key: Option<Bytes>,
@@ -140,12 +141,15 @@ impl SstableBuilder {
         path: impl AsRef<Path>,
         key_manager: Option<Arc<KeyManager>>,
     ) -> Result<Self> {
-        let file = File::create(path)
+        let path = path.as_ref().to_path_buf();
+        let tmp_path = path.with_extension("tmp");
+        let file = File::create(&tmp_path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create SSTable: {}", e)))?;
 
         Ok(Self {
             file,
+            path,
             block_builder: BlockBuilder::new(BLOCK_SIZE),
             index: Vec::new(),
             first_key: None,
@@ -239,6 +243,14 @@ impl SstableBuilder {
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?
             .len();
+
+        // Close file explicitly before rename
+        drop(self.file);
+
+        let tmp_path = self.path.with_extension("tmp");
+        tokio::fs::rename(&tmp_path, &self.path)
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("Failed to rename SSTable: {}", e)))?;
 
         Ok(SstableMetadata {
             first_key: self.first_key.unwrap_or_default(),

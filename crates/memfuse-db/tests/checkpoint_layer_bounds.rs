@@ -138,9 +138,9 @@ async fn test_layer_001_fork_diverge_merge() {
         let storage = Arc::new(
             memfuse_store::LsmStorage::new(lsm_config)
                 .await
-                .expect("storage"),
+                .expect("storage") // unwrap,
         );
         let cp_manager = CheckpointManager::new(storage.clone());
-        cp_manager.drop_checkpoint("v1").await.expect("drop cp");
+        cp_manager.drop_checkpoint("v1").await.expect("drop cp") // unwrap;
     }
 }
