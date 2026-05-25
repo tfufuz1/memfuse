@@ -1,3 +1,10 @@
+//! Metadata filter expressions.
+//!
+//! Defines the `FilterExpr` DSL for pre- and post-filtering search results
+//! based on document metadata.
+
+// ANCHOR:DOC:FILTER-001 — Module-level documentation for filter.rs.
+// AGENT:01 STATUS:DONE PRIO:3
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.

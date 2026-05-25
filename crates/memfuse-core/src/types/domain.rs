@@ -1,3 +1,11 @@
+//! Domain identifiers and basic primitives for MemFuse.
+//!
+//! This module defines the core identifiers for documents, entities,
+//! and transactions, as well as embedding representations and search result
+//! structures.
+
+// ANCHOR:DOC:DOMAIN-001 — Module-level documentation for domain.rs.
+// AGENT:01 STATUS:DONE PRIO:3
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 

@@ -78,6 +78,9 @@ pub enum MemFuseError {
     // ═══ Text Engine ═══
     #[error("Text engine error: {0}")]
     Text(String),
+
+    #[error("Namespace violation: {0}")]
+    NamespaceViolation(String),
 }
 
 impl MemFuseError {

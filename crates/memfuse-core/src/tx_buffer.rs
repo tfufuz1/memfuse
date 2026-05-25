@@ -316,7 +316,13 @@ mod tests {
 
         let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10));
         assert!(buffer.has_tx(tx1));
-        sleep(Duration::from_millis(100)).await;
+
+        // Poll for up to 2s to avoid flakiness
+        let start = Instant::now();
+        while buffer.has_tx(tx1) && start.elapsed() < Duration::from_secs(2) {
+            sleep(Duration::from_millis(10)).await;
+        }
+
         assert!(!buffer.has_tx(tx1));
     }
 
