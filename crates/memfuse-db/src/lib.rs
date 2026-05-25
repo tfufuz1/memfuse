@@ -873,7 +873,7 @@ mod tests {
         // 7. Verify empty search and missing doc
         let get_agent = db.get("agent-1").await.expect("get"); // unwrap
         assert!(get_agent.is_none());
-        assert_eq!(db.len().await.expect("len"), 2); // 3 inserted, 1 deleted
+        assert_eq!(db.len().await.expect("len"), 2); // 3 inserted, 1 deleted // unwrap
     }
 
     #[tokio::test]

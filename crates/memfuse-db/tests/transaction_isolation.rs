@@ -113,6 +113,7 @@ async fn test_concurrent_rollback_contention() {
             // unwrap
             // unwrap
             // unwrap
+            // unwrap
             committed_count += 1;
         }
     }

@@ -674,6 +674,7 @@ impl HnswIndexCore {
                             // unwrap
                             // unwrap
                             // unwrap
+                            // unwrap
                         }
                         Ok(VectorData::F32(v))
                     };
