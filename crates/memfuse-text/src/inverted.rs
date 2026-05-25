@@ -149,9 +149,10 @@ impl InvertedIndex {
         if is_update {
             if let Some(bytes) = self.storage.get(&ol_key).await? {
                 if bytes.len() == 4 {
-                    old_orig_len = u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                        MemFuseError::Storage("Invalid orig_len length".into())
-                    })?);
+                    old_orig_len =
+                        u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                            MemFuseError::Storage("Invalid orig_len length".into())
+                        })?);
                 }
             }
         }
@@ -163,9 +164,10 @@ impl InvertedIndex {
         let mut total_orig_tokens = 0u64;
         if let Some(bytes) = self.storage.get(&meta_orig_tokens_key).await? {
             if bytes.len() == 8 {
-                total_orig_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid meta:orig_tokens length".into())
-                })?);
+                total_orig_tokens =
+                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid meta:orig_tokens length".into())
+                    })?);
             }
         }
         total_orig_tokens = total_orig_tokens.saturating_sub(old_orig_len as u64) + orig_len as u64;
