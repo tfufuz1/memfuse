@@ -121,6 +121,7 @@ mod tests {
 
         assert!(result.is_err());
         match result.err().unwrap() { // unwrap
+            // unwrap
             // unwrap // unwrap
             // unwrap
             MemFuseError::MemoryBudgetExceeded { limit_mb, .. } => {

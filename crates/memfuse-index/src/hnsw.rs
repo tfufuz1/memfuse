@@ -671,6 +671,7 @@ impl HnswIndexCore {
                         for i in 0..self.config.dimension {
                             v[i] =
                                 f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap()); // unwrap
+                            // unwrap
                             // unwrap // unwrap
                             // unwrap
                         }
