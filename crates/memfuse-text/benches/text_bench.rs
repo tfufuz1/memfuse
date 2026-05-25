@@ -1,9 +1,9 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use memfuse_core::{DocId, Result, StorageEngine, TxId, StorageStats};
+use memfuse_core::{DocId, Result, StorageEngine, StorageStats, TxId};
 use memfuse_text::inverted::InvertedIndex;
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::RwLock;
 use tokio::runtime::Runtime;
 
 struct MockStorage {
@@ -58,7 +58,7 @@ impl StorageEngine for MockStorage {
 }
 
 fn bench_text_engine(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
+    let rt = Runtime::new().expect("bench unwrap"); // unwrap
     let storage = Arc::new(MockStorage::new());
     let index = InvertedIndex::new(storage.clone(), "default");
 
@@ -73,7 +73,10 @@ fn bench_text_engine(c: &mut Criterion) {
             let tx = TxId::new(id_counter);
             let index = index.clone();
             async move {
-                index.upsert_document(tx, doc_id, black_box(text)).await.unwrap();
+                index
+                    .upsert_document(tx, doc_id, black_box(text))
+                    .await
+                    .expect("bench unwrap"); // unwrap
             }
         });
     });
@@ -81,7 +84,14 @@ fn bench_text_engine(c: &mut Criterion) {
     // Search benchmark (pre-populated)
     rt.block_on(async {
         for i in 1..=100 {
-            index.upsert_document(TxId::new(i), DocId::new(i), "The quick brown fox jumps over the lazy dog").await.unwrap();
+            index
+                .upsert_document(
+                    TxId::new(i),
+                    DocId::new(i),
+                    "The quick brown fox jumps over the lazy dog",
+                )
+                .await
+                .expect("bench unwrap"); // unwrap
         }
     });
 
@@ -90,7 +100,10 @@ fn bench_text_engine(c: &mut Criterion) {
         b.to_async(&rt).iter(|| {
             let index = index.clone();
             async move {
-                let _ = index.search_bm25(black_box("quick fox"), 10).await.unwrap();
+                let _ = index
+                    .search_bm25(black_box("quick fox"), 10)
+                    .await
+                    .expect("bench unwrap"); // unwrap
             }
         });
     });
