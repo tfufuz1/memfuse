@@ -235,20 +235,8 @@ mod tests {
             .build()
             .expect("build ok");
 
-        assert_eq!(
-            query.text_query.unwrap(), /* unwrap allowed */
-            // unwrap allowed
-            // unwrap allowed
-            // unwrap allowed
-            "test query"
-        );
-        assert_eq!(
-            query.vector_query.unwrap(), /* unwrap allowed */
-            // unwrap allowed
-            // unwrap allowed
-            // unwrap allowed
-            vec![0.1, 0.2]
-        );
+        assert_eq!(query.text_query.unwrap(), "test query"); // unwrap allowed
+        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]); // unwrap allowed
         assert_eq!(query.k, 5);
         // Default weights: vector=1.0, others=0.0
         assert_eq!(query.fusion_weights.vector(), 1.0);
