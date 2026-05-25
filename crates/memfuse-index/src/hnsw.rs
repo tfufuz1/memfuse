@@ -669,8 +669,9 @@ impl HnswIndexCore {
                     } else {
                         let mut v = vec![0.0f32; self.config.dimension];
                         for i in 0..self.config.dimension {
-                            v[i] =
-                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().expect("fixed size"));
+                            v[i] = f32::from_le_bytes(
+                                bytes[i * 4..(i + 1) * 4].try_into().expect("fixed size"),
+                            );
                         }
                         Ok(VectorData::F32(v))
                     };
@@ -1861,7 +1862,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().expect("test");
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {
