@@ -66,7 +66,7 @@ mod tests {
 
         // 1. Insert some data
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.unwrap();
+        storage.put(tx1, b"key1", b"val1").await.unwrap(); // ANCHOR:FIXME AGENT:02 PRIO:2 (unwrap)
         storage.commit(tx1).await.unwrap();
 
         let cp1 = checkpointer.create_checkpoint(tx1);

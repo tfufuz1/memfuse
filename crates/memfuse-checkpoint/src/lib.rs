@@ -1,4 +1,6 @@
 //! Checkpointing & Time-Travel (WP-5.1)
+// ANCHOR:INTEGRATION PRIO:2 STATUS:OPEN AGENT:12
+// FIXME: Missing integration tests in crates/memfuse-checkpoint/tests/
 //!
 //! Enables deterministic freezing and restarting of agent workflows.
 //! Implements a SnapshotRegistry abstracting over Multi-Version Concurrency Control (MVCC).

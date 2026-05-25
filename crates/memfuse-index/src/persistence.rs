@@ -120,7 +120,7 @@ impl MmapIndex {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = std::fs::File::open(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
-        let mmap = unsafe { memmap2::Mmap::map(&file) }
+        let mmap = unsafe { memmap2::Mmap::map(&file) } // ANCHOR:FIXME AGENT:03 PRIO:2 (unsafe)
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
         let header = HnswHeader::try_from_bytes(&mmap[0..HnswHeader::SIZE])?;

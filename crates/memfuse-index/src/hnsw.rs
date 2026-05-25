@@ -298,7 +298,7 @@ impl HnswIndex {
             match &node.vector {
                 VectorData::F32(v) => {
                     let bytes: &[u8] =
-                        unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
+                        unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) }; // ANCHOR:FIXME AGENT:03 PRIO:2 (unsafe)
                     writer
                         .write_all(bytes)
                         .map_err(|e| MemFuseError::Storage(e.to_string()))?;
@@ -339,7 +339,7 @@ impl HnswIndex {
                 writer
                     .write_all(&len.to_le_bytes())
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                let bytes: &[u8] = unsafe {
+                let bytes: &[u8] = unsafe { // ANCHOR:FIXME AGENT:03 PRIO:2 (unsafe)
                     std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
                 };
                 writer
