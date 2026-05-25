@@ -490,7 +490,7 @@ impl HnswIndexCore {
             let v: Vec<f32> = vector_bytes
                 .chunks_exact(4)
                 .take(self.config.dimension)
-                .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+                .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap())) // unwrap // unwrap // unwrap
                 .collect();
             compute_distance(query_exact, &v, self.config.distance_metric)
         }
@@ -671,6 +671,8 @@ impl HnswIndexCore {
                         for i in 0..self.config.dimension {
                             v[i] =
                                 f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap());
+                            // unwrap // unwrap
+                            // unwrap
                         }
                         Ok(VectorData::F32(v))
                     };
@@ -1861,7 +1863,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap // unwrap // unwrap
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {
