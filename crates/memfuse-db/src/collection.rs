@@ -155,7 +155,10 @@ impl Collection {
                 Err(_) => continue, // Skip invalid entries
             };
 
-            let doc_id = DocId::from_string(&stored.id);
+            let doc_id = match DocId::from_key(&stored.id) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
 
             // Check if present in index
             // We use k=1 search to check presence (if we find it with distance 0, it's there)
@@ -616,7 +619,8 @@ impl Collection {
             let oversample = (k * 10).min(total_docs).max(k);
             let scored_docs = self.index.search_filtered(query, oversample, None).await?;
 
-            let mut results = Vec::new();
+            // ANCHOR:PERF:ALLOC-005 — Pre-allocation für gefilterte Ergebnisse
+            let mut results = Vec::with_capacity(k);
             for sd in scored_docs {
                 let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
                 if let Some(bytes) = self.storage.get(&doc_key).await? {
@@ -810,7 +814,8 @@ impl Collection {
         };
 
         let kvs = self.storage.scan(start_bytes, end_bytes).await?;
-        let mut results = Vec::new();
+        // ANCHOR:PERF:ALLOC-004 — Pre-allocation für Scan-Ergebnisse
+        let mut results = Vec::with_capacity(kvs.len());
         for (k, v) in kvs {
             let key_str = String::from_utf8_lossy(&k).to_string();
             let user_key = if self.name == "default" {
