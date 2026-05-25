@@ -1,3 +1,6 @@
+//! Core domain identifiers and fundamental types.
+
+// ANCHOR:DOC:DOMAIN-001 AGENT:01 STATUS:DONE PRIO:3
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 

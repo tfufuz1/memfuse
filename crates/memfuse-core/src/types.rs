@@ -1,3 +1,6 @@
+//! Core domain types and resource management.
+
+// ANCHOR:DOC:TYPES-001 AGENT:01 STATUS:DONE PRIO:3
 pub mod budget;
 pub mod domain;
 pub mod filter;
