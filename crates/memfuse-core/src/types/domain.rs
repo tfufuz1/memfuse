@@ -1,3 +1,5 @@
+//! Domain-specific type definitions for MemFuse.
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 

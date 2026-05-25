@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-/// WAL entry operation.
+/// WAL entry operation types.
 #[derive(Debug, Clone)]
 pub enum WalOp {
     /// Inserts or updates a key-value pair.
@@ -21,6 +21,7 @@ pub enum WalOp {
 }
 
 impl WalOp {
+    /// Returns the transaction ID associated with the operation.
     pub fn tx_id(&self) -> TxId {
         match self {
             WalOp::Put { tx_id, .. } => *tx_id,
@@ -43,6 +44,7 @@ pub struct WalEntry {
 }
 
 impl WalEntry {
+    /// Returns the transaction ID of the inner operation.
     pub fn tx_id(&self) -> TxId {
         self.op.tx_id()
     }

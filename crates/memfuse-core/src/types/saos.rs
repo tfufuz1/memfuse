@@ -1,3 +1,5 @@
+//! Sovereign Agentic Operating System (SAOS) types for context and isolation management.
+
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
@@ -91,48 +93,68 @@ impl FusionWeights {
 /// Defines cross-namespace isolation guarantees.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IsolationLevel {
+    /// Strict isolation, no data sharing.
     Strict,
+    /// Shared read access across namespaces.
     SharedRead,
+    /// Logical isolation within the same physical storage.
     Logical,
 }
 
 /// A chunk of context for LLM budget allocation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextChunk {
+    /// Associated document ID.
     pub doc_id: DocId,
+    /// Text content of the chunk.
     pub content: String,
+    /// Relevance score (0.0 to 1.0).
     pub relevance: f32,
+    /// Number of tokens in the content.
     pub token_count: usize,
 }
 
 /// An aggregated context window constrained by a token budget.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextWindow {
+    /// List of chunks in the window.
     pub chunks: Vec<ContextChunk>,
+    /// Total number of tokens in the window.
     pub total_tokens: usize,
+    /// Whether the context was truncated to fit the budget.
     pub truncated: bool,
 }
 
 /// Evaluated result for hybrid/4-signal search.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScoredEntry {
+    /// Document ID as a string.
     pub id: String,
+    /// Calculated final fusion score.
     pub final_score: f32,
+    /// Associated metadata.
     pub metadata: Option<serde_json::Value>,
 }
 
 /// A unified query traversing multiple index signals.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HybridQuery {
+    /// Optional natural language query.
     pub text_query: Option<String>,
+    /// Optional dense vector query.
     pub vector_query: Option<Vec<f32>>,
+    /// Optional starting node for graph traversal.
     pub graph_start_node: Option<String>,
+    /// Weights for signal fusion.
     pub fusion_weights: FusionWeights,
+    /// Optional metadata filter.
     pub filter: Option<FilterExpr>,
+    /// Number of results to return.
     pub k: usize,
 }
 
 impl HybridQuery {
+    /// Returns a new HybridQueryBuilder.
     pub fn builder() -> HybridQueryBuilder {
         HybridQueryBuilder::default()
     }
@@ -150,40 +172,48 @@ pub struct HybridQueryBuilder {
 }
 
 impl HybridQueryBuilder {
+    /// Creates a new HybridQueryBuilder.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Sets the text query.
     pub fn with_text_query(mut self, q: impl Into<String>) -> Self {
         self.text_query = Some(q.into());
         self
     }
 
+    /// Sets the vector query.
     pub fn with_vector_query(mut self, v: Vec<f32>) -> Self {
         self.vector_query = Some(v);
         self
     }
 
+    /// Sets the graph starting node.
     pub fn with_graph_start_node(mut self, start: impl Into<String>) -> Self {
         self.graph_start_node = Some(start.into());
         self
     }
 
+    /// Sets the fusion weights.
     pub fn with_fusion_weights(mut self, weights: FusionWeights) -> Self {
         self.fusion_weights = Some(weights);
         self
     }
 
+    /// Sets the metadata filter.
     pub fn with_filter(mut self, filter: FilterExpr) -> Self {
         self.filter = Some(filter);
         self
     }
 
+    /// Sets the number of results to return.
     pub fn with_k(mut self, k: usize) -> Self {
         self.k = Some(k);
         self
     }
 
+    /// Builds the HybridQuery.
     pub fn build(self) -> Result<HybridQuery> {
         Ok(HybridQuery {
             text_query: self.text_query,

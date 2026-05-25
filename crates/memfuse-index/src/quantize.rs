@@ -13,10 +13,15 @@ use memfuse_core::DistanceMetric;
 /// Quantization reduces the memory footprint of vector storage by 4x.
 #[derive(Debug, Clone)]
 pub struct ScalarQuantizer {
+    /// Global minimum value for training.
     pub min: f32,
+    /// Global maximum value for training.
     pub max: f32,
+    /// Precomputed scale factor (255 / range).
     pub scale: f32,
+    /// Precomputed inverse scale factor (range / 255).
     pub inv_scale: f32,
+    /// Vector dimensionality.
     pub dimension: usize,
 }
 

@@ -59,6 +59,9 @@ struct CachedNode {
 }
 
 /// DiskANN out-of-core vector index.
+///
+/// Designed for datasets that exceed available RAM, using memory-mapped I/O
+/// and beam search over an SSD-resident graph.
 #[derive(Debug)]
 pub struct DiskAnnIndex {
     config: DiskAnnConfig,
