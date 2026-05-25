@@ -76,9 +76,9 @@ impl HnswHeader {
                     .map_err(|_| MemFuseError::Storage("Invalid nodes_offset bytes".into()))?,
             ),
             connections_offset: u64::from_le_bytes(
-                bytes[40..48]
-                    .try_into()
-                    .map_err(|_| MemFuseError::Storage("Invalid connections_offset bytes".into()))?,
+                bytes[40..48].try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid connections_offset bytes".into())
+                })?,
             ),
         })
     }
