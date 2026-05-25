@@ -1,7 +1,16 @@
 //! LSM-Tree (Log-Structured Merge-Tree) storage engine.
+//!
+//! This module implements a robust, versioned storage engine based on the LSM-Tree architecture.
+//! It provides ACID guarantees for metadata and document state through a combination of:
+//! - **Write-Ahead Logging (WAL)**: HMAC-chained durability for all operations.
+//! - **MemTables**: In-memory versioned buffers for high-performance writes and snapshot isolation.
+//! - **SSTables**: Immutable on-disk sorted tables with Bloom filters and block-level caching.
+//! - **Compaction**: Size-Tiered strategy for space amplification control and tombstone GC.
+//! - **MVCC**: Sequence-number based snapshots for consistent multi-document reads.
+//!
 // ANCHOR:DOC:DOC-LSM-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-16 STATUS:REVIEW
+// AGENT:02 DATE:2026-06-15 STATUS:REVIEW
 // CREATED:2026-05-09 DEADLINE:NONE
 // ANCHOR:ARCH:LSM-001 — Zentraler Storage-Engine-Orchestrator des Triebwerks.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -158,7 +167,7 @@ impl LsmStorage {
         let mut max_seq = 0u64;
         let mut replayed_size = 0u64;
 
-        for (lsn, entry) in &wal_entries {
+        for (lsn, entry, _) in &wal_entries {
             if *lsn > max_seq {
                 max_seq = *lsn;
             }
@@ -213,7 +222,7 @@ impl LsmStorage {
         // Spawn background compaction task
         // ANCHOR:TODO:COMP-001 — Implementiere CompactionEngine::run_loop.
         // WP:WP-1.1 PRIO:1 NEEDS:NONE
-        // AGENT:@JULES-02 DATE:2026-05-12 STATUS:REVIEW
+        // AGENT:02 DATE:2026-06-15 STATUS:REVIEW
         // TEST: cargo test -p memfuse-store test_concurrent_reads_during_compaction
         // DONE: Triple-Test grün, keine Deadlocks in tokio::spawn.
         // SUCCESSOR: @JULES-04 — "Background compaction ist stabil. Collections können aufbauen."
@@ -262,15 +271,21 @@ impl LsmStorage {
 
         // 1. Replay WAL to find the last valid seq_no and the file offset
         let entries = state.wal.replay().await?;
-        let mut _target_seq = 0;
+        let mut target_offset = 0u64;
+        let mut target_hmac = [0u8; 32];
+        let mut max_seq = 0u64;
         let mut found = false;
 
-        // We need to find the offset in the file to truncate.
-        // Replay doesn't currently give us offsets, but we can re-read.
-        for (seq, entry) in &entries {
-            if entry.tx_id() == target_tx {
-                _target_seq = *seq;
-                found = true;
+        for (seq, entry, end_offset) in &entries {
+            if entry.tx_id().inner() <= target_tx.inner() {
+                if *seq > max_seq {
+                    max_seq = *seq;
+                }
+                target_offset = *end_offset;
+                target_hmac = entry.checksum;
+                if entry.tx_id() == target_tx {
+                    found = true;
+                }
             }
         }
 
@@ -286,12 +301,8 @@ impl LsmStorage {
         state.immutable_memtables.clear();
 
         // 3. Re-replay WAL up to target_tx into the new memtable
-        let mut max_seq = 0;
-        for (seq, entry) in entries {
+        for (seq, entry, _) in entries {
             if entry.tx_id().inner() <= target_tx.inner() {
-                if seq > max_seq {
-                    max_seq = seq;
-                }
                 match entry.op {
                     WalOp::Put { key, value, .. } => {
                         state
@@ -312,13 +323,14 @@ impl LsmStorage {
         // 4. Update next_seq_no
         self.next_seq_no.store(max_seq + 1, Ordering::SeqCst);
 
-        // 5. Truncate WAL (Simple version: just keep it as is, but any new writes will have lower seq_nos? No, we should truncate.)
-        // TODO: Real truncation involves knowing the byte offset of the last valid entry.
+        // 5. Physical WAL Truncation
+        state.wal.truncate(target_offset, target_hmac).await?;
 
         tracing::info!(
-            "Rollback to TX {} successful. Max seq: {}",
+            "Rollback to TX {} successful. Max seq: {}, WAL truncated to {}",
             target_tx,
-            max_seq
+            max_seq,
+            target_offset
         );
         Ok(())
     }

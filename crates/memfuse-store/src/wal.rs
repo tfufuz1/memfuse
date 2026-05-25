@@ -185,7 +185,7 @@ impl Wal {
         // If file is not empty, find the last valid HMAC to continue the chain
         if metadata.len() > 0 {
             let entries = wal.replay().await?;
-            if let Some((_, last_entry)) = entries.last() {
+            if let Some((_, last_entry, _)) = entries.last() {
                 let mut guard = wal.last_hmac.lock().await;
                 *guard = last_entry.checksum;
             }
@@ -241,8 +241,9 @@ impl Wal {
         WalEntry::try_new(op, seq_no, &integrity_key, *last_hmac)
     }
 
-    /// Replays the WAL, returning all valid entries.
-    pub async fn replay(&self) -> Result<Vec<(u64, WalEntry)>> {
+    /// Replays the WAL, returning all valid entries along with their file offsets.
+    /// Returns: Vec<(seq_no, entry, end_offset)>
+    pub async fn replay(&self) -> Result<Vec<(u64, WalEntry, u64)>> {
         let mut file = self.file.lock().await;
         use tokio::io::AsyncSeekExt;
         file.seek(std::io::SeekFrom::Start(0))
@@ -496,10 +497,32 @@ impl Wal {
                     checksum: stored_checksum,
                     prev_hmac,
                 },
+                pos,
             ));
         }
 
         Ok(entries)
+    }
+
+    /// Truncates the WAL to the specified length and resets the HMAC chain.
+    pub async fn truncate(&self, new_len: u64, last_hmac: [u8; 32]) -> Result<()> {
+        let mut file = self.file.lock().await;
+        let mut current_hmac = self.last_hmac.lock().await;
+
+        file.set_len(new_len)
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("WAL truncate failed: {}", e)))?;
+
+        use tokio::io::AsyncSeekExt;
+        file.seek(std::io::SeekFrom::End(0))
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("WAL truncate seek failed: {}", e)))?;
+
+        self.size
+            .store(new_len, std::sync::atomic::Ordering::SeqCst);
+        *current_hmac = last_hmac;
+
+        Ok(())
     }
 
     pub fn size(&self) -> u64 {
@@ -631,5 +654,39 @@ mod tests {
 
         // Should have replayed the first 4 entries successfully
         assert_eq!(entries.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_wal_physical_truncate() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("phys_trunc.log");
+
+        let wal = Wal::open(&wal_path).await.expect("open");
+        for i in 1..=5 {
+            let op = WalOp::Put {
+                tx_id: TxId::new(i),
+                key: b"key".to_vec(),
+                value: b"val".to_vec(),
+            };
+            let entry = wal.create_entry(op, i as u64).await.expect("entry");
+            wal.append(&entry).await.expect("append");
+        }
+
+        let entries = wal.replay().await.expect("replay");
+        assert_eq!(entries.len(), 5);
+        let truncate_to = entries[2].2; // End of 3rd entry
+        let target_hmac = entries[2].1.checksum;
+
+        wal.truncate(truncate_to, target_hmac)
+            .await
+            .expect("truncate");
+
+        let entries_after = wal.replay().await.expect("replay after");
+        assert_eq!(entries_after.len(), 3);
+        assert_eq!(entries_after.last().unwrap().2, truncate_to);
+
+        // Verify physical file size
+        let metadata = fs::metadata(&wal_path).await.expect("metadata");
+        assert_eq!(metadata.len(), truncate_to);
     }
 }
