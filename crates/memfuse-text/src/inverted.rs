@@ -1,7 +1,7 @@
 //! LSM-backed Inverted Index.
 // ANCHOR:PERF:LATENCY-003 — Inverted Index Key-Gen & Cache
 // WP:WP-0.0 PRIO:2 NEEDS:NONE
-// AGENT:09 DATE:2026-05-19 STATUS:DONE
+// AGENT:05 DATE:2026-05-19 STATUS:DONE
 // CREATED:2026-05-19 DEADLINE:NONE
 // TARGET: < 20µs für upsert_document
 // AKTUELL: ~18.6 µs (nach Optimierung)
@@ -24,6 +24,8 @@ pub struct InvertedIndex {
     storage: Arc<dyn StorageEngine>,
     prefix: Vec<u8>,
     tokenizer: Arc<dyn Tokenizer>,
+    k1: f32,
+    b: f32,
 }
 
 impl InvertedIndex {
@@ -45,7 +47,16 @@ impl InvertedIndex {
             storage,
             prefix,
             tokenizer,
+            k1: 1.2,
+            b: 0.75,
         }
+    }
+
+    /// Sets the BM25 parameters.
+    pub fn with_params(mut self, k1: f32, b: f32) -> Self {
+        self.k1 = k1;
+        self.b = b;
+        self
     }
 
     fn key(&self, suffix: &str) -> Vec<u8> {
@@ -377,6 +388,8 @@ impl InvertedIndex {
                             avg_doc_len,
                             df,
                             total_docs as u32,
+                            self.k1,
+                            self.b,
                         );
 
                         *scores.entry(doc_id).or_insert(0.0) += score;
