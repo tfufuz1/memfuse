@@ -139,6 +139,40 @@ impl InvertedIndex {
             .put(tx, &dl_key, &new_len.to_le_bytes())
             .await?;
 
+        // Calculate original tokens (before morphological splitting)
+        let orig_tokens = DefaultTokenizer.tokenize(text);
+        let orig_len = orig_tokens.len() as u32;
+        let ol_key = self.key_with_id("ol:", doc_id.inner());
+
+        // Update global original tokens
+        let mut old_orig_len = 0u32;
+        if is_update {
+            if let Some(bytes) = self.storage.get(&ol_key).await? {
+                if bytes.len() == 4 {
+                    old_orig_len = u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid orig_len length".into())
+                    })?);
+                }
+            }
+        }
+        self.storage
+            .put(tx, &ol_key, &orig_len.to_le_bytes())
+            .await?;
+
+        let meta_orig_tokens_key = self.key("meta:orig_tokens");
+        let mut total_orig_tokens = 0u64;
+        if let Some(bytes) = self.storage.get(&meta_orig_tokens_key).await? {
+            if bytes.len() == 8 {
+                total_orig_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid meta:orig_tokens length".into())
+                })?);
+            }
+        }
+        total_orig_tokens = total_orig_tokens.saturating_sub(old_orig_len as u64) + orig_len as u64;
+        self.storage
+            .put(tx, &meta_orig_tokens_key, &total_orig_tokens.to_le_bytes())
+            .await?;
+
         // Store forward index (unique terms)
         let mut tfs_vec: Vec<(String, u32)> = tfs.into_iter().collect();
         tfs_vec.sort_by(|a, b| a.0.cmp(&b.0));
@@ -217,6 +251,7 @@ impl InvertedIndex {
     pub async fn delete_document(&self, tx: TxId, doc_id: DocId) -> Result<()> {
         let dl_key = self.key_with_id("dl:", doc_id.inner());
         let fw_key = self.key_with_id("fw:", doc_id.inner());
+        let ol_key = self.key_with_id("ol:", doc_id.inner());
 
         let mut doc_len = 0u32;
         if let Some(bytes) = self.storage.get(&dl_key).await? {
@@ -233,7 +268,20 @@ impl InvertedIndex {
             return Ok(());
         }
 
+        let mut orig_len = 0u32;
+        if let Some(bytes) = self.storage.get(&ol_key).await? {
+            if bytes.len() == 4 {
+                orig_len = u32::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid orig_len length".into()))?,
+                );
+            }
+        }
+
         self.storage.delete(tx, &dl_key).await?;
+        self.storage.delete(tx, &ol_key).await?;
 
         // Remove from posting lists using forward index
         if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
@@ -278,6 +326,20 @@ impl InvertedIndex {
                 total_tokens = total_tokens.saturating_sub(doc_len as u64);
                 self.storage
                     .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
+                    .await?;
+            }
+        }
+
+        let meta_orig_tokens_key = self.key("meta:orig_tokens");
+        if let Some(bytes) = self.storage.get(&meta_orig_tokens_key).await? {
+            if bytes.len() == 8 {
+                let mut total_orig_tokens =
+                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid meta:orig_tokens length".into())
+                    })?);
+                total_orig_tokens = total_orig_tokens.saturating_sub(orig_len as u64);
+                self.storage
+                    .put(tx, &meta_orig_tokens_key, &total_orig_tokens.to_le_bytes())
                     .await?;
             }
         }
@@ -445,10 +507,31 @@ impl TextIndex for InvertedIndex {
             }
         }
 
+        let total_orig_tok_key = self.key("meta:orig_tokens");
+        let mut total_orig_tokens = 0u64;
+        if let Some(bytes) = self.storage.get(&total_orig_tok_key).await? {
+            if bytes.len() == 8 {
+                total_orig_tokens =
+                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid meta:orig_tokens length".into())
+                    })?);
+            }
+        }
+
+        let token_reduction_ratio = if total_orig_tokens > 0 {
+            total_tokens as f32 / total_orig_tokens as f32
+        } else {
+            1.0
+        };
+
+        // Heuristic: 24 bytes per token for posting lists and metadata
+        let memory_usage_bytes = (total_tokens as usize).saturating_mul(24);
+
         Ok(TextIndexStats {
             num_documents: total_docs as usize,
             num_tokens: total_tokens as usize,
-            memory_usage_bytes: 0,
+            memory_usage_bytes,
+            token_reduction_ratio,
         })
     }
 }
@@ -701,6 +784,12 @@ mod tests {
         );
         assert_eq!(td, 1);
         assert_eq!(tt, 1);
+
+        let stats = index.stats().await?;
+        assert_eq!(stats.num_documents, 1);
+        assert_eq!(stats.num_tokens, 1);
+        assert_eq!(stats.memory_usage_bytes, 24);
+        assert!(stats.token_reduction_ratio > 0.0);
         Ok(())
     }
 
