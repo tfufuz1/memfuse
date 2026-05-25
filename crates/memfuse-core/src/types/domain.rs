@@ -1,3 +1,9 @@
+//! Fundamental domain types for the MemFuse ecosystem.
+//!
+//! Includes core identifiers like `DocId` and `TxId`, as well as
+//! vector embeddings and graph entities.
+
+// ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 

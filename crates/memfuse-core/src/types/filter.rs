@@ -1,3 +1,9 @@
+//! Metadata filtering expressions.
+//!
+//! Provides the `FilterExpr` DSL for defining complex boolean filters
+//! applied to document metadata.
+
+// ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.
