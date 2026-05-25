@@ -74,21 +74,21 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt_roundtrip() {
-        let km = KeyManager::try_new("secret-passphrase").expect("try_new");
+        let km = KeyManager::try_new("secret-passphrase").expect("try_new"); // unwrap
         let data = b"sensitive data";
         let nonce = 42;
 
-        let encrypted = km.encrypt(data, nonce).expect("encrypt");
-        let decrypted = km.decrypt(&encrypted, nonce).expect("decrypt");
+        let encrypted = km.encrypt(data, nonce).expect("encrypt"); // unwrap
+        let decrypted = km.decrypt(&encrypted, nonce).expect("decrypt"); // unwrap
 
         assert_eq!(data, decrypted.as_slice());
     }
 
     #[test]
     fn test_wrong_nonce_fails() {
-        let km = KeyManager::try_new("secret-passphrase").expect("try_new");
+        let km = KeyManager::try_new("secret-passphrase").expect("try_new"); // unwrap
         let data = b"sensitive data";
-        let encrypted = km.encrypt(data, 42).expect("encrypt");
+        let encrypted = km.encrypt(data, 42).expect("encrypt"); // unwrap
 
         let result = km.decrypt(&encrypted, 43);
         assert!(result.is_err());
@@ -96,13 +96,13 @@ mod tests {
 
     #[test]
     fn test_different_keys_different_ciphertexts() {
-        let km1 = KeyManager::try_new("pass1").expect("try_new");
-        let km2 = KeyManager::try_new("pass2").expect("try_new");
+        let km1 = KeyManager::try_new("pass1").expect("try_new"); // unwrap
+        let km2 = KeyManager::try_new("pass2").expect("try_new"); // unwrap
         let data = b"data";
         let nonce = 0;
 
-        let enc1 = km1.encrypt(data, nonce).expect("enc1");
-        let enc2 = km2.encrypt(data, nonce).expect("enc2");
+        let enc1 = km1.encrypt(data, nonce).expect("enc1"); // unwrap
+        let enc2 = km2.encrypt(data, nonce).expect("enc2"); // unwrap
 
         assert_ne!(enc1, enc2);
     }

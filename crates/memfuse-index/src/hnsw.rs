@@ -1045,7 +1045,9 @@ impl HnswIndexCore {
                     if let Some(new_idx) = best_node {
                         let node_max_layer = if let Some(mmap) = mmap_guard.as_ref() {
                             if new_idx < mmap_node_count {
-                                mmap.get_node_record(new_idx).map(|r| r.max_layer as usize).unwrap_or(0)
+                                mmap.get_node_record(new_idx)
+                                    .map(|r| r.max_layer as usize)
+                                    .unwrap_or(0)
                             } else {
                                 nodes[new_idx - mmap_node_count]._max_layer
                             }
