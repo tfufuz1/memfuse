@@ -144,7 +144,10 @@ impl<T: Clone> TxBuffer<T> {
             .shards
             .get(shard_idx)
             .ok_or_else(|| {
-                MemFuseError::Internal(format!("Invalid shard index {} for transaction {}", shard_idx, tx))
+                MemFuseError::Internal(format!(
+                    "Invalid shard index {} for transaction {}",
+                    shard_idx, tx
+                ))
             })?
             .read();
 
