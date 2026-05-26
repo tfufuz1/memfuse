@@ -200,7 +200,10 @@ impl Wal {
 
         if let Some(km) = &self.key_manager {
             if bytes.len() > 4 {
-                let payload = &bytes[4..];
+                // ANCHOR:SEC:SLICE-002 AGENT:10 STATUS:REVIEW
+                let payload = bytes
+                    .get(4..)
+                    .ok_or(MemFuseError::Storage("Invalid WAL entry: payload too short".into()))?;
                 let offset = self.size();
                 let encrypted = km.encrypt(payload, offset)?;
                 let mut new_bytes = Vec::with_capacity(4 + encrypted.len());
@@ -304,13 +307,25 @@ impl Wal {
                 continue;
             }
 
-            let stored_crc = u32::from_le_bytes(entry_data[0..4].try_into().map_err(|_| {
-                MemFuseError::WalCorruption {
-                    offset: pos,
-                    reason: "Invalid CRC format".into(),
-                }
-            })?);
-            let payload = &entry_data[4..];
+            // ANCHOR:SEC:SLICE-002 AGENT:10 STATUS:REVIEW
+            let stored_crc = u32::from_le_bytes(
+                entry_data
+                    .get(0..4)
+                    .ok_or(MemFuseError::WalCorruption {
+                        offset: pos,
+                        reason: "CRC slice missing".into(),
+                    })?
+                    .try_into()
+                    .map_err(|_| MemFuseError::WalCorruption {
+                        offset: pos,
+                        reason: "Invalid CRC format".into(),
+                    })?,
+            );
+            // ANCHOR:SEC:SLICE-002 AGENT:10 STATUS:REVIEW
+            let payload = entry_data.get(4..).ok_or(MemFuseError::WalCorruption {
+                offset: pos,
+                reason: "Payload slice missing".into(),
+            })?;
             let computed_crc = crc32fast::hash(payload);
 
             if stored_crc != computed_crc {
