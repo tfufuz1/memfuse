@@ -91,9 +91,9 @@ impl HnswHeader {
                     .map_err(|_| MemFuseError::Storage("Invalid nodes_offset bytes".into()))?,
             ),
             connections_offset: u64::from_le_bytes(
-                bytes[48..56]
-                    .try_into()
-                    .map_err(|_| MemFuseError::Storage("Invalid connections_offset bytes".into()))?,
+                bytes[48..56].try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid connections_offset bytes".into())
+                })?,
             ),
             last_tx_id: u64::from_le_bytes(
                 bytes[56..64]
@@ -136,13 +136,24 @@ impl NodeRecord {
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         Self {
-            doc_id: u64::from_le_bytes(bytes.get(0..8).and_then(|b| b.try_into().ok()).unwrap_or([0; 8])),
+            doc_id: u64::from_le_bytes(
+                bytes
+                    .get(0..8)
+                    .and_then(|b| b.try_into().ok())
+                    .unwrap_or([0; 8]),
+            ),
             max_layer: bytes.get(8).cloned().unwrap_or(0),
             vector_offset: u64::from_le_bytes(
-                bytes.get(9..17).and_then(|b| b.try_into().ok()).unwrap_or([0; 8]),
+                bytes
+                    .get(9..17)
+                    .and_then(|b| b.try_into().ok())
+                    .unwrap_or([0; 8]),
             ),
             connections_offset: u64::from_le_bytes(
-                bytes.get(17..25).and_then(|b| b.try_into().ok()).unwrap_or([0; 8]),
+                bytes
+                    .get(17..25)
+                    .and_then(|b| b.try_into().ok())
+                    .unwrap_or([0; 8]),
             ),
         }
     }
