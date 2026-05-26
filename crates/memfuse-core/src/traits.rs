@@ -178,6 +178,8 @@ pub struct TextIndexStats {
     pub num_documents: usize,
     /// Total number of tokens across all documents.
     pub num_tokens: usize,
+    /// Expansion ratio from original to decomposed tokens.
+    pub token_reduction_ratio: f32,
     /// Estimated memory usage in bytes.
     pub memory_usage_bytes: usize,
 }

@@ -55,6 +55,33 @@ impl Default for GermanCompoundSplitter {
     }
 }
 
+const GERMAN_DICT: &[&str] = &[
+    "arbeits",
+    "wirtschafts",
+    "justiz",
+    "verfassungs",
+    "bundes",
+    "gericht",
+    "gesetz",
+    "entwurf",
+    "daten",
+    "bank",
+    "speicher",
+    "vektor",
+    "suche",
+    "system",
+    "steuerung",
+    "verwaltung",
+    "bericht",
+    "prüfung",
+    "schutz",
+    "sicherheit",
+    "zugriff",
+    "rechte",
+    "finanz",
+    "verfassung",
+];
+
 impl MorphologicalTokenizer for GermanCompoundSplitter {
     fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
         // Simple recursive splitting based on a set of known components
@@ -64,44 +91,32 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             return vec![token];
         }
 
-        // Common components in technical/legal German compounds
-        let dictionary = [
-            "bundes",
-            "verfassungs",
-            "gericht",
-            "gesetz",
-            "entwurf",
-            "daten",
-            "bank",
-            "speicher",
-            "vektor",
-            "suche",
-            "system",
-            "steuerung",
-            "verwaltung",
-            "bericht",
-            "prüfung",
-            "schutz",
-            "sicherheit",
-            "zugriff",
-            "rechte",
-        ];
-
-        for &word in &dictionary {
+        for &word in GERMAN_DICT {
             if token.len() > word.len() && token.starts_with(word) {
                 let rest = &token[word.len()..];
 
-                // Handle Fugen-s (e.g., Verfassung-s-gericht)
-                let actual_rest = if rest.starts_with('s') && rest.len() > 1 {
-                    &rest[1..]
-                } else {
-                    rest
-                };
+                // Try splitting WITHOUT stripping Fugen-s first (prefer dictionary matches)
+                if rest.len() >= self.min_component_len {
+                    let rest_decomposed = self.decompose(rest);
+                    if rest_decomposed.len() > 1 || GERMAN_DICT.contains(&rest) {
+                        let mut result = vec![&token[..word.len()]];
+                        result.extend(rest_decomposed);
+                        return result;
+                    }
+                }
 
-                if actual_rest.len() >= self.min_component_len {
-                    let mut result = vec![&token[..word.len()]];
-                    result.extend(self.decompose(actual_rest));
-                    return result;
+                // Handle Fugen-s (e.g., Verfassung-s-gericht)
+                // Only strip 's' if the word itself doesn't end with 's' to avoid "finanz-system" issues
+                if !word.ends_with('s') && rest.starts_with('s') && rest.len() > 1 {
+                    let actual_rest = &rest[1..];
+                    if actual_rest.len() >= self.min_component_len {
+                        let rest_decomposed = self.decompose(actual_rest);
+                        if rest_decomposed.len() > 1 || GERMAN_DICT.contains(&actual_rest) {
+                            let mut result = vec![&token[..word.len()]];
+                            result.extend(rest_decomposed);
+                            return result;
+                        }
+                    }
                 }
             }
         }
@@ -166,10 +181,18 @@ mod tests {
     #[test]
     fn test_german_splitter_scaffold() {
         let splitter = GermanCompoundSplitter::new();
-        // Fallback: returns original token
-        let result = splitter.decompose("Bundesverfassungsgericht");
-        assert_eq!(result, vec!["Bundesverfassungsgericht"]);
+        // Should split lowercase correctly
+        let result = splitter.decompose("bundesverfassungsgericht");
+        assert_eq!(result, vec!["bundes", "verfassungs", "gericht"]);
         assert_eq!(splitter.language(), "de");
+    }
+
+    #[test]
+    fn test_finanzsystem_no_aggressive_s_stripping() {
+        let splitter = GermanCompoundSplitter::new();
+        let result = splitter.decompose("finanzsystem");
+        // Should be ["finanz", "system"], NOT ["finanz", "ystem"]
+        assert_eq!(result, vec!["finanz", "system"]);
     }
 
     #[test]
