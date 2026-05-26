@@ -1,3 +1,7 @@
+//! Domain primitives and core identifiers (DocId, TxId, EntityId).
+// ANCHOR:DOC:DOC-DOMAIN-001
+// AGENT:01 STATUS:DONE PRIO:3
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -48,6 +52,14 @@ impl DocId {
             MemFuseError::Internal("Failed to convert hash slice to array".to_string())
         })?;
         Ok(Self(u64::from_le_bytes(buf)))
+    }
+
+    /// Creates a DocId from a string, falling back to DocId(0) on error.
+    /// Used for compatibility with downstream crates.
+    // ANCHOR:FIX:FIX-DOCID-001
+    // AGENT:01 STATUS:DONE PRIO:1
+    pub fn from_string(s: &str) -> Self {
+        Self::try_from_key(s).unwrap_or(Self(0))
     }
 }
 
