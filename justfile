@@ -173,7 +173,14 @@ debt-audit:
         | grep -v "//.*unwrap" \
         | grep -v "//.*test" \
         | grep -v "assert" \
-        | grep -vE "memfuse-crypto/src/wal_crypto\.rs|memfuse-core/src/types/budget\.rs|memfuse-core/src/types/saos\.rs|memfuse-checkpoint/src/lib\.rs|memfuse-store/src/memtable\.rs|memfuse-store/src/checkpoint\.rs|memfuse-index/src/persistence\.rs|memfuse-index/src/hnsw\.rs" \
+        | grep -v "crates/memfuse-crypto/src/wal_crypto.rs" \
+        | grep -v "crates/memfuse-core/src/types/budget.rs" \
+        | grep -v "crates/memfuse-core/src/types/saos.rs" \
+        | grep -v "crates/memfuse-checkpoint/src/lib.rs" \
+        | grep -v "crates/memfuse-store/src/memtable.rs" \
+        | grep -v "crates/memfuse-store/src/checkpoint.rs" \
+        | grep -v "crates/memfuse-index/src/persistence.rs" \
+        | grep -v "crates/memfuse-index/src/hnsw.rs" \
         || true)
     if [ -n "$UNWRAP" ]; then
         UNWRAP_COUNT=$(echo "$UNWRAP" | wc -l)
