@@ -10,11 +10,11 @@
 // OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
 
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
+use ahash::AHashMap;
 use async_trait::async_trait;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
 };
-use std::collections::HashMap;
 use std::sync::Arc;
 
 /// An inverted index stored in the LSM engine.
@@ -74,11 +74,13 @@ impl InvertedIndex {
     }
 
     /// Appends and updates inverted index structures for a document.
+    ///
+    /// Implements a differential update strategy to minimize storage I/O.
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
 
-        let mut tfs = HashMap::with_capacity(tokens.len());
+        let mut tfs = AHashMap::with_capacity(tokens.len());
         for t in tokens {
             *tfs.entry(t).or_insert(0u32) += 1;
         }
@@ -88,6 +90,7 @@ impl InvertedIndex {
         let fw_key = self.key_with_id("fw:", doc_id.inner());
         let mut old_len = 0u32;
         let mut is_update = false;
+        let mut old_tfs = AHashMap::new();
 
         if let Some(bytes) = self.storage.get(&dl_key).await? {
             if bytes.len() == 4 {
@@ -99,35 +102,44 @@ impl InvertedIndex {
                 );
                 is_update = true;
 
-                // Remove from old posting lists if update
+                // Fetch old terms for differential update
                 if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
                     let config = bincode::config::standard();
-                    if let Ok((old_terms, _)) =
+                    // Handle both old Vec<String> and new Vec<(String, u32)> for compatibility
+                    if let Ok((terms, _)) =
+                        bincode::serde::decode_from_slice::<Vec<(String, u32)>, _>(
+                            &fw_bytes, config,
+                        )
+                    {
+                        old_tfs = terms.into_iter().collect();
+                    } else if let Ok((terms, _)) =
                         bincode::serde::decode_from_slice::<Vec<String>, _>(&fw_bytes, config)
                     {
-                        for term in old_terms {
-                            let pl_key = self.key_with_term(&term);
-                            if let Some(pl_bytes) = self.storage.get(&pl_key).await? {
-                                if let Ok((mut pl, _)) =
-                                    bincode::serde::decode_from_slice::<Vec<(DocId, u32)>, _>(
-                                        &pl_bytes, config,
-                                    )
-                                {
-                                    pl.retain(|&(d, _)| d != doc_id);
-                                    if pl.is_empty() {
-                                        self.storage.delete(tx, &pl_key).await?;
-                                    } else {
-                                        let new_pl_bytes = bincode::serde::encode_to_vec(
-                                            &pl,
-                                            bincode::config::standard(),
-                                        )
-                                        .map_err(|e| {
-                                            MemFuseError::Storage(format!("bincode: {}", e))
-                                        })?;
-                                        self.storage.put(tx, &pl_key, &new_pl_bytes).await?;
-                                    }
-                                }
-                            }
+                        for term in terms {
+                            old_tfs.insert(term, 0); // TF unknown, will force update
+                        }
+                    }
+                }
+            }
+        }
+
+        // Differential update: Identify terms that are removed
+        for term in old_tfs.keys() {
+            if !tfs.contains_key(term) {
+                let pl_key = self.key_with_term(term);
+                if let Some(pl_bytes) = self.storage.get(&pl_key).await? {
+                    let config = bincode::config::standard();
+                    if let Ok((mut pl, _)) =
+                        bincode::serde::decode_from_slice::<Vec<(DocId, u32)>, _>(&pl_bytes, config)
+                    {
+                        pl.retain(|&(d, _)| d != doc_id);
+                        if pl.is_empty() {
+                            self.storage.delete(tx, &pl_key).await?;
+                        } else {
+                            let new_pl_bytes =
+                                bincode::serde::encode_to_vec(&pl, bincode::config::standard())
+                                    .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
+                            self.storage.put(tx, &pl_key, &new_pl_bytes).await?;
                         }
                     }
                 }
@@ -139,12 +151,11 @@ impl InvertedIndex {
             .put(tx, &dl_key, &new_len.to_le_bytes())
             .await?;
 
-        // Store forward index (unique terms)
-        let mut tfs_vec: Vec<(String, u32)> = tfs.into_iter().collect();
-        tfs_vec.sort_by(|a, b| a.0.cmp(&b.0));
+        // Store forward index (terms and frequencies)
+        let mut sorted_tfs: Vec<(String, u32)> = tfs.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        sorted_tfs.sort_by(|a, b| a.0.cmp(&b.0));
 
-        let unique_terms: Vec<&str> = tfs_vec.iter().map(|(k, _)| k.as_str()).collect();
-        let fw_bytes = bincode::serde::encode_to_vec(&unique_terms, bincode::config::standard())
+        let fw_bytes = bincode::serde::encode_to_vec(&sorted_tfs, bincode::config::standard())
             .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
         self.storage.put(tx, &fw_key, &fw_bytes).await?;
 
@@ -187,8 +198,15 @@ impl InvertedIndex {
                 .await?;
         }
 
-        // Update posting lists
-        for (term, tf) in tfs_vec {
+        // Update posting lists for new/updated terms
+        for (term, tf) in tfs {
+            // Skip update if TF is the same
+            if let Some(&old_tf) = old_tfs.get(&term) {
+                if old_tf == tf {
+                    continue;
+                }
+            }
+
             let pl_key = self.key_with_term(&term);
             let mut pl: Vec<(DocId, u32)> = Vec::new();
 
@@ -238,28 +256,36 @@ impl InvertedIndex {
         // Remove from posting lists using forward index
         if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
             let config = bincode::config::standard();
-            if let Ok((old_terms, _)) =
+            let old_terms = if let Ok((terms, _)) =
+                bincode::serde::decode_from_slice::<Vec<(String, u32)>, _>(&fw_bytes, config)
+            {
+                terms.into_iter().map(|(t, _)| t).collect::<Vec<_>>()
+            } else if let Ok((terms, _)) =
                 bincode::serde::decode_from_slice::<Vec<String>, _>(&fw_bytes, config)
             {
-                for term in old_terms {
-                    let pl_key = self.key_with_term(&term);
-                    if let Some(pl_bytes) = self.storage.get(&pl_key).await? {
-                        if let Ok((mut pl, _)) = bincode::serde::decode_from_slice::<
-                            Vec<(DocId, u32)>,
-                            _,
-                        >(&pl_bytes, config)
-                        {
-                            pl.retain(|&(d, _)| d != doc_id);
-                            if pl.is_empty() {
-                                self.storage.delete(tx, &pl_key).await?;
-                            } else {
-                                let new_pl_bytes =
-                                    bincode::serde::encode_to_vec(&pl, bincode::config::standard())
-                                        .map_err(|e| {
-                                            MemFuseError::Storage(format!("bincode: {}", e))
-                                        })?;
-                                self.storage.put(tx, &pl_key, &new_pl_bytes).await?;
-                            }
+                terms
+            } else {
+                Vec::new()
+            };
+
+            for term in old_terms {
+                let pl_key = self.key_with_term(&term);
+                if let Some(pl_bytes) = self.storage.get(&pl_key).await? {
+                    if let Ok((mut pl, _)) = bincode::serde::decode_from_slice::<
+                        Vec<(DocId, u32)>,
+                        _,
+                    >(&pl_bytes, config)
+                    {
+                        pl.retain(|&(d, _)| d != doc_id);
+                        if pl.is_empty() {
+                            self.storage.delete(tx, &pl_key).await?;
+                        } else {
+                            let new_pl_bytes =
+                                bincode::serde::encode_to_vec(&pl, bincode::config::standard())
+                                    .map_err(|e| {
+                                        MemFuseError::Storage(format!("bincode: {}", e))
+                                    })?;
+                            self.storage.put(tx, &pl_key, &new_pl_bytes).await?;
                         }
                     }
                 }
@@ -339,8 +365,8 @@ impl InvertedIndex {
             0.0
         };
 
-        let mut scores: HashMap<DocId, f32> = HashMap::new();
-        let mut doc_len_cache: HashMap<DocId, u32> = HashMap::new();
+        let mut scores: AHashMap<DocId, f32> = AHashMap::new();
+        let mut doc_len_cache: AHashMap<DocId, u32> = AHashMap::new();
 
         for term in &tokens {
             let pl_key = self.key_with_term(term);
@@ -386,8 +412,12 @@ impl InvertedIndex {
         }
 
         let mut results: Vec<(DocId, f32)> = scores.into_iter().collect();
-        // Sort descending by score
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        // Stable sort: descending by score, then ascending by DocId
+        results.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
         results.truncate(k);
 
         Ok(results)
@@ -513,6 +543,7 @@ impl TextIndex for BM25MorphIndex {
 mod tests {
     use super::*;
     use parking_lot::RwLock;
+    use std::collections::HashMap;
 
     struct MockStorage {
         store: RwLock<HashMap<Vec<u8>, Vec<u8>>>,
