@@ -9,6 +9,8 @@
 //! Peer to `memfuse-store` and `memfuse-index`. Provides the `GraphIndex`
 //! trait implementation via [`CsrGraph`].
 
+// ANCHOR:INTEGRATION STATUS:READY AGENT:12 PRIO:3
+// FIXME: Missing cross-crate integration tests in crates/memfuse-graph/tests/.
 // ANCHOR:ARCH:GRAPH-001 — CSR-Graph für 4-Signal Fusion (WP-6.1)
 // WP:WP-6.1 PRIO:2 NEEDS:WP-2.1
 // STATUS:SCAFFOLD DATE:2026-05-17
