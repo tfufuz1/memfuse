@@ -33,7 +33,11 @@ fn test_snapshot_registry_visibility_logic() {
 
     // Drop g2 (200)
     drop(g2);
-    assert_eq!(registry.min_active_seqno(), u64::MAX, "Min should be MAX again");
+    assert_eq!(
+        registry.min_active_seqno(),
+        u64::MAX,
+        "Min should be MAX again"
+    );
 }
 
 #[test]
@@ -60,7 +64,11 @@ fn test_snapshot_ref_counting() {
     assert_eq!(registry.min_active_seqno(), 100);
 
     drop(_g1);
-    assert_eq!(registry.min_active_seqno(), 100, "Min should still be 100 because _g2 is active");
+    assert_eq!(
+        registry.min_active_seqno(),
+        100,
+        "Min should still be 100 because _g2 is active"
+    );
 
     drop(_g2);
     assert_eq!(registry.min_active_seqno(), u64::MAX);

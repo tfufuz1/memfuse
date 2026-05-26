@@ -13,11 +13,19 @@ fn test_key_manager_full_flow() {
 
     // Encrypt
     let ciphertext = km.encrypt(original_data, nonce).expect("Encryption failed");
-    assert_ne!(original_data.to_vec(), ciphertext, "Ciphertext must differ from plaintext");
+    assert_ne!(
+        original_data.to_vec(),
+        ciphertext,
+        "Ciphertext must differ from plaintext"
+    );
 
     // Decrypt
     let decrypted = km.decrypt(&ciphertext, nonce).expect("Decryption failed");
-    assert_eq!(original_data.to_vec(), decrypted, "Decrypted data must match original");
+    assert_eq!(
+        original_data.to_vec(),
+        decrypted,
+        "Decrypted data must match original"
+    );
 }
 
 #[test]
@@ -46,7 +54,10 @@ fn test_nonce_isolation() {
     let c1 = km.encrypt(data, 1).expect("ok");
     let c2 = km.encrypt(data, 2).expect("ok");
 
-    assert_ne!(c1, c2, "Same data with different nonces must result in different ciphertexts");
+    assert_ne!(
+        c1, c2,
+        "Same data with different nonces must result in different ciphertexts"
+    );
 
     // Decrypting with wrong nonce should fail
     assert!(km.decrypt(&c1, 2).is_err());
@@ -64,5 +75,8 @@ fn test_consistent_key_derivation() {
     let c1 = km1.encrypt(data, nonce).expect("ok");
     let c2 = km2.encrypt(data, nonce).expect("ok");
 
-    assert_eq!(c1, c2, "Same passphrase must result in same key and ciphertext");
+    assert_eq!(
+        c1, c2,
+        "Same passphrase must result in same key and ciphertext"
+    );
 }

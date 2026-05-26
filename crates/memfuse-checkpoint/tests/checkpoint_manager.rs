@@ -2,8 +2,8 @@
 //! Integration tests for CheckpointManager with real LSM storage.
 
 use memfuse_checkpoint::{CheckpointManager, CheckpointRegistry};
-use memfuse_store::{LsmStorage, LsmConfig};
 use memfuse_core::{TxId, WorkflowState};
+use memfuse_store::{LsmConfig, LsmStorage};
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -14,17 +14,24 @@ async fn test_checkpoint_manager_persistence_lifecycle() {
         path: tmp.path().to_path_buf(),
         ..Default::default()
     };
-    let storage = Arc::new(LsmStorage::new(config).await.expect("Failed to open storage"));
+    let storage = Arc::new(
+        LsmStorage::new(config)
+            .await
+            .expect("Failed to open storage"),
+    );
 
     let manager = CheckpointManager::new(storage.clone());
 
     // 1. Create a checkpoint
-    let meta = manager.create_checkpoint(
-        "stable_v1",
-        "collection_alpha",
-        42,
-        serde_json::json!({"version": 1, "tags": ["prod"]})
-    ).await.expect("Failed to create checkpoint");
+    let meta = manager
+        .create_checkpoint(
+            "stable_v1",
+            "collection_alpha",
+            42,
+            serde_json::json!({"version": 1, "tags": ["prod"]}),
+        )
+        .await
+        .expect("Failed to create checkpoint");
 
     assert_eq!(meta.name, "stable_v1");
     assert_eq!(meta.seq_no, 42);
@@ -39,18 +46,30 @@ async fn test_checkpoint_manager_persistence_lifecycle() {
     let manager_reopened = CheckpointManager::new(storage.clone());
 
     // Explicitly reload to verify it picks up from LSM
-    manager_reopened.reload_from_storage().await.expect("Failed to reload");
+    manager_reopened
+        .reload_from_storage()
+        .await
+        .expect("Failed to reload");
 
-    let meta_reopened = manager_reopened.get_checkpoint("stable_v1").await.expect("Failed to get")
+    let meta_reopened = manager_reopened
+        .get_checkpoint("stable_v1")
+        .await
+        .expect("Failed to get")
         .expect("Checkpoint should exist after reload");
 
     assert_eq!(meta_reopened.seq_no, 42);
     assert_eq!(meta_reopened.collection_id, "collection_alpha");
 
     // 4. Drop checkpoint
-    manager_reopened.drop_checkpoint("stable_v1").await.expect("Failed to drop");
+    manager_reopened
+        .drop_checkpoint("stable_v1")
+        .await
+        .expect("Failed to drop");
     let list_after = manager_reopened.list_checkpoints().await.unwrap();
-    assert!(list_after.is_empty(), "Checkpoint list should be empty after drop");
+    assert!(
+        list_after.is_empty(),
+        "Checkpoint list should be empty after drop"
+    );
 }
 
 #[test]
