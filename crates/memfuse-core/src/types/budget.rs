@@ -1,3 +1,5 @@
+//! Resource budgeting and backpressure management for MemFuse.
+
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.
@@ -8,6 +10,7 @@ pub struct ResourceBudget {
 }
 
 impl Default for ResourceBudget {
+    /// Default budget is 2GB.
     fn default() -> Self {
         Self {
             memory_limit: 2 * 1024 * 1024 * 1024, // 2GB
@@ -39,6 +42,7 @@ impl ResourceTracker {
         }
     }
 
+    /// Attempts to consume a certain amount of memory. Returns error if budget exceeded.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         loop {
             let current = self.memory_used.load(std::sync::atomic::Ordering::Acquire);
@@ -63,15 +67,18 @@ impl ResourceTracker {
         }
     }
 
+    /// Releases consumed memory back to the budget.
     pub fn release_memory(&self, bytes: u64) {
         self.memory_used
             .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Returns the current memory usage in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns a reference to the configured budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }

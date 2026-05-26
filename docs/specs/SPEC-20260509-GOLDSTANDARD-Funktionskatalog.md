@@ -1,7 +1,7 @@
 # MemFuse SAOS — Goldstandard Funktionskatalog
 ## Formale Spezifikation der Zukunftsfähigen Erweiterungen
 
-> **Status:** PLANNING  
+> **Status:** IN_PROGRESS (GS-01, GS-04, GS-05, GS-07 DONE)
 > **Basis:** SAOS-ARCHITECTURE.md + SAOS-ROADMAP.md + Goldstandard-Vision  
 > **Erstellt:** 2026-05-08 | **Agent:** Context-Architekt (ANTIGRAVITY-Analyse)
 

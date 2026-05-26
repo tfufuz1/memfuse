@@ -1,3 +1,5 @@
+//! Metadata filtering expressions for hybrid search.
+
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.

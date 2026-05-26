@@ -1,3 +1,5 @@
+//! User-facing metadata filtering logic for MemFuse collections.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

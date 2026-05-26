@@ -2,7 +2,7 @@
 
 **Sovereign Agentic Operating System (SAOS)**
 
-> "The ultimate runtime for AI Agents: Database, Saftey Layer, and Orchestrator in one crate."
+> "The ultimate runtime for AI Agents: Database, Safety Layer, and Orchestrator in one crate."
 
 ## Quick Start
 
@@ -81,8 +81,6 @@ bash .agent/scripts/jules-dashboard.sh
 - **LSM-Tree Persistence** — WAL + MemTable with crash recovery
 - **Transactional** — Sharded TxBuffer with orphan-reaping
 - **Relationship Tracking** — `relate()` API for graph-aware retrieval
-- **Hybrid Search** — Optimized BM25 + Vector Fusion (RRF)
-- **Scalar Quantization** — SQ8 compression for 4x reduced RAM footprint
 - **Deterministic Checkpointing** — Native state pinning for "Time-Travel" debugging
 
 ## Building

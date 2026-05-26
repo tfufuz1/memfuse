@@ -1,3 +1,5 @@
+//! Domain types for MemFuse, including identifiers and embeddings.
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -14,29 +16,35 @@ pub struct WorkflowState {
 /// Bit mask for identifying tombstones in sequence numbers.
 pub const TOMBSTONE_BIT: u64 = 1 << 63;
 
-/// Internal document identifier.
+/// Internal document identifier based on a 64-bit hash.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct DocId(pub u64);
 
 impl DocId {
+    /// Maximum possible DocId.
     pub const MAX: Self = Self(u64::MAX);
+    /// Minimum possible DocId.
     pub const MIN: Self = Self(0);
 
+    /// Creates a new DocId from a raw u64.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
+    /// Returns the inner u64 value.
     #[inline]
     pub const fn inner(self) -> u64 {
         self.0
     }
 
+    /// Hashes a string key into a DocId.
     pub fn from_key(key: &str) -> Result<Self> {
         Self::try_from_key(key)
     }
 
+    /// Attempt to hash a string key into a DocId.
     pub fn try_from_key(key: &str) -> Result<Self> {
         let hash = blake3::hash(key.as_bytes());
         let bytes = hash
