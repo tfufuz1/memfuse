@@ -91,9 +91,9 @@ impl HnswHeader {
                     .map_err(|_| MemFuseError::Storage("Failed to parse nodes_offset".into()))?,
             ),
             connections_offset: u64::from_le_bytes(
-                bytes[48..56]
-                    .try_into()
-                    .map_err(|_| MemFuseError::Storage("Failed to parse connections_offset".into()))?,
+                bytes[48..56].try_into().map_err(|_| {
+                    MemFuseError::Storage("Failed to parse connections_offset".into())
+                })?,
             ),
             last_tx_id: u64::from_le_bytes(
                 bytes[56..64]
@@ -151,9 +151,9 @@ impl NodeRecord {
                     .map_err(|_| MemFuseError::Storage("Failed to parse vector_offset".into()))?,
             ),
             connections_offset: u64::from_le_bytes(
-                bytes[17..25]
-                    .try_into()
-                    .map_err(|_| MemFuseError::Storage("Failed to parse connections_offset".into()))?,
+                bytes[17..25].try_into().map_err(|_| {
+                    MemFuseError::Storage("Failed to parse connections_offset".into())
+                })?,
             ),
         })
     }
@@ -192,7 +192,9 @@ impl MmapIndex {
     pub fn get_node_record(&self, index: usize) -> Result<NodeRecord> {
         let offset = self.header.nodes_offset as usize + index * NodeRecord::SIZE;
         if offset + NodeRecord::SIZE > self.mmap.len() {
-            return Err(MemFuseError::Storage("Node record offset out of bounds".into()));
+            return Err(MemFuseError::Storage(
+                "Node record offset out of bounds".into(),
+            ));
         }
         NodeRecord::try_from_bytes(&self.mmap[offset..offset + NodeRecord::SIZE])
     }
@@ -225,18 +227,21 @@ impl MmapIndex {
         let mut current_pos = offset + 1;
         for _ in 0..layer {
             if current_pos + 4 > self.mmap.len() {
-                return Err(MemFuseError::Storage("Connection layer length out of bounds".into()));
+                return Err(MemFuseError::Storage(
+                    "Connection layer length out of bounds".into(),
+                ));
             }
-            let len = u32::from_le_bytes(
-                self.mmap[current_pos..current_pos + 4]
-                    .try_into()
-                    .map_err(|_| MemFuseError::Storage("Failed to parse connection length".into()))?,
-            ) as usize;
+            let len =
+                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().map_err(
+                    |_| MemFuseError::Storage("Failed to parse connection length".into()),
+                )?) as usize;
             current_pos += 4 + len * 4;
         }
 
         if current_pos + 4 > self.mmap.len() {
-            return Err(MemFuseError::Storage("Connection length out of bounds".into()));
+            return Err(MemFuseError::Storage(
+                "Connection length out of bounds".into(),
+            ));
         }
         let len = u32::from_le_bytes(
             self.mmap[current_pos..current_pos + 4]
@@ -247,17 +252,18 @@ impl MmapIndex {
         let end = start + len * 4;
 
         if end > self.mmap.len() {
-            return Err(MemFuseError::Storage("Connection data out of bounds".into()));
+            return Err(MemFuseError::Storage(
+                "Connection data out of bounds".into(),
+            ));
         }
 
         let raw = &self.mmap[start..end];
         let mut connections = Vec::with_capacity(len);
         for i in 0..len {
-            let val = u32::from_le_bytes(
-                raw[i * 4..(i + 1) * 4]
-                    .try_into()
-                    .map_err(|_| MemFuseError::Storage("Failed to parse connection index".into()))?,
-            );
+            let val =
+                u32::from_le_bytes(raw[i * 4..(i + 1) * 4].try_into().map_err(|_| {
+                    MemFuseError::Storage("Failed to parse connection index".into())
+                })?);
             connections.push(val);
         }
 

@@ -686,9 +686,11 @@ impl HnswIndexCore {
                     } else {
                         let mut v = vec![0.0f32; self.config.dimension];
                         for i in 0..self.config.dimension {
-                    v[i] = f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().map_err(|_| {
-                        MemFuseError::Storage("Failed to parse vector component".into())
-                    })?);
+                            v[i] = f32::from_le_bytes(
+                                bytes[i * 4..(i + 1) * 4].try_into().map_err(|_| {
+                                    MemFuseError::Storage("Failed to parse vector component".into())
+                                })?,
+                            );
                         }
                         Ok(VectorData::F32(v))
                     };
@@ -1023,7 +1025,7 @@ impl HnswIndexCore {
                 if let Some(mmap) = mmap_guard.as_ref() {
                     for i in 0..mmap_node_count {
                         if i != idx && !deleted.contains(i as u64) {
-                    let record = mmap.get_node_record(i)?;
+                            let record = mmap.get_node_record(i)?;
                             if record.max_layer as usize >= max_layer {
                                 max_layer = record.max_layer as usize;
                                 best_node = Some(i);
@@ -1879,7 +1881,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed;
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {
