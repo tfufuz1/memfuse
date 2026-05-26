@@ -1,3 +1,8 @@
+//! Metadata filter expressions.
+//!
+//! ANCHOR:DOC:FILTER — Module documentation for filters.
+//! AGENT:01 STATUS:DONE PRIO:3
+
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.

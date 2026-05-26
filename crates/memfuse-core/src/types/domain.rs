@@ -1,3 +1,8 @@
+//! Core domain entities and identifiers.
+//!
+//! ANCHOR:DOC:DOMAIN — Module documentation for domain entities.
+//! AGENT:01 STATUS:DONE PRIO:3
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +40,14 @@ impl DocId {
 
     pub fn from_key(key: &str) -> Result<Self> {
         Self::try_from_key(key)
+    }
+
+    /// Alias for `from_key` used in downstream crates.
+    ///
+    /// NOTE: This returns a `DocId` directly for compatibility with existing code.
+    /// It panics if hashing fails (which should never happen with Blake3).
+    pub fn from_string(key: &str) -> Self {
+        Self::try_from_key(key).expect("Blake3 hashing should not fail")
     }
 
     pub fn try_from_key(key: &str) -> Result<Self> {
