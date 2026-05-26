@@ -669,9 +669,8 @@ impl HnswIndexCore {
                     } else {
                         let mut v = vec![0.0f32; self.config.dimension];
                         for i in 0..self.config.dimension {
-                            v[i] = f32::from_le_bytes(
-                                bytes[i * 4..(i + 1) * 4].try_into().unwrap(), // unwrap allowed
-                            );
+                            let chunk = bytes[i * 4..(i + 1) * 4].try_into().unwrap(); // unwrap allowed
+                            v[i] = f32::from_le_bytes(chunk);
                         }
                         Ok(VectorData::F32(v))
                     };

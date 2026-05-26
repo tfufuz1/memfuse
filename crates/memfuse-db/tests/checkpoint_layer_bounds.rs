@@ -1,7 +1,6 @@
 use memfuse_checkpoint::CheckpointManager;
 use memfuse_db::{MemFuse, MemFuseConfig};
 use serde_json::json;
-use std::sync::Arc;
 use tempfile::TempDir;
 
 // AGENT:12 DATE:2026-05-09 STATUS:DONE
@@ -52,22 +51,18 @@ async fn test_layer_001_fork_diverge_merge() {
     // 2. Checkpoint erstellen (Simuliert durch CheckpointManager auf ruhenden Daten)
     let _cp_v1;
     {
-        let lsm_config = memfuse_store::LsmConfig {
-            path: db_path.clone(),
-            ..Default::default()
-        };
-        let storage = Arc::new(
-            memfuse_store::LsmStorage::new(lsm_config)
-                .await
-                .expect("storage"),
-        );
+        let db = MemFuse::open_with_config(&db_path, config.clone())
+            .await
+            .expect("open db");
+        let storage = db.inner_storage();
         let cp_manager = CheckpointManager::new(storage.clone());
 
         _cp_v1 = cp_manager
             .create_checkpoint("v1", "main", 0, json!({}))
             .await
             .expect("checkpoint");
-        // Storage wird gedroppt, Lock frei.
+
+        db.close().await.expect("close db");
     }
 
     // 3. "Fork" simulieren
@@ -127,20 +122,19 @@ async fn test_layer_001_fork_diverge_merge() {
             .expect("get merged")
             .unwrap();
         assert_eq!(merged_doc.metadata.unwrap()["origin"], "fork");
+
+        db.close().await.expect("close db before cleanup");
     }
 
     // 6. Cleanup Checkpoint
     {
-        let lsm_config = memfuse_store::LsmConfig {
-            path: db_path,
-            ..Default::default()
-        };
-        let storage = Arc::new(
-            memfuse_store::LsmStorage::new(lsm_config)
-                .await
-                .expect("storage"),
-        );
+        let db = MemFuse::open_with_config(&db_path, config.clone())
+            .await
+            .expect("open db");
+        let storage = db.inner_storage();
         let cp_manager = CheckpointManager::new(storage.clone());
         cp_manager.drop_checkpoint("v1").await.expect("drop cp");
+
+        db.close().await.expect("close db");
     }
 }
