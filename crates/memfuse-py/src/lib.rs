@@ -76,6 +76,35 @@ fn json_to_py(py: Python<'_>, val: &serde_json::Value) -> PyResult<PyObject> {
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Metadata error: {}", e)))
 }
 
+/// Helper to convert a Python dict to a simple equality MetadataFilter.
+fn dict_to_filter(metadata: Option<&pyo3::Bound<'_, pyo3::types::PyDict>>) -> PyResult<Option<memfuse_db::MetadataFilter>> {
+    let metadata = match metadata {
+        Some(m) => m,
+        None => return Ok(None),
+    };
+
+    let mut conditions = Vec::new();
+    for (k, v) in metadata.iter() {
+        let field = k.extract::<String>()?;
+        let value = depythonize(&v).map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Invalid filter value: {}", e)))?;
+        conditions.push(memfuse_db::MetadataFilter::Condition {
+            field,
+            op: memfuse_db::filter::FilterOp::Eq,
+            value,
+        });
+    }
+
+    if conditions.is_empty() {
+        Ok(None)
+    } else if conditions.len() == 1 {
+        Ok(conditions.pop().map(Some).ok_or_else(|| {
+            pyo3::exceptions::PyRuntimeError::new_err("Internal error: condition disappeared")
+        })?)
+    } else {
+        Ok(Some(memfuse_db::MetadataFilter::And(conditions)))
+    }
+}
+
 /// Converts a memfuse_db::Document to a PyDocument.
 fn doc_to_py(py: Python<'_>, d: memfuse_db::Document) -> PyResult<PyDocument> {
     let meta_py = match d.metadata {
@@ -298,19 +327,21 @@ macro_rules! memfuse_crud_methods {
             }
 
             /// Performs semantic k-NN search over the embeddings.
-            #[pyo3(signature = (vector, k))]
+            #[pyo3(signature = (vector, k, filter=None))]
             pub fn search<'py>(
                 &self,
                 py: Python<'py>,
                 vector: PyReadonlyArray1<'py, f32>,
                 k: usize,
+                filter: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
             ) -> PyResult<Vec<PySearchResult>> {
                 let rt = get_runtime()?;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
+                let filter_obj = dict_to_filter(filter.as_ref())?;
                 let results = py
-                    .allow_threads(|| rt.block_on(self.inner.search(v, k)))
+                    .allow_threads(|| rt.block_on(self.inner.search_with_filter(v, k, filter_obj)))
                     .map_err(memfuse_err)?;
                 results_to_py(py, results)
             }
@@ -539,6 +570,13 @@ impl PyMemFuse {
             .map_err(memfuse_err)
     }
 
+    /// Repairs all collections by re-syncing their indices with storage.
+    pub fn repair(&self, py: Python<'_>) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.repair()))
+            .map_err(memfuse_err)
+    }
+
     /// Flushes all pending writes to disk.
     pub fn flush(&self, py: Python<'_>) -> PyResult<()> {
         let rt = get_runtime()?;
@@ -619,6 +657,13 @@ impl PyCollection {
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
         Ok(py.allow_threads(|| rt.block_on(self.inner.is_empty())))
+    }
+
+    /// Repairs the collection index by re-syncing with storage.
+    pub fn repair(&self, py: Python<'_>) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.repair()))
+            .map_err(memfuse_err)
     }
 }
 

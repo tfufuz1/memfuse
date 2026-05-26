@@ -33,6 +33,10 @@ impl DocId {
         self.0
     }
 
+    pub fn from_string(s: &str) -> Self {
+        Self::try_from_key(s).expect("DocId derivation from key should never fail")
+    }
+
     pub fn from_key(key: &str) -> Result<Self> {
         Self::try_from_key(key)
     }

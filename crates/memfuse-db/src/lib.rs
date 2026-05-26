@@ -552,6 +552,16 @@ impl MemFuse {
             storage_stats: self.storage.stats().await?,
         })
     }
+    /// Repairs all collections by re-syncing their indices with storage.
+    pub async fn repair(&self) -> Result<()> {
+        let collections = self.collections.read().await;
+        for (name, col) in collections.iter() {
+            tracing::info!("Repairing collection '{}'...", name);
+            col.repair().await?;
+        }
+        Ok(())
+    }
+
     /// Flushes all pending writes to disk.
     ///
     /// This ensures that the WAL is synced and memtables are persisted as SSTables.
