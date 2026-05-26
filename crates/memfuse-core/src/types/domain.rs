@@ -1,3 +1,5 @@
+//! Domain identifiers and basic data structures.
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +37,11 @@ impl DocId {
 
     pub fn from_key(key: &str) -> Result<Self> {
         Self::try_from_key(key)
+    }
+
+    /// Legacy alias for from_key, panics on error.
+    pub fn from_string(key: &str) -> Self {
+        Self::from_key(key).expect("DocId::from_key failed") // unwrap
     }
 
     pub fn try_from_key(key: &str) -> Result<Self> {

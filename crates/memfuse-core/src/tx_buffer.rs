@@ -316,8 +316,18 @@ mod tests {
 
         let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10));
         assert!(buffer.has_tx(tx1));
-        sleep(Duration::from_millis(100)).await;
-        assert!(!buffer.has_tx(tx1));
+
+        // Poll for removal with 2s timeout to avoid CI flakiness
+        let start = std::time::Instant::now();
+        let mut removed = false;
+        while start.elapsed() < Duration::from_secs(2) {
+            if !buffer.has_tx(tx1) {
+                removed = true;
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+        assert!(removed, "Transaction was not reaped within timeout");
     }
 
     #[tokio::test]

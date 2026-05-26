@@ -1,3 +1,5 @@
+//! Core domain types for MemFuse.
+
 pub mod budget;
 pub mod domain;
 pub mod filter;

@@ -1,3 +1,5 @@
+//! Metadata filtering expressions and evaluation logic.
+
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.
