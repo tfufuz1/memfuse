@@ -1,7 +1,3 @@
-//! Resource budget and memory tracking for LLM operations.
-// ANCHOR:DOC:DOC-BUDGET-001
-// AGENT:01 STATUS:DONE PRIO:3
-
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.

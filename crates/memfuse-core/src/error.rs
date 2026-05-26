@@ -78,12 +78,6 @@ pub enum MemFuseError {
     // ═══ Text Engine ═══
     #[error("Text engine error: {0}")]
     Text(String),
-
-    // ═══ Graph Engine ═══
-    // ANCHOR:FIX:FIX-ERROR-001
-    // AGENT:01 STATUS:DONE PRIO:2
-    #[error("Graph error: {0}")]
-    Graph(String),
 }
 
 impl MemFuseError {

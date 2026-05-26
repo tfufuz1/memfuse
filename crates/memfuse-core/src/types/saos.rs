@@ -1,7 +1,3 @@
-//! Search and Orchestration Schemas (SAOS) for hybrid queries.
-// ANCHOR:DOC:DOC-SAOS-001
-// AGENT:01 STATUS:DONE PRIO:3
-
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
