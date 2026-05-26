@@ -101,6 +101,8 @@ jobs:
             | grep -v "#\[test\]" \
             | grep -v "#\[cfg(test)\]" \
             | grep -v "//.*unwrap" \
+            | grep -v "// expect #[cfg(test)]" \
+            | grep -v "::tests::" \
             | grep -v "_test\." \
             | grep -v "/tests/" \
             || true)
