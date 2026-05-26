@@ -279,7 +279,8 @@ impl HnswIndex {
         };
 
         // 1. Placeholder Header
-        writer.write_all(&header.to_bytes())
+        writer
+            .write_all(&header.to_bytes())
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
 
@@ -294,7 +295,8 @@ impl HnswIndex {
             node_count
         ];
         for record in &node_records {
-            writer.write_all(&record.to_bytes())
+            writer
+                .write_all(&record.to_bytes())
                 .await
                 .map_err(|e| MemFuseError::Storage(e.to_string()))?;
         }
@@ -309,13 +311,15 @@ impl HnswIndex {
             match &node.vector {
                 VectorData::F32(v) => {
                     let bytes: &[u8] = bytemuck::cast_slice(v);
-                    writer.write_all(bytes)
+                    writer
+                        .write_all(bytes)
                         .await
                         .map_err(|e| MemFuseError::Storage(e.to_string()))?;
                     current_pos += bytes.len() as u64;
                 }
                 VectorData::U8(v) => {
-                    writer.write_all(v)
+                    writer
+                        .write_all(v)
                         .await
                         .map_err(|e| MemFuseError::Storage(e.to_string()))?;
                     current_pos += v.len() as u64;
@@ -329,7 +333,8 @@ impl HnswIndex {
 
         if connections_offset > current_pos {
             let padding = [0u8; 4];
-            writer.write_all(&padding[..(connections_offset - current_pos) as usize])
+            writer
+                .write_all(&padding[..(connections_offset - current_pos) as usize])
                 .await
                 .map_err(|e| MemFuseError::Storage(e.to_string()))?;
         }
@@ -338,7 +343,8 @@ impl HnswIndex {
         for (i, node) in nodes_snapshot.iter().enumerate() {
             node_records[i].connections_offset = conn_pos;
             let num_layers = node.connections.len() as u8;
-            writer.write_all(&[num_layers])
+            writer
+                .write_all(&[num_layers])
                 .await
                 .map_err(|e| MemFuseError::Storage(e.to_string()))?;
             conn_pos += 1;
@@ -346,36 +352,44 @@ impl HnswIndex {
             for layer in 0..num_layers as usize {
                 let conns = &node.connections[layer];
                 let len = conns.len() as u32;
-                writer.write_all(&len.to_le_bytes())
+                writer
+                    .write_all(&len.to_le_bytes())
                     .await
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
                 let bytes: &[u8] = bytemuck::cast_slice(conns);
-                writer.write_all(bytes)
+                writer
+                    .write_all(bytes)
                     .await
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
                 conn_pos += 4 + bytes.len() as u64;
             }
         }
-        writer.flush()
+        writer
+            .flush()
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
 
         // 5. Final Updates
-        writer.seek(std::io::SeekFrom::Start(0))
+        writer
+            .seek(std::io::SeekFrom::Start(0))
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        writer.write_all(&header.to_bytes())
+        writer
+            .write_all(&header.to_bytes())
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        writer.seek(std::io::SeekFrom::Start(nodes_offset))
+        writer
+            .seek(std::io::SeekFrom::Start(nodes_offset))
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
         for record in &node_records {
-            writer.write_all(&record.to_bytes())
+            writer
+                .write_all(&record.to_bytes())
                 .await
                 .map_err(|e| MemFuseError::Storage(e.to_string()))?;
         }
-        writer.flush()
+        writer
+            .flush()
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
 
@@ -389,11 +403,10 @@ impl HnswIndex {
     /// Loads an HNSW index from a flat file via memory-mapping.
     pub async fn load_mmap(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let path_buf = path.as_ref().to_path_buf();
-        let mmap_index = tokio::task::spawn_blocking(move || {
-            crate::persistence::MmapIndex::open(path_buf)
-        })
-        .await
-        .map_err(|e| MemFuseError::Index(format!("Mmap load task panicked: {}", e)))??;
+        let mmap_index =
+            tokio::task::spawn_blocking(move || crate::persistence::MmapIndex::open(path_buf))
+                .await
+                .map_err(|e| MemFuseError::Index(format!("Mmap load task panicked: {}", e)))??;
 
         self.load_mmap_from_instance(mmap_index)
     }
@@ -689,8 +702,9 @@ impl HnswIndexCore {
                     } else {
                         let mut v = vec![0.0f32; self.config.dimension];
                         for i in 0..self.config.dimension {
-                            v[i] =
-                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap()); // unwrap allowed: vector size checked in get_vector
+                            v[i] = f32::from_le_bytes(
+                                bytes[i * 4..(i + 1) * 4].try_into().unwrap(), // unwrap allowed: vector size checked in get_vector
+                            );
                         }
                         Ok(VectorData::F32(v))
                     };
@@ -1884,7 +1898,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {

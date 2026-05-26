@@ -181,16 +181,19 @@ impl MmapIndex {
         let mut current_pos = offset + 1;
         for _ in 0..layer {
             if current_pos + 4 > self.mmap.len() {
-                return Err(MemFuseError::Index("Malformed connections block: length missing".into()));
+                return Err(MemFuseError::Index(
+                    "Malformed connections block: length missing".into(),
+                ));
             }
-            let len =
-                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap allowed: bounds checked above
+            let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap allowed: bounds checked above
                     as usize;
             current_pos += 4 + len * 4;
         }
 
         if current_pos + 4 > self.mmap.len() {
-            return Err(MemFuseError::Index("Malformed connections block: target layer length missing".into()));
+            return Err(MemFuseError::Index(
+                "Malformed connections block: target layer length missing".into(),
+            ));
         }
         let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap allowed: bounds checked above
             as usize;
@@ -198,7 +201,9 @@ impl MmapIndex {
         let end = start + len * 4;
 
         if end > self.mmap.len() {
-             return Err(MemFuseError::Index("Malformed connections block: target layer data out of bounds".into()));
+            return Err(MemFuseError::Index(
+                "Malformed connections block: target layer data out of bounds".into(),
+            ));
         }
 
         let raw = &self.mmap[start..end];
