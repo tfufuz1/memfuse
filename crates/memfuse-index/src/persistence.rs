@@ -120,6 +120,9 @@ impl MmapIndex {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = std::fs::File::open(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
+        // ANCHOR:SEC:MMAP-002 AGENT:10 PRIO:1 STATUS:REVIEW
+        // ANCHOR:SAFETY:MMAP-002 — Memory Mapping of HNSW index file
+        // BEGRÜNDUNG: HNSW Index-Dateien sind unveränderlich nach dem Schreiben.
         let mmap = unsafe { memmap2::Mmap::map(&file) }
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
