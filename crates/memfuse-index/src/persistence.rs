@@ -42,20 +42,31 @@ impl HnswHeader {
             return Err(MemFuseError::Storage("Invalid HNSW magic".into()));
         }
 
+        let version = u16::from_le_bytes(bytes[4..6].try_into().unwrap()); // unwrap
+        let dimension = u32::from_le_bytes(bytes[6..10].try_into().unwrap()); // unwrap
+        let m = u32::from_le_bytes(bytes[10..14].try_into().unwrap()); // unwrap
+        let q_min = f32::from_le_bytes(bytes[16..20].try_into().unwrap()); // unwrap
+        let q_max = f32::from_le_bytes(bytes[20..24].try_into().unwrap()); // unwrap
+        let node_count = u64::from_le_bytes(bytes[24..32].try_into().unwrap()); // unwrap
+        let entry_point = i64::from_le_bytes(bytes[32..40].try_into().unwrap()); // unwrap
+        let nodes_offset = u64::from_le_bytes(bytes[40..48].try_into().unwrap()); // unwrap
+        let connections_offset = u64::from_le_bytes(bytes[48..56].try_into().unwrap()); // unwrap
+        let last_tx_id = u64::from_le_bytes(bytes[56..64].try_into().unwrap()); // unwrap
+
         Ok(Self {
             magic,
-            version: u16::from_le_bytes(bytes[4..6].try_into().unwrap()), // unwrap
-            dimension: u32::from_le_bytes(bytes[6..10].try_into().unwrap()), // unwrap
-            m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()), // unwrap
+            version,
+            dimension,
+            m,
             metric: bytes[14],
             quantized: bytes[15],
-            q_min: f32::from_le_bytes(bytes[16..20].try_into().unwrap()), // unwrap
-            q_max: f32::from_le_bytes(bytes[20..24].try_into().unwrap()), // unwrap
-            node_count: u64::from_le_bytes(bytes[24..32].try_into().unwrap()), // unwrap
-            entry_point: i64::from_le_bytes(bytes[32..40].try_into().unwrap()), // unwrap
-            nodes_offset: u64::from_le_bytes(bytes[40..48].try_into().unwrap()), // unwrap
-            connections_offset: u64::from_le_bytes(bytes[48..56].try_into().unwrap()), // unwrap
-            last_tx_id: u64::from_le_bytes(bytes[56..64].try_into().unwrap()), // unwrap
+            q_min,
+            q_max,
+            node_count,
+            entry_point,
+            nodes_offset,
+            connections_offset,
+            last_tx_id,
         })
     }
 
@@ -91,11 +102,14 @@ impl NodeRecord {
     pub const SIZE: usize = 8 + 1 + 8 + 8; // 25 bytes
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
+        let doc_id = u64::from_le_bytes(bytes[0..8].try_into().unwrap()); // unwrap
+        let vector_offset = u64::from_le_bytes(bytes[9..17].try_into().unwrap()); // unwrap
+        let connections_offset = u64::from_le_bytes(bytes[17..25].try_into().unwrap()); // unwrap
         Self {
-            doc_id: u64::from_le_bytes(bytes[0..8].try_into().unwrap()), // unwrap
+            doc_id,
             max_layer: bytes[8],
-            vector_offset: u64::from_le_bytes(bytes[9..17].try_into().unwrap()), // unwrap
-            connections_offset: u64::from_le_bytes(bytes[17..25].try_into().unwrap()), // unwrap
+            vector_offset,
+            connections_offset,
         }
     }
 
@@ -159,14 +173,13 @@ impl MmapIndex {
 
         let mut current_pos = offset + 1;
         for _ in 0..layer {
-            let len =
-                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap
+            let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap
                     as usize;
             current_pos += 4 + len * 4;
         }
 
-        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap
-            as usize;
+        let len_bytes_final = self.mmap[current_pos..current_pos + 4].try_into().unwrap(); // unwrap
+        let len = u32::from_le_bytes(len_bytes_final) as usize;
         let start = current_pos + 4;
         let end = start + len * 4;
 

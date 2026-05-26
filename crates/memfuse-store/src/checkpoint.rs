@@ -90,6 +90,7 @@ mod tests {
         let tx3 = TxId::new(3);
         storage.put(tx3, b"key3", b"val3").await.unwrap(); // expect #[cfg(test)]
         storage.commit(tx3).await.unwrap(); // expect #[cfg(test)]
-        assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec())); // expect #[cfg(test)]
+        let val3 = storage.get(b"key3").await.unwrap(); // expect #[cfg(test)]
+        assert_eq!(val3, Some(b"val3".to_vec()));
     }
 }
