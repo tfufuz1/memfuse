@@ -15,6 +15,7 @@
 //! - **Async I/O**: All disk operations use `tokio::fs` or `memmap2` with `spawn_blocking`.
 //! - **Zero Panic**: Production code paths avoid `unwrap()` and `expect()`, favoring explicit error handling.
 
+use crate::mmap::MmapReader;
 use bytes::{BufMut, Bytes, BytesMut};
 use lru::LruCache;
 use memfuse_core::{MemFuseError, Result};
@@ -25,7 +26,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
-use crate::mmap::MmapReader;
 
 /// Cache for SSTable blocks. Key is (file_id, block_offset).
 pub type BlockCache = RwLock<LruCache<(u64, u64), Bytes>>;
@@ -373,7 +373,8 @@ impl SstableReader {
                 index_offset
             };
 
-            let block_data = Self::read_block_at(mmap.as_slice(), offset, next_offset, &key_manager)?;
+            let block_data =
+                Self::read_block_at(mmap.as_slice(), offset, next_offset, &key_manager)?;
             if block_data.len() < 2 {
                 return Err(MemFuseError::Storage("corrupted SSTable block".into()));
             }

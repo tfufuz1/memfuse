@@ -517,8 +517,7 @@ impl Wal {
             .await
             .map_err(|e| MemFuseError::Storage(format!("WAL seek failed: {}", e)))?;
 
-        self.size
-            .store(size, std::sync::atomic::Ordering::SeqCst);
+        self.size.store(size, std::sync::atomic::Ordering::SeqCst);
         let mut hmac_guard = self.last_hmac.lock().await;
         *hmac_guard = last_hmac;
 
