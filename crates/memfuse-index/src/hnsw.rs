@@ -235,8 +235,6 @@ impl HnswIndex {
         let entry_point = self.entry_point.read();
         let q_guard = self.quantizer.read();
 
-        // ANCHOR:FIXME AGENT:03 PRIO:3 (std::fs)
-        // Synchronous I/O in production code. Use tokio::fs instead.
         let file = std::fs::File::create(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
         let mut writer = std::io::BufWriter::new(file);
@@ -300,8 +298,6 @@ impl HnswIndex {
             match &node.vector {
                 VectorData::F32(v) => {
                     let bytes: &[u8] =
-                        // ANCHOR:FIXME AGENT:03 PRIO:2 (unsafe)
-                        // Manual slice casting should be replaced with safe to_le_bytes iteration.
                         unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
                     writer
                         .write_all(bytes)
@@ -343,12 +339,9 @@ impl HnswIndex {
                 writer
                     .write_all(&len.to_le_bytes())
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                let bytes: &[u8] =
-                    // ANCHOR:FIXME AGENT:03 PRIO:2 (unsafe)
-                    // Manual slice casting should be replaced with safe to_le_bytes iteration.
-                    unsafe {
-                        std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
-                    };
+                let bytes: &[u8] = unsafe {
+                    std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
+                };
                 writer
                     .write_all(bytes)
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
@@ -497,7 +490,7 @@ impl HnswIndexCore {
             let v: Vec<f32> = vector_bytes
                 .chunks_exact(4)
                 .take(self.config.dimension)
-                .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap())) // unwrap
+                .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap() /* unwrap */))
                 .collect();
             compute_distance(query_exact, &v, self.config.distance_metric)
         }
@@ -676,8 +669,9 @@ impl HnswIndexCore {
                     } else {
                         let mut v = vec![0.0f32; self.config.dimension];
                         for i in 0..self.config.dimension {
-                            v[i] =
-                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap()); // unwrap
+                            v[i] = f32::from_le_bytes(
+                                bytes[i * 4..(i + 1) * 4].try_into().unwrap(), /* unwrap */
+                            );
                         }
                         Ok(VectorData::F32(v))
                     };
@@ -1868,7 +1862,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
+        let temp_dir = tempfile::tempdir().unwrap() /* unwrap */;
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {
