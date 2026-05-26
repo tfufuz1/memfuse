@@ -12,7 +12,7 @@
 
 #![forbid(unsafe_code)]
 
-use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
+use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig, MetadataFilter};
 use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;
 use pythonize::{depythonize, pythonize};
@@ -57,6 +57,12 @@ fn get_runtime() -> PyResult<&'static Runtime> {
 fn dict_to_json(d: &pyo3::Bound<'_, pyo3::types::PyDict>) -> PyResult<serde_json::Value> {
     depythonize(d)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Metadata error: {}", e)))
+}
+
+/// Converts a Python dict to a MetadataFilter.
+fn dict_to_filter(d: &pyo3::Bound<'_, pyo3::types::PyDict>) -> PyResult<MetadataFilter> {
+    depythonize(d)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Filter error: {}", e)))
 }
 
 /// Converts an optional Python dict to an optional serde_json::Value.
@@ -311,6 +317,26 @@ macro_rules! memfuse_crud_methods {
                 })?;
                 let results = py
                     .allow_threads(|| rt.block_on(self.inner.search(v, k)))
+                    .map_err(memfuse_err)?;
+                results_to_py(py, results)
+            }
+
+            /// Performs semantic search with an advanced metadata filter.
+            #[pyo3(signature = (vector, k, filter))]
+            pub fn search_with_filter<'py>(
+                &self,
+                py: Python<'py>,
+                vector: PyReadonlyArray1<'py, f32>,
+                k: usize,
+                filter: pyo3::Bound<'py, pyo3::types::PyDict>,
+            ) -> PyResult<Vec<PySearchResult>> {
+                let rt = get_runtime()?;
+                let v = vector.as_slice().map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
+                })?;
+                let f = dict_to_filter(&filter)?;
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.search_with_filter(v, k, Some(f))))
                     .map_err(memfuse_err)?;
                 results_to_py(py, results)
             }

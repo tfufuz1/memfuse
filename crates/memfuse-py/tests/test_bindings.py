@@ -206,7 +206,7 @@ def test_distance_metrics(db_path):
         memfuse.open(db_path + "_invalid", dimension=4, distance_metric="invalid")
 
 def test_version_and_repr(db_path):
-    assert memfuse.__version__ == "0.1.0"
+    assert memfuse.__version__ == "0.2.0"
 
     db = memfuse.open(db_path, dimension=4, max_elements=5000)
     col = db.collection("repr_test")
@@ -227,3 +227,35 @@ def test_version_and_repr(db_path):
 
     db_stats = db.stats()
     assert "DbStats(vectors=0" in repr(db_stats) # default col is empty
+
+def test_search_with_filter(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("filter_test")
+    v1 = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    v2 = np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float32)
+
+    col.insert("doc1", v1, metadata={"category": "A", "price": 10})
+    col.insert("doc2", v2, metadata={"category": "B", "price": 20})
+
+    # Filter matching doc1
+    filter_a = {"Condition": {"field": "category", "op": "Eq", "value": "A"}}
+    results = col.search_with_filter(v1, k=10, filter=filter_a)
+    assert len(results) == 1
+    assert results[0].id == "doc1"
+
+    # Filter matching doc2 by price
+    filter_price = {"Condition": {"field": "price", "op": "Gt", "value": 15}}
+    results = col.search_with_filter(v1, k=10, filter=filter_price)
+    assert len(results) == 1
+    assert results[0].id == "doc2"
+
+    # Logical AND
+    filter_and = {
+        "And": [
+            {"Condition": {"field": "category", "op": "Eq", "value": "B"}},
+            {"Condition": {"field": "price", "op": "Gte", "value": 20}}
+        ]
+    }
+    results = col.search_with_filter(v1, k=10, filter=filter_and)
+    assert len(results) == 1
+    assert results[0].id == "doc2"
