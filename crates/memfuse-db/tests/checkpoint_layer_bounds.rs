@@ -6,6 +6,8 @@ use tempfile::TempDir;
 
 // AGENT:12 DATE:2026-05-09 STATUS:DONE
 // ZIEL: memfuse-checkpoint -> memfuse-db (Fork + Diverge + Merge)
+// ANCHOR:FIXME AGENT:04 PRIO:2 (flaky)
+// The 'Invalid SSTable magic number' regression in memfuse-db integration tests.
 //
 // Dieser Test verifiziert die Zusammenarbeit zwischen dem CheckpointManager
 // und der MemFuse-DB Facade. Er simuliert einen "Fork", indem er eine neue

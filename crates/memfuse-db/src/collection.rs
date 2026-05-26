@@ -155,6 +155,8 @@ impl Collection {
                 Err(_) => continue, // Skip invalid entries
             };
 
+            // ANCHOR:FIXME AGENT:04 PRIO:1 (build-blocker)
+            // DocId::from_string does not exist in memfuse-core.
             let doc_id = DocId::from_string(&stored.id);
 
             // Check if present in index

@@ -235,6 +235,8 @@ impl HnswIndex {
         let entry_point = self.entry_point.read();
         let q_guard = self.quantizer.read();
 
+        // ANCHOR:FIXME AGENT:03 PRIO:3 (std::fs)
+        // Synchronous I/O in production code. Use tokio::fs instead.
         let file = std::fs::File::create(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
         let mut writer = std::io::BufWriter::new(file);
@@ -298,6 +300,8 @@ impl HnswIndex {
             match &node.vector {
                 VectorData::F32(v) => {
                     let bytes: &[u8] =
+                        // ANCHOR:FIXME AGENT:03 PRIO:2 (unsafe)
+                        // Manual slice casting should be replaced with safe to_le_bytes iteration.
                         unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
                     writer
                         .write_all(bytes)
@@ -339,9 +343,12 @@ impl HnswIndex {
                 writer
                     .write_all(&len.to_le_bytes())
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                let bytes: &[u8] = unsafe {
-                    std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
-                };
+                let bytes: &[u8] =
+                    // ANCHOR:FIXME AGENT:03 PRIO:2 (unsafe)
+                    // Manual slice casting should be replaced with safe to_le_bytes iteration.
+                    unsafe {
+                        std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
+                    };
                 writer
                     .write_all(bytes)
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;

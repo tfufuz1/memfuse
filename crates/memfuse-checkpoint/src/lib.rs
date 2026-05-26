@@ -3,6 +3,9 @@
 //! Enables deterministic freezing and restarting of agent workflows.
 //! Implements a SnapshotRegistry abstracting over Multi-Version Concurrency Control (MVCC).
 
+// ANCHOR:INTEGRATION AGENT:12 PRIO:3
+// Missing external tests/ directory for memfuse-checkpoint.
+
 #![forbid(unsafe_code)]
 
 use memfuse_core::{Result, StorageEngine, TxId, WorkflowState};

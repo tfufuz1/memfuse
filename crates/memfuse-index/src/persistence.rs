@@ -118,8 +118,12 @@ pub struct MmapIndex {
 
 impl MmapIndex {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        // ANCHOR:FIXME AGENT:03 PRIO:3 (std::fs)
+        // Synchronous I/O in production code. Use tokio::fs instead.
         let file = std::fs::File::open(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
+        // ANCHOR:FIXME AGENT:03 PRIO:2 (unsafe)
+        // Manual mmap outside distance.rs should be moved to a centralized wrapper.
         let mmap = unsafe { memmap2::Mmap::map(&file) }
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
