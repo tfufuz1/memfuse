@@ -37,25 +37,69 @@ impl HnswHeader {
             return Err(MemFuseError::Storage("Header too small".into()));
         }
 
-        let magic = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        let magic = u32::from_le_bytes(
+            bytes[0..4]
+                .try_into()
+                .map_err(|e| MemFuseError::Storage(format!("Header magic error: {}", e)))?,
+        );
         if magic != HNSW_MAGIC {
             return Err(MemFuseError::Storage("Invalid HNSW magic".into()));
         }
 
         Ok(Self {
             magic,
-            version: u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
-            dimension: u32::from_le_bytes(bytes[6..10].try_into().unwrap()),
-            m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()),
+            version: u16::from_le_bytes(
+                bytes[4..6]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Header version error: {}", e)))?,
+            ),
+            dimension: u32::from_le_bytes(
+                bytes[6..10]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Header dimension error: {}", e)))?,
+            ),
+            m: u32::from_le_bytes(
+                bytes[10..14]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Header M error: {}", e)))?,
+            ),
             metric: bytes[14],
             quantized: bytes[15],
-            q_min: f32::from_le_bytes(bytes[16..20].try_into().unwrap()),
-            q_max: f32::from_le_bytes(bytes[20..24].try_into().unwrap()),
-            node_count: u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-            entry_point: i64::from_le_bytes(bytes[32..40].try_into().unwrap()),
-            nodes_offset: u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
-            last_tx_id: u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
+            q_min: f32::from_le_bytes(
+                bytes[16..20]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Header QMin error: {}", e)))?,
+            ),
+            q_max: f32::from_le_bytes(
+                bytes[20..24]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Header QMax error: {}", e)))?,
+            ),
+            node_count: u64::from_le_bytes(
+                bytes[24..32]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Header nodes error: {}", e)))?,
+            ),
+            entry_point: i64::from_le_bytes(
+                bytes[32..40]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Header EP error: {}", e)))?,
+            ),
+            nodes_offset: u64::from_le_bytes(
+                bytes[40..48]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Header nodes off error: {}", e)))?,
+            ),
+            connections_offset: u64::from_le_bytes(
+                bytes[48..56]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Header conn off error: {}", e)))?,
+            ),
+            last_tx_id: u64::from_le_bytes(
+                bytes[56..64]
+                    .try_into()
+                    .map_err(|e| MemFuseError::Storage(format!("Header TX error: {}", e)))?,
+            ),
         })
     }
 
@@ -92,10 +136,14 @@ impl NodeRecord {
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         Self {
-            doc_id: u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            doc_id: u64::from_le_bytes(bytes[0..8].try_into().expect("Record doc_id error")),
             max_layer: bytes[8],
-            vector_offset: u64::from_le_bytes(bytes[9..17].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[17..25].try_into().unwrap()),
+            vector_offset: u64::from_le_bytes(
+                bytes[9..17].try_into().expect("Record vector error"),
+            ),
+            connections_offset: u64::from_le_bytes(
+                bytes[17..25].try_into().expect("Record conn error"),
+            ),
         }
     }
 
@@ -159,21 +207,27 @@ impl MmapIndex {
 
         let mut current_pos = offset + 1;
         for _ in 0..layer {
-            let len =
-                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap())
-                    as usize;
+            let len = u32::from_le_bytes(
+                self.mmap[current_pos..current_pos + 4]
+                    .try_into()
+                    .expect("Mmap layer len error"),
+            ) as usize;
             current_pos += 4 + len * 4;
         }
 
-        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap())
-            as usize;
+        let len = u32::from_le_bytes(
+            self.mmap[current_pos..current_pos + 4]
+                .try_into()
+                .expect("Mmap conn len error"),
+        ) as usize;
         let start = current_pos + 4;
         let end = start + len * 4;
 
         let raw = &self.mmap[start..end];
         let mut connections = Vec::with_capacity(len);
         for i in 0..len {
-            let val = u32::from_le_bytes(raw[i * 4..(i + 1) * 4].try_into().unwrap());
+            let val =
+                u32::from_le_bytes(raw[i * 4..(i + 1) * 4].try_into().expect("Mmap val error"));
             connections.push(val);
         }
 

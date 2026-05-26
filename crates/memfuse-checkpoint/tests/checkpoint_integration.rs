@@ -2,7 +2,7 @@
 // ANCHOR:INTEGRATION:CHECKPOINT-001 STATUS:READY AGENT:12
 
 use memfuse_checkpoint::CheckpointManager;
-use memfuse_store::{LsmStorage, LsmConfig};
+use memfuse_store::{LsmConfig, LsmStorage};
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -14,7 +14,11 @@ async fn test_checkpoint_manager_with_real_storage() {
         ..Default::default()
     };
 
-    let storage = Arc::new(LsmStorage::new(config.clone()).await.expect("Failed to open storage"));
+    let storage = Arc::new(
+        LsmStorage::new(config.clone())
+            .await
+            .expect("Failed to open storage"),
+    );
     let manager = CheckpointManager::new(storage.clone());
 
     // 1. Create a checkpoint
@@ -28,7 +32,10 @@ async fn test_checkpoint_manager_with_real_storage() {
 
     // 2. Verify persistence (reload manager)
     let manager2 = CheckpointManager::new(storage.clone());
-    let list = manager2.list_checkpoints().await.expect("Failed to list checkpoints");
+    let list = manager2
+        .list_checkpoints()
+        .await
+        .expect("Failed to list checkpoints");
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].name, "cp1");
     assert_eq!(list[0].seq_no, 10);
@@ -36,20 +43,37 @@ async fn test_checkpoint_manager_with_real_storage() {
     // 3. Verify pinning by creating a new manager with a new storage instance on same path
     // IMPORTANT: CheckpointManager uses a separate persistent_checkpoints cache.
     // It only reloads from storage if the cache is empty.
-    let storage3 = Arc::new(LsmStorage::new(config.clone()).await.expect("Failed to reopen storage"));
+    let storage3 = Arc::new(
+        LsmStorage::new(config.clone())
+            .await
+            .expect("Failed to reopen storage"),
+    );
     let manager3 = CheckpointManager::new(storage3.clone());
 
     // list_checkpoints should trigger a reload if cache is empty
-    let list_reloaded = manager3.list_checkpoints().await.expect("Failed to list reloaded checkpoints");
+    let list_reloaded = manager3
+        .list_checkpoints()
+        .await
+        .expect("Failed to list reloaded checkpoints");
     assert_eq!(list_reloaded.len(), 1);
     assert_eq!(list_reloaded[0].name, "cp1");
 
-    let cp = manager3.get_checkpoint("cp1").await.expect("Failed to get checkpoint").expect("Checkpoint missing");
+    let cp = manager3
+        .get_checkpoint("cp1")
+        .await
+        .expect("Failed to get checkpoint")
+        .expect("Checkpoint missing");
     assert_eq!(cp.seq_no, 10);
 
     // 4. Drop checkpoint and verify unpinned
-    manager3.drop_checkpoint("cp1").await.expect("Failed to drop checkpoint");
-    let list_after = manager3.list_checkpoints().await.expect("Failed to list checkpoints after drop");
+    manager3
+        .drop_checkpoint("cp1")
+        .await
+        .expect("Failed to drop checkpoint");
+    let list_after = manager3
+        .list_checkpoints()
+        .await
+        .expect("Failed to list checkpoints after drop");
     assert!(list_after.is_empty());
 }
 
@@ -61,7 +85,11 @@ async fn test_checkpoint_concurrency() {
         ..Default::default()
     };
 
-    let storage = Arc::new(LsmStorage::new(config).await.expect("Failed to open storage"));
+    let storage = Arc::new(
+        LsmStorage::new(config)
+            .await
+            .expect("Failed to open storage"),
+    );
     let manager = Arc::new(CheckpointManager::new(storage.clone()));
 
     let mut handles = vec![];
