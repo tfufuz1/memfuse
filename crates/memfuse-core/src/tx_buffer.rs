@@ -1,4 +1,3 @@
-// ANCHOR:DEBT:TXBUF-003 AGENT:01 STATUS:DONE PRIO:3
 //! Transactional buffer for staging index operations.
 //!
 //! Sharded into sub-buffers to reduce lock contention.
