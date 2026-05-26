@@ -37,6 +37,11 @@ impl DocId {
         Self::try_from_key(key)
     }
 
+    /// Compatibility alias for `from_key`.
+    pub fn from_string(key: &str) -> Self {
+        Self::try_from_key(key).expect("Failed to derive DocId from string")
+    }
+
     pub fn try_from_key(key: &str) -> Result<Self> {
         let hash = blake3::hash(key.as_bytes());
         let bytes = hash

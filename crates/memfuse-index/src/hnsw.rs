@@ -601,9 +601,10 @@ impl HnswIndexCore {
             mmap_node_count,
         };
 
-        let mut visited = AHashSet::new();
-        let mut candidates = BinaryHeap::new();
-        let mut results = BinaryHeap::new();
+        // ANCHOR:PERF:ALLOC-003 STATUS:DONE
+        let mut visited = AHashSet::with_capacity(ef);
+        let mut candidates = BinaryHeap::with_capacity(ef);
+        let mut results = BinaryHeap::with_capacity(ef);
 
         for &ep in entry_points {
             if visited.insert(ep) {
