@@ -11,11 +11,10 @@ memfuse-core = { workspace = true }
 itoa = { workspace = true }
 # ANCHOR:ARCH:DAG-001 — Architektur-Layer durchbrochen
 # WP:NONE PRIO:1 NEEDS:NONE
-# AGENT:05 DATE:2026-05-16 STATUS:FIXME
+# AGENT:05 DATE:2026-05-16 STATUS:DONE
 # CREATED:2026-05-09 DEADLINE:NONE
-# VERLETZUNG: memfuse-text importiert memfuse-store gegen die DAG-Invariante
-# IMPACT: Verstößt gegen Layer-Architektur, verhindert saubere Kompilierung
-# SOFORTIGE AKTION: Abhängigkeit extrahieren nach memfuse-core oder neuen Crate
+# VERIFIZIERUNG: memfuse-store wurde nach [dev-dependencies] verschoben.
+# Kein Verstoß in Produktions-Builds mehr vorhanden.
 unicode-segmentation = "1.11.0"
 async-trait.workspace = true
 bincode = { workspace = true }

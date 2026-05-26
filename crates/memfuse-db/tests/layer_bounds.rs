@@ -35,6 +35,7 @@ async fn test_layer_002_collection_persistence() {
 
         let list = db.list_collections().await.expect("list");
         assert!(list.contains(&"persistent-col".to_string()));
+        db.close().await.expect("close");
     }
 
     // 2. Close and re-open (simulate restart)
@@ -64,7 +65,6 @@ async fn test_layer_002_collection_persistence() {
 // CREATED:2026-05-09 DEADLINE:NONE
 // ZIEL: memfuse-db -> memfuse-text (BM25-Query nach Ingest)
 #[tokio::test]
-#[ignore]
 async fn test_layer_003_hybrid_bm25_search() {
     let tmp = TempDir::new().expect("temp dir");
     let config = MemFuseConfig {

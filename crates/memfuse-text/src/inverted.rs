@@ -48,6 +48,12 @@ impl InvertedIndex {
         }
     }
 
+    /// Overrides the default tokenizer.
+    pub fn with_tokenizer(mut self, tokenizer: Arc<dyn Tokenizer>) -> Self {
+        self.tokenizer = tokenizer;
+        self
+    }
+
     fn key(&self, suffix: &str) -> Vec<u8> {
         let mut k = Vec::with_capacity(self.prefix.len() + suffix.len());
         k.extend_from_slice(&self.prefix);
@@ -467,8 +473,9 @@ impl BM25MorphIndex {
         namespace: &str,
         tokenizer: Arc<dyn MorphologicalTokenizer>,
     ) -> Self {
+        let morph_tokenizer = Arc::new(crate::tokenizer::MorphTokenizer::new(tokenizer.clone()));
         Self {
-            inner: InvertedIndex::new(storage, namespace),
+            inner: InvertedIndex::new(storage, namespace).with_tokenizer(morph_tokenizer),
             tokenizer,
         }
     }
@@ -773,6 +780,43 @@ mod tests {
 
         let stats_after = index.stats().await?;
         assert_eq!(stats_after.num_documents, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_bm25_morph_index_propagation() -> Result<()> {
+        struct CustomSplitter;
+        impl MorphologicalTokenizer for CustomSplitter {
+            fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
+                if token == "magicword" {
+                    vec!["magic", "word"]
+                } else {
+                    vec![token]
+                }
+            }
+            fn language(&self) -> &str {
+                "custom"
+            }
+        }
+
+        let storage = Arc::new(MockStorage::new());
+        let splitter = Arc::new(CustomSplitter);
+        let index = BM25MorphIndex::new(storage.clone(), "propagation-test", splitter);
+
+        let tx = TxId::new(1);
+        let doc_id = DocId::new(1);
+        index.insert(tx, doc_id, "This is a magicword.").await?;
+        index.commit(tx).await?;
+
+        // If propagation works, searching for "magic" should find the document
+        let results = index.search("magic", 10).await?;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].doc_id, doc_id);
+
+        // Searching for "word" should also find it
+        let results = index.search("word", 10).await?;
+        assert_eq!(results.len(), 1);
 
         Ok(())
     }
