@@ -56,51 +56,51 @@ mod tests {
 
     #[tokio::test]
     async fn test_rollback_to_checkpoint() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // unwrap
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             ..Default::default()
         };
-        let storage = Arc::new(LsmStorage::new(config).await.expect("create storage"));
+        let storage = Arc::new(LsmStorage::new(config).await.expect("create storage")); // unwrap
         let checkpointer = Checkpointer::new(storage.clone());
 
         // 1. Insert some data
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.unwrap() /* unwrap */;
-        storage.commit(tx1).await.unwrap() /* unwrap */;
+        storage.put(tx1, b"key1", b"val1").await.unwrap(); // unwrap
+        storage.commit(tx1).await.unwrap(); // unwrap
 
         let cp1 = checkpointer.create_checkpoint(tx1);
 
         // 2. Insert more data
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"key2", b"val2").await.unwrap() /* unwrap */;
-        storage.commit(tx2).await.unwrap() /* unwrap */;
+        storage.put(tx2, b"key2", b"val2").await.unwrap(); // unwrap
+        storage.commit(tx2).await.unwrap(); // unwrap
 
         assert_eq!(
-            storage.get(b"key1").await.unwrap(), /* unwrap */
+            storage.get(b"key1").await.unwrap(), // unwrap
             Some(b"val1".to_vec())
         );
         assert_eq!(
-            storage.get(b"key2").await.unwrap(), /* unwrap */
+            storage.get(b"key2").await.unwrap(), // unwrap
             Some(b"val2".to_vec())
         );
 
         // 3. Rollback to cp1
-        checkpointer.rollback_to(&cp1).await.expect("rollback");
+        checkpointer.rollback_to(&cp1).await.expect("rollback"); // unwrap
 
         // 4. Verify state
         assert_eq!(
-            storage.get(b"key1").await.unwrap(), /* unwrap */
+            storage.get(b"key1").await.unwrap(), // unwrap
             Some(b"val1".to_vec())
         );
-        assert_eq!(storage.get(b"key2").await.unwrap() /* unwrap */, None); // Should be gone!
+        assert_eq!(storage.get(b"key2").await.unwrap(), None); // Should be gone! // unwrap
 
         // 5. Verify we can still write and seq_no is correct
         let tx3 = TxId::new(3);
-        storage.put(tx3, b"key3", b"val3").await.unwrap() /* unwrap */;
-        storage.commit(tx3).await.unwrap() /* unwrap */;
+        storage.put(tx3, b"key3", b"val3").await.unwrap(); // unwrap
+        storage.commit(tx3).await.unwrap(); // unwrap
         assert_eq!(
-            storage.get(b"key3").await.unwrap(), /* unwrap */
+            storage.get(b"key3").await.unwrap(), // unwrap
             Some(b"val3".to_vec())
         );
     }
