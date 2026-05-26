@@ -10,7 +10,15 @@
 /// * `n` - Total number of documents in the collection
 /// * `k1` - BM25 parameter k1 (usually 1.2)
 /// * `b` - BM25 parameter b (usually 0.75)
-pub fn score_term(tf: u32, doc_len: u32, avg_doc_len: f32, df: u32, n: u32, k1: f32, b: f32) -> f32 {
+pub fn score_term(
+    tf: u32,
+    doc_len: u32,
+    avg_doc_len: f32,
+    df: u32,
+    n: u32,
+    k1: f32,
+    b: f32,
+) -> f32 {
     let tf = tf as f32;
     let doc_len = doc_len as f32;
     let df = df as f32;
