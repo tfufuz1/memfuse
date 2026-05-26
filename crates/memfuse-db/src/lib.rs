@@ -205,7 +205,10 @@ impl MemFuse {
             // 2. Mark each pending intent as "repaired" to prevent re-processing.
             //    The actual data reconciliation happens in step 3 via Collection::repair().
             for intent_key in &pending_intents {
-                let tx = TxId::new(self.next_tx.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+                let tx = TxId::new(
+                    self.next_tx
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                );
                 if let Err(e) = self.storage.put(tx, intent_key, b"repaired").await {
                     tracing::error!("repair_on_open: failed to mark intent as repaired: {}", e);
                     continue;
