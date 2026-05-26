@@ -244,12 +244,7 @@ mod tests {
         let manager = CheckpointManager::new(storage.clone());
 
         let meta = manager
-            .create_checkpoint(
-                "test_cp",
-                "coll_1",
-                100,
-                serde_json::json!({"state": "ok"}),
-            )
+            .create_checkpoint("test_cp", "coll_1", 100, serde_json::json!({"state": "ok"}))
             .await
             .unwrap(); // unwrap allowed
 

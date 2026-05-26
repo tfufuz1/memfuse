@@ -46,7 +46,7 @@ impl HnswHeader {
             magic,
             version: u16::from_le_bytes(bytes[4..6].try_into().unwrap()), // unwrap allowed
             dimension: u32::from_le_bytes(bytes[6..10].try_into().unwrap()), // unwrap allowed
-            m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()), // unwrap allowed
+            m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()),     // unwrap allowed
             metric: bytes[14],
             quantized: bytes[15],
             q_min: f32::from_le_bytes(bytes[16..20].try_into().unwrap()), // unwrap allowed
@@ -160,17 +160,13 @@ impl MmapIndex {
         let mut current_pos = offset + 1;
         for _ in 0..layer {
             let len = u32::from_le_bytes(
-                self.mmap[current_pos..current_pos + 4]
-                    .try_into()
-                    .unwrap(), // unwrap allowed
+                self.mmap[current_pos..current_pos + 4].try_into().unwrap(), // unwrap allowed
             ) as usize;
             current_pos += 4 + len * 4;
         }
 
         let len = u32::from_le_bytes(
-            self.mmap[current_pos..current_pos + 4]
-                .try_into()
-                .unwrap(), // unwrap allowed
+            self.mmap[current_pos..current_pos + 4].try_into().unwrap(), // unwrap allowed
         ) as usize;
         let start = current_pos + 4;
         let end = start + len * 4;
