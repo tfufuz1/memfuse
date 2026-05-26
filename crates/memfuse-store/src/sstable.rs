@@ -977,9 +977,9 @@ mod tests {
         let num_offsets = u16::from_le_bytes(
             block
                 .get(n.saturating_sub(2)..n)
-                .expect("test") // expect #[cfg(test)]
+                .expect("test") // unwrap
                 .try_into()
-                .expect("test"), // expect #[cfg(test)]
+                .expect("test"), // unwrap
         );
         assert_eq!(num_offsets, 2);
 
@@ -987,9 +987,9 @@ mod tests {
         let bloom = u64::from_le_bytes(
             block
                 .get(bloom_pos..bloom_pos + 8)
-                .expect("test") // expect #[cfg(test)]
+                .expect("test") // unwrap
                 .try_into()
-                .expect("correct length"), // expect #[cfg(test)]
+                .expect("correct length"), // unwrap
         );
         assert!(bloom > 0);
 
@@ -1019,52 +1019,52 @@ mod tests {
 
     #[tokio::test]
     async fn test_sstable_bloom_integration() {
-        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
+        let tmp = TempDir::new().expect("temp dir"); // unwrap
         let path = tmp.path().join("test.sst");
         let bc = create_block_cache(1);
 
-        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect #[cfg(test)]
-        builder.add(b"key1", b"val1", 1).await.expect("add key1"); // expect #[cfg(test)]
-        builder.add(b"key2", b"val2", 2).await.expect("add key2"); // expect #[cfg(test)]
-        builder.finish().await.expect("finish builder"); // expect #[cfg(test)]
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // unwrap
+        builder.add(b"key1", b"val1", 1).await.expect("add key1"); // unwrap
+        builder.add(b"key2", b"val2", 2).await.expect("add key2"); // unwrap
+        builder.finish().await.expect("finish builder"); // unwrap
 
-        let reader = SstableReader::open(&path, bc).await.expect("open reader"); // expect #[cfg(test)]
+        let reader = SstableReader::open(&path, bc).await.expect("open reader"); // unwrap
 
         // Positive lookup
-        let res = reader.get(b"key1").await.expect("get key1"); // expect #[cfg(test)]
-        assert_eq!(res.expect("exists").0.as_ref(), b"val1"); // expect #[cfg(test)]
+        let res = reader.get(b"key1").await.expect("get key1"); // unwrap
+        assert_eq!(res.expect("exists").0.as_ref(), b"val1"); // unwrap
 
         // Negative lookup (should be caught by bloom or range check)
-        let res = reader.get(b"nonexistent").await.expect("get nonexistent"); // expect #[cfg(test)]
+        let res = reader.get(b"nonexistent").await.expect("get nonexistent"); // unwrap
         assert!(res.is_none());
     }
 
     #[tokio::test]
     async fn test_mmap_read_correct_values() {
-        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
+        let tmp = TempDir::new().expect("temp dir"); // unwrap
         let path = tmp.path().join("mmap_test.sst");
         let bc = create_block_cache(1);
 
-        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect #[cfg(test)]
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // unwrap
         for i in 0..100 {
             let key = format!("key-{:03}", i);
             let val = format!("val-{:03}", i);
             builder
                 .add(key.as_bytes(), val.as_bytes(), i as u64)
                 .await
-                .expect("add"); // expect #[cfg(test)]
+                .expect("add"); // unwrap
         }
-        builder.finish().await.expect("finish"); // expect #[cfg(test)]
+        builder.finish().await.expect("finish"); // unwrap
 
-        let reader = SstableReader::open(&path, bc).await.expect("open"); // expect #[cfg(test)]
+        let reader = SstableReader::open(&path, bc).await.expect("open"); // unwrap
         for i in 0..100 {
             let key = format!("key-{:03}", i);
             let expected = format!("val-{:03}", i);
             let res = reader
                 .get(key.as_bytes())
                 .await
-                .expect("get") // expect #[cfg(test)]
-                .expect("exists"); // expect #[cfg(test)]
+                .expect("get") // unwrap
+                .expect("exists"); // unwrap
             assert_eq!(res.0.as_ref(), expected.as_bytes());
             assert_eq!(res.1, i as u64);
         }
@@ -1073,22 +1073,22 @@ mod tests {
     #[tokio::test]
     async fn test_mmap_concurrent_readers() {
         use std::sync::Arc;
-        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
+        let tmp = TempDir::new().expect("temp dir"); // unwrap
         let path = tmp.path().join("mmap_concurrent.sst");
         let bc = create_block_cache(1);
 
-        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect #[cfg(test)]
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // unwrap
         for i in 0..100 {
             let key = format!("key-{:03}", i);
             let val = format!("val-{:03}", i);
             builder
                 .add(key.as_bytes(), val.as_bytes(), i as u64)
                 .await
-                .expect("add"); // expect #[cfg(test)]
+                .expect("add"); // unwrap
         }
-        builder.finish().await.expect("finish"); // expect #[cfg(test)]
+        builder.finish().await.expect("finish"); // unwrap
 
-        let reader = Arc::new(SstableReader::open(&path, bc).await.expect("open")); // expect #[cfg(test)]
+        let reader = Arc::new(SstableReader::open(&path, bc).await.expect("open")); // unwrap
         let mut handles = Vec::new();
 
         for _ in 0..16 {
@@ -1097,66 +1097,66 @@ mod tests {
                 for i in 0..100 {
                     let key = format!("key-{:03}", i);
                     let expected = format!("val-{:03}", i);
-                    let res = r.get(key.as_bytes()).await.expect("get").expect("exists"); // expect #[cfg(test)]
+                    let res = r.get(key.as_bytes()).await.expect("get").expect("exists"); // unwrap
                     assert_eq!(res.0.as_ref(), expected.as_bytes());
                 }
             }));
         }
 
         for h in handles {
-            h.await.expect("task failed"); // expect #[cfg(test)]
+            h.await.expect("task failed"); // unwrap
         }
     }
 
     #[tokio::test]
     async fn test_sstable_scan_prefix() {
-        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
+        let tmp = TempDir::new().expect("temp dir"); // unwrap
         let path = tmp.path().join("scan_prefix.sst");
         let bc = create_block_cache(1);
 
-        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect #[cfg(test)]
-        builder.add(b"apple/1", b"a1", 1).await.expect("add"); // expect #[cfg(test)]
-        builder.add(b"apple/2", b"a2", 2).await.expect("add"); // expect #[cfg(test)]
-        builder.add(b"banana/1", b"b1", 3).await.expect("add"); // expect #[cfg(test)]
-        builder.add(b"cherry/1", b"c1", 4).await.expect("add"); // expect #[cfg(test)]
-        builder.finish().await.expect("finish"); // expect #[cfg(test)]
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // unwrap
+        builder.add(b"apple/1", b"a1", 1).await.expect("add"); // unwrap
+        builder.add(b"apple/2", b"a2", 2).await.expect("add"); // unwrap
+        builder.add(b"banana/1", b"b1", 3).await.expect("add"); // unwrap
+        builder.add(b"cherry/1", b"c1", 4).await.expect("add"); // unwrap
+        builder.finish().await.expect("finish"); // unwrap
 
-        let reader = SstableReader::open(&path, bc).await.expect("open"); // expect #[cfg(test)]
+        let reader = SstableReader::open(&path, bc).await.expect("open"); // unwrap
 
-        let apples = reader.scan_prefix(b"apple/").await.expect("scan"); // expect #[cfg(test)]
+        let apples = reader.scan_prefix(b"apple/").await.expect("scan"); // unwrap
         assert_eq!(apples.len(), 2);
         assert_eq!(apples[0].0.as_ref(), b"apple/1");
         assert_eq!(apples[1].0.as_ref(), b"apple/2");
 
-        let bananas = reader.scan_prefix(b"banana/").await.expect("scan"); // expect #[cfg(test)]
+        let bananas = reader.scan_prefix(b"banana/").await.expect("scan"); // unwrap
         assert_eq!(bananas.len(), 1);
         assert_eq!(bananas[0].0.as_ref(), b"banana/1");
 
-        let non = reader.scan_prefix(b"zebra").await.expect("scan"); // expect #[cfg(test)]
+        let non = reader.scan_prefix(b"zebra").await.expect("scan"); // unwrap
         assert!(non.is_empty());
     }
 
     #[tokio::test]
     async fn test_sstable_scan_range() {
         use std::ops::Bound;
-        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
+        let tmp = TempDir::new().expect("temp dir"); // unwrap
         let path = tmp.path().join("scan_range.sst");
         let bc = create_block_cache(1);
 
-        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect #[cfg(test)]
-        builder.add(b"a", b"1", 1).await.expect("add"); // expect #[cfg(test)]
-        builder.add(b"b", b"2", 2).await.expect("add"); // expect #[cfg(test)]
-        builder.add(b"c", b"3", 3).await.expect("add"); // expect #[cfg(test)]
-        builder.add(b"d", b"4", 4).await.expect("add"); // expect #[cfg(test)]
-        builder.finish().await.expect("finish"); // expect #[cfg(test)]
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // unwrap
+        builder.add(b"a", b"1", 1).await.expect("add"); // unwrap
+        builder.add(b"b", b"2", 2).await.expect("add"); // unwrap
+        builder.add(b"c", b"3", 3).await.expect("add"); // unwrap
+        builder.add(b"d", b"4", 4).await.expect("add"); // unwrap
+        builder.finish().await.expect("finish"); // unwrap
 
-        let reader = SstableReader::open(&path, bc).await.expect("open"); // expect #[cfg(test)]
+        let reader = SstableReader::open(&path, bc).await.expect("open"); // unwrap
 
         // Included Range [b, c]
         let res = reader
             .scan_range(Bound::Included(b"b"), Bound::Included(b"c"))
             .await
-            .expect("scan"); // expect #[cfg(test)]
+            .expect("scan"); // unwrap
         assert_eq!(res.len(), 2);
         assert_eq!(res[0].0.as_ref(), b"b");
         assert_eq!(res[1].0.as_ref(), b"c");
@@ -1165,7 +1165,7 @@ mod tests {
         let res = reader
             .scan_range(Bound::Excluded(b"b"), Bound::Excluded(b"d"))
             .await
-            .expect("scan"); // expect #[cfg(test)]
+            .expect("scan"); // unwrap
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].0.as_ref(), b"c");
 
@@ -1173,7 +1173,7 @@ mod tests {
         let res = reader
             .scan_range(Bound::Unbounded, Bound::Included(b"b"))
             .await
-            .expect("scan"); // expect #[cfg(test)]
+            .expect("scan"); // unwrap
         assert_eq!(res.len(), 2);
         assert_eq!(res[0].0.as_ref(), b"a");
     }

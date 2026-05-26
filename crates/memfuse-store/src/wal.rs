@@ -530,39 +530,39 @@ mod tests {
             b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0",
             [0u8; 32],
         )
-        .expect("try_new"); // expect #[cfg(test)]
+        .expect("try_new"); // unwrap
         let bytes = entry.to_bytes();
 
         assert_eq!(bytes.len(), 105);
-        let payload_len = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice")); // expect #[cfg(test)]
+        let payload_len = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice")); // unwrap
         assert_eq!(payload_len, 101);
     }
 
     #[tokio::test]
     async fn test_wal_append_and_replay_valid() {
-        let dir = tempdir().expect("tempdir"); // expect #[cfg(test)]
+        let dir = tempdir().expect("tempdir"); // unwrap
         let wal_path = dir.path().join("test_wal.log");
 
         {
-            let wal = Wal::open(&wal_path).await.expect("open WAL"); // expect #[cfg(test)]
+            let wal = Wal::open(&wal_path).await.expect("open WAL"); // unwrap
             let op1 = WalOp::Put {
                 tx_id: TxId::new(1),
                 key: b"user:1".to_vec(),
                 value: b"Alice".to_vec(),
             };
-            let entry1 = wal.create_entry(op1, 10).await.expect("valid"); // expect #[cfg(test)]
-            wal.append(&entry1).await.expect("append 1"); // expect #[cfg(test)]
+            let entry1 = wal.create_entry(op1, 10).await.expect("valid"); // unwrap
+            wal.append(&entry1).await.expect("append 1"); // unwrap
 
             let op2 = WalOp::Delete {
                 tx_id: TxId::new(2),
                 key: b"user:1".to_vec(),
             };
-            let entry2 = wal.create_entry(op2, 11).await.expect("valid"); // expect #[cfg(test)]
-            wal.append(&entry2).await.expect("append 2"); // expect #[cfg(test)]
+            let entry2 = wal.create_entry(op2, 11).await.expect("valid"); // unwrap
+            wal.append(&entry2).await.expect("append 2"); // unwrap
         }
 
-        let wal2 = Wal::open(&wal_path).await.expect("reopen WAL"); // expect #[cfg(test)]
-        let entries = wal2.replay().await.expect("replay"); // expect #[cfg(test)]
+        let wal2 = Wal::open(&wal_path).await.expect("reopen WAL"); // unwrap
+        let entries = wal2.replay().await.expect("replay"); // unwrap
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[1].1.prev_hmac, entries[0].1.checksum);
@@ -570,64 +570,64 @@ mod tests {
 
     #[tokio::test]
     async fn test_wal_hash_chain_verification() {
-        let dir = tempdir().expect("tempdir"); // expect #[cfg(test)]
+        let dir = tempdir().expect("tempdir"); // unwrap
         let wal_path = dir.path().join("chain_wal.log");
 
         {
-            let wal = Wal::open(&wal_path).await.expect("open"); // expect #[cfg(test)]
+            let wal = Wal::open(&wal_path).await.expect("open"); // unwrap
             let op1 = WalOp::Put {
                 tx_id: TxId::new(1),
                 key: b"k1".to_vec(),
                 value: b"v1".to_vec(),
             };
-            let entry1 = wal.create_entry(op1, 1).await.expect("entry1"); // expect #[cfg(test)]
-            wal.append(&entry1).await.expect("append1"); // expect #[cfg(test)]
+            let entry1 = wal.create_entry(op1, 1).await.expect("entry1"); // unwrap
+            wal.append(&entry1).await.expect("append1"); // unwrap
 
             let op2 = WalOp::Put {
                 tx_id: TxId::new(2),
                 key: b"k2".to_vec(),
                 value: b"v2".to_vec(),
             };
-            let entry2 = wal.create_entry(op2, 2).await.expect("entry2"); // expect #[cfg(test)]
-            wal.append(&entry2).await.expect("append2"); // expect #[cfg(test)]
+            let entry2 = wal.create_entry(op2, 2).await.expect("entry2"); // unwrap
+            wal.append(&entry2).await.expect("append2"); // unwrap
         }
 
         {
-            let mut data = fs::read(&wal_path).await.expect("read"); // expect #[cfg(test)]
+            let mut data = fs::read(&wal_path).await.expect("read"); // unwrap
             data[12] ^= 0xFF;
-            fs::write(&wal_path, data).await.expect("write"); // expect #[cfg(test)]
+            fs::write(&wal_path, data).await.expect("write"); // unwrap
         }
 
-        let wal2 = Wal::open(&wal_path).await.expect("open"); // expect #[cfg(test)]
-        let entries = wal2.replay().await.expect("replay"); // expect #[cfg(test)]
+        let wal2 = Wal::open(&wal_path).await.expect("open"); // unwrap
+        let entries = wal2.replay().await.expect("replay"); // unwrap
         assert_eq!(entries.len(), 0);
     }
     #[tokio::test]
     async fn test_wal_replay_truncation() {
-        let dir = tempdir().expect("tempdir"); // expect #[cfg(test)]
+        let dir = tempdir().expect("tempdir"); // unwrap
         let wal_path = dir.path().join("trunc_wal.log");
 
         {
-            let wal = Wal::open(&wal_path).await.expect("open"); // expect #[cfg(test)]
+            let wal = Wal::open(&wal_path).await.expect("open"); // unwrap
             for i in 0..5 {
                 let op = WalOp::Put {
                     tx_id: TxId::new(i),
                     key: b"key".to_vec(),
                     value: b"val".to_vec(),
                 };
-                let entry = wal.create_entry(op, i).await.expect("entry"); // expect #[cfg(test)]
-                wal.append(&entry).await.expect("append"); // expect #[cfg(test)]
+                let entry = wal.create_entry(op, i).await.expect("entry"); // unwrap
+                wal.append(&entry).await.expect("append"); // unwrap
             }
         }
 
         // Truncate the file in the middle of the last entry
-        let mut data = fs::read(&wal_path).await.expect("read"); // expect #[cfg(test)]
+        let mut data = fs::read(&wal_path).await.expect("read"); // unwrap
         let new_size = data.len() - 10; // Chop off 10 bytes from the last entry
         data.truncate(new_size);
-        fs::write(&wal_path, data).await.expect("write"); // expect #[cfg(test)]
+        fs::write(&wal_path, data).await.expect("write"); // unwrap
 
-        let wal2 = Wal::open(&wal_path).await.expect("open"); // expect #[cfg(test)]
-        let entries = wal2.replay().await.expect("replay"); // expect #[cfg(test)]
+        let wal2 = Wal::open(&wal_path).await.expect("open"); // unwrap
+        let entries = wal2.replay().await.expect("replay"); // unwrap
 
         // Should have replayed the first 4 entries successfully
         assert_eq!(entries.len(), 4);

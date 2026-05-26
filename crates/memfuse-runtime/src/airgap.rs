@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn test_airgap_verifier() {
         let config = AirGapConfig::strict();
-        let report = AirGapVerifier::verify(&config).expect("valid test value"); // expect #[cfg(test)]
+        let report = AirGapVerifier::verify(&config).expect("valid test value"); // unwrap
         assert!(report.is_compliant());
     }
 }
