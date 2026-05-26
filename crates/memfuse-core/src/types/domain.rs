@@ -77,11 +77,13 @@ impl std::fmt::Display for DocId {
 pub struct EntityId(pub u64);
 
 impl EntityId {
+    /// Creates a new EntityId.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
+    /// Returns the inner u64 value.
     #[inline]
     pub const fn inner(self) -> u64 {
         self.0
@@ -106,11 +108,13 @@ impl std::fmt::Display for EntityId {
 pub struct TxId(pub u64);
 
 impl TxId {
+    /// Creates a new TxId.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
+    /// Returns the inner u64 value.
     #[inline]
     pub const fn inner(self) -> u64 {
         self.0
@@ -126,33 +130,41 @@ impl std::fmt::Display for TxId {
 /// Distance metric for vector comparison.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 pub enum DistanceMetric {
+    /// Cosine similarity (orientation-based).
     #[default]
     Cosine,
+    /// Euclidean distance (L2).
     Euclidean,
+    /// Dot product similarity.
     DotProduct,
 }
 
 /// Vector embedding representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Embedding {
+    /// raw float data.
     pub data: Vec<f32>,
 }
 
 impl Embedding {
+    /// Creates a new Embedding.
     pub fn new(data: Vec<f32>) -> Self {
         Self { data }
     }
 
+    /// Returns the dimensionality.
     #[inline]
     pub fn dim(&self) -> usize {
         self.data.len()
     }
 
+    /// Returns the data as a slice.
     #[inline]
     pub fn as_slice(&self) -> &[f32] {
         &self.data
     }
 
+    /// Computes the L2 norm.
     pub fn l2_norm(&self) -> f32 {
         self.data.iter().map(|x| x * x).sum::<f32>().sqrt()
     }
@@ -169,11 +181,14 @@ impl Embedding {
 /// A scored search result.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ScoredDocument {
+    /// Document identifier.
     pub doc_id: DocId,
+    /// Relevance score.
     pub score: f32,
 }
 
 impl ScoredDocument {
+    /// Creates a new ScoredDocument.
     pub fn new(doc_id: DocId, score: f32) -> Self {
         Self { doc_id, score }
     }
@@ -182,12 +197,16 @@ impl ScoredDocument {
 /// Graph entity.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
+    /// Unique entity identifier.
     pub id: EntityId,
+    /// Display name.
     pub name: String,
+    /// Category or type of entity.
     pub entity_type: String,
 }
 
 impl Entity {
+    /// Creates a new Entity.
     pub fn new(id: EntityId, name: impl Into<String>, entity_type: impl Into<String>) -> Self {
         Self {
             id,
@@ -200,13 +219,18 @@ impl Entity {
 /// Graph edge.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Edge {
+    /// Source entity.
     pub from: EntityId,
+    /// Target entity.
     pub to: EntityId,
+    /// Edge label.
     pub label: String,
+    /// Importance weight.
     pub weight: f32,
 }
 
 impl Edge {
+    /// Creates a new Edge.
     pub fn new(from: EntityId, to: EntityId, label: impl Into<String>) -> Self {
         Self {
             from,
@@ -216,6 +240,7 @@ impl Edge {
         }
     }
 
+    /// Sets the edge weight.
     pub fn with_weight(mut self, weight: f32) -> Self {
         self.weight = weight;
         self
