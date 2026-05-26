@@ -90,11 +90,9 @@ impl HnswHeader {
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("Malformed header: nodes_offset".into()))?,
             ),
-            connections_offset: u64::from_le_bytes(
-                bytes[48..56].try_into().map_err(|_| {
-                    MemFuseError::Storage("Malformed header: connections_offset".into())
-                })?,
-            ),
+            connections_offset: u64::from_le_bytes(bytes[48..56].try_into().map_err(|_| {
+                MemFuseError::Storage("Malformed header: connections_offset".into())
+            })?),
             last_tx_id: u64::from_le_bytes(
                 bytes[56..64]
                     .try_into()
@@ -222,8 +220,7 @@ impl MmapIndex {
 
         let mut current_pos = offset + 1;
         for _ in 0..layer {
-            let len =
-                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap
+            let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap
                     as usize;
             current_pos += 4 + len * 4;
         }
