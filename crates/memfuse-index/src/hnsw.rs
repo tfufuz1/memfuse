@@ -1,4 +1,3 @@
-#![allow(unsafe_code)]
 //! HNSW (Hierarchical Navigable Small World) vector index.
 //! # Hierarchical Navigable Small World (HNSW) Index
 //!
@@ -297,12 +296,12 @@ impl HnswIndex {
 
             match &node.vector {
                 VectorData::F32(v) => {
-                    let bytes: &[u8] =
-                        unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
-                    writer
-                        .write_all(bytes)
-                        .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                    current_pos += bytes.len() as u64;
+                    for x in v {
+                        writer
+                            .write_all(&x.to_le_bytes())
+                            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                    }
+                    current_pos += (v.len() * 4) as u64;
                 }
                 VectorData::U8(v) => {
                     writer
@@ -339,13 +338,12 @@ impl HnswIndex {
                 writer
                     .write_all(&len.to_le_bytes())
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                let bytes: &[u8] = unsafe {
-                    std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
-                };
-                writer
-                    .write_all(bytes)
-                    .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                conn_pos += 4 + bytes.len() as u64;
+                for conn in conns {
+                    writer
+                        .write_all(&conn.to_le_bytes())
+                        .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                }
+                conn_pos += 4 + (conns.len() * 4) as u64;
             }
         }
         writer
@@ -392,7 +390,7 @@ impl HnswIndex {
         // For simplicity, we can also store it in header (as we do in save).
         // Let's use the node metadata of the entry point if available.
         let max_layer = if let Some(e) = ep {
-            let record = mmap_index.get_node_record(e);
+            let record = mmap_index.get_node_record(e)?;
             record.max_layer as u64
         } else {
             0
@@ -487,11 +485,13 @@ impl HnswIndexCore {
             }
         } else {
             // Safe unaligned F32 read
-            let v: Vec<f32> = vector_bytes
+            let mut v = Vec::with_capacity(self.config.dimension);
+            for chunk in vector_bytes
                 .chunks_exact(4)
-                .take(self.config.dimension)
-                .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
-                .collect();
+                .take(self.config.dimension) {
+                let bytes = chunk.try_into().map_err(|_| MemFuseError::Index("Invalid vector bytes".into()))?;
+                v.push(f32::from_le_bytes(bytes));
+            }
             compute_distance(query_exact, &v, self.config.distance_metric)
         }
     }
@@ -530,7 +530,7 @@ impl HnswIndexCore {
     ) -> Result<f32> {
         if let Some(mmap) = ctx.mmap {
             if idx < ctx.mmap_node_count {
-                let record = mmap.get_node_record(idx);
+                let record = mmap.get_node_record(idx)?;
                 return self.compute_distance_with_mmap(query, query_q, mmap, &record);
             }
             let ram_idx = idx - ctx.mmap_node_count;
@@ -547,8 +547,8 @@ impl HnswIndexCore {
     ) -> Result<Cow<'a, [u32]>> {
         if let Some(mmap) = ctx.mmap {
             if idx < ctx.mmap_node_count {
-                let record = mmap.get_node_record(idx);
-                return Ok(Cow::Owned(mmap.get_connections(&record, layer)));
+                let record = mmap.get_node_record(idx)?;
+                return Ok(Cow::Owned(mmap.get_connections(&record, layer)?));
             }
             let ram_idx = idx - ctx.mmap_node_count;
             return Ok(Cow::Borrowed(
@@ -571,7 +571,7 @@ impl HnswIndexCore {
     fn resolve_doc_id(&self, idx: usize, ctx: &SearchContext) -> Result<DocId> {
         if let Some(mmap) = ctx.mmap {
             if idx < ctx.mmap_node_count {
-                let record = mmap.get_node_record(idx);
+                let record = mmap.get_node_record(idx)?;
                 return Ok(DocId::new(record.doc_id));
             }
             let ram_idx = idx - ctx.mmap_node_count;
@@ -662,15 +662,18 @@ impl HnswIndexCore {
         let get_vector_data = |idx: usize| -> Result<VectorData> {
             if let Some(mmap) = ctx.mmap {
                 if idx < ctx.mmap_node_count {
-                    let record = mmap.get_node_record(idx);
+                    let record = mmap.get_node_record(idx)?;
                     let bytes = mmap.get_vector(&record);
                     return if mmap.header.quantized != 0 {
                         Ok(VectorData::U8(bytes.to_vec()))
                     } else {
                         let mut v = vec![0.0f32; self.config.dimension];
                         for i in 0..self.config.dimension {
-                            v[i] =
-                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap());
+                            v[i] = f32::from_le_bytes(
+                                bytes[i * 4..(i + 1) * 4]
+                                    .try_into()
+                                    .map_err(|_| MemFuseError::Index("Invalid vector bytes".into()))?,
+                            );
                         }
                         Ok(VectorData::F32(v))
                     };
@@ -1005,10 +1008,11 @@ impl HnswIndexCore {
                 if let Some(mmap) = mmap_guard.as_ref() {
                     for i in 0..mmap_node_count {
                         if i != idx && !deleted.contains(i as u64) {
-                            let record = mmap.get_node_record(i);
-                            if record.max_layer as usize >= max_layer {
-                                max_layer = record.max_layer as usize;
-                                best_node = Some(i);
+                            if let Ok(record) = mmap.get_node_record(i) {
+                                if record.max_layer as usize >= max_layer {
+                                    max_layer = record.max_layer as usize;
+                                    best_node = Some(i);
+                                }
                             }
                         }
                     }
@@ -1034,7 +1038,9 @@ impl HnswIndexCore {
                     if let Some(new_idx) = best_node {
                         let node_max_layer = if let Some(mmap) = mmap_guard.as_ref() {
                             if new_idx < mmap_node_count {
-                                mmap.get_node_record(new_idx).max_layer as usize
+                                mmap.get_node_record(new_idx)
+                                    .map(|r| r.max_layer as usize)
+                                    .unwrap_or(0)
                             } else {
                                 nodes[new_idx - mmap_node_count]._max_layer
                             }
