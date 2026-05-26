@@ -11,6 +11,8 @@ memfuse-core = { workspace = true }
 bytes = { workspace = true }
 blake3 = { workspace = true }
 crc32fast = { workspace = true }
+# ANCHOR:ARCH:DAG-004 AGENT:02 PRIO:1
+# memfuse-store violates DAG by importing non-core crate memfuse-crypto.
 memfuse-crypto = { workspace = true }
 parking_lot = { workspace = true }
 tokio = { workspace = true }

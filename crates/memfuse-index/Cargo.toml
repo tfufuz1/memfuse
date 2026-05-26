@@ -8,6 +8,8 @@ description = "HNSW vector index with SIMD distance computation for MemFuse"
 
 [dependencies]
 memfuse-core = { workspace = true }
+# ANCHOR:ARCH:DAG-005 AGENT:03 PRIO:1
+# memfuse-index violates DAG by importing non-core crate memfuse-graph.
 memfuse-graph = { workspace = true }
 ahash = { workspace = true }
 parking_lot = { workspace = true }
