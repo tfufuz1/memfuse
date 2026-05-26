@@ -5,7 +5,7 @@
 
 // ANCHOR:ARCH:MORPH-001 — Morphologische Inferenz-Optimierung (WP-6.5)
 // WP:WP-6.5 PRIO:2 NEEDS:WP-2.1
-// STATUS:SCAFFOLD DATE:2026-05-17
+// STATUS:DONE DATE:2026-06-03
 
 /// Trait for morphological tokenization.
 ///
@@ -26,46 +26,14 @@ pub trait MorphologicalTokenizer: Send + Sync {
 pub struct GermanCompoundSplitter {
     /// Minimum component length for splitting.
     min_component_len: usize,
+    /// Dictionary of common components, sorted by length descending for longest-match.
+    dictionary: Vec<String>,
 }
 
 impl GermanCompoundSplitter {
     /// Creates a new German compound splitter.
     pub fn new() -> Self {
-        Self {
-            min_component_len: 3,
-        }
-    }
-
-    /// Creates a splitter with custom minimum component length.
-    pub fn with_min_length(min_len: usize) -> Self {
-        Self {
-            min_component_len: min_len,
-        }
-    }
-
-    /// Returns the minimum component length.
-    pub fn min_component_len(&self) -> usize {
-        self.min_component_len
-    }
-}
-
-impl Default for GermanCompoundSplitter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl MorphologicalTokenizer for GermanCompoundSplitter {
-    fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
-        // Simple recursive splitting based on a set of known components
-        // and common German compound patterns (Fugen-S etc.)
-
-        if token.len() <= self.min_component_len {
-            return vec![token];
-        }
-
-        // Common components in technical/legal German compounds
-        let dictionary = [
+        let mut dictionary = vec![
             "bundes",
             "verfassungs",
             "gericht",
@@ -85,13 +53,69 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             "sicherheit",
             "zugriff",
             "rechte",
-        ];
+            "verordnung",
+            "recht",
+            "gemeinde",
+            "stadt",
+            "land",
+            "fluss",
+            "berg",
+            "haus",
+            "auto",
+            "bahn",
+            "zug",
+            "werk",
+            "bau",
+            "stelle",
+            "plan",
+            "rat",
+            "amt",
+            "dienst",
+        ]
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
 
-        for &word in &dictionary {
+        // Sort by length descending to ensure longest match
+        dictionary.sort_by_key(|b| std::cmp::Reverse(b.len()));
+
+        Self {
+            min_component_len: 3,
+            dictionary,
+        }
+    }
+
+    /// Creates a splitter with custom minimum component length.
+    pub fn with_min_length(min_len: usize) -> Self {
+        let mut s = Self::new();
+        s.min_component_len = min_len;
+        s
+    }
+
+    /// Returns the minimum component length.
+    pub fn min_component_len(&self) -> usize {
+        self.min_component_len
+    }
+}
+
+impl Default for GermanCompoundSplitter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MorphologicalTokenizer for GermanCompoundSplitter {
+    fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
+        // Longest-match recursive splitting
+        if token.len() <= self.min_component_len {
+            return vec![token];
+        }
+
+        for word in &self.dictionary {
             if token.len() > word.len() && token.starts_with(word) {
                 let rest = &token[word.len()..];
 
-                // Handle Fugen-s (e.g., Verfassung-s-gericht)
+                // Handle Fugen-s (e.g., Verfassung-s-gericht, Bundes-verfassung-s-gericht)
                 let actual_rest = if rest.starts_with('s') && rest.len() > 1 {
                     &rest[1..]
                 } else {
@@ -164,11 +188,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_german_splitter_scaffold() {
+    fn test_german_splitter_optimized() {
         let splitter = GermanCompoundSplitter::new();
-        // Fallback: returns original token
-        let result = splitter.decompose("Bundesverfassungsgericht");
-        assert_eq!(result, vec!["Bundesverfassungsgericht"]);
+        let result = splitter.decompose("bundesverfassungsgericht");
+        assert_eq!(result, vec!["bundes", "verfassungs", "gericht"]);
         assert_eq!(splitter.language(), "de");
     }
 
@@ -202,13 +225,6 @@ mod tests {
             original_tokens: original_count,
             decomposed_tokens: decomposed_count,
         };
-
-        // Bundesverfassungsgericht -> [bundes, verfassungs, gericht] (+2)
-        // Gesetzentwurf -> [gesetz, entwurf] (+1)
-        // Datensicherheit -> [daten, sicherheit] (+1)
-        // Total original: 8
-        // Total decomposed: 8 + 2 + 1 + 1 = 12
-        // Ratio: 12/8 = 1.5 (+50%)
 
         println!("Expansion Ratio: {}", metrics.expansion_ratio());
         assert!(metrics.expansion_ratio() > 1.2, "Expansion should be > 20%");

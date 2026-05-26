@@ -24,6 +24,8 @@ pub struct InvertedIndex {
     storage: Arc<dyn StorageEngine>,
     prefix: Vec<u8>,
     tokenizer: Arc<dyn Tokenizer>,
+    k1: f32,
+    b: f32,
 }
 
 impl InvertedIndex {
@@ -45,7 +47,16 @@ impl InvertedIndex {
             storage,
             prefix,
             tokenizer,
+            k1: 1.2,
+            b: 0.75,
         }
+    }
+
+    /// Sets BM25 parameters.
+    pub fn with_params(mut self, k1: f32, b: f32) -> Self {
+        self.k1 = k1;
+        self.b = b;
+        self
     }
 
     fn key(&self, suffix: &str) -> Vec<u8> {
@@ -377,6 +388,8 @@ impl InvertedIndex {
                             avg_doc_len,
                             df,
                             total_docs as u32,
+                            self.k1,
+                            self.b,
                         );
 
                         *scores.entry(doc_id).or_insert(0.0) += score;
@@ -471,6 +484,11 @@ impl BM25MorphIndex {
             inner: InvertedIndex::new(storage, namespace),
             tokenizer,
         }
+    }
+
+    pub fn with_params(mut self, k1: f32, b: f32) -> Self {
+        self.inner = self.inner.with_params(k1, b);
+        self
     }
 
     pub fn tokenizer(&self) -> &dyn MorphologicalTokenizer {

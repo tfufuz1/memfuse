@@ -27,6 +27,11 @@ impl Bm25Scorer {
             index: InvertedIndex::new(storage, namespace),
         }
     }
+
+    pub fn with_params(mut self, k1: f32, b: f32) -> Self {
+        self.index = self.index.with_params(k1, b);
+        self
+    }
 }
 
 #[async_trait::async_trait]
