@@ -45,7 +45,7 @@
 //! # }
 //! ```
 
-#![forbid(unsafe_code)] // unsafe
+#![forbid(unsafe_code)]
 
 use memfuse_core::{DocId, Result, StorageEngine, TxId};
 use memfuse_index::{HnswConfig, HnswIndex};

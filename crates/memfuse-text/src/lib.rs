@@ -3,7 +3,7 @@
 //! Evaluates Inverse Document Frequencies integrating natively into the
 //! `fusion.rs` layer in `memfuse-db`.
 
-#![forbid(unsafe_code)] // unsafe
+#![forbid(unsafe_code)]
 
 pub mod bm25;
 pub mod inverted;

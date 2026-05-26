@@ -23,7 +23,7 @@
 // INVARIANTE: Kein I/O, kein async, kein Netzwerk — reine Datentypen + Traits.
 // Vor jeder Änderung: `cargo check -p memfuse-db` um Downstream-Bruch zu erkennen.
 
-#![forbid(unsafe_code)] // unsafe
+#![forbid(unsafe_code)]
 
 pub mod error;
 pub mod snapshot;

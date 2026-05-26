@@ -20,7 +20,7 @@
 // ANCHOR:INTEGRATION PRIO:2 STATUS:DONE AGENT:07 DATE:2026-05-20
 // DONE: Cross-Crate Integration Tests für WASM-Sandbox Isolation und Tool-Execution implementiert.
 
-#![forbid(unsafe_code)] // unsafe
+#![forbid(unsafe_code)]
 
 use memfuse_core::{Result, TokenBudget};
 

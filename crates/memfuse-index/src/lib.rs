@@ -10,7 +10,7 @@
 #![feature(portable_simd)]
 // ANCHOR:AUDIT:SEC-002 — deny(unsafe_code) statt forbid(unsafe_code)
 // BEGRÜNDUNG: SIMD-Intrinsics in distance.rs benötigen unsafe für Performance.
-#![deny(unsafe_code)] // unsafe
+#![deny(unsafe_code)]
 
 pub mod diskann;
 pub mod distance;

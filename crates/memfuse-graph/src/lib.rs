@@ -13,7 +13,7 @@
 // WP:WP-6.1 PRIO:2 NEEDS:WP-2.1
 // STATUS:SCAFFOLD DATE:2026-05-17
 
-#![forbid(unsafe_code)] // unsafe
+#![forbid(unsafe_code)]
 
 pub mod csr;
 

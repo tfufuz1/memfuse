@@ -10,7 +10,7 @@
 //!   from synchronous Python calls.
 //! - **Zero-Copy**: Aims for minimal copying of vector data between Python and Rust.
 
-#![forbid(unsafe_code)] // unsafe
+#![forbid(unsafe_code)]
 
 use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
 use numpy::PyReadonlyArray1;

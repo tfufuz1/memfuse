@@ -1,4 +1,4 @@
-#![allow(unsafe_code)] // unsafe
+#![allow(unsafe_code)]
 //! HNSW (Hierarchical Navigable Small World) vector index.
 //! # Hierarchical Navigable Small World (HNSW) Index
 //!
@@ -298,7 +298,7 @@ impl HnswIndex {
             match &node.vector {
                 VectorData::F32(v) => {
                     let bytes: &[u8] =
-                        unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) }; // unsafe
+                        unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
                     writer
                         .write_all(bytes)
                         .map_err(|e| MemFuseError::Storage(e.to_string()))?;
@@ -340,7 +340,7 @@ impl HnswIndex {
                     .write_all(&len.to_le_bytes())
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
                 let bytes: &[u8] = unsafe {
-                    // unsafe
+
                     std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
                 };
                 writer
@@ -671,8 +671,9 @@ impl HnswIndexCore {
                         let mut v = vec![0.0f32; self.config.dimension];
                         for i in 0..self.config.dimension {
                             v[i] =
-                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap());
-                            // unwrap
+                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap()); // unwrap
+
+
                         }
                         Ok(VectorData::F32(v))
                     };
