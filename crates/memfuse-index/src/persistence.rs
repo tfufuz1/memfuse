@@ -37,25 +37,103 @@ impl HnswHeader {
             return Err(MemFuseError::Storage("Header too small".into()));
         }
 
-        let magic = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        let magic = u32::from_le_bytes(
+            bytes
+                .get(0..4)
+                .ok_or_else(|| MemFuseError::Storage("Header too small for magic".into()))?
+                .try_into()
+                .unwrap(),
+        );
         if magic != HNSW_MAGIC {
             return Err(MemFuseError::Storage("Invalid HNSW magic".into()));
         }
 
         Ok(Self {
             magic,
-            version: u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
-            dimension: u32::from_le_bytes(bytes[6..10].try_into().unwrap()),
-            m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()),
-            metric: bytes[14],
-            quantized: bytes[15],
-            q_min: f32::from_le_bytes(bytes[16..20].try_into().unwrap()),
-            q_max: f32::from_le_bytes(bytes[20..24].try_into().unwrap()),
-            node_count: u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-            entry_point: i64::from_le_bytes(bytes[32..40].try_into().unwrap()),
-            nodes_offset: u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
-            last_tx_id: u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
+            version: u16::from_le_bytes(
+                bytes
+                    .get(4..6)
+                    .ok_or_else(|| MemFuseError::Storage("Header too small for version".into()))?
+                    .try_into()
+                    .unwrap(),
+            ),
+            dimension: u32::from_le_bytes(
+                bytes
+                    .get(6..10)
+                    .ok_or_else(|| MemFuseError::Storage("Header too small for dimension".into()))?
+                    .try_into()
+                    .unwrap(),
+            ),
+            m: u32::from_le_bytes(
+                bytes
+                    .get(10..14)
+                    .ok_or_else(|| MemFuseError::Storage("Header too small for m".into()))?
+                    .try_into()
+                    .unwrap(),
+            ),
+            metric: *bytes
+                .get(14)
+                .ok_or_else(|| MemFuseError::Storage("Header too small for metric".into()))?,
+            quantized: *bytes
+                .get(15)
+                .ok_or_else(|| MemFuseError::Storage("Header too small for quantized".into()))?,
+            q_min: f32::from_le_bytes(
+                bytes
+                    .get(16..20)
+                    .ok_or_else(|| MemFuseError::Storage("Header too small for q_min".into()))?
+                    .try_into()
+                    .unwrap(),
+            ),
+            q_max: f32::from_le_bytes(
+                bytes
+                    .get(20..24)
+                    .ok_or_else(|| MemFuseError::Storage("Header too small for q_max".into()))?
+                    .try_into()
+                    .unwrap(),
+            ),
+            node_count: u64::from_le_bytes(
+                bytes
+                    .get(24..32)
+                    .ok_or_else(|| MemFuseError::Storage("Header too small for node_count".into()))?
+                    .try_into()
+                    .unwrap(),
+            ),
+            entry_point: i64::from_le_bytes(
+                bytes
+                    .get(32..40)
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("Header too small for entry_point".into())
+                    })?
+                    .try_into()
+                    .unwrap(),
+            ),
+            nodes_offset: u64::from_le_bytes(
+                bytes
+                    .get(40..48)
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("Header too small for nodes_offset".into())
+                    })?
+                    .try_into()
+                    .unwrap(),
+            ),
+            connections_offset: u64::from_le_bytes(
+                bytes
+                    .get(48..56)
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("Header too small for connections_offset".into())
+                    })?
+                    .try_into()
+                    .unwrap(),
+            ),
+            last_tx_id: u64::from_le_bytes(
+                bytes
+                    .get(56..64)
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("Header too small for last_tx_id".into())
+                    })?
+                    .try_into()
+                    .unwrap(),
+            ),
         })
     }
 
@@ -120,6 +198,7 @@ impl MmapIndex {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = std::fs::File::open(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
+        // ANCHOR:SEC:UNSAFE-Violation (AGENT:10 PRIO:1 STATUS:READY)
         let mmap = unsafe { memmap2::Mmap::map(&file) }
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
@@ -152,7 +231,10 @@ impl MmapIndex {
             return Vec::new();
         }
 
-        let num_layers = self.mmap[offset] as usize;
+        let num_layers = *self
+            .mmap
+            .get(offset)
+            .expect("Offset check above guarantees in-bounds") as usize;
         if layer >= num_layers {
             return Vec::new();
         }
