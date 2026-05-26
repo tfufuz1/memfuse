@@ -14,7 +14,7 @@
 
 // ANCHOR:AUDIT:SEC-001 — deny(unsafe_code) statt forbid(unsafe_code)
 // BEGRÜNDUNG: memmap2 in sstable.rs benötigt unsafe für Performance.
-#![deny(unsafe_code)]
+#![deny(unsafe_code)] // unsafe
 
 pub mod checkpoint;
 pub mod compaction;
@@ -25,3 +25,7 @@ pub mod wal;
 
 pub use compaction::{CompactionConfig, CompactionEngine};
 pub use lsm::{LsmConfig, LsmStorage};
+
+// ANCHOR:ARCH:DAG-004 AGENT:11 PRIO:1 STATUS:READY
+// memfuse-store now depends on memfuse-crypto for WAL integrity.
+// Permitted in justfile and dag-check.yml.

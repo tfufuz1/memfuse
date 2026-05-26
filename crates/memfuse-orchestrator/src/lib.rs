@@ -20,7 +20,7 @@
 // ANCHOR:INTEGRATION PRIO:2 STATUS:DONE AGENT:07 DATE:2026-05-20
 // DONE: Cross-Crate Integration Tests für StateGraph und Agent-Interaktion implementiert.
 
-#![forbid(unsafe_code)]
+#![forbid(unsafe_code)] // unsafe
 
 use memfuse_core::Result;
 

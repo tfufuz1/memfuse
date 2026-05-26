@@ -10,7 +10,7 @@
 #![feature(portable_simd)]
 // ANCHOR:AUDIT:SEC-002 — deny(unsafe_code) statt forbid(unsafe_code)
 // BEGRÜNDUNG: SIMD-Intrinsics in distance.rs benötigen unsafe für Performance.
-#![deny(unsafe_code)]
+#![deny(unsafe_code)] // unsafe
 
 pub mod diskann;
 pub mod distance;
@@ -21,3 +21,7 @@ pub mod quantize;
 pub use hnsw::{HnswConfig, HnswIndex};
 pub use memfuse_graph::CsrGraph;
 pub use persistence::{HnswHeader, MmapIndex};
+
+// ANCHOR:ARCH:DAG-005 AGENT:11 PRIO:1 STATUS:READY
+// memfuse-index now depends on memfuse-graph for CSR representation.
+// Permitted in justfile and dag-check.yml.

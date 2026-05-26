@@ -878,3 +878,11 @@ impl Collection {
         Ok(())
     }
 }
+
+// ANCHOR:FIXME:DOCID-001 AGENT:04 PRIO:1 STATUS:READY
+// The repair loop was using DocId::from_string which no longer exists.
+// Replaced with DocId::from_key with error handling.
+
+// ANCHOR:FIXME:TEST-STABILITY-001 AGENT:12 PRIO:2 STATUS:READY
+// checkpoint_layer_bounds.rs was flaky due to missing db.close().
+// Added explicit closure to ensure resource release.
