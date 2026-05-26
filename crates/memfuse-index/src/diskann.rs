@@ -436,7 +436,7 @@ mod tests {
             distance_metric: DistanceMetric::Cosine,
         };
 
-        let index = DiskAnnIndex::try_new(valid_config).expect("valid config");
+        let index = DiskAnnIndex::try_new(valid_config).expect("valid config"); // expect #[cfg(test)]
         assert!(index.is_empty());
 
         let invalid_sector = DiskAnnConfig {
@@ -465,7 +465,7 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let mut index = DiskAnnIndex::try_new(config).expect("valid config");
+        let mut index = DiskAnnIndex::try_new(config).expect("valid config"); // expect #[cfg(test)]
 
         let n = 1000;
         let mut vectors = Vec::with_capacity(n);
@@ -477,11 +477,11 @@ mod tests {
             ids.push(DocId::from(i as u64));
         }
 
-        index.build(&vectors, &ids).await.expect("Build failed");
+        index.build(&vectors, &ids).await.expect("Build failed"); // expect #[cfg(test)]
 
         let mut recall_count = 0;
         for (i, query) in vectors.iter().enumerate().take(100) {
-            let results = index.search(query, 10).await.expect("Search failed");
+            let results = index.search(query, 10).await.expect("Search failed"); // expect #[cfg(test)]
             if results.iter().any(|r| r.doc_id == ids[i]) {
                 recall_count += 1;
             }

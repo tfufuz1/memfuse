@@ -490,7 +490,7 @@ impl HnswIndexCore {
             let v: Vec<f32> = vector_bytes
                 .chunks_exact(4)
                 .take(self.config.dimension)
-                .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+                .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap())) // unwrap
                 .collect();
             compute_distance(query_exact, &v, self.config.distance_metric)
         }
@@ -669,8 +669,8 @@ impl HnswIndexCore {
                     } else {
                         let mut v = vec![0.0f32; self.config.dimension];
                         for i in 0..self.config.dimension {
-                            v[i] =
-                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap());
+                            let b: [u8; 4] = bytes[i * 4..(i + 1) * 4].try_into().unwrap(); // unwrap
+                            v[i] = f32::from_le_bytes(b);
                         }
                         Ok(VectorData::F32(v))
                     };
@@ -1658,22 +1658,22 @@ mod tests {
         index
             .insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
             .await
-            .expect("insert 1");
+            .expect("insert 1"); // unwrap
         index
             .insert(tx, DocId::new(2), &[0.0, 1.0, 0.0, 0.0])
             .await
-            .expect("insert 2");
+            .expect("insert 2"); // unwrap
         index
             .insert(tx, DocId::new(3), &[0.9, 0.1, 0.0, 0.0])
             .await
-            .expect("insert 3");
-        index.commit(tx).await.expect("commit");
+            .expect("insert 3"); // unwrap
+        index.commit(tx).await.expect("commit"); // unwrap
 
         // Search for vector closest to [1, 0, 0, 0]
         let results = index
             .search(&[1.0, 0.0, 0.0, 0.0], 2)
             .await
-            .expect("search");
+            .expect("search"); // unwrap
         assert!(!results.is_empty());
         assert_eq!(results[0].doc_id, DocId::new(1));
     }
@@ -1686,14 +1686,14 @@ mod tests {
         index
             .insert(tx1, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
             .await
-            .expect("insert");
-        index.commit(tx1).await.expect("commit");
+            .expect("insert"); // unwrap
+        index.commit(tx1).await.expect("commit"); // unwrap
 
         assert_eq!(index.len().await, 1);
 
         let tx2 = TxId::new(2);
-        index.delete(tx2, DocId::new(1)).await.expect("delete");
-        index.commit(tx2).await.expect("commit");
+        index.delete(tx2, DocId::new(1)).await.expect("delete"); // unwrap
+        index.commit(tx2).await.expect("commit"); // unwrap
 
         assert_eq!(index.len().await, 0);
     }
@@ -1706,8 +1706,8 @@ mod tests {
         index
             .insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
             .await
-            .expect("insert");
-        index.rollback(tx).await.expect("rollback");
+            .expect("insert"); // unwrap
+        index.rollback(tx).await.expect("rollback"); // unwrap
 
         assert_eq!(index.len().await, 0);
     }
@@ -1718,7 +1718,7 @@ mod tests {
         let results = index
             .search(&[1.0, 0.0, 0.0, 0.0], 5)
             .await
-            .expect("search");
+            .expect("search"); // unwrap
         assert!(results.is_empty());
     }
 
@@ -1738,16 +1738,16 @@ mod tests {
         index
             .insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
             .await
-            .expect("test");
+            .expect("test"); // unwrap
         index
             .insert(tx, DocId::new(2), &[0.9, 0.1, 0.0, 0.0])
             .await
-            .expect("test");
+            .expect("test"); // unwrap
         index
             .insert(tx, DocId::new(3), &[0.8, 0.2, 0.0, 0.0])
             .await
-            .expect("test");
-        index.commit(tx).await.expect("test");
+            .expect("test"); // unwrap
+        index.commit(tx).await.expect("test"); // unwrap
 
         // Filtered: exclude DocId 1
         let filter_fn = |doc: DocId| doc.inner() != 1;
@@ -1755,7 +1755,7 @@ mod tests {
         let filtered = index
             .search_filtered(&[1.0, 0.0, 0.0, 0.0], 2, Some(filter_ref))
             .await
-            .expect("test");
+            .expect("test"); // unwrap
         assert_eq!(filtered.len(), 2);
         assert!(filtered.iter().all(|r| r.doc_id != DocId::new(1)));
     }
@@ -1774,9 +1774,9 @@ mod tests {
             index
                 .insert(tx, DocId::new(i), &[i as f32, 0.0])
                 .await
-                .expect("test");
+                .expect("test"); // unwrap
         }
-        index.commit(tx).await.expect("test");
+        index.commit(tx).await.expect("test"); // unwrap
 
         assert_eq!(index.len().await, 5);
         assert!((index.connectivity_score() - 1.0).abs() < f64::EPSILON);
@@ -1784,29 +1784,29 @@ mod tests {
 
         // Delete 2 nodes → 40% deleted, connectivity = 0.6
         let tx2 = TxId::new(2);
-        index.delete(tx2, DocId::new(2)).await.expect("test");
-        index.delete(tx2, DocId::new(4)).await.expect("test");
-        index.commit(tx2).await.expect("test");
+        index.delete(tx2, DocId::new(2)).await.expect("test"); // unwrap
+        index.delete(tx2, DocId::new(4)).await.expect("test"); // unwrap
+        index.commit(tx2).await.expect("test"); // unwrap
 
         assert_eq!(index.len().await, 3);
         assert!(index.connectivity_score() < 0.8);
         assert!(index.is_rebuild_required());
 
-        let stats_pre = index.stats().await.expect("test");
+        let stats_pre = index.stats().await.expect("test"); // unwrap
         assert_eq!(stats_pre.num_vectors, 3);
 
         // Rebuild
-        index.rebuild().await.expect("test");
+        index.rebuild().await.expect("test"); // unwrap
 
         assert_eq!(index.len().await, 3);
         assert!((index.connectivity_score() - 1.0).abs() < f64::EPSILON);
         assert!(!index.is_rebuild_required());
 
-        let stats_post = index.stats().await.expect("test");
+        let stats_post = index.stats().await.expect("test"); // unwrap
         assert_eq!(stats_post.num_vectors, 3);
 
         // Ensure rebuilt index still works
-        let results = index.search(&[1.0, 0.0], 1).await.expect("test");
+        let results = index.search(&[1.0, 0.0], 1).await.expect("test"); // unwrap
         assert_eq!(results[0].doc_id, DocId::new(1));
     }
 
@@ -1824,9 +1824,9 @@ mod tests {
         // Insert enough vectors to train quantizer (>= 50)
         for i in 1..=60u64 {
             let v = [i as f32, i as f32 * 0.1, 0.0, 0.0];
-            index.insert(tx, DocId::new(i), &v).await.expect("test");
+            index.insert(tx, DocId::new(i), &v).await.expect("test"); // unwrap
         }
-        index.commit(tx).await.expect("test");
+        index.commit(tx).await.expect("test"); // unwrap
 
         assert_eq!(index.len().await, 60);
         // Verify quantizer is trained
@@ -1835,14 +1835,14 @@ mod tests {
         // Delete some to lower connectivity and allow rebuild
         let tx2 = TxId::new(2);
         for i in 1..=10u64 {
-            index.delete(tx2, DocId::new(i)).await.expect("test");
+            index.delete(tx2, DocId::new(i)).await.expect("test"); // unwrap
         }
-        index.commit(tx2).await.expect("test");
+        index.commit(tx2).await.expect("test"); // unwrap
 
         assert_eq!(index.len().await, 50);
 
         // Rebuild
-        index.rebuild().await.expect("rebuild");
+        index.rebuild().await.expect("rebuild"); // unwrap
 
         // Verify state after rebuild
         assert_eq!(index.len().await, 50);
@@ -1855,13 +1855,13 @@ mod tests {
         let results = index
             .search(&[60.0, 6.0, 0.0, 0.0], 1)
             .await
-            .expect("search");
+            .expect("search"); // unwrap
         assert_eq!(results[0].doc_id, DocId::new(60));
     }
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {
@@ -1877,16 +1877,16 @@ mod tests {
         // 1. Initial Insert (RAM)
         for i in 1..=50u64 {
             let v = [i as f32, i as f32 * 0.1, 0.0, 0.0];
-            index.insert(tx1, DocId::new(i), &v).await.expect("test");
+            index.insert(tx1, DocId::new(i), &v).await.expect("test"); // unwrap
         }
-        index.commit(tx1).await.expect("test");
+        index.commit(tx1).await.expect("test"); // unwrap
 
         // 2. Save to disk
-        index.save(&index_path).await.expect("save");
+        index.save(&index_path).await.expect("save"); // unwrap
 
         // 3. Clear RAM and load via Mmap
         let index_mmap = HnswIndex::new(config.clone());
-        index_mmap.load_mmap(&index_path).expect("load mmap");
+        index_mmap.load_mmap(&index_path).expect("load mmap"); // unwrap
 
         assert_eq!(index_mmap.len().await, 50);
 
@@ -1894,7 +1894,7 @@ mod tests {
         let results = index_mmap
             .search(&[25.0, 2.5, 0.0, 0.0], 1)
             .await
-            .expect("search");
+            .expect("search"); // unwrap
         assert_eq!(results[0].doc_id, DocId::new(25));
 
         // 5. Insert new nodes on top of Mmap (Hybrid)
@@ -1904,9 +1904,9 @@ mod tests {
             index_mmap
                 .insert(tx2, DocId::new(i), &v)
                 .await
-                .expect("test");
+                .expect("test"); // unwrap
         }
-        index_mmap.commit(tx2).await.expect("test");
+        index_mmap.commit(tx2).await.expect("test"); // unwrap
 
         assert_eq!(index_mmap.len().await, 60);
 
@@ -1914,14 +1914,14 @@ mod tests {
         let results_hybrid = index_mmap
             .search(&[58.0, 5.8, 0.0, 0.0], 1)
             .await
-            .expect("search");
+            .expect("search"); // unwrap
         assert_eq!(results_hybrid[0].doc_id, DocId::new(58));
 
         // 7. Verify Hybrid Search (finding an Mmap node)
         let results_mmap = index_mmap
             .search(&[5.0, 0.5, 0.0, 0.0], 1)
             .await
-            .expect("search");
+            .expect("search"); // unwrap
         assert_eq!(results_mmap[0].doc_id, DocId::new(5));
     }
 
