@@ -10,6 +10,7 @@
 // OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
 
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
+use unicode_segmentation::UnicodeSegmentation;
 use async_trait::async_trait;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
@@ -83,10 +84,15 @@ impl InvertedIndex {
             *tfs.entry(t).or_insert(0u32) += 1;
         }
 
+        // Calculate original length (before morphological decomposition)
+        let orig_len = text.unicode_words().count() as u32;
+
         // Check if document already exists to adjust total_tokens and total_docs
         let dl_key = self.key_with_id("dl:", doc_id.inner());
+        let ol_key = self.key_with_id("ol:", doc_id.inner());
         let fw_key = self.key_with_id("fw:", doc_id.inner());
         let mut old_len = 0u32;
+        let mut old_orig_len = 0u32;
         let mut is_update = false;
 
         if let Some(bytes) = self.storage.get(&dl_key).await? {
@@ -97,6 +103,15 @@ impl InvertedIndex {
                         .try_into()
                         .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
                 );
+
+                if let Some(ol_bytes) = self.storage.get(&ol_key).await? {
+                    if ol_bytes.len() == 4 {
+                        old_orig_len = u32::from_le_bytes(ol_bytes.as_slice().try_into().map_err(
+                            |_| MemFuseError::Storage("Invalid orig_len length".into()),
+                        )?);
+                    }
+                }
+
                 is_update = true;
 
                 // Remove from old posting lists if update
@@ -139,6 +154,11 @@ impl InvertedIndex {
             .put(tx, &dl_key, &new_len.to_le_bytes())
             .await?;
 
+        // Store original length
+        self.storage
+            .put(tx, &ol_key, &orig_len.to_le_bytes())
+            .await?;
+
         // Store forward index (unique terms)
         let mut tfs_vec: Vec<(String, u32)> = tfs.into_iter().collect();
         tfs_vec.sort_by(|a, b| a.0.cmp(&b.0));
@@ -164,6 +184,26 @@ impl InvertedIndex {
 
         self.storage
             .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
+            .await?;
+
+        // Update original tokens (global)
+        let orig_tok_key = self.key("meta:orig_tokens");
+        let mut total_orig_tokens = 0u64;
+        if let Some(bytes) = self.storage.get(&orig_tok_key).await? {
+            if bytes.len() == 8 {
+                total_orig_tokens = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid orig_tokens length".into()))?,
+                );
+            }
+        }
+
+        total_orig_tokens = total_orig_tokens.saturating_sub(old_orig_len as u64) + orig_len as u64;
+
+        self.storage
+            .put(tx, &orig_tok_key, &total_orig_tokens.to_le_bytes())
             .await?;
 
         // Update total docs
@@ -216,6 +256,7 @@ impl InvertedIndex {
     /// Deletes a document from the index.
     pub async fn delete_document(&self, tx: TxId, doc_id: DocId) -> Result<()> {
         let dl_key = self.key_with_id("dl:", doc_id.inner());
+        let ol_key = self.key_with_id("ol:", doc_id.inner());
         let fw_key = self.key_with_id("fw:", doc_id.inner());
 
         let mut doc_len = 0u32;
@@ -233,7 +274,20 @@ impl InvertedIndex {
             return Ok(());
         }
 
+        let mut orig_len = 0u32;
+        if let Some(bytes) = self.storage.get(&ol_key).await? {
+            if bytes.len() == 4 {
+                orig_len = u32::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid orig_len length".into()))?,
+                );
+            }
+        }
+
         self.storage.delete(tx, &dl_key).await?;
+        self.storage.delete(tx, &ol_key).await?;
 
         // Remove from posting lists using forward index
         if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
@@ -278,6 +332,20 @@ impl InvertedIndex {
                 total_tokens = total_tokens.saturating_sub(doc_len as u64);
                 self.storage
                     .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
+                    .await?;
+            }
+        }
+
+        let orig_tok_key = self.key("meta:orig_tokens");
+        if let Some(bytes) = self.storage.get(&orig_tok_key).await? {
+            if bytes.len() == 8 {
+                let mut total_orig_tokens =
+                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid orig_tokens length".into())
+                    })?);
+                total_orig_tokens = total_orig_tokens.saturating_sub(orig_len as u64);
+                self.storage
+                    .put(tx, &orig_tok_key, &total_orig_tokens.to_le_bytes())
                     .await?;
             }
         }
@@ -445,10 +513,28 @@ impl TextIndex for InvertedIndex {
             }
         }
 
+        let orig_tok_key = self.key("meta:orig_tokens");
+        let mut total_orig_tokens = 0u64;
+        if let Some(bytes) = self.storage.get(&orig_tok_key).await? {
+            if bytes.len() == 8 {
+                total_orig_tokens =
+                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid orig_tokens length".into())
+                    })?);
+            }
+        }
+
+        let token_reduction_ratio = if total_orig_tokens > 0 {
+            total_tokens as f32 / total_orig_tokens as f32
+        } else {
+            1.0
+        };
+
         Ok(TextIndexStats {
             num_documents: total_docs as usize,
             num_tokens: total_tokens as usize,
-            memory_usage_bytes: 0,
+            memory_usage_bytes: total_tokens as usize * 24,
+            token_reduction_ratio,
         })
     }
 }

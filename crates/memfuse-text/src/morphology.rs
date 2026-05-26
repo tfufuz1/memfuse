@@ -5,7 +5,7 @@
 
 // ANCHOR:ARCH:MORPH-001 — Morphologische Inferenz-Optimierung (WP-6.5)
 // WP:WP-6.5 PRIO:2 NEEDS:WP-2.1
-// STATUS:SCAFFOLD DATE:2026-05-17
+// STATUS:READY DATE:2026-06-15
 
 /// Trait for morphological tokenization.
 ///
@@ -85,6 +85,11 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             "sicherheit",
             "zugriff",
             "rechte",
+            "arbeits",
+            "wirtschafts",
+            "justiz",
+            "finanz",
+            "verfassungs",
         ];
 
         for &word in &dictionary {
