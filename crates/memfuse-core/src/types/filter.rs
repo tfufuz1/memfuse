@@ -1,3 +1,11 @@
+//! Metadata filtering for search queries.
+//!
+//! Provides a structured expression language for defining filters
+//! on document and entity metadata.
+
+// ANCHOR:DOC:FILTER-001 — Missing module-level documentation.
+// AGENT:01 STATUS:DONE PRIO:3
+
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.

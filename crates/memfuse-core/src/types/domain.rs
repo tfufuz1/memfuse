@@ -1,3 +1,11 @@
+//! Domain types for the MemFuse workspace.
+//!
+//! Includes basic identifiers like `DocId`, `TxId`, and `EntityId`,
+//! as well as vector embeddings and search results.
+
+// ANCHOR:DOC:DOMAIN-001 — Missing module-level documentation.
+// AGENT:01 STATUS:DONE PRIO:3
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 

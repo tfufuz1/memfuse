@@ -1,6 +1,9 @@
 //! Transactional buffer for staging index operations.
 //!
 //! Sharded into sub-buffers to reduce lock contention.
+
+// ANCHOR:DEBT:TXBUF-003 — Unannotated unwraps/expects in tests.
+// AGENT:01 STATUS:DONE PRIO:3
 //! Each shard is independently locked, allowing concurrent writers
 //! to different transactions.
 
@@ -349,7 +352,7 @@ mod tests {
 
         for h in handles {
             // ANCHOR:DEBT:TXBUF-002 — intentional expect in tests
-            h.await.expect("task panicked"); // #[cfg(test)]
+            h.await.expect("task panicked"); // unwrap allowed
         }
 
         assert_eq!(buffer.len(), num_tx);
