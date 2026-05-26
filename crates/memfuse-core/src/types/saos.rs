@@ -227,38 +227,39 @@ mod tests {
     }
 
     #[test]
-    fn test_hybrid_query_builder_happy_path() {
+    fn test_hybrid_query_builder_happy_path() -> Result<()> {
         let query = HybridQuery::builder()
             .with_text_query("test query")
             .with_vector_query(vec![0.1, 0.2])
             .with_k(5)
-            .build()
-            .expect("build ok");
+            .build()?;
 
-        assert_eq!(query.text_query.unwrap(), "test query");
-        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]);
+        assert_eq!(query.text_query.as_deref(), Some("test query"));
+        assert_eq!(query.vector_query.as_deref(), Some([0.1, 0.2].as_slice()));
         assert_eq!(query.k, 5);
         // Default weights: vector=1.0, others=0.0
         assert_eq!(query.fusion_weights.vector(), 1.0);
+        Ok(())
     }
 
     #[test]
-    fn test_hybrid_query_builder_custom_weights() {
-        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap();
+    fn test_hybrid_query_builder_custom_weights() -> Result<()> {
+        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1)?;
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())
-            .build()
-            .unwrap();
+            .build()?;
 
         assert_eq!(query.fusion_weights, weights);
+        Ok(())
     }
 
     #[test]
-    fn test_hybrid_query_builder_defaults() {
-        let query = HybridQuery::builder().build().unwrap();
+    fn test_hybrid_query_builder_defaults() -> Result<()> {
+        let query = HybridQuery::builder().build()?;
         assert_eq!(query.k, 10);
         assert_eq!(query.fusion_weights.vector(), 1.0);
         assert!(query.text_query.is_none());
         assert!(query.vector_query.is_none());
+        Ok(())
     }
 }

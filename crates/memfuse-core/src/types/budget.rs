@@ -112,21 +112,21 @@ mod tests {
     }
 
     #[test]
-    fn test_budget_exceeded() {
+    fn test_budget_exceeded() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let budget = ResourceBudget { memory_limit: 1000 };
         let tracker = ResourceTracker::new(budget);
 
-        tracker.consume_memory(900).expect("should consume");
+        tracker.consume_memory(900)?;
         let result = tracker.consume_memory(200);
 
         assert!(result.is_err());
-        match result.err().unwrap() {
-            MemFuseError::MemoryBudgetExceeded { limit_mb, .. } => {
-                // used_mb = (900 + 200) / 1024*1024 = 0 in this case because limit is tiny
-                assert_eq!(limit_mb, 0);
-            }
-            _ => panic!("Expected MemoryBudgetExceeded error"),
+        if let Err(MemFuseError::MemoryBudgetExceeded { limit_mb, .. }) = result {
+            // used_mb = (900 + 200) / 1024*1024 = 0 in this case because limit is tiny
+            assert_eq!(limit_mb, 0);
+        } else {
+            return Err("Expected MemoryBudgetExceeded error".into());
         }
+        Ok(())
     }
 
     #[test]
@@ -160,7 +160,7 @@ mod tests {
     }
 
     #[test]
-    fn test_concurrent_consumption() {
+    fn test_concurrent_consumption() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let budget = ResourceBudget {
             memory_limit: 10000,
         };
@@ -169,18 +169,22 @@ mod tests {
         let mut handlers = Vec::new();
         for _ in 0..10 {
             let t = tracker.clone();
-            handlers.push(std::thread::spawn(move || {
-                for _ in 0..100 {
-                    t.consume_memory(10).expect("consume");
-                }
-            }));
+            handlers.push(std::thread::spawn(
+                move || -> std::result::Result<(), String> {
+                    for _ in 0..100 {
+                        t.consume_memory(10).map_err(|e| e.to_string())?;
+                    }
+                    Ok(())
+                },
+            ));
         }
 
         for h in handlers {
-            h.join().unwrap();
+            h.join().map_err(|_| "thread panicked")??;
         }
 
         assert_eq!(tracker.memory_used(), 10000);
         assert!(tracker.consume_memory(1).is_err());
+        Ok(())
     }
 }
