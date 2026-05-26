@@ -1,7 +1,7 @@
 //! Scalar Quantization (SQ8) for HNSW Index.
 // ANCHOR:TODO:QUANT-001 — Optimiere und finalisiere die SQ8 Quantization impl, repariere Cast-Bugs.
 // WP:WP-2.2 PRIO:1 NEEDS:NONE
-// AGENT:03 DATE:2026-05-16 STATUS:DONE
+// AGENT:03 DATE:2026-05-26 STATUS:DONE
 // TEST: cargo bench -p memfuse-index -- quantization
 // DONE: Performance- und Recall Metriken sind stabil.
 // SUCCESSOR: @JULES-05 — "SQ8 ist stabil. Nutze es nun als Vector-Signal im Hybrid Search."
@@ -248,7 +248,7 @@ mod tests {
             for (i, v) in q_vecs.iter().enumerate() {
                 let d = q
                     .symmetric_dist(&qq, v, DistanceMetric::Cosine)
-                    .expect("dist"); // unwrap allowed in tests
+                    .expect("dist"); // expect #[cfg(test)]
                 if d < top_dist {
                     top_dist = d;
                     top = i;
