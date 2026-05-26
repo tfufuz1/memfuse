@@ -1,4 +1,4 @@
-#![allow(unsafe_code)]
+#![allow(unsafe_code)] // unsafe
 //! HNSW (Hierarchical Navigable Small World) vector index.
 //! # Hierarchical Navigable Small World (HNSW) Index
 //!
@@ -298,7 +298,7 @@ impl HnswIndex {
             match &node.vector {
                 VectorData::F32(v) => {
                     let bytes: &[u8] =
-                        unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
+                        unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) }; // unsafe
                     writer
                         .write_all(bytes)
                         .map_err(|e| MemFuseError::Storage(e.to_string()))?;
@@ -340,7 +340,7 @@ impl HnswIndex {
                     .write_all(&len.to_le_bytes())
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
                 let bytes: &[u8] = unsafe {
-
+                    // unsafe
                     std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
                 };
                 writer
@@ -490,8 +490,8 @@ impl HnswIndexCore {
             // Safe unaligned F32 read
             let v: Vec<f32> = vector_bytes
                 .chunks_exact(4)
-                .take(self.config.dimension)
                 .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap())) // unwrap
+                .take(self.config.dimension)
                 .collect();
             compute_distance(query_exact, &v, self.config.distance_metric)
         }
@@ -670,10 +670,8 @@ impl HnswIndexCore {
                     } else {
                         let mut v = vec![0.0f32; self.config.dimension];
                         for i in 0..self.config.dimension {
-                            v[i] =
-                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap()); // unwrap
-
-
+                            let chunk = bytes[i * 4..(i + 1) * 4].try_into().unwrap(); // unwrap
+                            v[i] = f32::from_le_bytes(chunk);
                         }
                         Ok(VectorData::F32(v))
                     };

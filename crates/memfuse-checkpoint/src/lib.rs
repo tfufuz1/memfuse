@@ -3,7 +3,7 @@
 //! Enables deterministic freezing and restarting of agent workflows.
 //! Implements a SnapshotRegistry abstracting over Multi-Version Concurrency Control (MVCC).
 
-#![forbid(unsafe_code)]
+#![forbid(unsafe_code)] // unsafe
 
 use memfuse_core::{Result, StorageEngine, TxId, WorkflowState};
 use parking_lot::RwLock as SyncRwLock;

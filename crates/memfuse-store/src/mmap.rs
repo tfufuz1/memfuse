@@ -3,7 +3,7 @@
 //! Maps multi-gigabyte SSTables or Out-of-Core components instantly to RAM without allocations.
 
 // Mmap bindings fundamentally require unsafe memory translations.
-#![allow(unsafe_code)]
+#![allow(unsafe_code)] // unsafe
 
 use memfuse_core::Result;
 

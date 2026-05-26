@@ -1,4 +1,4 @@
-#![allow(unsafe_code)]
+#![allow(unsafe_code)] // unsafe
 //! HNSW Persistence Layer — Serialisierung und mmap-Mapping für Vektor-Indizes.
 //!
 //! Dieses Modul implementiert das `.hnsw` Dateiformat, das für das Offloading von
@@ -120,7 +120,7 @@ impl MmapIndex {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = std::fs::File::open(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
-        let mmap = unsafe { memmap2::Mmap::map(&file) }
+        let mmap = unsafe { memmap2::Mmap::map(&file) } // unsafe
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
         let header = HnswHeader::try_from_bytes(&mmap[0..HnswHeader::SIZE])?;

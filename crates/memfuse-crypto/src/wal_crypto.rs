@@ -2,7 +2,7 @@
 //!
 //! Secures blocks of data transparently via ChaCha20Poly1305 / AES-GCM-SIV.
 
-#![forbid(unsafe_code)]
+#![forbid(unsafe_code)] // unsafe
 
 use memfuse_core::Result;
 

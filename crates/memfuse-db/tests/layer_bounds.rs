@@ -35,6 +35,7 @@ async fn test_layer_002_collection_persistence() {
 
         let list = db.list_collections().await.expect("list");
         assert!(list.contains(&"persistent-col".to_string()));
+        db.close().await.expect("close");
     }
 
     // 2. Close and re-open (simulate restart)

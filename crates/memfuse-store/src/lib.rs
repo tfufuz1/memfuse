@@ -14,7 +14,7 @@
 
 // ANCHOR:AUDIT:SEC-001 — deny(unsafe_code) statt forbid(unsafe_code)
 // BEGRÜNDUNG: memmap2 in sstable.rs benötigt unsafe für Performance.
-#![deny(unsafe_code)]
+#![deny(unsafe_code)] // unsafe
 
 pub mod checkpoint;
 pub mod compaction;
