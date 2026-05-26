@@ -15,7 +15,6 @@
 //! - **Async I/O**: All disk operations use `tokio::fs` or `memmap2` with `spawn_blocking`.
 //! - **Zero Panic**: Production code paths avoid `unwrap()` and `expect()`, favoring explicit error handling.
 
-use crate::mmap::MmapReader;
 use bytes::{BufMut, Bytes, BytesMut};
 use lru::LruCache;
 use memfuse_core::{MemFuseError, Result};
@@ -251,7 +250,7 @@ impl SstableBuilder {
 
 /// A reader for existing SSTables.
 pub struct SstableReader {
-    mmap: MmapReader,
+    mmap: Arc<memmap2::Mmap>,
     index: Vec<(Bytes, u64)>,
     metadata: SstableMetadata,
     /// Byte offset where the index data begins (= end of last block).
@@ -277,28 +276,40 @@ impl SstableReader {
         key_manager: Option<Arc<KeyManager>>,
     ) -> Result<Self> {
         let path_buf = path.as_ref().to_path_buf();
-        let mmap = tokio::task::spawn_blocking(move || MmapReader::open(&path_buf))
+        let (mmap, file_size) =
+            tokio::task::spawn_blocking(move || -> std::io::Result<(memmap2::Mmap, u64)> {
+                let file = std::fs::File::open(&path_buf)?; // std::fs justification: required for memmap2
+                let metadata = file.metadata()?;
+                let file_size = metadata.len();
+                // ANCHOR:SAFETY:MMAP-001 — Memory Mapping of SSTable file
+                // WP:WP-4.1 PRIO:1 NEEDS:NONE
+                // AGENT:02 DATE:2026-05-16 STATUS:REVIEW
+                // BEGRÜNDUNG: SSTables sind im LSM-Tree unveränderlich. Memory Mapping
+                // ermöglicht effizienten Zugriff ohne explizite Syscalls.
+                #[allow(unsafe_code)]
+                let mmap = unsafe { memmap2::Mmap::map(&file)? };
+                Ok((mmap, file_size))
+            })
             .await
-            .map_err(|e| MemFuseError::Storage(format!("Join error: {}", e)))??;
-
-        let file_size = mmap.len() as u64;
+            .map_err(|e| MemFuseError::Storage(format!("Join error: {}", e)))?
+            .map_err(|e| MemFuseError::Storage(format!("Mmap failed: {}", e)))?;
 
         if file_size < 12 {
             return Err(MemFuseError::Storage("SSTable file too small".into()));
         }
 
+        let mmap = Arc::new(mmap);
+
         // Read index offset and magic from trailer (last 12 bytes)
         let trailer_pos = (file_size - 12) as usize;
         let index_offset = u64::from_le_bytes(
-            mmap.as_slice()
-                .get(trailer_pos..trailer_pos + 8)
+            mmap.get(trailer_pos..trailer_pos + 8)
                 .ok_or_else(|| MemFuseError::Storage("invalid trailer offset".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid trailer".into()))?,
         );
         let magic = u32::from_le_bytes(
-            mmap.as_slice()
-                .get(trailer_pos + 8..trailer_pos + 12)
+            mmap.get(trailer_pos + 8..trailer_pos + 12)
                 .ok_or_else(|| MemFuseError::Storage("invalid trailer magic".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid trailer".into()))?,
@@ -321,8 +332,7 @@ impl SstableReader {
 
         while pos + 10 <= index_end {
             let key_len = u16::from_le_bytes(
-                mmap.as_slice()
-                    .get(pos..pos + 2)
+                mmap.get(pos..pos + 2)
                     .ok_or_else(|| MemFuseError::Storage("corrupted index k_len".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
@@ -333,8 +343,7 @@ impl SstableReader {
                 return Err(MemFuseError::Storage("corrupted SSTable index".into()));
             }
             let key = Bytes::copy_from_slice(
-                mmap.as_slice()
-                    .get(pos..pos + key_len)
+                mmap.get(pos..pos + key_len)
                     .ok_or_else(|| MemFuseError::Storage("corrupted index key".into()))?,
             );
             pos += key_len;
@@ -343,8 +352,7 @@ impl SstableReader {
                 return Err(MemFuseError::Storage("corrupted SSTable index".into()));
             }
             let offset = u64::from_le_bytes(
-                mmap.as_slice()
-                    .get(pos..pos + 8)
+                mmap.get(pos..pos + 8)
                     .ok_or_else(|| MemFuseError::Storage("corrupted index offset".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
@@ -373,8 +381,7 @@ impl SstableReader {
                 index_offset
             };
 
-            let block_data =
-                Self::read_block_at(mmap.as_slice(), offset, next_offset, &key_manager)?;
+            let block_data = Self::read_block_at(&mmap, offset, next_offset, &key_manager)?;
             if block_data.len() < 2 {
                 return Err(MemFuseError::Storage("corrupted SSTable block".into()));
             }
@@ -447,8 +454,7 @@ impl SstableReader {
         if let Some(block) = cached {
             Ok(block)
         } else {
-            let block =
-                Self::read_block_at(self.mmap.as_slice(), offset, next_offset, &self.key_manager)?;
+            let block = Self::read_block_at(&self.mmap, offset, next_offset, &self.key_manager)?;
             self.block_cache
                 .write()
                 .put((self.file_id, offset), block.clone());

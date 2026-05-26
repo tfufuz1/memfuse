@@ -185,7 +185,7 @@ impl Wal {
         // If file is not empty, find the last valid HMAC to continue the chain
         if metadata.len() > 0 {
             let entries = wal.replay().await?;
-            if let Some((_, last_entry, _)) = entries.last() {
+            if let Some((_, last_entry)) = entries.last() {
                 let mut guard = wal.last_hmac.lock().await;
                 *guard = last_entry.checksum;
             }
@@ -241,9 +241,8 @@ impl Wal {
         WalEntry::try_new(op, seq_no, &integrity_key, *last_hmac)
     }
 
-    /// Replays the WAL, returning all valid entries with their sequence numbers and end offsets.
-    /// Returns `Vec<(seq_no, WalEntry, end_offset)>`.
-    pub async fn replay(&self) -> Result<Vec<(u64, WalEntry, u64)>> {
+    /// Replays the WAL, returning all valid entries.
+    pub async fn replay(&self) -> Result<Vec<(u64, WalEntry)>> {
         let mut file = self.file.lock().await;
         use tokio::io::AsyncSeekExt;
         file.seek(std::io::SeekFrom::Start(0))
@@ -288,8 +287,7 @@ impl Wal {
                 Err(e) => return Err(MemFuseError::Storage(format!("WAL read failed: {}", e))),
             };
 
-            let end_offset = pos + 4 + len as u64;
-            pos = end_offset;
+            pos += (4 + len) as u64;
 
             let decrypted_data;
             let entry_data = if let Some(km) = &self.key_manager {
@@ -498,30 +496,10 @@ impl Wal {
                     checksum: stored_checksum,
                     prev_hmac,
                 },
-                end_offset,
             ));
         }
 
         Ok(entries)
-    }
-
-    /// Truncates the WAL to a specific size and updates the last HMAC.
-    pub async fn truncate(&self, size: u64, last_hmac: [u8; 32]) -> Result<()> {
-        let mut file = self.file.lock().await;
-        file.set_len(size)
-            .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL truncate failed: {}", e)))?;
-
-        use tokio::io::AsyncSeekExt;
-        file.seek(std::io::SeekFrom::Start(size))
-            .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL seek failed: {}", e)))?;
-
-        self.size.store(size, std::sync::atomic::Ordering::SeqCst);
-        let mut hmac_guard = self.last_hmac.lock().await;
-        *hmac_guard = last_hmac;
-
-        Ok(())
     }
 
     pub fn size(&self) -> u64 {
@@ -588,7 +566,6 @@ mod tests {
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[1].1.prev_hmac, entries[0].1.checksum);
-        assert_eq!(entries[1].2, wal2.size());
     }
 
     #[tokio::test]

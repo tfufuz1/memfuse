@@ -20,7 +20,6 @@ pub mod checkpoint;
 pub mod compaction;
 pub mod lsm;
 pub mod memtable;
-pub mod mmap;
 pub mod sstable;
 pub mod wal;
 

@@ -33,6 +33,10 @@ impl DocId {
         self.0
     }
 
+    pub fn from_string(id: &str) -> Self {
+        Self::from_key(id).unwrap_or(Self(0))
+    }
+
     pub fn from_key(key: &str) -> Result<Self> {
         Self::try_from_key(key)
     }
