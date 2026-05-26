@@ -11,7 +11,8 @@
 //! It combines vector search (HNSW), persistent storage (LSM-Tree),
 //! and relationship tracking in a single library.
 //!
-// AGENT:08 DATE:2026-05-18 STATUS:DONE
+//! MemFuse Database facade providing high-level collection and search APIs.
+//! (Updated by AGENT:08 on 2026-05-18)
 //!
 //! ## Quick Start
 //!
@@ -66,6 +67,7 @@ pub use memfuse_checkpoint;
 
 /// User-facing search result containing the ID, score, and optional metadata.
 #[derive(Debug, Clone)]
+/// A single result from a semantic or hybrid search operation.
 pub struct SearchResult {
     /// The string ID provided during insert.
     pub id: String,
@@ -77,6 +79,7 @@ pub struct SearchResult {
 
 /// Overall database statistics.
 #[derive(Debug, Clone)]
+/// Aggregated statistics for the MemFuse database.
 pub struct DbStats {
     /// Statistics for the vector index.
     pub index_stats: memfuse_core::VectorIndexStats,
@@ -86,6 +89,7 @@ pub struct DbStats {
 
 /// User-facing document structure.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// A document containing content, vector embedding, and metadata.
 pub struct Document {
     /// The string ID.
     pub id: String,
@@ -95,6 +99,7 @@ pub struct Document {
 
 /// Global configuration settings for the MemFuse database.
 #[derive(Debug, Clone)]
+/// Configuration options for the MemFuse database instance.
 pub struct MemFuseConfig {
     /// Vector dimensionality (must match your embeddings).
     pub dimension: usize,

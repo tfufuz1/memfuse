@@ -51,6 +51,7 @@ fn extract_text(metadata: &Option<serde_json::Value>) -> Option<String> {
 /// Each collection provides its own HNSW vector index and inverted text index,
 /// while sharing the underlying LSM-Tree storage with other collections.
 #[derive(Clone)]
+/// A collection of documents providing high-level search and manipulation APIs.
 pub struct Collection {
     pub(crate) name: String,
     pub(crate) prefix: Vec<u8>,
@@ -155,6 +156,9 @@ impl Collection {
                 Err(_) => continue, // Skip invalid entries
             };
 
+            // ANCHOR:FIXME:COMP-001 AGENT:08 STATUS:READY
+            // COMPILATION ERROR: DocId::from_string does not exist.
+            // MUST BE REPLACED WITH: match DocId::from_key(&stored.id) { Ok(id) => id, Err(_) => continue }
             let doc_id = DocId::from_string(&stored.id);
 
             // Check if present in index

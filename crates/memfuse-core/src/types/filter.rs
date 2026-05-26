@@ -1,7 +1,10 @@
+//! Metadata filtering expressions and evaluation.
+
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents a metadata filter expression.
 pub enum FilterExpr {
     /// Exact match: field == value
     Eq {

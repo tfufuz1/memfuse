@@ -103,6 +103,7 @@ impl ContextManager {
 ///
 /// Filters context by geographic region metadata field.
 #[derive(Debug, Clone)]
+/// A spatial filter used to restrict search results to a specific geographic region.
 pub struct SpatialFence {
     /// The region identifier to filter by.
     pub region: String,

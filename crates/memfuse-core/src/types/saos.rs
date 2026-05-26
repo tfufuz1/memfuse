@@ -1,3 +1,5 @@
+//! SAOS (Sovereign Agentic Operating System) specific types and structures.
+
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
@@ -88,7 +90,7 @@ impl FusionWeights {
     }
 }
 
-/// Defines cross-namespace isolation guarantees.
+/// Defines the level of isolation between namespaces and cross-namespace guarantees.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IsolationLevel {
     Strict,
@@ -96,7 +98,7 @@ pub enum IsolationLevel {
     Logical,
 }
 
-/// A chunk of context for LLM budget allocation.
+/// A single chunk of context used for LLM budget allocation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextChunk {
     pub doc_id: DocId,
@@ -105,7 +107,7 @@ pub struct ContextChunk {
     pub token_count: usize,
 }
 
-/// An aggregated context window constrained by a token budget.
+/// A window of aggregated context chunks within a token budget.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextWindow {
     pub chunks: Vec<ContextChunk>,
@@ -113,7 +115,7 @@ pub struct ContextWindow {
     pub truncated: bool,
 }
 
-/// Evaluated result for hybrid/4-signal search.
+/// A search result entry with a final calculated score for hybrid/4-signal search.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScoredEntry {
     pub id: String,
@@ -121,7 +123,7 @@ pub struct ScoredEntry {
     pub metadata: Option<serde_json::Value>,
 }
 
-/// A unified query traversing multiple index signals.
+/// A unified query that combines multiple search signals (text, vector, graph).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HybridQuery {
     pub text_query: Option<String>,
@@ -138,7 +140,7 @@ impl HybridQuery {
     }
 }
 
-/// Builder for HybridQuery to improve DX.
+/// Builder for constructing a `HybridQuery` with a fluent API.
 #[derive(Default)]
 pub struct HybridQueryBuilder {
     text_query: Option<String>,

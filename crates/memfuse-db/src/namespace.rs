@@ -12,6 +12,7 @@ use std::collections::HashMap;
 
 /// Metadata for a single namespace.
 #[derive(Debug, Clone)]
+/// Represents an isolated logical workspace (namespace) within the database.
 pub struct Namespace {
     /// Unique identifier.
     pub id: NamespaceId,

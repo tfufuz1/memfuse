@@ -1,3 +1,5 @@
+//! High-level metadata filtering for the database layer.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

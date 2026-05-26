@@ -34,6 +34,7 @@ impl EncryptedWal {
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
+/// HMAC generator for Write-Ahead Log entries.
 pub struct WalHmac {
     mac: Hmac<Sha256>,
 }
@@ -56,6 +57,7 @@ impl WalHmac {
 
 /// A snapshot of a WAL entry for cryptographic verification.
 #[derive(Debug, Clone)]
+/// A snapshot of a WAL entry with associated cryptographic verification data.
 pub struct WalEntrySnapshot {
     pub seq_no: u64,
     pub op_type: u8, // 0: Put, 1: Delete

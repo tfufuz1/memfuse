@@ -1,3 +1,5 @@
+//! Resource and token budgeting for MemFuse operations.
+
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.

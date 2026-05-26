@@ -1,3 +1,5 @@
+//! Core domain types and common data structures for MemFuse.
+
 pub mod budget;
 pub mod domain;
 pub mod filter;

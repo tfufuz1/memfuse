@@ -1,3 +1,5 @@
+//! Domain-specific types including identifiers and fundamental structures.
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
