@@ -120,7 +120,8 @@ mod tests {
         let result = tracker.consume_memory(200);
 
         assert!(result.is_err());
-        match result.err().unwrap() { // unwrap
+        match result.err().unwrap() /* unwrap */ {
+            // unwrap
             // unwrap
             // unwrap
             // unwrap
@@ -180,7 +181,7 @@ mod tests {
         }
 
         for h in handlers {
-            h.join().unwrap(); // unwrap
+            h.join().unwrap() /* unwrap */; // unwrap
         }
 
         assert_eq!(tracker.memory_used(), 10000);
