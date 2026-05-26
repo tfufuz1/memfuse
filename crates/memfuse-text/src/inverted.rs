@@ -106,11 +106,9 @@ impl InvertedIndex {
                 if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
                     let config = bincode::config::standard();
                     // Handle both old Vec<String> and new Vec<(String, u32)> for compatibility
-                    if let Ok((terms, _)) =
-                        bincode::serde::decode_from_slice::<Vec<(String, u32)>, _>(
-                            &fw_bytes, config,
-                        )
-                    {
+                    if let Ok((terms, _)) = bincode::serde::decode_from_slice::<Vec<(String, u32)>, _>(
+                        &fw_bytes, config,
+                    ) {
                         old_tfs = terms.into_iter().collect();
                     } else if let Ok((terms, _)) =
                         bincode::serde::decode_from_slice::<Vec<String>, _>(&fw_bytes, config)
@@ -138,7 +136,9 @@ impl InvertedIndex {
                         } else {
                             let new_pl_bytes =
                                 bincode::serde::encode_to_vec(&pl, bincode::config::standard())
-                                    .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
+                                    .map_err(|e| {
+                                        MemFuseError::Storage(format!("bincode: {}", e))
+                                    })?;
                             self.storage.put(tx, &pl_key, &new_pl_bytes).await?;
                         }
                     }
@@ -271,10 +271,8 @@ impl InvertedIndex {
             for term in old_terms {
                 let pl_key = self.key_with_term(&term);
                 if let Some(pl_bytes) = self.storage.get(&pl_key).await? {
-                    if let Ok((mut pl, _)) = bincode::serde::decode_from_slice::<
-                        Vec<(DocId, u32)>,
-                        _,
-                    >(&pl_bytes, config)
+                    if let Ok((mut pl, _)) =
+                        bincode::serde::decode_from_slice::<Vec<(DocId, u32)>, _>(&pl_bytes, config)
                     {
                         pl.retain(|&(d, _)| d != doc_id);
                         if pl.is_empty() {
