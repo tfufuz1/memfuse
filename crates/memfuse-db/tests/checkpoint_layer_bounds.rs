@@ -107,14 +107,14 @@ async fn test_layer_001_fork_diverge_merge() {
             .expect("ins fork only");
 
         // Verifizieren der Divergenz
-        assert!(main_col.get("doc-main-only").await.unwrap().is_some());
-        assert!(main_col.get("doc-fork-only").await.unwrap().is_none());
+        assert!(main_col.get("doc-main-only").await.expect("test").is_some());
+        assert!(main_col.get("doc-fork-only").await.expect("test").is_none());
 
-        assert!(fork_col.get("doc-fork-only").await.unwrap().is_some());
-        assert!(fork_col.get("doc-main-only").await.unwrap().is_none());
+        assert!(fork_col.get("doc-fork-only").await.expect("test").is_some());
+        assert!(fork_col.get("doc-main-only").await.expect("test").is_none());
 
         // 5. "Merge" simulieren
-        let fork_doc = fork_col.get("doc-fork-only").await.expect("get").unwrap();
+        let fork_doc = fork_col.get("doc-fork-only").await.expect("get").expect("test");
         main_col
             .insert(&fork_doc.id, &[0.0, 0.0, 1.0, 1.0], fork_doc.metadata)
             .await
@@ -125,8 +125,8 @@ async fn test_layer_001_fork_diverge_merge() {
             .get("doc-fork-only")
             .await
             .expect("get merged")
-            .unwrap();
-        assert_eq!(merged_doc.metadata.unwrap()["origin"], "fork");
+            .expect("test");
+        assert_eq!(merged_doc.metadata.expect("test")["origin"], "fork");
     }
 
     // 6. Cleanup Checkpoint
