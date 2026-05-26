@@ -26,6 +26,9 @@ fn bench_hybrid_search(c: &mut Criterion) {
 
     c.bench_function("hybrid_search_latency", |b| {
         b.to_async(&rt).iter(|| async {
+            // Re-open/ensure db is ready in this thread's context if needed,
+            // but MemFuse::open already handles initialization.
+            // The panic suggested a missing reactor, usually solved by block_on or to_async.
             let _ = db
                 .hybrid_search("quick fox", &vec![0.1; 1536], 5)
                 .await
