@@ -37,6 +37,10 @@ impl DocId {
         Self::try_from_key(key)
     }
 
+    pub fn from_string(s: &str) -> Self {
+        Self::try_from_key(s).unwrap_or(Self(0))
+    }
+
     pub fn try_from_key(key: &str) -> Result<Self> {
         let hash = blake3::hash(key.as_bytes());
         let bytes = hash
