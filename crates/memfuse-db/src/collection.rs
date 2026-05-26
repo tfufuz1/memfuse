@@ -108,7 +108,8 @@ impl Collection {
                     k
                 }
                 3 => {
-                    let mut k = b"__tx_intent:".to_vec();
+                    let mut k = Vec::with_capacity(12 + key.len());
+                    k.extend_from_slice(b"__tx_intent:");
                     k.extend_from_slice(key);
                     k
                 }
@@ -155,7 +156,17 @@ impl Collection {
                 Err(_) => continue, // Skip invalid entries
             };
 
-            let doc_id = DocId::from_string(&stored.id);
+            let doc_id = match DocId::from_key(&stored.id) {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::warn!(
+                        "Skipping document with invalid ID '{}' during repair: {}",
+                        stored.id,
+                        e
+                    );
+                    continue;
+                }
+            };
 
             // Check if present in index
             // We use k=1 search to check presence (if we find it with distance 0, it's there)
