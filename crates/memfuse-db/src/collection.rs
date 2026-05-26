@@ -6,6 +6,8 @@
 // DESIGN: Eigener HNSW-Index pro Collection, GEMEINSAMER LSM-Storage.
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 // STATUS: Full Implementation für WP-1.2.
+// ANCHOR:TODO:HARDEN-001 — Harden error handling and validation in DB Orchestrator
+// STATUS:DONE AGENT:04
 
 use crate::filter::MetadataFilter;
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
@@ -155,7 +157,10 @@ impl Collection {
                 Err(_) => continue, // Skip invalid entries
             };
 
-            let doc_id = DocId::from_string(&stored.id);
+            let doc_id = match DocId::from_key(&stored.id) {
+                Ok(id) => id,
+                Err(_) => continue, // Skip invalid keys during repair
+            };
 
             // Check if present in index
             // We use k=1 search to check presence (if we find it with distance 0, it's there)
@@ -585,6 +590,9 @@ impl Collection {
         k: usize,
         filter: Option<MetadataFilter>,
     ) -> Result<Vec<crate::SearchResult>> {
+        if k == 0 {
+            return Ok(Vec::new());
+        }
         let filter = match filter {
             Some(f) => f,
             None => return self.search_filtered(query, k, None).await,
@@ -672,6 +680,9 @@ impl Collection {
         k: usize,
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<crate::SearchResult>> {
+        if k == 0 {
+            return Ok(Vec::new());
+        }
         let scored_docs = self.index.search_filtered(query, k, filter).await?;
         self.hydrate_from_scored(scored_docs).await
     }
@@ -729,6 +740,9 @@ impl Collection {
         vector: &[f32],
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
+        if k == 0 {
+            return Ok(Vec::new());
+        }
         let is_vector_zero = vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
 
