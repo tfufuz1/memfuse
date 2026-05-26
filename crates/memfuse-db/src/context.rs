@@ -5,7 +5,7 @@
 
 // ANCHOR:ARCH:CONTEXT-001 — Autonomes Kontext-Management (WP-6.3)
 // WP:WP-6.3 PRIO:2 NEEDS:GS-01
-// STATUS:SCAFFOLD DATE:2026-05-17
+// STATUS:DONE DATE:2026-05-26
 
 use memfuse_core::{
     ContextChunk, ContextWindow, Result, TokenBudget,
@@ -120,9 +120,13 @@ impl SpatialFence {
     }
 
     /// Checks if a chunk's metadata matches this spatial fence.
-    pub fn matches(&self, _chunk: &ContextChunk) -> bool {
-        // TODO(WP-6.3): Check chunk metadata for geo_region field match.
-        true
+    pub fn matches(&self, chunk: &ContextChunk) -> bool {
+        if let Some(meta) = &chunk.metadata {
+            if let Some(region) = meta.get(&self.field_name).and_then(|v| v.as_str()) {
+                return region == self.region;
+            }
+        }
+        false
     }
 }
 
@@ -144,22 +148,25 @@ mod tests {
                 content: "high relevance".into(),
                 relevance: 0.9,
                 token_count: 50,
+                metadata: None,
             },
             ContextChunk {
                 doc_id: DocId::new(2),
                 content: "medium relevance".into(),
                 relevance: 0.5,
                 token_count: 50,
+                metadata: None,
             },
             ContextChunk {
                 doc_id: DocId::new(3),
                 content: "should be excluded".into(),
                 relevance: 0.3,
                 token_count: 50,
+                metadata: None,
             },
         ];
 
-        let window = mgr.prepare_context(chunks).expect("valid test value");
+        let window = mgr.prepare_context(chunks).expect("valid test value"); // unwrap allowed
         // Budget: 100 - 20 = 80 available. Should fit 50 (chunk1) but not 50+50=100.
         // Actually 50+50=100 > 80, so only first chunk should fit... but let's check:
         // chunk1: 50 <= 80 -> included, total=50

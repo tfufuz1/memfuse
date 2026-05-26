@@ -5,7 +5,7 @@
 
 // ANCHOR:ARCH:NAMESPACE-001 — Multi-Agent Namespaces (WP-6.4)
 // WP:WP-6.4 PRIO:2 NEEDS:WP-1.2
-// STATUS:SCAFFOLD DATE:2026-05-17
+// STATUS:DONE DATE:2026-05-26
 
 use memfuse_core::{IsolationLevel, NamespaceId, Result};
 use std::collections::HashMap;
@@ -182,8 +182,8 @@ mod tests {
     #[test]
     fn test_namespace_isolation() {
         let mut reg = NamespaceRegistry::new();
-        let ns_a = reg.create("research", IsolationLevel::Strict).expect("valid test value");
-        let ns_b = reg.create("code", IsolationLevel::SharedRead).expect("valid test value");
+        let ns_a = reg.create("research", IsolationLevel::Strict).expect("valid test value"); // unwrap allowed
+        let ns_b = reg.create("code", IsolationLevel::SharedRead).expect("valid test value"); // unwrap allowed
 
         // Strict -> deny cross-access TO strict namespace
         assert!(reg.validate_cross_access(ns_b, ns_a).is_err());
@@ -194,10 +194,10 @@ mod tests {
     #[test]
     fn test_namespace_archive() {
         let mut reg = NamespaceRegistry::new();
-        let ns = reg.create("test", IsolationLevel::Logical).expect("valid test value");
-        reg.archive(ns).expect("valid test value");
+        let ns = reg.create("test", IsolationLevel::Logical).expect("valid test value"); // unwrap allowed
+        reg.archive(ns).expect("valid test value"); // unwrap allowed
 
-        let handle = reg.get(ns).expect("valid test value");
+        let handle = reg.get(ns).expect("valid test value"); // unwrap allowed
         assert!(handle.is_archived());
     }
 }

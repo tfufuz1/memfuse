@@ -103,6 +103,7 @@ pub struct ContextChunk {
     pub content: String,
     pub relevance: f32,
     pub token_count: usize,
+    pub metadata: Option<serde_json::Value>,
 }
 
 /// An aggregated context window constrained by a token budget.
