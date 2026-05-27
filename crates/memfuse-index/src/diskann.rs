@@ -183,9 +183,10 @@ impl DiskAnnIndex {
         file.sync_all().await.map_err(MemFuseError::Io)?;
 
         let std_file = file.into_std().await;
-        self.mmap = Some(crate::distance::mmap_file(&std_file).map_err(|e| {
-            std::io::Error::other(e.to_string())
-        })?);
+        self.mmap = Some(
+            crate::distance::mmap_file(&std_file)
+                .map_err(|e| std::io::Error::other(e.to_string()))?,
+        );
         self.entry_point = 0;
 
         Ok(())

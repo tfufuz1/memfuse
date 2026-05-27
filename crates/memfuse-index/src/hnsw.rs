@@ -489,9 +489,10 @@ impl HnswIndexCore {
                 .chunks_exact(4)
                 .take(self.config.dimension)
                 .map(|chunk| {
-                    chunk.try_into().map(f32::from_le_bytes).map_err(|_| {
-                        MemFuseError::Storage("Malformed F32 vector in mmap".into())
-                    })
+                    chunk
+                        .try_into()
+                        .map(f32::from_le_bytes)
+                        .map_err(|_| MemFuseError::Storage("Malformed F32 vector in mmap".into()))
                 })
                 .collect::<Result<Vec<f32>>>()?;
             compute_distance(query_exact, &v, self.config.distance_metric)
@@ -532,7 +533,7 @@ impl HnswIndexCore {
     ) -> Result<f32> {
         if let Some(mmap) = ctx.mmap {
             if idx < ctx.mmap_node_count {
-            let record = mmap.get_node_record(idx)?;
+                let record = mmap.get_node_record(idx)?;
                 return self.compute_distance_with_mmap(query, query_q, mmap, &record);
             }
             let ram_idx = idx - ctx.mmap_node_count;
@@ -1864,7 +1865,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {

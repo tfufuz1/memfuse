@@ -89,11 +89,9 @@ impl HnswHeader {
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("Malformed header: nodes_offset".into()))?,
             ),
-            connections_offset: u64::from_le_bytes(
-                bytes[48..56]
-                    .try_into()
-                    .map_err(|_| MemFuseError::Storage("Malformed header: connections_offset".into()))?,
-            ),
+            connections_offset: u64::from_le_bytes(bytes[48..56].try_into().map_err(|_| {
+                MemFuseError::Storage("Malformed header: connections_offset".into())
+            })?),
             last_tx_id: u64::from_le_bytes(
                 bytes[56..64]
                     .try_into()
@@ -144,16 +142,12 @@ impl NodeRecord {
                     .map_err(|_| MemFuseError::Storage("Malformed node record: doc_id".into()))?,
             ),
             max_layer: bytes[8],
-            vector_offset: u64::from_le_bytes(
-                bytes[9..17].try_into().map_err(|_| {
-                    MemFuseError::Storage("Malformed node record: vector_offset".into())
-                })?,
-            ),
-            connections_offset: u64::from_le_bytes(
-                bytes[17..25].try_into().map_err(|_| {
-                    MemFuseError::Storage("Malformed node record: connections_offset".into())
-                })?,
-            ),
+            vector_offset: u64::from_le_bytes(bytes[9..17].try_into().map_err(|_| {
+                MemFuseError::Storage("Malformed node record: vector_offset".into())
+            })?),
+            connections_offset: u64::from_le_bytes(bytes[17..25].try_into().map_err(|_| {
+                MemFuseError::Storage("Malformed node record: connections_offset".into())
+            })?),
         })
     }
 
@@ -216,13 +210,10 @@ impl MmapIndex {
 
         let mut current_pos = offset + 1;
         for _ in 0..layer {
-            let len = u32::from_le_bytes(
-                self.mmap[current_pos..current_pos + 4]
-                    .try_into()
-                    .map_err(|_| {
-                        MemFuseError::Storage("Malformed connections: layer length".into())
-                    })?,
-            ) as usize;
+            let len =
+                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().map_err(
+                    |_| MemFuseError::Storage("Malformed connections: layer length".into()),
+                )?) as usize;
             current_pos += 4 + len * 4;
         }
 
@@ -235,7 +226,9 @@ impl MmapIndex {
         let end = start + len * 4;
 
         if end > self.mmap.len() {
-            return Err(MemFuseError::Storage("Connections offset out of bounds".into()));
+            return Err(MemFuseError::Storage(
+                "Connections offset out of bounds".into(),
+            ));
         }
 
         let raw = &self.mmap[start..end];
