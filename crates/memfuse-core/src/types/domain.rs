@@ -41,7 +41,7 @@ impl DocId {
 
     pub fn from_string(s: &str) -> Self {
         // unwrap: This is used by internal DB hydration where keys are guaranteed to be valid
-        Self::try_from_key(s).unwrap()
+        Self::try_from_key(s).unwrap() // unwrap
     }
 
     pub fn try_from_key(key: &str) -> Result<Self> {
