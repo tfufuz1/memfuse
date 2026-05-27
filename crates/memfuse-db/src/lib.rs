@@ -205,7 +205,10 @@ impl MemFuse {
             // 2. Mark each pending intent as "repaired" to prevent re-processing.
             //    The actual data reconciliation happens in step 3 via Collection::repair().
             for intent_key in &pending_intents {
-                let tx = TxId::new(self.next_tx.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+                let tx = TxId::new(
+                    self.next_tx
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                );
                 if let Err(e) = self.storage.put(tx, intent_key, b"repaired").await {
                     tracing::error!("repair_on_open: failed to mark intent as repaired: {}", e);
                     continue;
@@ -497,15 +500,12 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
+    /// Performs hybrid search combining BM25 and vector search.
     /// Performs a 4-signal fusion query combining vector, text, and metadata signals.
-    pub async fn query(
-        &self,
-        query: memfuse_core::HybridQuery,
-    ) -> Result<Vec<SearchResult>> {
+    pub async fn query(&self, query: memfuse_core::HybridQuery) -> Result<Vec<SearchResult>> {
         self.default_col().await?.query(query).await
     }
 
-    /// Performs hybrid search combining BM25 and vector search.
     pub async fn hybrid_search(
         &self,
         text: &str,
@@ -644,9 +644,9 @@ mod tests {
             .expect("insert"); // unwrap allowed (AGENT:04)
 
         let results = db.search(&[1.0, 0.0, 0.0, 0.0], 2).await.expect("search"); // unwrap allowed (AGENT:04)
-        assert_eq!(results.len(), 2); // unwrap allowed (AGENT:04)
+        assert_eq!(results.len(), 2);
         // doc-1 should be closest
-        assert!(results[0].score > results[1].score); // unwrap allowed (AGENT:04)
+        assert!(results[0].score > results[1].score);
     }
 
     #[tokio::test]
@@ -662,11 +662,11 @@ mod tests {
         .expect("insert"); // unwrap allowed (AGENT:04)
 
         let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // unwrap allowed (AGENT:04)
-        assert_eq!(results.len(), 1); // unwrap allowed (AGENT:04)
-        assert_eq!(results[0].id, "doc-1"); // unwrap allowed (AGENT:04)
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "doc-1");
         let meta = results[0].metadata.as_ref().expect("metadata should exist"); // unwrap allowed (AGENT:04)
-        assert_eq!(meta["topic"], "rust"); // unwrap allowed (AGENT:04)
-        assert_eq!(meta["priority"], 1); // unwrap allowed (AGENT:04)
+        assert_eq!(meta["topic"], "rust");
+        assert_eq!(meta["priority"], 1);
     }
 
     #[tokio::test]
@@ -682,11 +682,11 @@ mod tests {
         .expect("insert"); // unwrap allowed (AGENT:04)
 
         let doc = db.get("doc-1").await.expect("get").expect("should exist"); // unwrap allowed (AGENT:04)
-        assert_eq!(doc.id, "doc-1"); // unwrap allowed (AGENT:04)
-        assert_eq!(doc.metadata.expect("valid")["topic"], "rust"); // unwrap allowed (AGENT:04) // unwrap allowed (AGENT:04)
+        assert_eq!(doc.id, "doc-1");
+        assert_eq!(doc.metadata.expect("valid")["topic"], "rust"); // unwrap allowed (AGENT:04)
 
         let none = db.get("nonexistent").await.expect("get"); // unwrap allowed (AGENT:04)
-        assert!(none.is_none()); // unwrap allowed (AGENT:04)
+        assert!(none.is_none());
     }
 
     #[tokio::test]
@@ -703,12 +703,12 @@ mod tests {
 
         // Metadata should be updated
         let doc = db.get("doc-1").await.expect("get").expect("exists"); // unwrap allowed (AGENT:04)
-        assert_eq!(doc.metadata.expect("valid")["v"], 2); // unwrap allowed (AGENT:04) // unwrap allowed (AGENT:04)
+        assert_eq!(doc.metadata.expect("valid")["v"], 2); // unwrap allowed (AGENT:04)
 
         // Vector should be updated — search for new vector should find it
         let results = db.search(&[0.0, 1.0, 0.0, 0.0], 1).await.expect("search"); // unwrap allowed (AGENT:04)
-        assert_eq!(results.len(), 1); // unwrap allowed (AGENT:04)
-        assert_eq!(results[0].id, "doc-1"); // unwrap allowed (AGENT:04)
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "doc-1");
     }
 
     #[tokio::test]
@@ -718,14 +718,14 @@ mod tests {
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
             .expect("insert"); // unwrap allowed (AGENT:04)
-        assert_eq!(db.len().await.expect("len"), 1); // unwrap allowed (AGENT:04) // unwrap allowed (AGENT:04)
+        assert_eq!(db.len().await.expect("len"), 1); // unwrap allowed (AGENT:04)
 
         db.delete("doc-1").await.expect("delete"); // unwrap allowed (AGENT:04)
-        assert_eq!(db.len().await.expect("len"), 0); // unwrap allowed (AGENT:04) // unwrap allowed (AGENT:04)
+        assert_eq!(db.len().await.expect("len"), 0); // unwrap allowed (AGENT:04)
 
         // get should return None after delete
         let doc = db.get("doc-1").await.expect("get"); // unwrap allowed (AGENT:04)
-        assert!(doc.is_none()); // unwrap allowed (AGENT:04)
+        assert!(doc.is_none());
     }
 
     #[tokio::test]
@@ -749,14 +749,14 @@ mod tests {
     async fn test_dimension_mismatch() {
         let (db, _tmp) = test_db(4).await;
         let result = db.insert("doc-1", &[1.0, 0.0], None).await;
-        assert!(result.is_err()); // unwrap allowed (AGENT:04)
+        assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_empty_search() {
         let (db, _tmp) = test_db(4).await;
         let results = db.search(&[1.0, 0.0, 0.0, 0.0], 5).await.expect("search"); // unwrap allowed (AGENT:04)
-        assert!(results.is_empty()); // unwrap allowed (AGENT:04)
+        assert!(results.is_empty());
     }
 
     #[tokio::test]
@@ -785,22 +785,22 @@ mod tests {
             .scan_prefix("__rel:doc-1:references:")
             .await
             .expect("scan"); // unwrap allowed (AGENT:04)
-        assert_eq!(results.len(), 2); // unwrap allowed (AGENT:04)
+        assert_eq!(results.len(), 2);
 
         let related_ids: Vec<String> = results
             .into_iter()
-            .map(|(_, v)| v["to"].as_str().expect("valid") /* unwrap allowed (AGENT:04) */ .to_string())
+            .map(|(_, v)| v["to"].as_str().expect("valid").to_string()) // unwrap allowed (AGENT:04)
             .collect();
-        assert!(related_ids.contains(&"doc-2".to_string())); // unwrap allowed (AGENT:04)
-        assert!(related_ids.contains(&"doc-3".to_string())); // unwrap allowed (AGENT:04)
+        assert!(related_ids.contains(&"doc-2".to_string()));
+        assert!(related_ids.contains(&"doc-3".to_string()));
 
         // Check backward edge setup automatically
         let backward_results = db
             .scan_prefix("__rel:doc-2:references:")
             .await
             .expect("scan bwd"); // unwrap allowed (AGENT:04)
-        assert_eq!(backward_results.len(), 1); // unwrap allowed (AGENT:04)
-        assert_eq!(backward_results[0].1["to"], "doc-1"); // unwrap allowed (AGENT:04)
+        assert_eq!(backward_results.len(), 1);
+        assert_eq!(backward_results[0].1["to"], "doc-1");
     }
 
     #[tokio::test]
@@ -812,8 +812,8 @@ mod tests {
             .expect("insert"); // unwrap allowed (AGENT:04)
 
         let stats = db.stats().await.expect("stats"); // unwrap allowed (AGENT:04)
-        assert_eq!(stats.index_stats.num_vectors, 1); // unwrap allowed (AGENT:04)
-        assert!(stats.storage_stats.memtable_size_bytes > 0); // unwrap allowed (AGENT:04)
+        assert_eq!(stats.index_stats.num_vectors, 1);
+        assert!(stats.storage_stats.memtable_size_bytes > 0);
     }
 
     #[tokio::test]
@@ -853,8 +853,8 @@ mod tests {
 
         // 3. Search
         let results = db.search(&[1.0, 0.5, 0.0, 0.0], 2).await.expect("search"); // unwrap allowed (AGENT:04)
-        assert_eq!(results[0].id, "agent-1"); // unwrap allowed (AGENT:04) // Exactly matches
-        assert_eq!(results[1].id, "task-1"); // unwrap allowed (AGENT:04) // Close match
+        assert_eq!(results[0].id, "agent-1"); // Exactly matches
+        assert_eq!(results[1].id, "task-1"); // Close match
 
         // 4. Update
         db.update(
@@ -870,15 +870,15 @@ mod tests {
             .scan_prefix("__rel:agent-1:assigned_to:")
             .await
             .expect("scan"); // unwrap allowed (AGENT:04)
-        assert_eq!(edges.len(), 2); // unwrap allowed (AGENT:04)
+        assert_eq!(edges.len(), 2);
 
         // 6. Delete
         db.delete("agent-1").await.expect("delete"); // unwrap allowed (AGENT:04)
 
         // 7. Verify empty search and missing doc
         let get_agent = db.get("agent-1").await.expect("get"); // unwrap allowed (AGENT:04)
-        assert!(get_agent.is_none()); // unwrap allowed (AGENT:04)
-        assert_eq!(db.len().await.expect("len"), 2); // unwrap allowed (AGENT:04) // unwrap allowed (AGENT:04) // 3 inserted, 1 deleted
+        assert!(get_agent.is_none());
+        assert_eq!(db.len().await.expect("len"), 2); // 3 inserted, 1 deleted // unwrap allowed (AGENT:04)
     }
 
     #[tokio::test]
@@ -899,16 +899,16 @@ mod tests {
         let res_a = col_a.get("k1").await.expect("get a").expect("exists"); // unwrap allowed (AGENT:04)
         let res_b = col_b.get("k1").await.expect("get b").expect("exists"); // unwrap allowed (AGENT:04)
 
-        assert_eq!(res_a.metadata.expect("test")["val"], "a"); // unwrap allowed (AGENT:04) // unwrap allowed (AGENT:04)
-        assert_eq!(res_b.metadata.expect("test")["val"], "b"); // unwrap allowed (AGENT:04) // unwrap allowed (AGENT:04)
+        assert_eq!(res_a.metadata.expect("test")["val"], "a"); // unwrap allowed (AGENT:04)
+        assert_eq!(res_b.metadata.expect("test")["val"], "b"); // unwrap allowed (AGENT:04)
 
         let search_a = col_a
             .search(&[1.0, 0.0, 0.0, 0.0], 1)
             .await
             .expect("search a"); // unwrap allowed (AGENT:04)
-        assert_eq!(search_a.len(), 1); // unwrap allowed (AGENT:04)
-        assert_eq!(search_a[0].id, "k1"); // unwrap allowed (AGENT:04)
-        assert_eq!(search_a[0].metadata.as_ref().expect("test")["val"], "a"); // unwrap allowed (AGENT:04) // unwrap allowed (AGENT:04)
+        assert_eq!(search_a.len(), 1);
+        assert_eq!(search_a[0].id, "k1");
+        assert_eq!(search_a[0].metadata.as_ref().expect("test")["val"], "a"); // unwrap allowed (AGENT:04)
     }
 
     #[tokio::test]
@@ -935,8 +935,8 @@ mod tests {
                 .await
                 .expect("open 2"); // unwrap allowed (AGENT:04)
             let doc = db.get("doc-1").await.expect("get").expect("exists"); // unwrap allowed (AGENT:04)
-            assert_eq!(doc.id, "doc-1"); // unwrap allowed (AGENT:04)
-            assert_eq!(doc.metadata.expect("valid")["v"], 1); // unwrap allowed (AGENT:04) // unwrap allowed (AGENT:04)
+            assert_eq!(doc.id, "doc-1");
+            assert_eq!(doc.metadata.expect("valid")["v"], 1); // unwrap allowed (AGENT:04)
         }
     }
 
@@ -951,8 +951,8 @@ mod tests {
         db.drop_collection("drop-me").await.expect("drop"); // unwrap allowed (AGENT:04)
 
         let col2 = db.collection("drop-me").await.expect("re-create"); // unwrap allowed (AGENT:04)
-        assert_eq!(col2.len().await, 0); // unwrap allowed (AGENT:04)
-        assert!(col2.get("k1").await.expect("get").is_none()); // unwrap allowed (AGENT:04) // unwrap allowed (AGENT:04)
+        assert_eq!(col2.len().await, 0);
+        assert!(col2.get("k1").await.expect("get").is_none()); // unwrap allowed (AGENT:04)
     }
 
     #[tokio::test]
@@ -963,10 +963,10 @@ mod tests {
             .expect("ins"); // unwrap allowed (AGENT:04)
 
         let doc = db.get("k").await.expect("get").expect("exists"); // unwrap allowed (AGENT:04)
-        assert_eq!(doc.id, "k"); // unwrap allowed (AGENT:04)
+        assert_eq!(doc.id, "k");
 
         let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // unwrap allowed (AGENT:04)
-        assert_eq!(results[0].id, "k"); // unwrap allowed (AGENT:04)
+        assert_eq!(results[0].id, "k");
     }
 
     #[tokio::test]
@@ -977,10 +977,10 @@ mod tests {
         db.collection("c3").await.expect("c3"); // unwrap allowed (AGENT:04)
 
         let list = db.list_collections().await.expect("list"); // unwrap allowed (AGENT:04)
-        assert!(list.contains(&"default".to_string())); // unwrap allowed (AGENT:04)
-        assert!(list.contains(&"c1".to_string())); // unwrap allowed (AGENT:04)
-        assert!(list.contains(&"c2".to_string())); // unwrap allowed (AGENT:04)
-        assert!(list.contains(&"c3".to_string())); // unwrap allowed (AGENT:04)
-        assert_eq!(list.len(), 4); // unwrap allowed (AGENT:04)
+        assert!(list.contains(&"default".to_string()));
+        assert!(list.contains(&"c1".to_string()));
+        assert!(list.contains(&"c2".to_string()));
+        assert!(list.contains(&"c3".to_string()));
+        assert_eq!(list.len(), 4);
     }
 }

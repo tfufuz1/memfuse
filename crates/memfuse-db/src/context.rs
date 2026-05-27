@@ -1,9 +1,7 @@
 //! Autonomous Context Management (WP-6.3).
 //!
 //! Proactively injects the most relevant context into the LLM working memory
-//! before inference. Implements Small-to-Big retrieval by identifying precise
-//! chunks and loading their parent context, constrained by a relevance-weighted
-//! token budget management system.
+//! before inference. Implements Small-to-Big retrieval by identifying precise chunks and loading their parent context, constrained by a relevance-weighted token budget management system.
 
 // ANCHOR:ARCH:CONTEXT-001 — Autonomes Kontext-Management (WP-6.3)
 // WP:WP-6.3 PRIO:2 NEEDS:GS-01
