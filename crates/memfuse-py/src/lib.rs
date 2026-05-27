@@ -73,12 +73,17 @@ fn opt_dict_to_json(
 ///
 /// Currently supports a simple implicit AND of equality conditions.
 /// Example: `{"type": "agent", "status": "active"}`
-fn dict_to_filter(d: &pyo3::Bound<'_, pyo3::types::PyDict>) -> PyResult<memfuse_db::filter::MetadataFilter> {
+fn dict_to_filter(
+    d: &pyo3::Bound<'_, pyo3::types::PyDict>,
+) -> PyResult<memfuse_db::filter::MetadataFilter> {
     let mut conditions = Vec::new();
     for (k, v) in d.iter() {
         let field = k.extract::<String>()?;
         let value = depythonize(&v).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid filter value for '{}': {}", field, e))
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "Invalid filter value for '{}': {}",
+                field, e
+            ))
         })?;
         conditions.push(memfuse_db::filter::MetadataFilter::Condition {
             field,

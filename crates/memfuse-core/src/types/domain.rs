@@ -39,7 +39,7 @@ impl DocId {
 
     /// Helper for internal DB hydration that unwraps the Result.
     pub fn from_string(s: &str) -> Self {
-        Self::from_key(s).unwrap()
+        Self::from_key(s).unwrap() // unwrap
     }
 
     pub fn try_from_key(key: &str) -> Result<Self> {
