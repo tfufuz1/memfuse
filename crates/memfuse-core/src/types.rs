@@ -1,3 +1,8 @@
+//! # MemFuse Core Types
+//!
+//! This module provides the fundamental domain types, budget management,
+//! filtering expressions, and SAOS-specific types used across the MemFuse workspace.
+
 pub mod budget;
 pub mod domain;
 pub mod filter;

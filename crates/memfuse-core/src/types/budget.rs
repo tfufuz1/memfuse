@@ -1,3 +1,8 @@
+//! # Resource Budgeting
+//!
+//! Provides mechanisms for tracking and enforcing resource limits, primarily
+//! memory usage, with support for backpressure and budget-aware allocations.
+
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.

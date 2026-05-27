@@ -1,3 +1,8 @@
+//! # SAOS Integration Types
+//!
+//! Types specifically designed for the Sovereign Agentic Operating System (SAOS)
+//! integration, including namespaces, context windows, and hybrid query definitions.
+
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};

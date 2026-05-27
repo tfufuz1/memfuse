@@ -1,3 +1,8 @@
+//! # Metadata Filtering
+//!
+//! Defines the expression language for filtering search results based on
+//! document metadata.
+
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.
