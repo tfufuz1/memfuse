@@ -518,8 +518,8 @@ impl Collection {
 
         let key1_str = format!("{}:{}:{}", from, label, to);
         let key1 = self.namespaced_key(key1_str.as_bytes(), 2);
-        let val1 = serde_json::json!({"from": from, "to": to, "label": label});
         // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:READY
+        let val1 = serde_json::json!({"from": from, "to": to, "label": label});
         let bytes1 = serde_json::to_vec(&val1)?;
         self.storage.put(tx, &key1, &bytes1).await?;
 
@@ -558,10 +558,7 @@ impl Collection {
                 // Strip the internal prefix: self.prefix (variable) + 1 byte (key_type)
                 let prefix_len = self.prefix.len() + 1;
                 if key_str.len() >= prefix_len {
-                    key_str
-                        .get(prefix_len..)
-                        .unwrap_or(&key_str)
-                        .to_string()
+                    key_str.get(prefix_len..).unwrap_or(&key_str).to_string()
                 } else {
                     key_str
                 }
@@ -823,10 +820,7 @@ impl Collection {
             } else {
                 let prefix_len = self.prefix.len() + 1;
                 if key_str.len() >= prefix_len {
-                    key_str
-                        .get(prefix_len..)
-                        .unwrap_or(&key_str)
-                        .to_string()
+                    key_str.get(prefix_len..).unwrap_or(&key_str).to_string()
                 } else {
                     key_str
                 }
