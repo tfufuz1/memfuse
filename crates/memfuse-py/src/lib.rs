@@ -12,7 +12,7 @@
 
 #![forbid(unsafe_code)]
 
-use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
+use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig, MetadataFilter};
 use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;
 use pythonize::{depythonize, pythonize};
@@ -116,7 +116,7 @@ fn memfuse_err<E: std::fmt::Display>(e: E) -> PyErr {
 // ─── Python Types ───────────────────────────────────────────────────────────
 
 /// A single search result from MemFuse.
-#[pyclass(get_all)]
+#[pyclass(get_all, name = "SearchResult")]
 pub struct PySearchResult {
     /// The document ID.
     pub id: String,
@@ -134,7 +134,7 @@ impl PySearchResult {
 }
 
 /// A document retrieved from MemFuse.
-#[pyclass(get_all)]
+#[pyclass(get_all, name = "Document")]
 pub struct PyDocument {
     /// The document ID.
     pub id: String,
@@ -211,6 +211,35 @@ impl PyDbStats {
             self.index_stats.num_vectors,
             self.storage_stats.total_size_bytes + self.storage_stats.memtable_size_bytes
         )
+    }
+}
+
+/// A metadata filter for narrowing down search results.
+#[pyclass(name = "MetadataFilter")]
+#[derive(Clone)]
+pub struct PyMetadataFilter {
+    pub(crate) inner: MetadataFilter,
+}
+
+#[pymethods]
+impl PyMetadataFilter {
+    /// Creates a filter from a Python dictionary.
+    ///
+    /// The dictionary should follow the structure expected by `MetadataFilter`:
+    /// - Condition: `{"field": "name", "op": "Eq", "value": "val"}`
+    /// - And: `{"And": [filter1, filter2]}`
+    /// - Or: `{"Or": [filter1, filter2]}`
+    /// - Not: `{"Not": filter}`
+    #[staticmethod]
+    pub fn from_dict(d: &Bound<'_, pyo3::types::PyDict>) -> PyResult<Self> {
+        let filter: MetadataFilter = depythonize(d).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Invalid filter structure: {}", e))
+        })?;
+        Ok(PyMetadataFilter { inner: filter })
+    }
+
+    fn __repr__(&self) -> String {
+        format!("MetadataFilter({:?})", self.inner)
     }
 }
 
@@ -311,6 +340,25 @@ macro_rules! memfuse_crud_methods {
                 })?;
                 let results = py
                     .allow_threads(|| rt.block_on(self.inner.search(v, k)))
+                    .map_err(memfuse_err)?;
+                results_to_py(py, results)
+            }
+
+            /// Performs semantic search with a metadata filter.
+            #[pyo3(signature = (vector, k, filter))]
+            pub fn search_with_filter<'py>(
+                &self,
+                py: Python<'py>,
+                vector: PyReadonlyArray1<'py, f32>,
+                k: usize,
+                filter: PyMetadataFilter,
+            ) -> PyResult<Vec<PySearchResult>> {
+                let rt = get_runtime()?;
+                let v = vector.as_slice().map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
+                })?;
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.search_with_filter(v, k, Some(filter.inner))))
                     .map_err(memfuse_err)?;
                 results_to_py(py, results)
             }
@@ -682,7 +730,7 @@ fn open(
 
 #[pymodule]
 fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
-    m.add("__version__", "0.2.0")?;
+    m.add("__version__", "0.1.0")?;
     m.add_function(wrap_pyfunction!(open, m)?)?;
     m.add_class::<PyMemFuse>()?;
     m.add_class::<PyCollection>()?;
@@ -691,5 +739,6 @@ fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()
     m.add_class::<PyVectorIndexStats>()?;
     m.add_class::<PyStorageStats>()?;
     m.add_class::<PyDbStats>()?;
+    m.add_class::<PyMetadataFilter>()?;
     Ok(())
 }
