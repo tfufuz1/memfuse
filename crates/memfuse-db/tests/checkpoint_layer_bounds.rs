@@ -120,6 +120,7 @@ async fn test_layer_001_fork_diverge_merge() {
             .await
             .expect("merge insert");
 
+        db.close().await.expect("close db fork");
         // Final State Check
         let merged_doc = main_col
             .get("doc-fork-only")
