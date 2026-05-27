@@ -31,14 +31,16 @@ jobs:
         run: |
           set -e
           echo "Verifying memfuse-store..."
-          if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core" | grep -q "memfuse-"; then
-            echo "ERROR: memfuse-store violates DAG by importing non-core crates."
+          # L2 Peer isolation permits memfuse-store -> memfuse-crypto (WP-3.2)
+          if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core|memfuse-crypto" | grep -q "memfuse-"; then
+            echo "ERROR: memfuse-store violates DAG by importing non-core/non-permitted crates."
             cargo tree -p memfuse-store --edges no-dev | grep "memfuse-"
             exit 1
           fi
           echo "Verifying memfuse-index..."
-          if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core" | grep -q "memfuse-"; then
-            echo "ERROR: memfuse-index violates DAG by importing non-core crates."
+          # L2 Peer isolation permits memfuse-index -> memfuse-graph (WP-2.1)
+          if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core|memfuse-graph" | grep -q "memfuse-"; then
+            echo "ERROR: memfuse-index violates DAG by importing non-core/non-permitted crates."
             cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
             exit 1
           fi

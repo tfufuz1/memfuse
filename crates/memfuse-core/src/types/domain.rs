@@ -39,7 +39,7 @@ impl DocId {
         Self::try_from_key(key)
     }
 
-    /// Alias for `from_key` for backward compatibility.
+    /// Convenience method to create a DocId from a string key.
     /// Panics if the key cannot be hashed (should never happen with Blake3).
     pub fn from_string(key: &str) -> Self {
         Self::from_key(key).expect("Blake3 hashing should not fail")
