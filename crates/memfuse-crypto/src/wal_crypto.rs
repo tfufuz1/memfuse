@@ -4,7 +4,11 @@
 
 #![forbid(unsafe_code)]
 
-use memfuse_core::Result;
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
+use memfuse_core::{MemFuseError, Result};
 
 /// Provides Key Management Strategy hooks.
 pub trait KmsProvider {
@@ -14,20 +18,41 @@ pub trait KmsProvider {
 
 /// A wrapper handling logical Wal append encryption logic.
 pub struct EncryptedWal {
-    _key: Vec<u8>,
-}
-
-impl Default for EncryptedWal {
-    fn default() -> Self {
-        Self { _key: vec![0; 32] }
-    }
+    key: [u8; 32],
 }
 
 impl EncryptedWal {
-    /// Wraps the internal WAL chunk in ChaCha20Poly1305 stream.
-    pub fn encrypt_chunk(&self, payload: &[u8]) -> Result<Vec<u8>> {
-        // TODO(WP-3.2): Process through aead.
-        Ok(payload.to_vec())
+    /// Creates a new EncryptedWal with a given key.
+    pub fn new(key: [u8; 32]) -> Self {
+        Self { key }
+    }
+
+    /// Wraps the internal WAL chunk in AES-256-GCM.
+    pub fn encrypt_chunk(&self, payload: &[u8], nonce_val: u64) -> Result<Vec<u8>> {
+        let cipher = Aes256Gcm::new_from_slice(&self.key)
+            .map_err(|e| MemFuseError::Storage(format!("Crypto error: {}", e)))?;
+
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[4..12].copy_from_slice(&nonce_val.to_le_bytes());
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        cipher
+            .encrypt(nonce, payload)
+            .map_err(|e| MemFuseError::Storage(format!("Encryption failed: {}", e)))
+    }
+
+    /// Decrypts a WAL chunk.
+    pub fn decrypt_chunk(&self, ciphertext: &[u8], nonce_val: u64) -> Result<Vec<u8>> {
+        let cipher = Aes256Gcm::new_from_slice(&self.key)
+            .map_err(|e| MemFuseError::Storage(format!("Crypto error: {}", e)))?;
+
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[4..12].copy_from_slice(&nonce_val.to_le_bytes());
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|e| MemFuseError::Storage(format!("Decryption failed: {}", e)))
     }
 }
 
@@ -40,7 +65,7 @@ pub struct WalHmac {
 
 impl WalHmac {
     pub fn new(integrity_key: &[u8]) -> Result<Self> {
-        let mac = Hmac::<Sha256>::new_from_slice(integrity_key)
+        let mac = <Hmac<Sha256> as KeyInit>::new_from_slice(integrity_key)
             .map_err(|e| memfuse_core::MemFuseError::Storage(format!("HMAC key error: {}", e)))?;
         Ok(Self { mac })
     }
@@ -111,6 +136,18 @@ mod tests {
 
     // ANCHOR:AUDIT:FIXED — IntegrityVerifier lifecycle and HMAC chain validation verified.
     // STATUS:DONE (Audited 2026-05-23)
+    #[test]
+    fn test_encrypted_wal_roundtrip() {
+        let key = [0u8; 32];
+        let wal = EncryptedWal::new(key);
+        let payload = b"secret wal entry";
+        let nonce = 123;
+
+        let encrypted = wal.encrypt_chunk(payload, nonce).expect("encrypt");
+        let decrypted = wal.decrypt_chunk(&encrypted, nonce).expect("decrypt");
+        assert_eq!(payload, decrypted.as_slice());
+    }
+
     #[test]
     fn test_wal_hmac_basic() {
         let key = b"test-key-32-bytes-long-----------";

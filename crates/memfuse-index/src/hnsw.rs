@@ -297,6 +297,11 @@ impl HnswIndex {
 
             match &node.vector {
                 VectorData::F32(v) => {
+                    // ANCHOR:SAFETY:HNSW-001 — Slice from raw parts (F32 vectors)
+                    // WP:WP-0.0 PRIO:1 NEEDS:NONE
+                    // AGENT:10 DATE:2026-06-15 STATUS:READY
+                    // BEGRÜNDUNG: F32-Vektoren werden als Byte-Array für I/O interpretiert.
+                    // Pointer und Länge (v.len() * 4) sind durch die Vec-Invariante gültig.
                     let bytes: &[u8] =
                         unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
                     writer
@@ -339,6 +344,11 @@ impl HnswIndex {
                 writer
                     .write_all(&len.to_le_bytes())
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                // ANCHOR:SAFETY:HNSW-002 — Slice from raw parts (Connections)
+                // WP:WP-0.0 PRIO:1 NEEDS:NONE
+                // AGENT:10 DATE:2026-06-15 STATUS:READY
+                // BEGRÜNDUNG: u32-Connections werden als Byte-Array für I/O interpretiert.
+                // Pointer und Länge (conns.len() * 4) sind durch die Vec-Invariante gültig.
                 let bytes: &[u8] = unsafe {
                     std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
                 };
