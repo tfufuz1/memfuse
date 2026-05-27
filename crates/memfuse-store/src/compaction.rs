@@ -301,7 +301,9 @@ impl CompactionEngine {
                 top.block_idx += 1;
                 top.entry_idx = 0;
                 if top.block_idx < inputs[top.sst_idx].num_blocks() {
-                    caches[top.sst_idx] = inputs[top.sst_idx].read_block_entries(top.block_idx).await?;
+                    caches[top.sst_idx] = inputs[top.sst_idx]
+                        .read_block_entries(top.block_idx)
+                        .await?;
                     if let Some((k, v, s)) = caches[top.sst_idx].first() {
                         top.key = k.clone();
                         top.value = v.clone();

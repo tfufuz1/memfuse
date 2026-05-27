@@ -629,7 +629,9 @@ impl SstableReader {
         let num_offsets = u16::from_le_bytes(
             block_data
                 .get(n.saturating_sub(2)..n)
-                .ok_or_else(|| MemFuseError::Storage("malformed block: missing num_offsets".into()))?
+                .ok_or_else(|| {
+                    MemFuseError::Storage("malformed block: missing num_offsets".into())
+                })?
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
         ) as usize;
@@ -664,7 +666,9 @@ impl SstableReader {
             let key_start = ep;
             ep += k_len;
             if ep > block_data.len() {
-                return Err(MemFuseError::Storage("malformed block: key out of bounds".into()));
+                return Err(MemFuseError::Storage(
+                    "malformed block: key out of bounds".into(),
+                ));
             }
 
             let seq_no = u64::from_le_bytes(
@@ -686,7 +690,9 @@ impl SstableReader {
             let val_start = ep;
             ep += v_len;
             if ep > block_data.len() {
-                return Err(MemFuseError::Storage("malformed block: value out of bounds".into()));
+                return Err(MemFuseError::Storage(
+                    "malformed block: value out of bounds".into(),
+                ));
             }
 
             results.push((
