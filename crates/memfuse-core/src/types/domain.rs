@@ -1,7 +1,6 @@
 //! Domain types for the MemFuse workspace.
 //!
-//! Includes basic identifiers like `DocId`, `TxId`, and `EntityId`,
-//! as well as vector embeddings and search results.
+//! Provides central structures and traits.
 
 // ANCHOR:DOC:DOMAIN-001 — Missing module-level documentation.
 // AGENT:01 STATUS:DONE PRIO:3

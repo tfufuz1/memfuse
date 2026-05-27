@@ -1,7 +1,6 @@
 //! Metadata filtering for search queries.
 //!
-//! Provides a structured expression language for defining filters
-//! on document and entity metadata.
+//! Provides central structures and traits.
 
 // ANCHOR:DOC:FILTER-001 — Missing module-level documentation.
 // AGENT:01 STATUS:DONE PRIO:3

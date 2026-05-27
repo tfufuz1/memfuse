@@ -1,7 +1,6 @@
 //! Situational Awareness and Orchestration Structures (SAOS).
 //!
-//! Defines complex query types, fusion weights for hybrid search,
-//! and LLM context management structures.
+//! Provides central structures and traits.
 
 // ANCHOR:DOC:SAOS-001 — Missing module-level documentation.
 // AGENT:01 STATUS:DONE PRIO:3

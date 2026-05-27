@@ -1,7 +1,6 @@
 //! Type definitions for the MemFuse core.
 //!
-//! This module provides the central domain types, resource management,
-//! and search structures used throughout the MemFuse workspace.
+//! Provides central structures and traits.
 
 // ANCHOR:DOC:TYPES-001 — Missing module-level documentation.
 // AGENT:01 STATUS:DONE PRIO:3
