@@ -104,6 +104,16 @@ impl SnapshotRegistry {
 /// While this guard is held, the SnapshotRegistry ensures that tombstones
 /// with a sequence number greater than or equal to this snapshot's sequence
 /// number are not garbage collected.
+/// RAII Guard for an active snapshot.
+///
+/// While this guard is held, the SnapshotRegistry ensures that tombstones
+/// with a sequence number greater than or equal to this snapshot's sequence
+/// number are not garbage collected.
+/// RAII Guard for an active snapshot.
+///
+/// While this guard is held, the SnapshotRegistry ensures that tombstones
+/// with a sequence number greater than or equal to this snapshot's sequence
+/// number are not garbage collected.
 pub struct SnapshotGuard {
     registry: Arc<SnapshotRegistry>,
     seq_no: u64,
