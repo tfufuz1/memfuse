@@ -27,6 +27,9 @@
             virtualenv
             numpy
             pytest
+            # Add these if they exist in your nixpkgs, otherwise they will be ignored or fail
+            # fastmcp
+            # mcp
           ]);
       in {
         devShells.default = pkgs.mkShell {

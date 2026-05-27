@@ -681,7 +681,7 @@ fn open(
 }
 
 #[pymodule]
-fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
+fn _memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
     m.add("__version__", "0.2.0")?;
     m.add_function(wrap_pyfunction!(open, m)?)?;
     m.add_class::<PyMemFuse>()?;

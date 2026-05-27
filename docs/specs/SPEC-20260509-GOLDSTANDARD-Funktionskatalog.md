@@ -16,7 +16,7 @@
 | GS-03 | Autonomes Kontext-Management | memfuse-db | GS-01 | WP-6.3 |
 | GS-04 | Multi-Agent Namespaces | memfuse-db | WP-1.2 | WP-6.4 |
 | GS-05 | Morphologische Inferenz-Optimierung | memfuse-text | WP-2.1 | WP-6.5 |
-| GS-06 | Air-Gap Deployment Profile | memfuse-py, memfuse-embed | WP-3.1 + WP-3.2 | WP-6.6 |
+| GS-06 | Air-Gap Deployment Profile | memfuse-py, memfuse-py | WP-3.1 + WP-3.2 | WP-6.6 |
 | GS-07 | Kryptografische WAL-Verifikation | memfuse-store | WP-1.1 + WP-3.2 | WP-6.7 |
 
 ---
@@ -307,7 +307,7 @@ db = MemFuse(
 ```
 
 #### FR-GS06-002: ONNX Runtime Integration
-- `memfuse-embed` Crate: Native ONNX Runtime Bindings (`ort`)
+- `memfuse-py` Crate: Native ONNX Runtime Bindings (`ort`)
 - Offizielle Unterstützung für:
   - `e5-small-v2` (66MB, 384-dim, multilingual) — Empfohlener Default für 8GB RAM
   - `bge-small-en-v1.5` (133MB, 384-dim)

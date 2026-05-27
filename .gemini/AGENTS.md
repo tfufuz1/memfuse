@@ -306,7 +306,7 @@ just spec WP-X.Y-NAME  # Atomic Spec erstellen (Pflicht vor Implementierung)
 
 | ID | Severity | Crate | Beschreibung |
 |---|---|---|---|
-| CRIT-001 | 🔴 | `memfuse-core` | `DocId::from_key()` nutzt `.expect()` — Zero-Panic Verstoß |
+| CRIT-001 | ✅ | `memfuse-core` | `DocId::from_key()` nutzt `.expect()` — Zero-Panic Verstoß (Resolved 2026-05-27) |
 | HIGH-001 | 🟠 | `memfuse-store` | WAL-Einträge werden bei Replay nicht CRC-verifiziert |
 | HIGH-002 | 🟠 | `memfuse-checkpoint` | Persistent Store hat keinen Locking-Mechanismus |
 

@@ -206,7 +206,7 @@ def test_distance_metrics(db_path):
         memfuse.open(db_path + "_invalid", dimension=4, distance_metric="invalid")
 
 def test_version_and_repr(db_path):
-    assert memfuse.__version__ == "0.1.0"
+    assert memfuse.__version__ == "0.2.0"
 
     db = memfuse.open(db_path, dimension=4, max_elements=5000)
     col = db.collection("repr_test")

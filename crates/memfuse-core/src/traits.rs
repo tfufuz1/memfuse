@@ -11,11 +11,9 @@
 
 use crate::types::*;
 use crate::Result;
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 /// Abstract contract for generating consistent checkpoints.
-#[async_trait]
 pub trait Checkpoint: Send + Sync {
     /// Takes a deterministic snapshot of the current state.
     async fn take_snapshot(&self, tx: TxId) -> Result<WorkflowState>;
@@ -58,7 +56,6 @@ pub struct StorageStats {
 // CREATED:2026-05-05 DEADLINE:NONE
 // Lifecycle: put/delete → commit/rollback → flush(background).
 /// Storage engine trait — abstracts over the LSM-Tree implementation.
-#[async_trait]
 pub trait StorageEngine: Send + Sync {
     /// Retrieves a value by key.
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
@@ -125,7 +122,6 @@ pub trait StorageEngine: Send + Sync {
 // CREATED:2026-05-05 DEADLINE:NONE
 // Rebuild: Automatisch bei >20% gelöschten Nodes.
 /// Vector index trait — abstracts over the HNSW implementation.
-#[async_trait]
 pub trait VectorIndex: Send + Sync {
     /// Inserts a vector with an associated document ID.
     async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()>;
@@ -183,7 +179,6 @@ pub struct TextIndexStats {
 }
 
 /// Text index trait — abstracts over the inverted index and BM25 search.
-#[async_trait]
 pub trait TextIndex: Send + Sync {
     /// Searches for documents matching the query.
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>>;
@@ -209,7 +204,6 @@ pub trait TextIndex: Send + Sync {
 // STATUS:SCAFFOLD DATE:2026-05-17
 
 /// Defines the contract for the CSR Graph traverse capabilities (Signal 3).
-#[async_trait]
 pub trait GraphIndex: Send + Sync {
     /// Traverses the entity graph using BFS up to a maximum number of hops.
     /// Distributes traversing decay weights across related entities.

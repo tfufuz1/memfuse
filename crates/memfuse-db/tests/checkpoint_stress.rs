@@ -1,4 +1,4 @@
-use memfuse_checkpoint::CheckpointManager;
+use memfuse_checkpoint::PersistentCheckpointStore;
 use memfuse_core::{StorageEngine, TxId};
 use memfuse_store::{LsmConfig, LsmStorage};
 use std::sync::Arc;
@@ -19,7 +19,7 @@ async fn test_checkpoint_concurrency_stress() {
             .await
             .expect("failed to open storage"),
     );
-    let manager = Arc::new(CheckpointManager::new(storage.clone()));
+    let manager = Arc::new(PersistentCheckpointStore::new(storage.clone()));
 
     let num_writer_tasks = 5;
     let num_checkpoint_tasks = 2;

@@ -44,7 +44,6 @@ use crate::compaction::{CompactionConfig, CompactionEngine};
 use crate::memtable::MemTable;
 use crate::sstable::{create_block_cache, BlockCache, SstableBuilder, SstableReader};
 use crate::wal::{Wal, WalOp};
-use async_trait::async_trait;
 use bytes::Bytes;
 use memfuse_core::{
     DocId, IndexOp, MemFuseError, ResourceBudget, ResourceTracker, Result, SnapshotRegistry,
@@ -158,7 +157,8 @@ impl LsmStorage {
         let mut max_seq = 0u64;
         let mut replayed_size = 0u64;
 
-        for (lsn, entry) in &wal_entries {
+        for (lsn, entry, _offset) in &wal_entries {
+
             if *lsn > max_seq {
                 max_seq = *lsn;
             }
@@ -248,7 +248,7 @@ impl LsmStorage {
         })
     }
 
-    /// Forces a flush (to be used by CheckpointManager or tests).
+    /// Forces a flush (to be used by PersistentCheckpointStore or tests).
     pub async fn force_flush(&self) -> Result<()> {
         self.flush().await
     }
@@ -260,17 +260,19 @@ impl LsmStorage {
         let _commit_lock = self.commit_mutex.lock().await;
         let mut state = self.state.write().await;
 
-        // 1. Replay WAL to find the last valid seq_no and the file offset
+        // 1. Replay WAL to find the last valid seq_no, file offset, and HMAC
         let entries = state.wal.replay().await?;
-        let mut _target_seq = 0;
+        let mut target_offset = 0u64;
+        let mut target_hmac = [0u8; 32];
         let mut found = false;
 
-        // We need to find the offset in the file to truncate.
-        // Replay doesn't currently give us offsets, but we can re-read.
-        for (seq, entry) in &entries {
-            if entry.tx_id() == target_tx {
-                _target_seq = *seq;
-                found = true;
+        for (_seq, entry, offset) in &entries {
+            if entry.tx_id().inner() <= target_tx.inner() {
+                target_offset = *offset;
+                target_hmac = entry.checksum;
+                if entry.tx_id() == target_tx {
+                    found = true;
+                }
             }
         }
 
@@ -285,10 +287,10 @@ impl LsmStorage {
         state.memtable = Arc::new(MemTable::new());
         state.immutable_memtables.clear();
 
-        // 3. Re-replay WAL up to target_tx into the new memtable
+        // 3. Re-populate memtable up to target_tx
         let mut max_seq = 0;
-        for (seq, entry) in entries {
-            if entry.tx_id().inner() <= target_tx.inner() {
+        for (seq, entry, offset) in entries {
+            if offset <= target_offset && target_offset > 0 {
                 if seq > max_seq {
                     max_seq = seq;
                 }
@@ -312,19 +314,19 @@ impl LsmStorage {
         // 4. Update next_seq_no
         self.next_seq_no.store(max_seq + 1, Ordering::SeqCst);
 
-        // 5. Truncate WAL (Simple version: just keep it as is, but any new writes will have lower seq_nos? No, we should truncate.)
-        // TODO: Real truncation involves knowing the byte offset of the last valid entry.
+        // 5. Physically truncate WAL
+        state.wal.truncate(target_offset, target_hmac).await?;
 
         tracing::info!(
-            "Rollback to TX {} successful. Max seq: {}",
+            "Rollback to TX {} successful. Max seq: {}, WAL offset: {}",
             target_tx,
-            max_seq
+            max_seq,
+            target_offset
         );
         Ok(())
     }
 }
 
-#[async_trait]
 impl StorageEngine for LsmStorage {
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let state = self.state.read().await;
@@ -912,5 +914,53 @@ mod tests {
             .await
             .expect("scan");
         assert_eq!(results.len(), 2); // d, f (e deleted)
+    }
+
+    #[tokio::test]
+    async fn test_lsm_rollback_persistence() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 64,
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+
+        {
+            let storage = LsmStorage::new(config.clone()).await.expect("create storage");
+            
+            let tx1 = TxId::new(1);
+            storage.put(tx1, b"k1", b"v1").await.unwrap();
+            storage.commit(tx1).await.unwrap();
+
+            let tx2 = TxId::new(2);
+            storage.put(tx2, b"k2", b"v2").await.unwrap();
+            storage.commit(tx2).await.unwrap();
+
+            // Verify both exist
+            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
+            assert_eq!(storage.get(b"k2").await.unwrap(), Some(b"v2".to_vec()));
+
+            // Rollback to Tx1
+            storage.rollback_to_tx(tx1).await.expect("rollback");
+            
+            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
+            assert_eq!(storage.get(b"k2").await.unwrap(), None);
+        }
+
+        // Restart storage
+        {
+            let storage = LsmStorage::new(config).await.expect("restart storage");
+            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
+            assert_eq!(storage.get(b"k2").await.unwrap(), None, "k2 should NOT be replayed after rollback");
+            
+            // Verify we can still append new transactions after rollback
+            let tx3 = TxId::new(3);
+            storage.put(tx3, b"k3", b"v3").await.unwrap();
+            storage.commit(tx3).await.unwrap();
+            assert_eq!(storage.get(b"k3").await.unwrap(), Some(b"v3".to_vec()));
+        }
     }
 }

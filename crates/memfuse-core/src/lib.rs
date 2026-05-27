@@ -24,6 +24,7 @@
 // Vor jeder Änderung: `cargo check -p memfuse-db` um Downstream-Bruch zu erkennen.
 
 #![forbid(unsafe_code)]
+#![allow(async_fn_in_trait)]
 
 pub mod error;
 pub mod snapshot;

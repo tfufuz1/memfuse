@@ -29,7 +29,6 @@ impl Bm25Scorer {
     }
 }
 
-#[async_trait::async_trait]
 impl TextIndex for Bm25Scorer {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         self.index.search(query, k).await

@@ -6,6 +6,8 @@
 
 use memfuse_core::Result;
 
+use crate::crypto::KeyManager;
+
 /// Provides Key Management Strategy hooks.
 pub trait KmsProvider {
     /// Retrieves the Data Encryption Key (DEK).
@@ -14,20 +16,22 @@ pub trait KmsProvider {
 
 /// A wrapper handling logical Wal append encryption logic.
 pub struct EncryptedWal {
-    _key: Vec<u8>,
-}
-
-impl Default for EncryptedWal {
-    fn default() -> Self {
-        Self { _key: vec![0; 32] }
-    }
+    key_manager: KeyManager,
 }
 
 impl EncryptedWal {
-    /// Wraps the internal WAL chunk in ChaCha20Poly1305 stream.
-    pub fn encrypt_chunk(&self, payload: &[u8]) -> Result<Vec<u8>> {
-        // TODO(WP-3.2): Process through aead.
-        Ok(payload.to_vec())
+    pub fn new(key_manager: KeyManager) -> Self {
+        Self { key_manager }
+    }
+
+    /// Wraps the internal WAL chunk in AES-256-GCM stream.
+    pub fn encrypt_chunk(&self, payload: &[u8], nonce_val: u64) -> Result<Vec<u8>> {
+        self.key_manager.encrypt(payload, nonce_val)
+    }
+
+    /// Decrypts the WAL chunk from the AES-256-GCM stream.
+    pub fn decrypt_chunk(&self, ciphertext: &[u8], nonce_val: u64) -> Result<Vec<u8>> {
+        self.key_manager.decrypt(ciphertext, nonce_val)
     }
 }
 
@@ -174,5 +178,21 @@ mod tests {
             prev_hmac: checksum2,
         };
         assert!(verifier.verify_and_update(&e3).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_encrypted_wal_roundtrip() -> Result<()> {
+        let km = crate::crypto::KeyManager::try_new("test-pass")?;
+        let wal = EncryptedWal::new(km);
+        let data = b"wal-entry-data-to-encrypt";
+        let nonce = 1337;
+
+        let encrypted = wal.encrypt_chunk(data, nonce)?;
+        assert_ne!(encrypted.as_slice(), data);
+
+        let decrypted = wal.decrypt_chunk(&encrypted, nonce)?;
+        assert_eq!(decrypted.as_slice(), data);
+
+        Ok(())
     }
 }

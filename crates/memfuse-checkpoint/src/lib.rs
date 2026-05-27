@@ -5,12 +5,11 @@
 
 #![forbid(unsafe_code)]
 
-use memfuse_core::{Result, StorageEngine, TxId, WorkflowState};
+use memfuse_core::{Result, StorageEngine, StorageStats, TxId, WorkflowState};
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 /// Metadata for a persistent checkpoint.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -52,19 +51,22 @@ impl Default for CheckpointRegistry {
 }
 
 /// Manages persistent checkpoints and their integration with the storage engine.
-pub struct CheckpointManager {
+pub struct PersistentCheckpointStore {
     storage: Arc<dyn StorageEngine>,
     // In-memory cache of checkpoints for fast lookups
-    persistent_checkpoints: RwLock<Vec<CheckpointMeta>>,
+    persistent_checkpoints: SyncRwLock<Vec<CheckpointMeta>>,
     registry: Arc<CheckpointRegistry>,
+    // Serializes write operations to ensure atomicity between storage and cache
+    op_lock: tokio::sync::Mutex<()>,
 }
 
-impl CheckpointManager {
+impl PersistentCheckpointStore {
     pub fn new(storage: Arc<dyn StorageEngine>) -> Self {
         Self {
             storage,
-            persistent_checkpoints: RwLock::new(Vec::new()),
+            persistent_checkpoints: SyncRwLock::new(Vec::new()),
             registry: Arc::new(CheckpointRegistry::new()),
+            op_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -76,6 +78,8 @@ impl CheckpointManager {
         seq_no: u64,
         metadata: serde_json::Value,
     ) -> Result<CheckpointMeta> {
+        let _guard = self.op_lock.lock().await;
+
         let checkpoint = CheckpointMeta {
             name: name.to_string(),
             collection_id: collection_id.to_string(),
@@ -102,9 +106,15 @@ impl CheckpointManager {
         self.storage.commit(TxId::new(0)).await?;
 
         // 3. Update cache
-        let mut cache = self.persistent_checkpoints.write().await;
-        cache.push(checkpoint.clone());
-        cache.sort_by_key(|c| c.seq_no);
+        {
+            let mut cache = self.persistent_checkpoints.write();
+            // Remove existing if any (overwrite semantics)
+            if let Some(pos) = cache.iter().position(|c| c.name == name) {
+                cache.remove(pos);
+            }
+            cache.push(checkpoint.clone());
+            cache.sort_by_key(|c| c.seq_no);
+        }
 
         Ok(checkpoint)
     }
@@ -112,18 +122,20 @@ impl CheckpointManager {
     /// Lists all persistent checkpoints, ordered by sequence number.
     pub async fn list_checkpoints(&self) -> Result<Vec<CheckpointMeta>> {
         {
-            let cache = self.persistent_checkpoints.read().await;
+            let cache = self.persistent_checkpoints.read();
             if !cache.is_empty() {
                 return Ok(cache.clone());
             }
         }
 
         self.reload_from_storage().await?;
-        Ok(self.persistent_checkpoints.read().await.clone())
+        Ok(self.persistent_checkpoints.read().clone())
     }
 
     /// Reloads the in-memory cache from persistent storage.
     pub async fn reload_from_storage(&self) -> Result<()> {
+        let _guard = self.op_lock.lock().await;
+
         let entries = self.storage.scan_prefix(b"__checkpoint:").await?;
         let mut checkpoints = Vec::new();
         for (_, value) in entries {
@@ -133,23 +145,29 @@ impl CheckpointManager {
         }
         checkpoints.sort_by_key(|c| c.seq_no);
 
-        let mut cache = self.persistent_checkpoints.write().await;
-        *cache = checkpoints;
+        {
+            let mut cache = self.persistent_checkpoints.write();
+            *cache = checkpoints;
+        }
         Ok(())
     }
 
     /// Retrieves a persistent checkpoint by name.
     pub async fn get_checkpoint(&self, name: &str) -> Result<Option<CheckpointMeta>> {
-        let cache = self.persistent_checkpoints.read().await;
+        let cache = self.persistent_checkpoints.read();
         Ok(cache.iter().find(|c| c.name == name).cloned())
     }
 
     /// Deletes a persistent checkpoint and unpins it in storage.
     pub async fn drop_checkpoint(&self, name: &str) -> Result<()> {
-        let mut cache = self.persistent_checkpoints.write().await;
-        if let Some(pos) = cache.iter().position(|c| c.name == name) {
-            let checkpoint = cache.remove(pos);
+        let _guard = self.op_lock.lock().await;
 
+        let checkpoint_to_remove = {
+            let cache = self.persistent_checkpoints.read();
+            cache.iter().find(|c| c.name == name).cloned()
+        };
+
+        if let Some(checkpoint) = checkpoint_to_remove {
             // 1. Unpin in storage
             self.storage.unpin_checkpoint(checkpoint.seq_no).await?;
 
@@ -157,6 +175,12 @@ impl CheckpointManager {
             let key = format!("__checkpoint:{}", name);
             self.storage.delete(TxId::new(0), key.as_bytes()).await?;
             self.storage.commit(TxId::new(0)).await?;
+
+            // 3. Update cache
+            let mut cache = self.persistent_checkpoints.write();
+            if let Some(pos) = cache.iter().position(|c| c.name == name) {
+                cache.remove(pos);
+            }
         }
         Ok(())
     }
@@ -170,8 +194,7 @@ impl CheckpointManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
-    use memfuse_core::{Result, StorageStats};
+    use memfuse_core::Result;
     use parking_lot::Mutex;
 
     // Mock StorageEngine for testing
@@ -189,7 +212,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
             Ok(self.data.lock().get(key).cloned())
@@ -239,7 +261,7 @@ mod tests {
     #[tokio::test]
     async fn test_checkpoint_create_and_restore() {
         let storage = Arc::new(MockStorage::new());
-        let manager = CheckpointManager::new(storage.clone());
+        let manager = PersistentCheckpointStore::new(storage.clone());
 
         let meta = manager
             .create_checkpoint("test_cp", "coll_1", 100, serde_json::json!({"state": "ok"}))
@@ -260,7 +282,7 @@ mod tests {
     #[tokio::test]
     async fn test_checkpoint_metadata_roundtrip() {
         let storage = Arc::new(MockStorage::new());
-        let manager = CheckpointManager::new(storage.clone());
+        let manager = PersistentCheckpointStore::new(storage.clone());
 
         let metadata = serde_json::json!({"step": 5, "vars": {"a": 1}});
         manager
@@ -275,7 +297,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_checkpoints_ordered() {
         let storage = Arc::new(MockStorage::new());
-        let manager = CheckpointManager::new(storage.clone());
+        let manager = PersistentCheckpointStore::new(storage.clone());
 
         manager
             .create_checkpoint("cp2", "c1", 20, serde_json::json!({}))
@@ -300,7 +322,7 @@ mod tests {
     #[tokio::test]
     async fn test_checkpoint_persistence_reload() {
         let storage = Arc::new(MockStorage::new());
-        let manager1 = CheckpointManager::new(storage.clone());
+        let manager1 = PersistentCheckpointStore::new(storage.clone());
 
         manager1
             .create_checkpoint("persist_me", "c1", 50, serde_json::json!({}))
@@ -308,12 +330,47 @@ mod tests {
             .unwrap();
 
         // New manager sharing the same storage
-        let manager2 = CheckpointManager::new(storage.clone());
+        let manager2 = PersistentCheckpointStore::new(storage.clone());
         let list = manager2.list_checkpoints().await.unwrap();
 
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "persist_me");
         assert_eq!(list[0].seq_no, 50);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_checkpoint_creation() {
+        let storage = Arc::new(MockStorage::new());
+        let store = Arc::new(PersistentCheckpointStore::new(storage.clone()));
+        let mut handles = vec![];
+
+        for i in 0..50 {
+            let store = store.clone();
+            let handle = tokio::spawn(async move {
+                // Half the tasks use the same name, half use unique names
+                let name = if i % 2 == 0 {
+                    "shared_cp".to_string()
+                } else {
+                    format!("unique_cp_{}", i)
+                };
+                store
+                    .create_checkpoint(&name, "c1", i as u64, serde_json::json!({}))
+                    .await
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.await.unwrap().unwrap();
+        }
+
+        let list = store.list_checkpoints().await.unwrap();
+        // 25 unique + 1 shared = 26 checkpoints
+        assert_eq!(list.len(), 26);
+
+        // Verify no duplicates in names
+        let names: std::collections::HashSet<_> = list.iter().map(|c| &c.name).collect();
+        assert_eq!(names.len(), 26);
     }
 
     #[test]

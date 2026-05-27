@@ -7,7 +7,7 @@ rust-version.workspace = true
 description = "Python bindings for MemFuse using PyO3"
 
 [lib]
-name = "memfuse"
+name = "_memfuse"
 crate-type = ["cdylib"]
 test = false
 doctest = false

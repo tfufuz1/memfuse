@@ -3,7 +3,7 @@
 // AGENT:09 DATE:2026-05-15 STATUS:DONE
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use memfuse_checkpoint::CheckpointManager;
+use memfuse_checkpoint::PersistentCheckpointStore;
 use memfuse_db::MemFuse;
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
@@ -39,7 +39,7 @@ fn bench_agent_state_checkpoint(c: &mut Criterion) {
     let tmp = TempDir::new().unwrap();
     let db = rt.block_on(MemFuse::open(tmp.path())).unwrap();
     let storage = db.inner_storage();
-    let manager = CheckpointManager::new(storage);
+    let manager = PersistentCheckpointStore::new(storage);
 
     c.bench_function("checkpoint_latency", |b| {
         b.to_async(&rt).iter(|| async {

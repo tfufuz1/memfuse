@@ -20,9 +20,9 @@
 | Crate | Rolle | LoC | Status |
 |:------|:------|:----|:-------|
 | **`memfuse-db`** | Zentrale Facade: Collections, Hybrid-Search (RRF), Fusion, Namespace-Isolation | 1917 | ✅ Stabil |
-| **`memfuse-checkpoint`** | Snapshot Registry, Time-Travel, MVCC-basiertes Checkpointing | 262 | 🟡 Scaffold |
-| **`memfuse-orchestrator`** | Declarative StateGraph, Agent Workflow Engine | 89 | 🟡 Scaffold |
-| **`memfuse-runtime`** | WASM Sandbox, Air-Gap Execution, Token-Budget | 163 | 🟡 Scaffold |
+| **`memfuse-checkpoint`** | Snapshot Registry, Time-Travel, MVCC-basiertes Checkpointing | 262 | 🛑 FROZEN (Focus L1) |
+| **`memfuse-saos-agent`** | Task/Step Orchestration (Workflow Engine) | 89 | 🛑 FROZEN (Focus L1) |
+| **`memfuse-sandbox`** | WASM Tool Sandbox, Air-Gap Execution, Token-Budget | 163 | 🛑 FROZEN (Focus L1) |
 
 ### Layer 1 — Sub-Engines (isoliert, keine gegenseitigen Imports)
 
@@ -179,7 +179,7 @@
 | **Key Files** | `lib.rs`, `csr.rs` |
 | **Public API** | `CsrGraph` (implements `GraphIndex` trait) |
 | **Deps** | memfuse-core, parking_lot, ahash, tokio, async-trait |
-| **Status** | 🟡 Scaffold — BFS traversal + score decay implementiert, noch keine Persistenz |
+| **Status** | 🛑 FROZEN — L1 Hardening Sprint Priority |
 
 ### `memfuse-checkpoint` — Time-Travel & Snapshots
 
@@ -188,27 +188,27 @@
 | **Pfad** | `crates/memfuse-checkpoint/src/lib.rs` (Single-File) |
 | **Public API** | `CheckpointRegistry`, `CheckpointMeta`, `PersistentCheckpointStore` |
 | **Deps** | memfuse-core, tokio, serde, parking_lot |
-| **Status** | 🟡 Scaffold — In-Memory MVCC Registry + persistent JSON Store |
+| **Status** | 🛑 FROZEN — L1 Hardening Sprint Priority |
 
-### `memfuse-orchestrator` — StateGraph Engine
+### `memfuse-saos-agent` — StateGraph Engine
 
 | Key | Value |
 |:----|:------|
-| **Pfad** | `crates/memfuse-orchestrator/src/` |
+| **Pfad** | `crates/memfuse-saos-agent/src/` |
 | **Key Files** | `lib.rs`, `graph.rs` |
 | **Public API** | `GraphNode`, `WorkflowEdge`, `StateGraph` |
 | **Deps** | memfuse-core |
-| **Status** | 🟡 Scaffold — Deklarative Graph-Definiton, noch keine Execution |
+| **Status** | 🛑 FROZEN — L1 Hardening Sprint Priority |
 
-### `memfuse-runtime` — WASM Sandbox
+### `memfuse-sandbox` — WASM Sandbox
 
 | Key | Value |
 |:----|:------|
-| **Pfad** | `crates/memfuse-runtime/src/` |
+| **Pfad** | `crates/memfuse-sandbox/src/` |
 | **Key Files** | `lib.rs`, `sandbox.rs`, `airgap.rs` |
 | **Public API** | `AgentRuntime` (trait), `WasmSandbox`, `AirGapProfile` |
 | **Deps** | memfuse-core, async-trait |
-| **Status** | 🟡 Scaffold — Trait-Definition + Stub-Impl, kein WASM-Runtime integriert |
+| **Status** | 🛑 FROZEN — L1 Hardening Sprint Priority |
 
 ---
 
@@ -280,33 +280,33 @@ just spec WP-X.Y-NAME  # Atomic Spec erstellen (Pflicht vor Implementierung)
 | **WP-4.2** | Advanced Filtering | `memfuse-db` | ✅ Stabil | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
 | **WP-4.3** | DiskANN Out-of-Core | `memfuse-index` | 🟡 Refactor | [SPEC](./docs/specs/SPEC-20260505-WP-4.x-Scale.md) |
 
-### Phase 5 — SAOS (Agent OS)
+### Phase 5 — SAOS (Agent OS) [FROZEN]
 
 | WP | Name | Crate(s) | Status | Spec |
 |---|---|---|---|---|
-| **WP-5.1** | Checkpointing / Time-Travel | `memfuse-checkpoint` | 🟡 Scaffold | [SPEC](./docs/specs/SPEC-20260508-WP-5.1-Checkpointing.md) |
-| **WP-5.2** | WASM Sandbox | `memfuse-runtime` | 🟡 Scaffold | [SPEC](./docs/specs/SPEC-SAOS-WP-5.2-WasmSandbox.md) |
-| **WP-5.3** | Agent Orchestration | `memfuse-orchestrator` | 🟡 Scaffold | [SPEC](./docs/specs/SPEC-SAOS-WP-5.3-AgentOrchestration.md) |
+| **WP-5.1** | Checkpointing / Time-Travel | `memfuse-checkpoint` | 🛑 FROZEN | [SPEC](./docs/specs/SPEC-20260508-WP-5.1-Checkpointing.md) |
+| **WP-5.2** | WASM Sandbox | `memfuse-runtime` | 🛑 FROZEN | [SPEC](./docs/specs/SPEC-SAOS-WP-5.2-WasmSandbox.md) |
+| **WP-5.3** | Agent Orchestration | `memfuse-orchestrator` | 🛑 FROZEN | [SPEC](./docs/specs/SPEC-SAOS-WP-5.3-AgentOrchestration.md) |
 
-### Phase 6 — Goldstandard (Zukunft)
-
-| WP | Name | Crate(s) | Status | Spec |
-|---|---|---|---|---|
-| **WP-6.1** | 4-Signal Fusion API | `memfuse-db`, `memfuse-graph` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
-| **WP-6.2** | Declarative StateGraph API | `memfuse-orchestrator` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
-| **WP-6.3** | Autonomes Kontext-Management | `memfuse-db` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
-| **WP-6.4** | Multi-Agent Namespaces | `memfuse-db` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
-| **WP-6.5** | Morphologische Inferenz-Optimierung | `memfuse-text` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
-| **WP-6.6** | Air-Gap Deployment Profile | `memfuse-runtime` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
-| **WP-6.7** | Kryptografische WAL-Verifikation | `memfuse-crypto` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
-
-### Phase 7 — RAG & Connectivity (NEU)
+### Phase 6 — Goldstandard (Zukunft) [FROZEN]
 
 | WP | Name | Crate(s) | Status | Spec |
 |---|---|---|---|---|
-| **WP-7.1** | Markdown Chunker | `memfuse-db` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260524-WP-7.1-MarkdownChunker.md) |
-| **WP-7.2** | HNSW Persistence | `memfuse-index` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260524-WP-7.2-HnswPersistence.md) |
-| **WP-7.3** | MCP Provider | `memfuse-py` | ⬜ Offen | [SPEC](./docs/specs/SPEC-20260524-WP-7.3-MCPProvider.md) |
+| **WP-6.1** | 4-Signal Fusion API | `memfuse-db`, `memfuse-graph` | 🛑 FROZEN | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
+| **WP-6.2** | Declarative StateGraph API | `memfuse-orchestrator` | 🛑 FROZEN | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
+| **WP-6.3** | Autonomes Kontext-Management | `memfuse-db` | 🛑 FROZEN | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
+| **WP-6.4** | Multi-Agent Namespaces | `memfuse-db` | 🛑 FROZEN | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
+| **WP-6.5** | Morphologische Inferenz-Optimierung | `memfuse-text` | 🛑 FROZEN | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
+| **WP-6.6** | Air-Gap Deployment Profile | `memfuse-runtime` | 🛑 FROZEN | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
+| **WP-6.7** | Kryptografische WAL-Verifikation | `memfuse-crypto` | 🛑 FROZEN | [SPEC](./docs/specs/SPEC-20260509-GOLDSTANDARD-Funktionskatalog.md) |
+
+### Phase 7 — RAG & Connectivity (NEU) [FROZEN]
+
+| WP | Name | Crate(s) | Status | Spec |
+|---|---|---|---|---|
+| **WP-7.1** | Markdown Chunker | `memfuse-db` | 🛑 FROZEN | [SPEC](./docs/specs/SPEC-20260524-WP-7.1-MarkdownChunker.md) |
+| **WP-7.2** | HNSW Persistence | `memfuse-index` | 🛑 FROZEN | [SPEC](./docs/specs/SPEC-20260524-WP-7.2-HnswPersistence.md) |
+| **WP-7.3** | MCP Provider | `memfuse-py` | 🛑 FROZEN | [SPEC](./docs/specs/SPEC-20260524-WP-7.3-MCPProvider.md) |
 
 ---
 
@@ -314,7 +314,7 @@ just spec WP-X.Y-NAME  # Atomic Spec erstellen (Pflicht vor Implementierung)
 
 | ID | Severity | Crate | Beschreibung |
 |---|---|---|---|
-| CRIT-001 | 🔴 | `memfuse-core` | `DocId::from_key()` nutzt `.expect()` — Zero-Panic Verstoß |
+| CRIT-001 | ✅ | `memfuse-core` | `DocId::from_key()` nutzt `.expect()` — Zero-Panic Verstoß (Resolved 2026-05-27) |
 | HIGH-001 | 🟠 | `memfuse-store` | WAL-Einträge werden bei Replay nicht CRC-verifiziert |
 | HIGH-002 | 🟠 | `memfuse-checkpoint` | Persistent Store hat keinen Locking-Mechanismus |
 
@@ -334,8 +334,8 @@ just spec WP-X.Y-NAME  # Atomic Spec erstellen (Pflicht vor Implementierung)
 | 05 | **Text Analyst** | `memfuse-text` (BM25 / Morphology) | 10:00 UTC |
 | 06 | **Python Bridge** | `memfuse-py` (PyO3 Bindings) | 11:00 UTC |
 | 07 | **QA Cross-Crate** | Integration & PR Verification | 20:00 UTC |
-| 08 | **Runtime Architect** | `memfuse-runtime` (WASM Sandbox) | 12:00 UTC |
-| 09 | **Orchestration Lead** | `memfuse-orchestrator` (StateGraph) | 13:00 UTC |
+| 08 | **Sandbox Architect** | `memfuse-sandbox` (WASM Sandbox) | 12:00 UTC |
+| 09 | **Agent Lead** | `memfuse-saos-agent` (StateGraph) | 13:00 UTC |
 | 10 | **Security Engineer** | `memfuse-crypto` (Encryption) | 14:00 UTC |
 | 11 | **Graph Engineer** | `memfuse-graph` (CSR / 4-Signal) | 15:00 UTC |
 | 12 | **Checkpoint Lead** | `memfuse-checkpoint` (Time-Travel) | 16:00 UTC |

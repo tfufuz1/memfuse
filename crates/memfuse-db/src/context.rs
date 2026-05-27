@@ -7,9 +7,7 @@
 // WP:WP-6.3 PRIO:2 NEEDS:GS-01
 // STATUS:SCAFFOLD DATE:2026-05-17
 
-use memfuse_core::{
-    ContextChunk, ContextWindow, Result, TokenBudget,
-};
+use memfuse_core::{ContextChunk, ContextWindow, Result, TokenBudget};
 
 /// Manages autonomous context preparation for LLM consumption.
 ///
@@ -51,10 +49,7 @@ impl ContextManager {
     /// Prepares a context window from retrieved chunks.
     ///
     /// Filters by relevance threshold, sorts by score, and truncates to budget.
-    pub fn prepare_context(
-        &self,
-        mut chunks: Vec<ContextChunk>,
-    ) -> Result<ContextWindow> {
+    pub fn prepare_context(&self, mut chunks: Vec<ContextChunk>) -> Result<ContextWindow> {
         // Filter by relevance threshold
         chunks.retain(|c| c.relevance >= self.relevance_threshold);
 
@@ -129,6 +124,7 @@ impl SpatialFence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use memfuse_core::DocId;
 
     #[test]
     fn test_context_manager_budget_truncation() {
@@ -144,18 +140,21 @@ mod tests {
                 content: "high relevance".into(),
                 relevance: 0.9,
                 token_count: 50,
+                metadata: None,
             },
             ContextChunk {
                 doc_id: DocId::new(2),
                 content: "medium relevance".into(),
                 relevance: 0.5,
                 token_count: 50,
+                metadata: None,
             },
             ContextChunk {
                 doc_id: DocId::new(3),
                 content: "should be excluded".into(),
                 relevance: 0.3,
                 token_count: 50,
+                metadata: None,
             },
         ];
 

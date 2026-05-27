@@ -34,10 +34,6 @@ impl DocId {
     }
 
     pub fn from_key(key: &str) -> Result<Self> {
-        Self::try_from_key(key)
-    }
-
-    pub fn try_from_key(key: &str) -> Result<Self> {
         let hash = blake3::hash(key.as_bytes());
         let bytes = hash
             .as_bytes()
@@ -211,5 +207,33 @@ impl Edge {
     pub fn with_weight(mut self, weight: f32) -> Self {
         self.weight = weight;
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_doc_id_from_key_no_panic() {
+        // Test with various strings to ensure no panic
+        let keys = vec![
+            "",
+            "a",
+            "short",
+            "very_long_key_that_exceeds_blake3_block_size_maybe_not_really_but_long",
+        ];
+        for key in keys {
+            let res = DocId::from_key(key);
+            assert!(res.is_ok(), "DocId::from_key failed for key: {}", key);
+        }
+    }
+
+    #[test]
+    fn test_doc_id_determinism() {
+        let key = "consistent_key";
+        let id1 = DocId::from_key(key).unwrap();
+        let id2 = DocId::from_key(key).unwrap();
+        assert_eq!(id1, id2);
     }
 }

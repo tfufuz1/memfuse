@@ -15,6 +15,14 @@ pub struct KeyManager {
     key: [u8; 32],
 }
 
+impl std::fmt::Debug for KeyManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KeyManager")
+            .field("key", &"***REDACTED***")
+            .finish()
+    }
+}
+
 impl KeyManager {
     /// Creates a new KeyManager by deriving a key from a passphrase.
     pub fn try_new(passphrase: &str) -> Result<Self> {

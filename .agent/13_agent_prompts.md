@@ -13,7 +13,7 @@ Jeder Block ist als direkt auszuführender Prompt für den jeweiligen SAOS-Agent
 AUFGABE: Implementierung der CheckpointRegistry in `memfuse-checkpoint` (WP-5.1).
 
 SCHRITT 1: Erweitere `memfuse-core/src/traits.rs` um ein sauberes `Snapshot` Trait, falls nicht vorhanden.
-SCHRITT 2: Implementiere `CheckpointManager` und `CheckpointRegistry` in `memfuse-checkpoint/src/lib.rs` mit MVCC-Snapshot-Verwaltung. Ein Checkpoint speichert Name, `seq_no`, Collection-ID und Metadaten (JSON).
+SCHRITT 2: Implementiere `PersistentCheckpointStore` und `CheckpointRegistry` in `memfuse-checkpoint/src/lib.rs` mit MVCC-Snapshot-Verwaltung. Ein Checkpoint speichert Name, `seq_no`, Collection-ID und Metadaten (JSON).
 SCHRITT 3: Test-Infrastruktur: Implementiere `test_checkpoint_create_and_restore`, `test_checkpoint_metadata_roundtrip` und `test_list_checkpoints_ordered`.
 SCHRITT 4: Führe das Triple-Test-Gate (`just triple-test`) für `memfuse-checkpoint` aus.
 SCHRITT 5: Beende mit SUCCESSOR: @JULES-02 — "Pinn-Mechanismus im LSM-Store verknüpfen".

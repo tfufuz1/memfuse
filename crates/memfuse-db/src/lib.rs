@@ -55,7 +55,9 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+pub mod chunker;
 pub mod collection;
+pub mod context;
 pub mod filter;
 pub mod fusion;
 pub mod transaction;
@@ -205,7 +207,10 @@ impl MemFuse {
             // 2. Mark each pending intent as "repaired" to prevent re-processing.
             //    The actual data reconciliation happens in step 3 via Collection::repair().
             for intent_key in &pending_intents {
-                let tx = TxId::new(self.next_tx.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+                let tx = TxId::new(
+                    self.next_tx
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                );
                 if let Err(e) = self.storage.put(tx, intent_key, b"repaired").await {
                     tracing::error!("repair_on_open: failed to mark intent as repaired: {}", e);
                     continue;
@@ -583,15 +588,6 @@ impl MemFuse {
     }
 }
 
-impl Drop for MemFuse {
-    fn drop(&mut self) {
-        let storage = Arc::clone(&self.storage);
-        // Best effort flush on drop to ensure zero data loss if `close()` is forgotten.
-        tokio::spawn(async move {
-            let _ = storage.flush().await;
-        });
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -974,5 +970,80 @@ mod tests {
         assert!(list.contains(&"c2".to_string()));
         assert!(list.contains(&"c3".to_string()));
         assert_eq!(list.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_repair_on_open_resolves_pending_intents() {
+        let tmp = tempfile::TempDir::new().expect("temp dir");
+        let path = tmp.path().to_path_buf();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+
+        // 1. Create a doc in LSM but NOT in HNSW to simulate a partial commit
+        {
+            let db = MemFuse::open_with_config(&path, config.clone())
+                .await
+                .expect("open 1");
+            let col = db.collection("recovery-test").await.expect("col");
+
+            // We'll use a direct LSM put to bypass HNSW
+            let doc_id = DocId::from_key("recovered-doc").expect("doc_id");
+            let stored = crate::collection::StoredDocument {
+                id: "recovered-doc".to_string(),
+                embedding: vec![1.0, 0.0, 0.0, 0.0],
+                metadata: Some(json!({"status": "recovered"})),
+            };
+            let data = serde_json::to_vec(&stored).expect("json");
+
+            let user_key = col.namespaced_key(b"recovered-doc", 0);
+            let doc_key = col.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+
+            // Put in LSM
+            let tx = TxId::new(db.next_tx.fetch_add(1, Ordering::SeqCst));
+            db.storage
+                .put(tx, &user_key, &data)
+                .await
+                .expect("put user");
+            db.storage.put(tx, &doc_key, &data).await.expect("put doc");
+
+            // Manually write a "pending" intent
+            let intent_key = col.namespaced_key(tx.inner().to_le_bytes().as_ref(), 3);
+            db.storage
+                .put(tx, &intent_key, b"pending")
+                .await
+                .expect("put intent");
+
+            db.storage.commit(tx).await.expect("commit");
+
+            // Verify it's NOT in HNSW yet (search should fail to find it)
+            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+            assert!(results.is_empty(), "Should not be in HNSW yet");
+
+            db.close().await.expect("close");
+        }
+
+        // 2. Re-open: repair_on_open should trigger and re-sync
+        {
+            let db = MemFuse::open_with_config(&path, config)
+                .await
+                .expect("open 2 (repair)");
+            let col = db.collection("recovery-test").await.expect("col");
+
+            // Verify it IS now in HNSW
+            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+            assert_eq!(results.len(), 1, "Should be repaired and found in HNSW");
+            assert_eq!(results[0].id, "recovered-doc");
+
+            // Verify intent is marked as repaired
+            let entries = db
+                .storage
+                .scan_prefix(b"__col:recovery-test:\x00\x03")
+                .await
+                .expect("scan intents");
+            let found_repaired = entries.iter().any(|(_, v)| v == b"repaired");
+            assert!(found_repaired, "Intent should be marked as repaired");
+        }
     }
 }

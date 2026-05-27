@@ -1,4 +1,4 @@
-use memfuse_checkpoint::CheckpointManager;
+use memfuse_checkpoint::PersistentCheckpointStore;
 use memfuse_db::{MemFuse, MemFuseConfig};
 use serde_json::json;
 use std::sync::Arc;
@@ -7,7 +7,7 @@ use tempfile::TempDir;
 // AGENT:12 DATE:2026-05-09 STATUS:DONE
 // ZIEL: memfuse-checkpoint -> memfuse-db (Fork + Diverge + Merge)
 //
-// Dieser Test verifiziert die Zusammenarbeit zwischen dem CheckpointManager
+// Dieser Test verifiziert die Zusammenarbeit zwischen dem PersistentCheckpointStore
 // und der MemFuse-DB Facade. Er simuliert einen "Fork", indem er eine neue
 // Collection erstellt und Daten basierend auf einem Checkpoint repliziert.
 #[tokio::test]
@@ -49,7 +49,7 @@ async fn test_layer_001_fork_diverge_merge() {
         db.close().await.expect("close db");
     }
 
-    // 2. Checkpoint erstellen (Simuliert durch CheckpointManager auf ruhenden Daten)
+    // 2. Checkpoint erstellen (Simuliert durch PersistentCheckpointStore auf ruhenden Daten)
     let _cp_v1;
     {
         let lsm_config = memfuse_store::LsmConfig {
@@ -61,7 +61,7 @@ async fn test_layer_001_fork_diverge_merge() {
                 .await
                 .expect("storage"),
         );
-        let cp_manager = CheckpointManager::new(storage.clone());
+        let cp_manager = PersistentCheckpointStore::new(storage.clone());
 
         _cp_v1 = cp_manager
             .create_checkpoint("v1", "main", 0, json!({}))
@@ -127,6 +127,8 @@ async fn test_layer_001_fork_diverge_merge() {
             .expect("get merged")
             .unwrap();
         assert_eq!(merged_doc.metadata.unwrap()["origin"], "fork");
+
+        db.close().await.expect("close db");
     }
 
     // 6. Cleanup Checkpoint
@@ -140,7 +142,7 @@ async fn test_layer_001_fork_diverge_merge() {
                 .await
                 .expect("storage"),
         );
-        let cp_manager = CheckpointManager::new(storage.clone());
+        let cp_manager = PersistentCheckpointStore::new(storage.clone());
         cp_manager.drop_checkpoint("v1").await.expect("drop cp");
     }
 }

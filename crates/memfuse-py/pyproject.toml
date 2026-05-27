@@ -8,7 +8,9 @@ requires-python = ">=3.9"
 description = "Embedded Hybrid-Search vector database"
 version = "0.1.0"
 dependencies = [
-    "numpy>=1.20"
+    "numpy>=1.20",
+    "mcp>=0.1.0",
+    "fastmcp>=0.4.1"
 ]
 
 [project.optional-dependencies]
@@ -16,4 +18,5 @@ test = ["pytest", "numpy"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
-module-name = "memfuse"
+module-name = "memfuse._memfuse"
+python-source = "python"

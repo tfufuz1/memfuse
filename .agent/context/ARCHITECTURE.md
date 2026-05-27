@@ -18,9 +18,9 @@ MemFuse folgt einer strikten Schichtenarchitektur. Abhängigkeiten dürfen nur n
 
 ### Schicht 2: Orchestration & SAOS
 - **`memfuse-db`**: Die zentrale Facade. Orchestriert Storage, Index und Text-Suche. Handhabt Collections und Fusion (RRF).
-- **`memfuse-orchestrator`**: Agent-Workflow-Engine (StateGraph). Deterministische Schrittfolge für autonome Agenten.
+- **`memfuse-saos-agent`**: Agent-Workflow-Engine (StateGraph). Deterministische Schrittfolge für autonome Agenten.
 - **`memfuse-checkpoint`**: Snapshot-Registry für Time-Travel und MVCC-basiertes Workflow-Freezing.
-- **`memfuse-runtime`**: WASM-Sandbox zur sicheren Ausführung von Agent-Tools ohne Host-Zugriff.
+- **`memfuse-sandbox`**: WASM-Sandbox zur sicheren Ausführung von Agent-Tools ohne Host-Zugriff.
 
 ### Schicht 1: Sub-Engines (Engine Room)
 - **`memfuse-store`**: LSM-Storage (MemTables, SSTables, WAL). Zuständig für Persistenz und atomare Schreibvorgänge.

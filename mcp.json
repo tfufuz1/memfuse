@@ -1,0 +1,45 @@
+{
+  "name": "memfuse",
+  "version": "0.1.0",
+  "description": "Local-first hybrid vector + text search for AI agents",
+  "tools": [
+    {
+      "name": "memfuse_search",
+      "description": "Hybrid search across stored documents (vector + BM25 + metadata)",
+      "parameters": {
+        "query": {"type": "string", "description": "Natural language query"},
+        "collection": {"type": "string", "description": "Collection name", "default": "default"},
+        "k": {"type": "integer", "description": "Number of results", "default": 10}
+      }
+    },
+    {
+      "name": "memfuse_get",
+      "description": "Retrieve a specific document by ID",
+      "parameters": {
+        "id": {"type": "string", "description": "Document ID"},
+        "collection": {"type": "string", "description": "Collection name", "default": "default"}
+      }
+    },
+    {
+      "name": "memfuse_insert",
+      "description": "Store a document with embedding and metadata",
+      "parameters": {
+        "id": {"type": "string", "description": "Document ID"},
+        "text": {"type": "string", "description": "Document text (auto-chunked and embedded)"},
+        "collection": {"type": "string", "description": "Collection name", "default": "default"},
+        "metadata": {"type": "object", "description": "Optional metadata", "default": {}}
+      }
+    },
+    {
+      "name": "memfuse_collections",
+      "description": "List all available collections",
+      "parameters": {}
+    }
+  ],
+  "resources": [
+    {
+      "name": "memfuse_stats",
+      "description": "Database statistics (doc count, memory usage, index health)"
+    }
+  ]
+}

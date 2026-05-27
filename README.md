@@ -1,8 +1,8 @@
 # MemFuse
 
-**Sovereign Agentic Operating System (SAOS)**
+**The Embedded Edge-AI Vector Database (Sovereign Core)**
 
-> "The ultimate runtime for AI Agents: Database, Saftey Layer, and Orchestrator in one crate."
+> "The ultimate 100% safe-Rust, zero-panic, air-gapped embedded database for AI Agents. No external C/C++ dependencies."
 
 ## Quick Start
 
@@ -30,33 +30,30 @@ for res in results:
 hybrid_results = col.hybrid_search("AI search", v, k=5)
 ```
 
-## Architecture: The 3 SAOS Layers
+## Architecture: The "Sovereign Core"
 
-MemFuse is no longer just a vector database, it is the runtime environment in which the agent exists.
+MemFuse provides absolute computational verifyability and data sovereignty for edge-deployments. It is designed around the **Sovereign Core Doctrine** (Zero-panic, 100% Async Safe Rust, zero external database dependencies like Arrow/C).
 
-1. **Das Triebwerk (Data & Memory Foundation)**
+1. **Kernel & Sub-Engines (Level 0 & 1)**
 ```
-memfuse-core   ← Core Types, WAL, Transactions, State Checkpoints
-memfuse-store  ← LSM-Tree Persistence
-memfuse-index  ← HNSW + SIMD Vector Search + CSR Graph (Multi-Hop)
+memfuse-core   ← Core Types, Traits, Errors, TxBuffer
+memfuse-store  ← Mathematically verified LSM-Tree Persistence (WAL)
+memfuse-index  ← HNSW + SIMD Vector Search (OOM resilient)
 memfuse-text   ← Inverted Index + BM25 Scoring
+memfuse-crypto ← AES-GCM Encryption-at-Rest
+memfuse-graph  ← CSR-Graph Entity Relations
 ```
-*Provides 4-Signal-Fusion (Dense, Sparse, Graph, Meta) at edge latency.*
+*Provides dense, sparse, and semantic retrieval at extreme edge latency without network overhead.*
 
-2. **Das Getriebe (Execution & Safety Layer)**
+2. **Orchestration & Facade (Level 2 & 3)**
 ```
-memfuse-runtime ← WASM Sandboxing & Native Tool Execution
+memfuse-db     ← Orchestrator for Namespaces & Hybrid Fusion
+memfuse-py     ← PyO3 Zero-Cost bindings (`pip install memfuse`)
 ```
-*Provides guaranteed host-safety and native state checkpointing (Time-Travel).*
 
-3. **Das Cockpit (Agentic Workflow Orchestration)**
-```
-memfuse-orchestrator ← Rust-native Declarative StateGraphs
-memfuse-py           ← PyO3 bindings (`pip install memfuse`)
-```
-*Autonomously injects context, controls execution flow, and enforces isolation.*
+> **Note:** Development on AgentOS middlewares (e.g., WASM sandboxes, Workflow Engines) has been STRATEGICALLY FROZEN. MemFuse focuses exclusively on being the absolute best embedded edge vector engine.
 
-## 4. The Jules Squad: 13 Autonomous Agents
+## The Jules Squad: 13 Autonomous Agents
 
 MemFuse is developed using a revolutionary **Multi-Agent Orchestration** system. 13 autonomous Jules agents work in a staggered 24-hour cycle to provide 24/7 development and maintenance without human intervention.
 
@@ -80,10 +77,6 @@ bash .agent/scripts/jules-dashboard.sh
 - **SIMD Acceleration** — portable-simd for distance computation
 - **LSM-Tree Persistence** — WAL + MemTable with crash recovery
 - **Transactional** — Sharded TxBuffer with orphan-reaping
-- **Relationship Tracking** — `relate()` API for graph-aware retrieval
-- **Hybrid Search** — Optimized BM25 + Vector Fusion (RRF)
-- **Scalar Quantization** — SQ8 compression for 4x reduced RAM footprint
-- **Deterministic Checkpointing** — Native state pinning for "Time-Travel" debugging
 
 ## Building
 

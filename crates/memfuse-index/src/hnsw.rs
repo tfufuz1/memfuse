@@ -37,7 +37,6 @@
 
 use crate::distance::compute_distance;
 use ahash::{AHashMap, AHashSet};
-use async_trait::async_trait;
 use memfuse_core::{
     DistanceMetric, DocId, IndexOp, MemFuseError, Result, ScoredDocument, TxBuffer, TxId,
     VectorIndex, VectorIndexStats,
@@ -691,15 +690,35 @@ impl HnswIndexCore {
         candidates: &[Candidate],
         m: usize,
     ) -> Result<Vec<u32>> {
+        if candidates.is_empty() {
+            return Ok(Vec::new());
+        }
         if candidates.len() <= m {
             return Ok(candidates.iter().map(|c| c.index as u32).collect());
         }
 
-        let mut result: Vec<Candidate> = Vec::with_capacity(m);
-        let mut remaining: BinaryHeap<Reverse<Candidate>> =
-            candidates.iter().copied().map(Reverse).collect();
+        // SPECCED: Varianzbasierter Schwellenwert zur Recall-Stabilisierung (SQ8).
+        // Wir berechnen die Streuung der Distanzen um die Heuristik bei verrauschten
+        // Abständen (Quantisierungsfehler) weniger aggressiv agieren zu lassen.
+        let distances: Vec<f32> = candidates.iter().map(|c| c.distance).collect();
+        let mean = distances.iter().sum::<f32>() / distances.len() as f32;
+        let variance =
+            distances.iter().map(|d| (d - mean).powi(2)).sum::<f32>() / distances.len() as f32;
+        let std_dev = variance.sqrt();
 
-        while let Some(Reverse(closest)) = remaining.pop() {
+        // Dynamische Lockerung: Bei hoher Dichte (geringe Varianz) erlauben wir
+        // mehr Redundanz um SQ8-Artefakte zu kompensieren.
+        let relaxation = if self.config.quantize {
+            (0.1 * (1.0 / (1.0 + std_dev))).clamp(0.02, 0.2)
+        } else {
+            0.0
+        };
+
+        let mut result: Vec<Candidate> = Vec::with_capacity(m);
+        let mut sorted_cands = candidates.to_vec();
+        sorted_cands.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap());
+
+        for closest in sorted_cands {
             if result.len() >= m {
                 break;
             }
@@ -707,7 +726,9 @@ impl HnswIndexCore {
             for selected in &result {
                 let dist_between =
                     self.compute_symmetric_distance_hybrid(closest.index, selected.index, ctx)?;
-                if closest.distance > dist_between {
+
+                // Hartes Pruning bei Standard-F32, dynamisches Pruning bei SQ8
+                if closest.distance > dist_between * (1.0 + relaxation) {
                     keep = false;
                     break;
                 }
@@ -717,26 +738,24 @@ impl HnswIndexCore {
             }
         }
 
-        // ANCHOR:ALG-FIX:D2-007 — Heuristic Fallback (Recall Guard)
-        // WP:WP-0.0 PRIO:1 NEEDS:NONE
-        // AGENT:13 DATE:2026-05-08 STATUS:DONE
-        // CREATED:2026-05-08 DEADLINE:NONE
-        // Wenn die Diversity-Heuristik zu aggressiv filtert (z.B. < M/2 Nachbarn),
-        // fallen wir auf einfache KNN-Nachbarn zurück um Graph-Fragmentation zu vermeiden.
-        // Wir garantieren hier mindestens m/2 Nachbarn, falls genug Kandidaten existieren.
-        let min_neighbors = if self.config.quantize {
-            m.saturating_sub(4)
-        } else {
-            m / 2
-        };
-        if result.len() < min_neighbors && !candidates.is_empty() {
+        // SPECCED: Minimale Konnektivität (M/2 Floor).
+        // Bei Quantisierungs-Artefakten darf die Heuristik den Graphen nicht fragmentieren.
+        let min_neighbors = m / 2;
+        if result.len() < min_neighbors && candidates.len() >= min_neighbors {
             let mut fallback = result;
-            for cand in candidates {
-                if fallback.len() >= m {
-                    break;
+            let mut sorted_fallback = candidates.to_vec();
+            sorted_fallback.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap());
+
+            for cand in sorted_fallback {
+                if fallback.len() >= m || (fallback.len() >= min_neighbors && !fallback.is_empty())
+                {
+                    // We only enforce floor if we strictly have too few neighbors
+                    if fallback.len() >= min_neighbors {
+                        break;
+                    }
                 }
                 if !fallback.iter().any(|c| c.index == cand.index) {
-                    fallback.push(*cand);
+                    fallback.push(cand);
                 }
             }
             return Ok(fallback.iter().map(|c| c.index as u32).collect());
@@ -1190,7 +1209,6 @@ impl HnswIndexCore {
     // Kept for backward compatibility or direct calls if needed, though facade should use `HnswIndex` wrapper
 }
 
-#[async_trait]
 impl VectorIndex for HnswIndex {
     async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()> {
         if let Some(ref err) = self.validation_error {
@@ -1932,5 +1950,50 @@ mod tests {
         normalize_inplace(&mut v);
         assert!((v[0] - 0.6).abs() < 1e-5);
         assert!((v[1] - 0.8).abs() < 1e-5);
+    }
+
+    #[tokio::test]
+    async fn test_hnsw_sq8_recall_stability() {
+        // Test: SQ8 should maintain high recall (> 0.9) on small dataset
+        let config = HnswConfig {
+            dimension: 16,
+            m: 16,
+            ef_construction: 64,
+            quantize: true,
+            ..test_config(16)
+        };
+        let index = HnswIndex::new(config);
+        let tx = TxId::new(1);
+
+        // 1. Train quantizer with some data
+        let mut data = Vec::new();
+        for i in 0..100u64 {
+            let mut v = vec![0.0f32; 16];
+            v[0] = i as f32;
+            data.push(v);
+        }
+
+        for (i, v) in data.iter().enumerate() {
+            index
+                .insert(tx, DocId::new(i as u64), v)
+                .await
+                .expect("insert");
+        }
+        index.commit(tx).await.expect("commit");
+
+        // 2. Perform searches and calculate recall
+        let mut hits = 0;
+        let test_queries = 20;
+        for i in 0..test_queries {
+            let query = &data[i * 5];
+            let results = index.search(query, 1).await.expect("search");
+            if !results.is_empty() && results[0].doc_id == DocId::new((i * 5) as u64) {
+                hits += 1;
+            }
+        }
+
+        let recall = hits as f32 / test_queries as f32;
+        tracing::info!("SQ8 Recall: {}", recall);
+        assert!(recall >= 0.9, "Recall too low for SQ8: {}", recall);
     }
 }

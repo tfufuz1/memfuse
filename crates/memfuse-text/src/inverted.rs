@@ -10,7 +10,6 @@
 // OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
 
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
-use async_trait::async_trait;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
 };
@@ -20,15 +19,15 @@ use std::sync::Arc;
 /// An inverted index stored in the LSM engine.
 #[derive(Clone)]
 /// An inverted index tied to a specific collection namespace.
-pub struct InvertedIndex {
-    storage: Arc<dyn StorageEngine>,
+pub struct InvertedIndex<S: StorageEngine> {
+    storage: Arc<S>,
     prefix: Vec<u8>,
     tokenizer: Arc<dyn Tokenizer>,
 }
 
-impl InvertedIndex {
+impl<S: StorageEngine> InvertedIndex<S> {
     /// Creates a new InvertedIndex tied to a specific collection namespace.
-    pub fn new(storage: Arc<dyn StorageEngine>, namespace: &str) -> Self {
+    pub fn new(storage: Arc<S>, namespace: &str) -> Self {
         let prefix = if namespace == "default" {
             b"__txt:default:".to_vec()
         } else {
@@ -101,29 +100,21 @@ impl InvertedIndex {
 
                 // Remove from old posting lists if update
                 if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
-                    let config = bincode::config::standard();
-                    if let Ok((old_terms, _)) =
-                        bincode::serde::decode_from_slice::<Vec<String>, _>(&fw_bytes, config)
-                    {
+                    if let Ok(old_terms) = bincode::deserialize::<Vec<String>>(&fw_bytes) {
                         for term in old_terms {
                             let pl_key = self.key_with_term(&term);
                             if let Some(pl_bytes) = self.storage.get(&pl_key).await? {
-                                if let Ok((mut pl, _)) =
-                                    bincode::serde::decode_from_slice::<Vec<(DocId, u32)>, _>(
-                                        &pl_bytes, config,
-                                    )
+                                if let Ok(mut pl) =
+                                    bincode::deserialize::<Vec<(DocId, u32)>>(&pl_bytes)
                                 {
                                     pl.retain(|&(d, _)| d != doc_id);
                                     if pl.is_empty() {
                                         self.storage.delete(tx, &pl_key).await?;
                                     } else {
-                                        let new_pl_bytes = bincode::serde::encode_to_vec(
-                                            &pl,
-                                            bincode::config::standard(),
-                                        )
-                                        .map_err(|e| {
-                                            MemFuseError::Storage(format!("bincode: {}", e))
-                                        })?;
+                                        let new_pl_bytes =
+                                            bincode::serialize(&pl).map_err(|e| {
+                                                MemFuseError::Storage(format!("bincode: {}", e))
+                                            })?;
                                         self.storage.put(tx, &pl_key, &new_pl_bytes).await?;
                                     }
                                 }
@@ -144,7 +135,7 @@ impl InvertedIndex {
         tfs_vec.sort_by(|a, b| a.0.cmp(&b.0));
 
         let unique_terms: Vec<&str> = tfs_vec.iter().map(|(k, _)| k.as_str()).collect();
-        let fw_bytes = bincode::serde::encode_to_vec(&unique_terms, bincode::config::standard())
+        let fw_bytes = bincode::serialize(&unique_terms)
             .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
         self.storage.put(tx, &fw_key, &fw_bytes).await?;
 
@@ -193,10 +184,7 @@ impl InvertedIndex {
             let mut pl: Vec<(DocId, u32)> = Vec::new();
 
             if let Some(bytes) = self.storage.get(&pl_key).await? {
-                let config = bincode::config::standard();
-                if let Ok((existing, _)) =
-                    bincode::serde::decode_from_slice::<Vec<(DocId, u32)>, _>(&bytes, config)
-                {
+                if let Ok(existing) = bincode::deserialize::<Vec<(DocId, u32)>>(&bytes) {
                     pl = existing;
                 }
             }
@@ -205,7 +193,7 @@ impl InvertedIndex {
             pl.retain(|&(d, _)| d != doc_id);
             pl.push((doc_id, tf));
 
-            let new_bytes = bincode::serde::encode_to_vec(&pl, bincode::config::standard())
+            let new_bytes = bincode::serialize(&pl)
                 .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
             self.storage.put(tx, &pl_key, &new_bytes).await?;
         }
@@ -237,27 +225,18 @@ impl InvertedIndex {
 
         // Remove from posting lists using forward index
         if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
-            let config = bincode::config::standard();
-            if let Ok((old_terms, _)) =
-                bincode::serde::decode_from_slice::<Vec<String>, _>(&fw_bytes, config)
-            {
+            if let Ok(old_terms) = bincode::deserialize::<Vec<String>>(&fw_bytes) {
                 for term in old_terms {
                     let pl_key = self.key_with_term(&term);
                     if let Some(pl_bytes) = self.storage.get(&pl_key).await? {
-                        if let Ok((mut pl, _)) = bincode::serde::decode_from_slice::<
-                            Vec<(DocId, u32)>,
-                            _,
-                        >(&pl_bytes, config)
-                        {
+                        if let Ok(mut pl) = bincode::deserialize::<Vec<(DocId, u32)>>(&pl_bytes) {
                             pl.retain(|&(d, _)| d != doc_id);
                             if pl.is_empty() {
                                 self.storage.delete(tx, &pl_key).await?;
                             } else {
-                                let new_pl_bytes =
-                                    bincode::serde::encode_to_vec(&pl, bincode::config::standard())
-                                        .map_err(|e| {
-                                            MemFuseError::Storage(format!("bincode: {}", e))
-                                        })?;
+                                let new_pl_bytes = bincode::serialize(&pl).map_err(|e| {
+                                    MemFuseError::Storage(format!("bincode: {}", e))
+                                })?;
                                 self.storage.put(tx, &pl_key, &new_pl_bytes).await?;
                             }
                         }
@@ -345,10 +324,7 @@ impl InvertedIndex {
         for term in &tokens {
             let pl_key = self.key_with_term(term);
             if let Some(bytes) = self.storage.get(&pl_key).await? {
-                let config = bincode::config::standard();
-                if let Ok((pl, _)) =
-                    bincode::serde::decode_from_slice::<Vec<(DocId, u32)>, _>(&bytes, config)
-                {
+                if let Ok(pl) = bincode::deserialize::<Vec<(DocId, u32)>>(&bytes) {
                     let df = pl.len() as u32;
 
                     for (doc_id, tf) in pl {
@@ -394,7 +370,6 @@ impl InvertedIndex {
     }
 }
 
-#[async_trait]
 impl TextIndex for InvertedIndex {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         let results = self.search_bm25(query, k).await?;
@@ -478,7 +453,6 @@ impl BM25MorphIndex {
     }
 }
 
-#[async_trait]
 impl TextIndex for BM25MorphIndex {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         // Here we could apply the morphological tokenizer to the query tokens
@@ -526,7 +500,6 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
             Ok(self.store.read().get(key).cloned())
