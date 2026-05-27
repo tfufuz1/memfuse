@@ -1,3 +1,5 @@
+//! Domain-specific types and identifiers.
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +37,12 @@ impl DocId {
 
     pub fn from_key(key: &str) -> Result<Self> {
         Self::try_from_key(key)
+    }
+
+    /// Alias for `from_key` for backward compatibility.
+    #[deprecated(note = "Use from_key instead")]
+    pub fn from_string(key: &str) -> Self {
+        Self::from_key(key).unwrap_or(Self(0))
     }
 
     pub fn try_from_key(key: &str) -> Result<Self> {

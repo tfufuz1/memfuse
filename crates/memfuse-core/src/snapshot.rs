@@ -81,10 +81,13 @@ impl SnapshotRegistry {
         let seq_no = seq_no & !TOMBSTONE_BIT;
         let mut active = self.active.lock();
         if let Some(count) = active.get_mut(&seq_no) {
-            *count -= 1;
-            if *count == 0 {
+            if *count > 1 {
+                *count -= 1;
+            } else {
                 active.remove(&seq_no);
             }
+        } else {
+            tracing::warn!("Attempted to release non-existent snapshot: seq_no={}", seq_no);
         }
         self.update_min(&active);
     }
