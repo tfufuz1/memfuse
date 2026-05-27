@@ -20,8 +20,6 @@ pub struct WorkflowState {
 pub const TOMBSTONE_BIT: u64 = 1 << 63;
 
 /// Internal document identifier.
-///
-/// Wraps a `u64` that is typically a hash of the user-provided string ID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct DocId(pub u64);

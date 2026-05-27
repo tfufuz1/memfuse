@@ -1,8 +1,3 @@
-//! # MemFuse — Embedded Hybrid-Search for AI Agents
-//!
-//! MemFuse is a zero-boilerplate embedded database for AI agent memory.
-//! It combines vector search (HNSW), persistent storage (LSM-Tree),
-//! and relationship tracking in a single library.
 // ANCHOR:ARCH:DB-001 — Orchestrator Facade (Getriebe — Layer 2).
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -10,6 +5,12 @@
 // ROLLE: Verbindet memfuse-core (Traits), memfuse-store (LSM) und memfuse-index (HNSW).
 // DESIGN: Zero-Boilerplate API für Nutzer. Intern wird alles über die Collection-Abstraktion geroutet.
 // ABWÄRTSKOMPATIBILITÄT: Bietet weiterhin top-level insert/search an, die intern auf die "default" Collection leiten.
+//! # MemFuse — Embedded Hybrid-Search for AI Agents
+//!
+//! MemFuse is a zero-boilerplate embedded database for AI agent memory.
+//! It combines vector search (HNSW), persistent storage (LSM-Tree),
+//! and relationship tracking in a single library.
+//!
 // AGENT:08 DATE:2026-05-18 STATUS:DONE
 //!
 //! ## Quick Start
@@ -204,7 +205,10 @@ impl MemFuse {
             // 2. Mark each pending intent as "repaired" to prevent re-processing.
             //    The actual data reconciliation happens in step 3 via Collection::repair().
             for intent_key in &pending_intents {
-                let tx = TxId::new(self.next_tx.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+                let tx = TxId::new(
+                    self.next_tx
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                );
                 if let Err(e) = self.storage.put(tx, intent_key, b"repaired").await {
                     tracing::error!("repair_on_open: failed to mark intent as repaired: {}", e);
                     continue;

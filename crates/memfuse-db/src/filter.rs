@@ -1,6 +1,6 @@
 //! # Metadata Filter Evaluation
 //!
-//! Implements the evaluation logic for `MetadataFilter`, allowing for
+//! Implements the evaluation logic for MetadataFilter, allowing for
 //! filtering documents based on their associated metadata during search operations.
 
 use serde::{Deserialize, Serialize};
