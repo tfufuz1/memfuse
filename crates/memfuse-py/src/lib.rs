@@ -315,6 +315,31 @@ macro_rules! memfuse_crud_methods {
                 results_to_py(py, results)
             }
 
+            /// Performs semantic k-NN search with an optional metadata filter.
+            #[pyo3(signature = (vector, k, filter=None))]
+            pub fn search_with_filter<'py>(
+                &self,
+                py: Python<'py>,
+                vector: PyReadonlyArray1<'py, f32>,
+                k: usize,
+                filter: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+            ) -> PyResult<Vec<PySearchResult>> {
+                let rt = get_runtime()?;
+                let v = vector.as_slice().map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
+                })?;
+                let f = match filter {
+                    Some(dict) => Some(depythonize(&dict).map_err(|e| {
+                        pyo3::exceptions::PyValueError::new_err(format!("Filter error: {}", e))
+                    })?),
+                    None => None,
+                };
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.search_with_filter(v, k, f)))
+                    .map_err(memfuse_err)?;
+                results_to_py(py, results)
+            }
+
             /// Performs hybrid search combining BM25 and vector search results.
             #[pyo3(signature = (text, vector, k))]
             pub fn hybrid_search<'py>(
@@ -682,7 +707,7 @@ fn open(
 
 #[pymodule]
 fn memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
-    m.add("__version__", "0.2.0")?;
+    m.add("__version__", "0.1.0")?;
     m.add_function(wrap_pyfunction!(open, m)?)?;
     m.add_class::<PyMemFuse>()?;
     m.add_class::<PyCollection>()?;

@@ -227,3 +227,34 @@ def test_version_and_repr(db_path):
 
     db_stats = db.stats()
     assert "DbStats(vectors=0" in repr(db_stats) # default col is empty
+
+def test_search_with_filter(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    col = db.collection("filter_test")
+    v1 = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    v2 = np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float32)
+
+    col.upsert("d1", v1, metadata={"category": "A", "value": 10})
+    col.upsert("d2", v2, metadata={"category": "B", "value": 20})
+
+    # Filter: category == "A"
+    filter_a = {"Condition": {"field": "category", "op": "Eq", "value": "A"}}
+    results = col.search_with_filter(v1, k=10, filter=filter_a)
+    assert len(results) == 1
+    assert results[0].id == "d1"
+
+    # Filter: value > 15
+    filter_gt = {"Condition": {"field": "value", "op": "Gt", "value": 15}}
+    results = col.search_with_filter(v1, k=10, filter=filter_gt)
+    assert len(results) == 1
+    assert results[0].id == "d2"
+
+    # Filter: category in ["A", "B"] (AND condition)
+    filter_and = {
+        "And": [
+            {"Condition": {"field": "category", "op": "In", "value": ["A", "B"]}},
+            {"Condition": {"field": "value", "op": "Lte", "value": 25}}
+        ]
+    }
+    results = col.search_with_filter(v1, k=10, filter=filter_and)
+    assert len(results) == 2
