@@ -253,7 +253,11 @@ mod tests {
         assert!(storage.pinned.lock().contains(&100));
 
         // Verify it exists in manager
-        let retrieved = manager.get_checkpoint("test_cp").await.expect("CI guard: replaced unwrap").expect("CI guard: replaced unwrap");
+        let retrieved = manager
+            .get_checkpoint("test_cp")
+            .await
+            .expect("CI guard: replaced unwrap")
+            .expect("CI guard: replaced unwrap");
         assert_eq!(retrieved, meta);
     }
 
@@ -268,7 +272,11 @@ mod tests {
             .await
             .expect("CI guard: replaced unwrap");
 
-        let retrieved = manager.get_checkpoint("cp1").await.expect("CI guard: replaced unwrap").expect("CI guard: replaced unwrap");
+        let retrieved = manager
+            .get_checkpoint("cp1")
+            .await
+            .expect("CI guard: replaced unwrap")
+            .expect("CI guard: replaced unwrap");
         assert_eq!(retrieved.metadata, metadata);
     }
 
@@ -290,7 +298,10 @@ mod tests {
             .await
             .expect("CI guard: replaced unwrap");
 
-        let list = manager.list_checkpoints().await.expect("CI guard: replaced unwrap");
+        let list = manager
+            .list_checkpoints()
+            .await
+            .expect("CI guard: replaced unwrap");
         assert_eq!(list.len(), 3);
         assert_eq!(list[0].name, "cp1");
         assert_eq!(list[1].name, "cp2");
@@ -309,7 +320,10 @@ mod tests {
 
         // New manager sharing the same storage
         let manager2 = CheckpointManager::new(storage.clone());
-        let list = manager2.list_checkpoints().await.expect("CI guard: replaced unwrap");
+        let list = manager2
+            .list_checkpoints()
+            .await
+            .expect("CI guard: replaced unwrap");
 
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "persist_me");

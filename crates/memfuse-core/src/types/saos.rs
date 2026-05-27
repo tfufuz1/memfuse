@@ -235,8 +235,14 @@ mod tests {
             .build()
             .expect("build ok");
 
-        assert_eq!(query.text_query.expect("CI guard: replaced unwrap"), "test query");
-        assert_eq!(query.vector_query.expect("CI guard: replaced unwrap"), vec![0.1, 0.2]);
+        assert_eq!(
+            query.text_query.expect("CI guard: replaced unwrap"),
+            "test query"
+        );
+        assert_eq!(
+            query.vector_query.expect("CI guard: replaced unwrap"),
+            vec![0.1, 0.2]
+        );
         assert_eq!(query.k, 5);
         // Default weights: vector=1.0, others=0.0
         assert_eq!(query.fusion_weights.vector(), 1.0);
@@ -255,7 +261,9 @@ mod tests {
 
     #[test]
     fn test_hybrid_query_builder_defaults() {
-        let query = HybridQuery::builder().build().expect("CI guard: replaced unwrap");
+        let query = HybridQuery::builder()
+            .build()
+            .expect("CI guard: replaced unwrap");
         assert_eq!(query.k, 10);
         assert_eq!(query.fusion_weights.vector(), 1.0);
         assert!(query.text_query.is_none());
