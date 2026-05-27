@@ -152,17 +152,17 @@ mod tests {
         assert!(mt.get_at_seq(b"key1", 5).is_none());
 
         // Exact match
-        let (val, seq) = mt.get_at_seq(b"key1", 20).expect("exact match"); // unwrap
+        let (val, seq) = mt.get_at_seq(b"key1", 20).expect("version at 20"); // unwrap
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
 
         // Between versions
-        let (val, seq) = mt.get_at_seq(b"key1", 25).expect("between versions"); // unwrap
+        let (val, seq) = mt.get_at_seq(b"key1", 25).expect("version at 25 (points to 20)"); // unwrap
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
 
         // Latest version
-        let (val, seq) = mt.get_at_seq(b"key1", 100).expect("latest version"); // unwrap
+        let (val, seq) = mt.get_at_seq(b"key1", 100).expect("latest version at 100"); // unwrap
         assert_eq!(val.as_ref(), b"v3");
         assert_eq!(seq, 30);
     }

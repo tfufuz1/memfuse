@@ -66,42 +66,42 @@ mod tests {
 
         // 1. Insert some data
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.expect("put1"); // unwrap
-        storage.commit(tx1).await.expect("commit1"); // unwrap
+        storage.put(tx1, b"key1", b"val1").await.expect("put 1"); // unwrap
+        storage.commit(tx1).await.expect("commit 1"); // unwrap
 
         let cp1 = checkpointer.create_checkpoint(tx1);
 
         // 2. Insert more data
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"key2", b"val2").await.expect("put2"); // unwrap
-        storage.commit(tx2).await.expect("commit2"); // unwrap
+        storage.put(tx2, b"key2", b"val2").await.expect("put 2"); // unwrap
+        storage.commit(tx2).await.expect("commit 2"); // unwrap
 
         assert_eq!(
-            storage.get(b"key1").await.expect("get1"),
+            storage.get(b"key1").await.expect("get 1"), // unwrap
             Some(b"val1".to_vec())
-        ); // unwrap
+        );
         assert_eq!(
-            storage.get(b"key2").await.expect("get2"),
+            storage.get(b"key2").await.expect("get 2"), // unwrap
             Some(b"val2".to_vec())
-        ); // unwrap
+        );
 
         // 3. Rollback to cp1
         checkpointer.rollback_to(&cp1).await.expect("rollback");
 
         // 4. Verify state
         assert_eq!(
-            storage.get(b"key1").await.expect("get1_post"),
+            storage.get(b"key1").await.expect("get 1 post rollback"), // unwrap
             Some(b"val1".to_vec())
-        ); // unwrap
-        assert_eq!(storage.get(b"key2").await.expect("get2_post"), None); // Should be gone! // unwrap
+        );
+        assert_eq!(storage.get(b"key2").await.expect("get 2 post rollback"), None); // Should be gone! // unwrap
 
         // 5. Verify we can still write and seq_no is correct
         let tx3 = TxId::new(3);
-        storage.put(tx3, b"key3", b"val3").await.expect("put3"); // unwrap
-        storage.commit(tx3).await.expect("commit3"); // unwrap
+        storage.put(tx3, b"key3", b"val3").await.expect("put 3"); // unwrap
+        storage.commit(tx3).await.expect("commit 3"); // unwrap
         assert_eq!(
-            storage.get(b"key3").await.expect("get3"),
+            storage.get(b"key3").await.expect("get 3"), // unwrap
             Some(b"val3".to_vec())
-        ); // unwrap
+        );
     }
 }

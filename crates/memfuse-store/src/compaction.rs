@@ -218,110 +218,52 @@ impl CompactionEngine {
     /// During merge:
     /// - Duplicate keys: newest sequence number wins
     /// - Tombstones: removed if `seq_no < min_snapshot_seq` (no snapshot references them)
-    ///
-    /// Härtung: Nutzt Streaming-Merge mit BinaryHeap um OOM bei großen SSTables zu vermeiden.
     async fn merge_sstables(
         &self,
         inputs: &[Arc<SstableReader>],
         output_path: &std::path::Path,
         min_snapshot_seq: u64,
     ) -> Result<()> {
-        use bytes::Bytes;
-        use std::collections::BinaryHeap;
-
-        #[derive(Eq, PartialEq)]
-        struct MergeEntry {
-            key: Bytes,
-            value: Bytes,
-            seq: u64,
-            sst_idx: usize,
-            block_idx: usize,
-            entry_idx: usize,
-        }
-
-        impl Ord for MergeEntry {
-            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-                // Min-heap for key (asc), Max-heap for seq (desc)
-                other
-                    .key
-                    .cmp(&self.key)
-                    .then_with(|| self.seq.cmp(&other.seq))
+        // 1. Collect all entries from all input SSTables
+        let mut all_entries: Vec<(Vec<u8>, Vec<u8>, u64)> = Vec::new();
+        for sst in inputs {
+            let entries = sst.iter().await?;
+            for (k, v, seq) in entries {
+                all_entries.push((k.to_vec(), v.to_vec(), seq));
             }
         }
 
-        impl PartialOrd for MergeEntry {
-            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-                Some(self.cmp(other))
+        // 2. Sort by key, then by sequence number descending (newest first)
+        all_entries.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| b.2.cmp(&a.2)));
+
+        // 3. Deduplicate: for each key, keep only the entry with the highest seq_no
+        let mut deduped: Vec<(Vec<u8>, Vec<u8>, u64)> = Vec::new();
+        let mut last_key: Option<&[u8]> = None;
+
+        for entry in &all_entries {
+            if last_key == Some(&entry.0) {
+                continue; // Skip: already have a newer version of this key
             }
+            last_key = Some(&entry.0);
+
+            let is_tombstone = (entry.2 & TOMBSTONE_BIT) != 0;
+            let raw_seq = entry.2 & !TOMBSTONE_BIT;
+
+            // GC tombstones that are older than all active snapshots
+            if is_tombstone && raw_seq < min_snapshot_seq {
+                continue; // Tombstone is safe to garbage-collect
+            }
+
+            deduped.push(entry.clone());
         }
 
-        let mut heap = BinaryHeap::new();
-        // Entry cache for each SSTable to avoid re-reading blocks constantly
-        let mut caches: Vec<Vec<(Bytes, Bytes, u64)>> = Vec::with_capacity(inputs.len());
-
-        for (i, sst) in inputs.iter().enumerate() {
-            if sst.num_blocks() > 0 {
-                let entries = sst.read_block_entries(0).await?;
-                if let Some((k, v, s)) = entries.first() {
-                    heap.push(MergeEntry {
-                        key: k.clone(),
-                        value: v.clone(),
-                        seq: *s,
-                        sst_idx: i,
-                        block_idx: 0,
-                        entry_idx: 0,
-                    });
-                }
-                caches.push(entries);
-            } else {
-                caches.push(Vec::new());
-            }
-        }
-
+        // 4. Write to output SSTable
         let mut builder = SstableBuilder::create(output_path).await?;
-        let mut last_key: Option<Bytes> = None;
-
-        while let Some(mut top) = heap.pop() {
-            let is_duplicate = last_key.as_ref() == Some(&top.key);
-
-            if !is_duplicate {
-                let is_tombstone = (top.seq & TOMBSTONE_BIT) != 0;
-                let raw_seq = top.seq & !TOMBSTONE_BIT;
-
-                if !(is_tombstone && raw_seq < min_snapshot_seq) {
-                    builder.add(&top.key, &top.value, top.seq).await?;
-                }
-                last_key = Some(top.key.clone());
-            }
-
-            // Advance the iterator for the SSTable that provided 'top'
-            top.entry_idx += 1;
-            if top.entry_idx >= caches[top.sst_idx].len() {
-                // Need to load next block
-                top.block_idx += 1;
-                top.entry_idx = 0;
-                if top.block_idx < inputs[top.sst_idx].num_blocks() {
-                    caches[top.sst_idx] = inputs[top.sst_idx]
-                        .read_block_entries(top.block_idx)
-                        .await?;
-                    if let Some((k, v, s)) = caches[top.sst_idx].first() {
-                        top.key = k.clone();
-                        top.value = v.clone();
-                        top.seq = *s;
-                        heap.push(top);
-                    }
-                }
-            } else {
-                // Use next entry in current block cache
-                let (k, v, s) = &caches[top.sst_idx][top.entry_idx];
-                top.key = k.clone();
-                top.value = v.clone();
-                top.seq = *s;
-                heap.push(top);
-            }
+        for (key, value, seq) in &deduped {
+            builder.add(key, value, *seq).await?;
         }
-
         builder.finish().await?;
+
         Ok(())
     }
 

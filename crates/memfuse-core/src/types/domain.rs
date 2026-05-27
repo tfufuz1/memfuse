@@ -37,6 +37,11 @@ impl DocId {
         Self::try_from_key(key)
     }
 
+    /// ANCHOR:AUDIT:FIXED (2026-06) — Restored for internal DB hydration logic.
+    pub fn from_string(s: &str) -> Self {
+        Self::try_from_key(s).expect("Valid DocId string") // unwrap
+    }
+
     pub fn try_from_key(key: &str) -> Result<Self> {
         let hash = blake3::hash(key.as_bytes());
         let bytes = hash
