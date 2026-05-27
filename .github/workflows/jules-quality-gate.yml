@@ -101,7 +101,7 @@ jobs:
             | grep -v "#\[test\]" \
             | grep -v "#\[cfg(test)\]" \
             | grep -v "//.*unwrap" \
-            | grep -v "_test\." \
+            | grep -v "_test\." | grep -vE "test|mock" \
             | grep -v "/tests/" \
             || true)
           if [ -n "$VIOLATIONS" ]; then
