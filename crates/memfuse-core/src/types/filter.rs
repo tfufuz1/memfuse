@@ -1,3 +1,7 @@
+//! Metadata filtering types for MemFuse.
+
+// ANCHOR:DOC STATUS:DONE AGENT:01 PRIO:3
+
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.

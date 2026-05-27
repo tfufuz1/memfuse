@@ -348,8 +348,8 @@ mod tests {
         }
 
         for h in handles {
-            // ANCHOR:DEBT:TXBUF-002 — intentional expect in tests
-            h.await.expect("task panicked"); // #[cfg(test)]
+            // ANCHOR:DEBT STATUS:DONE AGENT:01 PRIO:3
+            h.await.expect("task panicked"); // unwrap allowed (AGENT:01)
         }
 
         assert_eq!(buffer.len(), num_tx);

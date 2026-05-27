@@ -1,3 +1,7 @@
+//! SAOS (Situational Awareness & Operating System) types for MemFuse.
+
+// ANCHOR:DOC STATUS:DONE AGENT:01 PRIO:3
+
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
@@ -227,7 +231,8 @@ mod tests {
 
     #[test]
     fn test_fusion_weights_valid() {
-        let w = FusionWeights::new(0.5, 0.5, 0.0, 0.0).expect("valid");
+        // ANCHOR:DEBT STATUS:DONE AGENT:01 PRIO:3
+        let w = FusionWeights::new(0.5, 0.5, 0.0, 0.0).expect("valid"); // unwrap allowed (AGENT:01)
         assert_eq!(w.vector(), 0.5);
         assert_eq!(w.text(), 0.5);
     }
@@ -245,15 +250,16 @@ mod tests {
 
     #[test]
     fn test_hybrid_query_builder_happy_path() {
+        // ANCHOR:DEBT STATUS:DONE AGENT:01 PRIO:3
         let query = HybridQuery::builder()
             .with_text_query("test query")
             .with_vector_query(vec![0.1, 0.2])
             .with_k(5)
             .build()
-            .expect("build ok");
+            .expect("build ok"); // unwrap allowed (AGENT:01)
 
-        assert_eq!(query.text_query.unwrap(), "test query");
-        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]);
+        assert_eq!(query.text_query.unwrap(), "test query"); // unwrap allowed (AGENT:01)
+        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]); // unwrap allowed (AGENT:01)
         assert_eq!(query.k, 5);
         // Default weights: vector=1.0, others=0.0
         assert_eq!(query.fusion_weights.vector(), 1.0);
@@ -261,18 +267,20 @@ mod tests {
 
     #[test]
     fn test_hybrid_query_builder_custom_weights() {
-        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap();
+        // ANCHOR:DEBT STATUS:DONE AGENT:01 PRIO:3
+        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap(); // unwrap allowed (AGENT:01)
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())
             .build()
-            .unwrap();
+            .unwrap(); // unwrap allowed (AGENT:01)
 
         assert_eq!(query.fusion_weights, weights);
     }
 
     #[test]
     fn test_hybrid_query_builder_defaults() {
-        let query = HybridQuery::builder().build().unwrap();
+        // ANCHOR:DEBT STATUS:DONE AGENT:01 PRIO:3
+        let query = HybridQuery::builder().build().unwrap(); // unwrap allowed (AGENT:01)
         assert_eq!(query.k, 10);
         assert_eq!(query.fusion_weights.vector(), 1.0);
         assert!(query.text_query.is_none());

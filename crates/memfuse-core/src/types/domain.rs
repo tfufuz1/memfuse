@@ -1,3 +1,7 @@
+//! Domain-specific types for MemFuse.
+
+// ANCHOR:DOC STATUS:DONE AGENT:01 PRIO:3
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -236,9 +240,10 @@ mod tests {
 
     #[test]
     fn test_doc_id_determinism() {
+        // ANCHOR:DEBT STATUS:DONE AGENT:01 PRIO:3
         let key = "consistent_key";
-        let id1 = DocId::from_key(key).unwrap();
-        let id2 = DocId::from_key(key).unwrap();
+        let id1 = DocId::from_key(key).unwrap(); // unwrap allowed (AGENT:01)
+        let id2 = DocId::from_key(key).unwrap(); // unwrap allowed (AGENT:01)
         assert_eq!(id1, id2);
     }
 }
