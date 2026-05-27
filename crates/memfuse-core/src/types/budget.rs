@@ -1,7 +1,6 @@
 //! Resource budget and tracking for MemFuse.
 //!
-//! Provides mechanisms to track and limit memory consumption,
-//! enabling backpressure and resource isolation.
+//! Provides central structures and traits.
 
 // ANCHOR:DOC:BUDGET-001 — Missing module-level documentation.
 // AGENT:01 STATUS:DONE PRIO:3
