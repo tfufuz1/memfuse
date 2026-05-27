@@ -87,7 +87,10 @@ impl SnapshotRegistry {
                 active.remove(&seq_no);
             }
         } else {
-            tracing::warn!("Attempted to release non-existent snapshot: seq_no={}", seq_no);
+            tracing::warn!(
+                "Attempted to release non-existent snapshot: seq_no={}",
+                seq_no
+            );
         }
         self.update_min(&active);
     }
