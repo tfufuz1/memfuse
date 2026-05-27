@@ -34,21 +34,25 @@ impl EncryptedWal {
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
+/// HMAC-SHA256 for WAL integrity.
 pub struct WalHmac {
     mac: Hmac<Sha256>,
 }
 
 impl WalHmac {
+    /// Creates a new WalHmac with the given integrity key.
     pub fn new(integrity_key: &[u8]) -> Result<Self> {
         let mac = Hmac::<Sha256>::new_from_slice(integrity_key)
             .map_err(|e| memfuse_core::MemFuseError::Storage(format!("HMAC key error: {}", e)))?;
         Ok(Self { mac })
     }
 
+    /// Updates the HMAC state with data.
     pub fn update(&mut self, data: &[u8]) {
         self.mac.update(data);
     }
 
+    /// Finalizes the HMAC and returns the 32-byte hash.
     pub fn finalize(self) -> [u8; 32] {
         self.mac.finalize().into_bytes().into()
     }
@@ -57,11 +61,17 @@ impl WalHmac {
 /// A snapshot of a WAL entry for cryptographic verification.
 #[derive(Debug, Clone)]
 pub struct WalEntrySnapshot {
+    /// Sequence number.
     pub seq_no: u64,
+    /// Operation type (0 for Put, 1 for Delete).
     pub op_type: u8, // 0: Put, 1: Delete
+    /// Document key.
     pub key: Vec<u8>,
+    /// Document value (for Put).
     pub value: Vec<u8>,
+    /// HMAC checksum of this entry.
     pub checksum: [u8; 32],
+    /// HMAC of the previous entry.
     pub prev_hmac: [u8; 32],
 }
 
@@ -72,6 +82,7 @@ pub struct IntegrityVerifier {
 }
 
 impl IntegrityVerifier {
+    /// Creates a new IntegrityVerifier.
     pub fn new(integrity_key: &[u8]) -> Self {
         Self {
             last_hmac: [0u8; 32],

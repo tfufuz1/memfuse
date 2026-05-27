@@ -1,3 +1,5 @@
+//! Filtering logic for the MemFuse database.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

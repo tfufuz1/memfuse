@@ -1,3 +1,5 @@
+//! Common types used across the MemFuse workspace.
+
 pub mod budget;
 pub mod domain;
 pub mod filter;

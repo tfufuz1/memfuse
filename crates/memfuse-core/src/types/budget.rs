@@ -1,3 +1,5 @@
+//! Resource and memory budgeting for the MemFuse workspace.
+
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.

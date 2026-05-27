@@ -1,3 +1,5 @@
+//! Core domain models and primitives for MemFuse.
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
