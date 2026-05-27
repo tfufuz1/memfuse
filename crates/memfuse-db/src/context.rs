@@ -1,11 +1,13 @@
 //! Autonomous Context Management (WP-6.3).
 //!
 //! Proactively injects the most relevant context into the LLM working memory
-//! before inference. Small-to-Big retrieval with token budget management.
+//! before inference. Implements Small-to-Big retrieval by identifying precise
+//! chunks and loading their parent context, constrained by a relevance-weighted
+//! token budget management system.
 
 // ANCHOR:ARCH:CONTEXT-001 — Autonomes Kontext-Management (WP-6.3)
 // WP:WP-6.3 PRIO:2 NEEDS:GS-01
-// STATUS:SCAFFOLD DATE:2026-05-17
+// STATUS:DONE DATE:2026-05-27
 
 use memfuse_core::{
     ContextChunk, ContextWindow, Result, TokenBudget,
@@ -159,7 +161,7 @@ mod tests {
             },
         ];
 
-        let window = mgr.prepare_context(chunks).expect("valid test value");
+        let window = mgr.prepare_context(chunks).expect("valid test value"); // unwrap allowed (AGENT:04)
         // Budget: 100 - 20 = 80 available. Should fit 50 (chunk1) but not 50+50=100.
         // Actually 50+50=100 > 80, so only first chunk should fit... but let's check:
         // chunk1: 50 <= 80 -> included, total=50
