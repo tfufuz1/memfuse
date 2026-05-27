@@ -917,6 +917,17 @@ unsafe fn hsum256_epi64_avx2(v: __m256i) -> i64 {
     }
 }
 
+/// Safely maps a file into memory.
+pub fn mmap_file(file: &std::fs::File) -> memfuse_core::Result<memmap2::Mmap> {
+    // ANCHOR:SAFETY:MMAP-001 — Memory mapping a file.
+    // BEGRÜNDUNG: memmap2::Mmap::map ist unsafe, weil Änderungen an der Datei
+    // von anderen Prozessen zu Undefined Behavior in Rust führen können (z.B. SIGBUS).
+    // In unserer kontrollierten Umgebung (embedded DB) ist dies akzeptabel.
+    unsafe {
+        memmap2::Mmap::map(file).map_err(|e| memfuse_core::MemFuseError::Storage(e.to_string()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1026,16 +1037,5 @@ mod tests {
         let expected_same = 0.0; // Identical
         let actual_same = super::cosine_distance_std_simd(&c, &d);
         assert!((expected_same - actual_same).abs() < 1e-3);
-    }
-}
-
-/// Safely maps a file into memory.
-pub fn mmap_file(file: &std::fs::File) -> memfuse_core::Result<memmap2::Mmap> {
-    // ANCHOR:SAFETY:MMAP-001 — Memory mapping a file.
-    // BEGRÜNDUNG: memmap2::Mmap::map ist unsafe, weil Änderungen an der Datei
-    // von anderen Prozessen zu Undefined Behavior in Rust führen können (z.B. SIGBUS).
-    // In unserer kontrollierten Umgebung (embedded DB) ist dies akzeptabel.
-    unsafe {
-        memmap2::Mmap::map(file).map_err(|e| memfuse_core::MemFuseError::Storage(e.to_string()))
     }
 }
