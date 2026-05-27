@@ -3,12 +3,20 @@
 //! Enables deterministic freezing and restarting of agent workflows.
 //! Implements a SnapshotRegistry abstracting over Multi-Version Concurrency Control (MVCC).
 
+// ANCHOR:REFACTOR:WP-5.1-DUMMYTX — TxId(0)/Low-ID collision risk eliminated
+// WP:WP-5.1 PRIO:2 NEEDS:NONE
+// AGENT:@JULES-12 DATE:2026-05-27 STATUS:DONE
+// TEST: cargo test -p memfuse-checkpoint
+// DONE: Interne Metadaten-Transaktionen nutzen TxId::INTERNAL_BASE (u64::MAX-1M) als kollisionsfreien ID-Raum.
+// SUCCESSOR: @JULES-13 — "Checkpointing ist nun sicher vor ID-Kollisionen."
+
 #![forbid(unsafe_code)]
 
 use memfuse_core::{Result, StorageEngine, TxId, WorkflowState};
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 /// Metadata for a persistent checkpoint.
@@ -17,8 +25,18 @@ pub struct CheckpointMeta {
     pub name: String,
     pub collection_id: String,
     pub seq_no: u64,
+    pub tx_id: TxId,
     pub metadata: serde_json::Value,
     pub created_at: u64,
+}
+
+impl CheckpointMeta {
+    pub fn into_workflow_state(&self) -> WorkflowState {
+        WorkflowState {
+            tx: self.tx_id,
+            graph_hash: format!("seq-{}", self.seq_no),
+        }
+    }
 }
 
 /// In-memory MVCC checkpoint abstraction.
@@ -58,6 +76,8 @@ pub struct PersistentCheckpointStore<S: StorageEngine> {
     registry: Arc<CheckpointRegistry>,
     // Serializes write operations to ensure atomicity between storage and cache
     op_lock: tokio::sync::Mutex<()>,
+    // Internal transaction sequence for metadata writes
+    internal_tx_seq: AtomicU64,
 }
 
 impl<S: StorageEngine> PersistentCheckpointStore<S> {
@@ -67,15 +87,26 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
             persistent_checkpoints: SyncRwLock::new(Vec::new()),
             registry: Arc::new(CheckpointRegistry::new()),
             op_lock: tokio::sync::Mutex::new(()),
+            internal_tx_seq: AtomicU64::new(0),
         }
     }
 
+    fn next_tx_id(&self) -> TxId {
+        // Count upward from INTERNAL_BASE to stay in the reserved system range,
+        // avoiding collision with user-facing TxIds which start at 1.
+        let offset = self.internal_tx_seq.fetch_add(1, Ordering::Relaxed);
+        TxId::new(TxId::INTERNAL_BASE.wrapping_add(offset))
+    }
+
     /// Creates a new persistent checkpoint at the specified sequence number.
+    // TODO(FIND-CHK-001): Transaction Leak on Failure
+    // If subsequent operations (like put/commit) fail, ensure self.storage.rollback(tx) is explicitly called!
     pub async fn create_checkpoint(
         &self,
         name: &str,
         collection_id: &str,
         seq_no: u64,
+        tx_id: TxId,
         metadata: serde_json::Value,
     ) -> Result<CheckpointMeta> {
         let _guard = self.op_lock.lock().await;
@@ -84,6 +115,7 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
             name: name.to_string(),
             collection_id: collection_id.to_string(),
             seq_no,
+            tx_id,
             metadata,
             created_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -99,11 +131,10 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
         let value = serde_json::to_vec(&checkpoint)
             .map_err(|e| memfuse_core::error::MemFuseError::Internal(e.to_string()))?;
 
-        // We use a dummy TxId for now or zero since it's an internal write
-        self.storage
-            .put(TxId::new(0), key.as_bytes(), &value)
-            .await?;
-        self.storage.commit(TxId::new(0)).await?;
+        // Use a safe internal TxId
+        let tx = self.next_tx_id();
+        self.storage.put(tx, key.as_bytes(), &value).await?;
+        self.storage.commit(tx).await?;
 
         // 3. Update cache
         {
@@ -159,6 +190,8 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
     }
 
     /// Deletes a persistent checkpoint and unpins it in storage.
+    // TODO(FIND-CHK-001): Transaction Leak on Failure
+    // If storage engine operations fail mid-transaction, ensure self.storage.rollback(tx) is explicitly called!
     pub async fn drop_checkpoint(&self, name: &str) -> Result<()> {
         let _guard = self.op_lock.lock().await;
 
@@ -173,8 +206,9 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
 
             // 2. Remove from persistent storage
             let key = format!("__checkpoint:{}", name);
-            self.storage.delete(TxId::new(0), key.as_bytes()).await?;
-            self.storage.commit(TxId::new(0)).await?;
+            let tx = self.next_tx_id();
+            self.storage.delete(tx, key.as_bytes()).await?;
+            self.storage.commit(tx).await?;
 
             // 3. Update cache
             let mut cache = self.persistent_checkpoints.write();
@@ -188,6 +222,24 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
     /// Returns the underlying registry.
     pub fn registry(&self) -> Arc<CheckpointRegistry> {
         self.registry.clone()
+    }
+}
+
+impl<S: StorageEngine> memfuse_core::traits::Checkpoint for PersistentCheckpointStore<S> {
+    async fn take_snapshot(&self, tx: TxId) -> Result<memfuse_core::WorkflowState> {
+        let seq_no = self.storage.last_seq_no().await?;
+        Ok(memfuse_core::WorkflowState {
+            tx,
+            graph_hash: format!("seq-{}", seq_no),
+        })
+    }
+
+    async fn restore(&self, state: &memfuse_core::WorkflowState) -> Result<()> {
+        // Force the storage engine to rollback to the specified transaction
+        self.storage.rollback_to_tx(state.tx).await?;
+
+        // Reload the metadata cache to reflect the rolled-back state
+        self.reload_from_storage().await
     }
 }
 
@@ -230,6 +282,9 @@ mod tests {
         async fn rollback(&self, _tx_id: TxId) -> Result<()> {
             Ok(())
         }
+        async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
+            Ok(())
+        }
         async fn flush(&self) -> Result<()> {
             Ok(())
         }
@@ -264,12 +319,19 @@ mod tests {
         let manager = PersistentCheckpointStore::new(storage.clone());
 
         let meta = manager
-            .create_checkpoint("test_cp", "coll_1", 100, serde_json::json!({"state": "ok"}))
+            .create_checkpoint(
+                "test_cp",
+                "coll_1",
+                100,
+                TxId::new(10),
+                serde_json::json!({"state": "ok"}),
+            )
             .await
             .unwrap();
 
         assert_eq!(meta.name, "test_cp");
         assert_eq!(meta.seq_no, 100);
+        assert_eq!(meta.tx_id, TxId::new(10));
 
         // Verify it was pinned
         assert!(storage.pinned.lock().contains(&100));
@@ -286,7 +348,7 @@ mod tests {
 
         let metadata = serde_json::json!({"step": 5, "vars": {"a": 1}});
         manager
-            .create_checkpoint("cp1", "c1", 10, metadata.clone())
+            .create_checkpoint("cp1", "c1", 10, TxId::new(1), metadata.clone())
             .await
             .unwrap();
 
@@ -300,15 +362,15 @@ mod tests {
         let manager = PersistentCheckpointStore::new(storage.clone());
 
         manager
-            .create_checkpoint("cp2", "c1", 20, serde_json::json!({}))
+            .create_checkpoint("cp2", "c1", 20, TxId::new(2), serde_json::json!({}))
             .await
             .unwrap();
         manager
-            .create_checkpoint("cp1", "c1", 10, serde_json::json!({}))
+            .create_checkpoint("cp1", "c1", 10, TxId::new(1), serde_json::json!({}))
             .await
             .unwrap();
         manager
-            .create_checkpoint("cp3", "c1", 30, serde_json::json!({}))
+            .create_checkpoint("cp3", "c1", 30, TxId::new(3), serde_json::json!({}))
             .await
             .unwrap();
 
@@ -325,7 +387,7 @@ mod tests {
         let manager1 = PersistentCheckpointStore::new(storage.clone());
 
         manager1
-            .create_checkpoint("persist_me", "c1", 50, serde_json::json!({}))
+            .create_checkpoint("persist_me", "c1", 50, TxId::new(5), serde_json::json!({}))
             .await
             .unwrap();
 
@@ -354,7 +416,13 @@ mod tests {
                     format!("unique_cp_{}", i)
                 };
                 store
-                    .create_checkpoint(&name, "c1", i as u64, serde_json::json!({}))
+                    .create_checkpoint(
+                        &name,
+                        "c1",
+                        i as u64,
+                        TxId::new(i as u64),
+                        serde_json::json!({}),
+                    )
                     .await
             });
             handles.push(handle);
@@ -385,5 +453,101 @@ mod tests {
         registry.register(tx_id, state.clone());
         let retrieved = registry.get(tx_id).unwrap();
         assert_eq!(retrieved.graph_hash, "hash");
+    }
+
+    #[tokio::test]
+    async fn test_internal_tx_ids_use_reserved_range() {
+        // Track all TxIds used by the checkpoint store
+        struct TrackingStorage {
+            inner: MockStorage,
+            observed_tx_ids: parking_lot::Mutex<Vec<u64>>,
+        }
+
+        impl TrackingStorage {
+            fn new() -> Self {
+                Self {
+                    inner: MockStorage::new(),
+                    observed_tx_ids: parking_lot::Mutex::new(Vec::new()),
+                }
+            }
+        }
+
+        impl StorageEngine for TrackingStorage {
+            async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+                self.inner.get(key).await
+            }
+            async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+                self.observed_tx_ids.lock().push(tx_id.inner());
+                self.inner.put(tx_id, key, value).await
+            }
+            async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
+                self.observed_tx_ids.lock().push(tx_id.inner());
+                self.inner.delete(tx_id, key).await
+            }
+            async fn commit(&self, tx_id: TxId) -> Result<()> {
+                self.observed_tx_ids.lock().push(tx_id.inner());
+                self.inner.commit(tx_id).await
+            }
+            async fn rollback(&self, tx_id: TxId) -> Result<()> {
+                self.inner.rollback(tx_id).await
+            }
+            async fn flush(&self) -> Result<()> {
+                self.inner.flush().await
+            }
+            async fn stats(&self) -> Result<StorageStats> {
+                self.inner.stats().await
+            }
+            async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
+                self.inner.pin_checkpoint(seq_no).await
+            }
+            async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
+                self.inner.unpin_checkpoint(seq_no).await
+            }
+            async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+                self.inner.scan_prefix(prefix).await
+            }
+        }
+
+        let storage = Arc::new(TrackingStorage::new());
+        let store = PersistentCheckpointStore::new(storage.clone());
+
+        // Create several checkpoints
+        for i in 0..5 {
+            store
+                .create_checkpoint(
+                    &format!("cp_{}", i),
+                    "c1",
+                    i as u64,
+                    TxId::new(i as u64),
+                    serde_json::json!({}),
+                )
+                .await
+                .unwrap();
+        }
+
+        // Delete one
+        store.drop_checkpoint("cp_0").await.unwrap();
+
+        // Verify ALL observed TxIds are in the reserved internal range
+        let observed = storage.observed_tx_ids.lock().clone();
+        assert!(!observed.is_empty(), "Should have observed some TxIds");
+
+        for tx_id in &observed {
+            assert!(
+                *tx_id >= TxId::INTERNAL_BASE,
+                "Internal TxId {} must be >= INTERNAL_BASE ({})",
+                tx_id,
+                TxId::INTERNAL_BASE
+            );
+        }
+
+        // Verify no collision with typical user TxId range (1..1000)
+        for tx_id in &observed {
+            assert!(
+                *tx_id > 1000,
+                "Internal TxId {} collides with user range",
+                tx_id
+            );
+        }
     }
 }

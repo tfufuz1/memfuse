@@ -110,6 +110,7 @@ pub struct LsmStorage {
     block_cache: Arc<BlockCache>,
     pub snapshot_registry: Arc<SnapshotRegistry>,
     next_seq_no: AtomicU64,
+    last_committed_tx: AtomicU64,
     /// Mutex to serialize commits and prevent snapshot inversion (parallel seq_no holes).
     commit_mutex: tokio::sync::Mutex<()>,
 }
@@ -155,11 +156,18 @@ impl LsmStorage {
         // Replay WAL
         let wal_entries = wal.replay().await?;
         let mut max_seq = 0u64;
+        let mut max_tx = 0u64;
         let mut replayed_size = 0u64;
 
         for (lsn, entry, _offset) in &wal_entries {
             if *lsn > max_seq {
                 max_seq = *lsn;
+            }
+            if entry.tx_id().inner() > max_tx {
+                // Ignore internal TxIds during recovery for user-facing last_tx_id
+                if entry.tx_id().inner() < TxId::INTERNAL_BASE {
+                    max_tx = entry.tx_id().inner();
+                }
             }
             match &entry.op {
                 WalOp::Put { key, value, .. } => {
@@ -223,6 +231,8 @@ impl LsmStorage {
         ));
         let compaction_sstables = Arc::clone(&sstables);
         let compaction_path = config.path.clone();
+        // TODO(FIND-STO-001): Compaction-Engine CPU Starvation (WL-2)
+        // Ensure the internal while-loop explicitly calls tokio::task::yield_now() between merges!
         tokio::spawn(async move {
             compaction_engine
                 .run_loop(compaction_sstables, compaction_path)
@@ -243,6 +253,7 @@ impl LsmStorage {
             block_cache,
             snapshot_registry,
             next_seq_no: AtomicU64::new(max_seq + 1),
+            last_committed_tx: AtomicU64::new(max_tx),
             commit_mutex: tokio::sync::Mutex::new(()),
         })
     }
@@ -454,13 +465,22 @@ impl StorageEngine for LsmStorage {
         let _commit_lock = self.commit_mutex.lock().await;
 
         let ops = self.tx_buffer.drain(tx_id);
+        if ops.is_empty() {
+            return Ok(());
+        }
         let state = self.state.read().await;
 
-        for op in ops {
-            let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
+        // --- PHASE 1: WAL Snapshot for atomic rollback ---
+        let pre_tx_offset = state.wal.size();
+        let pre_tx_hmac = state.wal.last_hmac_snapshot().await;
 
+        let mut wal_entries = Vec::with_capacity(ops.len());
+        let mut mem_updates = Vec::with_capacity(ops.len());
+
+        for op in &ops {
+            let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
             match op {
-                IndexOp::Insert { data, .. } => {
+                IndexOp::Insert { doc_id: _, data } => {
                     let (key, value) = data;
                     let entry = state
                         .wal
@@ -473,14 +493,10 @@ impl StorageEngine for LsmStorage {
                             seq_no,
                         )
                         .await?;
-                    let entry_size = key.len() + value.len() + 8;
-                    let _ = self.budget.consume_memory(entry_size as u64);
-                    state.wal.append(&entry).await?;
-                    state
-                        .memtable
-                        .put(Bytes::from(key), Bytes::from(value), seq_no);
+                    wal_entries.push(entry);
+                    mem_updates.push((key.clone(), value.clone(), seq_no));
                 }
-                IndexOp::Delete { data, .. } => {
+                IndexOp::Delete { doc_id: _, data } => {
                     if let Some((key, _)) = data {
                         let entry = state
                             .wal
@@ -492,14 +508,36 @@ impl StorageEngine for LsmStorage {
                                 seq_no,
                             )
                             .await?;
-                        let _ = self.budget.consume_memory(key.len() as u64 + 8);
-                        state.wal.append(&entry).await?;
-                        state
-                            .memtable
-                            .put(Bytes::from(key), Bytes::new(), seq_no | TOMBSTONE_BIT);
+                        wal_entries.push(entry);
+                        mem_updates.push((key.clone(), Vec::new(), seq_no | TOMBSTONE_BIT));
                     }
                 }
             }
+        }
+
+        // --- PHASE 2: Group Commit to WAL ---
+        if let Err(e) = state.wal.append_batch(&wal_entries).await {
+            // FATAL I/O ERROR: Physical Rollback of the WAL to pre-tx state
+            state.wal.truncate(pre_tx_offset, pre_tx_hmac).await?;
+            return Err(MemFuseError::Storage(format!(
+                "Commit failed, WAL rollback executed: {}",
+                e
+            )));
+        }
+
+        // --- PHASE 3: Apply to MemTable ---
+        for (key, value, seq) in mem_updates {
+            let entry_size = key.len() + value.len() + 8;
+            let _ = self.budget.consume_memory(entry_size as u64);
+            state
+                .memtable
+                .put(Bytes::from(key), Bytes::from(value), seq);
+        }
+
+        // Update last committed transaction ID if it is not a system transaction
+        if tx_id.inner() < TxId::INTERNAL_BASE {
+            self.last_committed_tx
+                .store(tx_id.inner(), Ordering::SeqCst);
         }
 
         // Check if flush is needed
@@ -514,6 +552,10 @@ impl StorageEngine for LsmStorage {
     async fn rollback(&self, tx_id: TxId) -> Result<()> {
         self.tx_buffer.discard(tx_id);
         Ok(())
+    }
+
+    async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
+        self.rollback_to_tx(tx_id).await
     }
 
     async fn flush(&self) -> Result<()> {
@@ -611,6 +653,10 @@ impl StorageEngine for LsmStorage {
 
     async fn last_seq_no(&self) -> Result<u64> {
         Ok(self.next_seq_no.load(Ordering::SeqCst).saturating_sub(1))
+    }
+
+    async fn last_tx_id(&self) -> Result<TxId> {
+        Ok(TxId::new(self.last_committed_tx.load(Ordering::SeqCst)))
     }
 
     async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {

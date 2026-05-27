@@ -204,37 +204,57 @@ impl Wal {
     }
 
     /// Appends an entry to the WAL.
+    // TODO(FIND-STO-001): WAL CRC fehlend. (WP-1.1)
+    // Add CRC32c or HMAC tagging to prevent stealth corruption during crash recoveries.
     pub async fn append(&self, entry: &WalEntry) -> Result<()> {
-        let mut bytes = entry.to_bytes();
+        self.append_batch(std::slice::from_ref(entry)).await
+    }
 
-        if let Some(km) = &self.key_manager {
-            if bytes.len() > 4 {
-                let payload = &bytes[4..];
-                let offset = self.size();
-                let encrypted = km.encrypt(payload, offset)?;
-                let mut new_bytes = Vec::with_capacity(4 + encrypted.len());
-                new_bytes.extend_from_slice(&(encrypted.len() as u32).to_le_bytes());
-                new_bytes.extend_from_slice(&encrypted);
-                bytes = new_bytes;
+    /// Appends a batch of entries to the WAL and performs a single fsync.
+    pub async fn append_batch(&self, entries: &[WalEntry]) -> Result<()> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+
+        let mut total_bytes = Vec::new();
+        let mut last_hmac_val = [0u8; 32];
+
+        for entry in entries {
+            let mut bytes = entry.to_bytes();
+
+            if let Some(km) = &self.key_manager {
+                if bytes.len() > 4 {
+                    let payload = &bytes[4..];
+                    let offset = self.size() + total_bytes.len() as u64;
+                    let encrypted = km.encrypt(payload, offset)?;
+                    let mut new_bytes = Vec::with_capacity(4 + encrypted.len());
+                    new_bytes.extend_from_slice(&(encrypted.len() as u32).to_le_bytes());
+                    new_bytes.extend_from_slice(&encrypted);
+                    bytes = new_bytes;
+                }
             }
+            total_bytes.extend_from_slice(&bytes);
+            last_hmac_val = entry.checksum;
         }
 
         let mut file = self.file.lock().await;
-        file.write_all(&bytes)
+        file.write_all(&total_bytes)
             .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL write failed: {}", e)))?;
+            .map_err(|e| MemFuseError::Storage(format!("WAL batch write failed: {}", e)))?;
         file.flush()
             .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL flush failed: {}", e)))?;
+            .map_err(|e| MemFuseError::Storage(format!("WAL batch flush failed: {}", e)))?;
         file.sync_data()
             .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL fsync failed: {}", e)))?;
+            .map_err(|e| MemFuseError::Storage(format!("WAL batch fsync failed: {}", e)))?;
 
-        self.size
-            .fetch_add(bytes.len() as u64, std::sync::atomic::Ordering::Relaxed);
+        self.size.fetch_add(
+            total_bytes.len() as u64,
+            std::sync::atomic::Ordering::SeqCst,
+        );
 
         let mut last_hmac = self.last_hmac.lock().await;
-        *last_hmac = entry.checksum;
+        *last_hmac = last_hmac_val;
 
         Ok(())
     }
@@ -591,6 +611,11 @@ impl Wal {
         *last_hmac_guard = new_last_hmac;
 
         Ok(())
+    }
+
+    /// Returns a snapshot of the last HMAC written to the log.
+    pub async fn last_hmac_snapshot(&self) -> [u8; 32] {
+        *self.last_hmac.lock().await
     }
 }
 

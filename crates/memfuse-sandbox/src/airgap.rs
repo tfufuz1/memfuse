@@ -86,6 +86,8 @@ impl AirGapVerifier {
     /// Runs a full air-gap compliance check.
     ///
     /// Returns a verification report.
+    // TODO(FIND-SBX-002): AirGapVerifier ist ein Mock (WP-6.6)
+    // Implementiere reale OS-spezifische Socket-Checks (z.B. via /proc/self/fd auf Linux), anstatt statisch Ok() zurückzugeben.
     pub fn verify(_config: &AirGapConfig) -> Result<AirGapReport> {
         // TODO(WP-6.6): Implement actual verification:
         // 1. Check no open sockets (via /proc/self/fd on Linux)

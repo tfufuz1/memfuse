@@ -131,6 +131,9 @@ pub struct MemFuse {
     collections: tokio::sync::RwLock<std::collections::HashMap<String, Collection<LsmStorage>>>,
 }
 
+// TODO(FIND-DB-001): Snapshot-Recovery API fehlt!
+// Implementiere create_snapshot() und rollback_to_snapshot() in der Facade
+// um Core MVCC Primitives für externe Agenten aufzuschließen.
 impl MemFuse {
     /// Opens or creates a MemFuse database at the given path.
     ///

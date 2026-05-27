@@ -598,6 +598,9 @@ impl DiskAnnIndex {
     }
 
     /// Optimized Beam Search
+    // TODO(WP-8.2): DiskANN/HNSW Async I/O (S3-B)
+    // Synchronous Mmap/File operations in tokio threads can stall the reactor.
+    // Migrate blocking search operations to native tokio AIO.
     pub async fn search_internal(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>> {
         let header = self
             .header

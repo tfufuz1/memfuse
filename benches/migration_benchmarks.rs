@@ -44,7 +44,7 @@ fn bench_agent_state_checkpoint(c: &mut Criterion) {
     c.bench_function("checkpoint_latency", |b| {
         b.to_async(&rt).iter(|| async {
             let _ = manager
-                .create_checkpoint("test-cp", "default", 0, serde_json::json!({}))
+                .create_checkpoint("test-cp", "default", 0, TxId::new(0), serde_json::json!({}))
                 .await
                 .unwrap();
         })

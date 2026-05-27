@@ -73,8 +73,14 @@ async fn test_concurrent_checkpoint_creation_same_name() {
     for i in 0..10 {
         let m = manager.clone();
         handles.push(tokio::spawn(async move {
-            m.create_checkpoint("same_name", "coll", i as u64, serde_json::json!({}))
-                .await
+            m.create_checkpoint(
+                "same_name",
+                "coll",
+                i as u64,
+                TxId::new(i as u64),
+                serde_json::json!({}),
+            )
+            .await
         }));
     }
 

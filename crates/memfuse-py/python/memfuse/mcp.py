@@ -58,6 +58,8 @@ def create_mcp_server(db_path: str, dimension: int = 1536) -> FastMCP:
             
             # For now, let's use a zero vector of correct dimension to satisfy the hybrid_search call.
             import numpy as np
+            # TODO(FIND-PY-001): Skeleton "Zero Vector" in MCP Tools (S4-C)
+            # Stop spoofing vectors. Accept literal arrays from caller or throw NotSupportedError until Embeddings are live.
             zero_vector = np.zeros(dimension, dtype=np.float32)
             
             results = col.hybrid_search(query, zero_vector, k)
@@ -97,7 +99,8 @@ def create_mcp_server(db_path: str, dimension: int = 1536) -> FastMCP:
             col = db.collection(collection)
             # Auto-embedding placeholder
             import numpy as np
-            # Dummy vector for now as per FR-7.3-003 fallback
+            # TODO(FIND-PY-001): Skeleton "Zero Vector" in MCP Tools (S4-C)
+            # Stop spoofing vectors. Accept literal arrays from caller or throw NotSupportedError until Embeddings are live.
             vector = np.zeros(dimension, dtype=np.float32)
             
             # Store text in metadata so it's searchable by BM25

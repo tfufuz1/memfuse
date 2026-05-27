@@ -40,17 +40,27 @@
 //! This module contains `unsafe` code for hardware-specific intrinsics. All `unsafe` blocks
 //! are guarded by runtime feature detection and documented with safety justifications.
 
+// ANCHOR:REFACTOR:WP-0.0-STABLESIMD — Remove nightly portable_simd
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:@JULES-03 DATE:2026-05-27 STATUS:READY
+// TEST: cargo +stable check -p memfuse-index
+// DONE: #![feature(portable_simd)] ist entfernt und distance.rs nutzt stabiles Rust.
+// SUCCESSOR: @JULES-13 — "SIMD ist stabil. Tech-Debt Audit fortsetzen."
+
 #![allow(unused_unsafe)]
 #![allow(unsafe_code)]
 
 use memfuse_core::DistanceMetric;
-use std::simd::prelude::*;
+// use std::simd::prelude::*; // Removed for stable Rust stabilization
 
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
 /// Computes distance between two vectors using the specified metric.
 #[inline]
+// TODO(WP-8.1): Stable SIMD Migration
+// Standardize SIMD distance metrics on Stable Rust, preventing panic in hardware fallbacks.
+// Fallbacks MUST be verified to prevent Zero-Panic violations.
 pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse_core::Result<f32> {
     if a.len() != b.len() {
         return Err(memfuse_core::MemFuseError::invalid_input(
@@ -86,8 +96,8 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
             return unsafe { cosine_distance_avx2(a, b) };
         }
     }
-    // Portable-simd fallback
-    cosine_distance_std_simd(a, b)
+    // Stable fallback (autovectorizable by compiler)
+    cosine_distance_scalar(a, b)
 }
 
 /// Computes Euclidean (L2) distance.
@@ -111,8 +121,8 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
             return unsafe { euclidean_distance_avx2(a, b) };
         }
     }
-    // Portable-simd fallback
-    euclidean_distance_std_simd(a, b)
+    // Stable fallback (autovectorizable by compiler)
+    euclidean_distance_scalar(a, b)
 }
 
 /// Computes negative dot product.
@@ -136,8 +146,8 @@ pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
             return unsafe { -dot_product_avx2(a, b) };
         }
     }
-    // Portable-simd fallback
-    -dot_product_std_simd(a, b)
+    // Stable fallback (autovectorizable by compiler)
+    -dot_product_scalar(a, b)
 }
 
 /// Scalar implementation of cosine distance.
@@ -173,86 +183,7 @@ pub fn dot_product_scalar(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
 
-/// SIMD implementation of dot product using portable-simd.
-pub fn dot_product_std_simd(a: &[f32], b: &[f32]) -> f32 {
-    let mut i = 0;
-    let n = a.len();
-    let mut sum = f32x8::splat(0.0);
-
-    while i + 8 <= n {
-        let va = f32x8::from_slice(&a[i..i + 8]);
-        let vb = f32x8::from_slice(&b[i..i + 8]);
-        sum += va * vb;
-        i += 8;
-    }
-
-    let mut res = sum.reduce_sum();
-    while i < n {
-        res += a[i] * b[i];
-        i += 1;
-    }
-    res
-}
-
-/// SIMD implementation of Euclidean distance using portable-simd.
-pub fn euclidean_distance_std_simd(a: &[f32], b: &[f32]) -> f32 {
-    let mut i = 0;
-    let n = a.len();
-    let mut sum = f32x8::splat(0.0);
-
-    while i + 8 <= n {
-        let va = f32x8::from_slice(&a[i..i + 8]);
-        let vb = f32x8::from_slice(&b[i..i + 8]);
-        let diff = va - vb;
-        sum += diff * diff;
-        i += 8;
-    }
-
-    let mut res = sum.reduce_sum();
-    while i < n {
-        let diff = a[i] - b[i];
-        res += diff * diff;
-        i += 1;
-    }
-    res.sqrt()
-}
-
-/// SIMD implementation of cosine distance using portable-simd.
-pub fn cosine_distance_std_simd(a: &[f32], b: &[f32]) -> f32 {
-    let mut i = 0;
-    let n = a.len();
-    let mut dot = f32x8::splat(0.0);
-    let mut norm_a = f32x8::splat(0.0);
-    let mut norm_b = f32x8::splat(0.0);
-
-    while i + 8 <= n {
-        let va = f32x8::from_slice(&a[i..i + 8]);
-        let vb = f32x8::from_slice(&b[i..i + 8]);
-        dot += va * vb;
-        norm_a += va * va;
-        norm_b += vb * vb;
-        i += 8;
-    }
-
-    let mut final_dot = dot.reduce_sum();
-    let mut final_norm_a = norm_a.reduce_sum();
-    let mut final_norm_b = norm_b.reduce_sum();
-
-    while i < n {
-        let x = a[i];
-        let y = b[i];
-        final_dot += x * y;
-        final_norm_a += x * x;
-        final_norm_b += y * y;
-        i += 1;
-    }
-
-    if final_norm_a == 0.0 || final_norm_b == 0.0 {
-        1.0
-    } else {
-        1.0 - (final_dot / (final_norm_a.sqrt() * final_norm_b.sqrt()))
-    }
-}
+// ANCHOR:REFACTOR:WP-0.0-STABLESIMD — Removed std_simd functions
 
 // -----------------------------------------------------------------------------
 // AVX2 Implementations
@@ -926,24 +857,6 @@ mod tests {
     }
 
     #[test]
-    fn test_std_simd_dot_product() {
-        let a = vec![1.0; 64];
-        let b = vec![2.0; 64];
-        let expected = 128.0;
-        let actual = super::dot_product_std_simd(&a, &b);
-        assert!((expected - actual).abs() < 1e-3);
-    }
-
-    #[test]
-    fn test_std_simd_euclidean() {
-        let a = vec![1.0; 64];
-        let b = vec![2.0; 64];
-        let expected = 8.0; // sqrt(64 * (1-2)^2) = sqrt(64) = 8
-        let actual = super::euclidean_distance_std_simd(&a, &b);
-        assert!((expected - actual).abs() < 1e-3);
-    }
-
-    #[test]
     fn test_u8_metrics_match_scalar() {
         let a = vec![
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
@@ -993,20 +906,5 @@ mod tests {
                 assert_eq!(parts_scalar.norm_b_sq, parts_simd.norm_b_sq);
             }
         }
-    }
-
-    #[test]
-    fn test_std_simd_cosine() {
-        let a = vec![1.0, 0.0, 1.0, 0.0];
-        let b = vec![0.0, 1.0, 0.0, 1.0];
-        let expected = 1.0; // Orthogonal
-        let actual = super::cosine_distance_std_simd(&a, &b);
-        assert!((expected - actual).abs() < 1e-3);
-
-        let c = vec![1.0, 1.0];
-        let d = vec![1.0, 1.0];
-        let expected_same = 0.0; // Identical
-        let actual_same = super::cosine_distance_std_simd(&c, &d);
-        assert!((expected_same - actual_same).abs() < 1e-3);
     }
 }

@@ -1,4 +1,5 @@
 use memfuse_checkpoint::PersistentCheckpointStore;
+use memfuse_core::TxId;
 use memfuse_db::{MemFuse, MemFuseConfig};
 use serde_json::json;
 use std::sync::Arc;
@@ -64,7 +65,7 @@ async fn test_layer_001_fork_diverge_merge() {
         let cp_manager = PersistentCheckpointStore::new(storage.clone());
 
         _cp_v1 = cp_manager
-            .create_checkpoint("v1", "main", 0, json!({}))
+            .create_checkpoint("v1", "main", 0, TxId::new(0), json!({}))
             .await
             .expect("checkpoint");
         // Storage wird gedroppt, Lock frei.

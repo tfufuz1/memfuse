@@ -27,4 +27,6 @@ parking_lot = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
 tempfile = { workspace = true }
+# TODO(FIND-TXT-001): DAG Invarianz Verletzung (`memfuse-store` in dev-dependencies)
+# Remove this dependency and move integration tests to memfuse-db or mock it.
 memfuse-store = { version = "0.1.0", path = "../memfuse-store" }

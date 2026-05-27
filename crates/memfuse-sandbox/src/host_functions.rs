@@ -35,6 +35,8 @@ pub fn bind_host_functions(linker: &mut Linker<SandboxState>) -> memfuse_core::R
     linker
         .func_wrap(
             "env",
+            // TODO(FIND-SBX-001): Skeleton Implementierung in Host-Funktionen (WP-6)
+            // Implement real async DB bindings via channels instead of returning 0.
             "db_search",
             |_caller: Caller<'_, SandboxState>, _query_ptr: i32, _query_len: i32, _k: i32| -> i32 {
                 // TODO(WP-6): Actual orchestrator L2 loopback

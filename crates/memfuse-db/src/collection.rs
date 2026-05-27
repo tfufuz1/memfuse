@@ -210,6 +210,8 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Inserts a document with an embedding and optional metadata.
+    // TODO(FIND-DB-002): Wichtige Pfade haben kein Tracing
+    // Annotate with #[instrument(skip(self, vector, metadata))] to prevent silent latencies.
     pub async fn insert(
         &self,
         id: &str,
@@ -736,6 +738,8 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Performs hybrid search combining BM25 and vector search results via RRF.
+    // TODO(FIND-DB-002): Wichtige Pfade haben kein Tracing
+    // Annotate with #[instrument(skip(self, text, vector))]
     pub async fn hybrid_search(
         &self,
         text: &str,

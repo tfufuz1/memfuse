@@ -94,6 +94,11 @@ impl std::fmt::Display for EntityId {
 pub struct TxId(pub u64);
 
 impl TxId {
+    /// Base for internal/system transaction IDs. Internal TxIds count upward
+    /// from this value to avoid collision with user-facing TxIds (which count
+    /// upward from 1). This reserves the top ~1M of the u64 space for system use.
+    pub const INTERNAL_BASE: u64 = u64::MAX - 1_000_000;
+
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)

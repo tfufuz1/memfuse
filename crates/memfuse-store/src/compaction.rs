@@ -224,46 +224,92 @@ impl CompactionEngine {
         output_path: &std::path::Path,
         min_snapshot_seq: u64,
     ) -> Result<()> {
-        // 1. Collect all entries from all input SSTables
-        let mut all_entries: Vec<(Vec<u8>, Vec<u8>, u64)> = Vec::new();
+        struct HeapItem {
+            key: bytes::Bytes,
+            value: bytes::Bytes,
+            seq: u64,
+            source_idx: usize,
+        }
+
+        impl PartialEq for HeapItem {
+            fn eq(&self, other: &Self) -> bool {
+                self.key == other.key && self.seq == other.seq
+            }
+        }
+        
+        impl Eq for HeapItem {}
+
+        impl PartialOrd for HeapItem {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+
+        impl Ord for HeapItem {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                // Reverse key comparison for min-heap (smallest key first)
+                match other.key.cmp(&self.key) {
+                    std::cmp::Ordering::Equal => {
+                        // Max-heap for seq (largest seq first)
+                        self.seq.cmp(&other.seq)
+                    }
+                    ord => ord,
+                }
+            }
+        }
+
+        let mut streams = Vec::new();
         for sst in inputs {
-            let entries = sst.iter().await?;
-            for (k, v, seq) in entries {
-                all_entries.push((k.to_vec(), v.to_vec(), seq));
+            streams.push(sst.stream().await?);
+        }
+
+        let mut heap = std::collections::BinaryHeap::new();
+        for (i, stream) in streams.iter_mut().enumerate() {
+            if let Some((key, value, seq)) = stream.next().await? {
+                heap.push(HeapItem {
+                    key,
+                    value,
+                    seq,
+                    source_idx: i,
+                });
             }
         }
 
-        // 2. Sort by key, then by sequence number descending (newest first)
-        all_entries.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| b.2.cmp(&a.2)));
-
-        // 3. Deduplicate: for each key, keep only the entry with the highest seq_no
-        let mut deduped: Vec<(Vec<u8>, Vec<u8>, u64)> = Vec::new();
-        let mut last_key: Option<&[u8]> = None;
-
-        for entry in &all_entries {
-            if last_key == Some(&entry.0) {
-                continue; // Skip: already have a newer version of this key
-            }
-            last_key = Some(&entry.0);
-
-            let is_tombstone = (entry.2 & TOMBSTONE_BIT) != 0;
-            let raw_seq = entry.2 & !TOMBSTONE_BIT;
-
-            // GC tombstones that are older than all active snapshots
-            if is_tombstone && raw_seq < min_snapshot_seq {
-                continue; // Tombstone is safe to garbage-collect
-            }
-
-            deduped.push(entry.clone());
-        }
-
-        // 4. Write to output SSTable
         let mut builder = SstableBuilder::create(output_path).await?;
-        for (key, value, seq) in &deduped {
-            builder.add(key, value, *seq).await?;
-        }
-        builder.finish().await?;
+        let mut last_key: Option<bytes::Bytes> = None;
 
+        while let Some(item) = heap.pop() {
+            // Deduplicate: only keep the first (highest seq_no) entry for each key
+            let is_duplicate = if let Some(ref lk) = last_key {
+                lk == &item.key
+            } else {
+                false
+            };
+
+            if !is_duplicate {
+                last_key = Some(item.key.clone());
+
+                let is_tombstone = (item.seq & TOMBSTONE_BIT) != 0;
+                let raw_seq = item.seq & !TOMBSTONE_BIT;
+
+                // GC tombstones that are older than all active snapshots
+                if !(is_tombstone && raw_seq < min_snapshot_seq) {
+                    builder.add(&item.key, &item.value, item.seq).await?;
+                }
+            }
+
+            // Immediately fetch the next item from the source stream
+            if let Some((key, value, seq)) = streams[item.source_idx].next().await? {
+                heap.push(HeapItem {
+                    key,
+                    value,
+                    seq,
+                    source_idx: item.source_idx,
+                });
+            }
+        }
+
+        builder.finish().await?;
         Ok(())
     }
 

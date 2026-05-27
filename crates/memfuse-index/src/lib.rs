@@ -7,7 +7,13 @@
 // KERNKOMPONENTEN: HNSW (Graph-basierte ANN) + CSR Graph (Relationen) + SIMD-Distanz.
 // INVARIANTE: HNSW-Graphen liegen exklusiv im RAM. Disk-Storage erfolgt über memfuse-store (via LsmStorage).
 
-#![feature(portable_simd)]
+// ANCHOR:REFACTOR:WP-0.0-STABLESIMD — Remove nightly portable_simd
+// ANCHOR:REFACTOR:WP-0.0-STABLESIMD — Remove nightly portable_simd
+// WP:WP-0.0 PRIO:1 NEEDS:NONE
+// AGENT:@JULES-03 DATE:2026-05-27 STATUS:READY
+// TEST: cargo +stable check -p memfuse-index
+// DONE: #![feature(portable_simd)] ist entfernt und distance.rs nutzt stabiles Rust.
+// SUCCESSOR: @JULES-13 — "SIMD ist stabil. Tech-Debt Audit fortsetzen."
 // ANCHOR:AUDIT:SEC-002 — deny(unsafe_code) statt forbid(unsafe_code)
 // BEGRÜNDUNG: SIMD-Intrinsics in distance.rs benötigen unsafe für Performance.
 #![deny(unsafe_code)]

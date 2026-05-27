@@ -786,7 +786,18 @@ impl SstableReader {
         &self.metadata
     }
 
-    /// Iterates over all entries in sorted key order.
+    pub async fn stream(self: &Arc<Self>) -> Result<SstableStream> {
+        Ok(SstableStream {
+            reader: Arc::clone(self),
+            block_idx: 0,
+            entry_idx: 0,
+            current_block: None,
+            num_offsets: 0,
+            offsets_start: 0,
+        })
+    }
+
+    /// Iterates over all entries in sorted key order (allocates memory for all entries).
     pub async fn iter(&self) -> Result<Vec<(Bytes, Bytes, u64)>> {
         let mut results = Vec::new();
         if self.index.is_empty() {
@@ -887,6 +898,121 @@ impl SstableReader {
 
         Ok(results)
     }
+}
+
+pub struct SstableStream {
+    reader: Arc<SstableReader>,
+    block_idx: usize,
+    entry_idx: usize,
+    current_block: Option<Bytes>,
+    num_offsets: usize,
+    offsets_start: usize,
+}
+
+impl SstableStream {
+    pub async fn next(&mut self) -> Result<Option<(Bytes, Bytes, u64)>> {
+        if self.reader.index.is_empty() {
+            return Ok(None);
+        }
+
+        loop {
+            // Load a new block if needed
+            if self.current_block.is_none() || self.entry_idx >= self.num_offsets {
+                if self.block_idx >= self.reader.index.len() {
+                    return Ok(None);
+                }
+
+                let offset = self.reader.index[self.block_idx].1;
+                let next_offset = if self.block_idx + 1 < self.reader.index.len() {
+                    self.reader.index[self.block_idx + 1].1
+                } else {
+                    self.reader.index_offset
+                };
+
+                let block_data = self.reader.get_block(offset, next_offset).await?;
+                self.block_idx += 1;
+                self.entry_idx = 0;
+
+                let n = block_data.len();
+                if n < 10 {
+                    continue; // Empty or malformed block, try next
+                }
+
+                self.num_offsets = u16::from_le_bytes(
+                    block_data
+                        .get(n.saturating_sub(2)..n)
+                        .ok_or_else(|| MemFuseError::Storage("missing num_offsets".into()))?
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                ) as usize;
+
+                let offsets_len = self.num_offsets * 2;
+                if n < 10 + offsets_len {
+                    continue;
+                }
+                self.offsets_start = n - 2 - offsets_len;
+                self.current_block = Some(block_data);
+            }
+
+            // Yield an entry from the current block
+            if let Some(block_data) = &self.current_block {
+                if self.entry_idx < self.num_offsets {
+                    let off_pos = self.offsets_start + self.entry_idx * 2;
+                    let entry_off = u16::from_le_bytes(
+                        block_data
+                            .get(off_pos..off_pos + 2)
+                            .ok_or_else(|| MemFuseError::Storage("missing off_pos".into()))?
+                            .try_into()
+                            .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                    ) as usize;
+
+                    let mut ep = entry_off;
+                    let k_len = u16::from_le_bytes(
+                        block_data
+                            .get(ep..ep + 2)
+                            .ok_or_else(|| MemFuseError::Storage("missing k_len".into()))?
+                            .try_into()
+                            .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                    ) as usize;
+                    ep += 2;
+                    let entry_key = block_data
+                        .get(ep..ep + k_len)
+                        .ok_or_else(|| MemFuseError::Storage("missing entry_key".into()))?;
+                    ep += k_len;
+
+                    let seq_no = u64::from_le_bytes(
+                        block_data
+                            .get(ep..ep + 8)
+                            .ok_or_else(|| MemFuseError::Storage("missing seq_no".into()))?
+                            .try_into()
+                            .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                    );
+                    ep += 8;
+                    let v_len = u16::from_le_bytes(
+                        block_data
+                            .get(ep..ep + 2)
+                            .ok_or_else(|| MemFuseError::Storage("missing v_len".into()))?
+                            .try_into()
+                            .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                    ) as usize;
+                    ep += 2;
+                    let entry_val = block_data
+                        .get(ep..ep + v_len)
+                        .ok_or_else(|| MemFuseError::Storage("missing value".into()))?;
+
+                    self.entry_idx += 1;
+                    return Ok(Some((
+                        Bytes::copy_from_slice(entry_key),
+                        Bytes::copy_from_slice(entry_val),
+                        seq_no,
+                    )));
+                }
+            }
+        }
+    }
+}
+
+impl SstableReader {
 
     /// Returns the file path of this SSTable.
     pub fn file_path(&self) -> &std::path::Path {

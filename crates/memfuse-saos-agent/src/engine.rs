@@ -6,6 +6,7 @@ use crate::context::AgentContext;
 use crate::graph::{AgentNode, NodeType, StateGraph};
 use crate::step::{AgentTool, StepResult};
 use memfuse_checkpoint::PersistentCheckpointStore;
+use memfuse_core::traits::{Checkpoint, StorageEngine};
 use memfuse_core::{MemFuseError, Result};
 use memfuse_store::LsmStorage;
 use std::collections::HashMap;
@@ -30,13 +31,18 @@ impl OrchestratorEngine {
     }
 
     pub async fn run(&self, ctx: &mut AgentContext, graph: &StateGraph) -> Result<()> {
+        ctx.status = crate::context::AgentStatus::Running;
         loop {
+            tokio::task::yield_now().await;
             let node = graph.get_node(&ctx.current_node).ok_or_else(|| {
                 MemFuseError::Internal(format!("Node {} not found", ctx.current_node))
             })?;
 
             match node.node_type {
+                // TODO(FIND-SAOS-001): Crash Recovery Vulnerability
+                // Missing `self.checkpoint(ctx).await;` before `persist_final_state`.
                 NodeType::End => {
+                    ctx.status = crate::context::AgentStatus::Completed;
                     self.persist_final_state(ctx).await?;
                     return Ok(());
                 }
@@ -44,40 +50,53 @@ impl OrchestratorEngine {
                     // 1. Checkpoint BEFORE execution (AC-1)
                     self.checkpoint(ctx).await?;
 
-                    // 2. Execute the registered tool
-                    let handler_name = node.handler.as_ref().ok_or_else(|| {
-                        MemFuseError::Internal(format!("Task Node {} lacks handler", node.id))
-                    })?;
+                    // 2. Resolve handler (Optional for Start nodes)
+                    let result = if let Some(handler_name) = &node.handler {
+                        let tool = self.tools.get(handler_name).ok_or_else(|| {
+                            MemFuseError::Internal(format!("Tool {} not registered", handler_name))
+                        })?;
 
-                    let tool = self.tools.get(handler_name).ok_or_else(|| {
-                        MemFuseError::Internal(format!("Tool {} not registered", handler_name))
-                    })?;
+                        let input = ctx
+                            .memory
+                            .get("last_output")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null);
 
-                    let input = ctx
-                        .memory
-                        .get("last_output")
-                        .cloned()
-                        .unwrap_or(serde_json::Value::Null);
+                        let res = tool.execute(ctx, input).await?;
 
-                    let result = tool.execute(ctx, input).await?;
+                        // Append to context memory
+                        ctx.memory
+                            .insert("last_output".to_string(), res.output.clone());
 
-                    // 3. Append to context memory
-                    ctx.memory
-                        .insert("last_output".to_string(), result.output.clone());
+                        res
+                    } else if node.node_type == NodeType::Start {
+                        // Pass-through result for start nodes without handlers
+                        StepResult {
+                            node_id: node.id.clone(),
+                            output: serde_json::Value::Null,
+                            tokens_consumed: 0,
+                            next_edge: None,
+                        }
+                    } else {
+                        return Err(MemFuseError::Internal(format!(
+                            "Task Node {} lacks handler",
+                            node.id
+                        )));
+                    };
 
-                    // 4. Atomic commit to LSM
+                    // 3. Atomic commit to LSM
                     self.commit_step(ctx, &result).await?;
 
-                    // 5. Audit log (AC-3)
+                    // 4. Audit log (AC-3)
                     self.audit_log(ctx, &result).await?;
 
-                    // 6. Consume tokens and check budget
+                    // 5. Consume tokens and check budget
                     ctx.budget.consume(result.tokens_consumed);
-                    if ctx.budget.available() == 0 {
+                    if ctx.budget.available() == 0 && node.node_type != NodeType::Start {
                         return Err(MemFuseError::Internal("Token budget exhausted".to_string()));
                     }
 
-                    // 7. Resolve next edge
+                    // 6. Resolve next edge
                     ctx.current_node = self.resolve_next_node(graph, &ctx.current_node, &result)?;
                     ctx.step_count += 1;
                 }
@@ -115,7 +134,12 @@ impl OrchestratorEngine {
         {
             ctx.memory = memory.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         }
-        // In a real implementation, we would also need to revert the storage to checkpoint.seq_no
+
+        // Restore storage state to the checkpoint's TxId
+        self.checkpoint_store
+            .restore(&checkpoint.into_workflow_state())
+            .await?;
+
         Ok(())
     }
 
@@ -129,11 +153,13 @@ impl OrchestratorEngine {
         });
 
         let seq_no = ctx.db.last_committed_seq().await?;
+        let tx_id = ctx.db.inner_storage().last_tx_id().await?;
         self.checkpoint_store
             .create_checkpoint(
                 &checkpoint_name,
                 ctx.state_collection.name(),
                 seq_no,
+                tx_id,
                 metadata,
             )
             .await?;
@@ -147,12 +173,14 @@ impl OrchestratorEngine {
             "node": ctx.current_node,
             "memory": ctx.memory,
             "output": result.output,
-            "tokens_consumed": result.tokens_consumed
+            "tokens_consumed": result.tokens_consumed,
+            "status": ctx.status
         });
 
-        let dummy_vec = vec![0.0; ctx.state_collection.dimension()];
+        // Use a metadata-only storage pattern for workflow history (zero-vector)
+        let zero_vec = vec![0.0; ctx.state_collection.dimension()];
         ctx.state_collection
-            .insert(&state_doc_id, &dummy_vec, Some(metadata))
+            .insert(&state_doc_id, &zero_vec, Some(metadata))
             .await
     }
 
@@ -170,8 +198,21 @@ impl OrchestratorEngine {
         audit_log.append(&entry).await
     }
 
-    async fn persist_final_state(&self, _ctx: &AgentContext) -> Result<()> {
-        Ok(())
+    async fn persist_final_state(&self, ctx: &AgentContext) -> Result<()> {
+        let final_id = format!("task:{}:final", ctx.task_id);
+        let metadata = serde_json::json!({
+            "stage": "final",
+            "status": ctx.status,
+            "task_id": ctx.task_id,
+            "step_count": ctx.step_count,
+            "memory": ctx.memory,
+            "tokens_total": ctx.budget.consumed()
+        });
+
+        let zero_vec = vec![0.0; ctx.state_collection.dimension()];
+        ctx.state_collection
+            .insert(&final_id, &zero_vec, Some(metadata))
+            .await
     }
 
     fn resolve_next_node(

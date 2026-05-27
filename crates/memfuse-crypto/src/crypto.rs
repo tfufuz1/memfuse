@@ -26,6 +26,8 @@ impl std::fmt::Debug for KeyManager {
 impl KeyManager {
     /// Creates a new KeyManager by deriving a key from a passphrase.
     pub fn try_new(passphrase: &str) -> Result<Self> {
+        // TODO(FIND-CRY-001): Hardcoded HKDF Salt!
+        // Move salt to MemFuseConfig or generate randomly per instance to prevent rainbow table attacks.
         let salt = b"memfuse-encryption-salt-v1";
         let hk = Hkdf::<Sha256>::new(Some(salt), passphrase.as_bytes());
         let mut key = [0u8; 32];
@@ -37,6 +39,8 @@ impl KeyManager {
 
     /// Derives an integrity key for HMAC-SHA256.
     pub fn integrity_key(&self) -> Result<[u8; 32]> {
+        // TODO(FIND-CRY-001): Hardcoded HKDF Salt!
+        // Move salt to MemFuseConfig or generate randomly per instance to prevent rainbow table attacks.
         let salt = b"memfuse-encryption-salt-v1";
         let hk = Hkdf::<Sha256>::new(Some(salt), &self.key);
         let mut key = [0u8; 32];

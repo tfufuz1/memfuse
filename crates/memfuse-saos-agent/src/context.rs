@@ -9,6 +9,15 @@ use memfuse_store::LsmStorage;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Operational status of an agent workflow.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum AgentStatus {
+    Idle,
+    Running,
+    Completed,
+    Failed,
+}
+
 /// Operational context spanning the entire workflow execution.
 pub struct AgentContext {
     pub task_id: String,
@@ -17,6 +26,7 @@ pub struct AgentContext {
     pub db: Arc<MemFuse>,
     pub state_collection: Arc<Collection<LsmStorage>>,
     pub budget: TokenBudget,
+    pub status: AgentStatus,
     /// Accumulates results and state transfers between steps.
     pub memory: HashMap<String, serde_json::Value>,
 }
@@ -36,6 +46,7 @@ impl AgentContext {
             db,
             state_collection,
             budget,
+            status: AgentStatus::Idle,
             memory: HashMap::new(),
         }
     }

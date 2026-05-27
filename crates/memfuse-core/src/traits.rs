@@ -58,6 +58,8 @@ pub struct StorageStats {
 // CREATED:2026-05-05 DEADLINE:NONE
 // Lifecycle: put/delete → commit/rollback → flush(background).
 /// Storage engine trait — abstracts over the LSM-Tree implementation.
+// TODO(FIND-COR-001): Trait requires #[async_trait] macro.
+// Remove default implementations to prevent silent E0038/E0195 dyn-compatibility issues.
 pub trait StorageEngine: Send + Sync {
     /// Retrieves a value by key.
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
@@ -71,6 +73,14 @@ pub trait StorageEngine: Send + Sync {
     /// Stores a key-value pair as part of a transaction.
     async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()>;
 
+    /// Stores multiple key-value pairs as part of a transaction.
+    async fn put_batch(&self, tx_id: TxId, entries: &[(Vec<u8>, Vec<u8>)]) -> Result<()> {
+        for (key, value) in entries {
+            self.put(tx_id, key, value).await?;
+        }
+        Ok(())
+    }
+
     /// Deletes a key as part of a transaction.
     async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()>;
 
@@ -78,7 +88,22 @@ pub trait StorageEngine: Send + Sync {
     async fn commit(&self, tx_id: TxId) -> Result<()>;
 
     /// Rolls back a transaction — discards writes.
-    async fn rollback(&self, tx_id: TxId) -> Result<()>;
+    ///
+    /// **Implementor contract**: MUST discard all staged writes for `tx_id`.
+    /// The default no-op is only valid for test mocks. Production implementations
+    /// MUST override this. See `LsmStorage::rollback` for reference.
+    async fn rollback(&self, _tx_id: TxId) -> Result<()> {
+        Ok(())
+    }
+
+    /// Rolls back the entire storage state to a specific transaction ID.
+    ///
+    /// **Implementor contract**: MUST physically revert all state beyond `tx_id`,
+    /// including WAL truncation and memtable reconstruction. The default no-op
+    /// is only valid for test mocks. See `LsmStorage::rollback_to_tx` for reference.
+    async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
+        Ok(())
+    }
 
     /// Flushes the memtable to disk.
     async fn flush(&self) -> Result<()>;
@@ -89,6 +114,11 @@ pub trait StorageEngine: Send + Sync {
     /// Returns the last sequence number committed to storage.
     async fn last_seq_no(&self) -> Result<u64> {
         Ok(0)
+    }
+
+    /// Returns the last transaction ID committed to storage.
+    async fn last_tx_id(&self) -> Result<TxId> {
+        Ok(TxId::new(0))
     }
 
     /// Pins a checkpoint for the given sequence number.
@@ -127,6 +157,14 @@ pub trait StorageEngine: Send + Sync {
 pub trait VectorIndex: Send + Sync {
     /// Inserts a vector with an associated document ID.
     async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()>;
+
+    /// Inserts multiple vectors with associated document IDs.
+    async fn insert_batch(&self, tx: TxId, vectors: &[(DocId, &[f32])]) -> Result<()> {
+        for (id, embedding) in vectors {
+            self.insert(tx, *id, embedding).await?;
+        }
+        Ok(())
+    }
 
     /// Searches for the k nearest neighbors to a query vector.
     async fn search(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>>;

@@ -82,6 +82,8 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 
     /// Appends and updates inverted index structures for a document.
+    // TODO(FIND-TXT-002): Fehlendes OpenTelemetry Tracing
+    // Annotieren mit #[instrument(skip(self, text))]
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
@@ -290,6 +292,8 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 
     /// Searches the inverted index using BM25.
+    // TODO(FIND-TXT-002): Fehlendes OpenTelemetry Tracing
+    // Annotieren mit #[instrument(skip(self, query))]
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
         let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {

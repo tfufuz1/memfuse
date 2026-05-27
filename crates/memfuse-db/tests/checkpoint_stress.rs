@@ -56,7 +56,7 @@ async fn test_checkpoint_concurrency_stress() {
             for i in 0..(ops_per_task / 10) {
                 let name = format!("cp-{}-{}", t, i);
                 let cp = manager
-                    .create_checkpoint(&name, "default", 0, serde_json::json!({}))
+                    .create_checkpoint(&name, "default", 0, TxId::new(0), serde_json::json!({}))
                     .await
                     .expect("create checkpoint failed");
 

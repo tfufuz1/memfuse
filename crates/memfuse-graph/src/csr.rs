@@ -145,6 +145,9 @@ impl CsrGraph {
     }
 
     /// Compacts the graph to optimize for traversal.
+    // TODO(FIND-GRA-001): Transaction Isolation Leak
+    // Compaction serialisiert fälschlicherweise auch uncommitted Kanten,
+    // was die LSM MVCC Isolationsgarantien verletzt.
     pub fn compact(&self) {
         self.inner.write().compact();
     }

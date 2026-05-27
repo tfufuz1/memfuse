@@ -4,10 +4,11 @@
 MemFuse ist eine in-process, einbettbare und extrem performante Vektor/Hybrid-Suchdatenbank für lokale LLM-RAG-Systeme ("SQLite for AI Agents").
 
 ## Kern-Philosophie: Sovereign Core Doctrine
-1. **Zero-Panic Policy:** Absolut kein `.unwrap()`, `.expect()` oder `panic!()` in Hot-Paths. Fehlerfortpflanzung erfolgt strikt über `memfuse_core::MemFuseError`.
-2. **Keine blockierende I/O:** Es wird ausschließlich `tokio::fs` und `tokio::io` verwendet. Standard `std::fs` ist in asynchronen Kontexten verboten.
-3. **Isolierte Unsicherheit:** `unsafe` ist nur für SIMD-Optimierungen in `memfuse-index` gestattet und muss zwingend mit `// SAFETY: [Begründung]` dokumentiert werden.
-4. **Triple-Test-Gate:** Qualität wird durch 3x aufeinanderfolgende erfolgreiche Testläufe und Zero-Clippy-Warnings sichergestellt.
+1. **Zero-Panic Policy:** Absolut kein `.unwrap()`, `.expect()` oder `panic!()` in Hot-Paths inkl. Type-Casts (`try_into()`). Fehlerfortpflanzung erfolgt strikt über `memfuse_core::MemFuseError`.
+2. **Stable Rust Doctrine:** Das Projekt muss zwingend auf dem `stable` Toolchain kompilieren. `#![feature(...)]` Flags für Nightly-Features sind systemweit verboten.
+3. **Keine blockierende I/O:** Es wird ausschließlich `tokio::fs` und `tokio::io` verwendet. Standard `std::fs` ist in asynchronen Kontexten absolut verboten, es sei denn, es wird per `tokio::task::spawn_blocking` isoliert.
+4. **Isolierte Unsicherheit:** `unsafe` ist nur für Leistungsoptimierungen gestattet und muss zwingend mit `// SAFETY: [Beweis]` dokumentiert werden.
+5. **Triple-Test-Gate:** Qualität wird durch 3x aufeinanderfolgende erfolgreiche Testläufe und Zero-Clippy-Warnings sichergestellt.
 
 ## Crate-Hierarchie (4-Layer DAG)
 
