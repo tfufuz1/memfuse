@@ -17,19 +17,19 @@ pub use tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use memfuse_core::{DocId, Result, ScoredDocument, TextIndex, TextIndexStats, TxId};
 
 /// Evaluates keyword weights and applies standard BM25 logic.
-pub struct Bm25Scorer {
-    index: InvertedIndex,
+pub struct Bm25Scorer<S: memfuse_core::StorageEngine> {
+    index: InvertedIndex<S>,
 }
 
-impl Bm25Scorer {
-    pub fn new(storage: std::sync::Arc<dyn memfuse_core::StorageEngine>, namespace: &str) -> Self {
+impl<S: memfuse_core::StorageEngine> Bm25Scorer<S> {
+    pub fn new(storage: std::sync::Arc<S>, namespace: &str) -> Self {
         Self {
             index: InvertedIndex::new(storage, namespace),
         }
     }
 }
 
-impl TextIndex for Bm25Scorer {
+impl<S: memfuse_core::StorageEngine> TextIndex for Bm25Scorer<S> {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         self.index.search(query, k).await
     }

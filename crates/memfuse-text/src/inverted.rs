@@ -17,12 +17,21 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// An inverted index stored in the LSM engine.
-#[derive(Clone)]
 /// An inverted index tied to a specific collection namespace.
 pub struct InvertedIndex<S: StorageEngine> {
     storage: Arc<S>,
     prefix: Vec<u8>,
     tokenizer: Arc<dyn Tokenizer>,
+}
+
+impl<S: StorageEngine> Clone for InvertedIndex<S> {
+    fn clone(&self) -> Self {
+        Self {
+            storage: self.storage.clone(),
+            prefix: self.prefix.clone(),
+            tokenizer: self.tokenizer.clone(),
+        }
+    }
 }
 
 impl<S: StorageEngine> InvertedIndex<S> {
@@ -370,7 +379,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 }
 
-impl TextIndex for InvertedIndex {
+impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         let results = self.search_bm25(query, k).await?;
         Ok(results
@@ -431,14 +440,14 @@ impl TextIndex for InvertedIndex {
 use crate::morphology::MorphologicalTokenizer;
 
 /// An inverted index with morphological optimization.
-pub struct BM25MorphIndex {
-    inner: InvertedIndex,
+pub struct BM25MorphIndex<S: StorageEngine> {
+    inner: InvertedIndex<S>,
     tokenizer: Arc<dyn MorphologicalTokenizer>,
 }
 
-impl BM25MorphIndex {
+impl<S: StorageEngine> BM25MorphIndex<S> {
     pub fn new(
-        storage: Arc<dyn StorageEngine>,
+        storage: Arc<S>,
         namespace: &str,
         tokenizer: Arc<dyn MorphologicalTokenizer>,
     ) -> Self {
@@ -453,7 +462,7 @@ impl BM25MorphIndex {
     }
 }
 
-impl TextIndex for BM25MorphIndex {
+impl<S: StorageEngine> TextIndex for BM25MorphIndex<S> {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         // Here we could apply the morphological tokenizer to the query tokens
         // But InvertedIndex already does this via its internal tokenizer.
@@ -716,7 +725,7 @@ mod tests {
     #[tokio::test]
     async fn test_text_index_trait_implementation() -> Result<()> {
         let storage = Arc::new(MockStorage::new());
-        let index: Arc<dyn TextIndex> = Arc::new(InvertedIndex::new(storage.clone(), "trait_test"));
+        let index = Arc::new(InvertedIndex::new(storage.clone(), "trait_test"));
 
         let tx = TxId::new(100);
         let doc_id = DocId::new(100);

@@ -28,6 +28,7 @@ impl std::fmt::Display for NamespaceId {
 pub struct TokenBudget {
     pub max_tokens: usize,
     pub reserve_tokens: usize,
+    consumed: usize,
 }
 
 impl TokenBudget {
@@ -35,11 +36,25 @@ impl TokenBudget {
         Self {
             max_tokens,
             reserve_tokens,
+            consumed: 0,
         }
     }
 
+    /// Returns tokens still available after subtracting reserve and consumed.
     pub fn available(&self) -> usize {
-        self.max_tokens.saturating_sub(self.reserve_tokens)
+        self.max_tokens
+            .saturating_sub(self.reserve_tokens)
+            .saturating_sub(self.consumed)
+    }
+
+    /// Records `tokens` as consumed, reducing future availability.
+    pub fn consume(&mut self, tokens: usize) {
+        self.consumed = self.consumed.saturating_add(tokens);
+    }
+
+    /// Returns total tokens consumed so far.
+    pub fn consumed(&self) -> usize {
+        self.consumed
     }
 }
 
@@ -48,6 +63,7 @@ impl Default for TokenBudget {
         Self {
             max_tokens: 4096,
             reserve_tokens: 512,
+            consumed: 0,
         }
     }
 }

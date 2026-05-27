@@ -65,3 +65,24 @@ async with agent.task("summarize_documents") as task:
 | `crates/memfuse-saos-agent/src/task.rs` | NEU: Task + Step Orchestration |
 | `crates/memfuse-saos-agent/src/audit.rs` | NEU: Immutable Audit-Log |
 | `crates/memfuse-py/src/agent.rs` | MODIFY: PyO3-Bindings für Agent-API |
+
+## State-Graph ERM (Entity-Relation Mapping)
+
+Der `StateGraph` im `memfuse-saos-agent` Crate baut auf den primitiven `Entity` und `Edge` Typen aus `memfuse-core::types::domain` auf und orchestriert den Graphen über den `GraphIndex` Trait der Speicherschicht.
+
+### 1. `GraphNode` (Wraps `memfuse_core::types::domain::Entity`)
+Repräsentiert einen logischen Zustand oder Task-Knoten im Agenten-Workflow.
+- **`node_id`**: `EntityId` (Unique ID des Zustands)
+- **`name`**: `String` (z.B. `"analyze_document"`, `"execute_tool"`)
+- **`state_type`**: `String` (z.B. `"task"`, `"decision"`, `"end"`)
+- **`memory_context`**: `Vec<DocId>` (Verlinkte Vektor/Text-Dokumente für LLM-Kontext)
+
+### 2. `WorkflowEdge` (Wraps `memfuse_core::types::domain::Edge`)
+Repräsentiert den strukturierten Übergang zwischen zwei Task-Knoten.
+- **`from_node`**: `EntityId`
+- **`to_node`**: `EntityId`
+- **`condition`**: `String` (optionaler Transition-Trigger oder Event-Label, z.B. `"on_success"`, `"requires_retry"`)
+- **`weight`**: `f32` (für Traversierungs-Prio/Decay-Gewichtung der kognitiven Sub-Engine)
+
+### 3. `StateGraph` Engine
+Die Hauptstruktur `StateGraph`, die intern eine `Arc<dyn GraphIndex>` Instanz zur Persistierung hält. Sie verwaltet die Workflow-Steuerung, führt `traverse` Aufrufe durch und interagiert mit der Checkpoint-Infrastruktur (`WorkflowState`), um den Graph abzusichern.

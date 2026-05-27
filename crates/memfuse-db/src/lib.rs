@@ -128,7 +128,7 @@ pub struct MemFuse {
     storage: Arc<LsmStorage>,
     next_tx: Arc<AtomicU64>,
     dimension: usize,
-    collections: tokio::sync::RwLock<std::collections::HashMap<String, Collection>>,
+    collections: tokio::sync::RwLock<std::collections::HashMap<String, Collection<LsmStorage>>>,
 }
 
 impl MemFuse {
@@ -293,7 +293,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_collections_are_isolated
     // DONE: `collection()` ist wal-gesichert, Isolation ist korrekt.
     // SUCCESSOR: @JULES-04 — "Mach weiter mit COL-002 und COL-003, bis Collections-Modul fully featured ist."
-    pub async fn collection(&self, name: &str) -> Result<Collection> {
+    pub async fn collection(&self, name: &str) -> Result<Collection<LsmStorage>> {
         // Validation
         if name.len() > 64 {
             return Err(memfuse_core::MemFuseError::invalid_input(
@@ -411,7 +411,7 @@ impl MemFuse {
 
     // --- Legacy Backwards Compatibility Methods (Wraps "default" collection) ---
 
-    async fn default_col(&self) -> Result<Collection> {
+    async fn default_col(&self) -> Result<Collection<LsmStorage>> {
         self.collection("default").await
     }
 

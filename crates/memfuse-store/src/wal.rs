@@ -195,7 +195,6 @@ impl Wal {
         if metadata.len() > 0 {
             let entries = wal.replay_with_size(metadata.len()).await?;
             if let Some((_, last_entry, _)) = entries.last() {
-
                 let mut guard = wal.last_hmac.lock().await;
                 *guard = last_entry.checksum;
             }
@@ -585,8 +584,7 @@ impl Wal {
             .map_err(|e| MemFuseError::Storage(format!("WAL seek after truncate failed: {}", e)))?;
 
         // 3. Update in-memory size
-        self.size
-            .store(offset, std::sync::atomic::Ordering::SeqCst);
+        self.size.store(offset, std::sync::atomic::Ordering::SeqCst);
 
         // 4. Update last_hmac
         let mut last_hmac_guard = self.last_hmac.lock().await;

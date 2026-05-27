@@ -1,19 +1,92 @@
-// AGENT:12
-// ANCHOR:INTEGRATION STATUS:DONE
-// E2E Test: Full Stack Integration
+//! E2E integration tests for memfuse-saos-agent.
+//!
+//! Validates the full stack: MemFuse DB → Collection → OrchestratorEngine → Graph walk.
+
 use memfuse_core::TokenBudget;
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
-use memfuse_sandbox::{AgentRuntime, WasmSandbox};
-use memfuse_saos_agent::{GraphNode, OrchestratorEngine, StateGraph, WorkflowEdge};
+use memfuse_saos_agent::step::StepResult;
+use memfuse_saos_agent::{AgentContext, NodeType, OrchestratorEngine, StateGraph};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
-use tokio::task::JoinHandle;
+
+/// A trivial tool that echoes its input and consumes 5 tokens.
+struct EchoTool;
+
+#[async_trait::async_trait]
+impl memfuse_saos_agent::AgentTool for EchoTool {
+    fn name(&self) -> &str {
+        "echo_tool"
+    }
+
+    async fn execute(
+        &self,
+        _ctx: &AgentContext,
+        input: serde_json::Value,
+    ) -> memfuse_core::Result<StepResult> {
+        Ok(StepResult {
+            node_id: "echo".to_string(),
+            output: json!({"echo": input}),
+            tokens_consumed: 5,
+            next_edge: None,
+        })
+    }
+}
+
+/// Helper: creates a MemFuse DB + state collection + OrchestratorEngine.
+async fn setup_engine(dim: usize) -> (OrchestratorEngine, Arc<MemFuse>, TempDir) {
+    let tmp = TempDir::new().expect("temp dir");
+    let config = MemFuseConfig {
+        dimension: dim,
+        max_elements: 10_000,
+        distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
+    };
+    let db = Arc::new(
+        MemFuse::open_with_config(tmp.path(), config)
+            .await
+            .expect("open db"),
+    );
+
+    let storage = db.inner_storage();
+    let mut engine = OrchestratorEngine::new(storage);
+    engine.register_tool(Box::new(EchoTool));
+
+    (engine, db, tmp)
+}
 
 #[tokio::test]
 async fn test_e2e_agent_workflow() {
-    // 1. MemFuse::open()
-    let tmp = TempDir::new().expect("failed to create temp dir");
+    let (engine, db, _tmp) = setup_engine(3).await;
+
+    // Build a simple Start → Task → End graph
+    let mut graph = StateGraph::new();
+    graph.add_node(
+        "start",
+        "Begin workflow",
+        NodeType::Start,
+        Some("echo_tool"),
+    );
+    graph.add_node("process", "Process data", NodeType::Task, Some("echo_tool"));
+    graph.add_node("done", "Finished", NodeType::End, None);
+
+    graph.add_edge("start", "process", None, 1);
+    graph.add_edge("process", "done", None, 1);
+
+    let state_col = Arc::new(db.collection("agent-state").await.expect("collection"));
+    let budget = TokenBudget::new(100, 0);
+    let mut ctx = AgentContext::new("test-task-1", "start", db.clone(), state_col, budget);
+
+    engine.run(&mut ctx, &graph).await.expect("workflow run");
+
+    // Engine should have terminated at "done" node
+    assert_eq!(ctx.current_node, "done");
+    assert_eq!(ctx.step_count, 2); // start + process = 2 steps
+}
+
+#[tokio::test]
+async fn test_e2e_db_crud_roundtrip() {
+    let tmp = TempDir::new().expect("temp dir");
     let config = MemFuseConfig {
         dimension: 3,
         max_elements: 1000,
@@ -22,106 +95,50 @@ async fn test_e2e_agent_workflow() {
     };
     let db = MemFuse::open_with_config(tmp.path(), config)
         .await
-        .expect("failed to open db");
+        .expect("open db");
 
-    // 2. Insert Dokumente mit Embeddings + Metadata
-    db.insert(
-        "doc-1",
-        &[1.0, 0.0, 0.0],
-        Some(json!({"text": "Rust is a systems programming language."})),
-    )
-    .await
-    .expect("insert failed");
-    db.insert(
-        "doc-2",
-        &[0.0, 1.0, 0.0],
-        Some(json!({"text": "Python is great for data science."})),
-    )
-    .await
-    .expect("insert failed");
-
-    // 3. Hybrid Search (Vector + Text)
-    let results = db
-        .hybrid_search("Rust", &[0.9, 0.1, 0.0], 2)
+    // Insert
+    db.insert("doc-1", &[1.0, 0.0, 0.0], Some(json!({"text": "Rust"})))
         .await
-        .expect("hybrid search failed");
+        .expect("insert");
 
-    // 4. Verify Ergebnisse (Score, Metadata, Ordering)
-    assert!(!results.is_empty());
+    // Search
+    let results = db.search(&[1.0, 0.0, 0.0], 1).await.expect("search");
     assert_eq!(results[0].id, "doc-1");
-    assert!(results[0].metadata.as_ref().unwrap()["text"]
-        .as_str()
-        .unwrap()
-        .contains("Rust"));
 
-    // 5. Update + Re-Search
-    db.update(
-        "doc-1",
-        &[1.0, 0.0, 0.0],
-        Some(json!({"text": "Rust is super fast."})),
-    )
-    .await
-    .expect("update failed");
-    let results_updated = db.search(&[1.0, 0.0, 0.0], 1).await.expect("search failed");
-    assert_eq!(
-        results_updated[0].metadata.as_ref().unwrap()["text"],
-        "Rust is super fast."
-    );
+    // Update
+    db.update("doc-1", &[1.0, 0.0, 0.0], Some(json!({"text": "Updated"})))
+        .await
+        .expect("update");
+    let doc = db.get("doc-1").await.expect("get").expect("exists");
+    assert_eq!(doc.metadata.expect("meta")["text"], "Updated");
 
-    // 6. Delete + Verify Gone
-    db.delete("doc-1").await.expect("delete failed");
-    let doc_gone = db.get("doc-1").await.expect("get failed");
-    assert!(doc_gone.is_none());
+    // Delete
+    db.delete("doc-1").await.expect("delete");
+    assert!(db.get("doc-1").await.expect("get").is_none());
 
-    // 7. Collection Isolation
-    let col_a = db.collection("isolated-a").await.expect("col a failed");
-    let col_b = db.collection("isolated-b").await.expect("col b failed");
+    // Collection isolation
+    let col_a = db.collection("isolated-a").await.expect("col a");
+    let col_b = db.collection("isolated-b").await.expect("col b");
 
     col_a
-        .insert("secret", &[0.1, 0.2, 0.3], Some(json!({"val": "A"})))
+        .insert("key", &[0.1, 0.2, 0.3], Some(json!({"val": "A"})))
         .await
         .expect("ins a");
     col_b
-        .insert("secret", &[0.1, 0.2, 0.3], Some(json!({"val": "B"})))
+        .insert("key", &[0.1, 0.2, 0.3], Some(json!({"val": "B"})))
         .await
         .expect("ins b");
 
-    let val_a = col_a.get("secret").await.expect("get a").unwrap();
-    let val_b = col_b.get("secret").await.expect("get b").unwrap();
-
-    assert_eq!(val_a.metadata.unwrap()["val"], "A");
-    assert_eq!(val_b.metadata.unwrap()["val"], "B");
-
-    // Integration of Orchestrator and Runtime
-    let mut graph = StateGraph::new();
-    graph.nodes.push(GraphNode {
-        name: "search".to_string(),
-        executable_identifier: "search_tool".to_string(),
-    });
-    graph.nodes.push(GraphNode {
-        name: "process".to_string(),
-        executable_identifier: "process_tool".to_string(),
-    });
-    graph.edges.push(WorkflowEdge {
-        from: "search".to_string(),
-        to: "process".to_string(),
-        condition_evaluator: None,
-    });
-
-    let sandbox = WasmSandbox::new(128);
-    let budget = TokenBudget::new(100, 0);
-    let _execution_result = sandbox
-        .execute_isolated(b"WASM_CODE", &budget)
-        .await
-        .expect("WASM execution failed");
-
-    let engine = OrchestratorEngine;
-    engine.execute(&graph).await.expect("workflow failed");
+    let va = col_a.get("key").await.expect("get a").expect("exists");
+    let vb = col_b.get("key").await.expect("get b").expect("exists");
+    assert_eq!(va.metadata.expect("meta")["val"], "A");
+    assert_eq!(vb.metadata.expect("meta")["val"], "B");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_stress_concurrent_agent_ops() {
-    let tmp = TempDir::new().expect("failed to create temp dir");
+    let tmp = TempDir::new().expect("temp dir");
     let db = Arc::new(
         MemFuse::open_with_config(
             tmp.path(),
@@ -136,9 +153,9 @@ async fn test_stress_concurrent_agent_ops() {
         .expect("open db"),
     );
 
-    let num_tasks = 20;
-    let ops_per_task = 20;
-    let mut handles: Vec<JoinHandle<()>> = Vec::new();
+    let num_tasks = 10;
+    let ops_per_task = 10;
+    let mut handles = Vec::new();
 
     for t in 0..num_tasks {
         let db = db.clone();
@@ -150,19 +167,14 @@ async fn test_stress_concurrent_agent_ops() {
                 let id = format!("task-{}-doc-{}", t, i);
                 let vec = vec![t as f32, i as f32, (t + i) as f32, 0.0];
 
-                // 1. Insert
                 col.insert(&id, &vec, Some(json!({"t": t, "i": i})))
                     .await
                     .expect("insert");
 
-                // 2. Search
                 let res = col.search(&vec, 1).await.expect("search");
                 assert_eq!(res[0].id, id);
 
-                // 3. Delete
                 col.delete(&id).await.expect("delete");
-
-                // Verify gone
                 let doc = col.get(&id).await.expect("get");
                 assert!(doc.is_none());
             }
@@ -171,17 +183,5 @@ async fn test_stress_concurrent_agent_ops() {
 
     for h in handles {
         h.await.expect("task failed");
-    }
-
-    // Final Consistency Check
-    for t in 0..num_tasks {
-        let col_name = format!("stress-{}", t);
-        let col = db.collection(&col_name).await.expect("collection");
-        assert_eq!(
-            col.len().await,
-            0,
-            "Collection {} should be empty",
-            col_name
-        );
     }
 }

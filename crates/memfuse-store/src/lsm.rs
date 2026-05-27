@@ -158,7 +158,6 @@ impl LsmStorage {
         let mut replayed_size = 0u64;
 
         for (lsn, entry, _offset) in &wal_entries {
-
             if *lsn > max_seq {
                 max_seq = *lsn;
             }
@@ -929,8 +928,10 @@ mod tests {
         };
 
         {
-            let storage = LsmStorage::new(config.clone()).await.expect("create storage");
-            
+            let storage = LsmStorage::new(config.clone())
+                .await
+                .expect("create storage");
+
             let tx1 = TxId::new(1);
             storage.put(tx1, b"k1", b"v1").await.unwrap();
             storage.commit(tx1).await.unwrap();
@@ -945,7 +946,7 @@ mod tests {
 
             // Rollback to Tx1
             storage.rollback_to_tx(tx1).await.expect("rollback");
-            
+
             assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
             assert_eq!(storage.get(b"k2").await.unwrap(), None);
         }
@@ -954,8 +955,12 @@ mod tests {
         {
             let storage = LsmStorage::new(config).await.expect("restart storage");
             assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
-            assert_eq!(storage.get(b"k2").await.unwrap(), None, "k2 should NOT be replayed after rollback");
-            
+            assert_eq!(
+                storage.get(b"k2").await.unwrap(),
+                None,
+                "k2 should NOT be replayed after rollback"
+            );
+
             // Verify we can still append new transactions after rollback
             let tx3 = TxId::new(3);
             storage.put(tx3, b"k3", b"v3").await.unwrap();

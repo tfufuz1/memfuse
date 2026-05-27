@@ -8,10 +8,16 @@ description = "Task and step orchestration (workflow engine) for MemFuse"
 
 [dependencies]
 memfuse-core = { workspace = true }
+memfuse-db = { workspace = true }
+memfuse-graph = { workspace = true }
+memfuse-checkpoint = { workspace = true }
+memfuse-store = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+async-trait = { workspace = true }
 
 [dev-dependencies]
-memfuse-db = { workspace = true }
 memfuse-sandbox = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
 tempfile = { workspace = true }
-serde_json = { workspace = true }

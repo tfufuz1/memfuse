@@ -78,6 +78,19 @@ pub enum MemFuseError {
     // ═══ Text Engine ═══
     #[error("Text engine error: {0}")]
     Text(String),
+
+    // ═══ Sandbox ═══
+    #[error("Sandbox error: {0}")]
+    Sandbox(String),
+
+    #[error("Memory limit exceeded in sandbox: {0}")]
+    MemoryLimitExceeded(String),
+
+    #[error("Timeout exceeded in sandbox: {0}")]
+    SandboxTimeout(String),
+
+    #[error("Policy violation in sandbox: {0}")]
+    PolicyViolation(String),
 }
 
 impl MemFuseError {

@@ -14,16 +14,16 @@ use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId, VectorIndex
 use std::sync::Mutex;
 
 /// A transaction wrapper that ensures atomic multi-index commits across LSM-Store and HNSW-Index.
-pub struct DbTransaction<'a> {
+pub struct DbTransaction<'a, S: StorageEngine> {
     pub tx_id: TxId,
-    collection: &'a Collection,
+    collection: &'a Collection<S>,
     staged_forward_keys: Mutex<Vec<Vec<u8>>>,
     staged_reverse_keys: Mutex<Vec<Vec<u8>>>,
     staged_doc_ids: Mutex<Vec<DocId>>,
 }
 
-impl<'a> DbTransaction<'a> {
-    pub fn new(collection: &'a Collection, tx_id: TxId) -> Self {
+impl<'a, S: StorageEngine> DbTransaction<'a, S> {
+    pub fn new(collection: &'a Collection<S>, tx_id: TxId) -> Self {
         Self {
             tx_id,
             collection,

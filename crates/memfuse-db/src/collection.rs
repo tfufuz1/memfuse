@@ -50,22 +50,35 @@ fn extract_text(metadata: &Option<serde_json::Value>) -> Option<String> {
 ///
 /// Each collection provides its own HNSW vector index and inverted text index,
 /// while sharing the underlying LSM-Tree storage with other collections.
-#[derive(Clone)]
-pub struct Collection {
+pub struct Collection<S: StorageEngine = LsmStorage> {
     pub(crate) name: String,
     pub(crate) prefix: Vec<u8>,
     pub(crate) index: Arc<HnswIndex>,
-    pub(crate) text_index: InvertedIndex,
-    pub(crate) storage: Arc<LsmStorage>,
+    pub(crate) text_index: InvertedIndex<S>,
+    pub(crate) storage: Arc<S>,
     pub(crate) next_tx: Arc<AtomicU64>,
     pub(crate) dimension: usize,
 }
 
-impl Collection {
+impl<S: StorageEngine> Clone for Collection<S> {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            prefix: self.prefix.clone(),
+            index: self.index.clone(),
+            text_index: self.text_index.clone(),
+            storage: self.storage.clone(),
+            next_tx: self.next_tx.clone(),
+            dimension: self.dimension,
+        }
+    }
+}
+
+impl<S: StorageEngine> Collection<S> {
     /// Creates a new `Collection` instance.
     pub fn new(
         name: String,
-        storage: Arc<LsmStorage>,
+        storage: Arc<S>,
         index: Arc<HnswIndex>,
         next_tx: Arc<AtomicU64>,
         dimension: usize,
@@ -191,7 +204,7 @@ impl Collection {
     }
 
     /// Begins a new atomic transaction for this collection.
-    pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<'_> {
+    pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<'_, S> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         crate::transaction::DbTransaction::new(self, tx)
     }
@@ -226,7 +239,7 @@ impl Collection {
 
     async fn insert_op(
         &self,
-        db_tx: &crate::transaction::DbTransaction<'_>,
+        db_tx: &crate::transaction::DbTransaction<'_, S>,
         id: &str,
         embedding: &[f32],
         metadata: Option<serde_json::Value>,
@@ -411,7 +424,7 @@ impl Collection {
 
     async fn update_op(
         &self,
-        db_tx: &crate::transaction::DbTransaction<'_>,
+        db_tx: &crate::transaction::DbTransaction<'_, S>,
         id: &str,
         embedding: &[f32],
         metadata: Option<serde_json::Value>,
@@ -470,7 +483,7 @@ impl Collection {
 
     async fn delete_op(
         &self,
-        db_tx: &crate::transaction::DbTransaction<'_>,
+        db_tx: &crate::transaction::DbTransaction<'_, S>,
         id: &str,
     ) -> Result<()> {
         let tx = db_tx.tx_id;
@@ -752,9 +765,19 @@ impl Collection {
         }
     }
 
+    /// Returns the name of the collection.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     /// Returns the number of documents in the collection.
     pub async fn len(&self) -> usize {
         self.index.len().await
+    }
+
+    /// Returns the vector dimension for this collection.
+    pub fn dimension(&self) -> usize {
+        self.dimension
     }
 
     /// Returns true if the collection is empty.

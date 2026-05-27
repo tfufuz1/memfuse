@@ -5,7 +5,7 @@
 
 #![forbid(unsafe_code)]
 
-use memfuse_core::{Result, StorageEngine, StorageStats, TxId, WorkflowState};
+use memfuse_core::{Result, StorageEngine, TxId, WorkflowState};
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -51,8 +51,8 @@ impl Default for CheckpointRegistry {
 }
 
 /// Manages persistent checkpoints and their integration with the storage engine.
-pub struct PersistentCheckpointStore {
-    storage: Arc<dyn StorageEngine>,
+pub struct PersistentCheckpointStore<S: StorageEngine> {
+    storage: Arc<S>,
     // In-memory cache of checkpoints for fast lookups
     persistent_checkpoints: SyncRwLock<Vec<CheckpointMeta>>,
     registry: Arc<CheckpointRegistry>,
@@ -60,8 +60,8 @@ pub struct PersistentCheckpointStore {
     op_lock: tokio::sync::Mutex<()>,
 }
 
-impl PersistentCheckpointStore {
-    pub fn new(storage: Arc<dyn StorageEngine>) -> Self {
+impl<S: StorageEngine> PersistentCheckpointStore<S> {
+    pub fn new(storage: Arc<S>) -> Self {
         Self {
             storage,
             persistent_checkpoints: SyncRwLock::new(Vec::new()),
@@ -194,7 +194,7 @@ impl PersistentCheckpointStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use memfuse_core::Result;
+    use memfuse_core::{Result, StorageStats};
     use parking_lot::Mutex;
 
     // Mock StorageEngine for testing

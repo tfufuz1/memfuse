@@ -1,20 +1,30 @@
 use memfuse_core::{Result, TokenBudget};
-use memfuse_sandbox::AgentRuntime;
-use memfuse_sandbox::WasmSandbox;
+use memfuse_sandbox::{AgentRuntime, SandboxConfig, WasmSandbox};
+
+fn dummy_wasm() -> Vec<u8> {
+    wat::parse_str(
+        r#"
+        (module
+            (func (export "main"))
+        )
+    "#,
+    )
+    .unwrap()
+}
 
 #[tokio::test]
 async fn test_sandbox_initialization() {
-    let _sandbox = WasmSandbox::new(128);
+    let _sandbox = WasmSandbox::new(SandboxConfig::default()).unwrap();
 }
 
 #[tokio::test]
 async fn test_sandbox_execution_placeholder() -> Result<()> {
-    let sandbox = WasmSandbox::new(128);
-    let wasm_bytes = vec![0, 1, 2, 3]; // Mock WASM
+    let sandbox = WasmSandbox::new(SandboxConfig::default()).unwrap();
+    let wasm_bytes = dummy_wasm();
     let budget = TokenBudget::new(100, 0);
 
     let result = sandbox.execute_isolated(&wasm_bytes, &budget).await?;
 
-    assert!(result.is_empty()); // Current scaffold returns empty Vec
+    assert!(result.is_empty());
     Ok(())
 }

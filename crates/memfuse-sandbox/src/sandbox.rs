@@ -1,12 +1,12 @@
 //! WebAssembly Sandboxing for safe agent tool execution.
+//!
+//! Enforces Zero-Trust boundaries around untrusted Agent Tools.
+//! Host actions are isolated, throttled, and budget-monitored.
 
-// ANCHOR:ARCH:SANDBOX-001 — Isolierte WASM-Ausführungsumgebung.
-// WP:NONE PRIO:2 NEEDS:NONE
-// AGENT:NONE DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-09 DEADLINE:NONE
-// DEFAULT-LIMS: 64MB Memory, 500ms Timeout, Netzwerk OFF.
-
+use memfuse_core::error::MemFuseError;
+use memfuse_core::Result;
 use std::time::Duration;
+use wasmtime::{Config, Engine, StoreLimits, StoreLimitsBuilder};
 
 #[derive(Debug)]
 pub struct SandboxConfig {
@@ -26,22 +26,35 @@ impl Default for SandboxConfig {
 }
 
 /// Executes arbitrary WASM payloads isolated from the host.
-/// In a real implementation this binds to `wasmtime` or `wasmer`.
 pub struct WasmSandbox {
-    #[allow(dead_code)]
     config: SandboxConfig,
+    pub(crate) engine: Engine,
 }
 
 impl WasmSandbox {
     /// Creates a new WASM sandbox with the given configuration.
-    pub fn new(config: SandboxConfig) -> Self {
-        Self { config }
+    pub fn new(config: SandboxConfig) -> Result<Self> {
+        let mut engine_config = Config::new();
+
+        // AC-2: CPU Fuel Consumption (Fuel represents execution time/steps)
+        engine_config.consume_fuel(true);
+
+        let engine =
+            Engine::new(&engine_config).map_err(|e| MemFuseError::Sandbox(e.to_string()))?;
+
+        Ok(Self { config, engine })
     }
 
-    /// Executes a given WASM binary with an input string and returns the output.
-    pub fn execute(&self, _wasm_bytes: &[u8], _input: &str) -> std::io::Result<String> {
-        // Placeholder for the actual WASM engine execution.
-        // E.g., Wasmtime Engine::new(), instantiate module, call exported function.
-        Ok("sandbox_execution_result_placeholder".to_string())
+    /// Provides StoreLimits configured per SandboxConfig. (AC-1)
+    pub(crate) fn build_store_limits(&self) -> StoreLimits {
+        StoreLimitsBuilder::new()
+            .memory_size(self.config.max_memory_mb * 1024 * 1024)
+            .build()
+    }
+
+    /// Configures fuel based on timeout heuristic.
+    pub(crate) fn max_fuel(&self) -> u64 {
+        // Rough heuristic: 1 ms = 10_000 fuel units
+        (self.config.timeout.as_millis() as u64) * 10_000
     }
 }

@@ -128,10 +128,7 @@ mod tests {
 
     #[test]
     fn test_context_manager_budget_truncation() {
-        let budget = TokenBudget {
-            max_tokens: 100,
-            reserve_tokens: 20,
-        };
+        let budget = TokenBudget::new(100, 20);
         let mgr = ContextManager::new(budget);
 
         let chunks = vec![
