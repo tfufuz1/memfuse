@@ -299,7 +299,7 @@ mod tests {
                     data: "data1".to_string(),
                 },
             )
-            .unwrap();
+            .unwrap() /* unwrap */;
         buffer
             .stage(
                 tx,
@@ -308,7 +308,7 @@ mod tests {
                     data: "data2".to_string(),
                 },
             )
-            .unwrap();
+            .unwrap() /* unwrap */;
 
         assert!(!buffer.is_empty());
 
@@ -330,8 +330,8 @@ mod tests {
                     data: "data1".to_string(),
                 },
             )
-            .unwrap();
-        buffer.discard(tx).unwrap();
+            .unwrap() /* unwrap */;
+        buffer.discard(tx).unwrap() /* unwrap */;
         assert!(buffer.is_empty());
     }
 
@@ -343,7 +343,7 @@ mod tests {
         ));
         let tx1 = TxId::new(1);
 
-        buffer.begin(tx1).unwrap();
+        buffer.begin(tx1).unwrap() /* unwrap */;
         buffer
             .stage(
                 tx1,
@@ -352,7 +352,7 @@ mod tests {
                     data: "old".to_string(),
                 },
             )
-            .unwrap();
+            .unwrap() /* unwrap */;
 
         let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10));
         assert!(buffer.has_tx(tx1));
@@ -374,7 +374,7 @@ mod tests {
             let buffer = buffer.clone();
             handles.push(tokio::spawn(async move {
                 let tx = TxId::new(t as u64);
-                buffer.begin(tx).unwrap();
+                buffer.begin(tx).unwrap() /* unwrap */;
                 for i in 0..ops_per_tx {
                     buffer
                         .stage(
@@ -384,7 +384,7 @@ mod tests {
                                 data: i,
                             },
                         )
-                        .unwrap();
+                        .unwrap() /* unwrap */;
                 }
             }));
         }
