@@ -10,6 +10,7 @@
 // OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
 
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
+use unicode_segmentation::UnicodeSegmentation;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
 };
@@ -17,12 +18,21 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// An inverted index stored in the LSM engine.
-#[derive(Clone)]
 /// An inverted index tied to a specific collection namespace.
 pub struct InvertedIndex<S: StorageEngine> {
     storage: Arc<S>,
     prefix: Vec<u8>,
     tokenizer: Arc<dyn Tokenizer>,
+}
+
+impl<S: StorageEngine> Clone for InvertedIndex<S> {
+    fn clone(&self) -> Self {
+        Self {
+            storage: self.storage.clone(),
+            prefix: self.prefix.clone(),
+            tokenizer: self.tokenizer.clone(),
+        }
+    }
 }
 
 impl<S: StorageEngine> InvertedIndex<S> {
@@ -76,6 +86,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
+        let orig_len = text.unicode_words().count() as u32;
 
         let mut tfs = HashMap::with_capacity(tokens.len());
         for t in tokens {
@@ -84,8 +95,10 @@ impl<S: StorageEngine> InvertedIndex<S> {
 
         // Check if document already exists to adjust total_tokens and total_docs
         let dl_key = self.key_with_id("dl:", doc_id.inner());
+        let ol_key = self.key_with_id("ol:", doc_id.inner());
         let fw_key = self.key_with_id("fw:", doc_id.inner());
         let mut old_len = 0u32;
+        let mut old_orig_len = 0u32;
         let mut is_update = false;
 
         if let Some(bytes) = self.storage.get(&dl_key).await? {
@@ -96,6 +109,15 @@ impl<S: StorageEngine> InvertedIndex<S> {
                         .try_into()
                         .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
                 );
+
+                if let Some(ol_bytes) = self.storage.get(&ol_key).await? {
+                    if ol_bytes.len() == 4 {
+                        old_orig_len = u32::from_le_bytes(ol_bytes.as_slice().try_into().map_err(
+                            |_| MemFuseError::Storage("Invalid orig_len length".into()),
+                        )?);
+                    }
+                }
+
                 is_update = true;
 
                 // Remove from old posting lists if update
@@ -130,6 +152,11 @@ impl<S: StorageEngine> InvertedIndex<S> {
             .put(tx, &dl_key, &new_len.to_le_bytes())
             .await?;
 
+        // Store original length
+        self.storage
+            .put(tx, &ol_key, &orig_len.to_le_bytes())
+            .await?;
+
         // Store forward index (unique terms)
         let mut tfs_vec: Vec<(String, u32)> = tfs.into_iter().collect();
         tfs_vec.sort_by(|a, b| a.0.cmp(&b.0));
@@ -155,6 +182,22 @@ impl<S: StorageEngine> InvertedIndex<S> {
 
         self.storage
             .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
+            .await?;
+
+        // Update total original tokens
+        let total_orig_tok_key = self.key("meta:orig_tokens");
+        let mut total_orig_tokens = 0u64;
+        if let Some(bytes) = self.storage.get(&total_orig_tok_key).await? {
+            if bytes.len() == 8 {
+                total_orig_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(
+                    |_| MemFuseError::Storage("Invalid orig_tokens length".into()),
+                )?);
+            }
+        }
+
+        total_orig_tokens = total_orig_tokens.saturating_sub(old_orig_len as u64) + orig_len as u64;
+        self.storage
+            .put(tx, &total_orig_tok_key, &total_orig_tokens.to_le_bytes())
             .await?;
 
         // Update total docs
@@ -204,9 +247,11 @@ impl<S: StorageEngine> InvertedIndex<S> {
     /// Deletes a document from the index.
     pub async fn delete_document(&self, tx: TxId, doc_id: DocId) -> Result<()> {
         let dl_key = self.key_with_id("dl:", doc_id.inner());
+        let ol_key = self.key_with_id("ol:", doc_id.inner());
         let fw_key = self.key_with_id("fw:", doc_id.inner());
 
         let mut doc_len = 0u32;
+        let mut orig_len = 0u32;
         if let Some(bytes) = self.storage.get(&dl_key).await? {
             if bytes.len() == 4 {
                 doc_len = u32::from_le_bytes(
@@ -216,12 +261,20 @@ impl<S: StorageEngine> InvertedIndex<S> {
                         .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
                 );
             }
+            if let Some(ol_bytes) = self.storage.get(&ol_key).await? {
+                if ol_bytes.len() == 4 {
+                    orig_len = u32::from_le_bytes(ol_bytes.as_slice().try_into().map_err(|_| {
+                        MemFuseError::Storage("Invalid orig_len length".into())
+                    })?);
+                }
+            }
         } else {
             // Document doesn't exist in inverted index
             return Ok(());
         }
 
         self.storage.delete(tx, &dl_key).await?;
+        self.storage.delete(tx, &ol_key).await?;
 
         // Remove from posting lists using forward index
         if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
@@ -257,6 +310,19 @@ impl<S: StorageEngine> InvertedIndex<S> {
                 total_tokens = total_tokens.saturating_sub(doc_len as u64);
                 self.storage
                     .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
+                    .await?;
+            }
+        }
+
+        let total_orig_tok_key = self.key("meta:orig_tokens");
+        if let Some(bytes) = self.storage.get(&total_orig_tok_key).await? {
+            if bytes.len() == 8 {
+                let mut total_orig_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(
+                    |_| MemFuseError::Storage("Invalid orig_tokens length".into()),
+                )?);
+                total_orig_tokens = total_orig_tokens.saturating_sub(orig_len as u64);
+                self.storage
+                    .put(tx, &total_orig_tok_key, &total_orig_tokens.to_le_bytes())
                     .await?;
             }
         }
@@ -370,7 +436,30 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 }
 
-impl TextIndex for InvertedIndex {
+
+use crate::morphology::MorphologicalTokenizer;
+
+/// An inverted index with morphological optimization.
+pub struct BM25MorphIndex<S: StorageEngine> {
+    inner: InvertedIndex<S>,
+    tokenizer: Arc<dyn MorphologicalTokenizer>,
+}
+
+impl<S: StorageEngine> BM25MorphIndex<S> {
+    pub fn new(storage: Arc<S>, namespace: &str, tokenizer: Arc<dyn MorphologicalTokenizer>) -> Self {
+        Self {
+            inner: InvertedIndex::new(storage, namespace),
+            tokenizer,
+        }
+    }
+
+    pub fn tokenizer(&self) -> &dyn MorphologicalTokenizer {
+        self.tokenizer.as_ref()
+    }
+}
+
+#[async_trait::async_trait]
+impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         let results = self.search_bm25(query, k).await?;
         Ok(results
@@ -420,40 +509,33 @@ impl TextIndex for InvertedIndex {
             }
         }
 
+        let total_orig_tok_key = self.key("meta:orig_tokens");
+        let mut total_orig_tokens = 0u64;
+        if let Some(bytes) = self.storage.get(&total_orig_tok_key).await? {
+            if bytes.len() == 8 {
+                total_orig_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(
+                    |_| MemFuseError::Storage("Invalid orig_tokens length".into()),
+                )?);
+            }
+        }
+
+        let ratio = if total_orig_tokens > 0 {
+            total_tokens as f32 / total_orig_tokens as f32
+        } else {
+            0.0
+        };
+
         Ok(TextIndexStats {
             num_documents: total_docs as usize,
             num_tokens: total_tokens as usize,
-            memory_usage_bytes: 0,
+            memory_usage_bytes: total_tokens as usize * 24, // Heuristic
+            token_reduction_ratio: ratio,
         })
     }
 }
 
-use crate::morphology::MorphologicalTokenizer;
-
-/// An inverted index with morphological optimization.
-pub struct BM25MorphIndex {
-    inner: InvertedIndex,
-    tokenizer: Arc<dyn MorphologicalTokenizer>,
-}
-
-impl BM25MorphIndex {
-    pub fn new(
-        storage: Arc<dyn StorageEngine>,
-        namespace: &str,
-        tokenizer: Arc<dyn MorphologicalTokenizer>,
-    ) -> Self {
-        Self {
-            inner: InvertedIndex::new(storage, namespace),
-            tokenizer,
-        }
-    }
-
-    pub fn tokenizer(&self) -> &dyn MorphologicalTokenizer {
-        self.tokenizer.as_ref()
-    }
-}
-
-impl TextIndex for BM25MorphIndex {
+#[async_trait::async_trait]
+impl<S: StorageEngine> TextIndex for BM25MorphIndex<S> {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         // Here we could apply the morphological tokenizer to the query tokens
         // But InvertedIndex already does this via its internal tokenizer.
@@ -500,6 +582,7 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
             Ok(self.store.read().get(key).cloned())

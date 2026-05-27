@@ -9,6 +9,7 @@
 // CREATED:2026-05-05 DEADLINE:NONE
 // REGEL: Neue Methoden MÜSSEN Default-Impl haben (backward compat).
 
+pub use async_trait::async_trait;
 use crate::types::*;
 use crate::Result;
 use serde::{Deserialize, Serialize};
@@ -56,6 +57,7 @@ pub struct StorageStats {
 // CREATED:2026-05-05 DEADLINE:NONE
 // Lifecycle: put/delete → commit/rollback → flush(background).
 /// Storage engine trait — abstracts over the LSM-Tree implementation.
+#[async_trait]
 pub trait StorageEngine: Send + Sync {
     /// Retrieves a value by key.
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
@@ -122,6 +124,7 @@ pub trait StorageEngine: Send + Sync {
 // CREATED:2026-05-05 DEADLINE:NONE
 // Rebuild: Automatisch bei >20% gelöschten Nodes.
 /// Vector index trait — abstracts over the HNSW implementation.
+#[async_trait]
 pub trait VectorIndex: Send + Sync {
     /// Inserts a vector with an associated document ID.
     async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()>;
@@ -176,9 +179,12 @@ pub struct TextIndexStats {
     pub num_tokens: usize,
     /// Estimated memory usage in bytes.
     pub memory_usage_bytes: usize,
+    /// Ratio of indexed tokens to original tokens (expansion factor).
+    pub token_reduction_ratio: f32,
 }
 
 /// Text index trait — abstracts over the inverted index and BM25 search.
+#[async_trait]
 pub trait TextIndex: Send + Sync {
     /// Searches for documents matching the query.
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>>;
@@ -204,6 +210,7 @@ pub trait TextIndex: Send + Sync {
 // STATUS:SCAFFOLD DATE:2026-05-17
 
 /// Defines the contract for the CSR Graph traverse capabilities (Signal 3).
+#[async_trait]
 pub trait GraphIndex: Send + Sync {
     /// Traverses the entity graph using BFS up to a maximum number of hops.
     /// Distributes traversing decay weights across related entities.

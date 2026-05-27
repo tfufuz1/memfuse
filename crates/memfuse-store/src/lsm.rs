@@ -327,6 +327,7 @@ impl LsmStorage {
     }
 }
 
+#[memfuse_core::async_trait]
 impl StorageEngine for LsmStorage {
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let state = self.state.read().await;

@@ -677,6 +677,7 @@ impl DiskAnnIndex {
     }
 }
 
+#[memfuse_core::async_trait]
 impl VectorIndex for DiskAnnIndex {
     async fn insert(&self, _tx: TxId, _id: DocId, _embedding: &[f32]) -> Result<()> {
         Err(MemFuseError::InvalidInput(

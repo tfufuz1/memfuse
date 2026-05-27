@@ -212,6 +212,7 @@ mod tests {
         }
     }
 
+    #[memfuse_core::async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
             Ok(self.data.lock().get(key).cloned())

@@ -167,6 +167,7 @@ impl Default for CsrGraph {
     }
 }
 
+#[memfuse_core::async_trait]
 impl GraphIndex for CsrGraph {
     async fn add_entity(&self, _tx: TxId, entity: Entity) -> Result<()> {
         let mut inner = self.inner.write();

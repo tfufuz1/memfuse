@@ -55,7 +55,7 @@ pub struct Collection {
     pub(crate) name: String,
     pub(crate) prefix: Vec<u8>,
     pub(crate) index: Arc<HnswIndex>,
-    pub(crate) text_index: InvertedIndex,
+    pub(crate) text_index: InvertedIndex<LsmStorage>,
     pub(crate) storage: Arc<LsmStorage>,
     pub(crate) next_tx: Arc<AtomicU64>,
     pub(crate) dimension: usize,

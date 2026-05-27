@@ -12,3 +12,6 @@ sha2 = "0.10"
 hmac = "0.12"
 aes-gcm = "0.10"
 hkdf = "0.12"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
