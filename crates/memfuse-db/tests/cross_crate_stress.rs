@@ -31,7 +31,10 @@ async fn test_cross_crate_concurrent_load() {
         let db_clone = Arc::clone(&db);
         let handle = task::spawn(async move {
             let col_name = format!("stress-col-{}", t_idx % 2); // 2 collections shared across 5 tasks
-            let col = db_clone.collection(&col_name).await.expect("collection error");
+            let col = db_clone
+                .collection(&col_name)
+                .await
+                .expect("collection error");
 
             for i in 0..ops_per_task {
                 let doc_id = format!("task-{}-doc-{}", t_idx, i);
@@ -47,8 +50,16 @@ async fn test_cross_crate_concurrent_load() {
                 .expect("insert error");
 
                 // 2. Hybrid Search - querying for text that matches
-                let search_results = col.hybrid_search("stress", &vec, 1).await.expect("search error");
-                assert!(!search_results.is_empty(), "Search results empty for task {} iteration {}", t_idx, i);
+                let search_results = col
+                    .hybrid_search("stress", &vec, 1)
+                    .await
+                    .expect("search error");
+                assert!(
+                    !search_results.is_empty(),
+                    "Search results empty for task {} iteration {}",
+                    t_idx,
+                    i
+                );
 
                 // 3. Update
                 col.update(
@@ -62,7 +73,9 @@ async fn test_cross_crate_concurrent_load() {
                 // 4. Relate
                 if i > 0 {
                     let prev_doc_id = format!("task-{}-doc-{}", t_idx, i - 1);
-                    col.relate(&doc_id, &prev_doc_id, "prev").await.expect("relate error");
+                    col.relate(&doc_id, &prev_doc_id, "prev")
+                        .await
+                        .expect("relate error");
                 }
             }
         });
@@ -95,7 +108,10 @@ async fn test_high_concurrency_collection_creation() {
         let db_clone = Arc::clone(&db);
         handles.push(task::spawn(async move {
             let name = format!("col-{}", i);
-            let _col = db_clone.collection(&name).await.expect("failed to create col");
+            let _col = db_clone
+                .collection(&name)
+                .await
+                .expect("failed to create col");
         }));
     }
 

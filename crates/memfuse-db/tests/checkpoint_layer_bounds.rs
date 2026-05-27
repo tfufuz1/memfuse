@@ -47,6 +47,7 @@ async fn test_layer_001_fork_diverge_merge() {
 
         // Explizites Drop/Close damit Filesystem-Locks frei werden
         db.close().await.expect("close db");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 
     // 2. Checkpoint erstellen (Simuliert durch CheckpointManager auf ruhenden Daten)
