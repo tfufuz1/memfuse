@@ -120,8 +120,7 @@ impl GermanCompoundSplitter {
                 }
 
                 // Handle Fugen-s
-                let actual_rest = if rest.starts_with('s') && rest.len() > self.min_component_len
-                {
+                let actual_rest = if rest.starts_with('s') && rest.len() > self.min_component_len {
                     &rest[1..]
                 } else {
                     rest

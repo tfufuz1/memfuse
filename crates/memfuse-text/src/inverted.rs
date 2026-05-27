@@ -156,9 +156,11 @@ impl InvertedIndex {
                 }
             }
 
-            // Replace existing doc_id if it exists
-            pl.retain(|&(d, _)| d != doc_id);
-            pl.push((doc_id, *tf));
+            // Maintain sorted order of DocIds for efficient merging
+            match pl.binary_search_by_key(&doc_id, |&(d, _)| d) {
+                Ok(index) => pl[index] = (doc_id, *tf),
+                Err(index) => pl.insert(index, (doc_id, *tf)),
+            }
 
             let new_bytes = bincode::serde::encode_to_vec(&pl, bincode::config::standard())
                 .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
