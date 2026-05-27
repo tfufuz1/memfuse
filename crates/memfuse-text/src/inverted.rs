@@ -831,8 +831,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_bm25_morph_index_propagation() -> std::result::Result<(), Box<dyn std::error::Error>>
-    {
+    async fn test_bm25_morph_index_propagation(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         use crate::morphology::GermanCompoundSplitter;
         let storage = Arc::new(MockStorage::new());
         let splitter = Arc::new(GermanCompoundSplitter::new());
@@ -842,18 +842,30 @@ mod tests {
         let d1 = DocId::new(1);
         // "Bundesverfassungsgericht" splits into [bundes, verfassungs, gericht]
         index
-            .insert(tx, d1, "Das Bundesverfassungsgericht hat heute entschieden.")
+            .insert(
+                tx,
+                d1,
+                "Das Bundesverfassungsgericht hat heute entschieden.",
+            )
             .await?;
         index.commit(tx).await?;
 
         // Search for "gericht" should find it
         let results = index.search("gericht", 10).await?;
-        assert_eq!(results.len(), 1, "Should find document by component 'gericht'");
+        assert_eq!(
+            results.len(),
+            1,
+            "Should find document by component 'gericht'"
+        );
         assert_eq!(results[0].doc_id, d1);
 
         // Search for "bundes" should also find it
         let results = index.search("bundes", 10).await?;
-        assert_eq!(results.len(), 1, "Should find document by component 'bundes'");
+        assert_eq!(
+            results.len(),
+            1,
+            "Should find document by component 'bundes'"
+        );
 
         Ok(())
     }
