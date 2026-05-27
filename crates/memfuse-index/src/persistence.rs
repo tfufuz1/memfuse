@@ -120,6 +120,9 @@ impl MmapIndex {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = std::fs::File::open(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
+        // ANCHOR:SAFETY:MMAP-PERSIST-001 AGENT:10 STATUS:REVIEW
+        // BEGRÜNDUNG: HNSW-Dateien sind im Off-Core Modus unveränderlich (read-only).
+        // Memory Mapping reduziert den RAM-Footprint auf 8GB-Systemen massiv.
         let mmap = unsafe { memmap2::Mmap::map(&file) }
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 

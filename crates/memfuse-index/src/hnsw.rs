@@ -297,6 +297,10 @@ impl HnswIndex {
 
             match &node.vector {
                 VectorData::F32(v) => {
+                    // ANCHOR:SAFETY:RAW-SLICE-001 AGENT:10 STATUS:REVIEW
+                    // BEGRÜNDUNG: f32-Vektoren werden als Rohdaten serialisiert.
+                    // Die Länge wird mit 4 multipliziert (f32 = 4 bytes).
+                    // Die Daten bleiben während des `write_all` Aufrufs im Scope valide.
                     let bytes: &[u8] =
                         unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
                     writer
@@ -339,6 +343,9 @@ impl HnswIndex {
                 writer
                     .write_all(&len.to_le_bytes())
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                // ANCHOR:SAFETY:RAW-SLICE-002 AGENT:10 STATUS:REVIEW
+                // BEGRÜNDUNG: Verbindungslisten (u32) werden als Rohdaten serialisiert.
+                // u32 ist 4 bytes groß.
                 let bytes: &[u8] = unsafe {
                     std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
                 };
@@ -1212,7 +1219,7 @@ impl VectorIndex for HnswIndex {
                 doc_id: id,
                 data: embedding.to_vec(),
             },
-        );
+        )?;
         Ok(())
     }
 
@@ -1461,7 +1468,7 @@ impl VectorIndex for HnswIndex {
                 doc_id: id,
                 data: None,
             },
-        );
+        )?;
         Ok(())
     }
 
@@ -1550,7 +1557,7 @@ impl VectorIndex for HnswIndex {
                 err
             )));
         }
-        self.tx_buffer.discard(tx);
+        self.tx_buffer.discard(tx)?;
         Ok(())
     }
 

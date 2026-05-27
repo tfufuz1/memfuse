@@ -184,9 +184,10 @@ impl DiskAnnIndex {
 
         file.sync_all().await.map_err(MemFuseError::Io)?;
 
-        // SAFETY: Mapping a file that we just wrote and synced is safe as long as the file is not
-        // truncated or modified concurrently while mapped. Since this is an embedded database
-        // with exclusive file locks (managed by storage/LSM), this is safe.
+        // ANCHOR:SAFETY:MMAP-DANN-001 AGENT:10 STATUS:REVIEW
+        // BEGRÜNDUNG: DiskANN-Indexdateien sind nach der Erstellung unveränderlich.
+        // Das Mappen einer frisch gesyncten Datei ist sicher, da exklusive Locks
+        // durch die Storage-Layer (LSM) gehalten werden.
         let std_file = file.into_std().await;
         self.mmap = Some(unsafe { Mmap::map(&std_file).map_err(MemFuseError::Io)? });
         self.entry_point = 0;

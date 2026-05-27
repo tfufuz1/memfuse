@@ -416,7 +416,7 @@ impl StorageEngine for LsmStorage {
                 doc_id,
                 data: (key.to_vec(), value.to_vec()),
             },
-        );
+        )?;
         Ok(())
     }
 
@@ -434,7 +434,7 @@ impl StorageEngine for LsmStorage {
                 doc_id,
                 data: Some((key.to_vec(), Vec::new())),
             },
-        );
+        )?;
         Ok(())
     }
 
@@ -511,7 +511,7 @@ impl StorageEngine for LsmStorage {
     }
 
     async fn rollback(&self, tx_id: TxId) -> Result<()> {
-        self.tx_buffer.discard(tx_id);
+        self.tx_buffer.discard(tx_id)?;
         Ok(())
     }
 

@@ -76,6 +76,7 @@ impl<T: Clone> TxBuffer<T> {
 
     /// Creates a new buffer with custom settings.
     pub fn new_with_config(shard_count: usize, tx_timeout: Duration) -> Self {
+        assert!(shard_count > 0, "shard_count must be greater than zero");
         let mut shards = Vec::with_capacity(shard_count);
         for _ in 0..shard_count {
             shards.push(RwLock::new(TxShard::new()));
@@ -94,42 +95,62 @@ impl<T: Clone> TxBuffer<T> {
 
     /// Checks if the given transaction exists in the buffer.
     pub fn has_tx(&self, tx: TxId) -> bool {
-        // ANCHOR:SEC:SLICE-001 — Slice-Indexing — sicher weil shard_idx = modulo len()
+        // ANCHOR:SEC:SLICE-001 — Slice-Indexing
         // WP:WP-0.0 PRIO:5 NEEDS:NONE
-        // AGENT:10 DATE:2026-05-09 STATUS:DONE
-        // CREATED:2026-05-09 DEADLINE:NONE
-        let shard = &self.shards[self.shard_idx(tx)];
+        // AGENT:10 DATE:2026-05-09 STATUS:REVIEW
+        // BEGRÜNDUNG: shard_idx wird via Modulo berechnet und ist sicher.
+        let shard = match self.shards.get(self.shard_idx(tx)) {
+            Some(s) => s,
+            None => return false,
+        };
         shard.read().ops.contains_key(&tx)
     }
 
     /// Registers a new transaction in the buffer.
-    pub fn begin(&self, tx: TxId) {
+    pub fn begin(&self, tx: TxId) -> Result<()> {
         let shard_idx = self.shard_idx(tx);
-        let mut shard = self.shards[shard_idx].write();
+        // ANCHOR:SEC:SLICE-004 AGENT:10 STATUS:REVIEW
+        let mut shard = self
+            .shards
+            .get(shard_idx)
+            .ok_or_else(|| MemFuseError::Transaction("Shard index out of bounds".into()))?
+            .write();
         shard
             .ops
             .entry(tx)
             .or_insert_with(|| (Vec::with_capacity(16), Instant::now()));
+        Ok(())
     }
 
     /// Stages an operation for the given transaction.
     ///
     /// If the transaction has not been explicitly started with `begin`,
     /// it will be implicitly created on the first `stage` call.
-    pub fn stage(&self, tx: TxId, op: IndexOp<T>) {
+    pub fn stage(&self, tx: TxId, op: IndexOp<T>) -> Result<()> {
         let shard_idx = self.shard_idx(tx);
-        let mut shard = self.shards[shard_idx].write();
+        // ANCHOR:SEC:SLICE-005 AGENT:10 STATUS:REVIEW
+        let mut shard = self
+            .shards
+            .get(shard_idx)
+            .ok_or_else(|| MemFuseError::Transaction("Shard index out of bounds".into()))?
+            .write();
         let entry = shard
             .ops
             .entry(tx)
             .or_insert_with(|| (Vec::with_capacity(16), Instant::now()));
         entry.0.push(op);
+        Ok(())
     }
 
     /// Validates that the transaction has pending operations.
     pub fn validate_pending_ops(&self, tx: TxId) -> Result<()> {
         let shard_idx = self.shard_idx(tx);
-        let shard = self.shards[shard_idx].read();
+        // ANCHOR:SEC:SLICE-006 AGENT:10 STATUS:REVIEW
+        let shard = self
+            .shards
+            .get(shard_idx)
+            .ok_or_else(|| MemFuseError::Transaction("Shard index out of bounds".into()))?
+            .read();
 
         if let Some((ops, _)) = shard.ops.get(&tx) {
             if ops.is_empty() {
@@ -148,7 +169,11 @@ impl<T: Clone> TxBuffer<T> {
     /// This operation is atomic per shard.
     pub fn drain(&self, tx: TxId) -> Vec<IndexOp<T>> {
         let shard_idx = self.shard_idx(tx);
-        let mut shard = self.shards[shard_idx].write();
+        // ANCHOR:SEC:SLICE-007 AGENT:10 STATUS:REVIEW
+        let mut shard = match self.shards.get(shard_idx) {
+            Some(s) => s.write(),
+            None => return Vec::new(),
+        };
         shard
             .ops
             .remove(&tx)
@@ -157,10 +182,16 @@ impl<T: Clone> TxBuffer<T> {
     }
 
     /// Discards all buffered operations for a transaction.
-    pub fn discard(&self, tx: TxId) {
+    pub fn discard(&self, tx: TxId) -> Result<()> {
         let shard_idx = self.shard_idx(tx);
-        let mut shard = self.shards[shard_idx].write();
+        // ANCHOR:SEC:SLICE-008 AGENT:10 STATUS:REVIEW
+        let mut shard = self
+            .shards
+            .get(shard_idx)
+            .ok_or_else(|| MemFuseError::Transaction("Shard index out of bounds".into()))?
+            .write();
         shard.ops.remove(&tx);
+        Ok(())
     }
 
     /// Returns the total number of pending transactions.
@@ -193,7 +224,8 @@ impl<T: Clone> TxBuffer<T> {
     /// Returns a clone of the pending operations for a transaction.
     pub fn get_ops(&self, tx: TxId) -> Option<Vec<IndexOp<T>>> {
         let shard_idx = self.shard_idx(tx);
-        let shard = self.shards[shard_idx].read();
+        // ANCHOR:SEC:SLICE-009 AGENT:10 STATUS:REVIEW
+        let shard = self.shards.get(shard_idx)?.read();
         shard.ops.get(&tx).map(|(ops, _)| ops.clone())
     }
 }
@@ -259,20 +291,24 @@ mod tests {
         let buffer = TxBuffer::<String>::new_with_config(64, Duration::from_secs(30));
         let tx = TxId::new(1);
 
-        buffer.stage(
-            tx,
-            IndexOp::Insert {
-                doc_id: DocId::new(1),
-                data: "data1".to_string(),
-            },
-        );
-        buffer.stage(
-            tx,
-            IndexOp::Insert {
-                doc_id: DocId::new(2),
-                data: "data2".to_string(),
-            },
-        );
+        buffer
+            .stage(
+                tx,
+                IndexOp::Insert {
+                    doc_id: DocId::new(1),
+                    data: "data1".to_string(),
+                },
+            )
+            .unwrap();
+        buffer
+            .stage(
+                tx,
+                IndexOp::Insert {
+                    doc_id: DocId::new(2),
+                    data: "data2".to_string(),
+                },
+            )
+            .unwrap();
 
         assert!(!buffer.is_empty());
 
@@ -286,14 +322,16 @@ mod tests {
         let buffer = TxBuffer::<String>::new_with_config(64, Duration::from_secs(30));
         let tx = TxId::new(1);
 
-        buffer.stage(
-            tx,
-            IndexOp::Insert {
-                doc_id: DocId::new(1),
-                data: "data1".to_string(),
-            },
-        );
-        buffer.discard(tx);
+        buffer
+            .stage(
+                tx,
+                IndexOp::Insert {
+                    doc_id: DocId::new(1),
+                    data: "data1".to_string(),
+                },
+            )
+            .unwrap();
+        buffer.discard(tx).unwrap();
         assert!(buffer.is_empty());
     }
 
@@ -305,14 +343,16 @@ mod tests {
         ));
         let tx1 = TxId::new(1);
 
-        buffer.begin(tx1);
-        buffer.stage(
-            tx1,
-            IndexOp::Insert {
-                doc_id: DocId::new(1),
-                data: "old".to_string(),
-            },
-        );
+        buffer.begin(tx1).unwrap();
+        buffer
+            .stage(
+                tx1,
+                IndexOp::Insert {
+                    doc_id: DocId::new(1),
+                    data: "old".to_string(),
+                },
+            )
+            .unwrap();
 
         let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10));
         assert!(buffer.has_tx(tx1));
@@ -334,15 +374,17 @@ mod tests {
             let buffer = buffer.clone();
             handles.push(tokio::spawn(async move {
                 let tx = TxId::new(t as u64);
-                buffer.begin(tx);
+                buffer.begin(tx).unwrap();
                 for i in 0..ops_per_tx {
-                    buffer.stage(
-                        tx,
-                        IndexOp::Insert {
-                            doc_id: DocId::new(i as u64),
-                            data: i,
-                        },
-                    );
+                    buffer
+                        .stage(
+                            tx,
+                            IndexOp::Insert {
+                                doc_id: DocId::new(i as u64),
+                                data: i,
+                            },
+                        )
+                        .unwrap();
                 }
             }));
         }

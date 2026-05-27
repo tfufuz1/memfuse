@@ -155,7 +155,10 @@ impl Collection {
                 Err(_) => continue, // Skip invalid entries
             };
 
-            let doc_id = DocId::from_string(&stored.id);
+            let doc_id = match DocId::from_key(&stored.id) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
 
             // Check if present in index
             // We use k=1 search to check presence (if we find it with distance 0, it's there)
@@ -555,8 +558,12 @@ impl Collection {
             } else {
                 // Strip the internal prefix: self.prefix (variable) + 1 byte (key_type)
                 let prefix_len = self.prefix.len() + 1;
-                if key_str.len() >= prefix_len {
-                    key_str[prefix_len..].to_string()
+                // ANCHOR:SEC:SLICE-010 AGENT:10 STATUS:REVIEW
+                // Safe slicing by checking boundary and char boundaries.
+                // Since the prefix is generated via `format!` or fixed bytes,
+                // and DocId is le_bytes, we must slice the raw bytes `k` first.
+                if k.len() >= prefix_len {
+                    String::from_utf8_lossy(&k[prefix_len..]).to_string()
                 } else {
                     key_str
                 }
@@ -817,8 +824,10 @@ impl Collection {
                 key_str
             } else {
                 let prefix_len = self.prefix.len() + 1;
-                if key_str.len() >= prefix_len {
-                    key_str[prefix_len..].to_string()
+                // ANCHOR:SEC:SLICE-011 AGENT:10 STATUS:REVIEW
+                // Safe byte slicing before converting to string to avoid char boundary panics.
+                if k.len() >= prefix_len {
+                    String::from_utf8_lossy(&k[prefix_len..]).to_string()
                 } else {
                     key_str
                 }
