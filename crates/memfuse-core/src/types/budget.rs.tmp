@@ -1,0 +1,6 @@
+        let result = tracker.consume_memory(200);
+
+        assert!(result.is_err());
+        let err = result.err().unwrap(); // unwrap allowed (AGENT:10)
+        match err {
+            MemFuseError::MemoryBudgetExceeded { limit_mb, .. } => {
