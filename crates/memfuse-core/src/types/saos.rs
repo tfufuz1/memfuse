@@ -1,3 +1,5 @@
+//! Search and Orchestration Signals (SAOS) types.
+
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
@@ -78,6 +80,8 @@ impl FusionWeights {
             metadata,
         })
     }
+
+    // ANCHOR:DEBT AGENT:01 STATUS:READY PRIO:3 — Move weights validation to a separate validator for reuse.
 
     pub fn vector(&self) -> f32 {
         self.vector

@@ -1,3 +1,5 @@
+//! Core type modules.
+
 pub mod budget;
 pub mod domain;
 pub mod filter;

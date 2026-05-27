@@ -1,3 +1,5 @@
+//! Resource budget and tracking for memory management.
+
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.
@@ -90,6 +92,7 @@ impl ResourceTracker {
 }
 
 // ANCHOR:AUDIT:FIXED — Resource Tracker (Memory Budget & Backpressure) verified by 5 tests.
+// ANCHOR:DEBT — Consider adding checked memory release if bytes > used. AGENT:01 STATUS:READY PRIO:3
 // STATUS:DONE (Audited 2026-05-23)
 #[cfg(test)]
 mod tests {

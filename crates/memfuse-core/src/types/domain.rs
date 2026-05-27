@@ -1,3 +1,5 @@
+//! Domain-specific identifiers and core types.
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +37,11 @@ impl DocId {
 
     pub fn from_key(key: &str) -> Result<Self> {
         Self::try_from_key(key)
+    }
+
+    pub fn from_string(s: &str) -> Self {
+        // unwrap: This is used by internal DB hydration where keys are guaranteed to be valid
+        Self::try_from_key(s).unwrap()
     }
 
     pub fn try_from_key(key: &str) -> Result<Self> {
