@@ -48,6 +48,25 @@ impl InvertedIndex {
         }
     }
 
+    /// Creates a new InvertedIndex with a specific tokenizer.
+    pub fn with_tokenizer(
+        storage: Arc<dyn StorageEngine>,
+        namespace: &str,
+        tokenizer: Arc<dyn Tokenizer>,
+    ) -> Self {
+        let prefix = if namespace == "default" {
+            b"__txt:default:".to_vec()
+        } else {
+            format!("__txt:{}:", namespace).into_bytes()
+        };
+
+        Self {
+            storage,
+            prefix,
+            tokenizer,
+        }
+    }
+
     fn key(&self, suffix: &str) -> Vec<u8> {
         let mut k = Vec::with_capacity(self.prefix.len() + suffix.len());
         k.extend_from_slice(&self.prefix);
@@ -467,8 +486,9 @@ impl BM25MorphIndex {
         namespace: &str,
         tokenizer: Arc<dyn MorphologicalTokenizer>,
     ) -> Self {
+        let morph_tokenizer = Arc::new(GermanMorphTokenizer::with_splitter(tokenizer.clone()));
         Self {
-            inner: InvertedIndex::new(storage, namespace),
+            inner: InvertedIndex::with_tokenizer(storage, namespace, morph_tokenizer),
             tokenizer,
         }
     }
@@ -773,6 +793,48 @@ mod tests {
 
         let stats_after = index.stats().await?;
         assert_eq!(stats_after.num_documents, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_bm25_morph_index_uses_custom_splitter() -> Result<()> {
+        struct CustomSplitter;
+        impl MorphologicalTokenizer for CustomSplitter {
+            fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
+                if token == "supercalifragilistic" {
+                    vec!["super", "cali", "fragilistic"]
+                } else {
+                    vec![token]
+                }
+            }
+            fn language(&self) -> &str {
+                "custom"
+            }
+        }
+
+        let storage = Arc::new(MockStorage::new());
+        let morph_index = BM25MorphIndex::new(
+            storage.clone(),
+            "morph_test",
+            Arc::new(CustomSplitter),
+        );
+
+        let tx = TxId::new(1);
+        let doc_id = DocId::new(1);
+        morph_index.insert(tx, doc_id, "supercalifragilistic").await?;
+        morph_index.commit(tx).await?;
+
+        // Should find by components
+        let res1 = morph_index.search("super", 10).await?;
+        assert_eq!(res1.len(), 1);
+
+        let res2 = morph_index.search("fragilistic", 10).await?;
+        assert_eq!(res2.len(), 1);
+
+        // Should also find by original if the tokenizer kept it (ours didn't, but let's check)
+        let res3 = morph_index.search("supercalifragilistic", 10).await?;
+        assert_eq!(res3.len(), 1);
 
         Ok(())
     }

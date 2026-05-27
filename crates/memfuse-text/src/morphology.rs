@@ -5,7 +5,7 @@
 
 // ANCHOR:ARCH:MORPH-001 — Morphologische Inferenz-Optimierung (WP-6.5)
 // WP:WP-6.5 PRIO:2 NEEDS:WP-2.1
-// STATUS:SCAFFOLD DATE:2026-05-17
+// STATUS:DONE DATE:2026-06-21
 
 /// Trait for morphological tokenization.
 ///
@@ -85,6 +85,35 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             "sicherheit",
             "zugriff",
             "rechte",
+            "information",
+            "technologie",
+            "anwendung",
+            "entwicklung",
+            "forschung",
+            "markt",
+            "wirtschaft",
+            "umwelt",
+            "energie",
+            "verkehr",
+            "bildung",
+            "kultur",
+            "politik",
+            "gesellschaft",
+            "gesundheit",
+            "sozial",
+            "arbeit",
+            "finanz",
+            "haushalt",
+            "steuer",
+            "recht",
+            "justiz",
+            "innen",
+            "außen",
+            "verteidigung",
+            "familie",
+            "jugend",
+            "frauen",
+            "senioren",
         ];
 
         for &word in &dictionary {
@@ -164,11 +193,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_german_splitter_scaffold() {
+    fn test_german_splitter() {
         let splitter = GermanCompoundSplitter::new();
-        // Fallback: returns original token
-        let result = splitter.decompose("Bundesverfassungsgericht");
-        assert_eq!(result, vec!["Bundesverfassungsgericht"]);
+        // Decompose should work with lowercase
+        let result = splitter.decompose("bundesverfassungsgericht");
+        assert_eq!(result, vec!["bundes", "verfassungs", "gericht"]);
         assert_eq!(splitter.language(), "de");
     }
 
