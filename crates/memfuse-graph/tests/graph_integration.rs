@@ -16,22 +16,38 @@ async fn test_graph_diamond_topology_score_decay() {
     //    \     /
     //      (3)
 
-    let entities = vec![
-        (1, "A"), (2, "B"), (3, "C"), (4, "D")
-    ];
+    let entities = vec![(1, "A"), (2, "B"), (3, "C"), (4, "D")];
 
     for (id, name) in entities {
-        graph.add_entity(tx, Entity::new(EntityId::new(id), name, "Node")).await.unwrap();
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(id), name, "Node"))
+            .await
+            .unwrap();
     }
 
     // Edges
-    graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "link")).await.unwrap();
-    graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(3), "link")).await.unwrap();
-    graph.add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(4), "link")).await.unwrap();
-    graph.add_edge(tx, Edge::new(EntityId::new(3), EntityId::new(4), "link")).await.unwrap();
+    graph
+        .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "link"))
+        .await
+        .unwrap();
+    graph
+        .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(3), "link"))
+        .await
+        .unwrap();
+    graph
+        .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(4), "link"))
+        .await
+        .unwrap();
+    graph
+        .add_edge(tx, Edge::new(EntityId::new(3), EntityId::new(4), "link"))
+        .await
+        .unwrap();
 
     // Traverse from 1
-    let results = graph.traverse(EntityId::new(1), 2).await.expect("traverse failed");
+    let results = graph
+        .traverse(EntityId::new(1), 2)
+        .await
+        .expect("traverse failed");
 
     // Should find 2, 3, 4
     assert_eq!(results.len(), 3);
@@ -56,15 +72,33 @@ async fn test_graph_cycle_integrity() {
 
     // Cycle: 1 -> 2 -> 3 -> 1
     for id in 1..=3 {
-        graph.add_entity(tx, Entity::new(EntityId::new(id), format!("N{}", id), "Node")).await.unwrap();
+        graph
+            .add_entity(
+                tx,
+                Entity::new(EntityId::new(id), format!("N{}", id), "Node"),
+            )
+            .await
+            .unwrap();
     }
 
-    graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "next")).await.unwrap();
-    graph.add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(3), "next")).await.unwrap();
-    graph.add_edge(tx, Edge::new(EntityId::new(3), EntityId::new(1), "next")).await.unwrap();
+    graph
+        .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "next"))
+        .await
+        .unwrap();
+    graph
+        .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(3), "next"))
+        .await
+        .unwrap();
+    graph
+        .add_edge(tx, Edge::new(EntityId::new(3), EntityId::new(1), "next"))
+        .await
+        .unwrap();
 
     // Traverse from 1 with high max_hops
-    let results = graph.traverse(EntityId::new(1), 10).await.expect("traverse failed");
+    let results = graph
+        .traverse(EntityId::new(1), 10)
+        .await
+        .expect("traverse failed");
 
     // Should only contain 2 and 3 (start node 1 is excluded)
     assert_eq!(results.len(), 2);
@@ -77,9 +111,18 @@ async fn test_graph_stats_e2e() {
     let graph = CsrGraph::new();
     let tx = TxId::new(1);
 
-    graph.add_entity(tx, Entity::new(EntityId::new(1), "A", "T")).await.unwrap();
-    graph.add_entity(tx, Entity::new(EntityId::new(2), "B", "T")).await.unwrap();
-    graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "E")).await.unwrap();
+    graph
+        .add_entity(tx, Entity::new(EntityId::new(1), "A", "T"))
+        .await
+        .unwrap();
+    graph
+        .add_entity(tx, Entity::new(EntityId::new(2), "B", "T"))
+        .await
+        .unwrap();
+    graph
+        .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "E"))
+        .await
+        .unwrap();
 
     let stats = graph.stats().await.expect("stats failed");
     assert_eq!(stats.num_entities, 2);

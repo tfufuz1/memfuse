@@ -48,7 +48,10 @@ async fn test_checkpoint_manager_lsm_integration() {
     assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec()));
 
     // 5. Verify time-travel (reading from checkpoint seq_no)
-    assert_eq!(storage.get_at_seq(b"key1", last_seq).await.unwrap(), Some(b"val1".to_vec()));
+    assert_eq!(
+        storage.get_at_seq(b"key1", last_seq).await.unwrap(),
+        Some(b"val1".to_vec())
+    );
     assert_eq!(storage.get_at_seq(b"key2", last_seq).await.unwrap(), None);
 
     // 6. Delete checkpoint and verify unpinning (indirectly by checking if we can still list it)
