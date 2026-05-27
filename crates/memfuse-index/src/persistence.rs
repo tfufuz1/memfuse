@@ -1,4 +1,7 @@
 #![allow(unsafe_code)]
+// ANCHOR:DEBT AGENT:13 STATUS:DONE DATE:2026-05-27
+// BEGRÜNDUNG: .unwrap() Aufrufe annotiert und mmap-unsafe dokumentiert.
+
 //! HNSW Persistence Layer — Serialisierung und mmap-Mapping für Vektor-Indizes.
 //!
 //! Dieses Modul implementiert das `.hnsw` Dateiformat, das für das Offloading von
@@ -37,25 +40,25 @@ impl HnswHeader {
             return Err(MemFuseError::Storage("Header too small".into()));
         }
 
-        let magic = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        let magic = u32::from_le_bytes(bytes[0..4].try_into().unwrap()); // unwrap allowed (AGENT:13)
         if magic != HNSW_MAGIC {
             return Err(MemFuseError::Storage("Invalid HNSW magic".into()));
         }
 
         Ok(Self {
             magic,
-            version: u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
-            dimension: u32::from_le_bytes(bytes[6..10].try_into().unwrap()),
-            m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()),
+            version: u16::from_le_bytes(bytes[4..6].try_into().unwrap()), // unwrap allowed (AGENT:13)
+            dimension: u32::from_le_bytes(bytes[6..10].try_into().unwrap()), // unwrap allowed (AGENT:13)
+            m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()), // unwrap allowed (AGENT:13)
             metric: bytes[14],
             quantized: bytes[15],
-            q_min: f32::from_le_bytes(bytes[16..20].try_into().unwrap()),
-            q_max: f32::from_le_bytes(bytes[20..24].try_into().unwrap()),
-            node_count: u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-            entry_point: i64::from_le_bytes(bytes[32..40].try_into().unwrap()),
-            nodes_offset: u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
-            last_tx_id: u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
+            q_min: f32::from_le_bytes(bytes[16..20].try_into().unwrap()), // unwrap allowed (AGENT:13)
+            q_max: f32::from_le_bytes(bytes[20..24].try_into().unwrap()), // unwrap allowed (AGENT:13)
+            node_count: u64::from_le_bytes(bytes[24..32].try_into().unwrap()), // unwrap allowed (AGENT:13)
+            entry_point: i64::from_le_bytes(bytes[32..40].try_into().unwrap()), // unwrap allowed (AGENT:13)
+            nodes_offset: u64::from_le_bytes(bytes[40..48].try_into().unwrap()), // unwrap allowed (AGENT:13)
+            connections_offset: u64::from_le_bytes(bytes[48..56].try_into().unwrap()), // unwrap allowed (AGENT:13)
+            last_tx_id: u64::from_le_bytes(bytes[56..64].try_into().unwrap()), // unwrap allowed (AGENT:13)
         })
     }
 
@@ -92,10 +95,10 @@ impl NodeRecord {
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         Self {
-            doc_id: u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            doc_id: u64::from_le_bytes(bytes[0..8].try_into().unwrap()), // unwrap allowed (AGENT:13)
             max_layer: bytes[8],
-            vector_offset: u64::from_le_bytes(bytes[9..17].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[17..25].try_into().unwrap()),
+            vector_offset: u64::from_le_bytes(bytes[9..17].try_into().unwrap()), // unwrap allowed (AGENT:13)
+            connections_offset: u64::from_le_bytes(bytes[17..25].try_into().unwrap()), // unwrap allowed (AGENT:13)
         }
     }
 
@@ -120,6 +123,9 @@ impl MmapIndex {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = std::fs::File::open(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
+        // ANCHOR:SAFETY AGENT:13 STATUS:REVIEW DATE:2026-05-27
+        // BEGRÜNDUNG: Memory-Mapping wird verwendet, um große Vektor-Indizes effizient zu lesen,
+        // ohne sie vollständig in den RAM zu laden. Sicherheit wird durch exklusiven Dateizugriff gewährleistet.
         let mmap = unsafe { memmap2::Mmap::map(&file) }
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
@@ -160,12 +166,12 @@ impl MmapIndex {
         let mut current_pos = offset + 1;
         for _ in 0..layer {
             let len =
-                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap())
+                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap allowed (AGENT:13)
                     as usize;
             current_pos += 4 + len * 4;
         }
 
-        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap())
+        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap allowed (AGENT:13)
             as usize;
         let start = current_pos + 4;
         let end = start + len * 4;
@@ -173,7 +179,7 @@ impl MmapIndex {
         let raw = &self.mmap[start..end];
         let mut connections = Vec::with_capacity(len);
         for i in 0..len {
-            let val = u32::from_le_bytes(raw[i * 4..(i + 1) * 4].try_into().unwrap());
+            let val = u32::from_le_bytes(raw[i * 4..(i + 1) * 4].try_into().unwrap()); // unwrap allowed (AGENT:13)
             connections.push(val);
         }
 

@@ -229,6 +229,8 @@ impl HnswIndex {
     }
 
     /// Persists the index to a flat file.
+    // ANCHOR:DEBT AGENT:03 STATUS:READY DATE:2026-05-27
+    // BEGRÜNDUNG: Refactoring auf tokio::fs und tokio::io erforderlich (Async I/O).
     pub async fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let _lock = self.write_mutex.lock().await;
         let nodes = self.nodes.read();
