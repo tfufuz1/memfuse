@@ -155,7 +155,7 @@ impl Collection {
                 Err(_) => continue, // Skip invalid entries
             };
 
-            let doc_id = DocId::from_string(&stored.id);
+            let doc_id = DocId::from_key(&stored.id)?;
 
             // Check if present in index
             // We use k=1 search to check presence (if we find it with distance 0, it's there)
@@ -616,7 +616,7 @@ impl Collection {
             let oversample = (k * 10).min(total_docs).max(k);
             let scored_docs = self.index.search_filtered(query, oversample, None).await?;
 
-            let mut results = Vec::new();
+            let mut results = Vec::with_capacity(k);
             for sd in scored_docs {
                 let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
                 if let Some(bytes) = self.storage.get(&doc_key).await? {
