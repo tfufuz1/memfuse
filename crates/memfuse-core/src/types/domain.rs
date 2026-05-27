@@ -33,11 +33,6 @@ impl DocId {
         self.0
     }
 
-    /// Deprecated: Use `from_key`. Maintained for backwards compatibility in repair loops.
-    pub fn from_string(key: &str) -> Self {
-        Self::from_key(key).unwrap_or(Self(0)) // unwrap
-    }
-
     pub fn from_key(key: &str) -> Result<Self> {
         Self::try_from_key(key)
     }
