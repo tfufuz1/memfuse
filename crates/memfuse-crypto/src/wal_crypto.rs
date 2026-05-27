@@ -143,7 +143,7 @@ mod tests {
             prev_hmac: [0u8; 32],
         };
 
-        verifier.verify_and_update(&e1).expect("e1 valid");
+        verifier.verify_and_update(&e1).expect("e1 valid"); // unwrap allowed
 
         // entry 2
         let mut hmac2 = WalHmac::new(key).unwrap(); // unwrap allowed
@@ -162,7 +162,7 @@ mod tests {
             prev_hmac: checksum1,
         };
 
-        verifier.verify_and_update(&e2).expect("e2 valid");
+        verifier.verify_and_update(&e2).expect("e2 valid"); // unwrap allowed
 
         // entry 3 (corrupt)
         let e3 = WalEntrySnapshot {

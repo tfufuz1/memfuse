@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn test_fusion_weights_valid() {
-        let w = FusionWeights::new(0.5, 0.5, 0.0, 0.0).expect("valid");
+        let w = FusionWeights::new(0.5, 0.5, 0.0, 0.0).expect("valid"); // unwrap allowed
         assert_eq!(w.vector(), 0.5);
         assert_eq!(w.text(), 0.5);
     }
@@ -233,7 +233,7 @@ mod tests {
             .with_vector_query(vec![0.1, 0.2])
             .with_k(5)
             .build()
-            .expect("build ok");
+            .expect("build ok"); // unwrap allowed
 
         assert_eq!(query.text_query.unwrap(), "test query"); // unwrap allowed
         assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]); // unwrap allowed
