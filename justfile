@@ -64,8 +64,8 @@ dag-check:
     set -euo pipefail
     echo "=== DAG Integrity Check ==="
 
-    echo "--- Phase 1: L1 Kernel Isolation (core, sandbox, saos-agent) ---"
-    for CRATE in memfuse-core memfuse-sandbox memfuse-saos-agent; do
+    echo "--- Phase 1: L1 Kernel Isolation (core, sandbox) ---"
+    for CRATE in memfuse-core memfuse-sandbox; do
         echo "Verifying $CRATE isolation..."
         if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -E -v "$CRATE|memfuse-core" | grep -q .; then
             echo "❌ ERROR: $CRATE imports forbidden internal crates."
@@ -114,17 +114,23 @@ dag-check:
 
     echo "--- Phase 3: L3 Orchestration Isolation (db) ---"
     echo "Verifying memfuse-db..."
-    if cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py|memfuse-sandbox|memfuse-saos-agent"; then
+    if cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py|memfuse-saos-agent"; then
         echo "❌ ERROR: memfuse-db imports higher layers."
-        cargo tree -p memfuse-db --edges no-dev | grep -E "memfuse-py|memfuse-sandbox|memfuse-saos-agent"
+        cargo tree -p memfuse-db --edges no-dev | grep -E "memfuse-py|memfuse-saos-agent"
         exit 1
     fi
 
-    echo "--- Phase 4: L4 Bindings Isolation (py) ---"
+    echo "--- Phase 4: L4 App/Bindings Isolation (py, saos-agent) ---"
     echo "Verifying memfuse-py..."
-    if cargo tree -p memfuse-py --edges no-dev | grep -E -q "memfuse-sandbox|memfuse-saos-agent"; then
+    if cargo tree -p memfuse-py --edges no-dev | grep -E -q "memfuse-sandbox"; then
         echo "❌ ERROR: memfuse-py violates isolation by importing L1 Kernel crates."
-        cargo tree -p memfuse-py --edges no-dev | grep -E "memfuse-sandbox|memfuse-saos-agent"
+        cargo tree -p memfuse-py --edges no-dev | grep -E "memfuse-sandbox"
+        exit 1
+    fi
+    echo "Verifying memfuse-saos-agent..."
+    if cargo tree -p memfuse-saos-agent --edges no-dev | grep -E -q "memfuse-py"; then
+        echo "❌ ERROR: memfuse-saos-agent violates isolation by importing L4 Bindings."
+        cargo tree -p memfuse-saos-agent --edges no-dev | grep -E "memfuse-py"
         exit 1
     fi
 
