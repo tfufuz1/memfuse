@@ -503,10 +503,11 @@ impl MemFuse {
         text: &str,
         vector: &[f32],
         k: usize,
+        filter: Option<MetadataFilter>,
     ) -> Result<Vec<SearchResult>> {
         self.default_col()
             .await?
-            .hybrid_search(text, vector, k)
+            .hybrid_search(text, vector, k, filter)
             .await
     }
 
@@ -552,6 +553,20 @@ impl MemFuse {
             storage_stats: self.storage.stats().await?,
         })
     }
+
+    /// Repairs all active and persisted collections.
+    ///
+    /// This re-syncs the HNSW indices with the LSM storage to ensure consistency
+    /// after a crash or for general maintenance.
+    pub async fn repair(&self) -> Result<()> {
+        let collections = self.list_collections().await?;
+        for name in collections {
+            let col = self.collection(&name).await?;
+            col.repair().await?;
+        }
+        Ok(())
+    }
+
     /// Flushes all pending writes to disk.
     ///
     /// This ensures that the WAL is synced and memtables are persisted as SSTables.

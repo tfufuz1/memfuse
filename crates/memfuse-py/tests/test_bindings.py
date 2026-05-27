@@ -115,9 +115,6 @@ def test_relationships_and_scanning(db_path):
     col.relate("a", "b", "friend")
 
     # scan_prefix for relations
-    # Note: internal prefixing might be visible or stripped depending on implementation
-    # The Rust side for collection prepends __col:{name}:\x00
-    # But scan_prefix in Collection handles it.
     rels = col.scan_prefix("__rel:a:friend:")
     assert len(rels) == 1
     assert rels[0][1]["to"] == "b"
@@ -128,8 +125,6 @@ def test_relationships_and_scanning(db_path):
 
     # Scan all
     all_docs = db.scan()
-    # db.scan() on default collection sees EVERYTHING because it has no prefix.
-    # We just check that our keys are in there.
     doc_ids = [k for k, v in all_docs]
     assert "x" in doc_ids
     assert "y" in doc_ids
@@ -166,7 +161,7 @@ def test_encryption_at_rest(tmp_path):
     v = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
     col.insert("k1", v, metadata={"secret": "data"})
 
-    # Close by deleting object (though it doesn't strictly close the file until dropped)
+    # Close by deleting object
     del col
     del db
 
@@ -177,8 +172,7 @@ def test_encryption_at_rest(tmp_path):
     assert doc is not None
     assert doc.metadata["secret"] == "data"
 
-    # Re-open with WRONG passphrase should fail to decrypt or at least fail to verify integrity
-    # LsmStorage::new tries to open WAL which will fail integrity check or decryption
+    # Re-open with WRONG passphrase should fail
     with pytest.raises(Exception):
          memfuse.open(path, dimension=4, encryption_passphrase="wrong-password")
 
@@ -188,9 +182,6 @@ def test_distance_metrics(db_path):
     col = db_l2.collection("test")
     v1 = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
     col.insert("v1", v1)
-    # Search with exact same vector, should have score 0.0 (distance) or 1.0 (similarity)
-    # Actually HNSW usually returns distance. In memfuse-db SearchResult it is called "score".
-    # For Cosine it is 1.0 - cosine_dist.
     results = col.search(v1, k=1)
     assert results[0].id == "v1"
 
@@ -205,8 +196,37 @@ def test_distance_metrics(db_path):
     with pytest.raises(ValueError):
         memfuse.open(db_path + "_invalid", dimension=4, distance_metric="invalid")
 
+def test_filtering(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    v = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    db.insert("d1", v, metadata={"type": "A", "val": 1})
+    db.insert("d2", v, metadata={"type": "B", "val": 2})
+
+    # Search with filter
+    res = db.search(v, k=10, filter={"type": "A"})
+    assert len(res) == 1
+    assert res[0].id == "d1"
+
+    res = db.search(v, k=10, filter={"val": 2})
+    assert len(res) == 1
+    assert res[0].id == "d2"
+
+    # Hybrid search with filter
+    res = db.hybrid_search("", v, k=10, filter={"type": "B"})
+    assert len(res) == 1
+    assert res[0].id == "d2"
+
+def test_repair(db_path):
+    db = memfuse.open(db_path, dimension=4)
+    v = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    db.insert("d1", v)
+
+    # Just call it to ensure no panic/error
+    db.repair()
+    db.collection("default").repair()
+
 def test_version_and_repr(db_path):
-    assert memfuse.__version__ == "0.1.0"
+    assert memfuse.__version__ == "0.2.0"
 
     db = memfuse.open(db_path, dimension=4, max_elements=5000)
     col = db.collection("repr_test")
@@ -226,4 +246,4 @@ def test_version_and_repr(db_path):
     assert "VectorIndexStats(num_vectors=1" in repr(stats)
 
     db_stats = db.stats()
-    assert "DbStats(vectors=0" in repr(db_stats) # default col is empty
+    assert "DbStats(vectors=0" in repr(db_stats)

@@ -728,22 +728,30 @@ impl Collection {
         text: &str,
         vector: &[f32],
         k: usize,
+        filter: Option<MetadataFilter>,
     ) -> Result<Vec<crate::SearchResult>> {
         let is_vector_zero = vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
 
         match (is_text_empty, is_vector_zero) {
             (true, true) => Ok(Vec::new()),
-            (true, false) => self.search(vector, k).await,
+            (true, false) => self.search_with_filter(vector, k, filter).await,
             (false, is_v_zero) => {
                 let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let text_results = self.hydrate_from_tuples(bm25_results).await?;
+                let mut text_results = self.hydrate_from_tuples(bm25_results).await?;
+
+                // Apply filter to text results if present
+                if let Some(ref f) = filter {
+                    text_results.retain(|r| {
+                        f.matches(r.metadata.as_ref().unwrap_or(&serde_json::Value::Null))
+                    });
+                }
 
                 if is_v_zero {
                     return Ok(text_results);
                 }
 
-                let vector_results = self.search(vector, k).await?;
+                let vector_results = self.search_with_filter(vector, k, filter).await?;
                 Ok(crate::fusion::reciprocal_rank_fusion(
                     vec![vector_results, text_results],
                     k,

@@ -37,6 +37,11 @@ impl DocId {
         Self::try_from_key(key)
     }
 
+    /// Helper for internal DB hydration that unwraps the Result.
+    pub fn from_string(s: &str) -> Self {
+        Self::from_key(s).unwrap()
+    }
+
     pub fn try_from_key(key: &str) -> Result<Self> {
         let hash = blake3::hash(key.as_bytes());
         let bytes = hash
