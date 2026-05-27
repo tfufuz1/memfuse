@@ -48,6 +48,25 @@ impl InvertedIndex {
         }
     }
 
+    /// Creates a new InvertedIndex with a custom tokenizer.
+    pub fn with_tokenizer(
+        storage: Arc<dyn StorageEngine>,
+        namespace: &str,
+        tokenizer: Arc<dyn Tokenizer>,
+    ) -> Self {
+        let prefix = if namespace == "default" {
+            b"__txt:default:".to_vec()
+        } else {
+            format!("__txt:{}:", namespace).into_bytes()
+        };
+
+        Self {
+            storage,
+            prefix,
+            tokenizer,
+        }
+    }
+
     fn key(&self, suffix: &str) -> Vec<u8> {
         let mut k = Vec::with_capacity(self.prefix.len() + suffix.len());
         k.extend_from_slice(&self.prefix);
@@ -467,14 +486,48 @@ impl BM25MorphIndex {
         namespace: &str,
         tokenizer: Arc<dyn MorphologicalTokenizer>,
     ) -> Self {
+        // Create a custom tokenizer that uses the provided MorphologicalTokenizer
+        let morph_tokenizer = Arc::new(MorphologicalWrapper {
+            splitter: tokenizer.clone(),
+        });
+
         Self {
-            inner: InvertedIndex::new(storage, namespace),
+            inner: InvertedIndex::with_tokenizer(storage, namespace, morph_tokenizer),
             tokenizer,
         }
     }
 
     pub fn tokenizer(&self) -> &dyn MorphologicalTokenizer {
         self.tokenizer.as_ref()
+    }
+}
+
+struct MorphologicalWrapper {
+    splitter: Arc<dyn MorphologicalTokenizer>,
+}
+
+impl Tokenizer for MorphologicalWrapper {
+    fn tokenize(&self, text: &str) -> Vec<String> {
+        let stopwords = crate::tokenizer::get_stopwords();
+        let mut tokens = Vec::new();
+        use unicode_segmentation::UnicodeSegmentation;
+
+        for word in text.unicode_words() {
+            let lower = word.to_lowercase();
+            if stopwords.contains(&lower) {
+                continue;
+            }
+
+            let components = self.splitter.decompose(&lower);
+            if components.len() > 1 {
+                let comp_strs: Vec<String> = components.iter().map(|s| s.to_string()).collect();
+                tokens.push(lower);
+                tokens.extend(comp_strs);
+            } else {
+                tokens.push(lower);
+            }
+        }
+        tokens
     }
 }
 
@@ -773,6 +826,34 @@ mod tests {
 
         let stats_after = index.stats().await?;
         assert_eq!(stats_after.num_documents, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_bm25_morph_index_propagation() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
+        use crate::morphology::GermanCompoundSplitter;
+        let storage = Arc::new(MockStorage::new());
+        let splitter = Arc::new(GermanCompoundSplitter::new());
+        let index = BM25MorphIndex::new(storage.clone(), "morph_test", splitter);
+
+        let tx = TxId::new(1);
+        let d1 = DocId::new(1);
+        // "Bundesverfassungsgericht" splits into [bundes, verfassungs, gericht]
+        index
+            .insert(tx, d1, "Das Bundesverfassungsgericht hat heute entschieden.")
+            .await?;
+        index.commit(tx).await?;
+
+        // Search for "gericht" should find it
+        let results = index.search("gericht", 10).await?;
+        assert_eq!(results.len(), 1, "Should find document by component 'gericht'");
+        assert_eq!(results[0].doc_id, d1);
+
+        // Search for "bundes" should also find it
+        let results = index.search("bundes", 10).await?;
+        assert_eq!(results.len(), 1, "Should find document by component 'bundes'");
 
         Ok(())
     }

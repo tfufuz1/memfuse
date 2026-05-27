@@ -6,7 +6,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 static STOPWORDS: OnceLock<HashSet<String>> = OnceLock::new();
 
-fn get_stopwords() -> &'static HashSet<String> {
+pub(crate) fn get_stopwords() -> &'static HashSet<String> {
     STOPWORDS.get_or_init(|| {
         let words = vec![
             "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "if", "in", "into",

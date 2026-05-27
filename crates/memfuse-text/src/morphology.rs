@@ -5,7 +5,7 @@
 
 // ANCHOR:ARCH:MORPH-001 — Morphologische Inferenz-Optimierung (WP-6.5)
 // WP:WP-6.5 PRIO:2 NEEDS:WP-2.1
-// STATUS:SCAFFOLD DATE:2026-05-17
+// STATUS:DONE DATE:2026-05-27 AGENT:05
 
 /// Trait for morphological tokenization.
 ///
@@ -55,17 +55,14 @@ impl Default for GermanCompoundSplitter {
     }
 }
 
-impl MorphologicalTokenizer for GermanCompoundSplitter {
-    fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
-        // Simple recursive splitting based on a set of known components
-        // and common German compound patterns (Fugen-S etc.)
+use std::collections::HashSet;
+use std::sync::OnceLock;
 
-        if token.len() <= self.min_component_len {
-            return vec![token];
-        }
+static GERMAN_COMPONENTS: OnceLock<HashSet<&'static str>> = OnceLock::new();
 
-        // Common components in technical/legal German compounds
-        let dictionary = [
+fn get_german_components() -> &'static HashSet<&'static str> {
+    GERMAN_COMPONENTS.get_or_init(|| {
+        [
             "bundes",
             "verfassungs",
             "gericht",
@@ -85,21 +82,397 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             "sicherheit",
             "zugriff",
             "rechte",
-        ];
+            "struktur",
+            "architektur",
+            "schnittstelle",
+            "anwendung",
+            "entwicklung",
+            "forschung",
+            "technologie",
+            "komponente",
+            "umgebung",
+            "ressource",
+            "kapazität",
+            "optimierung",
+            "verarbeitung",
+            "analyse",
+            "algorithmus",
+            "modell",
+            "instanz",
+            "knoten",
+            "kante",
+            "graph",
+            "schicht",
+            "kern",
+            "speicher",
+            "abbild",
+            "zustand",
+            "fluss",
+            "steuerung",
+            "ereignis",
+            "nachricht",
+            "protokoll",
+            "verbindung",
+            "abfrage",
+            "ergebnis",
+            "menge",
+            "raum",
+            "zeit",
+            "dauer",
+            "intervall",
+            "bereich",
+            "punkt",
+            "wert",
+            "typ",
+            "form",
+            "art",
+            "weise",
+            "mittel",
+            "werkzeug",
+            "hilfsmittel",
+            "grundlage",
+            "rahmen",
+            "bedingungen",
+            "anforderung",
+            "eigenschaft",
+            "merkmal",
+            "funktion",
+            "aufgabe",
+            "ziel",
+            "zweck",
+            "nutzen",
+            "wert",
+            "vorteil",
+            "nachteil",
+            "risiko",
+            "gefahr",
+            "schaden",
+            "fehler",
+            "problem",
+            "lösung",
+            "ansatz",
+            "verfahren",
+            "methode",
+            "technik",
+            "weg",
+            "schritt",
+            "phase",
+            "abschnitt",
+            "teil",
+            "stück",
+            "glied",
+            "element",
+            "baustein",
+            "faktor",
+            "aspekt",
+            "punkt",
+            "thema",
+            "bereich",
+            "feld",
+            "ebene",
+            "stufe",
+            "grad",
+            "maß",
+            "anzahl",
+            "menge",
+            "summe",
+            "rate",
+            "quote",
+            "anteil",
+            "prozent",
+            "verhältnis",
+            "beziehung",
+            "bezug",
+            "zusammenhang",
+            "kontext",
+            "inhalt",
+            "form",
+            "struktur",
+            "aufbau",
+            "ordnung",
+            "system",
+            "netz",
+            "werk",
+            "bau",
+            "anlage",
+            "gerät",
+            "maschine",
+            "apparat",
+            "instrument",
+            "organ",
+            "stelle",
+            "amt",
+            "behörde",
+            "rat",
+            "kommission",
+            "ausschuss",
+            "kreis",
+            "gruppe",
+            "bund",
+            "verein",
+            "gesellschaft",
+            "firma",
+            "unternehmen",
+            "betrieb",
+            "werk",
+            "fabrik",
+            "laden",
+            "geschäft",
+            "handel",
+            "markt",
+            "börse",
+            "bank",
+            "kasse",
+            "fonds",
+            "depot",
+            "konto",
+            "buch",
+            "blatt",
+            "karte",
+            "liste",
+            "tabelle",
+            "datei",
+            "akten",
+            "ordner",
+            "mappe",
+            "heft",
+            "brief",
+            "post",
+            "mail",
+            "text",
+            "wort",
+            "satz",
+            "absatz",
+            "kapitel",
+            "seite",
+            "zeile",
+            "spalte",
+            "feld",
+            "zelle",
+            "bit",
+            "byte",
+            "code",
+            "skript",
+            "programm",
+            "software",
+            "hardware",
+            "firmware",
+            "treiber",
+            "modul",
+            "bibliothek",
+            "paket",
+            "archiv",
+            "container",
+            "image",
+            "abbild",
+            "kopie",
+            "original",
+            "quelle",
+            "ziel",
+            "start",
+            "ende",
+            "anfang",
+            "schluss",
+            "abbruch",
+            "pause",
+            "stopp",
+            "halt",
+            "lauf",
+            "gang",
+            "zug",
+            "flug",
+            "fahrt",
+            "reise",
+            "tour",
+            "route",
+            "pfad",
+            "spur",
+            "weg",
+            "straße",
+            "platz",
+            "ort",
+            "raum",
+            "land",
+            "stadt",
+            "dorf",
+            "haus",
+            "bau",
+            "werk",
+            "kraft",
+            "strom",
+            "licht",
+            "wärme",
+            "kälte",
+            "druck",
+            "zug",
+            "last",
+            "spannung",
+            "strom",
+            "spannung",
+            "widerstand",
+            "leiter",
+            "kabel",
+            "draht",
+            "funk",
+            "welle",
+            "signal",
+            "impuls",
+            "takt",
+            "frequenz",
+            "band",
+            "kanal",
+            "netz",
+            "knoten",
+            "punkt",
+            "stelle",
+            "ort",
+            "platz",
+            "raum",
+            "zeit",
+            "punkt",
+            "moment",
+            "dauer",
+            "frist",
+            "termin",
+            "plan",
+            "ziel",
+            "zweck",
+            "sinn",
+            "grund",
+            "ursache",
+            "folge",
+            "wirkung",
+            "erfolg",
+            "sieg",
+            "niederlage",
+            "verlust",
+            "gewinn",
+            "ertrag",
+            "nutzen",
+            "wert",
+            "preis",
+            "kosten",
+            "aufwand",
+            "leistung",
+            "kraft",
+            "energie",
+            "arbeit",
+            "beruf",
+            "job",
+            "amt",
+            "dienst",
+            "hilfe",
+            "schutz",
+            "recht",
+            "gesetz",
+            "norm",
+            "regel",
+            "maß",
+            "form",
+            "art",
+            "typ",
+            "klasse",
+            "gruppe",
+            "kreis",
+            "menge",
+            "zahl",
+            "summe",
+            "wert",
+            "maß",
+            "grad",
+            "stufe",
+            "ebene",
+            "schicht",
+            "kern",
+            "rand",
+            "grenze",
+            "band",
+            "kreis",
+            "punkt",
+            "linie",
+            "fläche",
+            "raum",
+            "körper",
+            "stoff",
+            "masse",
+            "gut",
+            "ware",
+            "sache",
+            "objekt",
+            "ding",
+            "wesen",
+            "person",
+            "mann",
+            "frau",
+            "kind",
+            "volk",
+            "staat",
+            "welt",
+            "all",
+            "natur",
+            "leben",
+            "geist",
+            "seele",
+            "herz",
+            "hand",
+            "kopf",
+            "fuß",
+            "arm",
+            "bein",
+            "ohr",
+            "auge",
+            "mund",
+            "zahn",
+            "haar",
+            "haut",
+            "blut",
+            "fleisch",
+            "knochen",
+            "nerv",
+            "zelle",
+            "gen",
+            "keim",
+            "samen",
+            "frucht",
+            "baum",
+            "pflanze",
+            "tier",
+            "mensch",
+        ]
+        .into_iter()
+        .collect()
+    })
+}
 
-        for &word in &dictionary {
-            if token.len() > word.len() && token.starts_with(word) {
-                let rest = &token[word.len()..];
+impl MorphologicalTokenizer for GermanCompoundSplitter {
+    fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
+        // Simple recursive splitting based on a set of known components
+        // and common German compound patterns (Fugen-S etc.)
+
+        if token.len() <= self.min_component_len {
+            return vec![token];
+        }
+
+        let dictionary = get_german_components();
+
+        // We try to find the longest prefix that is in the dictionary
+        for i in (self.min_component_len..token.len()).rev() {
+            if !token.is_char_boundary(i) {
+                continue;
+            }
+            let prefix = &token[..i];
+            if dictionary.contains(prefix) {
+                let rest = &token[i..];
 
                 // Handle Fugen-s (e.g., Verfassung-s-gericht)
-                let actual_rest = if rest.starts_with('s') && rest.len() > 1 {
-                    &rest[1..]
+                let (actual_rest, _consumed_s) = if rest.starts_with('s') && rest.len() > 1 {
+                    (&rest[1..], true)
                 } else {
-                    rest
+                    (rest, false)
                 };
 
                 if actual_rest.len() >= self.min_component_len {
-                    let mut result = vec![&token[..word.len()]];
+                    let mut result = vec![prefix];
                     result.extend(self.decompose(actual_rest));
                     return result;
                 }
@@ -166,9 +539,9 @@ mod tests {
     #[test]
     fn test_german_splitter_scaffold() {
         let splitter = GermanCompoundSplitter::new();
-        // Fallback: returns original token
-        let result = splitter.decompose("Bundesverfassungsgericht");
-        assert_eq!(result, vec!["Bundesverfassungsgericht"]);
+        // Uses dictionary
+        let result = splitter.decompose("bundesverfassungsgericht");
+        assert_eq!(result, vec!["bundes", "verfassungs", "gericht"]);
         assert_eq!(splitter.language(), "de");
     }
 
