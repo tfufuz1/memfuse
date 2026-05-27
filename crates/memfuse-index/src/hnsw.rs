@@ -297,6 +297,9 @@ impl HnswIndex {
 
             match &node.vector {
                 VectorData::F32(v) => {
+                    // ANCHOR:SEC:SAFETY-001 AGENT:10 PRIO:2 STATUS:REVIEW
+                    // BEGRÜNDUNG: Casting f32 slice to u8 slice for serialization.
+                    // Da f32 und u8 beide Copy sind und keine Referenzen enthalten, ist das bitweise Auslesen sicher.
                     let bytes: &[u8] =
                         unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
                     writer
@@ -339,6 +342,9 @@ impl HnswIndex {
                 writer
                     .write_all(&len.to_le_bytes())
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                // ANCHOR:SEC:SAFETY-002 AGENT:10 PRIO:2 STATUS:REVIEW
+                // BEGRÜNDUNG: Casting u32 slice to u8 slice for serialization.
+                // Sicherer Bit-Cast von numerischen Typen für I/O-Zwecke.
                 let bytes: &[u8] = unsafe {
                     std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
                 };
