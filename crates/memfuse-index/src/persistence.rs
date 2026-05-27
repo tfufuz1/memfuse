@@ -159,8 +159,7 @@ impl MmapIndex {
 
         let mut current_pos = offset + 1;
         for _ in 0..layer {
-            let len =
-                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap allowed (AGENT:09)
+            let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap()) // unwrap allowed (AGENT:09)
                     as usize;
             current_pos += 4 + len * 4;
         }
