@@ -16,12 +16,12 @@ roaring = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
-memmap2 = "0.9"
+memmap2 = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
-criterion = "0.5"
-tempfile = "3"
+criterion = { workspace = true }
+tempfile = { workspace = true }
 
 [[bench]]
 name = "distance_bench"

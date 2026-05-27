@@ -46,6 +46,7 @@ tracing = "0.1"
 
 # Testing
 tempfile = "3"
+criterion = "0.5"
 
 # Internal crates
 memfuse-core = { path = "crates/memfuse-core" }
