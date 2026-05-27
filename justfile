@@ -6,49 +6,57 @@ default:
 
 # Runs the TDD Validation Loop (Red -> Green -> Refactor)
 test: check
-    nix develop -c cargo nextest run --workspace || nix develop -c cargo test --workspace
+    cargo nextest run --workspace || cargo test --workspace
 
 # Runs formatting, clippy and checks compilation
 check:
-    nix develop -c cargo fmt --all -- --check
-    nix develop -c cargo clippy --all-targets -- -D warnings
-    nix develop -c cargo check --all-targets --workspace
+    cargo fmt --all -- --check
+    cargo clippy --all-targets -- -D warnings
+    cargo check --all-targets --workspace
 
 # Modular check for memfuse-core
 check-core:
-    nix develop -c cargo check -p memfuse-core
+    cargo check -p memfuse-core
 
 # Modular check for memfuse-store
 check-store:
-    nix develop -c cargo check -p memfuse-store
+    cargo check -p memfuse-store
 
 # Modular check for memfuse-index
 check-index:
-    nix develop -c cargo check -p memfuse-index
+    cargo check -p memfuse-index
 
 # Modular check for memfuse-db
 check-db:
-    nix develop -c cargo check -p memfuse-db
+    cargo check -p memfuse-db
 
 # Modular check for memfuse-text
 check-text:
-    nix develop -c cargo check -p memfuse-text
+    cargo check -p memfuse-text
 
 # Modular check for memfuse-runtime
 check-runtime:
-    nix develop -c cargo check -p memfuse-runtime
+    cargo check -p memfuse-runtime
 
 # Modular check for memfuse-orchestrator
 check-orchestrator:
-    nix develop -c cargo check -p memfuse-orchestrator
+    cargo check -p memfuse-orchestrator
 
 # Modular check for memfuse-py
 check-py:
-    nix develop -c cargo check -p memfuse-py
+    cargo check -p memfuse-py
 
 # Modular check for memfuse-checkpoint
 check-checkpoint:
-    nix develop -c cargo check -p memfuse-checkpoint
+    cargo check -p memfuse-checkpoint
+
+# Modular check for memfuse-graph
+check-graph:
+    cargo check -p memfuse-graph
+
+# Modular check for memfuse-crypto
+check-crypto:
+    cargo check -p memfuse-crypto
 
 # Verifies the Directed Acyclic Graph (DAG) integrity of the workspace
 dag-check:
@@ -56,8 +64,8 @@ dag-check:
     set -euo pipefail
     echo "=== DAG Integrity Check ==="
 
-    echo "--- Phase 1: L1 Kernel Isolation (core, runtime, orchestrator) ---"
-    for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator; do
+    echo "--- Phase 1: L1 Kernel Isolation (core, runtime, orchestrator, crypto) ---"
+    for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator memfuse-crypto; do
         echo "Verifying $CRATE isolation..."
         if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -E -v "$CRATE|memfuse-core" | grep -q .; then
             echo "❌ ERROR: $CRATE imports forbidden internal crates."
@@ -66,17 +74,23 @@ dag-check:
         fi
     done
 
-    echo "--- Phase 2: L2 Peer Isolation (store, index, text, checkpoint) ---"
+    echo "--- Phase 2: L2 Peer Isolation (store, index, text, checkpoint, graph) ---"
     echo "Verifying memfuse-store..."
-    if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core" | grep -q "memfuse-"; then
-        echo "❌ ERROR: memfuse-store violates DAG by importing non-core crates."
+    if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core|memfuse-crypto" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-store violates DAG by importing non-core/crypto crates."
         cargo tree -p memfuse-store --edges no-dev | grep "memfuse-"
         exit 1
     fi
     echo "Verifying memfuse-index..."
-    if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core" | grep -q "memfuse-"; then
-        echo "❌ ERROR: memfuse-index violates DAG by importing non-core crates."
+    if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core|memfuse-graph" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-index violates DAG by importing non-core/graph crates."
         cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
+        exit 1
+    fi
+    echo "Verifying memfuse-graph..."
+    if cargo tree -p memfuse-graph --edges no-dev | grep -E -v "memfuse-graph|memfuse-core" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-graph violates isolation."
+        cargo tree -p memfuse-graph --edges no-dev | grep "memfuse-"
         exit 1
     fi
     echo "Verifying memfuse-text..."
@@ -128,7 +142,7 @@ triple-test: check
     echo "=== Triple-Test-Gate ==="
     for RUN in 1 2 3; do
         echo "--- Run $RUN/3 ---"
-        if ! nix develop -c cargo test --workspace; then
+        if ! cargo test --workspace; then
             echo "❌ FAILED on run $RUN/3. Fix all failures before this WP is DONE."
             exit 1
         fi
