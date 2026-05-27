@@ -76,14 +76,18 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
             // ANCHOR:SAFETY:SIMD-001 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
-            return unsafe { cosine_distance_avx512(a, b) };
+            unsafe {
+                return cosine_distance_avx512(a, b);
+            }
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
             // ANCHOR:SAFETY:SIMD-002 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
-            return unsafe { cosine_distance_avx2(a, b) };
+            unsafe {
+                return cosine_distance_avx2(a, b);
+            }
         }
     }
     // Portable-simd fallback
@@ -101,14 +105,18 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
             // ANCHOR:SAFETY:SIMD-003 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
-            return unsafe { euclidean_distance_avx512(a, b) };
+            unsafe {
+                return euclidean_distance_avx512(a, b);
+            }
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
             // ANCHOR:SAFETY:SIMD-004 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
-            return unsafe { euclidean_distance_avx2(a, b) };
+            unsafe {
+                return euclidean_distance_avx2(a, b);
+            }
         }
     }
     // Portable-simd fallback
@@ -126,14 +134,18 @@ pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
             // ANCHOR:SAFETY:SIMD-005 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
-            return unsafe { -dot_product_avx512(a, b) };
+            unsafe {
+                return -dot_product_avx512(a, b);
+            }
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
             // ANCHOR:SAFETY:SIMD-006 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
-            return unsafe { -dot_product_avx2(a, b) };
+            unsafe {
+                return -dot_product_avx2(a, b);
+            }
         }
     }
     // Portable-simd fallback
@@ -569,7 +581,9 @@ pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
         if is_x86_feature_detected!("avx2") {
             // ANCHOR:SAFETY:SIMD-U8-014 — AVX2 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
-            return unsafe { dot_product_u8_avx2(a, b) };
+            unsafe {
+                return dot_product_u8_avx2(a, b);
+            }
         }
     }
     dot_product_u8_scalar(a, b)
@@ -591,7 +605,9 @@ pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
         if is_x86_feature_detected!("avx2") {
             // ANCHOR:SAFETY:SIMD-U8-015 — AVX2 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
-            return unsafe { euclidean_distance_sq_u8_avx2(a, b) };
+            unsafe {
+                return euclidean_distance_sq_u8_avx2(a, b);
+            }
         }
     }
     euclidean_distance_sq_u8_scalar(a, b)
@@ -626,7 +642,9 @@ pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8
         if is_x86_feature_detected!("avx2") {
             // ANCHOR:SAFETY:SIMD-U8-016 — AVX2 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
-            return unsafe { cosine_similarity_parts_u8_avx2(a, b) };
+            unsafe {
+                return cosine_similarity_parts_u8_avx2(a, b);
+            }
         }
     }
     cosine_similarity_parts_u8_scalar(a, b)
@@ -1008,5 +1026,16 @@ mod tests {
         let expected_same = 0.0; // Identical
         let actual_same = super::cosine_distance_std_simd(&c, &d);
         assert!((expected_same - actual_same).abs() < 1e-3);
+    }
+}
+
+/// Safely maps a file into memory.
+pub fn mmap_file(file: &std::fs::File) -> memfuse_core::Result<memmap2::Mmap> {
+    // ANCHOR:SAFETY:MMAP-001 — Memory mapping a file.
+    // BEGRÜNDUNG: memmap2::Mmap::map ist unsafe, weil Änderungen an der Datei
+    // von anderen Prozessen zu Undefined Behavior in Rust führen können (z.B. SIGBUS).
+    // In unserer kontrollierten Umgebung (embedded DB) ist dies akzeptabel.
+    unsafe {
+        memmap2::Mmap::map(file).map_err(|e| memfuse_core::MemFuseError::Storage(e.to_string()))
     }
 }

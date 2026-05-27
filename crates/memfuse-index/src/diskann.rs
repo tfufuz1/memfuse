@@ -1,7 +1,5 @@
 //! DiskANN Out-of-Core Vector Search (WP-4.3).
 
-#![allow(unsafe_code)]
-
 use crate::distance::compute_distance;
 use ahash::AHashMap;
 use async_trait::async_trait;
@@ -184,11 +182,10 @@ impl DiskAnnIndex {
 
         file.sync_all().await.map_err(MemFuseError::Io)?;
 
-        // SAFETY: Mapping a file that we just wrote and synced is safe as long as the file is not
-        // truncated or modified concurrently while mapped. Since this is an embedded database
-        // with exclusive file locks (managed by storage/LSM), this is safe.
         let std_file = file.into_std().await;
-        self.mmap = Some(unsafe { Mmap::map(&std_file).map_err(MemFuseError::Io)? });
+        self.mmap = Some(crate::distance::mmap_file(&std_file).map_err(|e| {
+            std::io::Error::other(e.to_string())
+        })?);
         self.entry_point = 0;
 
         Ok(())
