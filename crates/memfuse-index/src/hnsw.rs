@@ -497,8 +497,9 @@ impl HnswIndexCore {
             let v: Vec<f32> = vector_bytes
                 .chunks_exact(4)
                 .take(self.config.dimension)
-                .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
-                .collect();
+                .map(|chunk| chunk.try_into().map(f32::from_le_bytes))
+                .collect::<std::result::Result<Vec<f32>, _>>()
+                .map_err(|_| MemFuseError::Storage("Invalid bytes".into()))?;
             compute_distance(query_exact, &v, self.config.distance_metric)
         }
     }

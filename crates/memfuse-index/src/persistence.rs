@@ -91,9 +91,9 @@ impl HnswHeader {
                     .map_err(|_| MemFuseError::Storage("Invalid nodes_offset bytes".into()))?,
             ),
             connections_offset: u64::from_le_bytes(
-                bytes[48..56]
-                    .try_into()
-                    .map_err(|_| MemFuseError::Storage("Invalid connections_offset bytes".into()))?,
+                bytes[48..56].try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid connections_offset bytes".into())
+                })?,
             ),
             last_tx_id: u64::from_le_bytes(
                 bytes[56..64]
@@ -151,9 +151,9 @@ impl NodeRecord {
                     .map_err(|_| MemFuseError::Storage("Invalid vector_offset bytes".into()))?,
             ),
             connections_offset: u64::from_le_bytes(
-                bytes[17..25]
-                    .try_into()
-                    .map_err(|_| MemFuseError::Storage("Invalid connections_offset bytes".into()))?,
+                bytes[17..25].try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid connections_offset bytes".into())
+                })?,
             ),
         })
     }
@@ -187,7 +187,9 @@ impl MmapIndex {
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
         if mmap.len() < HnswHeader::SIZE {
-            return Err(MemFuseError::Storage("HNSW file too small for header".into()));
+            return Err(MemFuseError::Storage(
+                "HNSW file too small for header".into(),
+            ));
         }
         let header = HnswHeader::try_from_bytes(&mmap[0..HnswHeader::SIZE])?;
         Ok(Self {
@@ -199,7 +201,9 @@ impl MmapIndex {
     pub fn get_node_record(&self, index: usize) -> Result<NodeRecord> {
         let offset = self.header.nodes_offset as usize + index * NodeRecord::SIZE;
         if offset + NodeRecord::SIZE > self.mmap.len() {
-            return Err(MemFuseError::Storage("Node record offset out of bounds".into()));
+            return Err(MemFuseError::Storage(
+                "Node record offset out of bounds".into(),
+            ));
         }
         NodeRecord::try_from_bytes(&self.mmap[offset..offset + NodeRecord::SIZE])
     }
@@ -229,7 +233,9 @@ impl MmapIndex {
         let mut current_pos = offset + 1;
         for _ in 0..layer {
             if current_pos + 4 > self.mmap.len() {
-                return Err(MemFuseError::Storage("Connections offset out of bounds".into()));
+                return Err(MemFuseError::Storage(
+                    "Connections offset out of bounds".into(),
+                ));
             }
             let len = u32::from_le_bytes(
                 self.mmap[current_pos..current_pos + 4]
@@ -240,7 +246,9 @@ impl MmapIndex {
         }
 
         if current_pos + 4 > self.mmap.len() {
-            return Err(MemFuseError::Storage("Connections offset out of bounds".into()));
+            return Err(MemFuseError::Storage(
+                "Connections offset out of bounds".into(),
+            ));
         }
         let len = u32::from_le_bytes(
             self.mmap[current_pos..current_pos + 4]
@@ -251,7 +259,9 @@ impl MmapIndex {
         let end = start + len * 4;
 
         if end > self.mmap.len() {
-            return Err(MemFuseError::Storage("Connections data out of bounds".into()));
+            return Err(MemFuseError::Storage(
+                "Connections data out of bounds".into(),
+            ));
         }
 
         let raw = &self.mmap[start..end];
