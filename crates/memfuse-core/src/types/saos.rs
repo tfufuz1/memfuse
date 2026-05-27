@@ -236,7 +236,10 @@ mod tests {
             .expect("build ok");
 
         assert_eq!(query.text_query.expect("text query present"), "test query"); // unwrap
-        assert_eq!(query.vector_query.expect("vector query present"), vec![0.1, 0.2]); // unwrap
+        assert_eq!(
+            query.vector_query.expect("vector query present"),
+            vec![0.1, 0.2]
+        ); // unwrap
         assert_eq!(query.k, 5);
         // Default weights: vector=1.0, others=0.0
         assert_eq!(query.fusion_weights.vector(), 1.0);

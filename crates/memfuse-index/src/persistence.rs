@@ -46,7 +46,7 @@ impl HnswHeader {
             magic,
             version: u16::from_le_bytes(bytes[4..6].try_into().expect("fixed slice")), // unwrap
             dimension: u32::from_le_bytes(bytes[6..10].try_into().expect("fixed slice")), // unwrap
-            m: u32::from_le_bytes(bytes[10..14].try_into().expect("fixed slice")), // unwrap
+            m: u32::from_le_bytes(bytes[10..14].try_into().expect("fixed slice")),     // unwrap
             metric: bytes[14],
             quantized: bytes[15],
             q_min: f32::from_le_bytes(bytes[16..20].try_into().expect("fixed slice")), // unwrap

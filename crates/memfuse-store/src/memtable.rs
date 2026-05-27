@@ -157,7 +157,9 @@ mod tests {
         assert_eq!(seq, 20);
 
         // Between versions
-        let (val, seq) = mt.get_at_seq(b"key1", 25).expect("version at 25 (points to 20)"); // unwrap
+        let (val, seq) = mt
+            .get_at_seq(b"key1", 25)
+            .expect("version at 25 (points to 20)"); // unwrap
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
 

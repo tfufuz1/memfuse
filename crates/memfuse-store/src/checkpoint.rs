@@ -93,7 +93,10 @@ mod tests {
             storage.get(b"key1").await.expect("get 1 post rollback"), // unwrap
             Some(b"val1".to_vec())
         );
-        assert_eq!(storage.get(b"key2").await.expect("get 2 post rollback"), None); // Should be gone! // unwrap
+        assert_eq!(
+            storage.get(b"key2").await.expect("get 2 post rollback"),
+            None
+        ); // Should be gone! // unwrap
 
         // 5. Verify we can still write and seq_no is correct
         let tx3 = TxId::new(3);
