@@ -182,8 +182,8 @@ mod tests {
     #[test]
     fn test_namespace_isolation() {
         let mut reg = NamespaceRegistry::new();
-        let ns_a = reg.create("research", IsolationLevel::Strict).expect("valid test value");
-        let ns_b = reg.create("code", IsolationLevel::SharedRead).expect("valid test value");
+        let ns_a = reg.create("research", IsolationLevel::Strict).expect("valid test value"); // unwrap
+        let ns_b = reg.create("code", IsolationLevel::SharedRead).expect("valid test value"); // unwrap
 
         // Strict -> deny cross-access TO strict namespace
         assert!(reg.validate_cross_access(ns_b, ns_a).is_err());
@@ -194,10 +194,10 @@ mod tests {
     #[test]
     fn test_namespace_archive() {
         let mut reg = NamespaceRegistry::new();
-        let ns = reg.create("test", IsolationLevel::Logical).expect("valid test value");
-        reg.archive(ns).expect("valid test value");
+        let ns = reg.create("test", IsolationLevel::Logical).expect("valid test value"); // unwrap
+        reg.archive(ns).expect("valid test value"); // unwrap
 
-        let handle = reg.get(ns).expect("valid test value");
+        let handle = reg.get(ns).expect("valid test value"); // unwrap
         assert!(handle.is_archived());
     }
 }

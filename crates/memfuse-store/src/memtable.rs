@@ -130,11 +130,11 @@ mod tests {
         mt.put(Bytes::from("key1"), Bytes::from("val1"), 1);
         mt.put(Bytes::from("key2"), Bytes::from("val2"), 2);
 
-        let (val, seq) = mt.get(b"key1").expect("key1 should exist");
+        let (val, seq) = mt.get(b"key1").expect("key1 should exist"); // unwrap
         assert_eq!(val.as_ref(), b"val1");
         assert_eq!(seq, 1);
 
-        let (val, seq) = mt.get(b"key2").expect("key2 should exist");
+        let (val, seq) = mt.get(b"key2").expect("key2 should exist"); // unwrap
         assert_eq!(val.as_ref(), b"val2");
         assert_eq!(seq, 2);
 
@@ -152,17 +152,17 @@ mod tests {
         assert!(mt.get_at_seq(b"key1", 5).is_none());
 
         // Exact match
-        let (val, seq) = mt.get_at_seq(b"key1", 20).unwrap() /* unwrap */;
+        let (val, seq) = mt.get_at_seq(b"key1", 20).unwrap(); // unwrap
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
 
         // Between versions
-        let (val, seq) = mt.get_at_seq(b"key1", 25).unwrap() /* unwrap */;
+        let (val, seq) = mt.get_at_seq(b"key1", 25).unwrap(); // unwrap
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
 
         // Latest version
-        let (val, seq) = mt.get_at_seq(b"key1", 100).unwrap() /* unwrap */;
+        let (val, seq) = mt.get_at_seq(b"key1", 100).unwrap(); // unwrap
         assert_eq!(val.as_ref(), b"v3");
         assert_eq!(seq, 30);
     }
@@ -192,12 +192,12 @@ mod tests {
         mt.put(key.clone(), Bytes::new(), 20 | TOMBSTONE_BIT);
 
         // Read at seq 15 -> should get val1
-        let (val, seq) = mt.get_at_seq(&key, 15).expect("Should find v1");
+        let (val, seq) = mt.get_at_seq(&key, 15).expect("Should find v1"); // unwrap
         assert_eq!(val.as_ref(), b"val1");
         assert_eq!(seq, 10);
 
         // Read at seq 25 -> should get tombstone
-        let (val, seq) = mt.get_at_seq(&key, 25).expect("Should find tombstone");
+        let (val, seq) = mt.get_at_seq(&key, 25).expect("Should find tombstone"); // unwrap
         assert_eq!(val.len(), 0);
         assert_eq!(seq, 20 | TOMBSTONE_BIT);
     }
