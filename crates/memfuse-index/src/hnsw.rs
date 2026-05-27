@@ -672,8 +672,6 @@ impl HnswIndexCore {
                             v[i] =
                                 f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap());
                             // unwrap allowed (AGENT:08)
-                            // unwrap allowed (AGENT:08)
-                            // unwrap allowed (AGENT:08)
                         }
                         Ok(VectorData::F32(v))
                     };

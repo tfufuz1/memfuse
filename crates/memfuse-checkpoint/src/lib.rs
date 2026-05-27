@@ -15,8 +15,6 @@ use tokio::sync::RwLock;
 /// Metadata for a persistent checkpoint.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Metadata for a persistent checkpoint.
-/// Metadata for a persistent checkpoint.
-/// Metadata for a persistent checkpoint.
 pub struct CheckpointMeta {
     pub name: String,
     pub collection_id: String,
