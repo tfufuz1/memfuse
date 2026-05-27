@@ -1,3 +1,5 @@
+//! Module definitions for MemFuse core types.
+
 pub mod budget;
 pub mod domain;
 pub mod filter;

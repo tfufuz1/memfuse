@@ -1,3 +1,5 @@
+//! Domain-specific types for MemFuse (DocId, TxId, etc.).
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +37,12 @@ impl DocId {
 
     pub fn from_key(key: &str) -> Result<Self> {
         Self::try_from_key(key)
+    }
+
+    /// Alias for `from_key` for backward compatibility.
+    /// Panics if the key cannot be hashed (should never happen with Blake3).
+    pub fn from_string(key: &str) -> Self {
+        Self::from_key(key).expect("Blake3 hashing should not fail")
     }
 
     pub fn try_from_key(key: &str) -> Result<Self> {

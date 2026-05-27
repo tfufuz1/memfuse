@@ -1,3 +1,5 @@
+//! Semantic Analysis & Orchestration Schema (SAOS) types.
+
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};

@@ -1,3 +1,5 @@
+//! Resource budget and tracking for memory management.
+
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.
