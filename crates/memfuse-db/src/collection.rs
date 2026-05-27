@@ -6,6 +6,9 @@
 // DESIGN: Eigener HNSW-Index pro Collection, GEMEINSAMER LSM-Storage.
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 // STATUS: Full Implementation für WP-1.2.
+// ANCHOR:FIXME PRIO:2 STATUS:OPEN AGENT:13 DATE:2026-05-27
+// Flaky I/O in integration tests (`test_layer_001_fork_diverge_merge`) occasionally causes
+// "Invalid SSTable magic number" errors during rapid open/close cycles.
 
 use crate::filter::MetadataFilter;
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
@@ -155,7 +158,10 @@ impl Collection {
                 Err(_) => continue, // Skip invalid entries
             };
 
-            let doc_id = DocId::from_string(&stored.id);
+            let doc_id = match DocId::from_key(&stored.id) {
+                Ok(id) => id,
+                Err(_) => continue, // Skip invalid entries
+            };
 
             // Check if present in index
             // We use k=1 search to check presence (if we find it with distance 0, it's there)

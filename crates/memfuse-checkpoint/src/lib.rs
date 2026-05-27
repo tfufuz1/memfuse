@@ -2,6 +2,8 @@
 //!
 //! Enables deterministic freezing and restarting of agent workflows.
 //! Implements a SnapshotRegistry abstracting over Multi-Version Concurrency Control (MVCC).
+// ANCHOR:INTEGRATION PRIO:2 STATUS:OPEN AGENT:12 DATE:2026-05-27
+// Missing dedicated tests/ directory for integration testing.
 
 #![forbid(unsafe_code)]
 

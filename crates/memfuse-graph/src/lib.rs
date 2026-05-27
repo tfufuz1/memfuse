@@ -12,6 +12,8 @@
 // ANCHOR:ARCH:GRAPH-001 — CSR-Graph für 4-Signal Fusion (WP-6.1)
 // WP:WP-6.1 PRIO:2 NEEDS:WP-2.1
 // STATUS:SCAFFOLD DATE:2026-05-17
+// ANCHOR:INTEGRATION PRIO:2 STATUS:OPEN AGENT:12 DATE:2026-05-27
+// Missing dedicated tests/ directory for integration testing.
 
 #![forbid(unsafe_code)]
 
