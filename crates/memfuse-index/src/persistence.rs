@@ -37,25 +37,47 @@ impl HnswHeader {
             return Err(MemFuseError::Storage("Header too small".into()));
         }
 
-        let magic = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        let magic = u32::from_le_bytes(bytes[0..4].try_into().map_err(|_| {
+            MemFuseError::Storage("persistence.rs:40: failed to read magic".into())
+        })?);
         if magic != HNSW_MAGIC {
             return Err(MemFuseError::Storage("Invalid HNSW magic".into()));
         }
 
         Ok(Self {
             magic,
-            version: u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
-            dimension: u32::from_le_bytes(bytes[6..10].try_into().unwrap()),
-            m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()),
+            version: u16::from_le_bytes(bytes[4..6].try_into().map_err(|_| {
+                MemFuseError::Storage("persistence.rs:47: failed to read version".into())
+            })?),
+            dimension: u32::from_le_bytes(bytes[6..10].try_into().map_err(|_| {
+                MemFuseError::Storage("persistence.rs:48: failed to read dimension".into())
+            })?),
+            m: u32::from_le_bytes(bytes[10..14].try_into().map_err(|_| {
+                MemFuseError::Storage("persistence.rs:49: failed to read m".into())
+            })?),
             metric: bytes[14],
             quantized: bytes[15],
-            q_min: f32::from_le_bytes(bytes[16..20].try_into().unwrap()),
-            q_max: f32::from_le_bytes(bytes[20..24].try_into().unwrap()),
-            node_count: u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-            entry_point: i64::from_le_bytes(bytes[32..40].try_into().unwrap()),
-            nodes_offset: u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
-            last_tx_id: u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
+            q_min: f32::from_le_bytes(bytes[16..20].try_into().map_err(|_| {
+                MemFuseError::Storage("persistence.rs:52: failed to read q_min".into())
+            })?),
+            q_max: f32::from_le_bytes(bytes[20..24].try_into().map_err(|_| {
+                MemFuseError::Storage("persistence.rs:53: failed to read q_max".into())
+            })?),
+            node_count: u64::from_le_bytes(bytes[24..32].try_into().map_err(|_| {
+                MemFuseError::Storage("persistence.rs:54: failed to read node_count".into())
+            })?),
+            entry_point: i64::from_le_bytes(bytes[32..40].try_into().map_err(|_| {
+                MemFuseError::Storage("persistence.rs:55: failed to read entry_point".into())
+            })?),
+            nodes_offset: u64::from_le_bytes(bytes[40..48].try_into().map_err(|_| {
+                MemFuseError::Storage("persistence.rs:56: failed to read nodes_offset".into())
+            })?),
+            connections_offset: u64::from_le_bytes(bytes[48..56].try_into().map_err(|_| {
+                MemFuseError::Storage("persistence.rs:57: failed to read connections_offset".into())
+            })?),
+            last_tx_id: u64::from_le_bytes(bytes[56..64].try_into().map_err(|_| {
+                MemFuseError::Storage("persistence.rs:58: failed to read last_tx_id".into())
+            })?),
         })
     }
 
@@ -90,13 +112,22 @@ pub struct NodeRecord {
 impl NodeRecord {
     pub const SIZE: usize = 8 + 1 + 8 + 8; // 25 bytes
 
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        Self {
-            doc_id: u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
-            max_layer: bytes[8],
-            vector_offset: u64::from_le_bytes(bytes[9..17].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[17..25].try_into().unwrap()),
+    pub fn try_from_bytes(bytes: &[u8]) -> Result<Self> {
+        if bytes.len() < Self::SIZE {
+            return Err(MemFuseError::Storage("NodeRecord too small".into()));
         }
+        Ok(Self {
+            doc_id: u64::from_le_bytes(bytes[0..8].try_into().map_err(|_| {
+                MemFuseError::Storage("persistence.rs:95: failed to read doc_id".into())
+            })?),
+            max_layer: bytes[8],
+            vector_offset: u64::from_le_bytes(bytes[9..17].try_into().map_err(|_| {
+                MemFuseError::Storage("persistence.rs:97: failed to read vector_offset".into())
+            })?),
+            connections_offset: u64::from_le_bytes(bytes[17..25].try_into().map_err(|_| {
+                MemFuseError::Storage("persistence.rs:98: failed to read connections_offset".into())
+            })?),
+        })
     }
 
     pub fn to_bytes(&self) -> [u8; 25] {
@@ -130,9 +161,9 @@ impl MmapIndex {
         })
     }
 
-    pub fn get_node_record(&self, index: usize) -> NodeRecord {
+    pub fn get_node_record(&self, index: usize) -> Result<NodeRecord> {
         let offset = self.header.nodes_offset as usize + index * NodeRecord::SIZE;
-        NodeRecord::from_bytes(&self.mmap[offset..offset + NodeRecord::SIZE])
+        NodeRecord::try_from_bytes(&self.mmap[offset..offset + NodeRecord::SIZE])
     }
 
     pub fn get_vector(&self, record: &NodeRecord) -> &[u8] {
@@ -146,40 +177,48 @@ impl MmapIndex {
         &self.mmap[offset..offset + size]
     }
 
-    pub fn get_connections(&self, record: &NodeRecord, layer: usize) -> Vec<u32> {
+    pub fn get_connections(&self, record: &NodeRecord, layer: usize) -> Result<Vec<u32>> {
         let offset = record.connections_offset as usize;
         if offset >= self.mmap.len() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
         let num_layers = self.mmap[offset] as usize;
         if layer >= num_layers {
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
         let mut current_pos = offset + 1;
         for _ in 0..layer {
             let len =
-                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap())
-                    as usize;
+                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().map_err(
+                    |_| {
+                        MemFuseError::Storage(
+                            "persistence.rs:163: failed to read connection layer len".into(),
+                        )
+                    },
+                )?) as usize;
             current_pos += 4 + len * 4;
         }
 
-        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap())
-            as usize;
+        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().map_err(
+            |_| MemFuseError::Storage("persistence.rs:168: failed to read target layer len".into()),
+        )?) as usize;
         let start = current_pos + 4;
         let end = start + len * 4;
 
         let raw = &self.mmap[start..end];
         let mut connections = Vec::with_capacity(len);
         for i in 0..len {
-            let val = u32::from_le_bytes(raw[i * 4..(i + 1) * 4].try_into().unwrap());
+            let val = u32::from_le_bytes(raw[i * 4..(i + 1) * 4].try_into().map_err(|_| {
+                MemFuseError::Storage("persistence.rs:176: failed to read connection ID".into())
+            })?);
             connections.push(val);
         }
 
         // This is a temporary copy. For long-term performance, we should ensure alignment
         // in the file format or use a safe abstraction.
         // But for 8GB RAM remediation, this loop is acceptable.
-        connections
+        Ok(connections)
     }
 }

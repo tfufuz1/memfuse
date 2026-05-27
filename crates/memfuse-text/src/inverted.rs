@@ -814,15 +814,14 @@ mod tests {
         }
 
         let storage = Arc::new(MockStorage::new());
-        let morph_index = BM25MorphIndex::new(
-            storage.clone(),
-            "morph_test",
-            Arc::new(CustomSplitter),
-        );
+        let morph_index =
+            BM25MorphIndex::new(storage.clone(), "morph_test", Arc::new(CustomSplitter));
 
         let tx = TxId::new(1);
         let doc_id = DocId::new(1);
-        morph_index.insert(tx, doc_id, "supercalifragilistic").await?;
+        morph_index
+            .insert(tx, doc_id, "supercalifragilistic")
+            .await?;
         morph_index.commit(tx).await?;
 
         // Should find by components
