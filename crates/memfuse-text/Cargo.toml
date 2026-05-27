@@ -11,7 +11,7 @@ memfuse-core = { workspace = true }
 itoa = { workspace = true }
 # ANCHOR:ARCH:DAG-001 — Architektur-Layer durchbrochen
 # WP:NONE PRIO:1 NEEDS:NONE
-# AGENT:05 DATE:2026-05-16 STATUS:FIXME
+# AGENT:05 DATE:2026-05-16 STATUS:READY
 # CREATED:2026-05-09 DEADLINE:NONE
 # VERLETZUNG: memfuse-text importiert memfuse-store gegen die DAG-Invariante
 # IMPACT: Verstößt gegen Layer-Architektur, verhindert saubere Kompilierung
