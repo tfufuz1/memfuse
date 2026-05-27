@@ -673,6 +673,8 @@ impl HnswIndexCore {
                                 f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap());
                             // unwrap
                             // unwrap
+                            // unwrap
+                            // unwrap
                         }
                         Ok(VectorData::F32(v))
                     };
