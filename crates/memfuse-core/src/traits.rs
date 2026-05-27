@@ -9,9 +9,9 @@
 // CREATED:2026-05-05 DEADLINE:NONE
 // REGEL: Neue Methoden MÜSSEN Default-Impl haben (backward compat).
 
-pub use async_trait::async_trait;
 use crate::types::*;
 use crate::Result;
+pub use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 /// Abstract contract for generating consistent checkpoints.

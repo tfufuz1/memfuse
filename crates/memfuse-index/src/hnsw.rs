@@ -489,7 +489,7 @@ impl HnswIndexCore {
             let v: Vec<f32> = vector_bytes
                 .chunks_exact(4)
                 .take(self.config.dimension)
-                .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+                .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("4 bytes")))
                 .collect();
             compute_distance(query_exact, &v, self.config.distance_metric)
         }
@@ -668,8 +668,9 @@ impl HnswIndexCore {
                     } else {
                         let mut v = vec![0.0f32; self.config.dimension];
                         for i in 0..self.config.dimension {
-                            v[i] =
-                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap());
+                            v[i] = f32::from_le_bytes(
+                                bytes[i * 4..(i + 1) * 4].try_into().expect("4 bytes"),
+                            );
                         }
                         Ok(VectorData::F32(v))
                     };
@@ -716,7 +717,7 @@ impl HnswIndexCore {
 
         let mut result: Vec<Candidate> = Vec::with_capacity(m);
         let mut sorted_cands = candidates.to_vec();
-        sorted_cands.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap());
+        sorted_cands.sort_by(|a, b| a.distance.partial_cmp(&b.distance).expect("not NaN"));
 
         for closest in sorted_cands {
             if result.len() >= m {
@@ -744,7 +745,7 @@ impl HnswIndexCore {
         if result.len() < min_neighbors && candidates.len() >= min_neighbors {
             let mut fallback = result;
             let mut sorted_fallback = candidates.to_vec();
-            sorted_fallback.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap());
+            sorted_fallback.sort_by(|a, b| a.distance.partial_cmp(&b.distance).expect("not NaN"));
 
             for cand in sorted_fallback {
                 if fallback.len() >= m || (fallback.len() >= min_neighbors && !fallback.is_empty())
@@ -1880,7 +1881,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().expect("tempdir failed");
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {

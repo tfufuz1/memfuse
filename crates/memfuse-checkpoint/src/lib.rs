@@ -267,7 +267,7 @@ mod tests {
         let meta = manager
             .create_checkpoint("test_cp", "coll_1", 100, serde_json::json!({"state": "ok"}))
             .await
-            .unwrap();
+            .expect("create failed");
 
         assert_eq!(meta.name, "test_cp");
         assert_eq!(meta.seq_no, 100);
@@ -276,7 +276,11 @@ mod tests {
         assert!(storage.pinned.lock().contains(&100));
 
         // Verify it exists in manager
-        let retrieved = manager.get_checkpoint("test_cp").await.unwrap().unwrap();
+        let retrieved = manager
+            .get_checkpoint("test_cp")
+            .await
+            .expect("get failed")
+            .expect("found");
         assert_eq!(retrieved, meta);
     }
 
@@ -289,9 +293,13 @@ mod tests {
         manager
             .create_checkpoint("cp1", "c1", 10, metadata.clone())
             .await
-            .unwrap();
+            .expect("create failed");
 
-        let retrieved = manager.get_checkpoint("cp1").await.unwrap().unwrap();
+        let retrieved = manager
+            .get_checkpoint("cp1")
+            .await
+            .expect("get failed")
+            .expect("found");
         assert_eq!(retrieved.metadata, metadata);
     }
 
@@ -303,17 +311,17 @@ mod tests {
         manager
             .create_checkpoint("cp2", "c1", 20, serde_json::json!({}))
             .await
-            .unwrap();
+            .expect("create failed");
         manager
             .create_checkpoint("cp1", "c1", 10, serde_json::json!({}))
             .await
-            .unwrap();
+            .expect("create failed");
         manager
             .create_checkpoint("cp3", "c1", 30, serde_json::json!({}))
             .await
-            .unwrap();
+            .expect("create failed");
 
-        let list = manager.list_checkpoints().await.unwrap();
+        let list = manager.list_checkpoints().await.expect("list failed");
         assert_eq!(list.len(), 3);
         assert_eq!(list[0].name, "cp1");
         assert_eq!(list[1].name, "cp2");
@@ -328,11 +336,11 @@ mod tests {
         manager1
             .create_checkpoint("persist_me", "c1", 50, serde_json::json!({}))
             .await
-            .unwrap();
+            .expect("create failed");
 
         // New manager sharing the same storage
         let manager2 = PersistentCheckpointStore::new(storage.clone());
-        let list = manager2.list_checkpoints().await.unwrap();
+        let list = manager2.list_checkpoints().await.expect("list failed");
 
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "persist_me");
@@ -362,10 +370,10 @@ mod tests {
         }
 
         for handle in handles {
-            handle.await.unwrap().unwrap();
+            handle.await.expect("join failed").expect("create failed");
         }
 
-        let list = store.list_checkpoints().await.unwrap();
+        let list = store.list_checkpoints().await.expect("list failed");
         // 25 unique + 1 shared = 26 checkpoints
         assert_eq!(list.len(), 26);
 
@@ -384,7 +392,7 @@ mod tests {
         };
 
         registry.register(tx_id, state.clone());
-        let retrieved = registry.get(tx_id).unwrap();
+        let retrieved = registry.get(tx_id).expect("snapshot found");
         assert_eq!(retrieved.graph_hash, "hash");
     }
 }

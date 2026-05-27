@@ -10,12 +10,12 @@
 // OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
 
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
-use unicode_segmentation::UnicodeSegmentation;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// An inverted index stored in the LSM engine.
 /// An inverted index tied to a specific collection namespace.
@@ -112,9 +112,10 @@ impl<S: StorageEngine> InvertedIndex<S> {
 
                 if let Some(ol_bytes) = self.storage.get(&ol_key).await? {
                     if ol_bytes.len() == 4 {
-                        old_orig_len = u32::from_le_bytes(ol_bytes.as_slice().try_into().map_err(
-                            |_| MemFuseError::Storage("Invalid orig_len length".into()),
-                        )?);
+                        old_orig_len =
+                            u32::from_le_bytes(ol_bytes.as_slice().try_into().map_err(|_| {
+                                MemFuseError::Storage("Invalid orig_len length".into())
+                            })?);
                     }
                 }
 
@@ -189,9 +190,12 @@ impl<S: StorageEngine> InvertedIndex<S> {
         let mut total_orig_tokens = 0u64;
         if let Some(bytes) = self.storage.get(&total_orig_tok_key).await? {
             if bytes.len() == 8 {
-                total_orig_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(
-                    |_| MemFuseError::Storage("Invalid orig_tokens length".into()),
-                )?);
+                total_orig_tokens = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid orig_tokens length".into()))?,
+                );
             }
         }
 
@@ -263,9 +267,10 @@ impl<S: StorageEngine> InvertedIndex<S> {
             }
             if let Some(ol_bytes) = self.storage.get(&ol_key).await? {
                 if ol_bytes.len() == 4 {
-                    orig_len = u32::from_le_bytes(ol_bytes.as_slice().try_into().map_err(|_| {
-                        MemFuseError::Storage("Invalid orig_len length".into())
-                    })?);
+                    orig_len =
+                        u32::from_le_bytes(ol_bytes.as_slice().try_into().map_err(|_| {
+                            MemFuseError::Storage("Invalid orig_len length".into())
+                        })?);
                 }
             }
         } else {
@@ -317,9 +322,12 @@ impl<S: StorageEngine> InvertedIndex<S> {
         let total_orig_tok_key = self.key("meta:orig_tokens");
         if let Some(bytes) = self.storage.get(&total_orig_tok_key).await? {
             if bytes.len() == 8 {
-                let mut total_orig_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(
-                    |_| MemFuseError::Storage("Invalid orig_tokens length".into()),
-                )?);
+                let mut total_orig_tokens = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid orig_tokens length".into()))?,
+                );
                 total_orig_tokens = total_orig_tokens.saturating_sub(orig_len as u64);
                 self.storage
                     .put(tx, &total_orig_tok_key, &total_orig_tokens.to_le_bytes())
@@ -436,7 +444,6 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 }
 
-
 use crate::morphology::MorphologicalTokenizer;
 
 /// An inverted index with morphological optimization.
@@ -446,7 +453,11 @@ pub struct BM25MorphIndex<S: StorageEngine> {
 }
 
 impl<S: StorageEngine> BM25MorphIndex<S> {
-    pub fn new(storage: Arc<S>, namespace: &str, tokenizer: Arc<dyn MorphologicalTokenizer>) -> Self {
+    pub fn new(
+        storage: Arc<S>,
+        namespace: &str,
+        tokenizer: Arc<dyn MorphologicalTokenizer>,
+    ) -> Self {
         Self {
             inner: InvertedIndex::new(storage, namespace),
             tokenizer,
@@ -513,9 +524,12 @@ impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
         let mut total_orig_tokens = 0u64;
         if let Some(bytes) = self.storage.get(&total_orig_tok_key).await? {
             if bytes.len() == 8 {
-                total_orig_tokens = u64::from_le_bytes(bytes.as_slice().try_into().map_err(
-                    |_| MemFuseError::Storage("Invalid orig_tokens length".into()),
-                )?);
+                total_orig_tokens = u64::from_le_bytes(
+                    bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("Invalid orig_tokens length".into()))?,
+                );
             }
         }
 

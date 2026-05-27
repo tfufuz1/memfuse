@@ -232,8 +232,8 @@ mod tests {
     #[test]
     fn test_doc_id_determinism() {
         let key = "consistent_key";
-        let id1 = DocId::from_key(key).unwrap();
-        let id2 = DocId::from_key(key).unwrap();
+        let id1 = DocId::from_key(key).expect("valid key");
+        let id2 = DocId::from_key(key).expect("valid key");
         assert_eq!(id1, id2);
     }
 }
