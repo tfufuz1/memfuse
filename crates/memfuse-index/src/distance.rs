@@ -262,7 +262,7 @@ pub fn cosine_distance_std_simd(a: &[f32], b: &[f32]) -> f32 {
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "fma")]
 // ANCHOR:SAFETY:SIMD-007 — AVX2/FMA Dot Product.
-// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren. Dimensionen werden durch compute_distance validiert.
 unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-008 — Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_ps ist immer sicher.
@@ -296,7 +296,7 @@ unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "fma")]
 // ANCHOR:SAFETY:SIMD-011 — AVX2/FMA Cosine Distance.
-// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren. Dimensionen werden durch compute_distance validiert.
 unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-012 — Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_ps ist immer sicher.
@@ -355,7 +355,7 @@ unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "fma")]
 // ANCHOR:SAFETY:SIMD-015 — AVX2/FMA Euclidean Distance.
-// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren. Dimensionen werden durch compute_distance validiert.
 unsafe fn euclidean_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-016 — Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_ps ist immer sicher.
@@ -411,7 +411,7 @@ unsafe fn hsum256_ps_avx(v: __m256) -> f32 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx512f")]
 // ANCHOR:SAFETY:SIMD-021 — AVX-512 Dot Product.
-// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren. Dimensionen werden durch compute_distance validiert.
 unsafe fn dot_product_avx512(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-022 — Initialisierung.
     // BEGRÜNDUNG: _mm512_setzero_ps ist immer sicher.
@@ -444,7 +444,7 @@ unsafe fn dot_product_avx512(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx512f")]
 // ANCHOR:SAFETY:SIMD-025 — AVX-512 Cosine Distance.
-// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren. Dimensionen werden durch compute_distance validiert.
 unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-026 — Initialisierung.
     // BEGRÜNDUNG: _mm512_setzero_ps ist immer sicher.
@@ -502,7 +502,7 @@ unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx512f")]
 // ANCHOR:SAFETY:SIMD-029 — AVX-512 Euclidean Distance.
-// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren. Dimensionen werden durch compute_distance validiert.
 unsafe fn euclidean_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-030 — Initialisierung.
     // BEGRÜNDUNG: _mm512_setzero_ps ist immer sicher.

@@ -37,25 +37,69 @@ impl HnswHeader {
             return Err(MemFuseError::Storage("Header too small".into()));
         }
 
-        let magic = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        let magic = u32::from_le_bytes(
+            bytes[0..4]
+                .try_into()
+                .map_err(|_| MemFuseError::Storage("Invalid magic bytes".into()))?,
+        );
         if magic != HNSW_MAGIC {
             return Err(MemFuseError::Storage("Invalid HNSW magic".into()));
         }
 
         Ok(Self {
             magic,
-            version: u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
-            dimension: u32::from_le_bytes(bytes[6..10].try_into().unwrap()),
-            m: u32::from_le_bytes(bytes[10..14].try_into().unwrap()),
+            version: u16::from_le_bytes(
+                bytes[4..6]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid version bytes".into()))?,
+            ),
+            dimension: u32::from_le_bytes(
+                bytes[6..10]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid dimension bytes".into()))?,
+            ),
+            m: u32::from_le_bytes(
+                bytes[10..14]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid M bytes".into()))?,
+            ),
             metric: bytes[14],
             quantized: bytes[15],
-            q_min: f32::from_le_bytes(bytes[16..20].try_into().unwrap()),
-            q_max: f32::from_le_bytes(bytes[20..24].try_into().unwrap()),
-            node_count: u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-            entry_point: i64::from_le_bytes(bytes[32..40].try_into().unwrap()),
-            nodes_offset: u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
-            last_tx_id: u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
+            q_min: f32::from_le_bytes(
+                bytes[16..20]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid q_min bytes".into()))?,
+            ),
+            q_max: f32::from_le_bytes(
+                bytes[20..24]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid q_max bytes".into()))?,
+            ),
+            node_count: u64::from_le_bytes(
+                bytes[24..32]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid node_count bytes".into()))?,
+            ),
+            entry_point: i64::from_le_bytes(
+                bytes[32..40]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid entry_point bytes".into()))?,
+            ),
+            nodes_offset: u64::from_le_bytes(
+                bytes[40..48]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid nodes_offset bytes".into()))?,
+            ),
+            connections_offset: u64::from_le_bytes(
+                bytes[48..56]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid connections_offset bytes".into()))?,
+            ),
+            last_tx_id: u64::from_le_bytes(
+                bytes[56..64]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid last_tx_id bytes".into()))?,
+            ),
         })
     }
 
@@ -90,13 +134,28 @@ pub struct NodeRecord {
 impl NodeRecord {
     pub const SIZE: usize = 8 + 1 + 8 + 8; // 25 bytes
 
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        Self {
-            doc_id: u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
-            max_layer: bytes[8],
-            vector_offset: u64::from_le_bytes(bytes[9..17].try_into().unwrap()),
-            connections_offset: u64::from_le_bytes(bytes[17..25].try_into().unwrap()),
+    pub fn try_from_bytes(bytes: &[u8]) -> Result<Self> {
+        if bytes.len() < Self::SIZE {
+            return Err(MemFuseError::Storage("Node record too small".into()));
         }
+        Ok(Self {
+            doc_id: u64::from_le_bytes(
+                bytes[0..8]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid doc_id bytes".into()))?,
+            ),
+            max_layer: bytes[8],
+            vector_offset: u64::from_le_bytes(
+                bytes[9..17]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid vector_offset bytes".into()))?,
+            ),
+            connections_offset: u64::from_le_bytes(
+                bytes[17..25]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid connections_offset bytes".into()))?,
+            ),
+        })
     }
 
     pub fn to_bytes(&self) -> [u8; 25] {
@@ -120,9 +179,16 @@ impl MmapIndex {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = std::fs::File::open(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
+
+        // ANCHOR:SAFETY:MMAP-PERSIST-001 — Memory Mapping of HNSW Index.
+        // BEGRÜNDUNG: Die Datei wird schreibgeschützt geöffnet. Synchronisation wird durch
+        // das übergeordnete Storage-System (LSM/WAL) garantiert.
         let mmap = unsafe { memmap2::Mmap::map(&file) }
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
+        if mmap.len() < HnswHeader::SIZE {
+            return Err(MemFuseError::Storage("HNSW file too small for header".into()));
+        }
         let header = HnswHeader::try_from_bytes(&mmap[0..HnswHeader::SIZE])?;
         Ok(Self {
             mmap: std::sync::Arc::new(mmap),
@@ -130,9 +196,12 @@ impl MmapIndex {
         })
     }
 
-    pub fn get_node_record(&self, index: usize) -> NodeRecord {
+    pub fn get_node_record(&self, index: usize) -> Result<NodeRecord> {
         let offset = self.header.nodes_offset as usize + index * NodeRecord::SIZE;
-        NodeRecord::from_bytes(&self.mmap[offset..offset + NodeRecord::SIZE])
+        if offset + NodeRecord::SIZE > self.mmap.len() {
+            return Err(MemFuseError::Storage("Node record offset out of bounds".into()));
+        }
+        NodeRecord::try_from_bytes(&self.mmap[offset..offset + NodeRecord::SIZE])
     }
 
     pub fn get_vector(&self, record: &NodeRecord) -> &[u8] {
@@ -146,40 +215,59 @@ impl MmapIndex {
         &self.mmap[offset..offset + size]
     }
 
-    pub fn get_connections(&self, record: &NodeRecord, layer: usize) -> Vec<u32> {
+    pub fn get_connections(&self, record: &NodeRecord, layer: usize) -> Result<Vec<u32>> {
         let offset = record.connections_offset as usize;
         if offset >= self.mmap.len() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
         let num_layers = self.mmap[offset] as usize;
         if layer >= num_layers {
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
         let mut current_pos = offset + 1;
         for _ in 0..layer {
-            let len =
-                u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap())
-                    as usize;
+            if current_pos + 4 > self.mmap.len() {
+                return Err(MemFuseError::Storage("Connections offset out of bounds".into()));
+            }
+            let len = u32::from_le_bytes(
+                self.mmap[current_pos..current_pos + 4]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid connection length bytes".into()))?,
+            ) as usize;
             current_pos += 4 + len * 4;
         }
 
-        let len = u32::from_le_bytes(self.mmap[current_pos..current_pos + 4].try_into().unwrap())
-            as usize;
+        if current_pos + 4 > self.mmap.len() {
+            return Err(MemFuseError::Storage("Connections offset out of bounds".into()));
+        }
+        let len = u32::from_le_bytes(
+            self.mmap[current_pos..current_pos + 4]
+                .try_into()
+                .map_err(|_| MemFuseError::Storage("Invalid connection length bytes".into()))?,
+        ) as usize;
         let start = current_pos + 4;
         let end = start + len * 4;
+
+        if end > self.mmap.len() {
+            return Err(MemFuseError::Storage("Connections data out of bounds".into()));
+        }
 
         let raw = &self.mmap[start..end];
         let mut connections = Vec::with_capacity(len);
         for i in 0..len {
-            let val = u32::from_le_bytes(raw[i * 4..(i + 1) * 4].try_into().unwrap());
+            let val = u32::from_le_bytes(
+                raw[i * 4..(i + 1) * 4]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("Invalid connection bytes".into()))?,
+            );
             connections.push(val);
         }
 
         // This is a temporary copy. For long-term performance, we should ensure alignment
         // in the file format or use a safe abstraction.
         // But for 8GB RAM remediation, this loop is acceptable.
-        connections
+        Ok(connections)
     }
 }
