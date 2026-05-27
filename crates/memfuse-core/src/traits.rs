@@ -180,6 +180,8 @@ pub struct TextIndexStats {
     pub num_tokens: usize,
     /// Estimated memory usage in bytes.
     pub memory_usage_bytes: usize,
+    /// Ratio of expanded tokens vs original tokens.
+    pub token_reduction_ratio: f32,
 }
 
 /// Text index trait — abstracts over the inverted index and BM25 search.
