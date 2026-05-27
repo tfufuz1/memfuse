@@ -155,7 +155,8 @@ impl Collection {
                 Err(_) => continue, // Skip invalid entries
             };
 
-            let doc_id = DocId::from_key(&stored.id).map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
+            let doc_id = DocId::from_key(&stored.id)
+                .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
 
             // Check if present in index
             // We use k=1 search to check presence (if we find it with distance 0, it's there)
