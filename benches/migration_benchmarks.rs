@@ -1,6 +1,7 @@
 // ANCHOR:PERF:BENCH-001 — Benchmark Suite für LangGraph Migration
 // ZIEL: Beweise wirtschaftliche Kohärenz durch Latenz-Metriken (MemFuse vs Redis / Chroma)
-// AGENT:09 DATE:2026-05-15 STATUS:DONE
+// AGENT:09 DATE:2026-05-20 STATUS:DONE
+// OPT: DocId::from_key fix and HNSW search ep optimization
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use memfuse_checkpoint::CheckpointManager;

@@ -1251,7 +1251,7 @@ impl VectorIndex for HnswIndex {
             .map(|m| m.header.node_count as usize)
             .unwrap_or(0);
 
-        let mut ep = Vec::new();
+        let mut ep = Vec::with_capacity(2);
         if let Some(global_ep) = *self.entry_point.read() {
             ep.push(global_ep);
         }
@@ -1360,7 +1360,7 @@ impl VectorIndex for HnswIndex {
             None
         };
 
-        let mut ep = Vec::new();
+        let mut ep = Vec::with_capacity(2);
         if let Some(global_ep) = *self.entry_point.read() {
             ep.push(global_ep);
         }
