@@ -297,12 +297,12 @@ impl HnswIndex {
 
             match &node.vector {
                 VectorData::F32(v) => {
-                    let bytes: &[u8] =
-                        unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
-                    writer
-                        .write_all(bytes)
-                        .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                    current_pos += bytes.len() as u64;
+                    for &val in v {
+                        writer
+                            .write_all(&val.to_le_bytes())
+                            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                    }
+                    current_pos += (v.len() * 4) as u64;
                 }
                 VectorData::U8(v) => {
                     writer
@@ -339,13 +339,12 @@ impl HnswIndex {
                 writer
                     .write_all(&len.to_le_bytes())
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                let bytes: &[u8] = unsafe {
-                    std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
-                };
-                writer
-                    .write_all(bytes)
-                    .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                conn_pos += 4 + bytes.len() as u64;
+                for &conn in conns {
+                    writer
+                        .write_all(&conn.to_le_bytes())
+                        .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                }
+                conn_pos += 4 + (conns.len() * 4) as u64;
             }
         }
         writer
@@ -490,7 +489,8 @@ impl HnswIndexCore {
             let v: Vec<f32> = vector_bytes
                 .chunks_exact(4)
                 .take(self.config.dimension)
-                .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+                // ANCHOR:DEBT:COMP-018 — Unannotated unwrap (AGENT:03)
+                .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap())) // unwrap allowed (AGENT:03): chunks_exact(4)
                 .collect();
             compute_distance(query_exact, &v, self.config.distance_metric)
         }
@@ -669,8 +669,9 @@ impl HnswIndexCore {
                     } else {
                         let mut v = vec![0.0f32; self.config.dimension];
                         for i in 0..self.config.dimension {
+                            // ANCHOR:DEBT:COMP-019 — Unannotated unwrap (AGENT:03)
                             v[i] =
-                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap());
+                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().unwrap()); // unwrap allowed (AGENT:03): fixed chunk size
                         }
                         Ok(VectorData::F32(v))
                     };
