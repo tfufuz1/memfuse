@@ -96,6 +96,7 @@ impl PersistentCheckpointStore {
 
         // 2. Persist checkpoint metadata
         let key = format!("__checkpoint:{}", name);
+        // ANCHOR:SEC:ENCRYPT — Unverschlüsselte Checkpoint-Serialisierung
         let value = serde_json::to_vec(&checkpoint)
             .map_err(|e| memfuse_core::error::MemFuseError::Internal(e.to_string()))?;
 
@@ -314,9 +315,9 @@ mod tests {
 
         let list = manager.list_checkpoints().await.unwrap();
         assert_eq!(list.len(), 3);
-        assert_eq!(list[0].name, "cp1");
-        assert_eq!(list[1].name, "cp2");
-        assert_eq!(list[2].name, "cp3");
+        assert_eq!(list.get(0).unwrap().name, "cp1");
+        assert_eq!(list.get(1).unwrap().name, "cp2");
+        assert_eq!(list.get(2).unwrap().name, "cp3");
     }
 
     #[tokio::test]
@@ -334,8 +335,8 @@ mod tests {
         let list = manager2.list_checkpoints().await.unwrap();
 
         assert_eq!(list.len(), 1);
-        assert_eq!(list[0].name, "persist_me");
-        assert_eq!(list[0].seq_no, 50);
+        assert_eq!(list.get(0).unwrap().name, "persist_me");
+        assert_eq!(list.get(0).unwrap().seq_no, 50);
     }
 
     #[tokio::test]

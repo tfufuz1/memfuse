@@ -1,4 +1,3 @@
-#![allow(unsafe_code)]
 //! HNSW (Hierarchical Navigable Small World) vector index.
 //! # Hierarchical Navigable Small World (HNSW) Index
 //!
@@ -296,12 +295,12 @@ impl HnswIndex {
 
             match &node.vector {
                 VectorData::F32(v) => {
-                    let bytes: &[u8] =
-                        unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
-                    writer
-                        .write_all(bytes)
-                        .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                    current_pos += bytes.len() as u64;
+                    for &val in v {
+                        writer
+                            .write_all(&val.to_le_bytes())
+                            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                    }
+                    current_pos += (v.len() * 4) as u64;
                 }
                 VectorData::U8(v) => {
                     writer
@@ -338,13 +337,13 @@ impl HnswIndex {
                 writer
                     .write_all(&len.to_le_bytes())
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                let bytes: &[u8] = unsafe {
-                    std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
-                };
-                writer
-                    .write_all(bytes)
-                    .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                conn_pos += 4 + bytes.len() as u64;
+
+                for &conn in conns {
+                    writer
+                        .write_all(&conn.to_le_bytes())
+                        .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                }
+                conn_pos += 4 + (conns.len() * 4) as u64;
             }
         }
         writer

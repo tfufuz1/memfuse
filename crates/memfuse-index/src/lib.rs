@@ -10,6 +10,8 @@
 #![feature(portable_simd)]
 // ANCHOR:AUDIT:SEC-002 — deny(unsafe_code) statt forbid(unsafe_code)
 // BEGRÜNDUNG: SIMD-Intrinsics in distance.rs benötigen unsafe für Performance.
+// Da distance.rs unsafe nutzt, darf auf Crate-Ebene nur deny(unsafe_code) stehen.
+// Die anderen Module (hnsw, persistence, diskann) dürfen KEIN unsafe enthalten.
 #![deny(unsafe_code)]
 
 pub mod diskann;

@@ -995,6 +995,7 @@ mod tests {
                 embedding: vec![1.0, 0.0, 0.0, 0.0],
                 metadata: Some(json!({"status": "recovered"})),
             };
+            // ANCHOR:SEC:ENCRYPT — Unverschlüsselte Dokument-Serialisierung (Testcode)
             let data = serde_json::to_vec(&stored).expect("json");
 
             let user_key = col.namespaced_key(b"recovered-doc", 0);

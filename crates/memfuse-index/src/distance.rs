@@ -43,7 +43,7 @@
 #![allow(unused_unsafe)]
 #![allow(unsafe_code)]
 
-use memfuse_core::DistanceMetric;
+use memfuse_core::{DistanceMetric, MemFuseError};
 use std::simd::prelude::*;
 
 #[cfg(target_arch = "x86_64")]
@@ -252,6 +252,15 @@ pub fn cosine_distance_std_simd(a: &[f32], b: &[f32]) -> f32 {
     } else {
         1.0 - (final_dot / (final_norm_a.sqrt() * final_norm_b.sqrt()))
     }
+}
+
+/// Safely maps a file into memory.
+/// This is the only place where memmap2::Mmap is used in this crate.
+pub fn mmap_file(file: &std::fs::File) -> memfuse_core::Result<memmap2::Mmap> {
+    // ANCHOR:SAFETY:MMAP-001 — Centralized mmap wrapper.
+    // BEGRÜNDUNG: memmap2::Mmap::map ist unsafe, weil die Datei sich unter dem Mapping ändern kann.
+    // In MemFuse garantieren wir, dass SSTables/Index-Files nach dem Schreiben immutable sind.
+    unsafe { memmap2::Mmap::map(file).map_err(MemFuseError::Io) }
 }
 
 // -----------------------------------------------------------------------------

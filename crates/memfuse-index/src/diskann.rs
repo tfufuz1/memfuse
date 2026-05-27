@@ -1,7 +1,5 @@
 //! DiskANN Out-of-Core Vector Search (WP-4.3).
 
-#![allow(unsafe_code)]
-
 use crate::distance::compute_distance;
 use ahash::AHashMap;
 use memfuse_core::{
@@ -469,9 +467,7 @@ impl DiskAnnIndex {
     /// Loads the index from the configured path.
     pub fn load(&mut self) -> Result<()> {
         let file = std::fs::File::open(&self.config.index_path).map_err(MemFuseError::Io)?;
-        // SAFETY: Mapping a file is safe as long as it's not truncated or modified while mapped.
-        // In MemFuse, file access is orchestrated by the storage layer with exclusive locks.
-        let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? };
+        let mmap = crate::distance::mmap_file(&file)?;
 
         let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;
 
@@ -538,15 +534,19 @@ impl DiskAnnIndex {
         let mut cursor = 0;
 
         let vector = if header.quantized != 0 {
-            let v = node_data[cursor..cursor + header.dimension as usize].to_vec();
+            let v = node_data
+                .get(cursor..cursor + header.dimension as usize)
+                .ok_or_else(|| MemFuseError::Index("Vector data out of bounds".into()))?
+                .to_vec();
             cursor += header.dimension as usize;
             VectorData::U8(v)
         } else {
             let mut v = Vec::with_capacity(header.dimension as usize);
             for _ in 0..header.dimension {
-                // SAFETY: In-bounds check performed above.
                 v.push(f32::from_le_bytes(
-                    node_data[cursor..cursor + 4]
+                    node_data
+                        .get(cursor..cursor + 4)
+                        .ok_or_else(|| MemFuseError::Index("Vector data out of bounds".into()))?
                         .try_into()
                         .map_err(|_| MemFuseError::Index("Invalid vector data".into()))?,
                 ));
@@ -557,7 +557,9 @@ impl DiskAnnIndex {
 
         // Neighbors
         let neighbor_count = u32::from_le_bytes(
-            node_data[cursor..cursor + 4]
+            node_data
+                .get(cursor..cursor + 4)
+                .ok_or_else(|| MemFuseError::Index("Neighbor count out of bounds".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Index("Invalid neighbor count".into()))?,
         ) as usize;
@@ -565,7 +567,9 @@ impl DiskAnnIndex {
         let mut neighbors = Vec::with_capacity(neighbor_count);
         for _ in 0..neighbor_count {
             neighbors.push(u32::from_le_bytes(
-                node_data[cursor..cursor + 4]
+                node_data
+                    .get(cursor..cursor + 4)
+                    .ok_or_else(|| MemFuseError::Index("Neighbor ID out of bounds".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Index("Invalid neighbor ID".into()))?,
             ));
@@ -576,7 +580,9 @@ impl DiskAnnIndex {
 
         // DocId
         let doc_id = DocId::from(u64::from_le_bytes(
-            node_data[cursor..cursor + 8]
+            node_data
+                .get(cursor..cursor + 8)
+                .ok_or_else(|| MemFuseError::Index("DocId out of bounds".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Index("Invalid DocId".into()))?,
         ));
@@ -702,7 +708,7 @@ impl VectorIndex for DiskAnnIndex {
     }
 
     async fn len(&self) -> usize {
-        self.header.map(|h| h.node_count as usize).unwrap_or(0)
+        self.header.as_ref().map(|h| h.node_count as usize).unwrap_or(0)
     }
 
     async fn stats(&self) -> Result<VectorIndexStats> {
