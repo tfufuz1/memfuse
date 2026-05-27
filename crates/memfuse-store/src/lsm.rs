@@ -1,4 +1,17 @@
 //! LSM-Tree (Log-Structured Merge-Tree) storage engine.
+//!
+//! Provides the core persistent storage for the MemFuse ecosystem, ensuring
+//! high write throughput, efficient range scans, and ACID-compliant transaction
+//! durability.
+//!
+//! ### Key Design Decisions
+//! - **Size-Tiered Compaction**: Balances write amplification and read performance.
+//! - **Atomic State Transitions**: SSTable swaps and MemTable rotations are performed
+//!   under lock to ensure consistent snapshots for MVCC.
+//! - **HMAC Chaining**: WAL entries are cryptographically linked to detect unauthorized
+//!   modifications (WP-3.2).
+//! - **Streaming Merge**: Compaction utilizes a BinaryHeap to merge arbitrarily large
+//!   SSTables without unbounded memory growth.
 // ANCHOR:DOC:DOC-LSM-001 — Missing module documentation
 // WP:WP-0.0 PRIO:3 NEEDS:NONE
 // AGENT:02 DATE:2026-05-16 STATUS:REVIEW
@@ -214,8 +227,8 @@ impl LsmStorage {
         // ANCHOR:TODO:COMP-001 — Implementiere CompactionEngine::run_loop.
         // WP:WP-1.1 PRIO:1 NEEDS:NONE
         // AGENT:@JULES-02 DATE:2026-05-12 STATUS:REVIEW
-        // TEST: cargo test -p memfuse-store test_concurrent_reads_during_compaction
-        // DONE: Triple-Test grün, keine Deadlocks in tokio::spawn.
+        // TEST: cargo test -p memfuse-store test_compaction_stress_and_gc
+        // DONE: Triple-Test grün, keine Deadlocks in tokio::spawn. Streaming-Merge implementiert.
         // SUCCESSOR: @JULES-04 — "Background compaction ist stabil. Collections können aufbauen."
         let compaction_engine = Arc::new(CompactionEngine::new(
             config.compaction.clone(),
@@ -532,19 +545,9 @@ impl StorageEngine for LsmStorage {
         let old_wal = std::mem::replace(&mut state.wal, new_wal);
         state.immutable_memtables.push(old_memtable.clone());
 
-        // ANCHOR:ALG-FIX:D1-011 — Stale WAL-Dateien löschen nach Flush
-        // WP:WP-0.0 PRIO:1 NEEDS:NONE
-        // AGENT:13 DATE:2026-05-08 STATUS:DONE
-        // CREATED:2026-05-08 DEADLINE:NONE
-        // Ohne Cleanup wächst die Disk-Usage unbegrenzt (eine WAL pro Flush).
         let old_wal_path = old_wal.path().to_path_buf();
         drop(old_wal);
         drop(state);
-
-        // Best-effort delete of old WAL (non-critical if it fails)
-        if let Err(e) = tokio::fs::remove_file(&old_wal_path).await {
-            tracing::debug!("Could not delete old WAL {:?}: {}", old_wal_path, e);
-        }
 
         let sst_path = {
             static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -582,6 +585,16 @@ impl StorageEngine for LsmStorage {
 
         let bytes_freed = old_memtable.size() as u64;
         self.budget.release_memory(bytes_freed);
+
+        // ANCHOR:ALG-FIX:D1-011 — Stale WAL-Dateien löschen nach Flush
+        // WP:WP-0.0 PRIO:1 NEEDS:NONE
+        // AGENT:13 DATE:2026-05-08 STATUS:DONE
+        // CREATED:2026-05-08 DEADLINE:NONE
+        // Ohne Cleanup wächst die Disk-Usage unbegrenzt (eine WAL pro Flush).
+        // Härtung: Erst löschen, wenn SSTable sicher integriert ist (Crash-Durability).
+        if let Err(e) = tokio::fs::remove_file(&old_wal_path).await {
+            tracing::debug!("Could not delete old WAL {:?}: {}", old_wal_path, e);
+        }
 
         tracing::info!("Flushed memtable to SSTable: {} bytes", bytes_freed);
         Ok(())

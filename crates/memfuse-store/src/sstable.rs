@@ -62,13 +62,10 @@ impl BlockBuilder {
     fn update_bloom(&mut self, key: &[u8]) {
         let hash = blake3::hash(key);
         let bytes = hash.as_bytes();
-        // Use 4 x 11-bit chunks from the 256-bit hash for Bloom filter bits (64-bit filter)
-        // Safety: blake3 outputs 32 bytes, i * 2 + 1 is max 7.
+        // Use 4 x 16-bit chunks from the 256-bit hash for Bloom filter bits (64-bit filter).
+        // Since blake3 outputs 32 bytes, indexing into 0..8 is always safe.
         for i in 0..4 {
-            let chunk = u16::from_le_bytes([
-                *bytes.get(i * 2).unwrap_or(&0),
-                *bytes.get(i * 2 + 1).unwrap_or(&0),
-            ]);
+            let chunk = u16::from_le_bytes([bytes[i * 2], bytes[i * 2 + 1]]);
             let bit = chunk % 64;
             self.bloom |= 1 << bit;
         }
@@ -605,106 +602,114 @@ impl SstableReader {
         &self.metadata
     }
 
-    /// Iterates over all entries in sorted key order.
-    pub async fn iter(&self) -> Result<Vec<(Bytes, Bytes, u64)>> {
+    /// Reads all entries in a specific block.
+    pub async fn read_block_entries(&self, idx: usize) -> Result<Vec<(Bytes, Bytes, u64)>> {
         let mut results = Vec::new();
-        if self.index.is_empty() {
+        let offset = self
+            .index
+            .get(idx)
+            .ok_or_else(|| MemFuseError::Storage("index out of bounds".into()))?
+            .1;
+        let next_offset = if idx + 1 < self.index.len() {
+            self.index
+                .get(idx + 1)
+                .ok_or_else(|| MemFuseError::Storage("index out of bounds".into()))?
+                .1
+        } else {
+            self.index_offset
+        };
+
+        let block_data = self.get_block(offset, next_offset).await?;
+
+        let n = block_data.len();
+        if n < 10 {
             return Ok(results);
         }
 
-        for idx in 0..self.index.len() {
-            let offset = self
-                .index
-                .get(idx)
-                .ok_or_else(|| MemFuseError::Storage("index out of bounds".into()))?
-                .1;
-            let next_offset = if idx + 1 < self.index.len() {
-                self.index
-                    .get(idx + 1)
-                    .ok_or_else(|| MemFuseError::Storage("index out of bounds".into()))?
-                    .1
-            } else {
-                self.index_offset
-            };
+        let num_offsets = u16::from_le_bytes(
+            block_data
+                .get(n.saturating_sub(2)..n)
+                .ok_or_else(|| MemFuseError::Storage("malformed block: missing num_offsets".into()))?
+                .try_into()
+                .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+        ) as usize;
 
-            let block_data = self.get_block(offset, next_offset).await?;
+        let offsets_len = num_offsets * 2;
+        if n < 10 + offsets_len {
+            return Err(MemFuseError::Storage(
+                "malformed block: num_offsets too large".into(),
+            ));
+        }
+        let offsets_start = n - 2 - offsets_len;
 
-            let n = block_data.len();
-            if n < 10 {
-                continue;
-            }
-
-            let num_offsets = u16::from_le_bytes(
+        for i in 0..num_offsets {
+            let off_pos = offsets_start + i * 2;
+            let entry_off = u16::from_le_bytes(
                 block_data
-                    .get(n.saturating_sub(2)..n)
-                    .ok_or_else(|| {
-                        MemFuseError::Storage("malformed block: missing num_offsets".into())
-                    })?
+                    .get(off_pos..off_pos + 2)
+                    .ok_or_else(|| MemFuseError::Storage("malformed block: off_pos".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             ) as usize;
 
-            let offsets_len = num_offsets * 2;
-            if n < 10 + offsets_len {
-                return Err(MemFuseError::Storage(
-                    "malformed block: num_offsets too large".into(),
-                ));
+            let mut ep = entry_off;
+            let k_len = u16::from_le_bytes(
+                block_data
+                    .get(ep..ep + 2)
+                    .ok_or_else(|| MemFuseError::Storage("malformed block: k_len".into()))?
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+            ) as usize;
+            ep += 2;
+            let key_start = ep;
+            ep += k_len;
+            if ep > block_data.len() {
+                return Err(MemFuseError::Storage("malformed block: key out of bounds".into()));
             }
-            let offsets_start = n - 2 - offsets_len;
 
-            for i in 0..num_offsets {
-                let off_pos = offsets_start + i * 2;
-                let entry_off = u16::from_le_bytes(
-                    block_data
-                        .get(off_pos..off_pos + 2)
-                        .ok_or_else(|| MemFuseError::Storage("malformed block: off_pos".into()))?
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
-                ) as usize;
-
-                let mut ep = entry_off;
-                let k_len = u16::from_le_bytes(
-                    block_data
-                        .get(ep..ep + 2)
-                        .ok_or_else(|| MemFuseError::Storage("malformed block: k_len".into()))?
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
-                ) as usize;
-                ep += 2;
-                let entry_key = block_data
-                    .get(ep..ep + k_len)
-                    .ok_or_else(|| MemFuseError::Storage("malformed block: entry_key".into()))?;
-                ep += k_len;
-
-                let seq_no = u64::from_le_bytes(
-                    block_data
-                        .get(ep..ep + 8)
-                        .ok_or_else(|| MemFuseError::Storage("malformed block: seq_no".into()))?
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
-                );
-                ep += 8;
-                let v_len = u16::from_le_bytes(
-                    block_data
-                        .get(ep..ep + 2)
-                        .ok_or_else(|| MemFuseError::Storage("malformed block: v_len".into()))?
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
-                ) as usize;
-                ep += 2;
-                let entry_val = block_data
-                    .get(ep..ep + v_len)
-                    .ok_or_else(|| MemFuseError::Storage("malformed block: value".into()))?;
-
-                results.push((
-                    Bytes::copy_from_slice(entry_key),
-                    Bytes::copy_from_slice(entry_val),
-                    seq_no,
-                ));
+            let seq_no = u64::from_le_bytes(
+                block_data
+                    .get(ep..ep + 8)
+                    .ok_or_else(|| MemFuseError::Storage("malformed block: seq_no".into()))?
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+            );
+            ep += 8;
+            let v_len = u16::from_le_bytes(
+                block_data
+                    .get(ep..ep + 2)
+                    .ok_or_else(|| MemFuseError::Storage("malformed block: v_len".into()))?
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+            ) as usize;
+            ep += 2;
+            let val_start = ep;
+            ep += v_len;
+            if ep > block_data.len() {
+                return Err(MemFuseError::Storage("malformed block: value out of bounds".into()));
             }
+
+            results.push((
+                block_data.slice(key_start..key_start + k_len),
+                block_data.slice(val_start..val_start + v_len),
+                seq_no,
+            ));
         }
-
         Ok(results)
+    }
+
+    /// Iterates over all entries in sorted key order.
+    pub async fn iter(&self) -> Result<Vec<(Bytes, Bytes, u64)>> {
+        let mut results = Vec::new();
+        for idx in 0..self.index.len() {
+            results.extend(self.read_block_entries(idx).await?);
+        }
+        Ok(results)
+    }
+
+    /// Returns the number of data blocks in the SSTable.
+    pub fn num_blocks(&self) -> usize {
+        self.index.len()
     }
 
     /// Returns the file path of this SSTable.
