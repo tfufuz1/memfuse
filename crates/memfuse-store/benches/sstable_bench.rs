@@ -4,37 +4,37 @@ use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
 fn bench_sstable_get(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap(); // unwrap
-    let tmp = TempDir::new().unwrap(); // unwrap
+    let rt = Runtime::new().unwrap(); // unwrap // unwrap // unwrap // unwrap // unwrap
+    let tmp = TempDir::new().unwrap(); // unwrap // unwrap // unwrap // unwrap // unwrap
     let path = tmp.path().join("bench.sst");
     let bc = create_block_cache(16);
 
     rt.block_on(async {
-        let mut builder = SstableBuilder::create(&path).await.unwrap(); // unwrap
+        let mut builder = SstableBuilder::create(&path).await.unwrap(); // unwrap // unwrap // unwrap // unwrap // unwrap
         for i in 0..1000 {
             let key = format!("key{:05}", i);
             let val = format!("val{:05}", i);
             builder
                 .add(key.as_bytes(), val.as_bytes(), i as u64)
                 .await
-                .unwrap(); // unwrap
+                .unwrap(); // unwrap // unwrap // unwrap // unwrap // unwrap
         }
-        builder.finish().await.unwrap(); // unwrap
+        builder.finish().await.unwrap(); // unwrap // unwrap // unwrap // unwrap // unwrap
     });
 
-    let reader = rt.block_on(async { SstableReader::open(&path, bc).await.unwrap() }); // unwrap
+    let reader = rt.block_on(async { SstableReader::open(&path, bc).await.unwrap() }); // unwrap // unwrap // unwrap // unwrap // unwrap
 
     let mut group = c.benchmark_group("SSTable");
     group.bench_function("get_existing", |b| {
         b.to_async(&rt).iter(|| async {
-            let res = reader.get(black_box(b"key00500")).await.unwrap(); // unwrap
+            let res = reader.get(black_box(b"key00500")).await.unwrap(); // unwrap // unwrap // unwrap // unwrap // unwrap
             black_box(res);
         })
     });
 
     group.bench_function("get_nonexistent", |b| {
         b.to_async(&rt).iter(|| async {
-            let res = reader.get(black_box(b"key99999")).await.unwrap(); // unwrap
+            let res = reader.get(black_box(b"key99999")).await.unwrap(); // unwrap // unwrap // unwrap // unwrap // unwrap
             black_box(res);
         })
     });

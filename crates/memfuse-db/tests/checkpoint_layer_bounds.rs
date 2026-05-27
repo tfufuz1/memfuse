@@ -1,5 +1,5 @@
-use memfuse_core::StorageEngine;
 use memfuse_checkpoint::CheckpointManager;
+use memfuse_core::StorageEngine;
 use memfuse_db::{MemFuse, MemFuseConfig};
 use serde_json::json;
 use std::sync::Arc;
@@ -140,11 +140,10 @@ async fn test_layer_001_fork_diverge_merge() {
         let storage = Arc::new(
             memfuse_store::LsmStorage::new(lsm_config)
                 .await
-                .expect("storage") /* unwrap */,
+                .expect("storage"),
         );
         let cp_manager = CheckpointManager::new(storage.clone());
         storage.flush().await.expect("flush");
         cp_manager.drop_checkpoint("v1").await.expect("drop cp");
-
     }
 }
