@@ -56,14 +56,16 @@ impl DocId {
 
     /// Hydrates a DocId from its string representation (DocId(n)).
     /// Standard helper for database reconstruction/hydration.
-    pub fn from_string(s: &str) -> Self {
+    pub fn from_string(s: &str) -> Result<Self> {
         // Expected format: "DocId(123)"
         let inner = s
             .strip_prefix("DocId(")
             .and_then(|s| s.strip_suffix(')'))
             .and_then(|s| s.parse::<u64>().ok())
-            .unwrap(); // Intentional unwrap for hydration logic
-        Self(inner)
+            .ok_or_else(|| {
+                MemFuseError::InvalidInput(format!("Invalid DocId string representation: {}", s))
+            })?;
+        Ok(Self(inner))
     }
 }
 
@@ -257,8 +259,8 @@ mod tests {
     #[test]
     fn test_doc_id_determinism() {
         let key = "consistent_key";
-        let id1 = DocId::from_key(key).unwrap();
-        let id2 = DocId::from_key(key).unwrap();
+        let id1 = DocId::from_key(key).unwrap(); // unwrap
+        let id2 = DocId::from_key(key).unwrap(); // unwrap
         assert_eq!(id1, id2);
     }
 
@@ -267,7 +269,9 @@ mod tests {
         let id = DocId::new(42);
         let s = id.to_string();
         assert_eq!(s, "DocId(42)");
-        let hydrated = DocId::from_string(&s);
+        let hydrated = DocId::from_string(&s).unwrap(); // unwrap
         assert_eq!(id, hydrated);
+
+        assert!(DocId::from_string("invalid").is_err());
     }
 }
