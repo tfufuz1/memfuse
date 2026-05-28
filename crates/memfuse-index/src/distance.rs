@@ -50,6 +50,13 @@
 #![allow(unused_unsafe)]
 #![allow(unsafe_code)]
 
+//! Vector distance functions and SIMD optimizations.
+//!
+//! Provides highly optimized implementations for common distance metrics
+//! (Cosine, Euclidean, Dot Product) using hardware acceleration.
+//!
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
+
 use memfuse_core::DistanceMetric;
 // use std::simd::prelude::*; // Removed for stable Rust stabilization
 

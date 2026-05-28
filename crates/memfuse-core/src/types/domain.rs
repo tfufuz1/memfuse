@@ -1,3 +1,10 @@
+//! Domain-specific identifiers and core data structures.
+//!
+//! This module defines the fundamental building blocks for documents, entities,
+//! transactions, and embeddings.
+//!
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 

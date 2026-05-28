@@ -67,6 +67,8 @@ pub use filter::MetadataFilter;
 pub use memfuse_checkpoint;
 
 /// User-facing search result containing the ID, score, and optional metadata.
+///
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone)]
 pub struct SearchResult {
     /// The string ID provided during insert.
@@ -78,6 +80,8 @@ pub struct SearchResult {
 }
 
 /// Overall database statistics.
+///
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone)]
 pub struct DbStats {
     /// Statistics for the vector index.
@@ -87,6 +91,8 @@ pub struct DbStats {
 }
 
 /// User-facing document structure.
+///
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Document {
     /// The string ID.
@@ -96,6 +102,8 @@ pub struct Document {
 }
 
 /// Global configuration settings for the MemFuse database.
+///
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone)]
 pub struct MemFuseConfig {
     /// Vector dimensionality (must match your embeddings).
@@ -296,6 +304,10 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_collections_are_isolated
     // DONE: `collection()` ist wal-gesichert, Isolation ist korrekt.
     // SUCCESSOR: @JULES-04 — "Mach weiter mit COL-002 und COL-003, bis Collections-Modul fully featured ist."
+    /// Returns a specific collection (namespace).
+    /// Creates the collection if it does not already exist.
+    ///
+     // ANCHOR:DOC AGENT:08 STATUS:DONE
     pub async fn collection(&self, name: &str) -> Result<Collection<LsmStorage>> {
         // Validation
         if name.len() > 64 {
@@ -360,6 +372,9 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_list_collections
     // DONE: list_collections gibt persistierte Collections zurück.
     // SUCCESSOR: @JULES-04 — "Mache weiter mit COL-003."
+    /// Lists all existing collection names (including those persisted in storage).
+    ///
+     // ANCHOR:DOC AGENT:08 STATUS:DONE
     pub async fn list_collections(&self) -> Result<Vec<String>> {
         let col_idx_prefix = b"__col_idx:\x00";
         let entries = self.storage.scan_prefix(col_idx_prefix).await?;
@@ -392,6 +407,9 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_drop_removes_all_data
     // DONE: Alle Daten getilgt, re-öffnen führt zu leerer DB.
     // SUCCESSOR: @JULES-05 — "Collections sind fertig. Beginne mit WP-2.1 SEARCH-001."
+    /// Drops a collection, removing all its data from storage.
+    ///
+     // ANCHOR:DOC AGENT:08 STATUS:DONE
     pub async fn drop_collection(&self, name: &str) -> Result<()> {
         if name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(

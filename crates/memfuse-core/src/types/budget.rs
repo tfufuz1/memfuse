@@ -1,3 +1,10 @@
+//! Resource budget and memory tracking.
+//!
+//! Provides mechanisms for monitoring memory consumption and applying backpressure
+//! when resource limits are approached.
+//!
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
+
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.

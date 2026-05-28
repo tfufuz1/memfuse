@@ -1,9 +1,18 @@
+//! SAOS (Sovereign Agent Orchestration System) core types.
+//!
+//! Defines types for namespace isolation, token budgets for LLMs, and hybrid
+//! search query construction.
+//!
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
+
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
 /// Unique identifier for a Namespace.
+///
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NamespaceId(u64);
 
@@ -24,6 +33,8 @@ impl std::fmt::Display for NamespaceId {
 }
 
 /// Token budget configuration for LLM context management.
+///
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenBudget {
     pub max_tokens: usize,
@@ -69,6 +80,8 @@ impl Default for TokenBudget {
 }
 
 /// Normalized fusion weights for hybrid search.
+///
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FusionWeights {
     vector: f32,
@@ -105,6 +118,8 @@ impl FusionWeights {
 }
 
 /// Defines cross-namespace isolation guarantees.
+///
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IsolationLevel {
     Strict,
@@ -113,6 +128,8 @@ pub enum IsolationLevel {
 }
 
 /// A chunk of context for LLM budget allocation.
+///
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextChunk {
     pub doc_id: DocId,
@@ -123,6 +140,8 @@ pub struct ContextChunk {
 }
 
 /// An aggregated context window constrained by a token budget.
+///
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextWindow {
     pub chunks: Vec<ContextChunk>,
@@ -131,6 +150,8 @@ pub struct ContextWindow {
 }
 
 /// Evaluated result for hybrid/4-signal search.
+///
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScoredEntry {
     pub id: String,
@@ -139,6 +160,8 @@ pub struct ScoredEntry {
 }
 
 /// A unified query traversing multiple index signals.
+///
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HybridQuery {
     pub text_query: Option<String>,
@@ -156,6 +179,8 @@ impl HybridQuery {
 }
 
 /// Builder for HybridQuery to improve DX.
+///
+ // ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Default)]
 pub struct HybridQueryBuilder {
     text_query: Option<String>,
