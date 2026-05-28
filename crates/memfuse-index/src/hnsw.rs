@@ -47,7 +47,6 @@ use roaring::RoaringTreemap;
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::Mutex;
 
@@ -118,6 +117,7 @@ pub enum VectorData {
 }
 
 /// A node in the HNSW graph.
+#[derive(Clone)]
 #[derive(Debug)]
 struct HnswNode {
     doc_id: DocId,
@@ -240,25 +240,30 @@ impl HnswIndex {
         use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
         let _lock = self.write_mutex.lock().await;
-        let nodes = self.nodes.read();
-        let entry_point = self.entry_point.read();
-        let q_guard = self.quantizer.read();
+
+        let (nodes_snap, entry_point_snap, q_min, q_max, last_tx_id) = {
+            let nodes = self.nodes.read();
+            let entry_point = self.entry_point.read();
+            let q_guard = self.quantizer.read();
+
+            let (min, max) = if let Some(q) = q_guard.as_ref() {
+                (q.min, q.max)
+            } else {
+                (0.0, 0.0)
+            };
+
+            (nodes.clone(), *entry_point, min, max, self.last_tx_id.load(Ordering::SeqCst))
+        };
 
         let file = tokio::fs::File::create(path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
         let mut writer = tokio::io::BufWriter::new(file);
 
-        let node_count = nodes.len();
+        let node_count = nodes_snap.len();
         let nodes_offset = crate::persistence::HnswHeader::SIZE as u64;
         let vectors_offset =
             nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
-
-        let (q_min, q_max) = if let Some(q) = q_guard.as_ref() {
-            (q.min, q.max)
-        } else {
-            (0.0, 0.0)
-        };
 
         // Initial header
         let mut header = crate::persistence::HnswHeader {
@@ -271,10 +276,10 @@ impl HnswIndex {
             q_min,
             q_max,
             node_count: node_count as u64,
-            entry_point: entry_point.map(|i| i as i64).unwrap_or(-1),
+            entry_point: entry_point_snap.map(|i| i as i64).unwrap_or(-1),
             nodes_offset,
             connections_offset: 0,
-            last_tx_id: self.last_tx_id.load(Ordering::SeqCst),
+            last_tx_id,
         };
 
         // 1. Placeholder Header
@@ -302,7 +307,7 @@ impl HnswIndex {
 
         // 3. Vectors Block
         let mut current_pos = vectors_offset;
-        for (i, node) in nodes.iter().enumerate() {
+        for (i, node) in nodes_snap.iter().enumerate() {
             node_records[i].doc_id = node.doc_id.inner();
             node_records[i].max_layer = node.connections.len().saturating_sub(1) as u8;
             node_records[i].vector_offset = current_pos;
@@ -340,7 +345,7 @@ impl HnswIndex {
         }
 
         let mut conn_pos = connections_offset;
-        for (i, node) in nodes.iter().enumerate() {
+        for (i, node) in nodes_snap.iter().enumerate() {
             node_records[i].connections_offset = conn_pos;
             let num_layers = node.connections.len() as u8;
             writer
