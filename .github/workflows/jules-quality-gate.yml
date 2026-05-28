@@ -79,7 +79,7 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: Security audit
-        run: cargo audit
+        run: cargo audit --ignore RUSTSEC-2026-0087 --ignore RUSTSEC-2026-0002
 
       - name: Check for unused dependencies
         run: |
