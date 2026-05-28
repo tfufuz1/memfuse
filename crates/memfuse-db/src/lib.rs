@@ -68,7 +68,7 @@ pub use memfuse_checkpoint;
 
 /// User-facing search result containing the ID, score, and optional metadata.
 ///
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone)]
 pub struct SearchResult {
     /// The string ID provided during insert.
@@ -81,7 +81,7 @@ pub struct SearchResult {
 
 /// Overall database statistics.
 ///
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone)]
 pub struct DbStats {
     /// Statistics for the vector index.
@@ -92,7 +92,7 @@ pub struct DbStats {
 
 /// User-facing document structure.
 ///
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Document {
     /// The string ID.
@@ -103,7 +103,7 @@ pub struct Document {
 
 /// Global configuration settings for the MemFuse database.
 ///
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone)]
 pub struct MemFuseConfig {
     /// Vector dimensionality (must match your embeddings).
@@ -307,7 +307,7 @@ impl MemFuse {
     /// Returns a specific collection (namespace).
     /// Creates the collection if it does not already exist.
     ///
-     // ANCHOR:DOC AGENT:08 STATUS:DONE
+    // ANCHOR:DOC AGENT:08 STATUS:DONE
     pub async fn collection(&self, name: &str) -> Result<Collection<LsmStorage>> {
         // Validation
         if name.len() > 64 {
@@ -374,7 +374,7 @@ impl MemFuse {
     // SUCCESSOR: @JULES-04 — "Mache weiter mit COL-003."
     /// Lists all existing collection names (including those persisted in storage).
     ///
-     // ANCHOR:DOC AGENT:08 STATUS:DONE
+    // ANCHOR:DOC AGENT:08 STATUS:DONE
     pub async fn list_collections(&self) -> Result<Vec<String>> {
         let col_idx_prefix = b"__col_idx:\x00";
         let entries = self.storage.scan_prefix(col_idx_prefix).await?;
@@ -409,7 +409,7 @@ impl MemFuse {
     // SUCCESSOR: @JULES-05 — "Collections sind fertig. Beginne mit WP-2.1 SEARCH-001."
     /// Drops a collection, removing all its data from storage.
     ///
-     // ANCHOR:DOC AGENT:08 STATUS:DONE
+    // ANCHOR:DOC AGENT:08 STATUS:DONE
     pub async fn drop_collection(&self, name: &str) -> Result<()> {
         if name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(
@@ -615,7 +615,7 @@ mod tests {
     use tempfile::TempDir;
 
     async fn test_db(dim: usize) -> (MemFuse, TempDir) {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
         let config = MemFuseConfig {
             dimension: dim,
             max_elements: 10_000,
@@ -624,7 +624,7 @@ mod tests {
         };
         let db = MemFuse::open_with_config(tmp.path(), config)
             .await
-            .expect("open db");
+            .expect("open db"); // unwrap allowed (AGENT:08)
         (db, tmp)
     }
 
@@ -638,7 +638,7 @@ mod tests {
             Some(json!({"topic": "rust"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // unwrap allowed (AGENT:08)
 
         db.insert(
             "doc-2",
@@ -646,13 +646,13 @@ mod tests {
             Some(json!({"topic": "python"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // unwrap allowed (AGENT:08)
 
         db.insert("doc-3", &[0.9, 0.1, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // unwrap allowed (AGENT:08)
 
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 2).await.expect("search");
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 2).await.expect("search"); // unwrap allowed (AGENT:08)
         assert_eq!(results.len(), 2);
         // doc-1 should be closest
         assert!(results[0].score > results[1].score);
@@ -668,12 +668,12 @@ mod tests {
             Some(json!({"topic": "rust", "priority": 1})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // unwrap allowed (AGENT:08)
 
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // unwrap allowed (AGENT:08)
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "doc-1");
-        let meta = results[0].metadata.as_ref().expect("metadata should exist");
+        let meta = results[0].metadata.as_ref().expect("metadata should exist"); // unwrap allowed (AGENT:08)
         assert_eq!(meta["topic"], "rust");
         assert_eq!(meta["priority"], 1);
     }
@@ -688,13 +688,13 @@ mod tests {
             Some(json!({"topic": "rust"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // unwrap allowed (AGENT:08)
 
-        let doc = db.get("doc-1").await.expect("get").expect("should exist");
+        let doc = db.get("doc-1").await.expect("get").expect("should exist"); // unwrap allowed (AGENT:08)
         assert_eq!(doc.id, "doc-1");
-        assert_eq!(doc.metadata.expect("valid")["topic"], "rust");
+        assert_eq!(doc.metadata.expect("valid")["topic"], "rust"); // unwrap allowed (AGENT:08)
 
-        let none = db.get("nonexistent").await.expect("get");
+        let none = db.get("nonexistent").await.expect("get"); // unwrap allowed (AGENT:08)
         assert!(none.is_none());
     }
 
@@ -704,18 +704,18 @@ mod tests {
 
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"v": 1})))
             .await
-            .expect("insert");
+            .expect("insert"); // unwrap allowed (AGENT:08)
 
         db.update("doc-1", &[0.0, 1.0, 0.0, 0.0], Some(json!({"v": 2})))
             .await
-            .expect("update");
+            .expect("update"); // unwrap allowed (AGENT:08)
 
         // Metadata should be updated
-        let doc = db.get("doc-1").await.expect("get").expect("exists");
-        assert_eq!(doc.metadata.expect("valid")["v"], 2);
+        let doc = db.get("doc-1").await.expect("get").expect("exists"); // unwrap allowed (AGENT:08)
+        assert_eq!(doc.metadata.expect("valid")["v"], 2); // unwrap allowed (AGENT:08)
 
         // Vector should be updated — search for new vector should find it
-        let results = db.search(&[0.0, 1.0, 0.0, 0.0], 1).await.expect("search");
+        let results = db.search(&[0.0, 1.0, 0.0, 0.0], 1).await.expect("search"); // unwrap allowed (AGENT:08)
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "doc-1");
     }
@@ -726,14 +726,14 @@ mod tests {
 
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
-        assert_eq!(db.len().await.expect("len"), 1);
+            .expect("insert"); // unwrap allowed (AGENT:08)
+        assert_eq!(db.len().await.expect("len"), 1); // unwrap allowed (AGENT:08)
 
-        db.delete("doc-1").await.expect("delete");
-        assert_eq!(db.len().await.expect("len"), 0);
+        db.delete("doc-1").await.expect("delete"); // unwrap allowed (AGENT:08)
+        assert_eq!(db.len().await.expect("len"), 0); // unwrap allowed (AGENT:08)
 
         // get should return None after delete
-        let doc = db.get("doc-1").await.expect("get");
+        let doc = db.get("doc-1").await.expect("get"); // unwrap allowed (AGENT:08)
         assert!(doc.is_none());
     }
 
@@ -743,15 +743,15 @@ mod tests {
 
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // unwrap allowed (AGENT:08)
         db.insert("doc-2", &[0.0, 1.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // unwrap allowed (AGENT:08)
 
         // Should not error
         db.relate("doc-1", "doc-2", "references")
             .await
-            .expect("relate");
+            .expect("relate"); // unwrap allowed (AGENT:08)
     }
 
     #[tokio::test]
@@ -764,7 +764,7 @@ mod tests {
     #[tokio::test]
     async fn test_empty_search() {
         let (db, _tmp) = test_db(4).await;
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 5).await.expect("search");
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 5).await.expect("search"); // unwrap allowed (AGENT:08)
         assert!(results.is_empty());
     }
 
@@ -774,31 +774,31 @@ mod tests {
 
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // unwrap allowed (AGENT:08)
         db.insert("doc-2", &[0.0, 1.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // unwrap allowed (AGENT:08)
         db.insert("doc-3", &[0.0, 0.0, 1.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // unwrap allowed (AGENT:08)
 
         db.relate("doc-1", "doc-2", "references")
             .await
-            .expect("relate");
+            .expect("relate"); // unwrap allowed (AGENT:08)
         db.relate("doc-1", "doc-3", "references")
             .await
-            .expect("relate");
+            .expect("relate"); // unwrap allowed (AGENT:08)
 
         // Scan for relations of doc-1
         let results = db
             .scan_prefix("__rel:doc-1:references:")
             .await
-            .expect("scan");
+            .expect("scan"); // unwrap allowed (AGENT:08)
         assert_eq!(results.len(), 2);
 
         let related_ids: Vec<String> = results
             .into_iter()
-            .map(|(_, v)| v["to"].as_str().expect("valid").to_string())
+            .map(|(_, v)| v["to"].as_str().expect("valid").to_string()) // unwrap allowed (AGENT:08)
             .collect();
         assert!(related_ids.contains(&"doc-2".to_string()));
         assert!(related_ids.contains(&"doc-3".to_string()));
@@ -807,7 +807,7 @@ mod tests {
         let backward_results = db
             .scan_prefix("__rel:doc-2:references:")
             .await
-            .expect("scan bwd");
+            .expect("scan bwd"); // unwrap allowed (AGENT:08)
         assert_eq!(backward_results.len(), 1);
         assert_eq!(backward_results[0].1["to"], "doc-1");
     }
@@ -818,9 +818,9 @@ mod tests {
 
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // unwrap allowed (AGENT:08)
 
-        let stats = db.stats().await.expect("stats");
+        let stats = db.stats().await.expect("stats"); // unwrap allowed (AGENT:08)
         assert_eq!(stats.index_stats.num_vectors, 1);
         assert!(stats.storage_stats.memtable_size_bytes > 0);
     }
@@ -836,32 +836,32 @@ mod tests {
             Some(json!({"type": "agent"})),
         )
         .await
-        .expect("insert agent");
+        .expect("insert agent"); // unwrap allowed (AGENT:08)
         db.insert(
             "task-1",
             &[0.9, 0.6, 0.0, 0.0],
             Some(json!({"type": "task"})),
         )
         .await
-        .expect("insert task");
+        .expect("insert task"); // unwrap allowed (AGENT:08)
         db.insert(
             "task-2",
             &[0.0, 0.0, 1.0, 0.5],
             Some(json!({"type": "task"})),
         )
         .await
-        .expect("insert task 2");
+        .expect("insert task 2"); // unwrap allowed (AGENT:08)
 
         // 2. Relate
         db.relate("agent-1", "task-1", "assigned_to")
             .await
-            .expect("relate 1");
+            .expect("relate 1"); // unwrap allowed (AGENT:08)
         db.relate("agent-1", "task-2", "assigned_to")
             .await
-            .expect("relate 2");
+            .expect("relate 2"); // unwrap allowed (AGENT:08)
 
         // 3. Search
-        let results = db.search(&[1.0, 0.5, 0.0, 0.0], 2).await.expect("search");
+        let results = db.search(&[1.0, 0.5, 0.0, 0.0], 2).await.expect("search"); // unwrap allowed (AGENT:08)
         assert_eq!(results[0].id, "agent-1"); // Exactly matches
         assert_eq!(results[1].id, "task-1"); // Close match
 
@@ -872,57 +872,57 @@ mod tests {
             Some(json!({"type": "task", "status": "done"})),
         )
         .await
-        .expect("update task");
+        .expect("update task"); // unwrap allowed (AGENT:08)
 
         // 5. Scan prefix
         let edges = db
             .scan_prefix("__rel:agent-1:assigned_to:")
             .await
-            .expect("scan");
+            .expect("scan"); // unwrap allowed (AGENT:08)
         assert_eq!(edges.len(), 2);
 
         // 6. Delete
-        db.delete("agent-1").await.expect("delete");
+        db.delete("agent-1").await.expect("delete"); // unwrap allowed (AGENT:08)
 
         // 7. Verify empty search and missing doc
-        let get_agent = db.get("agent-1").await.expect("get");
+        let get_agent = db.get("agent-1").await.expect("get"); // unwrap allowed (AGENT:08)
         assert!(get_agent.is_none());
-        assert_eq!(db.len().await.expect("len"), 2); // 3 inserted, 1 deleted
+        assert_eq!(db.len().await.expect("len"), 2); // 3 inserted, 1 deleted // unwrap allowed (AGENT:08)
     }
 
     #[tokio::test]
     async fn test_collections_are_isolated() {
         let (db, _tmp) = test_db(4).await;
-        let col_a = db.collection("a").await.expect("col a");
-        let col_b = db.collection("b").await.expect("col b");
+        let col_a = db.collection("a").await.expect("col a"); // unwrap allowed (AGENT:08)
+        let col_b = db.collection("b").await.expect("col b"); // unwrap allowed (AGENT:08)
 
         col_a
             .insert("k1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"val": "a"})))
             .await
-            .expect("ins a");
+            .expect("ins a"); // unwrap allowed (AGENT:08)
         col_b
             .insert("k1", &[0.0, 1.0, 0.0, 0.0], Some(json!({"val": "b"})))
             .await
-            .expect("ins b");
+            .expect("ins b"); // unwrap allowed (AGENT:08)
 
-        let res_a = col_a.get("k1").await.expect("get a").expect("exists");
-        let res_b = col_b.get("k1").await.expect("get b").expect("exists");
+        let res_a = col_a.get("k1").await.expect("get a").expect("exists"); // unwrap allowed (AGENT:08)
+        let res_b = col_b.get("k1").await.expect("get b").expect("exists"); // unwrap allowed (AGENT:08)
 
-        assert_eq!(res_a.metadata.expect("test")["val"], "a");
-        assert_eq!(res_b.metadata.expect("test")["val"], "b");
+        assert_eq!(res_a.metadata.expect("test")["val"], "a"); // unwrap allowed (AGENT:08)
+        assert_eq!(res_b.metadata.expect("test")["val"], "b"); // unwrap allowed (AGENT:08)
 
         let search_a = col_a
             .search(&[1.0, 0.0, 0.0, 0.0], 1)
             .await
-            .expect("search a");
+            .expect("search a"); // unwrap allowed (AGENT:08)
         assert_eq!(search_a.len(), 1);
         assert_eq!(search_a[0].id, "k1");
-        assert_eq!(search_a[0].metadata.as_ref().expect("test")["val"], "a");
+        assert_eq!(search_a[0].metadata.as_ref().expect("test")["val"], "a"); // unwrap allowed (AGENT:08)
     }
 
     #[tokio::test]
     async fn test_close_and_reopen() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
         let path = tmp.path().to_path_buf();
         let config = MemFuseConfig {
             dimension: 4,
@@ -932,36 +932,36 @@ mod tests {
         {
             let db = MemFuse::open_with_config(&path, config.clone())
                 .await
-                .expect("open 1");
+                .expect("open 1"); // unwrap allowed (AGENT:08)
             db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"v": 1})))
                 .await
-                .expect("insert");
-            db.close().await.expect("close");
+                .expect("insert"); // unwrap allowed (AGENT:08)
+            db.close().await.expect("close"); // unwrap allowed (AGENT:08)
         }
 
         {
             let db = MemFuse::open_with_config(&path, config)
                 .await
-                .expect("open 2");
-            let doc = db.get("doc-1").await.expect("get").expect("exists");
+                .expect("open 2"); // unwrap allowed (AGENT:08)
+            let doc = db.get("doc-1").await.expect("get").expect("exists"); // unwrap allowed (AGENT:08)
             assert_eq!(doc.id, "doc-1");
-            assert_eq!(doc.metadata.expect("valid")["v"], 1);
+            assert_eq!(doc.metadata.expect("valid")["v"], 1); // unwrap allowed (AGENT:08)
         }
     }
 
     #[tokio::test]
     async fn test_drop_removes_all_data() {
         let (db, _tmp) = test_db(4).await;
-        let col = db.collection("drop-me").await.expect("col");
+        let col = db.collection("drop-me").await.expect("col"); // unwrap allowed (AGENT:08)
         col.insert("k1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
-            .expect("ins");
+            .expect("ins"); // unwrap allowed (AGENT:08)
 
-        db.drop_collection("drop-me").await.expect("drop");
+        db.drop_collection("drop-me").await.expect("drop"); // unwrap allowed (AGENT:08)
 
-        let col2 = db.collection("drop-me").await.expect("re-create");
+        let col2 = db.collection("drop-me").await.expect("re-create"); // unwrap allowed (AGENT:08)
         assert_eq!(col2.len().await, 0);
-        assert!(col2.get("k1").await.expect("get").is_none());
+        assert!(col2.get("k1").await.expect("get").is_none()); // unwrap allowed (AGENT:08)
     }
 
     #[tokio::test]
@@ -969,23 +969,23 @@ mod tests {
         let (db, _tmp) = test_db(4).await;
         db.insert("k", &[1.0, 0.0, 0.0, 0.0], Some(json!({"v": 1})))
             .await
-            .expect("ins");
+            .expect("ins"); // unwrap allowed (AGENT:08)
 
-        let doc = db.get("k").await.expect("get").expect("exists");
+        let doc = db.get("k").await.expect("get").expect("exists"); // unwrap allowed (AGENT:08)
         assert_eq!(doc.id, "k");
 
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // unwrap allowed (AGENT:08)
         assert_eq!(results[0].id, "k");
     }
 
     #[tokio::test]
     async fn test_list_collections() {
         let (db, _tmp) = test_db(4).await;
-        db.collection("c1").await.expect("c1");
-        db.collection("c2").await.expect("c2");
-        db.collection("c3").await.expect("c3");
+        db.collection("c1").await.expect("c1"); // unwrap allowed (AGENT:08)
+        db.collection("c2").await.expect("c2"); // unwrap allowed (AGENT:08)
+        db.collection("c3").await.expect("c3"); // unwrap allowed (AGENT:08)
 
-        let list = db.list_collections().await.expect("list");
+        let list = db.list_collections().await.expect("list"); // unwrap allowed (AGENT:08)
         assert!(list.contains(&"default".to_string()));
         assert!(list.contains(&"c1".to_string()));
         assert!(list.contains(&"c2".to_string()));
@@ -995,7 +995,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_repair_on_open_resolves_pending_intents() {
-        let tmp = tempfile::TempDir::new().expect("temp dir");
+        let tmp = tempfile::TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
         let path = tmp.path().to_path_buf();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1006,17 +1006,17 @@ mod tests {
         {
             let db = MemFuse::open_with_config(&path, config.clone())
                 .await
-                .expect("open 1");
-            let col = db.collection("recovery-test").await.expect("col");
+                .expect("open 1"); // unwrap allowed (AGENT:08)
+            let col = db.collection("recovery-test").await.expect("col"); // unwrap allowed (AGENT:08)
 
             // We'll use a direct LSM put to bypass HNSW
-            let doc_id = DocId::from_key("recovered-doc").expect("doc_id");
+            let doc_id = DocId::from_key("recovered-doc").expect("doc_id"); // unwrap allowed (AGENT:08)
             let stored = crate::collection::StoredDocument {
                 id: "recovered-doc".to_string(),
                 embedding: vec![1.0, 0.0, 0.0, 0.0],
                 metadata: Some(json!({"status": "recovered"})),
             };
-            let data = serde_json::to_vec(&stored).expect("json");
+            let data = serde_json::to_vec(&stored).expect("json"); // unwrap allowed (AGENT:08)
 
             let user_key = col.namespaced_key(b"recovered-doc", 0);
             let doc_key = col.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
@@ -1026,34 +1026,34 @@ mod tests {
             db.storage
                 .put(tx, &user_key, &data)
                 .await
-                .expect("put user");
-            db.storage.put(tx, &doc_key, &data).await.expect("put doc");
+                .expect("put user"); // unwrap allowed (AGENT:08)
+            db.storage.put(tx, &doc_key, &data).await.expect("put doc"); // unwrap allowed (AGENT:08)
 
             // Manually write a "pending" intent
             let intent_key = col.namespaced_key(tx.inner().to_le_bytes().as_ref(), 3);
             db.storage
                 .put(tx, &intent_key, b"pending")
                 .await
-                .expect("put intent");
+                .expect("put intent"); // unwrap allowed (AGENT:08)
 
-            db.storage.commit(tx).await.expect("commit");
+            db.storage.commit(tx).await.expect("commit"); // unwrap allowed (AGENT:08)
 
             // Verify it's NOT in HNSW yet (search should fail to find it)
-            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // unwrap allowed (AGENT:08)
             assert!(results.is_empty(), "Should not be in HNSW yet");
 
-            db.close().await.expect("close");
+            db.close().await.expect("close"); // unwrap allowed (AGENT:08)
         }
 
         // 2. Re-open: repair_on_open should trigger and re-sync
         {
             let db = MemFuse::open_with_config(&path, config)
                 .await
-                .expect("open 2 (repair)");
-            let col = db.collection("recovery-test").await.expect("col");
+                .expect("open 2 (repair)"); // unwrap allowed (AGENT:08)
+            let col = db.collection("recovery-test").await.expect("col"); // unwrap allowed (AGENT:08)
 
             // Verify it IS now in HNSW
-            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // unwrap allowed (AGENT:08)
             assert_eq!(results.len(), 1, "Should be repaired and found in HNSW");
             assert_eq!(results[0].id, "recovered-doc");
 
@@ -1062,7 +1062,7 @@ mod tests {
                 .storage
                 .scan_prefix(b"__col:recovery-test:\x00\x03")
                 .await
-                .expect("scan intents");
+                .expect("scan intents"); // unwrap allowed (AGENT:08)
             let found_repaired = entries.iter().any(|(_, v)| v == b"repaired");
             assert!(found_repaired, "Intent should be marked as repaired");
         }

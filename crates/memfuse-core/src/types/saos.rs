@@ -3,7 +3,7 @@
 //! Defines types for namespace isolation, token budgets for LLMs, and hybrid
 //! search query construction.
 //!
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 
 use super::domain::DocId;
 use super::filter::FilterExpr;
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 /// Unique identifier for a Namespace.
 ///
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NamespaceId(u64);
 
@@ -34,7 +34,7 @@ impl std::fmt::Display for NamespaceId {
 
 /// Token budget configuration for LLM context management.
 ///
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenBudget {
     pub max_tokens: usize,
@@ -81,7 +81,7 @@ impl Default for TokenBudget {
 
 /// Normalized fusion weights for hybrid search.
 ///
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FusionWeights {
     vector: f32,
@@ -119,7 +119,7 @@ impl FusionWeights {
 
 /// Defines cross-namespace isolation guarantees.
 ///
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IsolationLevel {
     Strict,
@@ -129,7 +129,7 @@ pub enum IsolationLevel {
 
 /// A chunk of context for LLM budget allocation.
 ///
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextChunk {
     pub doc_id: DocId,
@@ -141,7 +141,7 @@ pub struct ContextChunk {
 
 /// An aggregated context window constrained by a token budget.
 ///
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextWindow {
     pub chunks: Vec<ContextChunk>,
@@ -151,7 +151,7 @@ pub struct ContextWindow {
 
 /// Evaluated result for hybrid/4-signal search.
 ///
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScoredEntry {
     pub id: String,
@@ -161,7 +161,7 @@ pub struct ScoredEntry {
 
 /// A unified query traversing multiple index signals.
 ///
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HybridQuery {
     pub text_query: Option<String>,
@@ -180,7 +180,7 @@ impl HybridQuery {
 
 /// Builder for HybridQuery to improve DX.
 ///
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Default)]
 pub struct HybridQueryBuilder {
     text_query: Option<String>,
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn test_fusion_weights_valid() {
-        let w = FusionWeights::new(0.5, 0.5, 0.0, 0.0).expect("valid");
+        let w = FusionWeights::new(0.5, 0.5, 0.0, 0.0).expect("valid"); // unwrap allowed (AGENT:08)
         assert_eq!(w.vector(), 0.5);
         assert_eq!(w.text(), 0.5);
     }
@@ -275,10 +275,10 @@ mod tests {
             .with_vector_query(vec![0.1, 0.2])
             .with_k(5)
             .build()
-            .expect("build ok");
+            .expect("build ok"); // unwrap allowed (AGENT:08)
 
-        assert_eq!(query.text_query.unwrap(), "test query");
-        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]);
+        assert_eq!(query.text_query.unwrap(), "test query"); // unwrap allowed (AGENT:08)
+        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]); // unwrap allowed (AGENT:08)
         assert_eq!(query.k, 5);
         // Default weights: vector=1.0, others=0.0
         assert_eq!(query.fusion_weights.vector(), 1.0);
@@ -286,18 +286,18 @@ mod tests {
 
     #[test]
     fn test_hybrid_query_builder_custom_weights() {
-        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap();
+        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap(); // unwrap allowed (AGENT:08)
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())
             .build()
-            .unwrap();
+            .unwrap(); // unwrap allowed (AGENT:08)
 
         assert_eq!(query.fusion_weights, weights);
     }
 
     #[test]
     fn test_hybrid_query_builder_defaults() {
-        let query = HybridQuery::builder().build().unwrap();
+        let query = HybridQuery::builder().build().unwrap(); // unwrap allowed (AGENT:08)
         assert_eq!(query.k, 10);
         assert_eq!(query.fusion_weights.vector(), 1.0);
         assert!(query.text_query.is_none());

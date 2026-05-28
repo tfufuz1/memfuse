@@ -9,7 +9,7 @@ use tokio::task::JoinHandle;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_concurrent_collection_ops() {
-    let tmp = TempDir::new().expect("temp dir");
+    let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
     let config = MemFuseConfig {
         dimension: 4,
         max_elements: 10000,
@@ -19,10 +19,10 @@ async fn test_concurrent_collection_ops() {
     let db = Arc::new(
         MemFuse::open_with_config(tmp.path(), config)
             .await
-            .expect("open db"),
+            .expect("open db"), // unwrap allowed (AGENT:08)
     );
 
-    let col = Arc::new(db.collection("shared-stress").await.expect("collection"));
+    let col = Arc::new(db.collection("shared-stress").await.expect("collection")); // unwrap allowed (AGENT:08)
 
     let num_tasks = 20;
     let ops_per_task = 50;
@@ -38,23 +38,23 @@ async fn test_concurrent_collection_ops() {
                 // Insert
                 col.insert(&id, &vec, Some(json!({"t": t, "i": i})))
                     .await
-                    .expect("insert");
+                    .expect("insert"); // unwrap allowed (AGENT:08)
 
                 // Search
-                let results = col.search(&vec, 1).await.expect("search");
+                let results = col.search(&vec, 1).await.expect("search"); // unwrap allowed (AGENT:08)
                 assert!(
                     !results.is_empty(),
                     "Search should find at least one result (itself)"
                 );
 
                 // Delete
-                col.delete(&id).await.expect("delete");
+                col.delete(&id).await.expect("delete"); // unwrap allowed (AGENT:08)
             }
         }));
     }
 
     for h in handles {
-        h.await.expect("task panicked");
+        h.await.expect("task panicked"); // unwrap allowed (AGENT:08)
     }
 
     // Final sanity check: collection should be empty

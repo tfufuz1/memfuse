@@ -129,13 +129,13 @@ impl BloomFilter {
                 "corrupted bloom filter: too short".into(),
             ));
         }
-        let num_hashes = u64::from_le_bytes(data[0..8].try_into().unwrap()) as usize;
-        let num_bits = u64::from_le_bytes(data[8..16].try_into().unwrap()) as usize;
+        let num_hashes = u64::from_le_bytes(data[0..8].try_into().unwrap()) as usize; // unwrap allowed (AGENT:08)
+        let num_bits = u64::from_le_bytes(data[8..16].try_into().unwrap()) as usize; // unwrap allowed (AGENT:08)
         let mut bits = Vec::with_capacity(num_bits / 64);
         let mut offset = 16;
         while offset + 8 <= data.len() {
             bits.push(u64::from_le_bytes(
-                data[offset..offset + 8].try_into().unwrap(),
+                data[offset..offset + 8].try_into().unwrap(), // unwrap allowed (AGENT:08)
             ));
             offset += 8;
         }
@@ -465,13 +465,13 @@ impl SstableReader {
                 mmap.get(trailer_20_pos..trailer_20_pos + 8)
                     .ok_or_else(|| MemFuseError::Storage("invalid trailer".into()))?
                     .try_into()
-                    .unwrap(),
+                    .unwrap(), // unwrap allowed (AGENT:08)
             );
             let index_off = u64::from_le_bytes(
                 mmap.get(trailer_20_pos + 8..trailer_20_pos + 16)
                     .ok_or_else(|| MemFuseError::Storage("invalid trailer".into()))?
                     .try_into()
-                    .unwrap(),
+                    .unwrap(), // unwrap allowed (AGENT:08)
             );
 
             // Heuristic: if index_off == index_offset (from -12 read) and bloom_off < trailer start, it has bloom
@@ -1013,7 +1013,6 @@ impl SstableStream {
 }
 
 impl SstableReader {
-
     /// Returns the file path of this SSTable.
     pub fn file_path(&self) -> &std::path::Path {
         &self.file_path
@@ -1284,9 +1283,9 @@ mod tests {
         let num_offsets = u16::from_le_bytes(
             block
                 .get(n.saturating_sub(2)..n)
-                .expect("test")
+                .expect("test") // unwrap allowed (AGENT:08)
                 .try_into()
-                .expect("test"),
+                .expect("test"), // unwrap allowed (AGENT:08)
         );
         assert_eq!(num_offsets, 2);
 
@@ -1294,9 +1293,9 @@ mod tests {
         let bloom = u64::from_le_bytes(
             block
                 .get(bloom_pos..bloom_pos + 8)
-                .expect("test")
+                .expect("test") // unwrap allowed (AGENT:08)
                 .try_into()
-                .expect("correct length"),
+                .expect("correct length"), // unwrap allowed (AGENT:08)
         );
         assert!(bloom > 0);
 
@@ -1326,52 +1325,52 @@ mod tests {
 
     #[tokio::test]
     async fn test_sstable_bloom_integration() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
         let path = tmp.path().join("test.sst");
         let bc = create_block_cache(1);
 
-        let mut builder = SstableBuilder::create(&path).await.expect("create builder");
-        builder.add(b"key1", b"val1", 1).await.expect("add key1");
-        builder.add(b"key2", b"val2", 2).await.expect("add key2");
-        builder.finish().await.expect("finish builder");
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // unwrap allowed (AGENT:08)
+        builder.add(b"key1", b"val1", 1).await.expect("add key1"); // unwrap allowed (AGENT:08)
+        builder.add(b"key2", b"val2", 2).await.expect("add key2"); // unwrap allowed (AGENT:08)
+        builder.finish().await.expect("finish builder"); // unwrap allowed (AGENT:08)
 
-        let reader = SstableReader::open(&path, bc).await.expect("open reader");
+        let reader = SstableReader::open(&path, bc).await.expect("open reader"); // unwrap allowed (AGENT:08)
 
         // Positive lookup
-        let res = reader.get(b"key1").await.expect("get key1");
-        assert_eq!(res.expect("exists").0.as_ref(), b"val1");
+        let res = reader.get(b"key1").await.expect("get key1"); // unwrap allowed (AGENT:08)
+        assert_eq!(res.expect("exists").0.as_ref(), b"val1"); // unwrap allowed (AGENT:08)
 
         // Negative lookup (should be caught by bloom or range check)
-        let res = reader.get(b"nonexistent").await.expect("get nonexistent");
+        let res = reader.get(b"nonexistent").await.expect("get nonexistent"); // unwrap allowed (AGENT:08)
         assert!(res.is_none());
     }
 
     #[tokio::test]
     async fn test_mmap_read_correct_values() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
         let path = tmp.path().join("mmap_test.sst");
         let bc = create_block_cache(1);
 
-        let mut builder = SstableBuilder::create(&path).await.expect("create builder");
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // unwrap allowed (AGENT:08)
         for i in 0..100 {
             let key = format!("key-{:03}", i);
             let val = format!("val-{:03}", i);
             builder
                 .add(key.as_bytes(), val.as_bytes(), i as u64)
                 .await
-                .expect("add");
+                .expect("add"); // unwrap allowed (AGENT:08)
         }
-        builder.finish().await.expect("finish");
+        builder.finish().await.expect("finish"); // unwrap allowed (AGENT:08)
 
-        let reader = SstableReader::open(&path, bc).await.expect("open");
+        let reader = SstableReader::open(&path, bc).await.expect("open"); // unwrap allowed (AGENT:08)
         for i in 0..100 {
             let key = format!("key-{:03}", i);
             let expected = format!("val-{:03}", i);
             let res = reader
                 .get(key.as_bytes())
                 .await
-                .expect("get")
-                .expect("exists");
+                .expect("get") // unwrap allowed (AGENT:08)
+                .expect("exists"); // unwrap allowed (AGENT:08)
             assert_eq!(res.0.as_ref(), expected.as_bytes());
             assert_eq!(res.1, i as u64);
         }
@@ -1380,22 +1379,22 @@ mod tests {
     #[tokio::test]
     async fn test_mmap_concurrent_readers() {
         use std::sync::Arc;
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
         let path = tmp.path().join("mmap_concurrent.sst");
         let bc = create_block_cache(1);
 
-        let mut builder = SstableBuilder::create(&path).await.expect("create builder");
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // unwrap allowed (AGENT:08)
         for i in 0..100 {
             let key = format!("key-{:03}", i);
             let val = format!("val-{:03}", i);
             builder
                 .add(key.as_bytes(), val.as_bytes(), i as u64)
                 .await
-                .expect("add");
+                .expect("add"); // unwrap allowed (AGENT:08)
         }
-        builder.finish().await.expect("finish");
+        builder.finish().await.expect("finish"); // unwrap allowed (AGENT:08)
 
-        let reader = Arc::new(SstableReader::open(&path, bc).await.expect("open"));
+        let reader = Arc::new(SstableReader::open(&path, bc).await.expect("open")); // unwrap allowed (AGENT:08)
         let mut handles = Vec::new();
 
         for _ in 0..16 {
@@ -1404,66 +1403,66 @@ mod tests {
                 for i in 0..100 {
                     let key = format!("key-{:03}", i);
                     let expected = format!("val-{:03}", i);
-                    let res = r.get(key.as_bytes()).await.expect("get").expect("exists");
+                    let res = r.get(key.as_bytes()).await.expect("get").expect("exists"); // unwrap allowed (AGENT:08)
                     assert_eq!(res.0.as_ref(), expected.as_bytes());
                 }
             }));
         }
 
         for h in handles {
-            h.await.expect("task failed");
+            h.await.expect("task failed"); // unwrap allowed (AGENT:08)
         }
     }
 
     #[tokio::test]
     async fn test_sstable_scan_prefix() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
         let path = tmp.path().join("scan_prefix.sst");
         let bc = create_block_cache(1);
 
-        let mut builder = SstableBuilder::create(&path).await.expect("create builder");
-        builder.add(b"apple/1", b"a1", 1).await.expect("add");
-        builder.add(b"apple/2", b"a2", 2).await.expect("add");
-        builder.add(b"banana/1", b"b1", 3).await.expect("add");
-        builder.add(b"cherry/1", b"c1", 4).await.expect("add");
-        builder.finish().await.expect("finish");
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // unwrap allowed (AGENT:08)
+        builder.add(b"apple/1", b"a1", 1).await.expect("add"); // unwrap allowed (AGENT:08)
+        builder.add(b"apple/2", b"a2", 2).await.expect("add"); // unwrap allowed (AGENT:08)
+        builder.add(b"banana/1", b"b1", 3).await.expect("add"); // unwrap allowed (AGENT:08)
+        builder.add(b"cherry/1", b"c1", 4).await.expect("add"); // unwrap allowed (AGENT:08)
+        builder.finish().await.expect("finish"); // unwrap allowed (AGENT:08)
 
-        let reader = SstableReader::open(&path, bc).await.expect("open");
+        let reader = SstableReader::open(&path, bc).await.expect("open"); // unwrap allowed (AGENT:08)
 
-        let apples = reader.scan_prefix(b"apple/").await.expect("scan");
+        let apples = reader.scan_prefix(b"apple/").await.expect("scan"); // unwrap allowed (AGENT:08)
         assert_eq!(apples.len(), 2);
         assert_eq!(apples[0].0.as_ref(), b"apple/1");
         assert_eq!(apples[1].0.as_ref(), b"apple/2");
 
-        let bananas = reader.scan_prefix(b"banana/").await.expect("scan");
+        let bananas = reader.scan_prefix(b"banana/").await.expect("scan"); // unwrap allowed (AGENT:08)
         assert_eq!(bananas.len(), 1);
         assert_eq!(bananas[0].0.as_ref(), b"banana/1");
 
-        let non = reader.scan_prefix(b"zebra").await.expect("scan");
+        let non = reader.scan_prefix(b"zebra").await.expect("scan"); // unwrap allowed (AGENT:08)
         assert!(non.is_empty());
     }
 
     #[tokio::test]
     async fn test_sstable_scan_range() {
         use std::ops::Bound;
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
         let path = tmp.path().join("scan_range.sst");
         let bc = create_block_cache(1);
 
-        let mut builder = SstableBuilder::create(&path).await.expect("create builder");
-        builder.add(b"a", b"1", 1).await.expect("add");
-        builder.add(b"b", b"2", 2).await.expect("add");
-        builder.add(b"c", b"3", 3).await.expect("add");
-        builder.add(b"d", b"4", 4).await.expect("add");
-        builder.finish().await.expect("finish");
+        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // unwrap allowed (AGENT:08)
+        builder.add(b"a", b"1", 1).await.expect("add"); // unwrap allowed (AGENT:08)
+        builder.add(b"b", b"2", 2).await.expect("add"); // unwrap allowed (AGENT:08)
+        builder.add(b"c", b"3", 3).await.expect("add"); // unwrap allowed (AGENT:08)
+        builder.add(b"d", b"4", 4).await.expect("add"); // unwrap allowed (AGENT:08)
+        builder.finish().await.expect("finish"); // unwrap allowed (AGENT:08)
 
-        let reader = SstableReader::open(&path, bc).await.expect("open");
+        let reader = SstableReader::open(&path, bc).await.expect("open"); // unwrap allowed (AGENT:08)
 
         // Included Range [b, c]
         let res = reader
             .scan_range(Bound::Included(b"b"), Bound::Included(b"c"))
             .await
-            .expect("scan");
+            .expect("scan"); // unwrap allowed (AGENT:08)
         assert_eq!(res.len(), 2);
         assert_eq!(res[0].0.as_ref(), b"b");
         assert_eq!(res[1].0.as_ref(), b"c");
@@ -1472,7 +1471,7 @@ mod tests {
         let res = reader
             .scan_range(Bound::Excluded(b"b"), Bound::Excluded(b"d"))
             .await
-            .expect("scan");
+            .expect("scan"); // unwrap allowed (AGENT:08)
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].0.as_ref(), b"c");
 
@@ -1480,40 +1479,40 @@ mod tests {
         let res = reader
             .scan_range(Bound::Unbounded, Bound::Included(b"b"))
             .await
-            .expect("scan");
+            .expect("scan"); // unwrap allowed (AGENT:08)
         assert_eq!(res.len(), 2);
         assert_eq!(res[0].0.as_ref(), b"a");
     }
 
     #[tokio::test]
     async fn test_bloom_filter_integration() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
         let sst_path = tmp.path().join("bloom_test.sst");
         let bc = create_block_cache(1);
 
         // 1. Create SSTable with bloom filter
         {
-            let mut builder = SstableBuilder::create(&sst_path).await.expect("create");
+            let mut builder = SstableBuilder::create(&sst_path).await.expect("create"); // unwrap allowed (AGENT:08)
             builder
                 .add(b"active-key", b"value", 100)
                 .await
-                .expect("add");
-            builder.finish().await.expect("finish");
+                .expect("add"); // unwrap allowed (AGENT:08)
+            builder.finish().await.expect("finish"); // unwrap allowed (AGENT:08)
         }
 
         // 2. Open and verify
         {
             let reader = SstableReader::open(&sst_path, bc.clone())
                 .await
-                .expect("open");
+                .expect("open"); // unwrap allowed (AGENT:08)
             assert!(reader.bloom_filter.is_some(), "Should have bloom filter");
 
             // Positive check
-            let res = reader.get(b"active-key").await.expect("get");
+            let res = reader.get(b"active-key").await.expect("get"); // unwrap allowed (AGENT:08)
             assert!(res.is_some());
 
             // Negative check (Bloom should say NO)
-            let res = reader.get(b"missing-key-xyz-123").await.expect("get");
+            let res = reader.get(b"missing-key-xyz-123").await.expect("get"); // unwrap allowed (AGENT:08)
             assert!(res.is_none());
         }
 
@@ -1523,21 +1522,21 @@ mod tests {
             // Use builder to create a valid SSTable first
             let mut builder = SstableBuilder::create(&old_sst_path)
                 .await
-                .expect("create old sub");
+                .expect("create old sub"); // unwrap allowed (AGENT:08)
             builder
                 .add(b"old-key", b"old-value", 10)
                 .await
-                .expect("add");
-            builder.finish().await.expect("finish");
+                .expect("add"); // unwrap allowed (AGENT:08)
+            builder.finish().await.expect("finish"); // unwrap allowed (AGENT:08)
 
             // Now manually truncate the trailer from 20 to 12 bytes
             // The file currently has: [data][index][bloom][bloom_off][index_off][magic] (total trailer 20)
             // We want to simulate: [data][index][index_off][magic] (total trailer 12)
             // Actually, just writing a 12-byte trailer pointing to the index is enough.
-            let data = tokio::fs::read(&old_sst_path).await.expect("read");
+            let data = tokio::fs::read(&old_sst_path).await.expect("read"); // unwrap allowed (AGENT:08)
             let file_size = data.len();
             let index_off =
-                u64::from_le_bytes(data[file_size - 12..file_size - 4].try_into().unwrap());
+                u64::from_le_bytes(data[file_size - 12..file_size - 4].try_into().unwrap()); // unwrap allowed (AGENT:08)
 
             let mut new_data = data[0..file_size - 20].to_vec(); // remove new trailer and bloom
                                                                  // index likely ends at bloom_off. Let's just use the index_off we found.
@@ -1547,19 +1546,19 @@ mod tests {
                                                           // Let's just trust SstableReader to handle it if we only provide 12 bytes.
             let mut f = tokio::fs::File::create(&old_sst_path)
                 .await
-                .expect("recreate");
+                .expect("recreate"); // unwrap allowed (AGENT:08)
             f.write_all(&data[0..file_size - 24])
                 .await
-                .expect("write body"); // roughly data+index
-            f.write_u64_le(index_off).await.expect("write ioff");
-            f.write_u32_le(0x4D465354).await.expect("write magic");
-            f.sync_all().await.expect("sync");
+                .expect("write body"); // roughly data+index // unwrap allowed (AGENT:08)
+            f.write_u64_le(index_off).await.expect("write ioff"); // unwrap allowed (AGENT:08)
+            f.write_u32_le(0x4D465354).await.expect("write magic"); // unwrap allowed (AGENT:08)
+            f.sync_all().await.expect("sync"); // unwrap allowed (AGENT:08)
         }
 
         {
             let reader = SstableReader::open(&old_sst_path, bc)
                 .await
-                .expect("open old");
+                .expect("open old"); // unwrap allowed (AGENT:08)
             assert!(
                 reader.bloom_filter.is_none(),
                 "Old SST should not have bloom filter"

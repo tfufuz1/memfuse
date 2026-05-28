@@ -32,7 +32,7 @@ impl AgentTool for IncrementTool {
 
 #[tokio::test]
 async fn test_agent_persistence_and_recovery() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().unwrap(); // unwrap allowed (AGENT:08)
     let db_path = tmp.path();
 
     let config = MemFuseConfig {
@@ -40,8 +40,8 @@ async fn test_agent_persistence_and_recovery() {
         ..Default::default()
     };
 
-    let db = Arc::new(MemFuse::open_with_config(db_path, config).await.unwrap());
-    let state_collection = Arc::new(db.collection("agent_state").await.unwrap());
+    let db = Arc::new(MemFuse::open_with_config(db_path, config).await.unwrap()); // unwrap allowed (AGENT:08)
+    let state_collection = Arc::new(db.collection("agent_state").await.unwrap()); // unwrap allowed (AGENT:08)
 
     let mut graph = StateGraph::new();
     graph.add_node("start", "Start Node", NodeType::Start, None);
@@ -68,18 +68,18 @@ async fn test_agent_persistence_and_recovery() {
     );
 
     // Initial run
-    engine.run(&mut ctx, &graph).await.expect("Run failed");
+    engine.run(&mut ctx, &graph).await.expect("Run failed"); // unwrap allowed (AGENT:08)
 
     assert_eq!(ctx.status, AgentStatus::Completed);
-    assert_eq!(ctx.memory.get("last_output").unwrap().as_u64().unwrap(), 1);
+    assert_eq!(ctx.memory.get("last_output").unwrap().as_u64().unwrap(), 1); // unwrap allowed (AGENT:08)
 
     // Verify persistence in DB
     let final_doc = state_collection
         .get("task:test_task_123:final")
         .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(final_doc.metadata.unwrap()["status"], "Completed");
+        .unwrap() // unwrap allowed (AGENT:08)
+        .unwrap(); // unwrap allowed (AGENT:08)
+    assert_eq!(final_doc.metadata.unwrap()["status"], "Completed"); // unwrap allowed (AGENT:08)
 
     // Test Replay (Simulation of recovery)
     let db2 = Arc::new(
@@ -91,9 +91,9 @@ async fn test_agent_persistence_and_recovery() {
             },
         )
         .await
-        .unwrap(),
+        .unwrap(), // unwrap allowed (AGENT:08)
     );
-    let state_collection2 = Arc::new(db2.collection("agent_state").await.unwrap());
+    let state_collection2 = Arc::new(db2.collection("agent_state").await.unwrap()); // unwrap allowed (AGENT:08)
 
     let mut ctx2 = AgentContext::new(
         "test_task_123",
@@ -106,7 +106,7 @@ async fn test_agent_persistence_and_recovery() {
     engine
         .replay_from(&mut ctx2, "task_1")
         .await
-        .expect("Replay failed");
+        .expect("Replay failed"); // unwrap allowed (AGENT:08)
 
     // After replay, current_node should be "task_1" and memory should be restored (empty before task_1 executes)
     assert_eq!(ctx2.current_node, "task_1");

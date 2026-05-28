@@ -756,13 +756,13 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let index = DiskAnnIndex::try_new(valid_config).expect("valid config");
+        let index = DiskAnnIndex::try_new(valid_config).expect("valid config"); // unwrap allowed (AGENT:08)
         assert_eq!(index.len().await, 0);
     }
 
     #[tokio::test]
     async fn test_diskann_header_persistence() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed (AGENT:08)
         let index_path = temp_dir.path().join("header_test.idx");
 
         let config = DiskAnnConfig {
@@ -773,16 +773,16 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let mut index = DiskAnnIndex::try_new(config).expect("valid config");
+        let mut index = DiskAnnIndex::try_new(config).expect("valid config"); // unwrap allowed (AGENT:08)
         let vectors = vec![vec![1.0; 8]];
         let ids = vec![DocId::from(42)];
-        index.build(&vectors, &ids).await.expect("build");
+        index.build(&vectors, &ids).await.expect("build"); // unwrap allowed (AGENT:08)
 
-        let data = tokio::fs::read(&index_path).await.expect("read file");
+        let data = tokio::fs::read(&index_path).await.expect("read file"); // unwrap allowed (AGENT:08)
         assert!(data.starts_with(b"DANN"));
 
         let header =
-            DiskAnnHeader::try_from_bytes(&data[0..DiskAnnHeader::SIZE]).expect("try_from_bytes");
+            DiskAnnHeader::try_from_bytes(&data[0..DiskAnnHeader::SIZE]).expect("try_from_bytes"); // unwrap allowed (AGENT:08)
         assert_eq!(header.version, DISKANN_VERSION);
         assert_eq!(header.node_count, 1);
         assert_eq!(header.sector_size, 4096);
@@ -790,7 +790,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_diskann_recall_basic() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed (AGENT:08)
         let index_path = temp_dir.path().join("recall_test.idx");
 
         let config = DiskAnnConfig {
@@ -802,7 +802,7 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let mut index = DiskAnnIndex::try_new(config).expect("valid config");
+        let mut index = DiskAnnIndex::try_new(config).expect("valid config"); // unwrap allowed (AGENT:08)
 
         let n = 100;
         let mut vectors = Vec::with_capacity(n);
@@ -814,17 +814,17 @@ mod tests {
             ids.push(DocId::from(i as u64));
         }
 
-        index.build(&vectors, &ids).await.expect("Build failed");
+        index.build(&vectors, &ids).await.expect("Build failed"); // unwrap allowed (AGENT:08)
 
         let query = &vectors[50];
-        let results = index.search(query, 1).await.expect("Search failed");
+        let results = index.search(query, 1).await.expect("Search failed"); // unwrap allowed (AGENT:08)
         assert!(!results.is_empty());
         assert_eq!(results[0].doc_id, ids[50]);
     }
 
     #[tokio::test]
     async fn test_diskann_sq8_recall() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed (AGENT:08)
         let index_path = temp_dir.path().join("sq8_test.idx");
 
         let config = DiskAnnConfig {
@@ -837,7 +837,7 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let mut index = DiskAnnIndex::try_new(config).expect("valid config");
+        let mut index = DiskAnnIndex::try_new(config).expect("valid config"); // unwrap allowed (AGENT:08)
 
         let n = 200;
         let mut vectors = Vec::with_capacity(n);
@@ -849,10 +849,10 @@ mod tests {
             ids.push(DocId::from(i as u64));
         }
 
-        index.build(&vectors, &ids).await.expect("Build failed");
+        index.build(&vectors, &ids).await.expect("Build failed"); // unwrap allowed (AGENT:08)
 
         let query = &vectors[150];
-        let results = index.search(query, 1).await.expect("Search failed");
+        let results = index.search(query, 1).await.expect("Search failed"); // unwrap allowed (AGENT:08)
         assert!(!results.is_empty());
         assert_eq!(results[0].doc_id, ids[150]);
     }

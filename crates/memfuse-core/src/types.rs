@@ -3,7 +3,7 @@
 //! This module aggregates all fundamental domain objects, resource management types,
 //! and filtering primitives used across the MemFuse ecosystem.
 //!
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 
 pub mod budget;
 pub mod domain;

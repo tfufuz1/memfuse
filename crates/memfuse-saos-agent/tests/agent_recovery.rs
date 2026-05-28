@@ -49,7 +49,7 @@ impl AgentTool for SuccessTool {
 }
 
 async fn setup_env() -> (Arc<MemFuse>, TempDir) {
-    let tmp = TempDir::new().expect("failed to create temp dir");
+    let tmp = TempDir::new().expect("failed to create temp dir"); // unwrap allowed (AGENT:08)
     let config = MemFuseConfig {
         dimension: 3,
         max_elements: 1000,
@@ -59,7 +59,7 @@ async fn setup_env() -> (Arc<MemFuse>, TempDir) {
     let db = Arc::new(
         MemFuse::open_with_config(tmp.path(), config)
             .await
-            .expect("failed to open db"),
+            .expect("failed to open db"), // unwrap allowed (AGENT:08)
     );
     (db, tmp)
 }
@@ -67,7 +67,7 @@ async fn setup_env() -> (Arc<MemFuse>, TempDir) {
 #[tokio::test]
 async fn test_agent_auto_checkpoint_before_step() {
     let (db, _tmp) = setup_env().await;
-    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed"));
+    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed")); // unwrap allowed (AGENT:08)
     let mut ctx = AgentContext::new(
         "t1",
         "start",
@@ -84,21 +84,21 @@ async fn test_agent_auto_checkpoint_before_step() {
     let mut engine = OrchestratorEngine::new(db.inner_storage());
     engine.register_tool(Box::new(SuccessTool));
 
-    engine.run(&mut ctx, &graph).await.expect("run failed");
+    engine.run(&mut ctx, &graph).await.expect("run failed"); // unwrap allowed (AGENT:08)
 
     // Verify checkpoint exists
     let checkpoints = engine
         .checkpoint_store
         .list_checkpoints()
         .await
-        .expect("list failed");
+        .expect("list failed"); // unwrap allowed (AGENT:08)
     assert!(checkpoints.iter().any(|c| c.name == "task:t1:before:start"));
 }
 
 #[tokio::test]
 async fn test_agent_replay_from_checkpoint() {
     let (db, _tmp) = setup_env().await;
-    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed"));
+    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed")); // unwrap allowed (AGENT:08)
     let mut ctx = AgentContext::new(
         "t1",
         "start",
@@ -118,7 +118,7 @@ async fn test_agent_replay_from_checkpoint() {
     engine.register_tool(Box::new(SuccessTool));
 
     // Run first step
-    engine.run(&mut ctx, &graph).await.expect("run failed");
+    engine.run(&mut ctx, &graph).await.expect("run failed"); // unwrap allowed (AGENT:08)
     assert_eq!(ctx.current_node, "end");
 
     // Manually modify context and replay
@@ -126,7 +126,7 @@ async fn test_agent_replay_from_checkpoint() {
     engine
         .replay_from(&mut ctx, "start")
         .await
-        .expect("replay failed");
+        .expect("replay failed"); // unwrap allowed (AGENT:08)
 
     assert_eq!(ctx.current_node, "start");
     assert!(!ctx.memory.contains_key("corrupted"));
@@ -135,7 +135,7 @@ async fn test_agent_replay_from_checkpoint() {
 #[tokio::test]
 async fn test_agent_error_handling() {
     let (db, _tmp) = setup_env().await;
-    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed"));
+    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed")); // unwrap allowed (AGENT:08)
     let mut ctx = AgentContext::new(
         "t1",
         "start",
@@ -163,7 +163,7 @@ async fn test_agent_error_handling() {
 #[tokio::test]
 async fn test_agent_audit_log_immutable() {
     let (db, _tmp) = setup_env().await;
-    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed"));
+    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed")); // unwrap allowed (AGENT:08)
     let mut ctx = AgentContext::new(
         "t1",
         "start",
@@ -180,14 +180,14 @@ async fn test_agent_audit_log_immutable() {
     let mut engine = OrchestratorEngine::new(db.inner_storage());
     engine.register_tool(Box::new(SuccessTool));
 
-    engine.run(&mut ctx, &graph).await.expect("run failed");
+    engine.run(&mut ctx, &graph).await.expect("run failed"); // unwrap allowed (AGENT:08)
 
     // Verify audit log
-    let audit_log = db.collection("agent_state").await.expect("col failed");
+    let audit_log = db.collection("agent_state").await.expect("col failed"); // unwrap allowed (AGENT:08)
     let audit_entries = audit_log
         .scan_prefix("audit:t1:step:")
         .await
-        .expect("scan failed");
+        .expect("scan failed"); // unwrap allowed (AGENT:08)
     assert_eq!(audit_entries.len(), 1);
 
     // In our implementation, we don't have a direct "AuditError::Immutable" yet because

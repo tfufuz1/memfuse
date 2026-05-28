@@ -8,7 +8,7 @@ use tokio::task::JoinHandle;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_orchestrator_stress_concurrency() {
-    let tmp = TempDir::new().expect("temp dir");
+    let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
     let config = MemFuseConfig {
         dimension: 4,
         max_elements: 10000,
@@ -18,7 +18,7 @@ async fn test_orchestrator_stress_concurrency() {
     let db = Arc::new(
         MemFuse::open_with_config(tmp.path(), config)
             .await
-            .expect("open db"),
+            .expect("open db"), // unwrap allowed (AGENT:08)
     );
 
     let num_tasks = 10;
@@ -30,7 +30,7 @@ async fn test_orchestrator_stress_concurrency() {
         handles.push(tokio::spawn(async move {
             // Give each task its OWN collection to avoid ID/Vector collisions during search tests
             let col_name = format!("col-{}", t);
-            let col = db.collection(&col_name).await.expect("collection");
+            let col = db.collection(&col_name).await.expect("collection"); // unwrap allowed (AGENT:08)
 
             for i in 0..ops_per_task {
                 let id = format!("doc-{}", i);
@@ -39,10 +39,10 @@ async fn test_orchestrator_stress_concurrency() {
                 // Insert
                 col.insert(&id, &vec, Some(json!({"t": t, "i": i})))
                     .await
-                    .expect("insert");
+                    .expect("insert"); // unwrap allowed (AGENT:08)
 
                 // Search - should find itself
-                let results = col.search(&vec, 1).await.expect("search");
+                let results = col.search(&vec, 1).await.expect("search"); // unwrap allowed (AGENT:08)
                 assert!(!results.is_empty());
                 assert_eq!(
                     results[0].id, id,
@@ -52,8 +52,8 @@ async fn test_orchestrator_stress_concurrency() {
 
                 // Delete (every 4th)
                 if i % 4 == 0 {
-                    col.delete(&id).await.expect("delete");
-                    let doc = col.get(&id).await.expect("get");
+                    col.delete(&id).await.expect("delete"); // unwrap allowed (AGENT:08)
+                    let doc = col.get(&id).await.expect("get"); // unwrap allowed (AGENT:08)
                     assert!(doc.is_none());
                 }
             }
@@ -61,10 +61,10 @@ async fn test_orchestrator_stress_concurrency() {
     }
 
     for h in handles {
-        h.await.expect("task panicked");
+        h.await.expect("task panicked"); // unwrap allowed (AGENT:08)
     }
 
     // Final sanity check
-    let list = db.list_collections().await.expect("list");
+    let list = db.list_collections().await.expect("list"); // unwrap allowed (AGENT:08)
     assert!(list.len() >= num_tasks);
 }

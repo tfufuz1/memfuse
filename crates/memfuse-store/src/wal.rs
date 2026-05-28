@@ -638,39 +638,39 @@ mod tests {
             b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0",
             [0u8; 32],
         )
-        .expect("try_new");
+        .expect("try_new"); // unwrap allowed (AGENT:08)
         let bytes = entry.to_bytes();
 
         assert_eq!(bytes.len(), 105);
-        let payload_len = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice"));
+        let payload_len = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice")); // unwrap allowed (AGENT:08)
         assert_eq!(payload_len, 101);
     }
 
     #[tokio::test]
     async fn test_wal_append_and_replay_valid() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // unwrap allowed (AGENT:08)
         let wal_path = dir.path().join("test_wal.log");
 
         {
-            let wal = Wal::open(&wal_path).await.expect("open WAL");
+            let wal = Wal::open(&wal_path).await.expect("open WAL"); // unwrap allowed (AGENT:08)
             let op1 = WalOp::Put {
                 tx_id: TxId::new(1),
                 key: b"user:1".to_vec(),
                 value: b"Alice".to_vec(),
             };
-            let entry1 = wal.create_entry(op1, 10).await.expect("valid");
-            wal.append(&entry1).await.expect("append 1");
+            let entry1 = wal.create_entry(op1, 10).await.expect("valid"); // unwrap allowed (AGENT:08)
+            wal.append(&entry1).await.expect("append 1"); // unwrap allowed (AGENT:08)
 
             let op2 = WalOp::Delete {
                 tx_id: TxId::new(2),
                 key: b"user:1".to_vec(),
             };
-            let entry2 = wal.create_entry(op2, 11).await.expect("valid");
-            wal.append(&entry2).await.expect("append 2");
+            let entry2 = wal.create_entry(op2, 11).await.expect("valid"); // unwrap allowed (AGENT:08)
+            wal.append(&entry2).await.expect("append 2"); // unwrap allowed (AGENT:08)
         }
 
-        let wal2 = Wal::open(&wal_path).await.expect("reopen WAL");
-        let entries = wal2.replay().await.expect("replay");
+        let wal2 = Wal::open(&wal_path).await.expect("reopen WAL"); // unwrap allowed (AGENT:08)
+        let entries = wal2.replay().await.expect("replay"); // unwrap allowed (AGENT:08)
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[1].1.prev_hmac, entries[0].1.checksum);
@@ -678,32 +678,32 @@ mod tests {
 
     #[tokio::test]
     async fn test_wal_hash_chain_verification() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // unwrap allowed (AGENT:08)
         let wal_path = dir.path().join("chain_wal.log");
 
         {
-            let wal = Wal::open(&wal_path).await.expect("open");
+            let wal = Wal::open(&wal_path).await.expect("open"); // unwrap allowed (AGENT:08)
             let op1 = WalOp::Put {
                 tx_id: TxId::new(1),
                 key: b"k1".to_vec(),
                 value: b"v1".to_vec(),
             };
-            let entry1 = wal.create_entry(op1, 1).await.expect("entry1");
-            wal.append(&entry1).await.expect("append1");
+            let entry1 = wal.create_entry(op1, 1).await.expect("entry1"); // unwrap allowed (AGENT:08)
+            wal.append(&entry1).await.expect("append1"); // unwrap allowed (AGENT:08)
 
             let op2 = WalOp::Put {
                 tx_id: TxId::new(2),
                 key: b"k2".to_vec(),
                 value: b"v2".to_vec(),
             };
-            let entry2 = wal.create_entry(op2, 2).await.expect("entry2");
-            wal.append(&entry2).await.expect("append2");
+            let entry2 = wal.create_entry(op2, 2).await.expect("entry2"); // unwrap allowed (AGENT:08)
+            wal.append(&entry2).await.expect("append2"); // unwrap allowed (AGENT:08)
         }
 
         {
-            let mut data = fs::read(&wal_path).await.expect("read");
+            let mut data = fs::read(&wal_path).await.expect("read"); // unwrap allowed (AGENT:08)
             data[12] ^= 0xFF;
-            fs::write(&wal_path, data).await.expect("write");
+            fs::write(&wal_path, data).await.expect("write"); // unwrap allowed (AGENT:08)
         }
 
         let result = Wal::open(&wal_path).await;
@@ -711,58 +711,58 @@ mod tests {
     }
     #[tokio::test]
     async fn test_wal_replay_truncation() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // unwrap allowed (AGENT:08)
         let wal_path = dir.path().join("trunc_wal.log");
 
         {
-            let wal = Wal::open(&wal_path).await.expect("open");
+            let wal = Wal::open(&wal_path).await.expect("open"); // unwrap allowed (AGENT:08)
             for i in 0..5 {
                 let op = WalOp::Put {
                     tx_id: TxId::new(i),
                     key: b"key".to_vec(),
                     value: b"val".to_vec(),
                 };
-                let entry = wal.create_entry(op, i).await.expect("entry");
-                wal.append(&entry).await.expect("append");
+                let entry = wal.create_entry(op, i).await.expect("entry"); // unwrap allowed (AGENT:08)
+                wal.append(&entry).await.expect("append"); // unwrap allowed (AGENT:08)
             }
         }
 
         // Truncate the file in the middle of the last entry
-        let mut data = fs::read(&wal_path).await.expect("read");
+        let mut data = fs::read(&wal_path).await.expect("read"); // unwrap allowed (AGENT:08)
         let new_size = data.len() - 10; // Chop off 10 bytes from the last entry
         data.truncate(new_size);
-        fs::write(&wal_path, data).await.expect("write");
+        fs::write(&wal_path, data).await.expect("write"); // unwrap allowed (AGENT:08)
 
-        let wal2 = Wal::open(&wal_path).await.expect("open");
-        let entries = wal2.replay().await.expect("replay");
+        let wal2 = Wal::open(&wal_path).await.expect("open"); // unwrap allowed (AGENT:08)
+        let entries = wal2.replay().await.expect("replay"); // unwrap allowed (AGENT:08)
         assert_eq!(entries.len(), 4);
     }
 
     #[tokio::test]
     async fn test_wal_crc_middle_corruption() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // unwrap allowed (AGENT:08)
         let wal_path = dir.path().join("middle_corrupt.log");
 
         {
-            let wal = Wal::open(&wal_path).await.expect("open");
+            let wal = Wal::open(&wal_path).await.expect("open"); // unwrap allowed (AGENT:08)
             for i in 0..3 {
                 let op = WalOp::Put {
                     tx_id: TxId::new(i),
                     key: format!("k{}", i).into_bytes(),
                     value: format!("v{}", i).into_bytes(),
                 };
-                let entry = wal.create_entry(op, i).await.expect("entry");
-                wal.append(&entry).await.expect("append");
+                let entry = wal.create_entry(op, i).await.expect("entry"); // unwrap allowed (AGENT:08)
+                wal.append(&entry).await.expect("append"); // unwrap allowed (AGENT:08)
             }
         }
 
         {
-            let mut data = fs::read(&wal_path).await.expect("read");
-            // Corrupt the second entry (somewhere in the middle of the file)
-            // Each entry is ~100 bytes. Let's flip a bit around offset 150.
+            let mut data = fs::read(&wal_path).await.expect("read"); // unwrap allowed (AGENT:08)
+                                                                     // Corrupt the second entry (somewhere in the middle of the file)
+                                                                     // Each entry is ~100 bytes. Let's flip a bit around offset 150.
             if data.len() > 150 {
                 data[150] ^= 0xFF;
-                fs::write(&wal_path, data).await.expect("write");
+                fs::write(&wal_path, data).await.expect("write"); // unwrap allowed (AGENT:08)
             }
         }
 
@@ -778,19 +778,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_wal_crc_tail_corruption() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // unwrap allowed (AGENT:08)
         let wal_path = dir.path().join("tail_corrupt.log");
 
         {
-            let wal = Wal::open(&wal_path).await.expect("open");
+            let wal = Wal::open(&wal_path).await.expect("open"); // unwrap allowed (AGENT:08)
             for i in 0..2 {
                 let op = WalOp::Put {
                     tx_id: TxId::new(i),
                     key: format!("k{}", i).into_bytes(),
                     value: format!("v{}", i).into_bytes(),
                 };
-                let entry = wal.create_entry(op, i).await.expect("entry");
-                wal.append(&entry).await.expect("append");
+                let entry = wal.create_entry(op, i).await.expect("entry"); // unwrap allowed (AGENT:08)
+                wal.append(&entry).await.expect("append"); // unwrap allowed (AGENT:08)
             }
         }
 
@@ -799,16 +799,16 @@ mod tests {
                 .append(true)
                 .open(&wal_path)
                 .await
-                .expect("open");
+                .expect("open"); // unwrap allowed (AGENT:08)
             use tokio::io::AsyncWriteExt;
             // Append some garbage that doesn't form a valid entry
             file.write_all(b"SOME GARBAGE DATA AT THE END")
                 .await
-                .expect("write");
+                .expect("write"); // unwrap allowed (AGENT:08)
         }
 
-        let wal2 = Wal::open(&wal_path).await.expect("open");
-        let entries = wal2.replay().await.expect("replay");
+        let wal2 = Wal::open(&wal_path).await.expect("open"); // unwrap allowed (AGENT:08)
+        let entries = wal2.replay().await.expect("replay"); // unwrap allowed (AGENT:08)
 
         // Should succeed and return only the 2 valid entries
         assert_eq!(entries.len(), 2);

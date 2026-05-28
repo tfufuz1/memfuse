@@ -3,7 +3,7 @@
 //! This module defines the fundamental building blocks for documents, entities,
 //! transactions, and embeddings.
 //!
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
@@ -244,8 +244,8 @@ mod tests {
     #[test]
     fn test_doc_id_determinism() {
         let key = "consistent_key";
-        let id1 = DocId::from_key(key).unwrap();
-        let id2 = DocId::from_key(key).unwrap();
+        let id1 = DocId::from_key(key).unwrap(); // unwrap allowed (AGENT:08)
+        let id2 = DocId::from_key(key).unwrap(); // unwrap allowed (AGENT:08)
         assert_eq!(id1, id2);
     }
 }

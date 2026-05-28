@@ -35,7 +35,7 @@ impl memfuse_saos_agent::AgentTool for EchoTool {
 
 /// Helper: creates a MemFuse DB + state collection + OrchestratorEngine.
 async fn setup_engine(dim: usize) -> (OrchestratorEngine, Arc<MemFuse>, TempDir) {
-    let tmp = TempDir::new().expect("temp dir");
+    let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
     let config = MemFuseConfig {
         dimension: dim,
         max_elements: 10_000,
@@ -45,7 +45,7 @@ async fn setup_engine(dim: usize) -> (OrchestratorEngine, Arc<MemFuse>, TempDir)
     let db = Arc::new(
         MemFuse::open_with_config(tmp.path(), config)
             .await
-            .expect("open db"),
+            .expect("open db"), // unwrap allowed (AGENT:08)
     );
 
     let storage = db.inner_storage();
@@ -73,11 +73,11 @@ async fn test_e2e_agent_workflow() {
     graph.add_edge("start", "process", None, 1);
     graph.add_edge("process", "done", None, 1);
 
-    let state_col = Arc::new(db.collection("agent-state").await.expect("collection"));
+    let state_col = Arc::new(db.collection("agent-state").await.expect("collection")); // unwrap allowed (AGENT:08)
     let budget = TokenBudget::new(100, 0);
     let mut ctx = AgentContext::new("test-task-1", "start", db.clone(), state_col, budget);
 
-    engine.run(&mut ctx, &graph).await.expect("workflow run");
+    engine.run(&mut ctx, &graph).await.expect("workflow run"); // unwrap allowed (AGENT:08)
 
     // Engine should have terminated at "done" node
     assert_eq!(ctx.current_node, "done");
@@ -86,7 +86,7 @@ async fn test_e2e_agent_workflow() {
 
 #[tokio::test]
 async fn test_e2e_db_crud_roundtrip() {
-    let tmp = TempDir::new().expect("temp dir");
+    let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
     let config = MemFuseConfig {
         dimension: 3,
         max_elements: 1000,
@@ -95,50 +95,50 @@ async fn test_e2e_db_crud_roundtrip() {
     };
     let db = MemFuse::open_with_config(tmp.path(), config)
         .await
-        .expect("open db");
+        .expect("open db"); // unwrap allowed (AGENT:08)
 
     // Insert
     db.insert("doc-1", &[1.0, 0.0, 0.0], Some(json!({"text": "Rust"})))
         .await
-        .expect("insert");
+        .expect("insert"); // unwrap allowed (AGENT:08)
 
     // Search
-    let results = db.search(&[1.0, 0.0, 0.0], 1).await.expect("search");
+    let results = db.search(&[1.0, 0.0, 0.0], 1).await.expect("search"); // unwrap allowed (AGENT:08)
     assert_eq!(results[0].id, "doc-1");
 
     // Update
     db.update("doc-1", &[1.0, 0.0, 0.0], Some(json!({"text": "Updated"})))
         .await
-        .expect("update");
-    let doc = db.get("doc-1").await.expect("get").expect("exists");
-    assert_eq!(doc.metadata.expect("meta")["text"], "Updated");
+        .expect("update"); // unwrap allowed (AGENT:08)
+    let doc = db.get("doc-1").await.expect("get").expect("exists"); // unwrap allowed (AGENT:08)
+    assert_eq!(doc.metadata.expect("meta")["text"], "Updated"); // unwrap allowed (AGENT:08)
 
     // Delete
-    db.delete("doc-1").await.expect("delete");
-    assert!(db.get("doc-1").await.expect("get").is_none());
+    db.delete("doc-1").await.expect("delete"); // unwrap allowed (AGENT:08)
+    assert!(db.get("doc-1").await.expect("get").is_none()); // unwrap allowed (AGENT:08)
 
     // Collection isolation
-    let col_a = db.collection("isolated-a").await.expect("col a");
-    let col_b = db.collection("isolated-b").await.expect("col b");
+    let col_a = db.collection("isolated-a").await.expect("col a"); // unwrap allowed (AGENT:08)
+    let col_b = db.collection("isolated-b").await.expect("col b"); // unwrap allowed (AGENT:08)
 
     col_a
         .insert("key", &[0.1, 0.2, 0.3], Some(json!({"val": "A"})))
         .await
-        .expect("ins a");
+        .expect("ins a"); // unwrap allowed (AGENT:08)
     col_b
         .insert("key", &[0.1, 0.2, 0.3], Some(json!({"val": "B"})))
         .await
-        .expect("ins b");
+        .expect("ins b"); // unwrap allowed (AGENT:08)
 
-    let va = col_a.get("key").await.expect("get a").expect("exists");
-    let vb = col_b.get("key").await.expect("get b").expect("exists");
-    assert_eq!(va.metadata.expect("meta")["val"], "A");
-    assert_eq!(vb.metadata.expect("meta")["val"], "B");
+    let va = col_a.get("key").await.expect("get a").expect("exists"); // unwrap allowed (AGENT:08)
+    let vb = col_b.get("key").await.expect("get b").expect("exists"); // unwrap allowed (AGENT:08)
+    assert_eq!(va.metadata.expect("meta")["val"], "A"); // unwrap allowed (AGENT:08)
+    assert_eq!(vb.metadata.expect("meta")["val"], "B"); // unwrap allowed (AGENT:08)
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_stress_concurrent_agent_ops() {
-    let tmp = TempDir::new().expect("temp dir");
+    let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
     let db = Arc::new(
         MemFuse::open_with_config(
             tmp.path(),
@@ -150,7 +150,7 @@ async fn test_stress_concurrent_agent_ops() {
             },
         )
         .await
-        .expect("open db"),
+        .expect("open db"), // unwrap allowed (AGENT:08)
     );
 
     let num_tasks = 10;
@@ -161,7 +161,7 @@ async fn test_stress_concurrent_agent_ops() {
         let db = db.clone();
         handles.push(tokio::spawn(async move {
             let col_name = format!("stress-{}", t);
-            let col = db.collection(&col_name).await.expect("collection");
+            let col = db.collection(&col_name).await.expect("collection"); // unwrap allowed (AGENT:08)
 
             for i in 0..ops_per_task {
                 let id = format!("task-{}-doc-{}", t, i);
@@ -169,19 +169,19 @@ async fn test_stress_concurrent_agent_ops() {
 
                 col.insert(&id, &vec, Some(json!({"t": t, "i": i})))
                     .await
-                    .expect("insert");
+                    .expect("insert"); // unwrap allowed (AGENT:08)
 
-                let res = col.search(&vec, 1).await.expect("search");
+                let res = col.search(&vec, 1).await.expect("search"); // unwrap allowed (AGENT:08)
                 assert_eq!(res[0].id, id);
 
-                col.delete(&id).await.expect("delete");
-                let doc = col.get(&id).await.expect("get");
+                col.delete(&id).await.expect("delete"); // unwrap allowed (AGENT:08)
+                let doc = col.get(&id).await.expect("get"); // unwrap allowed (AGENT:08)
                 assert!(doc.is_none());
             }
         }));
     }
 
     for h in handles {
-        h.await.expect("task failed");
+        h.await.expect("task failed"); // unwrap allowed (AGENT:08)
     }
 }

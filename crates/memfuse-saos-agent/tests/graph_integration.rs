@@ -27,6 +27,6 @@ fn test_stategraph_complex_workflow() {
         .edges
         .iter()
         .find(|e| e.from == "analyze" && e.to == "store")
-        .expect("edge not found");
+        .expect("edge not found"); // unwrap allowed (AGENT:08)
     assert_eq!(edge_analyze_store.condition, Some("is_valid".to_string()));
 }

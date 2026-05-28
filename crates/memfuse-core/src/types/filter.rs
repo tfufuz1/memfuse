@@ -3,7 +3,7 @@
 //! Provides a structured way to define filters for metadata-based retrieval,
 //! supporting logical operators and comparison.
 //!
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 
 use serde::{Deserialize, Serialize};
 

@@ -5,7 +5,7 @@ use tempfile::TempDir;
 
 #[tokio::test]
 async fn test_encrypted_db_roundtrip() {
-    let tmp = TempDir::new().expect("temp dir");
+    let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
     let config = LsmConfig {
         path: tmp.path().to_path_buf(),
         memtable_size_limit: 1024,
@@ -19,15 +19,15 @@ async fn test_encrypted_db_roundtrip() {
     {
         let storage = LsmStorage::new(config.clone())
             .await
-            .expect("create storage");
+            .expect("create storage"); // unwrap allowed (AGENT:08)
         let tx = TxId::new(1);
-        storage.put(tx, b"key1", b"val1").await.expect("put");
-        storage.commit(tx).await.expect("commit");
+        storage.put(tx, b"key1", b"val1").await.expect("put"); // unwrap allowed (AGENT:08)
+        storage.commit(tx).await.expect("commit"); // unwrap allowed (AGENT:08)
 
         // Force flush to SSTable
-        storage.force_flush().await.expect("flush");
+        storage.force_flush().await.expect("flush"); // unwrap allowed (AGENT:08)
 
-        let val = storage.get(b"key1").await.expect("get");
+        let val = storage.get(b"key1").await.expect("get"); // unwrap allowed (AGENT:08)
         assert_eq!(val, Some(b"val1".to_vec()));
     }
 
@@ -35,15 +35,15 @@ async fn test_encrypted_db_roundtrip() {
     {
         let storage = LsmStorage::new(config.clone())
             .await
-            .expect("reopen storage");
-        let val = storage.get(b"key1").await.expect("get after reopen");
+            .expect("reopen storage"); // unwrap allowed (AGENT:08)
+        let val = storage.get(b"key1").await.expect("get after reopen"); // unwrap allowed (AGENT:08)
         assert_eq!(val, Some(b"val1".to_vec()));
     }
 }
 
 #[tokio::test]
 async fn test_wrong_passphrase_fails() {
-    let tmp = TempDir::new().expect("temp dir");
+    let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
     let mut config = LsmConfig {
         path: tmp.path().to_path_buf(),
         memtable_size_limit: 1024,
@@ -57,11 +57,11 @@ async fn test_wrong_passphrase_fails() {
     {
         let storage = LsmStorage::new(config.clone())
             .await
-            .expect("create storage");
+            .expect("create storage"); // unwrap allowed (AGENT:08)
         let tx = TxId::new(1);
-        storage.put(tx, b"key1", b"val1").await.expect("put");
-        storage.commit(tx).await.expect("commit");
-        storage.force_flush().await.expect("flush");
+        storage.put(tx, b"key1", b"val1").await.expect("put"); // unwrap allowed (AGENT:08)
+        storage.commit(tx).await.expect("commit"); // unwrap allowed (AGENT:08)
+        storage.force_flush().await.expect("flush"); // unwrap allowed (AGENT:08)
     }
 
     // 2. Re-open with WRONG passphrase
@@ -74,7 +74,7 @@ async fn test_wrong_passphrase_fails() {
 
 #[tokio::test]
 async fn test_encrypted_db_unreadable_as_plaintext() {
-    let tmp = TempDir::new().expect("temp dir");
+    let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
     let config = LsmConfig {
         path: tmp.path().to_path_buf(),
         memtable_size_limit: 1024,
@@ -87,20 +87,20 @@ async fn test_encrypted_db_unreadable_as_plaintext() {
     // 1. Write known string
     let secret_val = b"THIS_IS_A_SECRET_VALUE_THAT_SHOULD_NOT_BE_IN_PLAINTEXT";
     {
-        let storage = LsmStorage::new(config).await.expect("create storage");
+        let storage = LsmStorage::new(config).await.expect("create storage"); // unwrap allowed (AGENT:08)
         let tx = TxId::new(1);
-        storage.put(tx, b"key1", secret_val).await.expect("put");
-        storage.commit(tx).await.expect("commit");
-        storage.force_flush().await.expect("flush");
+        storage.put(tx, b"key1", secret_val).await.expect("put"); // unwrap allowed (AGENT:08)
+        storage.commit(tx).await.expect("commit"); // unwrap allowed (AGENT:08)
+        storage.force_flush().await.expect("flush"); // unwrap allowed (AGENT:08)
     }
 
     // 2. Scan files for the secret string
     let mut found = false;
-    let mut entries = std::fs::read_dir(tmp.path()).expect("read dir");
+    let mut entries = std::fs::read_dir(tmp.path()).expect("read dir"); // unwrap allowed (AGENT:08)
     while let Some(Ok(entry)) = entries.next() {
         if entry.path().is_file() {
-            let content = std::fs::read(entry.path()).expect("read file");
-            // Simple sub-slice search
+            let content = std::fs::read(entry.path()).expect("read file"); // unwrap allowed (AGENT:08)
+                                                                           // Simple sub-slice search
             if content
                 .windows(secret_val.len())
                 .any(|window| window == secret_val)

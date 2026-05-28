@@ -10,7 +10,7 @@
 //! Dieses Modul implementiert das `.hnsw` Dateiformat, das für das Offloading von
 //! Vektoren auf die Festplatte optimiert ist, um den RAM-Verbrauch auf 8GB-Systemen zu minimieren.
 //!
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 
 use memfuse_core::{MemFuseError, Result};
 
@@ -21,7 +21,7 @@ pub const HNSW_VERSION: u16 = 1;
 
 /// The header of an HNSW persistent file.
 ///
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HnswHeader {
     pub magic: u32,
@@ -134,7 +134,7 @@ impl HnswHeader {
 
 /// Represents a node's metadata in the flat file.
 ///
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 #[derive(Debug, Clone, Copy)]
 pub struct NodeRecord {
     pub doc_id: u64,
@@ -257,7 +257,9 @@ impl MmapIndex {
         let end = start + len * 4;
 
         if end > self.mmap.len() {
-            return Err(MemFuseError::Storage("Connection data out of bounds".into()));
+            return Err(MemFuseError::Storage(
+                "Connection data out of bounds".into(),
+            ));
         }
 
         let raw = &self.mmap[start..end];

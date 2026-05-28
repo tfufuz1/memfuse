@@ -236,7 +236,7 @@ impl CompactionEngine {
                 self.key == other.key && self.seq == other.seq
             }
         }
-        
+
         impl Eq for HeapItem {}
 
         impl PartialOrd for HeapItem {
@@ -364,17 +364,17 @@ mod tests {
         bc: Arc<BlockCache>,
     ) -> Arc<SstableReader> {
         let path = dir.join(name);
-        let mut builder = SstableBuilder::create(&path).await.expect("create sst");
+        let mut builder = SstableBuilder::create(&path).await.expect("create sst"); // unwrap allowed (AGENT:08)
         for (k, v, seq) in entries {
-            builder.add(k, v, *seq).await.expect("add entry");
+            builder.add(k, v, *seq).await.expect("add entry"); // unwrap allowed (AGENT:08)
         }
-        builder.finish().await.expect("finish sst");
-        Arc::new(SstableReader::open(&path, bc).await.expect("open sst"))
+        builder.finish().await.expect("finish sst"); // unwrap allowed (AGENT:08)
+        Arc::new(SstableReader::open(&path, bc).await.expect("open sst")) // unwrap allowed (AGENT:08)
     }
 
     #[tokio::test]
     async fn test_merge_deduplication() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
         let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
@@ -400,12 +400,12 @@ mod tests {
         engine
             .merge_sstables(&[sst1, sst2], &output, 0)
             .await
-            .expect("merge");
+            .expect("merge"); // unwrap allowed (AGENT:08)
 
         let reader = SstableReader::open(&output, Arc::clone(&bc))
             .await
-            .expect("open merged");
-        let entries = reader.iter().await.expect("iter");
+            .expect("open merged"); // unwrap allowed (AGENT:08)
+        let entries = reader.iter().await.expect("iter"); // unwrap allowed (AGENT:08)
 
         // key-a should have the newer value (seq=3)
         assert_eq!(entries.len(), 3); // key-a, key-b, key-c
@@ -416,7 +416,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tombstone_gc() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
         let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
@@ -436,12 +436,12 @@ mod tests {
         engine
             .merge_sstables(&[sst1], &output, 100)
             .await
-            .expect("merge");
+            .expect("merge"); // unwrap allowed (AGENT:08)
 
         let reader = SstableReader::open(&output, Arc::clone(&bc))
             .await
-            .expect("open");
-        let entries = reader.iter().await.expect("iter");
+            .expect("open"); // unwrap allowed (AGENT:08)
+        let entries = reader.iter().await.expect("iter"); // unwrap allowed (AGENT:08)
 
         assert_eq!(entries.len(), 1); // Only "alive" remains
         assert_eq!(entries[0].0.as_ref(), b"alive");
@@ -449,7 +449,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tombstone_preserved_with_active_snapshot() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
         let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
@@ -469,19 +469,19 @@ mod tests {
         engine
             .merge_sstables(&[sst1], &output, 2)
             .await
-            .expect("merge");
+            .expect("merge"); // unwrap allowed (AGENT:08)
 
         let reader = SstableReader::open(&output, Arc::clone(&bc))
             .await
-            .expect("open");
-        let entries = reader.iter().await.expect("iter");
+            .expect("open"); // unwrap allowed (AGENT:08)
+        let entries = reader.iter().await.expect("iter"); // unwrap allowed (AGENT:08)
 
         assert_eq!(entries.len(), 2); // Both preserved
     }
 
     #[tokio::test]
     async fn test_maybe_compact_full_cycle() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
         let config = CompactionConfig {
@@ -521,7 +521,7 @@ mod tests {
         let compacted = engine
             .maybe_compact(&sstables, tmp.path())
             .await
-            .expect("compact");
+            .expect("compact"); // unwrap allowed (AGENT:08)
 
         assert!(compacted, "Compaction should have occurred");
 
@@ -534,13 +534,13 @@ mod tests {
 
         // Verify all data is present in the compacted result
         let last_sst = &ssts[ssts.len() - 1];
-        let entries = last_sst.iter().await.expect("iter");
+        let entries = last_sst.iter().await.expect("iter"); // unwrap allowed (AGENT:08)
         assert_eq!(entries.len(), 6); // 3 SSTables × 2 entries each
     }
 
     #[tokio::test]
     async fn test_no_compaction_below_threshold() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
         let config = CompactionConfig {
@@ -565,7 +565,7 @@ mod tests {
         let compacted = engine
             .maybe_compact(&sstables, tmp.path())
             .await
-            .expect("compact");
+            .expect("compact"); // unwrap allowed (AGENT:08)
 
         assert!(!compacted, "Should not compact with only 2 SSTables");
         assert_eq!(sstables.read().await.len(), 2);
@@ -576,7 +576,7 @@ mod tests {
         use memfuse_core::TxId;
         use std::sync::atomic::{AtomicBool, Ordering};
 
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // unwrap allowed (AGENT:08)
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             memtable_size_limit: 64 * 1024, // 64KB - very small to force flushes
@@ -590,7 +590,7 @@ mod tests {
             encryption_passphrase: None,
         };
 
-        let storage = Arc::new(LsmStorage::new(config).await.expect("create storage"));
+        let storage = Arc::new(LsmStorage::new(config).await.expect("create storage")); // unwrap allowed (AGENT:08)
         let running = Arc::new(AtomicBool::new(true));
 
         // 1. Parallel Reader Task [INV-C2]
@@ -618,12 +618,12 @@ mod tests {
             let tx = TxId::new(i as u64);
             let key = format!("doc-{:04}", i);
             let val = vec![(i % 255) as u8; 100];
-            storage.put(tx, key.as_bytes(), &val).await.expect("put");
-            storage.commit(tx).await.expect("commit");
+            storage.put(tx, key.as_bytes(), &val).await.expect("put"); // unwrap allowed (AGENT:08)
+            storage.commit(tx).await.expect("commit"); // unwrap allowed (AGENT:08)
         }
 
         // 3. Register a Snapshot [INV-C1]
-        let snapshot_seq = storage.last_seq_no().await.expect("last_seq_no");
+        let snapshot_seq = storage.last_seq_no().await.expect("last_seq_no"); // unwrap allowed (AGENT:08)
         let _guard = storage.snapshot_registry.register(snapshot_seq);
 
         // 4. Heavy Load: 10,000 Inserts to trigger churn and background compaction
@@ -634,24 +634,24 @@ mod tests {
             storage
                 .put(tx, key.as_bytes(), &val)
                 .await
-                .expect("put heavy");
-            storage.commit(tx).await.expect("commit heavy");
+                .expect("put heavy"); // unwrap allowed (AGENT:08)
+            storage.commit(tx).await.expect("commit heavy"); // unwrap allowed (AGENT:08)
         }
 
         // 5. Deletes
         for i in 0..5000 {
             let tx = TxId::new(20000 + i as u64);
             let key = format!("doc-{:04}", i);
-            storage.delete(tx, key.as_bytes()).await.expect("delete");
-            storage.commit(tx).await.expect("commit delete");
+            storage.delete(tx, key.as_bytes()).await.expect("delete"); // unwrap allowed (AGENT:08)
+            storage.commit(tx).await.expect("commit delete"); // unwrap allowed (AGENT:08)
         }
 
         // 6. Wait for background compactions to stabilize
         let mut stabilized = false;
         for _ in 0..100 {
             tokio::time::sleep(Duration::from_millis(100)).await;
-            let stats = storage.stats().await.expect("stats");
-            // If we have few segments, compaction is doing its job
+            let stats = storage.stats().await.expect("stats"); // unwrap allowed (AGENT:08)
+                                                               // If we have few segments, compaction is doing its job
             if stats.num_segments <= 5 {
                 stabilized = true;
                 break;
@@ -660,10 +660,10 @@ mod tests {
 
         // Stop reader and check for errors
         running.store(false, Ordering::SeqCst);
-        reader_handle.await.expect("reader task panicked");
+        reader_handle.await.expect("reader task panicked"); // unwrap allowed (AGENT:08)
 
         // 7. Final Verification
-        let stats = storage.stats().await.expect("final stats");
+        let stats = storage.stats().await.expect("final stats"); // unwrap allowed (AGENT:08)
         println!(
             "Stress test finished. Final SSTable count: {}",
             stats.num_segments
@@ -675,7 +675,7 @@ mod tests {
             let val = storage
                 .get(key.as_bytes())
                 .await
-                .expect("get final")
+                .expect("get final") // unwrap allowed (AGENT:08)
                 .unwrap_or_else(|| panic!("missing key {}", key));
             assert_eq!(val[0], (i % 255) as u8);
         }
@@ -683,7 +683,7 @@ mod tests {
         // Deleted data MUST NOT be present in current view
         for i in 0..5000 {
             let key = format!("doc-{:04}", i);
-            let val = storage.get(key.as_bytes()).await.expect("get deleted");
+            let val = storage.get(key.as_bytes()).await.expect("get deleted"); // unwrap allowed (AGENT:08)
             assert!(val.is_none(), "Key {} should be deleted but found", key);
         }
 

@@ -8,7 +8,7 @@ use tempfile::TempDir;
 // Test that InvertedIndex correctly persists and retrieves data using LsmStorage.
 #[tokio::test]
 async fn test_inverted_index_persistence() {
-    let tmp = TempDir::new().expect("failed to create temp dir");
+    let tmp = TempDir::new().expect("failed to create temp dir"); // unwrap allowed (AGENT:08)
     let lsm_config = LsmConfig {
         path: tmp.path().to_path_buf(),
         ..Default::default()
@@ -16,7 +16,7 @@ async fn test_inverted_index_persistence() {
     let storage = Arc::new(
         LsmStorage::new(lsm_config)
             .await
-            .expect("failed to open storage"),
+            .expect("failed to open storage"), // unwrap allowed (AGENT:08)
     );
     let index = InvertedIndex::new(storage.clone(), "integration-test");
 
@@ -25,21 +25,21 @@ async fn test_inverted_index_persistence() {
     index
         .insert(tx1, DocId::new(1), "apple")
         .await
-        .expect("insert 1 failed");
-    storage.commit(tx1).await.expect("commit 1 failed");
+        .expect("insert 1 failed"); // unwrap allowed (AGENT:08)
+    storage.commit(tx1).await.expect("commit 1 failed"); // unwrap allowed (AGENT:08)
 
     let tx2 = TxId::new(2);
     index
         .insert(tx2, DocId::new(2), "banana")
         .await
-        .expect("insert 2 failed");
-    storage.commit(tx2).await.expect("commit 2 failed");
+        .expect("insert 2 failed"); // unwrap allowed (AGENT:08)
+    storage.commit(tx2).await.expect("commit 2 failed"); // unwrap allowed (AGENT:08)
 
     // 2. Verify search
     let results = index
         .search("apple", 10)
         .await
-        .expect("search apple failed");
+        .expect("search apple failed"); // unwrap allowed (AGENT:08)
     assert_eq!(
         results.len(),
         1,
@@ -51,7 +51,7 @@ async fn test_inverted_index_persistence() {
     let results_banana = index
         .search("banana", 10)
         .await
-        .expect("search banana failed");
+        .expect("search banana failed"); // unwrap allowed (AGENT:08)
     assert_eq!(
         results_banana.len(),
         1,
@@ -71,14 +71,14 @@ async fn test_inverted_index_persistence() {
     let storage2 = Arc::new(
         LsmStorage::new(lsm_config2)
             .await
-            .expect("failed to re-open storage"),
+            .expect("failed to re-open storage"), // unwrap allowed (AGENT:08)
     );
     let index2 = InvertedIndex::new(storage2.clone(), "integration-test");
 
     let results2 = index2
         .search("apple", 10)
         .await
-        .expect("search after restart failed");
+        .expect("search after restart failed"); // unwrap allowed (AGENT:08)
     assert_eq!(
         results2.len(),
         1,
@@ -91,13 +91,13 @@ async fn test_inverted_index_persistence() {
     index2
         .delete(tx3, DocId::new(1))
         .await
-        .expect("delete failed");
-    storage2.commit(tx3).await.expect("commit 3 failed");
+        .expect("delete failed"); // unwrap allowed (AGENT:08)
+    storage2.commit(tx3).await.expect("commit 3 failed"); // unwrap allowed (AGENT:08)
 
     let results3 = index2
         .search("apple", 10)
         .await
-        .expect("search after delete failed");
+        .expect("search after delete failed"); // unwrap allowed (AGENT:08)
     assert_eq!(
         results3.len(),
         0,

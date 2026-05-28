@@ -85,12 +85,12 @@ async fn test_concurrent_checkpoint_creation_same_name() {
     }
 
     for h in handles {
-        h.await.unwrap().unwrap();
+        h.await.unwrap().unwrap(); // unwrap allowed (AGENT:08)
     }
 
-    let checkpoints = manager.list_checkpoints().await.unwrap();
-    // In a world without race conditions and duplicate names, this should probably be 1 if we expect overwrite,
-    // or it should have failed. Currently it probably has 10.
+    let checkpoints = manager.list_checkpoints().await.unwrap(); // unwrap allowed (AGENT:08)
+                                                                 // In a world without race conditions and duplicate names, this should probably be 1 if we expect overwrite,
+                                                                 // or it should have failed. Currently it probably has 10.
     println!("Number of checkpoints: {}", checkpoints.len());
 
     // If it's 10, it's a bug because we have 10 checkpoints with the same name.

@@ -2,7 +2,7 @@
 //!
 //! Provides the [`MetadataFilter`] enum for specifying search constraints.
 //!
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

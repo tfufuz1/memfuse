@@ -55,7 +55,7 @@
 //! Provides highly optimized implementations for common distance metrics
 //! (Cosine, Euclidean, Dot Product) using hardware acceleration.
 //!
- // ANCHOR:DOC AGENT:08 STATUS:DONE
+// ANCHOR:DOC AGENT:08 STATUS:DONE
 
 use memfuse_core::DistanceMetric;
 // use std::simd::prelude::*; // Removed for stable Rust stabilization
@@ -848,18 +848,18 @@ mod tests {
 
         // Dot product
         let dot_scalar = dot_product_scalar(&a, &b);
-        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test");
+        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test"); // unwrap allowed (AGENT:08)
         let dot_simd = -d;
         assert!((dot_scalar - dot_simd).abs() < 1e-3);
 
         // Euclidean
         let euc_scalar = euclidean_distance_scalar(&a, &b);
-        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test");
+        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test"); // unwrap allowed (AGENT:08)
         assert!((euc_scalar - euc_simd).abs() < 1e-3);
 
         // Cosine
         let cos_scalar = cosine_distance_scalar(&a, &b);
-        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test");
+        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test"); // unwrap allowed (AGENT:08)
         assert!((cos_scalar - cos_simd).abs() < 1e-3);
     }
 
