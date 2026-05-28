@@ -261,13 +261,15 @@ impl Wal {
 
     /// Helper for creating entries bound to this WAL's current chain.
     pub async fn create_entry(&self, op: WalOp, seq_no: u64) -> Result<WalEntry> {
-        let last_hmac = self.last_hmac.lock().await;
+        let mut last_hmac = self.last_hmac.lock().await;
         let integrity_key = if let Some(km) = &self.key_manager {
             km.integrity_key()?
         } else {
             *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0"
         };
-        WalEntry::try_new(op, seq_no, &integrity_key, *last_hmac)
+        let entry = WalEntry::try_new(op, seq_no, &integrity_key, *last_hmac)?;
+        *last_hmac = entry.checksum;
+        Ok(entry)
     }
 
     /// Replays the WAL, returning all valid entries with their sequence numbers and end offsets.

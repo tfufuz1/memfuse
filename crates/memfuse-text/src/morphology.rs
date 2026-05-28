@@ -55,17 +55,14 @@ impl Default for GermanCompoundSplitter {
     }
 }
 
-impl MorphologicalTokenizer for GermanCompoundSplitter {
-    fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
-        // Simple recursive splitting based on a set of known components
-        // and common German compound patterns (Fugen-S etc.)
+use std::collections::HashSet;
+use std::sync::OnceLock;
 
-        if token.len() <= self.min_component_len {
-            return vec![token];
-        }
+static GERMAN_DICTIONARY: OnceLock<HashSet<String>> = OnceLock::new();
 
-        // Common components in technical/legal German compounds
-        let dictionary = [
+fn get_german_dictionary() -> &'static HashSet<String> {
+    GERMAN_DICTIONARY.get_or_init(|| {
+        let words = vec![
             "bundes",
             "verfassungs",
             "gericht",
@@ -86,10 +83,29 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             "zugriff",
             "rechte",
         ];
+        words.into_iter().map(|w| w.to_string()).collect()
+    })
+}
 
-        for &word in &dictionary {
-            if token.len() > word.len() && token.starts_with(word) {
-                let rest = &token[word.len()..];
+impl MorphologicalTokenizer for GermanCompoundSplitter {
+    fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
+        // Optimized longest-prefix matching (descending scan)
+        // Complexity: O(L) where L is token length
+
+        if token.len() <= self.min_component_len {
+            return vec![token];
+        }
+
+        let dict = get_german_dictionary();
+
+        // Find the longest prefix that is in the dictionary
+        for i in (self.min_component_len..token.len()).rev() {
+            if !token.is_char_boundary(i) {
+                continue;
+            }
+            let prefix = &token[..i];
+            if dict.contains(prefix) {
+                let rest = &token[i..];
 
                 // Handle Fugen-s (e.g., Verfassung-s-gericht)
                 let actual_rest = if rest.starts_with('s') && rest.len() > 1 {
@@ -99,9 +115,13 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
                 };
 
                 if actual_rest.len() >= self.min_component_len {
-                    let mut result = vec![&token[..word.len()]];
-                    result.extend(self.decompose(actual_rest));
-                    return result;
+                    let mut result = vec![prefix];
+                    let sub_components = self.decompose(actual_rest);
+                    // Check if we actually found more components
+                    if sub_components.len() > 1 || dict.contains(sub_components[0]) {
+                        result.extend(sub_components);
+                        return result;
+                    }
                 }
             }
         }

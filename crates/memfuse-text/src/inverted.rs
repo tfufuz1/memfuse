@@ -56,6 +56,12 @@ impl<S: StorageEngine> InvertedIndex<S> {
         }
     }
 
+    /// Overrides the default tokenizer.
+    pub fn with_tokenizer(mut self, tokenizer: Arc<dyn Tokenizer>) -> Self {
+        self.tokenizer = tokenizer;
+        self
+    }
+
     fn key(&self, suffix: &str) -> Vec<u8> {
         let mut k = Vec::with_capacity(self.prefix.len() + suffix.len());
         k.extend_from_slice(&self.prefix);
@@ -82,8 +88,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 
     /// Appends and updates inverted index structures for a document.
-    // TODO(FIND-TXT-002): Fehlendes OpenTelemetry Tracing
-    // Annotieren mit #[instrument(skip(self, text))]
+    #[tracing::instrument(skip(self, text))]
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
@@ -292,8 +297,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 
     /// Searches the inverted index using BM25.
-    // TODO(FIND-TXT-002): Fehlendes OpenTelemetry Tracing
-    // Annotieren mit #[instrument(skip(self, query))]
+    #[tracing::instrument(skip(self, query))]
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
         let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
@@ -376,7 +380,10 @@ impl<S: StorageEngine> InvertedIndex<S> {
 
         let mut results: Vec<(DocId, f32)> = scores.into_iter().collect();
         // Sort descending by score
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal) // unwrap allowed (AGENT:05)
+        });
         results.truncate(k);
 
         Ok(results)
@@ -443,6 +450,33 @@ impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
 
 use crate::morphology::MorphologicalTokenizer;
 
+/// Adapter to use a MorphologicalTokenizer as a standard Tokenizer.
+struct MorphTokenizerAdapter {
+    inner: Arc<dyn MorphologicalTokenizer>,
+    base_tokenizer: crate::tokenizer::DefaultTokenizer,
+}
+
+impl crate::tokenizer::Tokenizer for MorphTokenizerAdapter {
+    fn tokenize(&self, text: &str) -> Vec<String> {
+        let mut tokens = Vec::new();
+        // Use default tokenizer for base segmentation/stopwords
+        let base_tokens = self.base_tokenizer.tokenize(text);
+
+        for token in base_tokens {
+            let components = self.inner.decompose(&token);
+            if components.len() > 1 {
+                // Keep original
+                tokens.push(token.clone());
+                // Add components
+                tokens.extend(components.iter().map(|s| s.to_string()));
+            } else {
+                tokens.push(token);
+            }
+        }
+        tokens
+    }
+}
+
 /// An inverted index with morphological optimization.
 pub struct BM25MorphIndex<S: StorageEngine> {
     inner: InvertedIndex<S>,
@@ -455,8 +489,13 @@ impl<S: StorageEngine> BM25MorphIndex<S> {
         namespace: &str,
         tokenizer: Arc<dyn MorphologicalTokenizer>,
     ) -> Self {
+        let adapter = Arc::new(MorphTokenizerAdapter {
+            inner: tokenizer.clone(),
+            base_tokenizer: crate::tokenizer::DefaultTokenizer,
+        });
+
         Self {
-            inner: InvertedIndex::new(storage, namespace),
+            inner: InvertedIndex::new(storage, namespace).with_tokenizer(adapter),
             tokenizer,
         }
     }
