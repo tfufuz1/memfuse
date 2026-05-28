@@ -247,8 +247,8 @@ mod tests {
         // ANCHOR:DEBT:DOMAIN-002
         // AGENT:01 STATUS:DONE PRIO:3
         let key = "consistent_key";
-        let id1 = DocId::from_key(key).unwrap(); // unwrap #[cfg(test)]
-        let id2 = DocId::from_key(key).unwrap(); // unwrap #[cfg(test)]
+        let id1 = DocId::from_key(key).unwrap(); // unwrap
+        let id2 = DocId::from_key(key).unwrap(); // unwrap
         assert_eq!(id1, id2);
     }
 }
