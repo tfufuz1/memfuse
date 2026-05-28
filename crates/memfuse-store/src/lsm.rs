@@ -51,7 +51,6 @@ use memfuse_core::{
 };
 use memfuse_crypto::crypto::KeyManager;
 use rand::Rng; // FIND-CRY-001
-use std::io::{Read, Write}; // FIND-CRY-001
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -115,6 +114,7 @@ pub struct LsmStorage {
     last_committed_tx: AtomicU64,
     /// Mutex to serialize commits and prevent snapshot inversion (parallel seq_no holes).
     commit_mutex: tokio::sync::Mutex<()>,
+    shutdown_tx: tokio::sync::watch::Sender<bool>,
 }
 
 impl LsmStorage {
@@ -126,17 +126,19 @@ impl LsmStorage {
 
         // Persistent Salt Management (FIND-CRY-001)
         let salt_path = config.path.join("SALT");
-        let salt = if let Ok(mut file) = std::fs::File::open(&salt_path) {
-            let mut buf = vec![0u8; 32];
-            file.read_exact(&mut buf)
-                .map_err(|e| MemFuseError::Storage(format!("Failed to read SALT: {}", e)))?;
-            buf
+        let salt = if let Ok(data) = tokio::fs::read(&salt_path).await {
+            if data.len() != 32 {
+                return Err(MemFuseError::Storage(format!(
+                    "Invalid SALT file size: {}",
+                    data.len()
+                )));
+            }
+            data
         } else {
             let mut buf = [0u8; 32];
             rand::thread_rng().fill(&mut buf);
-            let mut file = std::fs::File::create(&salt_path)
-                .map_err(|e| MemFuseError::Storage(format!("Failed to create SALT: {}", e)))?;
-            file.write_all(&buf)
+            tokio::fs::write(&salt_path, &buf)
+                .await
                 .map_err(|e| MemFuseError::Storage(format!("Failed to write SALT: {}", e)))?;
             buf.to_vec()
         };
@@ -258,13 +260,14 @@ impl LsmStorage {
             Arc::clone(&snapshot_registry),
             Arc::clone(&block_cache),
         ));
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
         let compaction_sstables = Arc::clone(&sstables);
         let compaction_path = config.path.clone();
         // TODO(FIND-STO-001): Compaction-Engine CPU Starvation (WL-2)
         // Ensure the internal while-loop explicitly calls tokio::task::yield_now() between merges!
         tokio::spawn(async move {
             compaction_engine
-                .run_loop(compaction_sstables, compaction_path)
+                .run_loop(compaction_sstables, compaction_path, shutdown_rx)
                 .await;
         });
 
@@ -284,6 +287,7 @@ impl LsmStorage {
             next_seq_no: AtomicU64::new(max_seq + 1),
             last_committed_tx: AtomicU64::new(max_tx),
             commit_mutex: tokio::sync::Mutex::new(()),
+            shutdown_tx,
         })
     }
 
@@ -416,7 +420,15 @@ impl LsmStorage {
         );
         Ok(())
     }
+}
 
+impl Drop for LsmStorage {
+    fn drop(&mut self) {
+        let _ = self.shutdown_tx.send(true);
+    }
+}
+
+impl LsmStorage {
     /// Suspends execution briefly if memory usage exceeds 80% to apply backpressure.
     async fn apply_backpressure(&self) {
         if self.budget.memory_used()
@@ -460,7 +472,8 @@ impl StorageEngine for LsmStorage {
         for sst in sstables.iter().rev() {
             // SSTables already only contain entries up to their last_key.
             // But we still need to check the entry's seq_no.
-            if let Some((val, seq, _tx)) = sst.get(key).await? {
+            if let Some((val, seq, tx_id)) = sst.get(key).await? {
+                let _ = tx_id; // unused for now in point-get
                 if (seq & !TOMBSTONE_BIT) <= seq_no {
                     if (seq & TOMBSTONE_BIT) != 0 {
                         return Ok(None);
@@ -806,7 +819,8 @@ impl StorageEngine for LsmStorage {
             // CREATED:2026-05-08 DEADLINE:NONE
             // Ohne seq_no-Vergleich kann eine ältere SSTable einen neueren Wert
             // überschreiben wenn die SSTable-Reihenfolge nicht strikt chronologisch ist.
-            for (k, v, seq, _tx) in entries {
+            for (k, v, seq, tx_id) in entries {
+                let _ = tx_id; // unused for now in prefix-scan
                 let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                 if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                     *entry = (v.to_vec(), seq);
@@ -862,7 +876,8 @@ impl StorageEngine for LsmStorage {
         // 1. SSTables (oldest first → newer entries overwrite)
         for sst in sstables.iter() {
             let entries = sst.scan_range(start.map(|s| s), end.map(|e| e)).await?;
-            for (k, v, seq, _tx) in entries {
+            for (k, v, seq, tx_id) in entries {
+                let _ = tx_id; // unused for now in range-scan
                 let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                 if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                     *entry = (v.to_vec(), seq);
@@ -999,6 +1014,7 @@ mod tests {
         let val = storage.get(b"key").await.expect("get");
         assert_eq!(val, Some(b"val2".to_vec()));
     }
+
 
     #[tokio::test]
     async fn test_flush_creates_sstable() {

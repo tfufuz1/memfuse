@@ -129,13 +129,24 @@ impl BloomFilter {
                 "corrupted bloom filter: too short".into(),
             ));
         }
-        let num_hashes = u64::from_le_bytes(data[0..8].try_into().unwrap()) as usize;
-        let num_bits = u64::from_le_bytes(data[8..16].try_into().unwrap()) as usize;
-        let mut bits = Vec::with_capacity(num_bits / 64);
+        let num_hashes = u64::from_le_bytes(
+            data[0..8]
+                .try_into()
+                .map_err(|_| MemFuseError::Storage("invalid bloom num_hashes".into()))?,
+        ) as usize;
+        let num_bits = u64::from_le_bytes(
+            data[8..16]
+                .try_into()
+                .map_err(|_| MemFuseError::Storage("invalid bloom num_bits".into()))?,
+        ) as usize;
+
+        let mut bits = Vec::with_capacity(num_bits.saturating_div(64));
         let mut offset = 16;
         while offset + 8 <= data.len() {
             bits.push(u64::from_le_bytes(
-                data[offset..offset + 8].try_into().unwrap(),
+                data[offset..offset + 8]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("invalid bloom bits".into()))?,
             ));
             offset += 8;
         }
@@ -353,8 +364,16 @@ impl SstableBuilder {
             .await
             .map_err(|e| MemFuseError::Storage(format!("SSTable bloom write failed: {}", e)))?;
 
-        // Write trailer: [bloom_offset: u64][index_offset: u64][magic: u32]
-        // This is 20 bytes. Old trailer was 12 bytes.
+        // Write trailer: [min_tx: u64][max_tx: u64][bloom_offset: u64][index_offset: u64][magic: u32]
+        // This is 36 bytes. Older versions were 12 and 20 bytes.
+        self.file
+            .write_u64_le(self.min_tx_id)
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        self.file
+            .write_u64_le(self.max_tx_id)
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
         self.file
             .write_u64_le(bloom_offset)
             .await
@@ -480,37 +499,76 @@ impl SstableReader {
         }
 
         // Backward-compatible trailer detection:
-        // New: [bloom_offset: u64][index_offset: u64][magic: u32] = 20 bytes
-        // Old: [index_offset: u64][magic: u32] = 12 bytes
+        // V3: [min_tx: 8][max_tx: 8][bloom_off: 8][index_off: 8][magic: 4] = 36 bytes
+        // V2: [bloom_off: 8][index_off: 8][magic: 4] = 20 bytes
+        // V1: [index_off: 8][magic: 4] = 12 bytes
         let mut has_bloom = false;
         let mut bloom_offset = 0;
         let mut actual_index_offset = index_offset;
+        let mut min_tx_id = 0;
+        let mut max_tx_id = 0;
+        let mut trailer_size = 12;
 
-        if file_size >= 20 {
-            let trailer_20_pos = (file_size - 20) as usize;
-            let bloom_off = u64::from_le_bytes(
-                mmap.get(trailer_20_pos..trailer_20_pos + 8)
-                    .ok_or_else(|| MemFuseError::Storage("invalid trailer".into()))?
+        if file_size >= 36 {
+            let pos = (file_size - 36) as usize;
+            let min_tx = u64::from_le_bytes(
+                mmap[pos..pos + 8]
                     .try_into()
-                    .unwrap(),
+                    .map_err(|_| MemFuseError::Storage("invalid trailer min_tx".into()))?,
+            );
+            let max_tx = u64::from_le_bytes(
+                mmap[pos + 8..pos + 16]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("invalid trailer max_tx".into()))?,
+            );
+            let bloom_off = u64::from_le_bytes(
+                mmap[pos + 16..pos + 24]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("invalid trailer bloom_off".into()))?,
             );
             let index_off = u64::from_le_bytes(
-                mmap.get(trailer_20_pos + 8..trailer_20_pos + 16)
-                    .ok_or_else(|| MemFuseError::Storage("invalid trailer".into()))?
+                mmap[pos + 24..pos + 32]
                     .try_into()
-                    .unwrap(),
+                    .map_err(|_| MemFuseError::Storage("invalid trailer index_off".into()))?,
             );
 
-            // Heuristic: if index_off == index_offset (from -12 read) and bloom_off < trailer start, it has bloom
+            if index_off == index_offset
+                && bloom_off > index_off
+                && bloom_off < file_size - 36
+                && min_tx <= max_tx
+            {
+                min_tx_id = min_tx;
+                max_tx_id = max_tx;
+                bloom_offset = bloom_off;
+                actual_index_offset = index_off;
+                has_bloom = true;
+                trailer_size = 36;
+            }
+        }
+
+        if !has_bloom && file_size >= 20 {
+            let pos = (file_size - 20) as usize;
+            let bloom_off = u64::from_le_bytes(
+                mmap[pos..pos + 8]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("invalid trailer bloom_off".into()))?,
+            );
+            let index_off = u64::from_le_bytes(
+                mmap[pos + 8..pos + 16]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("invalid trailer index_off".into()))?,
+            );
+
             if index_off == index_offset && bloom_off > index_off && bloom_off < file_size - 20 {
                 has_bloom = true;
                 bloom_offset = bloom_off;
                 actual_index_offset = index_off;
+                trailer_size = 20;
             }
         }
 
         let bloom_filter = if has_bloom {
-            let bloom_end = (file_size - 20) as usize;
+            let bloom_end = (file_size - trailer_size as u64) as usize;
             let bloom_data = mmap
                 .get(bloom_offset as usize..bloom_end)
                 .ok_or_else(|| MemFuseError::Storage("corrupted bloom data".into()))?;
@@ -610,8 +668,10 @@ impl SstableReader {
                 first_key,
                 last_key,
                 file_size,
+                min_tx_id,
+                max_tx_id,
             },
-            index_offset,
+            index_offset: actual_index_offset,
             file_path: path.as_ref().to_path_buf(),
             file_id: {
                 static NEXT_FILE_ID: std::sync::atomic::AtomicU64 =
@@ -788,6 +848,7 @@ impl SstableReader {
                         .try_into()
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 );
+                ep += 8;
                 let tx_id = u64::from_le_bytes(
                     block_data
                         .get(ep..ep + 8)
@@ -832,7 +893,7 @@ impl SstableReader {
     }
 
     /// Iterates over all entries in sorted key order (allocates memory for all entries).
-    pub async fn iter(&self) -> Result<Vec<(Bytes, Bytes, u64)>> {
+    pub async fn iter(&self) -> Result<Vec<(Bytes, Bytes, u64, u64)>> {
         let mut results = Vec::new();
         if self.index.is_empty() {
             return Ok(results);
@@ -910,6 +971,14 @@ impl SstableReader {
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 );
                 ep += 8;
+                let tx_id = u64::from_le_bytes(
+                    block_data
+                        .get(ep..ep + 8)
+                        .ok_or_else(|| MemFuseError::Storage("malformed block: tx_id".into()))?
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                );
+                ep += 8;
                 let v_len = u16::from_le_bytes(
                     block_data
                         .get(ep..ep + 2)
@@ -926,6 +995,7 @@ impl SstableReader {
                     Bytes::copy_from_slice(entry_key),
                     Bytes::copy_from_slice(entry_val),
                     seq_no,
+                    tx_id,
                 ));
             }
         }
@@ -1014,6 +1084,14 @@ impl SstableStream {
                         .ok_or_else(|| MemFuseError::Storage("missing entry_key".into()))?;
                     ep += k_len;
 
+                    let seq_no = u64::from_le_bytes(
+                        block_data
+                            .get(ep..ep + 8)
+                            .ok_or_else(|| MemFuseError::Storage("missing seq_no".into()))?
+                            .try_into()
+                            .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                    );
+                    ep += 8;
                     let tx_id = u64::from_le_bytes(
                         block_data
                             .get(ep..ep + 8)
@@ -1151,6 +1229,14 @@ impl SstableReader {
                             .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                     );
                     ep += 8;
+                    let tx_id = u64::from_le_bytes(
+                        block_data
+                            .get(ep..ep + 8)
+                            .ok_or_else(|| MemFuseError::Storage("malformed block: tx_id".into()))?
+                            .try_into()
+                            .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                    );
+                    ep += 8;
                     let v_len = u16::from_le_bytes(
                         block_data
                             .get(ep..ep + 2)
@@ -1166,6 +1252,7 @@ impl SstableReader {
                         Bytes::copy_from_slice(entry_key),
                         Bytes::copy_from_slice(entry_val),
                         seq_no,
+                        tx_id,
                     ));
                 }
             }
@@ -1182,7 +1269,7 @@ impl SstableReader {
         &self,
         start: std::ops::Bound<&[u8]>,
         end: std::ops::Bound<&[u8]>,
-    ) -> Result<Vec<(Bytes, Bytes, u64)>> {
+    ) -> Result<Vec<(Bytes, Bytes, u64, u64)>> {
         use std::ops::Bound;
 
         let mut results = Vec::with_capacity(16);
@@ -1282,6 +1369,14 @@ impl SstableReader {
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 );
                 ep += 8;
+                let tx_id = u64::from_le_bytes(
+                    block_data
+                        .get(ep..ep + 8)
+                        .ok_or_else(|| MemFuseError::Storage("malformed block: tx_id".into()))?
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                );
+                ep += 8;
                 let v_len = u16::from_le_bytes(
                     block_data
                         .get(ep..ep + 2)
@@ -1297,6 +1392,7 @@ impl SstableReader {
                     Bytes::copy_from_slice(entry_key),
                     Bytes::copy_from_slice(entry_val),
                     seq_no,
+                    tx_id,
                 ));
             }
         }
@@ -1313,8 +1409,8 @@ mod tests {
     #[tokio::test]
     async fn test_block_bloom_filter() {
         let mut builder = BlockBuilder::new(4096);
-        builder.add(b"apple", b"red", 1);
-        builder.add(b"banana", b"yellow", 2);
+        builder.add(b"apple", b"red", 1, 1);
+        builder.add(b"banana", b"yellow", 2, 2);
         let block = builder.build();
 
         // 1. Verify format: [entries][u64 bloom][u16 offset1][u16 offset2][u16 num_offsets]
@@ -1369,8 +1465,8 @@ mod tests {
         let bc = create_block_cache(1);
 
         let mut builder = SstableBuilder::create(&path).await.expect("create builder");
-        builder.add(b"key1", b"val1", 1).await.expect("add key1");
-        builder.add(b"key2", b"val2", 2).await.expect("add key2");
+        builder.add(b"key1", b"val1", 1, 1).await.expect("add key1");
+        builder.add(b"key2", b"val2", 2, 2).await.expect("add key2");
         builder.finish().await.expect("finish builder");
 
         let reader = SstableReader::open(&path, bc).await.expect("open reader");
@@ -1395,7 +1491,7 @@ mod tests {
             let key = format!("key-{:03}", i);
             let val = format!("val-{:03}", i);
             builder
-                .add(key.as_bytes(), val.as_bytes(), i as u64)
+                .add(key.as_bytes(), val.as_bytes(), i as u64, i as u64)
                 .await
                 .expect("add");
         }
@@ -1427,7 +1523,7 @@ mod tests {
             let key = format!("key-{:03}", i);
             let val = format!("val-{:03}", i);
             builder
-                .add(key.as_bytes(), val.as_bytes(), i as u64)
+                .add(key.as_bytes(), val.as_bytes(), i as u64, i as u64)
                 .await
                 .expect("add");
         }
@@ -1460,10 +1556,10 @@ mod tests {
         let bc = create_block_cache(1);
 
         let mut builder = SstableBuilder::create(&path).await.expect("create builder");
-        builder.add(b"apple/1", b"a1", 1).await.expect("add");
-        builder.add(b"apple/2", b"a2", 2).await.expect("add");
-        builder.add(b"banana/1", b"b1", 3).await.expect("add");
-        builder.add(b"cherry/1", b"c1", 4).await.expect("add");
+        builder.add(b"apple/1", b"a1", 1, 1).await.expect("add");
+        builder.add(b"apple/2", b"a2", 2, 2).await.expect("add");
+        builder.add(b"banana/1", b"b1", 3, 3).await.expect("add");
+        builder.add(b"cherry/1", b"c1", 4, 4).await.expect("add");
         builder.finish().await.expect("finish");
 
         let reader = SstableReader::open(&path, bc).await.expect("open");
@@ -1489,10 +1585,10 @@ mod tests {
         let bc = create_block_cache(1);
 
         let mut builder = SstableBuilder::create(&path).await.expect("create builder");
-        builder.add(b"a", b"1", 1).await.expect("add");
-        builder.add(b"b", b"2", 2).await.expect("add");
-        builder.add(b"c", b"3", 3).await.expect("add");
-        builder.add(b"d", b"4", 4).await.expect("add");
+        builder.add(b"a", b"1", 1, 1).await.expect("add");
+        builder.add(b"b", b"2", 2, 2).await.expect("add");
+        builder.add(b"c", b"3", 3, 3).await.expect("add");
+        builder.add(b"d", b"4", 4, 4).await.expect("add");
         builder.finish().await.expect("finish");
 
         let reader = SstableReader::open(&path, bc).await.expect("open");
@@ -1533,7 +1629,7 @@ mod tests {
         {
             let mut builder = SstableBuilder::create(&sst_path).await.expect("create");
             builder
-                .add(b"active-key", b"value", 100)
+                .add(b"active-key", b"value", 100, 100)
                 .await
                 .expect("add");
             builder.finish().await.expect("finish");
@@ -1563,7 +1659,7 @@ mod tests {
                 .await
                 .expect("create old sub");
             builder
-                .add(b"old-key", b"old-value", 10)
+                .add(b"old-key", b"old-value", 10, 10)
                 .await
                 .expect("add");
             builder.finish().await.expect("finish");
