@@ -262,9 +262,10 @@ impl LsmStorage {
         let compaction_path = config.path.clone();
         // TODO(FIND-STO-001): Compaction-Engine CPU Starvation (WL-2)
         // Ensure the internal while-loop explicitly calls tokio::task::yield_now() between merges!
+        let (_compaction_tx, compaction_rx) = tokio::sync::watch::channel(false);
         tokio::spawn(async move {
             compaction_engine
-                .run_loop(compaction_sstables, compaction_path)
+                .run_loop(compaction_sstables, compaction_path, compaction_rx)
                 .await;
         });
 
@@ -295,6 +296,7 @@ impl LsmStorage {
     /// Rolls back the entire storage state to a specific transaction ID.
     /// This is a destructive operation that removes all data after the target TX.
     /// ANCHOR:AUDIT:FIXED (2026-05-23) — Initial implementation for Time-Travel Debugging.
+    // TODO(FIND-STO-003): Rollback-Inconsistency - Update rollback_to_tx to properly drop SSTables where min_tx_id > target_tx.
     pub async fn rollback_to_tx(&self, target_tx: TxId) -> Result<()> {
         let _commit_lock = self.commit_mutex.lock().await;
         let mut state = self.state.write().await;
@@ -1147,5 +1149,62 @@ mod tests {
             storage.commit(tx3).await.unwrap();
             assert_eq!(storage.get(b"k3").await.unwrap(), Some(b"v3".to_vec()));
         }
+    }
+    #[tokio::test]
+    async fn test_rollback_with_sstables() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 64,
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+        let storage = LsmStorage::new(config).await.expect("create storage");
+
+        // 1. Insert data for TX 1, TX 2
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"k1", b"v1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"k2", b"v2").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+
+        // 2. Flush (SSTable 1 contains TX 1, 2)
+        storage.force_flush().await.unwrap();
+
+        // 3. Insert data for TX 3, TX 4
+        let tx3 = TxId::new(3);
+        storage.put(tx3, b"k3", b"v3").await.unwrap();
+        storage.commit(tx3).await.unwrap();
+
+        let tx4 = TxId::new(4);
+        storage.put(tx4, b"k4", b"v4").await.unwrap();
+        storage.commit(tx4).await.unwrap();
+
+        // 4. Flush (SSTable 2 contains TX 3, 4)
+        storage.force_flush().await.unwrap();
+
+        {
+            let sstables = storage.sstables.read().await;
+            assert_eq!(sstables.len(), 2);
+        }
+
+        // 5. Rollback to TX 2
+        storage.rollback_to_tx(tx2).await.expect("rollback");
+
+        // 6. Verify SSTable 2 is gone, 7. Verify SSTable 1 is still there.
+        {
+            let sstables = storage.sstables.read().await;
+            assert_eq!(sstables.len(), 1, "SSTable 2 should be deleted");
+            assert_eq!(sstables[0].metadata().max_tx_id, 2);
+        }
+
+        assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
+        assert_eq!(storage.get(b"k2").await.unwrap(), Some(b"v2".to_vec()));
+        assert_eq!(storage.get(b"k3").await.unwrap(), None);
+        assert_eq!(storage.get(b"k4").await.unwrap(), None);
     }
 }

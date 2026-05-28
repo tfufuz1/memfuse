@@ -206,16 +206,16 @@ impl DiskAnnIndex {
         })
     }
 
-    fn compute_dist_between_nodes(&self, idx_a: u32, idx_b: u32) -> Result<f32> {
-        let node_a = self.load_node(idx_a)?;
-        let node_b = self.load_node(idx_b)?;
+    async fn compute_dist_between_nodes(&self, idx_a: u32, idx_b: u32) -> Result<f32> {
+        let node_a = self.load_node(idx_a).await?;
+        let node_b = self.load_node(idx_b).await?;
 
         match (&node_a.vector, &node_b.vector) {
             (VectorData::F32(v_a), VectorData::F32(v_b)) => {
                 compute_distance(v_a, v_b, self.config.distance_metric)
             }
             (VectorData::U8(v_a), VectorData::U8(v_b)) => {
-                let q_guard = self.quantizer.blocking_read();
+                let q_guard = self.quantizer.read().await;
                 let q = q_guard
                     .as_ref()
                     .ok_or_else(|| MemFuseError::Index("Quantizer missing".into()))?;
@@ -225,12 +225,12 @@ impl DiskAnnIndex {
         }
     }
 
-    fn get_dist_to_query(&self, query: &[f32], node_idx: u32) -> Result<f32> {
-        let node = self.load_node(node_idx)?;
+    async fn get_dist_to_query(&self, query: &[f32], node_idx: u32) -> Result<f32> {
+        let node = self.load_node(node_idx).await?;
         match &node.vector {
             VectorData::F32(v) => compute_distance(query, v, self.config.distance_metric),
             VectorData::U8(v) => {
-                let q_guard = self.quantizer.blocking_read();
+                let q_guard = self.quantizer.read().await;
                 let q = q_guard
                     .as_ref()
                     .ok_or_else(|| MemFuseError::Index("Quantizer missing".into()))?;
@@ -238,7 +238,12 @@ impl DiskAnnIndex {
             }
         }
     }
-    fn prune(&self, candidates: &mut [SearchCandidate], max_degree: usize, alpha: f32) -> Vec<u32> {
+    async fn prune(
+        &self,
+        candidates: &mut [SearchCandidate],
+        max_degree: usize,
+        alpha: f32,
+    ) -> Vec<u32> {
         if candidates.is_empty() {
             return Vec::new();
         }
@@ -254,6 +259,7 @@ impl DiskAnnIndex {
             for &p_idx in &pruned {
                 let dist_p_cand = self
                     .compute_dist_between_nodes(cand.index, p_idx)
+                    .await
                     .unwrap_or(f32::MAX);
                 if alpha * dist_p_cand < cand.distance {
                     keep = false;
@@ -280,7 +286,7 @@ impl DiskAnnIndex {
         if self.config.quantize {
             let refs: Vec<&[f32]> = vectors.iter().map(|v| v.as_slice()).collect();
             let q = crate::quantize::ScalarQuantizer::train(&refs, self.config.dimension);
-            *self.quantizer.write() = Some(q);
+            *self.quantizer.write().await = Some(q);
         }
 
         // 1. Initial State
@@ -292,7 +298,7 @@ impl DiskAnnIndex {
 
         // 2. Initial Write & Mmap
         self.write_to_file(&graph, vectors, ids).await?;
-        self.load()?; // Load mmap and doc_ids
+        self.load().await?; // Load mmap and doc_ids
 
         // 3. Vamana Build Pass
         let alpha = 1.2;
@@ -300,7 +306,7 @@ impl DiskAnnIndex {
             let mut results = self
                 .search_to_candidates(vector, self.config.beam_width)
                 .await?;
-            let pruned = self.prune(&mut results, self.config.max_degree, alpha);
+            let pruned = self.prune(&mut results, self.config.max_degree, alpha).await;
 
             for &neighbor in &pruned {
                 let neighbor_idx = neighbor as usize;
@@ -315,7 +321,7 @@ impl DiskAnnIndex {
 
         // 4. Final Write
         self.write_to_file(&graph, vectors, ids).await?;
-        self.load()?;
+        self.load().await?;
 
         Ok(())
     }
@@ -337,7 +343,7 @@ impl DiskAnnIndex {
             .map_err(MemFuseError::Io)?;
 
         let quantizer_opt = {
-            let q_guard = self.quantizer.read();
+            let q_guard = self.quantizer.read().await;
             q_guard.clone()
         };
         let (q_min, q_max, quantized) = if let Some(ref q) = quantizer_opt {
@@ -424,7 +430,7 @@ impl DiskAnnIndex {
         let mut results = BinaryHeap::new();
 
         let ep = header.entry_point;
-        let ep_dist = self.get_dist_to_query(query, ep)?;
+        let ep_dist = self.get_dist_to_query(query, ep).await?;
 
         let initial = SearchCandidate {
             index: ep,
@@ -441,12 +447,12 @@ impl DiskAnnIndex {
                 }
             }
 
-            let node = self.load_node(current.index)?;
+            let node = self.load_node(current.index).await?;
             for &neighbor in &node.neighbors {
                 if !visited.insert(neighbor) {
                     continue;
                 }
-                let dist = self.get_dist_to_query(query, neighbor)?;
+                let dist = self.get_dist_to_query(query, neighbor).await?;
                 let cand = SearchCandidate {
                     index: neighbor,
                     distance: dist,
@@ -467,7 +473,7 @@ impl DiskAnnIndex {
     }
 
     /// Loads the index from the configured path.
-    pub fn load(&mut self) -> Result<()> {
+    pub async fn load(&mut self) -> Result<()> {
         let file = std::fs::File::open(&self.config.index_path).map_err(MemFuseError::Io)?;
         // SAFETY: Mapping a file is safe as long as it's not truncated or modified while mapped.
         // In MemFuse, file access is orchestrated by the storage layer with exclusive locks.
@@ -476,7 +482,7 @@ impl DiskAnnIndex {
         let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;
 
         if header.quantized != 0 {
-            *self.quantizer.write() = Some(crate::quantize::ScalarQuantizer {
+            *self.quantizer.write().await = Some(crate::quantize::ScalarQuantizer {
                 min: header.q_min,
                 max: header.q_max,
                 scale: 255.0 / (header.q_max - header.q_min).max(1e-6),
@@ -502,17 +508,17 @@ impl DiskAnnIndex {
         // Load DocIds into RAM (Scan all nodes once)
         let mut ids = Vec::with_capacity(header.node_count as usize);
         for i in 0..header.node_count as u32 {
-            let node = self.load_node(i)?;
+            let node = self.load_node(i).await?;
             ids.push(node.doc_id);
         }
-        *self.doc_ids.write() = ids;
+        *self.doc_ids.write().await = ids;
 
         Ok(())
     }
 
-    fn load_node(&self, index: u32) -> Result<CachedNode> {
+    async fn load_node(&self, index: u32) -> Result<CachedNode> {
         // 1. Check Cache
-        if let Some(node) = self.cache.blocking_read().get(&index) {
+        if let Some(node) = self.cache.read().await.get(&index) {
             return Ok(node.clone());
         }
 
@@ -588,7 +594,7 @@ impl DiskAnnIndex {
         };
 
         // 3. Update Cache (Naive Clear-on-Budget)
-        let mut cache = self.cache.blocking_write();
+        let mut cache = self.cache.write().await;
         if cache.len() * self.node_size_bytes >= self.config.memory_budget {
             cache.clear();
         }
@@ -615,7 +621,7 @@ impl DiskAnnIndex {
         let mut results = BinaryHeap::new();
 
         let ep = header.entry_point;
-        let ep_dist = self.get_dist_to_query(query, ep)?;
+        let ep_dist = self.get_dist_to_query(query, ep).await?;
 
         let initial_cand = SearchCandidate {
             index: ep,
@@ -632,13 +638,13 @@ impl DiskAnnIndex {
                 }
             }
 
-            let node = self.load_node(current.index)?;
+            let node = self.load_node(current.index).await?;
             for &neighbor in &node.neighbors {
                 if !visited.insert(neighbor) {
                     continue;
                 }
 
-                let dist = self.get_dist_to_query(query, neighbor)?;
+                let dist = self.get_dist_to_query(query, neighbor).await?;
                 let cand = SearchCandidate {
                     index: neighbor,
                     distance: dist,
@@ -667,7 +673,7 @@ impl DiskAnnIndex {
         sorted_results.sort_by(|a, b| a.distance.total_cmp(&b.distance));
 
         for c in sorted_results.into_iter().take(k) {
-            let node = self.load_node(c.index)?;
+            let node = self.load_node(c.index).await?;
             let score = match self.config.distance_metric {
                 DistanceMetric::Cosine => 1.0 - c.distance,
                 DistanceMetric::Euclidean => 1.0 / (1.0 + c.distance),
@@ -680,6 +686,7 @@ impl DiskAnnIndex {
     }
 }
 
+#[async_trait::async_trait]
 impl VectorIndex for DiskAnnIndex {
     async fn insert(&self, _tx: TxId, _id: DocId, _embedding: &[f32]) -> Result<()> {
         Err(MemFuseError::InvalidInput(
@@ -702,6 +709,10 @@ impl VectorIndex for DiskAnnIndex {
     }
     async fn rollback(&self, _tx: TxId) -> Result<()> {
         Ok(())
+    }
+
+    async fn last_tx_id(&self) -> Result<u64> {
+        Ok(0)
     }
 
     async fn len(&self) -> usize {

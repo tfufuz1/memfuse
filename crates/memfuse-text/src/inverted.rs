@@ -305,8 +305,12 @@ impl<S: StorageEngine> InvertedIndex<S> {
         }
 
         let mut results: Vec<(DocId, f32)> = scores.into_iter().collect();
-        // Sort descending by score
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort descending by score, then ascending by DocId for determinism
+        results.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
         results.truncate(k);
 
         Ok(results)
@@ -470,7 +474,10 @@ mod tests {
                 memtable_size_bytes: 0,
             })
         }
-        async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
+        async fn pin_checkpoint(&self, _id: u64) -> Result<()> {
+            Ok(())
+        }
+        async fn unpin_checkpoint(&self, _id: u64) -> Result<()> {
             Ok(())
         }
         async fn scan(
@@ -555,27 +562,15 @@ mod tests {
         storage.commit(tx2).await?;
 
         // total_docs = 2, total_tokens = 5
-        let td_key = index.key("meta:total_docs");
-        let tt_key = index.key("meta:total_tokens");
+        let meta_key = index.key("meta:stats");
+        let meta_bytes = storage
+            .get(&meta_key)
+            .await?
+            .ok_or("meta:stats not found")?;
+        let meta: TextIndexMetadata = bincode::deserialize(&meta_bytes)?;
 
-        let td = u64::from_le_bytes(
-            storage
-                .get(&td_key)
-                .await?
-                .ok_or("td_key not found")?
-                .as_slice()
-                .try_into()?,
-        );
-        let tt = u64::from_le_bytes(
-            storage
-                .get(&tt_key)
-                .await?
-                .ok_or("tt_key not found")?
-                .as_slice()
-                .try_into()?,
-        );
-        assert_eq!(td, 2);
-        assert_eq!(tt, 5);
+        assert_eq!(meta.total_docs, 2);
+        assert_eq!(meta.total_tokens, 5);
 
         // Update d1
         let tx3 = TxId::new(3);
@@ -583,24 +578,13 @@ mod tests {
         storage.commit(tx3).await?;
 
         // total_docs = 2, total_tokens = 3 (5 - 3 + 1)
-        let td = u64::from_le_bytes(
-            storage
-                .get(&td_key)
-                .await?
-                .ok_or("td_key not found")?
-                .as_slice()
-                .try_into()?,
-        );
-        let tt = u64::from_le_bytes(
-            storage
-                .get(&tt_key)
-                .await?
-                .ok_or("tt_key not found")?
-                .as_slice()
-                .try_into()?,
-        );
-        assert_eq!(td, 2);
-        assert_eq!(tt, 3);
+        let meta_bytes = storage
+            .get(&meta_key)
+            .await?
+            .ok_or("meta:stats not found")?;
+        let meta: TextIndexMetadata = bincode::deserialize(&meta_bytes)?;
+        assert_eq!(meta.total_docs, 2);
+        assert_eq!(meta.total_tokens, 3);
 
         // Delete d2
         let tx4 = TxId::new(4);
@@ -608,24 +592,13 @@ mod tests {
         storage.commit(tx4).await?;
 
         // total_docs = 1, total_tokens = 1
-        let td = u64::from_le_bytes(
-            storage
-                .get(&td_key)
-                .await?
-                .ok_or("td_key not found")?
-                .as_slice()
-                .try_into()?,
-        );
-        let tt = u64::from_le_bytes(
-            storage
-                .get(&tt_key)
-                .await?
-                .ok_or("tt_key not found")?
-                .as_slice()
-                .try_into()?,
-        );
-        assert_eq!(td, 1);
-        assert_eq!(tt, 1);
+        let meta_bytes = storage
+            .get(&meta_key)
+            .await?
+            .ok_or("meta:stats not found")?;
+        let meta: TextIndexMetadata = bincode::deserialize(&meta_bytes)?;
+        assert_eq!(meta.total_docs, 1);
+        assert_eq!(meta.total_tokens, 1);
         Ok(())
     }
 
@@ -698,6 +671,43 @@ mod tests {
 
         let stats_after = index.stats().await?;
         assert_eq!(stats_after.num_documents, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_bm25_stability_edge_cases() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "stability");
+
+        // Case 1: Search empty index
+        let results = index.search_bm25("anything", 10).await?;
+        assert!(results.is_empty());
+
+        // Case 2: Document with zero length (e.g. only stop words or punctuation if not handled)
+        // Note: Our tokenizer might filter everything out, but let's force it if possible.
+        let tx = TxId::new(1);
+        let d1 = DocId::new(1);
+        // If tokenizer filters everything, upsert might return error or do nothing?
+        // Let's assume some tokens remain but we manually corrupt or use empty.
+        index.upsert_document(tx, d1, "").await?;
+        storage.commit(tx).await?;
+
+        let results = index.search_bm25("anything", 10).await?;
+        assert!(results.is_empty());
+
+        // Case 3: Mixed documents, some very short
+        let tx2 = TxId::new(2);
+        index.upsert_document(tx2, DocId::new(2), "test").await?;
+        index.upsert_document(tx2, DocId::new(3), "test test test").await?;
+        storage.commit(tx2).await?;
+
+        let results = index.search_bm25("test", 10).await?;
+        assert_eq!(results.len(), 2);
+        for (_, score) in results {
+            assert!(!score.is_nan());
+            assert!(!score.is_infinite());
+        }
 
         Ok(())
     }

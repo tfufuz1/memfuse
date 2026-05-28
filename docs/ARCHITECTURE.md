@@ -79,6 +79,7 @@ graph TD
 2.  **LSM Write Guarantee**: WAL write **must** be flushed and synced before MemTable modification.
 3.  **Isolation**: Namespaces must be physically prefixed in storage to prevent leakage.
 4.  **Resource Control**: All memory-intensive operations must register with the `ResourceTracker`.
+5.  **Cryptographic Isolation**: Every persistent file (WAL, SSTable) must use a unique sub-key derived via `KeyManager::derive_file_key(file_id)` to prevent AES-GCM nonce reuse.
 
 ---
 

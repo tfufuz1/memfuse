@@ -11,15 +11,29 @@ Implement hierarchical key derivation.
 3. This ensures that even if the same offset is used as a nonce, the underlying key is different for each file, preventing Nonce-Reuse.
 
 ## 3. Technical Changes
-- Add `derive_file_key(&self, file_id: &[u8]) -> Result<KeyManager>` to `KeyManager`.
-- The new `KeyManager` will have a key derived via:
-  `HKDF-Expand(master_key, info=file_id)`
-- Update existing documentation to mandate the use of `derive_file_key` for any file-backed storage.
+- Updated `KeyManager` to support hierarchical key derivation.
+- Implemented `derive_file_key(&self, file_id: &[u8]) -> Result<KeyManager>`.
+- The implementation uses `HKDF-Expand` with the master key as PRK.
+- A domain-separating prefix `memfuse-file-key:` is prepended to the `file_id` to prevent collisions with other derived keys (like the integrity key).
+- Mandatory use of `derive_file_key` in `memfuse-store` for SSTables and WALs.
+
+### Code Implementation Detail
+```rust
+    pub fn derive_file_key(&self, file_id: &[u8]) -> Result<Self> {
+        let hk = Hkdf::<Sha256>::from_prk(&self.key)?;
+        let mut sub_key = [0u8; 32];
+        let mut info = b"memfuse-file-key:".to_vec();
+        info.extend_from_slice(file_id);
+        hk.expand(&info, &mut sub_key)?;
+        Ok(Self { key: sub_key })
+    }
+```
 
 ## 4. Verification Plan
 ### Automated Tests
-- `test_nonce_reuse_prevention`: Verify that the same data encrypted with the same `nonce_val` but different `file_id`s results in different ciphertexts.
-- `test_sub_key_integrity`: Verify that a sub-key derived from a sub-key is consistent and correct.
+- `test_sub_key_derivation_prevents_nonce_reuse`: Verified in `src/crypto.rs`.
+- `test_nonce_reuse_vulnerability_demonstration`: Confirmed in `tests/nonce_reuse.rs`.
+- `test_sub_key_derivation_prevents_reuse`: Confirmed in `tests/nonce_reuse.rs`.
 
 ### Manual Verification
-- Ensure `memfuse-store` (where files are handled) actually calls `derive_file_key`. (This might be a follow-up task FIND-CRY-002-PART2).
+- Verified that `memfuse-store` (WAL and SSTable) calls `derive_file_key` using the filename as context.

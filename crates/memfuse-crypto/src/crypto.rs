@@ -2,6 +2,8 @@
 //!
 //! Implements AES-256-GCM encryption and HKDF-SHA256 key derivation.
 
+#![forbid(unsafe_code)]
+
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
@@ -40,17 +42,26 @@ impl KeyManager {
     /// Derives a sub-key for a specific file or logical stream.
     /// This prevents nonce-reuse when multiple files use the same master key.
     pub fn derive_file_key(&self, file_id: &[u8]) -> Result<Self> {
-        let hk = Hkdf::<Sha256>::new(None, &self.key);
+        // Since self.key is already derived via HKDF in try_new, it is a high-entropy PRK.
+        // We use HKDF-Expand with a domain-separating prefix to derive a per-file key.
+        let hk = Hkdf::<Sha256>::from_prk(&self.key)
+            .map_err(|_| MemFuseError::Storage("Invalid PRK length".to_string()))?;
+
         let mut sub_key = [0u8; 32];
-        hk.expand(file_id, &mut sub_key)
+        let mut info = Vec::with_capacity(b"memfuse-file-key:".len() + file_id.len());
+        info.extend_from_slice(b"memfuse-file-key:");
+        info.extend_from_slice(file_id);
+
+        hk.expand(&info, &mut sub_key)
             .map_err(|e| MemFuseError::Storage(format!("HKDF sub-key expansion failed: {}", e)))?;
+
         Ok(Self { key: sub_key })
     }
 
     /// Derives an integrity key for HMAC-SHA256.
     pub fn integrity_key(&self) -> Result<[u8; 32]> {
-        // Use the already-salted key for derivation to prevent rainbow table attacks.
-        let hk = Hkdf::<Sha256>::new(None, &self.key);
+        let hk = Hkdf::<Sha256>::from_prk(&self.key)
+            .map_err(|_| MemFuseError::Storage("Invalid PRK length".to_string()))?;
         let mut key = [0u8; 32];
         hk.expand(b"memfuse-hmac-sha256-key", &mut key)
             .map_err(|e| {
@@ -151,9 +162,6 @@ mod tests {
         let master_km = KeyManager::try_new("master-secret", None).expect("try_new");
         let data = b"identical-data";
         let offset = 0;
-
-        // Currently, we don't have derive_file_key, so we can't write this yet.
-        // But we want to ensure that if we had it, ciphertexts would differ.
 
         let km_file1 = master_km.derive_file_key(b"file1").expect("derive1");
         let km_file2 = master_km.derive_file_key(b"file2").expect("derive2");

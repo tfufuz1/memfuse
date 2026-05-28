@@ -254,7 +254,17 @@ impl SstableBuilder {
         path: impl AsRef<Path>,
         key_manager: Option<Arc<KeyManager>>,
     ) -> Result<Self> {
-        let file = File::create(path)
+        let path_ref = path.as_ref();
+        let derived_km = if let Some(km) = key_manager {
+            let file_id = path_ref
+                .file_name()
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_default();
+            Some(Arc::new(km.derive_file_key(file_id.as_bytes())?))
+        } else {
+            None
+        };
+        let file = File::create(path_ref)
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create SSTable: {}", e)))?;
 
@@ -265,7 +275,7 @@ impl SstableBuilder {
             first_key: None,
             last_key: None,
             offset: 0,
-            key_manager,
+            key_manager: derived_km,
             // Initialize with capacity 1000 (will grow if needed, or we just trust the final size)
             // Actually, we don't know the final size, but we can re-create it at finish or just use a large enough default.
             // Better: use a dynamic filter if possible, but standard Bloom needs N.
@@ -436,6 +446,15 @@ impl SstableReader {
         key_manager: Option<Arc<KeyManager>>,
     ) -> Result<Self> {
         let path_buf = path.as_ref().to_path_buf();
+        let derived_km = if let Some(ref km) = key_manager {
+            let file_id = path_buf
+                .file_name()
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_default();
+            Some(Arc::new(km.derive_file_key(file_id.as_bytes())?))
+        } else {
+            None
+        };
         let (mmap, file_size) =
             tokio::task::spawn_blocking(move || -> std::io::Result<(memmap2::Mmap, u64)> {
                 let file = std::fs::File::open(&path_buf)?; // std::fs justification: required for memmap2
@@ -610,6 +629,8 @@ impl SstableReader {
                 first_key,
                 last_key,
                 file_size,
+                min_tx_id: 0,
+                max_tx_id: u64::MAX,
             },
             index_offset,
             file_path: path.as_ref().to_path_buf(),
@@ -619,7 +640,7 @@ impl SstableReader {
                 NEXT_FILE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             },
             block_cache,
-            key_manager,
+            key_manager: derived_km,
             bloom_filter,
         })
     }
@@ -910,6 +931,14 @@ impl SstableReader {
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 );
                 ep += 8;
+                let _tx_id = u64::from_le_bytes(
+                    block_data
+                        .get(ep..ep + 8)
+                        .ok_or_else(|| MemFuseError::Storage("malformed block: tx_id".into()))?
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                );
+                ep += 8;
                 let v_len = u16::from_le_bytes(
                     block_data
                         .get(ep..ep + 2)
@@ -1013,6 +1042,15 @@ impl SstableStream {
                         .get(ep..ep + k_len)
                         .ok_or_else(|| MemFuseError::Storage("missing entry_key".into()))?;
                     ep += k_len;
+
+                    let seq_no = u64::from_le_bytes(
+                        block_data
+                            .get(ep..ep + 8)
+                            .ok_or_else(|| MemFuseError::Storage("missing seq_no".into()))?
+                            .try_into()
+                            .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                    );
+                    ep += 8;
 
                     let tx_id = u64::from_le_bytes(
                         block_data
@@ -1151,6 +1189,14 @@ impl SstableReader {
                             .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                     );
                     ep += 8;
+                    let tx_id = u64::from_le_bytes(
+                        block_data
+                            .get(ep..ep + 8)
+                            .ok_or_else(|| MemFuseError::Storage("malformed block: tx_id".into()))?
+                            .try_into()
+                            .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                    );
+                    ep += 8;
                     let v_len = u16::from_le_bytes(
                         block_data
                             .get(ep..ep + 2)
@@ -1166,6 +1212,7 @@ impl SstableReader {
                         Bytes::copy_from_slice(entry_key),
                         Bytes::copy_from_slice(entry_val),
                         seq_no,
+                        tx_id,
                     ));
                 }
             }
@@ -1182,7 +1229,7 @@ impl SstableReader {
         &self,
         start: std::ops::Bound<&[u8]>,
         end: std::ops::Bound<&[u8]>,
-    ) -> Result<Vec<(Bytes, Bytes, u64)>> {
+    ) -> Result<Vec<(Bytes, Bytes, u64, u64)>> {
         use std::ops::Bound;
 
         let mut results = Vec::with_capacity(16);
@@ -1297,8 +1344,8 @@ impl SstableReader {
                     Bytes::copy_from_slice(entry_key),
                     Bytes::copy_from_slice(entry_val),
                     seq_no,
-                ));
-            }
+                    0u64,
+                ));            }
         }
 
         Ok(results)
@@ -1313,8 +1360,8 @@ mod tests {
     #[tokio::test]
     async fn test_block_bloom_filter() {
         let mut builder = BlockBuilder::new(4096);
-        builder.add(b"apple", b"red", 1);
-        builder.add(b"banana", b"yellow", 2);
+        builder.add(b"apple", b"red", 1, 0);
+        builder.add(b"banana", b"yellow", 2, 0);
         let block = builder.build();
 
         // 1. Verify format: [entries][u64 bloom][u16 offset1][u16 offset2][u16 num_offsets]
@@ -1369,8 +1416,8 @@ mod tests {
         let bc = create_block_cache(1);
 
         let mut builder = SstableBuilder::create(&path).await.expect("create builder");
-        builder.add(b"key1", b"val1", 1).await.expect("add key1");
-        builder.add(b"key2", b"val2", 2).await.expect("add key2");
+        builder.add(b"key1", b"val1", 1, 0).await.expect("add key1");
+        builder.add(b"key2", b"val2", 2, 0).await.expect("add key2");
         builder.finish().await.expect("finish builder");
 
         let reader = SstableReader::open(&path, bc).await.expect("open reader");
@@ -1395,7 +1442,7 @@ mod tests {
             let key = format!("key-{:03}", i);
             let val = format!("val-{:03}", i);
             builder
-                .add(key.as_bytes(), val.as_bytes(), i as u64)
+                .add(key.as_bytes(), val.as_bytes(), i as u64, 0)
                 .await
                 .expect("add");
         }
@@ -1427,7 +1474,7 @@ mod tests {
             let key = format!("key-{:03}", i);
             let val = format!("val-{:03}", i);
             builder
-                .add(key.as_bytes(), val.as_bytes(), i as u64)
+                .add(key.as_bytes(), val.as_bytes(), i as u64, 0)
                 .await
                 .expect("add");
         }
@@ -1460,10 +1507,10 @@ mod tests {
         let bc = create_block_cache(1);
 
         let mut builder = SstableBuilder::create(&path).await.expect("create builder");
-        builder.add(b"apple/1", b"a1", 1).await.expect("add");
-        builder.add(b"apple/2", b"a2", 2).await.expect("add");
-        builder.add(b"banana/1", b"b1", 3).await.expect("add");
-        builder.add(b"cherry/1", b"c1", 4).await.expect("add");
+        builder.add(b"apple/1", b"a1", 1, 0).await.expect("add");
+        builder.add(b"apple/2", b"a2", 2, 0).await.expect("add");
+        builder.add(b"banana/1", b"b1", 3, 0).await.expect("add");
+        builder.add(b"cherry/1", b"c1", 4, 0).await.expect("add");
         builder.finish().await.expect("finish");
 
         let reader = SstableReader::open(&path, bc).await.expect("open");
@@ -1489,10 +1536,10 @@ mod tests {
         let bc = create_block_cache(1);
 
         let mut builder = SstableBuilder::create(&path).await.expect("create builder");
-        builder.add(b"a", b"1", 1).await.expect("add");
-        builder.add(b"b", b"2", 2).await.expect("add");
-        builder.add(b"c", b"3", 3).await.expect("add");
-        builder.add(b"d", b"4", 4).await.expect("add");
+        builder.add(b"a", b"1", 1, 0).await.expect("add");
+        builder.add(b"b", b"2", 2, 0).await.expect("add");
+        builder.add(b"c", b"3", 3, 0).await.expect("add");
+        builder.add(b"d", b"4", 4, 0).await.expect("add");
         builder.finish().await.expect("finish");
 
         let reader = SstableReader::open(&path, bc).await.expect("open");
@@ -1533,7 +1580,7 @@ mod tests {
         {
             let mut builder = SstableBuilder::create(&sst_path).await.expect("create");
             builder
-                .add(b"active-key", b"value", 100)
+                .add(b"active-key", b"value", 100, 0)
                 .await
                 .expect("add");
             builder.finish().await.expect("finish");
@@ -1563,7 +1610,7 @@ mod tests {
                 .await
                 .expect("create old sub");
             builder
-                .add(b"old-key", b"old-value", 10)
+                .add(b"old-key", b"old-value", 10, 0)
                 .await
                 .expect("add");
             builder.finish().await.expect("finish");

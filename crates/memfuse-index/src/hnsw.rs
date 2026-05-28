@@ -47,7 +47,6 @@ use roaring::RoaringTreemap;
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::Mutex;
 
@@ -1242,6 +1241,7 @@ impl HnswIndexCore {
     // Kept for backward compatibility or direct calls if needed, though facade should use `HnswIndex` wrapper
 }
 
+#[async_trait::async_trait]
 impl VectorIndex for HnswIndex {
     async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()> {
         if let Some(ref err) = self.validation_error {
@@ -1257,6 +1257,16 @@ impl VectorIndex for HnswIndex {
                 embedding.len()
             )));
         }
+
+        // FIND-IDX-002: NaN/Inf Poisoning prevention
+        for &val in embedding {
+            if val.is_nan() || val.is_infinite() {
+                return Err(MemFuseError::Storage(
+                    "Invalid vector: NaN or Infinity detected".to_string(),
+                ));
+            }
+        }
+
         self.tx_buffer.stage(
             tx,
             IndexOp::Insert {

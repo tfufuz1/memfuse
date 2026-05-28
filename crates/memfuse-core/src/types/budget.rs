@@ -42,9 +42,11 @@ impl ResourceTracker {
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         loop {
             let current = self.memory_used.load(std::sync::atomic::Ordering::Acquire);
-            if current + bytes > self.budget.memory_limit {
+            let next = current.saturating_add(bytes);
+
+            if next > self.budget.memory_limit {
                 return Err(MemFuseError::MemoryBudgetExceeded {
-                    used_mb: (current + bytes) / (1024 * 1024),
+                    used_mb: next / (1024 * 1024),
                     limit_mb: self.budget.memory_limit / (1024 * 1024),
                 });
             }
@@ -52,7 +54,7 @@ impl ResourceTracker {
                 .memory_used
                 .compare_exchange(
                     current,
-                    current + bytes,
+                    next,
                     std::sync::atomic::Ordering::AcqRel,
                     std::sync::atomic::Ordering::Relaxed,
                 )
@@ -69,6 +71,15 @@ impl ResourceTracker {
     pub fn release_memory(&self, bytes: u64) {
         loop {
             let current = self.memory_used.load(std::sync::atomic::Ordering::Acquire);
+
+            if bytes > current {
+                tracing::warn!(
+                    "ResourceTracker: Attempted to release {} bytes, but only {} bytes are tracked. Saturating to 0.",
+                    bytes,
+                    current
+                );
+            }
+
             let new_val = current.saturating_sub(bytes);
             if self
                 .memory_used
@@ -194,5 +205,20 @@ mod tests {
             .consume_memory(500)
             .expect("Should still allow consumption after underflow");
         assert_eq!(tracker.memory_used(), 500);
+    }
+
+    #[test]
+    fn test_consume_memory_overflow_prevention() {
+        let budget = ResourceBudget { memory_limit: 1000 };
+        let tracker = ResourceTracker::new(budget);
+
+        // Try to consume more than u64::MAX (total)
+        let result = tracker.consume_memory(u64::MAX);
+        assert!(result.is_err());
+
+        // Now test if current + bytes overflows u64
+        tracker.consume_memory(500).unwrap();
+        let result = tracker.consume_memory(u64::MAX - 100);
+        assert!(result.is_err());
     }
 }

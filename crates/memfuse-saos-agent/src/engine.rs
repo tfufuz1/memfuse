@@ -39,8 +39,6 @@ impl OrchestratorEngine {
             })?;
 
             match node.node_type {
-                // TODO(FIND-SAOS-001): Crash Recovery Vulnerability
-                // Missing `self.checkpoint(ctx).await;` before `persist_final_state`.
                 NodeType::End => {
                     ctx.status = crate::context::AgentStatus::Completed;
                     self.checkpoint(ctx).await?;
@@ -110,14 +108,28 @@ impl OrchestratorEngine {
     }
 
     /// Setzt den AgentContext auf einen früheren Checkpoint zurück (AC-2).
-    pub async fn replay_from(&self, ctx: &mut AgentContext, step_name: &str) -> Result<()> {
-        let checkpoint_name = format!("task:{}:before:{}", ctx.task_id, step_name);
-        let checkpoint = self
-            .checkpoint_store
-            .get_checkpoint(&checkpoint_name)
-            .await?
+    pub async fn replay_from(&self, ctx: &mut AgentContext, identifier: &str) -> Result<()> {
+        let checkpoints = self.checkpoint_store.list_checkpoints().await?;
+
+        // Find the checkpoint:
+        // 1. Exact match for name (deprecated but for compatibility)
+        // 2. Exact match for step_count
+        // 3. Latest match for node_id
+        let checkpoint = checkpoints
+            .iter()
+            .filter(|c| c.name.starts_with(&format!("task:{}:", ctx.task_id)))
+            .filter(|c| {
+                // Check if identifier is step_count
+                if let Ok(step) = identifier.parse::<u64>() {
+                    c.name.contains(&format!(":step:{}:", step))
+                } else {
+                    // Check if identifier is node_id
+                    c.name.ends_with(&format!(":node:{}", identifier))
+                }
+            })
+            .last() // Take the latest one
             .ok_or_else(|| {
-                MemFuseError::Internal(format!("Checkpoint {} not found", checkpoint_name))
+                MemFuseError::Internal(format!("Checkpoint for {} not found", identifier))
             })?;
 
         // Restore state from checkpoint metadata
@@ -127,6 +139,13 @@ impl OrchestratorEngine {
             .and_then(|v| v.as_str())
         {
             ctx.current_node = current_node.to_string();
+        }
+        if let Some(step_count) = checkpoint
+            .metadata
+            .get("step_count")
+            .and_then(|v| v.as_u64())
+        {
+            ctx.step_count = step_count;
         }
         if let Some(memory) = checkpoint
             .metadata
@@ -144,8 +163,11 @@ impl OrchestratorEngine {
         Ok(())
     }
 
-    async fn checkpoint(&self, ctx: &AgentContext) -> Result<()> {
-        let checkpoint_name = format!("task:{}:before:{}", ctx.task_id, ctx.current_node);
+    pub async fn checkpoint(&self, ctx: &AgentContext) -> Result<()> {
+        let checkpoint_name = format!(
+            "task:{}:step:{}:node:{}",
+            ctx.task_id, ctx.step_count, ctx.current_node
+        );
         let metadata = serde_json::json!({
             "current_node": ctx.current_node,
             "step_count": ctx.step_count,

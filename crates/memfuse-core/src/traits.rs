@@ -150,8 +150,11 @@ pub trait VectorIndex: Send + Sync {
         k: usize,
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<ScoredDocument>> {
-        // Default: ignore filter, delegate to basic search.
-        let _ = filter;
+        if filter.is_some() {
+            return Err(crate::error::MemFuseError::Index(
+                "Filter support not implemented for this vector engine".into(),
+            ));
+        }
         self.search(query, k).await
     }
 

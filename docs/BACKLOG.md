@@ -23,7 +23,7 @@ This document is the **single source of truth** for all open tasks, findings, an
 | **FIND-STO-003** | `store` | Rollback-Inconsistency | SSTables ignored during rollback. | [GOLD-Persist](./specs/SPEC-20260528-GOLDSTANDARD-ZeroPanicPersistence.md) |
 | **FIND-COR-001** | `core` | Trait Integrity | Dangerous `Ok(())` defaults in core traits. | - |
 | **FIND-COR-002** | `core` | Atomic Underflow | `ResourceTracker` can wrap around. | - |
-| **FIND-SAOS-001**| `saos` | Atomic Final State | Missing final checkpoint at `NodeType::End`. | - |
+| **FIND-SAOS-001**| `saos` | Atomic Final State | Missing final checkpoint at `NodeType::End`. | [SAOS-001](./specs/SPEC-20260528-SAOS-001-Atomic-Final-State.md) |
 | **FIND-IDX-002** | `index` | NaN/Inf Poisoning | HNSW index poisoned by non-finite vectors. | [Hnsw-Async](./specs/SPEC-20260528-GOLDSTANDARD-HnswAsyncIO.md) |
 | **FIND-TXT-003** | `text` | BM25 Div-by-Zero | Empty index causes `NaN` scores. | - |
 | **FIND-CRY-001** | `crypto` | Hardcoded Salt | Weakened password security via static HKDF salt. | - |

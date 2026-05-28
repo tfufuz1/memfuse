@@ -92,7 +92,7 @@ async fn test_agent_auto_checkpoint_before_step() {
         .list_checkpoints()
         .await
         .expect("list failed");
-    assert!(checkpoints.iter().any(|c| c.name == "task:t1:before:start"));
+    assert!(checkpoints.iter().any(|c| c.name == "task:t1:step:0:node:start"));
 }
 
 #[tokio::test]
@@ -193,4 +193,59 @@ async fn test_agent_audit_log_immutable() {
     // In our implementation, we don't have a direct "AuditError::Immutable" yet because
     // the collection API doesn't distinguish between audit and normal data at the storage level.
     // However, the Orchestrator only provides an 'append' interface for the audit log.
+}
+
+#[tokio::test]
+async fn test_loop_rollback_integrity() {
+    let (db, _tmp) = setup_env().await;
+    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed"));
+    let mut ctx = AgentContext::new(
+        "loop-task",
+        "A",
+        db.clone(),
+        state_col,
+        TokenBudget::new(100, 0),
+    );
+
+    // Graph: A -> B -> A (Loop)
+    let mut graph = StateGraph::new();
+    graph.add_node("A", "Node A", NodeType::Start, Some("success_tool"));
+    graph.add_node("B", "Node B", NodeType::Task, Some("success_tool"));
+    graph.add_node("end", "End", NodeType::End, None);
+
+    graph.add_edge("A", "B", None, 1);
+    graph.add_edge("B", "A", None, 1);
+    // Add a way out of the loop after 2 iterations (manual intervention simulated)
+    graph.add_edge("A", "end", None, 1);
+
+    let mut engine = OrchestratorEngine::new(db.inner_storage());
+    engine.register_tool(Box::new(SuccessTool));
+
+    // Run 5 steps: A(0) -> B(1) -> A(2) -> B(3) -> A(4)
+    // We stop before it continues to B or end.
+    for _ in 0..5 {
+        let _node = graph.get_node(&ctx.current_node).expect("node exists");
+        // Manual execution of one step
+        // (In a real scenario, the engine.run would have logic to break loops or budget)
+        // For testing naming collision, we just care about checkpoints.
+        engine.checkpoint(&ctx).await.expect("checkpoint failed");
+        ctx.step_count += 1;
+        if ctx.current_node == "A" {
+            ctx.current_node = "B".to_string();
+        } else {
+            ctx.current_node = "A".to_string();
+        }
+    }
+
+    let checkpoints = engine
+        .checkpoint_store
+        .list_checkpoints()
+        .await
+        .expect("list failed");
+    
+    // Should have 5 checkpoints: step 0(A), 1(B), 2(A), 3(B), 4(A)
+    assert_eq!(checkpoints.len(), 5);
+    assert!(checkpoints.iter().any(|c| c.name.contains(":step:0:node:A")));
+    assert!(checkpoints.iter().any(|c| c.name.contains(":step:2:node:A")));
+    assert!(checkpoints.iter().any(|c| c.name.contains(":step:4:node:A")));
 }

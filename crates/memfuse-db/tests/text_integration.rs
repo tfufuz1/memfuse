@@ -4,8 +4,6 @@ use memfuse_text::inverted::InvertedIndex;
 use std::sync::Arc;
 use tempfile::TempDir;
 
-// ANCHOR:INTEGRATION:TEXT-001 STATUS:DONE AGENT:12 DATE:2026-06-20
-// Test that InvertedIndex correctly persists and retrieves data using LsmStorage.
 #[tokio::test]
 async fn test_inverted_index_persistence() {
     let tmp = TempDir::new().expect("failed to create temp dir");

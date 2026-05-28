@@ -101,24 +101,31 @@ async fn test_agent_auto_checkpoint_before_step() {
     // Verify checkpoints were created before each step via the checkpoint_store
     let cp_start = engine
         .checkpoint_store
-        .get_checkpoint("task:test-task:before:start")
+        .get_checkpoint("task:test-task:step:0:node:start")
         .await
         .expect("get");
     assert!(cp_start.is_some(), "Checkpoint before 'start' must exist");
 
     let cp_a = engine
         .checkpoint_store
-        .get_checkpoint("task:test-task:before:step_a")
+        .get_checkpoint("task:test-task:step:1:node:step_a")
         .await
         .expect("get");
     assert!(cp_a.is_some(), "Checkpoint before 'step_a' must exist");
 
     let cp_b = engine
         .checkpoint_store
-        .get_checkpoint("task:test-task:before:step_b")
+        .get_checkpoint("task:test-task:step:2:node:step_b")
         .await
         .expect("get");
     assert!(cp_b.is_some(), "Checkpoint before 'step_b' must exist");
+
+    let cp_end = engine
+        .checkpoint_store
+        .get_checkpoint("task:test-task:step:3:node:end")
+        .await
+        .expect("get");
+    assert!(cp_end.is_some(), "Checkpoint at 'end' must exist");
 }
 
 // ─── AC-2: Replay from checkpoint ─────────────────────────────────────
