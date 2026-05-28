@@ -60,6 +60,7 @@ async fn test_inverted_index_persistence() {
     );
 
     // 3. Drop storage and index (simulating restart)
+    storage.force_flush().await.expect("flush failed");
     drop(index);
     drop(storage);
 

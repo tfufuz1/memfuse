@@ -40,7 +40,11 @@ impl<S: StorageEngine> InvertedIndex<S> {
         let prefix = if namespace == "default" {
             b"__txt:default:".to_vec()
         } else {
-            format!("__txt:{}:", namespace).into_bytes()
+            let mut p = Vec::with_capacity(7 + namespace.len());
+            p.extend_from_slice(b"__txt:");
+            p.extend_from_slice(namespace.as_bytes());
+            p.push(b':');
+            p
         };
 
         let tokenizer: Arc<dyn Tokenizer> = if namespace.contains("de") {
