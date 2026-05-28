@@ -50,6 +50,8 @@ use memfuse_core::{
     StorageEngine, TxBuffer, TxId, TOMBSTONE_BIT,
 };
 use memfuse_crypto::crypto::KeyManager;
+use rand::Rng; // FIND-CRY-001
+use std::io::{Read, Write}; // FIND-CRY-001
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -122,10 +124,27 @@ impl LsmStorage {
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create dir: {}", e)))?;
 
+        // Persistent Salt Management (FIND-CRY-001)
+        let salt_path = config.path.join("SALT");
+        let salt = if let Ok(mut file) = std::fs::File::open(&salt_path) {
+            let mut buf = vec![0u8; 32];
+            file.read_exact(&mut buf)
+                .map_err(|e| MemFuseError::Storage(format!("Failed to read SALT: {}", e)))?;
+            buf
+        } else {
+            let mut buf = [0u8; 32];
+            rand::thread_rng().fill(&mut buf);
+            let mut file = std::fs::File::create(&salt_path)
+                .map_err(|e| MemFuseError::Storage(format!("Failed to create SALT: {}", e)))?;
+            file.write_all(&buf)
+                .map_err(|e| MemFuseError::Storage(format!("Failed to write SALT: {}", e)))?;
+            buf.to_vec()
+        };
+
         let key_manager = config
             .encryption_passphrase
             .as_ref()
-            .map(|p| KeyManager::try_new(p).map(Arc::new))
+            .map(|p| KeyManager::try_new(p, Some(&salt)).map(Arc::new))
             .transpose()?;
 
         // Discover the latest WAL file
@@ -170,13 +189,23 @@ impl LsmStorage {
                 }
             }
             match &entry.op {
-                WalOp::Put { key, value, .. } => {
+                WalOp::Put { key, value, tx_id } => {
                     replayed_size += (key.len() + value.len()) as u64;
-                    memtable.put(Bytes::from(key.clone()), Bytes::from(value.clone()), *lsn);
+                    memtable.put(
+                        Bytes::from(key.clone()),
+                        Bytes::from(value.clone()),
+                        *lsn,
+                        tx_id.inner(),
+                    );
                 }
-                WalOp::Delete { key, .. } => {
+                WalOp::Delete { key, tx_id } => {
                     replayed_size += key.len() as u64;
-                    memtable.put(Bytes::from(key.clone()), Bytes::new(), lsn | TOMBSTONE_BIT);
+                    memtable.put(
+                        Bytes::from(key.clone()),
+                        Bytes::new(),
+                        lsn | TOMBSTONE_BIT,
+                        tx_id.inner(),
+                    );
                 }
             }
         }
@@ -287,45 +316,97 @@ impl LsmStorage {
         }
 
         if !found && target_tx.inner() != 0 {
-            return Err(MemFuseError::Storage(format!(
-                "Target TX {} not found in WAL",
-                target_tx
-            )));
+            // Check if it's in SSTables or older
+            let sstables = self.sstables.read().await;
+            let max_sst_tx = sstables
+                .iter()
+                .map(|sst| sst.metadata().max_tx_id)
+                .max()
+                .unwrap_or(0);
+            if target_tx.inner() > max_sst_tx {
+                return Err(MemFuseError::Storage(format!(
+                    "Target TX {} not found in WAL or SSTables (max SST TX: {})",
+                    target_tx, max_sst_tx
+                )));
+            }
         }
 
         // 2. Clear current memtable (it might have data > target_tx)
         state.memtable = Arc::new(MemTable::new());
         state.immutable_memtables.clear();
 
-        // 3. Re-populate memtable up to target_tx
+        // 3. Re-populate memtable up to target_tx (if it was in WAL)
         let mut max_seq = 0;
-        for (seq, entry, offset) in entries {
-            if offset <= target_offset && target_offset > 0 {
-                if seq > max_seq {
-                    max_seq = seq;
-                }
-                match entry.op {
-                    WalOp::Put { key, value, .. } => {
-                        state
-                            .memtable
-                            .put(bytes::Bytes::from(key), bytes::Bytes::from(value), seq);
+        if found || target_tx.inner() == 0 {
+            for (seq, entry, offset) in entries {
+                if offset <= target_offset && target_offset > 0 {
+                    if seq > max_seq {
+                        max_seq = seq;
                     }
-                    WalOp::Delete { key, .. } => {
-                        state.memtable.put(
-                            bytes::Bytes::from(key),
-                            bytes::Bytes::new(),
-                            seq | TOMBSTONE_BIT,
-                        );
+                    match entry.op {
+                        WalOp::Put { key, value, tx_id } => {
+                            state.memtable.put(
+                                bytes::Bytes::from(key),
+                                bytes::Bytes::from(value),
+                                seq,
+                                tx_id.inner(),
+                            );
+                        }
+                        WalOp::Delete { key, tx_id } => {
+                            state.memtable.put(
+                                bytes::Bytes::from(key),
+                                bytes::Bytes::new(),
+                                seq | TOMBSTONE_BIT,
+                                tx_id.inner(),
+                            );
+                        }
                     }
                 }
             }
         }
 
         // 4. Update next_seq_no
-        self.next_seq_no.store(max_seq + 1, Ordering::SeqCst);
+        if max_seq > 0 {
+            self.next_seq_no.store(max_seq + 1, Ordering::SeqCst);
+        }
 
         // 5. Physically truncate WAL
         state.wal.truncate(target_offset, target_hmac).await?;
+
+        // 6. Handle SSTables: Remove SSTables that are entirely newer than target_tx
+        let mut sstables_lock = self.sstables.write().await;
+        let mut sst_to_remove = Vec::new();
+        sstables_lock.retain(|sst| {
+            if sst.metadata().min_tx_id > target_tx.inner() {
+                sst_to_remove.push(sst.file_path().to_path_buf());
+                false
+            } else if sst.metadata().max_tx_id > target_tx.inner() {
+                // SSTable spans boundary — contains some entries > target_tx
+                // These stale entries are masked by the rebuilt memtable (which
+                // only contains entries <= target_tx), so reads remain correct.
+                // The next compaction pass will garbage-collect stale entries.
+                tracing::warn!(
+                    "SSTable {:?} spans rollback boundary (min_tx={}, max_tx={}). \
+                     Stale entries masked until next compaction.",
+                    sst.file_path(),
+                    sst.metadata().min_tx_id,
+                    sst.metadata().max_tx_id,
+                );
+                true
+            } else {
+                true
+            }
+        });
+        drop(sstables_lock);
+
+        for path in sst_to_remove {
+            tracing::info!("Removing SSTable during rollback: {:?}", path);
+            let _ = tokio::fs::remove_file(path).await;
+        }
+
+        // Update last committed TX
+        self.last_committed_tx
+            .store(target_tx.inner(), Ordering::SeqCst);
 
         tracing::info!(
             "Rollback to TX {} successful. Max seq: {}, WAL offset: {}",
@@ -335,40 +416,22 @@ impl LsmStorage {
         );
         Ok(())
     }
+
+    /// Suspends execution briefly if memory usage exceeds 80% to apply backpressure.
+    async fn apply_backpressure(&self) {
+        if self.budget.memory_used()
+            >= (self.config.max_ram_mb as f64 * 1024.0 * 1024.0 * 0.80) as u64
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    }
 }
 
+#[async_trait::async_trait]
 impl StorageEngine for LsmStorage {
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let state = self.state.read().await;
-
-        if let Some((val, seq)) = state.memtable.get(key) {
-            if (seq & TOMBSTONE_BIT) != 0 {
-                return Ok(None);
-            }
-            return Ok(Some(val.to_vec()));
-        }
-
-        for mt in state.immutable_memtables.iter().rev() {
-            if let Some((val, seq)) = mt.get(key) {
-                if (seq & TOMBSTONE_BIT) != 0 {
-                    return Ok(None);
-                }
-                return Ok(Some(val.to_vec()));
-            }
-        }
-
-        // 3. SSTables (newest first)
-        let sstables = self.sstables.read().await;
-        for sst in sstables.iter().rev() {
-            if let Some((val, seq)) = sst.get(key).await? {
-                if (seq & TOMBSTONE_BIT) != 0 {
-                    return Ok(None);
-                }
-                return Ok(Some(val.to_vec()));
-            }
-        }
-
-        Ok(None)
+        let current_max_seq = self.next_seq_no.load(Ordering::Acquire);
+        self.get_at_seq(key, current_max_seq).await
     }
 
     async fn get_at_seq(&self, key: &[u8], seq_no: u64) -> Result<Option<Vec<u8>>> {
@@ -397,7 +460,7 @@ impl StorageEngine for LsmStorage {
         for sst in sstables.iter().rev() {
             // SSTables already only contain entries up to their last_key.
             // But we still need to check the entry's seq_no.
-            if let Some((val, seq)) = sst.get(key).await? {
+            if let Some((val, seq, _tx)) = sst.get(key).await? {
                 if (seq & !TOMBSTONE_BIT) <= seq_no {
                     if (seq & TOMBSTONE_BIT) != 0 {
                         return Ok(None);
@@ -411,7 +474,7 @@ impl StorageEngine for LsmStorage {
     }
 
     async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-        self.budget.apply_backpressure().await;
+        self.apply_backpressure().await;
         if !self.budget.has_memory_capacity() {
             return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
         }
@@ -451,7 +514,7 @@ impl StorageEngine for LsmStorage {
     }
 
     async fn commit(&self, tx_id: TxId) -> Result<()> {
-        self.budget.apply_backpressure().await;
+        self.apply_backpressure().await;
         if !self.budget.has_memory_capacity() {
             return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
         }
@@ -531,7 +594,7 @@ impl StorageEngine for LsmStorage {
             let _ = self.budget.consume_memory(entry_size as u64);
             state
                 .memtable
-                .put(Bytes::from(key), Bytes::from(value), seq);
+                .put(Bytes::from(key), Bytes::from(value), seq, tx_id.inner());
         }
 
         // Update last committed transaction ID if it is not a system transaction
@@ -555,7 +618,78 @@ impl StorageEngine for LsmStorage {
     }
 
     async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
-        self.rollback_to_tx(tx_id).await
+        let mut state = self.state.write().await;
+        // 1. Truncate WAL to the position before tx_id
+        let (offset, hmac) = state.wal.find_tx_offset(tx_id).await?;
+        state.wal.truncate(offset, hmac).await?;
+
+        // 2. Clear and rebuild memtable from truncated WAL
+        state.memtable = Arc::new(MemTable::new());
+        let wal_entries = state.wal.replay().await?;
+        let mut max_seq = 0;
+        for (lsn, entry, _) in wal_entries {
+            if lsn > max_seq {
+                max_seq = lsn;
+            }
+            match entry.op {
+                WalOp::Put {
+                    key,
+                    value,
+                    tx_id: entry_tx,
+                } => {
+                    state
+                        .memtable
+                        .put(Bytes::from(key), Bytes::from(value), lsn, entry_tx.inner());
+                }
+                WalOp::Delete {
+                    key,
+                    tx_id: entry_tx,
+                } => {
+                    state.memtable.put(
+                        Bytes::from(key),
+                        Bytes::new(),
+                        lsn | TOMBSTONE_BIT,
+                        entry_tx.inner(),
+                    );
+                }
+            }
+        }
+
+        // Update next_seq_no to avoid reuse of sequence numbers from rolled-back transactions
+        self.next_seq_no.store(max_seq + 1, Ordering::SeqCst);
+        // last_committed_tx is now the one before the target
+        self.last_committed_tx
+            .store(tx_id.inner().saturating_sub(1), Ordering::SeqCst);
+
+        // 3. SSTable Rollback Gap Fix: Invalidate SSTables entirely newer than target_tx_id
+        // For ones that span, they are safe because read-path checks seq_no.
+        let mut sstables_guard = self.sstables.write().await;
+        let mut to_delete = Vec::new();
+        sstables_guard.retain(|sst| {
+            if sst.metadata().min_tx_id > tx_id.inner() {
+                to_delete.push(sst.file_path().to_path_buf());
+                false
+            } else {
+                true
+            }
+        });
+
+        // Physical deletion of invalid SSTables
+        for path in to_delete {
+            let _ = tokio::fs::remove_file(path).await;
+        }
+
+        Ok(())
+    }
+
+    async fn pin_checkpoint(&self, _seq_no: u64) -> Result<()> {
+        // Placeholder for real pinning logic in SnapshotRegistry
+        Ok(())
+    }
+
+    async fn unpin_checkpoint(&self, _seq_no: u64) -> Result<()> {
+        // Placeholder for real unpinning logic in SnapshotRegistry
+        Ok(())
     }
 
     async fn flush(&self) -> Result<()> {
@@ -599,8 +733,8 @@ impl StorageEngine for LsmStorage {
         let mut builder =
             SstableBuilder::create_with_key_manager(&sst_path, self.key_manager.clone()).await?;
 
-        for (k, v, seq) in old_memtable.iter_latest() {
-            builder.add(&k, &v, seq).await?;
+        for (k, v, seq, tx) in old_memtable.iter_latest() {
+            builder.add(&k, &v, seq, tx).await?;
         }
         builder.finish().await?;
 
@@ -672,7 +806,7 @@ impl StorageEngine for LsmStorage {
             // CREATED:2026-05-08 DEADLINE:NONE
             // Ohne seq_no-Vergleich kann eine ältere SSTable einen neueren Wert
             // überschreiben wenn die SSTable-Reihenfolge nicht strikt chronologisch ist.
-            for (k, v, seq) in entries {
+            for (k, v, seq, _tx) in entries {
                 let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                 if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                     *entry = (v.to_vec(), seq);
@@ -687,7 +821,7 @@ impl StorageEngine for LsmStorage {
         // Immutable MemTables können ältere Versionen eines Keys enthalten
         // als SSTables falls Flush-Reihenfolge abweicht.
         for mt in &state.immutable_memtables {
-            for (k, v, seq) in mt.iter() {
+            for (k, v, seq, _tx) in mt.iter() {
                 if k.starts_with(prefix) {
                     let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
@@ -698,7 +832,7 @@ impl StorageEngine for LsmStorage {
         }
 
         // Active memtable always has the newest data (commit_mutex serializes writes)
-        for (k, v, seq) in state.memtable.iter() {
+        for (k, v, seq, _tx) in state.memtable.iter() {
             if k.starts_with(prefix) {
                 map.insert(k.to_vec(), (v.to_vec(), seq));
             }
@@ -728,7 +862,7 @@ impl StorageEngine for LsmStorage {
         // 1. SSTables (oldest first → newer entries overwrite)
         for sst in sstables.iter() {
             let entries = sst.scan_range(start.map(|s| s), end.map(|e| e)).await?;
-            for (k, v, seq) in entries {
+            for (k, v, seq, _tx) in entries {
                 let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                 if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                     *entry = (v.to_vec(), seq);
@@ -738,7 +872,7 @@ impl StorageEngine for LsmStorage {
 
         // 2. Immutable memtables (older → newer)
         for mt in &state.immutable_memtables {
-            for (k, v, seq) in mt.iter() {
+            for (k, v, seq, _tx) in mt.iter() {
                 let in_range = match start {
                     Bound::Included(s) => k.as_ref() >= s,
                     Bound::Excluded(s) => k.as_ref() > s,
@@ -758,7 +892,7 @@ impl StorageEngine for LsmStorage {
         }
 
         // 3. Active memtable (newest, always wins on tie)
-        for (k, v, seq) in state.memtable.iter() {
+        for (k, v, seq, _tx) in state.memtable.iter() {
             let in_range = match start {
                 Bound::Included(s) => k.as_ref() >= s,
                 Bound::Excluded(s) => k.as_ref() > s,

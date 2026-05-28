@@ -9,6 +9,9 @@
 /// * `df` - Document frequency (number of documents containing the term)
 /// * `n` - Total number of documents in the collection
 pub fn score_term(tf: u32, doc_len: u32, avg_doc_len: f32, df: u32, n: u32) -> f32 {
+    if n == 0 {
+        return 0.0;
+    }
     // Constant parameters for BM25
     let k1 = 1.2;
     let b = 0.75;
@@ -43,5 +46,11 @@ mod tests {
     fn test_bm25_score() {
         let score = score_term(2, 100, 150.0, 10, 1000);
         assert!(score > 0.0);
+    }
+
+    #[test]
+    fn test_bm25_score_zero_n() {
+        let score = score_term(2, 100, 150.0, 10, 0);
+        assert_eq!(score, 0.0);
     }
 }

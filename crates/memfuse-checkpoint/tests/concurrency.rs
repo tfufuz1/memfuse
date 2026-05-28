@@ -54,6 +54,26 @@ impl StorageEngine for MockStorage {
         self.pinned.lock().remove(&seq_no);
         Ok(())
     }
+    async fn get_at_seq(&self, key: &[u8], _seq: u64) -> Result<Option<Vec<u8>>> {
+        self.get(key).await
+    }
+    async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
+        Ok(())
+    }
+    async fn last_seq_no(&self) -> Result<u64> {
+        Ok(0)
+    }
+    async fn last_tx_id(&self) -> Result<TxId> {
+        Ok(TxId::new(0))
+    }
+    async fn scan(
+        &self,
+        _start: std::ops::Bound<&[u8]>,
+        _end: std::ops::Bound<&[u8]>,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        Ok(Vec::new())
+    }
+
     async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         let data = self.data.lock();
         Ok(data

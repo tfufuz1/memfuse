@@ -38,9 +38,11 @@ struct GraphInner {
     /// CSR weights array: contiguous list of edge weights.
     weights: Vec<f32>,
 
-    /// Staging for edges not yet compacted into CSR arrays.
-    staged_edges: HashMap<InternalIndex, Vec<(InternalIndex, f32)>>,
-    /// Flag indicating if the CSR arrays are up to date with staged edges.
+    /// Staging for edges not yet compacted into CSR arrays, grouped by TxId (FIND-GRA-001).
+    staged_edges: HashMap<TxId, HashMap<InternalIndex, Vec<(InternalIndex, f32)>>>,
+    /// Edges that have been committed but not yet compacted (FIND-GRA-001).
+    committed_staged: HashMap<InternalIndex, Vec<(InternalIndex, f32)>>,
+    /// Flag indicating if the CSR arrays are up to date.
     is_dirty: bool,
 }
 
@@ -54,6 +56,7 @@ impl GraphInner {
             targets: Vec::new(),
             weights: Vec::new(),
             staged_edges: HashMap::new(),
+            committed_staged: HashMap::new(),
             is_dirty: false,
         }
     }
@@ -110,8 +113,8 @@ impl GraphInner {
                 current_offset += 1;
             }
 
-            // 2. Get neighbors from staged
-            if let Some(staged) = self.staged_edges.get(&i) {
+            // 2. Get neighbors from committed_staged (FIND-GRA-001)
+            if let Some(staged) = self.committed_staged.get(&i) {
                 for &(target, weight) in staged {
                     new_targets.push(target);
                     new_weights.push(weight);
@@ -124,7 +127,7 @@ impl GraphInner {
         self.offsets = new_offsets;
         self.targets = new_targets;
         self.weights = new_weights;
-        self.staged_edges.clear();
+        self.committed_staged.clear();
         self.is_dirty = false;
     }
 }
@@ -160,7 +163,17 @@ impl CsrGraph {
     /// Returns the number of edges in the graph.
     pub fn edge_count(&self) -> usize {
         let inner = self.inner.read();
-        inner.targets.len() + inner.staged_edges.values().map(|v| v.len()).sum::<usize>()
+        inner.targets.len()
+            + inner
+                .committed_staged
+                .values()
+                .map(|v| v.len())
+                .sum::<usize>()
+            + inner
+                .staged_edges
+                .values()
+                .map(|tx_map| tx_map.values().map(|v| v.len()).sum::<usize>())
+                .sum::<usize>()
     }
 }
 
@@ -170,6 +183,7 @@ impl Default for CsrGraph {
     }
 }
 
+#[async_trait::async_trait]
 impl GraphIndex for CsrGraph {
     async fn add_entity(&self, _tx: TxId, entity: Entity) -> Result<()> {
         let mut inner = self.inner.write();
@@ -184,17 +198,19 @@ impl GraphIndex for CsrGraph {
         Ok(())
     }
 
-    async fn add_edge(&self, _tx: TxId, edge: Edge) -> Result<()> {
+    async fn add_edge(&self, tx: TxId, edge: Edge) -> Result<()> {
         let mut inner = self.inner.write();
         let from_idx = inner.get_or_create_index(edge.from);
         let to_idx = inner.get_or_create_index(edge.to);
 
         inner
             .staged_edges
+            .entry(tx)
+            .or_default()
             .entry(from_idx)
             .or_default()
             .push((to_idx, edge.weight));
-        inner.is_dirty = true;
+        // Note: is_dirty is only set on commit when edges move to committed_staged
         Ok(())
     }
 
@@ -262,23 +278,41 @@ impl GraphIndex for CsrGraph {
         Ok(results)
     }
 
-    async fn commit(&self, _tx: TxId) -> Result<()> {
-        self.compact();
+    async fn commit(&self, tx: TxId) -> Result<()> {
+        let mut inner = self.inner.write();
+        if let Some(tx_edges) = inner.staged_edges.remove(&tx) {
+            for (from_idx, edges) in tx_edges {
+                inner
+                    .committed_staged
+                    .entry(from_idx)
+                    .or_default()
+                    .extend(edges);
+            }
+            inner.is_dirty = true;
+        }
         Ok(())
     }
 
-    async fn rollback(&self, _tx: TxId) -> Result<()> {
+    async fn rollback(&self, tx: TxId) -> Result<()> {
         let mut inner = self.inner.write();
-        inner.staged_edges.clear();
-        inner.is_dirty = false;
+        inner.staged_edges.remove(&tx);
         Ok(())
     }
 
     async fn stats(&self) -> Result<GraphIndexStats> {
         let inner = self.inner.read();
         let num_entities = inner.reverse_map.len();
-        let num_edges =
-            inner.targets.len() + inner.staged_edges.values().map(|v| v.len()).sum::<usize>();
+        let num_edges = inner.targets.len()
+            + inner
+                .committed_staged
+                .values()
+                .map(|v| v.len())
+                .sum::<usize>()
+            + inner
+                .staged_edges
+                .values()
+                .map(|tx_map| tx_map.values().map(|v| v.len()).sum::<usize>())
+                .sum::<usize>();
 
         let mem = (inner.reverse_map.len() * std::mem::size_of::<EntityId>())
             + (inner.entities.len() * std::mem::size_of::<Entity>())

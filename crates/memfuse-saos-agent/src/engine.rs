@@ -43,6 +43,7 @@ impl OrchestratorEngine {
                 // Missing `self.checkpoint(ctx).await;` before `persist_final_state`.
                 NodeType::End => {
                     ctx.status = crate::context::AgentStatus::Completed;
+                    self.checkpoint(ctx).await?;
                     self.persist_final_state(ctx).await?;
                     return Ok(());
                 }

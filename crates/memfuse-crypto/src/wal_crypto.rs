@@ -20,8 +20,13 @@ pub struct EncryptedWal {
 }
 
 impl EncryptedWal {
-    pub fn new(key_manager: KeyManager) -> Self {
-        Self { key_manager }
+    /// Creates a new EncryptedWal with per-file key derivation to prevent nonce-reuse.
+    /// `file_id` (e.g., filename) is used to derive a unique sub-key for this stream.
+    pub fn new(key_manager: KeyManager, file_id: &[u8]) -> Result<Self> {
+        let sub_km = key_manager.derive_file_key(file_id)?;
+        Ok(Self {
+            key_manager: sub_km,
+        })
     }
 
     /// Wraps the internal WAL chunk in AES-256-GCM stream.
@@ -182,8 +187,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_encrypted_wal_roundtrip() -> Result<()> {
-        let km = crate::crypto::KeyManager::try_new("test-pass")?;
-        let wal = EncryptedWal::new(km);
+        let km = crate::crypto::KeyManager::try_new("test-pass", None)?;
+        let wal = EncryptedWal::new(km, b"test-wal.log")?;
         let data = b"wal-entry-data-to-encrypt";
         let nonce = 1337;
 

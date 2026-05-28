@@ -170,6 +170,18 @@ impl Wal {
         key_manager: Option<Arc<KeyManager>>,
     ) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
+
+        // Derive sub-key for this specific file to prevent nonce reuse (FIND-CRY-002)
+        let derived_key_manager = if let Some(km) = key_manager {
+            let file_id = path
+                .file_name()
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_default();
+            Some(Arc::new(km.derive_file_key(file_id.as_bytes())?))
+        } else {
+            None
+        };
+
         let file = tokio::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -187,7 +199,7 @@ impl Wal {
             path: path.clone(),
             size: std::sync::atomic::AtomicU64::new(metadata.len()),
             file: tokio::sync::Mutex::new(file),
-            key_manager,
+            key_manager: derived_key_manager,
             last_hmac: tokio::sync::Mutex::new([0u8; 32]),
         };
 
@@ -556,11 +568,21 @@ impl Wal {
             let recomputed_checksum =
                 WalEntry::compute_checksum(&op, seq_no, &integrity_key, prev_hmac)?;
             if recomputed_checksum != stored_checksum || prev_hmac != current_chain_hmac {
-                tracing::warn!(
-                    "WAL entry at offset {} has invalid checksum or broken chain, truncating replay",
-                    entry_start_pos
-                );
-                break;
+                if pos >= file_size {
+                    tracing::warn!(
+                        "WAL entry at offset {} has invalid checksum or broken chain at tail, truncating",
+                        entry_start_pos
+                    );
+                    break;
+                } else {
+                    return Err(MemFuseError::WalCorruption {
+                        offset: entry_start_pos,
+                        reason: format!(
+                            "HMAC/Chain failure in middle of WAL: recomputed={:?}, stored={:?}, prev_hmac={:?}, current_chain={:?}",
+                            recomputed_checksum, stored_checksum, prev_hmac, current_chain_hmac
+                        ),
+                    });
+                }
             }
             current_chain_hmac = stored_checksum;
 
@@ -616,6 +638,28 @@ impl Wal {
     /// Returns a snapshot of the last HMAC written to the log.
     pub async fn last_hmac_snapshot(&self) -> [u8; 32] {
         *self.last_hmac.lock().await
+    }
+
+    /// Finds the offset and the previous HMAC for the given TxId.
+    /// Returns the offset AFTER which the TxId's commits start (effectively the rollback point).
+    pub async fn find_tx_offset(&self, target_tx_id: TxId) -> Result<(u64, [u8; 32])> {
+        let entries = self.replay().await?;
+        let mut last_offset = 0;
+        let mut last_hmac = [0u8; 32];
+
+        for (_, entry, offset) in entries {
+            if entry.tx_id().inner() >= target_tx_id.inner() {
+                // If this entry matches or exceeds target_tx_id,
+                // the rollback point is the end of the PREVIOUS entry.
+                return Ok((last_offset, last_hmac));
+            }
+            last_offset = offset;
+            last_hmac = entry.checksum;
+        }
+
+        // If target_tx_id is not found or is beyond the last entry,
+        // no rollback is possible or needed at this point.
+        Ok((last_offset, last_hmac))
     }
 }
 

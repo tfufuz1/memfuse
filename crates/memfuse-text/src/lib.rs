@@ -29,6 +29,7 @@ impl<S: memfuse_core::StorageEngine> Bm25Scorer<S> {
     }
 }
 
+#[async_trait::async_trait]
 impl<S: memfuse_core::StorageEngine> TextIndex for Bm25Scorer<S> {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         self.index.search(query, k).await

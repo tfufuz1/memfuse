@@ -37,6 +37,8 @@ pub struct CompactionConfig {
     pub size_ratio: f64,
     /// Interval between compaction checks.
     pub check_interval: Duration,
+    /// Yield execution after this many entries during merge.
+    pub yield_threshold: usize,
 }
 
 impl Default for CompactionConfig {
@@ -45,6 +47,7 @@ impl Default for CompactionConfig {
             min_sstables_per_tier: 4,
             size_ratio: 4.0,
             check_interval: Duration::from_secs(30),
+            yield_threshold: 1000,
         }
     }
 }
@@ -228,6 +231,7 @@ impl CompactionEngine {
             key: bytes::Bytes,
             value: bytes::Bytes,
             seq: u64,
+            tx: u64,
             source_idx: usize,
         }
 
@@ -236,7 +240,7 @@ impl CompactionEngine {
                 self.key == other.key && self.seq == other.seq
             }
         }
-        
+
         impl Eq for HeapItem {}
 
         impl PartialOrd for HeapItem {
@@ -265,11 +269,12 @@ impl CompactionEngine {
 
         let mut heap = std::collections::BinaryHeap::new();
         for (i, stream) in streams.iter_mut().enumerate() {
-            if let Some((key, value, seq)) = stream.next().await? {
+            if let Some((key, value, seq, tx)) = stream.next_entry().await? {
                 heap.push(HeapItem {
                     key,
                     value,
                     seq,
+                    tx,
                     source_idx: i,
                 });
             }
@@ -277,8 +282,14 @@ impl CompactionEngine {
 
         let mut builder = SstableBuilder::create(output_path).await?;
         let mut last_key: Option<bytes::Bytes> = None;
+        let mut processed_count = 0;
 
         while let Some(item) = heap.pop() {
+            processed_count += 1;
+            if processed_count % self.config.yield_threshold == 0 {
+                tokio::task::yield_now().await;
+            }
+
             // Deduplicate: only keep the first (highest seq_no) entry for each key
             let is_duplicate = if let Some(ref lk) = last_key {
                 lk == &item.key
@@ -294,21 +305,26 @@ impl CompactionEngine {
 
                 // GC tombstones that are older than all active snapshots
                 if !(is_tombstone && raw_seq < min_snapshot_seq) {
-                    builder.add(&item.key, &item.value, item.seq).await?;
+                    builder
+                        .add(&item.key, &item.value, item.seq, item.tx)
+                        .await?;
                 }
             }
 
             // Immediately fetch the next item from the source stream
-            if let Some((key, value, seq)) = streams[item.source_idx].next().await? {
+            if let Some((key, value, seq, tx)) = streams[item.source_idx].next_entry().await? {
                 heap.push(HeapItem {
                     key,
                     value,
                     seq,
+                    tx,
                     source_idx: item.source_idx,
                 });
             }
-        }
 
+            // Yield to executor to prevent CPU starvation during large merges (FIND-STO-001)
+            tokio::task::yield_now().await;
+        }
         builder.finish().await?;
         Ok(())
     }
@@ -332,18 +348,33 @@ impl CompactionEngine {
         self: Arc<Self>,
         sstables: Arc<RwLock<Vec<Arc<SstableReader>>>>,
         data_path: PathBuf,
+        mut shutdown: tokio::sync::watch::Receiver<bool>,
     ) {
         loop {
-            tokio::time::sleep(self.config.check_interval).await;
-            match self.maybe_compact(&sstables, &data_path).await {
-                Ok(true) => {
-                    tracing::debug!("Background compaction cycle completed successfully");
+            // Check for shutdown signal
+            if *shutdown.borrow_and_update() {
+                tracing::info!("Compaction engine received shutdown signal");
+                break;
+            }
+
+            // Wait for interval OR shutdown signal
+            tokio::select! {
+                _ = tokio::time::sleep(self.config.check_interval) => {
+                    match self.maybe_compact(&sstables, &data_path).await {
+                        Ok(true) => {
+                            tracing::debug!("Background compaction cycle completed successfully");
+                        }
+                        Ok(false) => {
+                            tracing::trace!("No compaction needed");
+                        }
+                        Err(e) => {
+                            tracing::error!("Background compaction failed: {}", e);
+                        }
+                    }
                 }
-                Ok(false) => {
-                    tracing::trace!("No compaction needed");
-                }
-                Err(e) => {
-                    tracing::error!("Background compaction failed: {}", e);
+                _ = shutdown.changed() => {
+                    tracing::info!("Compaction engine shutting down via signal");
+                    break;
                 }
             }
         }
@@ -366,7 +397,7 @@ mod tests {
         let path = dir.join(name);
         let mut builder = SstableBuilder::create(&path).await.expect("create sst");
         for (k, v, seq) in entries {
-            builder.add(k, v, *seq).await.expect("add entry");
+            builder.add(k, v, *seq, *seq).await.expect("add entry");
         }
         builder.finish().await.expect("finish sst");
         Arc::new(SstableReader::open(&path, bc).await.expect("open sst"))
@@ -488,6 +519,7 @@ mod tests {
             min_sstables_per_tier: 2, // Low threshold for testing
             size_ratio: 4.0,
             check_interval: Duration::from_secs(30),
+            yield_threshold: 1000,
         };
         let engine = CompactionEngine::new(config, registry, Arc::clone(&bc));
 
@@ -547,6 +579,7 @@ mod tests {
             min_sstables_per_tier: 4,
             size_ratio: 4.0,
             check_interval: Duration::from_secs(30),
+            yield_threshold: 1000,
         };
         let engine = CompactionEngine::new(config, registry, Arc::clone(&bc));
 
@@ -586,6 +619,7 @@ mod tests {
                 min_sstables_per_tier: 3, // Small tier to trigger compaction often
                 size_ratio: 2.0,
                 check_interval: Duration::from_millis(100), // Fast check
+                yield_threshold: 100,
             },
             encryption_passphrase: None,
         };
@@ -696,6 +730,44 @@ mod tests {
         assert!(
             stabilized,
             "Compaction didn't reach target segment count in time"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_compaction_cancellation() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        let bc = crate::sstable::create_block_cache(1024);
+        let config = CompactionConfig {
+            min_sstables_per_tier: 2,
+            size_ratio: 2.0,
+            check_interval: std::time::Duration::from_millis(10),
+            yield_threshold: 100,
+        };
+        let engine = Arc::new(CompactionEngine::new(config, registry, bc));
+        let sstables = Arc::new(tokio::sync::RwLock::new(Vec::new()));
+        let tmp = tempfile::TempDir::new().unwrap();
+
+        let (tx, rx) = tokio::sync::watch::channel(false);
+
+        // Spawn the loop
+        let engine_clone = Arc::clone(&engine);
+        let sstables_clone = Arc::clone(&sstables);
+        let path = tmp.path().to_path_buf();
+        let handle = tokio::spawn(async move {
+            engine_clone.run_loop(sstables_clone, path, rx).await;
+        });
+
+        // Let it run for a bit
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Cancel it
+        tx.send(true).unwrap();
+
+        // Wait for it to finish
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), handle).await;
+        assert!(
+            result.is_ok(),
+            "Compaction loop did not shut down gracefully"
         );
     }
 }

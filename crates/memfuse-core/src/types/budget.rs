@@ -63,9 +63,26 @@ impl ResourceTracker {
         }
     }
 
+    /// Releases memory from the budget. Uses saturating subtraction to prevent
+    /// atomic underflow (wrapping to `u64::MAX`) which would permanently block
+    /// all future allocations. (FIND-COR-002)
     pub fn release_memory(&self, bytes: u64) {
-        self.memory_used
-            .fetch_sub(bytes, std::sync::atomic::Ordering::SeqCst);
+        loop {
+            let current = self.memory_used.load(std::sync::atomic::Ordering::Acquire);
+            let new_val = current.saturating_sub(bytes);
+            if self
+                .memory_used
+                .compare_exchange(
+                    current,
+                    new_val,
+                    std::sync::atomic::Ordering::AcqRel,
+                    std::sync::atomic::Ordering::Relaxed,
+                )
+                .is_ok()
+            {
+                break;
+            }
+        }
     }
 
     pub fn memory_used(&self) -> u64 {
@@ -79,13 +96,6 @@ impl ResourceTracker {
     /// Returns true if memory usage is below 95% of the limit.
     pub fn has_memory_capacity(&self) -> bool {
         self.memory_used() < (self.budget.memory_limit as f64 * 0.95) as u64
-    }
-
-    /// Suspends execution briefly if memory usage exceeds 80% to apply backpressure.
-    pub async fn apply_backpressure(&self) {
-        if self.memory_used() >= (self.budget.memory_limit as f64 * 0.80) as u64 {
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-        }
     }
 }
 
@@ -141,24 +151,6 @@ mod tests {
         assert!(!tracker.has_memory_capacity()); // 95% is not < 95%
     }
 
-    #[tokio::test]
-    async fn test_backpressure_trigger() {
-        let budget = ResourceBudget { memory_limit: 1000 };
-        let tracker = ResourceTracker::new(budget);
-
-        // Use 79% -> No sleep
-        tracker.consume_memory(790).expect("ok");
-        let start = std::time::Instant::now();
-        tracker.apply_backpressure().await;
-        assert!(start.elapsed() < std::time::Duration::from_millis(1));
-
-        // Use 80% -> Sleep
-        tracker.consume_memory(10).expect("ok");
-        let start = std::time::Instant::now();
-        tracker.apply_backpressure().await;
-        assert!(start.elapsed() >= std::time::Duration::from_millis(5));
-    }
-
     #[test]
     fn test_concurrent_consumption() {
         let budget = ResourceBudget {
@@ -182,5 +174,25 @@ mod tests {
 
         assert_eq!(tracker.memory_used(), 10000);
         assert!(tracker.consume_memory(1).is_err());
+    }
+
+    #[test]
+    fn test_release_memory_underflow_safety() {
+        let budget = ResourceBudget { memory_limit: 1000 };
+        let tracker = ResourceTracker::new(budget);
+
+        // Underflow: release 10 when 0 used
+        tracker.release_memory(10);
+        assert_eq!(
+            tracker.memory_used(),
+            0,
+            "Counter should saturate at 0, not wrap to MAX"
+        );
+
+        // Verify we can still consume memory (wrap would make memory_used > limit)
+        tracker
+            .consume_memory(500)
+            .expect("Should still allow consumption after underflow");
+        assert_eq!(tracker.memory_used(), 500);
     }
 }

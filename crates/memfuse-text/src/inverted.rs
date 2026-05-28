@@ -13,8 +13,16 @@ use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+/// Consolidated metadata for the text index.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct TextIndexMetadata {
+    pub total_docs: u64,
+    pub total_tokens: u64,
+}
 
 /// An inverted index stored in the LSM engine.
 /// An inverted index tied to a specific collection namespace.
@@ -73,11 +81,24 @@ impl<S: StorageEngine> InvertedIndex<S> {
         k
     }
 
-    fn key_with_term(&self, term: &str) -> Vec<u8> {
-        let mut k = Vec::with_capacity(self.prefix.len() + 3 + term.len());
+    fn key_with_term_doc(&self, term: &str, doc_id: DocId) -> Vec<u8> {
+        let mut itoa_buf = itoa::Buffer::new();
+        let id_str = itoa_buf.format(doc_id.inner());
+        let mut k = Vec::with_capacity(self.prefix.len() + 3 + term.len() + 1 + id_str.len());
         k.extend_from_slice(&self.prefix);
         k.extend_from_slice(b"pl:");
         k.extend_from_slice(term.as_bytes());
+        k.push(b':');
+        k.extend_from_slice(id_str.as_bytes());
+        k
+    }
+
+    fn key_term_prefix(&self, term: &str) -> Vec<u8> {
+        let mut k = Vec::with_capacity(self.prefix.len() + 3 + term.len() + 1);
+        k.extend_from_slice(&self.prefix);
+        k.extend_from_slice(b"pl:");
+        k.extend_from_slice(term.as_bytes());
+        k.push(b':');
         k
     }
 
@@ -93,7 +114,6 @@ impl<S: StorageEngine> InvertedIndex<S> {
             *tfs.entry(t).or_insert(0u32) += 1;
         }
 
-        // Check if document already exists to adjust total_tokens and total_docs
         let dl_key = self.key_with_id("dl:", doc_id.inner());
         let fw_key = self.key_with_id("fw:", doc_id.inner());
         let mut old_len = 0u32;
@@ -113,23 +133,8 @@ impl<S: StorageEngine> InvertedIndex<S> {
                 if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
                     if let Ok(old_terms) = bincode::deserialize::<Vec<String>>(&fw_bytes) {
                         for term in old_terms {
-                            let pl_key = self.key_with_term(&term);
-                            if let Some(pl_bytes) = self.storage.get(&pl_key).await? {
-                                if let Ok(mut pl) =
-                                    bincode::deserialize::<Vec<(DocId, u32)>>(&pl_bytes)
-                                {
-                                    pl.retain(|&(d, _)| d != doc_id);
-                                    if pl.is_empty() {
-                                        self.storage.delete(tx, &pl_key).await?;
-                                    } else {
-                                        let new_pl_bytes =
-                                            bincode::serialize(&pl).map_err(|e| {
-                                                MemFuseError::Storage(format!("bincode: {}", e))
-                                            })?;
-                                        self.storage.put(tx, &pl_key, &new_pl_bytes).await?;
-                                    }
-                                }
-                            }
+                            let pl_doc_key = self.key_with_term_doc(&term, doc_id);
+                            self.storage.delete(tx, &pl_doc_key).await?;
                         }
                     }
                 }
@@ -150,63 +155,28 @@ impl<S: StorageEngine> InvertedIndex<S> {
             .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
         self.storage.put(tx, &fw_key, &fw_bytes).await?;
 
-        // Update total tokens (global for avg_doc_len)
-        let total_tok_key = self.key("meta:total_tokens");
-        let mut total_tokens = 0u64;
-        if let Some(bytes) = self.storage.get(&total_tok_key).await? {
-            if bytes.len() == 8 {
-                total_tokens =
-                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                        MemFuseError::Storage("Invalid total_tokens length".into())
-                    })?);
-            }
-        }
+        // Update Metadata (Consolidated)
+        let meta_key = self.key("meta:stats");
+        let mut meta = if let Some(bytes) = self.storage.get(&meta_key).await? {
+            bincode::deserialize::<TextIndexMetadata>(&bytes)
+                .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?
+        } else {
+            TextIndexMetadata::default()
+        };
 
-        total_tokens = total_tokens.saturating_sub(old_len as u64) + new_len as u64;
-
-        self.storage
-            .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
-            .await?;
-
-        // Update total docs
-        let total_docs_key = self.key("meta:total_docs");
-        let mut total_docs = 0u64;
-        if let Some(bytes) = self.storage.get(&total_docs_key).await? {
-            if bytes.len() == 8 {
-                total_docs = u64::from_le_bytes(
-                    bytes
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
-                );
-            }
-        }
-
+        meta.total_tokens = meta.total_tokens.saturating_sub(old_len as u64) + new_len as u64;
         if !is_update {
-            total_docs += 1;
-            self.storage
-                .put(tx, &total_docs_key, &total_docs.to_le_bytes())
-                .await?;
+            meta.total_docs += 1;
         }
 
-        // Update posting lists
+        let meta_bytes = bincode::serialize(&meta)
+            .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
+        self.storage.put(tx, &meta_key, &meta_bytes).await?;
+
+        // Update posting lists (Individual keys: PL:term:doc_id)
         for (term, tf) in tfs_vec {
-            let pl_key = self.key_with_term(&term);
-            let mut pl: Vec<(DocId, u32)> = Vec::new();
-
-            if let Some(bytes) = self.storage.get(&pl_key).await? {
-                if let Ok(existing) = bincode::deserialize::<Vec<(DocId, u32)>>(&bytes) {
-                    pl = existing;
-                }
-            }
-
-            // Replace existing doc_id if it exists
-            pl.retain(|&(d, _)| d != doc_id);
-            pl.push((doc_id, tf));
-
-            let new_bytes = bincode::serialize(&pl)
-                .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
-            self.storage.put(tx, &pl_key, &new_bytes).await?;
+            let pl_doc_key = self.key_with_term_doc(&term, doc_id);
+            self.storage.put(tx, &pl_doc_key, &tf.to_le_bytes()).await?;
         }
 
         Ok(())
@@ -228,7 +198,6 @@ impl<S: StorageEngine> InvertedIndex<S> {
                 );
             }
         } else {
-            // Document doesn't exist in inverted index
             return Ok(());
         }
 
@@ -238,54 +207,24 @@ impl<S: StorageEngine> InvertedIndex<S> {
         if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
             if let Ok(old_terms) = bincode::deserialize::<Vec<String>>(&fw_bytes) {
                 for term in old_terms {
-                    let pl_key = self.key_with_term(&term);
-                    if let Some(pl_bytes) = self.storage.get(&pl_key).await? {
-                        if let Ok(mut pl) = bincode::deserialize::<Vec<(DocId, u32)>>(&pl_bytes) {
-                            pl.retain(|&(d, _)| d != doc_id);
-                            if pl.is_empty() {
-                                self.storage.delete(tx, &pl_key).await?;
-                            } else {
-                                let new_pl_bytes = bincode::serialize(&pl).map_err(|e| {
-                                    MemFuseError::Storage(format!("bincode: {}", e))
-                                })?;
-                                self.storage.put(tx, &pl_key, &new_pl_bytes).await?;
-                            }
-                        }
-                    }
+                    let pl_doc_key = self.key_with_term_doc(&term, doc_id);
+                    self.storage.delete(tx, &pl_doc_key).await?;
                 }
             }
         }
         self.storage.delete(tx, &fw_key).await?;
 
         // Update global stats
-        let total_tok_key = self.key("meta:total_tokens");
-        if let Some(bytes) = self.storage.get(&total_tok_key).await? {
-            if bytes.len() == 8 {
-                let mut total_tokens =
-                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                        MemFuseError::Storage("Invalid total_tokens length".into())
-                    })?);
-                total_tokens = total_tokens.saturating_sub(doc_len as u64);
-                self.storage
-                    .put(tx, &total_tok_key, &total_tokens.to_le_bytes())
-                    .await?;
-            }
-        }
+        let meta_key = self.key("meta:stats");
+        if let Some(bytes) = self.storage.get(&meta_key).await? {
+            let mut meta = bincode::deserialize::<TextIndexMetadata>(&bytes)
+                .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
+            meta.total_tokens = meta.total_tokens.saturating_sub(doc_len as u64);
+            meta.total_docs = meta.total_docs.saturating_sub(1);
 
-        let total_docs_key = self.key("meta:total_docs");
-        if let Some(bytes) = self.storage.get(&total_docs_key).await? {
-            if bytes.len() == 8 {
-                let mut total_docs = u64::from_le_bytes(
-                    bytes
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
-                );
-                total_docs = total_docs.saturating_sub(1);
-                self.storage
-                    .put(tx, &total_docs_key, &total_docs.to_le_bytes())
-                    .await?;
-            }
+            let meta_bytes = bincode::serialize(&meta)
+                .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
+            self.storage.put(tx, &meta_key, &meta_bytes).await?;
         }
 
         Ok(())
@@ -300,77 +239,68 @@ impl<S: StorageEngine> InvertedIndex<S> {
             return Ok(Vec::new());
         }
 
-        // Fetch global stats
-        let total_docs_key = self.key("meta:total_docs");
-        let mut total_docs = 0u64;
-        if let Some(bytes) = self.storage.get(&total_docs_key).await? {
-            if bytes.len() == 8 {
-                total_docs = u64::from_le_bytes(
-                    bytes
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
-                );
-            }
-        }
-
-        let total_tok_key = self.key("meta:total_tokens");
-        let mut total_tokens = 0u64;
-        if let Some(bytes) = self.storage.get(&total_tok_key).await? {
-            if bytes.len() == 8 {
-                total_tokens =
-                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                        MemFuseError::Storage("Invalid total_tokens length".into())
-                    })?);
-            }
-        }
-
-        let avg_doc_len = if total_docs > 0 {
-            total_tokens as f32 / total_docs as f32
+        // Fetch Metadata
+        let meta_key = self.key("meta:stats");
+        let meta = if let Some(bytes) = self.storage.get(&meta_key).await? {
+            bincode::deserialize::<TextIndexMetadata>(&bytes)
+                .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?
         } else {
-            0.0
+            TextIndexMetadata::default()
         };
+
+        if meta.total_docs == 0 {
+            return Ok(Vec::new());
+        }
+
+        let avg_doc_len = meta.total_tokens as f32 / meta.total_docs as f32;
 
         let mut scores: HashMap<DocId, f32> = HashMap::new();
         let mut doc_len_cache: HashMap<DocId, u32> = HashMap::new();
 
         for term in &tokens {
-            let pl_key = self.key_with_term(term);
-            if let Some(bytes) = self.storage.get(&pl_key).await? {
-                if let Ok(pl) = bincode::deserialize::<Vec<(DocId, u32)>>(&bytes) {
-                    let df = pl.len() as u32;
+            let prefix = self.key_term_prefix(term);
+            let entries = self.storage.scan_prefix(&prefix).await?;
 
-                    for (doc_id, tf) in pl {
-                        // Fetch doc length
-                        let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
-                            len
-                        } else {
-                            let dl_key = self.key_with_id("dl:", doc_id.inner());
-                            let mut len = 0u32;
-                            if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
-                                if dl_bytes.len() == 4 {
-                                    len = u32::from_le_bytes(
-                                        dl_bytes.as_slice().try_into().map_err(|_| {
-                                            MemFuseError::Storage("Invalid doc_len length".into())
-                                        })?,
-                                    );
-                                }
-                            }
-                            doc_len_cache.insert(doc_id, len);
-                            len
-                        };
+            let df = entries.len() as u32;
+            if df == 0 {
+                continue;
+            }
 
-                        let score = crate::bm25::score_term(
-                            tf,
-                            doc_len,
-                            avg_doc_len,
-                            df,
-                            total_docs as u32,
-                        );
+            for (key, val_bytes) in entries {
+                // Key format: {namespace}:pl:{term}:{doc_id}
+                // Suffix is just {doc_id}
+                let suffix = &key[prefix.len()..];
+                let doc_id_raw = std::str::from_utf8(suffix)
+                    .map_err(|_| MemFuseError::Storage("Invalid doc_id in key".into()))?
+                    .parse::<u64>()
+                    .map_err(|_| MemFuseError::Storage("Invalid doc_id format in key".into()))?;
+                let doc_id = DocId::new(doc_id_raw);
 
-                        *scores.entry(doc_id).or_insert(0.0) += score;
+                let tf = u32::from_le_bytes(val_bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid tf length in posting list".into())
+                })?);
+
+                // Fetch doc length
+                let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
+                    len
+                } else {
+                    let dl_key = self.key_with_id("dl:", doc_id.inner());
+                    let mut len = 0u32;
+                    if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
+                        if dl_bytes.len() == 4 {
+                            len = u32::from_le_bytes(dl_bytes.as_slice().try_into().map_err(
+                                |_| MemFuseError::Storage("Invalid doc_len length".into()),
+                            )?);
+                        }
                     }
-                }
+                    doc_len_cache.insert(doc_id, len);
+                    len
+                };
+
+                let score =
+                    crate::bm25::score_term(tf, doc_len, avg_doc_len, df, meta.total_docs as u32);
+
+                *scores.entry(doc_id).or_insert(0.0) += score;
             }
         }
 
@@ -383,6 +313,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 }
 
+#[async_trait::async_trait]
 impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         let results = self.search_bm25(query, k).await?;
@@ -409,33 +340,17 @@ impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
     }
 
     async fn stats(&self) -> Result<TextIndexStats> {
-        let total_docs_key = self.key("meta:total_docs");
-        let mut total_docs = 0u64;
-        if let Some(bytes) = self.storage.get(&total_docs_key).await? {
-            if bytes.len() == 8 {
-                total_docs = u64::from_le_bytes(
-                    bytes
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
-                );
-            }
-        }
-
-        let total_tok_key = self.key("meta:total_tokens");
-        let mut total_tokens = 0u64;
-        if let Some(bytes) = self.storage.get(&total_tok_key).await? {
-            if bytes.len() == 8 {
-                total_tokens =
-                    u64::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
-                        MemFuseError::Storage("Invalid total_tokens length".into())
-                    })?);
-            }
-        }
+        let meta_key = self.key("meta:stats");
+        let meta = if let Some(bytes) = self.storage.get(&meta_key).await? {
+            bincode::deserialize::<TextIndexMetadata>(&bytes)
+                .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?
+        } else {
+            TextIndexMetadata::default()
+        };
 
         Ok(TextIndexStats {
-            num_documents: total_docs as usize,
-            num_tokens: total_tokens as usize,
+            num_documents: meta.total_docs as usize,
+            num_tokens: meta.total_tokens as usize,
             memory_usage_bytes: 0,
         })
     }
@@ -466,6 +381,7 @@ impl<S: StorageEngine> BM25MorphIndex<S> {
     }
 }
 
+#[async_trait::async_trait]
 impl<S: StorageEngine> TextIndex for BM25MorphIndex<S> {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         // Here we could apply the morphological tokenizer to the query tokens
@@ -513,6 +429,7 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
             Ok(self.store.read().get(key).cloned())
@@ -531,6 +448,18 @@ mod tests {
         async fn rollback(&self, _tx_id: TxId) -> Result<()> {
             Ok(())
         }
+        async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
+            Ok(())
+        }
+        async fn get_at_seq(&self, key: &[u8], _seq: u64) -> Result<Option<Vec<u8>>> {
+            self.get(key).await
+        }
+        async fn last_seq_no(&self) -> Result<u64> {
+            Ok(0)
+        }
+        async fn last_tx_id(&self) -> Result<TxId> {
+            Ok(TxId::new(0))
+        }
         async fn flush(&self) -> Result<()> {
             Ok(())
         }
@@ -540,6 +469,16 @@ mod tests {
                 total_size_bytes: 0,
                 memtable_size_bytes: 0,
             })
+        }
+        async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
+            Ok(())
+        }
+        async fn scan(
+            &self,
+            _start: std::ops::Bound<&[u8]>,
+            _end: std::ops::Bound<&[u8]>,
+        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+            Ok(Vec::new())
         }
         async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
             let store = self.store.read();

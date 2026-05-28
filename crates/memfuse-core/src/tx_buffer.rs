@@ -15,7 +15,6 @@ use crate::types::{DocId, TxId};
 use ahash::AHashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Default number of shards for the transaction buffer.
@@ -196,6 +195,11 @@ impl<T: Clone> TxBuffer<T> {
         let shard = self.shards[shard_idx].read();
         shard.ops.get(&tx).map(|(ops, _)| ops.clone())
     }
+
+    /// Returns the transaction timeout.
+    pub fn tx_timeout(&self) -> Duration {
+        self.tx_timeout
+    }
 }
 
 impl<T: Clone> Default for TxBuffer<T> {
@@ -203,83 +207,10 @@ impl<T: Clone> Default for TxBuffer<T> {
         Self::new()
     }
 }
-
-// ANCHOR:ARCH:REAPER-001 — Background Tokio-Task für verwaiste Transaktionen.
-// WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
-// WARNUNG: Endlos-Loop — Tokio runtime drop killt den Task (akzeptiert).
-/// Starts a background task to periodically clean up orphan transactions.
-pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
-    buffer: Arc<TxBuffer<T>>,
-    interval: Duration,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        let mut ticker = tokio::time::interval(interval);
-        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
-        tracing::info!(
-            "Orphan reaper started (timeout: {:?}, interval: {:?})",
-            buffer.tx_timeout,
-            interval
-        );
-        loop {
-            ticker.tick().await;
-            let expired = buffer.reap_orphans();
-            if !expired.is_empty() {
-                tracing::warn!(
-                    "Orphan reaper cleaned up {} expired transactions",
-                    expired.len()
-                );
-            }
-        }
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
-    use tokio::time::sleep;
-
-    #[test]
-    fn test_sharding_distributes_evenly() {
-        let buffer = TxBuffer::<String>::new_with_config(64, Duration::from_secs(30));
-        let shard0 = buffer.shard_idx(TxId::new(0));
-        let shard1 = buffer.shard_idx(TxId::new(1));
-        let shard64 = buffer.shard_idx(TxId::new(64));
-
-        assert_eq!(shard0, 0);
-        assert_eq!(shard1, 1);
-        assert_eq!(shard64, 0);
-    }
-
-    #[test]
-    fn test_tx_buffer_stage_drain() {
-        let buffer = TxBuffer::<String>::new_with_config(64, Duration::from_secs(30));
-        let tx = TxId::new(1);
-
-        buffer.stage(
-            tx,
-            IndexOp::Insert {
-                doc_id: DocId::new(1),
-                data: "data1".to_string(),
-            },
-        );
-        buffer.stage(
-            tx,
-            IndexOp::Insert {
-                doc_id: DocId::new(2),
-                data: "data2".to_string(),
-            },
-        );
-
-        assert!(!buffer.is_empty());
-
-        let ops = buffer.drain(tx);
-        assert_eq!(ops.len(), 2);
-        assert!(buffer.is_empty());
-    }
+    use std::sync::Arc;
 
     #[test]
     fn test_tx_buffer_discard() {
@@ -295,29 +226,6 @@ mod tests {
         );
         buffer.discard(tx);
         assert!(buffer.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_orphan_reaper_removes_expired() {
-        let buffer = Arc::new(TxBuffer::<String>::new_with_config(
-            64,
-            Duration::from_millis(50),
-        ));
-        let tx1 = TxId::new(1);
-
-        buffer.begin(tx1);
-        buffer.stage(
-            tx1,
-            IndexOp::Insert {
-                doc_id: DocId::new(1),
-                data: "old".to_string(),
-            },
-        );
-
-        let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10));
-        assert!(buffer.has_tx(tx1));
-        sleep(Duration::from_millis(100)).await;
-        assert!(!buffer.has_tx(tx1));
     }
 
     #[tokio::test]

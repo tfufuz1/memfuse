@@ -60,6 +60,7 @@ pub mod collection;
 pub mod context;
 pub mod filter;
 pub mod fusion;
+pub mod reaper;
 pub mod transaction;
 
 pub use collection::Collection;

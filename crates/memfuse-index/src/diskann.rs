@@ -9,12 +9,12 @@ use memfuse_core::{
     VectorIndexStats,
 };
 use memmap2::Mmap;
-use parking_lot::RwLock;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashSet};
 use std::path::PathBuf;
 use tokio::fs::OpenOptions;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+use tokio::sync::RwLock;
 
 const DISKANN_MAGIC: &[u8; 4] = b"DANN";
 const DISKANN_VERSION: u16 = 1;
@@ -215,7 +215,7 @@ impl DiskAnnIndex {
                 compute_distance(v_a, v_b, self.config.distance_metric)
             }
             (VectorData::U8(v_a), VectorData::U8(v_b)) => {
-                let q_guard = self.quantizer.read();
+                let q_guard = self.quantizer.blocking_read();
                 let q = q_guard
                     .as_ref()
                     .ok_or_else(|| MemFuseError::Index("Quantizer missing".into()))?;
@@ -230,7 +230,7 @@ impl DiskAnnIndex {
         match &node.vector {
             VectorData::F32(v) => compute_distance(query, v, self.config.distance_metric),
             VectorData::U8(v) => {
-                let q_guard = self.quantizer.read();
+                let q_guard = self.quantizer.blocking_read();
                 let q = q_guard
                     .as_ref()
                     .ok_or_else(|| MemFuseError::Index("Quantizer missing".into()))?;
@@ -512,7 +512,7 @@ impl DiskAnnIndex {
 
     fn load_node(&self, index: u32) -> Result<CachedNode> {
         // 1. Check Cache
-        if let Some(node) = self.cache.read().get(&index) {
+        if let Some(node) = self.cache.blocking_read().get(&index) {
             return Ok(node.clone());
         }
 
@@ -588,7 +588,7 @@ impl DiskAnnIndex {
         };
 
         // 3. Update Cache (Naive Clear-on-Budget)
-        let mut cache = self.cache.write();
+        let mut cache = self.cache.blocking_write();
         if cache.len() * self.node_size_bytes >= self.config.memory_budget {
             cache.clear();
         }
@@ -710,7 +710,7 @@ impl VectorIndex for DiskAnnIndex {
 
     async fn stats(&self) -> Result<VectorIndexStats> {
         let count = self.len().await;
-        let cache_usage = self.cache.read().len() * self.node_size_bytes;
+        let cache_usage = self.cache.read().await.len() * self.node_size_bytes;
         Ok(VectorIndexStats {
             num_vectors: count,
             memory_usage_bytes: cache_usage,

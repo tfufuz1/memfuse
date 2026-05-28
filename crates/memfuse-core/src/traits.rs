@@ -3,7 +3,7 @@
 //! These traits define the abstract interfaces that concrete implementations
 //! must fulfill, enabling modularity and testability.
 
-#![allow(async_fn_in_trait)]
+// #![allow(async_fn_in_trait)]
 
 // ANCHOR:ARCH:TRAITS-001 — Trait-Contracts sind das API-Rückgrat des Workspace.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -16,6 +16,7 @@ use crate::Result;
 use serde::{Deserialize, Serialize};
 
 /// Abstract contract for generating consistent checkpoints.
+#[async_trait::async_trait]
 pub trait Checkpoint: Send + Sync {
     /// Takes a deterministic snapshot of the current state.
     async fn take_snapshot(&self, tx: TxId) -> Result<WorkflowState>;
@@ -58,17 +59,13 @@ pub struct StorageStats {
 // CREATED:2026-05-05 DEADLINE:NONE
 // Lifecycle: put/delete → commit/rollback → flush(background).
 /// Storage engine trait — abstracts over the LSM-Tree implementation.
-// TODO(FIND-COR-001): Trait requires #[async_trait] macro.
-// Remove default implementations to prevent silent E0038/E0195 dyn-compatibility issues.
+#[async_trait::async_trait]
 pub trait StorageEngine: Send + Sync {
     /// Retrieves a value by key.
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
 
     /// Retrieves a value by key at a specific sequence number (MVCC).
-    async fn get_at_seq(&self, key: &[u8], seq: u64) -> Result<Option<Vec<u8>>> {
-        let _ = seq;
-        self.get(key).await
-    }
+    async fn get_at_seq(&self, key: &[u8], seq: u64) -> Result<Option<Vec<u8>>>;
 
     /// Stores a key-value pair as part of a transaction.
     async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()>;
@@ -87,23 +84,13 @@ pub trait StorageEngine: Send + Sync {
     /// Commits a transaction — makes writes visible.
     async fn commit(&self, tx_id: TxId) -> Result<()>;
 
-    /// Rolls back a transaction — discards writes.
-    ///
-    /// **Implementor contract**: MUST discard all staged writes for `tx_id`.
-    /// The default no-op is only valid for test mocks. Production implementations
-    /// MUST override this. See `LsmStorage::rollback` for reference.
-    async fn rollback(&self, _tx_id: TxId) -> Result<()> {
-        Ok(())
-    }
+    /// Rolls back a transaction — discards stagged writes for the given ID.
+    async fn rollback(&self, tx_id: TxId) -> Result<()>;
 
     /// Rolls back the entire storage state to a specific transaction ID.
     ///
-    /// **Implementor contract**: MUST physically revert all state beyond `tx_id`,
-    /// including WAL truncation and memtable reconstruction. The default no-op
-    /// is only valid for test mocks. See `LsmStorage::rollback_to_tx` for reference.
-    async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
-        Ok(())
-    }
+    /// **Implementor contract**: MUST physically revert all state beyond `tx_id`.
+    async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()>;
 
     /// Flushes the memtable to disk.
     async fn flush(&self) -> Result<()>;
@@ -112,40 +99,26 @@ pub trait StorageEngine: Send + Sync {
     async fn stats(&self) -> Result<StorageStats>;
 
     /// Returns the last sequence number committed to storage.
-    async fn last_seq_no(&self) -> Result<u64> {
-        Ok(0)
-    }
+    async fn last_seq_no(&self) -> Result<u64>;
 
     /// Returns the last transaction ID committed to storage.
-    async fn last_tx_id(&self) -> Result<TxId> {
-        Ok(TxId::new(0))
-    }
+    async fn last_tx_id(&self) -> Result<TxId>;
 
     /// Pins a checkpoint for the given sequence number.
-    async fn pin_checkpoint(&self, _seq_no: u64) -> Result<()> {
-        Ok(())
-    }
+    async fn pin_checkpoint(&self, seq_no: u64) -> Result<()>;
 
     /// Unpins a checkpoint for the given sequence number.
-    async fn unpin_checkpoint(&self, _seq_no: u64) -> Result<()> {
-        Ok(())
-    }
+    async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()>;
 
     /// Scans a range of keys with the given prefix.
     async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
 
     /// Scans a range of keys between `start` and `end` bounds.
-    ///
-    /// Returns all non-tombstoned entries within the range, deduplicated
-    /// by key with the newest sequence number winning.
     async fn scan(
         &self,
         start: std::ops::Bound<&[u8]>,
         end: std::ops::Bound<&[u8]>,
-    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        let _ = (start, end);
-        Ok(Vec::new())
-    }
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
 }
 
 // ANCHOR:ARCH:CONTRACT-INDEX-001 — Implementor: HnswIndex (memfuse-index/src/hnsw.rs)
@@ -154,6 +127,7 @@ pub trait StorageEngine: Send + Sync {
 // CREATED:2026-05-05 DEADLINE:NONE
 // Rebuild: Automatisch bei >20% gelöschten Nodes.
 /// Vector index trait — abstracts over the HNSW implementation.
+#[async_trait::async_trait]
 pub trait VectorIndex: Send + Sync {
     /// Inserts a vector with an associated document ID.
     async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()>;
@@ -191,9 +165,7 @@ pub trait VectorIndex: Send + Sync {
     async fn rollback(&self, tx: TxId) -> Result<()>;
 
     /// Returns the last transaction ID processed by the index.
-    async fn last_tx_id(&self) -> Result<u64> {
-        Ok(0)
-    }
+    async fn last_tx_id(&self) -> Result<u64>;
 
     /// Returns the number of vectors in the index.
     async fn len(&self) -> usize;
@@ -219,6 +191,7 @@ pub struct TextIndexStats {
 }
 
 /// Text index trait — abstracts over the inverted index and BM25 search.
+#[async_trait::async_trait]
 pub trait TextIndex: Send + Sync {
     /// Searches for documents matching the query.
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>>;
@@ -244,6 +217,7 @@ pub trait TextIndex: Send + Sync {
 // STATUS:SCAFFOLD DATE:2026-05-17
 
 /// Defines the contract for the CSR Graph traverse capabilities (Signal 3).
+#[async_trait::async_trait]
 pub trait GraphIndex: Send + Sync {
     /// Traverses the entity graph using BFS up to a maximum number of hops.
     /// Distributes traversing decay weights across related entities.

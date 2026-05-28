@@ -180,10 +180,10 @@ impl BlockBuilder {
         }
     }
 
-    pub fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64) -> bool {
-        // size: key_len(2) + key + seq_no(8) + val_len(2) + value + bloom(8) + offsets + offset count (2 bytes)
+    pub fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64, tx_id: u64) -> bool {
+        // size: key_len(2) + key + seq_no(8) + tx_id(8) + val_len(2) + value + bloom(8) + offsets + offset count (2 bytes)
         if !self.data.is_empty()
-            && self.current_size() + key.len() + value.len() + 12 > self.block_size
+            && self.current_size() + key.len() + value.len() + 20 > self.block_size
         {
             return false;
         }
@@ -193,6 +193,7 @@ impl BlockBuilder {
         self.data.put_u16_le(key.len() as u16);
         self.data.put_slice(key);
         self.data.put_u64_le(seq_no);
+        self.data.put_u64_le(tx_id);
         self.data.put_u16_le(value.len() as u16);
         self.data.put_slice(value);
         true
@@ -223,6 +224,8 @@ pub struct SstableMetadata {
     pub first_key: Bytes,
     pub last_key: Bytes,
     pub file_size: u64,
+    pub min_tx_id: u64,
+    pub max_tx_id: u64,
 }
 
 /// A builder for creating new SSTables.
@@ -237,6 +240,8 @@ pub struct SstableBuilder {
     /// Whole-SSTable bloom filter for cross-block pre-checks.
     bloom_filter: BloomFilter,
     key_count: usize,
+    min_tx_id: u64,
+    max_tx_id: u64,
 }
 
 impl SstableBuilder {
@@ -268,22 +273,26 @@ impl SstableBuilder {
             // For now, let's use a very conservative 100k capacity bitset.
             bloom_filter: BloomFilter::new(100_000, 0.01),
             key_count: 0,
+            min_tx_id: u64::MAX,
+            max_tx_id: 0,
         })
     }
 
     /// Adds a key-value pair to the SSTable being built.
-    pub async fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64) -> Result<()> {
+    pub async fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64, tx_id: u64) -> Result<()> {
         if self.first_key.is_none() {
             self.first_key = Some(Bytes::copy_from_slice(key));
         }
 
-        if !self.block_builder.add(key, value, seq_no) {
+        if !self.block_builder.add(key, value, seq_no, tx_id) {
             self.flush_block().await?;
-            let _ = self.block_builder.add(key, value, seq_no);
+            let _ = self.block_builder.add(key, value, seq_no, tx_id);
         }
 
         self.bloom_filter.insert(key);
         self.key_count += 1;
+        self.min_tx_id = self.min_tx_id.min(tx_id);
+        self.max_tx_id = self.max_tx_id.max(tx_id);
         self.last_key = Some(Bytes::copy_from_slice(key));
         Ok(())
     }
@@ -372,9 +381,11 @@ impl SstableBuilder {
             .len();
 
         Ok(SstableMetadata {
-            first_key: self.first_key.unwrap_or_default(),
-            last_key: self.last_key.unwrap_or_default(),
+            first_key: self.first_key.clone().unwrap_or_default(),
+            last_key: self.last_key.clone().unwrap_or_default(),
             file_size,
+            min_tx_id: self.min_tx_id,
+            max_tx_id: self.max_tx_id,
         })
     }
 }
@@ -398,6 +409,22 @@ pub struct SstableReader {
 }
 
 impl SstableReader {
+    pub fn first_key(&self) -> &Bytes {
+        &self.metadata.first_key
+    }
+
+    pub fn last_key(&self) -> &Bytes {
+        &self.metadata.last_key
+    }
+
+    pub fn min_tx_id(&self) -> u64 {
+        self.metadata.min_tx_id
+    }
+
+    pub fn max_tx_id(&self) -> u64 {
+        self.metadata.max_tx_id
+    }
+
     /// Opens an existing SSTable file for reading.
     pub async fn open(path: impl AsRef<Path>, block_cache: Arc<BlockCache>) -> Result<Self> {
         Self::open_with_key_manager(path, block_cache, None).await
@@ -635,7 +662,7 @@ impl SstableReader {
     }
 
     /// Retrieves a value from the SSTable by key.
-    pub async fn get(&self, key: &[u8]) -> Result<Option<(Bytes, u64)>> {
+    pub async fn get(&self, key: &[u8]) -> Result<Option<(Bytes, u64, u64)>> {
         // 1. Whole-SSTable Bloom Filter Pre-check
         // WP:WP-5.x PRIO:1 NEEDS:NONE
         // SPECCED: Only if bloom filter is present (backward compatibility)
@@ -761,6 +788,13 @@ impl SstableReader {
                         .try_into()
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 );
+                let tx_id = u64::from_le_bytes(
+                    block_data
+                        .get(ep..ep + 8)
+                        .ok_or_else(|| MemFuseError::Storage("malformed block: tx_id".into()))?
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                );
                 ep += 8;
                 let v_len = u16::from_le_bytes(
                     block_data
@@ -776,7 +810,7 @@ impl SstableReader {
                     ));
                 }
                 let entry_val = block_data.slice(ep..ep + v_len);
-                return Ok(Some((entry_val, seq_no)));
+                return Ok(Some((entry_val, seq_no, tx_id)));
             }
         }
         Ok(None)
@@ -910,7 +944,7 @@ pub struct SstableStream {
 }
 
 impl SstableStream {
-    pub async fn next(&mut self) -> Result<Option<(Bytes, Bytes, u64)>> {
+    pub async fn next(&mut self) -> Result<Option<(Bytes, Bytes, u64, u64)>> {
         if self.reader.index.is_empty() {
             return Ok(None);
         }
@@ -980,14 +1014,15 @@ impl SstableStream {
                         .ok_or_else(|| MemFuseError::Storage("missing entry_key".into()))?;
                     ep += k_len;
 
-                    let seq_no = u64::from_le_bytes(
+                    let tx_id = u64::from_le_bytes(
                         block_data
                             .get(ep..ep + 8)
-                            .ok_or_else(|| MemFuseError::Storage("missing seq_no".into()))?
+                            .ok_or_else(|| MemFuseError::Storage("missing tx_id".into()))?
                             .try_into()
                             .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                     );
                     ep += 8;
+
                     let v_len = u16::from_le_bytes(
                         block_data
                             .get(ep..ep + 2)
@@ -996,31 +1031,34 @@ impl SstableStream {
                             .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                     ) as usize;
                     ep += 2;
-                    let entry_val = block_data
-                        .get(ep..ep + v_len)
-                        .ok_or_else(|| MemFuseError::Storage("missing value".into()))?;
-
+                    let entry_val = block_data.slice(ep..ep + v_len);
                     self.entry_idx += 1;
                     return Ok(Some((
                         Bytes::copy_from_slice(entry_key),
-                        Bytes::copy_from_slice(entry_val),
+                        entry_val,
                         seq_no,
+                        tx_id,
                     )));
                 }
             }
+            self.current_block = None;
         }
+    }
+
+    /// Optimized for compaction: avoids copying if possible.
+    pub async fn next_entry(&mut self) -> Result<Option<(Bytes, Bytes, u64, u64)>> {
+        self.next().await
     }
 }
 
 impl SstableReader {
-
     /// Returns the file path of this SSTable.
     pub fn file_path(&self) -> &std::path::Path {
         &self.file_path
     }
 
     /// Scans the SSTable for keys starting with the given prefix.
-    pub async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Bytes, Bytes, u64)>> {
+    pub async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Bytes, Bytes, u64, u64)>> {
         let mut results = Vec::with_capacity(16);
 
         let start_idx = match self.index.binary_search_by(|(k, _)| k.as_ref().cmp(prefix)) {

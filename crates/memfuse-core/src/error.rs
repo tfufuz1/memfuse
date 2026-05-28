@@ -15,9 +15,25 @@ pub type Result<T> = std::result::Result<T, MemFuseError>;
 /// Unified error type for all MemFuse operations.
 #[derive(Error, Debug)]
 pub enum MemFuseError {
-    // ═══ Storage ═══
+    // ═══ Core & Logic ═══
+    #[error("Internal error: {0}")]
+    Internal(String),
+
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
+    #[error("Not found: {0}")]
+    NotFound(String),
+
+    #[error("Policy violation: {0}")]
+    PolicyViolation(String),
+
+    // ═══ Storage Engine ═══
     #[error("Storage error: {0}")]
     Storage(String),
+
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
 
     #[error("WAL corruption detected at offset {offset}: {reason}")]
     WalCorruption { offset: u64, reason: String },
@@ -25,61 +41,33 @@ pub enum MemFuseError {
     #[error("Checksum mismatch: file={path}, block={block_id}")]
     ChecksumMismatch { path: String, block_id: u64 },
 
-    // ═══ Index ═══
-    #[error("Index error: {0}")]
-    Index(String),
-
-    #[error("HNSW graph connectivity degraded: {deleted_ratio:.1}% deleted nodes")]
-    HnswConnectivityDegraded { deleted_ratio: f64 },
-
-    // ═══ Transaction ═══
+    // ═══ Transactions & Consistency ═══
     #[error("Transaction error: {0}")]
     Transaction(String),
 
     #[error("Transaction {tx_id} timed out after {elapsed_ms}ms")]
     TransactionTimeout { tx_id: u64, elapsed_ms: u64 },
 
-    // ═══ Resource ═══
-    #[error("Memory budget exceeded: {used_mb}MB / {limit_mb}MB")]
-    MemoryBudgetExceeded { used_mb: u64, limit_mb: u64 },
-
-    // ═══ Input ═══
-    #[error("Invalid input: {0}")]
-    InvalidInput(String),
-
-    #[error("Not found: {0}")]
-    NotFound(String),
-
-    // ═══ Serialization ═══
-    #[error("Serialization error: {0}")]
-    Serialization(String),
-
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
-
-    // ═══ I/O ═══
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
-
-    // ═══ Checkpointing (SAOS) ═══
-    #[error("Checkpoint not found")]
-    CheckpointNotFound,
+    #[error("Conflict: {0}")]
+    Conflict(String),
 
     #[error("Invalid sequence number: {0}")]
     InvalidSequenceNumber(u64),
 
-    // ═══ Internal ═══
-    #[error("Internal error: {0}")]
-    Internal(String),
+    // ═══ Index & Search ═══
+    #[error("Index error: {0}")]
+    Index(String),
 
-    #[error("Crypto error: {0}")]
-    Crypto(String),
+    #[error("HNSW graph connectivity degraded: {deleted_ratio:.1}% deleted nodes")]
+    HnswConnectivityDegraded { deleted_ratio: f64 },
 
-    // ═══ Text Engine ═══
     #[error("Text engine error: {0}")]
     Text(String),
 
-    // ═══ Sandbox ═══
+    // ═══ Resources & Sandbox ═══
+    #[error("Memory budget exceeded: {used_mb}MB / {limit_mb}MB")]
+    MemoryBudgetExceeded { used_mb: u64, limit_mb: u64 },
+
     #[error("Sandbox error: {0}")]
     Sandbox(String),
 
@@ -89,8 +77,18 @@ pub enum MemFuseError {
     #[error("Timeout exceeded in sandbox: {0}")]
     SandboxTimeout(String),
 
-    #[error("Policy violation in sandbox: {0}")]
-    PolicyViolation(String),
+    // ═══ Infrastructure ═══
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    #[error("Crypto error: {0}")]
+    Crypto(String),
+
+    #[error("Checkpoint not found")]
+    CheckpointNotFound,
 }
 
 impl MemFuseError {

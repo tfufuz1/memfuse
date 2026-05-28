@@ -133,8 +133,14 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
 
         // Use a safe internal TxId
         let tx = self.next_tx_id();
-        self.storage.put(tx, key.as_bytes(), &value).await?;
-        self.storage.commit(tx).await?;
+        if let Err(e) = self.storage.put(tx, key.as_bytes(), &value).await {
+            let _ = self.storage.rollback(tx).await;
+            return Err(e);
+        }
+        if let Err(e) = self.storage.commit(tx).await {
+            let _ = self.storage.rollback(tx).await;
+            return Err(e);
+        }
 
         // 3. Update cache
         {
@@ -207,8 +213,14 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
             // 2. Remove from persistent storage
             let key = format!("__checkpoint:{}", name);
             let tx = self.next_tx_id();
-            self.storage.delete(tx, key.as_bytes()).await?;
-            self.storage.commit(tx).await?;
+            if let Err(e) = self.storage.delete(tx, key.as_bytes()).await {
+                let _ = self.storage.rollback(tx).await;
+                return Err(e);
+            }
+            if let Err(e) = self.storage.commit(tx).await {
+                let _ = self.storage.rollback(tx).await;
+                return Err(e);
+            }
 
             // 3. Update cache
             let mut cache = self.persistent_checkpoints.write();
@@ -225,6 +237,7 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
     }
 }
 
+#[async_trait::async_trait]
 impl<S: StorageEngine> memfuse_core::traits::Checkpoint for PersistentCheckpointStore<S> {
     async fn take_snapshot(&self, tx: TxId) -> Result<memfuse_core::WorkflowState> {
         let seq_no = self.storage.last_seq_no().await?;
@@ -264,6 +277,7 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
             Ok(self.data.lock().get(key).cloned())
@@ -284,6 +298,22 @@ mod tests {
         }
         async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
             Ok(())
+        }
+        async fn get_at_seq(&self, key: &[u8], _seq: u64) -> Result<Option<Vec<u8>>> {
+            self.get(key).await
+        }
+        async fn last_seq_no(&self) -> Result<u64> {
+            Ok(0)
+        }
+        async fn last_tx_id(&self) -> Result<TxId> {
+            Ok(TxId::new(0))
+        }
+        async fn scan(
+            &self,
+            _start: std::ops::Bound<&[u8]>,
+            _end: std::ops::Bound<&[u8]>,
+        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+            Ok(Vec::new())
         }
         async fn flush(&self) -> Result<()> {
             Ok(())
@@ -505,6 +535,25 @@ mod tests {
             }
             async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
                 self.inner.scan_prefix(prefix).await
+            }
+            async fn get_at_seq(&self, key: &[u8], seq: u64) -> Result<Option<Vec<u8>>> {
+                self.inner.get_at_seq(key, seq).await
+            }
+            async fn last_seq_no(&self) -> Result<u64> {
+                self.inner.last_seq_no().await
+            }
+            async fn last_tx_id(&self) -> Result<TxId> {
+                self.inner.last_tx_id().await
+            }
+            async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
+                self.inner.rollback_to_tx(tx_id).await
+            }
+            async fn scan(
+                &self,
+                start: std::ops::Bound<&[u8]>,
+                end: std::ops::Bound<&[u8]>,
+            ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+                self.inner.scan(start, end).await
             }
         }
 

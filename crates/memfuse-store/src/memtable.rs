@@ -11,15 +11,16 @@
 use bytes::Bytes;
 use parking_lot::RwLock;
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
-/// An in-memory sorted key-value structure with MVCC support.
 #[derive(Debug)]
 pub struct MemTable {
-    /// Maps UserKey -> Vec<(SequenceNumber, Value)>.
+    /// Maps UserKey -> Vec<(SequenceNumber, Value, TxId)>.
     /// The Vec is sorted by SequenceNumber ascending.
-    entries: RwLock<BTreeMap<Bytes, Vec<(u64, Bytes)>>>,
+    entries: RwLock<BTreeMap<Bytes, Vec<(u64, Bytes, u64)>>>,
     size: AtomicUsize,
+    min_tx: AtomicU64,
+    max_tx: AtomicU64,
 }
 
 impl MemTable {
@@ -28,19 +29,53 @@ impl MemTable {
         Self {
             entries: RwLock::new(BTreeMap::new()),
             size: AtomicUsize::new(0),
+            min_tx: AtomicU64::new(u64::MAX),
+            max_tx: AtomicU64::new(0),
         }
     }
 
-    /// Inserts a key-value pair with a sequence number.
-    pub fn put(&self, key: Bytes, value: Bytes, seq_no: u64) {
-        let additional_size = key.len() + value.len() + 8;
+    /// Inserts a key-value pair with a sequence number and transaction ID.
+    pub fn put(&self, key: Bytes, value: Bytes, seq_no: u64, tx_id: u64) {
+        let additional_size = key.len() + value.len() + 16; // Added tx_id
         let mut entries = self.entries.write();
 
         let versions = entries.entry(key).or_default();
-        versions.push((seq_no, value));
+        versions.push((seq_no, value, tx_id));
 
         // Note: Simple size tracking (sums all versions)
         self.size.fetch_add(additional_size, Ordering::Relaxed);
+
+        // Track TX range
+        loop {
+            let current_min = self.min_tx.load(Ordering::Acquire);
+            if tx_id >= current_min
+                || self
+                    .min_tx
+                    .compare_exchange(current_min, tx_id, Ordering::Release, Ordering::Relaxed)
+                    .is_ok()
+            {
+                break;
+            }
+        }
+        loop {
+            let current_max = self.max_tx.load(Ordering::Acquire);
+            if tx_id <= current_max
+                || self
+                    .max_tx
+                    .compare_exchange(current_max, tx_id, Ordering::Release, Ordering::Relaxed)
+                    .is_ok()
+            {
+                break;
+            }
+        }
+    }
+
+    /// Returns the transaction ID range covered by this MemTable.
+    pub fn tx_range(&self) -> (u64, u64) {
+        (
+            self.min_tx.load(Ordering::Acquire),
+            self.max_tx.load(Ordering::Acquire),
+        )
     }
 
     /// Retrieves the latest value and sequence number by key.
@@ -48,7 +83,7 @@ impl MemTable {
         let entries = self.entries.read();
         entries
             .get(key)
-            .and_then(|versions| versions.last().map(|(seq, val)| (val.clone(), *seq)))
+            .and_then(|versions| versions.last().map(|(seq, val, _tx)| (val.clone(), *seq)))
     }
 
     /// Retrieves a value and sequence number by key at or below a specific sequence number.
@@ -61,16 +96,16 @@ impl MemTable {
         // Binary search for the latest version <= seq_no
         // We must mask the TOMBSTONE_BIT during comparison because the search key
         // is a clean sequence number.
-        match versions.binary_search_by_key(&seq_no, |(s, _)| *s & !TOMBSTONE_BIT) {
+        match versions.binary_search_by_key(&seq_no, |(s, _, _)| *s & !TOMBSTONE_BIT) {
             Ok(idx) => {
-                let (s, v) = &versions[idx];
+                let (s, v, _) = &versions[idx];
                 Some((v.clone(), *s))
             }
             Err(idx) => {
                 if idx == 0 {
                     None
                 } else {
-                    let (s, v) = &versions[idx - 1];
+                    let (s, v, _) = &versions[idx - 1];
                     Some((v.clone(), *s))
                 }
             }
@@ -88,26 +123,26 @@ impl MemTable {
     }
 
     /// Iterates over all entries (all versions) in sorted order.
-    /// Returns (Key, Value, SeqNo).
-    pub fn iter(&self) -> Vec<(Bytes, Bytes, u64)> {
+    /// Returns (Key, Value, SeqNo, TxId).
+    pub fn iter(&self) -> Vec<(Bytes, Bytes, u64, u64)> {
         let entries = self.entries.read();
         let mut results = Vec::new();
         for (k, versions) in entries.iter() {
-            for (seq, val) in versions {
-                results.push((k.clone(), val.clone(), *seq));
+            for (seq, val, tx) in versions {
+                results.push((k.clone(), val.clone(), *seq, *tx));
             }
         }
         results
     }
 
     /// Iterates over only the latest version of each key in sorted order.
-    /// Returns (Key, Value, SeqNo).
-    pub fn iter_latest(&self) -> Vec<(Bytes, Bytes, u64)> {
+    /// Returns (Key, Value, SeqNo, TxId).
+    pub fn iter_latest(&self) -> Vec<(Bytes, Bytes, u64, u64)> {
         let entries = self.entries.read();
         let mut results = Vec::with_capacity(entries.len());
         for (k, versions) in entries.iter() {
-            if let Some((seq, val)) = versions.last() {
-                results.push((k.clone(), val.clone(), *seq));
+            if let Some((seq, val, tx)) = versions.last() {
+                results.push((k.clone(), val.clone(), *seq, *tx));
             }
         }
         results
@@ -127,8 +162,8 @@ mod tests {
     #[test]
     fn test_put_get() {
         let mt = MemTable::new();
-        mt.put(Bytes::from("key1"), Bytes::from("val1"), 1);
-        mt.put(Bytes::from("key2"), Bytes::from("val2"), 2);
+        mt.put(Bytes::from("key1"), Bytes::from("val1"), 1, 1);
+        mt.put(Bytes::from("key2"), Bytes::from("val2"), 2, 2);
 
         let (val, seq) = mt.get(b"key1").expect("key1 should exist");
         assert_eq!(val.as_ref(), b"val1");
@@ -144,9 +179,9 @@ mod tests {
     #[test]
     fn test_mvcc_get_at_seq() {
         let mt = MemTable::new();
-        mt.put(Bytes::from("key1"), Bytes::from("v1"), 10);
-        mt.put(Bytes::from("key1"), Bytes::from("v2"), 20);
-        mt.put(Bytes::from("key1"), Bytes::from("v3"), 30);
+        mt.put(Bytes::from("key1"), Bytes::from("v1"), 10, 1);
+        mt.put(Bytes::from("key1"), Bytes::from("v2"), 20, 2);
+        mt.put(Bytes::from("key1"), Bytes::from("v3"), 30, 3);
 
         // Before any version
         assert!(mt.get_at_seq(b"key1", 5).is_none());
@@ -170,9 +205,9 @@ mod tests {
     #[test]
     fn test_iter_all_versions() {
         let mt = MemTable::new();
-        mt.put(Bytes::from("a"), Bytes::from("v1"), 1);
-        mt.put(Bytes::from("a"), Bytes::from("v2"), 2);
-        mt.put(Bytes::from("b"), Bytes::from("v3"), 3);
+        mt.put(Bytes::from("a"), Bytes::from("v1"), 1, 1);
+        mt.put(Bytes::from("a"), Bytes::from("v2"), 2, 2);
+        mt.put(Bytes::from("b"), Bytes::from("v3"), 3, 3);
 
         let entries = mt.iter();
         assert_eq!(entries.len(), 3);
@@ -188,8 +223,8 @@ mod tests {
         let key = Bytes::from("key1");
 
         // Insert a value then a tombstone at a higher sequence number
-        mt.put(key.clone(), Bytes::from("val1"), 10);
-        mt.put(key.clone(), Bytes::new(), 20 | TOMBSTONE_BIT);
+        mt.put(key.clone(), Bytes::from("val1"), 10, 1);
+        mt.put(key.clone(), Bytes::new(), 20 | TOMBSTONE_BIT, 2);
 
         // Read at seq 15 -> should get val1
         let (val, seq) = mt.get_at_seq(&key, 15).expect("Should find v1");
@@ -205,9 +240,9 @@ mod tests {
     #[test]
     fn test_iter_latest() {
         let mt = MemTable::new();
-        mt.put(Bytes::from("a"), Bytes::from("v1"), 1);
-        mt.put(Bytes::from("a"), Bytes::from("v2"), 2);
-        mt.put(Bytes::from("b"), Bytes::from("v3"), 3);
+        mt.put(Bytes::from("a"), Bytes::from("v1"), 1, 1);
+        mt.put(Bytes::from("a"), Bytes::from("v2"), 2, 2);
+        mt.put(Bytes::from("b"), Bytes::from("v3"), 3, 3);
 
         let entries = mt.iter_latest();
         assert_eq!(entries.len(), 2);
