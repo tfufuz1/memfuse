@@ -1,6 +1,6 @@
 //! DiskANN Out-of-Core Vector Search (WP-4.3).
 
-#![allow(unsafe_code)]
+#![forbid(unsafe_code)]
 
 use crate::distance::compute_distance;
 use ahash::AHashMap;
@@ -469,9 +469,7 @@ impl DiskAnnIndex {
     /// Loads the index from the configured path.
     pub fn load(&mut self) -> Result<()> {
         let file = std::fs::File::open(&self.config.index_path).map_err(MemFuseError::Io)?;
-        // SAFETY: Mapping a file is safe as long as it's not truncated or modified while mapped.
-        // In MemFuse, file access is orchestrated by the storage layer with exclusive locks.
-        let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? };
+        let mmap = crate::distance::mmap_file(&file)?;
 
         let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;
 

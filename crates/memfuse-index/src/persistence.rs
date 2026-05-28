@@ -1,4 +1,4 @@
-#![allow(unsafe_code)]
+#![forbid(unsafe_code)]
 // ANCHOR:DEBT:WP-0.0-ZEROPANIC — Eradicate .unwrap() in persistence.rs
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:@JULES-13 DATE:2026-05-27 STATUS:READY
@@ -185,7 +185,7 @@ impl MmapIndex {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = std::fs::File::open(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
-        let mmap = unsafe { memmap2::Mmap::map(&file) }
+        let mmap = crate::distance::mmap_file(&file)
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
         let header = HnswHeader::try_from_bytes(&mmap[0..HnswHeader::SIZE])?;

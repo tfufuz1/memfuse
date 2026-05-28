@@ -42,7 +42,7 @@
 
 // ANCHOR:REFACTOR:WP-0.0-STABLESIMD — Remove nightly portable_simd
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:@JULES-03 DATE:2026-05-27 STATUS:READY
+// AGENT:@JULES-03 DATE:2026-05-27 STATUS:DONE
 // TEST: cargo +stable check -p memfuse-index
 // DONE: #![feature(portable_simd)] ist entfernt und distance.rs nutzt stabiles Rust.
 // SUCCESSOR: @JULES-13 — "SIMD ist stabil. Tech-Debt Audit fortsetzen."
@@ -592,6 +592,18 @@ pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarity
 /// Computes the dot product between an f32 vector and a u8 vector.
 pub fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
     a.iter().zip(b.iter()).map(|(&x, &y)| x * (y as f32)).sum()
+}
+
+/// A safe wrapper for memory-mapping a file.
+///
+/// # Safety
+/// Memory mapping is inherently unsafe as the underlying file could be modified or truncated.
+/// This wrapper centralizes the unsafe operation to `distance.rs` as per project policy.
+pub fn mmap_file(file: &std::fs::File) -> memfuse_core::Result<memmap2::Mmap> {
+    // ANCHOR:SAFETY:SIMD-MMAP-001 — Memory Mapping for Persistence.
+    // BEGRÜNDUNG: In MemFuse erfolgt der Dateizugriff über die Storage-Layer mit exklusiven Locks.
+    // Dies stellt sicher, dass die Datei während des Mappings nicht modifiziert oder gekürzt wird.
+    unsafe { memmap2::Mmap::map(file).map_err(memfuse_core::MemFuseError::Io) }
 }
 
 /// Computes the squared Euclidean distance between an f32 vector and a u8 vector

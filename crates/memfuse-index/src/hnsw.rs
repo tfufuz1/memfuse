@@ -1,4 +1,4 @@
-#![allow(unsafe_code)]
+#![forbid(unsafe_code)]
 //! HNSW (Hierarchical Navigable Small World) vector index.
 //! # Hierarchical Navigable Small World (HNSW) Index
 //!
@@ -47,7 +47,6 @@ use roaring::RoaringTreemap;
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::Mutex;
 
@@ -118,7 +117,7 @@ pub enum VectorData {
 }
 
 /// A node in the HNSW graph.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct HnswNode {
     doc_id: DocId,
     vector: VectorData,
@@ -232,7 +231,7 @@ impl HnswIndex {
     /// Persists the index to a flat file.
     // ANCHOR:REFACTOR:WP-0.0-ASYNCIO — Fix blocking I/O in HnswIndex::save
     // WP:WP-0.0 PRIO:1 NEEDS:NONE
-    // AGENT:@JULES-03 DATE:2026-05-27 STATUS:READY
+    // AGENT:@JULES-03 DATE:2026-05-27 STATUS:DONE
     // TEST: grep "std::fs" crates/memfuse-index/src/hnsw.rs
     // DONE: Alle std::fs Aufrufe in save() sind in spawn_blocking gekapselt oder durch tokio::fs ersetzt.
     // SUCCESSOR: @JULES-13 — "HNSW I/O ist nun async-safe. Tech-Debt Audit fortsetzen."
@@ -240,9 +239,12 @@ impl HnswIndex {
         use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
         let _lock = self.write_mutex.lock().await;
-        let nodes = self.nodes.read();
-        let entry_point = self.entry_point.read();
-        let q_guard = self.quantizer.read();
+        let (nodes, entry_point, q_params) = {
+            let nodes = self.nodes.read().clone();
+            let ep = *self.entry_point.read();
+            let q_params = self.quantizer.read().as_ref().map(|q| (q.min, q.max));
+            (nodes, ep, q_params)
+        };
 
         let file = tokio::fs::File::create(path)
             .await
@@ -254,11 +256,7 @@ impl HnswIndex {
         let vectors_offset =
             nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
 
-        let (q_min, q_max) = if let Some(q) = q_guard.as_ref() {
-            (q.min, q.max)
-        } else {
-            (0.0, 0.0)
-        };
+        let (q_min, q_max) = q_params.unwrap_or((0.0, 0.0));
 
         // Initial header
         let mut header = crate::persistence::HnswHeader {
@@ -309,13 +307,15 @@ impl HnswIndex {
 
             match &node.vector {
                 VectorData::F32(v) => {
-                    let bytes: &[u8] =
-                        unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
+                    let mut buf = Vec::with_capacity(v.len() * 4);
+                    for &val in v {
+                        buf.extend_from_slice(&val.to_le_bytes());
+                    }
                     writer
-                        .write_all(bytes)
+                        .write_all(&buf)
                         .await
                         .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                    current_pos += bytes.len() as u64;
+                    current_pos += buf.len() as u64;
                 }
                 VectorData::U8(v) => {
                     writer
@@ -356,14 +356,16 @@ impl HnswIndex {
                     .write_all(&len.to_le_bytes())
                     .await
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                let bytes: &[u8] = unsafe {
-                    std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
-                };
+
+                let mut conn_buf = Vec::with_capacity(conns.len() * 4);
+                for &val in conns {
+                    conn_buf.extend_from_slice(&val.to_le_bytes());
+                }
                 writer
-                    .write_all(bytes)
+                    .write_all(&conn_buf)
                     .await
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                conn_pos += 4 + bytes.len() as u64;
+                conn_pos += 4 + conn_buf.len() as u64;
             }
         }
         writer
