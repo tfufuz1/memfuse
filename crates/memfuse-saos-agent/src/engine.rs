@@ -117,17 +117,14 @@ impl OrchestratorEngine {
         // 3. Latest match for node_id
         let checkpoint = checkpoints
             .iter()
-            .filter(|c| c.name.starts_with(&format!("task:{}:", ctx.task_id)))
-            .filter(|c| {
-                // Check if identifier is step_count
-                if let Ok(step) = identifier.parse::<u64>() {
-                    c.name.contains(&format!(":step:{}:", step))
-                } else {
-                    // Check if identifier is node_id
-                    c.name.ends_with(&format!(":node:{}", identifier))
-                }
+            .rfind(|c| {
+                c.name.starts_with(&format!("task:{}:", ctx.task_id))
+                    && if let Ok(step) = identifier.parse::<u64>() {
+                        c.name.contains(&format!(":step:{}:", step))
+                    } else {
+                        c.name.ends_with(&format!(":node:{}", identifier))
+                    }
             })
-            .last() // Take the latest one
             .ok_or_else(|| {
                 MemFuseError::Internal(format!("Checkpoint for {} not found", identifier))
             })?;
