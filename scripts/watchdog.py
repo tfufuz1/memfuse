@@ -5,6 +5,7 @@ import sys
 
 # Constants
 TIMEOUT_HOURS = 8
+# Fixed simulation date to ensure deterministic results in this run
 CURRENT_DATE = datetime.datetime(2026, 6, 15, tzinfo=datetime.timezone.utc)
 
 def get_now():
@@ -19,7 +20,7 @@ def parse_anchors(content):
             if not anchor_match: continue
             anchor_id = anchor_match.group(1)
 
-            # Find status, needs, created in this line OR adjacent lines
+            # Context window for metadata
             context = "\n".join(lines[max(0, i-1):min(len(lines), i+3)])
 
             status_match = re.search(r"STATUS:(\S+)", context)
@@ -100,31 +101,24 @@ def process_anchors():
                 continue
 
     # Phase 2: Circular Deadlocks
-    blocked = {aid: data for aid, data in all_anchors.items() if data["status"] == "BLOCKED"}
+    blocked_ids = [aid for aid, data in all_anchors.items() if data["status"] == "BLOCKED"]
 
-    def find_cycle(start_aid, current_aid, visited, path):
+    def find_cycle(current_aid, path):
         if current_aid in path:
             cycle_start_idx = path.index(current_aid)
             return path[cycle_start_idx:]
 
-        if current_aid in visited:
-            return None
-
-        visited.add(current_aid)
-
         if current_aid in all_anchors:
             for dep in all_anchors[current_aid]["needs"]:
-                res = find_cycle(start_aid, dep, visited, path + [current_aid])
+                res = find_cycle(dep, path + [current_aid])
                 if res: return res
         return None
 
-    global_visited = set()
     cycles = []
-    for aid in blocked:
-        if aid not in global_visited:
-            cycle = find_cycle(aid, aid, global_visited, [])
-            if cycle:
-                cycles.append(cycle)
+    for aid in blocked_ids:
+        cycle = find_cycle(aid, [])
+        if cycle:
+            cycles.append(cycle)
 
     for cycle in cycles:
         print(f"Watchdog: Detected circular deadlock: {' -> '.join(cycle)} -> {cycle[0]}")
@@ -135,12 +129,14 @@ def process_anchors():
 
         old_line = data["raw"]
         new_line = old_line.replace("STATUS:BLOCKED", "STATUS:OPEN")
-        for dep in cycle[1:]:
-            if dep in new_line:
-                 new_line = re.sub(rf",?{dep},?", "", new_line)
+        # Remove dependencies that are part of the cycle
+        for dep in cycle:
+            if dep != aid_to_fix:
+                new_line = re.sub(rf",?{dep}", "", new_line)
 
-        if "NEEDS:" in new_line and new_line.split("NEEDS:")[1].strip() == "":
-             new_line = new_line.replace("NEEDS:", "NEEDS:NONE")
+        new_line = new_line.replace("NEEDS:,", "NEEDS:").replace("NEEDS: ", "NEEDS:NONE ").replace("NEEDS:\n", "NEEDS:NONE\n")
+        if "NEEDS:" in new_line and not re.search(r"NEEDS:\S+", new_line):
+             new_line = re.sub(r"NEEDS:.*", "NEEDS:NONE", new_line)
 
         final_line = f"// WATCHDOG: Broken cyclic dependency.\n{new_line}"
         file_contents[path] = content.replace(old_line, final_line)
@@ -162,13 +158,12 @@ def process_anchors():
             if "ANCHOR:ARCH:GATE-FV STATUS:OPEN" not in lib_content:
                 print("Watchdog: Opening ARCH:GATE-FV due to missing proofs.")
                 lib_content = lib_content.replace("ANCHOR:ARCH:GATE-FV STATUS:DONE", "ANCHOR:ARCH:GATE-FV STATUS:OPEN")
-                if "// WATCHDOG: Blocking merges" not in lib_content:
+                if "// WATCHDOG:" not in lib_content:
                     lib_content = lib_content.replace("ANCHOR:ARCH:GATE-FV STATUS:OPEN",
                                                       "ANCHOR:ARCH:GATE-FV STATUS:OPEN\n// WATCHDOG: Blocking merges due to missing Kani/TLA+ proofs for REVIEW components (WAL/LSM).")
                 file_contents[core_lib_path] = lib_content
-            else:
-                print("Watchdog: ARCH:GATE-FV already OPEN.")
 
+    # Write changes
     for path, content in file_contents.items():
         with open(path, 'w', encoding='utf-8') as f:
             f.write(content)
