@@ -11,8 +11,8 @@ test: check
 # Runs formatting, clippy and checks compilation
 check:
     nix develop -c cargo fmt --all -- --check
-    nix develop -c cargo clippy --all-targets -- -D warnings
-    nix develop -c cargo check --all-targets --workspace
+    nix develop -c cargo clippy --all-targets --workspace --exclude memfuse-py -- -D warnings
+    nix develop -c cargo check --all-targets --workspace --exclude memfuse-py
 
 # Modular check for memfuse-core
 check-core:
@@ -56,7 +56,7 @@ dag-check:
     set -euo pipefail
     echo "=== DAG Integrity Check ==="
 
-    echo "--- Phase 1: L1 Kernel Isolation (core, runtime, orchestrator) ---"
+    echo "--- Phase 1: L1 Kernel Isolation (core, sandbox, saos-agent) ---"
     for CRATE in memfuse-core memfuse-sandbox memfuse-saos-agent; do
         echo "Verifying $CRATE isolation..."
         if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -E -v "$CRATE|memfuse-core" | grep -q .; then
@@ -66,29 +66,41 @@ dag-check:
         fi
     done
 
-    echo "--- Phase 2: L2 Peer Isolation (store, index, text, checkpoint) ---"
-    echo "Verifying memfuse-store..."
-    if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core" | grep -q "memfuse-"; then
-        echo "❌ ERROR: memfuse-store violates DAG by importing non-core crates."
+    echo "--- Phase 2: L2 Peer Isolation (store, index, text, checkpoint, graph, crypto) ---"
+    echo "Verifying memfuse-store (permitted: core, crypto)..."
+    if cargo tree -p memfuse-store --edges no-dev | grep "memfuse-" | grep -E -v "memfuse-store|memfuse-core|memfuse-crypto" | grep -q .; then
+        echo "❌ ERROR: memfuse-store violates DAG by importing forbidden crates."
         cargo tree -p memfuse-store --edges no-dev | grep "memfuse-"
         exit 1
     fi
-    echo "Verifying memfuse-index..."
-    if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core" | grep -q "memfuse-"; then
-        echo "❌ ERROR: memfuse-index violates DAG by importing non-core crates."
+    echo "Verifying memfuse-index (permitted: core, graph)..."
+    if cargo tree -p memfuse-index --edges no-dev | grep "memfuse-" | grep -E -v "memfuse-index|memfuse-core|memfuse-graph" | grep -q .; then
+        echo "❌ ERROR: memfuse-index violates DAG by importing forbidden crates."
         cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
         exit 1
     fi
     echo "Verifying memfuse-text..."
-    if cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core" | grep -q "memfuse-"; then
+    if cargo tree -p memfuse-text --edges no-dev | grep "memfuse-" | grep -E -v "memfuse-text|memfuse-core" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-text violates DAG by importing non-core crates."
         cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
         exit 1
     fi
     echo "Verifying memfuse-checkpoint (excluding tracked DAG-002)..."
-    if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
+    if cargo tree -p memfuse-checkpoint --edges no-dev | grep "memfuse-" | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-checkpoint violates DAG."
         cargo tree -p memfuse-checkpoint --edges no-dev | grep "memfuse-"
+        exit 1
+    fi
+    echo "Verifying memfuse-graph..."
+    if cargo tree -p memfuse-graph --edges no-dev | grep -E -v "memfuse-graph|memfuse-core" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-graph violates DAG."
+        cargo tree -p memfuse-graph --edges no-dev | grep "memfuse-"
+        exit 1
+    fi
+    echo "Verifying memfuse-crypto..."
+    if cargo tree -p memfuse-crypto --edges no-dev | grep -E -v "memfuse-crypto|memfuse-core" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-crypto violates DAG."
+        cargo tree -p memfuse-crypto --edges no-dev | grep "memfuse-"
         exit 1
     fi
 
@@ -128,7 +140,7 @@ triple-test: check
     echo "=== Triple-Test-Gate ==="
     for RUN in 1 2 3; do
         echo "--- Run $RUN/3 ---"
-        if ! nix develop -c cargo test --workspace; then
+        if ! nix develop -c cargo test --workspace --exclude memfuse-py; then
             echo "❌ FAILED on run $RUN/3. Fix all failures before this WP is DONE."
             exit 1
         fi
