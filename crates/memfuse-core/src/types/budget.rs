@@ -1,3 +1,10 @@
+//! Resource budget and usage tracking.
+//!
+//! Provides mechanisms to monitor and limit memory consumption to ensure
+//! system stability and prevent OOM situations.
+//!
+// ANCHOR:DOC STATUS:DONE AGENT:01 PRIO:3
+
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.

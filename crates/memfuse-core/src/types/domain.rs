@@ -1,3 +1,10 @@
+//! Domain entities and foundational identifiers.
+//!
+//! This module defines core structures like `DocId`, `TxId`, and `Embedding`
+//! that form the backbone of the MemFuse data model.
+//!
+// ANCHOR:DOC STATUS:DONE AGENT:01 PRIO:3
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 

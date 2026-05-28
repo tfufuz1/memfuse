@@ -1,3 +1,10 @@
+//! Search and Orchestration Structures (SAOS).
+//!
+//! Defines types for hybrid search queries, fusion weights, and context management
+//! for LLM integrations.
+//!
+// ANCHOR:DOC STATUS:DONE AGENT:01 PRIO:3
+
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
