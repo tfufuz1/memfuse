@@ -22,7 +22,12 @@ def create_mcp_server(db_path: str, dimension: int = 1536) -> FastMCP:
         raise
 
     @mcp.tool()
-    def memfuse_search(query: str, collection: str = "default", k: int = 10) -> List[Dict[str, Any]]:
+    def memfuse_search(
+        query: str,
+        collection: str = "default",
+        k: int = 10,
+        vector: Optional[List[float]] = None
+    ) -> List[Dict[str, Any]]:
         """
         Hybrid search across stored documents (vector + BM25 + metadata).
         
@@ -30,39 +35,19 @@ def create_mcp_server(db_path: str, dimension: int = 1536) -> FastMCP:
             query: Natural language query
             collection: Collection name
             k: Number of results to return
+            vector: Optional embedding vector. If not provided, a zero-vector is used (BM25-heavy).
         """
         try:
             col = db.collection(collection)
-            # Since we don't have an embedding tool yet in this WP, 
-            # we might need to handle how vectors are provided or generated.
-            # FR-7.3-003 says: "Ohne Embedding-Provider muss der Client Vektoren mitliefern."
-            # But the tool definition in FR-7.3-001 for memfuse_search only takes 'query'.
-            # This implies the server should handle embedding OR query is only for BM25.
-            # Wait, hybrid_search in Rust takes (text, vector, k).
-            
-            # If query is only text, we can only do BM25 if no embedding is provided.
-            # But the spec says 'Hybrid search'. 
-            # Let's assume for now it uses a dummy vector if not provided, or we need an embedding.
-            # For the sake of this WP, I'll implement it as text-only search if no vector is available,
-            # or use a zero vector for semantic part (which is bad but matches the 'query' only signature).
-            # Actually, I'll check if I can add a 'vector' param too.
-            
-            # Re-reading FR-7.3-001: parameters: { "query": {"type": "string", ...} }
-            # It doesn't have a 'vector' parameter for search.
-            # This strongly implies that either:
-            # 1. memfuse_search only does BM25.
-            # 2. memfuse_search handles embedding internally.
-            
-            # Since FR-7.3-003 mentions "Auto-Embedding bei Insert", I'll assume we want the same for search.
-            # If no embedder is configured, we'll fall back to BM25 or throw error if only vector search is requested.
-            
-            # For now, let's use a zero vector of correct dimension to satisfy the hybrid_search call.
             import numpy as np
-            # TODO(FIND-PY-001): Skeleton "Zero Vector" in MCP Tools (S4-C)
-            # Stop spoofing vectors. Accept literal arrays from caller or throw NotSupportedError until Embeddings are live.
-            zero_vector = np.zeros(dimension, dtype=np.float32)
             
-            results = col.hybrid_search(query, zero_vector, k)
+            if vector is not None:
+                search_vector = np.array(vector, dtype=np.float32)
+            else:
+                logger.warning("No vector provided for memfuse_search, falling back to zero-vector (BM25-heavy).")
+                search_vector = np.zeros(dimension, dtype=np.float32)
+
+            results = col.hybrid_search(query, search_vector, k)
             return [
                 {
                     "id": r.id,
@@ -91,23 +76,31 @@ def create_mcp_server(db_path: str, dimension: int = 1536) -> FastMCP:
             return {"error": str(e)}
 
     @mcp.tool()
-    def memfuse_insert(id: str, text: str, collection: str = "default", metadata: Dict[str, Any] = None) -> str:
+    def memfuse_insert(
+        id: str,
+        text: str,
+        collection: str = "default",
+        metadata: Optional[Dict[str, Any]] = None,
+        vector: Optional[List[float]] = None
+    ) -> str:
         """
         Store a document with embedding and metadata.
         """
         try:
             col = db.collection(collection)
-            # Auto-embedding placeholder
             import numpy as np
-            # TODO(FIND-PY-001): Skeleton "Zero Vector" in MCP Tools (S4-C)
-            # Stop spoofing vectors. Accept literal arrays from caller or throw NotSupportedError until Embeddings are live.
-            vector = np.zeros(dimension, dtype=np.float32)
+
+            if vector is not None:
+                insert_vector = np.array(vector, dtype=np.float32)
+            else:
+                logger.warning(f"No vector provided for memfuse_insert of document {id}, falling back to zero-vector.")
+                insert_vector = np.zeros(dimension, dtype=np.float32)
             
             # Store text in metadata so it's searchable by BM25
             meta = metadata or {}
             meta["text"] = text
             
-            col.insert(id, vector, meta)
+            col.insert(id, insert_vector, meta)
             return f"Document {id} inserted successfully"
         except Exception as e:
             logger.error(f"Error in memfuse_insert: {e}")

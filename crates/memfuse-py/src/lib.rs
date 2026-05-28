@@ -12,7 +12,8 @@
 
 #![forbid(unsafe_code)]
 
-use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
+use memfuse_core::MemFuseError;
+use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig, MetadataFilter};
 use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;
 use pythonize::{depythonize, pythonize};
@@ -108,9 +109,14 @@ fn results_to_py(
     Ok(py_res)
 }
 
-/// Maps any error implementing Display to a PyRuntimeError.
-fn memfuse_err<E: std::fmt::Display>(e: E) -> PyErr {
-    pyo3::exceptions::PyRuntimeError::new_err(e.to_string())
+/// Maps MemFuseError to appropriate Python exceptions.
+fn memfuse_err(e: MemFuseError) -> PyErr {
+    match e {
+        MemFuseError::InvalidInput(s) => pyo3::exceptions::PyValueError::new_err(s),
+        MemFuseError::NotFound(s) => pyo3::exceptions::PyKeyError::new_err(s),
+        MemFuseError::Serialization(s) => pyo3::exceptions::PyTypeError::new_err(s),
+        _ => pyo3::exceptions::PyRuntimeError::new_err(e.to_string()),
+    }
 }
 
 // ─── Python Types ───────────────────────────────────────────────────────────
@@ -311,6 +317,31 @@ macro_rules! memfuse_crud_methods {
                 })?;
                 let results = py
                     .allow_threads(|| rt.block_on(self.inner.search(v, k)))
+                    .map_err(memfuse_err)?;
+                results_to_py(py, results)
+            }
+
+            /// Performs semantic search with an advanced metadata filter.
+            #[pyo3(signature = (vector, k, filter=None))]
+            pub fn search_with_filter<'py>(
+                &self,
+                py: Python<'py>,
+                vector: PyReadonlyArray1<'py, f32>,
+                k: usize,
+                filter: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
+            ) -> PyResult<Vec<PySearchResult>> {
+                let rt = get_runtime()?;
+                let v = vector.as_slice().map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
+                })?;
+                let f = match filter {
+                    Some(d) => Some(depythonize(&d).map_err(|e| {
+                        pyo3::exceptions::PyValueError::new_err(format!("Invalid filter: {}", e))
+                    })?),
+                    None => None,
+                };
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.search_with_filter(v, k, f)))
                     .map_err(memfuse_err)?;
                 results_to_py(py, results)
             }
