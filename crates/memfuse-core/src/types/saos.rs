@@ -255,8 +255,16 @@ mod tests {
             .build()
             .expect("build ok");
 
-        assert_eq!(query.text_query.unwrap(), "test query");
-        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]);
+        assert_eq!(
+            query.text_query.expect("Zero-unwrap Guard: context needed"),
+            "test query"
+        );
+        assert_eq!(
+            query
+                .vector_query
+                .expect("Zero-unwrap Guard: context needed"),
+            vec![0.1, 0.2]
+        );
         assert_eq!(query.k, 5);
         // Default weights: vector=1.0, others=0.0
         assert_eq!(query.fusion_weights.vector(), 1.0);
@@ -264,18 +272,21 @@ mod tests {
 
     #[test]
     fn test_hybrid_query_builder_custom_weights() {
-        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap();
+        let weights =
+            FusionWeights::new(0.4, 0.4, 0.1, 0.1).expect("Zero-unwrap Guard: context needed");
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())
             .build()
-            .unwrap();
+            .expect("Zero-unwrap Guard: context needed");
 
         assert_eq!(query.fusion_weights, weights);
     }
 
     #[test]
     fn test_hybrid_query_builder_defaults() {
-        let query = HybridQuery::builder().build().unwrap();
+        let query = HybridQuery::builder()
+            .build()
+            .expect("Zero-unwrap Guard: context needed");
         assert_eq!(query.k, 10);
         assert_eq!(query.fusion_weights.vector(), 1.0);
         assert!(query.text_query.is_none());

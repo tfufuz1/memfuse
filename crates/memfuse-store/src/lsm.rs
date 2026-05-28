@@ -979,39 +979,96 @@ mod tests {
                 .expect("create storage");
 
             let tx1 = TxId::new(1);
-            storage.put(tx1, b"k1", b"v1").await.unwrap();
-            storage.commit(tx1).await.unwrap();
+            storage
+                .put(tx1, b"k1", b"v1")
+                .await
+                .expect("Zero-unwrap Guard: context needed");
+            storage
+                .commit(tx1)
+                .await
+                .expect("Zero-unwrap Guard: context needed");
 
             let tx2 = TxId::new(2);
-            storage.put(tx2, b"k2", b"v2").await.unwrap();
-            storage.commit(tx2).await.unwrap();
+            storage
+                .put(tx2, b"k2", b"v2")
+                .await
+                .expect("Zero-unwrap Guard: context needed");
+            storage
+                .commit(tx2)
+                .await
+                .expect("Zero-unwrap Guard: context needed");
 
             // Verify both exist
-            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
-            assert_eq!(storage.get(b"k2").await.unwrap(), Some(b"v2".to_vec()));
+            assert_eq!(
+                storage
+                    .get(b"k1")
+                    .await
+                    .expect("Zero-unwrap Guard: context needed"),
+                Some(b"v1".to_vec())
+            );
+            assert_eq!(
+                storage
+                    .get(b"k2")
+                    .await
+                    .expect("Zero-unwrap Guard: context needed"),
+                Some(b"v2".to_vec())
+            );
 
             // Rollback to Tx1
             storage.rollback_to_tx(tx1).await.expect("rollback");
 
-            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
-            assert_eq!(storage.get(b"k2").await.unwrap(), None);
+            assert_eq!(
+                storage
+                    .get(b"k1")
+                    .await
+                    .expect("Zero-unwrap Guard: context needed"),
+                Some(b"v1".to_vec())
+            );
+            assert_eq!(
+                storage
+                    .get(b"k2")
+                    .await
+                    .expect("Zero-unwrap Guard: context needed"),
+                None
+            );
         }
 
         // Restart storage
         {
             let storage = LsmStorage::new(config).await.expect("restart storage");
-            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
             assert_eq!(
-                storage.get(b"k2").await.unwrap(),
+                storage
+                    .get(b"k1")
+                    .await
+                    .expect("Zero-unwrap Guard: context needed"),
+                Some(b"v1".to_vec())
+            );
+            assert_eq!(
+                storage
+                    .get(b"k2")
+                    .await
+                    .expect("Zero-unwrap Guard: context needed"),
                 None,
                 "k2 should NOT be replayed after rollback"
             );
 
             // Verify we can still append new transactions after rollback
             let tx3 = TxId::new(3);
-            storage.put(tx3, b"k3", b"v3").await.unwrap();
-            storage.commit(tx3).await.unwrap();
-            assert_eq!(storage.get(b"k3").await.unwrap(), Some(b"v3".to_vec()));
+            storage
+                .put(tx3, b"k3", b"v3")
+                .await
+                .expect("Zero-unwrap Guard: context needed");
+            storage
+                .commit(tx3)
+                .await
+                .expect("Zero-unwrap Guard: context needed");
+            assert_eq!(
+                storage
+                    .get(b"k3")
+                    .await
+                    .expect("Zero-unwrap Guard: context needed"),
+                Some(b"v3".to_vec())
+            );
         }
     }
 }

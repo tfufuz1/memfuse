@@ -122,7 +122,7 @@ mod tests {
         let result = tracker.consume_memory(200);
 
         assert!(result.is_err());
-        match result.err().unwrap() {
+        match result.err().expect("Zero-unwrap Guard: context needed") {
             MemFuseError::MemoryBudgetExceeded { limit_mb, .. } => {
                 // used_mb = (900 + 200) / 1024*1024 = 0 in this case because limit is tiny
                 assert_eq!(limit_mb, 0);
@@ -179,7 +179,7 @@ mod tests {
         }
 
         for h in handlers {
-            h.join().unwrap();
+            h.join().expect("Zero-unwrap Guard: context needed");
         }
 
         assert_eq!(tracker.memory_used(), 10000);

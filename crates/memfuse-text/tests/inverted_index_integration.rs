@@ -34,6 +34,7 @@ async fn test_inverted_index_persistence() {
         .await
         .expect("insert 2 failed");
     storage.commit(tx2).await.expect("commit 2 failed");
+    storage.flush().await.expect("flush failed");
 
     // 2. Verify search
     let results = index

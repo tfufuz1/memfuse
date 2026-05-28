@@ -47,7 +47,6 @@ use roaring::RoaringTreemap;
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::Mutex;
 
@@ -236,6 +235,7 @@ impl HnswIndex {
     // TEST: grep "std::fs" crates/memfuse-index/src/hnsw.rs
     // DONE: Alle std::fs Aufrufe in save() sind in spawn_blocking gekapselt oder durch tokio::fs ersetzt.
     // SUCCESSOR: @JULES-13 — "HNSW I/O ist nun async-safe. Tech-Debt Audit fortsetzen."
+#[allow(clippy::await_holding_lock)]
     pub async fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
@@ -512,11 +512,9 @@ impl HnswIndexCore {
                 .chunks_exact(4)
                 .take(self.config.dimension)
                 .map(|chunk| -> Result<f32> {
-                    Ok(f32::from_le_bytes(
-                        chunk
-                            .try_into()
-                            .map_err(|_| MemFuseError::Index("Corrupt f32 in mmap vector".into()))?,
-                    ))
+                    Ok(f32::from_le_bytes(chunk.try_into().map_err(|_| {
+                        MemFuseError::Index("Corrupt f32 in mmap vector".into())
+                    })?))
                 })
                 .collect::<Result<Vec<f32>>>()?;
             compute_distance(query_exact, &v, self.config.distance_metric)
@@ -696,13 +694,10 @@ impl HnswIndexCore {
                     } else {
                         let mut v = vec![0.0f32; self.config.dimension];
                         for i in 0..self.config.dimension {
-                            v[i] = f32::from_le_bytes(
-                                bytes[i * 4..(i + 1) * 4]
-                                    .try_into()
-                                    .map_err(|_| {
-                                        MemFuseError::Index("Corrupt f32 in mmap vector".into())
-                                    })?,
-                            );
+                            v[i] =
+                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().map_err(
+                                    |_| MemFuseError::Index("Corrupt f32 in mmap vector".into()),
+                                )?);
                         }
                         Ok(VectorData::F32(v))
                     };
@@ -1089,7 +1084,9 @@ impl HnswIndexCore {
                     if let Some(new_idx) = best_node {
                         let node_max_layer = if let Some(mmap) = mmap_guard.as_ref() {
                             if new_idx < mmap_node_count {
-                                mmap.get_node_record(new_idx).map(|r| r.max_layer as usize).unwrap_or(0)
+                                mmap.get_node_record(new_idx)
+                                    .map(|r| r.max_layer as usize)
+                                    .unwrap_or(0)
                             } else {
                                 nodes[new_idx - mmap_node_count]._max_layer
                             }
@@ -1915,7 +1912,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().expect("Zero-unwrap Guard: context needed");
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {
