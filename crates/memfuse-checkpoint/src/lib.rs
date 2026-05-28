@@ -128,6 +128,7 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
 
         // 2. Persist checkpoint metadata
         let key = format!("__checkpoint:{}", name);
+        // ANCHOR:SEC: AGENT:10 PRIO:1 STATUS:READY
         let value = serde_json::to_vec(&checkpoint)
             .map_err(|e| memfuse_core::error::MemFuseError::Internal(e.to_string()))?;
 

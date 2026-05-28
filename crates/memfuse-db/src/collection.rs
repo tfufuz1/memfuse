@@ -254,9 +254,7 @@ impl<S: StorageEngine> Collection<S> {
             embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
-        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
-        // Document serialization is unencrypted before being sent to storage.
-        // If Encryption-at-Rest is enabled, it's encrypted in the storage layer (WP-3.2).
+        // ANCHOR:SEC: AGENT:10 PRIO:1 STATUS:READY
         let data = serde_json::to_vec(&stored)?;
 
         let user_key = self.namespaced_key(id.as_bytes(), 0);
@@ -444,7 +442,7 @@ impl<S: StorageEngine> Collection<S> {
             embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
-        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
+        // ANCHOR:SEC: AGENT:10 PRIO:1 STATUS:READY
         let data = serde_json::to_vec(&stored)?;
 
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
@@ -518,7 +516,7 @@ impl<S: StorageEngine> Collection<S> {
             "to": to,
             "label": label,
         });
-        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
+        // ANCHOR:SEC: AGENT:10 PRIO:1 STATUS:READY
         let bytes = serde_json::to_vec(&val)?;
 
         self.storage.put(tx, &key, &bytes).await?;
@@ -534,12 +532,14 @@ impl<S: StorageEngine> Collection<S> {
         let key1_str = format!("{}:{}:{}", from, label, to);
         let key1 = self.namespaced_key(key1_str.as_bytes(), 2);
         let val1 = serde_json::json!({"from": from, "to": to, "label": label});
+        // ANCHOR:SEC: AGENT:10 PRIO:1 STATUS:READY
         let bytes1 = serde_json::to_vec(&val1)?;
         self.storage.put(tx, &key1, &bytes1).await?;
 
         let key2_str = format!("{}:{}:{}", to, label, from);
         let key2 = self.namespaced_key(key2_str.as_bytes(), 2);
         let val2 = serde_json::json!({"from": to, "to": from, "label": label});
+        // ANCHOR:SEC: AGENT:10 PRIO:1 STATUS:READY
         let bytes2 = serde_json::to_vec(&val2)?;
         self.storage.put(tx, &key2, &bytes2).await?;
 

@@ -47,7 +47,6 @@ use roaring::RoaringTreemap;
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::Mutex;
 
@@ -240,25 +239,28 @@ impl HnswIndex {
         use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
         let _lock = self.write_mutex.lock().await;
-        let nodes = self.nodes.read();
-        let entry_point = self.entry_point.read();
-        let q_guard = self.quantizer.read();
+        let (node_count, entry_point, q_params, last_tx_id) = {
+            let nodes = self.nodes.read();
+            let ep = *self.entry_point.read();
+            let q_params = self.quantizer.read().as_ref().map(|q| (q.min, q.max));
+            (
+                nodes.len(),
+                ep,
+                q_params,
+                self.last_tx_id.load(Ordering::SeqCst),
+            )
+        };
 
         let file = tokio::fs::File::create(path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
         let mut writer = tokio::io::BufWriter::new(file);
 
-        let node_count = nodes.len();
         let nodes_offset = crate::persistence::HnswHeader::SIZE as u64;
         let vectors_offset =
             nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
 
-        let (q_min, q_max) = if let Some(q) = q_guard.as_ref() {
-            (q.min, q.max)
-        } else {
-            (0.0, 0.0)
-        };
+        let (q_min, q_max) = q_params.unwrap_or((0.0, 0.0));
 
         // Initial header
         let mut header = crate::persistence::HnswHeader {
@@ -274,7 +276,7 @@ impl HnswIndex {
             entry_point: entry_point.map(|i| i as i64).unwrap_or(-1),
             nodes_offset,
             connections_offset: 0,
-            last_tx_id: self.last_tx_id.load(Ordering::SeqCst),
+            last_tx_id,
         };
 
         // 1. Placeholder Header
@@ -302,15 +304,30 @@ impl HnswIndex {
 
         // 3. Vectors Block
         let mut current_pos = vectors_offset;
-        for (i, node) in nodes.iter().enumerate() {
-            node_records[i].doc_id = node.doc_id.inner();
-            node_records[i].max_layer = node.connections.len().saturating_sub(1) as u8;
+        let snapshots = {
+            let nodes = self.nodes.read();
+            nodes
+                .iter()
+                .map(|n| (n.doc_id, n.vector.clone(), n.connections.clone()))
+                .collect::<Vec<_>>()
+        };
+
+        for (i, (doc_id, vector, connections)) in snapshots.iter().enumerate() {
+            node_records[i].doc_id = doc_id.inner();
+            node_records[i].max_layer = connections.len().saturating_sub(1) as u8;
             node_records[i].vector_offset = current_pos;
 
-            match &node.vector {
+            match vector {
                 VectorData::F32(v) => {
-                    let bytes: &[u8] =
-                        unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
+                    // ANCHOR:SAFETY: RAW-SLICE-001
+                    // BEGRÜNDUNG: v is Vec<f32>. f32 is 4 bytes. Vec is contiguous.
+                    // Pointer and length (v.len()*size_of::<f32>()) are valid for byte-slice conversion.
+                    let bytes: &[u8] = unsafe {
+                        std::slice::from_raw_parts(
+                            v.as_ptr() as *const u8,
+                            v.len() * std::mem::size_of::<f32>(),
+                        )
+                    };
                     writer
                         .write_all(bytes)
                         .await
@@ -340,24 +357,29 @@ impl HnswIndex {
         }
 
         let mut conn_pos = connections_offset;
-        for (i, node) in nodes.iter().enumerate() {
+        for (i, (_, _, connections)) in snapshots.iter().enumerate() {
             node_records[i].connections_offset = conn_pos;
-            let num_layers = node.connections.len() as u8;
+            let num_layers = connections.len() as u8;
             writer
                 .write_all(&[num_layers])
                 .await
                 .map_err(|e| MemFuseError::Storage(e.to_string()))?;
             conn_pos += 1;
 
-            for layer in 0..num_layers as usize {
-                let conns = &node.connections[layer];
+            for conns in connections.iter().take(num_layers as usize) {
                 let len = conns.len() as u32;
                 writer
                     .write_all(&len.to_le_bytes())
                     .await
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                // ANCHOR:SAFETY: RAW-SLICE-002
+                // BEGRÜNDUNG: conns is Vec<u32>. u32 is 4 bytes. Vec is contiguous.
+                // Pointer and length (conns.len()*size_of::<u32>()) are valid for byte-slice conversion.
                 let bytes: &[u8] = unsafe {
-                    std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
+                    std::slice::from_raw_parts(
+                        conns.as_ptr() as *const u8,
+                        conns.len() * std::mem::size_of::<u32>(),
+                    )
                 };
                 writer
                     .write_all(bytes)
@@ -512,11 +534,9 @@ impl HnswIndexCore {
                 .chunks_exact(4)
                 .take(self.config.dimension)
                 .map(|chunk| -> Result<f32> {
-                    Ok(f32::from_le_bytes(
-                        chunk
-                            .try_into()
-                            .map_err(|_| MemFuseError::Index("Corrupt f32 in mmap vector".into()))?,
-                    ))
+                    Ok(f32::from_le_bytes(chunk.try_into().map_err(|_| {
+                        MemFuseError::Index("Corrupt f32 in mmap vector".into())
+                    })?))
                 })
                 .collect::<Result<Vec<f32>>>()?;
             compute_distance(query_exact, &v, self.config.distance_metric)
@@ -696,13 +716,10 @@ impl HnswIndexCore {
                     } else {
                         let mut v = vec![0.0f32; self.config.dimension];
                         for i in 0..self.config.dimension {
-                            v[i] = f32::from_le_bytes(
-                                bytes[i * 4..(i + 1) * 4]
-                                    .try_into()
-                                    .map_err(|_| {
-                                        MemFuseError::Index("Corrupt f32 in mmap vector".into())
-                                    })?,
-                            );
+                            v[i] =
+                                f32::from_le_bytes(bytes[i * 4..(i + 1) * 4].try_into().map_err(
+                                    |_| MemFuseError::Index("Corrupt f32 in mmap vector".into()),
+                                )?);
                         }
                         Ok(VectorData::F32(v))
                     };
@@ -1089,7 +1106,9 @@ impl HnswIndexCore {
                     if let Some(new_idx) = best_node {
                         let node_max_layer = if let Some(mmap) = mmap_guard.as_ref() {
                             if new_idx < mmap_node_count {
-                                mmap.get_node_record(new_idx).map(|r| r.max_layer as usize).unwrap_or(0)
+                                mmap.get_node_record(new_idx)
+                                    .map(|r| r.max_layer as usize)
+                                    .unwrap_or(0)
                             } else {
                                 nodes[new_idx - mmap_node_count]._max_layer
                             }

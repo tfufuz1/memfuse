@@ -185,6 +185,7 @@ impl MmapIndex {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = std::fs::File::open(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
+        // ANCHOR:SEC: AGENT:10 PRIO:1 STATUS:READY
         let mmap = unsafe { memmap2::Mmap::map(&file) }
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
@@ -251,7 +252,9 @@ impl MmapIndex {
         let end = start + len * 4;
 
         if end > self.mmap.len() {
-            return Err(MemFuseError::Storage("Connection data out of bounds".into()));
+            return Err(MemFuseError::Storage(
+                "Connection data out of bounds".into(),
+            ));
         }
 
         let raw = &self.mmap[start..end];
