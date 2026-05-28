@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 /// Default number of shards for the transaction buffer.
 pub const DEFAULT_SHARD_COUNT: usize = 64;
 
-/// Operation to be executed in an index.
+/// Represents an atomic operation on an index during a transaction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IndexOp<T: Clone> {
     /// Insert a document with associated data.
@@ -62,6 +62,10 @@ impl<T: Clone> TxShard<T> {
 /// Standard acquisition order: Read-lock for queries, Write-lock for mutations.
 /// To avoid deadlocks, cross-shard operations must never acquire more than
 /// one shard lock simultaneously.
+///
+/// A thread-safe transaction buffer for staging index operations.
+///
+/// Uses sharding to reduce lock contention during concurrent access.
 #[derive(Debug)]
 pub struct TxBuffer<T: Clone> {
     shards: Vec<RwLock<TxShard<T>>>,

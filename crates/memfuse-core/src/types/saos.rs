@@ -1,6 +1,9 @@
+//! SAOS-specific types and workflow abstractions.
+
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
+
 use serde::{Deserialize, Serialize};
 
 /// Unique identifier for a Namespace.

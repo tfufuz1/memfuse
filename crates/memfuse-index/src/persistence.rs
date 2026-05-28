@@ -1,3 +1,5 @@
+//! Persistence logic for vector indices.
+
 #![allow(unsafe_code)]
 // ANCHOR:DEBT:WP-0.0-ZEROPANIC — Eradicate .unwrap() in persistence.rs
 // WP:WP-0.0 PRIO:1 NEEDS:NONE

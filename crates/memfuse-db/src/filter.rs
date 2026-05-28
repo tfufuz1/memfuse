@@ -1,3 +1,5 @@
+//! High-level metadata filtering for collection queries.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

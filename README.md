@@ -9,7 +9,10 @@ Designed for AI agents and local-first applications, MemFuse provides a producti
 ## 🚀 Key Features
 
 - **4-Signal Fusion**: Combines Vector, Text (BM25), Graph, and Metadata signals for unparalleled recall.
+- **Multi-Agent Namespaces**: Isolate context between different agents with fine-grained control.
+- **Morphological Optimization**: Advanced German compound splitting and linguistic tokenization.
 - **ACID Compliant**: Transactional safety with MVCC and a robust Write-Ahead-Log (WAL).
+- **Cryptographic WAL**: Verifiable audit logs with AES-256-GCM encryption and integrity checks.
 - **Embedded & Sovereign**: Zero external C-dependencies. Runs locally on Linux/macOS.
 - **SIMD Accelerated**: Hardware-accelerated vector distances (AVX-512, AVX2, NEON).
 - **Quantization (SQ8)**: Reduces memory footprint by up to 4x with minimal recall loss.

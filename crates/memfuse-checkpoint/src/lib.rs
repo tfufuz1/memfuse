@@ -31,6 +31,7 @@ pub struct CheckpointMeta {
 }
 
 impl CheckpointMeta {
+    /// Converts the checkpoint metadata into a [`WorkflowState`] for restoration.
     pub fn into_workflow_state(&self) -> WorkflowState {
         WorkflowState {
             tx: self.tx_id,
@@ -39,23 +40,29 @@ impl CheckpointMeta {
     }
 }
 
-/// In-memory MVCC checkpoint abstraction.
+/// In-memory MVCC checkpoint registry.
+///
+/// This registry tracks active and recently committed checkpoints in memory
+/// to support fast state transitions and lookups.
 pub struct CheckpointRegistry {
     checkpoints: SyncRwLock<HashMap<TxId, WorkflowState>>,
 }
 
 impl CheckpointRegistry {
+    /// Creates a new, empty checkpoint registry.
     pub fn new() -> Self {
         Self {
             checkpoints: SyncRwLock::new(HashMap::new()),
         }
     }
 
+    /// Registers a new checkpoint state for the given transaction ID.
     pub fn register(&self, tx_id: TxId, state: WorkflowState) {
         let mut cache = self.checkpoints.write();
         cache.insert(tx_id, state);
     }
 
+    /// Retrieves the registered state for a given transaction ID, if it exists.
     pub fn get(&self, tx_id: TxId) -> Option<WorkflowState> {
         let cache = self.checkpoints.read();
         cache.get(&tx_id).cloned()
@@ -81,6 +88,7 @@ pub struct PersistentCheckpointStore<S: StorageEngine> {
 }
 
 impl<S: StorageEngine> PersistentCheckpointStore<S> {
+    /// Creates a new persistent checkpoint store using the provided storage engine.
     pub fn new(storage: Arc<S>) -> Self {
         Self {
             storage,
@@ -151,6 +159,8 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
     }
 
     /// Lists all persistent checkpoints, ordered by sequence number.
+    ///
+    /// If the cache is empty, it attempts to reload from storage.
     pub async fn list_checkpoints(&self) -> Result<Vec<CheckpointMeta>> {
         {
             let cache = self.persistent_checkpoints.read();
@@ -163,7 +173,7 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
         Ok(self.persistent_checkpoints.read().clone())
     }
 
-    /// Reloads the in-memory cache from persistent storage.
+    /// Reloads the in-memory cache of checkpoint metadata from persistent storage.
     pub async fn reload_from_storage(&self) -> Result<()> {
         let _guard = self.op_lock.lock().await;
 
@@ -183,7 +193,7 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
         Ok(())
     }
 
-    /// Retrieves a persistent checkpoint by name.
+    /// Retrieves a persistent checkpoint's metadata by its unique name.
     pub async fn get_checkpoint(&self, name: &str) -> Result<Option<CheckpointMeta>> {
         let cache = self.persistent_checkpoints.read();
         Ok(cache.iter().find(|c| c.name == name).cloned())
@@ -219,7 +229,7 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
         Ok(())
     }
 
-    /// Returns the underlying registry.
+    /// Returns a handle to the underlying in-memory checkpoint registry.
     pub fn registry(&self) -> Arc<CheckpointRegistry> {
         self.registry.clone()
     }

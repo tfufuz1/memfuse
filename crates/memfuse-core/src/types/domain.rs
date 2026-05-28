@@ -1,3 +1,5 @@
+//! Domain types and core data structures for MemFuse.
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -172,7 +174,7 @@ impl ScoredDocument {
     }
 }
 
-/// Graph entity.
+/// Graph entity representing a node in the agent memory graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
     pub id: EntityId,
@@ -190,7 +192,7 @@ impl Entity {
     }
 }
 
-/// Graph edge.
+/// Graph edge representing a relationship between entities.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Edge {
     pub from: EntityId,

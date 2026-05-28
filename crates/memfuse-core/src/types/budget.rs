@@ -1,3 +1,5 @@
+//! Token budget management and resource tracking.
+
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.
