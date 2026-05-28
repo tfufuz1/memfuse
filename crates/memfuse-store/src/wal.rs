@@ -644,7 +644,8 @@ mod tests {
         let bytes = entry.to_bytes();
 
         assert_eq!(bytes.len(), 105);
-        let payload_len = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice")); // unwrap allowed (AGENT:02)
+        let len_bytes = bytes[0..4].try_into().expect("valid slice"); // unwrap allowed (AGENT:02)
+        let payload_len = u32::from_le_bytes(len_bytes);
         assert_eq!(payload_len, 101);
     }
 

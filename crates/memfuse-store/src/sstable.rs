@@ -1348,7 +1348,8 @@ mod tests {
 
         // Positive lookup
         let res = reader.get(b"key1").await.expect("get key1"); // unwrap allowed (AGENT:02)
-        assert_eq!(res.expect("exists").0.as_ref(), b"val1"); // unwrap allowed (AGENT:02)
+        let val1_res = res.expect("exists"); // unwrap allowed (AGENT:02)
+        assert_eq!(val1_res.0.as_ref(), b"val1");
 
         // Negative lookup (should be caught by bloom or range check)
         let res = reader.get(b"nonexistent").await.expect("get nonexistent"); // unwrap allowed (AGENT:02)
@@ -1413,8 +1414,9 @@ mod tests {
                 for i in 0..100 {
                     let key = format!("key-{:03}", i);
                     let expected = format!("val-{:03}", i);
-                    let res = r.get(key.as_bytes()).await.expect("get").expect("exists"); // unwrap allowed (AGENT:02)
-                    assert_eq!(res.0.as_ref(), expected.as_bytes());
+                    let res = r.get(key.as_bytes()).await.expect("get"); // unwrap allowed (AGENT:02)
+                    let res_val = res.expect("exists"); // unwrap allowed (AGENT:02)
+                    assert_eq!(res_val.0.as_ref(), expected.as_bytes());
                 }
             }));
         }
@@ -1545,8 +1547,8 @@ mod tests {
             // Actually, just writing a 12-byte trailer pointing to the index is enough.
             let data = tokio::fs::read(&old_sst_path).await.expect("read"); // unwrap allowed (AGENT:02)
             let file_size = data.len();
-            let index_off =
-                u64::from_le_bytes(data[file_size - 12..file_size - 4].try_into().unwrap()); // unwrap allowed (AGENT:02)
+            let idx_bytes = data[file_size - 12..file_size - 4].try_into().unwrap(); // unwrap allowed (AGENT:02)
+            let index_off = u64::from_le_bytes(idx_bytes);
 
             let mut new_data = data[0..file_size - 20].to_vec(); // remove new trailer and bloom
                                                                  // index likely ends at bloom_off. Let's just use the index_off we found.
