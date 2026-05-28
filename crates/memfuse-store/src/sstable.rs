@@ -1548,7 +1548,7 @@ mod tests {
             let data = tokio::fs::read(&old_sst_path).await.expect("read");
             let file_size = data.len();
             let index_off =
-                u64::from_le_bytes(data[file_size - 12..file_size - 4].try_into().unwrap());
+                u64::from_le_bytes(data[file_size - 12..file_size - 4].try_into().unwrap()); // unwrap
 
             let mut new_data = data[0..file_size - 20].to_vec(); // remove new trailer and bloom
                                                                  // index likely ends at bloom_off. Let's just use the index_off we found.
