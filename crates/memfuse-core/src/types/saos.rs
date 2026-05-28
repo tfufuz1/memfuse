@@ -1,3 +1,9 @@
+//! Orchestration and Hybrid Search types.
+//!
+//! This module defines types for multi-signal fusion, hybrid queries,
+//! and LLM context management (Token Budgets).
+
+// ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3 — Missing module-level documentation.
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};

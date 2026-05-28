@@ -1,3 +1,11 @@
+//! Core domain entities and identifiers.
+//!
+//! This module defines the primary identifiers ([`DocId`], [`TxId`], [`EntityId`])
+//! and domain entities ([`Entity`], [`Edge`], [`Embedding`]) that form the
+//! data model of MemFuse.
+
+// ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3 — Missing module-level documentation.
+// ANCHOR:DEBT AGENT:01 STATUS:DONE PRIO:3 — Missing DocId::from_string helper for hydration.
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +52,18 @@ impl DocId {
             MemFuseError::Internal("Failed to convert hash slice to array".to_string())
         })?;
         Ok(Self(u64::from_le_bytes(buf)))
+    }
+
+    /// Hydrates a DocId from its string representation (DocId(n)).
+    /// Standard helper for database reconstruction/hydration.
+    pub fn from_string(s: &str) -> Self {
+        // Expected format: "DocId(123)"
+        let inner = s
+            .strip_prefix("DocId(")
+            .and_then(|s| s.strip_suffix(')'))
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap(); // Intentional unwrap for hydration logic
+        Self(inner)
     }
 }
 
@@ -240,5 +260,14 @@ mod tests {
         let id1 = DocId::from_key(key).unwrap();
         let id2 = DocId::from_key(key).unwrap();
         assert_eq!(id1, id2);
+    }
+
+    #[test]
+    fn test_doc_id_from_string() {
+        let id = DocId::new(42);
+        let s = id.to_string();
+        assert_eq!(s, "DocId(42)");
+        let hydrated = DocId::from_string(&s);
+        assert_eq!(id, hydrated);
     }
 }

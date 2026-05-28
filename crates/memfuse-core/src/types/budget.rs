@@ -1,3 +1,9 @@
+//! Resource management and budgeting.
+//!
+//! This module provides tools for tracking and enforcing resource limits,
+//! such as memory usage, and applying backpressure when limits are approached.
+
+// ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3 — Missing module-level documentation.
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.

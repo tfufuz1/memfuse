@@ -1,3 +1,9 @@
+//! Metadata filtering expressions.
+//!
+//! This module defines the [`FilterExpr`] enum for constructing complex
+//! metadata filter predicates for both pre- and post-filtering.
+
+// ANCHOR:DOC AGENT:01 STATUS:DONE PRIO:3 — Missing module-level documentation.
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.
