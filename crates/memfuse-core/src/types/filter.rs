@@ -1,3 +1,11 @@
+//! Metadata filter expressions.
+//!
+//! Provides a domain-specific language (DSL) for expressing metadata
+//! filters used in vector and text search operations.
+
+// ANCHOR:DOC:FILTER-001
+// AGENT:01 STATUS:DONE PRIO:3
+
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.

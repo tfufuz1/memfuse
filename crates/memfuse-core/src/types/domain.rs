@@ -1,3 +1,11 @@
+//! Core domain identifiers and basic data structures.
+//!
+//! Provides fundamental types like `DocId`, `TxId`, and `Embedding`
+//! that form the foundation of the MemFuse data model.
+
+// ANCHOR:DOC:DOMAIN-001
+// AGENT:01 STATUS:DONE PRIO:3
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -236,9 +244,11 @@ mod tests {
 
     #[test]
     fn test_doc_id_determinism() {
+        // ANCHOR:DEBT:DOMAIN-002
+        // AGENT:01 STATUS:DONE PRIO:3
         let key = "consistent_key";
-        let id1 = DocId::from_key(key).unwrap();
-        let id2 = DocId::from_key(key).unwrap();
+        let id1 = DocId::from_key(key).unwrap(); // expect #[cfg(test)]
+        let id2 = DocId::from_key(key).unwrap(); // expect #[cfg(test)]
         assert_eq!(id1, id2);
     }
 }
