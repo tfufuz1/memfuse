@@ -117,7 +117,7 @@ pub enum VectorData {
 }
 
 /// A node in the HNSW graph.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct HnswNode {
     doc_id: DocId,
     vector: VectorData,
@@ -239,25 +239,44 @@ impl HnswIndex {
         use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
         let _lock = self.write_mutex.lock().await;
-        let nodes = self.nodes.read();
-        let entry_point = self.entry_point.read();
-        let q_guard = self.quantizer.read();
+
+        // Snapshot data to avoid holding RwLock guards across await points (Clippy)
+        let (node_records_snapshot, entry_point_val, q_snapshot, node_count, last_tx_id) = {
+            let nodes = self.nodes.read();
+            let entry_point = self.entry_point.read();
+            let q_guard = self.quantizer.read();
+
+            let node_count = nodes.len();
+            let mut records = Vec::with_capacity(node_count);
+            for node in nodes.iter() {
+                records.push(node.clone());
+            }
+
+            let q_snapshot = q_guard.as_ref().cloned();
+            let ep = entry_point.map(|i| i as i64).unwrap_or(-1);
+            let tx = self.last_tx_id.load(Ordering::SeqCst);
+
+            (records, ep, q_snapshot, node_count, tx)
+        };
 
         let file = tokio::fs::File::create(path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
         let mut writer = tokio::io::BufWriter::new(file);
 
-        let node_count = nodes.len();
         let nodes_offset = crate::persistence::HnswHeader::SIZE as u64;
-        let vectors_offset =
+        let _vectors_offset =
             nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
 
-        let (q_min, q_max) = if let Some(q) = q_guard.as_ref() {
+        let (q_min, q_max) = if let Some(q) = q_snapshot.as_ref() {
             (q.min, q.max)
         } else {
             (0.0, 0.0)
         };
+
+        let nodes_offset = crate::persistence::HnswHeader::SIZE as u64;
+        let vectors_offset =
+            nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
 
         // Initial header
         let mut header = crate::persistence::HnswHeader {
@@ -270,10 +289,10 @@ impl HnswIndex {
             q_min,
             q_max,
             node_count: node_count as u64,
-            entry_point: entry_point.map(|i| i as i64).unwrap_or(-1),
+            entry_point: entry_point_val,
             nodes_offset,
             connections_offset: 0,
-            last_tx_id: self.last_tx_id.load(Ordering::SeqCst),
+            last_tx_id,
         };
 
         // 1. Placeholder Header
@@ -301,7 +320,7 @@ impl HnswIndex {
 
         // 3. Vectors Block
         let mut current_pos = vectors_offset;
-        for (i, node) in nodes.iter().enumerate() {
+        for (i, node) in node_records_snapshot.iter().enumerate() {
             node_records[i].doc_id = node.doc_id.inner();
             node_records[i].max_layer = node.connections.len().saturating_sub(1) as u8;
             node_records[i].vector_offset = current_pos;
@@ -318,7 +337,7 @@ impl HnswIndex {
                 }
                 VectorData::U8(v) => {
                     writer
-                        .write_all(v)
+                        .write_all(&v)
                         .await
                         .map_err(|e| MemFuseError::Storage(e.to_string()))?;
                     current_pos += v.len() as u64;
@@ -339,7 +358,7 @@ impl HnswIndex {
         }
 
         let mut conn_pos = connections_offset;
-        for (i, node) in nodes.iter().enumerate() {
+        for (i, node) in node_records_snapshot.iter().enumerate() {
             node_records[i].connections_offset = conn_pos;
             let num_layers = node.connections.len() as u8;
             writer

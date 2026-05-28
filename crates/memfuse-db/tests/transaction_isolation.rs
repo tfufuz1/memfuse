@@ -109,7 +109,7 @@ async fn test_concurrent_rollback_contention() {
 
     let mut committed_count = 0;
     for task in tasks {
-        if task.await.unwrap() {
+        if task.await.unwrap() { // unwrap allowed (AGENT:08)
             // unwrap allowed (AGENT:08)
             committed_count += 1;
         }

@@ -1011,7 +1011,7 @@ mod tests {
             let tx3 = TxId::new(3);
             storage.put(tx3, b"k3", b"v3").await.unwrap(); // unwrap allowed (AGENT:08)
             storage.commit(tx3).await.unwrap(); // unwrap allowed (AGENT:08)
-            assert_eq!(storage.get(b"k3").await.unwrap(), Some(b"v3".to_vec()));
+            assert_eq!(storage.get(b"k3").await.unwrap(), Some(b"v3".to_vec())); // unwrap allowed (AGENT:08)
             // unwrap allowed (AGENT:08)
         }
     }

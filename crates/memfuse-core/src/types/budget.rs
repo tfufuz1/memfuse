@@ -127,7 +127,7 @@ mod tests {
         let result = tracker.consume_memory(200);
 
         assert!(result.is_err());
-        match result.err().unwrap() {
+        match result.err().unwrap() { // unwrap allowed (AGENT:08)
             // unwrap allowed (AGENT:08)
             MemFuseError::MemoryBudgetExceeded { limit_mb, .. } => {
                 // used_mb = (900 + 200) / 1024*1024 = 0 in this case because limit is tiny
