@@ -20,8 +20,10 @@ pub fn score_term(tf: u32, doc_len: u32, avg_doc_len: f32, df: u32, n: u32) -> f
 
     // Standard IDF formula, ensure we don't return negative IDF
     // If a term appears in more than half of the documents, the raw IDF formula can be negative.
-    // We cap it at 0.01 to ensure terms always have some positive weight.
-    let idf = f32::max(0.01, ((n - df + 0.5) / (df + 0.5)).ln());
+    // We clamp the argument to ln() to at least 0.5 to prevent NaN/negative values before taking the log.
+    // We cap the final IDF at 0.01 to ensure terms always have some positive weight.
+    let idf_arg = f32::max(0.5, (n - df + 0.5) / (df + 0.5));
+    let idf = f32::max(0.01, idf_arg.ln());
 
     let norm_doc_len = if avg_doc_len > 0.0 {
         doc_len / avg_doc_len

@@ -13,6 +13,7 @@ use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
 };
+use tracing::instrument;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -82,8 +83,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 
     /// Appends and updates inverted index structures for a document.
-    // TODO(FIND-TXT-002): Fehlendes OpenTelemetry Tracing
-    // Annotieren mit #[instrument(skip(self, text))]
+    #[instrument(skip(self, text))]
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
@@ -213,6 +213,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 
     /// Deletes a document from the index.
+    #[instrument(skip(self))]
     pub async fn delete_document(&self, tx: TxId, doc_id: DocId) -> Result<()> {
         let dl_key = self.key_with_id("dl:", doc_id.inner());
         let fw_key = self.key_with_id("fw:", doc_id.inner());
@@ -292,8 +293,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 
     /// Searches the inverted index using BM25.
-    // TODO(FIND-TXT-002): Fehlendes OpenTelemetry Tracing
-    // Annotieren mit #[instrument(skip(self, query))]
+    #[instrument(skip(self, query))]
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
         let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
