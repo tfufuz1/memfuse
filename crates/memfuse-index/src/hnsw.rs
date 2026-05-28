@@ -236,156 +236,153 @@ impl HnswIndex {
     // DONE: Alle std::fs Aufrufe in save() sind in spawn_blocking gekapselt oder durch tokio::fs ersetzt.
     // SUCCESSOR: @JULES-13 — "HNSW I/O ist nun async-safe. Tech-Debt Audit fortsetzen."
     pub async fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
-        use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+        use tokio::io::AsyncWriteExt;
 
         let _lock = self.write_mutex.lock().await;
-        let nodes = self.nodes.read();
-        let entry_point = self.entry_point.read();
-        let q_guard = self.quantizer.read();
+
+        let (header_bytes, node_records_bytes, vectors_bytes, connections_bytes) = {
+            let nodes = self.nodes.read();
+            let entry_point = self.entry_point.read();
+            let q_guard = self.quantizer.read();
+
+            let node_count = nodes.len();
+            let nodes_offset = crate::persistence::HnswHeader::SIZE as u64;
+            let vectors_offset =
+                nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
+
+            let (q_min, q_max) = if let Some(q) = q_guard.as_ref() {
+                (q.min, q.max)
+            } else {
+                (0.0, 0.0)
+            };
+
+            let mut header = crate::persistence::HnswHeader {
+                magic: crate::persistence::HNSW_MAGIC,
+                version: crate::persistence::HNSW_VERSION,
+                dimension: self.config.dimension as u32,
+                m: self.config.m as u32,
+                metric: self.config.distance_metric as u8,
+                quantized: if self.config.quantize { 1 } else { 0 },
+                q_min,
+                q_max,
+                node_count: node_count as u64,
+                entry_point: entry_point.map(|i| i as i64).unwrap_or(-1),
+                nodes_offset,
+                connections_offset: 0,
+                last_tx_id: self.last_tx_id.load(Ordering::SeqCst),
+            };
+
+            let mut node_records = Vec::with_capacity(node_count);
+            for _ in 0..node_count {
+                node_records.push(crate::persistence::NodeRecord {
+                    doc_id: 0,
+                    max_layer: 0,
+                    vector_offset: 0,
+                    connections_offset: 0,
+                });
+            }
+
+            let mut vectors_buf = Vec::new();
+            let mut current_pos = vectors_offset;
+            for (i, node) in nodes.iter().enumerate() {
+                node_records[i].doc_id = node.doc_id.inner();
+                node_records[i].max_layer = node.connections.len().saturating_sub(1) as u8;
+                node_records[i].vector_offset = current_pos;
+
+                match &node.vector {
+                    VectorData::F32(v) => {
+                        // ANCHOR:SAFETY:RAW-PARTS-001 — Direct cast of f32 vector to bytes for serialization.
+                        // BEGRÜNDUNG: f32 ist Plain-Old-Data (POD). Das Casting der f32-Daten (4 Bytes pro Element)
+                        // ist sicher, da die Länge korrekt berechnet wird (v.len() * 4).
+                        // SAFETY: f32 is POD. Casting to bytes is safe with correct length.
+                        let bytes: &[u8] = unsafe {
+                            std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4)
+                        };
+                        vectors_buf.extend_from_slice(bytes);
+                        current_pos += bytes.len() as u64;
+                    }
+                    VectorData::U8(v) => {
+                        vectors_buf.extend_from_slice(v);
+                        current_pos += v.len() as u64;
+                    }
+                }
+            }
+
+            let connections_offset = (current_pos + 3) & !3;
+            header.connections_offset = connections_offset;
+
+            let mut connections_buf = Vec::new();
+            if connections_offset > current_pos {
+                connections_buf.resize((connections_offset - current_pos) as usize, 0);
+            }
+
+            let mut conn_pos = connections_offset;
+            for (i, node) in nodes.iter().enumerate() {
+                node_records[i].connections_offset = conn_pos;
+                let num_layers = node.connections.len() as u8;
+                connections_buf.push(num_layers);
+                conn_pos += 1;
+
+                for layer in 0..num_layers as usize {
+                    let conns = &node.connections[layer];
+                    let len = conns.len() as u32;
+                    connections_buf.extend_from_slice(&len.to_le_bytes());
+                    // ANCHOR:SAFETY:RAW-PARTS-002 — Direct cast of u32 connection slice to bytes.
+                    // BEGRÜNDUNG: u32 ist POD. Das Casting zu u8-Slices für I/O ist sicher,
+                    // da die Länge (conns.len() * 4) der physischen Repräsentation im Speicher entspricht.
+                    // SAFETY: u32 is POD. Casting to bytes for I/O is safe.
+                    let bytes: &[u8] = unsafe {
+                        std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
+                    };
+                    connections_buf.extend_from_slice(bytes);
+                    conn_pos += 4 + bytes.len() as u64;
+                }
+            }
+
+            let mut node_records_bytes = Vec::with_capacity(node_count * crate::persistence::NodeRecord::SIZE);
+            for record in &node_records {
+                node_records_bytes.extend_from_slice(&record.to_bytes());
+            }
+
+            (
+                header.to_bytes().to_vec(),
+                node_records_bytes,
+                vectors_buf,
+                connections_buf,
+            )
+        };
 
         let file = tokio::fs::File::create(path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
         let mut writer = tokio::io::BufWriter::new(file);
 
-        let node_count = nodes.len();
-        let nodes_offset = crate::persistence::HnswHeader::SIZE as u64;
-        let vectors_offset =
-            nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
-
-        let (q_min, q_max) = if let Some(q) = q_guard.as_ref() {
-            (q.min, q.max)
-        } else {
-            (0.0, 0.0)
-        };
-
-        // Initial header
-        let mut header = crate::persistence::HnswHeader {
-            magic: crate::persistence::HNSW_MAGIC,
-            version: crate::persistence::HNSW_VERSION,
-            dimension: self.config.dimension as u32,
-            m: self.config.m as u32,
-            metric: self.config.distance_metric as u8,
-            quantized: if self.config.quantize { 1 } else { 0 },
-            q_min,
-            q_max,
-            node_count: node_count as u64,
-            entry_point: entry_point.map(|i| i as i64).unwrap_or(-1),
-            nodes_offset,
-            connections_offset: 0,
-            last_tx_id: self.last_tx_id.load(Ordering::SeqCst),
-        };
-
-        // 1. Placeholder Header
         writer
-            .write_all(&header.to_bytes())
+            .write_all(&header_bytes)
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
 
-        // 2. Nodes Metadata (Placeholders)
-        let mut node_records = Vec::with_capacity(node_count);
-        for _ in 0..node_count {
-            node_records.push(crate::persistence::NodeRecord {
-                doc_id: 0,
-                max_layer: 0,
-                vector_offset: 0,
-                connections_offset: 0,
-            });
-        }
-        for record in &node_records {
-            writer
-                .write_all(&record.to_bytes())
-                .await
-                .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        }
+        writer
+            .write_all(&node_records_bytes)
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
 
-        // 3. Vectors Block
-        let mut current_pos = vectors_offset;
-        for (i, node) in nodes.iter().enumerate() {
-            node_records[i].doc_id = node.doc_id.inner();
-            node_records[i].max_layer = node.connections.len().saturating_sub(1) as u8;
-            node_records[i].vector_offset = current_pos;
+        writer
+            .write_all(&vectors_bytes)
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
 
-            match &node.vector {
-                VectorData::F32(v) => {
-                    let bytes: &[u8] =
-                        unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
-                    writer
-                        .write_all(bytes)
-                        .await
-                        .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                    current_pos += bytes.len() as u64;
-                }
-                VectorData::U8(v) => {
-                    writer
-                        .write_all(v)
-                        .await
-                        .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                    current_pos += v.len() as u64;
-                }
-            }
-        }
+        writer
+            .write_all(&connections_bytes)
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
 
-        // 4. Connections Block (Align to 4 bytes)
-        let connections_offset = (current_pos + 3) & !3;
-        header.connections_offset = connections_offset;
-
-        if connections_offset > current_pos {
-            let padding = [0u8; 4];
-            writer
-                .write_all(&padding[..(connections_offset - current_pos) as usize])
-                .await
-                .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        }
-
-        let mut conn_pos = connections_offset;
-        for (i, node) in nodes.iter().enumerate() {
-            node_records[i].connections_offset = conn_pos;
-            let num_layers = node.connections.len() as u8;
-            writer
-                .write_all(&[num_layers])
-                .await
-                .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-            conn_pos += 1;
-
-            for layer in 0..num_layers as usize {
-                let conns = &node.connections[layer];
-                let len = conns.len() as u32;
-                writer
-                    .write_all(&len.to_le_bytes())
-                    .await
-                    .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                let bytes: &[u8] = unsafe {
-                    std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
-                };
-                writer
-                    .write_all(bytes)
-                    .await
-                    .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                conn_pos += 4 + bytes.len() as u64;
-            }
-        }
         writer
             .flush()
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        let mut file = writer.into_inner();
+        let file = writer.into_inner();
 
-        // 5. Final Updates
-        file.seek(tokio::io::SeekFrom::Start(0))
-            .await
-            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        file.write_all(&header.to_bytes())
-            .await
-            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        file.seek(tokio::io::SeekFrom::Start(nodes_offset))
-            .await
-            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        for record in &node_records {
-            file.write_all(&record.to_bytes())
-                .await
-                .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        }
         file.sync_all()
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;

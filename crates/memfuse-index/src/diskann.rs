@@ -475,8 +475,10 @@ impl DiskAnnIndex {
     /// Loads the index from the configured path.
     pub async fn load(&mut self) -> Result<()> {
         let file = std::fs::File::open(&self.config.index_path).map_err(MemFuseError::Io)?;
-        // SAFETY: Mapping a file is safe as long as it's not truncated or modified while mapped.
-        // In MemFuse, file access is orchestrated by the storage layer with exclusive locks.
+        // ANCHOR:SAFETY:MMAP-002 — Memory-mapping of a DiskANN index file.
+        // BEGRÜNDUNG: Mapping einer Datei ist sicher, solange sie während des Mappings nicht gekürzt
+        // oder extern modifiziert wird. MemFuse garantiert dies durch File-Level-Locks.
+        // SAFETY: Mapping is safe as long as the file is not modified externally.
         let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? };
 
         let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;

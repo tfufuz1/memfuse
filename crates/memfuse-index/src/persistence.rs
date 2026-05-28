@@ -185,6 +185,10 @@ impl MmapIndex {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = std::fs::File::open(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
+        // ANCHOR:SAFETY:MMAP-001 — Memory-mapping of an HNSW persistent file.
+        // BEGRÜNDUNG: Mapping einer Datei ist sicher, solange sie während des Mappings nicht gekürzt
+        // oder extern modifiziert wird. MemFuse garantiert dies durch File-Level-Locks.
+        // SAFETY: Mapping is safe as long as the file is not modified externally.
         let mmap = unsafe { memmap2::Mmap::map(&file) }
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
