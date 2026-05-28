@@ -364,7 +364,7 @@ impl MemFuse {
         let col_idx_prefix = b"__col_idx:\x00";
         let entries = self.storage.scan_prefix(col_idx_prefix).await?;
 
-        let mut names = std::collections::HashSet::new();
+        let mut names = std::collections::HashSet::with_capacity(entries.len() + 1);
         names.insert("default".to_string());
 
         for (k, _) in entries {
