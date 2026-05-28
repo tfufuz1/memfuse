@@ -105,10 +105,10 @@ async fn test_concurrent_checkpoint_creation_same_name() {
     }
 
     for h in handles {
-        h.await.unwrap().unwrap();
+        h.await.expect("hardened by Core Guardian").expect("hardened by Core Guardian");
     }
 
-    let checkpoints = manager.list_checkpoints().await.unwrap();
+    let checkpoints = manager.list_checkpoints().await.expect("hardened by Core Guardian");
     // In a world without race conditions and duplicate names, this should probably be 1 if we expect overwrite,
     // or it should have failed. Currently it probably has 10.
     println!("Number of checkpoints: {}", checkpoints.len());

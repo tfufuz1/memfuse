@@ -219,6 +219,7 @@ impl Edge {
 }
 
 #[cfg(test)]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -240,8 +241,8 @@ mod tests {
     #[test]
     fn test_doc_id_determinism() {
         let key = "consistent_key";
-        let id1 = DocId::from_key(key).unwrap();
-        let id2 = DocId::from_key(key).unwrap();
+        let id1 = DocId::from_key(key).expect("test deterministic DocId generation");
+        let id2 = DocId::from_key(key).expect("test deterministic DocId generation");
         assert_eq!(id1, id2);
     }
 }

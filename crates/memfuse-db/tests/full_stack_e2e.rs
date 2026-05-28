@@ -56,9 +56,9 @@ async fn test_full_stack_document_lifecycle() {
         .expect("Hybrid search failed");
     assert!(!results.is_empty(), "Search results should not be empty");
     assert_eq!(results[0].id, "doc1");
-    assert!(results[0].metadata.as_ref().unwrap()["tags"]
+    assert!(results[0].metadata.as_ref().expect("hardened by Core Guardian")["tags"]
         .as_array()
-        .unwrap()
+        .expect("hardened by Core Guardian")
         .contains(&json!("systems")));
 
     // 3. Bidirectional Relationships
@@ -89,7 +89,7 @@ async fn test_full_stack_document_lifecycle() {
         .expect("Get failed")
         .expect("Doc1 not found");
     assert_eq!(
-        doc.metadata.unwrap()["tags"],
+        doc.metadata.expect("hardened by Core Guardian")["tags"],
         json!(["systems", "performance"])
     );
 

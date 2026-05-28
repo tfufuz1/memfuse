@@ -225,12 +225,13 @@ impl HybridQueryBuilder {
 }
 
 #[cfg(test)]
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_fusion_weights_valid() {
-        let w = FusionWeights::new(0.5, 0.5, 0.0, 0.0).expect("valid");
+        let w = FusionWeights::new(0.5, 0.5, 0.0, 0.0).expect("test valid weights");
         assert_eq!(w.vector(), 0.5);
         assert_eq!(w.text(), 0.5);
     }
@@ -253,10 +254,10 @@ mod tests {
             .with_vector_query(vec![0.1, 0.2])
             .with_k(5)
             .build()
-            .expect("build ok");
+            .expect("test hybrid query build");
 
-        assert_eq!(query.text_query.unwrap(), "test query");
-        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]);
+        assert_eq!(query.text_query.expect("test text query presence"), "test query");
+        assert_eq!(query.vector_query.expect("test vector query presence"), vec![0.1, 0.2]);
         assert_eq!(query.k, 5);
         // Default weights: vector=1.0, others=0.0
         assert_eq!(query.fusion_weights.vector(), 1.0);
@@ -264,18 +265,18 @@ mod tests {
 
     #[test]
     fn test_hybrid_query_builder_custom_weights() {
-        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap();
+        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).expect("test custom weights");
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())
             .build()
-            .unwrap();
+            .expect("hardened by Core Guardian");
 
         assert_eq!(query.fusion_weights, weights);
     }
 
     #[test]
     fn test_hybrid_query_builder_defaults() {
-        let query = HybridQuery::builder().build().unwrap();
+        let query = HybridQuery::builder().build().expect("test default build");
         assert_eq!(query.k, 10);
         assert_eq!(query.fusion_weights.vector(), 1.0);
         assert!(query.text_query.is_none());

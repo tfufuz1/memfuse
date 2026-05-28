@@ -126,6 +126,7 @@ impl Drop for SnapshotGuard {
 }
 
 #[cfg(test)]
+#[cfg(test)]
 mod tests {
     use super::*;
 

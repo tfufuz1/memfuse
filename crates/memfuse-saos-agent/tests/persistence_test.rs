@@ -32,7 +32,7 @@ impl AgentTool for IncrementTool {
 
 #[tokio::test]
 async fn test_agent_persistence_and_recovery() {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TempDir::new().expect("hardened by Core Guardian");
     let db_path = tmp.path();
 
     let config = MemFuseConfig {
@@ -40,8 +40,8 @@ async fn test_agent_persistence_and_recovery() {
         ..Default::default()
     };
 
-    let db = Arc::new(MemFuse::open_with_config(db_path, config).await.unwrap());
-    let state_collection = Arc::new(db.collection("agent_state").await.unwrap());
+    let db = Arc::new(MemFuse::open_with_config(db_path, config).await.expect("hardened by Core Guardian"));
+    let state_collection = Arc::new(db.collection("agent_state").await.expect("hardened by Core Guardian"));
 
     let mut graph = StateGraph::new();
     graph.add_node("start", "Start Node", NodeType::Start, None);
@@ -71,15 +71,15 @@ async fn test_agent_persistence_and_recovery() {
     engine.run(&mut ctx, &graph).await.expect("Run failed");
 
     assert_eq!(ctx.status, AgentStatus::Completed);
-    assert_eq!(ctx.memory.get("last_output").unwrap().as_u64().unwrap(), 1);
+    assert_eq!(ctx.memory.get("last_output").expect("hardened by Core Guardian").as_u64().expect("hardened by Core Guardian"), 1);
 
     // Verify persistence in DB
     let final_doc = state_collection
         .get("task:test_task_123:final")
         .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(final_doc.metadata.unwrap()["status"], "Completed");
+        .expect("hardened by Core Guardian")
+        .expect("hardened by Core Guardian");
+    assert_eq!(final_doc.metadata.expect("hardened by Core Guardian")["status"], "Completed");
 
     // Test Replay (Simulation of recovery)
     let db2 = Arc::new(
@@ -91,9 +91,9 @@ async fn test_agent_persistence_and_recovery() {
             },
         )
         .await
-        .unwrap(),
+        .expect("hardened by Core Guardian"),
     );
-    let state_collection2 = Arc::new(db2.collection("agent_state").await.unwrap());
+    let state_collection2 = Arc::new(db2.collection("agent_state").await.expect("hardened by Core Guardian"));
 
     let mut ctx2 = AgentContext::new(
         "test_task_123",

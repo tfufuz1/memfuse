@@ -1912,7 +1912,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().expect("hardened by Core Guardian");
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {

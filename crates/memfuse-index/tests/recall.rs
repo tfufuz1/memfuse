@@ -37,18 +37,18 @@ async fn test_recall_at_10_above_95() {
 
     let tx = TxId::new(1);
     for (i, v) in data.iter().enumerate() {
-        index_f32.insert(tx, DocId::new(i as u64), v).await.unwrap();
-        index_sq8.insert(tx, DocId::new(i as u64), v).await.unwrap();
+        index_f32.insert(tx, DocId::new(i as u64), v).await.expect("hardened by Core Guardian");
+        index_sq8.insert(tx, DocId::new(i as u64), v).await.expect("hardened by Core Guardian");
     }
-    index_f32.commit(tx).await.unwrap();
-    index_sq8.commit(tx).await.unwrap();
+    index_f32.commit(tx).await.expect("hardened by Core Guardian");
+    index_sq8.commit(tx).await.expect("hardened by Core Guardian");
 
     let mut total_recall = 0.0;
     for _ in 0..num_queries {
         let query: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
 
-        let results_f32 = index_f32.search(&query, 10).await.unwrap();
-        let results_sq8 = index_sq8.search(&query, 10).await.unwrap();
+        let results_f32 = index_f32.search(&query, 10).await.expect("hardened by Core Guardian");
+        let results_sq8 = index_sq8.search(&query, 10).await.expect("hardened by Core Guardian");
 
         let ground_truth: std::collections::HashSet<_> =
             results_f32.iter().map(|r| r.doc_id).collect();
