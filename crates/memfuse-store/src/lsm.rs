@@ -231,7 +231,7 @@ impl LsmStorage {
         ));
         let compaction_sstables = Arc::clone(&sstables);
         let compaction_path = config.path.clone();
-        // TODO(FIND-STO-001): Compaction-Engine CPU Starvation (WL-2)
+        // ANCHOR:FIX:FIND-STO-001 STATUS:REVIEW — Compaction-Engine CPU Starvation (WL-2) addressed in merge_sstables
         // Ensure the internal while-loop explicitly calls tokio::task::yield_now() between merges!
         tokio::spawn(async move {
             compaction_engine

@@ -236,7 +236,7 @@ impl CompactionEngine {
                 self.key == other.key && self.seq == other.seq
             }
         }
-        
+
         impl Eq for HeapItem {}
 
         impl PartialOrd for HeapItem {
@@ -279,6 +279,9 @@ impl CompactionEngine {
         let mut last_key: Option<bytes::Bytes> = None;
 
         while let Some(item) = heap.pop() {
+            // ANCHOR:FIX:FIND-STO-001 — Prevent CPU Starvation during merge
+            tokio::task::yield_now().await;
+
             // Deduplicate: only keep the first (highest seq_no) entry for each key
             let is_duplicate = if let Some(ref lk) = last_key {
                 lk == &item.key
