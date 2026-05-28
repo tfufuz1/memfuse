@@ -8,8 +8,13 @@ async fn test_collection_atomic_rollback_on_error() {
         dimension: 4,
         ..Default::default()
     };
-    let db = MemFuse::open_with_config(tmp.path(), config).await.expect("hardened by Core Guardian");
-    let col = db.collection("test_col").await.expect("hardened by Core Guardian");
+    let db = MemFuse::open_with_config(tmp.path(), config)
+        .await
+        .expect("hardened by Core Guardian");
+    let col = db
+        .collection("test_col")
+        .await
+        .expect("hardened by Core Guardian");
 
     // Valid insert
     col.insert("doc1", &[0.1, 0.2, 0.3, 0.4], None)
@@ -22,7 +27,10 @@ async fn test_collection_atomic_rollback_on_error() {
     assert!(res.is_err(), "Insert with NaN should fail");
 
     // Verify that the document was completely rolled back and is not in LSM store
-    let retrieved = col.get("doc_invalid").await.expect("hardened by Core Guardian");
+    let retrieved = col
+        .get("doc_invalid")
+        .await
+        .expect("hardened by Core Guardian");
     assert!(
         retrieved.is_none(),
         "doc_invalid should not exist in storage due to rollback"
@@ -33,7 +41,10 @@ async fn test_collection_atomic_rollback_on_error() {
     assert_eq!(stats.num_vectors, 1, "Only doc1 should be in the index");
 
     // Test search for phantom hits
-    let results = col.search(&[0.1, 0.2, 0.3, 0.4], 10).await.expect("hardened by Core Guardian");
+    let results = col
+        .search(&[0.1, 0.2, 0.3, 0.4], 10)
+        .await
+        .expect("hardened by Core Guardian");
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].id, "doc1");
 }

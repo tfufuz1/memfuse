@@ -54,14 +54,6 @@ impl<T: Clone> TxShard<T> {
 }
 
 /// Buffers index operations until commit or rollback.
-///
-/// Sharded into sub-buffers to reduce lock contention.
-///
-/// ### Locking Strategy
-/// Each shard is protected by an independent `parking_lot::RwLock`.
-/// Standard acquisition order: Read-lock for queries, Write-lock for mutations.
-/// To avoid deadlocks, cross-shard operations must never acquire more than
-/// one shard lock simultaneously.
 #[derive(Debug)]
 pub struct TxBuffer<T: Clone> {
     shards: Vec<RwLock<TxShard<T>>>,
@@ -85,10 +77,6 @@ impl<T: Clone> TxBuffer<T> {
 
     #[inline]
     fn shard_idx(&self, tx: TxId) -> usize {
-        // ANCHOR:SEC:CAST-001 — Modulo-Cast u64→usize (sicher wegen %-Operator)
-        // WP:WP-0.0 PRIO:5 NEEDS:NONE
-        // AGENT:10 DATE:2026-05-09 STATUS:DONE
-        // CREATED:2026-05-09 DEADLINE:NONE
         (tx.inner() % self.shards.len() as u64) as usize
     }
 
@@ -102,10 +90,6 @@ impl<T: Clone> TxBuffer<T> {
 
     /// Checks if the given transaction exists in the buffer.
     pub fn has_tx(&self, tx: TxId) -> bool {
-        // ANCHOR:SEC:SLICE-001 — Slice-Indexing — sicher weil shard_idx = modulo len()
-        // WP:WP-0.0 PRIO:5 NEEDS:NONE
-        // AGENT:10 DATE:2026-05-09 STATUS:DONE
-        // CREATED:2026-05-09 DEADLINE:NONE
         let shard = self.get_shard(tx);
         shard.read().ops.contains_key(&tx)
     }
@@ -120,9 +104,6 @@ impl<T: Clone> TxBuffer<T> {
     }
 
     /// Stages an operation for the given transaction.
-    ///
-    /// If the transaction has not been explicitly started with `begin`,
-    /// it will be implicitly created on the first `stage` call.
     pub fn stage(&self, tx: TxId, op: IndexOp<T>) {
         let mut shard = self.get_shard(tx).write();
         let entry = shard
@@ -135,7 +116,6 @@ impl<T: Clone> TxBuffer<T> {
     /// Validates that the transaction has pending operations.
     pub fn validate_pending_ops(&self, tx: TxId) -> Result<()> {
         let shard = self.get_shard(tx).read();
-
         if let Some((ops, _)) = shard.ops.get(&tx) {
             if ops.is_empty() {
                 return Err(MemFuseError::Transaction(format!(
@@ -148,9 +128,6 @@ impl<T: Clone> TxBuffer<T> {
     }
 
     /// Drains and returns all buffered operations for a transaction.
-    ///
-    /// Returns an empty vector if the transaction does not exist or has no operations.
-    /// This operation is atomic per shard.
     pub fn drain(&self, tx: TxId) -> Vec<IndexOp<T>> {
         let mut shard = self.get_shard(tx).write();
         shard
@@ -210,6 +187,7 @@ impl<T: Clone> Default for TxBuffer<T> {
         Self::new()
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,7 +197,6 @@ mod tests {
     fn test_tx_buffer_discard() {
         let buffer = TxBuffer::<String>::new_with_config(64, Duration::from_secs(30));
         let tx = TxId::new(1);
-
         buffer.stage(
             tx,
             IndexOp::Insert {
@@ -239,7 +216,6 @@ mod tests {
         ));
         let num_tx = 100;
         let ops_per_tx = 100;
-
         let mut handles = Vec::new();
         for t in 0..num_tx {
             let buffer = buffer.clone();
@@ -257,12 +233,9 @@ mod tests {
                 }
             }));
         }
-
         for h in handles {
-            // ANCHOR:DEBT:TXBUF-002 — intentional expect in tests
-            h.await.expect("task panicked"); // #[cfg(test)]
+            h.await.expect("test concurrent stage");
         }
-
         assert_eq!(buffer.len(), num_tx);
         for t in 0..num_tx {
             let tx = TxId::new(t as u64);

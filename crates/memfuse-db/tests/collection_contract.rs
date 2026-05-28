@@ -38,11 +38,21 @@ async fn test_collection_insert_many_atomic() {
 
     assert_eq!(col.len().await, 3);
     assert_eq!(
-        col.get("d1").await.expect("hardened by Core Guardian").expect("hardened by Core Guardian").metadata.expect("hardened by Core Guardian")["v"],
+        col.get("d1")
+            .await
+            .expect("hardened by Core Guardian")
+            .expect("hardened by Core Guardian")
+            .metadata
+            .expect("hardened by Core Guardian")["v"],
         1
     );
     assert_eq!(
-        col.get("d2").await.expect("hardened by Core Guardian").expect("hardened by Core Guardian").metadata.expect("hardened by Core Guardian")["v"],
+        col.get("d2")
+            .await
+            .expect("hardened by Core Guardian")
+            .expect("hardened by Core Guardian")
+            .metadata
+            .expect("hardened by Core Guardian")["v"],
         2
     );
 }
@@ -53,7 +63,9 @@ async fn test_collection_upsert_many() {
     let col = db.collection("upsert_test").await.expect("col");
 
     // 1. Initial insert
-    col.insert("d1", &[1.0, 0.0, 0.0], None).await.expect("hardened by Core Guardian");
+    col.insert("d1", &[1.0, 0.0, 0.0], None)
+        .await
+        .expect("hardened by Core Guardian");
 
     // 2. Upsert many (update d1, insert d2)
     let docs = vec![
@@ -72,8 +84,14 @@ async fn test_collection_upsert_many() {
     col.upsert_many(&docs).await.expect("upsert_many failed");
 
     assert_eq!(col.len().await, 2);
-    let d1 = col.get("d1").await.expect("hardened by Core Guardian").expect("hardened by Core Guardian");
-    assert!(d1.metadata.expect("hardened by Core Guardian")["updated"].as_bool().expect("hardened by Core Guardian"));
+    let d1 = col
+        .get("d1")
+        .await
+        .expect("hardened by Core Guardian")
+        .expect("hardened by Core Guardian");
+    assert!(d1.metadata.expect("hardened by Core Guardian")["updated"]
+        .as_bool()
+        .expect("hardened by Core Guardian"));
 }
 
 #[tokio::test]
@@ -83,7 +101,10 @@ async fn test_collection_scan_range_isolation() {
     let col_b = db.collection("col_b").await.expect("col_b");
 
     // Fill col_a
-    col_a.insert("apple", &[1.0, 0.0, 0.0], None).await.expect("hardened by Core Guardian");
+    col_a
+        .insert("apple", &[1.0, 0.0, 0.0], None)
+        .await
+        .expect("hardened by Core Guardian");
     col_a
         .insert("banana", &[0.0, 1.0, 0.0], None)
         .await
@@ -124,9 +145,15 @@ async fn test_collection_scan_prefix_isolation() {
     let (db, _tmp) = setup_db(3).await;
     let col = db.collection("prefix_test").await.expect("col");
 
-    col.insert("user/1", &[0.1, 0.0, 0.0], None).await.expect("hardened by Core Guardian");
-    col.insert("user/2", &[0.2, 0.0, 0.0], None).await.expect("hardened by Core Guardian");
-    col.insert("item/1", &[0.3, 0.0, 0.0], None).await.expect("hardened by Core Guardian");
+    col.insert("user/1", &[0.1, 0.0, 0.0], None)
+        .await
+        .expect("hardened by Core Guardian");
+    col.insert("user/2", &[0.2, 0.0, 0.0], None)
+        .await
+        .expect("hardened by Core Guardian");
+    col.insert("item/1", &[0.3, 0.0, 0.0], None)
+        .await
+        .expect("hardened by Core Guardian");
 
     let users = col.scan_prefix("user/").await.expect("scan_prefix");
     assert_eq!(users.len(), 2);

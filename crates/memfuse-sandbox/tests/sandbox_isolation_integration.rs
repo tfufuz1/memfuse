@@ -38,8 +38,14 @@ async fn test_sandbox_multiple_instances() {
     let budget = TokenBudget::new(10, 0);
 
     let wasm_bytes = dummy_wasm();
-    let res1 = s1.execute_isolated(&wasm_bytes, &budget).await.expect("hardened by Core Guardian");
-    let res2 = s2.execute_isolated(&wasm_bytes, &budget).await.expect("hardened by Core Guardian");
+    let res1 = s1
+        .execute_isolated(&wasm_bytes, &budget)
+        .await
+        .expect("hardened by Core Guardian");
+    let res2 = s2
+        .execute_isolated(&wasm_bytes, &budget)
+        .await
+        .expect("hardened by Core Guardian");
 
     assert_eq!(res1, res2);
 }

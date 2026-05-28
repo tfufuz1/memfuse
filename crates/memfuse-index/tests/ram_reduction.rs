@@ -33,8 +33,14 @@ async fn test_ram_reduction_4x() {
             .await
             .expect("hardened by Core Guardian");
     }
-    index_f32.commit(tx).await.expect("hardened by Core Guardian");
-    index_sq8.commit(tx).await.expect("hardened by Core Guardian");
+    index_f32
+        .commit(tx)
+        .await
+        .expect("hardened by Core Guardian");
+    index_sq8
+        .commit(tx)
+        .await
+        .expect("hardened by Core Guardian");
 
     let stats_f32 = index_f32.stats().await.expect("hardened by Core Guardian");
     let stats_sq8 = index_sq8.stats().await.expect("hardened by Core Guardian");

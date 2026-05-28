@@ -20,12 +20,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 /// Registry for active read snapshots.
-///
-/// ### Locking Strategy
-/// Uses a single `parking_lot::Mutex` to protect the map of active snapshots.
-/// Updates to `min_active_seqno` use atomic operations with Release/Acquire
-/// semantics to ensure visibility across threads without holding the lock
-/// during reads.
 #[derive(Debug)]
 pub struct SnapshotRegistry {
     active: Mutex<BTreeMap<u64, usize>>,
@@ -98,9 +92,6 @@ impl SnapshotRegistry {
     }
 
     fn update_min(&self, active: &BTreeMap<u64, usize>) {
-        // SAFETY: u64::MAX is the correct default when no snapshots are active.
-        // It allows the LSM compaction to garbage collect ALL tombstones, as
-        // all existing records will have seq_no < u64::MAX.
         let min = active.keys().next().copied().unwrap_or(u64::MAX);
         self.min_active_seqno.store(min, Ordering::Release);
     }
@@ -120,18 +111,14 @@ impl SnapshotGuard {
 
 impl Drop for SnapshotGuard {
     fn drop(&mut self) {
-        // Ignore error during drop as we can't panic or return result
         let _ = self.registry.release(self.seq_no);
     }
 }
 
 #[cfg(test)]
-#[cfg(test)]
 mod tests {
     use super::*;
 
-    // ANCHOR:AUDIT:FIXED — Snapshot-Registry Lifecycle verified by 5 unit tests.
-    // STATUS:DONE (Audited 2026-05-23)
     #[test]
     fn test_snapshot_registry_basic() {
         let registry = Arc::new(SnapshotRegistry::new());
@@ -151,9 +138,7 @@ mod tests {
         let _g1 = registry.register(200);
         let g2 = registry.register(100);
         let _g3 = registry.register(300);
-
         assert_eq!(registry.min_active_seqno(), 100);
-
         drop(g2);
         assert_eq!(registry.min_active_seqno(), 200);
     }
@@ -163,13 +148,10 @@ mod tests {
         let registry = Arc::new(SnapshotRegistry::new());
         registry.pin(50);
         assert_eq!(registry.min_active_seqno(), 50);
-
         let g = registry.register(100);
         assert_eq!(registry.min_active_seqno(), 50);
-
-        registry.unpin(50).expect("unpin ok");
+        registry.unpin(50).expect("test unpin");
         assert_eq!(registry.min_active_seqno(), 100);
-
         drop(g);
         assert_eq!(registry.min_active_seqno(), u64::MAX);
     }
@@ -177,10 +159,8 @@ mod tests {
     #[test]
     fn test_seq_no_tombstone_masking() {
         let registry = Arc::new(SnapshotRegistry::new());
-        // seq_no with tombstone bit set
         let seq = 100 | crate::types::TOMBSTONE_BIT;
         let guard = registry.register(seq);
-
         assert_eq!(guard.seq_no(), 100);
         assert_eq!(registry.min_active_seqno(), 100);
     }
@@ -190,12 +170,9 @@ mod tests {
         let registry = Arc::new(SnapshotRegistry::new());
         let g1 = registry.register(100);
         let g2 = registry.register(100);
-
         assert_eq!(registry.min_active_seqno(), 100);
-
         drop(g1);
         assert_eq!(registry.min_active_seqno(), 100);
-
         drop(g2);
         assert_eq!(registry.min_active_seqno(), u64::MAX);
     }

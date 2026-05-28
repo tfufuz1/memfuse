@@ -1,6 +1,3 @@
-//! Domain models for the MemFuse core including DocId, EntityId, and TxId.
-
-// ANCHOR:DOC: AGENT:01 STATUS:DONE PRIO:3
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -219,7 +216,6 @@ impl Edge {
 }
 
 #[cfg(test)]
-#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -241,8 +237,8 @@ mod tests {
     #[test]
     fn test_doc_id_determinism() {
         let key = "consistent_key";
-        let id1 = DocId::from_key(key).expect("test deterministic DocId generation");
-        let id2 = DocId::from_key(key).expect("test deterministic DocId generation");
+        let id1 = DocId::from_key(key).unwrap();
+        let id2 = DocId::from_key(key).unwrap();
         assert_eq!(id1, id2);
     }
 }

@@ -225,7 +225,6 @@ impl HybridQueryBuilder {
 }
 
 #[cfg(test)]
-#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -256,8 +255,14 @@ mod tests {
             .build()
             .expect("test hybrid query build");
 
-        assert_eq!(query.text_query.expect("test text query presence"), "test query");
-        assert_eq!(query.vector_query.expect("test vector query presence"), vec![0.1, 0.2]);
+        assert_eq!(
+            query.text_query.expect("test text query presence"),
+            "test query"
+        );
+        assert_eq!(
+            query.vector_query.expect("test vector query presence"),
+            vec![0.1, 0.2]
+        );
         assert_eq!(query.k, 5);
         // Default weights: vector=1.0, others=0.0
         assert_eq!(query.fusion_weights.vector(), 1.0);
@@ -269,7 +274,7 @@ mod tests {
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())
             .build()
-            .expect("hardened by Core Guardian");
+            .unwrap();
 
         assert_eq!(query.fusion_weights, weights);
     }

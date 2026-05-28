@@ -105,7 +105,6 @@ impl ResourceTracker {
 // ANCHOR:AUDIT:FIXED — Resource Tracker (Memory Budget & Backpressure) verified by 5 tests.
 // STATUS:DONE (Audited 2026-05-23)
 #[cfg(test)]
-#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -194,9 +193,7 @@ mod tests {
         );
 
         // Verify we can still consume memory (wrap would make memory_used > limit)
-        tracker
-            .consume_memory(500)
-            .expect("underflow safety check");
+        tracker.consume_memory(500).expect("underflow safety check");
         assert_eq!(tracker.memory_used(), 500);
     }
 }

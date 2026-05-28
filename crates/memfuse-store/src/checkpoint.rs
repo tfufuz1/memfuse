@@ -66,30 +66,78 @@ mod tests {
 
         // 1. Insert some data
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.expect("hardened by Core Guardian");
-        storage.commit(tx1).await.expect("hardened by Core Guardian");
+        storage
+            .put(tx1, b"key1", b"val1")
+            .await
+            .expect("hardened by Core Guardian");
+        storage
+            .commit(tx1)
+            .await
+            .expect("hardened by Core Guardian");
 
         let cp1 = checkpointer.create_checkpoint(tx1);
 
         // 2. Insert more data
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"key2", b"val2").await.expect("hardened by Core Guardian");
-        storage.commit(tx2).await.expect("hardened by Core Guardian");
+        storage
+            .put(tx2, b"key2", b"val2")
+            .await
+            .expect("hardened by Core Guardian");
+        storage
+            .commit(tx2)
+            .await
+            .expect("hardened by Core Guardian");
 
-        assert_eq!(storage.get(b"key1").await.expect("hardened by Core Guardian"), Some(b"val1".to_vec()));
-        assert_eq!(storage.get(b"key2").await.expect("hardened by Core Guardian"), Some(b"val2".to_vec()));
+        assert_eq!(
+            storage
+                .get(b"key1")
+                .await
+                .expect("hardened by Core Guardian"),
+            Some(b"val1".to_vec())
+        );
+        assert_eq!(
+            storage
+                .get(b"key2")
+                .await
+                .expect("hardened by Core Guardian"),
+            Some(b"val2".to_vec())
+        );
 
         // 3. Rollback to cp1
         checkpointer.rollback_to(&cp1).await.expect("rollback");
 
         // 4. Verify state
-        assert_eq!(storage.get(b"key1").await.expect("hardened by Core Guardian"), Some(b"val1".to_vec()));
-        assert_eq!(storage.get(b"key2").await.expect("hardened by Core Guardian"), None); // Should be gone!
+        assert_eq!(
+            storage
+                .get(b"key1")
+                .await
+                .expect("hardened by Core Guardian"),
+            Some(b"val1".to_vec())
+        );
+        assert_eq!(
+            storage
+                .get(b"key2")
+                .await
+                .expect("hardened by Core Guardian"),
+            None
+        ); // Should be gone!
 
         // 5. Verify we can still write and seq_no is correct
         let tx3 = TxId::new(3);
-        storage.put(tx3, b"key3", b"val3").await.expect("hardened by Core Guardian");
-        storage.commit(tx3).await.expect("hardened by Core Guardian");
-        assert_eq!(storage.get(b"key3").await.expect("hardened by Core Guardian"), Some(b"val3".to_vec()));
+        storage
+            .put(tx3, b"key3", b"val3")
+            .await
+            .expect("hardened by Core Guardian");
+        storage
+            .commit(tx3)
+            .await
+            .expect("hardened by Core Guardian");
+        assert_eq!(
+            storage
+                .get(b"key3")
+                .await
+                .expect("hardened by Core Guardian"),
+            Some(b"val3".to_vec())
+        );
     }
 }

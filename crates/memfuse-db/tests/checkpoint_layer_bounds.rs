@@ -108,14 +108,34 @@ async fn test_layer_001_fork_diverge_merge() {
             .expect("ins fork only");
 
         // Verifizieren der Divergenz
-        assert!(main_col.get("doc-main-only").await.expect("hardened by Core Guardian").is_some());
-        assert!(main_col.get("doc-fork-only").await.expect("hardened by Core Guardian").is_none());
+        assert!(main_col
+            .get("doc-main-only")
+            .await
+            .expect("hardened by Core Guardian")
+            .is_some());
+        assert!(main_col
+            .get("doc-fork-only")
+            .await
+            .expect("hardened by Core Guardian")
+            .is_none());
 
-        assert!(fork_col.get("doc-fork-only").await.expect("hardened by Core Guardian").is_some());
-        assert!(fork_col.get("doc-main-only").await.expect("hardened by Core Guardian").is_none());
+        assert!(fork_col
+            .get("doc-fork-only")
+            .await
+            .expect("hardened by Core Guardian")
+            .is_some());
+        assert!(fork_col
+            .get("doc-main-only")
+            .await
+            .expect("hardened by Core Guardian")
+            .is_none());
 
         // 5. "Merge" simulieren
-        let fork_doc = fork_col.get("doc-fork-only").await.expect("get").expect("hardened by Core Guardian");
+        let fork_doc = fork_col
+            .get("doc-fork-only")
+            .await
+            .expect("get")
+            .expect("hardened by Core Guardian");
         main_col
             .insert(&fork_doc.id, &[0.0, 0.0, 1.0, 1.0], fork_doc.metadata)
             .await
@@ -127,7 +147,10 @@ async fn test_layer_001_fork_diverge_merge() {
             .await
             .expect("get merged")
             .expect("hardened by Core Guardian");
-        assert_eq!(merged_doc.metadata.expect("hardened by Core Guardian")["origin"], "fork");
+        assert_eq!(
+            merged_doc.metadata.expect("hardened by Core Guardian")["origin"],
+            "fork"
+        );
 
         db.close().await.expect("close db");
     }

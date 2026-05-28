@@ -15,7 +15,11 @@ async fn setup_collection(
         path: path.to_path_buf(),
         ..Default::default()
     };
-    let storage = Arc::new(LsmStorage::new(lsm_config).await.expect("hardened by Core Guardian"));
+    let storage = Arc::new(
+        LsmStorage::new(lsm_config)
+            .await
+            .expect("hardened by Core Guardian"),
+    );
 
     let hnsw_config = HnswConfig {
         dimension: dim,
@@ -51,19 +55,36 @@ async fn test_manual_rollback() {
         .put(tx_id, b"manual_rollback", b"should be rolled back")
         .await
         .expect("hardened by Core Guardian");
-    index.insert(tx_id, doc_id, &embedding).await.expect("hardened by Core Guardian");
+    index
+        .insert(tx_id, doc_id, &embedding)
+        .await
+        .expect("hardened by Core Guardian");
 
     // Verify it's staged but not committed yet (isolation)
-    assert!(storage.get(b"manual_rollback").await.expect("hardened by Core Guardian").is_none());
-    let search_res = index.search(&embedding, 1).await.expect("hardened by Core Guardian");
+    assert!(storage
+        .get(b"manual_rollback")
+        .await
+        .expect("hardened by Core Guardian")
+        .is_none());
+    let search_res = index
+        .search(&embedding, 1)
+        .await
+        .expect("hardened by Core Guardian");
     assert!(search_res.is_empty());
 
     // Rollback
     db_tx.rollback().await.expect("hardened by Core Guardian");
 
     // Verify it's still not there
-    assert!(storage.get(b"manual_rollback").await.expect("hardened by Core Guardian").is_none());
-    let search_res = index.search(&embedding, 1).await.expect("hardened by Core Guardian");
+    assert!(storage
+        .get(b"manual_rollback")
+        .await
+        .expect("hardened by Core Guardian")
+        .is_none());
+    let search_res = index
+        .search(&embedding, 1)
+        .await
+        .expect("hardened by Core Guardian");
     assert!(search_res.is_empty());
 }
 
@@ -94,7 +115,10 @@ async fn test_concurrent_rollback_contention() {
                 .put(tx_id, id.as_bytes(), id.as_bytes())
                 .await
                 .expect("hardened by Core Guardian");
-            index.insert(tx_id, doc_id, &embedding).await.expect("hardened by Core Guardian");
+            index
+                .insert(tx_id, doc_id, &embedding)
+                .await
+                .expect("hardened by Core Guardian");
 
             // Randomly commit or rollback
             if i % 2 == 0 {
@@ -120,7 +144,10 @@ async fn test_concurrent_rollback_contention() {
     let mut found_count = 0;
     for i in 0..num_tasks {
         let id = format!("doc-{}", i);
-        let val = storage.get(id.as_bytes()).await.expect("hardened by Core Guardian");
+        let val = storage
+            .get(id.as_bytes())
+            .await
+            .expect("hardened by Core Guardian");
         if i % 2 == 0 {
             assert!(val.is_some(), "Doc {} should be committed", i);
             found_count += 1;
@@ -142,38 +169,67 @@ async fn test_snapshot_stability() {
         ..Default::default()
     };
     let (db, _tmp) = (
-        MemFuse::open_with_config(tmp.path(), config).await.expect("hardened by Core Guardian"),
+        MemFuse::open_with_config(tmp.path(), config)
+            .await
+            .expect("hardened by Core Guardian"),
         tmp,
     );
-    let col = db.collection("snapshot_test").await.expect("hardened by Core Guardian");
+    let col = db
+        .collection("snapshot_test")
+        .await
+        .expect("hardened by Core Guardian");
 
     // 1. Initial state
     col.insert("base", &[0.0, 0.0, 0.0], Some(json!({"v": 0})))
         .await
         .expect("hardened by Core Guardian");
 
-    let snap_seq = db.last_committed_seq().await.expect("hardened by Core Guardian");
+    let snap_seq = db
+        .last_committed_seq()
+        .await
+        .expect("hardened by Core Guardian");
 
     // 2. Modify "base" and insert "new" in a new transaction
     col.insert("base", &[1.0, 1.0, 1.0], Some(json!({"v": 1})))
         .await
         .expect("hardened by Core Guardian");
-    col.insert("new", &[0.5, 0.5, 0.5], None).await.expect("hardened by Core Guardian");
+    col.insert("new", &[0.5, 0.5, 0.5], None)
+        .await
+        .expect("hardened by Core Guardian");
 
-    let _latest_seq = db.last_committed_seq().await.expect("hardened by Core Guardian");
+    let _latest_seq = db
+        .last_committed_seq()
+        .await
+        .expect("hardened by Core Guardian");
 
     // 3. Read from snapshot
-    let base_snap = col.get_at_snapshot("base", snap_seq).await.expect("hardened by Core Guardian");
+    let base_snap = col
+        .get_at_snapshot("base", snap_seq)
+        .await
+        .expect("hardened by Core Guardian");
     let base_snap = base_snap.expect("Base doc missing in snapshot");
-    assert_eq!(base_snap.metadata.expect("hardened by Core Guardian")["v"], 0);
+    assert_eq!(
+        base_snap.metadata.expect("hardened by Core Guardian")["v"],
+        0
+    );
 
-    let new_snap = col.get_at_snapshot("new", snap_seq).await.expect("hardened by Core Guardian");
+    let new_snap = col
+        .get_at_snapshot("new", snap_seq)
+        .await
+        .expect("hardened by Core Guardian");
     assert!(
         new_snap.is_none(),
         "New doc should not be visible in old snapshot"
     );
 
     // 4. Read latest
-    let base_latest = col.get("base").await.expect("hardened by Core Guardian").expect("hardened by Core Guardian");
-    assert_eq!(base_latest.metadata.expect("hardened by Core Guardian")["v"], 1);
+    let base_latest = col
+        .get("base")
+        .await
+        .expect("hardened by Core Guardian")
+        .expect("hardened by Core Guardian");
+    assert_eq!(
+        base_latest.metadata.expect("hardened by Core Guardian")["v"],
+        1
+    );
 }

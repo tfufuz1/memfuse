@@ -129,13 +129,17 @@ impl BloomFilter {
                 "corrupted bloom filter: too short".into(),
             ));
         }
-        let num_hashes = u64::from_le_bytes(data[0..8].try_into().expect("hardened by Core Guardian")) as usize;
-        let num_bits = u64::from_le_bytes(data[8..16].try_into().expect("hardened by Core Guardian")) as usize;
+        let num_hashes =
+            u64::from_le_bytes(data[0..8].try_into().expect("hardened by Core Guardian")) as usize;
+        let num_bits =
+            u64::from_le_bytes(data[8..16].try_into().expect("hardened by Core Guardian")) as usize;
         let mut bits = Vec::with_capacity(num_bits / 64);
         let mut offset = 16;
         while offset + 8 <= data.len() {
             bits.push(u64::from_le_bytes(
-                data[offset..offset + 8].try_into().expect("hardened by Core Guardian"),
+                data[offset..offset + 8]
+                    .try_into()
+                    .expect("hardened by Core Guardian"),
             ));
             offset += 8;
         }
@@ -1574,8 +1578,11 @@ mod tests {
             // Actually, just writing a 12-byte trailer pointing to the index is enough.
             let data = tokio::fs::read(&old_sst_path).await.expect("read");
             let file_size = data.len();
-            let index_off =
-                u64::from_le_bytes(data[file_size - 12..file_size - 4].try_into().expect("hardened by Core Guardian"));
+            let index_off = u64::from_le_bytes(
+                data[file_size - 12..file_size - 4]
+                    .try_into()
+                    .expect("hardened by Core Guardian"),
+            );
 
             let mut new_data = data[0..file_size - 20].to_vec(); // remove new trailer and bloom
                                                                  // index likely ends at bloom_off. Let's just use the index_off we found.

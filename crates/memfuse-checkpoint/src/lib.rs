@@ -367,7 +367,11 @@ mod tests {
         assert!(storage.pinned.lock().contains(&100));
 
         // Verify it exists in manager
-        let retrieved = manager.get_checkpoint("test_cp").await.expect("hardened by Core Guardian").expect("hardened by Core Guardian");
+        let retrieved = manager
+            .get_checkpoint("test_cp")
+            .await
+            .expect("hardened by Core Guardian")
+            .expect("hardened by Core Guardian");
         assert_eq!(retrieved, meta);
     }
 
@@ -382,7 +386,11 @@ mod tests {
             .await
             .expect("hardened by Core Guardian");
 
-        let retrieved = manager.get_checkpoint("cp1").await.expect("hardened by Core Guardian").expect("hardened by Core Guardian");
+        let retrieved = manager
+            .get_checkpoint("cp1")
+            .await
+            .expect("hardened by Core Guardian")
+            .expect("hardened by Core Guardian");
         assert_eq!(retrieved.metadata, metadata);
     }
 
@@ -404,7 +412,10 @@ mod tests {
             .await
             .expect("hardened by Core Guardian");
 
-        let list = manager.list_checkpoints().await.expect("hardened by Core Guardian");
+        let list = manager
+            .list_checkpoints()
+            .await
+            .expect("hardened by Core Guardian");
         assert_eq!(list.len(), 3);
         assert_eq!(list[0].name, "cp1");
         assert_eq!(list[1].name, "cp2");
@@ -423,7 +434,10 @@ mod tests {
 
         // New manager sharing the same storage
         let manager2 = PersistentCheckpointStore::new(storage.clone());
-        let list = manager2.list_checkpoints().await.expect("hardened by Core Guardian");
+        let list = manager2
+            .list_checkpoints()
+            .await
+            .expect("hardened by Core Guardian");
 
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "persist_me");
@@ -459,10 +473,16 @@ mod tests {
         }
 
         for handle in handles {
-            handle.await.expect("hardened by Core Guardian").expect("hardened by Core Guardian");
+            handle
+                .await
+                .expect("hardened by Core Guardian")
+                .expect("hardened by Core Guardian");
         }
 
-        let list = store.list_checkpoints().await.expect("hardened by Core Guardian");
+        let list = store
+            .list_checkpoints()
+            .await
+            .expect("hardened by Core Guardian");
         // 25 unique + 1 shared = 26 checkpoints
         assert_eq!(list.len(), 26);
 
@@ -575,7 +595,10 @@ mod tests {
         }
 
         // Delete one
-        store.drop_checkpoint("cp_0").await.expect("hardened by Core Guardian");
+        store
+            .drop_checkpoint("cp_0")
+            .await
+            .expect("hardened by Core Guardian");
 
         // Verify ALL observed TxIds are in the reserved internal range
         let observed = storage.observed_tx_ids.lock().clone();
