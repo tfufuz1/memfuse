@@ -360,15 +360,15 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(EntityId::new(1), "A", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed (AGENT:09)
         graph
             .add_entity(tx, Entity::new(EntityId::new(2), "B", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed (AGENT:09)
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "E"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed (AGENT:09)
 
         {
             let inner = graph.inner.read();
@@ -416,19 +416,19 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(EntityId::new(1), "A", "N"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed (AGENT:09)
         graph
             .add_entity(tx, Entity::new(EntityId::new(2), "B", "N"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed (AGENT:09)
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "E"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed (AGENT:09)
         graph
             .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(1), "E"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed (AGENT:09)
 
         let results = graph.traverse(EntityId::new(1), 5).await.expect("traverse");
         assert_eq!(results.len(), 1);
