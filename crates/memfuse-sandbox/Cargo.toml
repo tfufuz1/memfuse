@@ -8,7 +8,7 @@ description = "WASM sandbox for secure agent tool execution in MemFuse"
 
 [dependencies]
 async-trait.workspace = true
-memfuse-core = { version = "0.1.0", path = "../memfuse-core" }
+memfuse-core = { workspace = true }
 wasmtime = "20.0"
 
 [dev-dependencies]
