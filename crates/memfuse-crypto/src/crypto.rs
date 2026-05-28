@@ -2,6 +2,8 @@
 //!
 //! Implements AES-256-GCM encryption and HKDF-SHA256 key derivation.
 
+// ANCHOR:SEC: AGENT:10 PRIO:2 STATUS:REVIEW
+// PARTIAL: Extracted hardcoded HKDF Salt to constant HKDF_SALT.
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
@@ -9,6 +11,8 @@ use aes_gcm::{
 use hkdf::Hkdf;
 use memfuse_core::{MemFuseError, Result};
 use sha2::Sha256;
+
+const HKDF_SALT: &[u8] = b"memfuse-encryption-salt-v1";
 
 /// Manager for encryption keys and block encryption.
 pub struct KeyManager {
@@ -28,8 +32,7 @@ impl KeyManager {
     pub fn try_new(passphrase: &str) -> Result<Self> {
         // TODO(FIND-CRY-001): Hardcoded HKDF Salt!
         // Move salt to MemFuseConfig or generate randomly per instance to prevent rainbow table attacks.
-        let salt = b"memfuse-encryption-salt-v1";
-        let hk = Hkdf::<Sha256>::new(Some(salt), passphrase.as_bytes());
+        let hk = Hkdf::<Sha256>::new(Some(HKDF_SALT), passphrase.as_bytes());
         let mut key = [0u8; 32];
         hk.expand(b"memfuse-aes-256-gcm-key", &mut key)
             .map_err(|e| MemFuseError::Storage(format!("HKDF expansion failed: {}", e)))?;
@@ -41,8 +44,7 @@ impl KeyManager {
     pub fn integrity_key(&self) -> Result<[u8; 32]> {
         // TODO(FIND-CRY-001): Hardcoded HKDF Salt!
         // Move salt to MemFuseConfig or generate randomly per instance to prevent rainbow table attacks.
-        let salt = b"memfuse-encryption-salt-v1";
-        let hk = Hkdf::<Sha256>::new(Some(salt), &self.key);
+        let hk = Hkdf::<Sha256>::new(Some(HKDF_SALT), &self.key);
         let mut key = [0u8; 32];
         hk.expand(b"memfuse-hmac-sha256-key", &mut key)
             .map_err(|e| {
