@@ -631,7 +631,7 @@ impl<S: StorageEngine> Collection<S> {
             let oversample = (k * 10).min(total_docs).max(k);
             let scored_docs = self.index.search_filtered(query, oversample, None).await?;
 
-            let mut results = Vec::new();
+            let mut results = Vec::with_capacity(k);
             for sd in scored_docs {
                 let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
                 if let Some(bytes) = self.storage.get(&doc_key).await? {
