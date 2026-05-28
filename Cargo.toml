@@ -40,6 +40,7 @@ ahash = "0.8"
 itoa = "1"
 parking_lot = "0.12"
 roaring = "0.10"
+lru = "0.13"
 
 # Crypto & hashing
 blake3 = "1"
@@ -54,7 +55,6 @@ tracing = "0.1"
 # Testing
 tempfile = "3"
 wasmtime = "24"
-lru = "0.13"
 
 # Internal crates
 memfuse-core = { path = "crates/memfuse-core" }

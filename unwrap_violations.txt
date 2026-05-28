@@ -1,0 +1,78 @@
+crates/memfuse-checkpoint/src/lib.rs:330:            .unwrap();
+crates/memfuse-checkpoint/src/lib.rs:340:        let retrieved = manager.get_checkpoint("test_cp").await.unwrap().unwrap();
+crates/memfuse-checkpoint/src/lib.rs:353:            .unwrap();
+crates/memfuse-checkpoint/src/lib.rs:355:        let retrieved = manager.get_checkpoint("cp1").await.unwrap().unwrap();
+crates/memfuse-checkpoint/src/lib.rs:367:            .unwrap();
+crates/memfuse-checkpoint/src/lib.rs:371:            .unwrap();
+crates/memfuse-checkpoint/src/lib.rs:375:            .unwrap();
+crates/memfuse-checkpoint/src/lib.rs:377:        let list = manager.list_checkpoints().await.unwrap();
+crates/memfuse-checkpoint/src/lib.rs:392:            .unwrap();
+crates/memfuse-checkpoint/src/lib.rs:396:        let list = manager2.list_checkpoints().await.unwrap();
+crates/memfuse-checkpoint/src/lib.rs:432:            handle.await.unwrap().unwrap();
+crates/memfuse-checkpoint/src/lib.rs:435:        let list = store.list_checkpoints().await.unwrap();
+crates/memfuse-checkpoint/src/lib.rs:454:        let retrieved = registry.get(tx_id).unwrap();
+crates/memfuse-checkpoint/src/lib.rs:525:                .unwrap();
+crates/memfuse-checkpoint/src/lib.rs:529:        store.drop_checkpoint("cp_0").await.unwrap();
+crates/memfuse-core/src/types/budget.rs:123:        match result.err().unwrap() {
+crates/memfuse-core/src/types/budget.rs:180:            h.join().unwrap();
+crates/memfuse-core/src/types/domain.rs:240:        let id1 = DocId::from_key(key).unwrap();
+crates/memfuse-core/src/types/domain.rs:241:        let id2 = DocId::from_key(key).unwrap();
+crates/memfuse-core/src/types/saos.rs:255:        assert_eq!(query.text_query.unwrap(), "test query");
+crates/memfuse-core/src/types/saos.rs:256:        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]);
+crates/memfuse-core/src/types/saos.rs:264:        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap();
+crates/memfuse-core/src/types/saos.rs:268:            .unwrap();
+crates/memfuse-core/src/types/saos.rs:275:        let query = HybridQuery::builder().build().unwrap();
+crates/memfuse-crypto/src/wal_crypto.rs:121:        let mut hmac = WalHmac::new(key).unwrap();
+crates/memfuse-crypto/src/wal_crypto.rs:133:        let mut hmac1 = WalHmac::new(key).unwrap();
+crates/memfuse-crypto/src/wal_crypto.rs:153:        let mut hmac2 = WalHmac::new(key).unwrap();
+crates/memfuse-db/src/chunker.rs:249:        let m0 = chunks[0].metadata.as_ref().unwrap();
+crates/memfuse-db/src/chunker.rs:253:        let m1 = chunks[1].metadata.as_ref().unwrap();
+crates/memfuse-db/src/chunker.rs:257:        let m2 = chunks[2].metadata.as_ref().unwrap();
+crates/memfuse-db/src/chunker.rs:277:        let m = chunks[0].metadata.as_ref().unwrap();
+crates/memfuse-graph/src/csr.rs:363:            .unwrap();
+crates/memfuse-graph/src/csr.rs:367:            .unwrap();
+crates/memfuse-graph/src/csr.rs:371:            .unwrap();
+crates/memfuse-graph/src/csr.rs:419:            .unwrap();
+crates/memfuse-graph/src/csr.rs:423:            .unwrap();
+crates/memfuse-graph/src/csr.rs:427:            .unwrap();
+crates/memfuse-graph/src/csr.rs:431:            .unwrap();
+crates/memfuse-index/src/diskann.rs:765:        let temp_dir = tempfile::tempdir().unwrap();
+crates/memfuse-index/src/diskann.rs:793:        let temp_dir = tempfile::tempdir().unwrap();
+crates/memfuse-index/src/diskann.rs:827:        let temp_dir = tempfile::tempdir().unwrap();
+crates/memfuse-index/src/hnsw.rs:1918:        let temp_dir = tempfile::tempdir().unwrap();
+crates/memfuse-sandbox/src/lib.rs:102:        let sandbox = WasmSandbox::new(config).unwrap();
+crates/memfuse-sandbox/src/lib.rs:137:        let sandbox = WasmSandbox::new(config).unwrap();
+crates/memfuse-sandbox/src/lib.rs:164:        let sandbox = WasmSandbox::new(config).unwrap();
+crates/memfuse-store/src/checkpoint.rs:69:        storage.put(tx1, b"key1", b"val1").await.unwrap();
+crates/memfuse-store/src/checkpoint.rs:70:        storage.commit(tx1).await.unwrap();
+crates/memfuse-store/src/checkpoint.rs:76:        storage.put(tx2, b"key2", b"val2").await.unwrap();
+crates/memfuse-store/src/checkpoint.rs:77:        storage.commit(tx2).await.unwrap();
+crates/memfuse-store/src/checkpoint.rs:79:        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
+crates/memfuse-store/src/checkpoint.rs:80:        assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec()));
+crates/memfuse-store/src/checkpoint.rs:86:        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
+crates/memfuse-store/src/checkpoint.rs:87:        assert_eq!(storage.get(b"key2").await.unwrap(), None); // Should be gone!
+crates/memfuse-store/src/checkpoint.rs:91:        storage.put(tx3, b"key3", b"val3").await.unwrap();
+crates/memfuse-store/src/checkpoint.rs:92:        storage.commit(tx3).await.unwrap();
+crates/memfuse-store/src/checkpoint.rs:93:        assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec()));
+crates/memfuse-store/src/lsm.rs:1003:            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
+crates/memfuse-store/src/lsm.rs:1005:                storage.get(b"k2").await.unwrap(),
+crates/memfuse-store/src/lsm.rs:1012:            storage.put(tx3, b"k3", b"v3").await.unwrap();
+crates/memfuse-store/src/lsm.rs:1013:            storage.commit(tx3).await.unwrap();
+crates/memfuse-store/src/lsm.rs:1014:            assert_eq!(storage.get(b"k3").await.unwrap(), Some(b"v3".to_vec()));
+crates/memfuse-store/src/lsm.rs:982:            storage.put(tx1, b"k1", b"v1").await.unwrap();
+crates/memfuse-store/src/lsm.rs:983:            storage.commit(tx1).await.unwrap();
+crates/memfuse-store/src/lsm.rs:986:            storage.put(tx2, b"k2", b"v2").await.unwrap();
+crates/memfuse-store/src/lsm.rs:987:            storage.commit(tx2).await.unwrap();
+crates/memfuse-store/src/lsm.rs:990:            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
+crates/memfuse-store/src/lsm.rs:991:            assert_eq!(storage.get(b"k2").await.unwrap(), Some(b"v2".to_vec()));
+crates/memfuse-store/src/lsm.rs:996:            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
+crates/memfuse-store/src/lsm.rs:997:            assert_eq!(storage.get(b"k2").await.unwrap(), None);
+crates/memfuse-store/src/memtable.rs:155:        let (val, seq) = mt.get_at_seq(b"key1", 20).unwrap();
+crates/memfuse-store/src/memtable.rs:160:        let (val, seq) = mt.get_at_seq(b"key1", 25).unwrap();
+crates/memfuse-store/src/memtable.rs:165:        let (val, seq) = mt.get_at_seq(b"key1", 100).unwrap();
+crates/memfuse-store/src/sstable.rs:132:        let num_hashes = u64::from_le_bytes(data[0..8].try_into().unwrap()) as usize;
+crates/memfuse-store/src/sstable.rs:133:        let num_bits = u64::from_le_bytes(data[8..16].try_into().unwrap()) as usize;
+crates/memfuse-store/src/sstable.rs:138:                data[offset..offset + 8].try_into().unwrap(),
+crates/memfuse-store/src/sstable.rs:1540:                u64::from_le_bytes(data[file_size - 12..file_size - 4].try_into().unwrap());
+crates/memfuse-store/src/sstable.rs:468:                    .unwrap(),
+crates/memfuse-store/src/sstable.rs:474:                    .unwrap(),

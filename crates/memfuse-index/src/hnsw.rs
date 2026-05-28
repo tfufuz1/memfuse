@@ -303,6 +303,7 @@ impl HnswIndex {
             node_records[i].vector_offset = current_pos;
             match vector {
                 VectorData::F32(v) => {
+                    // ANCHOR:SAFETY: RAW-SLICE-001
                     let bytes: &[u8] =
                         unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
                     writer
@@ -344,6 +345,7 @@ impl HnswIndex {
                     .write_all(&len.to_le_bytes())
                     .await
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                // ANCHOR:SAFETY: RAW-SLICE-002
                 let bytes: &[u8] = unsafe {
                     std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
                 };
@@ -1897,7 +1899,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {
