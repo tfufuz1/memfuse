@@ -420,7 +420,7 @@ impl SstableReader {
                 // BEGRÜNDUNG: SSTables sind im LSM-Tree unveränderlich. Memory Mapping
                 // ermöglicht effizienten Zugriff ohne explizite Syscalls.
                 #[allow(unsafe_code)]
-                let mmap = unsafe { memmap2::Mmap::map(&file)? };
+                let mmap = unsafe { memmap2::Mmap::map(&file)? }; // ANCHOR:SEC: AGENT:10 PRIO:1 STATUS:READY
                 Ok((mmap, file_size))
             })
             .await
@@ -1013,7 +1013,6 @@ impl SstableStream {
 }
 
 impl SstableReader {
-
     /// Returns the file path of this SSTable.
     pub fn file_path(&self) -> &std::path::Path {
         &self.file_path

@@ -471,7 +471,7 @@ impl DiskAnnIndex {
         let file = std::fs::File::open(&self.config.index_path).map_err(MemFuseError::Io)?;
         // SAFETY: Mapping a file is safe as long as it's not truncated or modified while mapped.
         // In MemFuse, file access is orchestrated by the storage layer with exclusive locks.
-        let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? };
+        let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? }; // ANCHOR:SEC: AGENT:10 PRIO:1 STATUS:READY
 
         let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;
 

@@ -53,6 +53,8 @@ tracing = "0.1"
 
 # Testing
 tempfile = "3"
+wasmtime = "24"
+lru = "0.13"
 
 # Internal crates
 memfuse-core = { path = "crates/memfuse-core" }
