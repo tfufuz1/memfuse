@@ -172,8 +172,7 @@ impl CompactionEngine {
             let mut placed = false;
 
             for tier in &mut tiers {
-                let tier_idx = *tier.first()?;
-                let tier_size = ssts.get(tier_idx)?.metadata().file_size;
+                let tier_size = ssts[tier[0]].metadata().file_size;
                 let ratio = if size > tier_size {
                     size as f64 / tier_size.max(1) as f64
                 } else {
