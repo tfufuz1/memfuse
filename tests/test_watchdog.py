@@ -1,6 +1,8 @@
 import unittest
 import os
 import datetime
+import sys
+sys.path.append(os.getcwd())
 from scripts.watchdog import parse_anchors
 
 class TestWatchdog(unittest.TestCase):

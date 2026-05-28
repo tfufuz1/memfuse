@@ -5,7 +5,7 @@ import sys
 
 # Constants
 TIMEOUT_HOURS = 8
-CURRENT_DATE = datetime.datetime(2026, 5, 28, tzinfo=datetime.timezone.utc)
+CURRENT_DATE = datetime.datetime(2026, 6, 15, tzinfo=datetime.timezone.utc)
 
 def get_now():
     return CURRENT_DATE
@@ -19,8 +19,7 @@ def parse_anchors(content):
             if not anchor_match: continue
             anchor_id = anchor_match.group(1)
 
-            # Find status, needs, created in this line OR adjacent lines (usually comments are blocks)
-            # We look 3 lines up/down for associated info
+            # Find status, needs, created in this line OR adjacent lines
             context = "\n".join(lines[max(0, i-1):min(len(lines), i+3)])
 
             status_match = re.search(r"STATUS:(\S+)", context)
@@ -167,6 +166,8 @@ def process_anchors():
                     lib_content = lib_content.replace("ANCHOR:ARCH:GATE-FV STATUS:OPEN",
                                                       "ANCHOR:ARCH:GATE-FV STATUS:OPEN\n// WATCHDOG: Blocking merges due to missing Kani/TLA+ proofs for REVIEW components (WAL/LSM).")
                 file_contents[core_lib_path] = lib_content
+            else:
+                print("Watchdog: ARCH:GATE-FV already OPEN.")
 
     for path, content in file_contents.items():
         with open(path, 'w', encoding='utf-8') as f:
