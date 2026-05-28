@@ -339,7 +339,8 @@ impl HnswIndex {
                 }
             }
 
-            let mut node_records_bytes = Vec::with_capacity(node_count * crate::persistence::NodeRecord::SIZE);
+            let mut node_records_bytes =
+                Vec::with_capacity(node_count * crate::persistence::NodeRecord::SIZE);
             for record in &node_records {
                 node_records_bytes.extend_from_slice(&record.to_bytes());
             }
@@ -1919,7 +1920,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().expect("test environment");
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {
