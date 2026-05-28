@@ -1,4 +1,5 @@
 //! LSM-backed Inverted Index.
+// ANCHOR:SEC: AGENT:05 PRIO:1 STATUS:READY
 // ANCHOR:PERF:LATENCY-003 — Inverted Index Key-Gen & Cache
 // WP:WP-0.0 PRIO:2 NEEDS:NONE
 // AGENT:09 DATE:2026-05-19 STATUS:DONE
@@ -13,6 +14,7 @@ use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
 };
+use unicode_segmentation::UnicodeSegmentation;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -22,6 +24,8 @@ use std::sync::Arc;
 pub struct TextIndexMetadata {
     pub total_docs: u64,
     pub total_tokens: u64,
+    #[serde(default)]
+    pub total_orig_tokens: u64,
 }
 
 /// An inverted index stored in the LSM engine.
@@ -108,6 +112,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
+        let orig_len = text.unicode_words().count() as u32;
 
         let mut tfs = HashMap::with_capacity(tokens.len());
         for t in tokens {
@@ -116,7 +121,9 @@ impl<S: StorageEngine> InvertedIndex<S> {
 
         let dl_key = self.key_with_id("dl:", doc_id.inner());
         let fw_key = self.key_with_id("fw:", doc_id.inner());
+        let ol_key = self.key_with_id("ol:", doc_id.inner());
         let mut old_len = 0u32;
+        let mut old_orig_len = 0u32;
         let mut is_update = false;
 
         if let Some(bytes) = self.storage.get(&dl_key).await? {
@@ -128,6 +135,14 @@ impl<S: StorageEngine> InvertedIndex<S> {
                         .map_err(|_| MemFuseError::Storage("Invalid doc_len length".into()))?,
                 );
                 is_update = true;
+
+                if let Some(ol_bytes) = self.storage.get(&ol_key).await? {
+                    if ol_bytes.len() == 4 {
+                        old_orig_len = u32::from_le_bytes(ol_bytes.as_slice().try_into().map_err(
+                            |_| MemFuseError::Storage("Invalid ol_len length".into()),
+                        )?);
+                    }
+                }
 
                 // Remove from old posting lists if update
                 if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
@@ -141,20 +156,6 @@ impl<S: StorageEngine> InvertedIndex<S> {
             }
         }
 
-        // Store new document length
-        self.storage
-            .put(tx, &dl_key, &new_len.to_le_bytes())
-            .await?;
-
-        // Store forward index (unique terms)
-        let mut tfs_vec: Vec<(String, u32)> = tfs.into_iter().collect();
-        tfs_vec.sort_by(|a, b| a.0.cmp(&b.0));
-
-        let unique_terms: Vec<&str> = tfs_vec.iter().map(|(k, _)| k.as_str()).collect();
-        let fw_bytes = bincode::serialize(&unique_terms)
-            .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
-        self.storage.put(tx, &fw_key, &fw_bytes).await?;
-
         // Update Metadata (Consolidated)
         let meta_key = self.key("meta:stats");
         let mut meta = if let Some(bytes) = self.storage.get(&meta_key).await? {
@@ -165,19 +166,35 @@ impl<S: StorageEngine> InvertedIndex<S> {
         };
 
         meta.total_tokens = meta.total_tokens.saturating_sub(old_len as u64) + new_len as u64;
+        meta.total_orig_tokens =
+            meta.total_orig_tokens.saturating_sub(old_orig_len as u64) + orig_len as u64;
         if !is_update {
             meta.total_docs += 1;
         }
 
         let meta_bytes = bincode::serialize(&meta)
             .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
-        self.storage.put(tx, &meta_key, &meta_bytes).await?;
 
-        // Update posting lists (Individual keys: PL:term:doc_id)
+        // Prepare batch updates
+        let mut batch = Vec::new();
+        batch.push((dl_key, new_len.to_le_bytes().to_vec()));
+        batch.push((ol_key, orig_len.to_le_bytes().to_vec()));
+
+        let mut tfs_vec: Vec<(String, u32)> = tfs.into_iter().collect();
+        tfs_vec.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let unique_terms: Vec<&str> = tfs_vec.iter().map(|(k, _)| k.as_str()).collect();
+        let fw_bytes = bincode::serialize(&unique_terms)
+            .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
+        batch.push((fw_key, fw_bytes));
+        batch.push((meta_key, meta_bytes));
+
         for (term, tf) in tfs_vec {
             let pl_doc_key = self.key_with_term_doc(&term, doc_id);
-            self.storage.put(tx, &pl_doc_key, &tf.to_le_bytes()).await?;
+            batch.push((pl_doc_key, tf.to_le_bytes().to_vec()));
         }
+
+        self.storage.put_batch(tx, &batch).await?;
 
         Ok(())
     }
@@ -186,6 +203,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     pub async fn delete_document(&self, tx: TxId, doc_id: DocId) -> Result<()> {
         let dl_key = self.key_with_id("dl:", doc_id.inner());
         let fw_key = self.key_with_id("fw:", doc_id.inner());
+        let ol_key = self.key_with_id("ol:", doc_id.inner());
 
         let mut doc_len = 0u32;
         if let Some(bytes) = self.storage.get(&dl_key).await? {
@@ -201,7 +219,17 @@ impl<S: StorageEngine> InvertedIndex<S> {
             return Ok(());
         }
 
+        let mut orig_len = 0u32;
+        if let Some(ol_bytes) = self.storage.get(&ol_key).await? {
+            if ol_bytes.len() == 4 {
+                orig_len = u32::from_le_bytes(ol_bytes.as_slice().try_into().map_err(|_| {
+                    MemFuseError::Storage("Invalid ol_len length".into())
+                })?);
+            }
+        }
+
         self.storage.delete(tx, &dl_key).await?;
+        self.storage.delete(tx, &ol_key).await?;
 
         // Remove from posting lists using forward index
         if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
@@ -220,6 +248,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
             let mut meta = bincode::deserialize::<TextIndexMetadata>(&bytes)
                 .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
             meta.total_tokens = meta.total_tokens.saturating_sub(doc_len as u64);
+            meta.total_orig_tokens = meta.total_orig_tokens.saturating_sub(orig_len as u64);
             meta.total_docs = meta.total_docs.saturating_sub(1);
 
             let meta_bytes = bincode::serialize(&meta)
@@ -352,10 +381,17 @@ impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
             TextIndexMetadata::default()
         };
 
+        let token_reduction_ratio = if meta.total_orig_tokens > 0 {
+            meta.total_tokens as f32 / meta.total_orig_tokens as f32
+        } else {
+            1.0
+        };
+
         Ok(TextIndexStats {
             num_documents: meta.total_docs as usize,
             num_tokens: meta.total_tokens as usize,
-            memory_usage_bytes: 0,
+            memory_usage_bytes: meta.total_tokens as usize * 24, // heuristic
+            token_reduction_ratio,
         })
     }
 }
