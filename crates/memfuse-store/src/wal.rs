@@ -206,6 +206,8 @@ impl Wal {
     /// Appends an entry to the WAL.
     // ANCHOR:DEBT — WAL CRC fehlend. (WP-1.1)
     // AGENT:02 STATUS:READY
+    // ANCHOR:DEBT — WAL CRC fehlend. (WP-1.1)
+    // AGENT:02 STATUS:READY
     // TODO(FIND-STO-001): WAL CRC fehlend. (WP-1.1)
     // Add CRC32c or HMAC tagging to prevent stealth corruption during crash recoveries.
     pub async fn append(&self, entry: &WalEntry) -> Result<()> {

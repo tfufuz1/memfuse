@@ -233,6 +233,8 @@ impl LsmStorage {
         let compaction_path = config.path.clone();
         // ANCHOR:DEBT — Compaction-Engine CPU Starvation (WL-2)
         // AGENT:02 STATUS:READY
+        // ANCHOR:DEBT — Compaction-Engine CPU Starvation (WL-2)
+        // AGENT:02 STATUS:READY
         // TODO(FIND-STO-001): Compaction-Engine CPU Starvation (WL-2)
         // Ensure the internal while-loop explicitly calls tokio::task::yield_now() between merges!
         tokio::spawn(async move {
