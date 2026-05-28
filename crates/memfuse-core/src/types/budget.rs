@@ -1,3 +1,6 @@
+//! Resource budget and tracking for memory management.
+
+// ANCHOR:DOC: AGENT:01 STATUS:DONE PRIO:3
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.

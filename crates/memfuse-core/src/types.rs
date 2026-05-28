@@ -1,3 +1,6 @@
+//! Resource, domain, and search-related types for MemFuse.
+
+// ANCHOR:DOC: AGENT:01 STATUS:DONE PRIO:3
 pub mod budget;
 pub mod domain;
 pub mod filter;

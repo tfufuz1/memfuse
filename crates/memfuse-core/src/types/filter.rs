@@ -1,3 +1,6 @@
+//! Metadata filtering expressions for hybrid search queries.
+
+// ANCHOR:DOC: AGENT:01 STATUS:DONE PRIO:3
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.

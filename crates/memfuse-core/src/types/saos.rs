@@ -1,3 +1,6 @@
+//! Signal-based search and context management types (WP-6.x).
+
+// ANCHOR:DOC: AGENT:01 STATUS:DONE PRIO:3
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};

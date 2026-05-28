@@ -89,6 +89,9 @@ pub enum MemFuseError {
 
     #[error("Checkpoint not found")]
     CheckpointNotFound,
+
+    #[error("Graph error: {0}")]
+    Graph(String),
 }
 
 impl MemFuseError {

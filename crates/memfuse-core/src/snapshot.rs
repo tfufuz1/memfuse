@@ -6,11 +6,13 @@
 // ANCHOR:ARCH:MVCC-001 — Snapshot-Registry schützt Reads vor Compaction-GC.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
+// ANCHOR:DEBT: AGENT:01 STATUS:DONE PRIO:2
 // AUDIT:2026-05-23 STATUS:VERIFIED COVERAGE:100%
 // CREATED:2026-05-05 DEADLINE:NONE
 // INVARIANTE: Solange SnapshotGuard lebt → keine Tombstone-GC für seq >= guard.seq_no.
 // RAII-PATTERN: Drop deregistriert automatisch. unwrap_or(u64::MAX) ist KORREKT.
 
+use crate::error::{MemFuseError, Result};
 use crate::types::TOMBSTONE_BIT;
 use parking_lot::Mutex;
 use std::collections::BTreeMap;
@@ -73,20 +75,26 @@ impl SnapshotRegistry {
     }
 
     /// Removes a persistent pin.
-    pub fn unpin(&self, seq_no: u64) {
-        self.release(seq_no);
+    pub fn unpin(&self, seq_no: u64) -> Result<()> {
+        self.release(seq_no)
     }
 
-    pub(crate) fn release(&self, seq_no: u64) {
+    pub(crate) fn release(&self, seq_no: u64) -> Result<()> {
         let seq_no = seq_no & !TOMBSTONE_BIT;
         let mut active = self.active.lock();
         if let Some(count) = active.get_mut(&seq_no) {
-            *count -= 1;
+            *count = count.saturating_sub(1);
             if *count == 0 {
                 active.remove(&seq_no);
             }
+            self.update_min(&active);
+            Ok(())
+        } else {
+            Err(MemFuseError::Internal(format!(
+                "Attempted to release non-existent snapshot: {}",
+                seq_no
+            )))
         }
-        self.update_min(&active);
     }
 
     fn update_min(&self, active: &BTreeMap<u64, usize>) {
@@ -112,7 +120,8 @@ impl SnapshotGuard {
 
 impl Drop for SnapshotGuard {
     fn drop(&mut self) {
-        self.registry.release(self.seq_no);
+        // Ignore error during drop as we can't panic or return result
+        let _ = self.registry.release(self.seq_no);
     }
 }
 
@@ -157,7 +166,7 @@ mod tests {
         let g = registry.register(100);
         assert_eq!(registry.min_active_seqno(), 50);
 
-        registry.unpin(50);
+        registry.unpin(50).expect("unpin ok");
         assert_eq!(registry.min_active_seqno(), 100);
 
         drop(g);
