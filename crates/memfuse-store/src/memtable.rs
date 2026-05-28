@@ -187,17 +187,23 @@ mod tests {
         assert!(mt.get_at_seq(b"key1", 5).is_none());
 
         // Exact match
-        let (val, seq) = mt.get_at_seq(b"key1", 20).unwrap();
+        let (val, seq) = mt
+            .get_at_seq(b"key1", 20)
+            .expect("Test: key1 exists at seq 20");
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
 
         // Between versions
-        let (val, seq) = mt.get_at_seq(b"key1", 25).unwrap();
+        let (val, seq) = mt
+            .get_at_seq(b"key1", 25)
+            .expect("Test: key1 exists at seq 25");
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
 
         // Latest version
-        let (val, seq) = mt.get_at_seq(b"key1", 100).unwrap();
+        let (val, seq) = mt
+            .get_at_seq(b"key1", 100)
+            .expect("Test: key1 exists at seq 100");
         assert_eq!(val.as_ref(), b"v3");
         assert_eq!(seq, 30);
     }

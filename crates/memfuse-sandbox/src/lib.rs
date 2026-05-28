@@ -99,7 +99,7 @@ mod tests {
             timeout: Duration::from_secs(10),
             allow_network: false,
         };
-        let sandbox = WasmSandbox::new(config).unwrap();
+        let sandbox = WasmSandbox::new(config).expect("test setup");
         let budget = TokenBudget::new(100, 0);
 
         // WAT: loop calling memory.grow to exhaust memory limits.
@@ -134,7 +134,7 @@ mod tests {
             timeout: Duration::from_millis(50), // tiny timeout
             allow_network: false,
         };
-        let sandbox = WasmSandbox::new(config).unwrap();
+        let sandbox = WasmSandbox::new(config).expect("test setup");
         let budget = TokenBudget::new(100, 0);
 
         // WAT: tight infinite loop consuming CPU fuel.
@@ -161,7 +161,7 @@ mod tests {
     #[tokio::test]
     async fn test_sandbox_cannot_access_host_fs() {
         let config = SandboxConfig::default();
-        let sandbox = WasmSandbox::new(config).unwrap();
+        let sandbox = WasmSandbox::new(config).expect("test setup");
         let budget = TokenBudget::new(100, 0);
 
         // We simulate a WASI requirement without providing WASI to the linker.

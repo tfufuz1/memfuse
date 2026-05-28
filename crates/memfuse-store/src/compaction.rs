@@ -745,7 +745,8 @@ mod tests {
         };
         let engine = Arc::new(CompactionEngine::new(config, registry, bc));
         let sstables = Arc::new(tokio::sync::RwLock::new(Vec::new()));
-        let tmp = tempfile::TempDir::new().unwrap();
+        let tmp =
+            tempfile::TempDir::new().expect("Test environment setup: failed to create temp dir");
 
         let (tx, rx) = tokio::sync::watch::channel(false);
 
@@ -761,7 +762,7 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         // Cancel it
-        tx.send(true).unwrap();
+        tx.send(true).expect("Test: failed to signal termination");
 
         // Wait for it to finish
         let result = tokio::time::timeout(std::time::Duration::from_secs(1), handle).await;

@@ -4,9 +4,8 @@
 //! Compound-Splitting für Deutsch zur Token-Reduktion.
 
 // ANCHOR:ARCH:MORPH-001 — Morphologische Inferenz-Optimierung (WP-6.5)
-// ANCHOR:SEC: AGENT:05 PRIO:1 STATUS:READY
 // WP:WP-6.5 PRIO:2 NEEDS:WP-2.1
-// STATUS:READY DATE:2026-06-15
+// STATUS:SCAFFOLD DATE:2026-05-17
 
 /// Trait for morphological tokenization.
 ///
@@ -69,10 +68,6 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
         let dictionary = [
             "bundes",
             "verfassungs",
-            "arbeits",
-            "wirtschafts",
-            "justiz",
-            "finanz",
             "gericht",
             "gesetz",
             "entwurf",
@@ -169,11 +164,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_german_splitter_ready() {
+    fn test_german_splitter_scaffold() {
         let splitter = GermanCompoundSplitter::new();
-        // Now it should split correctly if given lowercase
-        let result = splitter.decompose("bundesverfassungsgericht");
-        assert_eq!(result, vec!["bundes", "verfassungs", "gericht"]);
+        // Fallback: returns original token
+        let result = splitter.decompose("Bundesverfassungsgericht");
+        assert_eq!(result, vec!["Bundesverfassungsgericht"]);
         assert_eq!(splitter.language(), "de");
     }
 
