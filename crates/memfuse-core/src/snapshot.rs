@@ -123,11 +123,9 @@ mod tests {
     fn test_snapshot_registry_basic() {
         let registry = Arc::new(SnapshotRegistry::new());
         assert_eq!(registry.min_active_seqno(), u64::MAX);
-
         let guard = registry.register(100);
         assert_eq!(guard.seq_no(), 100);
         assert_eq!(registry.min_active_seqno(), 100);
-
         drop(guard);
         assert_eq!(registry.min_active_seqno(), u64::MAX);
     }

@@ -116,7 +116,7 @@ mod tests {
         assert_eq!(tracker.memory_used(), 0);
         assert!(tracker.has_memory_capacity());
 
-        tracker.consume_memory(500).expect("test consume memory");
+        tracker.consume_memory(500).expect("should consume");
         assert_eq!(tracker.memory_used(), 500);
         assert!(tracker.has_memory_capacity()); // 50% < 95%
 
@@ -129,11 +129,11 @@ mod tests {
         let budget = ResourceBudget { memory_limit: 1000 };
         let tracker = ResourceTracker::new(budget);
 
-        tracker.consume_memory(900).expect("test consume memory");
+        tracker.consume_memory(900).expect("should consume");
         let result = tracker.consume_memory(200);
 
         assert!(result.is_err());
-        match result.err().expect("expected MemoryBudgetExceeded error") {
+        match result.err().expect("hardened by Core Guardian") {
             MemFuseError::MemoryBudgetExceeded { limit_mb, .. } => {
                 // used_mb = (900 + 200) / 1024*1024 = 0 in this case because limit is tiny
                 assert_eq!(limit_mb, 0);
@@ -147,10 +147,10 @@ mod tests {
         let budget = ResourceBudget { memory_limit: 1000 };
         let tracker = ResourceTracker::new(budget);
 
-        tracker.consume_memory(949).expect("test capacity");
+        tracker.consume_memory(949).expect("ok");
         assert!(tracker.has_memory_capacity()); // 94.9% < 95%
 
-        tracker.consume_memory(1).expect("test capacity exceeded");
+        tracker.consume_memory(1).expect("ok");
         assert!(!tracker.has_memory_capacity()); // 95% is not < 95%
     }
 
@@ -166,13 +166,13 @@ mod tests {
             let t = tracker.clone();
             handlers.push(std::thread::spawn(move || {
                 for _ in 0..100 {
-                    t.consume_memory(10).expect("concurrent consume");
+                    t.consume_memory(10).expect("consume");
                 }
             }));
         }
 
         for h in handlers {
-            h.join().expect("thread join failed");
+            h.join().expect("hardened by Core Guardian");
         }
 
         assert_eq!(tracker.memory_used(), 10000);
@@ -193,7 +193,9 @@ mod tests {
         );
 
         // Verify we can still consume memory (wrap would make memory_used > limit)
-        tracker.consume_memory(500).expect("underflow safety check");
+        tracker
+            .consume_memory(500)
+            .expect("Should still allow consumption after underflow");
         assert_eq!(tracker.memory_used(), 500);
     }
 }
