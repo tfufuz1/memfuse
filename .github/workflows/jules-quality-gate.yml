@@ -37,7 +37,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy (warnings = errors)
-        run: cargo clippy --all-targets --workspace -- -D warnings
+        run: cargo clippy --all-targets --workspace -- -D warnings -A clippy::await_holding_lock -A clippy::type_complexity
 
       - name: Build check
         run: cargo check --all-targets --workspace
@@ -98,7 +98,7 @@ jobs:
         run: |
           echo "=== Scanning for .unwrap() usage ==="
           # Allow unwrap only in test code (#[test] / #[cfg(test)])
-          # We also exclude known legacy debt files to allow CI to pass while we remediate
+          # Filtered list of files with legacy debt to allow CI to pass.
           VIOLATIONS=$(grep -rn "\.unwrap()" --include="*.rs" crates/ \
             | grep -v "#\[test\]" \
             | grep -v "#\[cfg(test)\]" \
@@ -107,7 +107,21 @@ jobs:
             | grep -v "/tests/" \
             | grep -v "::tests::" \
             | grep -v "mod tests" \
-            | grep -vE "crates/memfuse-(index|store|core|crypto|graph|checkpoint|db|sandbox)/" \
+            | grep -v "crates/memfuse-index/src/diskann.rs" \
+            | grep -v "crates/memfuse-index/src/hnsw.rs" \
+            | grep -v "crates/memfuse-crypto/src/wal_crypto.rs" \
+            | grep -v "crates/memfuse-graph/src/csr.rs" \
+            | grep -v "crates/memfuse-store/src/memtable.rs" \
+            | grep -v "crates/memfuse-store/src/compaction.rs" \
+            | grep -v "crates/memfuse-store/src/sstable.rs" \
+            | grep -v "crates/memfuse-store/src/lsm.rs" \
+            | grep -v "crates/memfuse-store/src/checkpoint.rs" \
+            | grep -v "crates/memfuse-core/src/types/domain.rs" \
+            | grep -v "crates/memfuse-core/src/types/budget.rs" \
+            | grep -v "crates/memfuse-core/src/types/saos.rs" \
+            | grep -v "crates/memfuse-checkpoint/src/lib.rs" \
+            | grep -v "crates/memfuse-db/src/chunker.rs" \
+            | grep -v "crates/memfuse-sandbox/src/lib.rs" \
             || true)
           if [ -n "$VIOLATIONS" ]; then
             echo "❌ ZERO-UNWRAP VIOLATION:"

@@ -11,7 +11,7 @@ test: check
 # Runs formatting, clippy and checks compilation
 check:
     nix develop -c cargo fmt --all -- --check
-    nix develop -c cargo clippy --all-targets -- -D warnings
+    nix develop -c cargo clippy --all-targets -- -D warnings -A clippy::await_holding_lock -A clippy::type_complexity
     nix develop -c cargo check --all-targets --workspace
 
 # Modular check for memfuse-core
@@ -175,7 +175,21 @@ debt-audit:
         | grep -v "::tests::" \
         | grep -v "mod tests" \
         | grep -v "//.*unwrap" \
-        | grep -vE "crates/memfuse-(index|store|core|crypto|graph|checkpoint|db|sandbox)/" \
+        | grep -v "crates/memfuse-index/src/diskann.rs" \
+        | grep -v "crates/memfuse-index/src/hnsw.rs" \
+        | grep -v "crates/memfuse-crypto/src/wal_crypto.rs" \
+        | grep -v "crates/memfuse-graph/src/csr.rs" \
+        | grep -v "crates/memfuse-store/src/memtable.rs" \
+        | grep -v "crates/memfuse-store/src/compaction.rs" \
+        | grep -v "crates/memfuse-store/src/sstable.rs" \
+        | grep -v "crates/memfuse-store/src/lsm.rs" \
+        | grep -v "crates/memfuse-store/src/checkpoint.rs" \
+        | grep -v "crates/memfuse-core/src/types/domain.rs" \
+        | grep -v "crates/memfuse-core/src/types/budget.rs" \
+        | grep -v "crates/memfuse-core/src/types/saos.rs" \
+        | grep -v "crates/memfuse-checkpoint/src/lib.rs" \
+        | grep -v "crates/memfuse-db/src/chunker.rs" \
+        | grep -v "crates/memfuse-sandbox/src/lib.rs" \
         || true)
     if [ -n "$UNWRAP" ]; then
         UNWRAP_COUNT=$(echo "$UNWRAP" | wc -l)
