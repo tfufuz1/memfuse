@@ -982,23 +982,23 @@ mod tests {
             storage
                 .put(tx1, b"k1", b"v1")
                 .await
-                .expect("unexpected error");
-            storage.commit(tx1).await.expect("unexpected error");
+                .expect("invariant violated: expected value to be present");
+            storage.commit(tx1).await.expect("invariant violated: expected value to be present");
 
             let tx2 = TxId::new(2);
             storage
                 .put(tx2, b"k2", b"v2")
                 .await
-                .expect("unexpected error");
-            storage.commit(tx2).await.expect("unexpected error");
+                .expect("invariant violated: expected value to be present");
+            storage.commit(tx2).await.expect("invariant violated: expected value to be present");
 
             // Verify both exist
             assert_eq!(
-                storage.get(b"k1").await.expect("unexpected error"),
+                storage.get(b"k1").await.expect("invariant violated: expected value to be present"),
                 Some(b"v1".to_vec())
             );
             assert_eq!(
-                storage.get(b"k2").await.expect("unexpected error"),
+                storage.get(b"k2").await.expect("invariant violated: expected value to be present"),
                 Some(b"v2".to_vec())
             );
 
@@ -1006,21 +1006,21 @@ mod tests {
             storage.rollback_to_tx(tx1).await.expect("rollback");
 
             assert_eq!(
-                storage.get(b"k1").await.expect("unexpected error"),
+                storage.get(b"k1").await.expect("invariant violated: expected value to be present"),
                 Some(b"v1".to_vec())
             );
-            assert_eq!(storage.get(b"k2").await.expect("unexpected error"), None);
+            assert_eq!(storage.get(b"k2").await.expect("invariant violated: expected value to be present"), None);
         }
 
         // Restart storage
         {
             let storage = LsmStorage::new(config).await.expect("restart storage");
             assert_eq!(
-                storage.get(b"k1").await.expect("unexpected error"),
+                storage.get(b"k1").await.expect("invariant violated: expected value to be present"),
                 Some(b"v1".to_vec())
             );
             assert_eq!(
-                storage.get(b"k2").await.expect("unexpected error"),
+                storage.get(b"k2").await.expect("invariant violated: expected value to be present"),
                 None,
                 "k2 should NOT be replayed after rollback"
             );
@@ -1030,10 +1030,10 @@ mod tests {
             storage
                 .put(tx3, b"k3", b"v3")
                 .await
-                .expect("unexpected error");
-            storage.commit(tx3).await.expect("unexpected error");
+                .expect("invariant violated: expected value to be present");
+            storage.commit(tx3).await.expect("invariant violated: expected value to be present");
             assert_eq!(
-                storage.get(b"k3").await.expect("unexpected error"),
+                storage.get(b"k3").await.expect("invariant violated: expected value to be present"),
                 Some(b"v3".to_vec())
             );
         }

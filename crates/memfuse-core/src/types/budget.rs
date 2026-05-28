@@ -177,7 +177,7 @@ mod tests {
         }
 
         for h in handlers {
-            h.join().expect("unexpected error");
+            h.join().expect("invariant violated: expected value to be present");
         }
 
         assert_eq!(tracker.memory_used(), 10000);

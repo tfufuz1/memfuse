@@ -237,8 +237,8 @@ mod tests {
     #[test]
     fn test_doc_id_determinism() {
         let key = "consistent_key";
-        let id1 = DocId::from_key(key).expect("unexpected error");
-        let id2 = DocId::from_key(key).expect("unexpected error");
+        let id1 = DocId::from_key(key).expect("invariant violated: expected value to be present");
+        let id2 = DocId::from_key(key).expect("invariant violated: expected value to be present");
         assert_eq!(id1, id2);
     }
 }

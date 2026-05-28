@@ -327,7 +327,7 @@ mod tests {
                 serde_json::json!({"state": "ok"}),
             )
             .await
-            .expect("unexpected error");
+            .expect("invariant violated: expected value to be present");
 
         assert_eq!(meta.name, "test_cp");
         assert_eq!(meta.seq_no, 100);
@@ -340,8 +340,8 @@ mod tests {
         let retrieved = manager
             .get_checkpoint("test_cp")
             .await
-            .expect("unexpected error")
-            .expect("unexpected error");
+            .expect("invariant violated: expected value to be present")
+            .expect("invariant violated: expected value to be present");
         assert_eq!(retrieved, meta);
     }
 
@@ -354,13 +354,13 @@ mod tests {
         manager
             .create_checkpoint("cp1", "c1", 10, TxId::new(1), metadata.clone())
             .await
-            .expect("unexpected error");
+            .expect("invariant violated: expected value to be present");
 
         let retrieved = manager
             .get_checkpoint("cp1")
             .await
-            .expect("unexpected error")
-            .expect("unexpected error");
+            .expect("invariant violated: expected value to be present")
+            .expect("invariant violated: expected value to be present");
         assert_eq!(retrieved.metadata, metadata);
     }
 
@@ -372,17 +372,17 @@ mod tests {
         manager
             .create_checkpoint("cp2", "c1", 20, TxId::new(2), serde_json::json!({}))
             .await
-            .expect("unexpected error");
+            .expect("invariant violated: expected value to be present");
         manager
             .create_checkpoint("cp1", "c1", 10, TxId::new(1), serde_json::json!({}))
             .await
-            .expect("unexpected error");
+            .expect("invariant violated: expected value to be present");
         manager
             .create_checkpoint("cp3", "c1", 30, TxId::new(3), serde_json::json!({}))
             .await
-            .expect("unexpected error");
+            .expect("invariant violated: expected value to be present");
 
-        let list = manager.list_checkpoints().await.expect("unexpected error");
+        let list = manager.list_checkpoints().await.expect("invariant violated: expected value to be present");
         assert_eq!(list.len(), 3);
         assert_eq!(list[0].name, "cp1");
         assert_eq!(list[1].name, "cp2");
@@ -397,11 +397,11 @@ mod tests {
         manager1
             .create_checkpoint("persist_me", "c1", 50, TxId::new(5), serde_json::json!({}))
             .await
-            .expect("unexpected error");
+            .expect("invariant violated: expected value to be present");
 
         // New manager sharing the same storage
         let manager2 = PersistentCheckpointStore::new(storage.clone());
-        let list = manager2.list_checkpoints().await.expect("unexpected error");
+        let list = manager2.list_checkpoints().await.expect("invariant violated: expected value to be present");
 
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "persist_me");
@@ -439,11 +439,11 @@ mod tests {
         for handle in handles {
             handle
                 .await
-                .expect("unexpected error")
-                .expect("unexpected error");
+                .expect("invariant violated: expected value to be present")
+                .expect("invariant violated: expected value to be present");
         }
 
-        let list = store.list_checkpoints().await.expect("unexpected error");
+        let list = store.list_checkpoints().await.expect("invariant violated: expected value to be present");
         // 25 unique + 1 shared = 26 checkpoints
         assert_eq!(list.len(), 26);
 
@@ -462,7 +462,7 @@ mod tests {
         };
 
         registry.register(tx_id, state.clone());
-        let retrieved = registry.get(tx_id).expect("unexpected error");
+        let retrieved = registry.get(tx_id).expect("invariant violated: expected value to be present");
         assert_eq!(retrieved.graph_hash, "hash");
     }
 
@@ -533,14 +533,14 @@ mod tests {
                     serde_json::json!({}),
                 )
                 .await
-                .expect("unexpected error");
+                .expect("invariant violated: expected value to be present");
         }
 
         // Delete one
         store
             .drop_checkpoint("cp_0")
             .await
-            .expect("unexpected error");
+            .expect("invariant violated: expected value to be present");
 
         // Verify ALL observed TxIds are in the reserved internal range
         let observed = storage.observed_tx_ids.lock().clone();

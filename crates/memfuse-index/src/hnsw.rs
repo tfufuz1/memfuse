@@ -117,8 +117,7 @@ pub enum VectorData {
 }
 
 /// A node in the HNSW graph.
-#[derive(Clone)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct HnswNode {
     doc_id: DocId,
     vector: VectorData,
@@ -252,7 +251,13 @@ impl HnswIndex {
                 (0.0, 0.0)
             };
 
-            (nodes.clone(), *entry_point, min, max, self.last_tx_id.load(Ordering::SeqCst))
+            (
+                nodes.clone(),
+                *entry_point,
+                min,
+                max,
+                self.last_tx_id.load(Ordering::SeqCst),
+            )
         };
 
         let file = tokio::fs::File::create(path)
@@ -1917,7 +1922,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().expect("unexpected error");
+        let temp_dir = tempfile::tempdir().expect("invariant violated: expected value to be present");
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {

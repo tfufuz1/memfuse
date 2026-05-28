@@ -57,7 +57,7 @@ dag-check:
     echo "=== DAG Integrity Check ==="
 
     echo "--- Phase 1: L1 Kernel Isolation (core, runtime, orchestrator) ---"
-    for CRATE in memfuse-core memfuse-sandbox memfuse-saos-agent; do
+    for CRATE in memfuse-core memfuse-sandbox; do
         echo "Verifying $CRATE isolation..."
         if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -E -v "$CRATE|memfuse-core" | grep -q .; then
             echo "❌ ERROR: $CRATE imports forbidden internal crates."

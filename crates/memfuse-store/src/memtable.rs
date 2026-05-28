@@ -152,17 +152,17 @@ mod tests {
         assert!(mt.get_at_seq(b"key1", 5).is_none());
 
         // Exact match
-        let (val, seq) = mt.get_at_seq(b"key1", 20).expect("unexpected error");
+        let (val, seq) = mt.get_at_seq(b"key1", 20).expect("invariant violated: expected value to be present");
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
 
         // Between versions
-        let (val, seq) = mt.get_at_seq(b"key1", 25).expect("unexpected error");
+        let (val, seq) = mt.get_at_seq(b"key1", 25).expect("invariant violated: expected value to be present");
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
 
         // Latest version
-        let (val, seq) = mt.get_at_seq(b"key1", 100).expect("unexpected error");
+        let (val, seq) = mt.get_at_seq(b"key1", 100).expect("invariant violated: expected value to be present");
         assert_eq!(val.as_ref(), b"v3");
         assert_eq!(seq, 30);
     }

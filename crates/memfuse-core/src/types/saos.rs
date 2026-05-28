@@ -252,9 +252,9 @@ mod tests {
             .build()
             .expect("build ok");
 
-        assert_eq!(query.text_query.expect("unexpected error"), "test query");
+        assert_eq!(query.text_query.expect("invariant violated: expected value to be present"), "test query");
         assert_eq!(
-            query.vector_query.expect("unexpected error"),
+            query.vector_query.expect("invariant violated: expected value to be present"),
             vec![0.1, 0.2]
         );
         assert_eq!(query.k, 5);
@@ -264,18 +264,18 @@ mod tests {
 
     #[test]
     fn test_hybrid_query_builder_custom_weights() {
-        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).expect("unexpected error");
+        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).expect("invariant violated: expected value to be present");
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())
             .build()
-            .expect("unexpected error");
+            .expect("invariant violated: expected value to be present");
 
         assert_eq!(query.fusion_weights, weights);
     }
 
     #[test]
     fn test_hybrid_query_builder_defaults() {
-        let query = HybridQuery::builder().build().expect("unexpected error");
+        let query = HybridQuery::builder().build().expect("invariant violated: expected value to be present");
         assert_eq!(query.k, 10);
         assert_eq!(query.fusion_weights.vector(), 1.0);
         assert!(query.text_query.is_none());
