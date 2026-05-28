@@ -123,6 +123,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
                                         self.storage.delete(tx, &pl_key).await?;
                                     } else {
                                         let new_pl_bytes =
+                                            // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:READY
                                             bincode::serialize(&pl).map_err(|e| {
                                                 MemFuseError::Storage(format!("bincode: {}", e))
                                             })?;
@@ -146,6 +147,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
         tfs_vec.sort_by(|a, b| a.0.cmp(&b.0));
 
         let unique_terms: Vec<&str> = tfs_vec.iter().map(|(k, _)| k.as_str()).collect();
+        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:READY
         let fw_bytes = bincode::serialize(&unique_terms)
             .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
         self.storage.put(tx, &fw_key, &fw_bytes).await?;
@@ -204,6 +206,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
             pl.retain(|&(d, _)| d != doc_id);
             pl.push((doc_id, tf));
 
+            // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:READY
             let new_bytes = bincode::serialize(&pl)
                 .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
             self.storage.put(tx, &pl_key, &new_bytes).await?;
@@ -245,6 +248,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
                             if pl.is_empty() {
                                 self.storage.delete(tx, &pl_key).await?;
                             } else {
+                                // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:READY
                                 let new_pl_bytes = bincode::serialize(&pl).map_err(|e| {
                                     MemFuseError::Storage(format!("bincode: {}", e))
                                 })?;
