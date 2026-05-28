@@ -129,17 +129,13 @@ impl BloomFilter {
                 "corrupted bloom filter: too short".into(),
             ));
         }
-        let num_hashes = u64::from_le_bytes(
-            data[0..8].try_into().unwrap(), // unwrap allowed (AGENT:09)
-        ) as usize;
-        let num_bits = u64::from_le_bytes(
-            data[8..16].try_into().unwrap(), // unwrap allowed (AGENT:09)
-        ) as usize;
+        let num_hashes = u64::from_le_bytes(data[0..8].try_into().unwrap()) as usize;
+        let num_bits = u64::from_le_bytes(data[8..16].try_into().unwrap()) as usize;
         let mut bits = Vec::with_capacity(num_bits / 64);
         let mut offset = 16;
         while offset + 8 <= data.len() {
             bits.push(u64::from_le_bytes(
-                data[offset..offset + 8].try_into().unwrap(), // unwrap allowed (AGENT:09)
+                data[offset..offset + 8].try_into().unwrap(),
             ));
             offset += 8;
         }
@@ -469,13 +465,13 @@ impl SstableReader {
                 mmap.get(trailer_20_pos..trailer_20_pos + 8)
                     .ok_or_else(|| MemFuseError::Storage("invalid trailer".into()))?
                     .try_into()
-                    .unwrap(), // unwrap allowed (AGENT:09)
+                    .unwrap(),
             );
             let index_off = u64::from_le_bytes(
                 mmap.get(trailer_20_pos + 8..trailer_20_pos + 16)
                     .ok_or_else(|| MemFuseError::Storage("invalid trailer".into()))?
                     .try_into()
-                    .unwrap(), // unwrap allowed (AGENT:09)
+                    .unwrap(),
             );
 
             // Heuristic: if index_off == index_offset (from -12 read) and bloom_off < trailer start, it has bloom
@@ -1539,9 +1535,8 @@ mod tests {
             // Actually, just writing a 12-byte trailer pointing to the index is enough.
             let data = tokio::fs::read(&old_sst_path).await.expect("read");
             let file_size = data.len();
-            let index_off = u64::from_le_bytes(
-                data[file_size - 12..file_size - 4].try_into().unwrap(), // unwrap allowed (AGENT:09)
-            );
+            let index_off =
+                u64::from_le_bytes(data[file_size - 12..file_size - 4].try_into().unwrap());
 
             let mut new_data = data[0..file_size - 20].to_vec(); // remove new trailer and bloom
                                                                  // index likely ends at bloom_off. Let's just use the index_off we found.

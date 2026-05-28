@@ -47,7 +47,6 @@ use roaring::RoaringTreemap;
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::Mutex;
 
@@ -236,6 +235,7 @@ impl HnswIndex {
     // TEST: grep "std::fs" crates/memfuse-index/src/hnsw.rs
     // DONE: Alle std::fs Aufrufe in save() sind in spawn_blocking gekapselt oder durch tokio::fs ersetzt.
     // SUCCESSOR: @JULES-13 — "HNSW I/O ist nun async-safe. Tech-Debt Audit fortsetzen."
+    #[allow(clippy::await_holding_lock)]
     pub async fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
@@ -1912,7 +1912,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed (AGENT:09)
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed (AGENT:09);
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {

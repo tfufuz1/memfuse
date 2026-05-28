@@ -152,17 +152,17 @@ mod tests {
         assert!(mt.get_at_seq(b"key1", 5).is_none());
 
         // Exact match
-        let (val, seq) = mt.get_at_seq(b"key1", 20).unwrap(); // unwrap allowed (AGENT:09)
+        let (val, seq) = mt.get_at_seq(b"key1", 20).unwrap();
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
 
         // Between versions
-        let (val, seq) = mt.get_at_seq(b"key1", 25).unwrap(); // unwrap allowed (AGENT:09)
+        let (val, seq) = mt.get_at_seq(b"key1", 25).unwrap();
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
 
         // Latest version
-        let (val, seq) = mt.get_at_seq(b"key1", 100).unwrap(); // unwrap allowed (AGENT:09)
+        let (val, seq) = mt.get_at_seq(b"key1", 100).unwrap();
         assert_eq!(val.as_ref(), b"v3");
         assert_eq!(seq, 30);
     }

@@ -246,15 +246,15 @@ mod tests {
 
         assert_eq!(chunks.len(), 3);
 
-        let m0 = chunks[0].metadata.as_ref().unwrap(); // unwrap allowed (AGENT:09)
+        let m0 = chunks[0].metadata.as_ref().unwrap();
         assert_eq!(m0["breadcrumb"], "# Title");
         assert_eq!(m0["heading_level"], 1);
 
-        let m1 = chunks[1].metadata.as_ref().unwrap(); // unwrap allowed (AGENT:09)
+        let m1 = chunks[1].metadata.as_ref().unwrap();
         assert_eq!(m1["breadcrumb"], "# Title > ## Section 1");
         assert_eq!(m1["heading_level"], 2);
 
-        let m2 = chunks[2].metadata.as_ref().unwrap(); // unwrap allowed (AGENT:09)
+        let m2 = chunks[2].metadata.as_ref().unwrap();
         assert_eq!(m2["breadcrumb"], "# Title > ## Section 1 > ### Sub 1");
         assert_eq!(m2["heading_level"], 3);
     }
@@ -274,7 +274,7 @@ mod tests {
         assert_eq!(chunks.len(), 1);
 
         // The merged chunk inherits the breadcrumb of the first sub-section.
-        let m = chunks[0].metadata.as_ref().unwrap(); // unwrap allowed (AGENT:09)
+        let m = chunks[0].metadata.as_ref().unwrap();
         assert_eq!(m["breadcrumb"], "# S1");
         assert!(chunks[0].content.contains("e"));
     }

@@ -178,7 +178,7 @@ mod tests {
         }
 
         for h in handlers {
-            h.join().unwrap(); // unwrap allowed (AGENT:09)
+            h.join().unwrap();
         }
 
         assert_eq!(tracker.memory_used(), 10000);

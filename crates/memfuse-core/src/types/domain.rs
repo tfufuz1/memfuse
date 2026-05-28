@@ -237,8 +237,8 @@ mod tests {
     #[test]
     fn test_doc_id_determinism() {
         let key = "consistent_key";
-        let id1 = DocId::from_key(key).unwrap(); // unwrap allowed (AGENT:09)
-        let id2 = DocId::from_key(key).unwrap(); // unwrap allowed (AGENT:09)
+        let id1 = DocId::from_key(key).unwrap();
+        let id2 = DocId::from_key(key).unwrap();
         assert_eq!(id1, id2);
     }
 }
