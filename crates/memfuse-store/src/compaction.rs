@@ -236,7 +236,7 @@ impl CompactionEngine {
                 self.key == other.key && self.seq == other.seq
             }
         }
-        
+
         impl Eq for HeapItem {}
 
         impl PartialOrd for HeapItem {

@@ -1013,7 +1013,6 @@ impl SstableStream {
 }
 
 impl SstableReader {
-
     /// Returns the file path of this SSTable.
     pub fn file_path(&self) -> &std::path::Path {
         &self.file_path

@@ -13,9 +13,9 @@ use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
 };
-use tracing::instrument;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::instrument;
 
 /// An inverted index stored in the LSM engine.
 /// An inverted index tied to a specific collection namespace.
@@ -312,6 +312,10 @@ impl<S: StorageEngine> InvertedIndex<S> {
                         .map_err(|_| MemFuseError::Storage("Invalid total_docs length".into()))?,
                 );
             }
+        }
+
+        if total_docs == 0 {
+            return Ok(Vec::new());
         }
 
         let total_tok_key = self.key("meta:total_tokens");
