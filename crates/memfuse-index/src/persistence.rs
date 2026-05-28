@@ -251,7 +251,9 @@ impl MmapIndex {
         let end = start + len * 4;
 
         if end > self.mmap.len() {
-            return Err(MemFuseError::Storage("Connection data out of bounds".into()));
+            return Err(MemFuseError::Storage(
+                "Connection data out of bounds".into(),
+            ));
         }
 
         let raw = &self.mmap[start..end];
