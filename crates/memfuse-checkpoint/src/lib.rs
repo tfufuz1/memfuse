@@ -174,7 +174,8 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
         let _guard = self.op_lock.lock().await;
 
         let entries = self.storage.scan_prefix(b"__checkpoint:").await?;
-        let mut checkpoints = Vec::new();
+        // ANCHOR:PERF:ALLOC-001 — Pre-allocation in reload_from_storage
+        let mut checkpoints = Vec::with_capacity(entries.len());
         for (_, value) in entries {
             let checkpoint: CheckpointMeta = serde_json::from_slice(&value)
                 .map_err(|e| memfuse_core::error::MemFuseError::Internal(e.to_string()))?;
@@ -502,6 +503,7 @@ mod tests {
             }
         }
 
+        #[async_trait::async_trait]
         impl StorageEngine for TrackingStorage {
             async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
                 self.inner.get(key).await

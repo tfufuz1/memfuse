@@ -117,7 +117,7 @@ pub enum VectorData {
 }
 
 /// A node in the HNSW graph.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct HnswNode {
     doc_id: DocId,
     vector: VectorData,
@@ -239,25 +239,30 @@ impl HnswIndex {
         use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
         let _lock = self.write_mutex.lock().await;
-        let nodes = self.nodes.read();
-        let entry_point = self.entry_point.read();
-        let q_guard = self.quantizer.read();
+
+        // Snapshot state to avoid holding locks across await points (Clippy/Deadlock protection)
+        let (nodes_snapshot, entry_point, q_min, q_max) = {
+            let nodes = self.nodes.read();
+            let ep = *self.entry_point.read();
+            let q_guard = self.quantizer.read();
+            let (min, max) = if let Some(q) = q_guard.as_ref() {
+                (q.min, q.max)
+            } else {
+                (0.0, 0.0)
+            };
+            // We only need to clone the metadata/structure if it's large, but here we clone for safety
+            (nodes.clone(), ep, min, max)
+        };
 
         let file = tokio::fs::File::create(path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
         let mut writer = tokio::io::BufWriter::new(file);
 
-        let node_count = nodes.len();
+        let node_count = nodes_snapshot.len();
         let nodes_offset = crate::persistence::HnswHeader::SIZE as u64;
         let vectors_offset =
             nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
-
-        let (q_min, q_max) = if let Some(q) = q_guard.as_ref() {
-            (q.min, q.max)
-        } else {
-            (0.0, 0.0)
-        };
 
         // Initial header
         let mut header = crate::persistence::HnswHeader {
@@ -301,7 +306,7 @@ impl HnswIndex {
 
         // 3. Vectors Block
         let mut current_pos = vectors_offset;
-        for (i, node) in nodes.iter().enumerate() {
+        for (i, node) in nodes_snapshot.iter().enumerate() {
             node_records[i].doc_id = node.doc_id.inner();
             node_records[i].max_layer = node.connections.len().saturating_sub(1) as u8;
             node_records[i].vector_offset = current_pos;
@@ -339,7 +344,7 @@ impl HnswIndex {
         }
 
         let mut conn_pos = connections_offset;
-        for (i, node) in nodes.iter().enumerate() {
+        for (i, node) in nodes_snapshot.iter().enumerate() {
             node_records[i].connections_offset = conn_pos;
             let num_layers = node.connections.len() as u8;
             writer
@@ -625,9 +630,10 @@ impl HnswIndexCore {
             mmap_node_count,
         };
 
-        let mut visited = AHashSet::new();
-        let mut candidates = BinaryHeap::new();
-        let mut results = BinaryHeap::new();
+        // ANCHOR:PERF:ALLOC-003 — Pre-allocation in HNSW Hotspots
+        let mut visited = AHashSet::with_capacity(ef);
+        let mut candidates = BinaryHeap::with_capacity(ef);
+        let mut results = BinaryHeap::with_capacity(ef);
 
         for &ep in entry_points {
             if visited.insert(ep) {
@@ -836,10 +842,22 @@ impl HnswIndexCore {
         let new_idx = {
             let mut nodes = self.nodes.write();
             let idx = nodes.len();
+
+            // ANCHOR:PERF:ALLOC-003 — Pre-allocation in HNSW Hotspots
+            let mut connections = Vec::with_capacity(new_layer + 1);
+            for l in 0..=new_layer {
+                let capacity = if l == 0 {
+                    2 * self.config.m
+                } else {
+                    self.config.m
+                };
+                connections.push(Vec::with_capacity(capacity));
+            }
+
             nodes.push(HnswNode {
                 doc_id: id,
                 vector: vector_data,
-                connections: vec![vec![]; new_layer + 1],
+                connections,
                 _max_layer: new_layer,
             });
             mmap_node_count + idx
