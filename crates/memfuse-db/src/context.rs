@@ -9,11 +9,12 @@
 
 // ANCHOR:INTEGRATION:WP-7.1-CHUNKER — Wire MarkdownChunker to ContextManager
 // WP:WP-7.1 PRIO:1 NEEDS:NONE
-// AGENT:@JULES-04 DATE:2026-05-27 STATUS:READY
+// AGENT:@JULES-04 DATE:2026-05-27 STATUS:DONE
 // TEST: cargo test -p memfuse-db
 // DONE: ContextManager nutzt MarkdownChunker zur Dokument-Zerlegung.
 // SUCCESSOR: @JULES-05 — "Chunking ist integriert. BM25 Re-Ranking auf Chunks validieren."
 
+use crate::chunker::MarkdownChunker;
 use memfuse_core::{ContextChunk, ContextWindow, Result, TokenBudget};
 
 /// Manages autonomous context preparation for LLM consumption.
@@ -27,6 +28,8 @@ pub struct ContextManager {
     budget: TokenBudget,
     /// Adaptive relevance threshold.
     relevance_threshold: f32,
+    /// Markdown chunker for document decomposition.
+    chunker: MarkdownChunker,
 }
 
 impl ContextManager {
@@ -35,12 +38,18 @@ impl ContextManager {
         Self {
             budget,
             relevance_threshold: 0.1,
+            chunker: MarkdownChunker::with_defaults(),
         }
     }
 
     /// Creates a ContextManager with default settings.
     pub fn with_defaults() -> Self {
         Self::new(TokenBudget::default())
+    }
+
+    /// Chunks a Markdown document into semantically coherent pieces.
+    pub fn chunk_document(&self, doc_id: memfuse_core::DocId, markdown: &str) -> Vec<ContextChunk> {
+        self.chunker.chunk(doc_id, markdown)
     }
 
     /// Sets the minimum relevance score for context inclusion.
@@ -176,5 +185,21 @@ mod tests {
     fn test_token_estimation() {
         let tokens = ContextManager::estimate_tokens("hello world foo bar");
         assert!(tokens >= 4); // At least 4 words
+    }
+
+    #[test]
+    fn test_context_manager_chunking() {
+        let mgr = ContextManager::with_defaults();
+        // Create two sections that are large enough to not be merged (min_tokens = 50)
+        let section1 = "# Title\n".to_string() + &"word ".repeat(50);
+        let section2 = "## Subtitle\n".to_string() + &"word ".repeat(50);
+        let markdown = format!("{}\n{}", section1, section2);
+
+        let chunks = mgr.chunk_document(DocId::new(42), &markdown);
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].doc_id, DocId::new(42));
+        assert!(chunks[0].content.contains("# Title"));
+        assert!(chunks[1].content.contains("## Subtitle"));
     }
 }
