@@ -308,6 +308,9 @@ impl HnswIndex {
 
             match &node.vector {
                 VectorData::F32(v) => {
+                    // ANCHOR:SAFETY:SEC-HNSW-001 — Byte-Casting von f32-Slices.
+                    // BEGRÜNDUNG: f32 hat keine internen Padding-Bytes und ist immer 4 Bytes groß.
+                    // Das Casting zu &[u8] für I/O ist sicher, solange die Länge korrekt (len * 4) angepasst wird.
                     let bytes: &[u8] =
                         unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
                     writer
@@ -355,6 +358,9 @@ impl HnswIndex {
                     .write_all(&len.to_le_bytes())
                     .await
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                // ANCHOR:SAFETY:SEC-HNSW-002 — Byte-Casting von u32-Slices.
+                // BEGRÜNDUNG: u32 (Nachbar-Indizes) sind Plain-Old-Data (POD).
+                // Das Casting zu &[u8] für die persistente Speicherung ist sicher.
                 let bytes: &[u8] = unsafe {
                     std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
                 };

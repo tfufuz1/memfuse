@@ -255,6 +255,8 @@ impl<S: StorageEngine> Collection<S> {
             metadata: metadata.clone(),
         };
         // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
+        // ANCHOR:SEC: AGENT:10 PRIO:1 STATUS:READY
+        // TODO(WP-3.2): Raw document data is serialized to JSON without encryption.
         // Document serialization is unencrypted before being sent to storage.
         // If Encryption-at-Rest is enabled, it's encrypted in the storage layer (WP-3.2).
         let data = serde_json::to_vec(&stored)?;
@@ -518,6 +520,8 @@ impl<S: StorageEngine> Collection<S> {
             "to": to,
             "label": label,
         });
+        // ANCHOR:SEC: AGENT:10 PRIO:1 STATUS:READY
+        // TODO(WP-3.2): Relationship data is serialized to JSON without encryption.
         // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
         let bytes = serde_json::to_vec(&val)?;
 
@@ -534,6 +538,8 @@ impl<S: StorageEngine> Collection<S> {
         let key1_str = format!("{}:{}:{}", from, label, to);
         let key1 = self.namespaced_key(key1_str.as_bytes(), 2);
         let val1 = serde_json::json!({"from": from, "to": to, "label": label});
+        // ANCHOR:SEC: AGENT:10 PRIO:1 STATUS:READY
+        // TODO(WP-3.2): Bidirectional relationship data is serialized to JSON without encryption.
         let bytes1 = serde_json::to_vec(&val1)?;
         self.storage.put(tx, &key1, &bytes1).await?;
 

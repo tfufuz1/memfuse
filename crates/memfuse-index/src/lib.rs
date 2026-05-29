@@ -15,7 +15,7 @@
 // DONE: #![feature(portable_simd)] ist entfernt und distance.rs nutzt stabiles Rust.
 // SUCCESSOR: @JULES-13 — "SIMD ist stabil. Tech-Debt Audit fortsetzen."
 // ANCHOR:AUDIT:SEC-002 — deny(unsafe_code) statt forbid(unsafe_code)
-// BEGRÜNDUNG: SIMD-Intrinsics in distance.rs benötigen unsafe für Performance.
+// BEGRÜNDUNG: SIMD-Intrinsics in distance.rs und Byte-Casting in hnsw.rs benötigen unsafe für Performance und I/O Effizienz.
 #![deny(unsafe_code)]
 // TODO(FIND-IDX-001): SIMD Safety - Add #![forbid(unsafe_code)] exception safely and audit missing Safety comments in distance.rs.
 // TODO(FIND-IDX-002): NaN/Inf Poisoning - Validate vectors against NaN/Inf before inserting.

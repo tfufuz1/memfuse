@@ -151,6 +151,8 @@ impl<S: StorageEngine> InvertedIndex<S> {
         tfs_vec.sort_by(|a, b| a.0.cmp(&b.0));
 
         let unique_terms: Vec<&str> = tfs_vec.iter().map(|(k, _)| k.as_str()).collect();
+        // ANCHOR:SEC: AGENT:10 PRIO:1 STATUS:READY
+        // TODO(WP-3.2): Forward index (terms) is serialized without encryption.
         let fw_bytes = bincode::serialize(&unique_terms)
             .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
         self.storage.put(tx, &fw_key, &fw_bytes).await?;
@@ -169,6 +171,8 @@ impl<S: StorageEngine> InvertedIndex<S> {
             meta.total_docs += 1;
         }
 
+        // ANCHOR:SEC: AGENT:10 PRIO:1 STATUS:READY
+        // TODO(WP-3.2): Text index global metadata is serialized without encryption.
         let meta_bytes = bincode::serialize(&meta)
             .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
         self.storage.put(tx, &meta_key, &meta_bytes).await?;

@@ -127,6 +127,8 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
         self.storage.pin_checkpoint(seq_no).await?;
 
         // 2. Persist checkpoint metadata
+        // ANCHOR:SEC: AGENT:10 PRIO:1 STATUS:READY
+        // TODO(WP-3.2): Checkpoint metadata contains TxId and Snapshot IDs; evaluate if encryption is required for at-rest security.
         let key = format!("__checkpoint:{}", name);
         let value = serde_json::to_vec(&checkpoint)
             .map_err(|e| memfuse_core::error::MemFuseError::Internal(e.to_string()))?;
@@ -502,6 +504,7 @@ mod tests {
             }
         }
 
+        #[async_trait::async_trait]
         impl StorageEngine for TrackingStorage {
             async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
                 self.inner.get(key).await
