@@ -1115,39 +1115,39 @@ mod tests {
                 .expect("create storage");
 
             let tx1 = TxId::new(1);
-            storage.put(tx1, b"k1", b"v1").await.unwrap();
-            storage.commit(tx1).await.unwrap();
+            storage.put(tx1, b"k1", b"v1").await.expect("LSM test failed");
+            storage.commit(tx1).await.expect("LSM test failed");
 
             let tx2 = TxId::new(2);
-            storage.put(tx2, b"k2", b"v2").await.unwrap();
-            storage.commit(tx2).await.unwrap();
+            storage.put(tx2, b"k2", b"v2").await.expect("LSM test failed");
+            storage.commit(tx2).await.expect("LSM test failed");
 
             // Verify both exist
-            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
-            assert_eq!(storage.get(b"k2").await.unwrap(), Some(b"v2".to_vec()));
+            assert_eq!(storage.get(b"k1").await.expect("LSM test failed"), Some(b"v1".to_vec()));
+            assert_eq!(storage.get(b"k2").await.expect("LSM test failed"), Some(b"v2".to_vec()));
 
             // Rollback to Tx1
             storage.rollback_to_tx(tx1).await.expect("rollback");
 
-            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
-            assert_eq!(storage.get(b"k2").await.unwrap(), None);
+            assert_eq!(storage.get(b"k1").await.expect("LSM test failed"), Some(b"v1".to_vec()));
+            assert_eq!(storage.get(b"k2").await.expect("LSM test failed"), None);
         }
 
         // Restart storage
         {
             let storage = LsmStorage::new(config).await.expect("restart storage");
-            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
+            assert_eq!(storage.get(b"k1").await.expect("LSM test failed"), Some(b"v1".to_vec()));
             assert_eq!(
-                storage.get(b"k2").await.unwrap(),
+                storage.get(b"k2").await.expect("LSM test failed"),
                 None,
                 "k2 should NOT be replayed after rollback"
             );
 
             // Verify we can still append new transactions after rollback
             let tx3 = TxId::new(3);
-            storage.put(tx3, b"k3", b"v3").await.unwrap();
-            storage.commit(tx3).await.unwrap();
-            assert_eq!(storage.get(b"k3").await.unwrap(), Some(b"v3".to_vec()));
+            storage.put(tx3, b"k3", b"v3").await.expect("LSM test failed");
+            storage.commit(tx3).await.expect("LSM test failed");
+            assert_eq!(storage.get(b"k3").await.expect("LSM test failed"), Some(b"v3".to_vec()));
         }
     }
     #[tokio::test]
@@ -1165,27 +1165,27 @@ mod tests {
 
         // 1. Insert data for TX 1, TX 2
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"k1", b"v1").await.unwrap();
-        storage.commit(tx1).await.unwrap();
+        storage.put(tx1, b"k1", b"v1").await.expect("LSM test failed");
+        storage.commit(tx1).await.expect("LSM test failed");
 
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"k2", b"v2").await.unwrap();
-        storage.commit(tx2).await.unwrap();
+        storage.put(tx2, b"k2", b"v2").await.expect("LSM test failed");
+        storage.commit(tx2).await.expect("LSM test failed");
 
         // 2. Flush (SSTable 1 contains TX 1, 2)
-        storage.force_flush().await.unwrap();
+        storage.force_flush().await.expect("LSM test failed");
 
         // 3. Insert data for TX 3, TX 4
         let tx3 = TxId::new(3);
-        storage.put(tx3, b"k3", b"v3").await.unwrap();
-        storage.commit(tx3).await.unwrap();
+        storage.put(tx3, b"k3", b"v3").await.expect("LSM test failed");
+        storage.commit(tx3).await.expect("LSM test failed");
 
         let tx4 = TxId::new(4);
-        storage.put(tx4, b"k4", b"v4").await.unwrap();
-        storage.commit(tx4).await.unwrap();
+        storage.put(tx4, b"k4", b"v4").await.expect("LSM test failed");
+        storage.commit(tx4).await.expect("LSM test failed");
 
         // 4. Flush (SSTable 2 contains TX 3, 4)
-        storage.force_flush().await.unwrap();
+        storage.force_flush().await.expect("LSM test failed");
 
         {
             let sstables = storage.sstables.read().await;
@@ -1202,9 +1202,9 @@ mod tests {
             assert_eq!(sstables[0].metadata().max_tx_id, 2);
         }
 
-        assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
-        assert_eq!(storage.get(b"k2").await.unwrap(), Some(b"v2".to_vec()));
-        assert_eq!(storage.get(b"k3").await.unwrap(), None);
-        assert_eq!(storage.get(b"k4").await.unwrap(), None);
+        assert_eq!(storage.get(b"k1").await.expect("LSM test failed"), Some(b"v1".to_vec()));
+        assert_eq!(storage.get(b"k2").await.expect("LSM test failed"), Some(b"v2".to_vec()));
+        assert_eq!(storage.get(b"k3").await.expect("LSM test failed"), None);
+        assert_eq!(storage.get(b"k4").await.expect("LSM test failed"), None);
     }
 }

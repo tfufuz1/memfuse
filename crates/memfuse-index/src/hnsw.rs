@@ -1922,7 +1922,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed (AGENT:05)
+        let temp_dir = tempfile::tempdir().expect("tmp dir failed");
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {

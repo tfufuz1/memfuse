@@ -306,7 +306,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
         // Sort descending by score, then ascending by DocId for determinism
         results.sort_by(|a, b| {
             b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal) // unwrap allowed (AGENT:05)
+                .unwrap_or(std::cmp::Ordering::Equal) /* unwrap allowed (AGENT:05) */ // unwrap allowed (AGENT:05)
                 .then_with(|| a.0.cmp(&b.0))
         });
         results.truncate(k);
@@ -697,7 +697,9 @@ mod tests {
         // Case 3: Mixed documents, some very short
         let tx2 = TxId::new(2);
         index.upsert_document(tx2, DocId::new(2), "test").await?;
-        index.upsert_document(tx2, DocId::new(3), "test test test").await?;
+        index
+            .upsert_document(tx2, DocId::new(3), "test test test")
+            .await?;
         storage.commit(tx2).await?;
 
         let results = index.search_bm25("test", 10).await?;
