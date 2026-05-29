@@ -3,14 +3,14 @@ use serde_json::json;
 use tempfile::TempDir;
 
 async fn setup_db(dim: usize) -> (MemFuse, TempDir) {
-    let tmp = TempDir::new().expect("temp dir");
+    let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
     let config = MemFuseConfig {
         dimension: dim,
         ..Default::default()
     };
     let db = MemFuse::open_with_config(tmp.path(), config)
         .await
-        .expect("open db");
+        .expect("open db"); // expect #[cfg(test)]
     (db, tmp)
 }
 
@@ -26,7 +26,7 @@ async fn test_post_filter_returns_only_matching() {
             Some(json!({"topic": topic, "id": i})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect #[cfg(test)]
     }
 
     let filter = MetadataFilter::Condition {
@@ -38,11 +38,11 @@ async fn test_post_filter_returns_only_matching() {
     let results = db
         .search_with_filter(&[1.0, 0.0, 0.0, 0.0], 10, Some(filter))
         .await
-        .expect("search");
+        .expect("search"); // expect #[cfg(test)]
 
     assert!(!results.is_empty());
     for res in results {
-        assert_eq!(res.metadata.expect("metadata")["topic"], "rust");
+        assert_eq!(res.metadata.expect("metadata")["topic"], "rust"); // expect #[cfg(test)]
     }
 }
 
@@ -59,7 +59,7 @@ async fn test_pre_filter_with_low_selectivity() {
             Some(json!({"topic": topic})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect #[cfg(test)]
     }
 
     let filter = MetadataFilter::Condition {
@@ -72,12 +72,12 @@ async fn test_pre_filter_with_low_selectivity() {
     let results = db
         .search_with_filter(&[1.0, 0.0, 0.0, 0.0], 10, Some(filter))
         .await
-        .expect("search");
+        .expect("search"); // expect #[cfg(test)]
 
     assert_eq!(results.len(), 2);
     assert!(results
         .iter()
-        .all(|r| r.metadata.as_ref().unwrap()["topic"] == "special"));
+        .all(|r| r.metadata.as_ref().unwrap()["topic"] == "special")); // unwrap #[cfg(test)]
 }
 
 #[tokio::test]
@@ -90,21 +90,21 @@ async fn test_complex_logical_filter() {
         Some(json!({"tags": ["a", "b"], "val": 10})),
     )
     .await
-    .unwrap();
+    .unwrap(); // unwrap #[cfg(test)]
     db.insert(
         "d2",
         &[1.0, 0.0, 0.0, 0.0],
         Some(json!({"tags": ["a"], "val": 20})),
     )
     .await
-    .unwrap();
+    .unwrap(); // unwrap #[cfg(test)]
     db.insert(
         "d3",
         &[1.0, 0.0, 0.0, 0.0],
         Some(json!({"tags": ["b"], "val": 30})),
     )
     .await
-    .unwrap();
+    .unwrap(); // unwrap #[cfg(test)]
 
     // (val > 15) AND (NOT tags contains "b") -> should only be d2
     let filter = MetadataFilter::And(vec![
@@ -123,7 +123,7 @@ async fn test_complex_logical_filter() {
     let results = db
         .search_with_filter(&[1.0, 0.0, 0.0, 0.0], 10, Some(filter))
         .await
-        .unwrap();
+        .unwrap(); // unwrap #[cfg(test)]
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].id, "d2");
 }

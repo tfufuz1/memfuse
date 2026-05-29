@@ -13,7 +13,7 @@ use tempfile::TempDir;
 // Collection erstellt und Daten basierend auf einem Checkpoint repliziert.
 #[tokio::test]
 async fn test_layer_001_fork_diverge_merge() {
-    let tmp = TempDir::new().expect("temp dir");
+    let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)] // expect #[cfg(test)]
     let db_path = tmp.path().to_path_buf();
 
     let config = MemFuseConfig {
@@ -25,8 +25,8 @@ async fn test_layer_001_fork_diverge_merge() {
     {
         let db = MemFuse::open_with_config(&db_path, config.clone())
             .await
-            .expect("open db");
-        let main_col = db.collection("main").await.expect("main col");
+            .expect("open db"); // expect #[cfg(test)]
+        let main_col = db.collection("main").await.expect("main col"); // expect #[cfg(test)]
 
         // Daten einfügen in "main"
         main_col
@@ -36,7 +36,7 @@ async fn test_layer_001_fork_diverge_merge() {
                 Some(json!({"val": "initial"})),
             )
             .await
-            .expect("insert 1");
+            .expect("insert 1"); // expect #[cfg(test)]
         main_col
             .insert(
                 "doc-2",
@@ -44,10 +44,10 @@ async fn test_layer_001_fork_diverge_merge() {
                 Some(json!({"val": "initial"})),
             )
             .await
-            .expect("insert 2");
+            .expect("insert 2"); // expect #[cfg(test)]
 
         // Explizites Drop/Close damit Filesystem-Locks frei werden
-        db.close().await.expect("close db");
+        db.close().await.expect("close db"); // expect #[cfg(test)]
     }
 
     // 2. Checkpoint erstellen (Simuliert durch PersistentCheckpointStore auf ruhenden Daten)
@@ -60,32 +60,32 @@ async fn test_layer_001_fork_diverge_merge() {
         let storage = Arc::new(
             memfuse_store::LsmStorage::new(lsm_config)
                 .await
-                .expect("storage"),
+                .expect("storage"), // expect #[cfg(test)]
         );
         let cp_manager = PersistentCheckpointStore::new(storage.clone());
 
         _cp_v1 = cp_manager
             .create_checkpoint("v1", "main", 0, TxId::new(0), json!({}))
             .await
-            .expect("checkpoint");
-        // Storage wird gedroppt, Lock frei.
+            .expect("checkpoint"); // expect #[cfg(test)]
+                                   // Storage wird gedroppt, Lock frei.
     }
 
     // 3. "Fork" simulieren
     {
         let db = MemFuse::open_with_config(&db_path, config.clone())
             .await
-            .expect("open db");
-        let main_col = db.collection("main").await.expect("main col");
-        let fork_col = db.collection("fork-v1").await.expect("fork col");
+            .expect("open db"); // expect #[cfg(test)]
+        let main_col = db.collection("main").await.expect("main col"); // expect #[cfg(test)]
+        let fork_col = db.collection("fork-v1").await.expect("fork col"); // expect #[cfg(test)]
 
         // Daten von "main" nach "fork" kopieren (Simulation von Fork-Logic)
-        let main_data = main_col.scan_prefix("").await.expect("scan main");
+        let main_data = main_col.scan_prefix("").await.expect("scan main"); // expect #[cfg(test)]
         for (id, meta) in main_data {
             fork_col
                 .insert(&id, &[0.5, 0.5, 0.5, 0.5], Some(meta))
                 .await
-                .expect("insert fork");
+                .expect("insert fork"); // expect #[cfg(test)]
         }
 
         // 4. "Diverge" (Auseinanderlaufen)
@@ -96,7 +96,7 @@ async fn test_layer_001_fork_diverge_merge() {
                 Some(json!({"origin": "main"})),
             )
             .await
-            .expect("ins main only");
+            .expect("ins main only"); // expect #[cfg(test)]
 
         fork_col
             .insert(
@@ -105,31 +105,31 @@ async fn test_layer_001_fork_diverge_merge() {
                 Some(json!({"origin": "fork"})),
             )
             .await
-            .expect("ins fork only");
+            .expect("ins fork only"); // expect #[cfg(test)]
 
         // Verifizieren der Divergenz
-        assert!(main_col.get("doc-main-only").await.unwrap().is_some());
-        assert!(main_col.get("doc-fork-only").await.unwrap().is_none());
+        assert!(main_col.get("doc-main-only").await.unwrap().is_some()); // unwrap #[cfg(test)]
+        assert!(main_col.get("doc-fork-only").await.unwrap().is_none()); // unwrap #[cfg(test)]
 
-        assert!(fork_col.get("doc-fork-only").await.unwrap().is_some());
-        assert!(fork_col.get("doc-main-only").await.unwrap().is_none());
+        assert!(fork_col.get("doc-fork-only").await.unwrap().is_some()); // unwrap #[cfg(test)]
+        assert!(fork_col.get("doc-main-only").await.unwrap().is_none()); // unwrap #[cfg(test)]
 
         // 5. "Merge" simulieren
-        let fork_doc = fork_col.get("doc-fork-only").await.expect("get").unwrap();
+        let fork_doc = fork_col.get("doc-fork-only").await.expect("get").unwrap(); // unwrap #[cfg(test)] // expect #[cfg(test)]
         main_col
             .insert(&fork_doc.id, &[0.0, 0.0, 1.0, 1.0], fork_doc.metadata)
             .await
-            .expect("merge insert");
+            .expect("merge insert"); // expect #[cfg(test)]
 
         // Final State Check
         let merged_doc = main_col
             .get("doc-fork-only")
             .await
-            .expect("get merged")
-            .unwrap();
-        assert_eq!(merged_doc.metadata.unwrap()["origin"], "fork");
+            .expect("get merged") // expect #[cfg(test)]
+            .unwrap(); // unwrap #[cfg(test)]
+        assert_eq!(merged_doc.metadata.unwrap()["origin"], "fork"); // unwrap #[cfg(test)]
 
-        db.close().await.expect("close db");
+        db.close().await.expect("close db"); // expect #[cfg(test)]
     }
 
     // 6. Cleanup Checkpoint
@@ -141,9 +141,9 @@ async fn test_layer_001_fork_diverge_merge() {
         let storage = Arc::new(
             memfuse_store::LsmStorage::new(lsm_config)
                 .await
-                .expect("storage"),
+                .expect("storage"), // expect #[cfg(test)]
         );
         let cp_manager = PersistentCheckpointStore::new(storage.clone());
-        cp_manager.drop_checkpoint("v1").await.expect("drop cp");
+        cp_manager.drop_checkpoint("v1").await.expect("drop cp"); // expect #[cfg(test)]
     }
 }

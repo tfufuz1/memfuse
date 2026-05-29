@@ -4,8 +4,8 @@
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use memfuse_checkpoint::PersistentCheckpointStore;
-use memfuse_db::MemFuse;
 use memfuse_core::TxId;
+use memfuse_db::MemFuse;
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 

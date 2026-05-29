@@ -49,7 +49,7 @@ impl AgentTool for SuccessTool {
 }
 
 async fn setup_env() -> (Arc<MemFuse>, TempDir) {
-    let tmp = TempDir::new().expect("failed to create temp dir");
+    let tmp = TempDir::new().expect("failed to create temp dir"); // expect #[cfg(test)]
     let config = MemFuseConfig {
         dimension: 3,
         max_elements: 1000,
@@ -59,7 +59,7 @@ async fn setup_env() -> (Arc<MemFuse>, TempDir) {
     let db = Arc::new(
         MemFuse::open_with_config(tmp.path(), config)
             .await
-            .expect("failed to open db"),
+            .expect("failed to open db"), // expect #[cfg(test)]
     );
     (db, tmp)
 }
@@ -67,7 +67,7 @@ async fn setup_env() -> (Arc<MemFuse>, TempDir) {
 #[tokio::test]
 async fn test_agent_auto_checkpoint_before_step() {
     let (db, _tmp) = setup_env().await;
-    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed"));
+    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed")); // expect #[cfg(test)] // expect #[cfg(test)]
     let mut ctx = AgentContext::new(
         "t1",
         "start",
@@ -84,21 +84,23 @@ async fn test_agent_auto_checkpoint_before_step() {
     let mut engine = OrchestratorEngine::new(db.inner_storage());
     engine.register_tool(Box::new(SuccessTool));
 
-    engine.run(&mut ctx, &graph).await.expect("run failed");
+    engine.run(&mut ctx, &graph).await.expect("run failed"); // expect #[cfg(test)] // expect #[cfg(test)]
 
     // Verify checkpoint exists
     let checkpoints = engine
         .checkpoint_store
         .list_checkpoints()
         .await
-        .expect("list failed");
-    assert!(checkpoints.iter().any(|c| c.name == "task:t1:step:0:node:start"));
+        .expect("list failed"); // expect #[cfg(test)] // expect #[cfg(test)]
+    assert!(checkpoints
+        .iter()
+        .any(|c| c.name == "task:t1:step:0:node:start"));
 }
 
 #[tokio::test]
 async fn test_agent_replay_from_checkpoint() {
     let (db, _tmp) = setup_env().await;
-    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed"));
+    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed")); // expect #[cfg(test)] // expect #[cfg(test)]
     let mut ctx = AgentContext::new(
         "t1",
         "start",
@@ -118,7 +120,7 @@ async fn test_agent_replay_from_checkpoint() {
     engine.register_tool(Box::new(SuccessTool));
 
     // Run first step
-    engine.run(&mut ctx, &graph).await.expect("run failed");
+    engine.run(&mut ctx, &graph).await.expect("run failed"); // expect #[cfg(test)] // expect #[cfg(test)]
     assert_eq!(ctx.current_node, "end");
 
     // Manually modify context and replay
@@ -126,7 +128,7 @@ async fn test_agent_replay_from_checkpoint() {
     engine
         .replay_from(&mut ctx, "start")
         .await
-        .expect("replay failed");
+        .expect("replay failed"); // expect #[cfg(test)] // expect #[cfg(test)]
 
     assert_eq!(ctx.current_node, "start");
     assert!(!ctx.memory.contains_key("corrupted"));
@@ -135,7 +137,7 @@ async fn test_agent_replay_from_checkpoint() {
 #[tokio::test]
 async fn test_agent_error_handling() {
     let (db, _tmp) = setup_env().await;
-    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed"));
+    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed")); // expect #[cfg(test)] // expect #[cfg(test)]
     let mut ctx = AgentContext::new(
         "t1",
         "start",
@@ -163,7 +165,7 @@ async fn test_agent_error_handling() {
 #[tokio::test]
 async fn test_agent_audit_log_immutable() {
     let (db, _tmp) = setup_env().await;
-    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed"));
+    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed")); // expect #[cfg(test)] // expect #[cfg(test)]
     let mut ctx = AgentContext::new(
         "t1",
         "start",
@@ -180,14 +182,14 @@ async fn test_agent_audit_log_immutable() {
     let mut engine = OrchestratorEngine::new(db.inner_storage());
     engine.register_tool(Box::new(SuccessTool));
 
-    engine.run(&mut ctx, &graph).await.expect("run failed");
+    engine.run(&mut ctx, &graph).await.expect("run failed"); // expect #[cfg(test)] // expect #[cfg(test)]
 
     // Verify audit log
-    let audit_log = db.collection("agent_state").await.expect("col failed");
+    let audit_log = db.collection("agent_state").await.expect("col failed"); // expect #[cfg(test)] // expect #[cfg(test)]
     let audit_entries = audit_log
         .scan_prefix("audit:t1:step:")
         .await
-        .expect("scan failed");
+        .expect("scan failed"); // expect #[cfg(test)] // expect #[cfg(test)]
     assert_eq!(audit_entries.len(), 1);
 
     // In our implementation, we don't have a direct "AuditError::Immutable" yet because
@@ -198,7 +200,7 @@ async fn test_agent_audit_log_immutable() {
 #[tokio::test]
 async fn test_loop_rollback_integrity() {
     let (db, _tmp) = setup_env().await;
-    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed"));
+    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed")); // expect #[cfg(test)] // expect #[cfg(test)]
     let mut ctx = AgentContext::new(
         "loop-task",
         "A",
@@ -224,11 +226,11 @@ async fn test_loop_rollback_integrity() {
     // Run 5 steps: A(0) -> B(1) -> A(2) -> B(3) -> A(4)
     // We stop before it continues to B or end.
     for _ in 0..5 {
-        let _node = graph.get_node(&ctx.current_node).expect("node exists");
-        // Manual execution of one step
-        // (In a real scenario, the engine.run would have logic to break loops or budget)
-        // For testing naming collision, we just care about checkpoints.
-        engine.checkpoint(&ctx).await.expect("checkpoint failed");
+        let _node = graph.get_node(&ctx.current_node).expect("node exists"); // expect #[cfg(test)] // expect #[cfg(test)]
+                                                                             // Manual execution of one step
+                                                                             // (In a real scenario, the engine.run would have logic to break loops or budget)
+                                                                             // For testing naming collision, we just care about checkpoints.
+        engine.checkpoint(&ctx).await.expect("checkpoint failed"); // expect #[cfg(test)] // expect #[cfg(test)]
         ctx.step_count += 1;
         if ctx.current_node == "A" {
             ctx.current_node = "B".to_string();
@@ -241,11 +243,17 @@ async fn test_loop_rollback_integrity() {
         .checkpoint_store
         .list_checkpoints()
         .await
-        .expect("list failed");
-    
+        .expect("list failed"); // expect #[cfg(test)]
+
     // Should have 5 checkpoints: step 0(A), 1(B), 2(A), 3(B), 4(A)
     assert_eq!(checkpoints.len(), 5);
-    assert!(checkpoints.iter().any(|c| c.name.contains(":step:0:node:A")));
-    assert!(checkpoints.iter().any(|c| c.name.contains(":step:2:node:A")));
-    assert!(checkpoints.iter().any(|c| c.name.contains(":step:4:node:A")));
+    assert!(checkpoints
+        .iter()
+        .any(|c| c.name.contains(":step:0:node:A")));
+    assert!(checkpoints
+        .iter()
+        .any(|c| c.name.contains(":step:2:node:A")));
+    assert!(checkpoints
+        .iter()
+        .any(|c| c.name.contains(":step:4:node:A")));
 }

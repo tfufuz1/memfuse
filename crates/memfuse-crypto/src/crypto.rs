@@ -105,21 +105,21 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt_roundtrip() {
-        let km = KeyManager::try_new("secret-passphrase", None).expect("try_new");
+        let km = KeyManager::try_new("secret-passphrase", None).expect("try_new"); // expect #[cfg(test)] // expect #[cfg(test)]
         let data = b"sensitive data";
         let nonce = 42;
 
-        let encrypted = km.encrypt(data, nonce).expect("encrypt");
-        let decrypted = km.decrypt(&encrypted, nonce).expect("decrypt");
+        let encrypted = km.encrypt(data, nonce).expect("encrypt"); // expect #[cfg(test)] // expect #[cfg(test)]
+        let decrypted = km.decrypt(&encrypted, nonce).expect("decrypt"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         assert_eq!(data, decrypted.as_slice());
     }
 
     #[test]
     fn test_wrong_nonce_fails() {
-        let km = KeyManager::try_new("secret-passphrase", None).expect("try_new");
+        let km = KeyManager::try_new("secret-passphrase", None).expect("try_new"); // expect #[cfg(test)] // expect #[cfg(test)]
         let data = b"sensitive data";
-        let encrypted = km.encrypt(data, 42).expect("encrypt");
+        let encrypted = km.encrypt(data, 42).expect("encrypt"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         let result = km.decrypt(&encrypted, 43);
         assert!(result.is_err());
@@ -127,13 +127,13 @@ mod tests {
 
     #[test]
     fn test_different_keys_different_ciphertexts() {
-        let km1 = KeyManager::try_new("pass1", None).expect("try_new");
-        let km2 = KeyManager::try_new("pass2", None).expect("try_new");
+        let km1 = KeyManager::try_new("pass1", None).expect("try_new"); // expect #[cfg(test)] // expect #[cfg(test)]
+        let km2 = KeyManager::try_new("pass2", None).expect("try_new"); // expect #[cfg(test)] // expect #[cfg(test)]
         let data = b"data";
         let nonce = 0;
 
-        let enc1 = km1.encrypt(data, nonce).expect("enc1");
-        let enc2 = km2.encrypt(data, nonce).expect("enc2");
+        let enc1 = km1.encrypt(data, nonce).expect("enc1"); // expect #[cfg(test)] // expect #[cfg(test)]
+        let enc2 = km2.encrypt(data, nonce).expect("enc2"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         assert_ne!(enc1, enc2);
     }
@@ -141,8 +141,8 @@ mod tests {
     #[test]
     fn test_different_salts_different_keys() {
         let pass = "secret";
-        let km1 = KeyManager::try_new(pass, Some(b"salt1")).expect("km1");
-        let km2 = KeyManager::try_new(pass, Some(b"salt2")).expect("km2");
+        let km1 = KeyManager::try_new(pass, Some(b"salt1")).expect("km1"); // expect #[cfg(test)] // expect #[cfg(test)]
+        let km2 = KeyManager::try_new(pass, Some(b"salt2")).expect("km2"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         assert_ne!(km1.key, km2.key);
     }
@@ -150,24 +150,24 @@ mod tests {
     #[test]
     fn test_legacy_salt_compatibility() {
         let pass = "secret";
-        let km_legacy = KeyManager::try_new(pass, None).expect("legacy");
+        let km_legacy = KeyManager::try_new(pass, None).expect("legacy"); // expect #[cfg(test)] // expect #[cfg(test)]
         let km_explicit =
-            KeyManager::try_new(pass, Some(b"memfuse-encryption-salt-v1")).expect("explicit");
+            KeyManager::try_new(pass, Some(b"memfuse-encryption-salt-v1")).expect("explicit"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         assert_eq!(km_legacy.key, km_explicit.key);
     }
 
     #[test]
     fn test_sub_key_derivation_prevents_nonce_reuse() {
-        let master_km = KeyManager::try_new("master-secret", None).expect("try_new");
+        let master_km = KeyManager::try_new("master-secret", None).expect("try_new"); // expect #[cfg(test)] // expect #[cfg(test)]
         let data = b"identical-data";
         let offset = 0;
 
-        let km_file1 = master_km.derive_file_key(b"file1").expect("derive1");
-        let km_file2 = master_km.derive_file_key(b"file2").expect("derive2");
+        let km_file1 = master_km.derive_file_key(b"file1").expect("derive1"); // expect #[cfg(test)] // expect #[cfg(test)]
+        let km_file2 = master_km.derive_file_key(b"file2").expect("derive2"); // expect #[cfg(test)] // expect #[cfg(test)]
 
-        let enc1 = km_file1.encrypt(data, offset).expect("enc1");
-        let enc2 = km_file2.encrypt(data, offset).expect("enc2");
+        let enc1 = km_file1.encrypt(data, offset).expect("enc1"); // expect #[cfg(test)] // expect #[cfg(test)]
+        let enc2 = km_file2.encrypt(data, offset).expect("enc2"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         assert_ne!(
             enc1, enc2,
@@ -175,7 +175,7 @@ mod tests {
         );
 
         // Decryption must still work with the correct sub-key
-        let dec1 = km_file1.decrypt(&enc1, offset).expect("dec1");
+        let dec1 = km_file1.decrypt(&enc1, offset).expect("dec1"); // expect #[cfg(test)] // expect #[cfg(test)]
         assert_eq!(data, dec1.as_slice());
     }
 }

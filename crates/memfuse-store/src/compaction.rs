@@ -395,17 +395,17 @@ mod tests {
         bc: Arc<BlockCache>,
     ) -> Arc<SstableReader> {
         let path = dir.join(name);
-        let mut builder = SstableBuilder::create(&path).await.expect("create sst");
+        let mut builder = SstableBuilder::create(&path).await.expect("create sst"); // expect #[cfg(test)]
         for (k, v, seq) in entries {
-            builder.add(k, v, *seq, *seq).await.expect("add entry");
+            builder.add(k, v, *seq, *seq).await.expect("add entry"); // expect #[cfg(test)]
         }
-        builder.finish().await.expect("finish sst");
-        Arc::new(SstableReader::open(&path, bc).await.expect("open sst"))
+        builder.finish().await.expect("finish sst"); // expect #[cfg(test)]
+        Arc::new(SstableReader::open(&path, bc).await.expect("open sst")) // expect #[cfg(test)]
     }
 
     #[tokio::test]
     async fn test_merge_deduplication() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)] // expect #[cfg(test)]
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
         let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
@@ -431,12 +431,12 @@ mod tests {
         engine
             .merge_sstables(&[sst1, sst2], &output, 0)
             .await
-            .expect("merge");
+            .expect("merge"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         let reader = SstableReader::open(&output, Arc::clone(&bc))
             .await
-            .expect("open merged");
-        let entries = reader.iter().await.expect("iter");
+            .expect("open merged"); // expect #[cfg(test)] // expect #[cfg(test)]
+        let entries = reader.iter().await.expect("iter"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         // key-a should have the newer value (seq=3)
         assert_eq!(entries.len(), 3); // key-a, key-b, key-c
@@ -447,7 +447,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tombstone_gc() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)] // expect #[cfg(test)]
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
         let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
@@ -467,12 +467,12 @@ mod tests {
         engine
             .merge_sstables(&[sst1], &output, 100)
             .await
-            .expect("merge");
+            .expect("merge"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         let reader = SstableReader::open(&output, Arc::clone(&bc))
             .await
-            .expect("open");
-        let entries = reader.iter().await.expect("iter");
+            .expect("open"); // expect #[cfg(test)] // expect #[cfg(test)]
+        let entries = reader.iter().await.expect("iter"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         assert_eq!(entries.len(), 1); // Only "alive" remains
         assert_eq!(entries[0].0.as_ref(), b"alive");
@@ -480,7 +480,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tombstone_preserved_with_active_snapshot() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)] // expect #[cfg(test)]
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
         let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
@@ -500,19 +500,19 @@ mod tests {
         engine
             .merge_sstables(&[sst1], &output, 2)
             .await
-            .expect("merge");
+            .expect("merge"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         let reader = SstableReader::open(&output, Arc::clone(&bc))
             .await
-            .expect("open");
-        let entries = reader.iter().await.expect("iter");
+            .expect("open"); // expect #[cfg(test)] // expect #[cfg(test)]
+        let entries = reader.iter().await.expect("iter"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         assert_eq!(entries.len(), 2); // Both preserved
     }
 
     #[tokio::test]
     async fn test_maybe_compact_full_cycle() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)] // expect #[cfg(test)]
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
         let config = CompactionConfig {
@@ -553,7 +553,7 @@ mod tests {
         let compacted = engine
             .maybe_compact(&sstables, tmp.path())
             .await
-            .expect("compact");
+            .expect("compact"); // expect #[cfg(test)]
 
         assert!(compacted, "Compaction should have occurred");
 
@@ -566,13 +566,13 @@ mod tests {
 
         // Verify all data is present in the compacted result
         let last_sst = &ssts[ssts.len() - 1];
-        let entries = last_sst.iter().await.expect("iter");
+        let entries = last_sst.iter().await.expect("iter"); // expect #[cfg(test)]
         assert_eq!(entries.len(), 6); // 3 SSTables × 2 entries each
     }
 
     #[tokio::test]
     async fn test_no_compaction_below_threshold() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)] // expect #[cfg(test)]
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
         let config = CompactionConfig {
@@ -598,7 +598,7 @@ mod tests {
         let compacted = engine
             .maybe_compact(&sstables, tmp.path())
             .await
-            .expect("compact");
+            .expect("compact"); // expect #[cfg(test)]
 
         assert!(!compacted, "Should not compact with only 2 SSTables");
         assert_eq!(sstables.read().await.len(), 2);
@@ -609,7 +609,7 @@ mod tests {
         use memfuse_core::TxId;
         use std::sync::atomic::{AtomicBool, Ordering};
 
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             memtable_size_limit: 64 * 1024, // 64KB - very small to force flushes
@@ -624,7 +624,7 @@ mod tests {
             encryption_passphrase: None,
         };
 
-        let storage = Arc::new(LsmStorage::new(config).await.expect("create storage"));
+        let storage = Arc::new(LsmStorage::new(config).await.expect("create storage")); // expect #[cfg(test)]
         let running = Arc::new(AtomicBool::new(true));
 
         // 1. Parallel Reader Task [INV-C2]
@@ -652,12 +652,12 @@ mod tests {
             let tx = TxId::new(i as u64);
             let key = format!("doc-{:04}", i);
             let val = vec![(i % 255) as u8; 100];
-            storage.put(tx, key.as_bytes(), &val).await.expect("put");
-            storage.commit(tx).await.expect("commit");
+            storage.put(tx, key.as_bytes(), &val).await.expect("put"); // expect #[cfg(test)]
+            storage.commit(tx).await.expect("commit"); // expect #[cfg(test)]
         }
 
         // 3. Register a Snapshot [INV-C1]
-        let snapshot_seq = storage.last_seq_no().await.expect("last_seq_no");
+        let snapshot_seq = storage.last_seq_no().await.expect("last_seq_no"); // expect #[cfg(test)]
         let _guard = storage.snapshot_registry.register(snapshot_seq);
 
         // 4. Heavy Load: 10,000 Inserts to trigger churn and background compaction
@@ -668,24 +668,24 @@ mod tests {
             storage
                 .put(tx, key.as_bytes(), &val)
                 .await
-                .expect("put heavy");
-            storage.commit(tx).await.expect("commit heavy");
+                .expect("put heavy"); // expect #[cfg(test)]
+            storage.commit(tx).await.expect("commit heavy"); // expect #[cfg(test)]
         }
 
         // 5. Deletes
         for i in 0..5000 {
             let tx = TxId::new(20000 + i as u64);
             let key = format!("doc-{:04}", i);
-            storage.delete(tx, key.as_bytes()).await.expect("delete");
-            storage.commit(tx).await.expect("commit delete");
+            storage.delete(tx, key.as_bytes()).await.expect("delete"); // expect #[cfg(test)]
+            storage.commit(tx).await.expect("commit delete"); // expect #[cfg(test)]
         }
 
         // 6. Wait for background compactions to stabilize
         let mut stabilized = false;
         for _ in 0..100 {
             tokio::time::sleep(Duration::from_millis(100)).await;
-            let stats = storage.stats().await.expect("stats");
-            // If we have few segments, compaction is doing its job
+            let stats = storage.stats().await.expect("stats"); // expect #[cfg(test)]
+                                                               // If we have few segments, compaction is doing its job
             if stats.num_segments <= 5 {
                 stabilized = true;
                 break;
@@ -694,10 +694,10 @@ mod tests {
 
         // Stop reader and check for errors
         running.store(false, Ordering::SeqCst);
-        reader_handle.await.expect("reader task panicked");
+        reader_handle.await.expect("reader task panicked"); // expect #[cfg(test)]
 
         // 7. Final Verification
-        let stats = storage.stats().await.expect("final stats");
+        let stats = storage.stats().await.expect("final stats"); // expect #[cfg(test)]
         println!(
             "Stress test finished. Final SSTable count: {}",
             stats.num_segments
@@ -709,7 +709,7 @@ mod tests {
             let val = storage
                 .get(key.as_bytes())
                 .await
-                .expect("get final")
+                .expect("get final") // expect #[cfg(test)]
                 .unwrap_or_else(|| panic!("missing key {}", key));
             assert_eq!(val[0], (i % 255) as u8);
         }
@@ -717,7 +717,7 @@ mod tests {
         // Deleted data MUST NOT be present in current view
         for i in 0..5000 {
             let key = format!("doc-{:04}", i);
-            let val = storage.get(key.as_bytes()).await.expect("get deleted");
+            let val = storage.get(key.as_bytes()).await.expect("get deleted"); // expect #[cfg(test)]
             assert!(val.is_none(), "Key {} should be deleted but found", key);
         }
 
@@ -745,7 +745,7 @@ mod tests {
         };
         let engine = Arc::new(CompactionEngine::new(config, registry, bc));
         let sstables = Arc::new(tokio::sync::RwLock::new(Vec::new()));
-        let tmp = tempfile::TempDir::new().unwrap();
+        let tmp = tempfile::TempDir::new().unwrap(); // unwrap #[cfg(test)]
 
         let (tx, rx) = tokio::sync::watch::channel(false);
 
@@ -761,7 +761,7 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         // Cancel it
-        tx.send(true).unwrap();
+        tx.send(true).unwrap(); // unwrap #[cfg(test)]
 
         // Wait for it to finish
         let result = tokio::time::timeout(std::time::Duration::from_secs(1), handle).await;

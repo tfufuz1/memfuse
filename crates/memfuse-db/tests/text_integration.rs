@@ -6,7 +6,7 @@ use tempfile::TempDir;
 
 #[tokio::test]
 async fn test_inverted_index_persistence() {
-    let tmp = TempDir::new().expect("failed to create temp dir");
+    let tmp = TempDir::new().expect("failed to create temp dir"); // expect #[cfg(test)] // expect #[cfg(test)]
     let lsm_config = LsmConfig {
         path: tmp.path().to_path_buf(),
         ..Default::default()
@@ -14,7 +14,7 @@ async fn test_inverted_index_persistence() {
     let storage = Arc::new(
         LsmStorage::new(lsm_config)
             .await
-            .expect("failed to open storage"),
+            .expect("failed to open storage"), // expect #[cfg(test)]
     );
     let index = InvertedIndex::new(storage.clone(), "integration-test");
 
@@ -23,21 +23,21 @@ async fn test_inverted_index_persistence() {
     index
         .insert(tx1, DocId::new(1), "apple")
         .await
-        .expect("insert 1 failed");
-    storage.commit(tx1).await.expect("commit 1 failed");
+        .expect("insert 1 failed"); // expect #[cfg(test)]
+    storage.commit(tx1).await.expect("commit 1 failed"); // expect #[cfg(test)]
 
     let tx2 = TxId::new(2);
     index
         .insert(tx2, DocId::new(2), "banana")
         .await
-        .expect("insert 2 failed");
-    storage.commit(tx2).await.expect("commit 2 failed");
+        .expect("insert 2 failed"); // expect #[cfg(test)]
+    storage.commit(tx2).await.expect("commit 2 failed"); // expect #[cfg(test)]
 
     // 2. Verify search
     let results = index
         .search("apple", 10)
         .await
-        .expect("search apple failed");
+        .expect("search apple failed"); // expect #[cfg(test)]
     assert_eq!(
         results.len(),
         1,
@@ -49,7 +49,7 @@ async fn test_inverted_index_persistence() {
     let results_banana = index
         .search("banana", 10)
         .await
-        .expect("search banana failed");
+        .expect("search banana failed"); // expect #[cfg(test)]
     assert_eq!(
         results_banana.len(),
         1,
@@ -69,14 +69,14 @@ async fn test_inverted_index_persistence() {
     let storage2 = Arc::new(
         LsmStorage::new(lsm_config2)
             .await
-            .expect("failed to re-open storage"),
+            .expect("failed to re-open storage"), // expect #[cfg(test)]
     );
     let index2 = InvertedIndex::new(storage2.clone(), "integration-test");
 
     let results2 = index2
         .search("apple", 10)
         .await
-        .expect("search after restart failed");
+        .expect("search after restart failed"); // expect #[cfg(test)]
     assert_eq!(
         results2.len(),
         1,
@@ -89,13 +89,13 @@ async fn test_inverted_index_persistence() {
     index2
         .delete(tx3, DocId::new(1))
         .await
-        .expect("delete failed");
-    storage2.commit(tx3).await.expect("commit 3 failed");
+        .expect("delete failed"); // expect #[cfg(test)]
+    storage2.commit(tx3).await.expect("commit 3 failed"); // expect #[cfg(test)]
 
     let results3 = index2
         .search("apple", 10)
         .await
-        .expect("search after delete failed");
+        .expect("search after delete failed"); // expect #[cfg(test)]
     assert_eq!(
         results3.len(),
         0,

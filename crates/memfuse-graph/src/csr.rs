@@ -343,7 +343,7 @@ mod tests {
                     Entity::new(EntityId::new(id), format!("P{}", id), "Person"),
                 )
                 .await
-                .expect("valid setup");
+                .expect("valid setup"); // expect #[cfg(test)]
         }
 
         graph
@@ -352,35 +352,35 @@ mod tests {
                 Edge::new(EntityId::new(1), EntityId::new(2), "knows").with_weight(1.0),
             )
             .await
-            .expect("valid edge");
+            .expect("valid edge"); // expect #[cfg(test)]
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(2), EntityId::new(3), "knows").with_weight(0.8),
             )
             .await
-            .expect("valid edge");
+            .expect("valid edge"); // expect #[cfg(test)]
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(3), EntityId::new(4), "knows").with_weight(0.6),
             )
             .await
-            .expect("valid edge");
+            .expect("valid edge"); // expect #[cfg(test)]
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(4), EntityId::new(5), "knows").with_weight(0.5),
             )
             .await
-            .expect("valid edge");
+            .expect("valid edge"); // expect #[cfg(test)]
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(2), EntityId::new(5), "knows").with_weight(0.4),
             )
             .await
-            .expect("valid edge");
+            .expect("valid edge"); // expect #[cfg(test)]
 
         graph.compact();
         graph
@@ -394,15 +394,15 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(EntityId::new(1), "A", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap #[cfg(test)] // unwrap #[cfg(test)]
         graph
             .add_entity(tx, Entity::new(EntityId::new(2), "B", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap #[cfg(test)] // unwrap #[cfg(test)]
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "E"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap #[cfg(test)] // unwrap #[cfg(test)]
 
         {
             let inner = graph.inner.read();
@@ -426,16 +426,16 @@ mod tests {
     #[tokio::test]
     async fn test_csr_graph_bfs_score_decay() {
         let graph = setup_test_graph().await;
-        let results = graph.traverse(EntityId::new(1), 3).await.expect("traverse");
+        let results = graph.traverse(EntityId::new(1), 3).await.expect("traverse"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         assert_eq!(results.len(), 4);
 
         let score_map: std::collections::HashMap<_, _> = results.into_iter().collect();
 
-        let s2 = *score_map.get(&EntityId::new(2)).expect("node 2 missing");
-        let s3 = *score_map.get(&EntityId::new(3)).expect("node 3 missing");
-        let s4 = *score_map.get(&EntityId::new(4)).expect("node 4 missing");
-        let s5 = *score_map.get(&EntityId::new(5)).expect("node 5 missing");
+        let s2 = *score_map.get(&EntityId::new(2)).expect("node 2 missing"); // expect #[cfg(test)] // expect #[cfg(test)]
+        let s3 = *score_map.get(&EntityId::new(3)).expect("node 3 missing"); // expect #[cfg(test)] // expect #[cfg(test)]
+        let s4 = *score_map.get(&EntityId::new(4)).expect("node 4 missing"); // expect #[cfg(test)] // expect #[cfg(test)]
+        let s5 = *score_map.get(&EntityId::new(5)).expect("node 5 missing"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         assert!((s2 - 0.7).abs() < f32::EPSILON);
         assert!((s3 - 0.392).abs() < f32::EPSILON);
@@ -450,21 +450,21 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(EntityId::new(1), "A", "N"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap #[cfg(test)] // unwrap #[cfg(test)]
         graph
             .add_entity(tx, Entity::new(EntityId::new(2), "B", "N"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap #[cfg(test)] // unwrap #[cfg(test)]
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "E"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap #[cfg(test)] // unwrap #[cfg(test)]
         graph
             .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(1), "E"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap #[cfg(test)] // unwrap #[cfg(test)]
 
-        let results = graph.traverse(EntityId::new(1), 5).await.expect("traverse");
+        let results = graph.traverse(EntityId::new(1), 5).await.expect("traverse"); // expect #[cfg(test)] // expect #[cfg(test)]
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, EntityId::new(2));
     }
@@ -477,7 +477,7 @@ mod tests {
         let results_hop1 = graph
             .traverse(EntityId::new(1), 1)
             .await
-            .expect("traverse 1 hop");
+            .expect("traverse 1 hop"); // expect #[cfg(test)] // expect #[cfg(test)]
         assert_eq!(results_hop1.len(), 1);
         assert_eq!(results_hop1[0].0, EntityId::new(2));
 
@@ -485,7 +485,7 @@ mod tests {
         let results_hop1_n3 = graph
             .traverse(EntityId::new(3), 1)
             .await
-            .expect("traverse 1 hop");
+            .expect("traverse 1 hop"); // expect #[cfg(test)] // expect #[cfg(test)]
         assert_eq!(results_hop1_n3.len(), 1);
         assert_eq!(results_hop1_n3[0].0, EntityId::new(4));
     }
@@ -493,7 +493,7 @@ mod tests {
     #[tokio::test]
     async fn test_csr_graph_stats_accuracy() {
         let graph = setup_test_graph().await;
-        let stats = graph.stats().await.expect("valid stats");
+        let stats = graph.stats().await.expect("valid stats"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         assert_eq!(stats.num_entities, 5);
         assert_eq!(stats.num_edges, 5);

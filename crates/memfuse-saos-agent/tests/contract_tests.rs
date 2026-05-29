@@ -51,7 +51,7 @@ impl AgentTool for TokenTool {
 
 /// Creates a test environment: engine + db + state_collection.
 async fn setup(budget: TokenBudget) -> (OrchestratorEngine, Arc<MemFuse>, AgentContext, TempDir) {
-    let tmp = TempDir::new().expect("temp dir");
+    let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
     let config = MemFuseConfig {
         dimension: 3,
         max_elements: 10_000,
@@ -61,10 +61,10 @@ async fn setup(budget: TokenBudget) -> (OrchestratorEngine, Arc<MemFuse>, AgentC
     let db = Arc::new(
         MemFuse::open_with_config(tmp.path(), config)
             .await
-            .expect("open db"),
+            .expect("open db"), // expect #[cfg(test)]
     );
 
-    let state_col = Arc::new(db.collection("agent-state").await.expect("collection"));
+    let state_col = Arc::new(db.collection("agent-state").await.expect("collection")); // expect #[cfg(test)]
     let ctx = AgentContext::new("test-task", "start", db.clone(), state_col, budget);
 
     let storage = db.inner_storage();
@@ -96,35 +96,35 @@ async fn test_agent_auto_checkpoint_before_step() {
     engine.register_tool(Box::new(TokenTool::new("tool_b", 5)));
 
     let graph = linear_graph();
-    engine.run(&mut ctx, &graph).await.expect("run");
+    engine.run(&mut ctx, &graph).await.expect("run"); // expect #[cfg(test)] // expect #[cfg(test)]
 
     // Verify checkpoints were created before each step via the checkpoint_store
     let cp_start = engine
         .checkpoint_store
         .get_checkpoint("task:test-task:step:0:node:start")
         .await
-        .expect("get");
+        .expect("get"); // expect #[cfg(test)] // expect #[cfg(test)]
     assert!(cp_start.is_some(), "Checkpoint before 'start' must exist");
 
     let cp_a = engine
         .checkpoint_store
         .get_checkpoint("task:test-task:step:1:node:step_a")
         .await
-        .expect("get");
+        .expect("get"); // expect #[cfg(test)] // expect #[cfg(test)]
     assert!(cp_a.is_some(), "Checkpoint before 'step_a' must exist");
 
     let cp_b = engine
         .checkpoint_store
         .get_checkpoint("task:test-task:step:2:node:step_b")
         .await
-        .expect("get");
+        .expect("get"); // expect #[cfg(test)] // expect #[cfg(test)]
     assert!(cp_b.is_some(), "Checkpoint before 'step_b' must exist");
 
     let cp_end = engine
         .checkpoint_store
         .get_checkpoint("task:test-task:step:3:node:end")
         .await
-        .expect("get");
+        .expect("get"); // expect #[cfg(test)] // expect #[cfg(test)]
     assert!(cp_end.is_some(), "Checkpoint at 'end' must exist");
 }
 
@@ -139,14 +139,14 @@ async fn test_agent_replay_from_checkpoint() {
     let graph = linear_graph();
 
     // Run the workflow to completion
-    engine.run(&mut ctx, &graph).await.expect("run");
+    engine.run(&mut ctx, &graph).await.expect("run"); // expect #[cfg(test)] // expect #[cfg(test)]
     assert_eq!(ctx.current_node, "end");
 
     // Now replay from step_a — context should be restored
     engine
         .replay_from(&mut ctx, "step_a")
         .await
-        .expect("replay");
+        .expect("replay"); // expect #[cfg(test)] // expect #[cfg(test)]
     assert_eq!(ctx.current_node, "step_a");
 }
 
@@ -159,11 +159,11 @@ async fn test_agent_audit_log_immutable() {
     engine.register_tool(Box::new(TokenTool::new("tool_b", 5)));
 
     let graph = linear_graph();
-    engine.run(&mut ctx, &graph).await.expect("run");
+    engine.run(&mut ctx, &graph).await.expect("run"); // expect #[cfg(test)] // expect #[cfg(test)]
 
     // Replay the audit log and verify entries
     let audit = AuditLog::new(ctx.state_collection.clone());
-    let entries = audit.replay_task("test-task").await.expect("replay");
+    let entries = audit.replay_task("test-task").await.expect("replay"); // expect #[cfg(test)] // expect #[cfg(test)]
 
     // 3 steps executed: start, step_a, step_b (end doesn't execute a tool)
     assert_eq!(

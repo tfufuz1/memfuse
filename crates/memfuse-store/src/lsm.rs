@@ -926,7 +926,7 @@ mod tests {
     use tempfile::TempDir;
 
     async fn test_storage() -> (LsmStorage, TempDir) {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             memtable_size_limit: 1024 * 1024,
@@ -935,7 +935,7 @@ mod tests {
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
         };
-        let storage = LsmStorage::new(config).await.expect("create storage");
+        let storage = LsmStorage::new(config).await.expect("create storage"); // expect #[cfg(test)]
         (storage, tmp)
     }
 
@@ -944,10 +944,10 @@ mod tests {
         let (storage, _tmp) = test_storage().await;
         let tx = TxId::new(1);
 
-        storage.put(tx, b"hello", b"world").await.expect("put");
-        storage.commit(tx).await.expect("commit");
+        storage.put(tx, b"hello", b"world").await.expect("put"); // expect #[cfg(test)] // expect #[cfg(test)]
+        storage.commit(tx).await.expect("commit"); // expect #[cfg(test)] // expect #[cfg(test)]
 
-        let val = storage.get(b"hello").await.expect("get");
+        let val = storage.get(b"hello").await.expect("get"); // expect #[cfg(test)] // expect #[cfg(test)]
         assert_eq!(val, Some(b"world".to_vec()));
     }
 
@@ -956,14 +956,14 @@ mod tests {
         let (storage, _tmp) = test_storage().await;
         let tx1 = TxId::new(1);
 
-        storage.put(tx1, b"key", b"val").await.expect("put");
-        storage.commit(tx1).await.expect("commit");
+        storage.put(tx1, b"key", b"val").await.expect("put"); // expect #[cfg(test)] // expect #[cfg(test)]
+        storage.commit(tx1).await.expect("commit"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         let tx2 = TxId::new(2);
-        storage.delete(tx2, b"key").await.expect("delete");
-        storage.commit(tx2).await.expect("commit");
+        storage.delete(tx2, b"key").await.expect("delete"); // expect #[cfg(test)] // expect #[cfg(test)]
+        storage.commit(tx2).await.expect("commit"); // expect #[cfg(test)] // expect #[cfg(test)]
 
-        let val = storage.get(b"key").await.expect("get");
+        let val = storage.get(b"key").await.expect("get"); // expect #[cfg(test)] // expect #[cfg(test)]
         assert_eq!(val, None);
     }
 
@@ -972,17 +972,17 @@ mod tests {
         let (storage, _tmp) = test_storage().await;
         let tx = TxId::new(1);
 
-        storage.put(tx, b"key", b"val").await.expect("put");
-        storage.rollback(tx).await.expect("rollback");
+        storage.put(tx, b"key", b"val").await.expect("put"); // expect #[cfg(test)] // expect #[cfg(test)]
+        storage.rollback(tx).await.expect("rollback"); // expect #[cfg(test)] // expect #[cfg(test)]
 
-        let val = storage.get(b"key").await.expect("get");
+        let val = storage.get(b"key").await.expect("get"); // expect #[cfg(test)] // expect #[cfg(test)]
         assert_eq!(val, None);
     }
 
     #[tokio::test]
     async fn test_get_nonexistent() {
         let (storage, _tmp) = test_storage().await;
-        let val = storage.get(b"nonexistent").await.expect("get");
+        let val = storage.get(b"nonexistent").await.expect("get"); // expect #[cfg(test)] // expect #[cfg(test)]
         assert_eq!(val, None);
     }
 
@@ -991,20 +991,20 @@ mod tests {
         let (storage, _tmp) = test_storage().await;
 
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key", b"val1").await.expect("put1");
-        storage.commit(tx1).await.expect("commit1");
+        storage.put(tx1, b"key", b"val1").await.expect("put1"); // expect #[cfg(test)] // expect #[cfg(test)]
+        storage.commit(tx1).await.expect("commit1"); // expect #[cfg(test)] // expect #[cfg(test)]
 
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"key", b"val2").await.expect("put2");
-        storage.commit(tx2).await.expect("commit2");
+        storage.put(tx2, b"key", b"val2").await.expect("put2"); // expect #[cfg(test)] // expect #[cfg(test)]
+        storage.commit(tx2).await.expect("commit2"); // expect #[cfg(test)] // expect #[cfg(test)]
 
-        let val = storage.get(b"key").await.expect("get");
+        let val = storage.get(b"key").await.expect("get"); // expect #[cfg(test)] // expect #[cfg(test)]
         assert_eq!(val, Some(b"val2".to_vec()));
     }
 
     #[tokio::test]
     async fn test_flush_creates_sstable() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)] // expect #[cfg(test)]
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             memtable_size_limit: 64, // Tiny limit to trigger flush easily
@@ -1013,7 +1013,7 @@ mod tests {
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
         };
-        let storage = LsmStorage::new(config).await.expect("create storage");
+        let storage = LsmStorage::new(config).await.expect("create storage"); // expect #[cfg(test)]
 
         // Insert enough data to exceed the tiny memtable limit
         let tx = TxId::new(1);
@@ -1023,15 +1023,15 @@ mod tests {
             storage
                 .put(tx, key.as_bytes(), val.as_bytes())
                 .await
-                .expect("put");
+                .expect("put"); // expect #[cfg(test)]
         }
-        storage.commit(tx).await.expect("commit");
+        storage.commit(tx).await.expect("commit"); // expect #[cfg(test)]
 
         // Verify data is still readable (from SSTable after flush)
         for i in 0..10u8 {
             let key = format!("key-{:03}", i);
             let expected = format!("value-{:03}", i);
-            let val = storage.get(key.as_bytes()).await.expect("get");
+            let val = storage.get(key.as_bytes()).await.expect("get"); // expect #[cfg(test)]
             assert_eq!(
                 val,
                 Some(expected.into_bytes()),
@@ -1041,7 +1041,7 @@ mod tests {
         }
 
         // Verify SSTable file(s) were created
-        let stats = storage.stats().await.expect("stats");
+        let stats = storage.stats().await.expect("stats"); // expect #[cfg(test)]
         assert!(
             stats.num_segments > 0,
             "Expected at least one SSTable segment after flush"
@@ -1057,16 +1057,16 @@ mod tests {
         for c in b'a'..=b'z' {
             let key = [c];
             let val = [c, c];
-            storage.put(tx, &key, &val).await.expect("put");
+            storage.put(tx, &key, &val).await.expect("put"); // expect #[cfg(test)] // expect #[cfg(test)]
         }
-        storage.commit(tx).await.expect("commit");
+        storage.commit(tx).await.expect("commit"); // expect #[cfg(test)]
 
         // Scan [c, g] inclusive
         use std::ops::Bound;
         let results = storage
             .scan(Bound::Included(b"c"), Bound::Included(b"g"))
             .await
-            .expect("scan");
+            .expect("scan"); // expect #[cfg(test)]
         assert_eq!(results.len(), 5); // c, d, e, f, g
         assert_eq!(results[0].0, b"c");
         assert_eq!(results[4].0, b"g");
@@ -1075,31 +1075,31 @@ mod tests {
         let results = storage
             .scan(Bound::Excluded(b"c"), Bound::Excluded(b"g"))
             .await
-            .expect("scan");
+            .expect("scan"); // expect #[cfg(test)]
         assert_eq!(results.len(), 3); // d, e, f
 
         // Scan unbounded start to d inclusive
         let results = storage
             .scan(Bound::Unbounded, Bound::Included(b"d"))
             .await
-            .expect("scan");
+            .expect("scan"); // expect #[cfg(test)]
         assert_eq!(results.len(), 4); // a, b, c, d
 
         // Scan with deleted key
         let tx2 = TxId::new(2);
-        storage.delete(tx2, b"e").await.expect("delete");
-        storage.commit(tx2).await.expect("commit");
+        storage.delete(tx2, b"e").await.expect("delete"); // expect #[cfg(test)]
+        storage.commit(tx2).await.expect("commit"); // expect #[cfg(test)]
 
         let results = storage
             .scan(Bound::Included(b"d"), Bound::Included(b"f"))
             .await
-            .expect("scan");
+            .expect("scan"); // expect #[cfg(test)]
         assert_eq!(results.len(), 2); // d, f (e deleted)
     }
 
     #[tokio::test]
     async fn test_lsm_rollback_persistence() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)] // expect #[cfg(test)]
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             memtable_size_limit: 1024 * 1024,
@@ -1112,47 +1112,50 @@ mod tests {
         {
             let storage = LsmStorage::new(config.clone())
                 .await
-                .expect("create storage");
+                .expect("create storage"); // expect #[cfg(test)]
 
             let tx1 = TxId::new(1);
-            storage.put(tx1, b"k1", b"v1").await.unwrap();
-            storage.commit(tx1).await.unwrap();
+            storage.put(tx1, b"k1", b"v1").await.unwrap(); // unwrap #[cfg(test)]
+            storage.commit(tx1).await.unwrap(); // unwrap #[cfg(test)]
 
             let tx2 = TxId::new(2);
-            storage.put(tx2, b"k2", b"v2").await.unwrap();
-            storage.commit(tx2).await.unwrap();
+            storage.put(tx2, b"k2", b"v2").await.unwrap(); // unwrap #[cfg(test)]
+            storage.commit(tx2).await.unwrap(); // unwrap #[cfg(test)]
 
             // Verify both exist
-            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
-            assert_eq!(storage.get(b"k2").await.unwrap(), Some(b"v2".to_vec()));
+            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec())); // unwrap #[cfg(test)]
+            assert_eq!(storage.get(b"k2").await.unwrap(), Some(b"v2".to_vec())); // unwrap #[cfg(test)]
 
             // Rollback to Tx1
-            storage.rollback_to_tx(tx1).await.expect("rollback");
+            storage.rollback_to_tx(tx1).await.expect("rollback"); // expect #[cfg(test)]
 
-            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
-            assert_eq!(storage.get(b"k2").await.unwrap(), None);
+            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec())); // unwrap #[cfg(test)]
+            assert_eq!(storage.get(b"k2").await.unwrap(), None); // unwrap #[cfg(test)]
         }
 
         // Restart storage
         {
-            let storage = LsmStorage::new(config).await.expect("restart storage");
-            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
+            let storage = LsmStorage::new(config).await.expect("restart storage"); // expect #[cfg(test)]
+            assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec())); // unwrap #[cfg(test)]
             assert_eq!(
-                storage.get(b"k2").await.unwrap(),
+                storage.get(b"k2").await.unwrap(), // unwrap #[cfg(test)]
                 None,
                 "k2 should NOT be replayed after rollback"
             );
 
             // Verify we can still append new transactions after rollback
             let tx3 = TxId::new(3);
-            storage.put(tx3, b"k3", b"v3").await.unwrap();
-            storage.commit(tx3).await.unwrap();
-            assert_eq!(storage.get(b"k3").await.unwrap(), Some(b"v3".to_vec()));
+            storage.put(tx3, b"k3", b"v3").await.unwrap(); // unwrap #[cfg(test)]
+            storage.commit(tx3).await.unwrap(); // unwrap #[cfg(test)]
+            assert_eq!(
+                storage.get(b"k3").await.unwrap(), // unwrap #[cfg(test)]
+                Some(b"v3".to_vec())
+            );
         }
     }
     #[tokio::test]
     async fn test_rollback_with_sstables() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)] // expect #[cfg(test)]
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             memtable_size_limit: 1024 * 1024,
@@ -1161,31 +1164,31 @@ mod tests {
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
         };
-        let storage = LsmStorage::new(config).await.expect("create storage");
+        let storage = LsmStorage::new(config).await.expect("create storage"); // expect #[cfg(test)]
 
         // 1. Insert data for TX 1, TX 2
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"k1", b"v1").await.unwrap();
-        storage.commit(tx1).await.unwrap();
+        storage.put(tx1, b"k1", b"v1").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx1).await.unwrap(); // unwrap #[cfg(test)]
 
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"k2", b"v2").await.unwrap();
-        storage.commit(tx2).await.unwrap();
+        storage.put(tx2, b"k2", b"v2").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx2).await.unwrap(); // unwrap #[cfg(test)]
 
         // 2. Flush (SSTable 1 contains TX 1, 2)
-        storage.force_flush().await.unwrap();
+        storage.force_flush().await.unwrap(); // unwrap #[cfg(test)]
 
         // 3. Insert data for TX 3, TX 4
         let tx3 = TxId::new(3);
-        storage.put(tx3, b"k3", b"v3").await.unwrap();
-        storage.commit(tx3).await.unwrap();
+        storage.put(tx3, b"k3", b"v3").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx3).await.unwrap(); // unwrap #[cfg(test)]
 
         let tx4 = TxId::new(4);
-        storage.put(tx4, b"k4", b"v4").await.unwrap();
-        storage.commit(tx4).await.unwrap();
+        storage.put(tx4, b"k4", b"v4").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx4).await.unwrap(); // unwrap #[cfg(test)]
 
         // 4. Flush (SSTable 2 contains TX 3, 4)
-        storage.force_flush().await.unwrap();
+        storage.force_flush().await.unwrap(); // unwrap #[cfg(test)]
 
         {
             let sstables = storage.sstables.read().await;
@@ -1193,7 +1196,7 @@ mod tests {
         }
 
         // 5. Rollback to TX 2
-        storage.rollback_to_tx(tx2).await.expect("rollback");
+        storage.rollback_to_tx(tx2).await.expect("rollback"); // expect #[cfg(test)]
 
         // 6. Verify SSTable 2 is gone, 7. Verify SSTable 1 is still there.
         {
@@ -1202,9 +1205,9 @@ mod tests {
             assert_eq!(sstables[0].metadata().max_tx_id, 2);
         }
 
-        assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec()));
-        assert_eq!(storage.get(b"k2").await.unwrap(), Some(b"v2".to_vec()));
-        assert_eq!(storage.get(b"k3").await.unwrap(), None);
-        assert_eq!(storage.get(b"k4").await.unwrap(), None);
+        assert_eq!(storage.get(b"k1").await.unwrap(), Some(b"v1".to_vec())); // unwrap #[cfg(test)]
+        assert_eq!(storage.get(b"k2").await.unwrap(), Some(b"v2".to_vec())); // unwrap #[cfg(test)]
+        assert_eq!(storage.get(b"k3").await.unwrap(), None); // unwrap #[cfg(test)]
+        assert_eq!(storage.get(b"k4").await.unwrap(), None); // unwrap #[cfg(test)]
     }
 }

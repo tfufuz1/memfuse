@@ -9,7 +9,7 @@ use tokio::task::JoinHandle;
 // Stress test for concurrent checkpoint creation and deletion during active writes.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_checkpoint_concurrency_stress() {
-    let tmp = TempDir::new().expect("failed to create temp dir");
+    let tmp = TempDir::new().expect("failed to create temp dir"); // expect #[cfg(test)]
     let lsm_config = LsmConfig {
         path: tmp.path().to_path_buf(),
         ..Default::default()
@@ -17,7 +17,7 @@ async fn test_checkpoint_concurrency_stress() {
     let storage = Arc::new(
         LsmStorage::new(lsm_config)
             .await
-            .expect("failed to open storage"),
+            .expect("failed to open storage"), // expect #[cfg(test)]
     );
     let manager = Arc::new(PersistentCheckpointStore::new(storage.clone()));
 
@@ -39,11 +39,11 @@ async fn test_checkpoint_concurrency_stress() {
                 storage
                     .put(tx, key.as_bytes(), val.as_bytes())
                     .await
-                    .expect("put failed");
-                storage.commit(tx).await.expect("commit failed");
+                    .expect("put failed"); // expect #[cfg(test)]
+                storage.commit(tx).await.expect("commit failed"); // expect #[cfg(test)]
 
                 if i % 10 == 0 {
-                    storage.force_flush().await.expect("flush failed");
+                    storage.force_flush().await.expect("flush failed"); // expect #[cfg(test)]
                 }
             }
         }));
@@ -58,7 +58,7 @@ async fn test_checkpoint_concurrency_stress() {
                 let cp = manager
                     .create_checkpoint(&name, "default", 0, TxId::new(0), serde_json::json!({}))
                     .await
-                    .expect("create checkpoint failed");
+                    .expect("create checkpoint failed"); // expect #[cfg(test)]
 
                 // Keep it for a bit
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -66,16 +66,16 @@ async fn test_checkpoint_concurrency_stress() {
                 manager
                     .drop_checkpoint(&cp.name)
                     .await
-                    .expect("drop checkpoint failed");
+                    .expect("drop checkpoint failed"); // expect #[cfg(test)]
             }
         }));
     }
 
     for h in handles {
-        h.await.expect("task panicked");
+        h.await.expect("task panicked"); // expect #[cfg(test)]
     }
 
     // Final sanity check
-    let last_seq = storage.last_seq_no().await.expect("get last seq");
+    let last_seq = storage.last_seq_no().await.expect("get last seq"); // expect #[cfg(test)]
     assert!(last_seq > 0);
 }

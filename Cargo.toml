@@ -54,6 +54,9 @@ tracing = "0.1"
 # Testing
 tempfile = "3"
 
+# Security upgrades
+wasmtime = "24.0.7"
+
 # Internal crates
 memfuse-core = { path = "crates/memfuse-core" }
 memfuse-store = { path = "crates/memfuse-store" }
