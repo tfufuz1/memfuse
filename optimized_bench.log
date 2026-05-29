@@ -1,0 +1,12 @@
+   Compiling memfuse-checkpoint v0.1.0 (/app/crates/memfuse-checkpoint)
+   Compiling memfuse-db v0.1.0 (/app/crates/memfuse-db)
+    Finished `bench` profile [optimized] target(s) in 1m 03s
+     Running ../../benches/migration_benchmarks.rs (target/release/deps/migration_benchmarks-88217d154836c9d2)
+Gnuplot not found, using plotters backend
+test hybrid_search_latency ... bench:       79769 ns/iter (+/- 1156)
+
+
+Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 5.2s, enable flat sampling, or reduce sample count to 60.
+test checkpoint_latency ... bench:      947745 ns/iter (+/- 176564)
+
+test rerun_cost_get_latency ... bench:       35931 ns/iter (+/- 488)

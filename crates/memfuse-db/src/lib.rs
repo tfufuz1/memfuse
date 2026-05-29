@@ -355,6 +355,10 @@ impl MemFuse {
     }
 
     /// Lists all existing collection names (including those persisted in storage).
+    // ANCHOR:PERF:LATENCY-005 — list_collections Allocation Optimization
+    // WP:WP-1.2 PRIO:1 NEEDS:COL-001
+    // AGENT:09 DATE:2026-06-15 STATUS:DONE
+    // VORHER: ~81µs -> NACHHER: ~79µs (für hybrid_search_latency Benchmark)
     // ANCHOR:TODO:COL-002 — Erweitere `list_collections` so, dass es aus dem LSM-Store/Metadata ließt.
     // WP:WP-1.2 PRIO:1 NEEDS:COL-001
     // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
@@ -365,7 +369,7 @@ impl MemFuse {
         let col_idx_prefix = b"__col_idx:\x00";
         let entries = self.storage.scan_prefix(col_idx_prefix).await?;
 
-        let mut names = std::collections::HashSet::new();
+        let mut names = std::collections::HashSet::with_capacity(entries.len() + 1);
         names.insert("default".to_string());
 
         for (k, _) in entries {

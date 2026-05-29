@@ -1,0 +1,10 @@
+    Finished `bench` profile [optimized] target(s) in 1.14s
+     Running ../../benches/migration_benchmarks.rs (target/release/deps/migration_benchmarks-88217d154836c9d2)
+Gnuplot not found, using plotters backend
+test hybrid_search_latency ... bench:       81045 ns/iter (+/- 927)
+
+
+Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 5.9s, enable flat sampling, or reduce sample count to 60.
+test checkpoint_latency ... bench:     1072072 ns/iter (+/- 232956)
+
+test rerun_cost_get_latency ... bench:       35797 ns/iter (+/- 319)
