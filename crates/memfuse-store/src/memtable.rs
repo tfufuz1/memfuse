@@ -13,11 +13,14 @@ use parking_lot::RwLock;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
+/// Versioned entry in the memtable.
+pub type MemTableEntry = (u64, Bytes, u64);
+
 #[derive(Debug)]
 pub struct MemTable {
-    /// Maps UserKey -> Vec<(SequenceNumber, Value, TxId)>.
+    /// Maps UserKey -> Vec<MemTableEntry>.
     /// The Vec is sorted by SequenceNumber ascending.
-    entries: RwLock<BTreeMap<Bytes, Vec<(u64, Bytes, u64)>>>,
+    entries: RwLock<BTreeMap<Bytes, Vec<MemTableEntry>>>,
     size: AtomicUsize,
     min_tx: AtomicU64,
     max_tx: AtomicU64,

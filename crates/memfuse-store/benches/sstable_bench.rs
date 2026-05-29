@@ -15,7 +15,7 @@ fn bench_sstable_get(c: &mut Criterion) {
             let key = format!("key{:05}", i);
             let val = format!("val{:05}", i);
             builder
-                .add(key.as_bytes(), val.as_bytes(), i as u64)
+                .add(key.as_bytes(), val.as_bytes(), i as u64, i as u64)
                 .await
                 .unwrap(); // unwrap
         }

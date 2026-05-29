@@ -117,8 +117,10 @@ impl OrchestratorEngine {
         // 3. Latest match for node_id
         let checkpoint = checkpoints
             .iter()
-            .filter(|c| c.name.starts_with(&format!("task:{}:", ctx.task_id)))
-            .filter(|c| {
+            .rfind(|c| {
+                if !c.name.starts_with(&format!("task:{}:", ctx.task_id)) {
+                    return false;
+                }
                 // Check if identifier is step_count
                 if let Ok(step) = identifier.parse::<u64>() {
                     c.name.contains(&format!(":step:{}:", step))
@@ -127,7 +129,6 @@ impl OrchestratorEngine {
                     c.name.ends_with(&format!(":node:{}", identifier))
                 }
             })
-            .last() // Take the latest one
             .ok_or_else(|| {
                 MemFuseError::Internal(format!("Checkpoint for {} not found", identifier))
             })?;
