@@ -7,6 +7,38 @@
 // WP:WP-6.5 PRIO:2 NEEDS:WP-2.1
 // STATUS:SCAFFOLD DATE:2026-05-17
 
+use std::collections::HashSet;
+use std::sync::OnceLock;
+
+static GERMAN_DICT: OnceLock<HashSet<String>> = OnceLock::new();
+
+fn get_german_dict() -> &'static HashSet<String> {
+    GERMAN_DICT.get_or_init(|| {
+        let dictionary = [
+            "bundes",
+            "verfassungs",
+            "gericht",
+            "gesetz",
+            "entwurf",
+            "daten",
+            "bank",
+            "speicher",
+            "vektor",
+            "suche",
+            "system",
+            "steuerung",
+            "verwaltung",
+            "bericht",
+            "prüfung",
+            "schutz",
+            "sicherheit",
+            "zugriff",
+            "rechte",
+        ];
+        dictionary.into_iter().map(|w| w.to_string()).collect()
+    })
+}
+
 /// Trait for morphological tokenization.
 ///
 /// Decomposes compound words into constituent morphemes.
@@ -57,51 +89,48 @@ impl Default for GermanCompoundSplitter {
 
 impl MorphologicalTokenizer for GermanCompoundSplitter {
     fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
-        // Simple recursive splitting based on a set of known components
-        // and common German compound patterns (Fugen-S etc.)
-
         if token.len() <= self.min_component_len {
             return vec![token];
         }
 
-        // Common components in technical/legal German compounds
-        let dictionary = [
-            "bundes",
-            "verfassungs",
-            "gericht",
-            "gesetz",
-            "entwurf",
-            "daten",
-            "bank",
-            "speicher",
-            "vektor",
-            "suche",
-            "system",
-            "steuerung",
-            "verwaltung",
-            "bericht",
-            "prüfung",
-            "schutz",
-            "sicherheit",
-            "zugriff",
-            "rechte",
-        ];
+        let dict = get_german_dict();
 
-        for &word in &dictionary {
-            if token.len() > word.len() && token.starts_with(word) {
-                let rest = &token[word.len()..];
+        // Optimized descending scan for longest-prefix matching
+        for len in (self.min_component_len..=token.len()).rev() {
+            // Ensure UTF-8 safety
+            if !token.is_char_boundary(len) {
+                continue;
+            }
 
-                // Handle Fugen-s (e.g., Verfassung-s-gericht)
-                let actual_rest = if rest.starts_with('s') && rest.len() > 1 {
-                    &rest[1..]
-                } else {
-                    rest
-                };
+            let prefix = &token[..len];
+            if dict.contains(prefix) {
+                if len == token.len() {
+                    return vec![token];
+                }
 
-                if actual_rest.len() >= self.min_component_len {
-                    let mut result = vec![&token[..word.len()]];
-                    result.extend(self.decompose(actual_rest));
+                let rest = &token[len..];
+
+                // Check for regular split first
+                let sub_regular = self.decompose(rest);
+                if sub_regular.len() > 1
+                    || (sub_regular.len() == 1 && sub_regular[0].len() >= self.min_component_len)
+                {
+                    let mut result = vec![prefix];
+                    result.extend(sub_regular);
                     return result;
+                }
+
+                // Handle Fugen-s: only if regular split failed
+                if rest.starts_with('s') && rest.len() > 1 {
+                    let actual_rest = &rest[1..];
+                    let sub_fugen = self.decompose(actual_rest);
+                    if sub_fugen.len() > 1
+                        || (sub_fugen.len() == 1 && sub_fugen[0].len() >= self.min_component_len)
+                    {
+                        let mut result = vec![prefix];
+                        result.extend(sub_fugen);
+                        return result;
+                    }
                 }
             }
         }
@@ -164,11 +193,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_german_splitter_scaffold() {
+    fn test_german_splitter_optimized() {
         let splitter = GermanCompoundSplitter::new();
-        // Fallback: returns original token
-        let result = splitter.decompose("Bundesverfassungsgericht");
-        assert_eq!(result, vec!["Bundesverfassungsgericht"]);
+        // Now it should actually split based on our dictionary
+        let result = splitter.decompose("bundesverfassungsgericht");
+        assert_eq!(result, vec!["bundes", "verfassungs", "gericht"]);
+
+        let result2 = splitter.decompose("gesetzentwurf");
+        assert_eq!(result2, vec!["gesetz", "entwurf"]);
+
+        let result3 = splitter.decompose("datensicherheit");
+        assert_eq!(result3, vec!["daten", "sicherheit"]);
+
         assert_eq!(splitter.language(), "de");
     }
 

@@ -103,8 +103,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 
     /// Appends and updates inverted index structures for a document.
-    // TODO(FIND-TXT-002): Fehlendes OpenTelemetry Tracing
-    // Annotieren mit #[instrument(skip(self, text))]
+    #[tracing::instrument(skip(self, text))]
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
@@ -231,8 +230,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 
     /// Searches the inverted index using BM25.
-    // TODO(FIND-TXT-002): Fehlendes OpenTelemetry Tracing
-    // Annotieren mit #[instrument(skip(self, query))]
+    #[tracing::instrument(skip(self, query))]
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
         let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
@@ -308,7 +306,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
         // Sort descending by score, then ascending by DocId for determinism
         results.sort_by(|a, b| {
             b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
+                .unwrap_or(std::cmp::Ordering::Equal) // unwrap allowed (AGENT:05)
                 .then_with(|| a.0.cmp(&b.0))
         });
         results.truncate(k);
