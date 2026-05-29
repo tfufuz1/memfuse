@@ -71,7 +71,7 @@ jobs:
           echo "Verifying memfuse-db..."
           if cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py|memfuse-sandbox|memfuse-saos-agent"; then
             echo "ERROR: memfuse-db imports higher layers."
-            cargo tree -p memfuse-db --edges no-dev | grep -E "memfuse-py|memfuse-sandbox|memfuse-saos-agent"
+            cargo tree -p memfuse-db --edges no-dev | grep "memfuse-py|memfuse-sandbox|memfuse-saos-agent"
             exit 1
           fi
 
@@ -81,7 +81,7 @@ jobs:
           echo "Verifying memfuse-py..."
           if cargo tree -p memfuse-py --edges no-dev | grep -E -q "memfuse-sandbox|memfuse-saos-agent"; then
             echo "ERROR: memfuse-py violates isolation."
-            cargo tree -p memfuse-py --edges no-dev | grep -E "memfuse-sandbox|memfuse-saos-agent"
+            cargo tree -p memfuse-py --edges no-dev | grep "memfuse-sandbox|memfuse-saos-agent"
             exit 1
           fi
 
