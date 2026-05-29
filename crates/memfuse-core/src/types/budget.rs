@@ -1,3 +1,5 @@
+//! Resource budget and tracking.
+//! ANCHOR:DOC:BUDGET-001 AGENT:01 STATUS:DONE PRIO:3
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.
@@ -124,7 +126,7 @@ mod tests {
         assert_eq!(tracker.memory_used(), 0);
         assert!(tracker.has_memory_capacity());
 
-        tracker.consume_memory(500).expect("should consume");
+        tracker.consume_memory(500).expect("should consume"); // expect #[cfg(test)]
         assert_eq!(tracker.memory_used(), 500);
         assert!(tracker.has_memory_capacity()); // 50% < 95%
 
@@ -137,11 +139,11 @@ mod tests {
         let budget = ResourceBudget { memory_limit: 1000 };
         let tracker = ResourceTracker::new(budget);
 
-        tracker.consume_memory(900).expect("should consume");
+        tracker.consume_memory(900).expect("should consume"); // expect #[cfg(test)]
         let result = tracker.consume_memory(200);
 
         assert!(result.is_err());
-        match result.err().unwrap() {
+        match result.err().unwrap() { // unwrap #[cfg(test)]
             MemFuseError::MemoryBudgetExceeded { limit_mb, .. } => {
                 // used_mb = (900 + 200) / 1024*1024 = 0 in this case because limit is tiny
                 assert_eq!(limit_mb, 0);
@@ -155,10 +157,10 @@ mod tests {
         let budget = ResourceBudget { memory_limit: 1000 };
         let tracker = ResourceTracker::new(budget);
 
-        tracker.consume_memory(949).expect("ok");
+        tracker.consume_memory(949).expect("ok"); // expect #[cfg(test)]
         assert!(tracker.has_memory_capacity()); // 94.9% < 95%
 
-        tracker.consume_memory(1).expect("ok");
+        tracker.consume_memory(1).expect("ok"); // expect #[cfg(test)]
         assert!(!tracker.has_memory_capacity()); // 95% is not < 95%
     }
 
@@ -174,13 +176,13 @@ mod tests {
             let t = tracker.clone();
             handlers.push(std::thread::spawn(move || {
                 for _ in 0..100 {
-                    t.consume_memory(10).expect("consume");
+                    t.consume_memory(10).expect("consume"); // expect #[cfg(test)]
                 }
             }));
         }
 
         for h in handlers {
-            h.join().unwrap();
+            h.join().unwrap(); // unwrap #[cfg(test)]
         }
 
         assert_eq!(tracker.memory_used(), 10000);
@@ -203,7 +205,7 @@ mod tests {
         // Verify we can still consume memory (wrap would make memory_used > limit)
         tracker
             .consume_memory(500)
-            .expect("Should still allow consumption after underflow");
+            .expect("Should still allow consumption after underflow"); // expect #[cfg(test)]
         assert_eq!(tracker.memory_used(), 500);
     }
 
@@ -217,7 +219,7 @@ mod tests {
         assert!(result.is_err());
 
         // Now test if current + bytes overflows u64
-        tracker.consume_memory(500).unwrap();
+        tracker.consume_memory(500).unwrap(); // unwrap #[cfg(test)]
         let result = tracker.consume_memory(u64::MAX - 100);
         assert!(result.is_err());
     }

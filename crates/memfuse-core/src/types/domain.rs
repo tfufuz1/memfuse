@@ -1,3 +1,5 @@
+//! Domain types for MemFuse Core.
+//! ANCHOR:DOC:DOMAIN-001 AGENT:01 STATUS:DONE PRIO:3
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -237,8 +239,8 @@ mod tests {
     #[test]
     fn test_doc_id_determinism() {
         let key = "consistent_key";
-        let id1 = DocId::from_key(key).unwrap();
-        let id2 = DocId::from_key(key).unwrap();
+        let id1 = DocId::from_key(key).unwrap(); // unwrap #[cfg(test)]
+        let id2 = DocId::from_key(key).unwrap(); // unwrap #[cfg(test)]
         assert_eq!(id1, id2);
     }
 }
