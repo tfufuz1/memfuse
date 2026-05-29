@@ -502,6 +502,7 @@ mod tests {
             }
         }
 
+        #[async_trait::async_trait]
         impl StorageEngine for TrackingStorage {
             async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
                 self.inner.get(key).await
