@@ -62,3 +62,10 @@ Keine Code-Integration ohne fehlerfreie Metriken. Exekutiere diese Sequenz zur Q
 Priorisiere **TIER 1 (BLOCKING)** Spezifikationen im [BACKLOG.md](./docs/BACKLOG.md).
 Maximale Kritikalität erfordert Fokussierung auf: **FIND-CRY-002** (Nonce-Reuse Mitigation) und **FIND-STO-003** (Rollback-Integrität).
 </mission>
+
+## VERBOTENE MUSTER (NIE TUN)
+- [ ] NIEMALS unwrap() ohne vorherigen Kommentar warum es sicher ist
+- [ ] NIEMALS einen WAL-Write nach einem MemTable-Write (Reihenfolge KRITISCH)
+- [ ] NIEMALS den HNSW-Layer-Assignment-Algorithmus ändern ohne Recall-Benchmark
+- [ ] NIEMALS Mutex.lock() halten während ein await() aufgerufen wird
+- [ ] NIEMALS hardcodierte IVs in der Kryptografie nutzen

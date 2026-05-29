@@ -133,12 +133,16 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
 
         // Use a safe internal TxId
         let tx = self.next_tx_id();
-        if let Err(e) = self.storage.put(tx, key.as_bytes(), &value).await {
-            let _ = self.storage.rollback(tx).await;
-            return Err(e);
+        let res = async {
+            self.storage.put(tx, key.as_bytes(), &value).await?;
+            self.storage.commit(tx).await?;
+            Ok::<(), memfuse_core::error::MemFuseError>(())
         }
-        if let Err(e) = self.storage.commit(tx).await {
+        .await;
+
+        if let Err(e) = res {
             let _ = self.storage.rollback(tx).await;
+            let _ = self.storage.unpin_checkpoint(seq_no).await;
             return Err(e);
         }
 
@@ -502,6 +506,7 @@ mod tests {
             }
         }
 
+        #[async_trait::async_trait]
         impl StorageEngine for TrackingStorage {
             async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
                 self.inner.get(key).await

@@ -216,8 +216,6 @@ impl Wal {
     }
 
     /// Appends an entry to the WAL.
-    // TODO(FIND-STO-001): WAL CRC fehlend. (WP-1.1)
-    // Add CRC32c or HMAC tagging to prevent stealth corruption during crash recoveries.
     pub async fn append(&self, entry: &WalEntry) -> Result<()> {
         self.append_batch(std::slice::from_ref(entry)).await
     }

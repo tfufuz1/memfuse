@@ -260,8 +260,6 @@ impl LsmStorage {
         ));
         let compaction_sstables = Arc::clone(&sstables);
         let compaction_path = config.path.clone();
-        // TODO(FIND-STO-001): Compaction-Engine CPU Starvation (WL-2)
-        // Ensure the internal while-loop explicitly calls tokio::task::yield_now() between merges!
         let (_compaction_tx, compaction_rx) = tokio::sync::watch::channel(false);
         tokio::spawn(async move {
             compaction_engine
@@ -296,7 +294,6 @@ impl LsmStorage {
     /// Rolls back the entire storage state to a specific transaction ID.
     /// This is a destructive operation that removes all data after the target TX.
     /// ANCHOR:AUDIT:FIXED (2026-05-23) — Initial implementation for Time-Travel Debugging.
-    // TODO(FIND-STO-003): Rollback-Inconsistency - Update rollback_to_tx to properly drop SSTables where min_tx_id > target_tx.
     pub async fn rollback_to_tx(&self, target_tx: TxId) -> Result<()> {
         let _commit_lock = self.commit_mutex.lock().await;
         let mut state = self.state.write().await;

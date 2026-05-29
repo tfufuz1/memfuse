@@ -382,6 +382,7 @@ mod tests {
             .await
             .expect("valid edge");
 
+        graph.commit(tx).await.expect("commit");
         graph.compact();
         graph
     }
@@ -404,10 +405,12 @@ mod tests {
             .await
             .unwrap();
 
+        graph.commit(tx).await.unwrap();
+
         {
             let inner = graph.inner.read();
             assert!(inner.is_dirty);
-            assert_eq!(inner.staged_edges.len(), 1);
+            assert_eq!(inner.staged_edges.len(), 0);
             assert_eq!(inner.targets.len(), 0);
         }
 
@@ -463,6 +466,8 @@ mod tests {
             .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(1), "E"))
             .await
             .unwrap();
+
+        graph.commit(tx).await.unwrap();
 
         let results = graph.traverse(EntityId::new(1), 5).await.expect("traverse");
         assert_eq!(results.len(), 1);
