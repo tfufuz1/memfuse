@@ -775,7 +775,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_diskann_header_persistence() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().expect("diskann test op");
         let index_path = temp_dir.path().join("header_test.idx");
 
         let config = DiskAnnConfig {
@@ -803,7 +803,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_diskann_recall_basic() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().expect("diskann test op");
         let index_path = temp_dir.path().join("recall_test.idx");
 
         let config = DiskAnnConfig {
@@ -837,7 +837,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_diskann_sq8_recall() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().expect("diskann test op");
         let index_path = temp_dir.path().join("sq8_test.idx");
 
         let config = DiskAnnConfig {

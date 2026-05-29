@@ -394,15 +394,15 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(EntityId::new(1), "A", "T"))
             .await
-            .unwrap();
+            .expect("csr test op");
         graph
             .add_entity(tx, Entity::new(EntityId::new(2), "B", "T"))
             .await
-            .unwrap();
+            .expect("csr test op");
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "E"))
             .await
-            .unwrap();
+            .expect("csr test op");
 
         {
             let inner = graph.inner.read();
@@ -450,19 +450,19 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(EntityId::new(1), "A", "N"))
             .await
-            .unwrap();
+            .expect("csr test op");
         graph
             .add_entity(tx, Entity::new(EntityId::new(2), "B", "N"))
             .await
-            .unwrap();
+            .expect("csr test op");
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "E"))
             .await
-            .unwrap();
+            .expect("csr test op");
         graph
             .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(1), "E"))
             .await
-            .unwrap();
+            .expect("csr test op");
 
         let results = graph.traverse(EntityId::new(1), 5).await.expect("traverse");
         assert_eq!(results.len(), 1);
