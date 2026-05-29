@@ -1,5 +1,9 @@
 //! Pure BM25 scoring functions.
 
+/// Constant parameters for BM25 (standard configuration).
+pub const BM25_K1: f32 = 1.2;
+pub const BM25_B: f32 = 0.75;
+
 /// Calculates the BM25 score for a single term in a document.
 ///
 /// # Arguments
@@ -12,9 +16,6 @@ pub fn score_term(tf: u32, doc_len: u32, avg_doc_len: f32, df: u32, n: u32) -> f
     if n == 0 || df == 0 || tf == 0 {
         return 0.0;
     }
-    // Constant parameters for BM25
-    let k1 = 1.2;
-    let b = 0.75;
 
     let tf = tf as f32;
     let doc_len = doc_len as f32;
@@ -39,8 +40,8 @@ pub fn score_term(tf: u32, doc_len: u32, avg_doc_len: f32, df: u32, n: u32) -> f
         1.0
     };
 
-    let tf_numerator = tf * (k1 + 1.0);
-    let tf_denominator = tf + k1 * (1.0 - b + b * norm_doc_len);
+    let tf_numerator = tf * (BM25_K1 + 1.0);
+    let tf_denominator = tf + BM25_K1 * (1.0 - BM25_B + BM25_B * norm_doc_len);
 
     // tf_denominator is guaranteed to be >= 0.3 since k1=1.2, b=0.75, tf>=0, norm_doc_len>=0
     // 1.2 * (0.25 + 0.75 * norm_doc_len) >= 0.3
