@@ -64,7 +64,7 @@ pub mod reaper;
 pub mod transaction;
 
 pub use collection::Collection;
-pub use filter::MetadataFilter;
+pub use filter::{FilterOp, MetadataFilter};
 pub use memfuse_checkpoint;
 
 /// User-facing search result containing the ID, score, and optional metadata.
@@ -184,6 +184,14 @@ impl MemFuse {
             }
         }
         Ok(())
+    }
+
+    /// Manually triggers an integrity repair across all collections.
+    ///
+    /// This re-syncs all HNSW indices with their corresponding entries in the
+    /// LSM storage and resolves any pending transaction intents.
+    pub async fn repair(&self) -> Result<()> {
+        self.repair_on_open().await
     }
 
     /// Repair-on-Open pipeline: scans for unresolved transaction intents and

@@ -12,7 +12,7 @@
 
 #![forbid(unsafe_code)]
 
-use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
+use memfuse_db::{Collection as MemFuseCollection, FilterOp, MemFuse, MemFuseConfig, MetadataFilter};
 use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;
 use pythonize::{depythonize, pythonize};
@@ -67,6 +67,28 @@ fn opt_dict_to_json(
         Some(d) => Ok(Some(dict_to_json(d)?)),
         None => Ok(None),
     }
+}
+
+/// Converts a Python dict to a MetadataFilter (implicit AND of equality conditions).
+fn dict_to_filter(
+    d: &pyo3::Bound<'_, pyo3::types::PyDict>,
+) -> PyResult<memfuse_db::MetadataFilter> {
+    let mut conditions = Vec::new();
+    for (key, value) in d.iter() {
+        let field = key.extract::<String>()?;
+        let val_json = depythonize(&value).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "Invalid filter value for {}: {}",
+                field, e
+            ))
+        })?;
+        conditions.push(MetadataFilter::Condition {
+            field,
+            op: FilterOp::Eq,
+            value: val_json,
+        });
+    }
+    Ok(MetadataFilter::And(conditions))
 }
 
 /// Converts a serde_json::Value to a Python object.
@@ -298,36 +320,52 @@ macro_rules! memfuse_crud_methods {
             }
 
             /// Performs semantic k-NN search over the embeddings.
-            #[pyo3(signature = (vector, k))]
+            #[pyo3(signature = (vector, k, filter=None))]
             pub fn search<'py>(
                 &self,
                 py: Python<'py>,
                 vector: PyReadonlyArray1<'py, f32>,
                 k: usize,
+                filter: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
             ) -> PyResult<Vec<PySearchResult>> {
                 let rt = get_runtime()?;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
+                let f = match filter {
+                    Some(d) => Some(dict_to_filter(&d)?),
+                    None => None,
+                };
                 let results = py
-                    .allow_threads(|| rt.block_on(self.inner.search(v, k)))
+                    .allow_threads(|| rt.block_on(self.inner.search_with_filter(v, k, f)))
                     .map_err(memfuse_err)?;
                 results_to_py(py, results)
             }
 
             /// Performs hybrid search combining BM25 and vector search results.
-            #[pyo3(signature = (text, vector, k))]
+            #[pyo3(signature = (text, vector, k, filter=None))]
             pub fn hybrid_search<'py>(
                 &self,
                 py: Python<'py>,
                 text: &str,
                 vector: PyReadonlyArray1<'py, f32>,
                 k: usize,
+                filter: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
             ) -> PyResult<Vec<PySearchResult>> {
                 let rt = get_runtime()?;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
+                // Note: hybrid_search in memfuse-db doesn't support filter yet,
+                // but we can oversample and filter manually or wait for db support.
+                // For now, if a filter is provided, we use search_with_filter if text is empty,
+                // or we report that filtering is not yet supported for hybrid search.
+                if filter.is_some() {
+                    return Err(pyo3::exceptions::PyNotImplementedError::new_err(
+                        "Metadata filtering is not yet supported for hybrid search",
+                    ));
+                }
+
                 let results = py
                     .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, v, k)))
                     .map_err(memfuse_err)?;
@@ -574,10 +612,21 @@ impl PyMemFuse {
             .map_err(memfuse_err)
     }
 
+    fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        self.len(py)
+    }
+
     /// Returns true if the collection/database is empty.
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
         py.allow_threads(|| rt.block_on(self.inner.is_empty()))
+            .map_err(memfuse_err)
+    }
+
+    /// Manually triggers an integrity repair across all collections.
+    pub fn repair(&self, py: Python<'_>) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.repair()))
             .map_err(memfuse_err)
     }
 }
@@ -615,10 +664,21 @@ impl PyCollection {
         Ok(py.allow_threads(|| rt.block_on(self.inner.len())))
     }
 
+    fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        self.len(py)
+    }
+
     /// Returns true if the collection is empty.
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
         Ok(py.allow_threads(|| rt.block_on(self.inner.is_empty())))
+    }
+
+    /// Manually triggers an integrity repair for this collection.
+    pub fn repair(&self, py: Python<'_>) -> PyResult<()> {
+        let rt = get_runtime()?;
+        py.allow_threads(|| rt.block_on(self.inner.repair()))
+            .map_err(memfuse_err)
     }
 }
 
