@@ -11,6 +11,7 @@
 // INVARIANTE: Solange SnapshotGuard lebt → keine Tombstone-GC für seq >= guard.seq_no.
 // RAII-PATTERN: Drop deregistriert automatisch. unwrap_or(u64::MAX) ist KORREKT.
 
+use crate::error::{MemFuseError, Result};
 use crate::types::TOMBSTONE_BIT;
 use parking_lot::Mutex;
 use std::collections::BTreeMap;
@@ -74,19 +75,33 @@ impl SnapshotRegistry {
 
     /// Removes a persistent pin.
     pub fn unpin(&self, seq_no: u64) {
-        self.release(seq_no);
+        let _ = self.release(seq_no);
     }
 
-    pub(crate) fn release(&self, seq_no: u64) {
+    // ANCHOR:DEBT: AGENT:01 STATUS:READY PRIO:3
+    pub(crate) fn release(&self, seq_no: u64) -> Result<()> {
         let seq_no = seq_no & !TOMBSTONE_BIT;
         let mut active = self.active.lock();
         if let Some(count) = active.get_mut(&seq_no) {
-            *count -= 1;
-            if *count == 0 {
-                active.remove(&seq_no);
+            if let Some(new_count) = count.checked_sub(1) {
+                *count = new_count;
+                if *count == 0 {
+                    active.remove(&seq_no);
+                }
+            } else {
+                return Err(MemFuseError::Internal(format!(
+                    "Snapshot reference count underflow for seq_no {}",
+                    seq_no
+                )));
             }
+        } else {
+            return Err(MemFuseError::NotFound(format!(
+                "Snapshot for seq_no {} not found",
+                seq_no
+            )));
         }
         self.update_min(&active);
+        Ok(())
     }
 
     fn update_min(&self, active: &BTreeMap<u64, usize>) {
@@ -112,7 +127,7 @@ impl SnapshotGuard {
 
 impl Drop for SnapshotGuard {
     fn drop(&mut self) {
-        self.registry.release(self.seq_no);
+        let _ = self.registry.release(self.seq_no);
     }
 }
 

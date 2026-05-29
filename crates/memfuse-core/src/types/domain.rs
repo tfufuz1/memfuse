@@ -1,3 +1,5 @@
+//! Domain models including Document IDs and savepoint states.
+// ANCHOR:DOC: AGENT:01 STATUS:READY PRIO:3
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 

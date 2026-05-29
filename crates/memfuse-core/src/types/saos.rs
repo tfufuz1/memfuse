@@ -1,3 +1,5 @@
+//! Types for SAOS (Search and Optimization Service) including hybrid queries.
+// ANCHOR:DOC: AGENT:01 STATUS:READY PRIO:3
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};

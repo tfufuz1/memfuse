@@ -12,6 +12,7 @@ use thiserror::Error;
 /// Convenience alias for `Result<T, MemFuseError>`.
 pub type Result<T> = std::result::Result<T, MemFuseError>;
 
+// ANCHOR:DEBT: AGENT:01 STATUS:READY PRIO:3
 /// Unified error type for all MemFuse operations.
 #[derive(Error, Debug)]
 pub enum MemFuseError {
@@ -89,6 +90,9 @@ pub enum MemFuseError {
 
     #[error("Checkpoint not found")]
     CheckpointNotFound,
+
+    #[error("Graph error: {0}")]
+    Graph(String),
 }
 
 impl MemFuseError {

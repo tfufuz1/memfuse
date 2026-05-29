@@ -1,3 +1,5 @@
+//! Metadata filtering expressions for index operations.
+// ANCHOR:DOC: AGENT:01 STATUS:READY PRIO:3
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.

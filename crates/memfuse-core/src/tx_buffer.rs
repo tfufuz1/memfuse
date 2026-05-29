@@ -82,6 +82,7 @@ impl<T: Clone> TxBuffer<T> {
         Self { shards, tx_timeout }
     }
 
+    // ANCHOR:DEBT: AGENT:01 STATUS:READY PRIO:3
     #[inline]
     fn shard_idx(&self, tx: TxId) -> usize {
         // ANCHOR:SEC:CAST-001 — Modulo-Cast u64→usize (sicher wegen %-Operator)
@@ -91,20 +92,27 @@ impl<T: Clone> TxBuffer<T> {
         (tx.inner() % self.shards.len() as u64) as usize
     }
 
+    #[inline]
+    fn get_shard(&self, tx: TxId) -> &RwLock<TxShard<T>> {
+        let idx = self.shard_idx(tx);
+        // ANCHOR:SEC:SLICE-002 — Slice-Indexing — sicher weil shard_idx = modulo len()
+        &self.shards[idx]
+    }
+
     /// Checks if the given transaction exists in the buffer.
     pub fn has_tx(&self, tx: TxId) -> bool {
         // ANCHOR:SEC:SLICE-001 — Slice-Indexing — sicher weil shard_idx = modulo len()
         // WP:WP-0.0 PRIO:5 NEEDS:NONE
         // AGENT:10 DATE:2026-05-09 STATUS:DONE
         // CREATED:2026-05-09 DEADLINE:NONE
-        let shard = &self.shards[self.shard_idx(tx)];
+        let shard = self.get_shard(tx);
         shard.read().ops.contains_key(&tx)
     }
 
     /// Registers a new transaction in the buffer.
     pub fn begin(&self, tx: TxId) {
-        let shard_idx = self.shard_idx(tx);
-        let mut shard = self.shards[shard_idx].write();
+        let shard = self.get_shard(tx);
+        let mut shard = shard.write();
         shard
             .ops
             .entry(tx)
@@ -116,8 +124,8 @@ impl<T: Clone> TxBuffer<T> {
     /// If the transaction has not been explicitly started with `begin`,
     /// it will be implicitly created on the first `stage` call.
     pub fn stage(&self, tx: TxId, op: IndexOp<T>) {
-        let shard_idx = self.shard_idx(tx);
-        let mut shard = self.shards[shard_idx].write();
+        let shard = self.get_shard(tx);
+        let mut shard = shard.write();
         let entry = shard
             .ops
             .entry(tx)
@@ -127,8 +135,8 @@ impl<T: Clone> TxBuffer<T> {
 
     /// Validates that the transaction has pending operations.
     pub fn validate_pending_ops(&self, tx: TxId) -> Result<()> {
-        let shard_idx = self.shard_idx(tx);
-        let shard = self.shards[shard_idx].read();
+        let shard = self.get_shard(tx);
+        let shard = shard.read();
 
         if let Some((ops, _)) = shard.ops.get(&tx) {
             if ops.is_empty() {
@@ -146,8 +154,8 @@ impl<T: Clone> TxBuffer<T> {
     /// Returns an empty vector if the transaction does not exist or has no operations.
     /// This operation is atomic per shard.
     pub fn drain(&self, tx: TxId) -> Vec<IndexOp<T>> {
-        let shard_idx = self.shard_idx(tx);
-        let mut shard = self.shards[shard_idx].write();
+        let shard = self.get_shard(tx);
+        let mut shard = shard.write();
         shard
             .ops
             .remove(&tx)
@@ -157,8 +165,8 @@ impl<T: Clone> TxBuffer<T> {
 
     /// Discards all buffered operations for a transaction.
     pub fn discard(&self, tx: TxId) {
-        let shard_idx = self.shard_idx(tx);
-        let mut shard = self.shards[shard_idx].write();
+        let shard = self.get_shard(tx);
+        let mut shard = shard.write();
         shard.ops.remove(&tx);
     }
 
@@ -191,8 +199,8 @@ impl<T: Clone> TxBuffer<T> {
 
     /// Returns a clone of the pending operations for a transaction.
     pub fn get_ops(&self, tx: TxId) -> Option<Vec<IndexOp<T>>> {
-        let shard_idx = self.shard_idx(tx);
-        let shard = self.shards[shard_idx].read();
+        let shard = self.get_shard(tx);
+        let shard = shard.read();
         shard.ops.get(&tx).map(|(ops, _)| ops.clone())
     }
 
@@ -257,7 +265,8 @@ mod tests {
 
         for h in handles {
             // ANCHOR:DEBT:TXBUF-002 — intentional expect in tests
-            h.await.expect("task panicked"); // #[cfg(test)]
+            h.await
+                .expect("Tokio task for concurrent stage operation failed"); // #[cfg(test)]
         }
 
         assert_eq!(buffer.len(), num_tx);
