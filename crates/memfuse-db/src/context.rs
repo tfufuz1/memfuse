@@ -56,6 +56,12 @@ impl ContextManager {
     /// Prepares a context window from retrieved chunks.
     ///
     /// Filters by relevance threshold, sorts by score, and truncates to budget.
+    // ANCHOR:PERF:CONTEXT-PREP-001 — Optimization for Context Prep
+    // WP:WP-6.3 PRIO:2 NEEDS:GS-01
+    // AGENT:09 DATE:2026-06-15 STATUS:DONE
+    // CREATED:2026-06-15 DEADLINE:NONE
+    // TARGET: Minimal allocations during context preparation
+    // VORHER: Vec::new() → NACHHER: Vec::with_capacity(chunks.len())
     pub fn prepare_context(&self, mut chunks: Vec<ContextChunk>) -> Result<ContextWindow> {
         // Filter by relevance threshold
         chunks.retain(|c| c.relevance >= self.relevance_threshold);
@@ -71,7 +77,7 @@ impl ContextManager {
         let available = self.budget.available();
         let mut total_tokens = 0;
         let mut truncated = false;
-        let mut selected = Vec::new();
+        let mut selected = Vec::with_capacity(chunks.len());
 
         for chunk in chunks {
             if total_tokens + chunk.token_count > available {

@@ -170,11 +170,17 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> {
     }
 
     /// Reloads the in-memory cache from persistent storage.
+    // ANCHOR:PERF:CHECKPOINT-RELOAD-001 — Optimization for Checkpoint Reload
+    // WP:WP-5.1 PRIO:2 NEEDS:NONE
+    // AGENT:09 DATE:2026-06-15 STATUS:DONE
+    // CREATED:2026-06-15 DEADLINE:NONE
+    // TARGET: Minimal allocations during checkpoint reload
+    // VORHER: Vec::new() → NACHHER: Vec::with_capacity(entries.len())
     pub async fn reload_from_storage(&self) -> Result<()> {
         let _guard = self.op_lock.lock().await;
 
         let entries = self.storage.scan_prefix(b"__checkpoint:").await?;
-        let mut checkpoints = Vec::new();
+        let mut checkpoints = Vec::with_capacity(entries.len());
         for (_, value) in entries {
             let checkpoint: CheckpointMeta = serde_json::from_slice(&value)
                 .map_err(|e| memfuse_core::error::MemFuseError::Internal(e.to_string()))?;
@@ -502,6 +508,7 @@ mod tests {
             }
         }
 
+        #[async_trait::async_trait]
         impl StorageEngine for TrackingStorage {
             async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
                 self.inner.get(key).await

@@ -239,42 +239,74 @@ impl HnswIndex {
         use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
         let _lock = self.write_mutex.lock().await;
-        let nodes = self.nodes.read();
-        let entry_point = self.entry_point.read();
-        let q_guard = self.quantizer.read();
+
+        // Snapshot necessary data while holding the synchronous read locks.
+        // This avoids holding synchronous locks across await points.
+        let header;
+        let node_records_initial;
+        let node_data_to_write;
+
+        {
+            let nodes = self.nodes.read();
+            let entry_point = self.entry_point.read();
+            let q_guard = self.quantizer.read();
+
+            let node_count = nodes.len();
+            let nodes_offset = crate::persistence::HnswHeader::SIZE as u64;
+
+            let (q_min, q_max) = if let Some(q) = q_guard.as_ref() {
+                (q.min, q.max)
+            } else {
+                (0.0, 0.0)
+            };
+
+            header = crate::persistence::HnswHeader {
+                magic: crate::persistence::HNSW_MAGIC,
+                version: crate::persistence::HNSW_VERSION,
+                dimension: self.config.dimension as u32,
+                m: self.config.m as u32,
+                metric: self.config.distance_metric as u8,
+                quantized: if self.config.quantize { 1 } else { 0 },
+                q_min,
+                q_max,
+                node_count: node_count as u64,
+                entry_point: entry_point.map(|i| i as i64).unwrap_or(-1),
+                nodes_offset,
+                connections_offset: 0,
+                last_tx_id: self.last_tx_id.load(Ordering::SeqCst),
+            };
+
+            node_records_initial = vec![
+                crate::persistence::NodeRecord {
+                    doc_id: 0,
+                    max_layer: 0,
+                    vector_offset: 0,
+                    connections_offset: 0,
+                };
+                node_count
+            ];
+
+            // Deep clone of data needed for serialization.
+            // Note: node.vector and node.connections are already heap-allocated,
+            // we clone them to release the lock on `nodes`.
+            node_data_to_write = nodes
+                .iter()
+                .map(|n| (n.doc_id, n.vector.clone(), n.connections.clone()))
+                .collect::<Vec<_>>();
+        }
+
+        let node_count = node_data_to_write.len();
+        let nodes_offset = header.nodes_offset;
+        let vectors_offset =
+            nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
 
         let file = tokio::fs::File::create(path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
         let mut writer = tokio::io::BufWriter::new(file);
 
-        let node_count = nodes.len();
-        let nodes_offset = crate::persistence::HnswHeader::SIZE as u64;
-        let vectors_offset =
-            nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
-
-        let (q_min, q_max) = if let Some(q) = q_guard.as_ref() {
-            (q.min, q.max)
-        } else {
-            (0.0, 0.0)
-        };
-
-        // Initial header
-        let mut header = crate::persistence::HnswHeader {
-            magic: crate::persistence::HNSW_MAGIC,
-            version: crate::persistence::HNSW_VERSION,
-            dimension: self.config.dimension as u32,
-            m: self.config.m as u32,
-            metric: self.config.distance_metric as u8,
-            quantized: if self.config.quantize { 1 } else { 0 },
-            q_min,
-            q_max,
-            node_count: node_count as u64,
-            entry_point: entry_point.map(|i| i as i64).unwrap_or(-1),
-            nodes_offset,
-            connections_offset: 0,
-            last_tx_id: self.last_tx_id.load(Ordering::SeqCst),
-        };
+        let mut header = header;
+        let mut node_records = node_records_initial;
 
         // 1. Placeholder Header
         writer
@@ -283,15 +315,6 @@ impl HnswIndex {
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
 
         // 2. Nodes Metadata (Placeholders)
-        let mut node_records = Vec::with_capacity(node_count);
-        for _ in 0..node_count {
-            node_records.push(crate::persistence::NodeRecord {
-                doc_id: 0,
-                max_layer: 0,
-                vector_offset: 0,
-                connections_offset: 0,
-            });
-        }
         for record in &node_records {
             writer
                 .write_all(&record.to_bytes())
@@ -301,12 +324,12 @@ impl HnswIndex {
 
         // 3. Vectors Block
         let mut current_pos = vectors_offset;
-        for (i, node) in nodes.iter().enumerate() {
-            node_records[i].doc_id = node.doc_id.inner();
-            node_records[i].max_layer = node.connections.len().saturating_sub(1) as u8;
+        for (i, (doc_id, vector, connections)) in node_data_to_write.iter().enumerate() {
+            node_records[i].doc_id = doc_id.inner();
+            node_records[i].max_layer = connections.len().saturating_sub(1) as u8;
             node_records[i].vector_offset = current_pos;
 
-            match &node.vector {
+            match vector {
                 VectorData::F32(v) => {
                     let bytes: &[u8] =
                         unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
@@ -339,9 +362,9 @@ impl HnswIndex {
         }
 
         let mut conn_pos = connections_offset;
-        for (i, node) in nodes.iter().enumerate() {
+        for (i, (_, _, connections)) in node_data_to_write.iter().enumerate() {
             node_records[i].connections_offset = conn_pos;
-            let num_layers = node.connections.len() as u8;
+            let num_layers = connections.len() as u8;
             writer
                 .write_all(&[num_layers])
                 .await
@@ -349,7 +372,7 @@ impl HnswIndex {
             conn_pos += 1;
 
             for layer in 0..num_layers as usize {
-                let conns = &node.connections[layer];
+                let conns = &connections[layer];
                 let len = conns.len() as u32;
                 writer
                     .write_all(&len.to_le_bytes())
