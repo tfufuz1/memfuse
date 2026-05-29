@@ -1345,7 +1345,8 @@ impl SstableReader {
                     Bytes::copy_from_slice(entry_val),
                     seq_no,
                     0u64,
-                ));            }
+                ));
+            }
         }
 
         Ok(results)
