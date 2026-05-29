@@ -3,6 +3,10 @@
 //! Evaluates Inverse Document Frequencies integrating natively into the
 //! `fusion.rs` layer in `memfuse-db`.
 
+// ANCHOR:ARCH:BM25-001 — BM25 Scoring Implementation (WP-2.1)
+// WP:WP-2.1 PRIO:1 NEEDS:NONE
+// STATUS:DONE DATE:2026-06-21
+
 #![forbid(unsafe_code)]
 
 pub mod bm25;
