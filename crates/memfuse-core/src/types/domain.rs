@@ -53,12 +53,11 @@ impl DocId {
     }
 
     /// Helper for hydrating DocId from a string representation.
-    /// This is a checked unwrap helper primarily used in hydration paths.
-    pub fn from_string(id_str: &str) -> Self {
+    pub fn from_string(id_str: &str) -> Result<Self> {
         let id = id_str
             .parse::<u64>()
-            .unwrap_or_else(|_| panic!("Invalid DocId string: {}", id_str));
-        Self(id)
+            .map_err(|_| MemFuseError::InvalidInput(format!("Invalid DocId string: {}", id_str)))?;
+        Ok(Self(id))
     }
 }
 
@@ -259,13 +258,13 @@ mod tests {
 
     #[test]
     fn test_doc_id_from_string() {
-        let id = DocId::from_string("12345");
+        let id = DocId::from_string("12345").unwrap();
         assert_eq!(id.inner(), 12345);
     }
 
     #[test]
-    #[should_panic(expected = "Invalid DocId string: invalid")]
-    fn test_doc_id_from_string_panic() {
-        DocId::from_string("invalid");
+    fn test_doc_id_from_string_error() {
+        let res = DocId::from_string("invalid");
+        assert!(res.is_err());
     }
 }
