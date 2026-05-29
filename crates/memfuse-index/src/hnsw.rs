@@ -371,8 +371,7 @@ impl HnswIndex {
                 .map_err(|e| MemFuseError::Storage(e.to_string()))?;
             conn_pos += 1;
 
-            for layer in 0..num_layers as usize {
-                let conns = &connections[layer];
+            for conns in connections.iter().take(num_layers as usize) {
                 let len = conns.len() as u32;
                 writer
                     .write_all(&len.to_le_bytes())

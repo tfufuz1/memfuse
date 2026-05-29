@@ -92,7 +92,9 @@ async fn test_agent_auto_checkpoint_before_step() {
         .list_checkpoints()
         .await
         .expect("list failed");
-    assert!(checkpoints.iter().any(|c| c.name == "task:t1:step:0:node:start"));
+    assert!(checkpoints
+        .iter()
+        .any(|c| c.name == "task:t1:step:0:node:start"));
 }
 
 #[tokio::test]
@@ -242,10 +244,16 @@ async fn test_loop_rollback_integrity() {
         .list_checkpoints()
         .await
         .expect("list failed");
-    
+
     // Should have 5 checkpoints: step 0(A), 1(B), 2(A), 3(B), 4(A)
     assert_eq!(checkpoints.len(), 5);
-    assert!(checkpoints.iter().any(|c| c.name.contains(":step:0:node:A")));
-    assert!(checkpoints.iter().any(|c| c.name.contains(":step:2:node:A")));
-    assert!(checkpoints.iter().any(|c| c.name.contains(":step:4:node:A")));
+    assert!(checkpoints
+        .iter()
+        .any(|c| c.name.contains(":step:0:node:A")));
+    assert!(checkpoints
+        .iter()
+        .any(|c| c.name.contains(":step:2:node:A")));
+    assert!(checkpoints
+        .iter()
+        .any(|c| c.name.contains(":step:4:node:A")));
 }
