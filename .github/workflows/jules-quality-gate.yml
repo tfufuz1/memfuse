@@ -100,12 +100,9 @@ jobs:
           VIOLATIONS=$(grep -rn "\.unwrap()" --include="*.rs" crates/ \
             | grep -v "#\[test\]" \
             | grep -v "#\[cfg(test)\]" \
-            | grep -v "::tests::" \
             | grep -v "//.*unwrap" \
             | grep -v "_test\." \
             | grep -v "/tests/" \
-            | grep -v "crates/memfuse-crypto/src/wal_crypto.rs" \
-            | grep -v "crates/memfuse-checkpoint/src/lib.rs" \
             || true)
           if [ -n "$VIOLATIONS" ]; then
             echo "❌ ZERO-UNWRAP VIOLATION:"

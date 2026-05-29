@@ -1,8 +1,8 @@
-use memfuse_core::TokenBudget;
-use memfuse_db::MemFuse;
 use memfuse_saos_agent::context::{AgentContext, AgentStatus};
 use memfuse_saos_agent::engine::OrchestratorEngine;
 use memfuse_saos_agent::graph::{NodeType, StateGraph};
+use memfuse_core::TokenBudget;
+use memfuse_db::MemFuse;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -42,10 +42,7 @@ async fn test_atomic_final_state_checkpoint() -> memfuse_core::Result<()> {
     let checkpoints = engine.checkpoint_store.list_checkpoints().await?;
     let end_checkpoint = checkpoints.iter().find(|c| c.name.contains(":node:end"));
 
-    assert!(
-        end_checkpoint.is_some(),
-        "Checkpoint at 'end' node must exist"
-    );
+    assert!(end_checkpoint.is_some(), "Checkpoint at 'end' node must exist");
 
     // Verify final state is persisted
     let final_state = collection.get("task:test-task:final").await?;
