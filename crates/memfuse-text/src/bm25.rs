@@ -99,11 +99,14 @@ mod tests {
         assert!(!score.is_nan());
         assert!(score >= 0.0);
     }
+}
+
+#[cfg(test)]
+mod stability_tests {
+    use super::*;
 
     #[test]
     fn test_bm25_empty_index_stability() {
-        // FIND-TXT-003: Empty index causes NaN scores.
-        // avg_doc_len = 0.0, n = 0, df = 0, tf = 0
         let score = score_term(0, 0, 0.0, 0, 0);
         assert!(!score.is_nan());
         assert_eq!(score, 0.0);
@@ -111,14 +114,12 @@ mod tests {
 
     #[test]
     fn test_bm25_div_by_zero_potential() {
-        // tf > 0, but n = 0 (should not happen in practice but test for stability)
         let score = score_term(1, 10, 10.0, 1, 0);
         assert!(!score.is_nan());
         assert_eq!(score, 0.0);
 
-        // avg_doc_len = 0.0, but n > 0
-        let score = score_term(1, 10, 0.0, 1, 10);
-        assert!(!score.is_nan());
-        assert!(score > 0.0);
+        let score2 = score_term(1, 10, 0.0, 1, 10);
+        assert!(!score2.is_nan());
+        assert!(score2 > 0.0);
     }
 }

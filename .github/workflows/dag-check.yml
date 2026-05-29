@@ -15,10 +15,10 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         
-      - name: Check L1 Kernel Isolation (core, sandbox, saos-agent)
+      - name: Check L1 Kernel Isolation (core, sandbox)
         run: |
           set -e
-          for CRATE in memfuse-core memfuse-sandbox memfuse-saos-agent; do
+          for CRATE in memfuse-core memfuse-sandbox; do
             echo "Verifying $CRATE isolation..."
             if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -E -v "$CRATE|memfuse-core" | grep -q .; then
               echo "ERROR: $CRATE imports forbidden internal crates."

@@ -7,8 +7,8 @@ rust-version.workspace = true
 description = "MemFuse — Text processing and BM25 search for Hybrid Search"
 
 [dependencies]
-memfuse-core = { workspace = true }
 tracing = { workspace = true }
+memfuse-core = { workspace = true }
 itoa = { workspace = true }
 unicode-segmentation = "1.11.0"
 async-trait.workspace = true
