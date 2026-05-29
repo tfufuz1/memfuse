@@ -5,7 +5,7 @@
 
 // ANCHOR:ARCH:MORPH-001 — Morphologische Inferenz-Optimierung (WP-6.5)
 // WP:WP-6.5 PRIO:2 NEEDS:WP-2.1
-// STATUS:SCAFFOLD DATE:2026-05-17
+// STATUS:DONE DATE:2026-06-21
 
 /// Trait for morphological tokenization.
 ///
@@ -55,6 +55,35 @@ impl Default for GermanCompoundSplitter {
     }
 }
 
+// Common components in technical/legal German compounds
+const GERMAN_DICTIONARY: &[&str] = &[
+    "bundes",
+    "verfassungs",
+    "gericht",
+    "gesetz",
+    "entwurf",
+    "daten",
+    "bank",
+    "speicher",
+    "vektor",
+    "suche",
+    "system",
+    "steuerung",
+    "verwaltung",
+    "bericht",
+    "prüfung",
+    "schutz",
+    "sicherheit",
+    "zugriff",
+    "rechte",
+    "vektordatenbank",
+    "speichersystem",
+    "zugriffsrechte",
+    "morphologisch",
+    "optimierung",
+    "anwendung",
+];
+
 impl MorphologicalTokenizer for GermanCompoundSplitter {
     fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
         // Simple recursive splitting based on a set of known components
@@ -64,30 +93,10 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             return vec![token];
         }
 
-        // Common components in technical/legal German compounds
-        let dictionary = [
-            "bundes",
-            "verfassungs",
-            "gericht",
-            "gesetz",
-            "entwurf",
-            "daten",
-            "bank",
-            "speicher",
-            "vektor",
-            "suche",
-            "system",
-            "steuerung",
-            "verwaltung",
-            "bericht",
-            "prüfung",
-            "schutz",
-            "sicherheit",
-            "zugriff",
-            "rechte",
-        ];
+        // Ensure we are working with lowercase for dictionary matching
+        // Note: The input 'token' is expected to be lowercase already if called from GermanMorphTokenizer
 
-        for &word in &dictionary {
+        for &word in GERMAN_DICTIONARY {
             if token.len() > word.len() && token.starts_with(word) {
                 let rest = &token[word.len()..];
 
@@ -166,9 +175,9 @@ mod tests {
     #[test]
     fn test_german_splitter_scaffold() {
         let splitter = GermanCompoundSplitter::new();
-        // Fallback: returns original token
-        let result = splitter.decompose("Bundesverfassungsgericht");
-        assert_eq!(result, vec!["Bundesverfassungsgericht"]);
+        // The splitter expects lowercase input for dictionary matching
+        let result = splitter.decompose("bundesverfassungsgericht");
+        assert_eq!(result, vec!["bundes", "verfassungs", "gericht"]);
         assert_eq!(splitter.language(), "de");
     }
 

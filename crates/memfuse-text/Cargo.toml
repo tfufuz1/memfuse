@@ -9,13 +9,6 @@ description = "MemFuse — Text processing and BM25 search for Hybrid Search"
 [dependencies]
 memfuse-core = { workspace = true }
 itoa = { workspace = true }
-# ANCHOR:ARCH:DAG-001 — Architektur-Layer durchbrochen
-# WP:NONE PRIO:1 NEEDS:NONE
-# AGENT:05 DATE:2026-05-16 STATUS:FIXME
-# CREATED:2026-05-09 DEADLINE:NONE
-# VERLETZUNG: memfuse-text importiert memfuse-store gegen die DAG-Invariante
-# IMPACT: Verstößt gegen Layer-Architektur, verhindert saubere Kompilierung
-# SOFORTIGE AKTION: Abhängigkeit extrahieren nach memfuse-core oder neuen Crate
 unicode-segmentation = "1.11.0"
 async-trait.workspace = true
 bincode = { workspace = true }
@@ -23,6 +16,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 parking_lot = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }

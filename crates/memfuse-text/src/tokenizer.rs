@@ -1,7 +1,8 @@
 //! Tokenizer using `unicode-segmentation`.
 
+use crate::morphology::MorphologicalTokenizer;
 use std::collections::HashSet;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use unicode_segmentation::UnicodeSegmentation;
 
 static STOPWORDS: OnceLock<HashSet<String>> = OnceLock::new();
@@ -42,14 +43,20 @@ impl Tokenizer for DefaultTokenizer {
 
 /// German tokenizer with morphological compound splitting.
 pub struct GermanMorphTokenizer {
-    splitter: crate::morphology::GermanCompoundSplitter,
+    splitter: Arc<dyn MorphologicalTokenizer>,
 }
 
 impl GermanMorphTokenizer {
+    /// Creates a new German morphological tokenizer with default splitter.
     pub fn new() -> Self {
         Self {
-            splitter: crate::morphology::GermanCompoundSplitter::new(),
+            splitter: Arc::new(crate::morphology::GermanCompoundSplitter::new()),
         }
+    }
+
+    /// Creates a new German morphological tokenizer with custom splitter.
+    pub fn with_splitter(splitter: Arc<dyn MorphologicalTokenizer>) -> Self {
+        Self { splitter }
     }
 }
 
@@ -61,7 +68,6 @@ impl Default for GermanMorphTokenizer {
 
 impl Tokenizer for GermanMorphTokenizer {
     fn tokenize(&self, text: &str) -> Vec<String> {
-        use crate::morphology::MorphologicalTokenizer;
         let stopwords = get_stopwords();
         let mut tokens = Vec::new();
 

@@ -16,6 +16,7 @@ use memfuse_core::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::instrument;
 
 /// Consolidated metadata for the text index.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -45,17 +46,18 @@ impl<S: StorageEngine> Clone for InvertedIndex<S> {
 impl<S: StorageEngine> InvertedIndex<S> {
     /// Creates a new InvertedIndex tied to a specific collection namespace.
     pub fn new(storage: Arc<S>, namespace: &str) -> Self {
-        let prefix = if namespace == "default" {
-            b"__txt:default:".to_vec()
-        } else {
-            format!("__txt:{}:", namespace).into_bytes()
-        };
-
         let tokenizer: Arc<dyn Tokenizer> = if namespace.contains("de") {
             Arc::new(GermanMorphTokenizer::new())
         } else {
             Arc::new(DefaultTokenizer)
         };
+
+        Self::with_tokenizer(storage, namespace, tokenizer)
+    }
+
+    /// Creates a new InvertedIndex with a custom tokenizer.
+    pub fn with_tokenizer(storage: Arc<S>, namespace: &str, tokenizer: Arc<dyn Tokenizer>) -> Self {
+        let prefix = format!("__txt:{}:", namespace).into_bytes();
 
         Self {
             storage,
@@ -103,8 +105,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 
     /// Appends and updates inverted index structures for a document.
-    // TODO(FIND-TXT-002): Fehlendes OpenTelemetry Tracing
-    // Annotieren mit #[instrument(skip(self, text))]
+    #[instrument(skip(self, text))]
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
@@ -231,8 +232,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 
     /// Searches the inverted index using BM25.
-    // TODO(FIND-TXT-002): Fehlendes OpenTelemetry Tracing
-    // Annotieren mit #[instrument(skip(self, query))]
+    #[instrument(skip(self, query))]
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
         let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
@@ -374,8 +374,9 @@ impl<S: StorageEngine> BM25MorphIndex<S> {
         namespace: &str,
         tokenizer: Arc<dyn MorphologicalTokenizer>,
     ) -> Self {
+        let morph_tokenizer = Arc::new(GermanMorphTokenizer::with_splitter(tokenizer.clone()));
         Self {
-            inner: InvertedIndex::new(storage, namespace),
+            inner: InvertedIndex::with_tokenizer(storage, namespace, morph_tokenizer),
             tokenizer,
         }
     }
