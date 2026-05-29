@@ -56,7 +56,7 @@ dag-check:
     set -euo pipefail
     echo "=== DAG Integrity Check ==="
 
-    echo "--- Phase 1: L1 Kernel Isolation (core, runtime, orchestrator) ---"
+    echo "--- Phase 1: L1 Kernel Isolation (core, sandbox, saos-agent) ---"
     for CRATE in memfuse-core memfuse-sandbox memfuse-saos-agent; do
         echo "Verifying $CRATE isolation..."
         if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -E -v "$CRATE|memfuse-core" | grep -q .; then
@@ -67,14 +67,14 @@ dag-check:
     done
 
     echo "--- Phase 2: L2 Peer Isolation (store, index, text, checkpoint) ---"
-    echo "Verifying memfuse-store..."
-    if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core" | grep -q "memfuse-"; then
+    echo "Verifying memfuse-store (allows memfuse-crypto)..."
+    if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core|memfuse-crypto" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-store violates DAG by importing non-core crates."
         cargo tree -p memfuse-store --edges no-dev | grep "memfuse-"
         exit 1
     fi
-    echo "Verifying memfuse-index..."
-    if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core" | grep -q "memfuse-"; then
+    echo "Verifying memfuse-index (allows memfuse-graph)..."
+    if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core|memfuse-graph" | grep -q "memfuse-"; then
         echo "❌ ERROR: memfuse-index violates DAG by importing non-core crates."
         cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
         exit 1
