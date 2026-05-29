@@ -87,7 +87,6 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
             // ANCHOR:SAFETY:SIMD-001 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
-            // SAFETY: Hardware support detected and bounds checked.
             return unsafe { cosine_distance_avx512(a, b) };
         }
         // Then AVX2
@@ -95,7 +94,6 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
             // ANCHOR:SAFETY:SIMD-002 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
-            // SAFETY: Hardware support detected and bounds checked.
             return unsafe { cosine_distance_avx2(a, b) };
         }
     }
@@ -115,7 +113,6 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
             // ANCHOR:SAFETY:SIMD-003 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
-            // SAFETY: Hardware support detected and bounds checked.
             return unsafe { euclidean_distance_avx512(a, b) };
         }
         // Then AVX2
@@ -123,7 +120,6 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
             // ANCHOR:SAFETY:SIMD-004 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
-            // SAFETY: Hardware support detected and bounds checked.
             return unsafe { euclidean_distance_avx2(a, b) };
         }
     }
@@ -143,7 +139,6 @@ pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
             // ANCHOR:SAFETY:SIMD-005 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
-            // SAFETY: Hardware support detected and bounds checked.
             return unsafe { -dot_product_avx512(a, b) };
         }
         // Then AVX2
@@ -151,7 +146,6 @@ pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
             // ANCHOR:SAFETY:SIMD-006 — Hardware-Support-Check und Bounds-Validation.
             // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
-            // SAFETY: Hardware support detected and bounds checked.
             return unsafe { -dot_product_avx2(a, b) };
         }
     }
@@ -207,7 +201,6 @@ pub fn dot_product_scalar(a: &[f32], b: &[f32]) -> f32 {
 unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-008 — Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_ps ist immer sicher.
-    // SAFETY: _mm256_setzero_ps is always safe.
     let mut sum_v = _mm256_setzero_ps();
     let n = a.len();
     let mut i = 0;
@@ -215,7 +208,7 @@ unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
     while i + 8 <= n {
         // ANCHOR:SAFETY:SIMD-009 — AVX2 Load und FMA.
         // BEGRÜNDUNG: i + 8 <= n garantiert In-Bounds Zugriff auf a und b. Unaligned Load (loadu) ist sicher.
-        // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 8 <= n. FMADD is safe on hardware detected by dispatcher.
+    // FMADD ist sicher auf Hardware, die vom Dispatcher erkannt wurde.
         unsafe {
             let va = _mm256_loadu_ps(a.as_ptr().add(i));
             let vb = _mm256_loadu_ps(b.as_ptr().add(i));
@@ -226,7 +219,6 @@ unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
 
     // ANCHOR:SAFETY:SIMD-010 — Horizontale Summe.
     // BEGRÜNDUNG: hsum256_ps_avx benötigt AVX Support, der hier durch target_feature garantiert ist.
-    // SAFETY: hsum256_ps_avx is called within an AVX2 enabled function.
     let mut sum = unsafe { hsum256_ps_avx(sum_v) };
 
     while i < n {
@@ -245,7 +237,6 @@ unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
 unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-012 — Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_ps ist immer sicher.
-    // SAFETY: _mm256_setzero_ps is always safe.
     let (mut dot_v, mut norm_a_v, mut norm_b_v) = (
         _mm256_setzero_ps(),
         _mm256_setzero_ps(),
@@ -258,7 +249,7 @@ unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
     while i + 8 <= n {
         // ANCHOR:SAFETY:SIMD-013 — AVX2 Load und FMA.
         // BEGRÜNDUNG: i + 8 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
-        // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 8 <= n. FMA is safe on hardware detected by dispatcher.
+    // FMA ist sicher auf Hardware, die vom Dispatcher erkannt wurde.
         unsafe {
             let va = _mm256_loadu_ps(a.as_ptr().add(i));
             let vb = _mm256_loadu_ps(b.as_ptr().add(i));
@@ -272,7 +263,6 @@ unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
 
     // ANCHOR:SAFETY:SIMD-014 — Horizontale Summen.
     // BEGRÜNDUNG: hsum256_ps_avx benötigt AVX Support, der hier durch target_feature garantiert ist.
-    // SAFETY: hsum256_ps_avx is called within an AVX2 enabled function.
     let (mut dot, mut norm_a, mut norm_b) = unsafe {
         (
             hsum256_ps_avx(dot_v),
@@ -306,7 +296,6 @@ unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
 unsafe fn euclidean_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-016 — Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_ps ist immer sicher.
-    // SAFETY: _mm256_setzero_ps is always safe.
     let mut sum_v = _mm256_setzero_ps();
     let n = a.len();
     let mut i = 0;
@@ -314,7 +303,7 @@ unsafe fn euclidean_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
     while i + 8 <= n {
         // ANCHOR:SAFETY:SIMD-017 — AVX2 Load, Sub und FMA.
         // BEGRÜNDUNG: i + 8 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
-        // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 8 <= n. FMA and subtraction are safe on hardware detected by dispatcher.
+    // FMA und Subtraktion sind sicher auf Hardware, die vom Dispatcher erkannt wurde.
         unsafe {
             let va = _mm256_loadu_ps(a.as_ptr().add(i));
             let vb = _mm256_loadu_ps(b.as_ptr().add(i));
@@ -326,7 +315,6 @@ unsafe fn euclidean_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
 
     // ANCHOR:SAFETY:SIMD-018 — Horizontale Summe.
     // BEGRÜNDUNG: hsum256_ps_avx benötigt AVX Support, der hier durch target_feature garantiert ist.
-    // SAFETY: hsum256_ps_avx is called within an AVX2 enabled function.
     let mut sum = unsafe { hsum256_ps_avx(sum_v) };
 
     while i < n {
@@ -347,7 +335,6 @@ unsafe fn euclidean_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
 unsafe fn hsum256_ps_avx(v: __m256) -> f32 {
     // ANCHOR:SAFETY:SIMD-020 — AVX Extraktion und Addition.
     // BEGRÜNDUNG: Standard AVX/AVX2 Befehle zur horizontalen Reduktion.
-    // SAFETY: Standard AVX/AVX2 horizontal reduction sequence is safe on supported hardware detected by caller.
     let x128 = _mm_add_ps(_mm256_extractf128_ps(v, 1), _mm256_castps256_ps128(v));
     let x64 = _mm_add_ps(x128, _mm_movehl_ps(x128, x128));
     let x32 = _mm_add_ss(x64, _mm_shuffle_ps(x64, x64, 0x55));
@@ -366,7 +353,6 @@ unsafe fn hsum256_ps_avx(v: __m256) -> f32 {
 unsafe fn dot_product_avx512(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-022 — Initialisierung.
     // BEGRÜNDUNG: _mm512_setzero_ps ist immer sicher.
-    // SAFETY: _mm512_setzero_ps is always safe.
     let mut sum_v = _mm512_setzero_ps();
     let n = a.len();
     let mut i = 0;
@@ -374,7 +360,7 @@ unsafe fn dot_product_avx512(a: &[f32], b: &[f32]) -> f32 {
     while i + 16 <= n {
         // ANCHOR:SAFETY:SIMD-023 — AVX-512 Load und FMA.
         // BEGRÜNDUNG: i + 16 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
-        // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 16 <= n. AVX-512 FMA is safe on hardware detected by dispatcher.
+    // AVX-512 FMA ist sicher auf Hardware, die vom Dispatcher erkannt wurde.
         unsafe {
             let va = _mm512_loadu_ps(a.as_ptr().add(i));
             let vb = _mm512_loadu_ps(b.as_ptr().add(i));
@@ -385,7 +371,6 @@ unsafe fn dot_product_avx512(a: &[f32], b: &[f32]) -> f32 {
 
     // ANCHOR:SAFETY:SIMD-024 — Horizontale Summe.
     // BEGRÜNDUNG: hsum512_ps_avx benötigt AVX-512 Support, der hier durch target_feature garantiert ist.
-    // SAFETY: hsum512_ps_avx is called within an AVX-512 enabled function.
     let mut sum = unsafe { hsum512_ps_avx(sum_v) };
 
     while i < n {
@@ -403,7 +388,6 @@ unsafe fn dot_product_avx512(a: &[f32], b: &[f32]) -> f32 {
 unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-026 — Initialisierung.
     // BEGRÜNDUNG: _mm512_setzero_ps ist immer sicher.
-    // SAFETY: _mm512_setzero_ps is always safe.
     let (mut dot_v, mut norm_a_v, mut norm_b_v) = (
         _mm512_setzero_ps(),
         _mm512_setzero_ps(),
@@ -416,7 +400,7 @@ unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
     while i + 16 <= n {
         // ANCHOR:SAFETY:SIMD-027 — AVX-512 Load und FMA.
         // BEGRÜNDUNG: i + 16 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
-        // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 16 <= n. AVX-512 FMA is safe on hardware detected by dispatcher.
+    // AVX-512 FMA ist sicher auf Hardware, die vom Dispatcher erkannt wurde.
         unsafe {
             let va = _mm512_loadu_ps(a.as_ptr().add(i));
             let vb = _mm512_loadu_ps(b.as_ptr().add(i));
@@ -430,7 +414,6 @@ unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
 
     // ANCHOR:SAFETY:SIMD-028 — Horizontale Summen.
     // BEGRÜNDUNG: hsum512_ps_avx benötigt AVX-512 Support, der hier durch target_feature garantiert ist.
-    // SAFETY: hsum512_ps_avx is called within an AVX-512 enabled function.
     let (mut dot, mut norm_a, mut norm_b) = unsafe {
         (
             hsum512_ps_avx(dot_v),
@@ -463,7 +446,6 @@ unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
 unsafe fn euclidean_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
     // ANCHOR:SAFETY:SIMD-030 — Initialisierung.
     // BEGRÜNDUNG: _mm512_setzero_ps ist immer sicher.
-    // SAFETY: _mm512_setzero_ps is always safe.
     let mut sum_v = _mm512_setzero_ps();
     let n = a.len();
     let mut i = 0;
@@ -471,7 +453,7 @@ unsafe fn euclidean_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
     while i + 16 <= n {
         // ANCHOR:SAFETY:SIMD-031 — AVX-512 Load, Sub und FMA.
         // BEGRÜNDUNG: i + 16 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
-        // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 16 <= n. AVX-512 FMA and subtraction are safe on hardware detected by dispatcher.
+    // AVX-512 FMA und Subtraktion sind sicher auf Hardware, die vom Dispatcher erkannt wurde.
         unsafe {
             let va = _mm512_loadu_ps(a.as_ptr().add(i));
             let vb = _mm512_loadu_ps(b.as_ptr().add(i));
@@ -483,7 +465,6 @@ unsafe fn euclidean_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
 
     // ANCHOR:SAFETY:SIMD-032 — Horizontale Summe.
     // BEGRÜNDUNG: hsum512_ps_avx benötigt AVX-512 Support, der hier durch target_feature garantiert ist.
-    // SAFETY: hsum512_ps_avx is called within an AVX-512 enabled function.
     let mut sum = unsafe { hsum512_ps_avx(sum_v) };
 
     while i < n {
@@ -501,9 +482,8 @@ unsafe fn euclidean_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
 // ANCHOR:SAFETY:SIMD-033 — Horizontale Summe AVX-512.
 // BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
 unsafe fn hsum512_ps_avx(v: __m512) -> f32 {
-    // ANCHOR:SAFETY:SIMD-034 — AVX-512 Kastrieren und Summieren.
+    // ANCHOR:SAFETY:SIMD-034 — AVX-512 Konvertierung und Summieren.
     // BEGRÜNDUNG: Standard AVX-512 Befehle zur Reduktion auf AVX2.
-    // SAFETY: Standard AVX-512 to AVX2 reduction sequence is safe on supported hardware detected by caller.
     unsafe {
         let low = _mm512_castps512_ps256(v);
         let high = _mm512_extractf32x8_ps(v, 1);
@@ -532,7 +512,6 @@ pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
         if is_x86_feature_detected!("avx2") {
             // ANCHOR:SAFETY:SIMD-U8-014 — AVX2 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
-            // SAFETY: Hardware support detected.
             return unsafe { dot_product_u8_avx2(a, b) };
         }
     }
@@ -556,7 +535,6 @@ pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
         if is_x86_feature_detected!("avx2") {
             // ANCHOR:SAFETY:SIMD-U8-015 — AVX2 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
-            // SAFETY: Hardware support detected.
             return unsafe { euclidean_distance_sq_u8_avx2(a, b) };
         }
     }
@@ -593,7 +571,6 @@ pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8
         if is_x86_feature_detected!("avx2") {
             // ANCHOR:SAFETY:SIMD-U8-016 — AVX2 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
-            // SAFETY: Hardware support detected.
             return unsafe { cosine_similarity_parts_u8_avx2(a, b) };
         }
     }
@@ -688,13 +665,12 @@ pub unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
     let mut i = 0;
     // ANCHOR:SAFETY:SIMD-U8-017 — Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
-    // SAFETY: _mm256_setzero_si256 is always safe.
     let mut sum_v = _mm256_setzero_si256();
 
     while i + 32 <= n {
         // ANCHOR:SAFETY:SIMD-U8-002 — AVX2 Load und Madd.
         // BEGRÜNDUNG: i + 32 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
-        // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 32 <= n. AVX2 intrinsics are safe on hardware detected by caller.
+    // AVX2 Intrinsics sind sicher auf Hardware, die vom Caller erkannt wurde.
         unsafe {
             let va = _mm256_loadu_si256(a.as_ptr().add(i) as *const __m256i);
             let vb = _mm256_loadu_si256(b.as_ptr().add(i) as *const __m256i);
@@ -713,7 +689,6 @@ pub unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
 
     // ANCHOR:SAFETY:SIMD-U8-011 — Horizontale Summe.
     // BEGRÜNDUNG: Hardware-Support durch Caller garantiert.
-    // SAFETY: hsum256_epi32_avx2 is called within an AVX2 enabled function.
     let mut sum = unsafe { hsum256_epi32_avx2(sum_v) } as u32;
     while i < n {
         sum += a[i] as u32 * b[i] as u32;
@@ -734,13 +709,12 @@ pub unsafe fn euclidean_distance_sq_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
     let mut i = 0;
     // ANCHOR:SAFETY:SIMD-U8-018 — Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
-    // SAFETY: _mm256_setzero_si256 is always safe.
     let mut sum_v = _mm256_setzero_si256();
 
     while i + 32 <= n {
         // ANCHOR:SAFETY:SIMD-U8-004 — AVX2 Load und Sub/Madd.
         // BEGRÜNDUNG: i + 32 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
-        // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 32 <= n. AVX2 intrinsics are safe on hardware detected by caller.
+    // AVX2 Intrinsics sind sicher auf Hardware, die vom Caller erkannt wurde.
         unsafe {
             let va = _mm256_loadu_si256(a.as_ptr().add(i) as *const __m256i);
             let vb = _mm256_loadu_si256(b.as_ptr().add(i) as *const __m256i);
@@ -761,7 +735,6 @@ pub unsafe fn euclidean_distance_sq_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
 
     // ANCHOR:SAFETY:SIMD-U8-012 — Horizontale Summe.
     // BEGRÜNDUNG: Hardware-Support durch Caller garantiert.
-    // SAFETY: hsum256_epi32_avx2 is called within an AVX2 enabled function.
     let mut sum = unsafe { hsum256_epi32_avx2(sum_v) } as u32;
     while i < n {
         let diff = a[i] as i32 - b[i] as i32;
@@ -784,7 +757,6 @@ pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimil
 
     // ANCHOR:SAFETY:SIMD-U8-019 — Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
-    // SAFETY: _mm256_setzero_si256 is always safe.
     let (mut dot_v, mut sum_a_v, mut sum_b_v, mut norm_a_v, mut norm_b_v) = (
         _mm256_setzero_si256(),
         _mm256_setzero_si256(),
@@ -796,7 +768,7 @@ pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimil
     while i + 32 <= n {
         // ANCHOR:SAFETY:SIMD-U8-006 — AVX2 Loads und Accumulation.
         // BEGRÜNDUNG: i + 32 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
-        // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 32 <= n. AVX2 intrinsics are safe on hardware detected by caller.
+    // AVX2 Intrinsics sind sicher auf Hardware, die vom Caller erkannt wurde.
         unsafe {
             let va = _mm256_loadu_si256(a.as_ptr().add(i) as *const __m256i);
             let vb = _mm256_loadu_si256(b.as_ptr().add(i) as *const __m256i);
@@ -827,7 +799,6 @@ pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimil
 
     // ANCHOR:SAFETY:SIMD-U8-013 — Horizontale Summen.
     // BEGRÜNDUNG: Hardware-Support durch Caller garantiert.
-    // SAFETY: Horizontal sum functions are called within an AVX2 enabled function.
     let (mut dot, mut norm_a_sq, mut norm_b_sq, mut sum_a, mut sum_b) = unsafe {
         (
             hsum256_epi32_avx2(dot_v) as u32,
@@ -866,7 +837,6 @@ pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimil
 unsafe fn hsum256_epi32_avx2(v: __m256i) -> i32 {
     // ANCHOR:SAFETY:SIMD-U8-009 — AVX2 Reduktion.
     // BEGRÜNDUNG: Standard AVX2 Befehle zur horizontalen Reduktion.
-    // SAFETY: Standard AVX2 horizontal reduction sequence is safe on supported hardware detected by caller.
     let v128 = _mm_add_epi32(_mm256_castsi256_si128(v), _mm256_extracti128_si256(v, 1));
     let v64 = _mm_add_epi32(v128, _mm_shuffle_epi32(v128, 0x4E));
     let v32 = _mm_add_epi32(v64, _mm_shuffle_epi32(v64, 0xB1));
@@ -881,7 +851,6 @@ unsafe fn hsum256_epi32_avx2(v: __m256i) -> i32 {
 unsafe fn hsum256_epi64_avx2(v: __m256i) -> i64 {
     // ANCHOR:SAFETY:SIMD-U8-010 — AVX2 Reduktion epi64.
     // BEGRÜNDUNG: Standard AVX2 Befehle zur horizontalen Reduktion.
-    // SAFETY: Standard AVX2 horizontal reduction sequence is safe on supported hardware detected by caller.
     let v128 = _mm_add_epi64(_mm256_castsi256_si128(v), _mm256_extracti128_si256(v, 1));
     let v64 = _mm_add_epi64(v128, _mm_unpackhi_epi64(v128, v128));
     _mm_cvtsi128_si64(v64)
@@ -932,7 +901,6 @@ mod tests {
             if is_x86_feature_detected!("avx2") {
                 // ANCHOR:SAFETY:SIMD-U8-TEST-001 — AVX2 Test Dispatch.
                 // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
-                // SAFETY: Hardware support detected.
                 let dot_simd = unsafe { dot_product_u8_avx2(&a, &b) };
                 assert_eq!(dot_scalar, dot_simd);
             }
@@ -945,7 +913,6 @@ mod tests {
             if is_x86_feature_detected!("avx2") {
                 // ANCHOR:SAFETY:SIMD-U8-TEST-002 — AVX2 Test Dispatch.
                 // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
-                // SAFETY: Hardware support detected.
                 let euc_simd = unsafe { euclidean_distance_sq_u8_avx2(&a, &b) };
                 assert_eq!(euc_scalar, euc_simd);
             }
@@ -958,7 +925,6 @@ mod tests {
             if is_x86_feature_detected!("avx2") {
                 // ANCHOR:SAFETY:SIMD-U8-TEST-003 — AVX2 Test Dispatch.
                 // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
-                // SAFETY: Hardware support detected.
                 let parts_simd = unsafe { cosine_similarity_parts_u8_avx2(&a, &b) };
                 assert_eq!(parts_scalar.dot, parts_simd.dot);
                 assert_eq!(parts_scalar.sum_a, parts_simd.sum_a);

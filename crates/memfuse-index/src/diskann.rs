@@ -280,6 +280,15 @@ impl DiskAnnIndex {
             return Ok(());
         }
 
+        // FIND-IDX-002: NaN/Inf Poisoning prevention
+        for v in vectors {
+            if v.iter().any(|x| x.is_nan() || x.is_infinite()) {
+                return Err(MemFuseError::InvalidInput(
+                    "Vector contains NaN or Infinity values".to_string(),
+                ));
+            }
+        }
+
         let n = vectors.len();
 
         // 0. SQ8 Training if needed
@@ -475,8 +484,9 @@ impl DiskAnnIndex {
     /// Loads the index from the configured path.
     pub async fn load(&mut self) -> Result<()> {
         let file = std::fs::File::open(&self.config.index_path).map_err(MemFuseError::Io)?;
-        // SAFETY: Mapping a file is safe as long as it's not truncated or modified while mapped.
-        // In MemFuse, file access is orchestrated by the storage layer with exclusive locks.
+        // ANCHOR:SAFETY:MMAP-002 — Read-only memory mapping of the DiskANN index file.
+        // BEGRÜNDUNG: In MemFuse ist der Dateizugriff über den Storage-Layer mit exklusiven Locks orchestriert.
+        // Die Datei wird während des Mappings nicht gekürzt oder modifiziert.
         let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? };
 
         let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;
@@ -608,6 +618,13 @@ impl DiskAnnIndex {
     // Synchronous Mmap/File operations in tokio threads can stall the reactor.
     // Migrate blocking search operations to native tokio AIO.
     pub async fn search_internal(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>> {
+        // FIND-IDX-002: NaN/Inf Poisoning prevention
+        if query.iter().any(|x| x.is_nan() || x.is_infinite()) {
+            return Err(MemFuseError::InvalidInput(
+                "Query vector contains NaN or Infinity values".to_string(),
+            ));
+        }
+
         let header = self
             .header
             .as_ref()

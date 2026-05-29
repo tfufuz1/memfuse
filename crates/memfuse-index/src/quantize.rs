@@ -98,8 +98,8 @@ impl ScalarQuantizer {
         metric: DistanceMetric,
     ) -> memfuse_core::Result<f32> {
         if query.len() != quantized.len() {
-            return Err(memfuse_core::MemFuseError::invalid_input(
-                "Vector dimensions must match",
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "Vector dimensions must match".to_string(),
             ));
         }
 
@@ -149,8 +149,8 @@ impl ScalarQuantizer {
         metric: DistanceMetric,
     ) -> memfuse_core::Result<f32> {
         if q1.len() != q2.len() {
-            return Err(memfuse_core::MemFuseError::invalid_input(
-                "Vector dimensions must match",
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "Vector dimensions must match".to_string(),
             ));
         }
 

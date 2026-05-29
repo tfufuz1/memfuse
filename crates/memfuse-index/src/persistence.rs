@@ -185,6 +185,9 @@ impl MmapIndex {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = std::fs::File::open(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
+        // ANCHOR:SAFETY:MMAP-001 — Read-only memory mapping of the index file.
+        // BEGRÜNDUNG: Das File wird nur lesend geöffnet. Die Datenstruktur im File ist unveränderlich
+        // während die Mmap existiert, da der Storage-Layer exklusive Locks garantiert.
         let mmap = unsafe { memmap2::Mmap::map(&file) }
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
