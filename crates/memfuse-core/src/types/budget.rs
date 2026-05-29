@@ -141,7 +141,8 @@ mod tests {
         let result = tracker.consume_memory(200);
 
         assert!(result.is_err());
-        match result.err().unwrap() {
+        match result.err().unwrap() /* unwrap allowed (AGENT:08) */
+        {
             MemFuseError::MemoryBudgetExceeded { limit_mb, .. } => {
                 // used_mb = (900 + 200) / 1024*1024 = 0 in this case because limit is tiny
                 assert_eq!(limit_mb, 0);
@@ -180,7 +181,7 @@ mod tests {
         }
 
         for h in handlers {
-            h.join().unwrap();
+            h.join().unwrap(); // unwrap allowed (AGENT:08)
         }
 
         assert_eq!(tracker.memory_used(), 10000);
@@ -217,7 +218,7 @@ mod tests {
         assert!(result.is_err());
 
         // Now test if current + bytes overflows u64
-        tracker.consume_memory(500).unwrap();
+        tracker.consume_memory(500).unwrap(); // unwrap allowed (AGENT:08)
         let result = tracker.consume_memory(u64::MAX - 100);
         assert!(result.is_err());
     }
