@@ -248,6 +248,7 @@ mod tests {
         }
     }
 
+
     #[test]
     fn test_doc_id_from_string() {
         let id = DocId::from_string("12345").unwrap(); // unwrap
@@ -259,7 +260,6 @@ mod tests {
         let res = DocId::from_string("invalid");
         assert!(res.is_err());
     }
-
     #[test]
     fn test_doc_id_determinism() {
         let key = "consistent_key";

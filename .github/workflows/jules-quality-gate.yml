@@ -93,25 +93,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Scan for .unwrap() in production code
+- name: Scan for .unwrap() in production code
         run: |
           echo "=== Scanning for .unwrap() usage ==="
-          # Allow unwrap only in test code (#[test] / #[cfg(test)])
-          VIOLATIONS=$(grep -rn "\.unwrap()" --include="*.rs" crates/ \
-            | grep -v "#\[test\]" \
-            | grep -v "#\[cfg(test)\]" \
-            | grep -v "//.*unwrap" \
-            | grep -v "_test\." \
-            | grep -v "/tests/" \
-            | grep -v "mod tests" \
-            | grep -v "::tests::" \
-            || true)
-          if [ -n "$VIOLATIONS" ]; then
-            echo "❌ ZERO-UNWRAP VIOLATION:"
-            echo "$VIOLATIONS"
-            exit 1
-          fi
-          echo "✅ No .unwrap() violations found"
+          python3 -c '
+import os, sys
+violations = []
+for root, dirs, files in os.walk("crates"):
+    for file in files:
+        if not file.endswith(".rs"): continue
+        if "_test." in file: continue
+        path = os.path.join(root, file)
+        if "/tests/" in path: continue
+        with open(path, "r") as f:
+            in_test_mod = False
+            for i, line in enumerate(f, 1):
+                l = line.strip()
+                if "#[cfg(test)]" in l or "mod tests" in l:
+                    in_test_mod = True
+                if in_test_mod: continue
+                if ".unwrap()" in l and "//" not in l and "#[test]" not in l:
+                    violations.append(f"{path}:{i}:{l}")
+if violations:
+    print("❌ ZERO-UNWRAP VIOLATION:")
+    for v in violations: print(v)
+    sys.exit(1)
+print("✅ No .unwrap() violations found in production code")
+'
 
       - name: Scan for unsafe code outside distance.rs
         run: |
