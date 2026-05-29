@@ -10,11 +10,11 @@
 // OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
 
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
+use ahash::AHashMap;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Consolidated metadata for the text index.
@@ -48,7 +48,11 @@ impl<S: StorageEngine> InvertedIndex<S> {
         let prefix = if namespace == "default" {
             b"__txt:default:".to_vec()
         } else {
-            format!("__txt:{}:", namespace).into_bytes()
+            let mut p = Vec::with_capacity("__txt:".len() + namespace.len() + 1);
+            p.extend_from_slice(b"__txt:");
+            p.extend_from_slice(namespace.as_bytes());
+            p.push(b':');
+            p
         };
 
         let tokenizer: Arc<dyn Tokenizer> = if namespace.contains("de") {
@@ -103,13 +107,12 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 
     /// Appends and updates inverted index structures for a document.
-    // TODO(FIND-TXT-002): Fehlendes OpenTelemetry Tracing
-    // Annotieren mit #[instrument(skip(self, text))]
+    #[tracing::instrument(skip(self, text))]
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
 
-        let mut tfs = HashMap::with_capacity(tokens.len());
+        let mut tfs = AHashMap::with_capacity(tokens.len());
         for t in tokens {
             *tfs.entry(t).or_insert(0u32) += 1;
         }
@@ -118,6 +121,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
         let fw_key = self.key_with_id("fw:", doc_id.inner());
         let mut old_len = 0u32;
         let mut is_update = false;
+        let mut old_terms: Vec<String> = Vec::new();
 
         if let Some(bytes) = self.storage.get(&dl_key).await? {
             if bytes.len() == 4 {
@@ -129,15 +133,20 @@ impl<S: StorageEngine> InvertedIndex<S> {
                 );
                 is_update = true;
 
-                // Remove from old posting lists if update
                 if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
-                    if let Ok(old_terms) = bincode::deserialize::<Vec<String>>(&fw_bytes) {
-                        for term in old_terms {
-                            let pl_doc_key = self.key_with_term_doc(&term, doc_id);
-                            self.storage.delete(tx, &pl_doc_key).await?;
-                        }
+                    if let Ok(terms) = bincode::deserialize::<Vec<String>>(&fw_bytes) {
+                        old_terms = terms;
                     }
                 }
+            }
+        }
+
+        // Differential update of posting lists
+        let new_terms: ahash::AHashSet<&str> = tfs.keys().map(|s| s.as_str()).collect();
+        for term in &old_terms {
+            if !new_terms.contains(term.as_str()) {
+                let pl_doc_key = self.key_with_term_doc(term, doc_id);
+                self.storage.delete(tx, &pl_doc_key).await?;
             }
         }
 
@@ -173,7 +182,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
             .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
         self.storage.put(tx, &meta_key, &meta_bytes).await?;
 
-        // Update posting lists (Individual keys: PL:term:doc_id)
+        // Update posting lists (Only those that are in tfs_vec)
         for (term, tf) in tfs_vec {
             let pl_doc_key = self.key_with_term_doc(&term, doc_id);
             self.storage.put(tx, &pl_doc_key, &tf.to_le_bytes()).await?;
@@ -231,8 +240,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 
     /// Searches the inverted index using BM25.
-    // TODO(FIND-TXT-002): Fehlendes OpenTelemetry Tracing
-    // Annotieren mit #[instrument(skip(self, query))]
+    #[tracing::instrument(skip(self, query))]
     pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
         let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
@@ -254,8 +262,8 @@ impl<S: StorageEngine> InvertedIndex<S> {
 
         let avg_doc_len = meta.total_tokens as f32 / meta.total_docs as f32;
 
-        let mut scores: HashMap<DocId, f32> = HashMap::new();
-        let mut doc_len_cache: HashMap<DocId, u32> = HashMap::new();
+        let mut scores: AHashMap<DocId, f32> = AHashMap::default();
+        let mut doc_len_cache: AHashMap<DocId, u32> = AHashMap::default();
 
         for term in &tokens {
             let prefix = self.key_term_prefix(term);
@@ -420,6 +428,7 @@ impl<S: StorageEngine> TextIndex for BM25MorphIndex<S> {
 mod tests {
     use super::*;
     use parking_lot::RwLock;
+    use std::collections::HashMap;
 
     struct MockStorage {
         store: RwLock<HashMap<Vec<u8>, Vec<u8>>>,

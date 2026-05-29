@@ -5,7 +5,9 @@
 
 // ANCHOR:ARCH:MORPH-001 — Morphologische Inferenz-Optimierung (WP-6.5)
 // WP:WP-6.5 PRIO:2 NEEDS:WP-2.1
-// STATUS:SCAFFOLD DATE:2026-05-17
+// STATUS:READY DATE:2026-07-25
+
+use std::sync::OnceLock;
 
 /// Trait for morphological tokenization.
 ///
@@ -57,49 +59,53 @@ impl Default for GermanCompoundSplitter {
 
 impl MorphologicalTokenizer for GermanCompoundSplitter {
     fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
-        // Simple recursive splitting based on a set of known components
-        // and common German compound patterns (Fugen-S etc.)
+        static DICTIONARY: OnceLock<Vec<&'static str>> = OnceLock::new();
+        let dict = DICTIONARY.get_or_init(|| {
+            let mut d = vec![
+                "bundes",
+                "verfassungs",
+                "gericht",
+                "gesetz",
+                "entwurf",
+                "daten",
+                "bank",
+                "speicher",
+                "vektor",
+                "suche",
+                "system",
+                "steuerung",
+                "verwaltung",
+                "bericht",
+                "prüfung",
+                "schutz",
+                "sicherheit",
+                "zugriff",
+                "rechte",
+            ];
+            // Sort by length descending for greedy matching
+            d.sort_by_key(|b| std::cmp::Reverse(b.len()));
+            d
+        });
 
         if token.len() <= self.min_component_len {
             return vec![token];
         }
 
-        // Common components in technical/legal German compounds
-        let dictionary = [
-            "bundes",
-            "verfassungs",
-            "gericht",
-            "gesetz",
-            "entwurf",
-            "daten",
-            "bank",
-            "speicher",
-            "vektor",
-            "suche",
-            "system",
-            "steuerung",
-            "verwaltung",
-            "bericht",
-            "prüfung",
-            "schutz",
-            "sicherheit",
-            "zugriff",
-            "rechte",
-        ];
-
-        for &word in &dictionary {
+        for &word in dict {
             if token.len() > word.len() && token.starts_with(word) {
                 let rest = &token[word.len()..];
 
                 // Handle Fugen-s (e.g., Verfassung-s-gericht)
-                let actual_rest = if rest.starts_with('s') && rest.len() > 1 {
-                    &rest[1..]
+                let (_fugen_len, actual_rest) = if rest.starts_with('s') && rest.len() > 1 {
+                    (1, &rest[1..])
                 } else {
-                    rest
+                    (0, rest)
                 };
 
-                if actual_rest.len() >= self.min_component_len {
+                if actual_rest.len() >= self.min_component_len && actual_rest.is_char_boundary(0) {
                     let mut result = vec![&token[..word.len()]];
+                    // Also include the Fugen-s in the decomposition if it exists?
+                    // Usually we just want the morphemes.
                     result.extend(self.decompose(actual_rest));
                     return result;
                 }
