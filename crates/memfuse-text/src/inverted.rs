@@ -151,6 +151,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
         tfs_vec.sort_by(|a, b| a.0.cmp(&b.0));
 
         let unique_terms: Vec<&str> = tfs_vec.iter().map(|(k, _)| k.as_str()).collect();
+        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:READY
         let fw_bytes = bincode::serialize(&unique_terms)
             .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
         self.storage.put(tx, &fw_key, &fw_bytes).await?;
@@ -169,6 +170,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
             meta.total_docs += 1;
         }
 
+        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:READY
         let meta_bytes = bincode::serialize(&meta)
             .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
         self.storage.put(tx, &meta_key, &meta_bytes).await?;
@@ -222,6 +224,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
             meta.total_tokens = meta.total_tokens.saturating_sub(doc_len as u64);
             meta.total_docs = meta.total_docs.saturating_sub(1);
 
+            // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:READY
             let meta_bytes = bincode::serialize(&meta)
                 .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
             self.storage.put(tx, &meta_key, &meta_bytes).await?;
@@ -269,7 +272,8 @@ impl<S: StorageEngine> InvertedIndex<S> {
             for (key, val_bytes) in entries {
                 // Key format: {namespace}:pl:{term}:{doc_id}
                 // Suffix is just {doc_id}
-                let suffix = &key[prefix.len()..];
+                // ANCHOR:SEC:SLICE-001 AGENT:10 PRIO:1 STATUS:REVIEW
+                let suffix = key.get(prefix.len()..).ok_or(MemFuseError::Storage("Corrupt key in posting list".into()))?;
                 let doc_id_raw = std::str::from_utf8(suffix)
                     .map_err(|_| MemFuseError::Storage("Invalid doc_id in key".into()))?
                     .parse::<u64>()
