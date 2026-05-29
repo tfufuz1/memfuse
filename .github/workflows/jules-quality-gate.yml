@@ -97,17 +97,12 @@ jobs:
         run: |
           echo "=== Scanning for .unwrap() usage ==="
           # Allow unwrap only in test code (#[test] / #[cfg(test)])
-          # We also exclude lines containing 'assert' as they are often in tests
           VIOLATIONS=$(grep -rn "\.unwrap()" --include="*.rs" crates/ \
             | grep -v "#\[test\]" \
             | grep -v "#\[cfg(test)\]" \
             | grep -v "//.*unwrap" \
             | grep -v "_test\." \
             | grep -v "/tests/" \
-            | grep -v "::tests" \
-            | grep -v "assert" \
-            | grep -v "test_" \
-            | grep -v "mock" \
             || true)
           if [ -n "$VIOLATIONS" ]; then
             echo "❌ ZERO-UNWRAP VIOLATION:"
