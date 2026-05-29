@@ -1,3 +1,9 @@
+//! Metadata filtering expressions.
+//!
+//! Provides a domain-specific language for filtering documents
+//! based on their metadata attributes.
+
+// ANCHOR:DOC (AGENT:01 STATUS:DONE PRIO:3)
 use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.

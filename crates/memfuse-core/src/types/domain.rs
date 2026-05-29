@@ -1,3 +1,9 @@
+//! Domain types for MemFuse.
+//!
+//! Includes identifiers for documents, entities, and transactions,
+//! as well as common data structures like embeddings and search results.
+
+// ANCHOR:DOC (AGENT:01 STATUS:DONE PRIO:3)
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +50,15 @@ impl DocId {
             MemFuseError::Internal("Failed to convert hash slice to array".to_string())
         })?;
         Ok(Self(u64::from_le_bytes(buf)))
+    }
+
+    /// Helper for hydrating DocId from a string representation.
+    /// This is a checked unwrap helper primarily used in hydration paths.
+    pub fn from_string(id_str: &str) -> Self {
+        let id = id_str
+            .parse::<u64>()
+            .unwrap_or_else(|_| panic!("Invalid DocId string: {}", id_str));
+        Self(id)
     }
 }
 
@@ -240,5 +255,17 @@ mod tests {
         let id1 = DocId::from_key(key).unwrap();
         let id2 = DocId::from_key(key).unwrap();
         assert_eq!(id1, id2);
+    }
+
+    #[test]
+    fn test_doc_id_from_string() {
+        let id = DocId::from_string("12345");
+        assert_eq!(id.inner(), 12345);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid DocId string: invalid")]
+    fn test_doc_id_from_string_panic() {
+        DocId::from_string("invalid");
     }
 }

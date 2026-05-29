@@ -1,3 +1,9 @@
+//! SAOS (System-Agent Orchestration Stack) types.
+//!
+//! Defines types for hybrid search queries, fusion weights, and
+//! other structures used for orchestrating agents and system tasks.
+
+// ANCHOR:DOC (AGENT:01 STATUS:DONE PRIO:3)
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
