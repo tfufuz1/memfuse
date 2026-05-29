@@ -249,16 +249,8 @@ mod tests {
     }
 
     #[test]
-    fn test_doc_id_determinism() {
-        let key = "consistent_key";
-        let id1 = DocId::from_key(key).unwrap();
-        let id2 = DocId::from_key(key).unwrap();
-        assert_eq!(id1, id2);
-    }
-
-    #[test]
     fn test_doc_id_from_string() {
-        let id = DocId::from_string("12345").unwrap();
+        let id = DocId::from_string("12345").unwrap(); // unwrap
         assert_eq!(id.inner(), 12345);
     }
 
@@ -266,5 +258,13 @@ mod tests {
     fn test_doc_id_from_string_error() {
         let res = DocId::from_string("invalid");
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_doc_id_determinism() {
+        let key = "consistent_key";
+        let id1 = DocId::from_key(key).unwrap(); // unwrap
+        let id2 = DocId::from_key(key).unwrap(); // unwrap
+        assert_eq!(id1, id2);
     }
 }
