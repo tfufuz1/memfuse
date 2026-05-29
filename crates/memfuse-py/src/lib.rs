@@ -12,7 +12,9 @@
 
 #![forbid(unsafe_code)]
 
-use memfuse_db::{Collection as MemFuseCollection, FilterOp, MemFuse, MemFuseConfig, MetadataFilter};
+use memfuse_db::{
+    Collection as MemFuseCollection, FilterOp, MemFuse, MemFuseConfig, MetadataFilter,
+};
 use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;
 use pythonize::{depythonize, pythonize};
