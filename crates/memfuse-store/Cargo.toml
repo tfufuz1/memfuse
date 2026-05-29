@@ -18,7 +18,7 @@ memmap2 = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 rand = { workspace = true }
-lru = "0.13"
+lru = "0.13.0"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }

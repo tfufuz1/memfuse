@@ -238,6 +238,7 @@ impl HnswIndex {
     pub async fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
+        #[allow(clippy::await_holding_lock)]
         let _lock = self.write_mutex.lock().await;
         let nodes = self.nodes.read();
         let entry_point = self.entry_point.read();

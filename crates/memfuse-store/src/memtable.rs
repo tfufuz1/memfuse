@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 #[derive(Debug)]
 pub struct MemTable {
     /// Maps UserKey -> Vec<(SequenceNumber, Value, TxId)>.
+    #[allow(clippy::type_complexity)]
     /// The Vec is sorted by SequenceNumber ascending.
     entries: RwLock<BTreeMap<Bytes, Vec<(u64, Bytes, u64)>>>,
     size: AtomicUsize,
