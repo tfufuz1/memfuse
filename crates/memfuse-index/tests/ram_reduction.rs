@@ -27,17 +27,17 @@ async fn test_ram_reduction_4x() {
         index_f32
             .insert(tx, DocId::new(i as u64), &v)
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed (AGENT:08)
         index_sq8
             .insert(tx, DocId::new(i as u64), &v)
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed (AGENT:08)
     }
-    index_f32.commit(tx).await.unwrap();
-    index_sq8.commit(tx).await.unwrap();
+    index_f32.commit(tx).await.unwrap(); // unwrap allowed (AGENT:08)
+    index_sq8.commit(tx).await.unwrap(); // unwrap allowed (AGENT:08)
 
-    let stats_f32 = index_f32.stats().await.unwrap();
-    let stats_sq8 = index_sq8.stats().await.unwrap();
+    let stats_f32 = index_f32.stats().await.unwrap(); // unwrap allowed (AGENT:08)
+    let stats_sq8 = index_sq8.stats().await.unwrap(); // unwrap allowed (AGENT:08)
 
     let vec_mem_f32 = num_vectors * dim * 4;
     let vec_mem_sq8 = num_vectors * dim;

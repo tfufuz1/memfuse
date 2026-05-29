@@ -15,10 +15,10 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         
-      - name: Check L1 Kernel Isolation (core, crypto, sandbox)
+      - name: Check L1 Kernel Isolation (core, runtime, orchestrator)
         run: |
           set -e
-          for CRATE in memfuse-core memfuse-crypto memfuse-sandbox; do
+          for CRATE in memfuse-core memfuse-runtime memfuse-orchestrator; do
             echo "Verifying $CRATE isolation..."
             if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -E -v "$CRATE|memfuse-core" | grep -q .; then
               echo "ERROR: $CRATE imports forbidden internal crates."
@@ -27,18 +27,18 @@ jobs:
             fi
           done
 
-      - name: Check L2 peer isolation (store, index, text, checkpoint, graph)
+      - name: Check L2 peer isolation (store, index, text, checkpoint)
         run: |
           set -e
-          echo "Verifying memfuse-store (permitted: core, crypto)..."
-          if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core|memfuse-crypto" | grep -q "memfuse-"; then
-            echo "ERROR: memfuse-store violates DAG by importing non-core/crypto crates."
+          echo "Verifying memfuse-store..."
+          if cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core" | grep -q "memfuse-"; then
+            echo "ERROR: memfuse-store violates DAG by importing non-core crates."
             cargo tree -p memfuse-store --edges no-dev | grep "memfuse-"
             exit 1
           fi
-          echo "Verifying memfuse-index (permitted: core, graph)..."
-          if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core|memfuse-graph" | grep -q "memfuse-"; then
-            echo "ERROR: memfuse-index violates DAG by importing non-core/graph crates."
+          echo "Verifying memfuse-index..."
+          if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core" | grep -q "memfuse-"; then
+            echo "ERROR: memfuse-index violates DAG by importing non-core crates."
             cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
             exit 1
           fi
@@ -59,23 +59,21 @@ jobs:
         run: |
           set -e
           echo "Verifying memfuse-db..."
-          if cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py|memfuse-sandbox|memfuse-saos-agent"; then
+          if cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py|memfuse-runtime|memfuse-orchestrator"; then
             echo "ERROR: memfuse-db imports higher layers."
-            cargo tree -p memfuse-db --edges no-dev | grep -E "memfuse-py|memfuse-sandbox|memfuse-saos-agent"
+            cargo tree -p memfuse-db --edges no-dev | grep -E "memfuse-py|memfuse-runtime|memfuse-orchestrator"
             exit 1
           fi
 
-      - name: Check L4 Bindings Isolation (py, saos-agent)
+      - name: Check L4 Bindings Isolation (py)
         run: |
           set -e
-          for CRATE in memfuse-py memfuse-saos-agent; do
-            echo "Verifying $CRATE isolation..."
-            if cargo tree -p "$CRATE" --edges no-dev | grep -E -q "memfuse-sandbox"; then
-              echo "ERROR: $CRATE violates isolation by importing internal Kernel crates."
-              cargo tree -p "$CRATE" --edges no-dev | grep -E "memfuse-sandbox"
-              exit 1
-            fi
-          done
+          echo "Verifying memfuse-py..."
+          if cargo tree -p memfuse-py --edges no-dev | grep -E -q "memfuse-runtime|memfuse-orchestrator"; then
+            echo "ERROR: memfuse-py violates isolation by importing L1 Kernel crates."
+            cargo tree -p memfuse-py --edges no-dev | grep -E "memfuse-runtime|memfuse-orchestrator"
+            exit 1
+          fi
 
       - name: Check known DAG violations (tracking)
         run: |

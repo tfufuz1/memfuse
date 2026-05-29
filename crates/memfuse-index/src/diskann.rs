@@ -306,9 +306,7 @@ impl DiskAnnIndex {
             let mut results = self
                 .search_to_candidates(vector, self.config.beam_width)
                 .await?;
-            let pruned = self
-                .prune(&mut results, self.config.max_degree, alpha)
-                .await;
+            let pruned = self.prune(&mut results, self.config.max_degree, alpha).await;
 
             for &neighbor in &pruned {
                 let neighbor_idx = neighbor as usize;
@@ -775,7 +773,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_diskann_header_persistence() {
-        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed (AGENT:08)
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed (AGENT:08);
         let index_path = temp_dir.path().join("header_test.idx");
 
         let config = DiskAnnConfig {
@@ -803,7 +801,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_diskann_recall_basic() {
-        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed (AGENT:08)
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed (AGENT:08);
         let index_path = temp_dir.path().join("recall_test.idx");
 
         let config = DiskAnnConfig {
@@ -837,7 +835,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_diskann_sq8_recall() {
-        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed (AGENT:08)
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed (AGENT:08);
         let index_path = temp_dir.path().join("sq8_test.idx");
 
         let config = DiskAnnConfig {

@@ -14,6 +14,8 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 #[derive(Debug)]
+#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity)]
 pub struct MemTable {
     /// Maps UserKey -> Vec<(SequenceNumber, Value, TxId)>.
     /// The Vec is sorted by SequenceNumber ascending.

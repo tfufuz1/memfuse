@@ -9,17 +9,17 @@ fn dummy_wasm() -> Vec<u8> {
         )
     "#,
     )
-    .unwrap()
+    .unwrap() // unwrap allowed (AGENT:08)
 }
 
 #[tokio::test]
 async fn test_sandbox_initialization() {
-    let _sandbox = WasmSandbox::new(SandboxConfig::default()).unwrap();
+    let _sandbox = WasmSandbox::new(SandboxConfig::default()).unwrap(); // unwrap allowed (AGENT:08)
 }
 
 #[tokio::test]
 async fn test_sandbox_execution_placeholder() -> Result<()> {
-    let sandbox = WasmSandbox::new(SandboxConfig::default()).unwrap();
+    let sandbox = WasmSandbox::new(SandboxConfig::default()).unwrap(); // unwrap allowed (AGENT:08)
     let wasm_bytes = dummy_wasm();
     let budget = TokenBudget::new(100, 0);
 

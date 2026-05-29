@@ -51,6 +51,9 @@ with memfuse.open("./data", dimension=1536) as db:
     for r in results:
         # Results have id, score, and metadata attributes
         print(f"Found {r.id} with score {r.score}")
+
+    for r in results:
+        print(f"Found {r.id} with score {r.score}")
 ```
 
 ---
