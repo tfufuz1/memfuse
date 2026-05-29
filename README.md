@@ -23,7 +23,7 @@ Designed for AI agents and local-first applications, MemFuse provides a producti
 Add MemFuse to your `Cargo.toml`:
 ```toml
 [dependencies]
-memfuse-db = "0.1.0"
+memfuse-db = "0.2.0"
 ```
 
 ### Python
@@ -48,10 +48,6 @@ with memfuse.open("./data", dimension=1536) as db:
     # Perform hybrid search
     results = db.hybrid_search("Hello", vector, k=5)
     
-    for r in results:
-        # Results have id, score, and metadata attributes
-        print(f"Found {r.id} with score {r.score}")
-
     for r in results:
         print(f"Found {r.id} with score {r.score}")
 ```

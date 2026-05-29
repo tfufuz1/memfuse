@@ -84,7 +84,7 @@ mod tests {
 
         // 4. Verify state
         assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec())); // unwrap allowed (AGENT:08)
-        assert_eq!(storage.get(b"key2").await.unwrap(), None); // Should be gone! unwrap allowed (AGENT:08)
+        assert_eq!(storage.get(b"key2").await.unwrap(), None); // unwrap allowed (AGENT:08) // Should be gone!
 
         // 5. Verify we can still write and seq_no is correct
         let tx3 = TxId::new(3);

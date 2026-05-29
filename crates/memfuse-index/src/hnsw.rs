@@ -236,7 +236,6 @@ impl HnswIndex {
     // DONE: Alle std::fs Aufrufe in save() sind in spawn_blocking gekapselt oder durch tokio::fs ersetzt.
     // SUCCESSOR: @JULES-13 — "HNSW I/O ist nun async-safe. Tech-Debt Audit fortsetzen."
     #[allow(clippy::await_holding_lock)]
-    #[allow(clippy::await_holding_lock)]
     pub async fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
