@@ -364,7 +364,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_list_collections
     // DONE: list_collections gibt persistierte Collections zurück.
     // SUCCESSOR: @JULES-04 — "Mache weiter mit COL-003."
-    /// Lists all existing collection names currently stored in the database.
+    /// Lists all existing collection names.
     /// ANCHOR:DOC STATUS:DONE AGENT:08
     pub async fn list_collections(&self) -> Result<Vec<String>> {
         let col_idx_prefix = b"__col_idx:\x00";
@@ -398,7 +398,7 @@ impl MemFuse {
     // TEST: cargo test -p memfuse-db test_drop_removes_all_data
     // DONE: Alle Daten getilgt, re-öffnen führt zu leerer DB.
     // SUCCESSOR: @JULES-05 — "Collections sind fertig. Beginne mit WP-2.1 SEARCH-001."
-    /// Permanently deletes a collection and all associated data from the LSM storage and vector index.
+    /// Permanently deletes a collection and all associated data.
     /// ANCHOR:DOC STATUS:DONE AGENT:08
     pub async fn drop_collection(&self, name: &str) -> Result<()> {
         if name == "default" {
