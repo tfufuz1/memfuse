@@ -1,3 +1,9 @@
+//! # SAOS Integration Types
+//!
+//! Types and structures for Self-Autonomous Operating System (SAOS) integration.
+//! Includes budget management, namespace isolation, and hybrid query builders.
+// ANCHOR:DOC STATUS:DONE AGENT:08
+
 use super::domain::DocId;
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
@@ -8,10 +14,12 @@ use serde::{Deserialize, Serialize};
 pub struct NamespaceId(u64);
 
 impl NamespaceId {
+    /// Creates a new namespace identifier.
     pub fn new(id: u64) -> Self {
         Self(id)
     }
 
+    /// Returns the raw u64 representation.
     pub fn inner(&self) -> u64 {
         self.0
     }
@@ -32,6 +40,7 @@ pub struct TokenBudget {
 }
 
 impl TokenBudget {
+    /// Creates a new token budget with a hard limit and reserved tokens.
     pub fn new(max_tokens: usize, reserve_tokens: usize) -> Self {
         Self {
             max_tokens,
@@ -78,6 +87,7 @@ pub struct FusionWeights {
 }
 
 impl FusionWeights {
+    /// Creates a new set of fusion weights. Must sum exactly to 1.0.
     pub fn new(vector: f32, text: f32, graph: f32, metadata: f32) -> Result<Self> {
         let sum = vector + text + graph + metadata;
         if (sum - 1.0).abs() > 1e-6 {
@@ -95,10 +105,12 @@ impl FusionWeights {
         })
     }
 
+    /// Returns the vector signal weight.
     pub fn vector(&self) -> f32 {
         self.vector
     }
 
+    /// Returns the text (BM25) signal weight.
     pub fn text(&self) -> f32 {
         self.text
     }
@@ -150,6 +162,7 @@ pub struct HybridQuery {
 }
 
 impl HybridQuery {
+    /// Returns a new builder for constructing a `HybridQuery`.
     pub fn builder() -> HybridQueryBuilder {
         HybridQueryBuilder::default()
     }
@@ -167,40 +180,48 @@ pub struct HybridQueryBuilder {
 }
 
 impl HybridQueryBuilder {
+    /// Creates a new `HybridQueryBuilder`.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Sets the keyword text query string.
     pub fn with_text_query(mut self, q: impl Into<String>) -> Self {
         self.text_query = Some(q.into());
         self
     }
 
+    /// Sets the semantic vector query.
     pub fn with_vector_query(mut self, v: Vec<f32>) -> Self {
         self.vector_query = Some(v);
         self
     }
 
+    /// Sets the starting node for graph traversal.
     pub fn with_graph_start_node(mut self, start: impl Into<String>) -> Self {
         self.graph_start_node = Some(start.into());
         self
     }
 
+    /// Sets the signal fusion weights.
     pub fn with_fusion_weights(mut self, weights: FusionWeights) -> Self {
         self.fusion_weights = Some(weights);
         self
     }
 
+    /// Sets the metadata filter expression.
     pub fn with_filter(mut self, filter: FilterExpr) -> Self {
         self.filter = Some(filter);
         self
     }
 
+    /// Sets the number of top-k results to return.
     pub fn with_k(mut self, k: usize) -> Self {
         self.k = Some(k);
         self
     }
 
+    /// Finalizes the builder and returns a `HybridQuery`.
     pub fn build(self) -> Result<HybridQuery> {
         Ok(HybridQuery {
             text_query: self.text_query,

@@ -1,7 +1,7 @@
 # MemFuse SAOS — Goldstandard Funktionskatalog
 ## Formale Spezifikation der Zukunftsfähigen Erweiterungen
 
-> **Status:** PLANNING  
+> **Status:** IMPLEMENTED (AGENT:08)
 > **Basis:** SAOS-ARCHITECTURE.md + SAOS-ROADMAP.md + Goldstandard-Vision  
 > **Erstellt:** 2026-05-08 | **Agent:** Context-Architekt (ANTIGRAVITY-Analyse)
 
@@ -9,15 +9,15 @@
 
 ## Übersicht: Die sieben Goldstandard-Funktionen
 
-| ID | Funktion | Crate | Abhängigkeit | WP |
-|----|---------|-------|-------------|-----|
-| GS-01 | 4-Signal Fusion API | memfuse-db | WP-2.1 + WP-2.2 | WP-6.1 |
-| GS-02 | Declarative StateGraph API | memfuse-saos-agent | WP-5.3 | WP-6.2 |
-| GS-03 | Autonomes Kontext-Management | memfuse-db | GS-01 | WP-6.3 |
-| GS-04 | Multi-Agent Namespaces | memfuse-db | WP-1.2 | WP-6.4 |
-| GS-05 | Morphologische Inferenz-Optimierung | memfuse-text | WP-2.1 | WP-6.5 |
-| GS-06 | Air-Gap Deployment Profile | memfuse-py, memfuse-py | WP-3.1 + WP-3.2 | WP-6.6 |
-| GS-07 | Kryptografische WAL-Verifikation | memfuse-store | WP-1.1 + WP-3.2 | WP-6.7 |
+| ID | Funktion | Crate | Abhängigkeit | WP | Status |
+|----|---------|-------|-------------|-----|--------|
+| GS-01 | 4-Signal Fusion API | memfuse-db | WP-2.1 + WP-2.2 | WP-6.1 | DONE |
+| GS-02 | Declarative StateGraph API | memfuse-saos-agent | WP-5.3 | WP-6.2 | DONE |
+| GS-03 | Autonomes Kontext-Management | memfuse-db | GS-01 | WP-6.3 | DONE |
+| GS-04 | Multi-Agent Namespaces | memfuse-db | WP-1.2 | WP-6.4 | DONE |
+| GS-05 | Morphologische Inferenz-Optimierung | memfuse-text | WP-2.1 | WP-6.5 | DONE |
+| GS-06 | Air-Gap Deployment Profile | memfuse-py, memfuse-py | WP-3.1 + WP-3.2 | WP-6.6 | WIP/SCAFFOLD |
+| GS-07 | Kryptografische WAL-Verifikation | memfuse-store | WP-1.1 + WP-3.2 | WP-6.7 | DONE |
 
 ---
 

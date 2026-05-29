@@ -1,3 +1,9 @@
+//! # Domain Types
+//!
+//! Core domain entities and identifiers for the MemFuse ecosystem.
+//! This module defines the fundamental building blocks used across all crates.
+// ANCHOR:DOC STATUS:DONE AGENT:08
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -20,7 +26,9 @@ pub const TOMBSTONE_BIT: u64 = 1 << 63;
 pub struct DocId(pub u64);
 
 impl DocId {
+    /// Maximum possible document identifier.
     pub const MAX: Self = Self(u64::MAX);
+    /// Minimum possible document identifier.
     pub const MIN: Self = Self(0);
 
     #[inline]
@@ -33,6 +41,7 @@ impl DocId {
         self.0
     }
 
+    /// Derives a deterministic `DocId` from a string key using Blake3 hashing.
     pub fn from_key(key: &str) -> Result<Self> {
         let hash = blake3::hash(key.as_bytes());
         let bytes = hash
@@ -132,6 +141,7 @@ pub struct Embedding {
 }
 
 impl Embedding {
+    /// Creates a new embedding from a vector of floats.
     pub fn new(data: Vec<f32>) -> Self {
         Self { data }
     }
@@ -146,10 +156,12 @@ impl Embedding {
         &self.data
     }
 
+    /// Computes the L2 norm (magnitude) of the embedding vector.
     pub fn l2_norm(&self) -> f32 {
         self.data.iter().map(|x| x * x).sum::<f32>().sqrt()
     }
 
+    /// Returns a new normalized embedding (L2 norm = 1.0).
     pub fn normalize(&self) -> Self {
         let norm = self.l2_norm();
         if norm == 0.0 {
@@ -167,6 +179,7 @@ pub struct ScoredDocument {
 }
 
 impl ScoredDocument {
+    /// Creates a new scored document result.
     pub fn new(doc_id: DocId, score: f32) -> Self {
         Self { doc_id, score }
     }
@@ -181,6 +194,7 @@ pub struct Entity {
 }
 
 impl Entity {
+    /// Creates a new graph entity with an ID, name, and type.
     pub fn new(id: EntityId, name: impl Into<String>, entity_type: impl Into<String>) -> Self {
         Self {
             id,
@@ -200,6 +214,7 @@ pub struct Edge {
 }
 
 impl Edge {
+    /// Creates a new graph edge between two entities with a label.
     pub fn new(from: EntityId, to: EntityId, label: impl Into<String>) -> Self {
         Self {
             from,
@@ -209,6 +224,7 @@ impl Edge {
         }
     }
 
+    /// Sets the weight of the edge and returns it.
     pub fn with_weight(mut self, weight: f32) -> Self {
         self.weight = weight;
         self
