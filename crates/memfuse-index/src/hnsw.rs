@@ -239,42 +239,66 @@ impl HnswIndex {
         use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
         let _lock = self.write_mutex.lock().await;
-        let nodes = self.nodes.read();
-        let entry_point = self.entry_point.read();
-        let q_guard = self.quantizer.read();
+        let (node_records_initial, header_initial, nodes_data) = {
+            let nodes = self.nodes.read();
+            let entry_point = self.entry_point.read();
+            let q_guard = self.quantizer.read();
+
+            let node_count = nodes.len();
+            let nodes_offset = crate::persistence::HnswHeader::SIZE as u64;
+
+            let (q_min, q_max) = if let Some(q) = q_guard.as_ref() {
+                (q.min, q.max)
+            } else {
+                (0.0, 0.0)
+            };
+
+            let header = crate::persistence::HnswHeader {
+                magic: crate::persistence::HNSW_MAGIC,
+                version: crate::persistence::HNSW_VERSION,
+                dimension: self.config.dimension as u32,
+                m: self.config.m as u32,
+                metric: self.config.distance_metric as u8,
+                quantized: if self.config.quantize { 1 } else { 0 },
+                q_min,
+                q_max,
+                node_count: node_count as u64,
+                entry_point: entry_point.map(|i| i as i64).unwrap_or(-1),
+                nodes_offset,
+                connections_offset: 0,
+                last_tx_id: self.last_tx_id.load(Ordering::SeqCst),
+            };
+
+            let mut node_records = Vec::with_capacity(node_count);
+            for _ in 0..node_count {
+                node_records.push(crate::persistence::NodeRecord {
+                    doc_id: 0,
+                    max_layer: 0,
+                    vector_offset: 0,
+                    connections_offset: 0,
+                });
+            }
+
+            // Snapshot node data for async writing
+            let nodes_snapshot: Vec<(DocId, VectorData, Vec<Vec<u32>>)> = nodes
+                .iter()
+                .map(|n| (n.doc_id, n.vector.clone(), n.connections.clone()))
+                .collect();
+
+            (node_records, header, nodes_snapshot)
+        };
+
+        let mut node_records = node_records_initial;
+        let mut header = header_initial;
+        let node_count = nodes_data.len();
+        let nodes_offset = header.nodes_offset;
+        let vectors_offset =
+            nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
 
         let file = tokio::fs::File::create(path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
         let mut writer = tokio::io::BufWriter::new(file);
-
-        let node_count = nodes.len();
-        let nodes_offset = crate::persistence::HnswHeader::SIZE as u64;
-        let vectors_offset =
-            nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
-
-        let (q_min, q_max) = if let Some(q) = q_guard.as_ref() {
-            (q.min, q.max)
-        } else {
-            (0.0, 0.0)
-        };
-
-        // Initial header
-        let mut header = crate::persistence::HnswHeader {
-            magic: crate::persistence::HNSW_MAGIC,
-            version: crate::persistence::HNSW_VERSION,
-            dimension: self.config.dimension as u32,
-            m: self.config.m as u32,
-            metric: self.config.distance_metric as u8,
-            quantized: if self.config.quantize { 1 } else { 0 },
-            q_min,
-            q_max,
-            node_count: node_count as u64,
-            entry_point: entry_point.map(|i| i as i64).unwrap_or(-1),
-            nodes_offset,
-            connections_offset: 0,
-            last_tx_id: self.last_tx_id.load(Ordering::SeqCst),
-        };
 
         // 1. Placeholder Header
         writer
@@ -283,15 +307,6 @@ impl HnswIndex {
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
 
         // 2. Nodes Metadata (Placeholders)
-        let mut node_records = Vec::with_capacity(node_count);
-        for _ in 0..node_count {
-            node_records.push(crate::persistence::NodeRecord {
-                doc_id: 0,
-                max_layer: 0,
-                vector_offset: 0,
-                connections_offset: 0,
-            });
-        }
         for record in &node_records {
             writer
                 .write_all(&record.to_bytes())
@@ -301,12 +316,12 @@ impl HnswIndex {
 
         // 3. Vectors Block
         let mut current_pos = vectors_offset;
-        for (i, node) in nodes.iter().enumerate() {
-            node_records[i].doc_id = node.doc_id.inner();
-            node_records[i].max_layer = node.connections.len().saturating_sub(1) as u8;
+        for (i, (doc_id, vector, connections)) in nodes_data.iter().enumerate() {
+            node_records[i].doc_id = doc_id.inner();
+            node_records[i].max_layer = connections.len().saturating_sub(1) as u8;
             node_records[i].vector_offset = current_pos;
 
-            match &node.vector {
+            match vector {
                 VectorData::F32(v) => {
                     // ANCHOR:SAFETY:SEC-HNSW-001 — Byte-Casting von f32-Slices.
                     // BEGRÜNDUNG: f32 hat keine internen Padding-Bytes und ist immer 4 Bytes groß.
@@ -342,17 +357,16 @@ impl HnswIndex {
         }
 
         let mut conn_pos = connections_offset;
-        for (i, node) in nodes.iter().enumerate() {
+        for (i, (_doc_id, _vector, connections)) in nodes_data.iter().enumerate() {
             node_records[i].connections_offset = conn_pos;
-            let num_layers = node.connections.len() as u8;
+            let num_layers = connections.len() as u8;
             writer
                 .write_all(&[num_layers])
                 .await
                 .map_err(|e| MemFuseError::Storage(e.to_string()))?;
             conn_pos += 1;
 
-            for layer in 0..num_layers as usize {
-                let conns = &node.connections[layer];
+            for conns in connections.iter().take(num_layers as usize) {
                 let len = conns.len() as u32;
                 writer
                     .write_all(&len.to_le_bytes())

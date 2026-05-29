@@ -306,7 +306,9 @@ impl DiskAnnIndex {
             let mut results = self
                 .search_to_candidates(vector, self.config.beam_width)
                 .await?;
-            let pruned = self.prune(&mut results, self.config.max_degree, alpha).await;
+            let pruned = self
+                .prune(&mut results, self.config.max_degree, alpha)
+                .await;
 
             for &neighbor in &pruned {
                 let neighbor_idx = neighbor as usize;
