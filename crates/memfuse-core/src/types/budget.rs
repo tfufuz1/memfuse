@@ -1,3 +1,13 @@
+//! Resource budget management for MemFuse.
+//!
+//! # Architektur
+//! Implementiert den `ResourceTracker`, der den Speicherverbrauch überwacht
+//! und Backpressure-Signale an die Storage-Engines sendet.
+//!
+//! # Invarianten
+//! - Der Speicherverbrauch wird atomar getrackt.
+//! - Überschreitet der Verbrauch 95% des Budgets, wird `MemoryBudgetExceeded` geworfen.
+
 use crate::error::{MemFuseError, Result};
 
 /// Resource budget for memory management.

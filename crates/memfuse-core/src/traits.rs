@@ -3,8 +3,6 @@
 //! These traits define the abstract interfaces that concrete implementations
 //! must fulfill, enabling modularity and testability.
 
-// #![allow(async_fn_in_trait)]
-
 // ANCHOR:ARCH:TRAITS-001 — Trait-Contracts sind das API-Rückgrat des Workspace.
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
@@ -13,11 +11,12 @@
 
 use crate::types::*;
 use crate::Result;
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 /// Abstract contract for generating consistent checkpoints.
-#[async_trait::async_trait]
-pub trait Checkpoint: Send + Sync {
+#[async_trait]
+pub trait Checkpoint: Send + Sync + 'static {
     /// Takes a deterministic snapshot of the current state.
     async fn take_snapshot(&self, tx: TxId) -> Result<WorkflowState>;
 
@@ -58,9 +57,18 @@ pub struct StorageStats {
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
 // Lifecycle: put/delete → commit/rollback → flush(background).
-/// Storage engine trait — abstracts over the LSM-Tree implementation.
-#[async_trait::async_trait]
-pub trait StorageEngine: Send + Sync {
+
+/// Storage Engine trait — abstrahiert die LSM-Tree-Persistenz.
+///
+/// # Dyn-Kompatibilität
+/// Dieser Trait ist durch `#[async_trait]` vtable-kompatibel (dyn-safe).
+/// Alle `async fn`-Methoden werden zu `Pin<Box<dyn Future<...>>>` desugared.
+///
+/// # Invarianten
+/// - Implementierungen DÜRFEN NICHT paniken (Zero-Panic Doctrine)
+/// - Alle Fehler werden über `crate::Result<T>` propagiert
+#[async_trait]
+pub trait StorageEngine: Send + Sync + 'static {
     /// Retrieves a value by key.
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
 
@@ -126,9 +134,13 @@ pub trait StorageEngine: Send + Sync {
 // AGENT:01 DATE:2026-05-09 STATUS:DONE
 // CREATED:2026-05-05 DEADLINE:NONE
 // Rebuild: Automatisch bei >20% gelöschten Nodes.
-/// Vector index trait — abstracts over the HNSW implementation.
-#[async_trait::async_trait]
-pub trait VectorIndex: Send + Sync {
+
+/// Vector Index Trait — abstrahiert die HNSW-Vektorsuche.
+///
+/// # Dyn-Kompatibilität
+/// Durch `#[async_trait]` vtable-kompatibel.
+#[async_trait]
+pub trait VectorIndex: Send + Sync + 'static {
     /// Inserts a vector with an associated document ID.
     async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()>;
 
@@ -193,9 +205,12 @@ pub struct TextIndexStats {
     pub memory_usage_bytes: usize,
 }
 
-/// Text index trait — abstracts over the inverted index and BM25 search.
-#[async_trait::async_trait]
-pub trait TextIndex: Send + Sync {
+/// Text-Index Trait — abstrahiert BM25/Inverted-Index-Operationen.
+///
+/// # Dyn-Kompatibilität
+/// Durch `#[async_trait]` vtable-kompatibel.
+#[async_trait]
+pub trait TextIndex: Send + Sync + 'static {
     /// Searches for documents matching the query.
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>>;
 
@@ -219,9 +234,12 @@ pub trait TextIndex: Send + Sync {
 // WP:WP-6.x PRIO:4 NEEDS:WP-2.1
 // STATUS:SCAFFOLD DATE:2026-05-17
 
-/// Defines the contract for the CSR Graph traverse capabilities (Signal 3).
-#[async_trait::async_trait]
-pub trait GraphIndex: Send + Sync {
+/// Graph-Index Trait — CSR-basierte Entity-Relation-Traversal.
+///
+/// # Dyn-Kompatibilität
+/// Durch `#[async_trait]` vtable-kompatibel.
+#[async_trait]
+pub trait GraphIndex: Send + Sync + 'static {
     /// Traverses the entity graph using BFS up to a maximum number of hops.
     /// Distributes traversing decay weights across related entities.
     async fn traverse(

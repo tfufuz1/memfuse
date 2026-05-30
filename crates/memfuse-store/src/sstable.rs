@@ -220,12 +220,15 @@ impl BlockBuilder {
 }
 
 /// Metadata for an SSTable.
+#[derive(Debug, Clone)]
 pub struct SstableMetadata {
     pub first_key: Bytes,
     pub last_key: Bytes,
     pub file_size: u64,
     pub min_tx_id: u64,
     pub max_tx_id: u64,
+    pub min_seq: u64,
+    pub max_seq: u64,
 }
 
 /// A builder for creating new SSTables.
@@ -242,6 +245,8 @@ pub struct SstableBuilder {
     key_count: usize,
     min_tx_id: u64,
     max_tx_id: u64,
+    min_seq: u64,
+    max_seq: u64,
 }
 
 impl SstableBuilder {
@@ -285,6 +290,8 @@ impl SstableBuilder {
             key_count: 0,
             min_tx_id: u64::MAX,
             max_tx_id: 0,
+            min_seq: u64::MAX,
+            max_seq: 0,
         })
     }
 
@@ -303,6 +310,8 @@ impl SstableBuilder {
         self.key_count += 1;
         self.min_tx_id = self.min_tx_id.min(tx_id);
         self.max_tx_id = self.max_tx_id.max(tx_id);
+        self.min_seq = self.min_seq.min(seq_no);
+        self.max_seq = self.max_seq.max(seq_no);
         self.last_key = Some(Bytes::copy_from_slice(key));
         Ok(())
     }
@@ -363,8 +372,24 @@ impl SstableBuilder {
             .await
             .map_err(|e| MemFuseError::Storage(format!("SSTable bloom write failed: {}", e)))?;
 
-        // Write trailer: [bloom_offset: u64][index_offset: u64][magic: u32]
-        // This is 20 bytes. Old trailer was 12 bytes.
+        // Write trailer: [min_tx][max_tx][min_seq][max_seq][bloom_offset][index_offset][magic]
+        // This is 52 bytes.
+        self.file
+            .write_u64_le(self.min_tx_id)
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        self.file
+            .write_u64_le(self.max_tx_id)
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        self.file
+            .write_u64_le(self.min_seq)
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        self.file
+            .write_u64_le(self.max_seq)
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
         self.file
             .write_u64_le(bloom_offset)
             .await
@@ -374,8 +399,8 @@ impl SstableBuilder {
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
         self.file
-            .write_u32_le(0x4D465354)
-            .await // "MFST" in hex
+            .write_u32_le(0x5853464D)
+            .await // "MFSX" in hex
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
 
         self.file
@@ -396,6 +421,8 @@ impl SstableBuilder {
             file_size,
             min_tx_id: self.min_tx_id,
             max_tx_id: self.max_tx_id,
+            min_seq: self.min_seq,
+            max_seq: self.max_seq,
         })
     }
 }
@@ -494,42 +521,91 @@ impl SstableReader {
                 .map_err(|_| MemFuseError::Storage("invalid trailer".into()))?,
         );
 
-        if magic != 0x4D465354 {
-            return Err(MemFuseError::Storage("Invalid SSTable magic number".into()));
-        }
-
-        // Backward-compatible trailer detection:
-        // New: [bloom_offset: u64][index_offset: u64][magic: u32] = 20 bytes
-        // Old: [index_offset: u64][magic: u32] = 12 bytes
         let mut has_bloom = false;
         let mut bloom_offset = 0;
         let mut actual_index_offset = index_offset;
+        let mut min_tx_id = 0;
+        let mut max_tx_id = 0;
+        let mut min_seq = 0;
+        let mut max_seq = 0;
 
-        if file_size >= 20 {
-            let trailer_20_pos = (file_size - 20) as usize;
-            let bloom_off = u64::from_le_bytes(
-                mmap.get(trailer_20_pos..trailer_20_pos + 8)
-                    .ok_or_else(|| MemFuseError::Storage("invalid trailer".into()))?
+        if magic == 0x5853464D && file_size >= 52 {
+            // New 52-byte trailer with MFSX magic
+            let trailer_52_pos = (file_size - 52) as usize;
+            min_tx_id = u64::from_le_bytes(
+                mmap.get(trailer_52_pos..trailer_52_pos + 8)
+                    .ok_or(MemFuseError::Storage("invalid trailer".into()))?
                     .try_into()
-                    .unwrap(),
+                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             );
-            let index_off = u64::from_le_bytes(
-                mmap.get(trailer_20_pos + 8..trailer_20_pos + 16)
-                    .ok_or_else(|| MemFuseError::Storage("invalid trailer".into()))?
+            max_tx_id = u64::from_le_bytes(
+                mmap.get(trailer_52_pos + 8..trailer_52_pos + 16)
+                    .ok_or(MemFuseError::Storage("invalid trailer".into()))?
                     .try_into()
-                    .unwrap(),
+                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
             );
+            min_seq = u64::from_le_bytes(
+                mmap.get(trailer_52_pos + 16..trailer_52_pos + 24)
+                    .ok_or(MemFuseError::Storage("invalid trailer".into()))?
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+            );
+            max_seq = u64::from_le_bytes(
+                mmap.get(trailer_52_pos + 24..trailer_52_pos + 32)
+                    .ok_or(MemFuseError::Storage("invalid trailer".into()))?
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+            );
+            bloom_offset = u64::from_le_bytes(
+                mmap.get(trailer_52_pos + 32..trailer_52_pos + 40)
+                    .ok_or(MemFuseError::Storage("invalid trailer".into()))?
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+            );
+            actual_index_offset = u64::from_le_bytes(
+                mmap.get(trailer_52_pos + 40..trailer_52_pos + 48)
+                    .ok_or(MemFuseError::Storage("invalid trailer".into()))?
+                    .try_into()
+                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+            );
+            has_bloom = true;
+        } else if magic == 0x4D465354 {
+            // Backward-compatible trailer detection:
+            // New: [bloom_offset: u64][index_offset: u64][magic: u32] = 20 bytes
+            // Old: [index_offset: u64][magic: u32] = 12 bytes
+            if file_size >= 20 {
+                let trailer_20_pos = (file_size - 20) as usize;
+                let bloom_off = u64::from_le_bytes(
+                    mmap.get(trailer_20_pos..trailer_20_pos + 8)
+                        .ok_or_else(|| MemFuseError::Storage("invalid trailer".into()))?
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                );
+                let index_off = u64::from_le_bytes(
+                    mmap.get(trailer_20_pos + 8..trailer_20_pos + 16)
+                        .ok_or_else(|| MemFuseError::Storage("invalid trailer".into()))?
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                );
 
-            // Heuristic: if index_off == index_offset (from -12 read) and bloom_off < trailer start, it has bloom
-            if index_off == index_offset && bloom_off > index_off && bloom_off < file_size - 20 {
-                has_bloom = true;
-                bloom_offset = bloom_off;
-                actual_index_offset = index_off;
+                // Heuristic: if index_off == index_offset (from -12 read) and bloom_off < trailer start, it has bloom
+                if index_off == index_offset && bloom_off > index_off && bloom_off < file_size - 20
+                {
+                    has_bloom = true;
+                    bloom_offset = bloom_off;
+                    actual_index_offset = index_off;
+                }
             }
+        } else {
+            return Err(MemFuseError::Storage("Invalid SSTable magic number".into()));
         }
 
         let bloom_filter = if has_bloom {
-            let bloom_end = (file_size - 20) as usize;
+            let bloom_end = if magic == 0x5853464D {
+                (file_size - 52) as usize
+            } else {
+                (file_size - 20) as usize
+            };
             let bloom_data = mmap
                 .get(bloom_offset as usize..bloom_end)
                 .ok_or_else(|| MemFuseError::Storage("corrupted bloom data".into()))?;
@@ -598,7 +674,7 @@ impl SstableReader {
                 index_offset
             };
 
-            let block_data = Self::read_block_at(&mmap, offset, next_offset, &key_manager)?;
+            let block_data = Self::read_block_at(&mmap, offset, next_offset, &derived_km)?;
             if block_data.len() < 2 {
                 return Err(MemFuseError::Storage("corrupted SSTable block".into()));
             }
@@ -629,8 +705,10 @@ impl SstableReader {
                 first_key,
                 last_key,
                 file_size,
-                min_tx_id: 0,
-                max_tx_id: u64::MAX,
+                min_tx_id,
+                max_tx_id,
+                min_seq,
+                max_seq,
             },
             index_offset,
             file_path: path.as_ref().to_path_buf(),
@@ -809,6 +887,7 @@ impl SstableReader {
                         .try_into()
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 );
+                ep += 8;
                 let tx_id = u64::from_le_bytes(
                     block_data
                         .get(ep..ep + 8)
@@ -1329,6 +1408,14 @@ impl SstableReader {
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 );
                 ep += 8;
+                let tx_id = u64::from_le_bytes(
+                    block_data
+                        .get(ep..ep + 8)
+                        .ok_or_else(|| MemFuseError::Storage("malformed block: tx_id".into()))?
+                        .try_into()
+                        .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                );
+                ep += 8;
                 let v_len = u16::from_le_bytes(
                     block_data
                         .get(ep..ep + 2)
@@ -1344,8 +1431,9 @@ impl SstableReader {
                     Bytes::copy_from_slice(entry_key),
                     Bytes::copy_from_slice(entry_val),
                     seq_no,
-                    0u64,
-                ));            }
+                    tx_id,
+                ));
+            }
         }
 
         Ok(results)

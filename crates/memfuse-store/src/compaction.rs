@@ -22,6 +22,7 @@
 
 use crate::sstable::{BlockCache, SstableBuilder, SstableReader};
 use memfuse_core::{Result, SnapshotRegistry, TOMBSTONE_BIT};
+use memfuse_crypto::crypto::KeyManager;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -60,6 +61,7 @@ pub struct CompactionEngine {
     config: CompactionConfig,
     snapshot_registry: Arc<SnapshotRegistry>,
     block_cache: Arc<BlockCache>,
+    key_manager: Option<Arc<KeyManager>>,
 }
 
 impl CompactionEngine {
@@ -68,11 +70,13 @@ impl CompactionEngine {
         config: CompactionConfig,
         snapshot_registry: Arc<SnapshotRegistry>,
         block_cache: Arc<BlockCache>,
+        key_manager: Option<Arc<KeyManager>>,
     ) -> Self {
         Self {
             config,
             snapshot_registry,
             block_cache,
+            key_manager,
         }
     }
 
@@ -114,8 +118,14 @@ impl CompactionEngine {
             .await?;
 
         // 4. Open the new SSTable
-        let new_reader =
-            Arc::new(SstableReader::open(&output_path, Arc::clone(&self.block_cache)).await?);
+        let new_reader = Arc::new(
+            SstableReader::open_with_key_manager(
+                &output_path,
+                Arc::clone(&self.block_cache),
+                self.key_manager.clone(),
+            )
+            .await?,
+        );
 
         // 5. Atomic swap under write-lock
         let old_paths: Vec<PathBuf> = {
@@ -280,7 +290,8 @@ impl CompactionEngine {
             }
         }
 
-        let mut builder = SstableBuilder::create(output_path).await?;
+        let mut builder =
+            SstableBuilder::create_with_key_manager(output_path, self.key_manager.clone()).await?;
         let mut last_key: Option<bytes::Bytes> = None;
         let mut processed_count = 0;
 
@@ -408,7 +419,8 @@ mod tests {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
-        let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
+        let engine =
+            CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc), None);
 
         // Two SSTables with overlapping keys
         let sst1 = create_test_sstable(
@@ -450,7 +462,8 @@ mod tests {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
-        let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
+        let engine =
+            CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc), None);
 
         let tombstone_seq = 5 | TOMBSTONE_BIT;
         let sst1 = create_test_sstable(
@@ -483,7 +496,8 @@ mod tests {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
-        let engine = CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc));
+        let engine =
+            CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc), None);
 
         let tombstone_seq = 5 | TOMBSTONE_BIT;
         let sst1 = create_test_sstable(
@@ -521,7 +535,7 @@ mod tests {
             check_interval: Duration::from_secs(30),
             yield_threshold: 1000,
         };
-        let engine = CompactionEngine::new(config, registry, Arc::clone(&bc));
+        let engine = CompactionEngine::new(config, registry, Arc::clone(&bc), None);
 
         // Create 3 small SSTables of similar size
         let sstables = Arc::new(RwLock::new(Vec::new()));
@@ -581,7 +595,7 @@ mod tests {
             check_interval: Duration::from_secs(30),
             yield_threshold: 1000,
         };
-        let engine = CompactionEngine::new(config, registry, Arc::clone(&bc));
+        let engine = CompactionEngine::new(config, registry, Arc::clone(&bc), None);
 
         let sstables = Arc::new(RwLock::new(Vec::new()));
         for i in 0..2u8 {
@@ -743,7 +757,7 @@ mod tests {
             check_interval: std::time::Duration::from_millis(10),
             yield_threshold: 100,
         };
-        let engine = Arc::new(CompactionEngine::new(config, registry, bc));
+        let engine = Arc::new(CompactionEngine::new(config, registry, bc, None));
         let sstables = Arc::new(tokio::sync::RwLock::new(Vec::new()));
         let tmp = tempfile::TempDir::new().unwrap();
 

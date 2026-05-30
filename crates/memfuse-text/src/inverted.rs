@@ -10,6 +10,7 @@
 // OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
 
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
+use async_trait::async_trait;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
 };
@@ -317,7 +318,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         let results = self.search_bm25(query, k).await?;
@@ -385,7 +386,7 @@ impl<S: StorageEngine> BM25MorphIndex<S> {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl<S: StorageEngine> TextIndex for BM25MorphIndex<S> {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         // Here we could apply the morphological tokenizer to the query tokens
@@ -433,7 +434,7 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait]
+    #[async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
             Ok(self.store.read().get(key).cloned())
@@ -699,7 +700,9 @@ mod tests {
         // Case 3: Mixed documents, some very short
         let tx2 = TxId::new(2);
         index.upsert_document(tx2, DocId::new(2), "test").await?;
-        index.upsert_document(tx2, DocId::new(3), "test test test").await?;
+        index
+            .upsert_document(tx2, DocId::new(3), "test test test")
+            .await?;
         storage.commit(tx2).await?;
 
         let results = index.search_bm25("test", 10).await?;

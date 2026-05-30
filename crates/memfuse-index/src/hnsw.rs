@@ -236,159 +236,156 @@ impl HnswIndex {
     // DONE: Alle std::fs Aufrufe in save() sind in spawn_blocking gekapselt oder durch tokio::fs ersetzt.
     // SUCCESSOR: @JULES-13 — "HNSW I/O ist nun async-safe. Tech-Debt Audit fortsetzen."
     pub async fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
-        use tokio::io::{AsyncSeekExt, AsyncWriteExt};
-
         let _lock = self.write_mutex.lock().await;
-        let nodes = self.nodes.read();
-        let entry_point = self.entry_point.read();
-        let q_guard = self.quantizer.read();
+        let inner = std::sync::Arc::clone(&self.inner);
+        let path_buf = path.as_ref().to_path_buf();
 
-        let file = tokio::fs::File::create(path)
-            .await
-            .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
-        let mut writer = tokio::io::BufWriter::new(file);
+        tokio::task::spawn_blocking(move || {
+            use std::io::{Seek, Write};
 
-        let node_count = nodes.len();
-        let nodes_offset = crate::persistence::HnswHeader::SIZE as u64;
-        let vectors_offset =
-            nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
+            let nodes = inner.nodes.read();
+            let entry_point = inner.entry_point.read();
+            let q_guard = inner.quantizer.read();
 
-        let (q_min, q_max) = if let Some(q) = q_guard.as_ref() {
-            (q.min, q.max)
-        } else {
-            (0.0, 0.0)
-        };
+            let file = std::fs::File::create(&path_buf)
+                .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
+            let mut writer = std::io::BufWriter::new(file);
 
-        // Initial header
-        let mut header = crate::persistence::HnswHeader {
-            magic: crate::persistence::HNSW_MAGIC,
-            version: crate::persistence::HNSW_VERSION,
-            dimension: self.config.dimension as u32,
-            m: self.config.m as u32,
-            metric: self.config.distance_metric as u8,
-            quantized: if self.config.quantize { 1 } else { 0 },
-            q_min,
-            q_max,
-            node_count: node_count as u64,
-            entry_point: entry_point.map(|i| i as i64).unwrap_or(-1),
-            nodes_offset,
-            connections_offset: 0,
-            last_tx_id: self.last_tx_id.load(Ordering::SeqCst),
-        };
+            let node_count = nodes.len();
+            let nodes_offset = crate::persistence::HnswHeader::SIZE as u64;
+            let vectors_offset =
+                nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
 
-        // 1. Placeholder Header
-        writer
-            .write_all(&header.to_bytes())
-            .await
-            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+            let (q_min, q_max) = if let Some(q) = q_guard.as_ref() {
+                (q.min, q.max)
+            } else {
+                (0.0, 0.0)
+            };
 
-        // 2. Nodes Metadata (Placeholders)
-        let mut node_records = Vec::with_capacity(node_count);
-        for _ in 0..node_count {
-            node_records.push(crate::persistence::NodeRecord {
-                doc_id: 0,
-                max_layer: 0,
-                vector_offset: 0,
+            // Initial header
+            let mut header = crate::persistence::HnswHeader {
+                magic: crate::persistence::HNSW_MAGIC,
+                version: crate::persistence::HNSW_VERSION,
+                dimension: inner.config.dimension as u32,
+                m: inner.config.m as u32,
+                metric: inner.config.distance_metric as u8,
+                quantized: if inner.config.quantize { 1 } else { 0 },
+                q_min,
+                q_max,
+                node_count: node_count as u64,
+                entry_point: entry_point.map(|i| i as i64).unwrap_or(-1),
+                nodes_offset,
                 connections_offset: 0,
-            });
-        }
-        for record in &node_records {
+                last_tx_id: inner.last_tx_id.load(Ordering::SeqCst),
+            };
+
+            // 1. Placeholder Header
             writer
-                .write_all(&record.to_bytes())
-                .await
+                .write_all(&header.to_bytes())
                 .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        }
 
-        // 3. Vectors Block
-        let mut current_pos = vectors_offset;
-        for (i, node) in nodes.iter().enumerate() {
-            node_records[i].doc_id = node.doc_id.inner();
-            node_records[i].max_layer = node.connections.len().saturating_sub(1) as u8;
-            node_records[i].vector_offset = current_pos;
+            // 2. Nodes Metadata (Placeholders)
+            let mut node_records = Vec::with_capacity(node_count);
+            for _ in 0..node_count {
+                node_records.push(crate::persistence::NodeRecord {
+                    doc_id: 0,
+                    max_layer: 0,
+                    vector_offset: 0,
+                    connections_offset: 0,
+                });
+            }
+            for record in &node_records {
+                writer
+                    .write_all(&record.to_bytes())
+                    .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+            }
 
-            match &node.vector {
-                VectorData::F32(v) => {
-                    let bytes: &[u8] =
-                        unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
+            // 3. Vectors Block
+            let mut current_pos = vectors_offset;
+            for (i, node) in nodes.iter().enumerate() {
+                node_records[i].doc_id = node.doc_id.inner();
+                node_records[i].max_layer = node.connections.len().saturating_sub(1) as u8;
+                node_records[i].vector_offset = current_pos;
+
+                match &node.vector {
+                    VectorData::F32(v) => {
+                        let bytes: &[u8] = unsafe {
+                            std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4)
+                        };
+                        writer
+                            .write_all(bytes)
+                            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                        current_pos += bytes.len() as u64;
+                    }
+                    VectorData::U8(v) => {
+                        writer
+                            .write_all(v)
+                            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                        current_pos += v.len() as u64;
+                    }
+                }
+            }
+
+            // 4. Connections Block (Align to 4 bytes)
+            let connections_offset = (current_pos + 3) & !3;
+            header.connections_offset = connections_offset;
+
+            if connections_offset > current_pos {
+                let padding = [0u8; 4];
+                writer
+                    .write_all(&padding[..(connections_offset - current_pos) as usize])
+                    .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+            }
+
+            let mut conn_pos = connections_offset;
+            for (i, node) in nodes.iter().enumerate() {
+                node_records[i].connections_offset = conn_pos;
+                let num_layers = node.connections.len() as u8;
+                writer
+                    .write_all(&[num_layers])
+                    .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                conn_pos += 1;
+
+                for layer in 0..num_layers as usize {
+                    let conns = &node.connections[layer];
+                    let len = conns.len() as u32;
+                    writer
+                        .write_all(&len.to_le_bytes())
+                        .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                    let bytes: &[u8] = unsafe {
+                        std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
+                    };
                     writer
                         .write_all(bytes)
-                        .await
                         .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                    current_pos += bytes.len() as u64;
-                }
-                VectorData::U8(v) => {
-                    writer
-                        .write_all(v)
-                        .await
-                        .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                    current_pos += v.len() as u64;
+                    conn_pos += 4 + bytes.len() as u64;
                 }
             }
-        }
-
-        // 4. Connections Block (Align to 4 bytes)
-        let connections_offset = (current_pos + 3) & !3;
-        header.connections_offset = connections_offset;
-
-        if connections_offset > current_pos {
-            let padding = [0u8; 4];
             writer
-                .write_all(&padding[..(connections_offset - current_pos) as usize])
-                .await
+                .flush()
                 .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        }
+            let mut file = writer.into_inner().map_err(|_| {
+                MemFuseError::Storage("Failed to retrieve file from BufWriter".into())
+            })?;
 
-        let mut conn_pos = connections_offset;
-        for (i, node) in nodes.iter().enumerate() {
-            node_records[i].connections_offset = conn_pos;
-            let num_layers = node.connections.len() as u8;
-            writer
-                .write_all(&[num_layers])
-                .await
+            // 5. Final Updates
+            file.seek(std::io::SeekFrom::Start(0))
                 .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-            conn_pos += 1;
-
-            for layer in 0..num_layers as usize {
-                let conns = &node.connections[layer];
-                let len = conns.len() as u32;
-                writer
-                    .write_all(&len.to_le_bytes())
-                    .await
+            file.write_all(&header.to_bytes())
+                .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+            file.seek(std::io::SeekFrom::Start(nodes_offset))
+                .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+            for record in &node_records {
+                file.write_all(&record.to_bytes())
                     .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                let bytes: &[u8] = unsafe {
-                    std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
-                };
-                writer
-                    .write_all(bytes)
-                    .await
-                    .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                conn_pos += 4 + bytes.len() as u64;
             }
-        }
-        writer
-            .flush()
-            .await
-            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        let mut file = writer.into_inner();
-
-        // 5. Final Updates
-        file.seek(tokio::io::SeekFrom::Start(0))
-            .await
-            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        file.write_all(&header.to_bytes())
-            .await
-            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        file.seek(tokio::io::SeekFrom::Start(nodes_offset))
-            .await
-            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        for record in &node_records {
-            file.write_all(&record.to_bytes())
-                .await
+            file.sync_all()
                 .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        }
-        file.sync_all()
-            .await
-            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+            Ok::<(), MemFuseError>(())
+        })
+        .await
+        .map_err(|e| MemFuseError::Storage(format!("Join error: {}", e)))??;
+
         Ok(())
     }
 

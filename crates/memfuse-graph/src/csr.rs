@@ -1,13 +1,14 @@
-//! Compressed Sparse Row (CSR) Graph implementation.
+//! CSR-Graph-Implementierung für Entity-Relation-Traversal.
 //!
-//! Memory-efficient graph storage for entity-relation traversal.
-//! BFS with score-decay: `score * 0.7^hop` (max 3 hops).
+//! Implementiert [`memfuse_core::GraphIndex`] via Compressed Sparse Row (CSR)
+//! Datenstruktur für cache-effizienten Graph-Traversal.
 
 // ANCHOR:ARCH:CSR-001 — CSR-Graph for 4-Signal Fusion
 // WP:WP-6.1 PRIO:2 NEEDS:WP-2.1
 // STATUS:IMPLEMENTED DATE:2026-05-27
 // DESIGN: CSR structure with contiguous arrays for traversal efficiency.
 
+use async_trait::async_trait;
 use memfuse_core::{Edge, Entity, EntityId, GraphIndex, GraphIndexStats, Result, TxId};
 use parking_lot::RwLock;
 use std::collections::{HashMap, VecDeque};
@@ -183,7 +184,7 @@ impl Default for CsrGraph {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl GraphIndex for CsrGraph {
     async fn add_entity(&self, _tx: TxId, entity: Entity) -> Result<()> {
         let mut inner = self.inner.write();

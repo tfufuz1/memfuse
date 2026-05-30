@@ -153,7 +153,8 @@ impl MemFuse {
         };
 
         let storage = Arc::new(LsmStorage::new(lsm_config).await?);
-        let next_tx = Arc::new(AtomicU64::new(1));
+        let last_tx = storage.last_tx_id().await?.inner();
+        let next_tx = Arc::new(AtomicU64::new(last_tx + 1));
 
         let db = Self {
             storage,

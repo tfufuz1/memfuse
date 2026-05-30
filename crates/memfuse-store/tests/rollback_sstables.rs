@@ -1,6 +1,5 @@
-use memfuse_core::{IndexOp, StorageEngine, TxId};
+use memfuse_core::{StorageEngine, TxId};
 use memfuse_store::lsm::{LsmConfig, LsmStorage};
-use std::sync::Arc;
 use tempfile::tempdir;
 
 #[tokio::test]

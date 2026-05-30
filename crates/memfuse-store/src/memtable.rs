@@ -13,11 +13,16 @@ use parking_lot::RwLock;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
+type SequenceNumber = u64;
+type TransactionId = u64;
+type MemTableEntry = (SequenceNumber, Bytes, TransactionId);
+type MemTableMap = BTreeMap<Bytes, Vec<MemTableEntry>>;
+
 #[derive(Debug)]
 pub struct MemTable {
     /// Maps UserKey -> Vec<(SequenceNumber, Value, TxId)>.
     /// The Vec is sorted by SequenceNumber ascending.
-    entries: RwLock<BTreeMap<Bytes, Vec<(u64, Bytes, u64)>>>,
+    entries: RwLock<MemTableMap>,
     size: AtomicUsize,
     min_tx: AtomicU64,
     max_tx: AtomicU64,
@@ -86,8 +91,8 @@ impl MemTable {
             .and_then(|versions| versions.last().map(|(seq, val, _tx)| (val.clone(), *seq)))
     }
 
-    /// Retrieves a value and sequence number by key at or below a specific sequence number.
-    pub fn get_at_seq(&self, key: &[u8], seq_no: u64) -> Option<(Bytes, u64)> {
+    /// Retrieves a value, sequence number, and transaction ID by key at or below a specific sequence number.
+    pub fn get_at_seq(&self, key: &[u8], seq_no: u64) -> Option<(Bytes, u64, u64)> {
         let entries = self.entries.read();
         let versions = entries.get(key)?;
 
@@ -98,15 +103,15 @@ impl MemTable {
         // is a clean sequence number.
         match versions.binary_search_by_key(&seq_no, |(s, _, _)| *s & !TOMBSTONE_BIT) {
             Ok(idx) => {
-                let (s, v, _) = &versions[idx];
-                Some((v.clone(), *s))
+                let (s, v, tx) = &versions[idx];
+                Some((v.clone(), *s, *tx))
             }
             Err(idx) => {
                 if idx == 0 {
                     None
                 } else {
-                    let (s, v, _) = &versions[idx - 1];
-                    Some((v.clone(), *s))
+                    let (s, v, tx) = &versions[idx - 1];
+                    Some((v.clone(), *s, *tx))
                 }
             }
         }
@@ -187,19 +192,22 @@ mod tests {
         assert!(mt.get_at_seq(b"key1", 5).is_none());
 
         // Exact match
-        let (val, seq) = mt.get_at_seq(b"key1", 20).unwrap();
+        let (val, seq, tx) = mt.get_at_seq(b"key1", 20).unwrap();
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
+        assert_eq!(tx, 2);
 
         // Between versions
-        let (val, seq) = mt.get_at_seq(b"key1", 25).unwrap();
+        let (val, seq, tx) = mt.get_at_seq(b"key1", 25).unwrap();
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
+        assert_eq!(tx, 2);
 
         // Latest version
-        let (val, seq) = mt.get_at_seq(b"key1", 100).unwrap();
+        let (val, seq, tx) = mt.get_at_seq(b"key1", 100).unwrap();
         assert_eq!(val.as_ref(), b"v3");
         assert_eq!(seq, 30);
+        assert_eq!(tx, 3);
     }
 
     #[test]
@@ -227,14 +235,16 @@ mod tests {
         mt.put(key.clone(), Bytes::new(), 20 | TOMBSTONE_BIT, 2);
 
         // Read at seq 15 -> should get val1
-        let (val, seq) = mt.get_at_seq(&key, 15).expect("Should find v1");
+        let (val, seq, tx) = mt.get_at_seq(&key, 15).expect("Should find v1");
         assert_eq!(val.as_ref(), b"val1");
         assert_eq!(seq, 10);
+        assert_eq!(tx, 1);
 
         // Read at seq 25 -> should get tombstone
-        let (val, seq) = mt.get_at_seq(&key, 25).expect("Should find tombstone");
+        let (val, seq, tx) = mt.get_at_seq(&key, 25).expect("Should find tombstone");
         assert_eq!(val.len(), 0);
         assert_eq!(seq, 20 | TOMBSTONE_BIT);
+        assert_eq!(tx, 2);
     }
 
     #[test]

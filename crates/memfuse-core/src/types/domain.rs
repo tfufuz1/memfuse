@@ -1,3 +1,12 @@
+//! Domain types for MemFuse.
+//!
+//! # Architektur
+//! Enthält die zentralen Domänen-Modelle wie `DocId`, `TxId` und `WorkflowState`.
+//! Diese Typen sind die "Lingua Franca" zwischen allen Crates.
+//!
+//! # Invarianten
+//! - `DocId` und `TxId` sind Wrapper um primitive Typen mit deterministischer Hash-Generierung.
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 

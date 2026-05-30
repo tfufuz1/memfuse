@@ -88,7 +88,7 @@ impl StorageEngine for MockStorage {
 #[tokio::test]
 async fn test_concurrent_checkpoint_creation_same_name() {
     let storage = Arc::new(MockStorage::new());
-    let manager = Arc::new(PersistentCheckpointStore::new(storage.clone()));
+    let manager = Arc::new(PersistentCheckpointStore::new(storage.clone(), "test"));
 
     let mut handles = Vec::new();
     for i in 0..10 {
