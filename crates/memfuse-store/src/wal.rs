@@ -271,13 +271,13 @@ impl Wal {
     ) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
 
-        // Derive sub-key for this specific file to prevent nonce reuse (FIND-CRY-002)
+        // SD-09-CRYPTO-002: Use a persisted UUID v4 as file_id instead of the
+        // filename.  This makes the WAL's cryptographic sub-key independent of
+        // the filesystem path — renaming or moving the file cannot cause nonce-
+        // reuse between two WAL instances sharing the same master key.
         let derived_key_manager = if let Some(km) = key_manager {
-            let file_id = path
-                .file_name()
-                .map(|n| n.to_string_lossy())
-                .unwrap_or_default();
-            Some(Arc::new(km.derive_file_key(file_id.as_bytes())?))
+            let uuid_bytes = Self::load_or_create_wal_uuid(&path).await?;
+            Some(Arc::new(km.derive_file_key(&uuid_bytes)?))
         } else {
             None
         };
@@ -313,6 +313,42 @@ impl Wal {
         }
 
         Ok(wal)
+    }
+
+    /// Loads the WAL's persistent UUID from a `.uuid` sidecar file next to the
+    /// WAL path, creating a new UUID v4 and persisting it if the sidecar does
+    /// not yet exist.
+    ///
+    /// The sidecar contains exactly 16 raw bytes (UUID in native byte order).
+    async fn load_or_create_wal_uuid(wal_path: &Path) -> Result<[u8; 16]> {
+        let uuid_path = {
+            let mut p = wal_path.as_os_str().to_os_string();
+            p.push(".uuid");
+            std::path::PathBuf::from(p)
+        };
+
+        if uuid_path.exists() {
+            let bytes = tokio::fs::read(&uuid_path).await.map_err(|e| {
+                MemFuseError::Storage(format!("Failed to read WAL UUID sidecar: {}", e))
+            })?;
+            if bytes.len() != 16 {
+                return Err(MemFuseError::Storage(format!(
+                    "WAL UUID sidecar has unexpected length: {} (expected 16)",
+                    bytes.len()
+                )));
+            }
+            let mut arr = [0u8; 16];
+            arr.copy_from_slice(&bytes);
+            Ok(arr)
+        } else {
+            // Generate and persist a fresh UUID v4.
+            let uuid = uuid::Uuid::new_v4();
+            let bytes = *uuid.as_bytes();
+            tokio::fs::write(&uuid_path, &bytes).await.map_err(|e| {
+                MemFuseError::Storage(format!("Failed to write WAL UUID sidecar: {}", e))
+            })?;
+            Ok(bytes)
+        }
     }
 
     /// Appends an entry to the WAL.

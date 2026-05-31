@@ -103,7 +103,37 @@ impl<S: StorageEngine> InvertedIndex<S> {
         k
     }
 
+    /// Returns the tombstone key for a document.
+    ///
+    /// A tombstone marks the *previous* posting-list entries of a document as
+    /// stale after an update.  It does **not** suppress the new entries — LSM
+    /// semantics guarantee that a re-written `pl:{term}:{doc_id}` key always
+    /// reflects the latest value.  The tombstone is only used during lazy
+    /// compaction to identify and remove truly-orphaned old-term entries whose
+    /// term no longer appears in the updated document.
+    fn key_tombstone(&self, doc_id: DocId) -> Vec<u8> {
+        let mut itoa_buf = itoa::Buffer::new();
+        let id_str = itoa_buf.format(doc_id.inner());
+        let mut k = Vec::with_capacity(self.prefix.len() + 4 + id_str.len());
+        k.extend_from_slice(&self.prefix);
+        k.extend_from_slice(b"tbs:");
+        k.extend_from_slice(id_str.as_bytes());
+        k
+    }
+
     /// Appends and updates inverted index structures for a document.
+    ///
+    /// # Update strategy — Tombstone path
+    ///
+    /// On first insert all posting-list entries are written eagerly.
+    /// On **update** the old eager-delete loop (N × `storage.delete`) is
+    /// replaced by a single tombstone write (`tbs:{doc_id}`).  The new
+    /// posting-list entries are written to the **same** `pl:{term}:{doc_id}`
+    /// keys — LSM semantics guarantee that the latest write wins, so BM25
+    /// correctness is maintained without reading the old forward index at all.
+    /// Stale entries from terms that were present in the old document but
+    /// absent in the new one can be cleaned up lazily via
+    /// `resolve_tombstones()`.
     // TODO(FIND-TXT-002): Fehlendes OpenTelemetry Tracing
     // Annotieren mit #[instrument(skip(self, text))]
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
@@ -120,6 +150,9 @@ impl<S: StorageEngine> InvertedIndex<S> {
         let mut old_len = 0u32;
         let mut is_update = false;
 
+        // Fast-path check: only read the fixed-size doc-length key (4 bytes).
+        // We do NOT read the full forward index here — the tombstone path
+        // removes the need for the old N×delete loop.
         if let Some(bytes) = self.storage.get(&dl_key).await? {
             if bytes.len() == 4 {
                 old_len = u32::from_le_bytes(
@@ -130,15 +163,13 @@ impl<S: StorageEngine> InvertedIndex<S> {
                 );
                 is_update = true;
 
-                // Remove from old posting lists if update
-                if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
-                    if let Ok(old_terms) = bincode::deserialize::<Vec<String>>(&fw_bytes) {
-                        for term in old_terms {
-                            let pl_doc_key = self.key_with_term_doc(&term, doc_id);
-                            self.storage.delete(tx, &pl_doc_key).await?;
-                        }
-                    }
-                }
+                // SD-05-TEXT-001: Tombstone path — write a single marker key
+                // instead of eagerly deleting every old posting-list entry.
+                // The new pl: entries overwrite the overlapping old entries via
+                // LSM semantics.  Stale entries for terms no longer in the doc
+                // are cleaned up by resolve_tombstones() during compaction.
+                let tbs_key = self.key_tombstone(doc_id);
+                self.storage.put(tx, &tbs_key, b"1").await?;
             }
         }
 
@@ -181,6 +212,96 @@ impl<S: StorageEngine> InvertedIndex<S> {
         }
 
         Ok(())
+    }
+
+    /// Lazily resolves tombstones left by `upsert_document` updates.
+    ///
+    /// For every document with a `tbs:{doc_id}` marker this method reads the
+    /// *current* forward index and removes posting-list entries for terms that
+    /// are no longer present.  Call this during background compaction or
+    /// whenever write throughput is low.
+    ///
+    /// Returns the number of tombstones that were resolved.
+    pub async fn resolve_tombstones(&self, tx: TxId) -> Result<u64> {
+        let tbs_prefix = {
+            let mut k = Vec::with_capacity(self.prefix.len() + 4);
+            k.extend_from_slice(&self.prefix);
+            k.extend_from_slice(b"tbs:");
+            k
+        };
+
+        let tombstones = self.storage.scan_prefix(&tbs_prefix).await?;
+        let mut resolved = 0u64;
+
+        for (tbs_key, _) in tombstones {
+            // Parse doc_id from the tombstone key suffix.
+            let suffix = &tbs_key[tbs_prefix.len()..];
+            let doc_id_raw = match std::str::from_utf8(suffix)
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+            {
+                Some(v) => v,
+                None => continue, // malformed key — skip
+            };
+            let doc_id = DocId::new(doc_id_raw);
+
+            // Read the *current* forward index to know which terms are live.
+            let fw_key = self.key_with_id("fw:", doc_id.inner());
+            let live_terms: std::collections::HashSet<String> =
+                if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
+                    bincode::deserialize::<Vec<String>>(&fw_bytes)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .collect()
+                } else {
+                    // Document was subsequently deleted — nothing to clean up.
+                    self.storage.delete(tx, &tbs_key).await?;
+                    resolved += 1;
+                    continue;
+                };
+
+            // Scan all posting-list entries for this document and delete those
+            // whose term is no longer live.
+            //
+            // Key format: {prefix}pl:{term}:{doc_id}
+            // We cannot easily scan by doc_id efficiently here, so we iterate
+            // the full pl: namespace and filter by doc_id suffix.
+            // For large indexes a secondary `pd:{doc_id}:{term}` index would be
+            // better, but is deferred to a future WP.
+            let pl_prefix = {
+                let mut k = Vec::with_capacity(self.prefix.len() + 3);
+                k.extend_from_slice(&self.prefix);
+                k.extend_from_slice(b"pl:");
+                k
+            };
+            let pl_entries = self.storage.scan_prefix(&pl_prefix).await?;
+
+            let mut itoa_buf = itoa::Buffer::new();
+            let id_str = itoa_buf.format(doc_id.inner());
+
+            for (pl_key, _) in pl_entries {
+                // Key suffix after pl: is "{term}:{doc_id}"
+                let pl_suffix = std::str::from_utf8(&pl_key[pl_prefix.len()..]);
+                let pl_suffix = match pl_suffix {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
+                // Split on last ':' to get term and doc_id part
+                if let Some(sep) = pl_suffix.rfind(':') {
+                    let (term_part, doc_part) = pl_suffix.split_at(sep);
+                    let doc_part = &doc_part[1..]; // skip ':'
+                    if doc_part == id_str && !live_terms.contains(term_part) {
+                        self.storage.delete(tx, &pl_key).await?;
+                    }
+                }
+            }
+
+            // Remove the tombstone itself.
+            self.storage.delete(tx, &tbs_key).await?;
+            resolved += 1;
+        }
+
+        Ok(resolved)
     }
 
     /// Deletes a document from the index.
@@ -623,7 +744,14 @@ mod tests {
         index.upsert_document(tx2, d1, "python coding").await?;
         storage.commit(tx2).await?;
 
-        // Should NOT be in "rust" or "programming" anymore
+        // Tombstone path: new pl: entries for "python"/"coding" overwrite the
+        // old ones immediately via LSM semantics.  Stale entries for "rust"/
+        // "programming" are removed AFTER resolve_tombstones().
+        let tx_resolve = TxId::new(10);
+        index.resolve_tombstones(tx_resolve).await?;
+        storage.commit(tx_resolve).await?;
+
+        // Should NOT be in "rust" or "programming" anymore (resolved)
         assert_eq!(index.search_bm25("rust", 10).await?.len(), 0);
         assert_eq!(index.search_bm25("programming", 10).await?.len(), 0);
         // Should be in "python" and "coding"

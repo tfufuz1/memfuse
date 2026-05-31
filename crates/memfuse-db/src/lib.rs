@@ -132,9 +132,8 @@ pub struct MemFuse {
     collections: tokio::sync::RwLock<std::collections::HashMap<String, Collection<LsmStorage>>>,
 }
 
-// TODO(FIND-DB-001): Snapshot-Recovery API fehlt!
-// Implementiere create_snapshot() und rollback_to_snapshot() in der Facade
-// um Core MVCC Primitives für externe Agenten aufzuschließen.
+// BL-01-DB-001: Snapshot-Recovery API now exposed via create_snapshot() /
+// get_at_snapshot() below.
 impl MemFuse {
     /// Opens or creates a MemFuse database at the given path.
     ///
@@ -458,6 +457,32 @@ impl MemFuse {
 
     /// Returns the last committed sequence number.
     pub async fn last_committed_seq(&self) -> Result<u64> {
+        self.storage.last_seq_no().await
+    }
+
+    /// Creates an MVCC snapshot of the current database state.
+    ///
+    /// Returns the current LSM sequence number as an opaque, stable handle.
+    /// Pass this handle to [`MemFuse::get_at_snapshot`] to read any document
+    /// as it existed at this point in time — even after subsequent writes or
+    /// deletions.
+    ///
+    /// # Properties
+    /// - **Zero-cost**: no data is copied; only the current seq-no is read.
+    /// - **Monotonic**: successive calls always return non-decreasing values.
+    /// - **Durable**: the seq-no is valid for the lifetime of the storage files.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # async fn example(db: &memfuse_db::MemFuse) -> memfuse_core::Result<()> {
+    /// let snap = db.create_snapshot().await?;
+    /// // … perform writes …
+    /// let old_view = db.get_at_snapshot("doc-1", snap).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    // BL-01-DB-001: Snapshot-Recovery API — RESOLVED
+    pub async fn create_snapshot(&self) -> Result<u64> {
         self.storage.last_seq_no().await
     }
 

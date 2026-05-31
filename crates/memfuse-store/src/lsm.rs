@@ -629,11 +629,6 @@ impl StorageEngine for LsmStorage {
         drop(old_wal);
         drop(state);
 
-        // Best-effort delete of old WAL (non-critical if it fails)
-        if let Err(e) = tokio::fs::remove_file(&old_wal_path).await {
-            tracing::debug!("Could not delete old WAL {:?}: {}", old_wal_path, e);
-        }
-
         let sst_path = {
             static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -667,6 +662,11 @@ impl StorageEngine for LsmStorage {
 
         drop(sstables);
         drop(state);
+
+        // Best-effort delete of old WAL (non-critical if it fails, as it will be replayed safely)
+        if let Err(e) = tokio::fs::remove_file(&old_wal_path).await {
+            tracing::debug!("Could not delete old WAL {:?}: {}", old_wal_path, e);
+        }
 
         let bytes_freed = old_memtable.size() as u64;
         self.budget.release_memory(bytes_freed);
