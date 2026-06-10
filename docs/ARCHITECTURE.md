@@ -1,6 +1,6 @@
 # MemFuse — Architecture Source of Truth
 
-This document defines the structural invariants and component responsibilities of the MemFuse system.
+This document defines the structural invariants and component responsibilities of the MemFuse system. **Current Status: TIER 1-3 Stabilized.**
 
 ---
 
@@ -54,32 +54,32 @@ graph TD
 ## 📦 Crate Responsibilities
 
 ### Layer 0: The Foundation
-- **`memfuse-core`**: Global types (`DocId`, `TxId`), shared traits (`StorageEngine`, `VectorIndex`), and unified error handling (`MemFuseError`). **Invariant: No I/O, no async (target).**
+- **`memfuse-core`**: Global types (`DocId`, `TxId`), shared traits (`StorageEngine`, `VectorIndex`), and unified error handling (`MemFuseError`).
 
 ### Layer 1: The Engines
-- **`memfuse-crypto`**: AES-256-GCM encryption and HKDF key derivation.
-- **`memfuse-store`**: Persistent LSM-Tree storage. Manages WAL, MemTables, and SSTables.
-- **`memfuse-index`**: HNSW vector index with SIMD-accelerated distance metrics.
+- **`memfuse-crypto`**: AES-256-GCM encryption and HKDF key derivation. Verified non-reusable nonces.
+- **`memfuse-store`**: Persistent LSM-Tree storage. Manages WAL, MemTables, and SSTables. **Safe Rust enforced.**
+- **`memfuse-index`**: HNSW and DiskANN vector indices. Uses `HnswConfigBuilder` for resource limit enforcement. Async-safe I/O via `spawn_blocking`.
 - **`memfuse-text`**: BM25 inverted index and morphological tokenizers.
-- **`memfuse-graph`**: CSR-Graph for relationship traversal (Signal 3).
+- **`memfuse-graph`**: CSR-Graph for relationship traversal.
 
 ### Layer 2: Orchestration
-- **`memfuse-db`**: The main facade. Orchestrates Engines to provide Hybrid Search (4-Signal Fusion), multi-tenancy (Namespaces), and atomic transactions.
+- **`memfuse-db`**: The main facade. Orchestrates Engines to provide Hybrid Search (4-Signal Fusion). Atomic transactions. **Zero-Panic enforced.**
 
 ### Layer 3: Bindings
-- **`memfuse-py`**: Python bridge using PyO3 and NumPy.
+- **`memfuse-py`**: Python bridge using PyO3. Strict exception mapping and vector validation.
 
 ---
 
 ## 🛡️ Critical Invariants
 
 1.  **Sovereign Core Doctrine**:
-    - `#![forbid(unsafe_code)]` in all crates except `memfuse-index` (specifically marked SIMD zones).
-    - Zero-Panic: No `.unwrap()` or `.expect()` in production code.
+    - `#![forbid(unsafe_code)]` in all crates except `memfuse-index` (SIMD).
+    - Zero-Panic: No `.unwrap()` or `.expect()` (verified via audits).
 2.  **LSM Write Guarantee**: WAL write **must** be flushed and synced before MemTable modification.
-3.  **Isolation**: Namespaces must be physically prefixed in storage to prevent leakage.
-4.  **Resource Control**: All memory-intensive operations must register with the `ResourceTracker`.
-5.  **Cryptographic Isolation**: Every persistent file (WAL, SSTable) must use a unique sub-key derived via `KeyManager::derive_file_key(file_id)` to prevent AES-GCM nonce reuse.
+3.  **Resource Control**: `HnswConfigBuilder` enforces hard limits (e.g., 50M records) to prevent heap-bombing OOM.
+4.  **Cryptographic Isolation**: Unique sub-key derivation per file via HKDF context.
+
 
 ---
 

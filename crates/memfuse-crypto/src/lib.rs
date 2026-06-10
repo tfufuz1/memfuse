@@ -10,5 +10,6 @@
 //! - Pro Datei wird ein eindeutiger Schlüssel abgeleitet (Nonce-Reuse Mitigation).
 //! - Passwörter werden via HKDF in Keys expandiert.
 
+pub mod anti_tamper;
 pub mod crypto;
 pub mod wal_crypto;

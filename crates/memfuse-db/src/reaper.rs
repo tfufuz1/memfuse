@@ -9,6 +9,7 @@ use std::time::Duration;
 pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
     buffer: Arc<TxBuffer<T>>,
     interval: Duration,
+    cancel_token: tokio_util::sync::CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(interval);
@@ -20,13 +21,20 @@ pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
             interval
         );
         loop {
-            ticker.tick().await;
-            let expired = buffer.reap_orphans();
-            if !expired.is_empty() {
-                tracing::warn!(
-                    "Orphan reaper cleaned up {} expired transactions",
-                    expired.len()
-                );
+            tokio::select! {
+                _ = ticker.tick() => {
+                    let expired = buffer.reap_orphans();
+                    if !expired.is_empty() {
+                        tracing::warn!(
+                            "Orphan reaper cleaned up {} expired transactions",
+                            expired.len()
+                        );
+                    }
+                }
+                _ = cancel_token.cancelled() => {
+                    tracing::info!("Orphan reaper shutting down via token");
+                    break;
+                }
             }
         }
     })
@@ -56,7 +64,8 @@ mod tests {
             },
         );
 
-        let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10));
+        let cancel_token = tokio_util::sync::CancellationToken::new();
+        let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10), cancel_token);
         assert!(buffer.has_tx(tx1));
         sleep(Duration::from_millis(100)).await;
         assert!(!buffer.has_tx(tx1));

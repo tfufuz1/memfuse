@@ -105,8 +105,8 @@ impl StorageEngine for MockStorage {
 /// posting-list entries — those are overwritten lazily by LSM semantics.
 /// Only `resolve_tombstones()` should trigger deletions.
 #[tokio::test]
-async fn test_tombstone_update_no_eager_delete() -> std::result::Result<(), Box<dyn std::error::Error>>
-{
+async fn test_tombstone_update_no_eager_delete(
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let storage = Arc::new(MockStorage::new());
     let index = InvertedIndex::new(storage.clone(), "default");
 
@@ -117,10 +117,7 @@ async fn test_tombstone_update_no_eager_delete() -> std::result::Result<(), Box<
     index.upsert_document(tx1, d1, "rust programming").await?;
     storage.commit(tx1).await?;
     let deletes_after_insert = storage.delete_call_count();
-    assert_eq!(
-        deletes_after_insert, 0,
-        "First insert must not call delete"
-    );
+    assert_eq!(deletes_after_insert, 0, "First insert must not call delete");
 
     // Update — tombstone path: still zero eager deletes.
     let tx2 = TxId::new(2);
@@ -143,8 +140,8 @@ async fn test_tombstone_update_no_eager_delete() -> std::result::Result<(), Box<
 /// After `resolve_tombstones()` the stale entries from the old document version
 /// should be removed and the BM25 index should reflect only the new terms.
 #[tokio::test]
-async fn test_bm25_correct_after_tombstone_update()
--> std::result::Result<(), Box<dyn std::error::Error>> {
+async fn test_bm25_correct_after_tombstone_update(
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let storage = Arc::new(MockStorage::new());
     let index = InvertedIndex::new(storage.clone(), "resolve");
 
@@ -192,8 +189,8 @@ async fn test_bm25_correct_after_tombstone_update()
 /// Multiple sequential updates of the same document should accumulate only
 /// ONE tombstone (because the same key is overwritten each time).
 #[tokio::test]
-async fn test_multiple_updates_single_tombstone()
--> std::result::Result<(), Box<dyn std::error::Error>> {
+async fn test_multiple_updates_single_tombstone(
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let storage = Arc::new(MockStorage::new());
     let index = InvertedIndex::new(storage.clone(), "multi");
 

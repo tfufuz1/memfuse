@@ -129,13 +129,28 @@ impl BloomFilter {
                 "corrupted bloom filter: too short".into(),
             ));
         }
-        let num_hashes = u64::from_le_bytes(data[0..8].try_into().unwrap()) as usize;
-        let num_bits = u64::from_le_bytes(data[8..16].try_into().unwrap()) as usize;
+        let num_hashes = u64::from_le_bytes(data[0..8].try_into().map_err(|_| {
+            MemFuseError::ParseError("corrupted bloom filter: invalid num_hashes".into())
+        })?) as usize;
+        let num_bits = u64::from_le_bytes(data[8..16].try_into().map_err(|_| {
+            MemFuseError::ParseError("corrupted bloom filter: invalid num_bits".into())
+        })?) as usize;
+
+        // Safety limit: 128MB for bloom filter bits (approx 1 billion bits)
+        if num_bits > 128 * 1024 * 1024 * 8 {
+            return Err(MemFuseError::Storage(format!(
+                "corrupted bloom filter: too many bits ({})",
+                num_bits
+            )));
+        }
+
         let mut bits = Vec::with_capacity(num_bits / 64);
         let mut offset = 16;
         while offset + 8 <= data.len() {
             bits.push(u64::from_le_bytes(
-                data[offset..offset + 8].try_into().unwrap(),
+                data[offset..offset + 8].try_into().map_err(|_| {
+                    MemFuseError::ParseError("corrupted bloom filter: invalid word".into())
+                })?,
             ));
             offset += 8;
         }
@@ -325,12 +340,23 @@ impl SstableBuilder {
             .last_key
             .clone()
             .ok_or_else(|| MemFuseError::Storage("Missing last_key".into()))?;
-        let mut block =
+        let block_data =
             std::mem::replace(&mut self.block_builder, BlockBuilder::new(BLOCK_SIZE)).build();
 
+        // Compute CRC before encryption
+        let crc = crc32fast::hash(&block_data);
+        let mut block_with_crc = Vec::with_capacity(4 + block_data.len());
+        block_with_crc.extend_from_slice(&crc.to_le_bytes());
+        block_with_crc.extend_from_slice(&block_data);
+
+        let mut block = Bytes::from(block_with_crc);
+
         if let Some(km) = &self.key_manager {
-            let encrypted = km.encrypt(&block, self.offset)?;
-            block = Bytes::from(encrypted);
+            let (encrypted, nonce) = km.encrypt_auto_nonce(&block)?;
+            let mut new_block = BytesMut::with_capacity(12 + encrypted.len());
+            new_block.put_slice(&nonce);
+            new_block.put_slice(&encrypted);
+            block = new_block.freeze();
         }
 
         let block_len = block.len() as u64;
@@ -359,16 +385,32 @@ impl SstableBuilder {
         }
 
         let index_bytes = index_builder.freeze();
+
+        // Add CRC to index
+        let index_crc = crc32fast::hash(&index_bytes);
+        let mut index_with_crc = Vec::with_capacity(4 + index_bytes.len());
+        index_with_crc.extend_from_slice(&index_crc.to_le_bytes());
+        index_with_crc.extend_from_slice(&index_bytes);
+        let index_to_write = index_with_crc;
+
         self.file
-            .write_all(&index_bytes)
+            .write_all(&index_to_write)
             .await
             .map_err(|e| MemFuseError::Storage(format!("SSTable index write failed: {}", e)))?;
 
         // SPECCED: Write the whole-SSTable Bloom filter
-        let bloom_offset = index_offset + index_bytes.len() as u64;
-        let bloom_bytes = self.bloom_filter.to_bytes();
+        let bloom_offset = index_offset + index_to_write.len() as u64;
+        let bloom_data = self.bloom_filter.to_bytes();
+
+        // Add CRC to bloom
+        let bloom_crc = crc32fast::hash(&bloom_data);
+        let mut bloom_with_crc = Vec::with_capacity(4 + bloom_data.len());
+        bloom_with_crc.extend_from_slice(&bloom_crc.to_le_bytes());
+        bloom_with_crc.extend_from_slice(&bloom_data);
+        let bloom_to_write = bloom_with_crc;
+
         self.file
-            .write_all(&bloom_bytes)
+            .write_all(&bloom_to_write)
             .await
             .map_err(|e| MemFuseError::Storage(format!("SSTable bloom write failed: {}", e)))?;
 
@@ -429,7 +471,7 @@ impl SstableBuilder {
 
 /// A reader for existing SSTables.
 pub struct SstableReader {
-    mmap: Arc<memmap2::Mmap>,
+    file: Arc<std::fs::File>,
     index: Vec<(Bytes, u64)>,
     metadata: SstableMetadata,
     /// Byte offset where the index data begins (= end of last block).
@@ -443,6 +485,8 @@ pub struct SstableReader {
     key_manager: Option<Arc<KeyManager>>,
     /// Optional whole-SSTable bloom filter for cross-block pre-checks.
     bloom_filter: Option<BloomFilter>,
+    /// Whether blocks have CRC32 checksums.
+    has_crc: bool,
 }
 
 impl SstableReader {
@@ -460,6 +504,10 @@ impl SstableReader {
 
     pub fn max_tx_id(&self) -> u64 {
         self.metadata.max_tx_id
+    }
+
+    pub fn file_path(&self) -> &Path {
+        &self.file_path
     }
 
     /// Opens an existing SSTable file for reading.
@@ -482,123 +530,123 @@ impl SstableReader {
         } else {
             None
         };
-        let (mmap, file_size) =
-            tokio::task::spawn_blocking(move || -> std::io::Result<(memmap2::Mmap, u64)> {
-                let file = std::fs::File::open(&path_buf)?; // std::fs justification: required for memmap2
+
+        let path_for_open = path_buf.clone();
+        let (file, file_size) =
+            tokio::task::spawn_blocking(move || -> std::io::Result<(std::fs::File, u64)> {
+                let file = std::fs::File::open(&path_for_open)?;
                 let metadata = file.metadata()?;
                 let file_size = metadata.len();
-                // ANCHOR:SAFETY:MMAP-001 — Memory Mapping of SSTable file
-                // WP:WP-4.1 PRIO:1 NEEDS:NONE
-                // AGENT:02 DATE:2026-05-16 STATUS:REVIEW
-                // BEGRÜNDUNG: SSTables sind im LSM-Tree unveränderlich. Memory Mapping
-                // ermöglicht effizienten Zugriff ohne explizite Syscalls.
-                #[allow(unsafe_code)]
-                let mmap = unsafe { memmap2::Mmap::map(&file)? };
-                Ok((mmap, file_size))
+                Ok((file, file_size))
             })
             .await
             .map_err(|e| MemFuseError::Storage(format!("Join error: {}", e)))?
-            .map_err(|e| MemFuseError::Storage(format!("Mmap failed: {}", e)))?;
+            .map_err(|e| MemFuseError::Storage(format!("File open failed: {}", e)))?;
 
         if file_size < 12 {
             return Err(MemFuseError::Storage("SSTable file too small".into()));
         }
 
-        let mmap = Arc::new(mmap);
+        let file = Arc::new(file);
 
-        // Read index offset and magic from trailer (last 12 bytes)
-        let trailer_pos = (file_size - 12) as usize;
-        let index_offset = u64::from_le_bytes(
-            mmap.get(trailer_pos..trailer_pos + 8)
-                .ok_or_else(|| MemFuseError::Storage("invalid trailer offset".into()))?
-                .try_into()
-                .map_err(|_| MemFuseError::Storage("invalid trailer".into()))?,
-        );
+        // Read trailer: last 52 bytes for MFSX or 12 bytes for legacy
+        let trailer_data = {
+            let f = Arc::clone(&file);
+            tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
+                use std::os::unix::fs::FileExt;
+                let mut buf = vec![0u8; 52.min(file_size as usize)];
+                let offset = file_size.saturating_sub(52);
+                f.read_exact_at(&mut buf, offset)?;
+                Ok(buf)
+            })
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("Join error: {}", e)))?
+            .map_err(|e| MemFuseError::Storage(format!("Trailer read failed: {}", e)))?
+        };
+
+        let trailer_len = trailer_data.len();
+        if trailer_len < 12 {
+            return Err(MemFuseError::Storage("Invalid trailer".into()));
+        }
+
+        // Magic is at the very end (last 4 bytes)
         let magic = u32::from_le_bytes(
-            mmap.get(trailer_pos + 8..trailer_pos + 12)
-                .ok_or_else(|| MemFuseError::Storage("invalid trailer magic".into()))?
+            trailer_data[trailer_len - 4..trailer_len]
                 .try_into()
-                .map_err(|_| MemFuseError::Storage("invalid trailer".into()))?,
+                .map_err(|_| MemFuseError::ParseError("Invalid magic format".into()))?,
         );
 
         let mut has_bloom = false;
+        let mut has_crc = false;
         let mut bloom_offset = 0;
-        let mut actual_index_offset = index_offset;
         let mut min_tx_id = 0;
         let mut max_tx_id = 0;
         let mut min_seq = 0;
         let mut max_seq = 0;
 
-        if magic == 0x5853464D && file_size >= 52 {
-            // New 52-byte trailer with MFSX magic
-            let trailer_52_pos = (file_size - 52) as usize;
+        let index_offset = if magic == 0x5853464D && file_size >= 52 {
+            // New 52-byte trailer (MFSX)
+            has_crc = true;
             min_tx_id = u64::from_le_bytes(
-                mmap.get(trailer_52_pos..trailer_52_pos + 8)
-                    .ok_or(MemFuseError::Storage("invalid trailer".into()))?
+                trailer_data[0..8]
                     .try_into()
-                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                    .map_err(|_| MemFuseError::ParseError("Invalid min_tx_id".into()))?,
             );
             max_tx_id = u64::from_le_bytes(
-                mmap.get(trailer_52_pos + 8..trailer_52_pos + 16)
-                    .ok_or(MemFuseError::Storage("invalid trailer".into()))?
+                trailer_data[8..16]
                     .try_into()
-                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                    .map_err(|_| MemFuseError::ParseError("Invalid max_tx_id".into()))?,
             );
             min_seq = u64::from_le_bytes(
-                mmap.get(trailer_52_pos + 16..trailer_52_pos + 24)
-                    .ok_or(MemFuseError::Storage("invalid trailer".into()))?
+                trailer_data[16..24]
                     .try_into()
-                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                    .map_err(|_| MemFuseError::ParseError("Invalid min_seq".into()))?,
             );
             max_seq = u64::from_le_bytes(
-                mmap.get(trailer_52_pos + 24..trailer_52_pos + 32)
-                    .ok_or(MemFuseError::Storage("invalid trailer".into()))?
+                trailer_data[24..32]
                     .try_into()
-                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                    .map_err(|_| MemFuseError::ParseError("Invalid max_seq".into()))?,
             );
             bloom_offset = u64::from_le_bytes(
-                mmap.get(trailer_52_pos + 32..trailer_52_pos + 40)
-                    .ok_or(MemFuseError::Storage("invalid trailer".into()))?
+                trailer_data[32..40]
                     .try_into()
-                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
-            );
-            actual_index_offset = u64::from_le_bytes(
-                mmap.get(trailer_52_pos + 40..trailer_52_pos + 48)
-                    .ok_or(MemFuseError::Storage("invalid trailer".into()))?
-                    .try_into()
-                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                    .map_err(|_| MemFuseError::ParseError("Invalid bloom_offset".into()))?,
             );
             has_bloom = true;
+            u64::from_le_bytes(
+                trailer_data[40..48]
+                    .try_into()
+                    .map_err(|_| MemFuseError::ParseError("Invalid index_offset".into()))?,
+            )
         } else if magic == 0x4D465354 {
-            // Backward-compatible trailer detection:
-            // New: [bloom_offset: u64][index_offset: u64][magic: u32] = 20 bytes
-            // Old: [index_offset: u64][magic: u32] = 12 bytes
-            if file_size >= 20 {
-                let trailer_20_pos = (file_size - 20) as usize;
-                let bloom_off = u64::from_le_bytes(
-                    mmap.get(trailer_20_pos..trailer_20_pos + 8)
-                        .ok_or_else(|| MemFuseError::Storage("invalid trailer".into()))?
+            // Backward-compatible 12-byte trailer: [index_offset: u64][magic: u32]
+            let off = if trailer_len >= 12 {
+                u64::from_le_bytes(
+                    trailer_data[trailer_len - 12..trailer_len - 4]
                         .try_into()
-                        .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
-                );
-                let index_off = u64::from_le_bytes(
-                    mmap.get(trailer_20_pos + 8..trailer_20_pos + 16)
-                        .ok_or_else(|| MemFuseError::Storage("invalid trailer".into()))?
-                        .try_into()
-                        .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
-                );
+                        .map_err(|_| MemFuseError::ParseError("Invalid index offset".into()))?,
+                )
+            } else {
+                0
+            };
 
-                // Heuristic: if index_off == index_offset (from -12 read) and bloom_off < trailer start, it has bloom
-                if index_off == index_offset && bloom_off > index_off && bloom_off < file_size - 20
-                {
+            // Heuristic for 20-byte trailer (has Bloom filter)
+            if file_size >= 20 && trailer_len >= 20 {
+                let maybe_b_off = u64::from_le_bytes(
+                    trailer_data[trailer_len - 20..trailer_len - 12]
+                        .try_into()
+                        .map_err(|_| MemFuseError::ParseError("Invalid bloom offset".into()))?,
+                );
+                // Heuristic: if bloom_off is between index_offset and trailer start, it might be a valid bloom offset
+                if maybe_b_off > off && maybe_b_off < file_size - 20 {
                     has_bloom = true;
-                    bloom_offset = bloom_off;
-                    actual_index_offset = index_off;
+                    bloom_offset = maybe_b_off;
                 }
             }
+            off
         } else {
             return Err(MemFuseError::Storage("Invalid SSTable magic number".into()));
-        }
+        };
 
         let bloom_filter = if has_bloom {
             let bloom_end = if magic == 0x5853464D {
@@ -606,112 +654,165 @@ impl SstableReader {
             } else {
                 (file_size - 20) as usize
             };
-            let bloom_data = mmap
-                .get(bloom_offset as usize..bloom_end)
-                .ok_or_else(|| MemFuseError::Storage("corrupted bloom data".into()))?;
+            let bloom_data_raw = {
+                let f = Arc::clone(&file);
+                tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
+                    use std::os::unix::fs::FileExt;
+                    let mut buf = vec![0u8; bloom_end.saturating_sub(bloom_offset as usize)];
+                    f.read_exact_at(&mut buf, bloom_offset)?;
+                    Ok(buf)
+                })
+                .await
+                .map_err(|e| MemFuseError::Storage(format!("Join error: {}", e)))?
+                .map_err(|e| MemFuseError::Storage(format!("Bloom read failed: {}", e)))?
+            };
+
+            let bloom_data = if has_crc {
+                if bloom_data_raw.len() < 4 {
+                    return Err(MemFuseError::Storage(
+                        "Bloom filter data too short for CRC".into(),
+                    ));
+                }
+                let stored_crc = u32::from_le_bytes(
+                    bloom_data_raw[0..4]
+                        .try_into()
+                        .map_err(|_| MemFuseError::Serialization("Invalid CRC".into()))?,
+                );
+                let payload = &bloom_data_raw[4..];
+                if crc32fast::hash(payload) != stored_crc {
+                    return Err(MemFuseError::ChecksumMismatch {
+                        path: path_buf.to_string_lossy().to_string(),
+                        block_id: bloom_offset,
+                    });
+                }
+                payload
+            } else {
+                &bloom_data_raw
+            };
+
             Some(BloomFilter::from_bytes(bloom_data)?)
         } else {
             None
         };
 
         // Read index
-        let mut index = Vec::new();
-        let mut pos = actual_index_offset as usize;
-        let index_end = if has_bloom {
-            bloom_offset as usize
-        } else {
-            (file_size - 12) as usize
+        let index_data_raw = {
+            let f = Arc::clone(&file);
+            let index_end = if has_bloom {
+                bloom_offset as usize
+            } else {
+                (file_size - 12) as usize
+            };
+            tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
+                use std::os::unix::fs::FileExt;
+                let mut buf = vec![0u8; index_end.saturating_sub(index_offset as usize)];
+                f.read_exact_at(&mut buf, index_offset)?;
+                Ok(buf)
+            })
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("Join error: {}", e)))?
+            .map_err(|e| MemFuseError::Storage(format!("Index read failed: {}", e)))?
         };
 
-        while pos + 10 <= index_end {
-            let key_len = u16::from_le_bytes(
-                mmap.get(pos..pos + 2)
-                    .ok_or_else(|| MemFuseError::Storage("corrupted index k_len".into()))?
+        let index_data = if has_crc {
+            if index_data_raw.len() < 4 {
+                return Err(MemFuseError::Storage("Index data too short for CRC".into()));
+            }
+            let stored_crc = u32::from_le_bytes(
+                index_data_raw[0..4]
                     .try_into()
-                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                    .map_err(|_| MemFuseError::Serialization("Invalid CRC".into()))?,
+            );
+            let payload = &index_data_raw[4..];
+            if crc32fast::hash(payload) != stored_crc {
+                return Err(MemFuseError::ChecksumMismatch {
+                    path: path_buf.to_string_lossy().to_string(),
+                    block_id: index_offset,
+                });
+            }
+            payload
+        } else {
+            &index_data_raw
+        };
+
+        let mut index = Vec::new();
+        let mut pos = 0;
+        let index_len = index_data.len();
+
+        while pos + 10 <= index_len {
+            let key_len = u16::from_le_bytes(
+                index_data[pos..pos + 2]
+                    .try_into()
+                    .map_err(|_| MemFuseError::ParseError("corrupted index: key_len".into()))?,
             ) as usize;
             pos += 2;
 
-            if pos + key_len > index_end {
-                return Err(MemFuseError::Storage("corrupted SSTable index".into()));
+            if pos + key_len + 8 > index_len {
+                return Err(MemFuseError::ParseError(
+                    "corrupted index: data too short".into(),
+                ));
             }
-            let key = Bytes::copy_from_slice(
-                mmap.get(pos..pos + key_len)
-                    .ok_or_else(|| MemFuseError::Storage("corrupted index key".into()))?,
-            );
+
+            let key = Bytes::copy_from_slice(&index_data[pos..pos + key_len]);
             pos += key_len;
 
-            if pos + 8 > index_end {
-                return Err(MemFuseError::Storage("corrupted SSTable index".into()));
-            }
             let offset = u64::from_le_bytes(
-                mmap.get(pos..pos + 8)
-                    .ok_or_else(|| MemFuseError::Storage("corrupted index offset".into()))?
+                index_data[pos..pos + 8]
                     .try_into()
-                    .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
+                    .map_err(|_| MemFuseError::ParseError("corrupted index: offset".into()))?,
             );
             pos += 8;
             index.push((key, offset));
         }
 
-        let last_key = index.last().map(|(k, _)| k.clone()).unwrap_or_default();
-
         let first_key = if !index.is_empty() {
-            let offset = index
-                .first()
-                .ok_or_else(|| {
-                    MemFuseError::Storage("corrupted index: first entry missing".into())
-                })?
-                .1;
+            let offset = index[0].1;
             let next_offset = if index.len() > 1 {
-                index
-                    .get(1)
-                    .ok_or_else(|| {
-                        MemFuseError::Storage("corrupted index: second entry missing".into())
-                    })?
-                    .1
+                index[1].1
             } else {
                 index_offset
             };
-
-            let block_data = Self::read_block_at(&mmap, offset, next_offset, &derived_km)?;
-            if block_data.len() < 2 {
-                return Err(MemFuseError::Storage("corrupted SSTable block".into()));
-            }
-            let k_len = u16::from_le_bytes([
-                *block_data
-                    .first()
-                    .ok_or_else(|| MemFuseError::Storage("block too small".into()))?,
-                *block_data
-                    .get(1)
-                    .ok_or_else(|| MemFuseError::Storage("block too small".into()))?,
-            ]) as usize;
-            if block_data.len() < 2 + k_len {
-                return Err(MemFuseError::Storage("corrupted SSTable block".into()));
-            }
-            Bytes::copy_from_slice(
-                block_data
-                    .get(2..2 + k_len)
-                    .ok_or_else(|| MemFuseError::Storage("corrupted block key".into()))?,
+            let block = Self::read_block_at_file(
+                Arc::clone(&file),
+                offset,
+                next_offset,
+                &derived_km,
+                has_crc,
+                &path_buf,
             )
+            .await?;
+            if block.len() >= 2 {
+                let k_len = u16::from_le_bytes(
+                    block[0..2]
+                        .try_into()
+                        .map_err(|_| MemFuseError::ParseError("corrupted block: k_len".into()))?,
+                ) as usize;
+                if block.len() >= 2 + k_len {
+                    Bytes::copy_from_slice(&block[2..2 + k_len])
+                } else {
+                    Bytes::new()
+                }
+            } else {
+                Bytes::new()
+            }
         } else {
             Bytes::new()
         };
 
         Ok(Self {
-            mmap,
-            index,
+            file,
             metadata: SstableMetadata {
                 first_key,
-                last_key,
+                last_key: index.last().map(|(k, _)| k.clone()).unwrap_or_default(),
                 file_size,
                 min_tx_id,
                 max_tx_id,
                 min_seq,
                 max_seq,
             },
+            index,
             index_offset,
-            file_path: path.as_ref().to_path_buf(),
+            file_path: path_buf,
             file_id: {
                 static NEXT_FILE_ID: std::sync::atomic::AtomicU64 =
                     std::sync::atomic::AtomicU64::new(1);
@@ -720,26 +821,62 @@ impl SstableReader {
             block_cache,
             key_manager: derived_km,
             bloom_filter,
+            has_crc,
         })
     }
 
-    fn read_block_at(
-        mmap: &[u8],
+    async fn read_block_at_file(
+        file: Arc<std::fs::File>,
         offset: u64,
         next_offset: u64,
         key_manager: &Option<Arc<KeyManager>>,
+        has_crc: bool,
+        path: &Path,
     ) -> Result<Bytes> {
-        if offset > next_offset || next_offset as usize > mmap.len() {
-            return Err(MemFuseError::Storage("Inconsistent block offsets".into()));
-        }
-        let raw_block = mmap
-            .get(offset as usize..next_offset as usize)
-            .ok_or_else(|| MemFuseError::Storage("block offset out of bounds".into()))?;
-        if let Some(km) = key_manager {
-            let decrypted = km.decrypt(raw_block, offset)?;
-            Ok(Bytes::from(decrypted))
+        let len = next_offset.saturating_sub(offset) as usize;
+        let data = tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
+            use std::os::unix::fs::FileExt;
+            let mut buf = vec![0u8; len];
+            file.read_exact_at(&mut buf, offset)?;
+            Ok(buf)
+        })
+        .await
+        .map_err(|e| MemFuseError::Storage(format!("Join error: {}", e)))?
+        .map_err(|e| MemFuseError::Storage(format!("Block read failed: {}", e)))?;
+
+        let block_data = if let Some(km) = key_manager {
+            if data.len() < 12 {
+                return Err(MemFuseError::Storage("Block too small for nonce".into()));
+            }
+            let mut nonce = [0u8; 12];
+            nonce.copy_from_slice(&data[0..12]);
+            let decrypted = km.decrypt_auto_nonce(&data[12..], &nonce)?;
+            Bytes::from(decrypted)
         } else {
-            Ok(Bytes::copy_from_slice(raw_block))
+            Bytes::from(data)
+        };
+
+        if has_crc {
+            if block_data.len() < 4 {
+                return Err(MemFuseError::Storage("Block too small for CRC".into()));
+            }
+            let stored_crc = u32::from_le_bytes(
+                block_data[0..4]
+                    .try_into()
+                    .map_err(|_| MemFuseError::Serialization("Invalid CRC format".into()))?,
+            );
+            let payload = &block_data[4..];
+            let computed_crc = crc32fast::hash(payload);
+
+            if stored_crc != computed_crc {
+                return Err(MemFuseError::ChecksumMismatch {
+                    path: path.to_string_lossy().to_string(),
+                    block_id: offset,
+                });
+            }
+            Ok(Bytes::copy_from_slice(payload))
+        } else {
+            Ok(block_data)
         }
     }
 
@@ -752,7 +889,15 @@ impl SstableReader {
         if let Some(block) = cached {
             Ok(block)
         } else {
-            let block = Self::read_block_at(&self.mmap, offset, next_offset, &self.key_manager)?;
+            let block = Self::read_block_at_file(
+                Arc::clone(&self.file),
+                offset,
+                next_offset,
+                &self.key_manager,
+                self.has_crc,
+                &self.file_path,
+            )
+            .await?;
             self.block_cache
                 .write()
                 .put((self.file_id, offset), block.clone());
@@ -777,13 +922,12 @@ impl SstableReader {
 
         let idx = match self.index.binary_search_by(|(k, _)| k.as_ref().cmp(key)) {
             Ok(i) => i,
-            Err(i) => {
-                if i >= self.index.len() {
-                    return Ok(None);
-                }
-                i
-            }
+            Err(i) => i,
         };
+
+        if idx >= self.index.len() {
+            return Ok(None);
+        }
 
         let offset = self
             .index
@@ -1169,11 +1313,6 @@ impl SstableStream {
 }
 
 impl SstableReader {
-    /// Returns the file path of this SSTable.
-    pub fn file_path(&self) -> &std::path::Path {
-        &self.file_path
-    }
-
     /// Scans the SSTable for keys starting with the given prefix.
     pub async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Bytes, Bytes, u64, u64)>> {
         let mut results = Vec::with_capacity(16);
@@ -1737,6 +1876,53 @@ mod tests {
                 reader.bloom_filter.is_none(),
                 "Old SST should not have bloom filter"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sstable_block_crc_corruption() {
+        let tmp = TempDir::new().expect("temp dir");
+        let path = tmp.path().join("crc_corrupt.sst");
+        let bc = create_block_cache(1);
+
+        {
+            let mut builder = SstableBuilder::create(&path).await.expect("create");
+            builder.add(b"key1", b"val1", 1, 0).await.expect("add");
+            builder.finish().await.expect("finish");
+        }
+
+        // Corrupt the first block
+        {
+            let mut data = tokio::fs::read(&path).await.expect("read");
+            // Blocks start at 0. Let's flip a bit at offset 10.
+            if data.len() > 10 {
+                data[10] ^= 0xFF;
+                tokio::fs::write(&path, data).await.expect("write");
+            }
+        }
+
+        let reader_res = SstableReader::open(&path, bc).await;
+
+        match reader_res {
+            Ok(reader) => {
+                let res = reader.get(b"key1").await;
+                assert!(
+                    res.is_err(),
+                    "Expected error due to corruption during get, but got {:?}",
+                    res
+                );
+                assert!(matches!(
+                    res.unwrap_err(),
+                    MemFuseError::ChecksumMismatch { .. }
+                ));
+            }
+            Err(e) => {
+                assert!(
+                    matches!(e, MemFuseError::ChecksumMismatch { .. }),
+                    "Expected ChecksumMismatch, got {:?}",
+                    e
+                );
+            }
         }
     }
 }

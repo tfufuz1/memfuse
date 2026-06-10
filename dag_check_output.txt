@@ -1,0 +1,28 @@
+=== DAG Integrity Check ===
+--- Phase 1: L1 Kernel Isolation (core, runtime, orchestrator) ---
+Verifying memfuse-core isolation...
+Verifying memfuse-sandbox isolation...
+Verifying memfuse-saos-agent isolation...
+❌ ERROR: memfuse-saos-agent imports forbidden internal crates.
+memfuse-saos-agent v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-saos-agent)
+├── memfuse-checkpoint v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-checkpoint)
+│   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core)
+├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
+├── memfuse-db v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-db)
+│   ├── memfuse-checkpoint v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-checkpoint) (*)
+│   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
+│   ├── memfuse-index v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-index)
+│   │   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
+│   │   ├── memfuse-graph v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-graph)
+│   │   │   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
+│   ├── memfuse-sandbox v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-sandbox)
+│   │   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
+│   ├── memfuse-store v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-store)
+│   │   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
+│   │   ├── memfuse-crypto v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-crypto)
+│   │   │   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
+│   ├── memfuse-text v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-text)
+│   │   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
+├── memfuse-graph v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-graph) (*)
+├── memfuse-store v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-store) (*)
+error: Recipe `dag-check` failed with exit code 1

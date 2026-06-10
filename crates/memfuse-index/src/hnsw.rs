@@ -52,8 +52,6 @@ use tokio::sync::Mutex;
 
 /// Configuration parameters for the HNSW index.
 #[derive(Debug, Clone)]
-// TODO(WP-4.1): Hardcoded resource limits.
-// Introduce a builder pattern to prevent arbitrary scaling that causes OOM in heavy workloads.
 pub struct HnswConfig {
     /// Vector dimensionality.
     pub dimension: usize,
@@ -83,7 +81,7 @@ impl Default for HnswConfig {
             ef_search: 64,
 
             distance_metric: DistanceMetric::Cosine,
-            rebuild_threshold: 0.8,
+            rebuild_threshold: 0.5,
             quantize: false,
         }
     }
@@ -104,6 +102,66 @@ impl HnswConfig {
             )));
         }
         Ok(())
+    }
+}
+
+/// Builder for HnswConfig with resource limit enforcements to prevent OOM.
+#[derive(Debug, Clone)]
+pub struct HnswConfigBuilder {
+    config: HnswConfig,
+}
+
+impl HnswConfigBuilder {
+    /// Creates a new builder with the chosen dimensionality.
+    pub fn new(dimension: usize) -> Self {
+        Self {
+            config: HnswConfig {
+                dimension,
+                ..Default::default()
+            },
+        }
+    }
+
+    /// Set max elements with a hardcap limit to avoid OOM.
+    pub fn max_elements(mut self, max: usize) -> Self {
+        self.config.max_elements = max.min(50_000_000);
+        self
+    }
+
+    /// Set the number of connections per element (M).
+    pub fn m(mut self, m: usize) -> Self {
+        self.config.m = m.clamp(4, 256);
+        self
+    }
+
+    /// Set dynamic candidate list size for construction.
+    pub fn ef_construction(mut self, ef: usize) -> Self {
+        self.config.ef_construction = ef.min(4000);
+        self
+    }
+
+    /// Set dynamic candidate list size for search.
+    pub fn ef_search(mut self, ef: usize) -> Self {
+        self.config.ef_search = ef.min(4000);
+        self
+    }
+
+    /// Use a specific distance metric.
+    pub fn distance_metric(mut self, metric: DistanceMetric) -> Self {
+        self.config.distance_metric = metric;
+        self
+    }
+
+    /// Enable or disable scalar quantization (SQ8) to reduce footprint.
+    pub fn quantize(mut self, quantize: bool) -> Self {
+        self.config.quantize = quantize;
+        self
+    }
+
+    /// Build the configuration after validating bounds.
+    pub fn build(self) -> Result<HnswConfig> {
+        self.config.validate()?;
+        Ok(self.config)
     }
 }
 
@@ -390,8 +448,8 @@ impl HnswIndex {
     }
 
     /// Loads an HNSW index from a flat file via memory-mapping.
-    pub fn load_mmap(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
-        let mmap_index = crate::persistence::MmapIndex::open(path)?;
+    pub async fn load_mmap(&self, path: impl AsRef<std::path::Path> + Send) -> Result<()> {
+        let mmap_index = crate::persistence::MmapIndex::open_async(path).await?;
         self.load_mmap_from_instance(mmap_index)
     }
 
@@ -844,11 +902,7 @@ impl HnswIndexCore {
 
         self.doc_to_node.write().insert(id.inner(), new_idx);
 
-        let query_quantized = if self.config.quantize {
-            self.quantizer.read().as_ref().map(|q| q.quantize(vector))
-        } else {
-            None
-        };
+        let query_quantized: Option<Vec<u8>> = None;
 
         let (_ep, final_connections) = {
             let nodes_read = self.nodes.read();
@@ -1297,11 +1351,7 @@ impl VectorIndex for HnswIndex {
             )));
         }
 
-        let query_quantized = if self.config.quantize {
-            self.quantizer.read().as_ref().map(|q| q.quantize(query))
-        } else {
-            None
-        };
+        let query_quantized: Option<Vec<u8>> = None;
 
         let mmap_guard = self.mmap_index.read();
         let mmap_node_count = mmap_guard
@@ -1944,7 +1994,7 @@ mod tests {
 
         // 3. Clear RAM and load via Mmap
         let index_mmap = HnswIndex::new(config.clone());
-        index_mmap.load_mmap(&index_path).expect("load mmap");
+        index_mmap.load_mmap(&index_path).await.expect("load mmap");
 
         assert_eq!(index_mmap.len().await, 50);
 

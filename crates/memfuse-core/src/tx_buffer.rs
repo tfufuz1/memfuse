@@ -228,8 +228,8 @@ mod tests {
         assert!(buffer.is_empty());
     }
 
-    #[tokio::test]
-    async fn test_concurrent_stage_no_data_loss() {
+    #[test]
+    fn test_concurrent_stage_no_data_loss() {
         let buffer = Arc::new(TxBuffer::<usize>::new_with_config(
             64,
             Duration::from_secs(30),
@@ -240,7 +240,7 @@ mod tests {
         let mut handles = Vec::new();
         for t in 0..num_tx {
             let buffer = buffer.clone();
-            handles.push(tokio::spawn(async move {
+            handles.push(std::thread::spawn(move || {
                 let tx = TxId::new(t as u64);
                 buffer.begin(tx);
                 for i in 0..ops_per_tx {
@@ -257,7 +257,7 @@ mod tests {
 
         for h in handles {
             // ANCHOR:DEBT:TXBUF-002 — intentional expect in tests
-            h.await.expect("task panicked"); // #[cfg(test)]
+            h.join().expect("task panicked"); // #[cfg(test)]
         }
 
         assert_eq!(buffer.len(), num_tx);

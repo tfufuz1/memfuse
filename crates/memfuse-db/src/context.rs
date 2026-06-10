@@ -122,9 +122,15 @@ impl SpatialFence {
     }
 
     /// Checks if a chunk's metadata matches this spatial fence.
-    pub fn matches(&self, _chunk: &ContextChunk) -> bool {
-        // TODO(WP-6.3): Check chunk metadata for geo_region field match.
-        true
+    pub fn matches(&self, chunk: &ContextChunk) -> bool {
+        if let Some(metadata) = &chunk.metadata {
+            if let Some(obj) = metadata.as_object() {
+                if let Some(val) = obj.get(&self.field_name).and_then(|v| v.as_str()) {
+                    return val == self.region;
+                }
+            }
+        }
+        false
     }
 }
 

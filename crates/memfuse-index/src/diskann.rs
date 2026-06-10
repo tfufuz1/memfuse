@@ -9,12 +9,12 @@ use memfuse_core::{
     VectorIndexStats,
 };
 use memmap2::Mmap;
+use parking_lot::RwLock;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashSet};
 use std::path::PathBuf;
-use tokio::fs::OpenOptions;
-use tokio::io::{AsyncSeekExt, AsyncWriteExt};
-use tokio::sync::RwLock;
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
 
 const DISKANN_MAGIC: &[u8; 4] = b"DANN";
 const DISKANN_VERSION: u16 = 1;
@@ -167,10 +167,14 @@ enum VectorData {
 /// consider using `tokio::task::spawn_blocking` when calling methods on this index
 /// if latency spikes are a concern.
 pub struct DiskAnnIndex {
+    inner: Arc<DiskAnnIndexInner>,
+}
+
+struct DiskAnnIndexInner {
     config: DiskAnnConfig,
-    header: Option<DiskAnnHeader>,
-    mmap: Option<Mmap>,
-    node_size_bytes: usize,
+    header: RwLock<Option<DiskAnnHeader>>,
+    mmap: RwLock<Option<Mmap>>,
+    node_size_bytes: AtomicU64,
     cache: RwLock<AHashMap<u32, CachedNode>>,
     doc_ids: RwLock<Vec<DocId>>,
     quantizer: RwLock<Option<crate::quantize::ScalarQuantizer>>,
@@ -196,54 +200,52 @@ impl DiskAnnIndex {
         let node_size_bytes = raw_node_size.div_ceil(config.sector_size) * config.sector_size;
 
         Ok(Self {
-            config,
-            header: None,
-            mmap: None,
-            node_size_bytes,
-            cache: RwLock::new(AHashMap::new()),
-            doc_ids: RwLock::new(Vec::new()),
-            quantizer: RwLock::new(None),
+            inner: Arc::new(DiskAnnIndexInner {
+                config,
+                header: RwLock::new(None),
+                mmap: RwLock::new(None),
+                node_size_bytes: AtomicU64::new(node_size_bytes as u64),
+                cache: RwLock::new(AHashMap::new()),
+                doc_ids: RwLock::new(Vec::new()),
+                quantizer: RwLock::new(None),
+            }),
         })
     }
 
-    async fn compute_dist_between_nodes(&self, idx_a: u32, idx_b: u32) -> Result<f32> {
-        let node_a = self.load_node(idx_a).await?;
-        let node_b = self.load_node(idx_b).await?;
+    fn compute_dist_between_nodes(&self, idx_a: u32, idx_b: u32) -> Result<f32> {
+        let node_a = self.load_node(idx_a)?;
+        let node_b = self.load_node(idx_b)?;
 
         match (&node_a.vector, &node_b.vector) {
             (VectorData::F32(v_a), VectorData::F32(v_b)) => {
-                compute_distance(v_a, v_b, self.config.distance_metric)
+                compute_distance(v_a, v_b, self.inner.config.distance_metric)
             }
             (VectorData::U8(v_a), VectorData::U8(v_b)) => {
-                let q_guard = self.quantizer.read().await;
+                let q_guard = self.inner.quantizer.read();
                 let q = q_guard
                     .as_ref()
                     .ok_or_else(|| MemFuseError::Index("Quantizer missing".into()))?;
-                q.symmetric_dist(v_a, v_b, self.config.distance_metric)
+                q.symmetric_dist(v_a, v_b, self.inner.config.distance_metric)
             }
             _ => Err(MemFuseError::Index("Mixed vector types".into())),
         }
     }
 
-    async fn get_dist_to_query(&self, query: &[f32], node_idx: u32) -> Result<f32> {
-        let node = self.load_node(node_idx).await?;
+    fn get_dist_to_query(&self, query: &[f32], node_idx: u32) -> Result<f32> {
+        let node = self.load_node(node_idx)?;
         match &node.vector {
-            VectorData::F32(v) => compute_distance(query, v, self.config.distance_metric),
+            VectorData::F32(v) => compute_distance(query, v, self.inner.config.distance_metric),
             VectorData::U8(v) => {
-                let q_guard = self.quantizer.read().await;
+                let q_guard = self.inner.quantizer.read();
                 let q = q_guard
                     .as_ref()
                     .ok_or_else(|| MemFuseError::Index("Quantizer missing".into()))?;
-                q.asymmetric_dist(query, v, self.config.distance_metric)
+                q.asymmetric_dist(query, v, self.inner.config.distance_metric)
             }
         }
     }
-    async fn prune(
-        &self,
-        candidates: &mut [SearchCandidate],
-        max_degree: usize,
-        alpha: f32,
-    ) -> Vec<u32> {
+
+    fn prune(&self, candidates: &mut [SearchCandidate], max_degree: usize, alpha: f32) -> Vec<u32> {
         if candidates.is_empty() {
             return Vec::new();
         }
@@ -259,7 +261,6 @@ impl DiskAnnIndex {
             for &p_idx in &pruned {
                 let dist_p_cand = self
                     .compute_dist_between_nodes(cand.index, p_idx)
-                    .await
                     .unwrap_or(f32::MAX);
                 if alpha * dist_p_cand < cand.distance {
                     keep = false;
@@ -275,7 +276,7 @@ impl DiskAnnIndex {
     }
 
     /// Builds the index from a set of vectors.
-    pub async fn build(&mut self, vectors: &[Vec<f32>], ids: &[DocId]) -> Result<()> {
+    pub async fn build(&self, vectors: &[Vec<f32>], ids: &[DocId]) -> Result<()> {
         if vectors.is_empty() {
             return Ok(());
         }
@@ -283,10 +284,10 @@ impl DiskAnnIndex {
         let n = vectors.len();
 
         // 0. SQ8 Training if needed
-        if self.config.quantize {
+        if self.inner.config.quantize {
             let refs: Vec<&[f32]> = vectors.iter().map(|v| v.as_slice()).collect();
-            let q = crate::quantize::ScalarQuantizer::train(&refs, self.config.dimension);
-            *self.quantizer.write().await = Some(q);
+            let q = crate::quantize::ScalarQuantizer::train(&refs, self.inner.config.dimension);
+            *self.inner.quantizer.write() = Some(q);
         }
 
         // 1. Initial State
@@ -303,17 +304,13 @@ impl DiskAnnIndex {
         // 3. Vamana Build Pass
         let alpha = 1.2;
         for (i, vector) in vectors.iter().enumerate() {
-            let mut results = self
-                .search_to_candidates(vector, self.config.beam_width)
-                .await?;
-            let pruned = self
-                .prune(&mut results, self.config.max_degree, alpha)
-                .await;
+            let mut results = self.search_to_candidates(vector, self.inner.config.beam_width)?;
+            let pruned = self.prune(&mut results, self.inner.config.max_degree, alpha);
 
             for &neighbor in &pruned {
                 let neighbor_idx = neighbor as usize;
                 if !graph[neighbor_idx].contains(&(i as u32))
-                    && graph[neighbor_idx].len() < self.config.max_degree
+                    && graph[neighbor_idx].len() < self.inner.config.max_degree
                 {
                     graph[neighbor_idx].push(i as u32);
                 }
@@ -334,18 +331,23 @@ impl DiskAnnIndex {
         vectors: &[Vec<f32>],
         ids: &[DocId],
     ) -> Result<()> {
+        use std::sync::atomic::Ordering;
+        use tokio::fs::OpenOptions;
+        use tokio::io::AsyncSeekExt;
+        use tokio::io::AsyncWriteExt;
+
         let n = vectors.len();
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(true)
-            .open(&self.config.index_path)
+            .open(&self.inner.config.index_path)
             .await
             .map_err(MemFuseError::Io)?;
 
         let quantizer_opt = {
-            let q_guard = self.quantizer.read().await;
+            let q_guard = self.inner.quantizer.read();
             q_guard.clone()
         };
         let (q_min, q_max, quantized) = if let Some(ref q) = quantizer_opt {
@@ -358,11 +360,11 @@ impl DiskAnnIndex {
             magic: *DISKANN_MAGIC,
             version: DISKANN_VERSION,
             node_count: n as u64,
-            dimension: self.config.dimension as u32,
-            max_degree: self.config.max_degree as u32,
-            sector_size: self.config.sector_size as u32,
+            dimension: self.inner.config.dimension as u32,
+            max_degree: self.inner.config.max_degree as u32,
+            sector_size: self.inner.config.sector_size as u32,
             entry_point: 0,
-            metric: self.config.distance_metric as u8,
+            metric: self.inner.config.distance_metric as u8,
             quantized,
             q_min,
             q_max,
@@ -371,8 +373,11 @@ impl DiskAnnIndex {
         file.write_all(&header.to_bytes())
             .await
             .map_err(MemFuseError::Io)?;
-        let padding =
-            vec![0u8; self.config.sector_size - (DiskAnnHeader::SIZE % self.config.sector_size)];
+        let padding = vec![
+            0u8;
+            self.inner.config.sector_size
+                - (DiskAnnHeader::SIZE % self.inner.config.sector_size)
+        ];
         file.write_all(&padding).await.map_err(MemFuseError::Io)?;
 
         for i in 0..n {
@@ -398,7 +403,7 @@ impl DiskAnnIndex {
                     .await
                     .map_err(MemFuseError::Io)?;
             }
-            let padding_count = self.config.max_degree - neighbors.len();
+            let padding_count = self.inner.config.max_degree - neighbors.len();
             file.write_all(&vec![0u8; padding_count * 4])
                 .await
                 .map_err(MemFuseError::Io)?;
@@ -408,8 +413,9 @@ impl DiskAnnIndex {
 
             let end_pos = file.stream_position().await.map_err(MemFuseError::Io)?;
             let used = (end_pos - start_pos) as usize;
-            if used < self.node_size_bytes {
-                file.write_all(&vec![0u8; self.node_size_bytes - used])
+            let node_size = self.inner.node_size_bytes.load(Ordering::SeqCst) as usize;
+            if used < node_size {
+                file.write_all(&vec![0u8; node_size - used])
                     .await
                     .map_err(MemFuseError::Io)?;
             }
@@ -418,13 +424,13 @@ impl DiskAnnIndex {
         Ok(())
     }
 
-    async fn search_to_candidates(
+    fn search_to_candidates(
         &self,
         query: &[f32],
         beam_width: usize,
     ) -> Result<Vec<SearchCandidate>> {
-        let header = self
-            .header
+        let header_guard = self.inner.header.read();
+        let header = header_guard
             .as_ref()
             .ok_or_else(|| MemFuseError::Index("Index not loaded".into()))?;
         let mut visited = HashSet::new();
@@ -432,7 +438,7 @@ impl DiskAnnIndex {
         let mut results = BinaryHeap::new();
 
         let ep = header.entry_point;
-        let ep_dist = self.get_dist_to_query(query, ep).await?;
+        let ep_dist = self.get_dist_to_query(query, ep)?;
 
         let initial = SearchCandidate {
             index: ep,
@@ -449,12 +455,12 @@ impl DiskAnnIndex {
                 }
             }
 
-            let node = self.load_node(current.index).await?;
+            let node = self.load_node(current.index)?;
             for &neighbor in &node.neighbors {
                 if !visited.insert(neighbor) {
                     continue;
                 }
-                let dist = self.get_dist_to_query(query, neighbor).await?;
+                let dist = self.get_dist_to_query(query, neighbor)?;
                 let cand = SearchCandidate {
                     index: neighbor,
                     distance: dist,
@@ -475,74 +481,88 @@ impl DiskAnnIndex {
     }
 
     /// Loads the index from the configured path.
-    pub async fn load(&mut self) -> Result<()> {
-        let file = std::fs::File::open(&self.config.index_path).map_err(MemFuseError::Io)?;
-        // SAFETY: Mapping a file is safe as long as it's not truncated or modified while mapped.
-        // In MemFuse, file access is orchestrated by the storage layer with exclusive locks.
-        let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? };
+    pub async fn load(&self) -> Result<()> {
+        let inner = Arc::clone(&self.inner);
+        tokio::task::spawn_blocking(move || {
+            use std::sync::atomic::Ordering;
+            let file = std::fs::File::open(&inner.config.index_path).map_err(MemFuseError::Io)?;
+            let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? };
 
-        let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;
+            let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;
 
-        if header.quantized != 0 {
-            *self.quantizer.write().await = Some(crate::quantize::ScalarQuantizer {
-                min: header.q_min,
-                max: header.q_max,
-                scale: 255.0 / (header.q_max - header.q_min).max(1e-6),
-                inv_scale: (header.q_max - header.q_min) / 255.0,
-                dimension: header.dimension as usize,
-            });
-        }
+            if header.quantized != 0 {
+                *inner.quantizer.write() = Some(crate::quantize::ScalarQuantizer {
+                    min: header.q_min,
+                    max: header.q_max,
+                    scale: 255.0 / (header.q_max - header.q_min).max(1e-6),
+                    inv_scale: (header.q_max - header.q_min) / 255.0,
+                    dimension: header.dimension as usize,
+                });
+            }
 
-        self.header = Some(header);
-        let vector_size = if header.quantized != 0 {
-            header.dimension as usize
-        } else {
-            header.dimension as usize * 4
-        };
-        let neighbors_size = 4 + (header.max_degree as usize * 4);
-        let doc_id_size = 8;
-        let raw_node_size = vector_size + neighbors_size + doc_id_size;
-        self.node_size_bytes =
-            raw_node_size.div_ceil(header.sector_size as usize) * header.sector_size as usize;
+            let vector_size = if header.quantized != 0 {
+                header.dimension as usize
+            } else {
+                header.dimension as usize * 4
+            };
+            let neighbors_size = 4 + (header.max_degree as usize * 4);
+            let doc_id_size = 8;
+            let raw_node_size = vector_size + neighbors_size + doc_id_size;
+            let node_size_bytes =
+                raw_node_size.div_ceil(header.sector_size as usize) * header.sector_size as usize;
+            inner
+                .node_size_bytes
+                .store(node_size_bytes as u64, Ordering::SeqCst);
 
-        self.mmap = Some(mmap);
+            *inner.header.write() = Some(header);
+            *inner.mmap.write() = Some(mmap);
 
-        // Load DocIds into RAM (Scan all nodes once)
-        let mut ids = Vec::with_capacity(header.node_count as usize);
-        for i in 0..header.node_count as u32 {
-            let node = self.load_node(i).await?;
-            ids.push(node.doc_id);
-        }
-        *self.doc_ids.write().await = ids;
-
-        Ok(())
+            let mut ids = Vec::with_capacity(header.node_count as usize);
+            for i in 0..header.node_count as u32 {
+                let offset = header.sector_size as usize + (i as usize * node_size_bytes);
+                let inner_mmap = inner.mmap.read();
+                let mmap_ref = inner_mmap
+                    .as_ref()
+                    .ok_or(MemFuseError::Index("Mmap failed".into()))?;
+                let doc_id = u64::from_le_bytes(
+                    mmap_ref[offset..offset + 8]
+                        .try_into()
+                        .map_err(|_| MemFuseError::Index("Corrupt doc_id".into()))?,
+                );
+                ids.push(DocId::from(doc_id));
+            }
+            *inner.doc_ids.write() = ids;
+            Ok(())
+        })
+        .await
+        .map_err(|e| MemFuseError::Storage(format!("Join error during DiskANN load: {}", e)))?
     }
 
-    async fn load_node(&self, index: u32) -> Result<CachedNode> {
-        // 1. Check Cache
-        if let Some(node) = self.cache.read().await.get(&index) {
+    fn load_node(&self, index: u32) -> Result<CachedNode> {
+        use std::sync::atomic::Ordering;
+        if let Some(node) = self.inner.cache.read().get(&index) {
             return Ok(node.clone());
         }
 
-        // 2. Load from Mmap
-        let mmap = self
-            .mmap
+        let mmap_guard = self.inner.mmap.read();
+        let mmap = mmap_guard
             .as_ref()
             .ok_or_else(|| MemFuseError::Index("Index not loaded".into()))?;
-        let header = self
-            .header
+        let header_guard = self.inner.header.read();
+        let header = header_guard
             .as_ref()
             .ok_or_else(|| MemFuseError::Index("Header missing".into()))?;
 
+        let node_size = self.inner.node_size_bytes.load(Ordering::SeqCst) as usize;
         let start_offset =
             DiskAnnHeader::SIZE.div_ceil(header.sector_size as usize) * header.sector_size as usize;
-        let node_offset = start_offset + (index as usize * self.node_size_bytes);
+        let node_offset = start_offset + (index as usize * node_size);
 
-        if node_offset + self.node_size_bytes > mmap.len() {
+        if node_offset + node_size > mmap.len() {
             return Err(MemFuseError::Index("Node offset out of bounds".into()));
         }
 
-        let node_data = &mmap[node_offset..node_offset + self.node_size_bytes];
+        let node_data = &mmap[node_offset..node_offset + node_size];
         let mut cursor = 0;
 
         let vector = if header.quantized != 0 {
@@ -552,7 +572,6 @@ impl DiskAnnIndex {
         } else {
             let mut v = Vec::with_capacity(header.dimension as usize);
             for _ in 0..header.dimension {
-                // SAFETY: In-bounds check performed above.
                 v.push(f32::from_le_bytes(
                     node_data[cursor..cursor + 4]
                         .try_into()
@@ -563,7 +582,6 @@ impl DiskAnnIndex {
             VectorData::F32(v)
         };
 
-        // Neighbors
         let neighbor_count = u32::from_le_bytes(
             node_data[cursor..cursor + 4]
                 .try_into()
@@ -579,10 +597,8 @@ impl DiskAnnIndex {
             ));
             cursor += 4;
         }
-        // Skip padding neighbors
         cursor += (header.max_degree as usize - neighbor_count) * 4;
 
-        // DocId
         let doc_id = DocId::from(u64::from_le_bytes(
             node_data[cursor..cursor + 8]
                 .try_into()
@@ -595,9 +611,8 @@ impl DiskAnnIndex {
             doc_id,
         };
 
-        // 3. Update Cache (Naive Clear-on-Budget)
-        let mut cache = self.cache.write().await;
-        if cache.len() * self.node_size_bytes >= self.config.memory_budget {
+        let mut cache = self.inner.cache.write();
+        if cache.len() * node_size >= self.inner.config.memory_budget {
             cache.clear();
         }
         cache.insert(index, node.clone());
@@ -605,25 +620,41 @@ impl DiskAnnIndex {
         Ok(node)
     }
 
-    /// Optimized Beam Search
-    // TODO(WP-8.2): DiskANN/HNSW Async I/O (S3-B)
-    // Synchronous Mmap/File operations in tokio threads can stall the reactor.
-    // Migrate blocking search operations to native tokio AIO.
     pub async fn search_internal(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>> {
-        let header = self
-            .header
-            .as_ref()
-            .ok_or_else(|| MemFuseError::Index("Index not loaded".into()))?;
+        let header = {
+            let guard = self.inner.header.read();
+            *guard
+                .as_ref()
+                .ok_or_else(|| MemFuseError::Index("Index not loaded".into()))?
+        };
+
         if header.node_count == 0 {
             return Ok(Vec::new());
         }
+
+        let query = query.to_vec();
+        let self_clone = self.clone();
+
+        tokio::task::spawn_blocking(move || self_clone.search_blocking(&query, k, header))
+            .await
+            .map_err(|e| MemFuseError::Index(format!("Join error: {}", e)))?
+    }
+
+    fn search_blocking(
+        &self,
+        query: &[f32],
+        k: usize,
+        header: DiskAnnHeader,
+    ) -> Result<Vec<ScoredDocument>> {
+        let beam_width = self.inner.config.beam_width;
+        let metric = self.inner.config.distance_metric;
 
         let mut visited = HashSet::new();
         let mut candidates = BinaryHeap::new();
         let mut results = BinaryHeap::new();
 
         let ep = header.entry_point;
-        let ep_dist = self.get_dist_to_query(query, ep).await?;
+        let ep_dist = self.get_dist_to_query(query, ep)?;
 
         let initial_cand = SearchCandidate {
             index: ep,
@@ -635,24 +666,24 @@ impl DiskAnnIndex {
 
         while let Some(Reverse(current)) = candidates.pop() {
             if let Some(worst) = results.peek() {
-                if current.distance > worst.distance && results.len() >= self.config.beam_width {
+                if current.distance > worst.distance && results.len() >= beam_width {
                     break;
                 }
             }
 
-            let node = self.load_node(current.index).await?;
+            let node = self.load_node(current.index)?;
             for &neighbor in &node.neighbors {
                 if !visited.insert(neighbor) {
                     continue;
                 }
 
-                let dist = self.get_dist_to_query(query, neighbor).await?;
+                let dist = self.get_dist_to_query(query, neighbor)?;
                 let cand = SearchCandidate {
                     index: neighbor,
                     distance: dist,
                 };
 
-                let is_better = if results.len() < self.config.beam_width {
+                let is_better = if results.len() < beam_width {
                     true
                 } else if let Some(worst) = results.peek() {
                     dist < worst.distance
@@ -663,7 +694,7 @@ impl DiskAnnIndex {
                 if is_better {
                     candidates.push(Reverse(cand.clone()));
                     results.push(cand);
-                    if results.len() > self.config.beam_width {
+                    if results.len() > beam_width {
                         results.pop();
                     }
                 }
@@ -675,8 +706,8 @@ impl DiskAnnIndex {
         sorted_results.sort_by(|a, b| a.distance.total_cmp(&b.distance));
 
         for c in sorted_results.into_iter().take(k) {
-            let node = self.load_node(c.index).await?;
-            let score = match self.config.distance_metric {
+            let node = self.load_node(c.index)?;
+            let score = match metric {
                 DistanceMetric::Cosine => 1.0 - c.distance,
                 DistanceMetric::Euclidean => 1.0 / (1.0 + c.distance),
                 DistanceMetric::DotProduct => -c.distance,
@@ -685,6 +716,14 @@ impl DiskAnnIndex {
         }
 
         Ok(final_results)
+    }
+}
+
+impl Clone for DiskAnnIndex {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
     }
 }
 
@@ -718,12 +757,15 @@ impl VectorIndex for DiskAnnIndex {
     }
 
     async fn len(&self) -> usize {
-        self.header.map(|h| h.node_count as usize).unwrap_or(0)
+        let guard = self.inner.header.read();
+        guard.as_ref().map(|h| h.node_count as usize).unwrap_or(0)
     }
 
     async fn stats(&self) -> Result<VectorIndexStats> {
+        use std::sync::atomic::Ordering;
         let count = self.len().await;
-        let cache_usage = self.cache.read().await.len() * self.node_size_bytes;
+        let node_size = self.inner.node_size_bytes.load(Ordering::SeqCst) as usize;
+        let cache_usage = self.inner.cache.read().len() * node_size;
         Ok(VectorIndexStats {
             num_vectors: count,
             memory_usage_bytes: cache_usage,
@@ -786,7 +828,7 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let mut index = DiskAnnIndex::try_new(config).expect("valid config");
+        let index = DiskAnnIndex::try_new(config).expect("valid config");
         let vectors = vec![vec![1.0; 8]];
         let ids = vec![DocId::from(42)];
         index.build(&vectors, &ids).await.expect("build");
@@ -815,7 +857,7 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let mut index = DiskAnnIndex::try_new(config).expect("valid config");
+        let index = DiskAnnIndex::try_new(config).expect("valid config");
 
         let n = 100;
         let mut vectors = Vec::with_capacity(n);
@@ -850,7 +892,7 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let mut index = DiskAnnIndex::try_new(config).expect("valid config");
+        let index = DiskAnnIndex::try_new(config).expect("valid config");
 
         let n = 200;
         let mut vectors = Vec::with_capacity(n);

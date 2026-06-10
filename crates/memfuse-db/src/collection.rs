@@ -9,6 +9,7 @@
 
 use crate::filter::MetadataFilter;
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
+use memfuse_embed::TextEmbedder;
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;
 use memfuse_text::inverted::InvertedIndex;
@@ -58,6 +59,7 @@ pub struct Collection<S: StorageEngine = LsmStorage> {
     pub(crate) storage: Arc<S>,
     pub(crate) next_tx: Arc<AtomicU64>,
     pub(crate) dimension: usize,
+    pub(crate) embedder: std::sync::RwLock<Option<Arc<TextEmbedder>>>,
 }
 
 impl<S: StorageEngine> Clone for Collection<S> {
@@ -70,6 +72,9 @@ impl<S: StorageEngine> Clone for Collection<S> {
             storage: self.storage.clone(),
             next_tx: self.next_tx.clone(),
             dimension: self.dimension,
+            embedder: std::sync::RwLock::new(
+                self.embedder.read().unwrap().as_ref().map(Arc::clone),
+            ),
         }
     }
 }
@@ -99,7 +104,25 @@ impl<S: StorageEngine> Collection<S> {
             storage,
             next_tx,
             dimension,
+            embedder: std::sync::RwLock::new(None),
         }
+    }
+
+    /// Sets the text embedder for this collection (consuming version).
+    #[tracing::instrument(level = "trace", skip(self, embedder))]
+    pub fn with_embedder(self, embedder: Arc<TextEmbedder>) -> Self {
+        {
+            let mut guard = self.embedder.write().unwrap();
+            *guard = Some(embedder);
+        }
+        self
+    }
+
+    /// Sets the text embedder for this collection.
+    #[tracing::instrument(level = "trace", skip(self, embedder))]
+    pub async fn set_embedder(&self, embedder: Arc<TextEmbedder>) {
+        let mut guard = self.embedder.write().unwrap();
+        *guard = Some(embedder);
     }
 
     /// Internal helper to generate namespaced keys.
@@ -140,6 +163,7 @@ impl<S: StorageEngine> Collection<S> {
     ///
     /// Scans the storage for any documents that are missing from the index
     /// and reconciles them. This is critical for crash recovery.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn repair(&self) -> Result<()> {
         tracing::info!("Starting integrity repair for collection '{}'", self.name);
         let start_time = std::time::Instant::now();
@@ -204,14 +228,78 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Begins a new atomic transaction for this collection.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<'_, S> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         crate::transaction::DbTransaction::new(self, tx)
     }
 
+    /// Inserts a text document, automatically generating its embedding.
+    #[tracing::instrument(level = "trace", skip(self, text, metadata))]
+    pub async fn insert_text_only(
+        &self,
+        id: &str,
+        text: &str,
+        mut metadata: Option<serde_json::Value>,
+    ) -> Result<()> {
+        let embedding = {
+            let embedder_guard = self.embedder.read().unwrap();
+            let embedder = embedder_guard.as_ref().ok_or_else(|| {
+                memfuse_core::MemFuseError::Internal(
+                    "No embedder configured for this collection".into(),
+                )
+            })?;
+            embedder.embed(text)?
+        };
+
+        // Ensure text is in metadata for indexing
+        let meta = metadata.get_or_insert(serde_json::json!({}));
+        if let Some(obj) = meta.as_object_mut() {
+            if !obj.contains_key("text") {
+                obj.insert(
+                    "text".to_string(),
+                    serde_json::Value::String(text.to_string()),
+                );
+            }
+        }
+
+        self.insert(id, &embedding, metadata).await
+    }
+
+    /// Upserts a text document, automatically generating its embedding.
+    #[tracing::instrument(level = "trace", skip(self, text, metadata))]
+    pub async fn upsert_text_only(
+        &self,
+        id: &str,
+        text: &str,
+        mut metadata: Option<serde_json::Value>,
+    ) -> Result<()> {
+        let embedding = {
+            let embedder_guard = self.embedder.read().unwrap();
+            let embedder = embedder_guard.as_ref().ok_or_else(|| {
+                memfuse_core::MemFuseError::Internal(
+                    "No embedder configured for this collection".into(),
+                )
+            })?;
+            embedder.embed(text)?
+        };
+
+        // Ensure text is in metadata for indexing
+        let meta = metadata.get_or_insert(serde_json::json!({}));
+        if let Some(obj) = meta.as_object_mut() {
+            if !obj.contains_key("text") {
+                obj.insert(
+                    "text".to_string(),
+                    serde_json::Value::String(text.to_string()),
+                );
+            }
+        }
+
+        self.upsert(id, &embedding, metadata).await
+    }
+
     /// Inserts a document with an embedding and optional metadata.
-    // TODO(FIND-DB-002): Wichtige Pfade haben kein Tracing
-    // Annotate with #[instrument(skip(self, vector, metadata))] to prevent silent latencies.
+    #[tracing::instrument(level = "trace", skip(self, embedding, metadata))]
     pub async fn insert(
         &self,
         id: &str,
@@ -279,6 +367,7 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Inserts multiple documents in a single transaction.
+    #[tracing::instrument(level = "trace", skip(self, docs))]
     pub async fn insert_many(
         &self,
         docs: &[(String, Vec<f32>, Option<serde_json::Value>)],
@@ -302,6 +391,7 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Upserts a document (inserts if missing, updates if exists) atomically.
+    #[tracing::instrument(level = "trace", skip(self, embedding, metadata))]
     pub async fn upsert(
         &self,
         id: &str,
@@ -340,6 +430,7 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Upserts multiple documents in a single transaction.
+    #[tracing::instrument(level = "trace", skip(self, docs))]
     pub async fn upsert_many(
         &self,
         docs: &[(String, Vec<f32>, Option<serde_json::Value>)],
@@ -379,11 +470,13 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Retrieves a document by its user-provided string ID.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get(&self, id: &str) -> Result<Option<crate::Document>> {
         self.get_at_snapshot(id, u64::MAX).await
     }
 
     /// Retrieves a document at a specific snapshot point.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get_at_snapshot(&self, id: &str, seq_no: u64) -> Result<Option<crate::Document>> {
         let key = self.namespaced_key(id.as_bytes(), 0);
         if let Some(data) = self.storage.get_at_seq(&key, seq_no).await? {
@@ -397,6 +490,7 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Updates an existing document in the collection.
+    #[tracing::instrument(level = "trace", skip(self, embedding, metadata))]
     pub async fn update(
         &self,
         id: &str,
@@ -469,6 +563,7 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Deletes a document from the collection by its ID.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn delete(&self, id: &str) -> Result<()> {
         let db_tx = self.begin_transaction();
 
@@ -509,6 +604,7 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Creates a directional relationship between two documents in the collection.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         let key_str = format!("{}:{}:{}", from, label, to);
@@ -527,6 +623,7 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Creates a bidirectional relationship atomically.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn relate_bidirectional(&self, from: &str, to: &str, label: &str) -> Result<()> {
         let db_tx = self.begin_transaction();
         let tx = db_tx.tx_id;
@@ -548,6 +645,7 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Scans documents in the collection that match a given key prefix.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn scan_prefix(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>> {
         let real_prefix = if prefix.starts_with("__rel:") {
             self.namespaced_key(
@@ -585,6 +683,7 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Performs semantic k-NN search over the collection's embeddings.
+    #[tracing::instrument(level = "trace", skip(self, query_embedding))]
     pub async fn search(
         &self,
         query_embedding: &[f32],
@@ -594,6 +693,7 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Performs semantic search with an advanced metadata filter.
+    #[tracing::instrument(level = "trace", skip(self, query, filter))]
     pub async fn search_with_filter(
         &self,
         query: &[f32],
@@ -653,7 +753,27 @@ impl<S: StorageEngine> Collection<S> {
         }
     }
 
+    /// Performs semantic search using a raw text query (automatically embedded).
+    #[tracing::instrument(level = "trace", skip(self, query_text))]
+    pub async fn search_text(
+        &self,
+        query_text: &str,
+        k: usize,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let embedding = {
+            let embedder_guard = self.embedder.read().unwrap();
+            let embedder = embedder_guard.as_ref().ok_or_else(|| {
+                memfuse_core::MemFuseError::Internal(
+                    "No embedder configured for this collection".into(),
+                )
+            })?;
+            embedder.embed(query_text)?
+        };
+        self.search(&embedding, k).await
+    }
+
     /// Internal helper to find all DocIds matching a filter by scanning metadata.
+    #[tracing::instrument(level = "trace", skip(self, filter))]
     async fn get_matching_doc_ids(
         &self,
         filter: &MetadataFilter,
@@ -681,6 +801,7 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Performs filtered semantic vector search in the collection.
+    #[tracing::instrument(level = "trace", skip(self, query, filter))]
     pub async fn search_filtered(
         &self,
         query: &[f32],
@@ -691,6 +812,7 @@ impl<S: StorageEngine> Collection<S> {
         self.hydrate_from_scored(scored_docs).await
     }
 
+    #[tracing::instrument(level = "trace", skip(self, scored_docs))]
     async fn hydrate_from_scored(
         &self,
         scored_docs: Vec<memfuse_core::ScoredDocument>,
@@ -714,6 +836,7 @@ impl<S: StorageEngine> Collection<S> {
         Ok(results)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, scored_tuples))]
     async fn hydrate_from_tuples(
         &self,
         scored_tuples: Vec<(DocId, f32)>,
@@ -738,8 +861,7 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Performs hybrid search combining BM25 and vector search results via RRF.
-    // TODO(FIND-DB-002): Wichtige Pfade haben kein Tracing
-    // Annotate with #[instrument(skip(self, text, vector))]
+    #[tracing::instrument(level = "trace", skip(self, text, vector))]
     pub async fn hybrid_search(
         &self,
         text: &str,
@@ -770,26 +892,31 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Returns the name of the collection.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// Returns the number of documents in the collection.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn len(&self) -> usize {
         self.index.len().await
     }
 
     /// Returns the vector dimension for this collection.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn dimension(&self) -> usize {
         self.dimension
     }
 
     /// Returns true if the collection is empty.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn is_empty(&self) -> bool {
         self.index.is_empty().await
     }
 
     /// Performs a range scan of documents in the collection.
+    #[tracing::instrument(level = "trace", skip(self, start, end))]
     pub async fn scan(
         &self,
         start: std::ops::Bound<&[u8]>,
@@ -858,11 +985,13 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Returns statistics for the collection's vector index.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn stats(&self) -> Result<memfuse_core::VectorIndexStats> {
         self.index.stats().await
     }
 
     /// Rebuilds the HNSW index from storage.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn load_index(&self) -> Result<()> {
         let prefix = if self.name == "default" {
             b"__docid:".to_vec()
@@ -884,6 +1013,7 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Removes all data belonging to this collection from storage.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn drop_collection(&self) -> Result<()> {
         let prefix = if self.name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(

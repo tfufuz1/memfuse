@@ -12,9 +12,9 @@
 // ANCHOR:INTEGRATION STATUS:REVIEW AGENT:02 DATE:2026-05-16
 // MODUL-HIERARCHIE: lsm.rs orchestriert, memtable/wal/sstable sind Bausteine.
 
-// ANCHOR:AUDIT:SEC-001 — deny(unsafe_code) statt forbid(unsafe_code)
-// BEGRÜNDUNG: memmap2 in sstable.rs benötigt unsafe für Performance.
-#![deny(unsafe_code)]
+// ANCHOR:AUDIT:SEC-001 — strictly forbid unsafe_code
+// BEGRÜNDUNG: Sovereign Core Doctrine mandates zero unsafe outside `memfuse-index`
+#![forbid(unsafe_code)]
 
 pub mod checkpoint;
 pub mod compaction;

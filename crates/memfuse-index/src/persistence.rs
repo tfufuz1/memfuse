@@ -195,6 +195,14 @@ impl MmapIndex {
         })
     }
 
+    /// Asynchronously opens an HNSW file using `spawn_blocking`.
+    pub async fn open_async(path: impl AsRef<std::path::Path> + Send) -> Result<Self> {
+        let path_buf = path.as_ref().to_path_buf();
+        tokio::task::spawn_blocking(move || Self::open(path_buf))
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("Join error: {}", e)))?
+    }
+
     pub fn get_node_record(&self, index: usize) -> Result<NodeRecord> {
         let offset = self.header.nodes_offset as usize + index * NodeRecord::SIZE;
         if offset + NodeRecord::SIZE > self.mmap.len() {
@@ -268,5 +276,42 @@ impl MmapIndex {
         }
 
         Ok(connections)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    pub const HNSW_MAGIC: u32 = 0x484E5357; // "HNSW"
+    pub const HNSW_VERSION: u16 = 1;
+
+    #[tokio::test]
+    async fn test_mmap_open_async() -> memfuse_core::Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let path = temp_dir.path().join("test_async.hnsw");
+
+        let header = HnswHeader {
+            magic: HNSW_MAGIC,
+            version: HNSW_VERSION,
+            dimension: 128,
+            m: 16,
+            metric: 0,
+            quantized: 0,
+            q_min: 0.0,
+            q_max: 0.0,
+            node_count: 0,
+            entry_point: -1,
+            nodes_offset: HnswHeader::SIZE as u64,
+            connections_offset: HnswHeader::SIZE as u64,
+            last_tx_id: 0,
+        };
+
+        std::fs::write(&path, header.to_bytes())
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        let index = MmapIndex::open_async(path).await?;
+        assert_eq!(index.header.dimension, 128);
+        Ok(())
     }
 }

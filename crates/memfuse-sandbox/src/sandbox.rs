@@ -38,6 +38,7 @@ impl WasmSandbox {
 
         // AC-2: CPU Fuel Consumption (Fuel represents execution time/steps)
         engine_config.consume_fuel(true);
+        engine_config.async_support(true);
 
         let engine =
             Engine::new(&engine_config).map_err(|e| MemFuseError::Sandbox(e.to_string()))?;

@@ -33,11 +33,8 @@ pub fn score_term(tf: u32, doc_len: u32, avg_doc_len: f32, df: u32, n: u32) -> f
         idf_arg.ln()
     };
 
-    let norm_doc_len = if avg_doc_len > 0.0 {
-        doc_len / avg_doc_len
-    } else {
-        1.0
-    };
+    let avg_doc = avg_doc_len.max(1.0);
+    let norm_doc_len = doc_len / avg_doc;
 
     let tf_numerator = tf * (k1 + 1.0);
     let tf_denominator = tf + k1 * (1.0 - b + b * norm_doc_len);

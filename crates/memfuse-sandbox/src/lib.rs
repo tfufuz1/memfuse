@@ -16,14 +16,32 @@ use host_functions::{bind_host_functions, SandboxState};
 use memfuse_core::error::MemFuseError;
 use wasmtime::{Linker, Module, Store};
 
-/// Defines the execution boundaries for sandbox containers.
-pub trait AgentRuntime: Send + Sync {
-    /// Executes a binary module with isolated constraints.
-    async fn execute_isolated(&self, module_bin: &[u8], budget: &TokenBudget) -> Result<Vec<u8>>;
+#[async_trait::async_trait]
+pub trait SandboxBridge: Send + Sync {
+    async fn db_search(&self, query: &[u8], k: usize) -> Result<Vec<u8>>;
+    async fn db_insert(&self, key: &[u8], value: &[u8]) -> Result<()>;
+    async fn db_get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
 }
 
+#[async_trait::async_trait]
+pub trait AgentRuntime: Send + Sync {
+    /// Executes a binary module with isolated constraints.
+    async fn execute_isolated(
+        &self,
+        module_bin: &[u8],
+        budget: &TokenBudget,
+        bridge: Option<std::sync::Arc<dyn SandboxBridge>>,
+    ) -> Result<Vec<u8>>;
+}
+
+#[async_trait::async_trait]
 impl AgentRuntime for WasmSandbox {
-    async fn execute_isolated(&self, module_bin: &[u8], budget: &TokenBudget) -> Result<Vec<u8>> {
+    async fn execute_isolated(
+        &self,
+        module_bin: &[u8],
+        budget: &TokenBudget,
+        bridge: Option<std::sync::Arc<dyn SandboxBridge>>,
+    ) -> Result<Vec<u8>> {
         let _ = budget.available();
 
         let engine = &self.engine;
@@ -35,6 +53,7 @@ impl AgentRuntime for WasmSandbox {
         // AC-1: Setup StoreLimits for memory
         let state = SandboxState {
             limits: self.build_store_limits(),
+            bridge,
         };
         let mut store = Store::new(engine, state);
         store.limiter(|state| &mut state.limits);
@@ -50,7 +69,8 @@ impl AgentRuntime for WasmSandbox {
 
         // Instantiate
         let instance = linker
-            .instantiate(&mut store, &module)
+            .instantiate_async(&mut store, &module)
+            .await
             .map_err(|e| MemFuseError::Sandbox(format!("instantiation error: {}", e)))?;
 
         // Execute AC test target function (assume `main` for simple execution tests)
@@ -58,7 +78,7 @@ impl AgentRuntime for WasmSandbox {
             .get_typed_func::<(), ()>(&mut store, "main")
             .map_err(|e| MemFuseError::Sandbox(format!("main not found: {}", e)))?;
 
-        main.call(&mut store, ()).map_err(|e| {
+        main.call_async(&mut store, ()).await.map_err(|e| {
             let err_str = format!("{:#}", e);
             // Map WASM trap types to our AC error variants
             if err_str.contains("fuel")
@@ -118,7 +138,10 @@ mod tests {
         "#;
         let bin = wat2wasm(wat);
 
-        let err = sandbox.execute_isolated(&bin, &budget).await.unwrap_err();
+        let err = sandbox
+            .execute_isolated(&bin, &budget, None)
+            .await
+            .unwrap_err();
         assert!(
             matches!(err, MemFuseError::MemoryLimitExceeded(_)),
             "Expected MemoryLimitExceeded, got: {:?}",
@@ -149,7 +172,10 @@ mod tests {
         "#;
         let bin = wat2wasm(wat);
 
-        let err = sandbox.execute_isolated(&bin, &budget).await.unwrap_err();
+        let err = sandbox
+            .execute_isolated(&bin, &budget, None)
+            .await
+            .unwrap_err();
         assert!(
             matches!(err, MemFuseError::SandboxTimeout(_)),
             "Expected SandboxTimeout, got: {:?}",
@@ -177,7 +203,10 @@ mod tests {
         "#;
         let bin = wat2wasm(wat);
 
-        let err = sandbox.execute_isolated(&bin, &budget).await.unwrap_err();
+        let err = sandbox
+            .execute_isolated(&bin, &budget, None)
+            .await
+            .unwrap_err();
         let err_str = err.to_string();
         assert!(
             err_str.contains("wasi_snapshot_preview1"),

@@ -89,11 +89,23 @@ pub enum MemFuseError {
 
     #[error("Checkpoint not found")]
     CheckpointNotFound,
+
+    #[error("Cluster error: {0}")]
+    Cluster(String),
+
+    #[error("Parse error: {0}")]
+    ParseError(String),
 }
 
 impl MemFuseError {
     /// Creates an `InvalidInput` error from any displayable value.
     pub fn invalid_input(msg: impl Into<String>) -> Self {
         Self::InvalidInput(msg.into())
+    }
+}
+
+impl From<std::array::TryFromSliceError> for MemFuseError {
+    fn from(e: std::array::TryFromSliceError) -> Self {
+        Self::ParseError(e.to_string())
     }
 }

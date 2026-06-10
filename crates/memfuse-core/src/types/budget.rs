@@ -82,13 +82,8 @@ impl ResourceTracker {
         loop {
             let current = self.memory_used.load(std::sync::atomic::Ordering::Acquire);
 
-            if bytes > current {
-                tracing::warn!(
-                    "ResourceTracker: Attempted to release {} bytes, but only {} bytes are tracked. Saturating to 0.",
-                    bytes,
-                    current
-                );
-            }
+            // SD-05-COR-001: Underflow protection for the atomic counter.
+            // We saturate to 0 instead of wrapping to preserve system stability.
 
             let new_val = current.saturating_sub(bytes);
             if self

@@ -117,6 +117,12 @@ impl TxId {
     pub const fn inner(self) -> u64 {
         self.0
     }
+
+    /// Returns a new internal/system transaction ID.
+    #[inline]
+    pub const fn internal() -> Self {
+        Self(Self::INTERNAL_BASE)
+    }
 }
 
 impl std::fmt::Display for TxId {

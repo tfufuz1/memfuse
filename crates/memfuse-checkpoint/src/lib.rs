@@ -102,7 +102,13 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         self.storage.pin_checkpoint(seq_no).await?;
 
         // 3. Persist checkpoint metadata
-        self.save_checkpoint_internal(meta.clone()).await?;
+        let result = self.save_checkpoint_internal(meta.clone()).await;
+
+        if result.is_err() {
+            // rollback: unpin if save failed (FIND-CHK-001)
+            let _ = self.storage.unpin_checkpoint(seq_no).await;
+            return result.map(|_| meta);
+        }
 
         Ok(meta)
     }
@@ -117,7 +123,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
             // 2. Remove from persistent storage
             let key = format!("{}:checkpoint:{}", self.namespace, name);
-            let tx = TxId::new(0);
+            let tx = TxId::new(TxId::INTERNAL_BASE);
             if let Err(e) = self.storage.delete(tx, key.as_bytes()).await {
                 let _ = self.storage.rollback(tx).await;
                 return Err(e);
@@ -139,7 +145,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let value =
             serde_json::to_vec(&meta).map_err(|e| MemFuseError::Serialization(e.to_string()))?;
 
-        let tx = TxId::new(0);
+        let tx = TxId::new(TxId::INTERNAL_BASE);
         if let Err(e) = self.storage.put(tx, key.as_bytes(), &value).await {
             let _ = self.storage.rollback(tx).await;
             return Err(e);
@@ -230,7 +236,9 @@ impl<S: memfuse_core::StorageEngine> CheckpointRegistry for PersistentCheckpoint
 }
 
 #[async_trait]
-impl<S: memfuse_core::StorageEngine> memfuse_core::traits::Checkpoint for PersistentCheckpointStore<S> {
+impl<S: memfuse_core::StorageEngine> memfuse_core::traits::Checkpoint
+    for PersistentCheckpointStore<S>
+{
     async fn take_snapshot(&self, tx: TxId) -> Result<WorkflowState> {
         let seq_no = self.storage.last_seq_no().await?;
         Ok(WorkflowState {
@@ -251,17 +259,20 @@ mod tests {
     use super::*;
     use memfuse_core::{Result, StorageEngine, StorageStats};
     use parking_lot::Mutex;
+    use std::collections::HashSet;
 
     struct MockStorage {
         data: Mutex<HashMap<Vec<u8>, Vec<u8>>>,
-        pinned: Mutex<std::collections::HashSet<u64>>,
+        pinned: Mutex<HashSet<u64>>,
+        fail_on_put: Mutex<Option<Vec<u8>>>,
     }
 
     impl MockStorage {
         fn new() -> Self {
             Self {
                 data: Mutex::new(HashMap::new()),
-                pinned: Mutex::new(std::collections::HashSet::new()),
+                pinned: Mutex::new(HashSet::new()),
+                fail_on_put: Mutex::new(None),
             }
         }
     }
@@ -275,6 +286,11 @@ mod tests {
             self.get(key).await
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+            if let Some(fail_key) = self.fail_on_put.lock().as_ref() {
+                if key == fail_key {
+                    return Err(MemFuseError::Internal("Mock Storage Error".to_string()));
+                }
+            }
             self.data.lock().insert(key.to_vec(), value.to_vec());
             Ok(())
         }
@@ -325,8 +341,8 @@ mod tests {
         }
         async fn scan(
             &self,
-            _start: std::ops::Bound<&[u8]>,
-            _end: std::ops::Bound<&[u8]>,
+            _s: std::ops::Bound<&[u8]>,
+            _e: std::ops::Bound<&[u8]>,
         ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
             Ok(Vec::new())
         }
@@ -359,8 +375,24 @@ mod tests {
         let all = store.list_checkpoints().await.unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].seq_no, 2);
-        // Verify only 2 is pinned
         assert!(!storage.pinned.lock().contains(&1));
         assert!(storage.pinned.lock().contains(&2));
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_creation_rollback_on_failure() {
+        let storage = Arc::new(MockStorage::new());
+        let cp_key = b"test:checkpoint:fail_cp";
+        *storage.fail_on_put.lock() = Some(cp_key.to_vec());
+
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
+        let seq_no = 123;
+
+        let res = store
+            .create_checkpoint("fail_cp", "c1", seq_no, TxId::new(1), serde_json::json!({}))
+            .await;
+
+        assert!(res.is_err());
+        assert!(!storage.pinned.lock().contains(&seq_no));
     }
 }

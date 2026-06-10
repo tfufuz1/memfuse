@@ -51,6 +51,7 @@
             # System libs for build
             pkg-config
             openssl
+            flatbuffers
           ];
 
           shellHook = ''

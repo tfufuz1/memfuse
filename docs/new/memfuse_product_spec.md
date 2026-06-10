@@ -59,7 +59,7 @@ memfuse/                          ~10.800 LoC gesamt
 │   ├── memfuse-saos-agent/          89 LoC  🛑 Frozen  — StateGraph (minimal)
 │   └── memfuse-sandbox/            163 LoC  🛑 Frozen  — WASM-Sandbox-Scaffold
 ├── docs/specs/                   SPEC-*.md für jedes Work Package
-├── .agent/                       Multi-Agent-Orchestration-Scripts
+├── docs/audit/                   Forensische Architektur-Audits
 ├── benches/                      Criterion-Benchmarks
 ├── rules/                        Projektregeln
 └── LLM_AGENT_MASTER_GUIDE.md     58.7 KB — Agentic Development Handbook

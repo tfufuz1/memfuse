@@ -57,7 +57,7 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 
 /// LSM storage configuration.
-// ANCHOR:TODO:SEC-001 — Erweitere LsmConfig um `encryption_passphrase` und AES-256.
+// SEC-001 — Erweitere LsmConfig um `encryption_passphrase` und AES-256.
 // WP:WP-3.2 PRIO:1 NEEDS:COL-001
 // AGENT:@JULES-10 DATE:2026-05-09 STATUS:READY
 // TEST: cargo test -p memfuse-store test_encrypted_db_unreadable_without_key
@@ -113,7 +113,8 @@ pub struct LsmStorage {
     last_committed_tx: AtomicU64,
     /// Mutex to serialize commits and prevent snapshot inversion (parallel seq_no holes).
     commit_mutex: tokio::sync::Mutex<()>,
-    _compaction_tx: tokio::sync::watch::Sender<bool>,
+    cancel_token: tokio_util::sync::CancellationToken,
+    task_tracker: tokio_util::task::TaskTracker,
 }
 
 impl LsmStorage {
@@ -146,71 +147,76 @@ impl LsmStorage {
         let key_manager = config
             .encryption_passphrase
             .as_ref()
-            .map(|p| KeyManager::try_new(p, Some(&salt)).map(Arc::new))
+            .map(|p| KeyManager::try_new(p, &salt).map(Arc::new))
             .transpose()?;
 
-        // Discover the latest WAL file
-        // AUDIT:2026-05-23 FIX: Added dynamic discovery for timestamped WALs after flush.
-        let mut wal_path = config.path.join("wal.log");
-        if tokio::fs::metadata(&wal_path).await.is_err() {
-            let mut entries = tokio::fs::read_dir(&config.path)
-                .await
-                .map_err(|e| MemFuseError::Storage(format!("Failed to read data dir: {}", e)))?;
-            let mut max_ts = 0u128;
-            while let Ok(Some(entry)) = entries.next_entry().await {
-                let name = entry.file_name();
-                let name_str = name.to_string_lossy();
-                if name_str.starts_with("wal-") && name_str.ends_with(".log") {
-                    if let Ok(ts) = name_str[4..name_str.len() - 4].parse::<u128>() {
-                        if ts > max_ts {
-                            max_ts = ts;
-                            wal_path = entry.path();
-                        }
-                    }
+        // Discover and sort all WAL files for replay
+        let mut wal_files = Vec::new();
+        let mut entries = tokio::fs::read_dir(&config.path)
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("Failed to read data dir: {}", e)))?;
+
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with("wal-") && name_str.ends_with(".log") {
+                if let Ok(ts) = name_str[4..name_str.len() - 4].parse::<u128>() {
+                    wal_files.push((ts, entry.path()));
                 }
+            } else if name_str == "wal.log" {
+                // Legacy WAL
+                wal_files.push((0, entry.path()));
             }
         }
+        wal_files.sort_by_key(|(ts, _)| *ts);
 
-        let wal = Wal::open_with_key_manager(wal_path, key_manager.clone()).await?;
         let memtable = MemTable::new();
-
-        // Replay WAL
-        let wal_entries = wal.replay().await?;
         let mut max_seq = 0u64;
         let mut max_tx = 0u64;
         let mut replayed_size = 0u64;
+        let mut last_wal = None;
 
-        for (lsn, entry, _offset) in &wal_entries {
-            if *lsn > max_seq {
-                max_seq = *lsn;
-            }
-            if entry.tx_id().inner() > max_tx {
-                // Ignore internal TxIds during recovery for user-facing last_tx_id
-                if entry.tx_id().inner() < TxId::INTERNAL_BASE {
+        for (_ts, wal_path) in &wal_files {
+            let wal = Wal::open_with_key_manager(wal_path, key_manager.clone()).await?;
+            let wal_entries = wal.replay().await?;
+
+            for (lsn, entry, _offset) in &wal_entries {
+                if *lsn > max_seq {
+                    max_seq = *lsn;
+                }
+                if entry.tx_id().inner() > max_tx && entry.tx_id().inner() < TxId::INTERNAL_BASE {
                     max_tx = entry.tx_id().inner();
                 }
-            }
-            match &entry.op {
-                WalOp::Put { key, value, tx_id } => {
-                    replayed_size += (key.len() + value.len()) as u64;
-                    memtable.put(
-                        Bytes::from(key.clone()),
-                        Bytes::from(value.clone()),
-                        *lsn,
-                        tx_id.inner(),
-                    );
+                match &entry.op {
+                    WalOp::Put { key, value, tx_id } => {
+                        replayed_size += (key.len() + value.len()) as u64;
+                        memtable.put(
+                            Bytes::from(key.clone()),
+                            Bytes::from(value.clone()),
+                            *lsn,
+                            tx_id.inner(),
+                        );
+                    }
+                    WalOp::Delete { key, tx_id } => {
+                        replayed_size += key.len() as u64;
+                        memtable.put(
+                            Bytes::from(key.clone()),
+                            Bytes::new(),
+                            *lsn | TOMBSTONE_BIT,
+                            tx_id.inner(),
+                        );
+                    }
                 }
-                WalOp::Delete { key, tx_id } => {
-                    replayed_size += key.len() as u64;
-                    memtable.put(
-                        Bytes::from(key.clone()),
-                        Bytes::new(),
-                        lsn | TOMBSTONE_BIT,
-                        tx_id.inner(),
-                    );
-                }
             }
+            last_wal = Some(wal);
         }
+
+        let wal = if let Some(w) = last_wal {
+            w
+        } else {
+            // No WAL found, create a new one
+            Wal::open_with_key_manager(config.path.join("wal.log"), key_manager.clone()).await?
+        };
 
         let budget_config = ResourceBudget {
             memory_limit: config.max_ram_mb * 1024 * 1024,
@@ -261,7 +267,7 @@ impl LsmStorage {
         let snapshot_registry = Arc::new(SnapshotRegistry::new());
 
         // Spawn background compaction task
-        // ANCHOR:TODO:COMP-001 — Implementiere CompactionEngine::run_loop.
+        // COMP-001 — Implementiere CompactionEngine::run_loop.
         // WP:WP-1.1 PRIO:1 NEEDS:NONE
         // AGENT:@JULES-02 DATE:2026-05-12 STATUS:REVIEW
         // TEST: cargo test -p memfuse-store test_concurrent_reads_during_compaction
@@ -272,15 +278,20 @@ impl LsmStorage {
             Arc::clone(&snapshot_registry),
             Arc::clone(&block_cache),
             key_manager.clone(),
+            Arc::clone(&resource_tracker),
         ));
         let compaction_sstables = Arc::clone(&sstables);
         let compaction_path = config.path.clone();
-        let (compaction_tx, compaction_rx) = tokio::sync::watch::channel(false);
-        tokio::spawn(async move {
+        let cancel_token = tokio_util::sync::CancellationToken::new();
+        let task_tracker = tokio_util::task::TaskTracker::new();
+        
+        let ct_clone = cancel_token.clone();
+        task_tracker.spawn(async move {
             compaction_engine
-                .run_loop(compaction_sstables, compaction_path, compaction_rx)
+                .run_loop(compaction_sstables, compaction_path, ct_clone)
                 .await;
         });
+        task_tracker.close();
 
         Ok(Self {
             config,
@@ -298,7 +309,8 @@ impl LsmStorage {
             next_seq_no: AtomicU64::new(max_seq.saturating_add(1)),
             last_committed_tx: AtomicU64::new(max_tx),
             commit_mutex: tokio::sync::Mutex::new(()),
-            _compaction_tx: compaction_tx,
+            cancel_token,
+            task_tracker,
         })
     }
 
@@ -309,7 +321,21 @@ impl LsmStorage {
 
     /// Signals the background compaction engine to stop.
     pub fn shutdown(&self) {
-        let _ = self._compaction_tx.send(true);
+        self.cancel_token.cancel();
+    }
+    
+    /// Waits for all spawned tasks to shut down fully.
+    pub async fn wait_shutdown(&self) {
+        self.shutdown();
+        self.task_tracker.wait().await;
+    }
+
+    /// Spawns a background task tracked by this storage instance.
+    pub fn spawn_tracked<F>(&self, future: F)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        self.task_tracker.spawn(future);
     }
 
     /// Rolls back the entire storage state to a specific transaction ID.
@@ -405,16 +431,29 @@ impl LsmStorage {
 impl StorageEngine for LsmStorage {
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let current_max_seq = self.next_seq_no.load(Ordering::Acquire);
-        self.get_at_seq(key, current_max_seq).await
+        let res = self.get_at_seq(key, current_max_seq).await?;
+        tracing::debug!(
+            "LsmStorage::get key={:?} seq={} found={}",
+            String::from_utf8_lossy(key),
+            current_max_seq,
+            res.is_some()
+        );
+        Ok(res)
     }
 
     async fn get_at_seq(&self, key: &[u8], seq_no: u64) -> Result<Option<Vec<u8>>> {
         let state = self.state.read().await;
         let last_tx = self.last_committed_tx.load(Ordering::Acquire);
+        tracing::debug!(
+            "LsmStorage::get_at_seq key={:?} seq={} last_tx={}",
+            String::from_utf8_lossy(key),
+            seq_no,
+            last_tx
+        );
 
         // 1. MemTable (only if seq_no in entry <= target seq_no AND tx_id <= last_tx)
         if let Some((val, seq, tx)) = state.memtable.get_at_seq(key, seq_no) {
-            if tx <= last_tx {
+            if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
                 if (seq & TOMBSTONE_BIT) != 0 {
                     return Ok(None);
                 }
@@ -436,15 +475,27 @@ impl StorageEngine for LsmStorage {
 
         // 3. SSTables (newest first, filtered by seq_no and last_tx)
         let sstables = self.sstables.read().await;
+        let last_tx = self.last_committed_tx.load(Ordering::Acquire);
         for sst in sstables.iter().rev() {
             // SSTables already only contain entries up to their last_key.
             // But we still need to check the entry's seq_no and tx_id.
             if let Some((val, seq, tx)) = sst.get(key).await? {
+                tracing::debug!(
+                    "LsmStorage::get_at_seq SSTable check: seq={} target_seq={} tx={} last_tx={}",
+                    seq & !TOMBSTONE_BIT,
+                    seq_no,
+                    tx,
+                    last_tx
+                );
                 if (seq & !TOMBSTONE_BIT) <= seq_no && tx <= last_tx {
                     if (seq & TOMBSTONE_BIT) != 0 {
+                        tracing::debug!("LsmStorage::get_at_seq FOUND TOMBSTONE");
                         return Ok(None);
                     }
+                    tracing::debug!("LsmStorage::get_at_seq MATCH found in SSTable");
                     return Ok(Some(val.to_vec()));
+                } else {
+                    tracing::debug!("LsmStorage::get_at_seq SKIPPED entry due to seq/tx filter");
                 }
             }
         }
@@ -571,8 +622,25 @@ impl StorageEngine for LsmStorage {
 
         // Update last committed transaction ID if it is not a system transaction
         if tx_id.inner() < TxId::INTERNAL_BASE {
-            self.last_committed_tx
-                .store(tx_id.inner(), Ordering::SeqCst);
+            let mut current = self.last_committed_tx.load(Ordering::Acquire);
+            while tx_id.inner() > current {
+                match self.last_committed_tx.compare_exchange_weak(
+                    current,
+                    tx_id.inner(),
+                    Ordering::SeqCst,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => {
+                        break;
+                    }
+                    Err(actual) => current = actual,
+                }
+            }
+            if tx_id.inner() <= current && tx_id.inner() != 0 {
+                // Already superseded
+            } else if tx_id.inner() == 0 {
+                tracing::warn!("LsmStorage::commit tx=0 called — ignoring visibility update to prevent blackout");
+            }
         }
 
         // Check if flush is needed
@@ -593,13 +661,13 @@ impl StorageEngine for LsmStorage {
         Self::rollback_to_tx(self, tx_id).await
     }
 
-    async fn pin_checkpoint(&self, _seq_no: u64) -> Result<()> {
-        // Placeholder for real pinning logic in SnapshotRegistry
+    async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
+        self.snapshot_registry.pin(seq_no);
         Ok(())
     }
 
-    async fn unpin_checkpoint(&self, _seq_no: u64) -> Result<()> {
-        // Placeholder for real unpinning logic in SnapshotRegistry
+    async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
+        self.snapshot_registry.unpin(seq_no);
         Ok(())
     }
 
@@ -642,14 +710,18 @@ impl StorageEngine for LsmStorage {
         for (k, v, seq, tx) in old_memtable.iter_latest() {
             builder.add(&k, &v, seq, tx).await?;
         }
-        builder.finish().await.map_err(|e| MemFuseError::Storage(format!("SSTable finish failed: {}", e)))?;
+        builder
+            .finish()
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("SSTable finish failed: {}", e)))?;
 
         let reader = SstableReader::open_with_key_manager(
             &sst_path,
             Arc::clone(&self.block_cache),
             self.key_manager.clone(),
         )
-        .await.map_err(|e| MemFuseError::Storage(format!("SSTable open after flush failed: {}", e)))?;
+        .await
+        .map_err(|e| MemFuseError::Storage(format!("SSTable open after flush failed: {}", e)))?;
 
         // Atomic transition: remove from immutable memtables and add to SSTables
         let mut state = self.state.write().await;
@@ -658,7 +730,27 @@ impl StorageEngine for LsmStorage {
         state
             .immutable_memtables
             .retain(|mt| !Arc::ptr_eq(mt, &old_memtable));
+
+        // Update last_committed_tx if the SSTable contains newer committed transactions
+        // WP:WP-0.0 PRIO:1 NEEDS:NONE
+        // FIX: Extract max_tx_id before move to satisfy borrow checker.
+        let sst_max_tx = reader.metadata().max_tx_id;
         sstables.push(Arc::new(reader));
+
+        if sst_max_tx < TxId::INTERNAL_BASE {
+            let mut current = self.last_committed_tx.load(Ordering::Acquire);
+            while sst_max_tx > current {
+                match self.last_committed_tx.compare_exchange_weak(
+                    current,
+                    sst_max_tx,
+                    Ordering::SeqCst,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => break,
+                    Err(actual) => current = actual,
+                }
+            }
+        }
 
         drop(sstables);
         drop(state);
@@ -769,6 +861,7 @@ impl StorageEngine for LsmStorage {
         let mut map = std::collections::BTreeMap::<Vec<u8>, (Vec<u8>, u64)>::new();
         let state = self.state.read().await;
         let sstables = self.sstables.read().await;
+        let last_tx = self.last_committed_tx.load(Ordering::Acquire);
 
         // 1. SSTables (oldest first → newer entries overwrite)
         for sst in sstables.iter() {
@@ -783,7 +876,10 @@ impl StorageEngine for LsmStorage {
 
         // 2. Immutable memtables (older → newer)
         for mt in &state.immutable_memtables {
-            for (k, v, seq, _tx) in mt.iter() {
+            for (k, v, seq, tx) in mt.iter() {
+                if tx > last_tx && tx < TxId::INTERNAL_BASE {
+                    continue;
+                }
                 let in_range = match start {
                     Bound::Included(s) => k.as_ref() >= s,
                     Bound::Excluded(s) => k.as_ref() > s,
@@ -803,7 +899,10 @@ impl StorageEngine for LsmStorage {
         }
 
         // 3. Active memtable (newest, always wins on tie)
-        for (k, v, seq, _tx) in state.memtable.iter() {
+        for (k, v, seq, tx) in state.memtable.iter() {
+            if tx > last_tx && tx < TxId::INTERNAL_BASE {
+                continue;
+            }
             let in_range = match start {
                 Bound::Included(s) => k.as_ref() >= s,
                 Bound::Excluded(s) => k.as_ref() > s,
@@ -1133,5 +1232,70 @@ mod tests {
         );
         assert_eq!(storage.get(b"k3").await.unwrap(), None);
         assert_eq!(storage.get(b"k4").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn test_pin_unpin_checkpoint_prevents_gc() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024,
+            max_ram_mb: 64,
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig {
+                min_sstables_per_tier: 2,
+                size_ratio: 4.0,
+                check_interval: Duration::from_secs(30),
+                yield_threshold: 1000,
+                max_memory_bytes: Some(1024 * 1024),
+            },
+            encryption_passphrase: None,
+        };
+        let storage = LsmStorage::new(config.clone())
+            .await
+            .expect("create storage");
+
+        // 1. Insert and commit data
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key1", b"val1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+        let seq1 = storage.last_seq_no().await.unwrap();
+
+        // 2. Pin seq1
+        storage.pin_checkpoint(seq1).await.expect("pin");
+
+        // 3. Delete key1 and commit
+        let tx2 = TxId::new(2);
+        storage.delete(tx2, b"key1").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+
+        // 4. Force flush and compaction
+        storage.force_flush().await.unwrap();
+
+        let engine = CompactionEngine::new(
+            config.compaction.clone(),
+            storage.snapshot_registry.clone(),
+            storage.block_cache.clone(),
+            storage.key_manager.clone(),
+            Arc::clone(&storage.budget),
+        );
+
+        engine
+            .maybe_compact(&storage.sstables, &storage.config.path)
+            .await
+            .expect("compact");
+
+        // 5. Verify min_active_seqno is correct
+        assert_eq!(storage.snapshot_registry.min_active_seqno(), seq1);
+
+        // 6. Unpin
+        storage.unpin_checkpoint(seq1).await.expect("unpin");
+        assert_eq!(storage.snapshot_registry.min_active_seqno(), u64::MAX);
+
+        // 7. Compact again
+        engine
+            .maybe_compact(&storage.sstables, &storage.config.path)
+            .await
+            .unwrap();
     }
 }

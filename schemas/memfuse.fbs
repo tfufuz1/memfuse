@@ -1,0 +1,28 @@
+namespace MemFuse.IPC;
+
+table Embedding {
+  data: [float];
+  quantized_u8: [ubyte];
+  metric: byte; // 0: Cosine, 1: Euclidean, 2: DotProduct
+}
+
+table ScoredDocument {
+  id: string;
+  score: float;
+  metadata: string; // JSON encoded for flexibility
+  embedding: Embedding;
+}
+
+table SearchResponse {
+  results: [ScoredDocument];
+  total_hits: uint;
+  processing_time_ms: float;
+}
+
+table VectorIndexUpdate {
+  id: string;
+  embedding: Embedding;
+  metadata: string;
+}
+
+root_type SearchResponse;

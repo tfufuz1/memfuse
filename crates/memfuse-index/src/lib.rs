@@ -17,7 +17,6 @@
 // ANCHOR:AUDIT:SEC-002 — deny(unsafe_code) statt forbid(unsafe_code)
 // BEGRÜNDUNG: SIMD-Intrinsics in distance.rs benötigen unsafe für Performance.
 #![deny(unsafe_code)]
-// TODO(FIND-IDX-001): SIMD Safety - Add #![forbid(unsafe_code)] exception safely and audit missing Safety comments in distance.rs.
 
 pub mod diskann;
 pub mod distance;

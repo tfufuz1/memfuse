@@ -41,8 +41,10 @@ impl OrchestratorEngine {
             match node.node_type {
                 NodeType::End => {
                     ctx.status = crate::context::AgentStatus::Completed;
-                    self.checkpoint(ctx).await?;
+                    // Persist final state before last checkpoint (FIND-SAOS-001)
                     self.persist_final_state(ctx).await?;
+                    ctx.db.inner_storage().flush().await?; // Ensure durability
+                    self.checkpoint(ctx).await?;
                     return Ok(());
                 }
                 NodeType::Start | NodeType::Task => {

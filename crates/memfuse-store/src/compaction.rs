@@ -40,6 +40,8 @@ pub struct CompactionConfig {
     pub check_interval: Duration,
     /// Yield execution after this many entries during merge.
     pub yield_threshold: usize,
+    /// Maximum memory (in bytes) to use for in-memory buffering during merge.
+    pub max_memory_bytes: Option<u64>,
 }
 
 impl Default for CompactionConfig {
@@ -49,6 +51,7 @@ impl Default for CompactionConfig {
             size_ratio: 4.0,
             check_interval: Duration::from_secs(30),
             yield_threshold: 1000,
+            max_memory_bytes: Some(128 * 1024 * 1024), // 128MB budget by default
         }
     }
 }
@@ -62,6 +65,7 @@ pub struct CompactionEngine {
     snapshot_registry: Arc<SnapshotRegistry>,
     block_cache: Arc<BlockCache>,
     key_manager: Option<Arc<KeyManager>>,
+    budget: Arc<memfuse_core::ResourceTracker>,
 }
 
 impl CompactionEngine {
@@ -71,12 +75,14 @@ impl CompactionEngine {
         snapshot_registry: Arc<SnapshotRegistry>,
         block_cache: Arc<BlockCache>,
         key_manager: Option<Arc<KeyManager>>,
+        budget: Arc<memfuse_core::ResourceTracker>,
     ) -> Self {
         Self {
             config,
             snapshot_registry,
             block_cache,
             key_manager,
+            budget,
         }
     }
 
@@ -298,6 +304,12 @@ impl CompactionEngine {
         while let Some(item) = heap.pop() {
             processed_count += 1;
             if processed_count % self.config.yield_threshold == 0 {
+                // FIND-STO-002: Budgeted Compaction
+                // Apply memory backpressure to prevent Compaction from OOMing the system
+                while !self.budget.has_memory_capacity() {
+                    tracing::warn!("Compaction engine paused due to memory budget exhaustion.");
+                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                }
                 tokio::task::yield_now().await;
             }
 
@@ -359,11 +371,11 @@ impl CompactionEngine {
         self: Arc<Self>,
         sstables: Arc<RwLock<Vec<Arc<SstableReader>>>>,
         data_path: PathBuf,
-        mut shutdown: tokio::sync::watch::Receiver<bool>,
+        shutdown: tokio_util::sync::CancellationToken,
     ) {
         loop {
             // Check for shutdown signal
-            if *shutdown.borrow_and_update() {
+            if shutdown.is_cancelled() {
                 tracing::info!("Compaction engine received shutdown signal");
                 break;
             }
@@ -383,7 +395,7 @@ impl CompactionEngine {
                         }
                     }
                 }
-                _ = shutdown.changed() => {
+                _ = shutdown.cancelled() => {
                     tracing::info!("Compaction engine shutting down via signal");
                     break;
                 }
@@ -419,8 +431,17 @@ mod tests {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
-        let engine =
-            CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc), None);
+        let engine = CompactionEngine::new(
+            CompactionConfig::default(),
+            registry,
+            Arc::clone(&bc),
+            None,
+            Arc::new(memfuse_core::ResourceTracker::new(
+                memfuse_core::ResourceBudget {
+                    memory_limit: 1024 * 1024,
+                },
+            )),
+        );
 
         // Two SSTables with overlapping keys
         let sst1 = create_test_sstable(
@@ -462,8 +483,17 @@ mod tests {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
-        let engine =
-            CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc), None);
+        let engine = CompactionEngine::new(
+            CompactionConfig::default(),
+            registry,
+            Arc::clone(&bc),
+            None,
+            Arc::new(memfuse_core::ResourceTracker::new(
+                memfuse_core::ResourceBudget {
+                    memory_limit: 1024 * 1024,
+                },
+            )),
+        );
 
         let tombstone_seq = 5 | TOMBSTONE_BIT;
         let sst1 = create_test_sstable(
@@ -496,8 +526,17 @@ mod tests {
         let tmp = TempDir::new().expect("temp dir");
         let registry = Arc::new(SnapshotRegistry::new());
         let bc = create_block_cache(1);
-        let engine =
-            CompactionEngine::new(CompactionConfig::default(), registry, Arc::clone(&bc), None);
+        let engine = CompactionEngine::new(
+            CompactionConfig::default(),
+            registry,
+            Arc::clone(&bc),
+            None,
+            Arc::new(memfuse_core::ResourceTracker::new(
+                memfuse_core::ResourceBudget {
+                    memory_limit: 1024 * 1024,
+                },
+            )),
+        );
 
         let tombstone_seq = 5 | TOMBSTONE_BIT;
         let sst1 = create_test_sstable(
@@ -531,11 +570,19 @@ mod tests {
         let bc = create_block_cache(1);
         let config = CompactionConfig {
             min_sstables_per_tier: 2, // Low threshold for testing
-            size_ratio: 4.0,
-            check_interval: Duration::from_secs(30),
-            yield_threshold: 1000,
+            ..Default::default()
         };
-        let engine = CompactionEngine::new(config, registry, Arc::clone(&bc), None);
+        let engine = CompactionEngine::new(
+            config,
+            registry,
+            Arc::clone(&bc),
+            None,
+            Arc::new(memfuse_core::ResourceTracker::new(
+                memfuse_core::ResourceBudget {
+                    memory_limit: 1024 * 1024,
+                },
+            )),
+        );
 
         // Create 3 small SSTables of similar size
         let sstables = Arc::new(RwLock::new(Vec::new()));
@@ -591,11 +638,19 @@ mod tests {
         let bc = create_block_cache(1);
         let config = CompactionConfig {
             min_sstables_per_tier: 4,
-            size_ratio: 4.0,
-            check_interval: Duration::from_secs(30),
-            yield_threshold: 1000,
+            ..Default::default()
         };
-        let engine = CompactionEngine::new(config, registry, Arc::clone(&bc), None);
+        let engine = CompactionEngine::new(
+            config,
+            registry,
+            Arc::clone(&bc),
+            None,
+            Arc::new(memfuse_core::ResourceTracker::new(
+                memfuse_core::ResourceBudget {
+                    memory_limit: 1024 * 1024,
+                },
+            )),
+        );
 
         let sstables = Arc::new(RwLock::new(Vec::new()));
         for i in 0..2u8 {
@@ -634,6 +689,7 @@ mod tests {
                 size_ratio: 2.0,
                 check_interval: Duration::from_millis(100), // Fast check
                 yield_threshold: 100,
+                max_memory_bytes: Some(128 * 1024 * 1024),
             },
             encryption_passphrase: None,
         };
@@ -756,8 +812,19 @@ mod tests {
             size_ratio: 2.0,
             check_interval: std::time::Duration::from_millis(10),
             yield_threshold: 100,
+            max_memory_bytes: None,
         };
-        let engine = Arc::new(CompactionEngine::new(config, registry, bc, None));
+        let engine = Arc::new(CompactionEngine::new(
+            config,
+            registry,
+            bc,
+            None,
+            Arc::new(memfuse_core::ResourceTracker::new(
+                memfuse_core::ResourceBudget {
+                    memory_limit: 1024 * 1024,
+                },
+            )),
+        ));
         let sstables = Arc::new(tokio::sync::RwLock::new(Vec::new()));
         let tmp = tempfile::TempDir::new().unwrap();
 

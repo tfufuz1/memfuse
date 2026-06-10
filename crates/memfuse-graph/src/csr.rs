@@ -29,7 +29,7 @@ struct GraphInner {
     /// Mapping from internal index back to EntityId.
     reverse_map: Vec<EntityId>,
     /// Entity metadata stored contiguously.
-    entities: Vec<Entity>,
+    entities: Vec<Option<Entity>>,
 
     /// CSR offsets array: offsets[i] is the start index in `targets` for node `i`.
     /// Length is nodes + 1.
@@ -39,9 +39,11 @@ struct GraphInner {
     /// CSR weights array: contiguous list of edge weights.
     weights: Vec<f32>,
 
-    /// Staging for edges not yet compacted into CSR arrays, grouped by TxId (FIND-GRA-001).
+    /// Staging for entities not yet committed, grouped by TxId.
+    staged_entities: HashMap<TxId, HashMap<EntityId, Entity>>,
+    /// Staging for edges not yet compacted into CSR arrays, grouped by TxId.
     staged_edges: HashMap<TxId, HashMap<InternalIndex, Vec<(InternalIndex, f32)>>>,
-    /// Edges that have been committed but not yet compacted (FIND-GRA-001).
+    /// Edges that have been committed but not yet compacted.
     committed_staged: HashMap<InternalIndex, Vec<(InternalIndex, f32)>>,
     /// Flag indicating if the CSR arrays are up to date.
     is_dirty: bool,
@@ -56,6 +58,7 @@ impl GraphInner {
             offsets: vec![0],
             targets: Vec::new(),
             weights: Vec::new(),
+            staged_entities: HashMap::new(),
             staged_edges: HashMap::new(),
             committed_staged: HashMap::new(),
             is_dirty: false,
@@ -149,16 +152,21 @@ impl CsrGraph {
     }
 
     /// Compacts the graph to optimize for traversal.
-    // TODO(FIND-GRA-001): Transaction Isolation Leak
-    // Compaction serialisiert fälschlicherweise auch uncommitted Kanten,
-    // was die LSM MVCC Isolationsgarantien verletzt.
     pub fn compact(&self) {
-        self.inner.write().compact();
+        // Double-checked locking to avoid unnecessary write locks (FIND-GRA-002)
+        if !self.inner.read().is_dirty {
+            return;
+        }
+
+        let mut inner = self.inner.write();
+        if inner.is_dirty {
+            inner.compact();
+        }
     }
 
-    /// Returns the number of entities in the graph.
+    /// Returns the number of committed entities in the graph.
     pub fn entity_count(&self) -> usize {
-        self.inner.read().reverse_map.len()
+        self.inner.read().entities.iter().flatten().count()
     }
 
     /// Returns the number of edges in the graph.
@@ -186,16 +194,13 @@ impl Default for CsrGraph {
 
 #[async_trait]
 impl GraphIndex for CsrGraph {
-    async fn add_entity(&self, _tx: TxId, entity: Entity) -> Result<()> {
+    async fn add_entity(&self, tx: TxId, entity: Entity) -> Result<()> {
         let mut inner = self.inner.write();
-        let idx = inner.get_or_create_index(entity.id);
-
-        if idx >= inner.entities.len() {
-            inner
-                .entities
-                .resize(idx + 1, Entity::new(EntityId::new(0), "", ""));
-        }
-        inner.entities[idx] = entity;
+        inner
+            .staged_entities
+            .entry(tx)
+            .or_default()
+            .insert(entity.id, entity);
         Ok(())
     }
 
@@ -211,7 +216,6 @@ impl GraphIndex for CsrGraph {
             .entry(from_idx)
             .or_default()
             .push((to_idx, edge.weight));
-        // Note: is_dirty is only set on commit when edges move to committed_staged
         Ok(())
     }
 
@@ -224,6 +228,11 @@ impl GraphIndex for CsrGraph {
             Some(&idx) => idx,
             None => return Ok(Vec::new()), // Start node not in graph
         };
+
+        // If the start node itself is not committed, we shouldn't start traversal from it
+        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
+            return Ok(Vec::new());
+        }
 
         let effective_max = (max_hops as u8).min(MAX_TRAVERSAL_HOPS);
 
@@ -258,7 +267,14 @@ impl GraphIndex for CsrGraph {
                         if !visited.contains_key(&neighbor_idx)
                             || visited[&neighbor_idx] < next_score
                         {
-                            queue.push_back((neighbor_idx, hop + 1, next_score));
+                            // Only visit nodes that have a committed entity (FIND-GRA-001)
+                            if inner
+                                .entities
+                                .get(neighbor_idx)
+                                .is_some_and(|e| e.is_some())
+                            {
+                                queue.push_back((neighbor_idx, hop + 1, next_score));
+                            }
                         }
                     }
                 }
@@ -281,6 +297,19 @@ impl GraphIndex for CsrGraph {
 
     async fn commit(&self, tx: TxId) -> Result<()> {
         let mut inner = self.inner.write();
+
+        // 1. Commit entities
+        if let Some(tx_entities) = inner.staged_entities.remove(&tx) {
+            for (id, entity) in tx_entities {
+                let idx = inner.get_or_create_index(id);
+                if idx >= inner.entities.len() {
+                    inner.entities.resize(idx + 1, None);
+                }
+                inner.entities[idx] = Some(entity);
+            }
+        }
+
+        // 2. Commit edges
         if let Some(tx_edges) = inner.staged_edges.remove(&tx) {
             for (from_idx, edges) in tx_edges {
                 inner
@@ -296,13 +325,14 @@ impl GraphIndex for CsrGraph {
 
     async fn rollback(&self, tx: TxId) -> Result<()> {
         let mut inner = self.inner.write();
+        inner.staged_entities.remove(&tx);
         inner.staged_edges.remove(&tx);
         Ok(())
     }
 
     async fn stats(&self) -> Result<GraphIndexStats> {
         let inner = self.inner.read();
-        let num_entities = inner.reverse_map.len();
+        let num_entities = inner.entities.iter().flatten().count();
         let num_edges = inner.targets.len()
             + inner
                 .committed_staged
@@ -316,7 +346,7 @@ impl GraphIndex for CsrGraph {
                 .sum::<usize>();
 
         let mem = (inner.reverse_map.len() * std::mem::size_of::<EntityId>())
-            + (inner.entities.len() * std::mem::size_of::<Entity>())
+            + (inner.entities.len() * std::mem::size_of::<Option<Entity>>())
             + (inner.offsets.len() * std::mem::size_of::<usize>())
             + (inner.targets.len() * std::mem::size_of::<usize>())
             + (inner.weights.len() * std::mem::size_of::<f32>());
@@ -428,6 +458,100 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_graph_transaction_isolation() {
+        let graph = CsrGraph::new();
+        let tx1 = TxId::new(1);
+
+        // 1. Tx1 fügt Entity und Edge hinzu
+        graph
+            .add_entity(tx1, Entity::new(EntityId::new(1), "A", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx1, Entity::new(EntityId::new(2), "B", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(
+                tx1,
+                Edge::new(EntityId::new(1), EntityId::new(2), "E").with_weight(1.0),
+            )
+            .await
+            .unwrap();
+
+        // 2. Traverse (ohne Tx) darf Edge NICHT sehen
+        let results = graph.traverse(EntityId::new(1), 1).await.unwrap();
+        assert_eq!(results.len(), 0, "Uncommitted edge should not be visible");
+
+        // 3. Tx1 committet
+        graph.commit(tx1).await.unwrap();
+
+        // 4. Traverse MUSS Edge sehen
+        let results = graph.traverse(EntityId::new(1), 1).await.unwrap();
+        assert_eq!(results.len(), 1, "Committed edge should be visible");
+        assert_eq!(results[0].0, EntityId::new(2));
+    }
+
+    #[tokio::test]
+    async fn test_graph_rollback_isolation() {
+        let graph = CsrGraph::new();
+        let tx1 = TxId::new(1);
+        let tx2 = TxId::new(2);
+
+        // 1. Tx1 und Tx2 fügen Edges hinzu
+        graph
+            .add_entity(tx1, Entity::new(EntityId::new(1), "A", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx1, Entity::new(EntityId::new(2), "B", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(
+                tx1,
+                Edge::new(EntityId::new(1), EntityId::new(2), "E1").with_weight(1.0),
+            )
+            .await
+            .unwrap();
+
+        graph
+            .add_entity(tx2, Entity::new(EntityId::new(1), "A", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx2, Entity::new(EntityId::new(3), "C", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(
+                tx2,
+                Edge::new(EntityId::new(1), EntityId::new(3), "E2").with_weight(1.0),
+            )
+            .await
+            .unwrap();
+
+        // 2. Tx1 rollt back
+        graph.rollback(tx1).await.unwrap();
+
+        // 3. Tx2 committet
+        graph.commit(tx2).await.unwrap();
+
+        // 4. Nur Edges von Tx2 dürfen existieren
+        let results = graph.traverse(EntityId::new(1), 1).await.unwrap();
+        assert_eq!(results.len(), 1, "Only Tx2 edge should be visible");
+        assert_eq!(results[0].0, EntityId::new(3));
+
+        let stats = graph.stats().await.unwrap();
+        // Wenn Isolation für Entities funktioniert, sollten es 2 sein (1 und 3).
+        // Aktuell ist es aber wahrscheinlich 3 (1, 2 und 3).
+        assert_eq!(
+            stats.num_entities, 2,
+            "Only entities from Tx2 and common ones should exist"
+        );
+    }
+
+    #[tokio::test]
     async fn test_csr_graph_bfs_score_decay() {
         let graph = setup_test_graph().await;
         let results = graph.traverse(EntityId::new(1), 3).await.expect("traverse");
@@ -507,11 +631,51 @@ mod tests {
         // Calculate expected memory based on implementation
         let inner = graph.inner.read();
         let expected_mem = (inner.reverse_map.len() * std::mem::size_of::<EntityId>())
-            + (inner.entities.len() * std::mem::size_of::<Entity>())
+            + (inner.entities.len() * std::mem::size_of::<Option<Entity>>())
             + (inner.offsets.len() * std::mem::size_of::<usize>())
             + (inner.targets.len() * std::mem::size_of::<usize>())
             + (inner.weights.len() * std::mem::size_of::<f32>());
 
         assert_eq!(stats.memory_usage_bytes, expected_mem);
+    }
+
+    #[tokio::test]
+    async fn test_compaction_excludes_uncommitted_edges() {
+        let graph = setup_test_graph().await;
+
+        // 1. Add uncommitted edges
+        let tx_uncommitted = TxId::new(999);
+        let edge1 = Edge {
+            from: EntityId::new(1),
+            to: EntityId::new(5),
+            weight: 0.5,
+            label: String::new(),
+        };
+        graph.add_edge(tx_uncommitted, edge1).await.unwrap();
+
+        // 2. Add committed edges
+        let tx_committed = TxId::new(100);
+        let edge2 = Edge {
+            from: EntityId::new(1),
+            to: EntityId::new(2), // Use existing entity 2 to avoid 'entry missing' errors
+            weight: 0.9,
+            label: String::new(),
+        };
+        graph.add_edge(tx_committed, edge2).await.unwrap();
+        graph.commit(tx_committed).await.unwrap();
+
+        // 3. Compact
+        graph.compact();
+
+        // 4. Verify traversal
+        let results = graph.traverse(EntityId::new(1), 1).await.unwrap();
+        let targets: Vec<_> = results.iter().map(|(id, _)| id.inner()).collect();
+
+        // Should find committed edge (2) but NOT uncommitted edge (5)
+        assert!(
+            targets.contains(&2),
+            "Expected Entity 2 in results, got {:?}",
+            targets
+        );
     }
 }

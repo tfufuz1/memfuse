@@ -529,6 +529,12 @@ pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
     debug_assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
+        if is_x86_feature_detected!("avx512vnni") {
+            // ANCHOR:SAFETY:SIMD-U8-020 — AVX-512 VNNI Dispatch.
+            // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
+            // SAFETY: Hardware support detected.
+            return unsafe { dot_product_u8_avx512vnni(a, b) };
+        }
         if is_x86_feature_detected!("avx2") {
             // ANCHOR:SAFETY:SIMD-U8-014 — AVX2 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
@@ -553,6 +559,12 @@ pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
     debug_assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
+        if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512bw") {
+            // ANCHOR:SAFETY:SIMD-U8-022 — AVX-512 Dispatch.
+            // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
+            // SAFETY: Hardware support detected.
+            return unsafe { euclidean_distance_sq_u8_avx512(a, b) };
+        }
         if is_x86_feature_detected!("avx2") {
             // ANCHOR:SAFETY:SIMD-U8-015 — AVX2 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
@@ -590,6 +602,12 @@ pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8
     debug_assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
+        if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512bw") && is_x86_feature_detected!("avx512vnni") {
+            // ANCHOR:SAFETY:SIMD-U8-023 — AVX-512 VNNI Dispatch.
+            // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
+            // SAFETY: Hardware support detected.
+            return unsafe { cosine_similarity_parts_u8_avx512(a, b) };
+        }
         if is_x86_feature_detected!("avx2") {
             // ANCHOR:SAFETY:SIMD-U8-016 — AVX2 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
@@ -669,6 +687,189 @@ pub fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPa
         dot_f32_u8,
         sum_u8,
         norm_u8_sq,
+    }
+}
+
+// -----------------------------------------------------------------------------
+// AVX-512 VNNI Implementations for u8
+// -----------------------------------------------------------------------------
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512vnni")]
+#[allow(unsafe_code)]
+// ANCHOR:SAFETY:SIMD-U8-021 — AVX-512 VNNI Dot Product for u8.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+/// # Safety
+/// This function is unsafe because it uses AVX-512 VNNI intrinsics. The caller must ensure that the CPU supports AVX-512 VNNI.
+pub unsafe fn dot_product_u8_avx512vnni(a: &[u8], b: &[u8]) -> u32 {
+    let n = a.len();
+    let mut i = 0;
+    // SAFETY: _mm512_setzero_si512 is always safe.
+    let mut sum_v = _mm512_setzero_si512();
+
+    while i + 64 <= n {
+        // SAFETY: Pointer arithmetic and unaligned loads are safe due to i + 64 <= n.
+        // VNNI instruction is safe on hardware detected by caller.
+        unsafe {
+            let va = _mm512_loadu_si512(a.as_ptr().add(i) as *const _);
+            let vb = _mm512_loadu_si512(b.as_ptr().add(i) as *const _);
+            sum_v = _mm512_dpbusd_epi32(sum_v, va, vb);
+        }
+        i += 64;
+    }
+
+    // SAFETY: hsum512_epi32_avx512 is called within an AVX-512 enabled context.
+    let mut sum = unsafe { hsum512_epi32_avx512(sum_v) } as u32;
+    while i < n {
+        sum += a[i] as u32 * b[i] as u32;
+        i += 1;
+    }
+    sum
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512bw")]
+#[allow(unsafe_code)]
+// ANCHOR:SAFETY:SIMD-U8-024 — AVX-512 Euclidean Squared for u8.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+/// # Safety
+/// This function is unsafe because it uses AVX-512 intrinsics. The caller must ensure that the CPU supports AVX-512F and AVX-512BW.
+pub unsafe fn euclidean_distance_sq_u8_avx512(a: &[u8], b: &[u8]) -> u32 {
+    let n = a.len();
+    let mut i = 0;
+    // SAFETY: _mm512_setzero_si512 is always safe.
+    let mut sum_v = _mm512_setzero_si512();
+
+    while i + 64 <= n {
+        // SAFETY: Pointer arithmetic and unaligned loads are safe due to i + 64 <= n.
+        unsafe {
+            let va = _mm512_loadu_si512(a.as_ptr().add(i) as *const _);
+            let vb = _mm512_loadu_si512(b.as_ptr().add(i) as *const _);
+
+            // Split 64 u8 into four 16 i16 or two 32 i16
+            // AVX-512BW provides cvtepu8_epi16 to 512-bit
+            let va_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(va));
+            let va_hi = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(va, 1));
+            let vb_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(vb));
+            let vb_hi = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(vb, 1));
+
+            let diff_lo = _mm512_sub_epi16(va_lo, vb_lo);
+            let diff_hi = _mm512_sub_epi16(va_hi, vb_hi);
+
+            sum_v = _mm512_add_epi32(sum_v, _mm512_madd_epi16(diff_lo, diff_lo));
+            sum_v = _mm512_add_epi32(sum_v, _mm512_madd_epi16(diff_hi, diff_hi));
+        }
+        i += 64;
+    }
+
+    // SAFETY: hsum512_epi32_avx512 is called within an AVX-512 enabled context.
+    let mut sum = unsafe { hsum512_epi32_avx512(sum_v) } as u32;
+    while i < n {
+        let diff = a[i] as i32 - b[i] as i32;
+        sum += (diff * diff) as u32;
+        i += 1;
+    }
+    sum
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512bw")]
+#[target_feature(enable = "avx512vnni")]
+#[allow(unsafe_code)]
+// ANCHOR:SAFETY:SIMD-U8-025 — AVX-512 VNNI Cosine Similarity Parts for u8.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+/// # Safety
+/// This function is unsafe because it uses AVX-512 VNNI intrinsics. The caller must ensure that the CPU supports AVX-512F, BW, and VNNI.
+pub unsafe fn cosine_similarity_parts_u8_avx512(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
+    let n = a.len();
+    let mut i = 0;
+    // SAFETY: _mm512_setzero_si512 is always safe.
+    let (mut dot_v, mut sum_a_v, mut sum_b_v, mut norm_a_v, mut norm_b_v) = (
+        _mm512_setzero_si512(),
+        _mm512_setzero_si512(),
+        _mm512_setzero_si512(),
+        _mm512_setzero_si512(),
+        _mm512_setzero_si512(),
+    );
+
+    while i + 64 <= n {
+        // SAFETY: Pointer arithmetic and unaligned loads are safe due to i + 64 <= n.
+        unsafe {
+            let va = _mm512_loadu_si512(a.as_ptr().add(i) as *const _);
+            let vb = _mm512_loadu_si512(b.as_ptr().add(i) as *const _);
+
+            dot_v = _mm512_dpbusd_epi32(dot_v, va, vb);
+            norm_a_v = _mm512_dpbusd_epi32(norm_a_v, va, va);
+            norm_b_v = _mm512_dpbusd_epi32(norm_b_v, vb, vb);
+
+            let zero = _mm512_setzero_si512();
+            sum_a_v = _mm512_add_epi64(sum_a_v, _mm512_sad_epu8(va, zero));
+            sum_b_v = _mm512_add_epi64(sum_b_v, _mm512_sad_epu8(vb, zero));
+        }
+        i += 64;
+    }
+
+    // SAFETY: Horizontal sums are safe on AVX-512.
+    let (mut dot, mut norm_a_sq, mut norm_b_sq, mut sum_a, mut sum_b) = unsafe {
+        (
+            hsum512_epi32_avx512(dot_v) as u32,
+            hsum512_epi32_avx512(norm_a_v) as u32,
+            hsum512_epi32_avx512(norm_b_v) as u32,
+            hsum512_epi64_avx512(sum_a_v) as u32,
+            hsum512_epi64_avx512(sum_b_v) as u32,
+        )
+    };
+
+    while i < n {
+        let xu = a[i] as u32;
+        let yu = b[i] as u32;
+        dot += xu * yu;
+        sum_a += xu;
+        sum_b += yu;
+        norm_a_sq += xu * xu;
+        norm_b_sq += yu * yu;
+        i += 1;
+    }
+
+    CosineSimilarityPartsU8 {
+        dot,
+        sum_a,
+        sum_b,
+        norm_a_sq,
+        norm_b_sq,
+    }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx512f")]
+#[allow(unsafe_code)]
+// ANCHOR:SAFETY:SIMD-U8-026 — Horizontal Sum epi64 AVX-512.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+unsafe fn hsum512_epi64_avx512(v: __m512i) -> i64 {
+    // SAFETY: Standard AVX-512 to AVX2 reduction is safe on supported hardware.
+    unsafe {
+        let low = _mm512_castsi512_si256(v);
+        let high = _mm512_extracti64x4_epi64(v, 1);
+        let sum256 = _mm256_add_epi64(low, high);
+        hsum256_epi64_avx2(sum256)
+    }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx512f")]
+#[allow(unsafe_code)]
+// ANCHOR:SAFETY:SIMD-U8-022 — Horizontal Sum epi32 AVX-512.
+// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
+unsafe fn hsum512_epi32_avx512(v: __m512i) -> i32 {
+    // SAFETY: Standard AVX-512 to AVX2 reduction is safe on supported hardware.
+    unsafe {
+        let low = _mm512_castsi512_si256(v);
+        let high = _mm512_extracti32x8_epi32(v, 1);
+        let sum256 = _mm256_add_epi32(low, high);
+        hsum256_epi32_avx2(sum256)
     }
 }
 
@@ -929,6 +1130,11 @@ mod tests {
         let dot_scalar = dot_product_u8(&a, &b);
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
+            if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512vnni") {
+                // SAFETY: Hardware support detected.
+                let dot_simd = unsafe { dot_product_u8_avx512vnni(&a, &b) };
+                assert_eq!(dot_scalar, dot_simd);
+            }
             if is_x86_feature_detected!("avx2") {
                 // ANCHOR:SAFETY:SIMD-U8-TEST-001 — AVX2 Test Dispatch.
                 // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.

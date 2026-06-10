@@ -48,8 +48,10 @@
 #![forbid(unsafe_code)]
 
 use memfuse_core::{DocId, Result, StorageEngine, TxId};
+use memfuse_embed::TextEmbedder;
 use memfuse_index::{HnswConfig, HnswIndex};
 use memfuse_store::LsmStorage;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -58,6 +60,10 @@ use std::sync::Arc;
 pub mod chunker;
 pub mod collection;
 pub mod context;
+
+use async_trait::async_trait;
+use memfuse_sandbox::SandboxBridge;
+// mod Collection is used via pub mod collection
 pub mod filter;
 pub mod fusion;
 pub mod reaper;
@@ -68,7 +74,7 @@ pub use filter::MetadataFilter;
 pub use memfuse_checkpoint;
 
 /// User-facing search result containing the ID, score, and optional metadata.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
     /// The string ID provided during insert.
     pub id: String,
@@ -78,22 +84,22 @@ pub struct SearchResult {
     pub metadata: Option<Value>,
 }
 
-/// Overall database statistics.
-#[derive(Debug, Clone)]
-pub struct DbStats {
-    /// Statistics for the vector index.
-    pub index_stats: memfuse_core::VectorIndexStats,
-    /// Statistics for the LSM storage engine.
-    pub storage_stats: memfuse_core::StorageStats,
-}
-
 /// User-facing document structure.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {
     /// The string ID.
     pub id: String,
     /// Metadata associated with the document.
     pub metadata: Option<Value>,
+}
+
+/// Overall database statistics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DbStats {
+    /// Statistics for the vector index.
+    pub index_stats: memfuse_core::VectorIndexStats,
+    /// Statistics for the LSM storage engine.
+    pub storage_stats: memfuse_core::StorageStats,
 }
 
 /// Global configuration settings for the MemFuse database.
@@ -130,20 +136,22 @@ pub struct MemFuse {
     next_tx: Arc<AtomicU64>,
     dimension: usize,
     collections: tokio::sync::RwLock<std::collections::HashMap<String, Collection<LsmStorage>>>,
+    /// Optional Raft handle for cluster replication.
+    raft: tokio::sync::OnceCell<memfuse_cluster::node::MemFuseRaft>,
+    /// Global text embedder for default collection.
+    embedder: std::sync::RwLock<Option<Arc<TextEmbedder>>>,
 }
 
 // BL-01-DB-001: Snapshot-Recovery API now exposed via create_snapshot() /
 // get_at_snapshot() below.
 impl MemFuse {
-    /// Opens or creates a MemFuse database at the given path.
-    ///
-    /// Uses default configuration (1536 dimensions, cosine distance).
-    /// For custom settings, use [`MemFuse::open_with_config`].
+    #[tracing::instrument(level = "trace", skip(path))]
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
         Self::open_with_config(path, MemFuseConfig::default()).await
     }
 
     /// Opens or creates a MemFuse database with custom configuration.
+    #[tracing::instrument(level = "trace", skip(path, config))]
     pub async fn open_with_config(path: impl AsRef<Path>, config: MemFuseConfig) -> Result<Self> {
         let lsm_config = memfuse_store::LsmConfig {
             path: path.as_ref().to_path_buf(),
@@ -160,6 +168,8 @@ impl MemFuse {
             next_tx,
             dimension: config.dimension,
             collections: tokio::sync::RwLock::new(std::collections::HashMap::new()),
+            raft: tokio::sync::OnceCell::new(),
+            embedder: std::sync::RwLock::new(None),
         };
 
         // Initialize already existing collections from storage
@@ -174,6 +184,7 @@ impl MemFuse {
         Ok(db)
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn initialize_collections(&self) -> Result<()> {
         let col_idx_prefix = b"__col_idx:\x00";
         let entries = self.storage.scan_prefix(col_idx_prefix).await?;
@@ -194,6 +205,7 @@ impl MemFuse {
     /// 2. For each pending intent, use forward-commit: replay missing HNSW entries
     ///    from LSM via `Collection::repair()`, then mark the intent as `"repaired"`.
     /// 3. Run `Collection::repair()` on all loaded collections to ensure LSM↔HNSW parity.
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn repair_on_open(&self) -> Result<()> {
         let start_time = std::time::Instant::now();
 
@@ -256,6 +268,7 @@ impl MemFuse {
     }
 
     /// Scans storage for all transaction intent keys with `"pending"` status.
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn scan_pending_intents(&self) -> Result<Vec<Vec<u8>>> {
         let mut pending = Vec::new();
 
@@ -291,12 +304,13 @@ impl MemFuse {
 
     /// Returns a specific collection (namespace).
     /// Creates the collection if it does not already exist.
-    // ANCHOR:TODO:COL-001 — Implementiere vollständige Persistenz und Isolation für `collection()`.
+    // COL-001 — Implementiere vollständige Persistenz und Isolation für `collection()`.
     // WP:WP-1.2 PRIO:1 NEEDS:NONE
     // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_collections_are_isolated
     // DONE: `collection()` ist wal-gesichert, Isolation ist korrekt.
     // SUCCESSOR: @JULES-04 — "Mach weiter mit COL-002 und COL-003, bis Collections-Modul fully featured ist."
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn collection(&self, name: &str) -> Result<Collection<LsmStorage>> {
         // Validation
         if name.len() > 64 {
@@ -330,13 +344,18 @@ impl MemFuse {
         };
         let index = Arc::new(HnswIndex::new(hnsw_config));
 
-        let col = Collection::new(
+        let mut col = Collection::new(
             name.to_string(),
             Arc::clone(&self.storage),
             index,
             Arc::clone(&self.next_tx),
             self.dimension,
         );
+
+        // Inherit global embedder if set
+        if let Some(emb) = self.embedder.read().unwrap().as_ref() {
+            col = col.with_embedder(Arc::clone(emb));
+        }
 
         // Register in storage if not default
         if name != "default" {
@@ -355,12 +374,13 @@ impl MemFuse {
     }
 
     /// Lists all existing collection names (including those persisted in storage).
-    // ANCHOR:TODO:COL-002 — Erweitere `list_collections` so, dass es aus dem LSM-Store/Metadata ließt.
+    // COL-002 — Erweitere `list_collections` so, dass es aus dem LSM-Store/Metadata ließt.
     // WP:WP-1.2 PRIO:1 NEEDS:COL-001
     // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_list_collections
     // DONE: list_collections gibt persistierte Collections zurück.
     // SUCCESSOR: @JULES-04 — "Mache weiter mit COL-003."
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn list_collections(&self) -> Result<Vec<String>> {
         let col_idx_prefix = b"__col_idx:\x00";
         let entries = self.storage.scan_prefix(col_idx_prefix).await?;
@@ -387,12 +407,13 @@ impl MemFuse {
     }
 
     /// Drops a collection, removing all its data from storage.
-    // ANCHOR:TODO:COL-003 — Löschen der Collection-Keys aus LSM und des HNSW Graphen.
+    // COL-003 — Löschen der Collection-Keys aus LSM und des HNSW Graphen.
     // WP:WP-1.2 PRIO:1 NEEDS:COL-001
     // AGENT:@JULES-04 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_drop_removes_all_data
     // DONE: Alle Daten getilgt, re-öffnen führt zu leerer DB.
     // SUCCESSOR: @JULES-05 — "Collections sind fertig. Beginne mit WP-2.1 SEARCH-001."
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn drop_collection(&self, name: &str) -> Result<()> {
         if name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(
@@ -420,6 +441,7 @@ impl MemFuse {
     }
 
     /// Inserts a document with an embedding and optional metadata.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn insert(&self, id: &str, embedding: &[f32], metadata: Option<Value>) -> Result<()> {
         self.default_col()
             .await?
@@ -427,7 +449,8 @@ impl MemFuse {
             .await
     }
 
-    /// Upserts a document (inserts if missing, updates if exists).
+    /// Upserts a document (inserts if missing, updates if exists) atomically.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn upsert(&self, id: &str, embedding: &[f32], metadata: Option<Value>) -> Result<()> {
         self.default_col()
             .await?
@@ -436,26 +459,31 @@ impl MemFuse {
     }
 
     /// Inserts multiple documents in a single transaction.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn insert_many(&self, docs: &[(String, Vec<f32>, Option<Value>)]) -> Result<()> {
         self.default_col().await?.insert_many(docs).await
     }
 
     /// Upserts multiple documents in a single transaction.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn upsert_many(&self, docs: &[(String, Vec<f32>, Option<Value>)]) -> Result<()> {
         self.default_col().await?.upsert_many(docs).await
     }
 
     /// Retrieves a document by its string key.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get(&self, id: &str) -> Result<Option<Document>> {
         self.default_col().await?.get(id).await
     }
 
     /// Retrieves a document at a specific point in time.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get_at_snapshot(&self, id: &str, seq_no: u64) -> Result<Option<Document>> {
         self.default_col().await?.get_at_snapshot(id, seq_no).await
     }
 
     /// Returns the last committed sequence number.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn last_committed_seq(&self) -> Result<u64> {
         self.storage.last_seq_no().await
     }
@@ -482,11 +510,13 @@ impl MemFuse {
     /// # }
     /// ```
     // BL-01-DB-001: Snapshot-Recovery API — RESOLVED
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn create_snapshot(&self) -> Result<u64> {
         self.storage.last_seq_no().await
     }
 
     /// Updates a document's embedding and/or metadata.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn update(&self, id: &str, embedding: &[f32], metadata: Option<Value>) -> Result<()> {
         self.default_col()
             .await?
@@ -495,11 +525,13 @@ impl MemFuse {
     }
 
     /// Performs semantic k-NN search over stored embeddings.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn search(&self, query: &[f32], k: usize) -> Result<Vec<SearchResult>> {
         self.default_col().await?.search(query, k).await
     }
 
     /// Performs semantic search with an advanced metadata filter.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn search_with_filter(
         &self,
         query: &[f32],
@@ -512,7 +544,42 @@ impl MemFuse {
             .await
     }
 
+    /// Inserts a text document via the default collection.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn insert_text_only(
+        &self,
+        id: &str,
+        text: &str,
+        metadata: Option<Value>,
+    ) -> Result<()> {
+        self.default_col()
+            .await?
+            .insert_text_only(id, text, metadata)
+            .await
+    }
+
+    /// Upserts a text document via the default collection.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn upsert_text_only(
+        &self,
+        id: &str,
+        text: &str,
+        metadata: Option<Value>,
+    ) -> Result<()> {
+        self.default_col()
+            .await?
+            .upsert_text_only(id, text, metadata)
+            .await
+    }
+
+    /// Performs text search via the default collection.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn search_text(&self, text: &str, k: usize) -> Result<Vec<SearchResult>> {
+        self.default_col().await?.search_text(text, k).await
+    }
+
     /// Performs semantic k-NN search with an optional filter function over documents.
+    #[tracing::instrument(level = "trace", skip(self, filter))]
     pub async fn search_filtered(
         &self,
         query: &[f32],
@@ -526,13 +593,14 @@ impl MemFuse {
     }
 
     /// Performs hybrid search combining BM25 and vector search.
-    // ANCHOR:TODO:SEARCH-001 — Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection.
+    // SEARCH-001 — Implementiere `hybrid_search(text, vector, k)` die delegiert an Collection.
     // WP:WP-2.1 PRIO:1 NEEDS:COL-001
     // AGENT:@JULES-05 DATE:2026-05-09 STATUS:DONE
     // TEST: cargo test -p memfuse-db test_bm25_ranks_exact_keyword_higher
     // DONE: Funktion existiert und delegiert richtig.
     // SUCCESSOR: @JULES-06 — "Hybrid Search Facade ist ready. Python Bindings (SEARCH-STABLE) können gebaut werden."
     /// Performs hybrid search combining BM25 and vector search.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn hybrid_search(
         &self,
         text: &str,
@@ -546,32 +614,38 @@ impl MemFuse {
     }
 
     /// Deletes a document by its string ID.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn delete(&self, id: &str) -> Result<()> {
         self.default_col().await?.delete(id).await
     }
 
     /// Creates a bidirectional relationship between two documents.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
         let col = self.default_col().await?;
         col.relate_bidirectional(from, to, label).await
     }
 
     /// Scans storage for key-value pairs matching a prefix.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn scan_prefix(&self, prefix: &str) -> Result<Vec<(String, Value)>> {
         self.default_col().await?.scan_prefix(prefix).await
     }
 
     /// Returns the number of vectors in the index.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn len(&self) -> Result<usize> {
         Ok(self.default_col().await?.len().await)
     }
 
     /// Returns true if the database is empty.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn is_empty(&self) -> Result<bool> {
         Ok(self.default_col().await?.is_empty().await)
     }
 
     /// Scans a range of keys, returning key-value pairs.
+    #[tracing::instrument(level = "trace", skip(self, start, end))]
     pub async fn scan(
         &self,
         start: std::ops::Bound<&[u8]>,
@@ -581,6 +655,7 @@ impl MemFuse {
     }
 
     /// Returns combined statistics for the vector index and storage engine.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn stats(&self) -> Result<DbStats> {
         Ok(DbStats {
             index_stats: self.default_col().await?.stats().await?,
@@ -590,6 +665,7 @@ impl MemFuse {
     /// Flushes all pending writes to disk.
     ///
     /// This ensures that the WAL is synced and memtables are persisted as SSTables.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn flush(&self) -> Result<()> {
         self.storage.flush().await?;
         Ok(())
@@ -599,9 +675,153 @@ impl MemFuse {
     ///
     /// This consumes the `MemFuse` instance. It is highly recommended to call
     /// this before application exit to ensure zero data loss.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn close(self) -> Result<()> {
+        if let Some(raft) = self.raft.get() {
+            let _ = raft.shutdown().await;
+        }
         self.flush().await?;
         Ok(())
+    }
+
+    /// Initializes this node as a single-node Raft cluster.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn init_cluster(&self, node_id: u64, addr: &str) -> Result<()> {
+        let node = memfuse_cluster::Node {
+            addr: addr.to_string(),
+        };
+        let raft =
+            memfuse_cluster::node::setup_raft(node_id, node.clone(), Arc::clone(&self.storage))
+                .await?;
+
+        raft.initialize(std::collections::BTreeMap::from([(node_id, node)]))
+            .await
+            .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
+
+        self.raft.set(raft).map_err(|_| {
+            memfuse_core::MemFuseError::Internal("Cluster already initialized".into())
+        })?;
+        Ok(())
+    }
+
+    /// Joins an existing Raft cluster.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn join_cluster(&self, node_id: u64, addr: &str) -> Result<()> {
+        let node = memfuse_cluster::Node {
+            addr: addr.to_string(),
+        };
+        let raft =
+            memfuse_cluster::node::setup_raft(node_id, node, Arc::clone(&self.storage)).await?;
+
+        self.raft.set(raft).map_err(|_| {
+            memfuse_core::MemFuseError::Internal("Cluster already initialized".into())
+        })?;
+        Ok(())
+    }
+
+    /// Adds a new node to the cluster.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn add_node(&self, node_id: u64, addr: &str) -> Result<()> {
+        let raft = self
+            .raft
+            .get()
+            .ok_or_else(|| memfuse_core::MemFuseError::Index("Not in cluster mode".into()))?;
+        let node = memfuse_cluster::Node {
+            addr: addr.to_string(),
+        };
+        raft.add_learner(node_id, node, true)
+            .await
+            .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
+
+        let mut members = raft
+            .metrics()
+            .borrow()
+            .membership_config
+            .membership()
+            .voter_ids()
+            .collect::<std::collections::BTreeSet<_>>();
+        members.insert(node_id);
+
+        raft.change_membership(members, false)
+            .await
+            .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Removes a node from the cluster.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn remove_node(&self, node_id: u64) -> Result<()> {
+        let raft = self
+            .raft
+            .get()
+            .ok_or_else(|| memfuse_core::MemFuseError::Index("Not in cluster mode".into()))?;
+
+        let mut members = raft
+            .metrics()
+            .borrow()
+            .membership_config
+            .membership()
+            .voter_ids()
+            .collect::<std::collections::BTreeSet<_>>();
+        members.remove(&node_id);
+
+        raft.change_membership(members, false)
+            .await
+            .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Returns Raft metrics.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn raft_metrics(&self) -> Result<String> {
+        let raft = self
+            .raft
+            .get()
+            .ok_or_else(|| memfuse_core::MemFuseError::Index("Not in cluster mode".into()))?;
+        let metrics = raft.metrics().borrow().clone();
+        Ok(format!("{:?}", metrics))
+    }
+
+    /// Sets the text embedder for default collection operations.
+    #[tracing::instrument(level = "trace", skip(self, embedder))]
+    pub async fn with_embedder(self, embedder: Arc<TextEmbedder>) -> Self {
+        {
+            let mut guard = self.embedder.write().unwrap();
+            *guard = Some(Arc::clone(&embedder));
+        }
+        // Also update existing default collection if already loaded
+        let collections = self.collections.read().await;
+        if let Some(col) = collections.get("default") {
+            let mut guard = col.embedder.write().unwrap();
+            *guard = Some(Arc::clone(&embedder));
+        }
+        drop(collections);
+
+        // Actually, it's better to just update the map entry if it exists.
+        let mut collections_write = self.collections.write().await;
+        if let Some(col) = collections_write.get_mut("default") {
+            let mut guard = col.embedder.write().unwrap();
+            *guard = Some(Arc::clone(&embedder));
+        }
+        drop(collections_write);
+
+        self
+    }
+
+    /// Sets the text embedder (non-consuming version).
+    #[tracing::instrument(level = "trace", skip(self, embedder))]
+    pub async fn set_embedder(&self, embedder: Arc<TextEmbedder>) {
+        {
+            let mut guard = self.embedder.write().unwrap();
+            *guard = Some(Arc::clone(&embedder));
+        }
+        let mut collections_write = self.collections.write().await;
+        if let Some(col) = collections_write.get_mut("default") {
+            let mut guard = col.embedder.write().unwrap();
+            *guard = Some(embedder);
+        }
     }
 }
 
@@ -615,6 +835,48 @@ impl MemFuse {
     #[doc(hidden)]
     pub fn inner_storage(&self) -> Arc<LsmStorage> {
         self.storage.clone()
+    }
+}
+
+#[async_trait]
+impl SandboxBridge for MemFuse {
+    async fn db_search(&self, query: &[u8], k: usize) -> Result<Vec<u8>> {
+        // Assume query is a binary f32 array (little endian)
+        let f32_count = query.len() / 4;
+        let mut vector = Vec::with_capacity(f32_count);
+        for i in 0..f32_count {
+            let start = i * 4;
+            let bits = u32::from_le_bytes(query[start..start + 4].try_into().map_err(|_| {
+                memfuse_core::MemFuseError::InvalidInput("Invalid query slice for DocId".into())
+            })?);
+            vector.push(f32::from_bits(bits));
+        }
+
+        let results: Vec<SearchResult> = self.search(&vector, k).await?;
+        Ok(serde_json::to_vec(&results)
+            .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?)
+    }
+
+    async fn db_insert(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        let id = String::from_utf8_lossy(key).to_string();
+        // Assume value is a JSON representing (embedding, metadata) or just value
+        let val_json: Value = serde_json::from_slice(value)
+            .unwrap_or(serde_json::json!({ "raw_data": String::from_utf8_lossy(value) }));
+
+        self.insert(&id, &[], Some(val_json)).await
+    }
+
+    async fn db_get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let id = String::from_utf8_lossy(key).to_string();
+        let doc = self.get(&id).await?;
+        match doc {
+            Some(d) => {
+                Ok(Some(serde_json::to_vec(&d).map_err(|e| {
+                    memfuse_core::MemFuseError::Internal(e.to_string())
+                })?))
+            }
+            None => Ok(None),
+        }
     }
 }
 

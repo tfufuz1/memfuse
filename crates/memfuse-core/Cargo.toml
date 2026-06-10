@@ -12,9 +12,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 parking_lot = { workspace = true }
 ahash = { workspace = true }
-tracing = { workspace = true }
 async-trait = { workspace = true }
 blake3 = { workspace = true }
+flatbuffers = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["full", "test-util"] }

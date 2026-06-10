@@ -30,13 +30,13 @@ impl EncryptedWal {
     }
 
     /// Wraps the internal WAL chunk in AES-256-GCM stream.
-    pub fn encrypt_chunk(&self, payload: &[u8], nonce_val: u64) -> Result<Vec<u8>> {
-        self.key_manager.encrypt(payload, nonce_val)
+    pub fn encrypt_chunk(&self, payload: &[u8]) -> Result<(Vec<u8>, [u8; 12])> {
+        self.key_manager.encrypt_auto_nonce(payload)
     }
 
     /// Decrypts the WAL chunk from the AES-256-GCM stream.
-    pub fn decrypt_chunk(&self, ciphertext: &[u8], nonce_val: u64) -> Result<Vec<u8>> {
-        self.key_manager.decrypt(ciphertext, nonce_val)
+    pub fn decrypt_chunk(&self, ciphertext: &[u8], nonce: &[u8; 12]) -> Result<Vec<u8>> {
+        self.key_manager.decrypt_auto_nonce(ciphertext, nonce)
     }
 }
 
@@ -187,15 +187,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_encrypted_wal_roundtrip() -> Result<()> {
-        let km = crate::crypto::KeyManager::try_new("test-pass", None)?;
+        let km = crate::crypto::KeyManager::try_new("test-pass", b"salt1")?;
         let wal = EncryptedWal::new(km, b"test-wal.log")?;
         let data = b"wal-entry-data-to-encrypt";
-        let nonce = 1337;
-
-        let encrypted = wal.encrypt_chunk(data, nonce)?;
+        let (encrypted, nonce) = wal.encrypt_chunk(data)?;
         assert_ne!(encrypted.as_slice(), data);
 
-        let decrypted = wal.decrypt_chunk(&encrypted, nonce)?;
+        let decrypted = wal.decrypt_chunk(&encrypted, &nonce)?;
         assert_eq!(decrypted.as_slice(), data);
 
         Ok(())

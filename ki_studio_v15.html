@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>KI.Studio v15</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@300;400;500&display=swap');
+:root{
+  --bg:#050508;--sf:#09090f;--sf2:#0e0e17;--sf3:#13131e;
+  --b:#1a1a2e;--b2:#20203a;--b3:#282840;
+  --ac:#ff1f5a;--ac2:#ff5580;--glow:rgba(255,31,90,.1);
+  --tx:#f2f2fa;--td:#606080;--tm:#30304a;
+  --teal:#00e5c8;--gold:#ffd166;--purple:#c084fc;--sky:#38bdf8;--green:#4ade80;
+  --yoga:#c084fc;--sport:#38bdf8;--fashion:#ffd166;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;overflow-x:hidden;font-size:13px}
+.hdr{background:linear-gradient(180deg,#050508,rgba(5,5,8,.92));border-bottom:1px solid var(--b);padding:10px 18px;position:sticky;top:0;z-index:500;backdrop-filter:blur(24px)}
+.hdr-in{max-width:1800px;margin:0 auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:2px;flex-shrink:0}
+.logo em{color:var(--ac);font-style:normal}
+.lv{font-family:'DM Mono',monospace;font-size:9px;background:var(--ac);color:#fff;padding:2px 6px;border-radius:3px;margin-left:4px}
+.hpills{display:flex;gap:5px}
+.hp{font-family:'DM Mono',monospace;font-size:9px;padding:3px 9px;border-radius:4px;border:1px solid;cursor:pointer;transition:all .15s;user-select:none}
+.hp.py{color:var(--yoga);border-color:rgba(192,132,252,.3);background:rgba(192,132,252,.06)}
+.hp.ps{color:var(--sport);border-color:rgba(56,189,248,.3);background:rgba(56,189,248,.06)}
+.hp.pf{color:var(--fashion);border-color:rgba(255,209,102,.3);background:rgba(255,209,102,.06)}
+.hp.on{opacity:1;font-weight:700}.hp:not(.on){opacity:.4}
+.hdr-r{margin-left:auto;display:flex;align-items:center;gap:8px}
+.hdr-cnt{font-family:'DM Mono',monospace;font-size:9px;color:var(--tm)}
+.wrap{max-width:1800px;margin:0 auto;padding:12px 18px 80px;display:grid;grid-template-columns:1fr 510px;gap:14px;align-items:start}
+/* CARD */
+.card{background:var(--sf);border:1px solid var(--b);border-radius:10px;overflow:hidden;margin-bottom:10px}
+.card.req{border-color:rgba(255,31,90,.18)}
+.card.opt{border-color:rgba(255,209,102,.08)}.card.opt.on{border-color:rgba(0,229,200,.2)}
+.ch{display:flex;align-items:center;padding:9px 13px;border-bottom:1px solid var(--b);cursor:pointer;gap:8px;min-height:38px;user-select:none}
+.ch:hover{background:rgba(255,255,255,.01)}
+.cico{width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
+.clbl{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--td);flex:1;line-height:1.3}
+.clbl small{display:block;font-size:8px;color:var(--tm);font-weight:400;text-transform:none;letter-spacing:0;margin-top:1px}
+.cval{font-family:'DM Mono',monospace;font-size:9px;color:var(--ac2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cval.dim{color:var(--tm)}
+.badge{font-family:'DM Mono',monospace;font-size:7px;font-weight:700;padding:2px 5px;border-radius:3px;white-space:nowrap;flex-shrink:0}
+.badge.req{background:rgba(255,31,90,.12);color:var(--ac2);border:1px solid rgba(255,31,90,.25)}
+.badge.done{background:rgba(0,229,200,.1);color:var(--teal);border:1px solid rgba(0,229,200,.25)}
+.badge.opt{background:rgba(255,209,102,.08);color:var(--gold);border:1px solid rgba(255,209,102,.18)}
+.badge.act{background:rgba(0,229,200,.1);color:var(--teal);border:1px solid rgba(0,229,200,.25)}
+.carr{color:var(--tm);font-size:8px;transition:transform .2s;flex-shrink:0}
+.card.col .carr{transform:rotate(-90deg)}.card.col .cb{display:none}
+.cb{padding:10px 12px 13px}
+/* SHOOTING TYPE */
+.stg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.stc{border:2px solid var(--b2);border-radius:9px;background:var(--sf2);cursor:pointer;padding:10px 8px;text-align:center;transition:all .13s;user-select:none}
+.stc:hover{border-color:var(--ac2);transform:translateY(-1px)}
+.stc.on{border-color:var(--ac);background:var(--glow);box-shadow:0 0 16px rgba(255,31,90,.12)}
+.stc.on .stlbl{color:var(--ac)}.stco{font-size:20px;margin-bottom:3px;opacity:.7}
+.stc.on .stco{opacity:1}.stlbl{font-size:10px;font-weight:700;color:var(--td);transition:color .12s}
+.stdesc{font-size:7.5px;color:var(--tm);margin-top:2px;font-family:'DM Mono',monospace}
+/* RATIO */
+.rg{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px}
+.rhero{border:2px solid var(--b2);border-radius:10px;background:var(--sf2);cursor:pointer;padding:12px 8px;display:flex;flex-direction:column;align-items:center;gap:6px;transition:all .14s;user-select:none}
+.rhero:hover{border-color:var(--ac2);transform:translateY(-1px)}
+.rhero.on{border-color:var(--ac);background:var(--glow);box-shadow:0 0 18px rgba(255,31,90,.12)}
+.rhero.on .rn{color:var(--ac)}.rhero.on .rshp{background:var(--ac)}
+.rshp{background:var(--b3);border-radius:3px;transition:background .14s}
+.rn{font-family:'DM Mono',monospace;font-size:15px;font-weight:700;color:var(--td)}
+.rm{font-size:10px;font-weight:600;color:var(--tx)}.rs{font-size:7.5px;color:var(--tm);text-align:center;line-height:1.3}
+.rcnt{font-family:'DM Mono',monospace;font-size:8px;background:var(--b3);padding:2px 5px;border-radius:3px;color:var(--td)}
+.rhero.on .rcnt{background:rgba(255,31,90,.2);color:var(--ac2)}
+.rhint{background:rgba(255,209,102,.04);border:1px solid rgba(255,209,102,.1);border-radius:6px;padding:6px 10px;font-family:'DM Mono',monospace;font-size:8.5px;color:var(--gold);line-height:1.5}
+/* ORIENT */
+.og{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.ocard{border:1.5px solid var(--b2);border-radius:8px;background:var(--sf2);cursor:pointer;padding:9px 7px;text-align:center;transition:all .12s;user-select:none}
+.ocard:hover{border-color:var(--ac2)}.ocard.on{border-color:var(--ac);background:var(--glow)}
+.ocard.on .olbl{color:var(--ac)}
+.oico{font-size:18px;margin-bottom:2px}.olbl{font-size:9px;font-weight:600;color:var(--td)}
+.odesc{font-size:7px;color:var(--tm);margin-top:1px;font-family:'DM Mono',monospace}
+/* POSE */
+.ptbar{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center}
+.psw{position:relative;flex:1;min-width:120px}
+.psi{position:absolute;left:9px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--td);font-size:11px}
+.ps{width:100%;background:var(--sf2);border:1.5px solid var(--b2);border-radius:7px;padding:7px 10px 7px 28px;font-family:'DM Mono',monospace;font-size:10px;color:var(--tx);outline:none;transition:border-color .15s}
+.ps:focus{border-color:var(--ac)}.ps::placeholder{color:var(--tm)}
+.ptab{padding:5px 9px;border-radius:5px;font-size:9px;font-weight:600;cursor:pointer;border:1.5px solid var(--b2);background:var(--sf2);color:var(--td);transition:all .1s;user-select:none;white-space:nowrap}
+.ptab:hover{border-color:var(--b3);color:var(--tx)}.ptab.on{background:var(--sf3);border-color:var(--b3);color:var(--tx)}
+.pg{margin-bottom:4px}
+.pgh{display:flex;align-items:center;gap:6px;padding:4px 2px 2px;cursor:pointer;user-select:none}
+.pgh:hover .pgl{color:var(--tx)}.pgl{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--td);flex:1}
+.pgcnt{font-family:'DM Mono',monospace;font-size:8px;background:var(--b2);padding:1px 5px;border-radius:3px;color:var(--tm)}
+.pgchev{font-size:8px;color:var(--tm);transition:transform .15s}
+.pg.col .pgchev{transform:rotate(-90deg)}.pg.col .pgc{display:none}
+.pgc{display:flex;flex-wrap:wrap;gap:4px;padding-bottom:5px}
+.pfb{background:rgba(255,31,90,.04);border:1px solid rgba(255,31,90,.1);border-radius:6px;padding:4px 9px;margin-bottom:6px;font-family:'DM Mono',monospace;font-size:8.5px;color:var(--ac2)}
+.pfb strong{color:var(--ac)}.nop{font-size:9px;color:var(--tm);font-style:italic;padding:4px 0}
+.pchip{padding:6px 10px;border-radius:7px;cursor:pointer;border:1.5px solid var(--b2);background:var(--sf2);transition:all .1s;user-select:none}
+.pchip:hover{border-color:var(--ac);background:rgba(255,31,90,.05)}
+.pchip.on{border-color:var(--ac);background:var(--glow);box-shadow:0 0 10px rgba(255,31,90,.15)}
+.pchip.on .pn{color:var(--tx)}.pn{display:block;font-size:11px;font-weight:600;color:var(--td)}
+.psk{display:block;font-size:8px;color:var(--tm);margin-top:1px;font-family:'DM Mono',monospace}
+.ptr{display:flex;gap:3px;margin-top:3px;flex-wrap:wrap}
+.pt9{font-family:'DM Mono',monospace;font-size:7px;font-weight:700;padding:1px 4px;border-radius:3px;background:rgba(255,31,90,.14);color:var(--ac2)}
+.pt16{font-family:'DM Mono',monospace;font-size:7px;font-weight:700;padding:1px 4px;border-radius:3px;background:rgba(0,229,200,.12);color:var(--teal)}
+.pttop{font-family:'DM Mono',monospace;font-size:7px;font-weight:700;padding:1px 4px;border-radius:3px;background:rgba(255,209,102,.12);color:var(--gold)}
+.pt43{font-family:'DM Mono',monospace;font-size:7px;font-weight:700;padding:1px 4px;border-radius:3px;background:rgba(192,132,252,.12);color:var(--purple)}
+.ptx{font-family:'DM Mono',monospace;font-size:7px;font-weight:700;padding:1px 4px;border-radius:3px;background:rgba(0,229,200,.12);color:var(--teal)}
+/* SHOT PANEL - BIG FEATURE */
+.sv-hdr{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.sv-title{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--tm);flex:1}
+.sv-cnt{font-family:'DM Mono',monospace;font-size:9px;background:var(--b2);border:1px solid var(--b3);padding:1px 7px;border-radius:3px;color:var(--teal);font-weight:700}
+.sv-grid{display:flex;flex-direction:column;gap:5px;margin-bottom:8px}
+.svc{padding:9px 11px;border-radius:8px;cursor:pointer;border:1.5px solid var(--b2);background:var(--sf2);transition:all .12s;user-select:none}
+.svc:hover{border-color:var(--teal);background:rgba(0,229,200,.03)}
+.svc.on{border-color:var(--teal);background:rgba(0,229,200,.06);box-shadow:0 0 14px rgba(0,229,200,.08)}
+.svc-top{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.svc-ico{font-size:14px;flex-shrink:0}
+.svc-name{font-size:11px;font-weight:700;color:var(--td);flex:1}
+.svc.on .svc-name{color:var(--teal)}
+.svc-num{font-family:'DM Mono',monospace;font-size:8px;color:var(--tm)}
+.svc.on .svc-num{color:var(--teal)}
+/* POSITION STRIP - KEY NEW FEATURE */
+.posrow{display:flex;gap:3px;flex-wrap:wrap;align-items:center}
+.posrow-lbl{font-family:'DM Mono',monospace;font-size:7px;color:var(--tm);margin-right:2px;flex-shrink:0}
+.pp{font-family:'DM Mono',monospace;font-size:8px;font-weight:700;padding:2px 6px;border-radius:4px;white-space:nowrap;line-height:1.4}
+.pp.po{background:rgba(255,85,128,.15);color:var(--ac2);border:1px solid rgba(255,85,128,.28)}
+.pp.pu{background:rgba(0,229,200,.12);color:var(--teal);border:1px solid rgba(0,229,200,.25)}
+.pp.pl{background:rgba(255,209,102,.12);color:var(--gold);border:1px solid rgba(255,209,102,.25)}
+.pp.pr{background:rgba(192,132,252,.12);color:var(--purple);border:1px solid rgba(192,132,252,.25)}
+.pp.pm{background:rgba(56,189,248,.1);color:var(--sky);border:1px solid rgba(56,189,248,.2)}
+.svc-empty{font-size:10px;color:var(--tm);font-style:italic;padding:4px 0}
+/* FRAME PREVIEW */
+.fpw{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;background:var(--sf2);border:1px solid var(--b2);border-radius:8px;padding:10px 12px;margin-top:6px}
+.fp-svg{display:flex;flex-direction:column;align-items:center;gap:5px}
+.fp-rb{font-family:'DM Mono',monospace;font-size:8px;font-weight:700;padding:2px 7px;border-radius:3px}
+.fp-rb.r9{background:rgba(255,31,90,.15);color:var(--ac2);border:1px solid rgba(255,31,90,.25)}
+.fp-rb.r16{background:rgba(0,229,200,.1);color:var(--teal);border:1px solid rgba(0,229,200,.2)}
+.fp-rb.rtop{background:rgba(255,209,102,.1);color:var(--gold);border:1px solid rgba(255,209,102,.2)}
+.fp-rb.r43{background:rgba(192,132,252,.1);color:var(--purple);border:1px solid rgba(192,132,252,.2)}
+.fp-rb.r11{background:rgba(74,222,128,.1);color:var(--green);border:1px solid rgba(74,222,128,.2)}
+.fp-info{display:flex;flex-direction:column;gap:6px}
+.fp-angle{display:flex;align-items:center;gap:7px}
+.fp-aico{font-size:18px}
+.fp-atxt{font-size:12px;font-weight:700;color:var(--tx);line-height:1.2}
+.fp-adesc{font-size:8px;color:var(--tm);font-family:'DM Mono',monospace;margin-top:2px}
+.fp-cam{font-family:'DM Mono',monospace;font-size:8.5px;color:var(--teal);background:rgba(0,229,200,.04);border:1px solid rgba(0,229,200,.1);border-radius:5px;padding:5px 8px;line-height:1.5}
+/* 5-position grid */
+.pos5{display:grid;grid-template-columns:1fr auto 1fr;grid-template-rows:auto auto auto;gap:3px;align-items:center;justify-items:center}
+.p5t{grid-column:2;grid-row:1}.p5l{grid-column:1;grid-row:2;justify-self:end}
+.p5m{grid-column:2;grid-row:2}.p5r{grid-column:3;grid-row:2;justify-self:start}
+.p5b{grid-column:2;grid-row:3}.p5x{font-size:8px;color:var(--b3);padding:2px 5px;font-family:'DM Mono',monospace}
+.fp-empty{font-size:10px;color:var(--tm);font-style:italic;padding:8px;text-align:center;grid-column:1/-1}
+/* OPTIONAL CHIPS */
+.oc{display:flex;flex-wrap:wrap;gap:5px}
+.ochip{padding:5px 10px;border-radius:6px;font-size:11px;font-weight:500;cursor:pointer;border:1.5px solid var(--b2);background:var(--sf2);color:var(--td);transition:all .1s;user-select:none}
+.ochip:hover{border-color:var(--teal);color:var(--tx)}
+.ochip.on{background:rgba(0,229,200,.07);color:var(--teal);border-color:var(--teal)}
+.ochip .ce{display:block;font-size:11px;font-weight:600}
+.ochip .cs{display:block;font-size:8.5px;color:var(--td);margin-top:1px}
+.ochip.on .cs{color:rgba(0,229,200,.5)}
+.sl{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--tm);margin:10px 0 6px;display:flex;align-items:center;gap:5px}
+.sl:first-child{margin-top:0}.sld{width:4px;height:4px;border-radius:50%;background:var(--teal);flex-shrink:0}
+/* RIGHT COL */
+.ocol{position:sticky;top:52px;height:calc(100vh - 65px);display:flex;flex-direction:column;gap:8px}
+.ref-panel{background:var(--sf);border:1px solid var(--b);border-radius:10px;padding:10px 12px;flex-shrink:0}
+.ref-title{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--td);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.rfdot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.rfg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.rfsl{border:2px solid;border-radius:8px;padding:9px;text-align:center}
+.rfsl.s1{border-color:rgba(192,132,252,.45);background:rgba(192,132,252,.04)}
+.rfsl.s2{border-color:rgba(0,229,200,.35);background:rgba(0,229,200,.03)}
+.rfsl-ico{font-size:20px;margin-bottom:4px}
+.rfsl-lbl{font-size:9.5px;font-weight:700;margin-bottom:3px}
+.rfsl.s1 .rfsl-lbl{color:var(--purple)}.rfsl.s2 .rfsl-lbl{color:var(--teal)}
+.rfsl-sub{font-size:7.5px;color:var(--tm);font-family:'DM Mono',monospace;line-height:1.6}
+/* ACTIVE PARAMS */
+.apan{background:var(--sf);border:1px solid var(--b);border-radius:10px;padding:10px 12px;flex-shrink:0}
+.ap-title{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--tm);margin-bottom:7px}
+.aprows{display:flex;flex-direction:column;gap:2px}
+.apr{display:flex;align-items:center;gap:7px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+.apr:last-child{border:none}
+.apr-k{font-family:'DM Mono',monospace;font-size:8px;font-weight:700;color:var(--tm);text-transform:uppercase;letter-spacing:.7px;min-width:60px;flex-shrink:0}
+.apr-v{font-size:10px;font-weight:600;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.apr-v.dim{color:var(--b3);font-weight:400}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;transition:background .2s}
+.dot.on{background:var(--teal)}.dot.off{background:var(--b3)}.dot.req{background:var(--ac2)}
+/* OUTPUT */
+.ocard{flex:1;background:var(--sf);border:1px solid var(--b);border-radius:10px;display:flex;flex-direction:column;overflow:hidden;min-height:0}
+.oh{padding:9px 13px;border-bottom:1px solid var(--b);display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0}
+.obg{font-family:'DM Mono',monospace;font-size:9px;padding:2px 7px;border-radius:4px;background:rgba(255,31,90,.08);color:var(--ac2);border:1px solid rgba(255,31,90,.18)}
+.oth{font-family:'DM Mono',monospace;font-size:9px;padding:2px 7px;border-radius:4px;font-weight:600}
+.ost{font-family:'DM Mono',monospace;font-size:9px;padding:2px 7px;border-radius:4px;background:rgba(255,209,102,.08);color:var(--gold);border:1px solid rgba(255,209,102,.18)}
+.osh{font-family:'DM Mono',monospace;font-size:9px;padding:2px 7px;border-radius:4px;background:rgba(0,229,200,.07);color:var(--teal);border:1px solid rgba(0,229,200,.15)}
+.ochars{font-family:'DM Mono',monospace;font-size:9px;color:var(--tm);margin-left:auto}
+.ob{flex:1;overflow-y:auto;padding:12px 13px}
+.ob::-webkit-scrollbar{width:3px}.ob::-webkit-scrollbar-thumb{background:var(--b3);border-radius:2px}
+.pt{font-family:'DM Mono',monospace;font-size:10px;line-height:1.95;color:#7878a0;white-space:pre-wrap}
+.pt-r1{color:var(--purple);font-weight:600}.pt-r2{color:var(--teal);font-weight:600}
+.pt-st{color:var(--gold);font-weight:700}.pt-sh{color:var(--sky)}
+.pt-pos{color:var(--ac2)}.pt-tech{color:var(--tm)}
+.of{padding:8px 10px;border-top:1px solid var(--b);display:flex;gap:5px;flex-shrink:0}
+.btn{flex:1;padding:10px;border-radius:7px;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:700;cursor:pointer;border:none;transition:all .13s}
+.btnp{background:var(--ac);color:#fff}
+.btnp:hover{filter:brightness(1.1);box-shadow:0 4px 18px rgba(255,31,90,.3);transform:translateY(-1px)}
+.btns{background:var(--sf2);color:var(--td);border:1.5px solid var(--b2);flex:0;padding:10px 12px;font-size:13px}
+.btns:hover{border-color:var(--teal);color:var(--teal)}
+.toast{position:fixed;bottom:18px;right:18px;background:var(--sf3);border:1px solid var(--ac);border-radius:8px;padding:9px 14px;font-size:12px;font-weight:600;box-shadow:0 8px 28px rgba(0,0,0,.6);transform:translateY(60px);opacity:0;transition:all .3s cubic-bezier(.34,1.56,.64,1);z-index:999;color:var(--tx)}
+.toast.show{transform:translateY(0);opacity:1}
+@media(max-width:1100px){.wrap{grid-template-columns:1fr}.ocol{position:static;height:auto}}
+@media(max-width:640px){.rg{grid-template-columns:1fr 1fr}.og{grid-template-columns:1fr 1fr}.stg{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="hdr-in">
+    <div class="logo">KI<em>.</em>Studio<span class="lv">v15</span></div>
+    <div class="hpills">
+      <div class="hp py on" data-th="yoga" onclick="setTheme('yoga')">🧘 Yoga</div>
+      <div class="hp ps" data-th="sport" onclick="setTheme('sport')">🏐 Sport</div>
+      <div class="hp pf" data-th="fashion" onclick="setTheme('fashion')">✨ Fashion</div>
+    </div>
+    <div class="hdr-r"><div class="hdr-cnt" id="hdr-cnt">— Shots</div></div>
+  </div>
+</div>
+<div class="wrap">
+<div>
+
+<!-- 1 SHOOTING TYPE -->
+<div class="card req" id="c-st">
+  <div class="ch" onclick="tog('st')">
+    <div class="cico" style="background:rgba(255,209,102,.12)">🎬</div>
+    <div class="clbl">① Shooting-Typ<small>Erscheint als erstes im Prompt — bestimmt den Bildcharakter</small></div>
+    <span class="badge req" id="st-badge">PFLICHT</span>
+    <div class="cval dim" id="s-st">— wählen</div>
+    <div class="carr">▾</div>
+  </div>
+  <div class="cb"><div class="stg" id="stg"></div></div>
+</div>
+
+<!-- 2 FORMAT -->
+<div class="card req" id="c-ratio">
+  <div class="ch" onclick="tog('ratio')">
+    <div class="cico" style="background:rgba(255,31,90,.12)">📐</div>
+    <div class="clbl">② Format<small>Filtert alle Posen &amp; Shots auf dieses Seitenverhältnis</small></div>
+    <div class="cval" id="s-ratio">9:16</div>
+    <div class="carr">▾</div>
+  </div>
+  <div class="cb">
+    <div class="rg">
+      <div class="rhero on" data-r="9:16" onclick="selR(this)"><div class="rshp" style="width:13px;height:24px"></div><div class="rn">9:16</div><div class="rm">📱 Hochformat</div><div class="rs">Reels · TikTok<br>Stehend & Balance</div><div class="rcnt" id="rc-916">—</div></div>
+      <div class="rhero" data-r="16:9" onclick="selR(this)"><div class="rshp" style="width:26px;height:15px"></div><div class="rn">16:9</div><div class="rm">🖥 Querformat</div><div class="rs">YouTube · Banner<br>Liegend & horizontal</div><div class="rcnt" id="rc-169">—</div></div>
+      <div class="rhero" data-r="top" onclick="selR(this)"><div class="rshp" style="width:18px;height:18px;border-radius:50%"></div><div class="rn">TOP</div><div class="rm">🦅 Bird View 90°</div><div class="rs">Overhead senkrecht<br>Grafisch & symmetrisch</div><div class="rcnt" id="rc-top">—</div></div>
+      <div class="rhero" data-r="4:3" onclick="selR(this)"><div class="rshp" style="width:22px;height:17px"></div><div class="rn">4:3</div><div class="rm">🖼 Portrait+</div><div class="rs">Instagram · Editorial</div><div class="rcnt" id="rc-43">—</div></div>
+      <div class="rhero" data-r="1:1" onclick="selR(this)"><div class="rshp" style="width:18px;height:18px"></div><div class="rn">1:1</div><div class="rm">⬜ Quadrat</div><div class="rs">Overhead zentriert</div><div class="rcnt" id="rc-11">—</div></div>
+      <div class="rhero" data-r="split" onclick="selR(this)"><div class="rshp" style="width:13px;height:24px;opacity:.5;border:1px dashed #fff3"></div><div class="rn" style="font-size:11px">SPLIT</div><div class="rm">🪞 Multi-View</div><div class="rs">Character Sheet<br>5-7 Winkel</div><div class="rcnt" id="rc-split">—</div></div>
+    </div>
+    <div class="rhint" id="rhint"><strong>9:16 Hochformat</strong> — Kopf oben (O), Füße unten (U), Körper füllt Frame senkrecht.</div>
+  </div>
+</div>
+
+<!-- 3 ORIENT -->
+<div class="card col" id="c-ori">
+  <div class="ch" onclick="tog('ori')">
+    <div class="cico" style="background:rgba(192,132,252,.12)">🧍</div>
+    <div class="clbl">③ Körper-Orientierung<small>Grob-Filter: wie ist der Körper im Frame ausgerichtet?</small></div>
+    <div class="cval" id="s-ori">Aufrecht</div>
+    <div class="carr">▾</div>
+  </div>
+  <div class="cb">
+    <div class="og" id="og"></div>
+    <div style="font-family:'DM Mono',monospace;font-size:8.5px;color:var(--teal);margin-top:8px;line-height:1.6;padding:5px 8px;background:rgba(0,229,200,.04);border:1px solid rgba(0,229,200,.1);border-radius:5px" id="ori-hint"></div>
+  </div>
+</div>
+
+<!-- 4 POSE -->
+<div class="card req" id="c-pose">
+  <div class="ch" onclick="tog('pose')">
+    <div class="cico" style="background:rgba(56,189,248,.12)">🤸</div>
+    <div class="clbl">④ Pose wählen<span id="pcnt" style="color:var(--tm);font-size:8px;font-weight:400;text-transform:none;letter-spacing:0;margin-left:5px"></span></div>
+    <div class="cval dim" id="s-pose">— wählen</div>
+    <div class="carr">▾</div>
+  </div>
+  <div class="cb">
+    <div class="ptbar">
+      <div class="psw"><span class="psi">🔍</span><input class="ps" id="psearch" type="text" placeholder="Suchen… Krieger, Brücke, Squat, Spagat, Kopfstand…" oninput="renderPoses()"></div>
+      <div id="ptabs" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+    </div>
+    <div class="pfb" id="pfb"></div>
+    <div id="pgroups"></div>
+  </div>
+</div>
+
+<!-- 5 PERSPEKTIVE + PREVIEW -->
+<div class="card req" id="c-shot">
+  <div class="ch" onclick="tog('shot')">
+    <div class="cico" style="background:rgba(0,229,200,.1)">🎯</div>
+    <div class="clbl">⑤ Perspektive &amp; Kamerawinkel — O / U / L / R / M<small>Wähle Winkel → sieh wo jedes Körperteil im Frame landet</small></div>
+    <div class="cval dim" id="s-shot">— wählen</div>
+    <div class="carr">▾</div>
+  </div>
+  <div class="cb">
+    <div class="sv-hdr">
+      <div class="sv-title">Shots für aktuelle Pose &amp; Format</div>
+      <span class="sv-cnt" id="sv-cnt">0</span>
+    </div>
+    <div class="sv-grid" id="svgrid"><div class="svc-empty">← Zuerst Pose wählen</div></div>
+    <div class="fpw" id="fpw"><div class="fp-empty">Pose &amp; Shot wählen um Frame-Preview zu sehen</div></div>
+  </div>
+</div>
+
+<!-- 6 LICHT optional -->
+<div class="card opt col" id="c-light">
+  <div class="ch" onclick="tog('light')">
+    <div class="cico" style="background:rgba(255,209,102,.1)">💡</div>
+    <div class="clbl">⑥ Licht · Setting · Color Grade<small>Nur aktivierte Chips landen im Prompt — alles optional</small></div>
+    <span class="badge opt" id="light-badge">OPTIONAL</span>
+    <div class="cval dim" id="s-light">—</div>
+    <div class="carr">▾</div>
+  </div>
+  <div class="cb">
+    <div class="sl"><div class="sld"></div>💡 Licht</div>
+    <div class="oc">
+      <div class="ochip" data-g="light" data-v="professional three-point studio lighting, high-key shadowless"><span class="ce">💡 High-Key Studio</span><span class="cs">Clean, shadowless</span></div>
+      <div class="ochip" data-g="light" data-v="dramatic rim light, full body silhouette outlined, dark atmospheric"><span class="ce">🔦 Dramatic Rim</span><span class="cs">Silhouette, moody</span></div>
+      <div class="ochip" data-g="light" data-v="golden hour warm directional outdoor light, 3200K, long soft shadows"><span class="ce">🌅 Golden Hour</span><span class="cs">Warm, sunset</span></div>
+      <div class="ochip" data-g="light" data-v="clamshell beauty lighting, flattering and even, no harsh shadows"><span class="ce">💆 Clamshell Beauty</span><span class="cs">Weich, schmeichelnd</span></div>
+      <div class="ochip" data-g="light" data-v="soft natural window light from one side, airy lifestyle mood"><span class="ce">🪟 Fensterlicht</span><span class="cs">Soft, airy</span></div>
+      <div class="ochip" data-g="light" data-v="bright tropical beach sunlight, high-key natural, crisp shadows"><span class="ce">☀️ Beach Sun</span><span class="cs">Sonnig, crisp</span></div>
+      <div class="ochip" data-g="light" data-v="blue hour cool atmospheric dusk, 6500K, cinematic mood"><span class="ce">🌆 Blue Hour</span><span class="cs">Cool, cinematisch</span></div>
+      <div class="ochip" data-g="light" data-v="low-key single source dramatic spotlight, deep black shadows"><span class="ce">⬛ Low-Key Spot</span><span class="cs">Dramatisch, dunkel</span></div>
+    </div>
+    <div class="sl"><div class="sld"></div>📍 Setting</div>
+    <div class="oc">
+      <div class="ochip" data-g="setting" data-v="seamless white cyclorama studio, pure white infinity cove"><span class="ce">🏛 Weißes Studio</span><span class="cs">Cyclorama</span></div>
+      <div class="ochip" data-g="setting" data-v="yoga studio, natural wooden floor, lush plants, large windows"><span class="ce">🌿 Yoga Studio</span><span class="cs">Holz, Pflanzen</span></div>
+      <div class="ochip" data-g="setting" data-v="tropical beach, white sand, crystal turquoise ocean"><span class="ce">🏖 Tropical Beach</span><span class="cs">Sand, Meer</span></div>
+      <div class="ochip" data-g="setting" data-v="luxury poolside, crystal blue pool, caustic light reflections"><span class="ce">💦 Luxury Pool</span><span class="cs">Reflektionen</span></div>
+      <div class="ochip" data-g="setting" data-v="minimalist luxury interior, white marble floors, floor-to-ceiling windows"><span class="ce">🏠 Luxury Interior</span><span class="cs">Marmor, Glas</span></div>
+      <div class="ochip" data-g="setting" data-v="mirror studio, reflective floor and mirrored walls, infinite reflections"><span class="ce">🪞 Spiegel Studio</span><span class="cs">Infinite Reflections</span></div>
+      <div class="ochip" data-g="setting" data-v="beach volleyball court, fine white sand, volleyball net, blue sky"><span class="ce">🏐 Volleyball Court</span><span class="cs">Sand, Sport</span></div>
+      <div class="ochip" data-g="setting" data-v="pure black void studio, minimalist dark infinite background"><span class="ce">⬛ Black Void</span><span class="cs">Minimalistisch</span></div>
+      <div class="ochip" data-g="setting" data-v="lush tropical jungle, dense green foliage, dappled natural light"><span class="ce">🌴 Tropical Jungle</span><span class="cs">Exotisch</span></div>
+      <div class="ochip" data-g="setting" data-v="white bedsheet surface, clean minimal intimate editorial setting"><span class="ce">🛏 Bettlaken</span><span class="cs">Intimate</span></div>
+    </div>
+    <div class="sl"><div class="sld"></div>🎨 Color Grade</div>
+    <div class="oc">
+      <div class="ochip" data-g="grade" data-v="clean bright airy, high-key, fresh modern editorial"><span class="ce">🤍 Clean Airy</span><span class="cs">Hell, frisch</span></div>
+      <div class="ochip" data-g="grade" data-v="warm golden amber, sun-kissed lifestyle mood"><span class="ce">🌇 Warm Golden</span><span class="cs">Amber, warm</span></div>
+      <div class="ochip" data-g="grade" data-v="vibrant saturated bold colors, high energy campaign pop"><span class="ce">🎨 Vibrant Pop</span><span class="cs">Satt, energetisch</span></div>
+      <div class="ochip" data-g="grade" data-v="desaturated muted editorial, sophisticated fashion tone"><span class="ce">🩶 Muted Editorial</span><span class="cs">Gedämpft, fine</span></div>
+      <div class="ochip" data-g="grade" data-v="black and white high-contrast monochrome, timeless classic"><span class="ce">⬛ Mono B&W</span><span class="cs">Schwarz-Weiß</span></div>
+      <div class="ochip" data-g="grade" data-v="moody cool blue-tinted shadows, cinematic atmospheric depth"><span class="ce">🔵 Moody Cinematic</span><span class="cs">Cool-Blue</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 7 AUSDRUCK optional -->
+<div class="card opt col" id="c-expr">
+  <div class="ch" onclick="tog('expr')">
+    <div class="cico" style="background:rgba(255,31,90,.1)">😊</div>
+    <div class="clbl">⑦ Gesichtsausdruck<small>Überschreibt natürlichen Ausdruck aus Anhang 1</small></div>
+    <span class="badge opt" id="expr-badge">OPTIONAL</span>
+    <div class="cval dim" id="s-expr">— aus Anhang 1</div>
+    <div class="carr">▾</div>
+  </div>
+  <div class="cb">
+    <div class="oc">
+      <div class="ochip" data-g="expr" data-v="soft warm confident smile, direct eye contact, approachable"><span class="ce">😊 Weiches Lächeln</span></div>
+      <div class="ochip" data-g="expr" data-v="full open genuine laugh, eyes crinkling, authentic happiness"><span class="ce">😄 Volles Lachen</span></div>
+      <div class="ochip" data-g="expr" data-v="cool neutral model expression, calm composed direct gaze"><span class="ce">😐 Neutral Editorial</span></div>
+      <div class="ochip" data-g="expr" data-v="intense athletic focus, determined fierce jaw-set, sharp eyes"><span class="ce">🔥 Athletisch Fokus</span></div>
+      <div class="ochip" data-g="expr" data-v="serene meditative yoga calm, soft half-smile, inner peace"><span class="ce">🧘 Meditativ Ruhig</span></div>
+      <div class="ochip" data-g="expr" data-v="bold fierce fashion stare, commanding gaze, high-fashion intensity"><span class="ce">💎 Fierce Stare</span></div>
+      <div class="ochip" data-g="expr" data-v="triumphant athletic joy, genuine pride, accomplished victory"><span class="ce">🏆 Triumph</span></div>
+      <div class="ochip" data-g="expr" data-v="eyes closed, peaceful serene meditative stillness, inner calm"><span class="ce">🙏 Augen geschlossen</span></div>
+      <div class="ochip" data-g="expr" data-v="playful cheeky smirk, one corner raised, sparkling eyes"><span class="ce">😏 Playful Smirk</span></div>
+    </div>
+  </div>
+</div>
+
+</div><!-- END LEFT -->
+
+<!-- RIGHT -->
+<div class="ocol">
+  <div class="ref-panel">
+    <div class="ref-title"><div class="rfdot" style="background:var(--purple)"></div>📎 Referenzbilder — Beide ins Modell hochladen</div>
+    <div class="rfg">
+      <div class="rfsl s1"><div class="rfsl-ico">🎭</div><div class="rfsl-lbl">Anhang 1 — Gesicht</div><div class="rfsl-sub">Gesicht + Frisur<br>Makeup + Haut<br>Ausdruck<br>→ exakt übernehmen</div></div>
+      <div class="rfsl s2"><div class="rfsl-ico">👙</div><div class="rfsl-lbl">Anhang 2 — Körper</div><div class="rfsl-sub">Körper + Figur<br>Outfit + Kleidung<br>Proportionen<br>→ exakt übernehmen</div></div>
+    </div>
+  </div>
+  <div class="apan">
+    <div class="ap-title">⚡ Aktive Parameter — nur diese landen im Prompt</div>
+    <div class="aprows">
+      <div class="apr"><div class="dot req" id="dt-st"></div><div class="apr-k">Shooting</div><div class="apr-v dim" id="ap-st">— PFLICHT</div></div>
+      <div class="apr"><div class="dot on"></div><div class="apr-k">Format</div><div class="apr-v" id="ap-ratio">9:16</div></div>
+      <div class="apr"><div class="dot off" id="dt-pose"></div><div class="apr-k">Pose</div><div class="apr-v dim" id="ap-pose">—</div></div>
+      <div class="apr"><div class="dot off" id="dt-shot"></div><div class="apr-k">Winkel</div><div class="apr-v dim" id="ap-shot">—</div></div>
+      <div class="apr"><div class="dot off" id="dt-pos"></div><div class="apr-k">O/U/L/R/M</div><div class="apr-v dim" id="ap-pos">—</div></div>
+      <div class="apr"><div class="dot off" id="dt-light"></div><div class="apr-k">Licht</div><div class="apr-v dim" id="ap-light">—</div></div>
+      <div class="apr"><div class="dot off" id="dt-setting"></div><div class="apr-k">Setting</div><div class="apr-v dim" id="ap-setting">—</div></div>
+      <div class="apr"><div class="dot off" id="dt-grade"></div><div class="apr-k">Grade</div><div class="apr-v dim" id="ap-grade">—</div></div>
+      <div class="apr"><div class="dot off" id="dt-expr"></div><div class="apr-k">Ausdruck</div><div class="apr-v dim" id="ap-expr">— aus Anhang 1</div></div>
+    </div>
+  </div>
+  <div class="ocard">
+    <div class="oh">
+      <div class="ost" id="out-st" style="display:none">—</div>
+      <div class="obg" id="out-ratio">9:16</div>
+      <div class="oth" id="theme-badge" style="background:rgba(192,132,252,.1);color:var(--yoga);border:1px solid rgba(192,132,252,.2)">🧘 Yoga</div>
+      <div class="osh" id="out-shot" style="display:none">—</div>
+      <div class="ochars" id="out-chars">—</div>
+    </div>
+    <div class="ob"><div class="pt" id="output">← Shooting-Typ, Format und Pose wählen</div></div>
+    <div class="of">
+      <button class="btn btnp" onclick="doCopy()">📋 Prompt kopieren</button>
+      <button class="btn btns" onclick="doRandom()" title="Zufallsmix">🎲</button>
+      <button class="btn btns" onclick="doReset()" title="Reset">↺</button>
+    </div>
+  </div>
+</div>
+</div>
+<div class="toast" id="toast">✓ Prompt kopiert!</div>
+<script>
+// ═══ ANGLE TYPES ════════════════════════════════════
+const AT={
+  BIRD90:{ico:"🦅",n:"Bird View 90°",d:"Kamera senkrecht von oben, 90° — grafische Draufsicht"},
+  HIGH45:{ico:"🎥",n:"High-Angle 45°",d:"Kamera erhöht schräg ~45° von vorne-oben"},
+  EYEF:  {ico:"👁",n:"Augenhöhe Frontal",d:"Kamera auf Augenhöhe, direkt frontal"},
+  EYES:  {ico:"↔",n:"Seitprofil 90°",d:"Kamera exakt seitlich, 90° zur Körperachse"},
+  EYE3Q: {ico:"◇",n:"3/4 Schräg 45°",d:"Kamera 45° schräg zur Front"},
+  EYER:  {ico:"↩",n:"Rear Augenhöhe",d:"Kamera von hinten auf Augenhöhe"},
+  MATL:  {ico:"📐",n:"Mattenhöhe Frontal",d:"Kamera auf Matten-/Bodenhöhe, frontal ~5-10cm"},
+  MATS:  {ico:"📐↔",n:"Mattenhöhe Seite",d:"Kamera auf Boden-/Mattenhöhe, seitlich"},
+  LOW:   {ico:"⬇",n:"Low-Angle Frontal",d:"Kamera bodennah ~20-30cm, frontal, schaut leicht hoch"},
+  XLOW:  {ico:"⬇⬇",n:"Extreme Low 5cm",d:"Kamera direkt am Boden ~5cm, extreme Aufsicht nach oben"},
+  RLOW:  {ico:"↩⬇",n:"Rear Low-Angle",d:"Von hinten und unten bodennah, schaut hoch"},
+  RFAR:  {ico:"↩◇",n:"Rear 3/4 Diagonal",d:"Von hinten-seitlich, schräge Rückansicht"},
+  DIAGR: {ico:"↗↩",n:"Diagonal Rear oben",d:"Erhöhte Schrägperspektive von hinten-oben ~45°"},
+  DIAG:  {ico:"↗",n:"Diagonal erhöht",d:"Erhöhte Schrägperspektive von vorne-oben"},
+  FEND:  {ico:"⬆↙",n:"Fußende erhöht",d:"Kamera über dem Fußende, leicht erhoben, Blick Richtung Kopf"},
+  ARCH:  {ico:"🕳",n:"Durch Bogen/Öffnung",d:"Kamera schaut durch Körperöffnung / Bogen / Arch"},
+};
+
+// ═══ SHOOTING TYPES ═════════════════════════════════
+const ST={
+  tutorial:  {ico:"📖",n:"Tutorial",d:"Lehraufnahme",intro:"Tutorial photography — precise instructional documentation, correct pose form and body alignment as the primary focus, educational and technically clear."},
+  editorial: {ico:"📸",n:"Editorial",d:"Magazin",intro:"Editorial photography — atmospheric high-end magazine imagery, mood, light and composition as primary elements, aspirational and artistic."},
+  campaign:  {ico:"🎯",n:"Campaign",d:"Werbekampagne",intro:"Brand campaign photography — powerful iconic advertising imagery, brand-defining visual statement, strong and memorable."},
+  charsheet: {ico:"👤",n:"Charakterstudie",d:"Character Sheet",intro:"Character study photography — neutral precise documentation of form, silhouette and presence, clean neutral background, no dramatic effects."},
+  wellness:  {ico:"🌿",n:"Wellness",d:"Ruhe & Energie",intro:"Wellness & lifestyle photography — serene, harmonious, grounded imagery conveying inner peace, vitality and authentic wellbeing."},
+  action:    {ico:"💪",n:"Action",d:"Kraft & Bewegung",intro:"Athletic action photography — explosive frozen motion, raw athletic energy and physical power as the central visual statement."},
+  fineart:   {ico:"🖼",n:"Fine Art",d:"Kunstfotografie",intro:"Fine art photography — sculptural, minimalist artistic imagery with graphic compositional intent, intended for gallery or high-end publication use."},
+  lifestyle: {ico:"🏖",n:"Lifestyle",d:"Authentisch",intro:"Lifestyle photography — authentic candid real-life moments, unposed natural energy, genuinely lived-in atmosphere."},
+};
+const ST_THEME={yoga:["tutorial","editorial","wellness","charsheet","fineart","lifestyle"],sport:["tutorial","action","campaign","lifestyle","charsheet"],fashion:["editorial","campaign","charsheet","lifestyle","fineart"]};
+
+// ═══ POSE DATABASE — MASSIVELY EXPANDED ═════════════
+// Schema: {g,de,sk,r[],s:{ratio:[{lbl,angle,cam,p,pos:{o,u,l,r,m},w}]}}
+// pos = O=oben U=unten L=links R=rechts M=mitte
+// w = SVG template: V I H A T D P K C J O
+const DB=[
+// ══ YOGA BODEN (yb) ════════════════════════════════
+{g:"yb",de:"Savasana",sk:"Totenhaltung",r:["16:9","top","9:16","1:1"],s:{
+"16:9":[
+{lbl:"Seitprofil · Boden",angle:"MATS",cam:"exact 90° side profile at mat level, camera at floor, body as horizontal line",p:"Savasana / Totenhaltung — side profile at mat level: body lying completely flat on back, arms slightly away palms up, legs slightly apart. Horizontal line from head to toe.",pos:{o:"Schulter",u:"Matte/Boden",l:"Kopf",r:"Füße/Zehen",m:"Torso"},w:"H"},
+{lbl:"Bird View 90° · Quer",angle:"BIRD90",cam:"camera directly overhead 90°, body horizontal in 16:9 landscape",p:"Savasana bird view 16:9: lying flat on back viewed from directly above, body as flat symmetric form.",pos:{o:"Obere Schulter",u:"Untere Schulter",l:"Kopf",r:"Füße",m:"Becken"},w:"O"},
+],
+"9:16":[
+{lbl:"Bird View 90° · Hochformat",angle:"BIRD90",cam:"camera overhead 90°, body oriented vertically in 9:16 portrait",p:"Savasana bird view portrait: body lying flat, crown at top frame edge, toes at bottom frame edge, arms slightly spread, symmetric overhead view.",pos:{o:"Kopf/Krone",u:"Zehen",l:"Linker Arm",r:"Rechter Arm",m:"Becken"},w:"O"},
+],
+"top":[
+{lbl:"Bird View 90° · Zentriert",angle:"BIRD90",cam:"camera mounted overhead at 90°, body centered",p:"Savasana overhead: flat on back, arms slightly out, legs slightly apart, face looking straight up. Head at top center, feet at bottom center.",pos:{o:"Kopf",u:"Füße",l:"Linker Arm",r:"Rechter Arm",m:"Becken"},w:"O"},
+],
+"1:1":[
+{lbl:"Bird View 90° · Square",angle:"BIRD90",cam:"overhead 90° square crop",p:"Savasana overhead square: body centered in square frame, face up, arms slightly out.",pos:{o:"Kopf",u:"Füße",m:"Torso"},w:"O"},
+]}},
+
+{g:"yb",de:"Brücke",sk:"Setu Bandhasana",r:["16:9","9:16","top"],s:{
+"16:9":[
+{lbl:"Seitprofil · Bogenform",angle:"MATS",cam:"camera at floor level, exact 90° side profile, arch fills horizontal frame",p:"Bridge pose side profile at floor: lying on back, feet flat hip-width, knees bent pointing up, spine lifted in strong arch, hips at apex, arms alongside body. Arch from shoulders to feet.",pos:{o:"Hüfte (Apex)",u:"Matte",l:"Schultern",r:"Füße",m:"Wirbelsäule-Bogen"},w:"A"},
+{lbl:"Bird View 90°",angle:"BIRD90",cam:"camera directly overhead at 90°",p:"Bridge pose bird view: feet at bottom frame, knees bent as symmetric peaks pointing toward camera, spine arched up, face visible looking straight up.",pos:{o:"Kopf",u:"Füße",l:"Linkes Knie",r:"Rechtes Knie",m:"Hüfte"},w:"O"},
+{lbl:"High-Angle 45° · Diagonal",angle:"HIGH45",cam:"elevated camera at 45° from above-front",p:"Bridge pose elevated diagonal: arch visible from above-front, knees prominent, spine curving, shoulders and feet as anchor points.",pos:{o:"Knie",u:"Füße/Schultern",m:"Hüfte/Bogen"},w:"O"},
+],
+"9:16":[
+{lbl:"Low-Angle · Fußende",angle:"LOW",cam:"camera low at foot level ~20cm, looking toward upper body",p:"Bridge pose from foot end: feet flat on floor dominating lower frame, knees bent rising, spine arched up, face visible at top frame looking toward camera.",pos:{o:"Gesicht",u:"Fußsohlen",l:"Linker Fuß",r:"Rechter Fuß",m:"Knie/Bogen"},w:"V"},
+{lbl:"Seitprofil · Portrait",angle:"EYES",cam:"side profile at floor level, portrait crop",p:"Bridge pose side portrait: full arch in portrait — shoulders at lower frame, hips at peak top-center, feet below.",pos:{o:"Hüfte (Apex)",u:"Schultern/Füße",m:"Wirbel-Bogen"},w:"A"},
+{lbl:"Extreme Low · Fußende",angle:"XLOW",cam:"camera virtually at floor level at foot end, 5cm",p:"Bridge pose extreme low from feet: camera at floor, soles massive at very bottom frame, knees rising, hips at peak, face at top frame.",pos:{o:"Gesicht",u:"Fußsohlen (groß/nah)",m:"Knie"},w:"V"},
+],
+"top":[
+{lbl:"Bird View 90°",angle:"BIRD90",cam:"camera overhead 90° directly above",p:"Bridge pose top-down: feet at bottom, knees as two symmetric peaks, spine arched, face at top looking straight up toward camera.",pos:{o:"Kopf",u:"Füße",l:"Linkes Knie",r:"Rechtes Knie",m:"Hüfte"},w:"O"},
+]}},
+
+{g:"yb",de:"Volles Rad",sk:"Urdhva Dhanurasana",r:["16:9","9:16","top"],s:{
+"16:9":[
+{lbl:"Seitprofil · Vollbogen",angle:"MATS",cam:"camera at mat level, exact 90° side, complete wheel arc",p:"Wheel pose full arc side profile: palms flat behind head, feet flat hip-width, arms straight, legs bent, body in complete open wheel arc, hips as apex — hands at left edge, feet at right edge.",pos:{o:"Hüfte (Apex)",u:"Matte",l:"Hände",r:"Füße",m:"Wirbel-Bogen"},w:"A"},
+{lbl:"High-Angle 45° · Diagonal",angle:"HIGH45",cam:"elevated camera 45° from above-front",p:"Wheel pose elevated diagonal: full backbend from above, four limbs at corners, belly and hips at highest center.",pos:{o:"Bauch/Hüfte (Apex)",u:"Matte/Hände/Füße",m:"Rücken-Bogen"},w:"O"},
+],
+"9:16":[
+{lbl:"Durch den Bogen · Low",angle:"ARCH",cam:"camera low between the hands on mat, looking up through the arch",p:"Wheel pose through arch: camera between hands at ground level. Both hands in foreground at bottom frame edges, arms straight, body arching overhead, face visible inverted at arch center looking toward camera.",pos:{o:"Gesicht (invertiert)",u:"Hände (Boden)",l:"Linke Hand",r:"Rechte Hand",m:"Bogen-Apex"},w:"A"},
+{lbl:"Seitprofil · Portrait",angle:"EYES",cam:"side profile at mat level, portrait",p:"Wheel pose side portrait: full backbend arc in 9:16 — hands at lower-left, arch rising, feet lower-right.",pos:{o:"Hüfte (Apex)",u:"Hände/Füße",m:"Bogen"},w:"A"},
+{lbl:"High-Angle · Frontal",angle:"HIGH45",cam:"elevated angle from above-front showing backbend depth",p:"Wheel pose high-angle frontal: from above, open chest visible, four limbs splayed, hips at highest point.",pos:{o:"Hüfte/Bauch",u:"Hände/Füße",m:"Rücken"},w:"K"},
+],
+"top":[
+{lbl:"Bird View · 4 Extremitäten",angle:"BIRD90",cam:"camera overhead 90° directly above",p:"Wheel pose overhead: four limbs as corner points at mat, back arching toward camera as highest center, head between arms visible.",pos:{o:"Hände",u:"Füße",l:"Linke Hand",r:"Rechte Hand",m:"Rücken (Apex)"},w:"O"},
+]}},
+
+{g:"yb",de:"Kobra",sk:"Bhujangasana",r:["16:9","9:16"],s:{
+"16:9":[
+{lbl:"Seitprofil · Exakt 90°",angle:"EYES",cam:"exact 90° side profile at mat level",p:"Cobra pose side profile: lying prone, palms beside lower ribs, elbows slightly bent, chest and head lifted in backbend, legs extended — head at left edge, feet at right edge.",pos:{o:"Kopf (angehoben)",u:"Hüfte/Beine",l:"Kopf",r:"Füße",m:"Brust/Rippen"},w:"H"},
+{lbl:"3/4 · Diagonal",angle:"EYE3Q",cam:"slightly elevated 3/4 from front-left",p:"Cobra 3/4 diagonal: upper body lifted in backbend, face turning 3/4 toward camera, open chest, arms pressing into mat.",pos:{o:"Kopf",u:"Beine/Matte",l:"Linke Schulter",r:"Körper rechts",m:"Brust"},w:"H"},
+],
+"9:16":[
+{lbl:"Mattenhöhe · Frontal direkt",angle:"MATL",cam:"camera at mat level ~5-10cm, frontal looking at chest/face",p:"Cobra frontal mat level: facing camera directly, prone, palms beside chest, chest and head lifted, face looking into lens. Hands at very bottom frame.",pos:{o:"Gesicht",u:"Hände (Boden nah)",m:"Brust/Dekolleté"},w:"K"},
+{lbl:"Extreme Low · Boden",angle:"XLOW",cam:"camera at floor level 5cm, extreme low, frontal",p:"Cobra extreme low: camera virtually on mat, extreme upward angle. Hands dominate very bottom, body rising, face at top.",pos:{o:"Kopf",u:"Hände (groß/nah)",m:"Arme/Schultern"},w:"K"},
+{lbl:"3/4 · Augenhöhe",angle:"EYE3Q",cam:"3/4 angle slightly elevated at chest height",p:"Cobra 3/4 portrait: prone, upper body lifted, face at 3/4 to camera, one shoulder forward, chest open.",pos:{o:"Kopf",u:"Beine",m:"Schultern"},w:"K"},
+{lbl:"Rear · Rückenblick",angle:"RFAR",cam:"rear 3/4 showing back muscles and lifted head",p:"Cobra rear diagonal: from behind-side, back muscles and lifted head visible, legs extended behind.",pos:{o:"Hinterkopf",u:"Füße",m:"Rückenmuskulatur"},w:"H"},
+]}},
+
+{g:"yb",de:"Sphinx",sk:"Salamba Bhujangasana",r:["16:9","9:16"],s:{
+"16:9":[
+{lbl:"Seitprofil · Mattenhöhe",angle:"MATS",cam:"exact side profile at mat level",p:"Sphinx pose side profile: prone, forearms flat parallel, elbows under shoulders, chest gently lifted, spine in soft arch, head upright. Elbows at left, toes at right.",pos:{o:"Kopf",u:"Matte",l:"Unterarme",r:"Füße",m:"Brust/Wirbel"},w:"H"},
+{lbl:"Frontal · Augenhöhe",angle:"EYEF",cam:"frontal at forearm/chest height, eye level",p:"Sphinx frontal: facing camera, forearms on mat, chest lifted, face with direct eye contact. Both shoulders at left and right edges.",pos:{o:"Kopf",u:"Unterarme",l:"Linke Schulter",r:"Rechte Schulter",m:"Brust"},w:"K"},
+],
+"9:16":[
+{lbl:"Mattenhöhe · Low-Angle",angle:"MATL",cam:"camera at mat level slight upward tilt, frontal",p:"Sphinx portrait mat level: forearms at bottom frame, chest lifting gently, face at top looking toward camera.",pos:{o:"Gesicht",u:"Unterarme (nah)",m:"Brust"},w:"K"},
+{lbl:"High-Angle · Von oben",angle:"HIGH45",cam:"elevated 45° from above-front",p:"Sphinx high angle: from elevated diagonal, curved spine and open chest visible from above, forearms at bottom.",pos:{o:"Rücken",u:"Unterarme",m:"Schultern/Kopf"},w:"K"},
+]}},
+
+{g:"yb",de:"Bogen",sk:"Dhanurasana",r:["16:9","9:16","top"],s:{
+"16:9":[
+{lbl:"Seitprofil · Vollbogen",angle:"MATS",cam:"exact 90° side profile at mat level",p:"Bow pose side profile: prone, knees bent bringing heels toward back, both hands gripping ankles, chest and thighs lifted, body forming complete bow arc. Head at left, feet at right, apex at top.",pos:{o:"Brust (Apex)",u:"Bauch",l:"Kopf",r:"Füße/Zehen",m:"Rücken-Bogen"},w:"A"},
+{lbl:"3/4 · Schräg vorne",angle:"EYE3Q",cam:"3/4 angle slightly elevated from front",p:"Bow pose 3/4: from front-side, chest open and lifted, arms reaching back, depth of backbend visible.",pos:{o:"Kopf/Brust",u:"Bauch",m:"Arme/Schultern"},w:"A"},
+],
+"9:16":[
+{lbl:"Frontal · Low Bodennähe",angle:"MATL",cam:"frontal at mat level, camera at chest height",p:"Bow pose frontal: facing camera, chest open and lifted, arms reaching back gripping ankles. Chest and face fill upper frame, knees at lower frame.",pos:{o:"Gesicht/Brust",u:"Knie (Boden)",m:"Arme/Schultern"},w:"K"},
+{lbl:"High-Angle · Von oben",angle:"HIGH45",cam:"elevated 45° from above-front",p:"Bow pose elevated: from above-front diagonal, full bow arc visible, chest and head visible at top, feet at lower frame.",pos:{o:"Kopf",u:"Knie",m:"Rücken-Bogen"},w:"K"},
+{lbl:"Extreme Low · Bauchhöhe",angle:"XLOW",cam:"camera at floor level looking up, 5cm above mat",p:"Bow pose extreme low: camera at mat level looking up, arc silhouette above, hands at far bottom, chest high.",pos:{o:"Brust/Bogen",u:"Hände (Boden-nah)",m:"Arme"},w:"K"},
+{lbl:"Rear · Rückenblick",angle:"EYER",cam:"rear view at kneeling body height",p:"Bow pose rear view: from behind, back muscles and spine visible in deep backbend, arms reaching back to ankles.",pos:{o:"Rücken (Apex)",u:"Knie",m:"Schulterblätter"},w:"K"},
+],
+"top":[
+{lbl:"Bird View · Bogenform",angle:"BIRD90",cam:"camera directly overhead at 90°",p:"Bow pose overhead: prone, symmetric bow shape from above, knees bent, hands gripping feet, back arched.",pos:{o:"Kopf",u:"Füße",l:"Linker Arm",r:"Rechter Arm",m:"Rücken"},w:"O"},
+]}},
+
+{g:"yb",de:"Heuschrecke",sk:"Shalabhasana",r:["16:9","9:16","top"],s:{
+"16:9":[
+{lbl:"Seitprofil · Schwebend",angle:"MATS",cam:"side profile at mat level, body hovering",p:"Locust pose side: prone, both arms alongside body, both legs and chest simultaneously lifted, body hovering in curved arc above mat. Head at left, feet at right.",pos:{o:"Brust/Beine (Apex)",u:"Bauch",l:"Kopf",r:"Füße",m:"Rücken"},w:"A"},
+],
+"9:16":[
+{lbl:"Diagonal Rear · Von oben",angle:"DIAGR",cam:"elevated rear diagonal 45° from above-behind",p:"Locust rear elevated: from above-behind, back muscles and spine visible, legs raised behind, feet at lower foreground, head at upper rear.",pos:{o:"Kopf",u:"Füße",m:"Rückenmuskulatur"},w:"V"},
+{lbl:"Frontal · Low Bodennähe",angle:"MATL",cam:"frontal at mat level, camera at body height",p:"Locust frontal low: facing camera prone, chest lifted off mat, face looking forward, legs raised behind.",pos:{o:"Gesicht",u:"Bauch (Boden)",m:"Brust"},w:"K"},
+],
+"top":[
+{lbl:"Bird View 90°",angle:"BIRD90",cam:"camera directly overhead at 90°",p:"Locust overhead: body prone hovering, arms at sides, legs and chest lifted in slight arc. Full body head to feet from above.",pos:{o:"Kopf",u:"Füße",l:"Linker Arm",r:"Rechter Arm",m:"Rücken"},w:"O"},
+]}},
+
+{g:"yb",de:"Herabschauender Hund",sk:"Adho Mukha Svanasana",r:["16:9","9:16","top"],s:{
+"16:9":[
+{lbl:"Seitprofil · V-Form",angle:"MATS",cam:"exact 90° side profile at mat level, inverted V",p:"Downward dog side profile: palms flat, feet flat, hips elevated forming apex of perfect inverted V — hands at left, feet at right, hips at top center.",pos:{o:"Hüfte (Apex V)",u:"Matte",l:"Hände",r:"Füße",m:"Wirbelsäule"},w:"D"},
+{lbl:"High-Angle · 45° Diagonal",angle:"HIGH45",cam:"elevated 45° from above-front",p:"Downward dog high angle: inverted V from elevated diagonal, hands at bottom near, hips at top.",pos:{o:"Hüfte",u:"Hände",l:"Links",r:"Rechts",m:"Rücken"},w:"D"},
+],
+"9:16":[
+{lbl:"Durch Hände · Arch Low",angle:"ARCH",cam:"camera between the hands on mat, looking up through inverted V",p:"Downward dog through hands: camera at ground between hands. Both hands at bottom frame edges, inverted V above, face visible at apex looking down toward camera.",pos:{o:"Hüfte (Apex V)",u:"Hände (Boden)",l:"Linke Hand",r:"Rechte Hand",m:"Beine"},w:"D"},
+{lbl:"Rear · High-Angle oben",angle:"DIAGR",cam:"elevated diagonal from above-behind",p:"Downward dog rear elevated: from above-behind, hips at top, hands and feet at lower frame, V-shape from behind.",pos:{o:"Hüfte",u:"Hände/Füße",m:"Rücken"},w:"D"},
+{lbl:"Bird View · Portrait",angle:"BIRD90",cam:"overhead 90° portrait orientation",p:"Downward dog bird view portrait: inverted V chevron from above, feet at top, hands at bottom, hips as center peak.",pos:{o:"Füße",u:"Hände",m:"Hüfte"},w:"D"},
+{lbl:"Frontal · Mattenhöhe",angle:"MATL",cam:"frontal at mat level looking toward the face",p:"Downward dog frontal low: camera at mat level, face visible looking down between arms, hands and feet in peripheral.",pos:{o:"Hüfte",u:"Hände/Füße",m:"Gesicht (nach unten)"},w:"D"},
+],
+"top":[
+{lbl:"Bird View · V-Chevron",angle:"BIRD90",cam:"overhead 90° directly above",p:"Downward dog top-down: inverted V as geometric chevron — hands at bottom of frame, feet at top, hips as peak.",pos:{o:"Füße",u:"Hände",m:"Hüfte (Apex)"},w:"D"},
+]}},
+
+{g:"yb",de:"Plank",sk:"Kumbhakasana",r:["16:9","9:16","top"],s:{
+"16:9":[
+{lbl:"Seitprofil · Gerade Linie",angle:"MATS",cam:"exact side profile at floor level, body as diagonal line",p:"Plank pose side profile: palms flat under shoulders, arms extended, feet together, body in perfectly rigid straight diagonal line crown to heels. Hands at left, feet at right.",pos:{o:"Schultern",u:"Hände/Füße",l:"Kopf/Hände",r:"Füße",m:"Hüfte (gerade)"},w:"P"},
+{lbl:"High-Angle · Diagonal",angle:"DIAG",cam:"elevated 3/4 angle from above-front",p:"Plank high angle: from above-front diagonal, rigid line visible in perspective, hands near-bottom, feet far-top.",pos:{o:"Rücken",u:"Hände",m:"Hüfte"},w:"P"},
+],
+"9:16":[
+{lbl:"Extreme Low · Frontal Gesicht",angle:"XLOW",cam:"camera at floor 5cm, looking directly toward face",p:"Plank extreme low frontal: camera virtually on mat looking toward face. Hands massive at very bottom frame, body in rigid plank receding in perspective, face at top.",pos:{o:"Gesicht",u:"Hände (groß/nah)",m:"Körper (Perspektive)"},w:"K"},
+{lbl:"Diagonal Rear · Von oben",angle:"DIAGR",cam:"elevated rear diagonal 45°",p:"Plank rear elevated: heels at lower foreground, body rigid, shoulders at upper frame, head looking down.",pos:{o:"Schultern",u:"Fersen",m:"Rücken/Körperlinie"},w:"P"},
+{lbl:"Mattenhöhe · Frontal",angle:"MATL",cam:"camera at mat level frontal looking at face",p:"Plank mat level frontal: forearms or hands at very bottom frame, rigid body receding, face at top looking toward camera.",pos:{o:"Gesicht",u:"Hände (Boden)",m:"Torso (Perspektive)"},w:"K"},
+],
+"top":[
+{lbl:"Bird View · Rechteck",angle:"BIRD90",cam:"overhead 90° directly above",p:"Plank top-down: body as perfectly straight narrow rectangle. Shoulders at top, feet at bottom.",pos:{o:"Kopf/Schultern",u:"Füße",m:"Rücken"},w:"O"},
+]}},
+
+{g:"yb",de:"Seitlicher Plank",sk:"Vasisthasana",r:["16:9","9:16"],s:{
+"16:9":[
+{lbl:"Seitprofil · Diagonale",angle:"EYES",cam:"exact side profile, body diagonal",p:"Side plank side profile: one palm on mat arm extended, feet stacked, body in clean diagonal line elevated, top arm straight up perpendicular.",pos:{o:"Obere Hand",u:"Untere Hand/Füße",l:"Füße",r:"Obere Hand",m:"Hüfte (Diagonal-Apex)"},w:"P"},
+],
+"9:16":[
+{lbl:"Frontal · Diagonal Schräg",angle:"EYE3Q",cam:"slight frontal angle showing depth of side plank",p:"Side plank portrait: one arm pressing into mat, body elevated in strong diagonal, top arm extending upward, face toward camera.",pos:{o:"Obere Hand",u:"Untere Hand",m:"Hüfte"},w:"P"},
+{lbl:"Extreme Low · Mattennähe",angle:"XLOW",cam:"extreme low angle at floor level",p:"Side plank extreme low: camera at floor looking up. Supporting hand at very bottom, body rising diagonally, raised hand at very top.",pos:{o:"Obere Hand",u:"Untere Hand (Boden nah)",m:"Körperdiagonale"},w:"P"},
+{lbl:"Rear 3/4 · Rücken",angle:"RFAR",cam:"rear 3/4 diagonal showing back muscles",p:"Side plank rear diagonal: from behind-side, back and oblique muscles visible in side plank, one arm raised.",pos:{o:"Obere Hand",u:"Untere Hand/Füße",m:"Rücken/Oblique"},w:"P"},
+]}},
+
+{g:"yb",de:"Boot-Pose",sk:"Navasana",r:["9:16","4:3"],s:{
+"9:16":[
+{lbl:"Frontal · V-Form Augenhöhe",angle:"EYEF",cam:"frontal at seated height",p:"Boat pose frontal: seated, spine upright, both legs lifted at ~45°, arms extended forward parallel to legs, V-shape. Face to camera.",pos:{o:"Füße/Hände",u:"Gesäß",m:"Bauch/Torso"},w:"V"},
+{lbl:"3/4 · Dynamisch schräg",angle:"EYE3Q",cam:"3/4 angle slightly elevated",p:"Boat pose 3/4: V-shape visible in depth, one side closer to camera, face at angle toward camera.",pos:{o:"Füße",u:"Gesäß",m:"Torso/Arme"},w:"V"},
+{lbl:"Low-Angle · Von unten",angle:"LOW",cam:"low angle frontal at seated height",p:"Boat pose low angle: from below, sitting base at very bottom, V-shape rising, feet at top frame.",pos:{o:"Füße",u:"Gesäß",m:"Torso"},w:"V"},
+],
+"4:3":[
+{lbl:"Frontal · 4:3 Editorial",angle:"EYEF",cam:"frontal at seated height",p:"Boat pose editorial 4:3: V-shape body, face directly to camera.",pos:{o:"Füße",u:"Gesäß",m:"Torso"},w:"V"},
+]}},
+
+{g:"yb",de:"Kopfstand",sk:"Sirsasana",r:["9:16","16:9"],s:{
+"9:16":[
+{lbl:"Frontal · Invertiert Mattenhöhe",angle:"MATL",cam:"frontal at ground level looking up at inverted body",p:"Headstand frontal from mat: forearms flat on mat forming triangle, crown on mat between hands, both legs extended straight up, perfect inverted line — forearms at very bottom frame, feet at very top.",pos:{o:"Füße/Zehen",u:"Unterarme/Krone",m:"Torso (invertiert)"},w:"I"},
+{lbl:"Seitprofil · Portrait invertiert",angle:"EYES",cam:"side profile at mat level, portrait",p:"Headstand side portrait: fully inverted vertical line — forearms and crown at bottom, legs straight up at top.",pos:{o:"Füße",u:"Unterarme/Krone",m:"Torso"},w:"I"},
+{lbl:"Rear · Von hinten-unten",angle:"RLOW",cam:"rear view, camera at floor level from behind",p:"Headstand rear low: from behind at floor level, head at bottom frame, heels and soles at very top. Back and spine visible.",pos:{o:"Fersen/Sohlen",u:"Hinterkopf",m:"Rücken/Wirbel"},w:"I"},
+{lbl:"Low-Angle · Diagonal Front",angle:"LOW",cam:"low angle frontal diagonal",p:"Headstand low diagonal: from below at angle, inverted body with legs at top, dramatic foreshortening.",pos:{o:"Zehen",u:"Krone/Unterarme",m:"Beine"},w:"I"},
+{lbl:"3/4 · Schräg invertiert",angle:"EYE3Q",cam:"3/4 angle at body height, inverted",p:"Headstand 3/4: three-quarter view of inverted body, one side forward, head on mat at bottom, feet in air at top.",pos:{o:"Füße",u:"Unterarme",m:"Torso"},w:"I"},
+],
+"16:9":[
+{lbl:"Seitprofil · 16:9",angle:"MATS",cam:"side profile at mat level, landscape",p:"Headstand side 16:9: fully inverted, forearms and crown on mat, legs reaching straight up — vertical silhouette in 16:9.",pos:{o:"Füße",u:"Matte",l:"Unterarme",r:"Füße (oben)",m:"Torso"},w:"I"},
+]}},
+
+{g:"yb",de:"Schulterstand",sk:"Sarvangasana",r:["9:16"],s:{
+"9:16":[
+{lbl:"Seitprofil · Invertiert",angle:"EYES",cam:"side profile at mat level",p:"Shoulder stand side profile: upper back on mat, hands pressing into lower back, both legs extended straight up perpendicular. Shoulders at bottom, feet at very top.",pos:{o:"Füße/Zehen",u:"Schultern",m:"Beine/Torso"},w:"I"},
+{lbl:"Frontal · Mattenhöhe",angle:"MATL",cam:"frontal at mat level, looking up",p:"Shoulder stand frontal: legs straight up at top frame, hips supported by hands, shoulders at bottom — frontal perspective.",pos:{o:"Füße",u:"Schultern",m:"Hüfte/Hände"},w:"I"},
+{lbl:"Low-Angle · Frontal dramatisch",angle:"LOW",cam:"low angle frontal ~20cm, looking up",p:"Shoulder stand low angle: from below, feet dominate very top frame, hips supported, shoulders at very bottom — dramatic low perspective.",pos:{o:"Füße (groß, nah)",u:"Schultern",m:"Beine"},w:"I"},
+]}},
+
+{g:"yb",de:"Kamel",sk:"Ustrasana",r:["9:16","16:9"],s:{
+"9:16":[
+{lbl:"Seitprofil · Kniend",angle:"EYES",cam:"side profile at kneeling body height",p:"Camel pose side: kneeling upright, torso arching backward, hands reaching back to heels, chest lifting toward ceiling — full arc from knees to hands.",pos:{o:"Brust (Apex)",u:"Knie",m:"Wirbel-Bogen"},w:"K"},
+{lbl:"Low-Angle · Frontal",angle:"LOW",cam:"frontal low angle at mat level ~20cm",p:"Camel pose frontal low: camera low, knees on mat in foreground at lower frame, torso arching back, open chest at upper frame.",pos:{o:"Brust",u:"Knie (nah)",m:"Torso"},w:"K"},
+{lbl:"3/4 · Tiefe des Backbend",angle:"EYE3Q",cam:"3/4 showing backbend depth",p:"Camel 3/4: three-quarter view, depth of backbend visible, one knee toward camera, chest open.",pos:{o:"Brust/Kopf",u:"Knie",m:"Torso"},w:"K"},
+{lbl:"Rear · Rückenansicht",angle:"EYER",cam:"rear view at kneeling height",p:"Camel rear: from behind, spine and back muscles in deep backbend, arms reaching back to heels, head dropped back.",pos:{o:"Hinterkopf",u:"Knie",m:"Rücken/Schultern"},w:"K"},
+{lbl:"High-Angle · Von oben",angle:"HIGH45",cam:"elevated 45° from above-front",p:"Camel high angle: from above-front, open chest visible, kneeling base at bottom, head dropping back.",pos:{o:"Brust (offen)",u:"Knie",m:"Torso"},w:"K"},
+],
+"16:9":[
+{lbl:"Seitprofil · Weitwinkel",angle:"EYES",cam:"side profile at mat level, wider framing",p:"Camel side landscape: kneeling, full backbend arc visible. Knees at left-bottom, hips at apex-top, arms reaching to heels.",pos:{o:"Brust (Apex)",u:"Matte",l:"Knie",r:"Hände/Fersen",m:"Wirbel"},w:"A"},
+]}},
+
+{g:"yb",de:"Katze-Kuh",sk:"Marjaryasana-Bitilasana",r:["16:9","top","9:16"],s:{
+"16:9":[
+{lbl:"Seitprofil · Katzenbuckel",angle:"MATS",cam:"exact side profile at mat level, cat pose",p:"Cat pose side profile: all fours, spine rounded upward in full arch, chin tucked — hands at left, knees at right, arched spine at top center.",pos:{o:"Rücken (Apex)",u:"Matte",l:"Hände",r:"Knie",m:"Rippen"},w:"D"},
+{lbl:"Seitprofil · Kuhbogen",angle:"MATS",cam:"exact side profile, cow pose",p:"Cow pose side profile: all fours, spine dropping in sway downward, head lifted, face forward — hands at left, knees at right, belly at bottom.",pos:{o:"Kopf",u:"Bauch (tief)",l:"Hände",r:"Knie",m:"Rücken"},w:"H"},
+],
+"top":[
+{lbl:"Bird View · Vierfüßler",angle:"BIRD90",cam:"overhead 90° directly above",p:"All-fours bird view: quadruped from above. Hands at top frame, knees at bottom frame.",pos:{o:"Hände",u:"Knie",l:"Linke Hand/Knie",r:"Rechte Hand/Knie",m:"Rücken"},w:"O"},
+],
+"9:16":[
+{lbl:"Mattenhöhe · Frontal Gesicht",angle:"MATL",cam:"frontal low at mat level before face",p:"Cat pose frontal mat-level: camera at mat level before face. Face and head at lower frame, rounded back rising to top.",pos:{o:"Hüfte/Rücken",u:"Gesicht (nah)",m:"Schultern"},w:"K"},
+{lbl:"Diagonal Rear · Von hinten",angle:"DIAGR",cam:"elevated rear diagonal",p:"All-fours rear diagonal: from above-behind, rounded back visible, hands and knees at lower frame corners.",pos:{o:"Rücken",u:"Hände/Knie",m:"Schultern"},w:"K"},
+]}},
+
+{g:"yb",de:"Kindshaltung",sk:"Balasana",r:["16:9","top","9:16"],s:{
+"16:9":[
+{lbl:"Seitprofil · Tief",angle:"MATS",cam:"exact side profile at mat level",p:"Child's pose side profile: knees beneath torso, hips back toward heels, arms stretched fully forward, forehead on mat. Hands at left, heels at right.",pos:{o:"Rücken (gerundet)",u:"Matte",l:"Hände",r:"Füße/Fersen",m:"Hüfte"},w:"H"},
+],
+"top":[
+{lbl:"Bird View · Y-Form",angle:"BIRD90",cam:"overhead 90° directly above",p:"Child's pose top-down Y: arms stretched wide creating Y-shape, hips back to heels, rounded back visible.",pos:{o:"Hände/Arme",u:"Fersen",m:"Rücken/Kopf"},w:"O"},
+],
+"9:16":[
+{lbl:"Mattenhöhe · Gesichtshöhe",angle:"MATL",cam:"frontal low at mat level before face",p:"Child's pose face-level: camera at mat level before face. Face at very lower frame, arms stretching forward and upward in depth.",pos:{o:"Hände",u:"Gesicht (nah)",m:"Schultern"},w:"K"},
+{lbl:"High-Angle · Von oben-vorne",angle:"HIGH45",cam:"elevated 45° from above-front",p:"Child's pose high angle: from above-front, rounded back dominant, hands visible at far front, heels at near bottom.",pos:{o:"Hände",u:"Fersen",m:"Rücken"},w:"K"},
+]}},
+
+{g:"yb",de:"Schmetterling sitzend",sk:"Baddha Konasana",r:["top","16:9","9:16","1:1"],s:{
+"top":[
+{lbl:"Bird View · Schmetterling",angle:"BIRD90",cam:"overhead 90° directly above",p:"Butterfly top-down: sitting upright, soles pressed together at center, both knees fallen wide — symmetric butterfly wing shape. Knees at left and right, head at top, feet at bottom.",pos:{o:"Kopf",u:"Füße/Sohlen",l:"Linkes Knie",r:"Rechtes Knie",m:"Becken"},w:"C"},
+],
+"16:9":[
+{lbl:"Bird View · Querformat",angle:"BIRD90",cam:"overhead 90° 16:9",p:"Butterfly overhead 16:9: symmetric butterfly shape, knees wide at left and right.",pos:{o:"Kopf",u:"Füße",l:"Linkes Knie",r:"Rechtes Knie",m:"Becken"},w:"C"},
+{lbl:"Frontal · Augenhöhe sitzend",angle:"EYEF",cam:"frontal at seated eye level",p:"Butterfly frontal: seated, soles together, knees wide open left and right, torso upright, face to camera.",pos:{o:"Kopf",u:"Matte",l:"Linkes Knie",r:"Rechtes Knie",m:"Torso"},w:"C"},
+],
+"9:16":[
+{lbl:"Bird View · Portrait",angle:"BIRD90",cam:"overhead 90° portrait",p:"Butterfly overhead portrait: symmetric, head at top, feet at bottom, knees spread.",pos:{o:"Kopf",u:"Füße",m:"Knie/Becken"},w:"C"},
+{lbl:"Low-Angle · Frontal",angle:"LOW",cam:"low angle frontal at seated height",p:"Butterfly low angle: from below looking up, knees visible wide on both sides, face at top.",pos:{o:"Kopf",u:"Matte/Knie (nah)",m:"Sohlen/Becken"},w:"C"},
+],
+"1:1":[
+{lbl:"Bird View · Square",angle:"BIRD90",cam:"overhead 90° square",p:"Butterfly overhead square: symmetric in square frame, soles together, knees wide.",pos:{o:"Kopf",u:"Füße",m:"Becken"},w:"C"},
+]}},
+
+{g:"yb",de:"Unterarmstand",sk:"Pincha Mayurasana",r:["9:16"],s:{
+"9:16":[
+{lbl:"Frontal · Invertiert Mattenhöhe",angle:"MATL",cam:"frontal at mat level looking up at inverted body",p:"Forearm stand frontal: forearms flat and parallel on mat, palms pressing in, both legs extended straight up — perfect inverted straight line. Forearms at very bottom, feet at very top.",pos:{o:"Füße/Zehen",u:"Unterarme/Hände",m:"Torso (invertiert)"},w:"I"},
+{lbl:"Seitprofil · 9:16",angle:"EYES",cam:"side profile at mat level, portrait",p:"Forearm stand side: body fully inverted, forearms on mat at bottom, legs reaching straight up at top.",pos:{o:"Füße",u:"Unterarme",m:"Torso"},w:"I"},
+{lbl:"Rear Low · Von hinten-unten",angle:"RLOW",cam:"rear view, camera low behind",p:"Forearm stand rear low: from behind and below, soles at top frame looking down, back visible, forearms at bottom.",pos:{o:"Fußsohlen",u:"Unterarme",m:"Rücken"},w:"I"},
+]}},
+
+{g:"yb",de:"Scorpion",sk:"Vrschikasana",r:["9:16","16:9"],s:{
+"9:16":[
+{lbl:"Seitprofil · Spektakulär",angle:"EYES",cam:"side profile showing full scorpion arc",p:"Scorpion pose: forearms on mat, body inverted balanced on forearms, spine arching deeply so feet curl over toward head — full scorpion arc. Forearms at bottom, curled feet near head at top.",pos:{o:"Füße (über Kopf)",u:"Unterarme",m:"Rücken-Bogen"},w:"A"},
+{lbl:"Frontal · Dramatisch",angle:"EYEF",cam:"frontal at forearm height looking up",p:"Scorpion frontal: camera at mat level, forearms at very bottom, inverted torso rising, deeply arching back, feet curling overhead toward head.",pos:{o:"Füße (über Kopf)",u:"Unterarme",m:"Torso"},w:"A"},
+],
+"16:9":[
+{lbl:"Seitprofil · Weitwinkel",angle:"EYES",cam:"side profile at mat level, landscape framing",p:"Scorpion side landscape: full scorpion arc visible, forearms at left, feet curling over toward head at top-right.",pos:{o:"Füße (über Kopf)",u:"Unterarme",l:"Unterarme",r:"Füße",m:"Rücken"},w:"A"},
+]}},
+
+{g:"yb",de:"Horizontaler Spagat",sk:"Hanumanasana",r:["16:9","9:16","top"],s:{
+"16:9":[
+{lbl:"Seitprofil · Voller Spagat",angle:"EYES",cam:"side profile at mat level showing full split",p:"Hanumanasana side: right leg fully forward, left leg fully backward, hips square, torso upright — body spanning full 16:9 from front foot to back foot.",pos:{o:"Arme/Kopf",u:"Matte",l:"Vorderer Fuß",r:"Hinterer Fuß",m:"Hüfte"},w:"H"},
+{lbl:"Frontal · Arme hoch weit",angle:"EYEF",cam:"frontal at mat level showing full span",p:"Hanumanasana frontal: full split facing camera, front foot near, back foot far, hips square, arms overhead.",pos:{o:"Arme/Fingerspitzen",u:"Matte/Füße",l:"Vorderer Fuß",r:"Hinterer Fuß",m:"Hüfte"},w:"H"},
+],
+"9:16":[
+{lbl:"Frontal · Arme Hoch",angle:"EYEF",cam:"frontal at mat level",p:"Hanumanasana portrait: full split, hips square, both arms raised fully overhead, face to camera. Arms at top, feet at bottom.",pos:{o:"Fingerspitzen",u:"Füße/Matte",m:"Hüfte/Torso"},w:"V"},
+{lbl:"Low-Angle · Dramatisch",angle:"LOW",cam:"low angle at mat level",p:"Hanumanasana low angle: camera at mat level, front foot dominant at lower frame, torso rising, arms overhead at top.",pos:{o:"Fingerspitzen",u:"Vorderer Fuß (nah)",m:"Hüfte"},w:"V"},
+{lbl:"3/4 · Hüftöffnung sichtbar",angle:"EYE3Q",cam:"3/4 angle showing hip opening depth",p:"Hanumanasana 3/4: hip opening depth visible in 3/4 view, front leg forward, back leg behind, torso tall.",pos:{o:"Arme",u:"Füße",m:"Hüfte/Torso"},w:"V"},
+],
+"top":[
+{lbl:"Bird View · Spagat",angle:"BIRD90",cam:"overhead 90°",p:"Hanumanasana top-down: full split from above, front foot at top frame, back foot at bottom frame, hips and torso centered.",pos:{o:"Vorderer Fuß",u:"Hinterer Fuß",m:"Hüfte"},w:"O"},
+]}},
+
+{g:"yb",de:"Vorwärtsbeuge sitzend",sk:"Paschimottanasana",r:["16:9","9:16","top"],s:{
+"16:9":[
+{lbl:"Seitprofil · Gerundeter Rücken",angle:"MATS",cam:"side profile at mat level",p:"Seated forward fold side: sitting on mat, legs extended forward, torso folding deeply over legs, hands reaching toward feet, rounded spine. Head at left, feet at right.",pos:{o:"Rücken (gerundet)",u:"Gesäß/Matte",l:"Kopf",r:"Füße",m:"Wirbelsäule"},w:"H"},
+],
+"9:16":[
+{lbl:"Diagonal Rear · Von oben",angle:"DIAGR",cam:"elevated 45° from above-behind",p:"Forward fold rear elevated: rounded back from above, head near camera at bottom, feet at top frame.",pos:{o:"Füße",u:"Schultern/Kopf",m:"Rücken"},w:"K"},
+{lbl:"Seitprofil · Portrait",angle:"EYES",cam:"side profile portrait orientation",p:"Forward fold side portrait: full fold in portrait, head at left-bottom, feet at right, rounded back prominent.",pos:{o:"Rücken (gerundet)",u:"Gesäß",l:"Kopf",r:"Füße",m:"Wirbel"},w:"H"},
+],
+"top":[
+{lbl:"Bird View 90°",angle:"BIRD90",cam:"overhead 90° directly above",p:"Forward fold overhead: folded body from above, rounded back visible, arms reaching toward feet.",pos:{o:"Füße",u:"Gesäß",l:"Linker Arm",r:"Rechter Arm",m:"Rücken"},w:"O"},
+]}},
+
+// ══ YOGA STEHEND (ys) ══════════════════════════════
+{g:"ys",de:"Tadasana",sk:"Mountain Pose / Gerader Stand",r:["9:16","16:9","top","4:3"],s:{
+"9:16":[
+{lbl:"Frontal · Augenhöhe",angle:"EYEF",cam:"camera at subject's eye level, frontal, full body",p:"Mountain pose frontal eye level: standing perfectly upright, feet hip-width, arms at sides, spine elongated, chin level, face to camera. Soles at very bottom, crown at very top.",pos:{o:"Kopf/Krone",u:"Fußsohlen",m:"Torso"},w:"V"},
+{lbl:"Extreme Low · Bodennähe heroisch",angle:"XLOW",cam:"camera at floor 5cm, extreme upward tilt, frontal",p:"Mountain pose extreme low: camera at floor, feet and soles appear massive at very bottom, body recedes upward, head at very top.",pos:{o:"Kopf",u:"Fußsohlen (groß/nah)",m:"Beine"},w:"V"},
+{lbl:"Low-Angle · Frontal",angle:"LOW",cam:"camera at ~30cm height, frontal, looking slightly up",p:"Mountain pose low angle: camera at knee height looking up. Feet at lower frame, body rising in perspective, head at top.",pos:{o:"Kopf",u:"Füße",m:"Beine/Torso"},w:"V"},
+{lbl:"Rear · Augenhöhe",angle:"EYER",cam:"rear view, camera at eye level",p:"Mountain pose rear: standing from behind, nape at top, heels at bottom, back and spine visible.",pos:{o:"Nacken",u:"Fersen",m:"Rücken"},w:"V"},
+{lbl:"Rear Low · Von hinten-unten",angle:"RLOW",cam:"rear view camera at floor behind",p:"Mountain pose rear low: from behind at floor level, heels massive at bottom, body rising, nape at top.",pos:{o:"Hinterkopf",u:"Fersen (groß)",m:"Rücken"},w:"V"},
+{lbl:"3/4 · Schräg Augenhöhe",angle:"EYE3Q",cam:"3/4 at eye level",p:"Mountain pose 3/4: three-quarter view, one shoulder toward camera, face turned to lens.",pos:{o:"Kopf",u:"Füße",m:"Torso"},w:"V"},
+],
+"16:9":[
+{lbl:"T-Arme · Querformat",angle:"EYEF",cam:"frontal at standing height, arms extended sideways",p:"Mountain pose T-arms: both arms extended fully straight out at shoulder height, face to camera — body from left fingertip to right fingertip in 16:9.",pos:{o:"Kopf",u:"Füße",l:"Linke Hand",r:"Rechte Hand",m:"Torso"},w:"T"},
+{lbl:"Rear · Augenhöhe 16:9",angle:"EYER",cam:"rear view at eye level landscape",p:"Mountain pose rear landscape: back view, arms at sides, nape to heels visible — body centered in 16:9.",pos:{o:"Nacken",u:"Fersen",l:"Linke Seite",r:"Rechte Seite",m:"Rücken"},w:"V"},
+],
+"top":[
+{lbl:"Bird View · T-Form",angle:"BIRD90",cam:"camera directly overhead 90°, arms extended sideways",p:"Mountain pose bird view T: arms extended sideways from above — T-shape, head at top, feet at bottom, hands at left and right.",pos:{o:"Kopf",u:"Füße",l:"Linke Hand",r:"Rechte Hand",m:"Torso"},w:"T"},
+],
+"4:3":[
+{lbl:"Frontal · Editorial 4:3",angle:"EYEF",cam:"frontal at standing height",p:"Mountain pose editorial: standing tall, natural posture, face to camera — clean editorial 4:3.",pos:{o:"Kopf",u:"Füße",m:"Torso"},w:"V"},
+]}},
+
+{g:"ys",de:"Krieger I",sk:"Virabhadrasana I",r:["9:16","16:9","4:3"],s:{
+"9:16":[
+{lbl:"Frontal · Arme hoch",angle:"EYEF",cam:"frontal at standing height",p:"Warrior I frontal: right foot forward, right knee bent 90°, left leg extended back, both arms overhead alongside ears — back foot at very bottom, raised fingertips at very top.",pos:{o:"Fingerspitzen",u:"Hinterer Fuß",m:"Torso/Hüfte"},w:"V"},
+{lbl:"Extreme Low · Fußnähe",angle:"XLOW",cam:"extreme low at floor level",p:"Warrior I extreme low: front foot massive at very bottom, knee rising, torso and arms to top.",pos:{o:"Fingerspitzen",u:"Vorderer Fuß (groß)",m:"Knie/Beine"},w:"V"},
+{lbl:"Low-Angle · Frontal",angle:"LOW",cam:"low angle frontal ~30cm",p:"Warrior I low angle: from low, feet at lower frame, deep lunge visible, arms overhead at top.",pos:{o:"Fingerspitzen",u:"Füße",m:"Knie/Hüfte"},w:"V"},
+{lbl:"3/4 · Lunge-Tiefe",angle:"EYE3Q",cam:"3/4 angle showing lunge depth",p:"Warrior I 3/4: 45° view showing lunge depth, arms overhead, face toward camera.",pos:{o:"Arme",u:"Hinterer Fuß",m:"Hüfte/Knie"},w:"V"},
+{lbl:"Rear · Von hinten Low",angle:"RLOW",cam:"rear view at floor level",p:"Warrior I rear low: from behind at floor, back heel massive at bottom, lunge depth from behind, arms at top.",pos:{o:"Arme",u:"Hintere Ferse",m:"Rücken"},w:"V"},
+],
+"16:9":[
+{lbl:"Seitprofil · Lunge Tiefe",angle:"EYES",cam:"direct side profile at mat level",p:"Warrior I side: back foot at left edge, front bent knee at right edge, lunge depth visible, arms overhead.",pos:{o:"Arme",u:"Boden",l:"Hinterer Fuß",r:"Vorderes Knie",m:"Torso"},w:"V"},
+],
+"4:3":[
+{lbl:"Frontal · 4:3",angle:"EYEF",cam:"frontal",p:"Warrior I 4:3: full body frontal, lunge, arms overhead, face to camera.",pos:{o:"Arme",u:"Füße",m:"Torso"},w:"V"},
+]}},
+
+{g:"ys",de:"Krieger II",sk:"Virabhadrasana II",r:["16:9","9:16","4:3"],s:{
+"16:9":[
+{lbl:"Frontal · T-Arme Querformat",angle:"EYEF",cam:"frontal at standing height",p:"Warrior II frontal: wide stance, right knee bent 90°, both arms extended horizontally opposite directions — arms spanning full 16:9 from left hand to right hand.",pos:{o:"Kopf",u:"Füße",l:"Hintere Hand",r:"Vordere Hand",m:"Torso"},w:"T"},
+{lbl:"3/4 · Lunge sichtbar",angle:"EYE3Q",cam:"slight 45° angle",p:"Warrior II 3/4: depth of wide stance visible, arms horizontal, face to camera.",pos:{o:"Kopf",u:"Füße",l:"Hintere Hand",r:"Vordere Hand",m:"Hüfte"},w:"T"},
+],
+"9:16":[
+{lbl:"Seitprofil · Portrait",angle:"EYES",cam:"side profile at eye level",p:"Warrior II side portrait: wide stance in profile, arms extending front and back, head upper frame, feet lower.",pos:{o:"Kopf",u:"Füße",l:"Hintere Hand",r:"Vordere Hand",m:"Torso"},w:"V"},
+{lbl:"Rear Low · Von hinten",angle:"RLOW",cam:"rear view low angle",p:"Warrior II rear low: from behind at low angle, wide stance from behind, arms extending left-right.",pos:{o:"Nacken",u:"Fersen",m:"Rücken"},w:"V"},
+{lbl:"Low-Angle · Frontal",angle:"LOW",cam:"low angle frontal",p:"Warrior II low frontal: from below, wide stance dominant, arms at sides, head at top.",pos:{o:"Kopf",u:"Füße (nah)",m:"Knie/Hüfte"},w:"V"},
+],
+"4:3":[
+{lbl:"Frontal · 4:3",angle:"EYEF",cam:"frontal or slight 3/4",p:"Warrior II 4:3: wide stance, arms horizontal, face to camera.",pos:{o:"Kopf",u:"Füße",m:"Torso"},w:"T"},
+]}},
+
+{g:"ys",de:"Krieger III",sk:"Virabhadrasana III",r:["16:9","9:16"],s:{
+"16:9":[
+{lbl:"Seitprofil · Horizontale Linie",angle:"EYES",cam:"direct side profile at standing height",p:"Warrior III side profile: balanced on left leg, body and right leg parallel to floor, arms extended forward — horizontal T-shape. Fingers at left, raised heel at right.",pos:{o:"Körperlinie (horizontal)",u:"Standfuß",l:"Fingerspitzen",r:"Ferse (hinten)",m:"Hüfte"},w:"P"},
+{lbl:"Rear Diagonal · Von hinten-oben",angle:"DIAGR",cam:"elevated rear diagonal 45°",p:"Warrior III rear elevated: from above-behind, horizontal body visible, back of raised leg toward camera, arms away.",pos:{o:"Rücken",u:"Standfuß",l:"Hände",r:"Hinterer Fuß",m:"Hüfte"},w:"P"},
+],
+"9:16":[
+{lbl:"Frontal · T-Form Portrait",angle:"EYEF",cam:"frontal at standing height",p:"Warrior III frontal: balanced on one leg, body parallel to floor, arms extended toward camera, face to camera.",pos:{o:"Kopf",u:"Standfuß",m:"Horizontaler Körper"},w:"V"},
+{lbl:"Low-Angle · Aufsteigend",angle:"LOW",cam:"low angle frontal below standing leg",p:"Warrior III low angle: from below, standing foot at very bottom, body horizontal receding in perspective, arms at top.",pos:{o:"Arme/Kopf",u:"Standfuß (nah)",m:"Hüfte"},w:"V"},
+{lbl:"Seitprofil · Portrait",angle:"EYES",cam:"side profile portrait",p:"Warrior III side portrait: horizontal body visible in full — fingers at one edge, raised heel at other edge, standing leg below.",pos:{o:"Körperlinie",u:"Standfuß",l:"Finger",r:"Ferse",m:"Hüfte"},w:"P"},
+]}},
+
+{g:"ys",de:"Baum",sk:"Vrksasana",r:["9:16","4:3"],s:{
+"9:16":[
+{lbl:"Frontal · Arme hoch",angle:"EYEF",cam:"frontal at standing height",p:"Tree pose frontal: standing on left foot, right foot on inner thigh, both arms raised overhead — soles at very bottom, fingertips at very top.",pos:{o:"Fingerspitzen",u:"Standsohle",m:"Torso"},w:"V"},
+{lbl:"Extreme Low · Heroisch",angle:"XLOW",cam:"extreme low at floor level",p:"Tree pose extreme low: camera at floor, standing sole massive at very bottom, body rising upward, arms overhead at top.",pos:{o:"Arme",u:"Standsohle (groß)",m:"Bein/Knie"},w:"V"},
+{lbl:"Rear Low · Von hinten-heroisch",angle:"RLOW",cam:"rear view camera at floor behind",p:"Tree pose rear low: from behind at floor level, standing heel massive at bottom, back rising, raised arms at top.",pos:{o:"Hände",u:"Standferse",m:"Rücken"},w:"V"},
+{lbl:"3/4 · Mit Tiefenwirkung",angle:"EYE3Q",cam:"3/4 at eye level",p:"Tree pose 3/4: folded knee and foot visible, arms overhead, face 3/4 to camera.",pos:{o:"Kopf/Arme",u:"Standfuß",m:"Torso/Knie"},w:"V"},
+{lbl:"Low-Angle · Frontal",angle:"LOW",cam:"low angle frontal ~30cm",p:"Tree pose low angle: from knee height, stand foot dominant lower, folded knee visible midframe, arms at top.",pos:{o:"Arme",u:"Standfuß",m:"Knie"},w:"V"},
+],
+"4:3":[
+{lbl:"Frontal · 4:3",angle:"EYEF",cam:"frontal or slight 3/4",p:"Tree pose 4:3: balance, foot on inner thigh, arms overhead, face to camera.",pos:{o:"Arme",u:"Fuß",m:"Torso"},w:"V"},
+]}},
+
+{g:"ys",de:"Tänzer",sk:"Natarajasana",r:["9:16","16:9"],s:{
+"9:16":[
+{lbl:"Frontal-3/4 · Volle Ausdehnung",angle:"EYE3Q",cam:"slight 3/4 at standing height",p:"Dancer pose 3/4: balanced on left foot, right leg lifted high behind, right hand gripping ankle, left arm reaching forward and up, torso elegantly arching — stand foot at bottom, raised foot at very top.",pos:{o:"Hochgehobener Fuß",u:"Standsohle",m:"Torso/Bogen"},w:"V"},
+{lbl:"Extreme Low · Fußnähe",angle:"XLOW",cam:"extreme low at floor level",p:"Dancer pose extreme low: stand sole massive at bottom, body rising in elegant arc, raised foot at very top.",pos:{o:"Hochgehobener Fuß",u:"Standsohle (groß)",m:"Torso"},w:"V"},
+{lbl:"Rear 3/4 · Eleganz von hinten",angle:"RFAR",cam:"rear 3/4 diagonal at standing height",p:"Dancer pose rear diagonal: from behind-side, back of raised leg visible, arm reaching back, elegant arc from behind.",pos:{o:"Hochgehobener Fuß",u:"Standsohle",m:"Rücken/Bogen"},w:"V"},
+{lbl:"Low-Angle · Frontal",angle:"LOW",cam:"low angle frontal ~30cm",p:"Dancer pose low: from below, stand foot at lower frame, raised leg high at top, free arm reaching forward.",pos:{o:"Hochgehobener Fuß",u:"Standfuß",m:"Torso"},w:"V"},
+],
+"16:9":[
+{lbl:"Seitprofil · Volle Streckung",angle:"EYES",cam:"direct side profile at standing height",p:"Dancer pose side: balanced on one foot, leg lifted high behind, hand gripping ankle, free arm extended forward — full arc from front arm at left edge to raised back foot at right edge.",pos:{o:"Hochgehobener Fuß",u:"Standfuß",l:"Vorderer Arm",r:"Hochgehobener Fuß",m:"Torso"},w:"V"},
+]}},
+
+{g:"ys",de:"Dreieck",sk:"Trikonasana",r:["16:9","9:16","4:3"],s:{
+"16:9":[
+{lbl:"Frontal · Volle Breite",angle:"EYEF",cam:"frontal at standing height",p:"Triangle pose frontal: wide stance, right hand to shin or floor, left arm straight up. Wide feet spanning full 16:9, arms forming vertical diagonal line.",pos:{o:"Obere Hand",u:"Füße",l:"Linker Fuß",r:"Rechter Fuß",m:"Torso"},w:"T"},
+{lbl:"3/4 · Schräg Tiefe",angle:"EYE3Q",cam:"slight 3/4 angle",p:"Triangle 3/4: slight angle showing stance depth, arms in diagonal line, face toward camera.",pos:{o:"Obere Hand",u:"Füße",m:"Torso"},w:"T"},
+],
+"9:16":[
+{lbl:"Frontal · Diagonal oben-unten",angle:"EYEF",cam:"frontal, slightly angled",p:"Triangle portrait: body as diagonal from lower hand at bottom to raised arm at top, wide stance visible.",pos:{o:"Obere Hand",u:"Untere Hand/Fuß",m:"Hüfte"},w:"V"},
+{lbl:"Seitprofil · Diagonale Linie",angle:"EYES",cam:"direct side profile",p:"Triangle side portrait: feet wide, one hand down, other arm straight up — vertical line from hand to hand.",pos:{o:"Obere Hand",u:"Füße",m:"Torso"},w:"V"},
+{lbl:"Low-Angle · Heroisch",angle:"LOW",cam:"low angle frontal",p:"Triangle low angle: feet at lower frame, wide stance, raised arm at very top — heroic perspective.",pos:{o:"Obere Hand",u:"Füße (nah)",m:"Torso"},w:"V"},
+],
+"4:3":[
+{lbl:"Frontal · 4:3",angle:"EYEF",cam:"frontal",p:"Triangle 4:3: wide stance, one arm down, one arm up, face to camera.",pos:{o:"Obere Hand",u:"Füße",m:"Torso"},w:"V"},
+]}},
+
+{g:"ys",de:"Halbmond",sk:"Ardha Chandrasana",r:["9:16","16:9"],s:{
+"9:16":[
+{lbl:"Frontal · Sternform",angle:"EYEF",cam:"frontal at hip height",p:"Half moon frontal: balanced on right foot, left leg horizontal to left, lower hand to mat, top arm straight up. Top arm at top, stand foot at bottom.",pos:{o:"Oberer Arm",u:"Standfuß",m:"Torso"},w:"V"},
+{lbl:"Low-Angle · Von unten",angle:"LOW",cam:"low angle from below standing foot",p:"Half moon low angle: from below, stand foot at lower frame, extended leg visible, top arm at very top.",pos:{o:"Oberer Arm",u:"Standfuß (nah)",m:"Hüfte"},w:"V"},
+],
+"16:9":[
+{lbl:"Seitprofil · Breiter Stern",angle:"EYES",cam:"direct side profile",p:"Half moon side: balanced on foot and hand, extended leg horizontal one side, top arm vertical — wide lateral star shape.",pos:{o:"Oberer Arm",u:"Untere Hand",l:"Untere Hand",r:"Seitliches Bein",m:"Torso"},w:"T"},
+{lbl:"Frontal · Weitwinkel",angle:"EYEF",cam:"frontal wide at hip height",p:"Half moon frontal wide: stand leg at bottom-center, extended leg to side, arms in vertical line — wide 16:9.",pos:{o:"Oberer Arm",u:"Standfuß",l:"Seitl. Bein",r:"Torso",m:"Hüfte"},w:"T"},
+]}},
+
+{g:"ys",de:"Stuhl",sk:"Utkatasana",r:["9:16","16:9"],s:{
+"9:16":[
+{lbl:"Low-Angle · Kniehöhe dominant",angle:"LOW",cam:"low angle frontal at knee height",p:"Chair pose low: camera at knee height. Knees and thighs dominate lower frame, torso rising, arms sweeping overhead to very top.",pos:{o:"Fingerspitzen",u:"Knie/Knöchel",m:"Torso"},w:"V"},
+{lbl:"Frontal · Augenhöhe",angle:"EYEF",cam:"frontal at mid-body height",p:"Chair pose frontal: deep knee bend, arms overhead, chest lifted, face to camera.",pos:{o:"Arme",u:"Füße",m:"Knie/Torso"},w:"V"},
+{lbl:"Seitprofil · Charakteristisch",angle:"EYES",cam:"side profile at mid-body height",p:"Chair pose side: knees bent deeply, torso forward, arms overhead — distinctive chair silhouette.",pos:{o:"Fingerspitzen",u:"Füße",m:"Knie/Hüfte"},w:"V"},
+{lbl:"Extreme Low · Von vorne",angle:"XLOW",cam:"extreme low at floor level",p:"Chair pose extreme low: camera at floor, feet at very bottom, knees huge midframe, arms overhead at top.",pos:{o:"Arme",u:"Fußsohlen (groß)",m:"Knie"},w:"V"},
+],
+"16:9":[
+{lbl:"Seitprofil · Chair Silhouette",angle:"EYES",cam:"side profile at eye level",p:"Chair pose side 16:9: distinctive chair-sitting silhouette, arms overhead, knees bent.",pos:{o:"Fingerspitzen",u:"Füße",l:"Vordere Knie",r:"Torso hinten",m:"Hüfte"},w:"V"},
+]}},
+
+{g:"ys",de:"Stehender Spagat",sk:"Urdhva Prasarita",r:["9:16"],s:{
+"9:16":[
+{lbl:"Seitprofil · Vertikale Linie",angle:"EYES",cam:"side profile or slight frontal",p:"Standing split: balanced on left foot, right leg kicked straight up, torso folding forward, hands to floor — vertical split from standing foot to raised foot.",pos:{o:"Hochgehobener Fuß",u:"Standsohle/Hände",m:"Torso"},w:"V"},
+{lbl:"Frontal · Arme unten",angle:"EYEF",cam:"frontal at standing height",p:"Standing split frontal: one leg up, torso folded, arms reaching down — frontal composition.",pos:{o:"Hochgehobener Fuß",u:"Hände/Standfuß",m:"Torso"},w:"V"},
+{lbl:"Rear 3/4 · Von hinten schräg",angle:"RFAR",cam:"rear 3/4 showing full elevation",p:"Standing split rear diagonal: full vertical leg extension visible from behind-diagonal, raised leg at top.",pos:{o:"Hochgehobener Fuß",u:"Hände/Standfuß",m:"Rücken"},w:"V"},
+{lbl:"Extreme Low · Von vorne",angle:"XLOW",cam:"extreme low frontal",p:"Standing split extreme low: camera at floor, standing sole massive at bottom, raised leg at very top.",pos:{o:"Hochgehobener Fuß",u:"Standsohle (groß)",m:"Torso"},w:"V"},
+]}},
+
+{g:"ys",de:"Adler",sk:"Garudasana",r:["9:16"],s:{
+"9:16":[
+{lbl:"Frontal · Kompakt",angle:"EYEF",cam:"frontal at standing height",p:"Eagle pose frontal: balanced on right leg, left leg wrapped over right thigh, both arms crossed and wrapped, forearms lifting parallel to floor — compact wrapped form.",pos:{o:"Ellbogen (oben)",u:"Standfuß",m:"Torso/verschränkte Arme"},w:"V"},
+{lbl:"Low-Angle · Frontal",angle:"LOW",cam:"low angle frontal at knee height",p:"Eagle pose low angle: from low, standing foot dominant at bottom, wrapped leg visible, arms raised at top.",pos:{o:"Ellbogen",u:"Standfuß (nah)",m:"Knie/Torso"},w:"V"},
+]}},
+
+{g:"ys",de:"Stehende Rückbeuge",sk:"Anuvittasana",r:["9:16","16:9"],s:{
+"9:16":[
+{lbl:"Seitprofil · Bogen stehend",angle:"EYES",cam:"direct side profile at standing height",p:"Standing backbend side: standing upright, arms arching overhead and back, spine deeply arching backward, head dropping back, hips thrusting forward — full arc.",pos:{o:"Fingerspitzen/Hände",u:"Füße",m:"Hüfte (Apex)"},w:"A"},
+{lbl:"Frontal · 3/4 Tiefe",angle:"EYE3Q",cam:"3/4 frontal showing backbend depth",p:"Standing backbend 3/4: backbend depth visible, hips forward, arms arching overhead, face toward camera.",pos:{o:"Arme",u:"Füße",m:"Hüfte/Torso"},w:"A"},
+{lbl:"Low-Angle · Von unten",angle:"LOW",cam:"low angle frontal",p:"Standing backbend low angle: from below, feet at lower frame, open chest visible from low angle, arms arching at top.",pos:{o:"Arme/Hände",u:"Füße",m:"Hüfte"},w:"A"},
+],
+"16:9":[
+{lbl:"Seitprofil · Voller Bogen",angle:"EYES",cam:"side profile at standing height",p:"Standing backbend side 16:9: full backbend arc visible, feet at left-bottom, fingertips at right-top, hips at apex forward-center.",pos:{o:"Hände (Apex-oben)",u:"Füße",l:"Füße",r:"Hände",m:"Hüfte"},w:"A"},
+]}},
+
+{g:"ys",de:"Dehnlunge",sk:"Anjaneyasana / Crescent Lunge",r:["9:16","16:9"],s:{
+"9:16":[
+{lbl:"Frontal · Arme hoch",angle:"EYEF",cam:"frontal at standing height",p:"Crescent lunge frontal: front foot forward, knee 90°, back knee on mat, arms raised overhead, torso tall — fingertips at top, back knee at bottom.",pos:{o:"Fingerspitzen",u:"Hinteres Knie",m:"Torso"},w:"K"},
+{lbl:"Seitprofil · Knie-Hüft-Bogen",angle:"EYES",cam:"side profile at kneeling height",p:"Crescent lunge side portrait: lunge depth visible, back knee on mat, front foot forward, arms raised overhead.",pos:{o:"Fingerspitzen",u:"Hinteres Knie/Matte",l:"Hinteres Knie",r:"Vorderer Fuß",m:"Hüfte/Torso"},w:"K"},
+{lbl:"Low-Angle · Frontal",angle:"LOW",cam:"low angle frontal at mat level",p:"Crescent lunge low: from low angle, back knee at lower frame, torso rising, arms overhead at top.",pos:{o:"Arme",u:"Hinteres Knie (nah)",m:"Hüfte/Torso"},w:"K"},
+],
+"16:9":[
+{lbl:"Seitprofil · Weitwinkel",angle:"EYES",cam:"side profile at mat level, wider framing",p:"Crescent lunge side landscape: back knee at left, front foot at right, torso tall with arms overhead.",pos:{o:"Arme/Fingerspitzen",u:"Knie/Matte",l:"Hinteres Knie",r:"Vorderer Fuß",m:"Hüfte"},w:"K"},
+]}},
+
+// ══ SPORT (sp) ══════════════════════════════════════
+{g:"sp",de:"Tiefe Kniebeuge",sk:"Power Squat",r:["9:16","16:9","4:3"],s:{
+"9:16":[
+{lbl:"Low-Angle · Frontal Kniehöhe",angle:"LOW",cam:"low angle frontal camera at ~20cm squat height",p:"Power squat low angle frontal: feet flat shoulder-width, knees bent deeply past parallel, back straight, arms extended forward. Feet at very bottom, head at top.",pos:{o:"Kopf",u:"Fußsohlen",m:"Knie/Hüfte"},w:"V"},
+{lbl:"Rear Low · Heroisch",angle:"RLOW",cam:"rear view camera at floor behind",p:"Power squat rear low: from behind at floor, heels massive at very bottom, glutes prominent, spine rising to top.",pos:{o:"Nacken",u:"Fersen (groß)",m:"Gesäß/Rücken"},w:"V"},
+{lbl:"Extreme Low · Frontal",angle:"XLOW",cam:"camera at floor 5cm, looking up",p:"Power squat extreme low: camera at floor, feet huge at bottom, thighs and knees midframe, face at top.",pos:{o:"Kopf",u:"Fußsohlen (groß)",m:"Knie"},w:"V"},
+{lbl:"3/4 · Schräg",angle:"EYE3Q",cam:"3/4 at squat height",p:"Power squat 3/4: slight angle showing depth of squat, knees visible, face toward camera.",pos:{o:"Kopf",u:"Füße",m:"Knie/Hüfte"},w:"V"},
+],
+"16:9":[
+{lbl:"Seitprofil · Kniehöhe",angle:"EYES",cam:"side profile at knee height",p:"Power squat side: feet flat, knees bent past parallel, back straight, arms extended — side profile.",pos:{o:"Kopf",u:"Füße",l:"Vorderer Fuß",r:"Hintere Ferse",m:"Knie/Hüfte"},w:"V"},
+],
+"4:3":[
+{lbl:"Frontal · 4:3",angle:"EYEF",cam:"frontal",p:"Squat 4:3: deep squat, arms forward, face to camera.",pos:{o:"Kopf",u:"Füße",m:"Knie"},w:"V"},
+]}},
+
+{g:"sp",de:"Ausfallschritt",sk:"Forward Lunge",r:["9:16","16:9","4:3"],s:{
+"9:16":[
+{lbl:"Low-Angle · Kniehöhe Frontal",angle:"LOW",cam:"low angle frontal at knee height",p:"Forward lunge low frontal: large step forward, front knee 90° over ankle, back knee approaching mat, torso upright. Front foot and bent knee dominate lower frame, head at top.",pos:{o:"Kopf",u:"Vorderer Fuß/Knie",m:"Torso/Hüfte"},w:"V"},
+{lbl:"3/4 · Tiefe Lunge",angle:"EYE3Q",cam:"3/4 showing lunge depth",p:"Lunge 3/4: depth visible, front knee prominent, back leg extended, face toward camera.",pos:{o:"Kopf",u:"Knie/Matte",m:"Hüfte"},w:"V"},
+{lbl:"Seitprofil · Portrait",angle:"EYES",cam:"side profile at mat level portrait",p:"Lunge side portrait: side view of full lunge, back knee at lower-left, front foot at lower-right.",pos:{o:"Kopf",u:"Knie/Matte",l:"Hinteres Knie",r:"Vorderer Fuß",m:"Hüfte"},w:"V"},
+{lbl:"Extreme Low · Frontal",angle:"XLOW",cam:"extreme low at floor level",p:"Lunge extreme low: camera at floor, front foot massive at bottom, knee rising, torso and head at top.",pos:{o:"Kopf",u:"Vorderer Fuß (groß)",m:"Knie/Beine"},w:"V"},
+],
+"16:9":[
+{lbl:"Seitprofil · Weitwinkel",angle:"MATS",cam:"side profile at mat level",p:"Lunge side landscape: back knee at left frame, front foot at right frame, torso upright at center — full 16:9.",pos:{o:"Kopf",u:"Knie/Matte",l:"Hinteres Knie",r:"Vorderer Fuß",m:"Hüfte"},w:"V"},
+],
+"4:3":[
+{lbl:"Frontal · 4:3",angle:"EYEF",cam:"frontal",p:"Lunge 4:3: lunge stance, face to camera.",pos:{o:"Kopf",u:"Füße",m:"Knie"},w:"V"},
+]}},
+
+{g:"sp",de:"Sprung eingefroren",sk:"Jump Shot / Mid-Air Peak",r:["9:16","16:9","4:3"],s:{
+"9:16":[
+{lbl:"Frontal · Sprung-Peak",angle:"EYEF",cam:"frontal slightly upward tilted, frozen at peak",p:"Mid-air jump frontal: body fully extended at absolute peak, both feet completely off ground, arms raised overhead — movement frozen. Face to camera with energy.",pos:{o:"Fingerspitzen",u:"Füße (Luft)",m:"Torso"},w:"J"},
+{lbl:"Low-Angle · Dramatisch",angle:"LOW",cam:"low angle frontal ~30cm looking up",p:"Jump shot low angle: camera low, body airborne above, feet visible lower frame, arms raised at top — dramatic foreshortening.",pos:{o:"Arme/Kopf",u:"Füße (Luft, sichtbar)",m:"Torso"},w:"J"},
+{lbl:"Arme weit gespreizt · Kraft",angle:"EYEF",cam:"frontal, arms spread wide airborne",p:"Jump wide arms: body in air, arms spread fully horizontal at shoulder height, legs bent or extended, face to camera.",pos:{o:"Kopf",u:"Füße (Luft)",l:"Linke Hand",r:"Rechte Hand",m:"Torso"},w:"J"},
+{lbl:"Extreme Low · Maximaldramatisch",angle:"XLOW",cam:"extreme low camera at floor 5cm",p:"Jump extreme low: camera at floor, feet massive at very bottom (barely visible in air), body towering above, arms at very top.",pos:{o:"Arme",u:"Füße (Luft, groß)",m:"Torso"},w:"J"},
+],
+"16:9":[
+{lbl:"Seitprofil · Sprung",angle:"EYES",cam:"direct side profile at eye level, airborne",p:"Jump side 16:9: body fully airborne at peak, legs bent or extended, arms up or wide — dynamic side silhouette.",pos:{o:"Arme",u:"Füße (Luft)",l:"Körper-links",r:"Körper-rechts",m:"Torso"},w:"J"},
+],
+"4:3":[
+{lbl:"Frontal · 4:3",angle:"EYEF",cam:"frontal",p:"Jump 4:3: body airborne, arms raised, face to camera.",pos:{o:"Arme",u:"Füße",m:"Torso"},w:"J"},
+]}},
+
+{g:"sp",de:"Laufstride eingefroren",sk:"Running Stride — Frozen Motion",r:["16:9","9:16"],s:{
+"16:9":[
+{lbl:"Seitprofil · Laufschritt",angle:"EYES",cam:"direct side profile at eye level, stride frozen",p:"Running stride side profile: right leg driving forward knee lifted, left leg extending behind foot pushing off, arms swinging. Back foot at left, front arm at right.",pos:{o:"Kopf",u:"Füße",l:"Hinterer Fuß",r:"Vorderer Arm",m:"Torso"},w:"H"},
+{lbl:"3/4 · Frontal Dynamisch",angle:"EYE3Q",cam:"3/4 frontal angle",p:"Running stride 3/4 frontal: body mid-stride at 3/4, face toward camera, arms pumping.",pos:{o:"Kopf",u:"Füße",m:"Torso"},w:"H"},
+],
+"9:16":[
+{lbl:"Frontal · Aufrecht Stride",angle:"EYEF",cam:"frontal at standing height",p:"Running stride frontal: mid-stride facing camera, one knee lifted powerfully, arms in running motion.",pos:{o:"Kopf",u:"Standfuß",m:"Torso"},w:"V"},
+{lbl:"Low-Angle · Frontal heroisch",angle:"LOW",cam:"low angle frontal ~30cm",p:"Running stride low angle: from below, feet dominant at lower frame, stride frozen, face at top.",pos:{o:"Kopf",u:"Füße (nah)",m:"Beine"},w:"V"},
+]}},
+
+{g:"sp",de:"Volleyball Aufschlag",sk:"Jump Serve",r:["9:16","4:3"],s:{
+"9:16":[
+{lbl:"Extreme Low · Aufwärts",angle:"XLOW",cam:"extreme low angle at court level looking straight up",p:"Volleyball jump serve extreme low: camera at court level looking straight up. Body airborne, serving arm fully extended overhead — body rising out of frame above camera.",pos:{o:"Serve-Arm/Hand",u:"Füße (Luft, sichtbar)",m:"Torso"},w:"J"},
+{lbl:"Low-Angle · Dramatisch",angle:"LOW",cam:"low angle frontal looking up",p:"Volleyball serve low angle: camera low, body airborne at peak, serving arm at very top, feet visible lower frame.",pos:{o:"Serve-Arm",u:"Füße (Luft)",m:"Torso"},w:"J"},
+],
+"4:3":[
+{lbl:"Frontal · Athletisch",angle:"EYEF",cam:"frontal or slight angle",p:"Volleyball serve 4:3: airborne, arm raised in serve, athletic explosive form.",pos:{o:"Arm",u:"Füße",m:"Torso"},w:"J"},
+]}},
+
+{g:"sp",de:"Triumph / Sieg-V",sk:"Victory Pose",r:["9:16","4:3"],s:{
+"9:16":[
+{lbl:"Extreme Low · Maximal Dominant",angle:"XLOW",cam:"extreme low at floor looking straight up",p:"Victory pose extreme low: camera at floor level, feet massive at very bottom, body rising, both arms in wide V at very top — maximum heroic dominance.",pos:{o:"Fäuste/Arme (V)",u:"Fußsohlen (groß)",m:"Torso"},w:"V"},
+{lbl:"Low-Angle · Heroisch",angle:"LOW",cam:"low angle frontal ~30cm",p:"Victory pose low angle: both arms in wide V overhead, chin lifted, genuine triumph expression — from low angle for impact.",pos:{o:"Fäuste/Arme (V)",u:"Füße",m:"Torso"},w:"V"},
+{lbl:"3/4 · Siegesgeste",angle:"EYE3Q",cam:"3/4 angle",p:"Victory pose 3/4: three-quarter view, both arms in V, open chest, triumphant expression.",pos:{o:"Arme (V)",u:"Füße",m:"Torso"},w:"V"},
+],
+"4:3":[
+{lbl:"Frontal · 4:3",angle:"EYEF",cam:"frontal",p:"Victory 4:3: both arms in V, chest open, face triumphant.",pos:{o:"Arme",u:"Füße",m:"Torso"},w:"V"},
+]}},
+
+{g:"sp",de:"Fitness Brücke",sk:"Glute Bridge",r:["16:9","9:16"],s:{
+"16:9":[
+{lbl:"Seitprofil · Peak Bogen",angle:"MATS",cam:"direct side profile at floor level",p:"Fitness bridge side at peak: lying on back, feet flat, knees bent up, spine in strong arch, hips at maximum height — side profile. Shoulders at left, feet at right, hips at apex.",pos:{o:"Hüfte (Apex)",u:"Boden",l:"Schultern",r:"Füße",m:"Wirbel-Bogen"},w:"A"},
+{lbl:"High-Angle · 45° Diagonal",angle:"HIGH45",cam:"elevated 45° from above-front",p:"Fitness bridge high angle: arch visible from above-front, hips at peak, knees bent, shoulders on mat.",pos:{o:"Hüfte/Knie",u:"Schultern/Füße",m:"Bauch"},w:"A"},
+],
+"9:16":[
+{lbl:"Low-Angle · Fußende",angle:"LOW",cam:"low angle from foot end ~20cm",p:"Fitness bridge foot end: feet flat at very lower frame, knees rising bent, hips at apex midframe, face visible at top.",pos:{o:"Gesicht",u:"Fußsohlen",m:"Knie/Hüfte"},w:"V"},
+{lbl:"Fußende erhöht",angle:"FEND",cam:"elevated angle from above foot end",p:"Fitness bridge elevated foot end: from elevated position over feet, arch visible in depth, face at top frame.",pos:{o:"Gesicht",u:"Füße",m:"Knie/Hüfte/Bogen"},w:"V"},
+]}},
+
+{g:"sp",de:"Push-Up",sk:"Push-Up Position",r:["16:9","9:16"],s:{
+"16:9":[
+{lbl:"Seitprofil · Spitze Top",angle:"MATS",cam:"side profile at floor level, top push-up",p:"Push-up top side profile: palms flat under shoulders, arms fully extended, body in perfectly rigid straight diagonal line. Hands at left, feet at right.",pos:{o:"Schultern",u:"Hände/Füße",l:"Kopf/Hände",r:"Füße",m:"Hüfte"},w:"P"},
+{lbl:"Seitprofil · Abwärts",angle:"MATS",cam:"side profile at floor level, bottom position",p:"Push-up bottom side: palms on floor, arms bent 90°, chest lowered near floor, still rigid line.",pos:{o:"Schultern",u:"Brust (nah Boden)",l:"Kopf",r:"Füße",m:"Hüfte"},w:"P"},
+],
+"9:16":[
+{lbl:"Extreme Low · Mattennähe",angle:"XLOW",cam:"extreme low at mat level looking at face",p:"Push-up extreme low frontal: camera at mat level, hands massive at very bottom, body in plank, face looking toward camera at upper frame.",pos:{o:"Gesicht",u:"Hände (groß/nah)",m:"Arme"},w:"K"},
+{lbl:"Diagonal Rear · Von oben",angle:"DIAGR",cam:"elevated rear diagonal",p:"Push-up rear elevated: from above-behind, back and spine visible in push-up, heels at lower, shoulders at upper.",pos:{o:"Schultern",u:"Fersen",m:"Rücken"},w:"P"},
+]}},
+
+{g:"sp",de:"Superman",sk:"Rückenstrecker / Back Extension",r:["16:9","9:16","top"],s:{
+"16:9":[
+{lbl:"Seitprofil · Schwebend",angle:"MATS",cam:"side profile at mat level",p:"Superman side profile: prone, both arms extended forward and both legs raised simultaneously, balanced on abdomen. Hands at left, feet at right.",pos:{o:"Brust/Beine (Apex)",u:"Bauch",l:"Hände",r:"Füße",m:"Rücken"},w:"A"},
+],
+"9:16":[
+{lbl:"Diagonal Rear · Rücken sichtbar",angle:"DIAGR",cam:"elevated rear diagonal 45°",p:"Superman rear elevated: from above-behind, back muscles visible, arms extended forward, legs raised — filling 9:16.",pos:{o:"Hände",u:"Füße",m:"Rückenmuskulatur"},w:"V"},
+],
+"top":[
+{lbl:"Bird View · Kreuz-/T-Form",angle:"BIRD90",cam:"overhead 90° directly above",p:"Superman overhead: body prone hovering, arms extended forward, legs raised — T/cross shape from above.",pos:{o:"Hände",u:"Füße",l:"Linker Arm",r:"Rechter Arm",m:"Rücken"},w:"T"},
+]}},
+
+{g:"sp",de:"Side Lunge",sk:"Lateraler Ausfallschritt",r:["16:9","9:16","4:3"],s:{
+"16:9":[
+{lbl:"Frontal · Volle Breite",angle:"EYEF",cam:"frontal at standing height, wide angle",p:"Side lunge frontal: right leg lunging deeply to right, left leg fully extended to left, face to camera — wide stance spanning full 16:9 from left foot to right foot.",pos:{o:"Kopf",u:"Füße",l:"Linker Fuß",r:"Rechter Fuß",m:"Hüfte"},w:"T"},
+],
+"9:16":[
+{lbl:"Low-Angle · Frontal",angle:"LOW",cam:"low angle frontal at lunge height",p:"Side lunge low: wide stance filling lower frame, bent knee dominant, torso rising, face at top.",pos:{o:"Kopf",u:"Füße (weit spreizend)",m:"Knie/Hüfte"},w:"V"},
+],
+"4:3":[
+{lbl:"Frontal · 4:3",angle:"EYEF",cam:"frontal",p:"Side lunge 4:3: wide lateral lunge, face to camera.",pos:{o:"Kopf",u:"Füße",m:"Knie"},w:"V"},
+]}},
+
+// ══ FASHION (fa) ══════════════════════════════════
+{g:"fa",de:"Contrapposto S-Kurve",sk:"Classic Contrapposto",r:["9:16","4:3"],s:{
+"9:16":[
+{lbl:"Frontal · Augenhöhe natürlich",angle:"EYEF",cam:"frontal or slight 3/4 at eye level",p:"Contrapposto frontal: weight on right leg, right hip pushed outward, left knee slightly bent, natural S-curve — face to camera.",pos:{o:"Kopf",u:"Füße",m:"Torso (S-Kurve)"},w:"V"},
+{lbl:"3/4 · Körperlinie",angle:"EYE3Q",cam:"slight 3/4 from the left",p:"Contrapposto 3/4: S-curve visible in depth, hip shifted, elegant body line, face toward camera.",pos:{o:"Kopf",u:"Füße",m:"Torso"},w:"V"},
+{lbl:"Low-Angle · Editorial",angle:"LOW",cam:"low angle frontal ~30cm",p:"Contrapposto low editorial: feet at lower frame, S-curve of body rising, face at top — editorial glamour perspective.",pos:{o:"Kopf",u:"Füße (nah)",m:"Hüfte/S-Kurve"},w:"V"},
+{lbl:"Extreme Low · Fashion",angle:"XLOW",cam:"extreme low at floor level",p:"Contrapposto extreme low: camera at floor, feet massive at bottom, body's S-curve towering, face at very top.",pos:{o:"Kopf",u:"Fußsohlen (groß)",m:"Hüfte"},w:"V"},
+],
+"4:3":[
+{lbl:"Frontal · 4:3",angle:"EYEF",cam:"frontal or 3/4",p:"Contrapposto 4:3: S-curve, graceful posture, face to camera.",pos:{o:"Kopf",u:"Füße",m:"Torso"},w:"V"},
+]}},
+
+{g:"fa",de:"Arme Überkopf",sk:"Arms Overhead",r:["9:16"],s:{
+"9:16":[
+{lbl:"Low-Angle · Streckung",angle:"LOW",cam:"frontal slightly low angle",p:"Arms overhead: both arms raised fully, body elongated from heels to fingertips — slightly low angle.",pos:{o:"Fingerspitzen",u:"Fußsohlen",m:"Torso"},w:"V"},
+{lbl:"Rear · Arme hoch",angle:"EYER",cam:"rear view from behind, arms overhead",p:"Arms overhead rear: from behind, body elongated, both arms raised high, back visible.",pos:{o:"Fingerspitzen",u:"Fersen",m:"Rücken"},w:"V"},
+{lbl:"Extreme Low · Maximale Streckung",angle:"XLOW",cam:"extreme low at floor level",p:"Arms overhead extreme low: camera at floor, feet massive at bottom, fingertips at very top — maximum stretch.",pos:{o:"Fingerspitzen",u:"Fußsohlen (groß)",m:"Torso"},w:"V"},
+{lbl:"High-Angle · Von oben schräg",angle:"HIGH45",cam:"elevated 45° from above-front",p:"Arms overhead high angle: from elevated angle, arms and hands at top, face visible, body elongated downward.",pos:{o:"Hände/Arme",u:"Füße",m:"Torso"},w:"V"},
+]}},
+
+{g:"fa",de:"Runway Walk",sk:"Catwalk Stride",r:["9:16","16:9","4:3"],s:{
+"9:16":[
+{lbl:"Frontal · Augenhöhe Stride",angle:"EYEF",cam:"frontal at body height",p:"Runway stride frontal: right foot forward, left following, arms swinging naturally, face confidently to camera.",pos:{o:"Kopf",u:"Füße",m:"Torso"},w:"V"},
+{lbl:"Low-Angle · Runway Heroisch",angle:"LOW",cam:"low angle frontal ~30cm",p:"Runway stride low: feet dominant at bottom, body rising powerfully, confident stride, face at top.",pos:{o:"Kopf",u:"Füße (nah)",m:"Torso"},w:"V"},
+{lbl:"3/4 · Editorial Schräg",angle:"EYE3Q",cam:"3/4 at body height",p:"Runway stride 3/4: stride visible in depth, arms swinging, face toward camera.",pos:{o:"Kopf",u:"Füße",m:"Torso"},w:"V"},
+{lbl:"Extreme Low · Fashion Power",angle:"XLOW",cam:"extreme low at floor",p:"Runway stride extreme low: camera at floor, feet massive at bottom, powerful stride towering, face at very top.",pos:{o:"Kopf",u:"Füße (groß)",m:"Beine"},w:"V"},
+],
+"16:9":[
+{lbl:"Seitprofil · Stride",angle:"EYES",cam:"side profile at eye level",p:"Runway stride side: side profile of confident walking stride, one foot forward, one back, arms swinging.",pos:{o:"Kopf",u:"Füße",l:"Hinterer Fuß",r:"Vorderer Fuß",m:"Torso"},w:"H"},
+],
+"4:3":[
+{lbl:"Frontal · 4:3",angle:"EYEF",cam:"frontal or 3/4",p:"Runway stride 4:3: purposeful step, arms swinging, face to camera.",pos:{o:"Kopf",u:"Füße",m:"Torso"},w:"V"},
+]}},
+
+{g:"fa",de:"Schulterblick",sk:"Look Back",r:["9:16","4:3"],s:{
+"9:16":[
+{lbl:"Rear · Augenhöhe",angle:"EYER",cam:"rear view, face over shoulder at eye level",p:"Shoulder look-back rear: body facing away, posture tall, head turned over right shoulder to look directly into lens.",pos:{o:"Gesicht (über Schulter)",u:"Fersen",m:"Rücken"},w:"V"},
+{lbl:"Rear Low · Von hinten-unten",angle:"RLOW",cam:"rear view camera at floor level",p:"Look-back rear low: from behind and below, heels massive at very bottom, body rising, head turned to look back at top.",pos:{o:"Gesicht (Schulterblick)",u:"Fersen (groß)",m:"Rücken"},w:"V"},
+{lbl:"Rear 3/4 · Diagonal",angle:"RFAR",cam:"rear 3/4 showing back profile",p:"Look-back rear 3/4: from behind-side, back profile visible, head over shoulder with direct eye contact.",pos:{o:"Gesicht",u:"Füße",m:"Rücken/Schulter"},w:"V"},
+{lbl:"High-Angle · Von oben-hinten",angle:"DIAGR",cam:"elevated from above-behind",p:"Look-back high angle: from elevated rear position, back and shoulder visible from above, face turned to look toward camera.",pos:{o:"Gesicht (nach oben-hinten)",u:"Füße",m:"Schultern/Rücken"},w:"V"},
+],
+"4:3":[
+{lbl:"Rear · 4:3",angle:"EYER",cam:"rear view over shoulder",p:"Look-back 4:3: body away from camera, head over shoulder, direct eye contact.",pos:{o:"Kopf",u:"Füße",m:"Rücken"},w:"V"},
+]}},
+
+{g:"fa",de:"Power Pose",sk:"Hands on Hips",r:["9:16","4:3"],s:{
+"9:16":[
+{lbl:"Low-Angle · Dominant",angle:"LOW",cam:"frontal slightly low angle",p:"Power pose low angle: wide stance, hands on hips, shoulders back, chest open, face confidently to camera — slightly low for dominance.",pos:{o:"Kopf",u:"Füße",m:"Hüfte/Hände"},w:"V"},
+{lbl:"Extreme Low · Maximal Dominant",angle:"XLOW",cam:"extreme low at floor",p:"Power pose extreme low: camera at floor, feet massive at bottom, body rising powerfully, hands on hips, face at top.",pos:{o:"Kopf",u:"Fußsohlen (groß)",m:"Hüfte/Hände"},w:"V"},
+{lbl:"3/4 · Stärke",angle:"EYE3Q",cam:"3/4 angle",p:"Power pose 3/4: hands on hips, confident stance, strong silhouette.",pos:{o:"Kopf",u:"Füße",m:"Hüfte"},w:"V"},
+{lbl:"Rear · Von hinten Stärke",angle:"EYER",cam:"rear view at eye level",p:"Power pose rear: from behind, hands on hips visible, strong back posture, nape at top, heels at bottom.",pos:{o:"Nacken",u:"Fersen",m:"Rücken/Hände"},w:"V"},
+],
+"4:3":[
+{lbl:"Frontal · 4:3",angle:"EYEF",cam:"frontal",p:"Power pose 4:3: hands on hips, confident, face to camera.",pos:{o:"Kopf",u:"Füße",m:"Hüfte"},w:"V"},
+]}},
+
+{g:"fa",de:"Liegend Editorial",sk:"Lying Editorial",r:["16:9","top","1:1"],s:{
+"16:9":[
+{lbl:"High-Angle · Diagonal",angle:"HIGH45",cam:"slightly elevated frontal angle",p:"Lying editorial high angle: lying stretched, head turned toward camera, one arm extended overhead, legs extended — elevated diagonal view.",pos:{o:"Kopf",u:"Hüfte",l:"Ausgestreckter Arm",r:"Füße",m:"Torso"},w:"H"},
+{lbl:"Bird View · 90°",angle:"BIRD90",cam:"overhead 90°",p:"Lying editorial overhead: from directly above, body stretched, face looking straight up toward camera.",pos:{o:"Kopf",u:"Füße",l:"Linker Arm",r:"Rechter Arm",m:"Torso"},w:"O"},
+{lbl:"Seitprofil · Bodenhöhe",angle:"EYES",cam:"exact side profile at floor level",p:"Lying editorial side: lying on side stretched elegantly, face visible propped up or turned toward camera.",pos:{o:"Kopf",u:"Hüfte",l:"Kopf",r:"Füße",m:"Torso"},w:"H"},
+],
+"top":[
+{lbl:"Bird View · Zentriert",angle:"BIRD90",cam:"overhead 90°",p:"Lying editorial bird view: from above, body centered, arms slightly out, face looking up.",pos:{o:"Kopf",u:"Füße",l:"Linker Arm",r:"Rechter Arm",m:"Torso"},w:"O"},
+],
+"1:1":[
+{lbl:"Bird View · Square",angle:"BIRD90",cam:"overhead 90° square",p:"Lying editorial overhead square: centered in square, face up, arms out — symmetric overhead.",pos:{o:"Kopf",u:"Füße",m:"Torso"},w:"O"},
+]}},
+
+{g:"fa",de:"Arme weit ausgestreckt",sk:"T-Pose / Arms Wide",r:["16:9","9:16"],s:{
+"16:9":[
+{lbl:"Frontal · T-Pose volle Breite",angle:"EYEF",cam:"frontal at standing height",p:"Arms wide frontal: both arms extended fully straight to sides at shoulder height, chest open, face to camera — filling 16:9 from left fingertip to right fingertip.",pos:{o:"Kopf",u:"Füße",l:"Linke Hand",r:"Rechte Hand",m:"Torso"},w:"T"},
+{lbl:"Low-Angle · T-Pose",angle:"LOW",cam:"low angle frontal",p:"Arms wide low angle: from below, feet at lower frame, body rising, arms spread at upper frame.",pos:{o:"Kopf/Arme",u:"Füße",l:"Linke Hand",r:"Rechte Hand",m:"Torso"},w:"T"},
+],
+"9:16":[
+{lbl:"Low-Angle · Frontal",angle:"LOW",cam:"frontal slightly low",p:"Arms wide portrait: arms extended wide, chest open, face to camera — slight low angle.",pos:{o:"Kopf/Arme",u:"Füße",m:"Torso"},w:"V"},
+]}},
+
+{g:"fa",de:"Kniend Aufrecht",sk:"Upright Kneeling",r:["9:16","4:3"],s:{
+"9:16":[
+{lbl:"Frontal · Augenhöhe",angle:"EYEF",cam:"frontal at kneeling body height",p:"Upright kneeling frontal: both knees on floor, torso tall and straight, arms at sides or raised, face with direct eye contact — knees at bottom, head at top.",pos:{o:"Kopf",u:"Knie/Schienbeine",m:"Torso"},w:"K"},
+{lbl:"Low-Angle · Kniehöhe",angle:"LOW",cam:"low angle at floor level looking up",p:"Upright kneeling low: camera at floor, knees massive at very bottom, body rising, face at top.",pos:{o:"Kopf",u:"Knie (groß)",m:"Torso"},w:"K"},
+{lbl:"Rear Low · Von hinten",angle:"RLOW",cam:"rear view at floor level",p:"Upright kneeling rear low: from behind at floor, knees and heels at bottom, back rising, nape at top.",pos:{o:"Nacken",u:"Knie/Fersen",m:"Rücken"},w:"K"},
+{lbl:"3/4 · Schräg kniend",angle:"EYE3Q",cam:"3/4 at kneeling height",p:"Upright kneeling 3/4: three-quarter view, one knee forward, torso tall, face turned to camera.",pos:{o:"Kopf",u:"Knie",m:"Torso"},w:"K"},
+],
+"4:3":[
+{lbl:"Frontal · 4:3",angle:"EYEF",cam:"frontal",p:"Kneeling 4:3: both knees on floor, torso tall, face to camera.",pos:{o:"Kopf",u:"Knie",m:"Torso"},w:"K"},
+]}},
+
+{g:"fa",de:"Dynamische Bewegung",sk:"Action Fashion / Mid-Turn",r:["9:16","4:3"],s:{
+"9:16":[
+{lbl:"Frontal · Eingefroren",angle:"EYEF",cam:"frontal or 3/4, movement frozen",p:"Dynamic fashion frozen frontal: body caught mid-turn, torso slightly rotated, one foot stepping forward, outfit caught in movement, face toward camera.",pos:{o:"Kopf",u:"Füße",m:"Torso (gedreht)"},w:"V"},
+{lbl:"3/4 · Bewegungsmoment",angle:"EYE3Q",cam:"3/4 showing rotation depth",p:"Dynamic fashion 3/4: mid-turn visible in depth, body rotating, face to camera.",pos:{o:"Kopf",u:"Füße",m:"Torso"},w:"V"},
+{lbl:"Low-Angle · Energetisch",angle:"LOW",cam:"low angle frontal",p:"Dynamic fashion low: from below, dynamic movement frozen, energy and motion, face at top.",pos:{o:"Kopf",u:"Füße",m:"Torso"},w:"V"},
+],
+"4:3":[
+{lbl:"Frontal · 4:3",angle:"EYEF",cam:"frontal or 3/4",p:"Dynamic fashion 4:3: mid-motion, body rotating, face to camera.",pos:{o:"Kopf",u:"Füße",m:"Torso"},w:"V"},
+]}},
+
+]; // END DB
+
+// ═══ GROUP + THEME META ═════════════════════════════
+const G={yb:{ico:"🧘",n:"Yoga — Boden & Inversionen"},ys:{ico:"🙏",n:"Yoga — Stehend & Balance"},sp:{ico:"🏐",n:"Sport & Fitness"},fa:{ico:"✨",n:"Fashion & Lifestyle"}};
+const TG={yoga:["yb","ys"],sport:["sp"],fashion:["fa"]};
+
+// ═══ STATE ══════════════════════════════════════════
+const S={theme:"yoga",ratio:"9:16",orient:"upright",stype:null,pose:null,si:0,light:null,setting:null,grade:null,expr:null};
+
+// ═══ HELPERS ════════════════════════════════════════
+function shots(p,r){if(!p||!p.s||!p.s[r])return[];const d=p.s[r];return Array.isArray(d)?d:(d.cam?[{lbl:"Standard",angle:"EYEF",cam:d.cam,p:d.p||"",pos:{},w:"V"}]:[]);}
+function csh(){if(!S.pose)return null;const ss=shots(S.pose,S.ratio);return ss[Math.min(S.si,ss.length-1)]||null;}
+function esc(s){return(s||'').replace(/'/g,"&#39;").replace(/"/g,"&quot;");}
+function escQ(s){return(s||'').replace(/'/g,"\\'");}
+function ss(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}
+function tog(id){document.getElementById('c-'+id)?.classList.toggle('col');}
+function posStr(p){if(!p)return null;const a=[];if(p.o)a.push('O:'+p.o);if(p.u)a.push('U:'+p.u);if(p.l)a.push('L:'+p.l);if(p.r)a.push('R:'+p.r);if(p.m)a.push('M:'+p.m);return a.join(' · ')||null;}
+
+// ═══ SHOOTING TYPES ════════════════════════════════
+const TC={yoga:{c:"var(--yoga)",bg:"rgba(192,132,252,.1)",br:"rgba(192,132,252,.2)",lbl:"🧘 Yoga"},sport:{c:"var(--sport)",bg:"rgba(56,189,248,.1)",br:"rgba(56,189,248,.2)",lbl:"🏐 Sport"},fashion:{c:"var(--fashion)",bg:"rgba(255,209,102,.1)",br:"rgba(255,209,102,.2)",lbl:"✨ Fashion"}};
+
+function initST(){
+  const el=document.getElementById('stg');if(!el)return;
+  el.innerHTML=Object.entries(ST).map(([k,v])=>`<div class="stc" data-k="${k}" onclick="selST('${k}')"><div class="stco">${v.ico}</div><div class="stlbl">${v.n}</div><div class="stdesc">${v.d}</div></div>`).join('');
+  filterST();
+}
+function filterST(){
+  const ok=ST_THEME[S.theme]||Object.keys(ST);
+  document.querySelectorAll('.stc').forEach(c=>{
+    c.style.display=ok.includes(c.dataset.k)?'':'none';
+    if(!ok.includes(c.dataset.k)&&S.stype===c.dataset.k){S.stype=null;updST();}
+  });
+}
+function selST(k){
+  const isOn=document.querySelector(`.stc[data-k="${k}"]`)?.classList.contains('on');
+  document.querySelectorAll('.stc').forEach(c=>c.classList.remove('on'));
+  S.stype=isOn?null:k;
+  if(S.stype)document.querySelector(`.stc[data-k="${k}"]`)?.classList.add('on');
+  updST();updAP();render();
+}
+function updST(){
+  const b=document.getElementById('st-badge'),cv=document.getElementById('s-st'),os=document.getElementById('out-st');
+  if(S.stype){if(b){b.textContent='✓ AKTIV';b.className='badge done';}if(cv){cv.textContent=ST[S.stype].n;cv.className='cval';}if(os){os.textContent=ST[S.stype].ico+' '+ST[S.stype].n;os.style.display='';}}
+  else{if(b){b.textContent='PFLICHT';b.className='badge req';}if(cv){cv.textContent='— wählen';cv.className='cval dim';}if(os)os.style.display='none';}
+}
+
+function setTheme(t){
+  S.theme=t;
+  document.querySelectorAll('.hp').forEach(p=>p.classList.toggle('on',p.dataset.th===t));
+  const tc=TC[t];const b=document.getElementById('theme-badge');
+  b.style.cssText=`background:${tc.bg};color:${tc.c};border:1px solid ${tc.br};font-family:DM Mono,monospace;font-size:9px;padding:2px 7px;border-radius:4px;font-weight:600`;
+  b.textContent=tc.lbl;
+  filterST();renderPoseTabs();renderPoses();render();
+}
+
+// ═══ RATIO ══════════════════════════════════════════
+const RH={"9:16":"<strong>9:16 Hochformat</strong> — O=Kopf/Arme · U=Fußsohlen · Body füllt Frame senkrecht.","16:9":"<strong>16:9 Querformat</strong> — L=Kopf/Hände · R=Füße/Hände · Body füllt Frame waagerecht.","top":"<strong>Bird View 90°</strong> — O=Kopf · U=Füße · L/R=Arme · Von direkt oben senkrecht.","4:3":"<strong>4:3 Portrait+</strong> — O=Kopf · U=Füße · Klassisch editorial.","1:1":"<strong>1:1 Quadrat</strong> — Overhead zentriert · Symmetrisch.","split":"<strong>Multi-View / Split</strong> — 5-7 Winkel gleichzeitig im Frame."};
+const RMAP={"9:16":"rc-916","16:9":"rc-169","top":"rc-top","4:3":"rc-43","1:1":"rc-11","split":"rc-split"};
+function selR(el){
+  document.querySelectorAll('.rhero').forEach(c=>c.classList.remove('on'));el.classList.add('on');
+  S.ratio=el.dataset.r;S.si=0;
+  ss('s-ratio',S.ratio);ss('ap-ratio',S.ratio);
+  const ob=document.getElementById('out-ratio');if(ob)ob.textContent=S.ratio;
+  document.getElementById('rhint').innerHTML=RH[S.ratio]||'';
+  renderOrient();renderPoses();render();updRcnt();
+}
+function updRcnt(){
+  const tp=DB.filter(p=>TG[S.theme]?.includes(p.g));
+  Object.keys(RMAP).forEach(r=>{
+    let c=0;tp.forEach(p=>{c+=shots(p,r).length;});
+    const el=document.getElementById(RMAP[r]);if(el)el.textContent=c+' Shots';
+  });
+  let t=0;tp.forEach(p=>{t+=shots(p,S.ratio).length;});ss('hdr-cnt',t+' Shots');
+}
+
+// ═══ ORIENT ════════════════════════════════════════
+const ORDATA={"9:16":[{id:"upright",ico:"🧍",n:"Aufrecht",d:"Kopf O · Füße U",h:"Standard stehend — Kopf am oberen Rand, Fußsohlen am unteren Rand."},{id:"kneel",ico:"🧎",n:"Kniend",d:"Kopf O · Knie U",h:"Knie am unteren Rand, Torso füllt Frame nach oben."},{id:"seated",ico:"🪑",n:"Sitzend V-Form",d:"Füße/Hände O · Gesäß U",h:"Sitzend am Boden, Beine diagonal nach oben — V-Form."},{id:"invert",ico:"🙃",n:"Invertiert",d:"Füße O · Kopf U",h:"Kopf-/Schulterstand — Füße oben, Kopf unten."},{id:"split-v",ico:"🤸",n:"Vertikaler Spagat",d:"Hochgehobener Fuß O",h:"Ein Fuß unten, ein Fuß oben — stehender Spagat."},{id:"jump",ico:"⬆️",n:"Sprung",d:"Fingerspitzen O · Füße U",h:"Beide Füße in der Luft — Sprung-Peak eingefroren."}],"16:9":[{id:"prone",ico:"😴",n:"Bauchlage",d:"Kopf L · Füße R",h:"Horizontal liegend auf Bauch."},{id:"supine",ico:"🛌",n:"Rückenlage",d:"Kopf L · Füße R",h:"Rückenlage horizontal."},{id:"horiz",ico:"✈️",n:"Waagerecht",d:"Finger L · Ferse R",h:"Körper horizontal — Warrior III, T-Form."},{id:"arch",ico:"🌈",n:"Bogenform",d:"Hüfte O · Hände L",h:"Bogenform — Brücke, Rad, Backbend."},{id:"tarms",ico:"⬅️➡️",n:"T-Arme",d:"Hand L · Hand R",h:"Arme ausgestreckt — Warrior II, T-Pose."}],"top":[{id:"flat",ico:"🔲",n:"Flach Savasana",d:"Kopf O · Füße U",h:"Körper flach von oben — Savasana."},{id:"tuck",ico:"🔵",n:"Knie angezogen",d:"Knie L/R",h:"Rückenlage mit Knie-Variation."},{id:"wide",ico:"⬡",n:"Beine weit",d:"Knie L · Knie R",h:"Schmetterling, Spagat — Beine weit von oben."},{id:"vshape",ico:"🔻",n:"V/Chevron",d:"Hände U · Füße O",h:"Downward Dog, Dreieck — V von oben."}],"4:3":[{id:"st43",ico:"🧍",n:"Stehend",d:"Kopf O · Füße U",h:"Stehende Pose in 4:3."},{id:"se43",ico:"🪑",n:"Sitzend/Kniend",d:"Kopf O · Knie U",h:"Sitzend oder kniend."},{id:"ac43",ico:"⚡",n:"Action",d:"Dynamisch",h:"Eingefrorene Bewegung."}],"1:1":[{id:"sq1",ico:"🔲",n:"Overhead Square",d:"Kopf O · Füße U",h:"Top-down zentriert."},{id:"sq2",ico:"⬛",n:"Frontal Square",d:"Kopf O · Füße U",h:"Frontansicht."}],"split":[{id:"sp1",ico:"🪟",n:"Multi-Angle",d:"5-7 Winkel",h:"Character Sheet."},{id:"sp2",ico:"🔄",n:"360° Rundum",d:"Alle Seiten",h:"Frontal+Seite+Rücken+3/4."}]};
+function renderOrient(){
+  const list=ORDATA[S.ratio]||[];const og=document.getElementById('og');const oh=document.getElementById('ori-hint');
+  if(!list.length){og.innerHTML='<div style="font-size:10px;color:var(--tm);grid-column:1/-1;padding:4px 0">Kein Filter nötig.</div>';oh.textContent='';return;}
+  og.innerHTML=list.map(o=>`<div class="ocard${S.orient===o.id?' on':''}" data-id="${o.id}" onclick="selOrient('${o.id}','${escQ(o.h)}')"><div class="oico">${o.ico}</div><div class="olbl">${o.n}</div><div class="odesc">${o.d}</div></div>`).join('');
+  const cur=list.find(o=>o.id===S.orient)||list[0];
+  if(cur){if(!list.find(o=>o.id===S.orient))S.orient=list[0].id;oh.textContent=cur.h;ss('s-ori',cur.n);}
+}
+function selOrient(id,h){
+  S.orient=id;
+  document.querySelectorAll('.ocard').forEach(c=>c.classList.toggle('on',c.dataset.id===id));
+  document.getElementById('ori-hint').textContent=h;
+  const cur=Object.values(ORDATA).flat().find(o=>o.id===id);if(cur)ss('s-ori',cur.n);
+  renderPoses();render();
+}
+
+// ═══ POSE TABS ══════════════════════════════════════
+let pF='all';
+function renderPoseTabs(){
+  const gs=TG[S.theme]||[];
+  let h=`<div class="ptab on" data-f="all" onclick="setPF('all')">Alle</div>`;
+  gs.forEach(gk=>{const m=G[gk];h+=`<div class="ptab" data-f="${gk}" onclick="setPF('${gk}')">${m.ico} ${m.n.split(' — ')[1]||m.n.split(' & ')[0]}</div>`;});
+  document.getElementById('ptabs').innerHTML=h;pF='all';
+}
+function setPF(f){pF=f;document.querySelectorAll('.ptab').forEach(t=>t.classList.toggle('on',t.dataset.f===f));renderPoses();}
+
+// ═══ POSE RENDER ════════════════════════════════════
+function renderPoses(){
+  const cont=document.getElementById('pgroups');
+  const q=(document.getElementById('psearch')?.value||'').toLowerCase();
+  const ag=pF==='all'?(TG[S.theme]||[]):[pF];
+  const rl={"9:16":"9:16 Hochformat","16:9":"16:9 Querformat","top":"Bird View / Draufsicht","4:3":"4:3","1:1":"Quadrat","split":"Multi-View"}[S.ratio]||S.ratio;
+  document.getElementById('pfb').innerHTML=`<strong>${rl}</strong> — Nur Posen &amp; Shots die bildfüllend für dieses Format funktionieren. Jeder Shot zeigt O/U/L/R/M Positionen.`;
+  const grouped={};
+  DB.forEach(p=>{
+    if(!ag.includes(p.g)||!p.r.includes(S.ratio))return;
+    const ss2=shots(p,S.ratio);if(!ss2.length)return;
+    if(q&&!p.de.toLowerCase().includes(q)&&!(p.sk||'').toLowerCase().includes(q))return;
+    if(!grouped[p.g])grouped[p.g]=[];grouped[p.g].push({p,ss:ss2});
+  });
+  let html='',total=0,stotal=0;
+  ag.forEach(gk=>{
+    const m=G[gk];const items=grouped[gk]||[];
+    total+=items.length;items.forEach(x=>stotal+=x.ss.length);
+    html+=`<div class="pg" id="pg-${gk}"><div class="pgh" onclick="togPG('${gk}')"><span>${m.ico}</span><span class="pgl">${m.n}</span><span class="pgcnt">${items.length} Poses · ${items.reduce((a,x)=>a+x.ss.length,0)} Shots</span><span class="pgchev">▾</span></div><div class="pgc">`;
+    if(!items.length){html+=`<span class="nop">Keine Posen für ${rl}${q?' · '+q:''}</span>`;}
+    else{items.forEach(({p,ss:sx})=>{
+      const on=S.pose&&S.pose.de===p.de?' on':'';
+      const rtags=p.r.map(rv=>{const cl=rv==='9:16'?'pt9':rv==='16:9'?'pt16':rv==='top'?'pttop':rv==='split'?'ptx':'pt43';return `<span class="${cl}">${rv}</span>`;}).join('');
+      const sbadge=sx.length>1?`<span class="ptx">${sx.length} Shots</span>`:'';
+      html+=`<div class="pchip${on}" data-de="${esc(p.de)}" onclick="selPose('${esc(p.de)}')"><span class="pn">${p.de}</span><span class="psk">${p.sk}</span><div class="ptr">${rtags}${sbadge}</div></div>`;
+    });}
+    html+=`</div></div>`;
+  });
+  cont.innerHTML=html;ss('pcnt',`(${total} Posen · ${stotal} Shots)`);
+  const ok=S.pose&&ag.includes(S.pose.g)&&S.pose.r.includes(S.ratio)&&(!q||S.pose.de.toLowerCase().includes(q));
+  if(!ok){const f=DB.find(p=>ag.includes(p.g)&&p.r.includes(S.ratio)&&shots(p,S.ratio).length);if(f){S.pose=f;S.si=0;}}
+  if(S.pose){const el=cont.querySelector(`[data-de="${esc(S.pose.de)}"]`);if(el)el.classList.add('on');}
+  renderShots();
+}
+function togPG(gk){document.getElementById('pg-'+gk)?.classList.toggle('col');}
+function selPose(de){
+  const p=DB.find(x=>x.de===de);if(!p)return;
+  S.pose=p;S.si=0;
+  document.querySelectorAll('[data-de]').forEach(e=>e.classList.remove('on'));
+  document.querySelector(`[data-de="${esc(de)}"]`)?.classList.add('on');
+  renderShots();updAP();render();
+}
+
+// ═══ SVG BUILDER ════════════════════════════════════
+function buildSVG(ratio,pos,w){
+  const isP=ratio==='9:16',isS=ratio==='1:1';
+  let fw,fh;if(isP){fw=54;fh=96;}else if(isS){fw=72;fh=72;}else if(ratio==='4:3'){fw=72;fh=54;}else{fw=96;fh=54;}
+  const ac=isP?'#ff5580':(ratio==='16:9'||ratio==='top')?'#00e5c8':isS?'#4ade80':'#c084fc';
+  const fc='#ffd166';const bc=ac+'cc';const cx=fw/2,cy=fh/2;
+  let body='';
+  switch(w||'V'){
+    case 'V':body=isP?`<rect x="${cx-7}" y="5" width="14" height="${fh-10}" rx="6" fill="${bc}"/><circle cx="${cx}" cy="11" r="6" fill="${fc}"/>`:`<rect x="${cx-5}" y="4" width="10" height="${fh-8}" rx="4" fill="${bc}"/><circle cx="${cx}" cy="9" r="5" fill="${fc}"/>`;break;
+    case 'I':body=isP?`<rect x="${cx-7}" y="5" width="14" height="${fh-10}" rx="6" fill="${bc}"/><circle cx="${cx}" cy="${fh-11}" r="6" fill="${fc}"/><line x1="${cx-7}" y1="7" x2="${cx-3}" y2="7" stroke="${fc}" stroke-width="2" stroke-linecap="round"/><line x1="${cx+3}" y1="7" x2="${cx+7}" y2="7" stroke="${fc}" stroke-width="2" stroke-linecap="round"/>`:`<rect x="${cx-5}" y="4" width="10" height="${fh-8}" rx="4" fill="${bc}"/><circle cx="${cx}" cy="${fh-9}" r="5" fill="${fc}"/>`;break;
+    case 'H':body=`<rect x="4" y="${cy-8}" width="${fw-8}" height="16" rx="7" fill="${bc}"/><circle cx="10" cy="${cy}" r="7" fill="${fc}"/>`;break;
+    case 'T':body=`<rect x="${cx-5}" y="${cy-fh*.35}" width="10" height="${fh*.7}" rx="4" fill="${bc}"/><rect x="4" y="${cy-5}" width="${fw-8}" height="10" rx="4" fill="${bc}"/><circle cx="${cx}" cy="${cy-fh*.3}" r="6" fill="${fc}"/>`;break;
+    case 'A':body=`<path d="M8,${fh-8} Q${cx},${fh*.12} ${fw-8},${fh-8}" fill="none" stroke="${bc}" stroke-width="9" stroke-linecap="round"/><circle cx="${cx}" cy="${fh*.2}" r="6" fill="${fc}"/>`;break;
+    case 'D':body=`<path d="M8,${fh-8} L${cx},${fh*.15} L${fw-8},${fh-8}" fill="none" stroke="${bc}" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${cx}" cy="${fh*.25}" r="5" fill="${fc}"/>`;break;
+    case 'O':body=`<ellipse cx="${cx}" cy="${cy}" rx="${fw*.22}" ry="${fh*.42}" fill="${bc}"/><circle cx="${cx}" cy="${cy-fh*.32}" r="7" fill="${fc}"/><line x1="${cx-fw*.2}" y1="${cy}" x2="${cx+fw*.2}" y2="${cy}" stroke="${fc}" stroke-width="3" stroke-linecap="round"/>`;break;
+    case 'P':body=`<rect x="5" y="${fh*.28}" width="${fw-10}" height="10" rx="4" fill="${bc}" transform="rotate(-8,${cx},${cy})"/><circle cx="12" cy="${fh*.32}" r="6" fill="${fc}"/>`;break;
+    case 'K':body=isP?`<rect x="${cx-8}" y="${fh*.35}" width="16" height="${fh*.55}" rx="6" fill="${bc}"/><circle cx="${cx}" cy="${fh*.12}" r="7" fill="${fc}"/><rect x="${cx-12}" y="${fh*.62}" width="24" height="9" rx="4" fill="${bc+'aa'}"/>`:`<rect x="${cx-6}" y="${cy-fh*.3}" width="12" height="${fh*.6}" rx="5" fill="${bc}"/><circle cx="${cx}" cy="${cy-fh*.32}" r="6" fill="${fc}"/>`;break;
+    case 'C':body=`<ellipse cx="${cx}" cy="${cy}" rx="${fw*.28}" ry="${fh*.32}" fill="${bc}"/><circle cx="${cx}" cy="${cy-fh*.22}" r="6" fill="${fc}"/><ellipse cx="${cx-fw*.27}" cy="${cy+fh*.05}" rx="${fw*.13}" ry="${fh*.18}" fill="${bc+'88'}" transform="rotate(-20,${cx-fw*.27},${cy})"/><ellipse cx="${cx+fw*.27}" cy="${cy+fh*.05}" rx="${fw*.13}" ry="${fh*.18}" fill="${bc+'88'}" transform="rotate(20,${cx+fw*.27},${cy})"/>`;break;
+    case 'J':body=isP?`<rect x="${cx-7}" y="${fh*.08}" width="14" height="${fh*.72}" rx="6" fill="${bc}"/><circle cx="${cx}" cy="${fh*.14}" r="6" fill="${fc}"/><line x1="${cx-fw*.28}" y1="${fh*.4}" x2="${cx+fw*.28}" y2="${fh*.4}" stroke="${bc}" stroke-width="7" stroke-linecap="round"/>`:`<rect x="${cx-5}" y="${cy-fh*.3}" width="10" height="${fh*.65}" rx="5" fill="${bc}"/><circle cx="${cx}" cy="${cy-fh*.28}" r="6" fill="${fc}"/>`;break;
+    default:body=`<rect x="${cx-7}" y="6" width="14" height="${fh-12}" rx="6" fill="${bc}"/><circle cx="${cx}" cy="12" r="6" fill="${fc}"/>`;
+  }
+  const aS='font-family:\'DM Mono\',monospace;font-size:6.5px;font-weight:700';
+  const ann=[];
+  if(pos?.o)ann.push(`<text x="${cx}" y="10" text-anchor="middle" style="${aS}" fill="${ac}">${(pos.o||'').slice(0,14)}</text>`);
+  if(pos?.u)ann.push(`<text x="${cx}" y="${fh-2}" text-anchor="middle" style="${aS}" fill="${ac}">${(pos.u||'').slice(0,14)}</text>`);
+  return `<svg width="${fw+2}" height="${fh+2}" viewBox="-1 -1 ${fw+2} ${fh+2}" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="${fw}" height="${fh}" rx="3" fill="#13131e" stroke="${ac}" stroke-width="1.5"/><line x1="${fw/3}" y1="0" x2="${fw/3}" y2="${fh}" stroke="${ac}" stroke-width=".3" opacity=".18"/><line x1="${fw*2/3}" y1="0" x2="${fw*2/3}" y2="${fh}" stroke="${ac}" stroke-width=".3" opacity=".18"/><line x1="0" y1="${fh/3}" x2="${fw}" y2="${fh/3}" stroke="${ac}" stroke-width=".3" opacity=".18"/><line x1="0" y1="${fh*2/3}" x2="${fw}" y2="${fh*2/3}" stroke="${ac}" stroke-width=".3" opacity=".18"/>${body}${ann.join('')}</svg>`;
+}
+
+function buildFP(sh,ratio){
+  if(!sh)return'<div class="fp-empty">Kein Shot verfügbar</div>';
+  const p=sh.pos||{};const adat=AT[sh.angle]||{ico:"🎯",n:sh.angle,d:""};
+  const rbc=ratio==='9:16'?'r9':ratio==='16:9'?'r16':ratio==='top'?'rtop':ratio==='1:1'?'r11':'r43';
+  const rl=ratio==='top'?'🦅 Bird View':ratio;
+  // position tags
+  const ptags=[];
+  if(p.o)ptags.push(`<span class="pp po">O: ${p.o}</span>`);
+  if(p.u)ptags.push(`<span class="pp pu">U: ${p.u}</span>`);
+  if(p.l)ptags.push(`<span class="pp pl">L: ${p.l}</span>`);
+  if(p.r)ptags.push(`<span class="pp pr">R: ${p.r}</span>`);
+  if(p.m)ptags.push(`<span class="pp pm">M: ${p.m}</span>`);
+  const svg=buildSVG(ratio,p,sh.w);
+  return `<div class="fp-svg"><div>${svg}</div><div class="fp-rb ${rbc}">${rl}</div></div>
+<div class="fp-info">
+  <div class="fp-angle"><div class="fp-aico">${adat.ico}</div><div><div class="fp-atxt">${adat.n}</div><div class="fp-adesc">${adat.d}</div></div></div>
+  <div class="fp-cam">📷 ${sh.cam}</div>
+  <div class="posrow"><span class="posrow-lbl">Frame:</span>${ptags.join('')}</div>
+</div>`;
+}
+
+// ═══ SHOTS PANEL ════════════════════════════════════
+function renderShots(){
+  const sg=document.getElementById('svgrid');const fp=document.getElementById('fpw');const cnt=document.getElementById('sv-cnt');
+  const os=document.getElementById('out-shot');
+  if(!S.pose){sg.innerHTML='<div class="svc-empty">← Zuerst Pose wählen</div>';fp.innerHTML='<div class="fp-empty">Pose &amp; Shot wählen</div>';cnt.textContent='0';if(os)os.style.display='none';return;}
+  const sx=shots(S.pose,S.ratio);
+  if(!sx.length){sg.innerHTML=`<div class="svc-empty">Keine Shots für ${S.ratio}</div>`;fp.innerHTML=`<div class="fp-empty">Kein Shot für ${S.ratio}</div>`;cnt.textContent='0';if(os)os.style.display='none';return;}
+  cnt.textContent=sx.length;if(os)os.style.display='';
+  if(S.si>=sx.length)S.si=0;
+  sg.innerHTML=sx.map((sh,i)=>{
+    const p=sh.pos||{};const adat=AT[sh.angle]||{ico:"🎯",n:sh.angle};
+    const ptags=[];
+    if(p.o)ptags.push(`<span class="pp po">O: ${p.o}</span>`);
+    if(p.u)ptags.push(`<span class="pp pu">U: ${p.u}</span>`);
+    if(p.l)ptags.push(`<span class="pp pl">L: ${p.l}</span>`);
+    if(p.r)ptags.push(`<span class="pp pr">R: ${p.r}</span>`);
+    if(p.m)ptags.push(`<span class="pp pm">M: ${p.m}</span>`);
+    return `<div class="svc${i===S.si?' on':''}" onclick="selShot(${i})">
+      <div class="svc-top"><span class="svc-ico">${adat.ico}</span><span class="svc-name">${sh.lbl||'Shot '+(i+1)}</span><span class="svc-num">#${i+1}</span></div>
+      <div class="posrow">${ptags.join('')}</div>
+    </div>`;
+  }).join('');
+  const sh=sx[S.si];
+  ss('s-shot',sh.lbl||('#'+(S.si+1)));if(os)os.textContent=sh.lbl||('Shot '+(S.si+1));
+  fp.innerHTML=buildFP(sh,S.ratio);
+}
+function selShot(i){
+  S.si=i;
+  document.querySelectorAll('.svc').forEach((e,j)=>e.classList.toggle('on',j===i));
+  const sh=shots(S.pose,S.ratio)[i];
+  if(sh){ss('s-shot',sh.lbl||('#'+(i+1)));const os=document.getElementById('out-shot');if(os)os.textContent=sh.lbl||('Shot '+(i+1));document.getElementById('fpw').innerHTML=buildFP(sh,S.ratio);}
+  updAP();render();
+}
+
+// ═══ OPTIONAL CHIPS ════════════════════════════════
+document.querySelectorAll('.ochip[data-g]').forEach(c=>{
+  c.addEventListener('click',()=>{
+    const g=c.dataset.g,isOn=c.classList.contains('on');
+    document.querySelectorAll(`.ochip[data-g="${g}"]`).forEach(x=>x.classList.remove('on'));
+    c.classList.toggle('on',!isOn);S[g]=isOn?null:c.dataset.v;
+    updLightBadge();updExprBadge();updAP();render();
+  });
+});
+function updLightBadge(){
+  const any=S.light||S.setting||S.grade;const b=document.getElementById('light-badge');const cv=document.getElementById('s-light');const card=document.getElementById('c-light');
+  if(any){if(b){b.textContent='AKTIV';b.className='badge act';}if(cv){cv.textContent=[S.light,S.setting,S.grade].filter(Boolean).map(v=>v.split(',')[0].trim().slice(0,12)).join(' · ');cv.className='cval';}card?.classList.add('on');}
+  else{if(b){b.textContent='OPTIONAL';b.className='badge opt';}if(cv){cv.textContent='—';cv.className='cval dim';}card?.classList.remove('on');}
+}
+function updExprBadge(){
+  const b=document.getElementById('expr-badge');const cv=document.getElementById('s-expr');const card=document.getElementById('c-expr');
+  if(S.expr){if(b){b.textContent='AKTIV';b.className='badge act';}if(cv){cv.textContent=S.expr.split(',')[0].slice(0,20);cv.className='cval';}card?.classList.add('on');}
+  else{if(b){b.textContent='OPTIONAL';b.className='badge opt';}if(cv){cv.textContent='— aus Anhang 1';cv.className='cval dim';}card?.classList.remove('on');}
+}
+
+// ═══ ACTIVE PARAMS ══════════════════════════════════
+function dot(id,on){const e=document.getElementById(id);if(e)e.className='dot '+(on?'on':'off');}
+function apv(id,v,dim){const e=document.getElementById(id);if(!e)return;if(v){e.textContent=v;e.className='apr-v';}else{e.textContent=dim||'—';e.className='apr-v dim';}}
+function updAP(){
+  const sh=csh();
+  dot('dt-st',!!S.stype);apv('ap-st',S.stype?ST[S.stype].n:null,'— PFLICHT');
+  dot('dt-pose',!!S.pose);apv('ap-pose',S.pose?S.pose.de:null);
+  dot('dt-shot',!!sh);apv('ap-shot',sh?sh.lbl:null);
+  dot('dt-pos',!!sh&&!!posStr(sh?.pos));apv('ap-pos',posStr(sh?.pos));
+  dot('dt-light',!!S.light);apv('ap-light',S.light?S.light.split(',')[0].slice(0,22):null);
+  dot('dt-setting',!!S.setting);apv('ap-setting',S.setting?S.setting.split(',')[0].slice(0,22):null);
+  dot('dt-grade',!!S.grade);apv('ap-grade',S.grade?S.grade.split(',')[0].slice(0,22):null);
+  dot('dt-expr',!!S.expr);apv('ap-expr',S.expr?S.expr.split(',')[0].slice(0,22):null,'— aus Anhang 1');
+}
+
+// ═══ PROMPT BUILDER ════════════════════════════════
+function getFrameDesc(){
+  return {"9:16":"frame-filling 9:16 vertical — body from top edge (O) to bottom edge (U), zero empty space","16:9":"frame-filling 16:9 horizontal — body from left edge (L) to right edge (R), zero empty space","top":"top-down 90° bird view overhead — body centered and filling the frame from above","4:3":"4:3 format — full body editorial portrait framing","1:1":"1:1 square format — centered symmetric square composition","split":"multi-view character sheet — 5-7 instances at different angles simultaneously"}[S.ratio]||S.ratio;
+}
+function build(){
+  const sh=csh();
+  if(!S.pose||!sh)return'← Shooting-Typ, Format und Pose wählen';
+  if(S.ratio==='split'){
+    const refLine='The exact person from both reference images — face, hair, makeup and skin from image 1; body, figure, proportions and outfit from image 2. Do not alter any feature from either reference.';
+    const lines=[refLine,''];
+    if(S.stype)lines.push(ST[S.stype].intro);
+    lines.push('Multi-angle character sheet: generate a seamless composition showing the same person in 5-6 distinct views simultaneously — center full-body frontal, left and right 90° profiles, 45° three-quarter views, and one close-up portrait. Each instance shows the same face, body and outfit with zero variation.');
+    if(S.expr)lines.push(`Expression: ${S.expr}.`);
+    lines.push('');
+    if(S.light)lines.push(`-- Lighting: ${S.light}`);
+    if(S.setting)lines.push(`-- Setting: ${S.setting}`);
+    if(S.grade)lines.push(`-- Color grade: ${S.grade}`);
+    lines.push('-- Shot on Hasselblad H6D-100c, HC 80mm f/2.8, f/4, ISO 64');
+    lines.push('-- 8K UHD, photorealistic, tack-sharp, no identity drift across instances');
+    lines.push('--ar 9_16');
+    return lines.join('\n');
+  }
+  const lines=[];
+  lines.push('FACE, HAIR, MAKEUP + SKIN: exact from reference image 1 — do not alter any feature.');
+  lines.push('BODY, FIGURE, PROPORTIONS + OUTFIT: exact from reference image 2 — preserve completely.');
+  lines.push('');
+  if(S.stype)lines.push(ST[S.stype].intro);
+  // Shot info with position
+  const pos=sh.pos||{};const pArr=[];
+  if(pos.o)pArr.push(`O=${pos.o}`);if(pos.u)pArr.push(`U=${pos.u}`);
+  if(pos.l)pArr.push(`L=${pos.l}`);if(pos.r)pArr.push(`R=${pos.r}`);
+  if(pos.m)pArr.push(`M=${pos.m}`);
+  const adat=AT[sh.angle]||{n:sh.angle};
+  lines.push(`[${sh.lbl} — ${adat.n}${pArr.length?' | '+pArr.join(' · '):''}]`);
+  lines.push(sh.p);
+  if(S.expr)lines.push(`${S.expr}.`);
+  lines.push('');
+  lines.push(`-- Camera: ${sh.cam}`);
+  lines.push(`-- Framing: ${getFrameDesc()}`);
+  if(S.light)lines.push(`-- Lighting: ${S.light}`);
+  if(S.setting)lines.push(`-- Setting: ${S.setting}`);
+  if(S.grade)lines.push(`-- Color grade: ${S.grade}`);
+  lines.push('-- Shot on Hasselblad H6D-100c, HC 80mm f/2.8, f/4, ISO 64');
+  lines.push('-- 8K UHD, photorealistic, tack-sharp focus, zero artifacts');
+  lines.push(`--ar ${S.ratio.replace(':','_')}`);
+  return lines.join('\n');
+}
+function render(){
+  const txt=build();
+  if(txt.startsWith('←')){document.getElementById('output').innerHTML=`<span style="color:var(--tm)">${txt}</span>`;ss('out-chars','—');return;}
+  const esc2=txt.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const hl=esc2
+    .replace(/^(FACE, HAIR.*?)$/m,'<span class="pt-r1">$1</span>')
+    .replace(/^(BODY, FIGURE.*?)$/m,'<span class="pt-r2">$1</span>')
+    .replace(/^(\[.+?\])$/m,'<span class="pt-sh">$1</span>')
+    .replace(/^(-- .*)$/gm,'<span class="pt-tech">$1</span>');
+  document.getElementById('output').innerHTML=hl;
+  ss('out-chars',txt.length+' Z');
+}
+function doCopy(){const t=build();if(t.startsWith('←'))return;navigator.clipboard.writeText(t).then(()=>{const e=document.getElementById('toast');e.classList.add('show');setTimeout(()=>e.classList.remove('show'),2400);});}
+function doReset(){
+  document.getElementById('psearch').value='';S.stype=null;S.light=null;S.setting=null;S.grade=null;S.expr=null;
+  document.querySelectorAll('.stc,.ochip').forEach(e=>e.classList.remove('on'));
+  updST();updLightBadge();updExprBadge();renderPoses();updAP();render();
+}
+function doRandom(){
+  const ts=['yoga','sport','fashion'],rs=['9:16','16:9'];
+  const nt=ts[Math.floor(Math.random()*ts.length)],nr=rs[Math.floor(Math.random()*rs.length)];
+  S.ratio=nr;S.si=0;
+  document.querySelectorAll('.rhero').forEach(c=>c.classList.toggle('on',c.dataset.r===nr));
+  document.getElementById('rhint').innerHTML=RH[nr]||'';
+  // random stype
+  const ok=ST_THEME[nt]||[];if(ok.length){const rk=ok[Math.floor(Math.random()*ok.length)];S.stype=rk;document.querySelectorAll('.stc').forEach(c=>c.classList.toggle('on',c.dataset.k===rk));}
+  renderOrient();setTheme(nt);
+  const avail=DB.filter(p=>TG[nt]?.includes(p.g)&&p.r.includes(nr)&&shots(p,nr).length);
+  if(avail.length){const rp=avail[Math.floor(Math.random()*avail.length)];S.pose=rp;S.si=Math.floor(Math.random()*shots(rp,nr).length);}
+  updRcnt();updST();renderShots();updAP();render();
+}
+
+// ═══ INIT ═══════════════════════════════════════════
+initST();setTheme('yoga');updRcnt();
+</script>
+</body>
+</html>

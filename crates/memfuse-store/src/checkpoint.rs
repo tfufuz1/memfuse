@@ -4,7 +4,7 @@
 //! Enables exact state reconstruction of an SAOS database at any given transaction ID.
 
 use crate::lsm::LsmStorage;
-use memfuse_core::{Result, TxId};
+use memfuse_core::{MemFuseError, Result, TxId};
 use std::sync::Arc;
 
 /// Represents a Point-in-Time snapshot of the agent's memory state.
@@ -12,6 +12,51 @@ use std::sync::Arc;
 pub struct StateCheckpoint {
     pub tx_id: TxId,
     pub timestamp_ms: u64,
+}
+
+/// RAII Guard that rolls back a checkpoint if not explicitly committed.
+/// Prevents transaction leaks if the process panics or drops early.
+pub struct CheckpointGuard {
+    checkpoint: Option<StateCheckpoint>,
+    storage: Arc<LsmStorage>,
+}
+
+impl CheckpointGuard {
+    pub fn new(checkpoint: StateCheckpoint, storage: Arc<LsmStorage>) -> Self {
+        Self {
+            checkpoint: Some(checkpoint),
+            storage,
+        }
+    }
+
+    pub fn checkpoint(&self) -> Result<&StateCheckpoint> {
+        self.checkpoint
+            .as_ref()
+            .ok_or_else(|| MemFuseError::Internal("Checkpoint already consumed".into()))
+    }
+
+    pub fn commit(mut self) -> Result<StateCheckpoint> {
+        self.checkpoint
+            .take()
+            .ok_or_else(|| MemFuseError::Internal("Checkpoint already consumed".into()))
+    }
+}
+
+impl Drop for CheckpointGuard {
+    fn drop(&mut self) {
+        if let Some(cp) = self.checkpoint.take() {
+            tracing::warn!(
+                "CheckpointGuard dropped without commit. Auto-rolling back to TxId: {:?}",
+                cp.tx_id
+            );
+            let storage_clone = Arc::clone(&self.storage);
+            self.storage.spawn_tracked(async move {
+                if let Err(e) = storage_clone.rollback_to_tx(cp.tx_id).await {
+                    tracing::error!("Auto-rollback failed: {}", e);
+                }
+            });
+        }
+    }
 }
 
 /// The Checkpointer manages WAL replay bounds for deterministic time-travel.
@@ -26,14 +71,16 @@ impl Checkpointer {
     }
 
     /// Records a new checkpoint at the current transaction ID marking an agent step.
-    pub fn create_checkpoint(&self, tx_id: TxId) -> StateCheckpoint {
-        StateCheckpoint {
+    /// Returns a RAII guard that will rollback the state if dropped without commit.
+    pub fn create_checkpoint(&self, tx_id: TxId) -> CheckpointGuard {
+        let cp = StateCheckpoint {
             tx_id,
             timestamp_ms: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64,
-        }
+        };
+        CheckpointGuard::new(cp, Arc::clone(&self.storage))
     }
 
     /// Rolls the database state back to a specific checkpoint.
@@ -64,14 +111,13 @@ mod tests {
         let storage = Arc::new(LsmStorage::new(config).await.expect("create storage"));
         let checkpointer = Checkpointer::new(storage.clone());
 
-        // 1. Insert some data
         let tx1 = TxId::new(1);
         storage.put(tx1, b"key1", b"val1").await.unwrap();
         storage.commit(tx1).await.unwrap();
 
-        let cp1 = checkpointer.create_checkpoint(tx1);
+        let cp1_guard = checkpointer.create_checkpoint(tx1);
+        let cp1 = cp1_guard.commit().expect("commit"); // explicit commit to prevent auto-rollback
 
-        // 2. Insert more data
         let tx2 = TxId::new(2);
         storage.put(tx2, b"key2", b"val2").await.unwrap();
         storage.commit(tx2).await.unwrap();
@@ -79,17 +125,47 @@ mod tests {
         assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
         assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec()));
 
-        // 3. Rollback to cp1
         checkpointer.rollback_to(&cp1).await.expect("rollback");
 
-        // 4. Verify state
         assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
-        assert_eq!(storage.get(b"key2").await.unwrap(), None); // Should be gone!
+        assert_eq!(storage.get(b"key2").await.unwrap(), None);
 
-        // 5. Verify we can still write and seq_no is correct
         let tx3 = TxId::new(3);
         storage.put(tx3, b"key3", b"val3").await.unwrap();
         storage.commit(tx3).await.unwrap();
         assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_raii_rollback() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(config).await.expect("create storage"));
+        let checkpointer = Checkpointer::new(storage.clone());
+
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key1", b"val1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        {
+            // Create a checkpoint guard but do NOT commit it.
+            let _cp_guard = checkpointer.create_checkpoint(tx1);
+
+            let tx2 = TxId::new(2);
+            storage.put(tx2, b"key2", b"val2").await.unwrap();
+            storage.commit(tx2).await.unwrap();
+            assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec()));
+            // guard drops here, triggering auto-rollback
+        }
+
+        // Wait a small amount of time for the spawned tokio task to finish
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Verify that tx2 was rolled back
+        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
+        assert_eq!(storage.get(b"key2").await.unwrap(), None);
     }
 }

@@ -5,6 +5,7 @@
 //! AC-3: Immutable audit log
 //! Bonus: Token budget exhaustion
 
+use memfuse_core::traits::StorageEngine;
 use memfuse_core::TokenBudget;
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use memfuse_saos_agent::audit::AuditLog;
@@ -51,6 +52,11 @@ impl AgentTool for TokenTool {
 
 /// Creates a test environment: engine + db + state_collection.
 async fn setup(budget: TokenBudget) -> (OrchestratorEngine, Arc<MemFuse>, AgentContext, TempDir) {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_test_writer()
+        .try_init();
+
     let tmp = TempDir::new().expect("temp dir");
     let config = MemFuseConfig {
         dimension: 3,
@@ -160,6 +166,7 @@ async fn test_agent_audit_log_immutable() {
 
     let graph = linear_graph();
     engine.run(&mut ctx, &graph).await.expect("run");
+    ctx.db.inner_storage().flush().await.expect("flush");
 
     // Replay the audit log and verify entries
     let audit = AuditLog::new(ctx.state_collection.clone());

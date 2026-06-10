@@ -10,8 +10,14 @@ description = "Encryption at Rest utilities for MemFuse"
 memfuse-core = { workspace = true }
 sha2 = "0.10"
 hmac = "0.12"
-aes-gcm = "0.10"
+aes-gcm-siv = "0.11"
 hkdf = "0.12"
+rand = { workspace = true }
+tracing = { workspace = true }
+zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
+
+[features]
+test-utils = []
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }

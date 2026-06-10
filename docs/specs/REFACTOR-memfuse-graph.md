@@ -115,7 +115,7 @@ Schritt 3: FIND-GRA-002 (Performance-Optimierung)
 
 ## DONE-DEFINITION FÜR DIESES CRATE
 
-- [ ] Transaktions-Isolation für Entities und Edges belegt.
-- [ ] Kompilierfehler (E0195) behoben.
-- [ ] `just triple-test -p memfuse-graph` grün.
-- [ ] Keine Write-Locks im Read-Pfad (außer bei notwendiger Compaction).
+- [x] Transaktions-Isolation für Entities und Edges belegt.
+- [x] Kompilierfehler (E0195) behoben.
+- [x] `just triple-test -p memfuse-graph` grün.
+- [x] Keine Write-Locks im Read-Pfad (außer bei notwendiger Compaction).

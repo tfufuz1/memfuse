@@ -1,7 +1,7 @@
 # MEMFUSE SYSTEM AUDIT REPORT
 **Datum:** 2026-05-31
 **Prüfer:** Lead Architect & Conductor
-**Referenz:** .agent/FORENSIC_FINDINGS.md
+**Referenz:** docs/audit/FORENSIC_FINDINGS.md
 
 ## EXECUTIVE SUMMARY
 Der aktuelle Status der MemFuse Codebase zeigt signifikante Fortschritte in der SIMD-Sicherheit und der Checkpoint-Architektur. Dennoch verbleiben **kritische Risiken** in der Storage-Integrität (Flush-Reihenfolge) und in der Performance der Text-Engine. Die Sovereign Core Doctrine ist in weiten Teilen umgesetzt, erfordert aber punktuelle Nachjustierung in den Fehlerpfaden.
