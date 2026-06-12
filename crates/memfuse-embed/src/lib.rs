@@ -6,18 +6,26 @@
 
 #![deny(unsafe_code)]
 
-use memfuse_core::{MemFuseError, Result};
+use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
 use ort::session::Session;
 use ort::value::Value;
 use std::path::Path;
 use tokenizers::Tokenizer;
 use tracing::{debug, info};
+use async_trait::async_trait;
 
 /// Handles text tokenization and ONNX model inference.
 #[derive(Debug)]
 pub struct TextEmbedder {
     session: std::sync::Mutex<Session>,
     tokenizer: Tokenizer,
+}
+
+#[async_trait]
+impl TextEmbeddingEngine for TextEmbedder {
+    async fn embed(&self, text: &str) -> Result<Vec<f32>> {
+        self.embed(text)
+    }
 }
 
 impl TextEmbedder {
@@ -231,11 +239,23 @@ mod tests {
     #[test]
     fn test_formatting_safety() {
         // Just verify that using std::fmt::Debug on a pseudo-initialized or similar struct doesn't panic.
-        // It's checked during compilation but checking runtime panic safety without model is tricky, 
-        // normally we'd instantiate but we can't because load fails without valid files.
-        // But we can verify our Error type formats without panicking.
         let err = MemFuseError::Internal("test".into());
         let formatted = format!("{:?}", err);
         assert!(formatted.contains("Internal"));
+    }
+
+    #[tokio::test]
+    async fn test_mock_embedding_engine() {
+        struct MockEngine;
+        #[async_trait]
+        impl TextEmbeddingEngine for MockEngine {
+            async fn embed(&self, text: &str) -> Result<Vec<f32>> {
+                Ok(vec![text.len() as f32])
+            }
+        }
+
+        let engine = MockEngine;
+        let res = engine.embed("memfuse").await.unwrap();
+        assert_eq!(res, vec![7.0]);
     }
 }

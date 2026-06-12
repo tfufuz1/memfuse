@@ -46,9 +46,9 @@ check-saos-agent:
 check-py:
     nix develop -c cargo check -p memfuse-py
 
-# Modular check for memfuse-checkpoint
-check-checkpoint:
-    nix develop -c cargo check -p memfuse-checkpoint
+# Modular check for memfuse-embed
+check-embed:
+    nix develop -c cargo check -p memfuse-embed
 
 # Verifies the Directed Acyclic Graph (DAG) integrity of the workspace
 dag-check:

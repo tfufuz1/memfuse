@@ -153,4 +153,31 @@ mod tests {
         );
         assert!((fused[1].score - (1.0 / 61.0)).abs() < f32::EPSILON);
     }
+
+    #[cfg(test)]
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn prop_rrf_never_panics(
+                result_sets in prop::collection::vec(
+                    prop::collection::vec(
+                        any::<u32>().prop_map(|i| SearchResult {
+                            id: format!("doc_{}", i % 100), // Collisions are good for testing
+                            score: 0.0,
+                            metadata: None,
+                        }),
+                        0..20
+                    ),
+                    0..5
+                ),
+                max_results in 0..50usize
+            ) {
+                let fused = reciprocal_rank_fusion(result_sets, max_results);
+                assert!(fused.len() <= max_results);
+            }
+        }
+    }
 }

@@ -202,6 +202,13 @@ pub trait VectorIndex: Send + Sync + 'static {
     async fn stats(&self) -> Result<VectorIndexStats>;
 }
 
+/// Text embedding engine trait.
+#[async_trait]
+pub trait TextEmbeddingEngine: Send + Sync + 'static {
+    /// Generates an embedding for the given text.
+    async fn embed(&self, text: &str) -> Result<Vec<f32>>;
+}
+
 /// Statistics for a text index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextIndexStats {

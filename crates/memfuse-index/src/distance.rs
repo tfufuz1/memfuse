@@ -735,6 +735,8 @@ pub unsafe fn dot_product_u8_avx512vnni(a: &[u8], b: &[u8]) -> u32 {
         i += 64;
     }
 
+    // ANCHOR:SAFETY:SIMD-017 — AVX-512 Horizontal Sum.
+    // BEGRÜNDUNG: hsum512_epi32_avx512 wird innerhalb eines AVX-512 aktivierten Kontextes aufgerufen.
     // SAFETY: hsum512_epi32_avx512 is called within an AVX-512 enabled context.
     let mut sum = unsafe { hsum512_epi32_avx512(sum_v) } as u32;
     while i < n {
@@ -780,6 +782,8 @@ pub unsafe fn euclidean_distance_sq_u8_avx512(a: &[u8], b: &[u8]) -> u32 {
         i += 64;
     }
 
+    // ANCHOR:SAFETY:SIMD-017 — AVX-512 Horizontal Sum.
+    // BEGRÜNDUNG: hsum512_epi32_avx512 wird innerhalb eines AVX-512 aktivierten Kontextes aufgerufen.
     // SAFETY: hsum512_epi32_avx512 is called within an AVX-512 enabled context.
     let mut sum = unsafe { hsum512_epi32_avx512(sum_v) } as u32;
     while i < n {
@@ -812,6 +816,8 @@ pub unsafe fn cosine_similarity_parts_u8_avx512(a: &[u8], b: &[u8]) -> CosineSim
     );
 
     while i + 64 <= n {
+        // ANCHOR:SAFETY:SIMD-018 — AVX-512 Load and DPBUSD.
+        // BEGRÜNDUNG: i + 64 <= n garantiert In-Bounds Zugriff. Hardware-Support via Dispatcher geprüft.
         // SAFETY: Pointer arithmetic and unaligned loads are safe due to i + 64 <= n.
         unsafe {
             let va = _mm512_loadu_si512(a.as_ptr().add(i) as *const _);
@@ -828,6 +834,8 @@ pub unsafe fn cosine_similarity_parts_u8_avx512(a: &[u8], b: &[u8]) -> CosineSim
         i += 64;
     }
 
+    // ANCHOR:SAFETY:SIMD-019 — AVX-512 Horizontal Sums.
+    // BEGRÜNDUNG: hsum512_epi32/64_avx512 werden innerhalb eines AVX-512 aktivierten Kontextes aufgerufen.
     // SAFETY: Horizontal sums are safe on AVX-512.
     let (mut dot, mut norm_a_sq, mut norm_b_sq, mut sum_a, mut sum_b) = unsafe {
         (
@@ -1147,6 +1155,8 @@ mod tests {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512vnni") {
+                // ANCHOR:SAFETY:SIMD-U8-TEST-002 — AVX-512 VNNI Test Dispatch.
+                // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
                 // SAFETY: Hardware support detected.
                 let dot_simd = unsafe { dot_product_u8_avx512vnni(&a, &b) };
                 assert_eq!(dot_scalar, dot_simd);
