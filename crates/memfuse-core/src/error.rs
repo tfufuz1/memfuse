@@ -109,3 +109,70 @@ impl From<std::array::TryFromSliceError> for MemFuseError {
         Self::ParseError(e.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_invalid_input_helper() {
+        let err = MemFuseError::invalid_input("bad param");
+        match err {
+            MemFuseError::InvalidInput(msg) => assert_eq!(msg, "bad param"),
+            _ => panic!("Expected InvalidInput, got {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_from_try_from_slice_error() {
+        let slice: &[u8] = &[1, 2, 3];
+        let try_from_res: std::result::Result<[u8; 4], _> = slice.try_into();
+        assert!(try_from_res.is_err());
+        
+        let parse_err: MemFuseError = try_from_res.unwrap_err().into();
+        match parse_err {
+            MemFuseError::ParseError(msg) => {
+                assert!(msg.contains("could not convert slice to array") || msg.contains("slice"));
+            }
+            _ => panic!("Expected ParseError, got {:?}", parse_err),
+        }
+    }
+
+    #[test]
+    fn test_error_display() {
+        let err = MemFuseError::NotFound("doc_1".to_string());
+        assert_eq!(err.to_string(), "Not found: doc_1");
+
+        let io_err = MemFuseError::Io(std::io::Error::other("disk failure"));
+        assert!(io_err.to_string().contains("I/O error: disk failure"));
+
+        let wal_err = MemFuseError::WalCorruption {
+            offset: 1024,
+            reason: "invalid header".to_string(),
+        };
+        assert_eq!(wal_err.to_string(), "WAL corruption detected at offset 1024: invalid header");
+    }
+
+    #[test]
+    fn test_from_conversions() {
+        // Io
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let m_err: MemFuseError = io_err.into();
+        assert!(matches!(m_err, MemFuseError::Io(_)));
+
+        // Json
+        let json_str = "{ invalid }";
+        let json_err: serde_json::Error = serde_json::from_str::<serde_json::Value>(json_str).unwrap_err();
+        let m_err2: MemFuseError = json_err.into();
+        assert!(matches!(m_err2, MemFuseError::Json(_)));
+    }
+
+    #[test]
+    fn test_result_alias() {
+        fn fail() -> Result<()> {
+            Err(MemFuseError::Internal("failed".to_string()))
+        }
+        let res = fail();
+        assert!(res.is_err());
+    }
+}

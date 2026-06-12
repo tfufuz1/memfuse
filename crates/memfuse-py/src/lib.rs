@@ -367,6 +367,12 @@ macro_rules! memfuse_crud_methods {
                 vector: PyReadonlyArray1<'py, f32>,
                 k: usize,
             ) -> PyResult<Vec<PySearchResult>> {
+                if k == 0 || k > 1000 {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "Search k must be between 1 and 1000. Got: {}",
+                        k
+                    )));
+                }
                 let rt = get_runtime()?;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
@@ -385,6 +391,12 @@ macro_rules! memfuse_crud_methods {
                 vector: PyReadonlyArray1<'py, f32>,
                 k: usize,
             ) -> PyResult<Bound<'py, PyBytes>> {
+                if k == 0 || k > 1000 {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "Search k must be between 1 and 1000. Got: {}",
+                        k
+                    )));
+                }
                 let rt = get_runtime()?;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
@@ -485,6 +497,12 @@ macro_rules! memfuse_crud_methods {
                 text: &str,
                 k: usize,
             ) -> PyResult<Vec<PySearchResult>> {
+                if k == 0 || k > 1000 {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "Search k must be between 1 and 1000. Got: {}",
+                        k
+                    )));
+                }
                 let rt = get_runtime()?;
                 let results = py
                     .allow_threads(|| rt.block_on(self.inner.search_text(text, k)))
@@ -501,6 +519,12 @@ macro_rules! memfuse_crud_methods {
                 vector: PyReadonlyArray1<'py, f32>,
                 k: usize,
             ) -> PyResult<Vec<PySearchResult>> {
+                if k == 0 || k > 1000 {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "Search k must be between 1 and 1000. Got: {}",
+                        k
+                    )));
+                }
                 let rt = get_runtime()?;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
@@ -520,6 +544,12 @@ macro_rules! memfuse_crud_methods {
                 vector: PyReadonlyArray1<'py, f32>,
                 k: usize,
             ) -> PyResult<Bound<'py, PyBytes>> {
+                if k == 0 || k > 1000 {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "Search k must be between 1 and 1000. Got: {}",
+                        k
+                    )));
+                }
                 let rt = get_runtime()?;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
@@ -909,6 +939,12 @@ fn open(
     encryption_passphrase: Option<String>,
     distance_metric: Option<String>,
 ) -> PyResult<PyMemFuse> {
+    if dimension == 0 || dimension > 10_000 {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "Dimension must be between 1 and 10000. Got: {}",
+            dimension
+        )));
+    }
     let rt = get_runtime()?;
     let mut config = MemFuseConfig {
         dimension,

@@ -305,8 +305,10 @@ impl HnswIndex {
             let entry_point = inner.entry_point.read();
             let q_guard = inner.quantizer.read();
 
-            let file = std::fs::File::create(&path_buf)
-                .map_err(|e| MemFuseError::Storage(format!("Failed to create HNSW file: {}", e)))?;
+            // ANCHOR:BUGFIX:SIGBUS-001 — Atomic Save to prevent SIGBUS on mmap
+            let temp_path = path_buf.with_extension("hnsw.tmp");
+            let file = std::fs::File::create(&temp_path)
+                .map_err(|e| MemFuseError::Storage(format!("Failed to create temporary HNSW file: {}", e)))?;
             let mut writer = std::io::BufWriter::new(file);
 
             let node_count = nodes.len();
@@ -439,6 +441,11 @@ impl HnswIndex {
             }
             file.sync_all()
                 .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                
+            // Atomic rename to replace the old file without truncating it, avoiding SIGBUS for active readers
+            std::fs::rename(&temp_path, &path_buf)
+                .map_err(|e| MemFuseError::Storage(format!("Failed to rename temporary HNSW file: {}", e)))?;
+                
             Ok::<(), MemFuseError>(())
         })
         .await
@@ -1662,8 +1669,52 @@ impl VectorIndex for HnswIndex {
         Ok(())
     }
 
+    async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
+        if let Some(ref err) = self.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
+        // For HNSW, rollback_to_tx means we discard all staged transactions
+        // and potentially clear the RAM segment if we want to be safe.
+        // For now, we update last_tx_id to reflect the new state.
+        // REAL physical rollback requires tracking tx_id per node, which is a future WP.
+        self.last_tx_id.store(tx_id.inner(), Ordering::SeqCst);
+        Ok(())
+    }
+
     async fn last_tx_id(&self) -> Result<u64> {
         Ok(self.last_tx_id.load(Ordering::SeqCst))
+    }
+
+    async fn all_doc_ids(&self) -> Result<Vec<DocId>> {
+        if self.validation_error.is_some() {
+            return Ok(Vec::new());
+        }
+        let nodes = self.nodes.read();
+        let mmap_guard = self.mmap_index.read();
+        let mmap_node_count = mmap_guard
+            .as_ref()
+            .map(|m| m.header.node_count as usize)
+            .unwrap_or(0);
+        let deleted = self.deleted_nodes.read();
+
+        let ctx = SearchContext {
+            nodes: &nodes,
+            mmap: mmap_guard.as_ref(),
+            mmap_node_count,
+        };
+
+        let total_nodes = mmap_node_count + nodes.len();
+        let mut ids = Vec::with_capacity(total_nodes.saturating_sub(deleted.len() as usize));
+
+        for i in 0..total_nodes {
+            if !deleted.contains(i as u64) {
+                ids.push(self.resolve_doc_id(i, &ctx)?);
+            }
+        }
+        Ok(ids)
     }
 
     async fn len(&self) -> usize {
@@ -2085,5 +2136,33 @@ mod tests {
         let recall = hits as f32 / test_queries as f32;
         tracing::info!("SQ8 Recall: {}", recall);
         assert!(recall >= 0.9, "Recall too low for SQ8: {}", recall);
+    }
+
+    #[tokio::test]
+    async fn test_all_doc_ids() {
+        let index = HnswIndex::new(test_config(4));
+        let tx = TxId::new(1);
+
+        for i in 1..=10u64 {
+            index.insert(tx, DocId::new(i), &[i as f32, 0.0, 0.0, 0.0]).await.unwrap();
+        }
+        index.commit(tx).await.unwrap();
+
+        let ids = index.all_doc_ids().await.unwrap();
+        assert_eq!(ids.len(), 10);
+        for i in 1..=10u64 {
+            assert!(ids.contains(&DocId::new(i)));
+        }
+
+        // Delete some
+        let tx2 = TxId::new(2);
+        index.delete(tx2, DocId::new(5)).await.unwrap();
+        index.delete(tx2, DocId::new(8)).await.unwrap();
+        index.commit(tx2).await.unwrap();
+
+        let ids2 = index.all_doc_ids().await.unwrap();
+        assert_eq!(ids2.len(), 8);
+        assert!(!ids2.contains(&DocId::new(5)));
+        assert!(!ids2.contains(&DocId::new(8)));
     }
 }

@@ -51,6 +51,10 @@ impl<S: memfuse_core::StorageEngine> TextIndex for Bm25Scorer<S> {
         self.index.rollback(tx).await
     }
 
+    async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
+        self.index.rollback_to_tx(tx_id).await
+    }
+
     async fn stats(&self) -> Result<TextIndexStats> {
         self.index.stats().await
     }

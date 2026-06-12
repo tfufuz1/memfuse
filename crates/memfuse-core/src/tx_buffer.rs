@@ -211,6 +211,7 @@ impl<T: Clone> Default for TxBuffer<T> {
 mod tests {
     use super::*;
     use std::sync::Arc;
+    use proptest::{prop_assert, prop_assert_eq};
 
     #[test]
     fn test_tx_buffer_discard() {
@@ -267,5 +268,113 @@ mod tests {
             assert_eq!(ops.len(), ops_per_tx);
         }
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_tx_buffer_reap_orphans() {
+        let buffer = TxBuffer::<String>::new_with_config(1, Duration::from_millis(10));
+        let tx = TxId::new(1);
+        buffer.begin(tx);
+        
+        // Wait for timeout
+        std::thread::sleep(Duration::from_millis(20));
+        
+        let expired = buffer.reap_orphans();
+        assert_eq!(expired, vec![tx]);
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_tx_buffer_validate_pending_ops() {
+        let buffer = TxBuffer::<String>::new();
+        let tx = TxId::new(1);
+        
+        // No tx yet
+        assert!(buffer.validate_pending_ops(tx).is_ok());
+        
+        // Registered but empty
+        buffer.begin(tx);
+        assert!(buffer.validate_pending_ops(tx).is_err());
+        
+        // With ops
+        buffer.stage(tx, IndexOp::Insert { doc_id: DocId::new(1), data: "s".to_string() });
+        assert!(buffer.validate_pending_ops(tx).is_ok());
+    }
+
+    #[test]
+    fn test_index_op_helpers() {
+        let op = IndexOp::Insert { doc_id: DocId::new(1), data: "d" };
+        assert_eq!(op.doc_id(), DocId::new(1));
+        
+        let op2 = IndexOp::Delete::<String> { doc_id: DocId::new(2), data: None };
+        assert_eq!(op2.doc_id(), DocId::new(2));
+    }
+
+    #[test]
+    fn test_tx_buffer_config() {
+        let timeout = Duration::from_secs(100);
+        let buffer = TxBuffer::<u8>::new_with_config(4, timeout);
+        assert_eq!(buffer.tx_timeout(), timeout);
+        // Ensure we can use all shards
+        for i in 0..10 {
+            buffer.begin(TxId::new(i));
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn prop_tx_buffer_isolation(
+            tx_ids in proptest::collection::vec(0..u64::MAX, 1..50),
+            shard_count in 1..256usize
+        ) {
+            let buffer = TxBuffer::<u64>::new_with_config(shard_count, Duration::from_secs(60));
+            
+            // 1. Stage values for all unique TXs
+            for &id in &tx_ids {
+                let tx = TxId::new(id);
+                buffer.stage(tx, IndexOp::Insert { doc_id: DocId::new(id), data: id });
+            }
+
+            // 2. Verify each TX only has its own data
+            for &id in &tx_ids {
+                let tx = TxId::new(id);
+                let ops = buffer.get_ops(tx).unwrap();
+                for op in ops {
+                    match op {
+                        IndexOp::Insert { doc_id, data } => {
+                            prop_assert_eq!(doc_id.inner(), id);
+                            prop_assert_eq!(data, id);
+                        },
+                        _ => panic!("Unexpected op"),
+                    }
+                }
+            }
+
+            // 3. Drain and verify emptiness
+            for &id in &tx_ids {
+                let tx = TxId::new(id);
+                buffer.drain(tx);
+            }
+            prop_assert!(buffer.is_empty());
+        }
+
+        #[test]
+        fn prop_tx_buffer_reap_is_complete(
+            tx_count in 1..100usize,
+            timeout_ms in 1..100u64
+        ) {
+            let buffer = TxBuffer::<u8>::new_with_config(16, Duration::from_millis(timeout_ms));
+            
+            for i in 0..tx_count {
+                buffer.begin(TxId::new(i as u64));
+            }
+
+            // Wait double the timeout
+            std::thread::sleep(Duration::from_millis(timeout_ms * 2));
+            
+            let reaped = buffer.reap_orphans();
+            prop_assert_eq!(reaped.len(), tx_count);
+            prop_assert!(buffer.is_empty());
+        }
     }
 }

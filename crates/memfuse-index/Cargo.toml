@@ -23,6 +23,7 @@ serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["full", "test-util"] }
 criterion = "0.5"
 tempfile = "3"
+proptest = "1.4"
 
 [[bench]]
 name = "distance_bench"

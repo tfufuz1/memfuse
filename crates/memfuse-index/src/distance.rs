@@ -209,7 +209,7 @@ unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
     // BEGRÜNDUNG: _mm256_setzero_ps ist immer sicher.
     // SAFETY: _mm256_setzero_ps is always safe.
     let mut sum_v = _mm256_setzero_ps();
-    let n = a.len();
+    let n = a.len().min(b.len());
     let mut i = 0;
 
     while i + 8 <= n {
@@ -252,7 +252,7 @@ unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
         _mm256_setzero_ps(),
     );
 
-    let n = a.len();
+    let n = a.len().min(b.len());
     let mut i = 0;
 
     while i + 8 <= n {
@@ -308,7 +308,7 @@ unsafe fn euclidean_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
     // BEGRÜNDUNG: _mm256_setzero_ps ist immer sicher.
     // SAFETY: _mm256_setzero_ps is always safe.
     let mut sum_v = _mm256_setzero_ps();
-    let n = a.len();
+    let n = a.len().min(b.len());
     let mut i = 0;
 
     while i + 8 <= n {
@@ -368,7 +368,7 @@ unsafe fn dot_product_avx512(a: &[f32], b: &[f32]) -> f32 {
     // BEGRÜNDUNG: _mm512_setzero_ps ist immer sicher.
     // SAFETY: _mm512_setzero_ps is always safe.
     let mut sum_v = _mm512_setzero_ps();
-    let n = a.len();
+    let n = a.len().min(b.len());
     let mut i = 0;
 
     while i + 16 <= n {
@@ -410,7 +410,7 @@ unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
         _mm512_setzero_ps(),
     );
 
-    let n = a.len();
+    let n = a.len().min(b.len());
     let mut i = 0;
 
     while i + 16 <= n {
@@ -465,7 +465,7 @@ unsafe fn euclidean_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
     // BEGRÜNDUNG: _mm512_setzero_ps ist immer sicher.
     // SAFETY: _mm512_setzero_ps is always safe.
     let mut sum_v = _mm512_setzero_ps();
-    let n = a.len();
+    let n = a.len().min(b.len());
     let mut i = 0;
 
     while i + 16 <= n {
@@ -706,7 +706,7 @@ pub fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPa
 /// # Safety
 /// This function is unsafe because it uses AVX-512 VNNI intrinsics. The caller must ensure that the CPU supports AVX-512 VNNI.
 pub unsafe fn dot_product_u8_avx512vnni(a: &[u8], b: &[u8]) -> u32 {
-    let n = a.len();
+    let n = a.len().min(b.len());
     let mut i = 0;
     // SAFETY: _mm512_setzero_si512 is always safe.
     let mut sum_v = _mm512_setzero_si512();
@@ -740,7 +740,7 @@ pub unsafe fn dot_product_u8_avx512vnni(a: &[u8], b: &[u8]) -> u32 {
 /// # Safety
 /// This function is unsafe because it uses AVX-512 intrinsics. The caller must ensure that the CPU supports AVX-512F and AVX-512BW.
 pub unsafe fn euclidean_distance_sq_u8_avx512(a: &[u8], b: &[u8]) -> u32 {
-    let n = a.len();
+    let n = a.len().min(b.len());
     let mut i = 0;
     // SAFETY: _mm512_setzero_si512 is always safe.
     let mut sum_v = _mm512_setzero_si512();
@@ -787,7 +787,7 @@ pub unsafe fn euclidean_distance_sq_u8_avx512(a: &[u8], b: &[u8]) -> u32 {
 /// # Safety
 /// This function is unsafe because it uses AVX-512 VNNI intrinsics. The caller must ensure that the CPU supports AVX-512F, BW, and VNNI.
 pub unsafe fn cosine_similarity_parts_u8_avx512(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
-    let n = a.len();
+    let n = a.len().min(b.len());
     let mut i = 0;
     // SAFETY: _mm512_setzero_si512 is always safe.
     let (mut dot_v, mut sum_a_v, mut sum_b_v, mut norm_a_v, mut norm_b_v) = (
@@ -1176,5 +1176,45 @@ mod tests {
                 assert_eq!(parts_scalar.norm_b_sq, parts_simd.norm_b_sq);
             }
         }
+    }
+
+    #[test]
+    fn test_asymmetric_metrics() {
+        let a = vec![1.0, 2.0, 3.0, 4.0];
+        let b = vec![10, 20, 30, 40];
+        let alpha = 0.1;
+        let min = 0.0;
+
+        // Euclidean Asymmetric
+        let dist_sq = euclidean_distance_sq_f32_u8(&a, &b, alpha, min);
+        let mut expected = 0.0;
+        for i in 0..4 {
+            let diff = a[i] - (b[i] as f32 * alpha + min);
+            expected += diff * diff;
+        }
+        assert!((dist_sq - expected).abs() < 1e-5);
+
+        // Dot Product Asymmetric
+        let dot = dot_product_f32_u8(&a, &b);
+        let mut expected_dot = 0.0;
+        for i in 0..4 {
+            expected_dot += a[i] * (b[i] as f32);
+        }
+        assert!((dot - expected_dot).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_distance_dimension_mismatch() {
+        let a = vec![1.0, 2.0];
+        let b = vec![1.0, 2.0, 3.0];
+        let res = compute_distance(&a, &b, DistanceMetric::Cosine);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_cosine_zero_norm() {
+        let a = vec![0.0, 0.0, 0.0];
+        let b = vec![1.0, 2.0, 3.0];
+        assert_eq!(cosine_distance_scalar(&a, &b), 1.0);
     }
 }

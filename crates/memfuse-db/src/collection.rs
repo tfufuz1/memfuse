@@ -9,7 +9,6 @@
 
 use crate::filter::MetadataFilter;
 use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
-use memfuse_embed::TextEmbedder;
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;
 use memfuse_text::inverted::InvertedIndex;
@@ -59,7 +58,6 @@ pub struct Collection<S: StorageEngine = LsmStorage> {
     pub(crate) storage: Arc<S>,
     pub(crate) next_tx: Arc<AtomicU64>,
     pub(crate) dimension: usize,
-    pub(crate) embedder: std::sync::RwLock<Option<Arc<TextEmbedder>>>,
 }
 
 impl<S: StorageEngine> Clone for Collection<S> {
@@ -72,9 +70,6 @@ impl<S: StorageEngine> Clone for Collection<S> {
             storage: self.storage.clone(),
             next_tx: self.next_tx.clone(),
             dimension: self.dimension,
-            embedder: std::sync::RwLock::new(
-                self.embedder.read().unwrap().as_ref().map(Arc::clone),
-            ),
         }
     }
 }
@@ -104,25 +99,7 @@ impl<S: StorageEngine> Collection<S> {
             storage,
             next_tx,
             dimension,
-            embedder: std::sync::RwLock::new(None),
         }
-    }
-
-    /// Sets the text embedder for this collection (consuming version).
-    #[tracing::instrument(level = "trace", skip(self, embedder))]
-    pub fn with_embedder(self, embedder: Arc<TextEmbedder>) -> Self {
-        {
-            let mut guard = self.embedder.write().unwrap();
-            *guard = Some(embedder);
-        }
-        self
-    }
-
-    /// Sets the text embedder for this collection.
-    #[tracing::instrument(level = "trace", skip(self, embedder))]
-    pub async fn set_embedder(&self, embedder: Arc<TextEmbedder>) {
-        let mut guard = self.embedder.write().unwrap();
-        *guard = Some(embedder);
     }
 
     /// Internal helper to generate namespaced keys.
@@ -171,8 +148,11 @@ impl<S: StorageEngine> Collection<S> {
         // 1. Scan storage for all documents in this collection
         let docs = self.storage.scan_prefix(&self.prefix).await?;
         let mut repair_count = 0;
+        let mut ghost_count = 0;
 
-        // 2. Cross-reference with index
+        let mut storage_doc_ids = std::collections::HashSet::new();
+
+        // 2. Cross-reference with index: Add missing documents from storage
         for (namespaced_key, value) in docs {
             // Only process user data (key_type 0)
             if self.name != "default" && namespaced_key.get(self.prefix.len()) != Some(&0) {
@@ -193,6 +173,7 @@ impl<S: StorageEngine> Collection<S> {
             };
 
             let doc_id = DocId::from_key(&stored.id)?;
+            storage_doc_ids.insert(doc_id);
 
             // Check if present in index
             // We use k=1 search to check presence (if we find it with distance 0, it's there)
@@ -209,10 +190,22 @@ impl<S: StorageEngine> Collection<S> {
             }
         }
 
-        if repair_count > 0 {
+        // 3. Cleanup "Ghost-Entries": Delete index entries not in storage
+        let indexed_ids = self.index.all_doc_ids().await?;
+        for doc_id in indexed_ids {
+            if !storage_doc_ids.contains(&doc_id) {
+                let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+                self.index.delete(tx, doc_id).await?;
+                self.index.commit(tx).await?;
+                ghost_count += 1;
+            }
+        }
+
+        if repair_count > 0 || ghost_count > 0 {
             tracing::info!(
-                "Repaired {} missing documents in collection '{}' in {:?}",
+                "Repaired {} missing docs, removed {} ghosts in collection '{}' in {:?}",
                 repair_count,
+                ghost_count,
                 self.name,
                 start_time.elapsed()
             );
@@ -223,6 +216,29 @@ impl<S: StorageEngine> Collection<S> {
                 start_time.elapsed()
             );
         }
+
+        Ok(())
+    }
+
+    /// Rolls back the entire collection state to a specific transaction ID.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn restore(&self, tx_id: TxId) -> Result<()> {
+        tracing::info!(
+            "Restoring collection '{}' to TxId {}",
+            self.name,
+            tx_id.inner()
+        );
+
+        // 1. Rollback sub-systems
+        self.storage.rollback_to_tx(tx_id).await?;
+        self.index.rollback_to_tx(tx_id).await?;
+        self.text_index.rollback_to_tx(tx_id).await?;
+
+        // 2. Reset transaction counter to follow the restored state
+        self.next_tx.store(tx_id.inner() + 1, Ordering::SeqCst);
+
+        // 3. Reconcile state (cleanup any ghost entries from the index)
+        self.repair().await?;
 
         Ok(())
     }

@@ -1,5 +1,5 @@
 use memfuse_checkpoint::PersistentCheckpointStore;
-use memfuse_core::{Result, StorageEngine, StorageStats, TxId};
+use memfuse_core::{Result, StorageEngine, StorageStats, TxId, MemFuseError};
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -37,6 +37,9 @@ impl StorageEngine for MockStorage {
     async fn rollback(&self, _tx_id: TxId) -> Result<()> {
         Ok(())
     }
+    async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
+        Ok(())
+    }
     async fn flush(&self) -> Result<()> {
         Ok(())
     }
@@ -57,9 +60,6 @@ impl StorageEngine for MockStorage {
     }
     async fn get_at_seq(&self, key: &[u8], _seq: u64) -> Result<Option<Vec<u8>>> {
         self.get(key).await
-    }
-    async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
-        Ok(())
     }
     async fn last_seq_no(&self) -> Result<u64> {
         Ok(0)
@@ -111,10 +111,9 @@ async fn test_concurrent_checkpoint_creation_same_name() {
 
     let checkpoints = manager.list_checkpoints().await.unwrap();
     // In a world without race conditions and duplicate names, this should probably be 1 if we expect overwrite,
-    // or it should have failed. Currently it probably has 10.
+    // or it should have failed. Currently it probably has 1.
     println!("Number of checkpoints: {}", checkpoints.len());
 
-    // If it's 10, it's a bug because we have 10 checkpoints with the same name.
     assert!(
         checkpoints.len() <= 1,
         "Should not have multiple checkpoints with the same name, found {}",

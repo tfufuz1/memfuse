@@ -56,8 +56,11 @@ with memfuse.open("./data", dimension=1536) as db:
 
 ## 🛠️ Development
 
-MemFuse is built with a **Sovereign Core Doctrine**. For architectural details, see:
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — System design and crate responsibilities.
+MemFuse uses a strict MECE **Unified Documentation System**. For all details, see:
+- [README.md](./README.md) — This file, features and high-level introduction.
+- [CONSTITUTION.md](./CONSTITUTION.md) & [AGENTS.md](./AGENTS.md) — Mandatory policies and Agent protocol.
+- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — System design DAG and invariants.
+- [docs/SOURCE_OF_TRUTH.md](./docs/SOURCE_OF_TRUTH.md) — The living document matching the exact current implementation state.
 
 ---
 

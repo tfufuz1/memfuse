@@ -752,6 +752,15 @@ impl VectorIndex for DiskAnnIndex {
         Ok(())
     }
 
+    async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
+        // DiskAnn is read-only, so rollback is always a no-op (it's already at a fixed state)
+        Ok(())
+    }
+
+    async fn all_doc_ids(&self) -> Result<Vec<DocId>> {
+        Ok(self.inner.doc_ids.read().clone())
+    }
+
     async fn last_tx_id(&self) -> Result<u64> {
         Ok(0)
     }

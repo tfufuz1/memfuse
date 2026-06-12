@@ -14,6 +14,7 @@ use tokenizers::Tokenizer;
 use tracing::{debug, info};
 
 /// Handles text tokenization and ONNX model inference.
+#[derive(Debug)]
 pub struct TextEmbedder {
     session: std::sync::Mutex<Session>,
     tokenizer: Tokenizer,
@@ -179,5 +180,62 @@ impl TextEmbedder {
         } else {
             Err(MemFuseError::Internal("Model produced no outputs".into()))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+    use std::fs::File;
+    use std::io::Write;
+
+    #[test]
+    fn test_text_embedder_load_missing_files() {
+        let dir = tempdir().unwrap();
+        
+        // Empty directory - should fail at tokenizer existence check first
+        // because model_path defaults to model_dir if model.onnx is missing.
+        let res = TextEmbedder::load(dir.path());
+        match res {
+            Err(e) => assert!(e.to_string().contains("Tokenizer file not found")),
+            Ok(_) => panic!("Should have failed"),
+        }
+
+        // Create tokenizer but still missing model.onnx
+        File::create(dir.path().join("tokenizer.json")).unwrap();
+        let res = TextEmbedder::load(dir.path());
+        match res {
+            Err(e) => {
+                let msg = e.to_string();
+                // Should fail at tokenizer loading because it's empty
+                assert!(msg.contains("Failed to load tokenizer"));
+            },
+            Ok(_) => panic!("Should have failed"),
+        }
+    }
+
+    #[test]
+    fn test_text_embedder_load_invalid_content() {
+        let dir = tempdir().unwrap();
+        File::create(dir.path().join("model.onnx")).unwrap().write_all(b"invalid").unwrap();
+        File::create(dir.path().join("tokenizer.json")).unwrap().write_all(b"invalid").unwrap();
+        
+        let res = TextEmbedder::load(dir.path());
+        assert!(res.is_err());
+        // Error could be from tokenizer or ONNX
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("Failed to load tokenizer") || err_msg.contains("Failed to load model"));
+    }
+
+    #[test]
+    fn test_formatting_safety() {
+        // Just verify that using std::fmt::Debug on a pseudo-initialized or similar struct doesn't panic.
+        // It's checked during compilation but checking runtime panic safety without model is tricky, 
+        // normally we'd instantiate but we can't because load fails without valid files.
+        // But we can verify our Error type formats without panicking.
+        let err = MemFuseError::Internal("test".into());
+        let formatted = format!("{:?}", err);
+        assert!(formatted.contains("Internal"));
     }
 }

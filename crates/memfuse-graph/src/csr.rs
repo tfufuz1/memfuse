@@ -330,6 +330,13 @@ impl GraphIndex for CsrGraph {
         Ok(())
     }
 
+    async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
+        // CSR Graph currently does not persist state across restarts or support physical rollback
+        // for committed transactions. In-memory staged transactions are handled by rollback().
+        // REAL physical rollback requires WAL replay or snapshot restoration.
+        Ok(())
+    }
+
     async fn stats(&self) -> Result<GraphIndexStats> {
         let inner = self.inner.read();
         let num_entities = inner.entities.iter().flatten().count();

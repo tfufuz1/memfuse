@@ -1,8 +1,6 @@
 # MemFuse — Source of Truth (SOT)
 
-> **Letzte Aktualisierung:** 2026-06-06 | **Audit-Stand:** Post-TIER 1–3 Stabilisierung
->
-> Dieses Dokument ist die **einzige autoritative Referenz** für Architektur, Crate-Status, offene Findings und Implementierungs-Roadmap. Alle anderen Dokumente in `docs/archive/`, `docs/specs/`, `docs/new/` sind historisch und werden von diesem Dokument superseded.
+> Dieses Dokument agiert als fester Bestandteil des **Unified Documentation Systems** (siehe `CONSTITUTION.md`) und ist das einzige **Living State Document** für Architektur, Crate-Status, offene Findings, und die Implementierungs-Roadmap. Es gibt keine persistenten Specs oder Archiv-Dokumente – jegliches Wissen wird hier konsolidiert.
 
 ---
 
@@ -338,11 +336,4 @@ rg "TODO|todo!|unimplemented!|FIXME" --type rust crates/
 | Architektur (Kurzreferenz) | `docs/ARCHITECTURE.md` | ✅ Aktiv |
 | Constitution | `CONSTITUTION.md` | ✅ Aktiv |
 | Agent-Protokoll | `AGENTS.md` | ✅ Aktiv |
-| **Dieses Dokument** | `docs/SOURCE_OF_TRUTH.md` | ✅ **Autorativ** |
-| Forensic Findings (Alt) | `docs/FORENSIC_FINDINGS.md` | ⚠️ Historisch — von SOT ersetzt |
-| Backlog (Alt) | `docs/BACKLOG.md` | ⚠️ Historisch — von SOT ersetzt |
-| Optimization Roadmap (Alt) | `docs/OPTIMIZATION_ROADMAP.md` | ⚠️ Historisch — von SOT ersetzt |
-| Audit Reports | `docs/audit/*` | ⚠️ Historisch — von SOT ersetzt |
-| Spec-Sammlung | `docs/specs/*` | ⚠️ Referenz — Details in SOT konsolidiert |
-| Archiv | `docs/archive/*` | ⚠️ Archiv — nur historische Referenz |
-| Neue Analysen | `docs/new/*` | ⚠️ Archiv — nur historische Referenz |
+| **Dieses Dokument** | `docs/SOURCE_OF_TRUTH.md` | ✅ **Living State** |

@@ -505,6 +505,13 @@ impl Wal {
 
             if len > 128 * 1024 * 1024 {
                 if pos + 4 + len as u64 > file_size {
+                    // STO-001: Massive Fehl-Länge am Anfang ist Korruption, am Ende (Tail) ignorable.
+                    if entries.is_empty() && file_size > 64 {
+                        return Err(MemFuseError::WalCorruption {
+                            offset: pos,
+                            reason: format!("WAL entry length ({}) exceeds hard limit and file size", len),
+                        });
+                    }
                     tracing::warn!("WAL tail corruption (huge len) at offset {}", pos);
                     break;
                 }
@@ -514,18 +521,27 @@ impl Wal {
                 });
             }
 
+            if pos + 4 + len as u64 > file_size {
+                if entries.is_empty() && file_size > 64 {
+                    return Err(MemFuseError::WalCorruption {
+                        offset: pos,
+                        reason: format!(
+                            "WAL entry length ({}) exceeds file size ({}) at start of file",
+                            len, file_size
+                        ),
+                    });
+                }
+                tracing::warn!("WAL tail corruption (partial entry) at offset {}", pos);
+                break;
+            }
+
             let mut entry_data_raw = vec![0u8; len];
             match reader.read_exact(&mut entry_data_raw).await {
                 Ok(_) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                    if pos + 4 + len as u64 > file_size {
-                        tracing::warn!("WAL truncated at offset {}", pos);
-                        break;
-                    }
-                    return Err(MemFuseError::WalCorruption {
-                        offset: pos,
-                        reason: format!("WAL truncated in middle of file (expected {} bytes)", len),
-                    });
+                    // Falls wir trotz vorheriger Prüfung EOF erreichen, ist es eine Truncation.
+                    tracing::warn!("WAL truncated during read at offset {}", pos);
+                    break;
                 }
                 Err(e) => return Err(MemFuseError::Storage(format!("WAL read failed: {}", e))),
             };

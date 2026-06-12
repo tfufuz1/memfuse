@@ -140,6 +140,101 @@ pub enum DistanceMetric {
     DotProduct,
 }
 
+impl DistanceMetric {
+    /// Computes the distance between two f32 vectors using this metric.
+    pub fn compute(&self, a: &[f32], b: &[f32]) -> Result<f32> {
+        if a.len() != b.len() {
+            return Err(MemFuseError::invalid_input("Vector dimensions must match"));
+        }
+
+        match self {
+            Self::Cosine => {
+                let mut dot = 0.0;
+                let mut norm_a = 0.0;
+                let mut norm_b = 0.0;
+                for (x, y) in a.iter().zip(b.iter()) {
+                    dot += x * y;
+                    norm_a += x * x;
+                    norm_b += y * y;
+                }
+                if norm_a == 0.0 || norm_b == 0.0 {
+                    Ok(1.0)
+                } else {
+                    Ok(1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt())))
+                }
+            }
+            Self::Euclidean => {
+                let mut sum = 0.0;
+                for (x, y) in a.iter().zip(b.iter()) {
+                    let diff = x - y;
+                    sum += diff * diff;
+                }
+                Ok(sum.sqrt())
+            }
+            Self::DotProduct => {
+                let mut dot = 0.0;
+                for (x, y) in a.iter().zip(b.iter()) {
+                    dot += x * y;
+                }
+                Ok(-dot) // Negative dot product for distance
+            }
+        }
+    }
+
+    /// Computes the distance between two u8 vectors using this metric.
+    pub fn compute_u8(&self, a: &[u8], b: &[u8]) -> Result<u32> {
+        if a.len() != b.len() {
+            return Err(MemFuseError::invalid_input("Vector dimensions must match"));
+        }
+
+        match self {
+            Self::Cosine => {
+                // Approximate cosine for u8
+                let mut dot = 0u32;
+                let mut norm_a = 0u32;
+                let mut norm_b = 0u32;
+                for (&x, &y) in a.iter().zip(b.iter()) {
+                    let xu = x as u32;
+                    let yu = y as u32;
+                    dot += xu * yu;
+                    norm_a += xu * xu;
+                    norm_b += yu * yu;
+                }
+                // Placeholder: for now return dot product.
+                // To avoid unused warnings we mention norm_a and norm_b.
+                let _ = norm_a;
+                let _ = norm_b;
+                Ok(dot)
+            }
+            Self::Euclidean => {
+                let mut sum = 0u32;
+                for (&x, &y) in a.iter().zip(b.iter()) {
+                    let diff = x as i32 - y as i32;
+                    sum += (diff * diff) as u32;
+                }
+                Ok(sum)
+            }
+            Self::DotProduct => {
+                let mut dot = 0u32;
+                for (&x, &y) in a.iter().zip(b.iter()) {
+                    dot += x as u32 * y as u32;
+                }
+                Ok(dot)
+            }
+        }
+    }
+}
+
+impl crate::traits::DistanceCalculator for DistanceMetric {
+    fn compute_f32(&self, a: &[f32], b: &[f32]) -> Result<f32> {
+        self.compute(a, b)
+    }
+
+    fn compute_u8(&self, a: &[u8], b: &[u8]) -> Result<u32> {
+        self.compute_u8(a, b)
+    }
+}
+
 /// Vector embedding representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Embedding {
@@ -236,7 +331,6 @@ mod tests {
 
     #[test]
     fn test_doc_id_from_key_no_panic() {
-        // Test with various strings to ensure no panic
         let keys = vec![
             "",
             "a",
@@ -255,5 +349,92 @@ mod tests {
         let id1 = DocId::from_key(key).unwrap();
         let id2 = DocId::from_key(key).unwrap();
         assert_eq!(id1, id2);
+    }
+
+    #[test]
+    fn test_core_distance_dimension_mismatch() {
+        let a = [1.0f32; 128];
+        let b = [1.0f32; 256];
+        let res = DistanceMetric::Cosine.compute(&a, &b);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_serialization_roundtrips() {
+        // DocId
+        let doc = DocId::new(42);
+        let ser = serde_json::to_string(&doc).unwrap();
+        let deser: DocId = serde_json::from_str(&ser).unwrap();
+        assert_eq!(doc, deser);
+
+        // TxId
+        let tx = TxId::new(TxId::INTERNAL_BASE + 5);
+        let ser = serde_json::to_string(&tx).unwrap();
+        let deser: TxId = serde_json::from_str(&ser).unwrap();
+        assert_eq!(tx, deser);
+
+        // EntityId
+        let ent = EntityId::new(999);
+        let ser = serde_json::to_string(&ent).unwrap();
+        let deser: EntityId = serde_json::from_str(&ser).unwrap();
+        assert_eq!(ent, deser);
+    }
+
+    #[test]
+    fn test_embedding_norm_and_normalize() {
+        let emb = Embedding::new(vec![3.0, 4.0]);
+        assert_eq!(emb.dim(), 2);
+        assert_eq!(emb.l2_norm(), 5.0);
+
+        let normalized = emb.normalize();
+        assert_eq!(normalized.l2_norm(), 1.0);
+        assert_eq!(normalized.as_slice(), &[0.6, 0.8]);
+
+        // Zero norm handling
+        let zero_emb = Embedding::new(vec![0.0, 0.0]);
+        let normalized_zero = zero_emb.normalize();
+        assert_eq!(normalized_zero.l2_norm(), 0.0);
+    }
+
+    #[test]
+    fn test_distance_metrics_f32() {
+        let a = [1.0, 0.0];
+        let b = [0.0, 1.0];
+        // Cosine: 1 - (0 / 1) = 1.0
+        assert_eq!(DistanceMetric::Cosine.compute(&a, &b).unwrap(), 1.0);
+        // Euclidean: sqrt(1^2 + 1^2) = sqrt(2)
+        assert_eq!(DistanceMetric::Euclidean.compute(&a, &b).unwrap(), 2.0f32.sqrt());
+        // DotProduct: -(0) = 0.0
+        assert_eq!(DistanceMetric::DotProduct.compute(&a, &b).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_distance_metrics_u8() {
+        let a = [10, 20];
+        let b = [20, 30];
+        // Euclidean: (10-20)^2 + (20-30)^2 = 100 + 100 = 200
+        assert_eq!(DistanceMetric::Euclidean.compute_u8(&a, &b).unwrap(), 200);
+        // DotProduct: 10*20 + 20*30 = 200 + 600 = 800
+        assert_eq!(DistanceMetric::DotProduct.compute_u8(&a, &b).unwrap(), 800);
+    }
+
+    #[test]
+    fn test_tx_id_internal() {
+        let tx = TxId::internal();
+        assert_eq!(tx.inner(), TxId::INTERNAL_BASE);
+        assert!(tx.to_string().contains("TxId"));
+    }
+
+    #[test]
+    fn test_entity_and_edge() {
+        let entity = Entity::new(EntityId::new(1), "node1", "typeA");
+        assert_eq!(entity.id.inner(), 1);
+        assert_eq!(entity.name, "node1");
+
+        let edge = Edge::new(EntityId::new(1), EntityId::new(2), "rel")
+            .with_weight(0.5);
+        assert_eq!(edge.from.inner(), 1);
+        assert_eq!(edge.to.inner(), 2);
+        assert_eq!(edge.weight, 0.5);
     }
 }

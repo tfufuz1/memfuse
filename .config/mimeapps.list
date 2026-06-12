@@ -1,0 +1,6 @@
+[Default Applications]
+text/html=chromium-agent.desktop
+x-scheme-handler/http=chromium-agent.desktop
+x-scheme-handler/https=chromium-agent.desktop
+x-scheme-handler/about=chromium-agent.desktop
+x-scheme-handler/unknown=chromium-agent.desktop

@@ -35,12 +35,16 @@ This document defines the core principles and non-negotiable standards of the Me
 -   Integration tests are required for all storage/recovery paths.
 -   Benchmarks must be provided for all performance-critical hot-paths.
 
-### 3. Documentation
--   All `pub` items must have doc comments.
--   Critical invariants must be tagged with `// ANCHOR` for cross-referencing.
+### 3. Unified Documentation System
+To keep context synchronous and strictly organized, we enforce a precise MECE (Mutually Exclusive, Collectively Exhaustive) documentation model:
+-   **`README.md`**: Entry point and high-level feature list.
+-   **`CONSTITUTION.md` & `AGENTS.md`**: Immutable system rules. 
+-   **`docs/ARCHITECTURE.md`**: The structural DAG. Rare changes.
+-   **`docs/SOURCE_OF_TRUTH.md` (Living State)**: Must be updated in the **same transaction/PR** as the code when components, findings, or ADRs change.
+-   **No Temporary Folders**: `docs/specs`, `docs/archive`, and `docs/audit` are prohibited. If a spec is implemented, its knowledge must be merged entirely into `SOURCE_OF_TRUTH.md` and the spec is discarded. Ensure every item has a distinct, single location. Code-level documentation (`pub` items) and core invariant comments (`// ANCHOR`) are required inside the codebase directly.
 
 ---
 
 ## ⚖️ Governance
 
-Changes to this Constitution require a consensus of the lead architects. Technical decisions (ADRs) must be documented in `docs/specs/decisions/`.
+Changes to this Constitution require a consensus of the lead architects. Technical decisions (ADRs) must be immediately documented in the ADR registry inside `docs/SOURCE_OF_TRUTH.md`. No separate files are to be created.

@@ -57,6 +57,13 @@
           shellHook = ''
             export RUST_BACKTRACE=1
             export PYTHONPATH="${pythonEnv}/bin/python"
+
+            # OpenSSL linkage for Rust
+            export OPENSSL_DIR="${pkgs.openssl.dev}"
+            export OPENSSL_LIB_DIR="${pkgs.openssl.out}/lib"
+            export OPENSSL_INCLUDE_DIR="${pkgs.openssl.dev}/include"
+            export PKG_CONFIG_PATH="${pkgs.openssl.dev}/lib/pkgconfig"
+
             echo "Memfuse Development Environment Loaded 🦀🐍"
           '';
         };

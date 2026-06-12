@@ -278,4 +278,44 @@ mod tests {
         assert!(query.text_query.is_none());
         assert!(query.vector_query.is_none());
     }
+
+    #[test]
+    fn test_token_budget_edge_cases() {
+        let mut budget = TokenBudget::new(100, 20);
+        assert_eq!(budget.available(), 80);
+        
+        budget.consume(50);
+        assert_eq!(budget.available(), 30);
+        
+        budget.consume(40); // Over consumption
+        assert_eq!(budget.available(), 0);
+        assert_eq!(budget.consumed(), 90);
+    }
+
+    #[test]
+    fn test_namespace_id() {
+        let ns = NamespaceId::new(123);
+        assert_eq!(ns.inner(), 123);
+        assert_eq!(ns.to_string(), "NS-123");
+    }
+
+    #[test]
+    fn test_context_window_serialization() {
+        let chunk = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "hello".to_string(),
+            relevance: 1.0,
+            token_count: 1,
+            metadata: None,
+        };
+        let window = ContextWindow {
+            chunks: vec![chunk],
+            total_tokens: 1,
+            truncated: false,
+        };
+        let ser = serde_json::to_string(&window).unwrap();
+        let deser: ContextWindow = serde_json::from_str(&ser).unwrap();
+        assert_eq!(deser.total_tokens, 1);
+        assert_eq!(deser.chunks.len(), 1);
+    }
 }

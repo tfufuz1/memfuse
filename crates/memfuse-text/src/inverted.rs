@@ -465,6 +465,10 @@ impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
         self.storage.rollback(tx).await
     }
 
+    async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
+        self.storage.rollback_to_tx(tx_id).await
+    }
+
     async fn stats(&self) -> Result<TextIndexStats> {
         let meta_key = self.key("meta:stats");
         let meta = if let Some(bytes) = self.storage.get(&meta_key).await? {
@@ -533,6 +537,10 @@ impl<S: StorageEngine> TextIndex for BM25MorphIndex<S> {
         self.inner.rollback(tx).await
     }
 
+    async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
+        self.inner.rollback_to_tx(tx_id).await
+    }
+
     async fn stats(&self) -> Result<TextIndexStats> {
         self.inner.stats().await
     }
@@ -578,6 +586,7 @@ mod tests {
             Ok(())
         }
         async fn get_at_seq(&self, key: &[u8], _seq: u64) -> Result<Option<Vec<u8>>> {
+
             self.get(key).await
         }
         async fn last_seq_no(&self) -> Result<u64> {

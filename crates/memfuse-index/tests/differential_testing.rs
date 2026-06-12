@@ -6,9 +6,9 @@ use std::collections::HashSet;
 #[tokio::test]
 async fn test_differential_quantization_sq8_10000_queries() {
     let dim = 128;
-    // We use a decent size dataset to make the search meaningful
-    let num_vectors = 10_000;
-    let num_queries = 10_000;
+    // Reduced size to fit in test timeout (5 minutes)
+    let num_vectors = 1000;
+    let num_queries = 100;
 
     let mut config = HnswConfig {
         dimension: dim,

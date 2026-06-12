@@ -143,6 +143,11 @@ pub trait StorageEngine: Send + Sync + 'static {
 pub trait VectorIndex: Send + Sync + 'static {
     /// Inserts a vector with an associated document ID.
     async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()>;
+    
+    /// Returns all active (non-deleted) document IDs in the index.
+    async fn all_doc_ids(&self) -> Result<Vec<DocId>> {
+        Ok(Vec::new())
+    }
 
     /// Inserts multiple vectors with associated document IDs.
     async fn insert_batch(&self, tx: TxId, vectors: &[(DocId, &[f32])]) -> Result<()> {
@@ -178,6 +183,9 @@ pub trait VectorIndex: Send + Sync + 'static {
 
     /// Rolls back a transaction.
     async fn rollback(&self, tx: TxId) -> Result<()>;
+
+    /// Rolls back the entire index state to a specific transaction ID.
+    async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()>;
 
     /// Returns the last transaction ID processed by the index.
     async fn last_tx_id(&self) -> Result<u64>;
@@ -226,6 +234,9 @@ pub trait TextIndex: Send + Sync + 'static {
     /// Rolls back a transaction.
     async fn rollback(&self, tx: TxId) -> Result<()>;
 
+    /// Rolls back the entire index state to a specific transaction ID.
+    async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()>;
+
     /// Returns index statistics.
     async fn stats(&self) -> Result<TextIndexStats>;
 }
@@ -265,6 +276,9 @@ pub trait GraphIndex: Send + Sync + 'static {
     /// Rolls back a transaction.
     async fn rollback(&self, tx: crate::types::TxId) -> crate::Result<()>;
 
+    /// Rolls back the entire graph state to a specific transaction ID.
+    async fn rollback_to_tx(&self, tx_id: crate::types::TxId) -> crate::Result<()>;
+
     /// Collects statistics for the Graph.
     async fn stats(&self) -> crate::Result<GraphIndexStats>;
 }
@@ -278,4 +292,123 @@ pub struct GraphIndexStats {
     pub num_edges: usize,
     /// Total bytes allocated by CSR representation.
     pub memory_usage_bytes: usize,
+}
+
+/// Distance calculator trait for vector comparison.
+pub trait DistanceCalculator: Send + Sync {
+    /// Computes the distance between two f32 vectors.
+    fn compute_f32(&self, a: &[f32], b: &[f32]) -> Result<f32>;
+
+    /// Computes the distance between two u8 vectors.
+    fn compute_u8(&self, a: &[u8], b: &[u8]) -> Result<u32>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_stats_serialization() {
+        let v_stats = VectorIndexStats {
+            num_vectors: 100,
+            memory_usage_bytes: 1024,
+            num_layers: 5,
+        };
+        let ser = serde_json::to_string(&v_stats).unwrap();
+        let deser: VectorIndexStats = serde_json::from_str(&ser).unwrap();
+        assert_eq!(v_stats.num_vectors, deser.num_vectors);
+
+        let s_stats = StorageStats {
+            num_segments: 2,
+            total_size_bytes: 2048,
+            memtable_size_bytes: 512,
+        };
+        let ser = serde_json::to_string(&s_stats).unwrap();
+        let deser: StorageStats = serde_json::from_str(&ser).unwrap();
+        assert_eq!(s_stats.total_size_bytes, deser.total_size_bytes);
+
+        let t_stats = TextIndexStats {
+            num_documents: 10,
+            num_tokens: 1000,
+            memory_usage_bytes: 256,
+        };
+        let ser = serde_json::to_string(&t_stats).unwrap();
+        let deser: TextIndexStats = serde_json::from_str(&ser).unwrap();
+        assert_eq!(t_stats.num_documents, deser.num_documents);
+    }
+
+    #[tokio::test]
+    async fn test_storage_engine_default_put_batch() {
+        type KVPair = (Vec<u8>, Vec<u8>);
+        type Log = std::sync::Arc<std::sync::Mutex<Vec<KVPair>>>;
+        struct MockStorage(Log);
+        #[async_trait::async_trait]
+        impl StorageEngine for MockStorage {
+            async fn get(&self, _: &[u8]) -> Result<Option<Vec<u8>>> { Ok(None) }
+            async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> { Ok(None) }
+            async fn put(&self, _: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+                self.0.lock().unwrap().push((key.to_vec(), value.to_vec()));
+                Ok(())
+            }
+            async fn delete(&self, _: TxId, _: &[u8]) -> Result<()> { Ok(()) }
+            async fn commit(&self, _: TxId) -> Result<()> { Ok(()) }
+            async fn rollback(&self, _: TxId) -> Result<()> { Ok(()) }
+            async fn rollback_to_tx(&self, _: TxId) -> Result<()> { Ok(()) }
+            async fn flush(&self) -> Result<()> { Ok(()) }
+            async fn stats(&self) -> Result<StorageStats> { 
+                Ok(StorageStats { num_segments: 0, total_size_bytes: 0, memtable_size_bytes: 0 }) 
+            }
+            async fn last_seq_no(&self) -> Result<u64> { Ok(0) }
+            async fn last_tx_id(&self) -> Result<TxId> { Ok(TxId(0)) }
+            async fn pin_checkpoint(&self, _: u64) -> Result<()> { Ok(()) }
+            async fn unpin_checkpoint(&self, _: u64) -> Result<()> { Ok(()) }
+            async fn scan_prefix(&self, _: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> { Ok(vec![]) }
+            async fn scan(&self, _: std::ops::Bound<&[u8]>, _: std::ops::Bound<&[u8]>) -> Result<Vec<(Vec<u8>, Vec<u8>)>> { Ok(vec![]) }
+        }
+
+        let store = MockStorage(std::sync::Arc::new(std::sync::Mutex::new(vec![])));
+        let entries = vec![
+            (b"k1".to_vec(), b"v1".to_vec()),
+            (b"k2".to_vec(), b"v2".to_vec()),
+        ];
+        store.put_batch(TxId(1), &entries).await.unwrap();
+        assert_eq!(store.0.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_vector_index_defaults() {
+        struct MockIndex(std::sync::atomic::AtomicUsize);
+        #[async_trait::async_trait]
+        impl VectorIndex for MockIndex {
+            async fn insert(&self, _: TxId, _: DocId, _: &[f32]) -> Result<()> { 
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(()) 
+            }
+            async fn search(&self, _: &[f32], _: usize) -> Result<Vec<ScoredDocument>> { Ok(vec![]) }
+            async fn delete(&self, _: TxId, _: DocId) -> Result<()> { Ok(()) }
+            async fn commit(&self, _: TxId) -> Result<()> { Ok(()) }
+            async fn rollback(&self, _: TxId) -> Result<()> { Ok(()) }
+            async fn rollback_to_tx(&self, _: TxId) -> Result<()> { Ok(()) }
+            async fn last_tx_id(&self) -> Result<u64> { Ok(0) }
+            async fn len(&self) -> usize { self.0.load(std::sync::atomic::Ordering::SeqCst) }
+            async fn stats(&self) -> Result<VectorIndexStats> {
+                Ok(VectorIndexStats { num_vectors: 0, memory_usage_bytes: 0, num_layers: 0 })
+            }
+        }
+
+        let index = MockIndex(std::sync::atomic::AtomicUsize::new(0));
+        assert!(index.is_empty().await);
+
+        let vectors = vec![
+            (DocId(1), [1.0, 2.0].as_slice()),
+            (DocId(2), [3.0, 4.0].as_slice()),
+        ];
+        index.insert_batch(TxId(1), &vectors).await.unwrap();
+        assert_eq!(index.len().await, 2);
+        assert!(!index.is_empty().await);
+
+        // Test search_filtered default error
+        let res = index.search_filtered(&[1.0], 1, Some(&|_| true)).await;
+        assert!(res.is_err());
+    }
 }

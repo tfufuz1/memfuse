@@ -12,13 +12,13 @@ memfuse-store = { workspace = true }
 memfuse-index = { workspace = true }
 memfuse-text = { workspace = true }
 memfuse-checkpoint = { workspace = true }
-memfuse-embed = { workspace = true }
+memfuse-embed = { workspace = true, optional = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 memfuse-sandbox = { path = "../memfuse-sandbox" }
-memfuse-cluster = { workspace = true }
+memfuse-cluster = { workspace = true, optional = true }
 async-trait = { workspace = true }
 tokio-util = { version = "0.7.18", features = ["rt"] }
 
@@ -26,9 +26,13 @@ tokio-util = { version = "0.7.18", features = ["rt"] }
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile = { workspace = true }
 criterion = { version = "0.5", features = ["async_tokio"] }
+proptest = "1.4"
 
 [features]
+default = []
 bench = []
+embed = ["dep:memfuse-embed"]
+cluster = ["dep:memfuse-cluster"]
 
 [[bench]]
 name = "migration_benchmarks"

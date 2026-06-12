@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+mkdir -p /tmp/chromium-cache-shared
+exec /nix/store/mwmmlaalpfnaaknbrh333agk5a01cg68-chromium-146.0.7680.164/bin/chromium \
+  --user-data-dir="/home/freddy/Arbeitsplatz/DEV/memfuse/.chromium" \
+  --disk-cache-dir="/tmp/chromium-cache-shared" \
+  --no-first-run --no-default-browser-check --disable-sync \
+  --disable-background-networking --disable-component-update --disable-default-apps \
+  "$@"

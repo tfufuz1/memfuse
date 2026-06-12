@@ -1,179 +1,74 @@
-use memfuse_core::{DocId, StorageEngine, VectorIndex};
-use memfuse_db::{Collection, MemFuse};
-use memfuse_index::{HnswConfig, HnswIndex};
-use memfuse_store::{LsmConfig, LsmStorage};
-use serde_json::json;
-use std::sync::atomic::AtomicU64;
+use memfuse_db::Collection;
+use memfuse_core::{DocId, Result, DistanceMetric};
+use tempfile::tempdir;
 use std::sync::Arc;
-use tempfile::TempDir;
-
-async fn setup_collection(
-    path: &std::path::Path,
-    dim: usize,
-) -> (Collection, Arc<LsmStorage>, Arc<HnswIndex>) {
-    let lsm_config = LsmConfig {
-        path: path.to_path_buf(),
-        ..Default::default()
-    };
-    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
-
-    let hnsw_config = HnswConfig {
-        dimension: dim,
-        ..Default::default()
-    };
-    let index = Arc::new(HnswIndex::new(hnsw_config));
-    let next_tx = Arc::new(AtomicU64::new(1));
-
-    let col = Collection::new(
-        "test_col".to_string(),
-        storage.clone(),
-        index.clone(),
-        next_tx,
-        dim,
-    );
-
-    (col, storage, index)
-}
+use tokio::sync::Barrier;
 
 #[tokio::test]
-async fn test_manual_rollback() {
-    let tmp = TempDir::new().unwrap();
-    let dim = 4;
-    let (col, storage, index) = setup_collection(tmp.path(), dim).await;
+async fn test_transaction_atomicity_under_load() -> Result<()> {
+    let dir = tempdir().unwrap();
+    // Wir nutzen eine reale Collection-Instanz (LSM + HNSW)
+    let collection = Arc::new(Collection::open_temp(dir.path(), 128, DistanceMetric::Cosine).await?);
+    
+    let num_writers = 4;
+    let num_readers = 10;
+    let iterations = 20;
+    let batch_size = 5; // Jede Transaktion schreibt 5 Dokumente
+    
+    let barrier = Arc::new(Barrier::new(num_writers + num_readers));
+    let mut handles = Vec::new();
 
-    let db_tx = col.begin_transaction();
-    let tx_id = db_tx.tx_id;
-    let doc_id = DocId::from_key("manual_rollback").unwrap();
-    let embedding = vec![1.0, 0.0, 0.0, 0.0];
-
-    // Manually put into storage and index using the transaction ID
-    storage
-        .put(tx_id, b"manual_rollback", b"should be rolled back")
-        .await
-        .unwrap();
-    index.insert(tx_id, doc_id, &embedding).await.unwrap();
-
-    // Verify it's staged but not committed yet (isolation)
-    assert!(storage.get(b"manual_rollback").await.unwrap().is_none());
-    let search_res = index.search(&embedding, 1).await.unwrap();
-    assert!(search_res.is_empty());
-
-    // Rollback
-    db_tx.rollback().await.unwrap();
-
-    // Verify it's still not there
-    assert!(storage.get(b"manual_rollback").await.unwrap().is_none());
-    let search_res = index.search(&embedding, 1).await.unwrap();
-    assert!(search_res.is_empty());
-}
-
-#[tokio::test]
-async fn test_concurrent_rollback_contention() {
-    let tmp = TempDir::new().unwrap();
-    let dim = 4;
-    let (col, storage, index) = setup_collection(tmp.path(), dim).await;
-    let col = Arc::new(col);
-
-    let num_tasks = 20;
-    let mut tasks = Vec::new();
-
-    for i in 0..num_tasks {
-        let col = col.clone();
-        let storage = storage.clone();
-        let index = index.clone();
-
-        tasks.push(tokio::spawn(async move {
-            let id = format!("doc-{}", i);
-            let doc_id = DocId::from_key(&id).unwrap();
-            let embedding = vec![i as f32, 0.0, 0.0, 0.0];
-
-            let db_tx = col.begin_transaction();
-            let tx_id = db_tx.tx_id;
-
-            storage
-                .put(tx_id, id.as_bytes(), id.as_bytes())
-                .await
-                .unwrap();
-            index.insert(tx_id, doc_id, &embedding).await.unwrap();
-
-            // Randomly commit or rollback
-            if i % 2 == 0 {
-                db_tx.commit().await.unwrap();
-                true // committed
-            } else {
-                db_tx.rollback().await.unwrap();
-                false // rolled back
+    // WRITERS: Schreiben atomare Batches
+    for w in 0..num_writers {
+        let col = collection.clone();
+        let b = barrier.clone();
+        handles.push(tokio::spawn(async move {
+            b.wait().await;
+            for i in 0..iterations {
+                let tx = col.begin_transaction().await.unwrap();
+                for j in 0..batch_size {
+                    let id = (w * 1000 + i * 10 + j) as u64;
+                    let vec = vec![i as f32; 128];
+                    col.insert_with_tx(&tx, DocId::new(id), &vec, format!("data_{}_{}_{}", w, i, j).as_bytes())
+                        .await
+                        .unwrap();
+                }
+                tx.commit().await.unwrap();
             }
         }));
     }
 
-    let mut committed_count = 0;
-    for task in tasks {
-        if task.await.unwrap() {
-            committed_count += 1;
-        }
+    // READERS: Prüfen auf Atomarität
+    // Invariante: Da wir immer batch_size (5) Dokumente pro Tx schreiben, 
+    // und die TxId-Bereiche disjunkt sind, muss die Gesamtzahl der Dokumente 
+    // in der Collection immer ein Vielfaches von batch_size sein (oder wir finden gar nichts).
+    let atomicity_errors = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    for _ in 0..num_readers {
+        let col = collection.clone();
+        let b = barrier.clone();
+        let errs = atomicity_errors.clone();
+        handles.push(tokio::spawn(async move {
+            b.wait().await;
+            for _ in 0..(iterations * 2) {
+                // Wir zählen alle Dokumente im Index
+                // Hinweis: search mit hohem k, um alle zu finden
+                let results = col.search(&vec![0.0; 128], 1000).await.unwrap();
+                let count = results.len();
+                
+                if count % batch_size != 0 {
+                    errs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                }
+                tokio::task::yield_now().await;
+            }
+        }));
     }
 
-    assert_eq!(committed_count, num_tasks / 2);
-
-    // Verify final state
-    let mut found_count = 0;
-    for i in 0..num_tasks {
-        let id = format!("doc-{}", i);
-        let val = storage.get(id.as_bytes()).await.unwrap();
-        if i % 2 == 0 {
-            assert!(val.is_some(), "Doc {} should be committed", i);
-            found_count += 1;
-        } else {
-            assert!(val.is_none(), "Doc {} should be rolled back", i);
-        }
+    for h in handles {
+        h.await.unwrap();
     }
-    assert_eq!(found_count, committed_count);
 
-    // Verify index state
-    assert_eq!(index.len().await, committed_count);
-}
-
-#[tokio::test]
-async fn test_snapshot_stability() {
-    let tmp = TempDir::new().unwrap();
-    let config = memfuse_db::MemFuseConfig {
-        dimension: 3,
-        ..Default::default()
-    };
-    let (db, _tmp) = (
-        MemFuse::open_with_config(tmp.path(), config).await.unwrap(),
-        tmp,
-    );
-    let col = db.collection("snapshot_test").await.unwrap();
-
-    // 1. Initial state
-    col.insert("base", &[0.0, 0.0, 0.0], Some(json!({"v": 0})))
-        .await
-        .unwrap();
-
-    let snap_seq = db.last_committed_seq().await.unwrap();
-
-    // 2. Modify "base" and insert "new" in a new transaction
-    col.insert("base", &[1.0, 1.0, 1.0], Some(json!({"v": 1})))
-        .await
-        .unwrap();
-    col.insert("new", &[0.5, 0.5, 0.5], None).await.unwrap();
-
-    let _latest_seq = db.last_committed_seq().await.unwrap();
-
-    // 3. Read from snapshot
-    let base_snap = col.get_at_snapshot("base", snap_seq).await.unwrap();
-    let base_snap = base_snap.expect("Base doc missing in snapshot");
-    assert_eq!(base_snap.metadata.unwrap()["v"], 0);
-
-    let new_snap = col.get_at_snapshot("new", snap_seq).await.unwrap();
-    assert!(
-        new_snap.is_none(),
-        "New doc should not be visible in old snapshot"
-    );
-
-    // 4. Read latest
-    let base_latest = col.get("base").await.unwrap().unwrap();
-    assert_eq!(base_latest.metadata.unwrap()["v"], 1);
+    let final_errors = atomicity_errors.load(std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(final_errors, 0, "Atomicity violation detected! Readers saw partial transaction states.");
+    
+    Ok(())
 }

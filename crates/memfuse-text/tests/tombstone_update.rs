@@ -56,6 +56,7 @@ impl StorageEngine for MockStorage {
         Ok(())
     }
     async fn get_at_seq(&self, key: &[u8], _seq: u64) -> Result<Option<Vec<u8>>> {
+
         self.get(key).await
     }
     async fn last_seq_no(&self) -> Result<u64> {

@@ -17,3 +17,5 @@ blake3 = { workspace = true }
 flatbuffers = { workspace = true }
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }
+proptest = "1.4"
