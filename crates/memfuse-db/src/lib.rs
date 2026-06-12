@@ -4,9 +4,11 @@
 
 #![forbid(unsafe_code)]
 
-use memfuse_core::{DocId, Result, StorageEngine, TxId};
+use memfuse_core::{Result, StorageEngine, TxId};
 use memfuse_index::{HnswConfig, HnswIndex};
 use memfuse_store::LsmStorage;
+pub use memfuse_core::DistanceMetric;
+pub use serde_json::json;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
@@ -25,6 +27,9 @@ use async_trait::async_trait;
 use memfuse_sandbox::SandboxBridge;
 pub use collection::Collection;
 pub use filter::MetadataFilter;
+
+#[cfg(feature = "embed")]
+use memfuse_embed::TextEmbedder;
 
 /// User-facing search result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +79,10 @@ pub struct MemFuse {
     next_tx: Arc<AtomicU64>,
     dimension: usize,
     collections: tokio::sync::RwLock<std::collections::HashMap<String, Collection<LsmStorage>>>,
+    #[cfg(feature = "cluster")]
+    raft: tokio::sync::OnceCell<memfuse_cluster::node::MemFuseRaft>,
+    #[cfg(feature = "embed")]
+    embedder: std::sync::RwLock<Option<Arc<TextEmbedder>>>,
 }
 
 impl MemFuse {
@@ -97,6 +106,10 @@ impl MemFuse {
             next_tx,
             dimension: config.dimension,
             collections: tokio::sync::RwLock::new(std::collections::HashMap::new()),
+            #[cfg(feature = "cluster")]
+            raft: tokio::sync::OnceCell::new(),
+            #[cfg(feature = "embed")]
+            embedder: std::sync::RwLock::new(None),
         };
 
         db.initialize_collections().await?;
@@ -106,7 +119,7 @@ impl MemFuse {
     async fn initialize_collections(&self) -> Result<()> {
         let names = self.list_collections().await?;
         for name in names {
-            self.collection(&name).await?;
+            let _ = self.collection(&name).await?;
         }
         Ok(())
     }
@@ -129,7 +142,7 @@ impl MemFuse {
         };
         let index = Arc::new(HnswIndex::new(hnsw_config));
 
-        let mut col = Collection::new(
+        let col = Collection::new(
             name.to_string(),
             Arc::clone(&self.storage),
             index,
@@ -198,12 +211,40 @@ impl MemFuse {
         self.default_col().await?.insert(id, embedding, metadata).await
     }
 
+    pub async fn upsert(&self, id: &str, embedding: &[f32], metadata: Option<Value>) -> Result<()> {
+        self.default_col().await?.upsert(id, embedding, metadata).await
+    }
+
+    pub async fn update(&self, id: &str, embedding: &[f32], metadata: Option<Value>) -> Result<()> {
+        self.default_col().await?.update(id, embedding, metadata).await
+    }
+
     pub async fn search(&self, query: &[f32], k: usize) -> Result<Vec<SearchResult>> {
         self.default_col().await?.search(query, k).await
     }
 
+    pub async fn search_with_filter(&self, query: &[f32], k: usize, filter: Option<MetadataFilter>) -> Result<Vec<SearchResult>> {
+        self.default_col().await?.search_with_filter(query, k, filter).await
+    }
+
+    pub async fn hybrid_search(&self, text: &str, vector: &[f32], k: usize) -> Result<Vec<SearchResult>> {
+        self.default_col().await?.hybrid_search(text, vector, k).await
+    }
+
     pub async fn get(&self, id: &str) -> Result<Option<Document>> {
         self.default_col().await?.get(id).await
+    }
+
+    pub async fn get_at_snapshot(&self, id: &str, seq_no: u64) -> Result<Option<Document>> {
+        self.default_col().await?.get_at_snapshot(id, seq_no).await
+    }
+
+    pub async fn create_snapshot(&self) -> Result<u64> {
+        self.storage.last_seq_no().await
+    }
+
+    pub async fn last_committed_seq(&self) -> Result<u64> {
+        self.storage.last_seq_no().await
     }
 
     pub async fn delete(&self, id: &str) -> Result<()> {
@@ -214,13 +255,29 @@ impl MemFuse {
         Ok(self.default_col().await?.len().await)
     }
 
+    pub async fn stats(&self) -> Result<DbStats> {
+        Ok(DbStats {
+            index_stats: self.default_col().await?.stats().await?,
+            storage_stats: self.storage.stats().await?,
+        })
+    }
+
+    pub async fn flush(&self) -> Result<()> {
+        self.storage.flush().await?;
+        Ok(())
+    }
+
     pub async fn close(self) -> Result<()> {
         self.storage.flush().await?;
         Ok(())
     }
 
     pub async fn begin_transaction(&self) -> Result<crate::transaction::DbTransaction<LsmStorage>> {
-        Ok(self.default_col().await?.begin_transaction().await?)
+        Ok(self.default_col().await?.begin_transaction())
+    }
+
+    pub fn inner_storage(&self) -> Arc<LsmStorage> {
+        self.storage.clone()
     }
 }
 
@@ -237,7 +294,7 @@ impl SandboxBridge for MemFuse {
         Ok(serde_json::to_vec(&results).unwrap())
     }
 
-    async fn db_insert(&self, key: &[u8], value: &[u8]) -> Result<()> {
+    async fn db_insert(&self, key: &[u8], _value: &[u8]) -> Result<()> {
         let id = String::from_utf8_lossy(key).to_string();
         self.insert(&id, &[], None).await
     }

@@ -68,6 +68,19 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
         ));
     }
 
+    // ANCHOR:SEC:NAN-VALIDATION — Ensure no NaN enters the distance metrics
+    // WP:WP-0.0 PRIO:1 NEEDS:NONE
+    // AGENT:ARCHITECT DATE:2026-06-12 STATUS:DONE
+    // INVARIANTE: Distance functions must never return NaN unless inputs are corrupted.
+    // Early validation prevents NaN poisoning in HNSW search/insert loops.
+    for val in a.iter().chain(b.iter()) {
+        if val.is_nan() {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Input vector contains NaN values",
+            ));
+        }
+    }
+
     Ok(match metric {
         DistanceMetric::Cosine => cosine_distance(a, b),
         DistanceMetric::Euclidean => euclidean_distance(a, b),

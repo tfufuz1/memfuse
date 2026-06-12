@@ -344,9 +344,6 @@ impl CompactionEngine {
                     source_idx: item.source_idx,
                 });
             }
-
-            // Yield to executor to prevent CPU starvation during large merges (FIND-STO-001)
-            tokio::task::yield_now().await;
         }
         builder.finish().await?;
         Ok(())

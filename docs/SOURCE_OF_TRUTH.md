@@ -239,7 +239,7 @@ graph TD
 
 | ID | Crate | Titel | Priorität | Status | Beschreibung |
 |---|---|---|---|---|---|
-| **FIND-STO-001** | `store` | WAL CRC-Validierung | TIER 2 | 🟡 OPEN | CRC32 pro WAL-Entry fehlt. `yield_now()` in Compaction bereits implementiert. |
+| **FIND-STO-001** | `store` | WAL CRC-Validierung | TIER 2 | 🟢 DONE | CRC32 pro WAL-Entry implementiert. `yield_now()` in Compaction optimiert. |
 | **FIND-DB-002** | `db` | OTel Tracing Expansion | TIER 3 | 🟡 OPEN | `tracing::instrument` auf pub-Methoden von `MemFuse`/`Collection`. |
 
 ### 3.2 Erledigte Items (Historisch)

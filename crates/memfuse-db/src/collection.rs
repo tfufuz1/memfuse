@@ -8,7 +8,7 @@
 // STATUS: Full Implementation für WP-1.2.
 
 use crate::filter::MetadataFilter;
-use memfuse_core::{DocId, Result, StorageEngine, TxId, VectorIndex};
+use memfuse_core::{DocId, Result, StorageEngine, TextIndex, TxId, VectorIndex};
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;
 use memfuse_text::inverted::InvertedIndex;
@@ -245,77 +245,12 @@ impl<S: StorageEngine> Collection<S> {
 
     /// Begins a new atomic transaction for this collection.
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<'_, S> {
+    pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<S> {
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
-        crate::transaction::DbTransaction::new(self, tx)
+        crate::transaction::DbTransaction::new(self.clone(), tx)
     }
 
-    /// Inserts a text document, automatically generating its embedding.
-    #[tracing::instrument(level = "trace", skip(self, text, metadata))]
-    pub async fn insert_text_only(
-        &self,
-        id: &str,
-        text: &str,
-        mut metadata: Option<serde_json::Value>,
-    ) -> Result<()> {
-        let embedding = {
-            let embedder_guard = self.embedder.read().unwrap();
-            let embedder = embedder_guard.as_ref().ok_or_else(|| {
-                memfuse_core::MemFuseError::Internal(
-                    "No embedder configured for this collection".into(),
-                )
-            })?;
-            embedder.embed(text)?
-        };
-
-        // Ensure text is in metadata for indexing
-        let meta = metadata.get_or_insert(serde_json::json!({}));
-        if let Some(obj) = meta.as_object_mut() {
-            if !obj.contains_key("text") {
-                obj.insert(
-                    "text".to_string(),
-                    serde_json::Value::String(text.to_string()),
-                );
-            }
-        }
-
-        self.insert(id, &embedding, metadata).await
-    }
-
-    /// Upserts a text document, automatically generating its embedding.
-    #[tracing::instrument(level = "trace", skip(self, text, metadata))]
-    pub async fn upsert_text_only(
-        &self,
-        id: &str,
-        text: &str,
-        mut metadata: Option<serde_json::Value>,
-    ) -> Result<()> {
-        let embedding = {
-            let embedder_guard = self.embedder.read().unwrap();
-            let embedder = embedder_guard.as_ref().ok_or_else(|| {
-                memfuse_core::MemFuseError::Internal(
-                    "No embedder configured for this collection".into(),
-                )
-            })?;
-            embedder.embed(text)?
-        };
-
-        // Ensure text is in metadata for indexing
-        let meta = metadata.get_or_insert(serde_json::json!({}));
-        if let Some(obj) = meta.as_object_mut() {
-            if !obj.contains_key("text") {
-                obj.insert(
-                    "text".to_string(),
-                    serde_json::Value::String(text.to_string()),
-                );
-            }
-        }
-
-        self.upsert(id, &embedding, metadata).await
-    }
-
-    /// Inserts a document with an embedding and optional metadata.
-    #[tracing::instrument(level = "trace", skip(self, embedding, metadata))]
+    /// Deletes a document by its string ID.
     pub async fn insert(
         &self,
         id: &str,
@@ -343,9 +278,9 @@ impl<S: StorageEngine> Collection<S> {
         }
     }
 
-    async fn insert_op(
+    pub async fn insert_op(
         &self,
-        db_tx: &crate::transaction::DbTransaction<'_, S>,
+        db_tx: &crate::transaction::DbTransaction<S>,
         id: &str,
         embedding: &[f32],
         metadata: Option<serde_json::Value>,
@@ -534,9 +469,9 @@ impl<S: StorageEngine> Collection<S> {
         }
     }
 
-    async fn update_op(
+    pub async fn update_op(
         &self,
-        db_tx: &crate::transaction::DbTransaction<'_, S>,
+        db_tx: &crate::transaction::DbTransaction<S>,
         id: &str,
         embedding: &[f32],
         metadata: Option<serde_json::Value>,
@@ -594,9 +529,9 @@ impl<S: StorageEngine> Collection<S> {
         }
     }
 
-    async fn delete_op(
+    pub async fn delete_op(
         &self,
-        db_tx: &crate::transaction::DbTransaction<'_, S>,
+        db_tx: &crate::transaction::DbTransaction<S>,
         id: &str,
     ) -> Result<()> {
         let tx = db_tx.tx_id;
@@ -740,7 +675,11 @@ impl<S: StorageEngine> Collection<S> {
                 .index
                 .search_filtered(query, k, Some(&filter_fn))
                 .await?;
-            self.hydrate_from_scored(scored_docs).await
+            let scored_tuples = scored_docs
+                .into_iter()
+                .map(|sd| (sd.doc_id, sd.score))
+                .collect();
+            self.hydrate_from_tuples(scored_tuples).await
         } else {
             // Post-filtering approach for larger collections:
             // 1. Search more than k (oversample) to account for filter drops.
@@ -767,25 +706,6 @@ impl<S: StorageEngine> Collection<S> {
             }
             Ok(results)
         }
-    }
-
-    /// Performs semantic search using a raw text query (automatically embedded).
-    #[tracing::instrument(level = "trace", skip(self, query_text))]
-    pub async fn search_text(
-        &self,
-        query_text: &str,
-        k: usize,
-    ) -> Result<Vec<crate::SearchResult>> {
-        let embedding = {
-            let embedder_guard = self.embedder.read().unwrap();
-            let embedder = embedder_guard.as_ref().ok_or_else(|| {
-                memfuse_core::MemFuseError::Internal(
-                    "No embedder configured for this collection".into(),
-                )
-            })?;
-            embedder.embed(query_text)?
-        };
-        self.search(&embedding, k).await
     }
 
     /// Internal helper to find all DocIds matching a filter by scanning metadata.
@@ -825,31 +745,12 @@ impl<S: StorageEngine> Collection<S> {
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<crate::SearchResult>> {
         let scored_docs = self.index.search_filtered(query, k, filter).await?;
-        self.hydrate_from_scored(scored_docs).await
-    }
+        let scored_tuples = scored_docs
+            .into_iter()
+            .map(|sd| (sd.doc_id, sd.score))
+            .collect();
+        self.hydrate_from_tuples(scored_tuples).await
 
-    #[tracing::instrument(level = "trace", skip(self, scored_docs))]
-    async fn hydrate_from_scored(
-        &self,
-        scored_docs: Vec<memfuse_core::ScoredDocument>,
-    ) -> Result<Vec<crate::SearchResult>> {
-        if scored_docs.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut results = Vec::with_capacity(scored_docs.len());
-        for sd in scored_docs {
-            let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
-            if let Some(bytes) = self.storage.get(&doc_key).await? {
-                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                results.push(crate::SearchResult {
-                    id: stored.id,
-                    score: sd.score,
-                    metadata: stored.metadata,
-                });
-            }
-        }
-        Ok(results)
     }
 
     #[tracing::instrument(level = "trace", skip(self, scored_tuples))]

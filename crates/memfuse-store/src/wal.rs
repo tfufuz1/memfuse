@@ -92,7 +92,7 @@ impl WalEntry {
     }
 
     /// Serializes the entry to bytes.
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
         let op_size = match &self.op {
             WalOp::Put { key, value, .. } => 1 + 8 + 4 + key.len() + 4 + value.len(),
             WalOp::Delete { key, .. } => 1 + 8 + 4 + key.len(),
@@ -108,6 +108,12 @@ impl WalEntry {
         let mut buf = Vec::with_capacity(total_size);
 
         // 1. Length Prefix
+        if total_payload_size > u32::MAX as usize {
+            return Err(MemFuseError::Serialization(format!(
+                "WAL entry too large: {} bytes",
+                total_payload_size
+            )));
+        }
         buf.extend_from_slice(&(total_payload_size as u32).to_le_bytes());
 
         // 2. CRC32 Placeholder (we'll fill this at the end)
@@ -141,7 +147,7 @@ impl WalEntry {
         let crc = crc32fast::hash(&buf[payload_start..]);
         buf[crc_offset..crc_offset + 4].copy_from_slice(&crc.to_le_bytes());
 
-        buf
+        Ok(buf)
     }
 
     /// Deserializes a WAL entry from bytes, verifying CRC32.
@@ -386,7 +392,7 @@ impl Wal {
         let mut last_hmac_val = [0u8; 32];
 
         for entry in entries {
-            let mut bytes = entry.to_bytes();
+            let mut bytes = entry.to_bytes()?;
 
             if let Some(km) = &self.key_manager {
                 if bytes.len() > 4 {
@@ -706,7 +712,7 @@ mod tests {
             [0u8; 32],
         )
         .expect("try_new");
-        let bytes = entry.to_bytes();
+        let bytes = entry.to_bytes().expect("serialization failed");
 
         // 4 (len) + 4 (crc) + 8 (seq) + 32 (hmac) + 32 (prev) + 1 (op) + 8 (tx) + 4 (klen) + 3 (k) + 4 (vlen) + 5 (v) = 105
         assert_eq!(bytes.len(), 105);
@@ -906,7 +912,7 @@ mod tests {
         )
         .expect("try_new");
 
-        let mut bytes = entry.to_bytes();
+        let mut bytes = entry.to_bytes().expect("serialization failed");
 
         // Let's corrupt the payload which is after the length prefix(4) and CRC(4)
         if bytes.len() > 10 {
@@ -992,7 +998,7 @@ mod tests {
         let integrity_key = b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0";
         let entry = WalEntry::try_new(op, 12345, integrity_key, [0u8; 32]).expect("try_new");
 
-        let original_bytes = entry.to_bytes();
+        let original_bytes = entry.to_bytes().expect("serialization failed");
 
         // Systematisch jedes Bit der ersten 12 Bytes flippen
         for byte_idx in 0..12 {
@@ -1042,7 +1048,7 @@ mod tests {
         )
         .expect("try_new");
 
-        let bytes = entry.to_bytes();
+        let bytes = entry.to_bytes().expect("serialization failed");
         let decoded = WalEntry::from_bytes(&bytes[4..]).expect("Roundtrip must work");
 
         assert_eq!(decoded.seq_no, 100);

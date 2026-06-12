@@ -1,5 +1,5 @@
-use memfuse_db::Collection;
-use memfuse_core::{DocId, Result, DistanceMetric};
+use memfuse_db::{MemFuse, MemFuseConfig};
+use memfuse_core::{Result, DistanceMetric};
 use tempfile::tempdir;
 use std::sync::Arc;
 use tokio::sync::Barrier;
@@ -7,8 +7,13 @@ use tokio::sync::Barrier;
 #[tokio::test]
 async fn test_transaction_atomicity_under_load() -> Result<()> {
     let dir = tempdir().unwrap();
-    // Wir nutzen eine reale Collection-Instanz (LSM + HNSW)
-    let collection = Arc::new(Collection::open_temp(dir.path(), 128, DistanceMetric::Cosine).await?);
+    let config = MemFuseConfig {
+        dimension: 128,
+        distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
+    };
+    let db = Arc::new(MemFuse::open_with_config(dir.path(), config).await?);
+    let collection = Arc::new(db.collection("default").await?);
     
     let num_writers = 4;
     let num_readers = 10;
@@ -25,11 +30,11 @@ async fn test_transaction_atomicity_under_load() -> Result<()> {
         handles.push(tokio::spawn(async move {
             b.wait().await;
             for i in 0..iterations {
-                let tx = col.begin_transaction().await.unwrap();
+                let tx = col.begin_transaction();
                 for j in 0..batch_size {
-                    let id = (w * 1000 + i * 10 + j) as u64;
+                    let id = format!("doc_{}_{}_{}", w, i, j);
                     let vec = vec![i as f32; 128];
-                    col.insert_with_tx(&tx, DocId::new(id), &vec, format!("data_{}_{}_{}", w, i, j).as_bytes())
+                    col.insert_op(&tx, &id, &vec, Some(serde_json::json!({"text": format!("data_{}_{}_{}", w, i, j)})))
                         .await
                         .unwrap();
                 }
@@ -39,9 +44,6 @@ async fn test_transaction_atomicity_under_load() -> Result<()> {
     }
 
     // READERS: Prüfen auf Atomarität
-    // Invariante: Da wir immer batch_size (5) Dokumente pro Tx schreiben, 
-    // und die TxId-Bereiche disjunkt sind, muss die Gesamtzahl der Dokumente 
-    // in der Collection immer ein Vielfaches von batch_size sein (oder wir finden gar nichts).
     let atomicity_errors = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     for _ in 0..num_readers {
         let col = collection.clone();
@@ -50,8 +52,6 @@ async fn test_transaction_atomicity_under_load() -> Result<()> {
         handles.push(tokio::spawn(async move {
             b.wait().await;
             for _ in 0..(iterations * 2) {
-                // Wir zählen alle Dokumente im Index
-                // Hinweis: search mit hohem k, um alle zu finden
                 let results = col.search(&vec![0.0; 128], 1000).await.unwrap();
                 let count = results.len();
                 
