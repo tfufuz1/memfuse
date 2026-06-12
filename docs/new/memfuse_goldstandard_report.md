@@ -29,14 +29,14 @@
 | LoC (gesamt) | ~10.800 |
 | Sprache (primär) | Rust 90.7% |
 | Python-Bindings | 4.0% (PyO3) |
-| CI-Jobs | jules-quality-gate.yml |
+| CI-Jobs | quality-gate.yml |
 | Open Pull Requests | ~154 (autonomer Agent-Output) |
 | Nightly Rust | Pflicht (portable-simd) |
 
 **Observations:**
 - Das Projekt verwendet nightly Rust ausschließlich für `portable-simd` in `distance.rs`. Dies ist ein **Adoptionsrisiko** für Downstream-Nutzer (viele Produktionsumgebungen akzeptieren kein nightly).
-- 154 offene PRs sind ein **Merge-Chaos-Signal** — autonome Agenten (Jules-Squad) produzieren massenhaft PRs, die nicht konsolidiert werden. Das blockiert Übersichtlichkeit.
-- Die Multi-Agent-Entwicklung mit 13 Google Jules-Accounts produziert Code, der Compiler-Fehler enthält (bestätigt durch `clippy.log`). Das Triple-Test-Gate funktioniert in der Praxis nicht wie beschrieben.
+- 154 offene PRs sind ein **Merge-Chaos-Signal** — es werden massenhaft PRs generiert, die nicht konsolidiert werden. Das blockiert Übersichtlichkeit.
+- Die Entwicklung produziert Code, der Compiler-Fehler enthält (bestätigt durch `clippy.log`). Das Triple-Test-Gate funktioniert in der Praxis nicht wie beschrieben.
 
 ---
 

@@ -335,7 +335,7 @@ impl<S: StorageEngine> PersistentCheckpointStore<S> { ... }
 
 **Betrifft:** `memfuse-graph/src/csr.rs`, `memfuse-text/src/inverted.rs`
 
-**Problem:** Die `async fn`-Desugaring in Rust generiert implizite Lifetime-Parameter. Die Jules-Agenten haben Trait-Definitionen in `memfuse-core/src/traits.rs` und deren Implementierungen in separaten Crates zu unterschiedlichen Zeitpunkten geschrieben, wobei die Lifetime-Annotationen nicht synchronisiert wurden.
+**Problem:** Die `async fn`-Desugaring in Rust generiert implizite Lifetime-Parameter. Trait-Definitionen in `memfuse-core/src/traits.rs` und deren Implementierungen in separaten Crates wurden zu unterschiedlichen Zeitpunkten geschrieben, wobei die Lifetime-Annotationen nicht synchronisiert wurden.
 
 **Betroffene Methoden:**
 ```
@@ -478,7 +478,7 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
 [...alle weiteren Crates: LEER]
 ```
 
-**Bedeutung:** Dies ist ein außergewöhnlich starkes Signal. In einem Projekt, das von 13 autonomen KI-Agenten (Google Jules) im 24-Stunden-Betrieb entwickelt wird, wäre eine skeleton-durchwachsene Codebase die Erwartung. Stattdessen ist der gesamte Code vollständig implementiert — jede Funktion, jeder Trait, jede Methode hat einen echten Body.
+**Bedeutung:** Dies ist ein außergewöhnlich starkes Signal. In einem solchen Projekt wäre eine skeleton-durchwachsene Codebase die Erwartung. Stattdessen ist der gesamte Code vollständig implementiert — jede Funktion, jeder Trait, jede Methode hat einen echten Body.
 
 **In Verbindung mit den ~130 Tests** bedeutet das: MemFuse ist kein Prototype mit Stubs, sondern eine vollständige Implementierung mit Compile-Fehlern die aus Trait-Design-Inkompatibilitäten stammen — behebbar.
 

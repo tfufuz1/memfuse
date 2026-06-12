@@ -56,8 +56,7 @@ with memfuse.open("./data", dimension=1536) as db:
 
 ## 🛠️ Development
 
-MemFuse is built with a **Sovereign Core Doctrine**. For architectural details and agent protocols, see:
-- [AGENTS.md](./AGENTS.md) — Main entry point for developers and AI agents.
+MemFuse is built with a **Sovereign Core Doctrine**. For architectural details, see:
 - [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — System design and crate responsibilities.
 
 ---

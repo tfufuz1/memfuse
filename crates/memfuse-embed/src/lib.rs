@@ -81,7 +81,10 @@ impl TextEmbedder {
             .map_err(|e| MemFuseError::Internal(format!("Failed to download model: {}", e)))?;
 
         // Both files are in the same cache directory usually
-        Self::load(model_path.parent().unwrap())
+        let parent = model_path
+            .parent()
+            .ok_or_else(|| MemFuseError::Internal("Model path has no parent directory".into()))?;
+        Self::load(parent)
     }
 
     /// Loads the default embedding model (all-MiniLM-L6-v2).

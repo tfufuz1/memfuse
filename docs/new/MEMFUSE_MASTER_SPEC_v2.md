@@ -337,7 +337,7 @@ cargo build --workspace 2>&1 | grep "^error" | wc -l  # Muss 0 sein
 
 **Problem-Analyse:**
 
-Beim asynchronen Desugaring in Rust generiert der Compiler implizite Lifetime-Parameter. Jules-Agenten haben Trait-Definitionen in `memfuse-core` und Implementierungen in separaten Crates zu verschiedenen Zeitpunkten geschrieben — ohne Lifetime-Synchronisation.
+Beim asynchronen Desugaring in Rust generiert der Compiler implizite Lifetime-Parameter. Trait-Definitionen in `memfuse-core` und Implementierungen in separaten Crates wurden zu verschiedenen Zeitpunkten geschrieben — ohne Lifetime-Synchronisation.
 
 **Betroffene Methoden (12 Stück):**
 
@@ -813,7 +813,7 @@ Die forensische Analyse zeigt, dass MemFuse erheblich weiter ist als die AGENTS.
 
 ### 5.2 Zero-Skeleton-Status
 
-**Kein einziges `todo!()`, `unimplemented!()` oder `unreachable!()` im gesamten Workspace.** Bei einem Projekt mit 13 autonomen KI-Agenten ist das außergewöhnlich. Alle Funktionen haben echte Implementierungen.
+**Kein einziges `todo!()`, `unimplemented!()` oder `unreachable!()` im gesamten Workspace.** In einem solchen Projekt ist das außergewöhnlich. Alle Funktionen haben echte Implementierungen.
 
 ### 5.3 Test-Coverage-Inventar
 

@@ -828,21 +828,22 @@ mod tests {
         let sstables = Arc::new(tokio::sync::RwLock::new(Vec::new()));
         let tmp = tempfile::TempDir::new().unwrap();
 
-        let (tx, rx) = tokio::sync::watch::channel(false);
+        let cancel_token = tokio_util::sync::CancellationToken::new();
 
         // Spawn the loop
         let engine_clone = Arc::clone(&engine);
         let sstables_clone = Arc::clone(&sstables);
         let path = tmp.path().to_path_buf();
+        let ct_clone = cancel_token.clone();
         let handle = tokio::spawn(async move {
-            engine_clone.run_loop(sstables_clone, path, rx).await;
+            engine_clone.run_loop(sstables_clone, path, ct_clone).await;
         });
 
         // Let it run for a bit
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         // Cancel it
-        tx.send(true).unwrap();
+        cancel_token.cancel();
 
         // Wait for it to finish
         let result = tokio::time::timeout(std::time::Duration::from_secs(1), handle).await;

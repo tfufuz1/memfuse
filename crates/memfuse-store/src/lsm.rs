@@ -284,7 +284,7 @@ impl LsmStorage {
         let compaction_path = config.path.clone();
         let cancel_token = tokio_util::sync::CancellationToken::new();
         let task_tracker = tokio_util::task::TaskTracker::new();
-        
+
         let ct_clone = cancel_token.clone();
         task_tracker.spawn(async move {
             compaction_engine
@@ -323,7 +323,7 @@ impl LsmStorage {
     pub fn shutdown(&self) {
         self.cancel_token.cancel();
     }
-    
+
     /// Waits for all spawned tasks to shut down fully.
     pub async fn wait_shutdown(&self) {
         self.shutdown();

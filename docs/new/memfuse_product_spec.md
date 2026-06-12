@@ -28,7 +28,7 @@
 **Aktuelle Stärken:**
 - ~10.800 LoC in 11 Crates, sauber geschichtete Architektur (L0–L3)
 - Vollständig funktionsfähige Kernkomponenten: LSM-Store, HNSW-Index, BM25-Text, Hybrid-Search (RRF), AES-GCM-Encryption, PyO3-Bindings
-- 202 Commits, 154 offene PRs — hohes Entwicklungstempo durch 13-Agenten-Squad
+- 202 Commits, 154 offene PRs — hohes Entwicklungstempo
 - Exzellentes Developer-Tooling: `justfile`, Nix-Flake, strukturierte SPEC-Dokumente
 
 **Kritischste Baustellen:**
@@ -594,28 +594,28 @@ Priorität 1: Alle Blocker beheben, damit `cargo build --all-targets` grün ist.
 
 ## 9. Empfehlungen für Coding-Agenten
 
-### 9.1 Sofortige Prioritäten (Jules Squad Dispatch-Reihenfolge)
+### 9.1 Sofortige Prioritäten
 
 ```
 Sprint 1 — Blocker-Beseitigung (KRITISCH)
-  Agent 01 (Core Guardian):    BLOCKER-001 — StorageEngine async_trait
-  Agent 05 (Text Analyst):     BLOCKER-002 — inverted.rs Lifetime-Fixes
-  Agent 11 (Graph Engineer):   BLOCKER-002 — csr.rs Lifetime-Fixes
-  Agent 02 (Store Engineer):   HIGH-001 — WAL CRC32-Verifikation
+  BLOCKER-001 — StorageEngine async_trait
+  BLOCKER-002 — inverted.rs Lifetime-Fixes
+  BLOCKER-002 — csr.rs Lifetime-Fixes
+  HIGH-001 — WAL CRC32-Verifikation
 
 Sprint 2 — Production-Hardening
-  Agent 03 (Index Master):     WP-7.2 HNSW-Persistenz
-  Agent 04 (Collection Arch.): DELETE-API + batch operations
-  Agent 05 (Text Analyst):     WP-7.1 Markdown-Chunker
-  Agent 13 (Debt Hunter):      clippy.log entfernen, all warnings fix
+  WP-7.2 HNSW-Persistenz
+  DELETE-API + batch operations
+  WP-7.1 Markdown-Chunker
+  clippy.log entfernen, all warnings fix
 
-Sprint 3 — Agent-Integration  
-  Agent 06 (Python Bridge):    WP-7.3 MCP-Provider
-  Agent 06 (Python Bridge):    .pyi Type-Stubs
-  Agent 07 (QA Cross-Crate):   Integration-Tests für alle Crates
+Sprint 3 — Integration
+  WP-7.3 MCP-Provider
+  .pyi Type-Stubs
+  Integration-Tests für alle Crates
 ```
 
-### 9.2 Invarianten für jeden Agenten (nie verletzen)
+### 9.2 Invarianten (nie verletzen)
 
 ```
 1. #![forbid(unsafe_code)] in jedem Crate außer distance.rs

@@ -232,7 +232,7 @@ for (_, value) in entries {
 - [ ] `cargo test --workspace` — alle Tests grün
 - [ ] `clippy.log` in `.gitignore`
 - [ ] Anzahl offener PRs: ≤ 20
-- [ ] GitHub Actions CI-Job `jules-quality-gate.yml` — grün
+- [ ] GitHub Actions CI-Job `quality-gate.yml` — grün
 
 ---
 
@@ -1364,7 +1364,7 @@ compression = ["lz4_flex"]
 
 ---
 
-## Invarianten — Für jeden Jules-Agenten verbindlich
+## Invarianten — Verbindlich
 
 Diese Regeln gelten für jedes WP, ohne Ausnahme:
 
