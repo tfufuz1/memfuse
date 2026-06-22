@@ -169,10 +169,7 @@ impl WalEntry {
         if stored_crc != computed_crc {
             // FIND-STO-001: Explicitly return a message that includes "CRC mismatch"
             // so replay can map it to WalCorruption.
-            return Err(MemFuseError::Serialization(format!(
-                "CRC mismatch: stored={:#010x}, computed={:#010x}",
-                stored_crc, computed_crc
-            )));
+            return Err(MemFuseError::Serialization("CRC mismatch in WAL entry".into()));
         }
 
         if payload.len() < 73 {
@@ -616,8 +613,8 @@ impl Wal {
                     return Err(MemFuseError::WalCorruption {
                         offset: entry_start_pos,
                         reason: format!(
-                            "HMAC/Chain failure in middle of WAL: recomputed={:?}, stored={:?}, prev_hmac={:?}, current_chain={:?}",
-                            recomputed_checksum, entry.checksum, entry.prev_hmac, current_chain_hmac
+                            "HMAC/Chain failure in middle of WAL at seq {}",
+                            entry.seq_no
                         ),
                     });
                 }
