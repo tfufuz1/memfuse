@@ -68,18 +68,13 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
         ));
     }
 
-    // ANCHOR:SEC:NAN-VALIDATION — Ensure no NaN enters the distance metrics
-    // WP:WP-0.0 PRIO:1 NEEDS:NONE
-    // AGENT:ARCHITECT DATE:2026-06-12 STATUS:DONE
-    // INVARIANTE: Distance functions must never return NaN unless inputs are corrupted.
-    // Early validation prevents NaN poisoning in HNSW search/insert loops.
-    for val in a.iter().chain(b.iter()) {
-        if val.is_nan() {
-            return Err(memfuse_core::MemFuseError::invalid_input(
-                "Input vector contains NaN values",
-            ));
-        }
-    }
+    // ANCHOR:SEC:VAL-VALIDATION — Ensure no NaN or Inf enters the distance metrics
+    // WP:WP-8.1 PRIO:1 NEEDS:NONE
+    // AGENT:ARCHITECT DATE:2026-06-15 STATUS:DONE
+    // INVARIANTE: Distance functions must never return NaN/Inf unless inputs are corrupted.
+    // Early validation prevents poisoning in HNSW search/insert loops (Zero-Panic §2).
+    validate_finite(a)?;
+    validate_finite(b)?;
 
     Ok(match metric {
         DistanceMetric::Cosine => cosine_distance(a, b),
@@ -203,6 +198,20 @@ pub fn euclidean_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
 /// Scalar implementation of dot product.
 pub fn dot_product_scalar(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
+}
+
+/// Robustly checks if all values in a slice are finite (not NaN/Inf)
+/// and returns an error otherwise. Optimized for SIMD-heavy hot paths.
+#[inline]
+pub fn validate_finite(v: &[f32]) -> memfuse_core::Result<()> {
+    for &x in v {
+        if !x.is_finite() {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Vector contains non-finite values (NaN/Inf)",
+            ));
+        }
+    }
+    Ok(())
 }
 
 // ANCHOR:REFACTOR:WP-0.0-STABLESIMD — Removed std_simd functions

@@ -2139,6 +2139,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_nan_search_protection() -> Result<()> {
+        let index = HnswIndex::new(test_config(4));
+        let tx = TxId::new(1);
+        index.insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0]).await?;
+        index.commit(tx).await?;
+
+        let nan_query = [f32::NAN, 0.0, 0.0, 0.0];
+        let result = index.search(&nan_query, 5).await;
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_nan_insert_protection() -> Result<()> {
+        let index = HnswIndex::new(test_config(4));
+        let tx = TxId::new(1);
+        let result = index.insert(tx, DocId::new(1), &[f32::NAN, 0.0, 0.0, 0.0]).await;
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_inf_insert_protection() -> Result<()> {
+        let index = HnswIndex::new(test_config(4));
+        let tx = TxId::new(1);
+        let result = index.insert(tx, DocId::new(1), &[f32::INFINITY, 0.0, 0.0, 0.0]).await;
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_inf_search_protection() -> Result<()> {
+        let index = HnswIndex::new(test_config(4));
+        let tx = TxId::new(1);
+        index.insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0]).await?;
+        index.commit(tx).await?;
+
+        let inf_query = [f32::INFINITY, 0.0, 0.0, 0.0];
+        let result = index.search(&inf_query, 5).await;
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_all_doc_ids() {
         let index = HnswIndex::new(test_config(4));
         let tx = TxId::new(1);
