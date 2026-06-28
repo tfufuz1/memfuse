@@ -55,6 +55,14 @@ impl<S: memfuse_core::StorageEngine> TextIndex for Bm25Scorer<S> {
         self.index.rollback_to_tx(tx_id).await
     }
 
+    async fn last_tx_id(&self) -> Result<u64> {
+        self.index.last_tx_id().await
+    }
+
+    async fn len(&self) -> usize {
+        self.index.len().await
+    }
+
     async fn stats(&self) -> Result<TextIndexStats> {
         self.index.stats().await
     }

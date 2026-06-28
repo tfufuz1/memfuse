@@ -214,7 +214,8 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     /// Restores the system to a specific checkpoint by name.
     /// This will rollback the underlying storage to the transaction ID of the checkpoint.
     pub async fn restore_checkpoint(&self, name: &str) -> Result<CheckpointMeta> {
-        let meta = self.get_checkpoint_internal(name)
+        let meta = self
+            .get_checkpoint_internal(name)
             .await?
             .ok_or_else(|| MemFuseError::NotFound(format!("Checkpoint '{}' not found", name)))?;
 
@@ -326,7 +327,6 @@ mod tests {
             Ok(())
         }
         async fn last_seq_no(&self) -> Result<u64> {
-
             Ok(0)
         }
         async fn last_tx_id(&self) -> Result<TxId> {

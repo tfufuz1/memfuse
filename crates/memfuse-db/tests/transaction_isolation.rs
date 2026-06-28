@@ -1,7 +1,7 @@
+use memfuse_core::{DistanceMetric, Result};
 use memfuse_db::{MemFuse, MemFuseConfig};
-use memfuse_core::{Result, DistanceMetric};
-use tempfile::tempdir;
 use std::sync::Arc;
+use tempfile::tempdir;
 use tokio::sync::Barrier;
 
 #[tokio::test]
@@ -14,12 +14,12 @@ async fn test_transaction_atomicity_under_load() -> Result<()> {
     };
     let db = Arc::new(MemFuse::open_with_config(dir.path(), config).await?);
     let collection = Arc::new(db.collection("default").await?);
-    
+
     let num_writers = 4;
     let num_readers = 10;
     let iterations = 20;
     let batch_size = 5; // Jede Transaktion schreibt 5 Dokumente
-    
+
     let barrier = Arc::new(Barrier::new(num_writers + num_readers));
     let mut handles = Vec::new();
 
@@ -34,9 +34,14 @@ async fn test_transaction_atomicity_under_load() -> Result<()> {
                 for j in 0..batch_size {
                     let id = format!("doc_{}_{}_{}", w, i, j);
                     let vec = vec![i as f32; 128];
-                    col.insert_op(&tx, &id, &vec, Some(serde_json::json!({"text": format!("data_{}_{}_{}", w, i, j)})))
-                        .await
-                        .unwrap();
+                    col.insert_op(
+                        &tx,
+                        &id,
+                        &vec,
+                        Some(serde_json::json!({"text": format!("data_{}_{}_{}", w, i, j)})),
+                    )
+                    .await
+                    .unwrap();
                 }
                 tx.commit().await.unwrap();
             }
@@ -54,7 +59,7 @@ async fn test_transaction_atomicity_under_load() -> Result<()> {
             for _ in 0..(iterations * 2) {
                 let results = col.search(&vec![0.0; 128], 1000).await.unwrap();
                 let count = results.len();
-                
+
                 if count % batch_size != 0 {
                     errs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 }
@@ -68,7 +73,10 @@ async fn test_transaction_atomicity_under_load() -> Result<()> {
     }
 
     let final_errors = atomicity_errors.load(std::sync::atomic::Ordering::SeqCst);
-    assert_eq!(final_errors, 0, "Atomicity violation detected! Readers saw partial transaction states.");
-    
+    assert_eq!(
+        final_errors, 0,
+        "Atomicity violation detected! Readers saw partial transaction states."
+    );
+
     Ok(())
 }

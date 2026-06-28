@@ -1,5 +1,5 @@
 use memfuse_checkpoint::PersistentCheckpointStore;
-use memfuse_core::{Result, StorageEngine, StorageStats, TxId, MemFuseError};
+use memfuse_core::{Result, StorageEngine, StorageStats, TxId};
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

@@ -74,7 +74,12 @@ impl<T: Clone> TxBuffer<T> {
     }
 
     /// Creates a new buffer with custom settings.
+    ///
+    /// If `shard_count` is 0, it defaults to 1 to prevent division-by-zero
+    /// in `shard_idx()` (§2 Zero-Panic-Gesetz).
     pub fn new_with_config(shard_count: usize, tx_timeout: Duration) -> Self {
+        // §2: Zero-Panic — shard_count=0 would cause division-by-zero in shard_idx()
+        let shard_count = if shard_count == 0 { 1 } else { shard_count };
         let mut shards = Vec::with_capacity(shard_count);
         for _ in 0..shard_count {
             shards.push(RwLock::new(TxShard::new()));
@@ -163,28 +168,38 @@ impl<T: Clone> TxBuffer<T> {
     }
 
     /// Returns the total number of pending transactions.
+    ///
+    /// WARNING: This iterates over all shards with individual read locks.
+    /// The result is NOT an atomic snapshot of the buffer's size.
+    /// Do not use this as a strict control metric for backpressure.
     pub fn len(&self) -> usize {
         self.shards.iter().map(|s| s.read().ops.len()).sum()
     }
 
     /// Returns true if all shards are empty.
+    ///
+    /// WARNING: Like `len()`, this is not an atomic operation across all shards.
     pub fn is_empty(&self) -> bool {
         self.shards.iter().all(|s| s.read().ops.is_empty())
     }
 
     /// Cleans up expired transactions.
     pub fn reap_orphans(&self) -> Vec<TxId> {
-        let mut expired = Vec::with_capacity(self.len());
+        // Estimate capacity based on a single shard to avoid locking all shards for `len()`
+        let estimated_cap = self.shards[0].read().ops.len() * self.shards.len();
+        let mut expired = Vec::with_capacity(estimated_cap);
         for shard_lock in &self.shards {
-            let mut shard = shard_lock.write();
-            shard.ops.retain(|tx, (_, created)| {
-                if created.elapsed() > self.tx_timeout {
-                    expired.push(*tx);
-                    false
-                } else {
-                    true
-                }
-            });
+            if let Some(mut shard) = shard_lock.try_write() {
+                shard.ops.retain(|tx, (_, created)| {
+                    if created.elapsed() > self.tx_timeout {
+                        expired.push(*tx);
+                        false
+                    } else {
+                        true
+                    }
+                });
+            }
+            std::thread::yield_now();
         }
         expired
     }
@@ -210,8 +225,8 @@ impl<T: Clone> Default for TxBuffer<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use proptest::{prop_assert, prop_assert_eq};
+    use std::sync::Arc;
 
     #[test]
     fn test_tx_buffer_discard() {
@@ -275,10 +290,10 @@ mod tests {
         let buffer = TxBuffer::<String>::new_with_config(1, Duration::from_millis(10));
         let tx = TxId::new(1);
         buffer.begin(tx);
-        
+
         // Wait for timeout
         std::thread::sleep(Duration::from_millis(20));
-        
+
         let expired = buffer.reap_orphans();
         assert_eq!(expired, vec![tx]);
         assert!(buffer.is_empty());
@@ -288,25 +303,37 @@ mod tests {
     fn test_tx_buffer_validate_pending_ops() {
         let buffer = TxBuffer::<String>::new();
         let tx = TxId::new(1);
-        
+
         // No tx yet
         assert!(buffer.validate_pending_ops(tx).is_ok());
-        
+
         // Registered but empty
         buffer.begin(tx);
         assert!(buffer.validate_pending_ops(tx).is_err());
-        
+
         // With ops
-        buffer.stage(tx, IndexOp::Insert { doc_id: DocId::new(1), data: "s".to_string() });
+        buffer.stage(
+            tx,
+            IndexOp::Insert {
+                doc_id: DocId::new(1),
+                data: "s".to_string(),
+            },
+        );
         assert!(buffer.validate_pending_ops(tx).is_ok());
     }
 
     #[test]
     fn test_index_op_helpers() {
-        let op = IndexOp::Insert { doc_id: DocId::new(1), data: "d" };
+        let op = IndexOp::Insert {
+            doc_id: DocId::new(1),
+            data: "d",
+        };
         assert_eq!(op.doc_id(), DocId::new(1));
-        
-        let op2 = IndexOp::Delete::<String> { doc_id: DocId::new(2), data: None };
+
+        let op2 = IndexOp::Delete::<String> {
+            doc_id: DocId::new(2),
+            data: None,
+        };
         assert_eq!(op2.doc_id(), DocId::new(2));
     }
 
@@ -321,6 +348,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_tx_buffer_zero_shards_defaults_to_one() {
+        // FIND-COR-001: shard_count=0 must not panic (§2 Zero-Panic)
+        let buffer = TxBuffer::<u8>::new_with_config(0, Duration::from_secs(1));
+        let tx = TxId::new(42);
+        buffer.begin(tx);
+        buffer.stage(
+            tx,
+            IndexOp::Insert {
+                doc_id: DocId::new(1),
+                data: 0,
+            },
+        );
+        let ops = buffer.drain(tx);
+        assert_eq!(ops.len(), 1);
+        assert!(buffer.is_empty());
+    }
+
     proptest::proptest! {
         #[test]
         fn prop_tx_buffer_isolation(
@@ -328,7 +373,7 @@ mod tests {
             shard_count in 1..256usize
         ) {
             let buffer = TxBuffer::<u64>::new_with_config(shard_count, Duration::from_secs(60));
-            
+
             // 1. Stage values for all unique TXs
             for &id in &tx_ids {
                 let tx = TxId::new(id);
@@ -364,14 +409,14 @@ mod tests {
             timeout_ms in 1..100u64
         ) {
             let buffer = TxBuffer::<u8>::new_with_config(16, Duration::from_millis(timeout_ms));
-            
+
             for i in 0..tx_count {
                 buffer.begin(TxId::new(i as u64));
             }
 
             // Wait double the timeout
             std::thread::sleep(Duration::from_millis(timeout_ms * 2));
-            
+
             let reaped = buffer.reap_orphans();
             prop_assert_eq!(reaped.len(), tx_count);
             prop_assert!(buffer.is_empty());

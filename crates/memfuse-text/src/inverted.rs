@@ -16,6 +16,7 @@ use memfuse_core::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 /// Consolidated metadata for the text index.
@@ -23,6 +24,7 @@ use std::sync::Arc;
 pub struct TextIndexMetadata {
     pub total_docs: u64,
     pub total_tokens: u64,
+    pub avg_doc_len_x1000: u64, // Fixed-point for BM25 caching (FIND-TXT-004)
 }
 
 /// An inverted index stored in the LSM engine.
@@ -31,6 +33,9 @@ pub struct InvertedIndex<S: StorageEngine> {
     storage: Arc<S>,
     prefix: Vec<u8>,
     tokenizer: Arc<dyn Tokenizer>,
+    pub(crate) total_docs: Arc<AtomicU64>,
+    pub(crate) total_tokens: Arc<AtomicU64>,
+    pub(crate) avg_doc_len_x1000: Arc<AtomicU64>, // Cached fixed-point (FIND-TXT-004)
 }
 
 impl<S: StorageEngine> Clone for InvertedIndex<S> {
@@ -39,6 +44,9 @@ impl<S: StorageEngine> Clone for InvertedIndex<S> {
             storage: self.storage.clone(),
             prefix: self.prefix.clone(),
             tokenizer: self.tokenizer.clone(),
+            total_docs: self.total_docs.clone(),
+            total_tokens: self.total_tokens.clone(),
+            avg_doc_len_x1000: self.avg_doc_len_x1000.clone(),
         }
     }
 }
@@ -62,7 +70,24 @@ impl<S: StorageEngine> InvertedIndex<S> {
             storage,
             prefix,
             tokenizer,
+            total_docs: Arc::new(AtomicU64::new(0)),
+            total_tokens: Arc::new(AtomicU64::new(0)),
+            avg_doc_len_x1000: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// Loads index statistics from storage into the cache.
+    pub async fn load_stats(&self) -> Result<()> {
+        let meta_key = self.key("meta:stats");
+        if let Some(bytes) = self.storage.get(&meta_key).await? {
+            let meta: TextIndexMetadata = bincode::deserialize(&bytes)
+                .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
+            self.total_docs.store(meta.total_docs, Ordering::SeqCst);
+            self.total_tokens.store(meta.total_tokens, Ordering::SeqCst);
+            self.avg_doc_len_x1000
+                .store(meta.avg_doc_len_x1000, Ordering::SeqCst);
+        }
+        Ok(())
     }
 
     fn key(&self, suffix: &str) -> Vec<u8> {
@@ -103,38 +128,18 @@ impl<S: StorageEngine> InvertedIndex<S> {
         k
     }
 
-    /// Returns the tombstone key for a document.
-    ///
-    /// A tombstone marks the *previous* posting-list entries of a document as
-    /// stale after an update.  It does **not** suppress the new entries — LSM
-    /// semantics guarantee that a re-written `pl:{term}:{doc_id}` key always
-    /// reflects the latest value.  The tombstone is only used during lazy
-    /// compaction to identify and remove truly-orphaned old-term entries whose
-    /// term no longer appears in the updated document.
-    fn key_tombstone(&self, doc_id: DocId) -> Vec<u8> {
+    fn key_tombstone(&self, doc_id: DocId, term: &str) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
         let id_str = itoa_buf.format(doc_id.inner());
-        let mut k = Vec::with_capacity(self.prefix.len() + 4 + id_str.len());
+        let mut k = Vec::with_capacity(self.prefix.len() + 4 + id_str.len() + 1 + term.len());
         k.extend_from_slice(&self.prefix);
         k.extend_from_slice(b"tbs:");
         k.extend_from_slice(id_str.as_bytes());
+        k.push(b':');
+        k.extend_from_slice(term.as_bytes());
         k
     }
 
-    /// Appends and updates inverted index structures for a document.
-    ///
-    /// # Update strategy — Tombstone path
-    ///
-    /// On first insert all posting-list entries are written eagerly.
-    /// On **update** the old eager-delete loop (N × `storage.delete`) is
-    /// replaced by a single tombstone write (`tbs:{doc_id}`).  The new
-    /// posting-list entries are written to the **same** `pl:{term}:{doc_id}`
-    /// keys — LSM semantics guarantee that the latest write wins, so BM25
-    /// correctness is maintained without reading the old forward index at all.
-    /// Stale entries from terms that were present in the old document but
-    /// absent in the new one can be cleaned up lazily via
-    /// `resolve_tombstones()`.
-    // Traced using OpenTelemetry
     #[tracing::instrument(skip(self, text))]
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
         let tokens = self.tokenizer.tokenize(text);
@@ -150,9 +155,6 @@ impl<S: StorageEngine> InvertedIndex<S> {
         let mut old_len = 0u32;
         let mut is_update = false;
 
-        // Fast-path check: only read the fixed-size doc-length key (4 bytes).
-        // We do NOT read the full forward index here — the tombstone path
-        // removes the need for the old N×delete loop.
         if let Some(bytes) = self.storage.get(&dl_key).await? {
             if bytes.len() == 4 {
                 old_len = u32::from_le_bytes(
@@ -163,22 +165,21 @@ impl<S: StorageEngine> InvertedIndex<S> {
                 );
                 is_update = true;
 
-                // SD-05-TEXT-001: Tombstone path — write a single marker key
-                // instead of eagerly deleting every old posting-list entry.
-                // The new pl: entries overwrite the overlapping old entries via
-                // LSM semantics.  Stale entries for terms no longer in the doc
-                // are cleaned up by resolve_tombstones() during compaction.
-                let tbs_key = self.key_tombstone(doc_id);
-                self.storage.put(tx, &tbs_key, b"1").await?;
+                if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
+                    let old_terms: Vec<String> = bincode::deserialize(&fw_bytes)
+                        .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
+                    for term in old_terms {
+                        let tbs_key = self.key_tombstone(doc_id, &term);
+                        self.storage.put(tx, &tbs_key, &[]).await?;
+                    }
+                }
             }
         }
 
-        // Store new document length
         self.storage
             .put(tx, &dl_key, &new_len.to_le_bytes())
             .await?;
 
-        // Store forward index (unique terms)
         let mut tfs_vec: Vec<(String, u32)> = tfs.into_iter().collect();
         tfs_vec.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -187,7 +188,6 @@ impl<S: StorageEngine> InvertedIndex<S> {
             .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
         self.storage.put(tx, &fw_key, &fw_bytes).await?;
 
-        // Update Metadata (Consolidated)
         let meta_key = self.key("meta:stats");
         let mut meta = if let Some(bytes) = self.storage.get(&meta_key).await? {
             bincode::deserialize::<TextIndexMetadata>(&bytes)
@@ -201,11 +201,22 @@ impl<S: StorageEngine> InvertedIndex<S> {
             meta.total_docs += 1;
         }
 
+        let avg_len = if meta.total_docs > 0 {
+            (meta.total_tokens as f64 / meta.total_docs as f64 * 1000.0) as u64
+        } else {
+            0
+        };
+        meta.avg_doc_len_x1000 = avg_len;
+
         let meta_bytes = bincode::serialize(&meta)
             .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
         self.storage.put(tx, &meta_key, &meta_bytes).await?;
 
-        // Update posting lists (Individual keys: PL:term:doc_id)
+        // FIND-TXT-004: Update cached stats
+        self.total_docs.store(meta.total_docs, Ordering::SeqCst);
+        self.total_tokens.store(meta.total_tokens, Ordering::SeqCst);
+        self.avg_doc_len_x1000.store(avg_len, Ordering::SeqCst);
+
         for (term, tf) in tfs_vec {
             let pl_doc_key = self.key_with_term_doc(&term, doc_id);
             self.storage.put(tx, &pl_doc_key, &tf.to_le_bytes()).await?;
@@ -214,7 +225,6 @@ impl<S: StorageEngine> InvertedIndex<S> {
         Ok(())
     }
 
-    /// Lazily resolves tombstones left by `upsert_document` updates.
     ///
     /// For every document with a `tbs:{doc_id}` marker this method reads the
     /// *current* forward index and removes posting-list entries for terms that
@@ -234,69 +244,37 @@ impl<S: StorageEngine> InvertedIndex<S> {
         let mut resolved = 0u64;
 
         for (tbs_key, _) in tombstones {
-            // Parse doc_id from the tombstone key suffix.
+            // Format: {prefix}tbs:{doc_id}:{term}
             let suffix = &tbs_key[tbs_prefix.len()..];
-            let doc_id_raw = match std::str::from_utf8(suffix)
+            let parts: Vec<&[u8]> = suffix.split(|&b| b == b':').collect();
+            if parts.len() < 2 {
+                continue;
+            }
+
+            let doc_id_raw = match std::str::from_utf8(parts[0])
                 .ok()
                 .and_then(|s| s.parse::<u64>().ok())
             {
                 Some(v) => v,
-                None => continue, // malformed key — skip
+                None => continue,
             };
             let doc_id = DocId::new(doc_id_raw);
+            let term = String::from_utf8_lossy(parts[1]).to_string();
 
             // Read the *current* forward index to know which terms are live.
             let fw_key = self.key_with_id("fw:", doc_id.inner());
-            let live_terms: std::collections::HashSet<String> =
-                if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
-                    bincode::deserialize::<Vec<String>>(&fw_bytes)
-                        .unwrap_or_default()
-                        .into_iter()
-                        .collect()
-                } else {
-                    // Document was subsequently deleted — nothing to clean up.
-                    self.storage.delete(tx, &tbs_key).await?;
-                    resolved += 1;
-                    continue;
-                };
-
-            // Scan all posting-list entries for this document and delete those
-            // whose term is no longer live.
-            //
-            // Key format: {prefix}pl:{term}:{doc_id}
-            // We cannot easily scan by doc_id efficiently here, so we iterate
-            // the full pl: namespace and filter by doc_id suffix.
-            // For large indexes a secondary `pd:{doc_id}:{term}` index would be
-            // better, but is deferred to a future WP.
-            let pl_prefix = {
-                let mut k = Vec::with_capacity(self.prefix.len() + 3);
-                k.extend_from_slice(&self.prefix);
-                k.extend_from_slice(b"pl:");
-                k
+            let is_live = if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
+                let live_terms: Vec<String> =
+                    bincode::deserialize::<Vec<String>>(&fw_bytes).unwrap_or_default();
+                live_terms.contains(&term)
+            } else {
+                false // Document deleted
             };
-            let pl_entries = self.storage.scan_prefix(&pl_prefix).await?;
 
-            let mut itoa_buf = itoa::Buffer::new();
-            let id_str = itoa_buf.format(doc_id.inner());
-
-            for (pl_key, _) in pl_entries {
-                // Key suffix after pl: is "{term}:{doc_id}"
-                let pl_suffix = std::str::from_utf8(&pl_key[pl_prefix.len()..]);
-                let pl_suffix = match pl_suffix {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                };
-                // Split on last ':' to get term and doc_id part
-                if let Some(sep) = pl_suffix.rfind(':') {
-                    let (term_part, doc_part) = pl_suffix.split_at(sep);
-                    let doc_part = &doc_part[1..]; // skip ':'
-                    if doc_part == id_str && !live_terms.contains(term_part) {
-                        self.storage.delete(tx, &pl_key).await?;
-                    }
-                }
+            if !is_live {
+                let pl_key = self.key_with_term_doc(&term, doc_id);
+                self.storage.delete(tx, &pl_key).await?;
             }
-
-            // Remove the tombstone itself.
             self.storage.delete(tx, &tbs_key).await?;
             resolved += 1;
         }
@@ -343,45 +321,75 @@ impl<S: StorageEngine> InvertedIndex<S> {
                 .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
             meta.total_tokens = meta.total_tokens.saturating_sub(doc_len as u64);
             meta.total_docs = meta.total_docs.saturating_sub(1);
+            let avg_len = if meta.total_docs > 0 {
+                (meta.total_tokens as f64 / meta.total_docs as f64 * 1000.0) as u64
+            } else {
+                0
+            };
+            meta.avg_doc_len_x1000 = avg_len;
 
             let meta_bytes = bincode::serialize(&meta)
                 .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
             self.storage.put(tx, &meta_key, &meta_bytes).await?;
+
+            // FIND-TXT-004: Update cached stats
+            self.total_docs.store(meta.total_docs, Ordering::SeqCst);
+            self.total_tokens.store(meta.total_tokens, Ordering::SeqCst);
+            self.avg_doc_len_x1000.store(avg_len, Ordering::SeqCst);
         }
 
         Ok(())
     }
 
     /// Searches the inverted index using BM25.
-    // Traced using OpenTelemetry
     #[tracing::instrument(skip(self, query))]
-    pub async fn search_bm25(&self, query: &str, k: usize) -> Result<Vec<(DocId, f32)>> {
+    pub async fn search_bm25(
+        &self,
+        query: &str,
+        k: usize,
+        max_seq: Option<u64>,
+    ) -> Result<Vec<(DocId, f32)>> {
+        self.search_bm25_at(query, k, max_seq).await
+    }
+
+    /// Searches the inverted index using BM25 at a specific snapshot version.
+    #[tracing::instrument(skip(self, query))]
+    pub async fn search_bm25_at(
+        &self,
+        query: &str,
+        k: usize,
+        max_seq: Option<u64>,
+    ) -> Result<Vec<(DocId, f32)>> {
         let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Fetch Metadata
-        let meta_key = self.key("meta:stats");
-        let meta = if let Some(bytes) = self.storage.get(&meta_key).await? {
-            bincode::deserialize::<TextIndexMetadata>(&bytes)
-                .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?
+        // 🛡️ SICHERUNG: Snapshot-Isolation (FIND-TXT-001)
+        // Wir pinnen die Sequence-Number zu Beginn der Anfrage, damit alle Reads
+        // (Stats, PL, DL) auf demselben konsistenten Stand basieren.
+        let seq = if let Some(s) = max_seq {
+            s
         } else {
-            TextIndexMetadata::default()
+            self.storage.last_seq_no().await?
         };
 
-        if meta.total_docs == 0 {
-            return Ok(Vec::new());
-        }
+        // FIND-TXT-004: Use cached stats instead of storage reads
+        let n = self.total_docs.load(Ordering::Acquire);
+        let cached_avg_len_x1000 = self.avg_doc_len_x1000.load(Ordering::Acquire);
 
-        let avg_doc_len = meta.total_tokens as f32 / meta.total_docs as f32;
+        let avg_doc_len = if n > 0 {
+            cached_avg_len_x1000 as f32 / 1000.0
+        } else {
+            0.0
+        };
 
         let mut scores: HashMap<DocId, f32> = HashMap::new();
         let mut doc_len_cache: HashMap<DocId, u32> = HashMap::new();
 
         for term in &tokens {
             let prefix = self.key_term_prefix(term);
-            let entries = self.storage.scan_prefix(&prefix).await?;
+            let entries = self.storage.scan_prefix_at(&prefix, seq).await?;
 
             let df = entries.len() as u32;
             if df == 0 {
@@ -408,7 +416,9 @@ impl<S: StorageEngine> InvertedIndex<S> {
                 } else {
                     let dl_key = self.key_with_id("dl:", doc_id.inner());
                     let mut len = 0u32;
-                    if let Some(dl_bytes) = self.storage.get(&dl_key).await? {
+                    let dl_bytes_res = self.storage.get_at_seq(&dl_key, seq).await?;
+
+                    if let Some(dl_bytes) = dl_bytes_res {
                         if dl_bytes.len() == 4 {
                             len = u32::from_le_bytes(dl_bytes.as_slice().try_into().map_err(
                                 |_| MemFuseError::Storage("Invalid doc_len length".into()),
@@ -419,8 +429,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
                     len
                 };
 
-                let score =
-                    crate::bm25::score_term(tf, doc_len, avg_doc_len, df, meta.total_docs as u32);
+                let score = crate::bm25::score_term(tf, doc_len, avg_doc_len, df, n as u32);
 
                 *scores.entry(doc_id).or_insert(0.0) += score;
             }
@@ -442,7 +451,15 @@ impl<S: StorageEngine> InvertedIndex<S> {
 #[async_trait]
 impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
-        let results = self.search_bm25(query, k).await?;
+        let results = self.search_bm25(query, k, None).await?;
+        Ok(results
+            .into_iter()
+            .map(|(doc_id, score)| ScoredDocument { doc_id, score })
+            .collect())
+    }
+
+    async fn search_at(&self, query: &str, k: usize, seq_no: u64) -> Result<Vec<ScoredDocument>> {
+        let results = self.search_bm25(query, k, Some(seq_no)).await?;
         Ok(results
             .into_iter()
             .map(|(doc_id, score)| ScoredDocument { doc_id, score })
@@ -467,6 +484,14 @@ impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
 
     async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
         self.storage.rollback_to_tx(tx_id).await
+    }
+
+    async fn last_tx_id(&self) -> Result<u64> {
+        self.storage.last_tx_id().await.map(|tx| tx.inner())
+    }
+
+    async fn len(&self) -> usize {
+        self.total_docs.load(Ordering::Acquire) as usize
     }
 
     async fn stats(&self) -> Result<TextIndexStats> {
@@ -541,6 +566,14 @@ impl<S: StorageEngine> TextIndex for BM25MorphIndex<S> {
         self.inner.rollback_to_tx(tx_id).await
     }
 
+    async fn last_tx_id(&self) -> Result<u64> {
+        self.inner.last_tx_id().await
+    }
+
+    async fn len(&self) -> usize {
+        self.inner.len().await
+    }
+
     async fn stats(&self) -> Result<TextIndexStats> {
         self.inner.stats().await
     }
@@ -551,14 +584,19 @@ mod tests {
     use super::*;
     use parking_lot::RwLock;
 
+    type MockStoreMap = RwLock<HashMap<Vec<u8>, Vec<(Vec<u8>, u64)>>>;
+
     struct MockStorage {
-        store: RwLock<HashMap<Vec<u8>, Vec<u8>>>,
+        // Map from Key -> Vec<(Value, SeqNo)>
+        store: MockStoreMap,
+        next_seq: std::sync::atomic::AtomicU64,
     }
 
     impl MockStorage {
         fn new() -> Self {
             Self {
-                store: RwLock::new(HashMap::new()),
+                store: MockStoreMap::new(HashMap::new()),
+                next_seq: std::sync::atomic::AtomicU64::new(1),
             }
         }
     }
@@ -566,14 +604,33 @@ mod tests {
     #[async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            Ok(self.store.read().get(key).cloned())
+            self.get_at_seq(key, u64::MAX).await
         }
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-            self.store.write().insert(key.to_vec(), value.to_vec());
+            let seq = self
+                .next_seq
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.store
+                .write()
+                .entry(key.to_vec())
+                .or_default()
+                .push((value.to_vec(), seq));
             Ok(())
         }
         async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
-            self.store.write().remove(key);
+            // Write a "tombstone" (empty value) with new sequence
+            let seq = self
+                .next_seq
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let mut w = self.store.write();
+            if let Some(versions) = w.get_mut(key) {
+                versions.push((Vec::new(), seq | memfuse_core::TOMBSTONE_BIT));
+            } else {
+                w.insert(
+                    key.to_vec(),
+                    vec![(Vec::new(), seq | memfuse_core::TOMBSTONE_BIT)],
+                );
+            }
             Ok(())
         }
         async fn commit(&self, _tx_id: TxId) -> Result<()> {
@@ -585,12 +642,28 @@ mod tests {
         async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
             Ok(())
         }
-        async fn get_at_seq(&self, key: &[u8], _seq: u64) -> Result<Option<Vec<u8>>> {
-
-            self.get(key).await
+        async fn get_at_seq(&self, key: &[u8], seq: u64) -> Result<Option<Vec<u8>>> {
+            let store = self.store.read();
+            if let Some(versions) = store.get(key) {
+                // Find latest version <= seq
+                for (val, v_seq) in versions.iter().rev() {
+                    let raw_seq = v_seq & !memfuse_core::TOMBSTONE_BIT;
+                    if raw_seq <= seq {
+                        if (v_seq & memfuse_core::TOMBSTONE_BIT) != 0 {
+                            return Ok(None);
+                        }
+                        return Ok(Some(val.clone()));
+                    }
+                }
+            }
+            Ok(None)
         }
         async fn last_seq_no(&self) -> Result<u64> {
-            Ok(0)
+            // Return latest generated seq
+            Ok(self
+                .next_seq
+                .load(std::sync::atomic::Ordering::SeqCst)
+                .saturating_sub(1))
         }
         async fn last_tx_id(&self) -> Result<TxId> {
             Ok(TxId::new(0))
@@ -619,12 +692,29 @@ mod tests {
             Ok(Vec::new())
         }
         async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+            self.scan_prefix_at(prefix, u64::MAX).await
+        }
+        async fn scan_prefix_at(
+            &self,
+            prefix: &[u8],
+            seq_no: u64,
+        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
             let store = self.store.read();
-            Ok(store
-                .iter()
-                .filter(|(k, _)| k.starts_with(prefix))
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect())
+            let mut results = Vec::new();
+            for (k, versions) in store.iter() {
+                if k.starts_with(prefix) {
+                    for (val, v_seq) in versions.iter().rev() {
+                        let raw_seq = v_seq & !memfuse_core::TOMBSTONE_BIT;
+                        if raw_seq <= seq_no {
+                            if (v_seq & memfuse_core::TOMBSTONE_BIT) == 0 {
+                                results.push((k.clone(), val.clone()));
+                            }
+                            break; // Stop looking at older versions for this key
+                        }
+                    }
+                }
+            }
+            Ok(results)
         }
     }
 
@@ -656,7 +746,7 @@ mod tests {
             .await?;
         storage.commit(tx3).await?;
 
-        let results = index.search_bm25("rust programming", 3).await?;
+        let results = index.search_bm25("rust programming", 3, None).await?;
 
         assert_eq!(results.len(), 2);
         // doc 2 has "rust" twice and "programming" once, should score higher than doc 1
@@ -745,8 +835,8 @@ mod tests {
         storage.commit(tx1).await?;
 
         // Should be in "rust" and "programming"
-        assert_eq!(index.search_bm25("rust", 10).await?.len(), 1);
-        assert_eq!(index.search_bm25("programming", 10).await?.len(), 1);
+        assert_eq!(index.search_bm25("rust", 10, None).await?.len(), 1);
+        assert_eq!(index.search_bm25("programming", 10, None).await?.len(), 1);
 
         // Update d1 to something else
         let tx2 = TxId::new(2);
@@ -761,18 +851,18 @@ mod tests {
         storage.commit(tx_resolve).await?;
 
         // Should NOT be in "rust" or "programming" anymore (resolved)
-        assert_eq!(index.search_bm25("rust", 10).await?.len(), 0);
-        assert_eq!(index.search_bm25("programming", 10).await?.len(), 0);
+        assert_eq!(index.search_bm25("rust", 10, None).await?.len(), 0);
+        assert_eq!(index.search_bm25("programming", 10, None).await?.len(), 0);
         // Should be in "python" and "coding"
-        assert_eq!(index.search_bm25("python", 10).await?.len(), 1);
-        assert_eq!(index.search_bm25("coding", 10).await?.len(), 1);
+        assert_eq!(index.search_bm25("python", 10, None).await?.len(), 1);
+        assert_eq!(index.search_bm25("coding", 10, None).await?.len(), 1);
 
         // Delete d1
         let tx3 = TxId::new(3);
         index.delete_document(tx3, d1).await?;
         storage.commit(tx3).await?;
 
-        assert_eq!(index.search_bm25("python", 10).await?.len(), 0);
+        assert_eq!(index.search_bm25("python", 10, None).await?.len(), 0);
         Ok(())
     }
 
@@ -819,7 +909,7 @@ mod tests {
         let index = InvertedIndex::new(storage.clone(), "stability");
 
         // Case 1: Search empty index
-        let results = index.search_bm25("anything", 10).await?;
+        let results = index.search_bm25("anything", 10, None).await?;
         assert!(results.is_empty());
 
         // Case 2: Document with zero length (e.g. only stop words or punctuation if not handled)
@@ -831,7 +921,7 @@ mod tests {
         index.upsert_document(tx, d1, "").await?;
         storage.commit(tx).await?;
 
-        let results = index.search_bm25("anything", 10).await?;
+        let results = index.search_bm25("anything", 10, None).await?;
         assert!(results.is_empty());
 
         // Case 3: Mixed documents, some very short
@@ -842,12 +932,43 @@ mod tests {
             .await?;
         storage.commit(tx2).await?;
 
-        let results = index.search_bm25("test", 10).await?;
+        let results = index.search_bm25("test", 10, None).await?;
         assert_eq!(results.len(), 2);
         for (_, score) in results {
             assert!(!score.is_nan());
             assert!(!score.is_infinite());
         }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_text_search_snapshot_isolation() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "isolation");
+
+        // 1. Initial State: Document 1
+        let tx1 = TxId::new(1);
+        let d1 = DocId::new(1);
+        index.upsert_document(tx1, d1, "rust programming").await?;
+        storage.commit(tx1).await?;
+        let seq1 = storage.last_seq_no().await?;
+
+        // 2. Second State: Document 2 (should not be visible at seq1)
+        let tx2 = TxId::new(2);
+        let d2 = DocId::new(2);
+        index.upsert_document(tx2, d2, "rust compiler").await?;
+        storage.commit(tx2).await?;
+
+        // 3. Verify Isolation
+        // At seq1, only d1 should exist
+        let results_at_seq1 = index.search_at("rust", 10, seq1).await?;
+        assert_eq!(results_at_seq1.len(), 1);
+        assert_eq!(results_at_seq1[0].doc_id, d1);
+
+        // At latest (None or higher seq), both should exist
+        let results_latest = index.search("rust", 10).await?;
+        assert_eq!(results_latest.len(), 2);
 
         Ok(())
     }

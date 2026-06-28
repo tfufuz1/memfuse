@@ -29,7 +29,7 @@ impl VolatileEncryptionKey {
 
     /// Test-only method to inspect key bytes.
     /// Used to verify zeroing in integration tests.
-    #[cfg(any(test, feature = "test-utils", debug_assertions))]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn inspect_key_bytes_for_test(&self) -> &[u8; 32] {
         &self.key_bytes
     }
@@ -46,5 +46,42 @@ impl std::fmt::Debug for VolatileEncryptionKey {
 impl PartialEq for VolatileEncryptionKey {
     fn eq(&self, other: &Self) -> bool {
         self.key_bytes == other.key_bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_emergency_wipe_zeros_key_bytes() {
+        let raw: [u8; 32] = [0xAA; 32];
+        let mut key = VolatileEncryptionKey::new(raw);
+
+        // Precondition: Key contains expected value
+        assert_eq!(key.inspect_key_bytes_for_test(), &[0xAA; 32]);
+
+        // Action: Trigger emergency wipe
+        key.emergency_wipe();
+
+        // Proof: Key is fully zeroed
+        assert_eq!(
+            key.inspect_key_bytes_for_test(),
+            &[0x00; 32],
+            "All key bytes MUST be zeroed after emergency_wipe()"
+        );
+    }
+
+    #[test]
+    fn test_emergency_wipe_is_idempotent() {
+        let raw: [u8; 32] = [0xFF; 32];
+        let mut key = VolatileEncryptionKey::new(raw);
+
+        key.emergency_wipe();
+        assert_eq!(key.inspect_key_bytes_for_test(), &[0x00; 32]);
+
+        // Second wipe must be safe and idempotent
+        key.emergency_wipe();
+        assert_eq!(key.inspect_key_bytes_for_test(), &[0x00; 32]);
     }
 }

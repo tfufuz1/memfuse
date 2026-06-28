@@ -351,7 +351,7 @@ impl DiskAnnIndex {
             q_guard.clone()
         };
         let (q_min, q_max, quantized) = if let Some(ref q) = quantizer_opt {
-            (q.min, q.max, 1)
+            (q.mins[0], q.maxes[0], 1)
         } else {
             (0.0, 0.0, 0)
         };
@@ -491,12 +491,14 @@ impl DiskAnnIndex {
             let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;
 
             if header.quantized != 0 {
+                let dim = header.dimension as usize;
+                let range = (header.q_max - header.q_min).max(1e-6);
                 *inner.quantizer.write() = Some(crate::quantize::ScalarQuantizer {
-                    min: header.q_min,
-                    max: header.q_max,
-                    scale: 255.0 / (header.q_max - header.q_min).max(1e-6),
-                    inv_scale: (header.q_max - header.q_min) / 255.0,
-                    dimension: header.dimension as usize,
+                    mins: vec![header.q_min; dim],
+                    maxes: vec![header.q_max; dim],
+                    scales: vec![255.0 / range; dim],
+                    inv_scales: vec![range / 255.0; dim],
+                    dimension: dim,
                 });
             }
 
@@ -613,7 +615,12 @@ impl DiskAnnIndex {
 
         let mut cache = self.inner.cache.write();
         if cache.len() * node_size >= self.inner.config.memory_budget {
-            cache.clear();
+            // FIND-IND-004: Replace full cache wipe with 25% partial eviction
+            let to_remove = cache.len() / 4;
+            let keys: Vec<_> = cache.keys().take(to_remove).cloned().collect();
+            for k in keys {
+                cache.remove(&k);
+            }
         }
         cache.insert(index, node.clone());
 

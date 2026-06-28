@@ -1,8 +1,8 @@
+use memfuse_core::{Result, TxId};
 use memfuse_store::wal::{Wal, WalOp};
-use memfuse_core::{TxId, Result};
-use tempfile::tempdir;
 use std::fs::OpenOptions;
 use std::io::Write;
+use tempfile::tempdir;
 
 #[tokio::test]
 async fn test_wal_recovery_from_partial_write() -> Result<()> {
@@ -25,10 +25,7 @@ async fn test_wal_recovery_from_partial_write() -> Result<()> {
 
     // 2. Simuliere einen "Partial Write" (halber Header am Ende)
     {
-        let mut file = OpenOptions::new()
-            .append(true)
-            .open(&wal_path)
-            .unwrap();
+        let mut file = OpenOptions::new().append(true).open(&wal_path).unwrap();
         // Nur 2 Bytes eines 4-Byte Längen-Präfixes
         file.write_all(&[0x10, 0x00]).unwrap();
         file.sync_all().unwrap();
@@ -38,18 +35,18 @@ async fn test_wal_recovery_from_partial_write() -> Result<()> {
     // In der aktuellen Implementierung führt ein fehlerhaftes Read in replay_with_size
     // vermutlich zu einem Fehler. Wir wollen sehen, wie das System reagiert.
     let wal = Wal::open(&wal_path).await;
-    
-    // ANCHOR:REACTION — Hier entscheiden wir: Soll Wal::open scheitern oder 
+
+    // ANCHOR:REACTION — Hier entscheiden wir: Soll Wal::open scheitern oder
     // die korrupten Daten am Ende abschneiden (Truncate)?
-    // Die Sovereign-Core-Doktrin bevorzugt Sicherheit. 
+    // Die Sovereign-Core-Doktrin bevorzugt Sicherheit.
     // Wenn das Log korrupt ist, ist ein expliziter Fehler besser als stillschweigendes Ignorieren.
-    
+
     match wal {
         Ok(w) => {
             let entries = w.replay().await?;
             // Wenn es Ok ist, sollten zumindest die ersten 3 da sein.
             assert_eq!(entries.len(), 3);
-        },
+        }
         Err(e) => {
             println!("WAL open failed as expected on corruption: {:?}", e);
             // Das ist auch ein valides Ergebnis für "Zero Panic" — solange es kein Panic ist.
@@ -86,6 +83,6 @@ async fn test_wal_hmac_chain_violation() -> Result<()> {
 
     let wal = Wal::open(&wal_path).await;
     assert!(wal.is_err(), "Wal must fail replay if HMAC chain is broken");
-    
+
     Ok(())
 }

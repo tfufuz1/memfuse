@@ -1,64 +1,70 @@
 //! Scalar Quantization (SQ8) for HNSW Index.
 // WP:WP-2.2 PRIO:1 NEEDS:NONE
 
-use crate::distance::{
-    cosine_similarity_parts_f32_u8, cosine_similarity_parts_u8, dot_product_f32_u8, dot_product_u8,
-    euclidean_distance_sq_f32_u8, euclidean_distance_sq_u8,
-};
+use crate::distance::euclidean_distance_sq_f32_u8;
 use memfuse_core::DistanceMetric;
 
 use serde::{Deserialize, Serialize};
 
-/// An 8-bit Scalar Quantizer (SQ8) that maps `f32` vectors into `u8` bounds.
+/// An 8-bit Scalar Quantizer (SQ8) with per-dimension scaling.
 ///
 /// Quantization reduces the memory footprint of vector storage by 4x.
+/// Per-dimension scaling improves recall by adapting to different value ranges.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScalarQuantizer {
-    pub min: f32,
-    pub max: f32,
-    pub scale: f32,
-    pub inv_scale: f32,
+    pub mins: Vec<f32>,
+    pub maxes: Vec<f32>,
+    pub scales: Vec<f32>,
+    pub inv_scales: Vec<f32>,
     pub dimension: usize,
 }
 
 impl ScalarQuantizer {
-    /// Creates a new ScalarQuantizer trained on a batch of vectors to find global min/max.
+    /// Creates a new ScalarQuantizer trained on a batch of vectors to find per-dimension min/max.
     pub fn train(batch: &[&[f32]], dimension: usize) -> Self {
+        let mut mins = vec![f32::MAX; dimension];
+        let mut maxes = vec![f32::MIN; dimension];
+
         if batch.is_empty() {
             return Self {
-                min: 0.0,
-                max: 1.0,
-                scale: 255.0,
-                inv_scale: 1.0 / 255.0,
+                mins: vec![0.0; dimension],
+                maxes: vec![1.0; dimension],
+                scales: vec![255.0; dimension],
+                inv_scales: vec![1.0 / 255.0; dimension],
                 dimension,
             };
         }
 
-        let mut min = f32::MAX;
-        let mut max = f32::MIN;
-
         for vec in batch {
-            for &val in *vec {
-                if val < min {
-                    min = val;
+            for i in 0..dimension.min(vec.len()) {
+                let val = vec[i];
+                if val < mins[i] {
+                    mins[i] = val;
                 }
-                if val > max {
-                    max = val;
+                if val > maxes[i] {
+                    maxes[i] = val;
                 }
             }
         }
 
-        // Prevent div by zero if max == min
-        if (max - min).abs() < f32::EPSILON {
-            max = min + 1e-6;
+        let mut scales = Vec::with_capacity(dimension);
+        let mut inv_scales = Vec::with_capacity(dimension);
+
+        for i in 0..dimension {
+            // Prevent div by zero if max == min
+            if (maxes[i] - mins[i]).abs() < f32::EPSILON {
+                maxes[i] = mins[i] + 1e-6;
+            }
+            let range = maxes[i] - mins[i];
+            scales.push(255.0 / range);
+            inv_scales.push(range / 255.0);
         }
 
-        let range = max - min;
         Self {
-            min,
-            max,
-            scale: 255.0 / range,
-            inv_scale: range / 255.0,
+            mins,
+            maxes,
+            scales,
+            inv_scales,
             dimension,
         }
     }
@@ -67,15 +73,10 @@ impl ScalarQuantizer {
     pub fn quantize(&self, vector: &[f32]) -> Vec<u8> {
         vector
             .iter()
-            .map(|&v| {
-                let clamped = v.clamp(self.min, self.max);
-                // ANCHOR:PERF:CAST-001 — Sicherer Integer-Cast mit Sättigung
-                // WP:WP-0.0 PRIO:2 NEEDS:NONE
-                // AGENT:03 DATE:2026-05-16 STATUS:DONE
-                // CREATED:2026-05-09 DEADLINE:NONE
-                // FUNDORT: memfuse-index/src/quantize.rs
-                // BEHEBUNG: Saturated casting via clamp and round.
-                ((clamped - self.min) * self.scale)
+            .enumerate()
+            .map(|(i, &v)| {
+                let clamped = v.clamp(self.mins[i], self.maxes[i]);
+                ((clamped - self.mins[i]) * self.scales[i])
                     .round()
                     .clamp(0.0, 255.0) as u8
             })
@@ -86,7 +87,8 @@ impl ScalarQuantizer {
     pub fn dequantize(&self, vector: &[u8]) -> Vec<f32> {
         vector
             .iter()
-            .map(|&v| (v as f32) * self.inv_scale + self.min)
+            .enumerate()
+            .map(|(i, &v)| (v as f32) * self.inv_scales[i] + self.mins[i])
             .collect()
     }
 
@@ -106,23 +108,18 @@ impl ScalarQuantizer {
 
         let acc = match metric {
             DistanceMetric::Cosine => {
-                let parts = cosine_similarity_parts_f32_u8(query, quantized);
-                let alpha = self.inv_scale;
-                let offset = self.min;
-                let d = query.len() as f32;
+                // For per-dimension scaling, we must dequantize each component
+                let mut dot = 0.0;
+                let mut norm_q_sq = 0.0;
+                let mut norm_d_sq = 0.0;
 
-                // dot(query, dequant) = alpha * dot(query, quantized) + offset * sum(query)
-                let sum_query: f32 = query.iter().sum();
-                let dot = alpha * parts.dot_f32_u8 + offset * sum_query;
-
-                // norm(query)^2
-                let norm_q_sq: f32 = query.iter().map(|&x| x * x).sum();
-
-                // norm(dequant)^2 = sum (yq * alpha + offset)^2
-                // = alpha^2 * sum(yq^2) + 2 * alpha * offset * sum(yq) + d * offset^2
-                let norm_d_sq = alpha * alpha * (parts.norm_u8_sq as f32)
-                    + 2.0 * alpha * offset * (parts.sum_u8 as f32)
-                    + d * offset * offset;
+                for i in 0..self.dimension {
+                    let qi = query[i];
+                    let di = (quantized[i] as f32) * self.inv_scales[i] + self.mins[i];
+                    dot += qi * di;
+                    norm_q_sq += qi * qi;
+                    norm_d_sq += di * di;
+                }
 
                 if norm_q_sq <= 0.0 || norm_d_sq <= 0.0 {
                     1.0
@@ -133,14 +130,16 @@ impl ScalarQuantizer {
             }
             DistanceMetric::Euclidean => {
                 let dist_sq =
-                    euclidean_distance_sq_f32_u8(query, quantized, self.inv_scale, self.min);
+                    euclidean_distance_sq_f32_u8(query, quantized, &self.inv_scales, &self.mins);
                 dist_sq.sqrt()
             }
             DistanceMetric::DotProduct => {
-                let dot_f32_u8 = dot_product_f32_u8(query, quantized);
-                let sum_query: f32 = query.iter().sum();
-                // dot = alpha * dot_f32_u8 + offset * sum(query)
-                let dot = self.inv_scale * dot_f32_u8 + self.min * sum_query;
+                let mut dot = 0.0;
+                for i in 0..self.dimension {
+                    let qi = query[i];
+                    let di = (quantized[i] as f32) * self.inv_scales[i] + self.mins[i];
+                    dot += qi * di;
+                }
                 -dot
             }
         };
@@ -161,26 +160,22 @@ impl ScalarQuantizer {
             ));
         }
 
+        let mut dot = 0.0_f32;
+        let mut norm_a_sq = 0.0_f32;
+        let mut norm_b_sq = 0.0_f32;
+        let mut dist_sq = 0.0_f32;
+
+        for i in 0..self.dimension {
+            let v1 = (q1[i] as f32) * self.inv_scales[i] + self.mins[i];
+            let v2 = (q2[i] as f32) * self.inv_scales[i] + self.mins[i];
+            dot += v1 * v2;
+            norm_a_sq += v1 * v1;
+            norm_b_sq += v2 * v2;
+            dist_sq += (v1 - v2).powi(2);
+        }
+
         let acc = match metric {
             DistanceMetric::Cosine => {
-                let parts = cosine_similarity_parts_u8(q1, q2);
-                let alpha = self.inv_scale;
-                let offset = self.min;
-                let d = q1.len() as f32;
-
-                // dot(dequant1, dequant2) = alpha^2 * dot(q1, q2) + alpha * offset * (sum_q1 + sum_q2) + d * offset^2
-                let dot = alpha * alpha * (parts.dot as f32)
-                    + alpha * offset * ((parts.sum_a + parts.sum_b) as f32)
-                    + d * offset * offset;
-
-                // norm(dequant)^2 = alpha^2 * sum(q^2) + 2 * alpha * offset * sum(q) + d * offset^2
-                let norm_a_sq = alpha * alpha * (parts.norm_a_sq as f32)
-                    + 2.0 * alpha * offset * (parts.sum_a as f32)
-                    + d * offset * offset;
-                let norm_b_sq = alpha * alpha * (parts.norm_b_sq as f32)
-                    + 2.0 * alpha * offset * (parts.sum_b as f32)
-                    + d * offset * offset;
-
                 if norm_a_sq <= 0.0 || norm_b_sq <= 0.0 {
                     1.0
                 } else {
@@ -188,23 +183,8 @@ impl ScalarQuantizer {
                     (1.0 - sim).max(0.0)
                 }
             }
-            DistanceMetric::Euclidean => {
-                let dist_sq_u8 = euclidean_distance_sq_u8(q1, q2);
-                let dist_sq = (self.inv_scale * self.inv_scale) * (dist_sq_u8 as f32);
-                dist_sq.sqrt()
-            }
-            DistanceMetric::DotProduct => {
-                let dot_u8 = dot_product_u8(q1, q2);
-                let parts = cosine_similarity_parts_u8(q1, q2);
-                let alpha = self.inv_scale;
-                let offset = self.min;
-                let d = q1.len() as f32;
-
-                let dot = alpha * alpha * (dot_u8 as f32)
-                    + alpha * offset * ((parts.sum_a + parts.sum_b) as f32)
-                    + d * offset * offset;
-                -dot
-            }
+            DistanceMetric::Euclidean => dist_sq.sqrt(),
+            DistanceMetric::DotProduct => -dot,
         };
         Ok(acc)
     }
@@ -224,18 +204,17 @@ mod tests {
         let quant = q.quantize(&v1);
         let dequant = q.dequantize(&quant);
 
-        let range = q.max - q.min;
         let mut max_err = 0.0_f32;
 
-        for (a, b) in v1.iter().zip(dequant.iter()) {
-            let err = (a - b).abs();
+        for i in 0..4 {
+            let range = q.maxes[i] - q.mins[i];
+            let err = (v1[i] - dequant[i]).abs();
             if err > max_err {
                 max_err = err;
             }
+            // Error should be strictly less than 1% of the per-dim range
+            assert!(err < 0.01 * range);
         }
-
-        // Error should be strictly less than 1% of the range (actually around 1/255 = 0.39%)
-        assert!(max_err < 0.01 * range);
     }
 
     #[test]
@@ -276,8 +255,8 @@ mod tests {
     #[test]
     fn test_train_empty_batch() {
         let q = ScalarQuantizer::train(&[], 128);
-        assert_eq!(q.min, 0.0);
-        assert_eq!(q.max, 1.0);
+        assert_eq!(q.mins[0], 0.0);
+        assert_eq!(q.maxes[0], 1.0);
         assert_eq!(q.dimension, 128);
 
         let v = vec![0.5; 128];

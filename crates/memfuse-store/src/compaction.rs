@@ -104,8 +104,16 @@ impl CompactionEngine {
             self.select_compaction_candidates(&ssts)
         };
 
-        let indices = match candidates {
-            Some(indices) if indices.len() >= 2 => indices,
+        let (indices, is_full_compaction, is_bottom_tier) = match candidates {
+            Some(indices) if indices.len() >= 2 => {
+                let is_full = {
+                    let ssts = sstables.read().await;
+                    indices.len() == ssts.len()
+                };
+                // FIND-STO-001: Bottom-tier detection
+                let is_bottom = indices.contains(&0);
+                (indices, is_full, is_bottom)
+            }
             _ => return Ok(false),
         };
 
@@ -120,8 +128,13 @@ impl CompactionEngine {
         // 3. Perform the merge (no lock held — this is the expensive part)
         let min_snapshot_seq = self.snapshot_registry.min_active_seqno();
         let output_path = Self::generate_sst_path(data_path);
-        self.merge_sstables(&input_ssts, &output_path, min_snapshot_seq)
-            .await?;
+        self.merge_sstables(
+            &input_ssts,
+            &output_path,
+            min_snapshot_seq,
+            is_full_compaction || is_bottom_tier,
+        )
+        .await?;
 
         // 4. Open the new SSTable
         let new_reader = Arc::new(
@@ -210,7 +223,17 @@ impl CompactionEngine {
             }
         }
 
-        // Return the first tier with enough candidates
+        // Return the most-filled tier with enough candidates (FIND-STO-002)
+        // Tie-breaker: prefer tiers with smaller files (likely closer to L0)
+        tiers.sort_by(|a, b| {
+            b.len().cmp(&a.len()).then_with(|| {
+                ssts[a[0]]
+                    .metadata()
+                    .file_size
+                    .cmp(&ssts[b[0]].metadata().file_size)
+            })
+        });
+
         for tier in tiers {
             if tier.len() >= self.config.min_sstables_per_tier {
                 return Some(tier);
@@ -242,6 +265,7 @@ impl CompactionEngine {
         inputs: &[Arc<SstableReader>],
         output_path: &std::path::Path,
         min_snapshot_seq: u64,
+        is_full_compaction: bool,
     ) -> Result<()> {
         struct HeapItem {
             key: bytes::Bytes,
@@ -326,8 +350,12 @@ impl CompactionEngine {
                 let is_tombstone = (item.seq & TOMBSTONE_BIT) != 0;
                 let raw_seq = item.seq & !TOMBSTONE_BIT;
 
-                // GC tombstones that are older than all active snapshots
-                if !(is_tombstone && raw_seq < min_snapshot_seq) {
+                // FIND-STO-001: Tombstone-Retention — only GC tombstones during
+                // full compaction (or bottom-tier merge) when no older values can exist.
+                let can_gc_tombstone =
+                    is_tombstone && raw_seq < min_snapshot_seq && is_full_compaction;
+
+                if !can_gc_tombstone {
                     builder
                         .add(&item.key, &item.value, item.seq, item.tx)
                         .await?;
@@ -459,7 +487,7 @@ mod tests {
 
         let output = tmp.path().join("merged.sst");
         engine
-            .merge_sstables(&[sst1, sst2], &output, 0)
+            .merge_sstables(&[sst1, sst2], &output, 0, true)
             .await
             .expect("merge");
 
@@ -505,7 +533,7 @@ mod tests {
 
         // min_snapshot_seq=100 → tombstone at seq=5 is safe to GC
         engine
-            .merge_sstables(&[sst1], &output, 100)
+            .merge_sstables(&[sst1], &output, 100, true)
             .await
             .expect("merge");
 
@@ -548,7 +576,7 @@ mod tests {
 
         // min_snapshot_seq=2 → tombstone at seq=5 is NOT safe to GC
         engine
-            .merge_sstables(&[sst1], &output, 2)
+            .merge_sstables(&[sst1], &output, 2, true)
             .await
             .expect("merge");
 
@@ -797,6 +825,120 @@ mod tests {
         assert!(
             stabilized,
             "Compaction didn't reach target segment count in time"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_phantom_data_after_partial_compaction() {
+        let tmp = TempDir::new().expect("temp dir");
+        let registry = Arc::new(SnapshotRegistry::new());
+        let bc = create_block_cache(1);
+        let engine = CompactionEngine::new(
+            CompactionConfig {
+                min_sstables_per_tier: 2,
+                ..CompactionConfig::default()
+            },
+            registry,
+            Arc::clone(&bc),
+            None,
+            Arc::new(memfuse_core::ResourceTracker::new(
+                memfuse_core::ResourceBudget {
+                    memory_limit: 1024 * 1024,
+                },
+            )),
+        );
+
+        // Scenario:
+        // SST1 (Older): [key-1: value-1, seq 10]
+        // SST2 (Newer): [key-1: tombstone, seq 20]
+        // SST3 (Irrelevant): [key-x: val, seq 30]
+        // Partial compaction of {SST1, SST2} must NOT GC the tombstone,
+        // because we don't know if an even older version exists in some other SSTable not in the set.
+        // Wait, even if we compact ALL SSTables that contain key-1, if it's not a FULL compaction
+        // of the entire system, we must be conservative.
+
+        let sst1 = create_test_sstable(
+            tmp.path(),
+            "sst1.sst",
+            &[(b"key-1", b"value-1", 10)],
+            Arc::clone(&bc),
+        )
+        .await;
+        // seq 20 | TOMBSTONE_BIT
+        let sst2 = create_test_sstable(
+            tmp.path(),
+            "sst2.sst",
+            &[(b"key-1", &[], 20 | TOMBSTONE_BIT)],
+            Arc::clone(&bc),
+        )
+        .await;
+        let sst3 = create_test_sstable(
+            tmp.path(),
+            "sst3.sst",
+            &[(b"key-x", b"val-x", 30)],
+            Arc::clone(&bc),
+        )
+        .await;
+
+        let _sstables = Arc::new(tokio::sync::RwLock::new(vec![
+            Arc::clone(&sst1),
+            Arc::clone(&sst2),
+            Arc::clone(&sst3),
+        ]));
+
+        // min_snapshot_seq is 100 (high enough that 20 would normally be GC'd)
+        let engine = Arc::new(engine);
+        engine.snapshot_registry.pin(100);
+
+        // Manually trigger merger for {sst1, sst2} -> partial compaction
+        let output_path = tmp.path().join("merged.sst");
+        engine
+            .merge_sstables(&[sst1, sst2], &output_path, 100, false) // is_full = false
+            .await
+            .expect("merge");
+
+        let reader = SstableReader::open(&output_path, Arc::clone(&bc))
+            .await
+            .expect("open");
+
+        // Verify tombstone is RETAINED
+        let res = reader.get(b"key-1").await.expect("get");
+        assert!(
+            res.is_some(),
+            "Tombstone should be RETAINED in partial compaction"
+        );
+        let (_, seq, _) = res.unwrap();
+        assert_eq!(seq & TOMBSTONE_BIT, TOMBSTONE_BIT);
+
+        // Now test FULL compaction
+        let output_path_full = tmp.path().join("full.sst");
+        let sst1 = create_test_sstable(
+            tmp.path(),
+            "sst1_b.sst",
+            &[(b"key-1", b"value-1", 10)],
+            Arc::clone(&bc),
+        )
+        .await;
+        let sst2 = create_test_sstable(
+            tmp.path(),
+            "sst2_b.sst",
+            &[(b"key-1", &[], 20 | TOMBSTONE_BIT)],
+            Arc::clone(&bc),
+        )
+        .await;
+
+        engine
+            .merge_sstables(&[sst1, sst2], &output_path_full, 100, true) // is_full = true
+            .await
+            .expect("merge");
+
+        let reader_full = SstableReader::open(&output_path_full, Arc::clone(&bc))
+            .await
+            .expect("open");
+        let res_full = reader_full.get(b"key-1").await.expect("get");
+        assert!(
+            res_full.is_none(),
+            "Tombstone should be REMOVED in full compaction"
         );
     }
 

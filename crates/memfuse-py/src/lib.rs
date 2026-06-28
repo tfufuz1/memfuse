@@ -198,14 +198,11 @@ impl PyTextEmbedder {
     #[new]
     #[pyo3(signature = (model_id=None))]
     pub fn new(model_id: Option<&str>) -> PyResult<Self> {
-        let embedder = if let Some(id) = model_id {
-            memfuse_embed::TextEmbedder::from_hub(id).map_err(memfuse_err)?
-        } else {
-            memfuse_embed::TextEmbedder::load_default().map_err(memfuse_err)?
-        };
-        Ok(Self {
-            inner: Arc::new(embedder),
-        })
+        let _ = model_id;
+        Err(pyo3::exceptions::PyValueError::new_err(
+            "Online model downloading is disabled to enforce air-gapped sovereignty (§1). \
+             Please use TextEmbedder.load(path) to load a local ONNX model."
+        ))
     }
 
     /// Loads a model from a local directory.
@@ -441,14 +438,14 @@ macro_rules! memfuse_crud_methods {
             }
 
             /// Sets the text embedder for auto-embedding features.
-            pub fn set_embedder(&mut self, embedder: PyTextEmbedder) -> PyResult<()> {
+            pub fn set_embedder(
+                &mut self,
+                py: Python<'_>,
+                embedder: PyTextEmbedder,
+            ) -> PyResult<()> {
                 let rt = get_runtime()?;
-                pyo3::Python::with_gil(|py| {
-                    py.allow_threads(|| {
-                        rt.block_on(self.inner.set_embedder(embedder.inner.clone()))
-                    })
-                });
-                Ok(())
+                py.allow_threads(|| rt.block_on(self.inner.set_embedder(embedder.inner.clone())))
+                    .map_err(memfuse_err)
             }
 
             /// Inserts a text document and automatically generates its embedding.

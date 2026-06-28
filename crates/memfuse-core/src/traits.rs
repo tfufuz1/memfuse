@@ -121,6 +121,20 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Scans a range of keys with the given prefix.
     async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
 
+    /// Scans keys with a prefix, returning only entries visible at or before `seq_no`.
+    ///
+    /// # Contract
+    /// Must respect MVCC snapshot isolation.
+    async fn scan_prefix_at(
+        &self,
+        _prefix: &[u8],
+        _seq_no: u64,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        Err(crate::error::MemFuseError::PolicyViolation(
+            "scan_prefix_at must be explicitly implemented to guarantee snapshot isolation".into(),
+        ))
+    }
+
     /// Scans a range of keys between `start` and `end` bounds.
     async fn scan(
         &self,
@@ -143,7 +157,7 @@ pub trait StorageEngine: Send + Sync + 'static {
 pub trait VectorIndex: Send + Sync + 'static {
     /// Inserts a vector with an associated document ID.
     async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()>;
-    
+
     /// Returns all active (non-deleted) document IDs in the index.
     async fn all_doc_ids(&self) -> Result<Vec<DocId>> {
         Ok(Vec::new())
@@ -160,7 +174,27 @@ pub trait VectorIndex: Send + Sync + 'static {
     /// Searches for the k nearest neighbors to a query vector.
     async fn search(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>>;
 
+    /// Searches for the k nearest neighbors to a query vector at a specific sequence number.
+    async fn search_at(
+        &self,
+        _query: &[f32],
+        _k: usize,
+        _seq_no: u64,
+    ) -> Result<Vec<ScoredDocument>> {
+        Err(crate::error::MemFuseError::PolicyViolation(
+            "search_at must be explicitly implemented to guarantee snapshot isolation".into(),
+        ))
+    }
+
     /// Searches with an optional filter predicate.
+    ///
+    /// # Default Behaviour
+    /// Returns an error if a filter is provided. Implementors **MUST** override
+    /// this method if filtered search is supported by their vector engine.
+    ///
+    /// # Note
+    /// This default exists solely for backward compatibility. Relying on it
+    /// at runtime (with `filter.is_some()`) will always produce an `Index` error.
     async fn search_filtered(
         &self,
         query: &[f32],
@@ -229,6 +263,18 @@ pub trait TextIndex: Send + Sync + 'static {
     /// Searches for documents matching the query.
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>>;
 
+    /// Searches for documents matching the query at a specific sequence number.
+    async fn search_at(
+        &self,
+        _query: &str,
+        _k: usize,
+        _seq_no: u64,
+    ) -> Result<Vec<ScoredDocument>> {
+        Err(crate::error::MemFuseError::PolicyViolation(
+            "search_at must be explicitly implemented to guarantee snapshot isolation".into(),
+        ))
+    }
+
     /// Inserts or updates a document in the index.
     async fn insert(&self, tx: TxId, id: DocId, text: &str) -> Result<()>;
 
@@ -243,6 +289,17 @@ pub trait TextIndex: Send + Sync + 'static {
 
     /// Rolls back the entire index state to a specific transaction ID.
     async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()>;
+
+    /// Returns the last transaction ID processed by the index.
+    async fn last_tx_id(&self) -> Result<u64>;
+
+    /// Returns the number of documents in the index.
+    async fn len(&self) -> usize;
+
+    /// Returns true if the index is empty.
+    async fn is_empty(&self) -> bool {
+        self.len().await == 0
+    }
 
     /// Returns index statistics.
     async fn stats(&self) -> Result<TextIndexStats>;
@@ -266,6 +323,18 @@ pub trait GraphIndex: Send + Sync + 'static {
         max_hops: usize,
     ) -> crate::Result<Vec<(crate::types::EntityId, f32)>>;
 
+    /// Traverses the entity graph using BFS up to a maximum number of hops at a specific sequence number.
+    async fn traverse_at(
+        &self,
+        _start_node: crate::types::EntityId,
+        _max_hops: usize,
+        _seq_no: u64,
+    ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
+        Err(crate::error::MemFuseError::PolicyViolation(
+            "traverse_at must be explicitly implemented to guarantee snapshot isolation".into(),
+        ))
+    }
+
     /// Inserts or updates a node entity.
     async fn add_entity(
         &self,
@@ -285,6 +354,17 @@ pub trait GraphIndex: Send + Sync + 'static {
 
     /// Rolls back the entire graph state to a specific transaction ID.
     async fn rollback_to_tx(&self, tx_id: crate::types::TxId) -> crate::Result<()>;
+
+    /// Returns the last transaction ID processed by the index.
+    async fn last_tx_id(&self) -> crate::Result<u64>;
+
+    /// Returns the number of entities in the index.
+    async fn len(&self) -> usize;
+
+    /// Returns true if the index is empty.
+    async fn is_empty(&self) -> bool {
+        self.len().await == 0
+    }
 
     /// Collects statistics for the Graph.
     async fn stats(&self) -> crate::Result<GraphIndexStats>;
@@ -351,26 +431,60 @@ mod tests {
         struct MockStorage(Log);
         #[async_trait::async_trait]
         impl StorageEngine for MockStorage {
-            async fn get(&self, _: &[u8]) -> Result<Option<Vec<u8>>> { Ok(None) }
-            async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> { Ok(None) }
+            async fn get(&self, _: &[u8]) -> Result<Option<Vec<u8>>> {
+                Ok(None)
+            }
+            async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> {
+                Ok(None)
+            }
             async fn put(&self, _: TxId, key: &[u8], value: &[u8]) -> Result<()> {
                 self.0.lock().unwrap().push((key.to_vec(), value.to_vec()));
                 Ok(())
             }
-            async fn delete(&self, _: TxId, _: &[u8]) -> Result<()> { Ok(()) }
-            async fn commit(&self, _: TxId) -> Result<()> { Ok(()) }
-            async fn rollback(&self, _: TxId) -> Result<()> { Ok(()) }
-            async fn rollback_to_tx(&self, _: TxId) -> Result<()> { Ok(()) }
-            async fn flush(&self) -> Result<()> { Ok(()) }
-            async fn stats(&self) -> Result<StorageStats> { 
-                Ok(StorageStats { num_segments: 0, total_size_bytes: 0, memtable_size_bytes: 0 }) 
+            async fn delete(&self, _: TxId, _: &[u8]) -> Result<()> {
+                Ok(())
             }
-            async fn last_seq_no(&self) -> Result<u64> { Ok(0) }
-            async fn last_tx_id(&self) -> Result<TxId> { Ok(TxId(0)) }
-            async fn pin_checkpoint(&self, _: u64) -> Result<()> { Ok(()) }
-            async fn unpin_checkpoint(&self, _: u64) -> Result<()> { Ok(()) }
-            async fn scan_prefix(&self, _: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> { Ok(vec![]) }
-            async fn scan(&self, _: std::ops::Bound<&[u8]>, _: std::ops::Bound<&[u8]>) -> Result<Vec<(Vec<u8>, Vec<u8>)>> { Ok(vec![]) }
+            async fn commit(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn flush(&self) -> Result<()> {
+                Ok(())
+            }
+            async fn stats(&self) -> Result<StorageStats> {
+                Ok(StorageStats {
+                    num_segments: 0,
+                    total_size_bytes: 0,
+                    memtable_size_bytes: 0,
+                })
+            }
+            async fn last_seq_no(&self) -> Result<u64> {
+                Ok(0)
+            }
+            async fn last_tx_id(&self) -> Result<TxId> {
+                Ok(TxId(0))
+            }
+            async fn pin_checkpoint(&self, _: u64) -> Result<()> {
+                Ok(())
+            }
+            async fn unpin_checkpoint(&self, _: u64) -> Result<()> {
+                Ok(())
+            }
+            async fn scan_prefix(&self, _: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+                Ok(vec![])
+            }
+            async fn scan(
+                &self,
+                _: std::ops::Bound<&[u8]>,
+                _: std::ops::Bound<&[u8]>,
+            ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+                Ok(vec![])
+            }
         }
 
         let store = MockStorage(std::sync::Arc::new(std::sync::Mutex::new(vec![])));
@@ -387,19 +501,37 @@ mod tests {
         struct MockIndex(std::sync::atomic::AtomicUsize);
         #[async_trait::async_trait]
         impl VectorIndex for MockIndex {
-            async fn insert(&self, _: TxId, _: DocId, _: &[f32]) -> Result<()> { 
+            async fn insert(&self, _: TxId, _: DocId, _: &[f32]) -> Result<()> {
                 self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                Ok(()) 
+                Ok(())
             }
-            async fn search(&self, _: &[f32], _: usize) -> Result<Vec<ScoredDocument>> { Ok(vec![]) }
-            async fn delete(&self, _: TxId, _: DocId) -> Result<()> { Ok(()) }
-            async fn commit(&self, _: TxId) -> Result<()> { Ok(()) }
-            async fn rollback(&self, _: TxId) -> Result<()> { Ok(()) }
-            async fn rollback_to_tx(&self, _: TxId) -> Result<()> { Ok(()) }
-            async fn last_tx_id(&self) -> Result<u64> { Ok(0) }
-            async fn len(&self) -> usize { self.0.load(std::sync::atomic::Ordering::SeqCst) }
+            async fn search(&self, _: &[f32], _: usize) -> Result<Vec<ScoredDocument>> {
+                Ok(vec![])
+            }
+            async fn delete(&self, _: TxId, _: DocId) -> Result<()> {
+                Ok(())
+            }
+            async fn commit(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn last_tx_id(&self) -> Result<u64> {
+                Ok(0)
+            }
+            async fn len(&self) -> usize {
+                self.0.load(std::sync::atomic::Ordering::SeqCst)
+            }
             async fn stats(&self) -> Result<VectorIndexStats> {
-                Ok(VectorIndexStats { num_vectors: 0, memory_usage_bytes: 0, num_layers: 0 })
+                Ok(VectorIndexStats {
+                    num_vectors: 0,
+                    memory_usage_bytes: 0,
+                    num_layers: 0,
+                })
             }
         }
 

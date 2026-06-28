@@ -89,7 +89,7 @@ impl IntegrityVerifier {
     }
 
     /// Verifies an entry and updates the chain state.
-    pub fn verify_and_update(&mut self, entry: &WalEntrySnapshot) -> Result<()> {
+    pub fn verify_and_update(&mut self, entry: &WalEntrySnapshot, offset: u64) -> Result<()> {
         let mut mac = WalHmac::new(&self.integrity_key)?;
         mac.update(&self.last_hmac);
         mac.update(&entry.seq_no.to_le_bytes());
@@ -104,7 +104,7 @@ impl IntegrityVerifier {
         let computed = mac.finalize();
         if computed != entry.checksum || entry.prev_hmac != self.last_hmac {
             return Err(memfuse_core::MemFuseError::WalCorruption {
-                offset: 0,
+                offset,
                 reason: format!("HMAC mismatch for seq {}", entry.seq_no),
             });
         }
@@ -152,7 +152,7 @@ mod tests {
             prev_hmac: [0u8; 32],
         };
 
-        verifier.verify_and_update(&e1).expect("e1 valid");
+        verifier.verify_and_update(&e1, 100).expect("e1 valid");
 
         // entry 2
         let mut hmac2 = WalHmac::new(key).unwrap();
@@ -171,7 +171,7 @@ mod tests {
             prev_hmac: checksum1,
         };
 
-        verifier.verify_and_update(&e2).expect("e2 valid");
+        verifier.verify_and_update(&e2, 200).expect("e2 valid");
 
         // entry 3 (corrupt)
         let e3 = WalEntrySnapshot {
@@ -182,7 +182,12 @@ mod tests {
             checksum: [0u8; 32],
             prev_hmac: checksum2,
         };
-        assert!(verifier.verify_and_update(&e3).is_err());
+        let err = verifier.verify_and_update(&e3, 300).unwrap_err();
+        if let memfuse_core::MemFuseError::WalCorruption { offset, .. } = err {
+            assert_eq!(offset, 300);
+        } else {
+            panic!("Expected WalCorruption with offset");
+        }
     }
 
     #[tokio::test]

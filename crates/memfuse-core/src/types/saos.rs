@@ -79,6 +79,12 @@ pub struct FusionWeights {
 
 impl FusionWeights {
     pub fn new(vector: f32, text: f32, graph: f32, metadata: f32) -> Result<Self> {
+        // FIND-COR-004: Guard against negative weights
+        if vector < 0.0 || text < 0.0 || graph < 0.0 || metadata < 0.0 {
+            return Err(MemFuseError::InvalidInput(
+                "Fusion weights must be non-negative".into(),
+            ));
+        }
         let sum = vector + text + graph + metadata;
         if (sum - 1.0).abs() > 1e-6 {
             // C-2 issue resolved! f32::EPSILON -> 1e-6
@@ -283,10 +289,10 @@ mod tests {
     fn test_token_budget_edge_cases() {
         let mut budget = TokenBudget::new(100, 20);
         assert_eq!(budget.available(), 80);
-        
+
         budget.consume(50);
         assert_eq!(budget.available(), 30);
-        
+
         budget.consume(40); // Over consumption
         assert_eq!(budget.available(), 0);
         assert_eq!(budget.consumed(), 90);

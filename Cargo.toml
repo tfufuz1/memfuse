@@ -78,13 +78,13 @@ tonic = { version = "0.12", features = ["tls"] }
 prost = "0.13"
 
 # Embedding & ML
-ort = "2.0.0-rc.12"
-hf-hub = "0.3"
+ort = { version = "2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "tracing", "download-binaries", "tls-rustls", "copy-dylibs", "api-24"] }
+hf-hub = { version = "0.3", default-features = false }
 tokenizers = "0.19"
 ndarray = "0.15"
 
 # Network
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [profile.release]
 opt-level = 3

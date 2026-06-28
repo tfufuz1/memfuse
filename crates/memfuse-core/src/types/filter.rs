@@ -68,7 +68,7 @@ mod tests {
                 value: json!(1),
             }),
         );
-        
+
         assert!(matches!(f3, FilterExpr::Or(_, _)));
     }
 }

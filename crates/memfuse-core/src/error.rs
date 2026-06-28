@@ -128,7 +128,7 @@ mod tests {
         let slice: &[u8] = &[1, 2, 3];
         let try_from_res: std::result::Result<[u8; 4], _> = slice.try_into();
         assert!(try_from_res.is_err());
-        
+
         let parse_err: MemFuseError = try_from_res.unwrap_err().into();
         match parse_err {
             MemFuseError::ParseError(msg) => {
@@ -150,7 +150,10 @@ mod tests {
             offset: 1024,
             reason: "invalid header".to_string(),
         };
-        assert_eq!(wal_err.to_string(), "WAL corruption detected at offset 1024: invalid header");
+        assert_eq!(
+            wal_err.to_string(),
+            "WAL corruption detected at offset 1024: invalid header"
+        );
     }
 
     #[test]
@@ -162,7 +165,8 @@ mod tests {
 
         // Json
         let json_str = "{ invalid }";
-        let json_err: serde_json::Error = serde_json::from_str::<serde_json::Value>(json_str).unwrap_err();
+        let json_err: serde_json::Error =
+            serde_json::from_str::<serde_json::Value>(json_str).unwrap_err();
         let m_err2: MemFuseError = json_err.into();
         assert!(matches!(m_err2, MemFuseError::Json(_)));
     }

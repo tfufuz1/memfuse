@@ -307,8 +307,9 @@ impl HnswIndex {
 
             // ANCHOR:BUGFIX:SIGBUS-001 — Atomic Save to prevent SIGBUS on mmap
             let temp_path = path_buf.with_extension("hnsw.tmp");
-            let file = std::fs::File::create(&temp_path)
-                .map_err(|e| MemFuseError::Storage(format!("Failed to create temporary HNSW file: {}", e)))?;
+            let file = std::fs::File::create(&temp_path).map_err(|e| {
+                MemFuseError::Storage(format!("Failed to create temporary HNSW file: {}", e))
+            })?;
             let mut writer = std::io::BufWriter::new(file);
 
             let node_count = nodes.len();
@@ -317,7 +318,10 @@ impl HnswIndex {
                 nodes_offset + (node_count * crate::persistence::NodeRecord::SIZE) as u64;
 
             let (q_min, q_max) = if let Some(q) = q_guard.as_ref() {
-                (q.min, q.max)
+                (
+                    q.mins.first().copied().unwrap_or(0.0),
+                    q.maxes.first().copied().unwrap_or(0.0),
+                )
             } else {
                 (0.0, 0.0)
             };
@@ -369,13 +373,12 @@ impl HnswIndex {
 
                 match &node.vector {
                     VectorData::F32(v) => {
-                        let bytes: &[u8] = unsafe {
-                            std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4)
-                        };
-                        writer
-                            .write_all(bytes)
-                            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                        current_pos += bytes.len() as u64;
+                        for &val in v {
+                            writer
+                                .write_all(&val.to_le_bytes())
+                                .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                        }
+                        current_pos += (v.len() * 4) as u64;
                     }
                     VectorData::U8(v) => {
                         writer
@@ -412,13 +415,12 @@ impl HnswIndex {
                     writer
                         .write_all(&len.to_le_bytes())
                         .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                    let bytes: &[u8] = unsafe {
-                        std::slice::from_raw_parts(conns.as_ptr() as *const u8, conns.len() * 4)
-                    };
-                    writer
-                        .write_all(bytes)
-                        .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                    conn_pos += 4 + bytes.len() as u64;
+                    for &conn in conns {
+                        writer
+                            .write_all(&conn.to_le_bytes())
+                            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+                    }
+                    conn_pos += 4 + (conns.len() * 4) as u64;
                 }
             }
             writer
@@ -441,11 +443,12 @@ impl HnswIndex {
             }
             file.sync_all()
                 .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                
+
             // Atomic rename to replace the old file without truncating it, avoiding SIGBUS for active readers
-            std::fs::rename(&temp_path, &path_buf)
-                .map_err(|e| MemFuseError::Storage(format!("Failed to rename temporary HNSW file: {}", e)))?;
-                
+            std::fs::rename(&temp_path, &path_buf).map_err(|e| {
+                MemFuseError::Storage(format!("Failed to rename temporary HNSW file: {}", e))
+            })?;
+
             Ok::<(), MemFuseError>(())
         })
         .await
@@ -488,13 +491,23 @@ impl HnswIndex {
         }
 
         if mmap_index.header.quantized != 0 {
+            let dim = self.config.dimension;
+            let q_min = mmap_index.header.q_min;
+            let q_max = mmap_index.header.q_max;
+            let range = if (q_max - q_min).abs() < f32::EPSILON {
+                1e-6
+            } else {
+                q_max - q_min
+            };
+            let scale = 255.0 / range;
+            let inv_scale = range / 255.0;
             let mut q_guard = self.quantizer.write();
             *q_guard = Some(crate::quantize::ScalarQuantizer {
-                min: mmap_index.header.q_min,
-                max: mmap_index.header.q_max,
-                scale: 255.0 / (mmap_index.header.q_max - mmap_index.header.q_min),
-                inv_scale: (mmap_index.header.q_max - mmap_index.header.q_min) / 255.0,
-                dimension: self.config.dimension,
+                mins: vec![q_min; dim],
+                maxes: vec![q_max; dim],
+                scales: vec![scale; dim],
+                inv_scales: vec![inv_scale; dim],
+                dimension: dim,
             });
         }
 
@@ -2144,7 +2157,10 @@ mod tests {
         let tx = TxId::new(1);
 
         for i in 1..=10u64 {
-            index.insert(tx, DocId::new(i), &[i as f32, 0.0, 0.0, 0.0]).await.unwrap();
+            index
+                .insert(tx, DocId::new(i), &[i as f32, 0.0, 0.0, 0.0])
+                .await
+                .unwrap();
         }
         index.commit(tx).await.unwrap();
 

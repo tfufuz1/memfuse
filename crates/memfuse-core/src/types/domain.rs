@@ -182,6 +182,14 @@ impl DistanceMetric {
     }
 
     /// Computes the distance between two u8 vectors using this metric.
+    ///
+    /// Returns a `u32` distance value. For metrics that naturally produce floats
+    /// (Cosine), the result is scaled by `1_000_000` for fixed-point ranking.
+    ///
+    /// # DotProduct semantics
+    /// Unlike the f32 path (`compute()`), the u32 result is **not negated** since
+    /// `u32` cannot represent negative values. The caller (e.g., HNSW quantized search)
+    /// is responsible for inverting the ranking order when using DotProduct.
     pub fn compute_u8(&self, a: &[u8], b: &[u8]) -> Result<u32> {
         if a.len() != b.len() {
             return Err(MemFuseError::invalid_input("Vector dimensions must match"));
@@ -189,22 +197,22 @@ impl DistanceMetric {
 
         match self {
             Self::Cosine => {
-                // Approximate cosine for u8
-                let mut dot = 0u32;
-                let mut norm_a = 0u32;
-                let mut norm_b = 0u32;
+                // FIND-COR-002: Correct cosine distance using f64 arithmetic
+                // cos_dist = 1.0 - (dot(a,b) / (||a|| * ||b||))
+                let mut dot = 0f64;
+                let mut norm_a = 0f64;
+                let mut norm_b = 0f64;
                 for (&x, &y) in a.iter().zip(b.iter()) {
-                    let xu = x as u32;
-                    let yu = y as u32;
-                    dot += xu * yu;
-                    norm_a += xu * xu;
-                    norm_b += yu * yu;
+                    let xf = x as f64;
+                    let yf = y as f64;
+                    dot += xf * yf;
+                    norm_a += xf * xf;
+                    norm_b += yf * yf;
                 }
-                // Placeholder: for now return dot product.
-                // To avoid unused warnings we mention norm_a and norm_b.
-                let _ = norm_a;
-                let _ = norm_b;
-                Ok(dot)
+                let denom = norm_a.sqrt() * norm_b.sqrt();
+                let dist = if denom == 0.0 { 1.0 } else { 1.0 - dot / denom };
+                // Scale to u32 fixed-point (×1_000_000) for ranking
+                Ok((dist.clamp(0.0, 2.0) * 1_000_000.0) as u32)
             }
             Self::Euclidean => {
                 let mut sum = 0u32;
@@ -215,6 +223,7 @@ impl DistanceMetric {
                 Ok(sum)
             }
             Self::DotProduct => {
+                // Raw dot product (unsigned). Caller handles ranking inversion.
                 let mut dot = 0u32;
                 for (&x, &y) in a.iter().zip(b.iter()) {
                     dot += x as u32 * y as u32;
@@ -403,7 +412,10 @@ mod tests {
         // Cosine: 1 - (0 / 1) = 1.0
         assert_eq!(DistanceMetric::Cosine.compute(&a, &b).unwrap(), 1.0);
         // Euclidean: sqrt(1^2 + 1^2) = sqrt(2)
-        assert_eq!(DistanceMetric::Euclidean.compute(&a, &b).unwrap(), 2.0f32.sqrt());
+        assert_eq!(
+            DistanceMetric::Euclidean.compute(&a, &b).unwrap(),
+            2.0f32.sqrt()
+        );
         // DotProduct: -(0) = 0.0
         assert_eq!(DistanceMetric::DotProduct.compute(&a, &b).unwrap(), 0.0);
     }
@@ -416,6 +428,43 @@ mod tests {
         assert_eq!(DistanceMetric::Euclidean.compute_u8(&a, &b).unwrap(), 200);
         // DotProduct: 10*20 + 20*30 = 200 + 600 = 800
         assert_eq!(DistanceMetric::DotProduct.compute_u8(&a, &b).unwrap(), 800);
+        // Cosine: orthogonal vectors → distance 1.0 → 1_000_000
+        let orth_a: [u8; 2] = [255, 0];
+        let orth_b: [u8; 2] = [0, 255];
+        assert_eq!(
+            DistanceMetric::Cosine.compute_u8(&orth_a, &orth_b).unwrap(),
+            1_000_000
+        );
+        // Cosine: identical vectors → distance 0.0 → 0
+        assert_eq!(DistanceMetric::Cosine.compute_u8(&a, &a).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_cosine_u8_ranking_matches_f32() {
+        // FIND-COR-002: Verify that u8 cosine ranking matches f32 cosine ranking
+        let query = [100u8, 200, 50, 150];
+        let close_vec = [110u8, 190, 60, 140]; // similar direction
+        let far_vec = [10u8, 20, 250, 5]; // different direction
+
+        let dist_close = DistanceMetric::Cosine
+            .compute_u8(&query, &close_vec)
+            .unwrap();
+        let dist_far = DistanceMetric::Cosine.compute_u8(&query, &far_vec).unwrap();
+        // Close vector should have smaller cosine distance
+        assert!(
+            dist_close < dist_far,
+            "Ranking mismatch: close={} far={}",
+            dist_close,
+            dist_far
+        );
+
+        // Cross-check with f32 ranking
+        let q_f32: Vec<f32> = query.iter().map(|&x| x as f32).collect();
+        let c_f32: Vec<f32> = close_vec.iter().map(|&x| x as f32).collect();
+        let f_f32: Vec<f32> = far_vec.iter().map(|&x| x as f32).collect();
+        let f32_close = DistanceMetric::Cosine.compute(&q_f32, &c_f32).unwrap();
+        let f32_far = DistanceMetric::Cosine.compute(&q_f32, &f_f32).unwrap();
+        assert!(f32_close < f32_far, "f32 ranking mismatch");
     }
 
     #[test]
@@ -431,8 +480,7 @@ mod tests {
         assert_eq!(entity.id.inner(), 1);
         assert_eq!(entity.name, "node1");
 
-        let edge = Edge::new(EntityId::new(1), EntityId::new(2), "rel")
-            .with_weight(0.5);
+        let edge = Edge::new(EntityId::new(1), EntityId::new(2), "rel").with_weight(0.5);
         assert_eq!(edge.from.inner(), 1);
         assert_eq!(edge.to.inner(), 2);
         assert_eq!(edge.weight, 0.5);

@@ -9,6 +9,8 @@
 
 use crate::filter::MetadataFilter;
 use memfuse_core::{DocId, Result, StorageEngine, TextIndex, TxId, VectorIndex};
+#[cfg(feature = "embed")]
+use memfuse_embed::TextEmbedder;
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;
 use memfuse_text::inverted::InvertedIndex;
@@ -58,6 +60,8 @@ pub struct Collection<S: StorageEngine = LsmStorage> {
     pub(crate) storage: Arc<S>,
     pub(crate) next_tx: Arc<AtomicU64>,
     pub(crate) dimension: usize,
+    #[cfg(feature = "embed")]
+    pub(crate) embedder: std::sync::RwLock<Option<Arc<TextEmbedder>>>,
 }
 
 impl<S: StorageEngine> Clone for Collection<S> {
@@ -70,6 +74,10 @@ impl<S: StorageEngine> Clone for Collection<S> {
             storage: self.storage.clone(),
             next_tx: self.next_tx.clone(),
             dimension: self.dimension,
+            #[cfg(feature = "embed")]
+            embedder: std::sync::RwLock::new(
+                self.embedder.read().unwrap().as_ref().map(Arc::clone),
+            ),
         }
     }
 }
@@ -99,7 +107,29 @@ impl<S: StorageEngine> Collection<S> {
             storage,
             next_tx,
             dimension,
+            #[cfg(feature = "embed")]
+            embedder: std::sync::RwLock::new(None),
         }
+    }
+
+    /// Sets the text embedder for this collection (consuming version).
+    #[cfg(feature = "embed")]
+    #[tracing::instrument(level = "trace", skip(self, embedder))]
+    pub fn with_embedder(self, embedder: Arc<TextEmbedder>) -> Self {
+        {
+            let mut guard = self.embedder.write().unwrap();
+            *guard = Some(embedder);
+        }
+        self
+    }
+
+    /// Configures the text embedder for this collection.
+    #[cfg(feature = "embed")]
+    #[tracing::instrument(level = "trace", skip(self, embedder))]
+    pub async fn set_embedder(&self, embedder: Arc<TextEmbedder>) -> Result<()> {
+        let mut guard = self.embedder.write().unwrap();
+        *guard = Some(embedder);
+        Ok(())
     }
 
     /// Internal helper to generate namespaced keys.
@@ -142,70 +172,88 @@ impl<S: StorageEngine> Collection<S> {
     /// and reconciles them. This is critical for crash recovery.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn repair(&self) -> Result<()> {
+        let mut repair_count = 0;
+        let docs = self.storage.scan_prefix(&self.prefix).await?;
+        let indexed_ids: std::collections::HashSet<DocId> =
+            self.index.all_doc_ids().await?.into_iter().collect();
+
         tracing::info!("Starting integrity repair for collection '{}'", self.name);
         let start_time = std::time::Instant::now();
 
-        // 1. Scan storage for all documents in this collection
-        let docs = self.storage.scan_prefix(&self.prefix).await?;
-        let mut repair_count = 0;
-        let mut ghost_count = 0;
+        // 1. Scan for pending transaction intents (2-Phase Commit Recovery — FIND-DB-005)
+        let intent_prefix = self.namespaced_key(&[], 3);
+        let intents = self.storage.scan_prefix(&intent_prefix).await?;
+        let recovery_tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+        let mut recovered_any = false;
 
-        let mut storage_doc_ids = std::collections::HashSet::new();
+        for (intent_key, intent_val) in intents {
+            use crate::transaction::CommitIntent;
+            if let Ok(CommitIntent::Pending { doc_ids }) =
+                serde_json::from_slice::<CommitIntent>(&intent_val)
+            {
+                tracing::info!(
+                    "Found pending transaction intent, recovering {} documents",
+                    doc_ids.len()
+                );
+                for doc_id in doc_ids {
+                    if !indexed_ids.contains(&doc_id) {
+                        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+                        if let Some(val) = self.storage.get(&doc_key).await? {
+                            if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&val) {
+                                self.index
+                                    .insert(recovery_tx, doc_id, &stored.embedding)
+                                    .await?;
+                                repair_count += 1;
+                                recovered_any = true;
+                            }
+                        }
+                    }
+                }
+                // Cleanup recovered intent
+                let _ = self.storage.delete(recovery_tx, &intent_key).await;
+            }
+        }
+        if recovered_any {
+            self.index.commit(recovery_tx).await?;
+        }
 
-        // 2. Cross-reference with index: Add missing documents from storage
+        // 2. Fallback: Full scan for documents missing from index (FIND-DB-004: Parallel Batching)
+        let fallback_tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+        let mut fallback_any = false;
+
         for (namespaced_key, value) in docs {
             // Only process user data (key_type 0)
-            if self.name != "default" && namespaced_key.get(self.prefix.len()) != Some(&0) {
-                continue;
-            }
-            // For default collection, we don't have a prefix, so check if it starts with internal prefixes
-            if self.name == "default"
-                && (namespaced_key.starts_with(b"__docid:")
-                    || namespaced_key.starts_with(b"__rel:")
-                    || namespaced_key.starts_with(b"__tx_intent:"))
-            {
+            if self.name != "default" {
+                if namespaced_key.get(self.prefix.len()) != Some(&0) {
+                    continue;
+                }
+            } else if namespaced_key.starts_with(b"__") {
                 continue;
             }
 
             let stored: StoredDocument = match serde_json::from_slice(&value) {
                 Ok(d) => d,
-                Err(_) => continue, // Skip invalid entries
+                Err(_) => continue,
             };
 
             let doc_id = DocId::from_key(&stored.id)?;
-            storage_doc_ids.insert(doc_id);
-
-            // Check if present in index
-            // We use k=1 search to check presence (if we find it with distance 0, it's there)
-            let results = self.index.search(&stored.embedding, 1).await?;
-            let found = results
-                .iter()
-                .any(|r| r.doc_id == doc_id && r.score > 0.9999);
-
-            if !found {
-                let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
-                self.index.insert(tx, doc_id, &stored.embedding).await?;
-                self.index.commit(tx).await?;
+            if !indexed_ids.contains(&doc_id) {
+                self.index
+                    .insert(fallback_tx, doc_id, &stored.embedding)
+                    .await?;
                 repair_count += 1;
+                fallback_any = true;
             }
         }
 
-        // 3. Cleanup "Ghost-Entries": Delete index entries not in storage
-        let indexed_ids = self.index.all_doc_ids().await?;
-        for doc_id in indexed_ids {
-            if !storage_doc_ids.contains(&doc_id) {
-                let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
-                self.index.delete(tx, doc_id).await?;
-                self.index.commit(tx).await?;
-                ghost_count += 1;
-            }
+        if fallback_any {
+            self.index.commit(fallback_tx).await?;
         }
 
-        if repair_count > 0 || ghost_count > 0 {
+        if repair_count > 0 {
             tracing::info!(
-                "Repaired {} missing docs, removed {} ghosts in collection '{}' in {:?}",
+                "Repaired {} missing documents in collection '{}' in {:?}",
                 repair_count,
-                ghost_count,
                 self.name,
                 start_time.elapsed()
             );
@@ -220,29 +268,6 @@ impl<S: StorageEngine> Collection<S> {
         Ok(())
     }
 
-    /// Rolls back the entire collection state to a specific transaction ID.
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn restore(&self, tx_id: TxId) -> Result<()> {
-        tracing::info!(
-            "Restoring collection '{}' to TxId {}",
-            self.name,
-            tx_id.inner()
-        );
-
-        // 1. Rollback sub-systems
-        self.storage.rollback_to_tx(tx_id).await?;
-        self.index.rollback_to_tx(tx_id).await?;
-        self.text_index.rollback_to_tx(tx_id).await?;
-
-        // 2. Reset transaction counter to follow the restored state
-        self.next_tx.store(tx_id.inner() + 1, Ordering::SeqCst);
-
-        // 3. Reconcile state (cleanup any ghost entries from the index)
-        self.repair().await?;
-
-        Ok(())
-    }
-
     /// Begins a new atomic transaction for this collection.
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<S> {
@@ -250,7 +275,74 @@ impl<S: StorageEngine> Collection<S> {
         crate::transaction::DbTransaction::new(self.clone(), tx)
     }
 
-    /// Deletes a document by its string ID.
+    /// Inserts a text document, automatically generating its embedding.
+    #[cfg(feature = "embed")]
+    #[tracing::instrument(level = "trace", skip(self, text, metadata))]
+    pub async fn insert_text_only(
+        &self,
+        id: &str,
+        text: &str,
+        mut metadata: Option<serde_json::Value>,
+    ) -> Result<()> {
+        let embedding = {
+            let embedder_guard = self.embedder.read().unwrap();
+            let embedder = embedder_guard.as_ref().ok_or_else(|| {
+                memfuse_core::MemFuseError::Internal(
+                    "No embedder configured for this collection".into(),
+                )
+            })?;
+            embedder.embed(text)?
+        };
+
+        // Ensure text is in metadata for indexing
+        let meta = metadata.get_or_insert(serde_json::json!({}));
+        if let Some(obj) = meta.as_object_mut() {
+            if !obj.contains_key("text") {
+                obj.insert(
+                    "text".to_string(),
+                    serde_json::Value::String(text.to_string()),
+                );
+            }
+        }
+
+        self.insert(id, &embedding, metadata).await
+    }
+
+    /// Upserts a text document, automatically generating its embedding.
+    #[cfg(feature = "embed")]
+    #[tracing::instrument(level = "trace", skip(self, text, metadata))]
+    pub async fn upsert_text_only(
+        &self,
+        id: &str,
+        text: &str,
+        mut metadata: Option<serde_json::Value>,
+    ) -> Result<()> {
+        let embedding = {
+            let embedder_guard = self.embedder.read().unwrap();
+            let embedder = embedder_guard.as_ref().ok_or_else(|| {
+                memfuse_core::MemFuseError::Internal(
+                    "No embedder configured for this collection".into(),
+                )
+            })?;
+            embedder.embed(text)?
+        };
+
+        // Ensure text is in metadata for indexing
+        let meta = metadata.get_or_insert(serde_json::json!({}));
+        if let Some(obj) = meta.as_object_mut() {
+            if !obj.contains_key("text") {
+                obj.insert(
+                    "text".to_string(),
+                    serde_json::Value::String(text.to_string()),
+                );
+            }
+        }
+
+        self.upsert(id, &embedding, metadata).await
+    }
+
+    /// Inserts a document with an embedding and optional metadata.
+    #[tracing::instrument(level = "trace", skip(self, embedding, metadata))]
     pub async fn insert(
         &self,
         id: &str,
@@ -420,6 +512,10 @@ impl<S: StorageEngine> Collection<S> {
         db_tx.commit().await
     }
 
+    async fn snapshot_seq(&self) -> u64 {
+        self.storage.last_seq_no().await.unwrap_or(u64::MAX)
+    }
+
     /// Retrieves a document by its user-provided string ID.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get(&self, id: &str) -> Result<Option<crate::Document>> {
@@ -516,9 +612,9 @@ impl<S: StorageEngine> Collection<S> {
     /// Deletes a document from the collection by its ID.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn delete(&self, id: &str) -> Result<()> {
-        let db_tx = self.begin_transaction();
+        let mut db_tx = self.begin_transaction();
 
-        match self.delete_op(&db_tx, id).await {
+        match self.delete_op(&mut db_tx, id).await {
             Ok(_) => db_tx.commit().await,
             Err(e) => {
                 if let Err(rollback_err) = db_tx.rollback().await {
@@ -531,7 +627,7 @@ impl<S: StorageEngine> Collection<S> {
 
     pub async fn delete_op(
         &self,
-        db_tx: &crate::transaction::DbTransaction<S>,
+        db_tx: &mut crate::transaction::DbTransaction<S>,
         id: &str,
     ) -> Result<()> {
         let tx = db_tx.tx_id;
@@ -651,68 +747,95 @@ impl<S: StorageEngine> Collection<S> {
         k: usize,
         filter: Option<MetadataFilter>,
     ) -> Result<Vec<crate::SearchResult>> {
-        let filter = match filter {
-            Some(f) => f,
-            None => return self.search_filtered(query, k, None).await,
-        };
+        // 🛡️ SICHERUNG: Snapshot-Isolation (FIND-DB-003)
+        // Wir pinnen den Snapshot für die gesamte Dauer der gefilterten Suche,
+        // um Konsistenz zwischen Vektor-Index, Metadaten-Filter und Re-Hydrierung zu garantieren.
+        let seq = self.snapshot_seq().await;
+        self.storage.pin_checkpoint(seq).await?;
 
-        let total_docs = self.len().await;
+        let res = async {
+            let filter = match filter {
+                Some(f) => f,
+                None => return self.search_filtered_at(query, k, None, seq).await,
+            };
 
-        // ADAPTIVE STRATEGY (WP-4.2):
-        // If total documents are few, or if we suspect high selectivity,
-        // we use Pre-filtering by scanning metadata first.
-        // For now, we use a simple heuristic: if docs < 1000, always pre-filter.
-        if total_docs < 1000 {
-            let matched_ids = self.get_matching_doc_ids(&filter).await?;
+            let total_docs = self.len().await;
 
-            // If no docs match the filter, return early
-            if matched_ids.is_empty() {
-                return Ok(Vec::new());
-            }
+            // ADAPTIVE STRATEGY (WP-4.2):
+            // If total documents are few, or if we suspect high selectivity,
+            // we use Pre-filtering by scanning metadata first.
+            // For now, we use a simple heuristic: if docs < 1000, always pre-filter.
+            if total_docs < 1000 {
+                let matched_ids = self.get_matching_doc_ids_at(&filter, seq).await?;
 
-            let filter_fn = move |id: DocId| matched_ids.contains(&id);
-            let scored_docs = self
-                .index
-                .search_filtered(query, k, Some(&filter_fn))
-                .await?;
-            let scored_tuples = scored_docs
-                .into_iter()
-                .map(|sd| (sd.doc_id, sd.score))
-                .collect();
-            self.hydrate_from_tuples(scored_tuples).await
-        } else {
-            // Post-filtering approach for larger collections:
-            // 1. Search more than k (oversample) to account for filter drops.
-            let oversample = (k * 10).min(total_docs).max(k);
-            let scored_docs = self.index.search_filtered(query, oversample, None).await?;
+                // If no docs match the filter, return early
+                if matched_ids.is_empty() {
+                    return Ok(Vec::new());
+                }
 
-            let mut results = Vec::new();
-            for sd in scored_docs {
-                let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
-                if let Some(bytes) = self.storage.get(&doc_key).await? {
-                    let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                    let metadata = stored.metadata.as_ref().unwrap_or(&serde_json::Value::Null);
-                    if filter.matches(metadata) {
-                        results.push(crate::SearchResult {
-                            id: stored.id,
-                            score: sd.score,
-                            metadata: stored.metadata,
-                        });
-                        if results.len() >= k {
-                            break;
+                let filter_fn = move |id: DocId| matched_ids.contains(&id);
+                let scored_docs = self
+                    .index
+                    .search_filtered(query, k, Some(&filter_fn))
+                    .await?;
+                self.hydrate_from_scored_at(scored_docs, seq).await
+            } else {
+                // Post-filtering approach for larger collections:
+                // 1. Search more than k (oversample) to account for filter drops.
+                let oversample = (k * 10).min(total_docs).max(k);
+                let scored_docs = self.index.search_filtered(query, oversample, None).await?;
+
+                let mut results = Vec::new();
+                for sd in scored_docs {
+                    let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
+                    if let Some(bytes) = self.storage.get_at_seq(&doc_key, seq).await? {
+                        let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                        let metadata = stored.metadata.as_ref().unwrap_or(&serde_json::Value::Null);
+                        if filter.matches(metadata) {
+                            results.push(crate::SearchResult {
+                                id: stored.id,
+                                score: sd.score,
+                                metadata: stored.metadata,
+                            });
+                            if results.len() >= k {
+                                break;
+                            }
                         }
                     }
                 }
+                Ok(results)
             }
-            Ok(results)
         }
+        .await;
+
+        let _ = self.storage.unpin_checkpoint(seq).await;
+        res
     }
 
-    /// Internal helper to find all DocIds matching a filter by scanning metadata.
-    #[tracing::instrument(level = "trace", skip(self, filter))]
-    async fn get_matching_doc_ids(
+    /// Performs semantic search using a raw text query (automatically embedded).
+    #[cfg(feature = "embed")]
+    #[tracing::instrument(level = "trace", skip(self, query_text))]
+    pub async fn search_text(
+        &self,
+        query_text: &str,
+        k: usize,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let embedding = {
+            let embedder_guard = self.embedder.read().unwrap();
+            let embedder = embedder_guard.as_ref().ok_or_else(|| {
+                memfuse_core::MemFuseError::Internal(
+                    "No embedder configured for this collection".into(),
+                )
+            })?;
+            embedder.embed(query_text)?
+        };
+        self.search(&embedding, k).await
+    }
+
+    async fn get_matching_doc_ids_at(
         &self,
         filter: &MetadataFilter,
+        seq: u64,
     ) -> Result<std::collections::HashSet<DocId>> {
         let prefix = if self.name == "default" {
             b"__docid:".to_vec()
@@ -722,7 +845,7 @@ impl<S: StorageEngine> Collection<S> {
             p
         };
 
-        let entries = self.storage.scan_prefix(&prefix).await?;
+        let entries = self.storage.scan_prefix_at(&prefix, seq).await?;
         let mut matched = std::collections::HashSet::new();
 
         for (_, v) in entries {
@@ -744,19 +867,49 @@ impl<S: StorageEngine> Collection<S> {
         k: usize,
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<crate::SearchResult>> {
-        let scored_docs = self.index.search_filtered(query, k, filter).await?;
-        let scored_tuples = scored_docs
-            .into_iter()
-            .map(|sd| (sd.doc_id, sd.score))
-            .collect();
-        self.hydrate_from_tuples(scored_tuples).await
-
+        let seq = self.snapshot_seq().await;
+        self.search_filtered_at(query, k, filter, seq).await
     }
 
-    #[tracing::instrument(level = "trace", skip(self, scored_tuples))]
-    async fn hydrate_from_tuples(
+    pub async fn search_filtered_at(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
+        seq: u64,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let scored_docs = self.index.search_filtered(query, k, filter).await?;
+        self.hydrate_from_scored_at(scored_docs, seq).await
+    }
+
+    async fn hydrate_from_scored_at(
+        &self,
+        scored_docs: Vec<memfuse_core::ScoredDocument>,
+        seq: u64,
+    ) -> Result<Vec<crate::SearchResult>> {
+        if scored_docs.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut results = Vec::with_capacity(scored_docs.len());
+        for sd in scored_docs {
+            let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
+            if let Some(bytes) = self.storage.get_at_seq(&doc_key, seq).await? {
+                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                results.push(crate::SearchResult {
+                    id: stored.id,
+                    score: sd.score,
+                    metadata: stored.metadata,
+                });
+            }
+        }
+        Ok(results)
+    }
+
+    async fn hydrate_from_tuples_at(
         &self,
         scored_tuples: Vec<(DocId, f32)>,
+        seq: u64,
     ) -> Result<Vec<crate::SearchResult>> {
         if scored_tuples.is_empty() {
             return Ok(Vec::new());
@@ -765,7 +918,7 @@ impl<S: StorageEngine> Collection<S> {
         let mut results = Vec::with_capacity(scored_tuples.len());
         for (doc_id, score) in scored_tuples {
             let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-            if let Some(bytes) = self.storage.get(&doc_key).await? {
+            if let Some(bytes) = self.storage.get_at_seq(&doc_key, seq).await? {
                 let stored: StoredDocument = serde_json::from_slice(&bytes)?;
                 results.push(crate::SearchResult {
                     id: stored.id,
@@ -785,21 +938,30 @@ impl<S: StorageEngine> Collection<S> {
         vector: &[f32],
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
+        let seq = self.snapshot_seq().await;
         let is_vector_zero = vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
 
         match (is_text_empty, is_vector_zero) {
             (true, true) => Ok(Vec::new()),
-            (true, false) => self.search(vector, k).await,
+            (true, false) => self.search_filtered_at(vector, k, None, seq).await,
             (false, is_v_zero) => {
-                let bm25_results = self.text_index.search_bm25(text, k).await?;
-                let text_results = self.hydrate_from_tuples(bm25_results).await?;
+                let bm25_results = self.text_index.search_at(text, k, seq).await?;
+                let text_results = self
+                    .hydrate_from_tuples_at(
+                        bm25_results
+                            .into_iter()
+                            .map(|sd| (sd.doc_id, sd.score))
+                            .collect(),
+                        seq,
+                    )
+                    .await?;
 
                 if is_v_zero {
                     return Ok(text_results);
                 }
 
-                let vector_results = self.search(vector, k).await?;
+                let vector_results = self.search_filtered_at(vector, k, None, seq).await?;
                 Ok(crate::fusion::reciprocal_rank_fusion(
                     vec![vector_results, text_results],
                     k,
@@ -929,6 +1091,11 @@ impl<S: StorageEngine> Collection<S> {
         Ok(())
     }
 
+    /// Loads text index statistics from storage.
+    pub async fn load_text_stats(&self) -> Result<()> {
+        self.text_index.load_stats().await
+    }
+
     /// Removes all data belonging to this collection from storage.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn drop_collection(&self) -> Result<()> {
@@ -940,11 +1107,20 @@ impl<S: StorageEngine> Collection<S> {
             self.prefix.clone()
         };
 
+        // 1. Clean collection data (user keys, docs, rels, intents)
         let entries = self.storage.scan_prefix(&prefix).await?;
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
         for (k, _) in entries {
             self.storage.delete(tx, &k).await?;
         }
+
+        // 2. Clean text index namespace (FIND-DB-002)
+        let txt_prefix = format!("__txt:{}:", self.name).into_bytes();
+        let txt_entries = self.storage.scan_prefix(&txt_prefix).await?;
+        for (k, _) in txt_entries {
+            self.storage.delete(tx, &k).await?;
+        }
+
         self.storage.commit(tx).await?;
         Ok(())
     }

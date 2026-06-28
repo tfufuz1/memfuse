@@ -337,6 +337,14 @@ impl GraphIndex for CsrGraph {
         Ok(())
     }
 
+    async fn last_tx_id(&self) -> Result<u64> {
+        Ok(0)
+    }
+
+    async fn len(&self) -> usize {
+        self.entity_count()
+    }
+
     async fn stats(&self) -> Result<GraphIndexStats> {
         let inner = self.inner.read();
         let num_entities = inner.entities.iter().flatten().count();

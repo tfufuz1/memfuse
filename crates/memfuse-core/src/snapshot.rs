@@ -85,6 +85,12 @@ impl SnapshotRegistry {
             if *count == 0 {
                 active.remove(&seq_no);
             }
+        } else {
+            debug_assert!(
+                false,
+                "SnapshotRegistry::release called for unknown seq_no: {}",
+                seq_no
+            );
         }
         self.update_min(&active);
     }

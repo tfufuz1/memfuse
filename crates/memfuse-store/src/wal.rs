@@ -308,6 +308,11 @@ impl Wal {
             None
         };
 
+        let mut is_new = false;
+        if !path.exists() {
+            is_new = true;
+        }
+
         let file = tokio::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -315,6 +320,15 @@ impl Wal {
             .open(&path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to open WAL: {}", e)))?;
+
+        // 🛡️ SICHERUNG: Directory FSync (FIND-STO-004)
+        if is_new {
+            if let Some(parent) = path.parent() {
+                if let Ok(dir) = tokio::fs::File::open(parent).await {
+                    let _ = dir.sync_all().await;
+                }
+            }
+        }
 
         let metadata = file
             .metadata()
@@ -373,6 +387,14 @@ impl Wal {
             tokio::fs::write(&uuid_path, &bytes).await.map_err(|e| {
                 MemFuseError::Storage(format!("Failed to write WAL UUID sidecar: {}", e))
             })?;
+
+            // FIND-STO-004: FSync parent directory to persist the new directory entry
+            if let Some(parent) = uuid_path.parent() {
+                if let Ok(dir) = tokio::fs::File::open(parent).await {
+                    let _ = dir.sync_all().await;
+                }
+            }
+
             Ok(bytes)
         }
     }
@@ -515,7 +537,10 @@ impl Wal {
                     if entries.is_empty() && file_size > 64 {
                         return Err(MemFuseError::WalCorruption {
                             offset: pos,
-                            reason: format!("WAL entry length ({}) exceeds hard limit and file size", len),
+                            reason: format!(
+                                "WAL entry length ({}) exceeds hard limit and file size",
+                                len
+                            ),
                         });
                     }
                     tracing::warn!("WAL tail corruption (huge len) at offset {}", pos);

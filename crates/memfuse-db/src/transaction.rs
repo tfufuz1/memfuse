@@ -11,7 +11,19 @@
 
 use crate::Collection;
 use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId, VectorIndex};
+use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
+
+/// Status of a multi-index transaction during the 2-phase commit.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum CommitIntent {
+    /// Transaction is in the "Prepared" state. Stored DocIds assist recovery.
+    Pending { doc_ids: Vec<DocId> },
+    /// Transaction is committed across all indices.
+    Committed,
+    /// Transaction was aborted and compensated.
+    Aborted,
+}
 
 /// A transaction wrapper that ensures atomic multi-index commits across LSM-Store and HNSW-Index.
 pub struct DbTransaction<S: StorageEngine> {
@@ -67,10 +79,23 @@ impl<S: StorageEngine> DbTransaction<S> {
             .collection
             .namespaced_key(&self.tx_id.inner().to_le_bytes(), 3);
 
-        // 1. Prepare phase: Write intent marker
+        // 1. Prepare phase: Write intent marker with staged IDs (FIND-DB-005)
+        let doc_ids = {
+            let guard = match self.staged_doc_ids.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            guard.clone()
+        };
+
+        let intent = CommitIntent::Pending { doc_ids };
+        let intent_bytes = serde_json::to_vec(&intent).map_err(|e| {
+            MemFuseError::Transaction(format!("Failed to serialize commit intent: {}", e))
+        })?;
+
         self.collection
             .storage
-            .put(self.tx_id, &intent_key, b"pending")
+            .put(self.tx_id, &intent_key, &intent_bytes)
             .await?;
 
         // 2. Commit Storage (LSM)
@@ -141,10 +166,11 @@ impl<S: StorageEngine> DbTransaction<S> {
                     }
                 }
 
+                let abort_bytes = serde_json::to_vec(&CommitIntent::Aborted).unwrap_or_default();
                 if let Err(e) = self
                     .collection
                     .storage
-                    .put(rollback_tx, &intent_key, b"aborted")
+                    .put(rollback_tx, &intent_key, &abort_bytes)
                     .await
                 {
                     tracing::error!("[INV-DB-3] Failed to write aborted intent marker: {}", e);
@@ -188,10 +214,11 @@ impl<S: StorageEngine> DbTransaction<S> {
                 .next_tx
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
         );
+        let commit_bytes = serde_json::to_vec(&CommitIntent::Committed).unwrap_or_default();
         if let Err(e) = self
             .collection
             .storage
-            .put(cleanup_tx, &intent_key, b"committed")
+            .put(cleanup_tx, &intent_key, &commit_bytes)
             .await
         {
             tracing::warn!("Failed to write committed intent marker: {}", e);

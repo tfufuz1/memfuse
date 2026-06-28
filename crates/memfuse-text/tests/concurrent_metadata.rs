@@ -46,7 +46,6 @@ impl StorageEngine for MockStorage {
         Ok(())
     }
     async fn get_at_seq(&self, key: &[u8], _seq: u64) -> Result<Option<Vec<u8>>> {
-
         self.get(key).await
     }
     async fn last_seq_no(&self) -> Result<u64> {
@@ -85,6 +84,13 @@ impl StorageEngine for MockStorage {
             .filter(|(k, _)| k.starts_with(prefix))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect())
+    }
+    async fn scan_prefix_at(
+        &self,
+        prefix: &[u8],
+        _seq_no: u64,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        self.scan_prefix(prefix).await
     }
 }
 
@@ -160,7 +166,7 @@ async fn test_concurrent_upserts_no_panic() -> std::result::Result<(), Box<dyn s
 
     // All 10 docs should be searchable (race conditions in meta:stats
     // may cause count drift but the index must NOT panic)
-    let results = index.search_bm25("concurrent", 20).await?;
+    let results = index.search_bm25("concurrent", 20, None).await?;
     assert_eq!(
         results.len(),
         10,

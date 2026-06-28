@@ -440,6 +440,13 @@ impl SstableBuilder {
             .write_u64_le(index_offset)
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        // FIND-STO-003: Extension point — format version (v1 = 54 byte trailer)
+        self.file
+            .write_u16_le(1)
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
         self.file
             .write_u32_le(0x5853464D)
             .await // "MFSX" in hex
@@ -549,13 +556,14 @@ impl SstableReader {
 
         let file = Arc::new(file);
 
-        // Read trailer: last 52 bytes for MFSX or 12 bytes for legacy
+        // Read trailer: last 54 bytes (v1) or 52 bytes (v0)
         let trailer_data = {
             let f = Arc::clone(&file);
             tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
                 use std::os::unix::fs::FileExt;
-                let mut buf = vec![0u8; 52.min(file_size as usize)];
-                let offset = file_size.saturating_sub(52);
+                // We read up to 54 bytes to check for v1 trailer
+                let mut buf = vec![0u8; 54.min(file_size as usize)];
+                let offset = file_size.saturating_sub(54);
                 f.read_exact_at(&mut buf, offset)?;
                 Ok(buf)
             })
@@ -569,12 +577,27 @@ impl SstableReader {
             return Err(MemFuseError::Storage("Invalid trailer".into()));
         }
 
-        // Magic is at the very end (last 4 bytes)
-        let magic = u32::from_le_bytes(
-            trailer_data[trailer_len - 4..trailer_len]
-                .try_into()
-                .map_err(|_| MemFuseError::ParseError("Invalid magic format".into()))?,
-        );
+        // Detect version and magic (FIND-STO-003)
+        // v1: [..., version:u16][magic:u32] at the end (54 bytes)
+        // v0: [..., magic:u32] at the end (52 bytes)
+        let mut format_version = 0u16;
+        let mut is_mfsx = false;
+
+        if trailer_len >= 54 {
+            let magic_v1 = u32::from_le_bytes(trailer_data[50..54].try_into().unwrap());
+            if magic_v1 == 0x5853464D {
+                format_version = u16::from_le_bytes(trailer_data[48..50].try_into().unwrap());
+                is_mfsx = true;
+            }
+        }
+
+        if !is_mfsx && trailer_len >= 52 {
+            let magic_v0 = u32::from_le_bytes(trailer_data[48..52].try_into().unwrap());
+            if magic_v0 == 0x5853464D {
+                is_mfsx = true;
+                format_version = 0;
+            }
+        }
 
         let mut has_bloom = false;
         let mut has_crc = false;
@@ -584,81 +607,72 @@ impl SstableReader {
         let mut min_seq = 0;
         let mut max_seq = 0;
 
-        let index_offset = if magic == 0x5853464D && file_size >= 52 {
-            // New 52-byte trailer (MFSX)
+        let index_offset = if is_mfsx {
+            // MFSX trailer (v0 or v1)
             has_crc = true;
+            let base = if format_version >= 1 { 0 } else { 2 }; // Offset into our 54-byte buffer
             min_tx_id = u64::from_le_bytes(
-                trailer_data[0..8]
+                trailer_data[base..base + 8]
                     .try_into()
                     .map_err(|_| MemFuseError::ParseError("Invalid min_tx_id".into()))?,
             );
             max_tx_id = u64::from_le_bytes(
-                trailer_data[8..16]
+                trailer_data[base + 8..base + 16]
                     .try_into()
                     .map_err(|_| MemFuseError::ParseError("Invalid max_tx_id".into()))?,
             );
             min_seq = u64::from_le_bytes(
-                trailer_data[16..24]
+                trailer_data[base + 16..base + 24]
                     .try_into()
                     .map_err(|_| MemFuseError::ParseError("Invalid min_seq".into()))?,
             );
             max_seq = u64::from_le_bytes(
-                trailer_data[24..32]
+                trailer_data[base + 24..base + 32]
                     .try_into()
                     .map_err(|_| MemFuseError::ParseError("Invalid max_seq".into()))?,
             );
             bloom_offset = u64::from_le_bytes(
-                trailer_data[32..40]
+                trailer_data[base + 32..base + 40]
                     .try_into()
                     .map_err(|_| MemFuseError::ParseError("Invalid bloom_offset".into()))?,
             );
-            has_bloom = true;
+            if bloom_offset > 0 {
+                has_bloom = true;
+            }
             u64::from_le_bytes(
-                trailer_data[40..48]
+                trailer_data[base + 40..base + 48]
                     .try_into()
                     .map_err(|_| MemFuseError::ParseError("Invalid index_offset".into()))?,
             )
-        } else if magic == 0x4D465354 {
-            // Backward-compatible 12-byte trailer: [index_offset: u64][magic: u32]
-            let off = if trailer_len >= 12 {
+        } else {
+            // Read magic from the very end of 54-byte buffer (which would be the same as end of 52-byte if we read 54)
+            let magic_legacy =
+                u32::from_le_bytes(trailer_data[50..54].try_into().unwrap_or([0; 4]));
+            if magic_legacy == 0x4D465354 {
+                // Backward-compatible 12-byte trailer: [index_offset: u64][magic: u32]
                 u64::from_le_bytes(
-                    trailer_data[trailer_len - 12..trailer_len - 4]
+                    trailer_data[42..50]
                         .try_into()
                         .map_err(|_| MemFuseError::ParseError("Invalid index offset".into()))?,
                 )
             } else {
-                0
-            };
-
-            // Heuristic for 20-byte trailer (has Bloom filter)
-            if file_size >= 20 && trailer_len >= 20 {
-                let maybe_b_off = u64::from_le_bytes(
-                    trailer_data[trailer_len - 20..trailer_len - 12]
-                        .try_into()
-                        .map_err(|_| MemFuseError::ParseError("Invalid bloom offset".into()))?,
-                );
-                // Heuristic: if bloom_off is between index_offset and trailer start, it might be a valid bloom offset
-                if maybe_b_off > off && maybe_b_off < file_size - 20 {
-                    has_bloom = true;
-                    bloom_offset = maybe_b_off;
-                }
+                return Err(MemFuseError::Storage("Invalid SSTable magic number".into()));
             }
-            off
-        } else {
-            return Err(MemFuseError::Storage("Invalid SSTable magic number".into()));
         };
 
         let bloom_filter = if has_bloom {
-            let bloom_end = if magic == 0x5853464D {
-                (file_size - 52) as usize
+            let bloom_end = if is_mfsx {
+                file_size.saturating_sub(if format_version >= 1 { 54 } else { 52 })
             } else {
-                (file_size - 20) as usize
+                file_size.saturating_sub(20)
             };
+
             let bloom_data_raw = {
                 let f = Arc::clone(&file);
                 tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
                     use std::os::unix::fs::FileExt;
-                    let mut buf = vec![0u8; bloom_end.saturating_sub(bloom_offset as usize)];
+                    let mut buf =
+                        vec![0u8; (bloom_end as usize).saturating_sub(bloom_offset as usize)];
                     f.read_exact_at(&mut buf, bloom_offset)?;
                     Ok(buf)
                 })

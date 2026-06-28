@@ -124,6 +124,13 @@ impl LsmStorage {
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create dir: {}", e)))?;
 
+        // 🛡️ SICHERUNG: Directory FSync (FIND-STO-004)
+        if let Some(parent) = config.path.parent() {
+            if let Ok(dir) = tokio::fs::File::open(parent).await {
+                let _ = dir.sync_all().await;
+            }
+        }
+
         // Persistent Salt Management (FIND-CRY-001)
         let salt_path = config.path.join("SALT");
         let salt = if let Ok(buf) = tokio::fs::read(&salt_path).await {
@@ -797,35 +804,20 @@ impl StorageEngine for LsmStorage {
     }
 
     async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        self.scan_prefix_at(prefix, u64::MAX).await
+    }
+
+    async fn scan_prefix_at(&self, prefix: &[u8], seq_no: u64) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         let mut map = std::collections::BTreeMap::new();
         let state = self.state.read().await;
         let sstables = self.sstables.read().await;
 
+        // Collect from SSTables
         for sst in sstables.iter() {
             let entries = sst.scan_prefix(prefix).await?;
-            // ANCHOR:ALG-FIX:D1-002 — seq_no-Vergleich bei scan_prefix (INV-LSM-2)
-            // WP:WP-0.0 PRIO:1 NEEDS:NONE
-            // AGENT:13 DATE:2026-05-08 STATUS:DONE
-            // CREATED:2026-05-08 DEADLINE:NONE
-            // Ohne seq_no-Vergleich kann eine ältere SSTable einen neueren Wert
-            // überschreiben wenn die SSTable-Reihenfolge nicht strikt chronologisch ist.
             for (k, v, seq, _tx) in entries {
-                let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
-                if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
-                    *entry = (v.to_vec(), seq);
-                }
-            }
-        }
-
-        // ANCHOR:ALG-FIX:D1-008 — seq_no-Vergleich für MemTable-Entries in scan_prefix
-        // WP:WP-0.0 PRIO:1 NEEDS:NONE
-        // AGENT:13 DATE:2026-05-08 STATUS:DONE
-        // CREATED:2026-05-08 DEADLINE:NONE
-        // Immutable MemTables können ältere Versionen eines Keys enthalten
-        // als SSTables falls Flush-Reihenfolge abweicht.
-        for mt in &state.immutable_memtables {
-            for (k, v, seq, _tx) in mt.iter() {
-                if k.starts_with(prefix) {
+                let raw_seq = seq & !TOMBSTONE_BIT;
+                if raw_seq <= seq_no {
                     let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                         *entry = (v.to_vec(), seq);
@@ -834,10 +826,27 @@ impl StorageEngine for LsmStorage {
             }
         }
 
-        // Active memtable always has the newest data (commit_mutex serializes writes)
+        // Collect from immutable memtables
+        for mt in &state.immutable_memtables {
+            for (k, v, seq, _tx) in mt.iter() {
+                let raw_seq = seq & !TOMBSTONE_BIT;
+                if k.starts_with(prefix) && raw_seq <= seq_no {
+                    let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
+                    if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                        *entry = (v.to_vec(), seq);
+                    }
+                }
+            }
+        }
+
+        // Collect from active memtable
         for (k, v, seq, _tx) in state.memtable.iter() {
-            if k.starts_with(prefix) {
-                map.insert(k.to_vec(), (v.to_vec(), seq));
+            let raw_seq = seq & !TOMBSTONE_BIT;
+            if k.starts_with(prefix) && raw_seq <= seq_no {
+                let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
+                if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                    *entry = (v.to_vec(), seq);
+                }
             }
         }
 

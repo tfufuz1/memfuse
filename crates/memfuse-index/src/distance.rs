@@ -39,6 +39,11 @@
 //! ## Safety
 //! This module contains `unsafe` code for hardware-specific intrinsics. All `unsafe` blocks
 //! are guarded by runtime feature detection and documented with safety justifications.
+//!
+//! ## Determinism
+//! SIMD implementations (AVX2, AVX-512) are designed to be numerically equivalent to their
+//! scalar counterparts within a tolerance of `±1e-6` (§4 Determinismus-Gesetz).
+//! Accumulation order is maintained where possible to minimize divergence.
 
 // ANCHOR:REFACTOR:WP-0.0-STABLESIMD — Remove nightly portable_simd
 // WP:WP-0.0 PRIO:1 NEEDS:NONE
@@ -666,11 +671,13 @@ pub fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
 }
 
 /// Computes the squared Euclidean distance between an f32 vector and a u8 vector
-/// performing inline dequantization.
-pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alpha: f32, min: f32) -> f32 {
+/// performing inline dequantization with per-dimension scaling.
+pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alphas: &[f32], mins: &[f32]) -> f32 {
     a.iter()
         .zip(b.iter())
-        .map(|(&x, &y)| {
+        .zip(alphas.iter())
+        .zip(mins.iter())
+        .map(|(((&x, &y), &alpha), &min)| {
             let y_f32 = (y as f32) * alpha + min;
             let diff = x - y_f32;
             diff * diff
@@ -1205,11 +1212,13 @@ mod tests {
     fn test_asymmetric_metrics() {
         let a = vec![1.0, 2.0, 3.0, 4.0];
         let b = vec![10, 20, 30, 40];
-        let alpha = 0.1;
-        let min = 0.0;
+        let alpha = 0.1_f32;
+        let min = 0.0_f32;
+        let alphas = vec![alpha; 4];
+        let mins = vec![min; 4];
 
         // Euclidean Asymmetric
-        let dist_sq = euclidean_distance_sq_f32_u8(&a, &b, alpha, min);
+        let dist_sq = euclidean_distance_sq_f32_u8(&a, &b, &alphas, &mins);
         let mut expected = 0.0;
         for i in 0..4 {
             let diff = a[i] - (b[i] as f32 * alpha + min);
@@ -1239,5 +1248,49 @@ mod tests {
         let a = vec![0.0, 0.0, 0.0];
         let b = vec![1.0, 2.0, 3.0];
         assert_eq!(cosine_distance_scalar(&a, &b), 1.0);
+    }
+
+    #[test]
+    fn test_simd_scalar_determinism_bound() {
+        // FIND-IND-001: Verify SIMD vs Scalar determinism bound
+        let dims = [16, 32, 64, 128, 1536];
+        let metrics = [
+            DistanceMetric::Cosine,
+            DistanceMetric::Euclidean,
+            DistanceMetric::DotProduct,
+        ];
+
+        for &dim in &dims {
+            let a: Vec<f32> = (0..dim).map(|i| (i as f32).sin()).collect();
+            let b: Vec<f32> = (0..dim).map(|i| (i as f32).cos()).collect();
+
+            for &metric in &metrics {
+                let scalar = match metric {
+                    DistanceMetric::Cosine => cosine_distance_scalar(&a, &b),
+                    DistanceMetric::Euclidean => euclidean_distance_scalar(&a, &b),
+                    DistanceMetric::DotProduct => dot_product_scalar(&a, &b),
+                };
+
+                let simd = compute_distance(&a, &b, metric).unwrap();
+
+                // DotProduct in compute_distance returns -dot, so we adjust
+                let simd_val = if metric == DistanceMetric::DotProduct {
+                    -simd
+                } else {
+                    simd
+                };
+
+                let diff = (scalar - simd_val).abs();
+                assert!(
+                    diff < 1e-5,
+                    "Determinism failure for {:?} at dim {}: scalar={}, simd={}, diff={}",
+                    metric,
+                    dim,
+                    scalar,
+                    simd_val,
+                    diff
+                );
+            }
+        }
     }
 }

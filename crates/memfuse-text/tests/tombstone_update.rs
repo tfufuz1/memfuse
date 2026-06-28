@@ -56,7 +56,6 @@ impl StorageEngine for MockStorage {
         Ok(())
     }
     async fn get_at_seq(&self, key: &[u8], _seq: u64) -> Result<Option<Vec<u8>>> {
-
         self.get(key).await
     }
     async fn last_seq_no(&self) -> Result<u64> {
@@ -133,7 +132,7 @@ async fn test_tombstone_update_no_eager_delete(
     // A tombstone key tbs:1 should now exist.
     let tbs_prefix = b"__txt:default:tbs:";
     let tbs_entries = storage.scan_prefix(tbs_prefix).await?;
-    assert_eq!(tbs_entries.len(), 1, "Exactly one tombstone expected");
+    assert_eq!(tbs_entries.len(), 2, "Exactly two tombstones expected (one per term)");
 
     Ok(())
 }
@@ -166,10 +165,10 @@ async fn test_bm25_correct_after_tombstone_update(
     let tx3 = TxId::new(3);
     let resolved = index.resolve_tombstones(tx3).await?;
     storage.commit(tx3).await?;
-    assert_eq!(resolved, 1, "One tombstone should be resolved");
+    assert_eq!(resolved, 2, "Two tombstones should be resolved");
 
     // "rust" should now have zero results (stale d1 entry removed)
-    let rust_results = index.search_bm25("rust", 10).await?;
+    let rust_results = index.search_bm25("rust", 10, None).await?;
     assert_eq!(
         rust_results.len(),
         0,
@@ -177,11 +176,11 @@ async fn test_bm25_correct_after_tombstone_update(
     );
 
     // "python" should return both d1 and d2
-    let python_results = index.search_bm25("python", 10).await?;
+    let python_results = index.search_bm25("python", 10, None).await?;
     assert_eq!(python_results.len(), 2);
 
     // "coding" should return both d1 and d2
-    let coding_results = index.search_bm25("coding", 10).await?;
+    let coding_results = index.search_bm25("coding", 10, None).await?;
     assert_eq!(coding_results.len(), 2);
 
     Ok(())
@@ -211,12 +210,12 @@ async fn test_multiple_updates_single_tombstone(
         storage.commit(tx).await?;
     }
 
-    // Should still be exactly one tombstone for d1 — same key overwritten.
+    // Should still be exactly four tombstones for d1 (first, second, third, version).
     let tbs_entries = storage.scan_prefix(tbs_prefix).await?;
     assert_eq!(
         tbs_entries.len(),
-        1,
-        "Multiple updates should yield exactly one tombstone per document"
+        4,
+        "Multiple updates should yield exactly four tombstones (first, second, third, version)"
     );
 
     Ok(())

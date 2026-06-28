@@ -6,13 +6,14 @@
 
 #![deny(unsafe_code)]
 
+use async_trait::async_trait;
 use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
 use ort::session::Session;
 use ort::value::Value;
 use std::path::Path;
 use tokenizers::Tokenizer;
 use tracing::{debug, info};
-use async_trait::async_trait;
+
 
 /// Handles text tokenization and ONNX model inference.
 #[derive(Debug)]
@@ -73,32 +74,6 @@ impl TextEmbedder {
             session: std::sync::Mutex::new(session),
             tokenizer,
         })
-    }
-
-    /// Downloads and loads a model from HuggingFace Hub.
-    pub fn from_hub(model_id: &str) -> Result<Self> {
-        use hf_hub::api::sync::Api;
-        use hf_hub::{Repo, RepoType};
-
-        info!("Downloading model '{}' from HuggingFace Hub", model_id);
-        let api = Api::new().map_err(|e| MemFuseError::Internal(format!("HF API error: {}", e)))?;
-        let repo = api.repo(Repo::new(model_id.to_string(), RepoType::Model));
-
-        let model_path = repo
-            .get("onnx/model.onnx")
-            .or_else(|_| repo.get("model.onnx"))
-            .map_err(|e| MemFuseError::Internal(format!("Failed to download model: {}", e)))?;
-
-        // Both files are in the same cache directory usually
-        let parent = model_path
-            .parent()
-            .ok_or_else(|| MemFuseError::Internal("Model path has no parent directory".into()))?;
-        Self::load(parent)
-    }
-
-    /// Loads the default embedding model (all-MiniLM-L6-v2).
-    pub fn load_default() -> Result<Self> {
-        Self::from_hub("sentence-transformers/all-MiniLM-L6-v2")
     }
 
     /// Generates an embedding for the given text.
@@ -194,14 +169,14 @@ impl TextEmbedder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::fs::File;
     use std::io::Write;
+    use tempfile::tempdir;
 
     #[test]
     fn test_text_embedder_load_missing_files() {
         let dir = tempdir().unwrap();
-        
+
         // Empty directory - should fail at tokenizer existence check first
         // because model_path defaults to model_dir if model.onnx is missing.
         let res = TextEmbedder::load(dir.path());
@@ -218,7 +193,7 @@ mod tests {
                 let msg = e.to_string();
                 // Should fail at tokenizer loading because it's empty
                 assert!(msg.contains("Failed to load tokenizer"));
-            },
+            }
             Ok(_) => panic!("Should have failed"),
         }
     }
@@ -226,14 +201,23 @@ mod tests {
     #[test]
     fn test_text_embedder_load_invalid_content() {
         let dir = tempdir().unwrap();
-        File::create(dir.path().join("model.onnx")).unwrap().write_all(b"invalid").unwrap();
-        File::create(dir.path().join("tokenizer.json")).unwrap().write_all(b"invalid").unwrap();
-        
+        File::create(dir.path().join("model.onnx"))
+            .unwrap()
+            .write_all(b"invalid")
+            .unwrap();
+        File::create(dir.path().join("tokenizer.json"))
+            .unwrap()
+            .write_all(b"invalid")
+            .unwrap();
+
         let res = TextEmbedder::load(dir.path());
         assert!(res.is_err());
         // Error could be from tokenizer or ONNX
         let err_msg = res.unwrap_err().to_string();
-        assert!(err_msg.contains("Failed to load tokenizer") || err_msg.contains("Failed to load model"));
+        assert!(
+            err_msg.contains("Failed to load tokenizer")
+                || err_msg.contains("Failed to load model")
+        );
     }
 
     #[test]
