@@ -19,7 +19,7 @@ pub struct WorkflowState {
     pub graph_hash: String,
 }
 
-// ANCHOR:ARCH:TOMBSTONE-001 — Bit 63 der SeqNo markiert Tombstones.
+// INVARIANT: Bit 63 der SeqNo markiert Tombstones.
 /// Bit mask for identifying tombstones in sequence numbers.
 pub const TOMBSTONE_BIT: u64 = 1 << 63;
 

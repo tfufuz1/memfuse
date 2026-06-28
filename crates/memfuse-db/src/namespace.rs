@@ -3,9 +3,7 @@
 //! Multiple specialized agents share the same MemFuse instance
 //! without context bleeding between namespaces.
 
-// ANCHOR:ARCH:NAMESPACE-001 — Multi-Agent Namespaces (WP-6.4)
-// WP:WP-6.4 PRIO:2 NEEDS:WP-1.2
-// STATUS:SCAFFOLD DATE:2026-05-17
+// INVARIANT: Multi-Agent Namespaces (WP-6.4)
 
 use memfuse_core::{IsolationLevel, NamespaceId, Result};
 use std::collections::HashMap;

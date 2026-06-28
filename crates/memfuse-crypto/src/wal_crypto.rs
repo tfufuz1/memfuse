@@ -118,8 +118,7 @@ impl IntegrityVerifier {
 mod tests {
     use super::*;
 
-    // ANCHOR:AUDIT:FIXED — IntegrityVerifier lifecycle and HMAC chain validation verified.
-    // STATUS:DONE (Audited 2026-05-23)
+    // INTENT: IntegrityVerifier lifecycle and HMAC chain validation verified.
     #[test]
     fn test_wal_hmac_basic() {
         let key = b"test-key-32-bytes-long-----------";

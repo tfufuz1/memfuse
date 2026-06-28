@@ -13,13 +13,8 @@
 //! - **TxBuffer**: Sharded transaction staging with orphan reaper
 //! - **Snapshots**: MVCC read isolation via [`SnapshotRegistry`]
 
-// ANCHOR:INTEGRATION STATUS:DONE AGENT:01
-// ANCHOR:ARCH:GATE-FV STATUS:OPEN
 // WATCHDOG: Blocking merges due to missing Kani/TLA+ proofs for REVIEW components (WAL/LSM).
-// ANCHOR:ARCH:CORE-001 — Triebwerk-Fundament: Alle anderen Crates hängen von memfuse-core ab.
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
+// INVARIANT: Triebwerk-Fundament: Alle anderen Crates hängen von memfuse-core ab.
 // INVARIANTE: Kein I/O, kein async, kein Netzwerk — reine Datentypen + Traits.
 // Vor jeder Änderung: `cargo check -p memfuse-db` um Downstream-Bruch zu erkennen.
 

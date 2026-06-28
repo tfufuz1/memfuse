@@ -922,7 +922,6 @@ impl SstableReader {
     /// Retrieves a value from the SSTable by key.
     pub async fn get(&self, key: &[u8]) -> Result<Option<(Bytes, u64, u64)>> {
         // 1. Whole-SSTable Bloom Filter Pre-check
-        // WP:WP-5.x PRIO:1 NEEDS:NONE
         // SPECCED: Only if bloom filter is present (backward compatibility)
         if let Some(bloom) = &self.bloom_filter {
             if !bloom.may_contain(key) {

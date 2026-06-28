@@ -3,14 +3,8 @@
 //! # Hierarchical Navigable Small World (HNSW) Index
 //!
 //! This module implements the HNSW algorithm for efficient approximate nearest neighbor (ANN) search.
-// ANCHOR:DOC:DOC-HNSW-001 — Module documentation added
-// WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:03 DATE:2026-05-15 STATUS:DONE
-// CREATED:2026-05-09 DEADLINE:NONE
-// ANCHOR:ARCH:HNSW-001 — Hierarchical Navigable Small World Index.
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
+// TODO: Module documentation added
+// INVARIANT: Hierarchical Navigable Small World Index.
 // IMPLEMENTS: VectorIndex Trait (memfuse-core/traits.rs)
 // CONSTRUCT: Greedyensuche + Heuristik für Diversitätsauswahl der Nachbarn.
 // SEARCH: Layer Descent (von max_layer bis 0), dann EF-Search in Layer 0.
@@ -91,9 +85,7 @@ impl HnswConfig {
     /// Validates that the configuration parameters are within acceptable bounds.
     pub fn validate(&self) -> Result<()> {
         // ANCHOR:ALG-FIX:D2-003 — ef_construction < M Guard fehlt
-        // WP:WP-0.0 PRIO:1 NEEDS:NONE
-        // AGENT:13 DATE:2026-05-08 STATUS:DONE
-        // CREATED:2026-05-08 DEADLINE:NONE
+        // ANCHOR:ALG-FIX:D2-003 — ef_construction < M Guard fehlt
         // INVARIANTE: ef_construction >= M (INV-HNSW-1)
         if self.ef_construction < self.m {
             return Err(MemFuseError::invalid_input(format!(
@@ -206,9 +198,7 @@ impl PartialOrd for Candidate {
 impl Ord for Candidate {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // ANCHOR:ALG-FIX:D2-005 — total_cmp statt unwrap_or(Equal) für NaN-Safety
-        // WP:WP-0.0 PRIO:1 NEEDS:NONE
-        // AGENT:13 DATE:2026-05-08 STATUS:DONE
-        // CREATED:2026-05-08 DEADLINE:NONE
+        // ANCHOR:ALG-FIX:D2-005 — total_cmp statt unwrap_or(Equal) für NaN-Safety
         // total_cmp gibt eine deterministische Ordnung für alle f32 inkl. NaN.
         self.distance.total_cmp(&other.distance)
     }
@@ -288,11 +278,8 @@ impl HnswIndex {
 
     /// Persists the index to a flat file.
     // ANCHOR:REFACTOR:WP-0.0-ASYNCIO — Fix blocking I/O in HnswIndex::save
-    // WP:WP-0.0 PRIO:1 NEEDS:NONE
-    // AGENT:@JULES-03 DATE:2026-05-27 STATUS:READY
     // TEST: grep "std::fs" crates/memfuse-index/src/hnsw.rs
     // DONE: Alle std::fs Aufrufe in save() sind in spawn_blocking gekapselt oder durch tokio::fs ersetzt.
-    // SUCCESSOR: @JULES-13 — "HNSW I/O ist nun async-safe. Tech-Debt Audit fortsetzen."
     pub async fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let _lock = self.write_mutex.lock().await;
         let inner = std::sync::Arc::clone(&self.inner);
@@ -305,7 +292,7 @@ impl HnswIndex {
             let entry_point = inner.entry_point.read();
             let q_guard = inner.quantizer.read();
 
-            // ANCHOR:BUGFIX:SIGBUS-001 — Atomic Save to prevent SIGBUS on mmap
+            // INTENT: Atomic Save to prevent SIGBUS on mmap
             let temp_path = path_buf.with_extension("hnsw.tmp");
             let file = std::fs::File::create(&temp_path).map_err(|e| {
                 MemFuseError::Storage(format!("Failed to create temporary HNSW file: {}", e))
@@ -530,9 +517,7 @@ impl HnswIndexCore {
     fn random_layer(&self) -> usize {
         let mut rng = rand::thread_rng();
         // ANCHOR:ALG-FIX:D2-002 — Guard gegen ln(0) = -∞ (INV-HNSW-2)
-        // WP:WP-0.0 PRIO:1 NEEDS:NONE
-        // AGENT:13 DATE:2026-05-08 STATUS:DONE
-        // CREATED:2026-05-08 DEADLINE:NONE
+        // ANCHOR:ALG-FIX:D2-002 — Guard gegen ln(0) = -∞ (INV-HNSW-2)
         // rng.gen() gibt [0, 1) — bei r=0.0: ln(0)=-∞ → usize::MAX → OOM.
         // max(f64::EPSILON) verhindert diesen Grenzfall.
         let r: f32 = rng.gen::<f32>();
@@ -610,9 +595,7 @@ impl HnswIndexCore {
                     .symmetric_dist(a, b, self.config.distance_metric)
             }
             // ANCHOR:ALG-FIX:PANIC-001 — Mixed VectorData Guard (Zero-Panic Policy)
-            // WP:WP-0.0 PRIO:1 NEEDS:NONE
-            // AGENT:13 DATE:2026-05-09 STATUS:DONE
-            // CREATED:2026-05-09 DEADLINE:NONE
+            // ANCHOR:ALG-FIX:PANIC-001 — Mixed VectorData Guard (Zero-Panic Policy)
             // FUNDORT: memfuse-index/src/hnsw.rs
             _ => Err(MemFuseError::Index(
                 "Mixed vector representations (F32/U8) are not supported".into(),
@@ -876,9 +859,7 @@ impl HnswIndexCore {
         }
 
         // ANCHOR:ALG-FIX:D2-004 — NaN/Inf-Validierung bei Insert (Distanzfunktion)
-        // WP:WP-0.0 PRIO:1 NEEDS:NONE
-        // AGENT:13 DATE:2026-05-08 STATUS:DONE
-        // CREATED:2026-05-08 DEADLINE:NONE
+        // ANCHOR:ALG-FIX:D2-004 — NaN/Inf-Validierung bei Insert (Distanzfunktion)
         // NaN-Vektoren würden in BinaryHeap stille Korrumpierung verursachen.
         // Validierung an der Grenze (insert) statt in distance.rs — distance bleibt rein.
         if vector.iter().any(|x| x.is_nan() || x.is_infinite()) {
@@ -1096,9 +1077,7 @@ impl HnswIndexCore {
             self.deleted_count.fetch_add(1, Ordering::SeqCst);
 
             // ANCHOR:ALG-FIX:D2-001 — Entry-Point-Aktualisierung nach Delete (INV-HNSW-4)
-            // WP:WP-0.0 PRIO:1 NEEDS:NONE
-            // AGENT:13 DATE:2026-05-08 STATUS:DONE
-            // CREATED:2026-05-08 DEADLINE:NONE
+            // ANCHOR:ALG-FIX:D2-001 — Entry-Point-Aktualisierung nach Delete (INV-HNSW-4)
             // Wenn der gelöschte Knoten der Entry-Point war, muss ein neuer
             // Entry-Point gefunden werden. Strategie: Nachbar auf höchstem Layer.
             let mut ep = self.entry_point.write();
@@ -1348,10 +1327,7 @@ impl VectorIndex for HnswIndex {
         Ok(())
     }
 
-    // ANCHOR:PERF:LATENCY-002 — HNSW Search Hotspot (Optimiert)
-    // WP:WP-0.0 PRIO:2 NEEDS:NONE
-    // AGENT:03 DATE:2026-05-15 STATUS:DONE
-    // CREATED:2026-05-09 DEADLINE:NONE
+    // CONSTRAINT: HNSW Search Hotspot (Optimiert)
     // TARGET: < 10ms bei 1M Vektoren
     // AKTUELL: Optimiert via Dynamic ef_search
     // BOTTLENECK: CPU / Cache Misses / ef_search Heuristik
@@ -1605,9 +1581,6 @@ impl VectorIndex for HnswIndex {
         let mut deleted_any = false;
 
         // ANCHOR:SPEC:WP-2.2-SQ8TRAIN-001 — Lazy Training logic (Stabilized)
-        // WP:WP-2.2 PRIO:2 NEEDS:NONE
-        // AGENT:03 DATE:2026-05-15 STATUS:DONE
-        // CREATED:2026-05-09 DEADLINE:NONE
         if self.config.quantize && self.quantizer.read().is_none() {
             let mut train_data = Vec::with_capacity(256.min(ops.len()));
             for op in &ops {

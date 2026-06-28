@@ -3,11 +3,7 @@
 //! Manages active read snapshots and computes the minimum active
 //! sequence number to prevent premature tombstone GC.
 
-// ANCHOR:ARCH:MVCC-001 — Snapshot-Registry schützt Reads vor Compaction-GC.
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// AUDIT:2026-05-23 STATUS:VERIFIED COVERAGE:100%
-// CREATED:2026-05-05 DEADLINE:NONE
+// INVARIANT: Snapshot-Registry schützt Reads vor Compaction-GC.
 // INVARIANTE: Solange SnapshotGuard lebt → keine Tombstone-GC für seq >= guard.seq_no.
 // RAII-PATTERN: Drop deregistriert automatisch. unwrap_or(u64::MAX) ist KORREKT.
 
@@ -126,8 +122,7 @@ impl Drop for SnapshotGuard {
 mod tests {
     use super::*;
 
-    // ANCHOR:AUDIT:FIXED — Snapshot-Registry Lifecycle verified by 5 unit tests.
-    // STATUS:DONE (Audited 2026-05-23)
+    // INTENT: Snapshot-Registry Lifecycle verified by 5 unit tests.
     #[test]
     fn test_snapshot_registry_basic() {
         let registry = Arc::new(SnapshotRegistry::new());

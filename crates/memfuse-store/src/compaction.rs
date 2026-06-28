@@ -5,10 +5,7 @@
 //! Tombstones are garbage-collected during merge when no active snapshot
 //! references them.
 
-// ANCHOR:ARCH:COMPACT-001 — Background Compaction (STCS — Size-Tiered Compaction Strategy).
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
+// INVARIANT: Background Compaction (STCS — Size-Tiered Compaction Strategy).
 // ALGORITHMUS: Gruppiere SSTables nach Größenklasse → Merge wenn >= min_sstables_per_tier.
 // TOMBSTONE-GC: Tombstones werden NUR gelöscht wenn seq < min_active_seqno (MVCC-SAFE).
 // ATOMARER SWAP: Merge unter read-lock, SSTable-Liste swap unter write-lock.

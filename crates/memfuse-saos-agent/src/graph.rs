@@ -1,10 +1,6 @@
 //! Declarative StateGraph definition for Agent Workflows.
 
-// ANCHOR:ARCH:GRAPH-001 — Deklarativer StateGraph.
-// WP:NONE PRIO:2 NEEDS:NONE
-// AGENT:NONE DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-09 DEADLINE:NONE
-// DESIGN: Hashmaps für Knoten, einfache Tuple-Listen für Edges.
+// INVARIANT: Deklarativer StateGraph.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

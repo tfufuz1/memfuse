@@ -58,7 +58,7 @@ with memfuse.open("./data", dimension=1536) as db:
 
 MemFuse uses a strict MECE **Unified Documentation System**. For all details, see:
 - [README.md](./README.md) — This file, features and high-level introduction.
-- [CONSTITUTION.md](./CONSTITUTION.md) & [AGENTS.md](./AGENTS.md) — Mandatory policies and Agent protocol.
+- [CONSTITUTION.md](./CONSTITUTION.md) & [DEVELOPERS.md](./DEVELOPERS.md) — Mandatory developer policies.
 - [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — System design DAG and invariants.
 - [docs/SOURCE_OF_TRUTH.md](./docs/SOURCE_OF_TRUTH.md) — The living document matching the exact current implementation state.
 

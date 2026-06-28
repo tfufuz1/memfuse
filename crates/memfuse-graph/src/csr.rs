@@ -3,10 +3,7 @@
 //! Implementiert [`memfuse_core::GraphIndex`] via Compressed Sparse Row (CSR)
 //! Datenstruktur für cache-effizienten Graph-Traversal.
 
-// ANCHOR:ARCH:CSR-001 — CSR-Graph for 4-Signal Fusion
-// WP:WP-6.1 PRIO:2 NEEDS:WP-2.1
-// STATUS:IMPLEMENTED DATE:2026-05-27
-// DESIGN: CSR structure with contiguous arrays for traversal efficiency.
+// INVARIANT: CSR-Graph for 4-Signal Fusion
 
 use async_trait::async_trait;
 use memfuse_core::{Edge, Entity, EntityId, GraphIndex, GraphIndexStats, Result, TxId};

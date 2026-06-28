@@ -1,11 +1,6 @@
 //! Logically isolated Collections inside the MemFuse database.
-// ANCHOR:ARCH:COLLECTION-001 — Logische Isolation (Namespaces).
-// WP:WP-1.2 PRIO:1 NEEDS:NONE
-// AGENT:04 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
-// DESIGN: Eigener HNSW-Index pro Collection, GEMEINSAMER LSM-Storage.
+// INVARIANT: Logische Isolation (Namespaces).
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
-// STATUS: Full Implementation für WP-1.2.
 
 use crate::filter::MetadataFilter;
 use memfuse_core::{DocId, Result, StorageEngine, TextIndex, TxId, VectorIndex};
@@ -385,7 +380,6 @@ impl<S: StorageEngine> Collection<S> {
             embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
-        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
         // Document serialization is unencrypted before being sent to storage.
         // If Encryption-at-Rest is enabled, it's encrypted in the storage layer (WP-3.2).
         let data = serde_json::to_vec(&stored)?;
@@ -585,7 +579,6 @@ impl<S: StorageEngine> Collection<S> {
             embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
-        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
         let data = serde_json::to_vec(&stored)?;
 
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
@@ -661,7 +654,6 @@ impl<S: StorageEngine> Collection<S> {
             "to": to,
             "label": label,
         });
-        // ANCHOR:SEC:ENCRYPT-001 AGENT:10 PRIO:1 STATUS:REVIEW
         let bytes = serde_json::to_vec(&val)?;
 
         self.storage.put(tx, &key, &bytes).await?;

@@ -3,9 +3,7 @@
 //! Sprachbewusste Tokenisierung für europäische Sprachen.
 //! Compound-Splitting für Deutsch zur Token-Reduktion.
 
-// ANCHOR:ARCH:MORPH-001 — Morphologische Inferenz-Optimierung (WP-6.5)
-// WP:WP-6.5 PRIO:2 NEEDS:WP-2.1
-// STATUS:SCAFFOLD DATE:2026-05-17
+// INVARIANT: Morphologische Inferenz-Optimierung (WP-6.5)
 
 /// Trait for morphological tokenization.
 ///

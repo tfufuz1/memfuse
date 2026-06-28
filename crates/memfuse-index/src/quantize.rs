@@ -1,5 +1,4 @@
 //! Scalar Quantization (SQ8) for HNSW Index.
-// WP:WP-2.2 PRIO:1 NEEDS:NONE
 
 use crate::distance::euclidean_distance_sq_f32_u8;
 use memfuse_core::DistanceMetric;

@@ -4,11 +4,7 @@
 //! Each shard is independently locked, allowing concurrent writers
 //! to different transactions.
 
-// ANCHOR:ARCH:TXBUF-001 — Sharded Transaction Buffer für lock-freie Concurrency.
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
-// DESIGN: 64 Shards → TxId % 64. LIFECYCLE: stage() → drain()/discard().
+// INVARIANT: Sharded Transaction Buffer für lock-freie Concurrency.
 
 use crate::error::{MemFuseError, Result};
 use crate::types::{DocId, TxId};
@@ -89,19 +85,13 @@ impl<T: Clone> TxBuffer<T> {
 
     #[inline]
     fn shard_idx(&self, tx: TxId) -> usize {
-        // ANCHOR:SEC:CAST-001 — Modulo-Cast u64→usize (sicher wegen %-Operator)
-        // WP:WP-0.0 PRIO:5 NEEDS:NONE
-        // AGENT:10 DATE:2026-05-09 STATUS:DONE
-        // CREATED:2026-05-09 DEADLINE:NONE
+        // SAFETY: Modulo-Cast u64→usize (sicher wegen %-Operator)
         (tx.inner() % self.shards.len() as u64) as usize
     }
 
     /// Checks if the given transaction exists in the buffer.
     pub fn has_tx(&self, tx: TxId) -> bool {
-        // ANCHOR:SEC:SLICE-001 — Slice-Indexing — sicher weil shard_idx = modulo len()
-        // WP:WP-0.0 PRIO:5 NEEDS:NONE
-        // AGENT:10 DATE:2026-05-09 STATUS:DONE
-        // CREATED:2026-05-09 DEADLINE:NONE
+        // SAFETY: Slice-Indexing — sicher weil shard_idx = modulo len()
         let shard = &self.shards[self.shard_idx(tx)];
         shard.read().ops.contains_key(&tx)
     }
@@ -272,7 +262,7 @@ mod tests {
         }
 
         for h in handles {
-            // ANCHOR:DEBT:TXBUF-002 — intentional expect in tests
+            // INTENT: intentional expect in tests
             h.join().expect("task panicked"); // #[cfg(test)]
         }
 

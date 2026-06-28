@@ -36,7 +36,7 @@ async fn test_wal_recovery_from_partial_write() -> Result<()> {
     // vermutlich zu einem Fehler. Wir wollen sehen, wie das System reagiert.
     let wal = Wal::open(&wal_path).await;
 
-    // ANCHOR:REACTION — Hier entscheiden wir: Soll Wal::open scheitern oder
+    // INTENT: Hier entscheiden wir: Soll Wal::open scheitern oder
     // die korrupten Daten am Ende abschneiden (Truncate)?
     // Die Sovereign-Core-Doktrin bevorzugt Sicherheit.
     // Wenn das Log korrupt ist, ist ein expliziter Fehler besser als stillschweigendes Ignorieren.

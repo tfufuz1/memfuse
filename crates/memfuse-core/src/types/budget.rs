@@ -115,8 +115,7 @@ impl ResourceTracker {
     }
 }
 
-// ANCHOR:AUDIT:FIXED — Resource Tracker (Memory Budget & Backpressure) verified by 5 tests.
-// STATUS:DONE (Audited 2026-05-23)
+// INTENT: Resource Tracker (Memory Budget & Backpressure) verified by 5 tests.
 #[cfg(test)]
 mod tests {
     use super::*;

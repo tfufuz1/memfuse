@@ -1,12 +1,6 @@
 //! LSM-Tree (Log-Structured Merge-Tree) storage engine.
-// ANCHOR:DOC:DOC-LSM-001 — Missing module documentation
-// WP:WP-0.0 PRIO:3 NEEDS:NONE
-// AGENT:02 DATE:2026-05-16 STATUS:REVIEW
-// CREATED:2026-05-09 DEADLINE:NONE
-// ANCHOR:ARCH:LSM-001 — Zentraler Storage-Engine-Orchestrator des Triebwerks.
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
+// TODO: Missing module documentation
+// INVARIANT: Zentraler Storage-Engine-Orchestrator des Triebwerks.
 // IMPLEMENTS: StorageEngine Trait (memfuse-core/src/traits.rs)
 // READ-PATH:  get() → Active MemTable → Immutable MemTables → SSTables (newest first)
 // WRITE-PATH: put()/delete() → TxBuffer → commit() → WAL + MemTable
@@ -58,11 +52,8 @@ use tokio::sync::RwLock;
 
 /// LSM storage configuration.
 // SEC-001 — Erweitere LsmConfig um `encryption_passphrase` und AES-256.
-// WP:WP-3.2 PRIO:1 NEEDS:COL-001
-// AGENT:@JULES-10 DATE:2026-05-09 STATUS:READY
 // TEST: cargo test -p memfuse-store test_encrypted_db_unreadable_without_key
 // DONE: LsmConfig akzeptiert Passphrase, AES-256 wird für Disk-I/O verwendet.
-// SUCCESSOR: @JULES-13 — "Encryption ist impl. Bitte Specs finalisieren."
 #[derive(Clone, Debug)]
 /// Configuration for the LSM storage engine.
 pub struct LsmConfig {
@@ -275,11 +266,8 @@ impl LsmStorage {
 
         // Spawn background compaction task
         // COMP-001 — Implementiere CompactionEngine::run_loop.
-        // WP:WP-1.1 PRIO:1 NEEDS:NONE
-        // AGENT:@JULES-02 DATE:2026-05-12 STATUS:REVIEW
         // TEST: cargo test -p memfuse-store test_concurrent_reads_during_compaction
         // DONE: Triple-Test grün, keine Deadlocks in tokio::spawn.
-        // SUCCESSOR: @JULES-04 — "Background compaction ist stabil. Collections können aufbauen."
         let compaction_engine = Arc::new(CompactionEngine::new(
             config.compaction.clone(),
             Arc::clone(&snapshot_registry),
@@ -557,9 +545,7 @@ impl StorageEngine for LsmStorage {
         }
 
         // ANCHOR:ALG-FIX:D6-001 — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
-        // WP:WP-0.0 PRIO:1 NEEDS:NONE
-        // AGENT:13 DATE:2026-05-08 STATUS:DONE
-        // CREATED:2026-05-08 DEADLINE:NONE
+        // ANCHOR:ALG-FIX:D6-001 — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
         // FIX: Commit-Mutex serialisiert fetch_add + memtable.put.
         // Ohne Mutex könnte seq=11 vor seq=10 fertig sein → Reader seq=11 sieht Lücke bei 10.
         let _commit_lock = self.commit_mutex.lock().await;
@@ -696,9 +682,7 @@ impl StorageEngine for LsmStorage {
         state.immutable_memtables.push(old_memtable.clone());
 
         // ANCHOR:ALG-FIX:D1-011 — Stale WAL-Dateien löschen nach Flush
-        // WP:WP-0.0 PRIO:1 NEEDS:NONE
-        // AGENT:13 DATE:2026-05-08 STATUS:DONE
-        // CREATED:2026-05-08 DEADLINE:NONE
+        // ANCHOR:ALG-FIX:D1-011 — Stale WAL-Dateien löschen nach Flush
         // Ohne Cleanup wächst die Disk-Usage unbegrenzt (eine WAL pro Flush).
         let old_wal_path = old_wal.path().to_path_buf();
         drop(old_wal);
@@ -739,7 +723,6 @@ impl StorageEngine for LsmStorage {
             .retain(|mt| !Arc::ptr_eq(mt, &old_memtable));
 
         // Update last_committed_tx if the SSTable contains newer committed transactions
-        // WP:WP-0.0 PRIO:1 NEEDS:NONE
         // FIX: Extract max_tx_id before move to satisfy borrow checker.
         let sst_max_tx = reader.metadata().max_tx_id;
         sstables.push(Arc::new(reader));

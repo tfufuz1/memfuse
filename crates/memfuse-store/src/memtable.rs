@@ -3,10 +3,7 @@
 //! Entries are stored in a `BTreeMap` where each key maps to a versioned list
 //! of values. This enables Snapshot Isolation by allowing point-in-time reads.
 
-// ANCHOR:ARCH:MEMTABLE-001 — In-Memory Sortierter Puffer (hot writes).
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-23 STATUS:DONE (MVCC Refactor)
-// CREATED:2026-05-05 DEADLINE:NONE
+// INVARIANT: In-Memory Sortierter Puffer (hot writes).
 
 use bytes::Bytes;
 use parking_lot::RwLock;

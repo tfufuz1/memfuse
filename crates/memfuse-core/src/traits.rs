@@ -3,10 +3,7 @@
 //! These traits define the abstract interfaces that concrete implementations
 //! must fulfill, enabling modularity and testability.
 
-// ANCHOR:ARCH:TRAITS-001 — Trait-Contracts sind das API-Rückgrat des Workspace.
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
+// INVARIANT: Trait-Contracts sind das API-Rückgrat des Workspace.
 // REGEL: Neue Methoden MÜSSEN Default-Impl haben (backward compat).
 
 use crate::types::*;
@@ -52,10 +49,7 @@ pub struct StorageStats {
     pub memtable_size_bytes: u64,
 }
 
-// ANCHOR:ARCH:CONTRACT-STORAGE-001 — Implementor: LsmStorage (memfuse-store/src/lsm.rs)
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
+// INVARIANT: Implementor: LsmStorage (memfuse-store/src/lsm.rs)
 // Lifecycle: put/delete → commit/rollback → flush(background).
 
 /// Storage Engine trait — abstrahiert die LSM-Tree-Persistenz.
@@ -143,10 +137,7 @@ pub trait StorageEngine: Send + Sync + 'static {
     ) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
 }
 
-// ANCHOR:ARCH:CONTRACT-INDEX-001 — Implementor: HnswIndex (memfuse-index/src/hnsw.rs)
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:01 DATE:2026-05-09 STATUS:DONE
-// CREATED:2026-05-05 DEADLINE:NONE
+// INVARIANT: Implementor: HnswIndex (memfuse-index/src/hnsw.rs)
 // Rebuild: Automatisch bei >20% gelöschten Nodes.
 
 /// Vector Index Trait — abstrahiert die HNSW-Vektorsuche.
@@ -305,9 +296,7 @@ pub trait TextIndex: Send + Sync + 'static {
     async fn stats(&self) -> Result<TextIndexStats>;
 }
 
-// ANCHOR:ARCH:TRAIT-003 — Graph Engine Trait (Signal 3)
-// WP:WP-6.x PRIO:4 NEEDS:WP-2.1
-// STATUS:SCAFFOLD DATE:2026-05-17
+// INVARIANT: Graph Engine Trait (Signal 3)
 
 /// Graph-Index Trait — CSR-basierte Entity-Relation-Traversal.
 ///

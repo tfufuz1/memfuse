@@ -3,16 +3,11 @@
 //! Proactively injects the most relevant context into the LLM working memory
 //! before inference. Small-to-Big retrieval with token budget management.
 
-// ANCHOR:ARCH:CONTEXT-001 — Autonomes Kontext-Management (WP-6.3)
-// WP:WP-6.3 PRIO:2 NEEDS:GS-01
-// STATUS:SCAFFOLD DATE:2026-05-17
+// INVARIANT: Autonomes Kontext-Management (WP-6.3)
 
 // ANCHOR:INTEGRATION:WP-7.1-CHUNKER — Wire MarkdownChunker to ContextManager
-// WP:WP-7.1 PRIO:1 NEEDS:NONE
-// AGENT:@JULES-04 DATE:2026-05-27 STATUS:READY
 // TEST: cargo test -p memfuse-db
 // DONE: ContextManager nutzt MarkdownChunker zur Dokument-Zerlegung.
-// SUCCESSOR: @JULES-05 — "Chunking ist integriert. BM25 Re-Ranking auf Chunks validieren."
 
 use memfuse_core::{ContextChunk, ContextWindow, Result, TokenBudget};
 

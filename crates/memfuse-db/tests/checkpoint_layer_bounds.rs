@@ -5,7 +5,6 @@ use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
 
-// AGENT:12 DATE:2026-05-09 STATUS:DONE
 // ZIEL: memfuse-checkpoint -> memfuse-db (Fork + Diverge + Merge)
 //
 // Dieser Test verifiziert die Zusammenarbeit zwischen dem PersistentCheckpointStore

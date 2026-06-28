@@ -18,8 +18,8 @@ This document defines the core principles and non-negotiable standards of the Me
 -   Architectural integrity is maintained by a strict Directed Acyclic Graph. 
 -   Layer 0 (Core) must remain agnostic of high-level features.
 
-### 4. Agentic Alignment
--   Code must be readable by both humans and LLM agents. 
+### 4. Code Alignment
+-   Code must be readable and maintainable by humans. 
 -   Comments should explain **why** an invariant exists (e.g., `// ANCHOR:ARCH:LSM-001`).
 
 ---
@@ -38,7 +38,7 @@ This document defines the core principles and non-negotiable standards of the Me
 ### 3. Unified Documentation System
 To keep context synchronous and strictly organized, we enforce a precise MECE (Mutually Exclusive, Collectively Exhaustive) documentation model:
 -   **`README.md`**: Entry point and high-level feature list.
--   **`CONSTITUTION.md` & `AGENTS.md`**: Immutable system rules. 
+-   **`CONSTITUTION.md` & `DEVELOPERS.md`**: Immutable system rules. 
 -   **`docs/ARCHITECTURE.md`**: The structural DAG. Rare changes.
 -   **`docs/SOURCE_OF_TRUTH.md` (Living State)**: Must be updated in the **same transaction/PR** as the code when components, findings, or ADRs change.
 -   **No Temporary Folders**: `docs/specs`, `docs/archive`, and `docs/audit` are prohibited. If a spec is implemented, its knowledge must be merged entirely into `SOURCE_OF_TRUTH.md` and the spec is discarded. Ensure every item has a distinct, single location. Code-level documentation (`pub` items) and core invariant comments (`// ANCHOR`) are required inside the codebase directly.

@@ -1,10 +1,7 @@
 #![allow(unsafe_code)]
 // ANCHOR:DEBT:WP-0.0-ZEROPANIC — Eradicate .unwrap() in persistence.rs
-// WP:WP-0.0 PRIO:1 NEEDS:NONE
-// AGENT:@JULES-13 DATE:2026-05-27 STATUS:READY
 // TEST: grep -c ".unwrap()" crates/memfuse-index/src/persistence.rs
 // DONE: Alle .unwrap() Aufrufe auf try_into() sind durch ? ersetzt.
-// SUCCESSOR: @JULES-03 — "Persistence ist nun panic-frei. HNSW Async I/O Refactor kann starten."
 //! HNSW Persistence Layer — Serialisierung und mmap-Mapping für Vektor-Indizes.
 //!
 //! Dieses Modul implementiert das `.hnsw` Dateiformat, das für das Offloading von

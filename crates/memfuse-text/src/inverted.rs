@@ -1,8 +1,5 @@
 //! LSM-backed Inverted Index.
-// ANCHOR:PERF:LATENCY-003 — Inverted Index Key-Gen & Cache
-// WP:WP-0.0 PRIO:2 NEEDS:NONE
-// AGENT:09 DATE:2026-05-19 STATUS:DONE
-// CREATED:2026-05-19 DEADLINE:NONE
+// CONSTRAINT: Inverted Index Key-Gen & Cache
 // TARGET: < 20µs für upsert_document
 // AKTUELL: ~18.6 µs (nach Optimierung)
 // VORHER: 24.6 µs → NACHHER: 18.6 µs (~24% gain)

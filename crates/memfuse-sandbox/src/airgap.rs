@@ -3,9 +3,7 @@
 //! Enforces complete network isolation for sovereign AI deployments.
 //! Validates that no socket calls leak from the runtime.
 
-// ANCHOR:ARCH:AIRGAP-001 — Air-Gap Deployment Profile (WP-6.6)
-// WP:WP-6.6 PRIO:2 NEEDS:WP-3.1+WP-3.2
-// STATUS:SCAFFOLD DATE:2026-05-17
+// INVARIANT: Air-Gap Deployment Profile (WP-6.6)
 
 use memfuse_core::Result;
 
