@@ -198,11 +198,17 @@ impl MemFuse {
     /// Repair-on-Open pipeline: scans for unresolved transaction intents and
     /// re-syncs HNSW indices from LSM storage to recover from crash scenarios.
     ///
-    /// Recovery strategy:
-    /// 1. Scan all `__tx_intent:` keys for `"pending"` status (incomplete commits).
-    /// 2. For each pending intent, use forward-commit: replay missing HNSW entries
-    ///    from LSM via `Collection::repair()`, then mark the intent as `"repaired"`.
-    /// 3. Run `Collection::repair()` on all loaded collections to ensure LSM↔HNSW parity.
+    /// # Geschäftslogik: Crash-Recovery (FIND-DB-005)
+    /// MemFuse nutzt ein 2-Phasen-Commit (2PC) Protokoll, um die Konsistenz zwischen
+    /// dem LSM-Tree (Speicher) und dem HNSW-Vektorindex zu garantieren.
+    /// Ein Crash zwischen Phase 1 (LSM commit) und Phase 2 (Index commit) würde
+    /// zu einem "Split-Brain" führen.
+    ///
+    /// Recovery-Strategie:
+    /// 1. Scan nach `CommitIntent::Pending` Markern in allen Namespaces.
+    /// 2. Markiere gefundene Intents als `Committed`, um redundante Recovery zu vermeiden.
+    /// 3. Starte `Collection::repair()`, welche die LSM-Daten liest und fehlende
+    ///    Einträge im HNSW-Index nachpflegt (Forward-Commit).
     #[tracing::instrument(level = "trace", skip(self))]
     async fn repair_on_open(&self) -> Result<()> {
         let start_time = std::time::Instant::now();
@@ -218,14 +224,16 @@ impl MemFuse {
                 pending_intents.len()
             );
 
-            // 2. Mark each pending intent as "repaired" to prevent re-processing.
+            // 2. Mark each pending intent as "committed" to prevent re-processing.
             //    The actual data reconciliation happens in step 3 via Collection::repair().
             for intent_key in &pending_intents {
                 let tx = TxId::new(
                     self.next_tx
                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
                 );
-                if let Err(e) = self.storage.put(tx, intent_key, b"repaired").await {
+                let committed_bytes =
+                    serde_json::to_vec(&crate::transaction::CommitIntent::Committed).unwrap_or_default();
+                if let Err(e) = self.storage.put(tx, intent_key, &committed_bytes).await {
                     tracing::error!("repair_on_open: failed to mark intent as repaired: {}", e);
                     continue;
                 }
@@ -265,16 +273,17 @@ impl MemFuse {
         Ok(())
     }
 
-    /// Scans storage for all transaction intent keys with `"pending"` status.
+    /// Scans storage for all transaction intent keys with `CommitIntent::Pending` status.
     #[tracing::instrument(level = "trace", skip(self))]
     async fn scan_pending_intents(&self) -> Result<Vec<Vec<u8>>> {
+        use crate::transaction::CommitIntent;
         let mut pending = Vec::new();
 
         // Scan default collection's intent namespace
         let default_prefix = b"__tx_intent:";
         let entries = self.storage.scan_prefix(default_prefix).await?;
         for (key, value) in entries {
-            if value == b"pending" {
+            if let Ok(CommitIntent::Pending { .. }) = serde_json::from_slice::<CommitIntent>(&value) {
                 pending.push(key);
             }
         }
@@ -290,7 +299,9 @@ impl MemFuse {
                 ns_prefix.push(3); // key_type=3 for tx intents
                 let ns_entries = self.storage.scan_prefix(&ns_prefix).await?;
                 for (ns_key, ns_value) in ns_entries {
-                    if ns_value == b"pending" {
+                    if let Ok(CommitIntent::Pending { .. }) =
+                        serde_json::from_slice::<CommitIntent>(&ns_value)
+                    {
                         pending.push(ns_key);
                     }
                 }
@@ -1273,8 +1284,12 @@ mod tests {
 
             // Manually write a "pending" intent
             let intent_key = col.namespaced_key(tx.inner().to_le_bytes().as_ref(), 3);
+            let intent = crate::transaction::CommitIntent::Pending {
+                doc_ids: vec![doc_id],
+            };
+            let intent_bytes = serde_json::to_vec(&intent).expect("json");
             db.storage
-                .put(tx, &intent_key, b"pending")
+                .put(tx, &intent_key, &intent_bytes)
                 .await
                 .expect("put intent");
 
@@ -1299,13 +1314,21 @@ mod tests {
             assert_eq!(results.len(), 1, "Should be repaired and found in HNSW");
             assert_eq!(results[0].id, "recovered-doc");
 
-            // Verify intent is marked as repaired
+            // Verify intent is marked as repaired (committed)
             let entries = db
                 .storage
                 .scan_prefix(b"__col:recovery-test:\x00\x03")
                 .await
                 .expect("scan intents");
-            let found_repaired = entries.iter().any(|(_, v)| v == b"repaired");
+            let found_repaired = entries.iter().any(|(_, v)| {
+                if let Ok(crate::transaction::CommitIntent::Committed) =
+                    serde_json::from_slice::<crate::transaction::CommitIntent>(v)
+                {
+                    true
+                } else {
+                    false
+                }
+            });
             assert!(found_repaired, "Intent should be marked as repaired");
         }
     }

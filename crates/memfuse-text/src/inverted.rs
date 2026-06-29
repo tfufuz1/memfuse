@@ -107,11 +107,15 @@ impl<S: StorageEngine> InvertedIndex<S> {
     fn key_with_term_doc(&self, term: &str, doc_id: DocId) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
         let id_str = itoa_buf.format(doc_id.inner());
+        // # Sicherheits-Hardening: Key-Injection Prevention
+        // Wir verwenden das Null-Byte (\x00) als Delimiter anstelle von ':'.
+        // Da Tokenizer Wörter an Satzzeichen splitten, können Tokens kein \x00 enthalten.
+        // Dies verhindert, dass ein bösartiger Term (z.B. "word:123") die DocId im Key fälscht.
         let mut k = Vec::with_capacity(self.prefix.len() + 3 + term.len() + 1 + id_str.len());
         k.extend_from_slice(&self.prefix);
         k.extend_from_slice(b"pl:");
         k.extend_from_slice(term.as_bytes());
-        k.push(b':');
+        k.push(0);
         k.extend_from_slice(id_str.as_bytes());
         k
     }
@@ -121,18 +125,19 @@ impl<S: StorageEngine> InvertedIndex<S> {
         k.extend_from_slice(&self.prefix);
         k.extend_from_slice(b"pl:");
         k.extend_from_slice(term.as_bytes());
-        k.push(b':');
+        k.push(0);
         k
     }
 
     fn key_tombstone(&self, doc_id: DocId, term: &str) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
         let id_str = itoa_buf.format(doc_id.inner());
+        // Use \x00 as delimiter
         let mut k = Vec::with_capacity(self.prefix.len() + 4 + id_str.len() + 1 + term.len());
         k.extend_from_slice(&self.prefix);
         k.extend_from_slice(b"tbs:");
         k.extend_from_slice(id_str.as_bytes());
-        k.push(b':');
+        k.push(0);
         k.extend_from_slice(term.as_bytes());
         k
     }
@@ -166,8 +171,10 @@ impl<S: StorageEngine> InvertedIndex<S> {
                     let old_terms: Vec<String> = bincode::deserialize(&fw_bytes)
                         .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
                     for term in old_terms {
-                        let tbs_key = self.key_tombstone(doc_id, &term);
-                        self.storage.put(tx, &tbs_key, &[]).await?;
+                        if !tfs.contains_key(&term) {
+                            let tbs_key = self.key_tombstone(doc_id, &term);
+                            self.storage.put(tx, &tbs_key, &[]).await?;
+                        }
                     }
                 }
             }
@@ -229,6 +236,10 @@ impl<S: StorageEngine> InvertedIndex<S> {
     /// whenever write throughput is low.
     ///
     /// Returns the number of tombstones that were resolved.
+    /// # Geschäftslogik: Tombstone-Resolution (WP-2.1)
+    /// MemFuse nutzt einen verzögerten Lösch-Ansatz für den Invertierten Index.
+    /// Updates markieren alte Dokument-Versionen via Tombstones (`tbs:`).
+    /// Diese Methode bereinigt die Posting-Lists asynchron, um die Schreib-Performance hoch zu halten.
     pub async fn resolve_tombstones(&self, tx: TxId) -> Result<u64> {
         let tbs_prefix = {
             let mut k = Vec::with_capacity(self.prefix.len() + 4);
@@ -241,9 +252,9 @@ impl<S: StorageEngine> InvertedIndex<S> {
         let mut resolved = 0u64;
 
         for (tbs_key, _) in tombstones {
-            // Format: {prefix}tbs:{doc_id}:{term}
+            // Format: {prefix}tbs:{doc_id}\x00{term}
             let suffix = &tbs_key[tbs_prefix.len()..];
-            let parts: Vec<&[u8]> = suffix.split(|&b| b == b':').collect();
+            let parts: Vec<&[u8]> = suffix.split(|&b| b == 0).collect();
             if parts.len() < 2 {
                 continue;
             }
@@ -394,7 +405,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
             }
 
             for (key, val_bytes) in entries {
-                // Key format: {namespace}:pl:{term}:{doc_id}
+                // Key format: {namespace}:pl:{term}\x00{doc_id}
                 // Suffix is just {doc_id}
                 let suffix = &key[prefix.len()..];
                 let doc_id_raw = std::str::from_utf8(suffix)

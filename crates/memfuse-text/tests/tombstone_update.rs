@@ -88,6 +88,9 @@ impl StorageEngine for MockStorage {
         Ok(Vec::new())
     }
     async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        self.scan_prefix_at(prefix, 0).await
+    }
+    async fn scan_prefix_at(&self, prefix: &[u8], _seq: u64) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         let store = self.store.read();
         Ok(store
             .iter()
@@ -210,12 +213,13 @@ async fn test_multiple_updates_single_tombstone(
         storage.commit(tx).await?;
     }
 
-    // Should still be exactly four tombstones for d1 (first, second, third, version).
+    // Should still be exactly three tombstones for d1 (first, second, third)
+    // "version" is kept in the final state, so it shouldn't have a tombstone.
     let tbs_entries = storage.scan_prefix(tbs_prefix).await?;
     assert_eq!(
         tbs_entries.len(),
-        4,
-        "Multiple updates should yield exactly four tombstones (first, second, third, version)"
+        3,
+        "Multiple updates should yield exactly three tombstones (first, second, third)"
     );
 
     Ok(())

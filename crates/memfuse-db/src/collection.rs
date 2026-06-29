@@ -163,8 +163,15 @@ impl<S: StorageEngine> Collection<S> {
 
     /// Repairs the index by re-syncing with the storage.
     ///
-    /// Scans the storage for any documents that are missing from the index
-    /// and reconciles them. This is critical for crash recovery.
+    /// # Geschäftslogik: Index-Reconciliation (FIND-DB-005)
+    /// Diese Methode stellt sicher, dass der Vektor-Index (HNSW) und die
+    /// LSM-Speicherschicht synchron sind.
+    ///
+    /// Ablauf:
+    /// 1. Priorisierte Recovery: Nutzt `CommitIntents`, um gezielt Dokumente
+    ///    nachzuindizieren, die bei einem Crash im HNSW-Index verloren gingen.
+    /// 2. Vollständige Heilung: Scannt alle Dokumente des Namespaces im LSM
+    ///    und indiziert fehlende DocIds nach.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn repair(&self) -> Result<()> {
         let mut repair_count = 0;
@@ -372,6 +379,15 @@ impl<S: StorageEngine> Collection<S> {
         embedding: &[f32],
         metadata: Option<serde_json::Value>,
     ) -> Result<()> {
+        // # Sicherheits-Validierung: Namespace-Pollution (WP-6.4)
+        // In der 'default' Collection verhindern wir, dass Benutzer-IDs mit '__' beginnen.
+        // Diese Präfixe sind für interne Metadaten (z.B. __docid:, __rel:) reserviert.
+        // Ohne diese Prüfung könnten bösartige IDs interne Indizes überschreiben oder korrumpieren.
+        if self.name == "default" && id.starts_with("__") {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Document IDs in the 'default' collection cannot start with reserved prefix '__'",
+            ));
+        }
         let tx = db_tx.tx_id;
         let doc_id = DocId::from_key(id)?;
 
@@ -566,6 +582,13 @@ impl<S: StorageEngine> Collection<S> {
         embedding: &[f32],
         metadata: Option<serde_json::Value>,
     ) -> Result<()> {
+        // # Sicherheits-Validierung: Namespace-Pollution (WP-6.4)
+        // Konsistente Prüfung auch bei Updates, um Injection-Versuche zu blockieren.
+        if self.name == "default" && id.starts_with("__") {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Document IDs in the 'default' collection cannot start with reserved prefix '__'",
+            ));
+        }
         let tx = db_tx.tx_id;
         let doc_id = DocId::from_key(id)?;
 
@@ -1115,5 +1138,35 @@ impl<S: StorageEngine> Collection<S> {
 
         self.storage.commit(tx).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::TempDir;
+    use crate::{MemFuse, MemFuseConfig};
+
+    #[tokio::test]
+    async fn test_default_collection_reserved_id_prevention() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(tmp.path(), config).await.expect("open db");
+        let col = db.collection("default").await.expect("default col");
+
+        let res = col.insert("__docid:evil", &[1.0, 0.0, 0.0, 0.0], None).await;
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("reserved prefix"));
+
+        let res_upsert = col.upsert("__tx_intent:evil", &[1.0, 0.0, 0.0, 0.0], None).await;
+        assert!(res_upsert.is_err());
+        assert!(res_upsert.unwrap_err().to_string().contains("reserved prefix"));
+
+        // Named collections should still allow it (they use their own prefix)
+        let col_named = db.collection("named").await.expect("named col");
+        let res_named = col_named.insert("__docid:fine", &[1.0, 0.0, 0.0, 0.0], None).await;
+        assert!(res_named.is_ok());
     }
 }
