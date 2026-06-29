@@ -347,7 +347,7 @@ impl MemFuse {
         };
         let index = Arc::new(HnswIndex::new(hnsw_config));
 
-        let mut col = Collection::new(
+        let col = Collection::new(
             name.to_string(),
             Arc::clone(&self.storage),
             index,

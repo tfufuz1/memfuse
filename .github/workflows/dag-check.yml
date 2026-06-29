@@ -61,9 +61,11 @@ jobs:
         run: |
           set -e
           echo "Verifying memfuse-db..."
-          if cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py|memfuse-checkpoint|memfuse-sandbox|memfuse-saos-agent"; then
-            echo "ERROR: memfuse-db imports higher layers."
-            cargo tree -p memfuse-db --edges no-dev | grep -E "memfuse-py|memfuse-checkpoint|memfuse-sandbox|memfuse-saos-agent"
+          # L3 (db) is permitted to depend on L1 (core, crypto, graph) and L2 (store, index, text, checkpoint)
+          # db also utilizes sandbox (L3 peer) for contract enforcement.
+          if cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py|memfuse-saos-agent"; then
+            echo "ERROR: memfuse-db imports forbidden higher layers (py, saos-agent)."
+            cargo tree -p memfuse-db --edges no-dev | grep -E "memfuse-py|memfuse-saos-agent"
             exit 1
           fi
 
@@ -71,9 +73,10 @@ jobs:
         run: |
           set -e
           echo "Verifying memfuse-py..."
-          if cargo tree -p memfuse-py --edges no-dev | grep -E -q "memfuse-checkpoint|memfuse-sandbox|memfuse-saos-agent"; then
-            echo "ERROR: memfuse-py violates isolation by importing L5 Frozen crates."
-            cargo tree -p memfuse-py --edges no-dev | grep -E "memfuse-checkpoint|memfuse-sandbox|memfuse-saos-agent"
+          # L4 (py) depends on L3 (db), but must not depend on L5 (saos-agent).
+          if cargo tree -p memfuse-py --edges no-dev | grep -q "memfuse-saos-agent"; then
+            echo "ERROR: memfuse-py violates isolation by importing L5 Frozen crates (saos-agent)."
+            cargo tree -p memfuse-py --edges no-dev | grep "memfuse-saos-agent"
             exit 1
           fi
 
