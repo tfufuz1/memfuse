@@ -88,6 +88,10 @@ impl StorageEngine for MockStorage {
         Ok(Vec::new())
     }
     async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        self.scan_prefix_at(prefix, u64::MAX).await
+    }
+
+    async fn scan_prefix_at(&self, prefix: &[u8], _seq_no: u64) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         let store = self.store.read();
         Ok(store
             .iter()

@@ -92,6 +92,7 @@ MemFuse ist eine eingebettete Hybrid-Search-Datenbank, die speziell für den Ein
 2.  **OOM-Handling**: Der `ResourceTracker` blockiert bei 95% Belegung weitere Schreibvorgänge, löst aber keinen automatischen "Emergency Flush" oder Cache-Eviction aus.
 3.  **Tombstone-Latenz**: Im Inverted Index werden Posting-Lists bei Updates nicht sofort bereinigt (Lazy Tombstones). Die `resolve_tombstones()` Methode muss manuell oder durch Hintergrund-Jobs aufgerufen werden, um Speicherplatz freizugeben.
 4.  **Inkonsistente Trait-Defaults**: Der Fehler in `scan_prefix_at` behindert die Testbarkeit von Komponenten, die gegen den Trait statt gegen die konkrete `LsmStorage` testen.
+5.  **CI/Architektur-Drift**: Crate-Umbenennungen (`runtime` -> `sandbox`) und neue Peer-Abhängigkeiten (`index` -> `graph`) müssen explizit in den CI-Filtern (`dag-check.yml`) nachgepflegt werden, um "False Positives" zu vermeiden.
 
 ---
 
