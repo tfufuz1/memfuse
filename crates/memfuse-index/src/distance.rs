@@ -219,6 +219,7 @@ unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
     while i + 8 <= n {
         // SAFETY: AVX2 Load und FMA.
         // BEGRÜNDUNG: i + 8 <= n garantiert In-Bounds Zugriff auf a und b. Unaligned Load (loadu) ist sicher.
+        // Vektoren a und b haben laut compute_distance die gleiche Länge n.
         // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 8 <= n. FMADD is safe on hardware detected by dispatcher.
         unsafe {
             let va = _mm256_loadu_ps(a.as_ptr().add(i));
