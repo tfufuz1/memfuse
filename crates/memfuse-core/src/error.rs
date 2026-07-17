@@ -284,4 +284,106 @@ mod tests {
         let res = fail();
         assert!(res.is_err());
     }
+
+    /// Mutation-robustness test: verifies that `From<std::io::Error>` preserves the
+    /// original I/O error message in the Display output.
+    ///
+    /// # Anti-Mirroring
+    /// Expected string `"I/O error: "` is a hand-written prefix, independent of the format
+    /// impl string `"I/O error: {0}"`. If the format string changed (e.g. prefix dropped),
+    /// this test would catch it.
+    ///
+    /// # Mutation robustness
+    /// Removing the `#[from]` attribute would break this test (Io variant would stop matching).
+    /// Changing the prefix from "I/O error" to anything else would break the `starts_with` assert.
+    #[test]
+    fn test_io_error_message_preserved() {
+        let sentinel = "unique_sentinel_message_for_mutation_test_42";
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, sentinel);
+        let mf_err: MemFuseError = io_err.into();
+
+        // Must be the Io variant — not Internal or Storage
+        assert!(
+            matches!(mf_err, MemFuseError::Io(_)),
+            "Expected MemFuseError::Io, got: {:?}",
+            mf_err
+        );
+
+        // The original message must survive in the Display output (no message loss)
+        let display = mf_err.to_string();
+        assert!(
+            display.contains(sentinel),
+            "io::Error message must be preserved. Display was: {:?}",
+            display
+        );
+        // The MemFuseError prefix must also be present (structural check)
+        assert!(
+            display.starts_with("I/O error:"),
+            "Expected 'I/O error:' prefix, got: {:?}",
+            display
+        );
+    }
+
+    /// Mutation-robustness test: verifies `From<serde_json::Error>` carries the parse error info.
+    ///
+    /// # Anti-Mirroring
+    /// `"JSON error:"` is a hand-written known-stable string; not derived from the format macro.
+    #[test]
+    fn test_json_error_message_preserved() {
+        let sentinel_json = "{\"key\": }"; // Valid JSON prefix, invalid tail
+        let json_err = serde_json::from_str::<serde_json::Value>(sentinel_json).unwrap_err();
+        let original_msg = json_err.to_string();
+        let mf_err: MemFuseError = json_err.into();
+
+        assert!(matches!(mf_err, MemFuseError::Json(_)));
+
+        let display = mf_err.to_string();
+        // Message from the JSON parser must survive in the output
+        assert!(
+            display.contains(&original_msg) || display.contains("expected value"),
+            "Json error detail must be preserved. Display: {:?}, original: {:?}",
+            display,
+            original_msg
+        );
+        assert!(
+            display.starts_with("JSON error:"),
+            "Expected 'JSON error:' prefix, got: {:?}",
+            display
+        );
+    }
+
+    /// Mutation-robustness test: WalCorruption fields must not be transposed.
+    ///
+    /// # Invariant
+    /// Swapping `offset` and `reason` in the struct definition would break this test.
+    /// Using the same value for both fields (lazy test) would not — this test uses distinct
+    /// types to make field-swapping impossible, and distinct values to catch display-level bugs.
+    #[test]
+    fn test_wal_corruption_fields_not_transposed() {
+        let err = MemFuseError::WalCorruption {
+            offset: 98765,
+            reason: "corrupted hmac chain".to_string(),
+        };
+        let display = err.to_string();
+
+        // The numeric offset must appear in the display — not be silently replaced by the reason
+        assert!(
+            display.contains("98765"),
+            "WalCorruption offset must appear in display: {:?}",
+            display
+        );
+        // The reason text must also appear
+        assert!(
+            display.contains("corrupted hmac chain"),
+            "WalCorruption reason must appear in display: {:?}",
+            display
+        );
+        // The offset must NOT accidentally appear where the reason should be
+        // (catches field-transposition bug in format string)
+        assert!(
+            !display.starts_with("WAL corruption detected at offset corrupted"),
+            "Offset and reason must not be transposed: {:?}",
+            display
+        );
+    }
 }

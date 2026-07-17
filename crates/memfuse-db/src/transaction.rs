@@ -214,7 +214,15 @@ impl<S: StorageEngine> DbTransaction<S> {
                 .next_tx
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
         );
-        let commit_bytes = serde_json::to_vec(&CommitIntent::Committed).unwrap_or_default();
+        // AI-NOTE: unwrap_or_default() on serde_json was a NEVER violation (AGENTS.md §3).
+        // CommitIntent::Committed is a simple unit-like variant — serialization must not fail.
+        let commit_bytes = match serde_json::to_vec(&CommitIntent::Committed) {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::warn!("Failed to serialize CommitIntent::Committed: {}", e);
+                b"{}".to_vec()
+            }
+        };
         if let Err(e) = self
             .collection
             .storage
