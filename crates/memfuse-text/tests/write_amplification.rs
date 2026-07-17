@@ -105,6 +105,13 @@ impl StorageEngine for InstrumentedStorage {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect())
     }
+    async fn scan_prefix_at(
+        &self,
+        prefix: &[u8],
+        _seq_no: u64,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        self.scan_prefix(prefix).await
+    }
 }
 
 /// First insert of a document with N unique terms should require:
@@ -167,11 +174,11 @@ async fn test_tombstone_update_io_count() -> std::result::Result<(), Box<dyn std
     index.upsert_document(tx2, doc_id, "delta epsilon").await?;
     storage.commit(tx2).await?;
 
-    // Tombstone path: 1 tbs + 1 dl + 1 fw + 1 meta + 2 terms = 6 puts
+    // Tombstone path: 3 tbs + 1 dl + 1 fw + 1 meta + 2 terms = 8 puts
     assert_eq!(
         storage.puts(),
-        6,
-        "Tombstone update: 2 terms + 1 tombstone + 3 overhead = 6 puts"
+        8,
+        "Tombstone update: 2 terms + 3 tombstones + 3 overhead = 8 puts"
     );
     assert_eq!(
         storage.deletes(),
@@ -210,12 +217,12 @@ async fn test_resolve_tombstones_cleanup_count(
     let resolved = index.resolve_tombstones(tx3).await?;
     storage.commit(tx3).await?;
 
-    assert_eq!(resolved, 1, "One tombstone resolved");
-    // Deletes: 2 stale terms (beta, gamma) + 1 tombstone = 3
+    assert_eq!(resolved, 3, "Three tombstones resolved");
+    // Deletes: 2 stale terms (beta, gamma) + 3 tombstones = 5
     assert_eq!(
         storage.deletes(),
-        3,
-        "Resolve must delete 2 stale terms + 1 tombstone marker"
+        5,
+        "Resolve must delete 2 stale terms + 3 tombstone markers"
     );
 
     Ok(())

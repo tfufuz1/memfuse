@@ -6,13 +6,8 @@ members = [
     "crates/memfuse-index",
     "crates/memfuse-db",
     "crates/memfuse-text",
-    "crates/memfuse-sandbox",
-    "crates/memfuse-saos-agent",
-    "crates/memfuse-py",
     "crates/memfuse-checkpoint",
-    "crates/memfuse-graph",
-    "crates/memfuse-crypto", "crates/memfuse-cluster",
-    "crates/memfuse-embed",
+    "crates/memfuse-crypto",
 ]
 
 [workspace.package]
@@ -57,34 +52,38 @@ tracing = "0.1"
 tempfile = "3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Internal crates
+# Internal crates (Sovereign Core — 7 Crates)
 memfuse-core = { path = "crates/memfuse-core" }
 memfuse-store = { path = "crates/memfuse-store" }
 memfuse-index = { path = "crates/memfuse-index" }
 memfuse-db = { path = "crates/memfuse-db" }
 memfuse-text = { path = "crates/memfuse-text" }
-memfuse-sandbox = { path = "crates/memfuse-sandbox" }
-memfuse-saos-agent = { path = "crates/memfuse-saos-agent" }
-memfuse-py = { path = "crates/memfuse-py" }
 memfuse-checkpoint = { path = "crates/memfuse-checkpoint" }
-memfuse-graph = { path = "crates/memfuse-graph" }
 memfuse-crypto = { path = "crates/memfuse-crypto" }
-memfuse-cluster = { path = "crates/memfuse-cluster" }
-memfuse-embed = { path = "crates/memfuse-embed" }
 
-# Cluster & Consensus
-openraft = { version = "0.9", features = ["storage-v2", "serde"] }
-tonic = { version = "0.12", features = ["tls"] }
-prost = "0.13"
+# 🧊 Frozen Zone — optional, not in workspace members
+# Activate only via explicit feature flags:
+# memfuse-sandbox = { path = "crates/memfuse-sandbox" }
+# memfuse-graph = { path = "crates/memfuse-graph" }
+# memfuse-cluster = { path = "crates/memfuse-cluster" }
+# memfuse-embed = { path = "crates/memfuse-embed" }
+# memfuse-saos-agent = { path = "crates/memfuse-saos-agent" }
+# memfuse-py = { path = "crates/memfuse-py" }
 
-# Embedding & ML
-ort = { version = "2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "tracing", "download-binaries", "tls-rustls", "copy-dylibs", "api-24"] }
-hf-hub = { version = "0.3", default-features = false }
-tokenizers = "0.19"
-ndarray = "0.15"
-
+# 🧊 Frozen Zone — external deps for future reactivation
+# Cluster & Consensus (activate with memfuse-cluster feature)
+# openraft = { version = "0.9", features = ["storage-v2", "serde"] }
+# tonic = { version = "0.12", features = ["tls"] }
+# prost = "0.13"
+#
+# Embedding & ML (activate with memfuse-embed feature)
+# ort = { version = "2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "tracing", "download-binaries", "tls-rustls", "copy-dylibs", "api-24"] }
+# hf-hub = { version = "0.3", default-features = false }
+# tokenizers = "0.19"
+# ndarray = "0.15"
+#
 # Network
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [profile.release]
 opt-level = 3

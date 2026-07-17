@@ -147,7 +147,7 @@ impl DistanceMetric {
             return Err(MemFuseError::invalid_input("Vector dimensions must match"));
         }
 
-        match self {
+        let dist = match self {
             Self::Cosine => {
                 let mut dot = 0.0;
                 let mut norm_a = 0.0;
@@ -158,9 +158,9 @@ impl DistanceMetric {
                     norm_b += y * y;
                 }
                 if norm_a == 0.0 || norm_b == 0.0 {
-                    Ok(1.0)
+                    1.0
                 } else {
-                    Ok(1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt())))
+                    1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
                 }
             }
             Self::Euclidean => {
@@ -169,16 +169,24 @@ impl DistanceMetric {
                     let diff = x - y;
                     sum += diff * diff;
                 }
-                Ok(sum.sqrt())
+                sum.sqrt()
             }
             Self::DotProduct => {
                 let mut dot = 0.0;
                 for (x, y) in a.iter().zip(b.iter()) {
                     dot += x * y;
                 }
-                Ok(-dot) // Negative dot product for distance
+                -dot // Negative dot product for distance
             }
+        };
+
+        if !dist.is_finite() {
+            return Err(MemFuseError::InvalidInput(
+                "Distance computation resulted in a non-finite value (NaN or Inf)".into(),
+            ));
         }
+
+        Ok(dist)
     }
 
     /// Computes the distance between two u8 vectors using this metric.

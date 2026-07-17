@@ -55,7 +55,9 @@ pub mod chunker;
 pub mod collection;
 pub mod context;
 
+#[cfg(feature = "sandbox")]
 use async_trait::async_trait;
+#[cfg(feature = "sandbox")]
 use memfuse_sandbox::SandboxBridge;
 // mod Collection is used via pub mod collection
 pub mod filter;
@@ -336,7 +338,7 @@ impl MemFuse {
         };
         let index = Arc::new(HnswIndex::new(hnsw_config));
 
-        let mut col = Collection::new(
+        let col = Collection::new(
             name.to_string(),
             Arc::clone(&self.storage),
             index,
@@ -801,6 +803,7 @@ impl MemFuse {
     }
 }
 
+#[cfg(feature = "sandbox")]
 #[async_trait]
 impl SandboxBridge for MemFuse {
     async fn db_search(&self, query: &[u8], k: usize) -> Result<Vec<u8>> {

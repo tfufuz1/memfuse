@@ -79,6 +79,11 @@ pub struct FusionWeights {
 
 impl FusionWeights {
     pub fn new(vector: f32, text: f32, graph: f32, metadata: f32) -> Result<Self> {
+        if !vector.is_finite() || !text.is_finite() || !graph.is_finite() || !metadata.is_finite() {
+            return Err(MemFuseError::InvalidInput(
+                "Fusion weights must be finite numbers".into(),
+            ));
+        }
         // FIND-COR-004: Guard against negative weights
         if vector < 0.0 || text < 0.0 || graph < 0.0 || metadata < 0.0 {
             return Err(MemFuseError::InvalidInput(

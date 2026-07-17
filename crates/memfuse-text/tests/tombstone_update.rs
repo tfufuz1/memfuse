@@ -95,6 +95,13 @@ impl StorageEngine for MockStorage {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect())
     }
+    async fn scan_prefix_at(
+        &self,
+        prefix: &[u8],
+        _seq_no: u64,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        self.scan_prefix(prefix).await
+    }
 }
 
 // ---------------------------------------------------------------------------

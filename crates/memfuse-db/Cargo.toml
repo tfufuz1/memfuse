@@ -12,15 +12,17 @@ memfuse-store = { workspace = true }
 memfuse-index = { workspace = true }
 memfuse-text = { workspace = true }
 memfuse-checkpoint = { workspace = true }
-memfuse-embed = { workspace = true, optional = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-memfuse-sandbox = { path = "../memfuse-sandbox" }
-memfuse-cluster = { workspace = true, optional = true }
 async-trait = { workspace = true }
 tokio-util = { version = "0.7.18", features = ["rt"] }
+
+# 🧊 Frozen Zone — uncomment to reactivate (requires frozen crates in workspace)
+# memfuse-embed = { path = "../memfuse-embed", optional = true }
+# memfuse-sandbox = { path = "../memfuse-sandbox", optional = true }
+# memfuse-cluster = { path = "../memfuse-cluster", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
@@ -31,8 +33,11 @@ proptest = "1.4"
 [features]
 default = []
 bench = []
-embed = ["dep:memfuse-embed"]
-cluster = ["dep:memfuse-cluster"]
+# 🧊 Frozen features — stubs declared to silence cfg(feature) warnings.
+# Uncomment dep: links above AND dep entries to fully reactivate.
+embed = []    # reactivate: embed = ["dep:memfuse-embed"]
+sandbox = []  # reactivate: sandbox = ["dep:memfuse-sandbox"]
+cluster = []  # reactivate: cluster = ["dep:memfuse-cluster"]
 
 [[bench]]
 name = "migration_benchmarks"

@@ -8,7 +8,7 @@ description = "HNSW vector index with SIMD distance computation for MemFuse"
 
 [dependencies]
 memfuse-core = { workspace = true }
-memfuse-graph = { workspace = true }
+memfuse-graph = { path = "../memfuse-graph", optional = true }
 ahash = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
@@ -18,6 +18,10 @@ async-trait = { workspace = true }
 tracing = { workspace = true }
 memmap2 = "0.9"
 serde = { workspace = true, features = ["derive"] }
+
+[features]
+default = []
+graph = ["dep:memfuse-graph"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
