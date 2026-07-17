@@ -1,0 +1,9 @@
+@AGENTS.md
+
+# Cline-Spezifische Regeln
+
+Dieses File importiert alle Regeln aus `@AGENTS.md`. Cline liest `AGENTS.md` derzeit nicht nativ — dieses File stellt sicher, dass die Regeln trotzdem geladen werden.
+
+## Verhalten
+- 7-Schleifen-Stack aus `rules/llm_protocol.md` vollständig durchlaufen.
+- Bei allen ASK-FIRST-Aktionen (§3) pausieren und Benutzer-Freigabe einholen.

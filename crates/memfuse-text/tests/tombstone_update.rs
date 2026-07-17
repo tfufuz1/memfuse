@@ -95,11 +95,7 @@ impl StorageEngine for MockStorage {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect())
     }
-    async fn scan_prefix_at(
-        &self,
-        prefix: &[u8],
-        _seq_no: u64,
-    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    async fn scan_prefix_at(&self, prefix: &[u8], _seq_no: u64) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         self.scan_prefix(prefix).await
     }
 }
@@ -139,7 +135,11 @@ async fn test_tombstone_update_no_eager_delete(
     // A tombstone key tbs:1 should now exist.
     let tbs_prefix = b"__txt:default:tbs:";
     let tbs_entries = storage.scan_prefix(tbs_prefix).await?;
-    assert_eq!(tbs_entries.len(), 2, "Exactly two tombstones expected (one per term)");
+    assert_eq!(
+        tbs_entries.len(),
+        2,
+        "Exactly two tombstones expected (one per term)"
+    );
 
     Ok(())
 }

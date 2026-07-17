@@ -3,6 +3,19 @@
 //! AUDIT:2026-05-23 STATUS:IMPLEMENTED (P0 Remediation)
 //! Enables exact state reconstruction of an SAOS database at any given transaction ID.
 
+// AI-TAG[DUPLICATION][MAJOR] Two parallel checkpoint subsystems with overlapping responsibilities
+// BEFUND: `memfuse-store/src/checkpoint.rs` implements `Checkpointer` + `CheckpointGuard` for
+//         WAL-based time-travel (TxId → rollback). The separate `memfuse-checkpoint` crate implements
+//         `PersistentCheckpointStore` + `CheckpointMeta` for named, persistent checkpoints with metadata.
+//         Both concepts are "checkpoints" and both call `storage.rollback_to_tx()`.
+//         Discovery: `memfuse-db/Cargo.toml` depends on `memfuse-checkpoint`; `memfuse-store` owns the other.
+// RISIKO: Two independent checkpoint vocabularies cause agent confusion and potential double-rollback.
+//         Future code may accidentally mix `StateCheckpoint` (TxId-scoped) with `CheckpointMeta`
+//         (named + seq_no-scoped), leading to invariant violations (§7 MECE-Primat).
+// EMPFEHLUNG: Consolidate into single trait in `memfuse-core::traits` — one concept, one crate.
+//             `Checkpointer` (RAII guard pattern) → stays in `memfuse-store` as internal impl.
+//             `PersistentCheckpointStore` → move interface to `memfuse-core`, implementation to `memfuse-store`.
+//             `memfuse-checkpoint` crate becomes redundant after consolidation.
 use crate::lsm::LsmStorage;
 use memfuse_core::{MemFuseError, Result, TxId};
 use std::sync::Arc;
@@ -73,6 +86,11 @@ impl Checkpointer {
     /// Records a new checkpoint at the current transaction ID marking an agent step.
     /// Returns a RAII guard that will rollback the state if dropped without commit.
     pub fn create_checkpoint(&self, tx_id: TxId) -> CheckpointGuard {
+        // AI-TAG[SMELL][MINOR] SystemTime::now() fallback to epoch (0ms) on pre-epoch system clocks
+        // BEFUND: `unwrap_or_default()` returns Duration::ZERO if clock is before UNIX_EPOCH.
+        //         Non-critical on standard Linux systems, but silently produces timestamp=0.
+        // RISIKO: Checkpoint ordering by timestamp becomes unreliable on misconfigured clocks.
+        // EMPFEHLUNG: Use `unwrap_or(Duration::MAX)` to make anomalies visible, or log a warning.
         let cp = StateCheckpoint {
             tx_id,
             timestamp_ms: std::time::SystemTime::now()

@@ -143,6 +143,13 @@ impl CompactionEngine {
             .await?,
         );
 
+        // TODO[STABILIZE][memfuse-store][CRITICAL][CONCURRENCY-BUG]
+        // PROBLEM: Compaction swap race condition with concurrent flushes/rollbacks.
+        // BEWEIS: maybe_compact drops the read lock before merge_sstables and re-acquires the write lock later. If a flush or rollback runs in between, the `indices` will be stale, causing out-of-bounds panics or removal of incorrect SSTables.
+        // URSACHE: Swapping uses index positions computed before the lock was dropped.
+        // LÖSUNG: Map input_ssts to current index positions in `ssts` inside the write lock. If any input SSTable is missing (e.g. rolled back), abort and clean up the new file.
+        // VERIFIKATION: Add a test that triggers concurrent rollback/flush during a simulated slow compaction merge.
+        // ABHÄNGIGKEIT: None
         // 5. Atomic swap under write-lock
         let old_paths: Vec<PathBuf> = {
             let mut ssts = sstables.write().await;

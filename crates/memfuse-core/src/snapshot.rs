@@ -121,6 +121,7 @@ impl Drop for SnapshotGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prop_assert_eq;
 
     // INTENT: Snapshot-Registry Lifecycle verified by 5 unit tests.
     #[test]
@@ -189,5 +190,32 @@ mod tests {
 
         drop(g2);
         assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn prop_snapshot_registry_min_active(
+            seqs in proptest::collection::vec(0..1000u64, 1..50)
+        ) {
+            let registry = Arc::new(SnapshotRegistry::new());
+            let mut guards = Vec::new();
+
+            for &seq in &seqs {
+                guards.push(registry.register(seq));
+            }
+
+            let min_expected = *seqs.iter().min().unwrap();
+            prop_assert_eq!(registry.min_active_seqno(), min_expected);
+
+            guards.pop(); // Drop last element
+
+            // If all elements dropped, min_active is MAX, else it's min of remaining
+            if guards.is_empty() {
+                prop_assert_eq!(registry.min_active_seqno(), u64::MAX);
+            } else {
+                let remaining_min = guards.iter().map(|g| g.seq_no()).min().unwrap();
+                prop_assert_eq!(registry.min_active_seqno(), remaining_min);
+            }
+        }
     }
 }

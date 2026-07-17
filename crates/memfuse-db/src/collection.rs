@@ -506,8 +506,11 @@ impl<S: StorageEngine> Collection<S> {
         db_tx.commit().await
     }
 
-    async fn snapshot_seq(&self) -> u64 {
-        self.storage.last_seq_no().await.unwrap_or(u64::MAX)
+    // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: snapshot_seq() now propagates storage errors
+    // instead of silently mapping them to u64::MAX (ID: AGT-DB-001).
+    // Consistent with every other error-propagation path in this file.
+    async fn snapshot_seq(&self) -> Result<u64> {
+        self.storage.last_seq_no().await
     }
 
     /// Retrieves a document by its user-provided string ID.
@@ -742,7 +745,7 @@ impl<S: StorageEngine> Collection<S> {
         // 🛡️ SICHERUNG: Snapshot-Isolation (FIND-DB-003)
         // Wir pinnen den Snapshot für die gesamte Dauer der gefilterten Suche,
         // um Konsistenz zwischen Vektor-Index, Metadaten-Filter und Re-Hydrierung zu garantieren.
-        let seq = self.snapshot_seq().await;
+        let seq = self.snapshot_seq().await?;
         self.storage.pin_checkpoint(seq).await?;
 
         let res = async {
@@ -859,7 +862,7 @@ impl<S: StorageEngine> Collection<S> {
         k: usize,
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<crate::SearchResult>> {
-        let seq = self.snapshot_seq().await;
+        let seq = self.snapshot_seq().await?;
         self.search_filtered_at(query, k, filter, seq).await
     }
 
@@ -930,7 +933,7 @@ impl<S: StorageEngine> Collection<S> {
         vector: &[f32],
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
-        let seq = self.snapshot_seq().await;
+        let seq = self.snapshot_seq().await?;
         let is_vector_zero = vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
 

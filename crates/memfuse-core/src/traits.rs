@@ -483,6 +483,13 @@ mod tests {
         ];
         store.put_batch(TxId(1), &entries).await.unwrap();
         assert_eq!(store.0.lock().unwrap().len(), 2);
+
+        // Test scan_prefix_at default error
+        let res = store.scan_prefix_at(b"pre", 1).await;
+        assert!(matches!(
+            res,
+            Err(crate::error::MemFuseError::PolicyViolation(_))
+        ));
     }
 
     #[tokio::test]
@@ -538,5 +545,118 @@ mod tests {
         // Test search_filtered default error
         let res = index.search_filtered(&[1.0], 1, Some(&|_| true)).await;
         assert!(res.is_err());
+
+        // Test search_at default error
+        let res2 = index.search_at(&[1.0], 1, 42).await;
+        assert!(matches!(
+            res2,
+            Err(crate::error::MemFuseError::PolicyViolation(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_text_index_defaults() {
+        struct MockTextIndex;
+        #[async_trait::async_trait]
+        impl TextIndex for MockTextIndex {
+            async fn search(&self, _: &str, _: usize) -> Result<Vec<ScoredDocument>> {
+                Ok(vec![])
+            }
+            async fn insert(&self, _: TxId, _: DocId, _: &str) -> Result<()> {
+                Ok(())
+            }
+            async fn delete(&self, _: TxId, _: DocId) -> Result<()> {
+                Ok(())
+            }
+            async fn commit(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn last_tx_id(&self) -> Result<u64> {
+                Ok(0)
+            }
+            async fn len(&self) -> usize {
+                0
+            }
+            async fn stats(&self) -> Result<TextIndexStats> {
+                Ok(TextIndexStats {
+                    num_documents: 0,
+                    num_tokens: 0,
+                    memory_usage_bytes: 0,
+                })
+            }
+        }
+
+        let index = MockTextIndex;
+        let res = index.search_at("query", 10, 42).await;
+        assert!(matches!(
+            res,
+            Err(crate::error::MemFuseError::PolicyViolation(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_graph_index_defaults() {
+        struct MockGraphIndex;
+        #[async_trait::async_trait]
+        impl GraphIndex for MockGraphIndex {
+            async fn traverse(
+                &self,
+                _: crate::types::EntityId,
+                _: usize,
+            ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
+                Ok(vec![])
+            }
+            async fn add_entity(
+                &self,
+                _: crate::types::TxId,
+                _: crate::types::Entity,
+            ) -> crate::Result<()> {
+                Ok(())
+            }
+            async fn add_edge(
+                &self,
+                _: crate::types::TxId,
+                _: crate::types::Edge,
+            ) -> crate::Result<()> {
+                Ok(())
+            }
+            async fn commit(&self, _: crate::types::TxId) -> crate::Result<()> {
+                Ok(())
+            }
+            async fn rollback(&self, _: crate::types::TxId) -> crate::Result<()> {
+                Ok(())
+            }
+            async fn rollback_to_tx(&self, _: crate::types::TxId) -> crate::Result<()> {
+                Ok(())
+            }
+            async fn last_tx_id(&self) -> crate::Result<u64> {
+                Ok(0)
+            }
+            async fn len(&self) -> usize {
+                0
+            }
+            async fn stats(&self) -> crate::Result<GraphIndexStats> {
+                Ok(GraphIndexStats {
+                    num_entities: 0,
+                    num_edges: 0,
+                    memory_usage_bytes: 0,
+                })
+            }
+        }
+
+        let index = MockGraphIndex;
+        let res = index
+            .traverse_at(crate::types::EntityId::new(1), 2, 42)
+            .await;
+        assert!(matches!(
+            res,
+            Err(crate::error::MemFuseError::PolicyViolation(_))
+        ));
     }
 }

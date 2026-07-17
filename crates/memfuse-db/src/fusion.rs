@@ -145,6 +145,17 @@ mod tests {
         let fused = reciprocal_rank_fusion(vec![vectors, keywords], 2);
 
         assert_eq!(fused.len(), 2);
+        // AI-TAG[TEST-MIRRORING][MAJOR] Expected value `1.0/61.0` directly encodes `1/(k+0+1)` formula
+        // BEFUND: `assert!((fused[0].score - (1.0 / 61.0)).abs() < f32::EPSILON)` lines 150+154.
+        //         `1.0/61.0` = `1/(60+0+1)` — the exact formula from `reciprocal_rank_fusion()` line 20.
+        //         An independent reference value would be e.g. a known-correct external score table for k=60.
+        // RISIKO: If `k` or the rank-indexing formula changes (e.g. to 0-indexed), the test
+        //         would still pass because both implementation and assertion would update identically.
+        //         A mutation of `k = 60` → `k = 0` would break the comment but not the test invariant check.
+        // EMPFEHLUNG: Use pre-computed float literals with explanatory comment:
+        //             `const EXPECTED: f32 = 0.016393_f32; // 1/(60+1), computed independently`
+        //             Or assert ordering/dominance only (e.g. "identical ranks → identical scores"),
+        //             not the exact numeric value.
         // Both hit rank 0. Score = 1 / (60 + 0 + 1) = 1/61 = ~0.01639
         assert!(
             (fused[0].score - (1.0 / 61.0)).abs() < f32::EPSILON,

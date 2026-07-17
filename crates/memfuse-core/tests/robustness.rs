@@ -1,7 +1,7 @@
 use memfuse_core::{
     snapshot::SnapshotRegistry,
     tx_buffer::{IndexOp, TxBuffer},
-    types::{DocId, DistanceMetric, FusionWeights, ResourceBudget, ResourceTracker, TxId},
+    types::{DistanceMetric, DocId, FusionWeights, ResourceBudget, ResourceTracker, TxId},
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,11 +13,17 @@ fn test_fusion_weights_nan_and_inf_prevention() {
     assert!(res_nan.is_err(), "FusionWeights should reject NaN values");
 
     let res_neg_nan = FusionWeights::new(-f32::NAN, 0.5, 0.5, 0.0);
-    assert!(res_neg_nan.is_err(), "FusionWeights should reject negative NaN values");
+    assert!(
+        res_neg_nan.is_err(),
+        "FusionWeights should reject negative NaN values"
+    );
 
     // Expose the Inf vulnerability: FusionWeights should not allow Inf weights.
     let res_inf = FusionWeights::new(f32::INFINITY, 0.5, 0.5, 0.0);
-    assert!(res_inf.is_err(), "FusionWeights should reject Infinity values");
+    assert!(
+        res_inf.is_err(),
+        "FusionWeights should reject Infinity values"
+    );
 }
 
 #[test]
@@ -28,27 +34,39 @@ fn test_distance_metric_nan_inf_prevention() {
     let a = [f32::NAN, 0.0];
     let b = [1.0, 1.0];
     let res = metric.compute(&a, &b);
-    assert!(res.is_err(), "Distance computation should fail if inputs contain NaN");
+    assert!(
+        res.is_err(),
+        "Distance computation should fail if inputs contain NaN"
+    );
 
     // Cosine with Inf in first vector
     let a = [f32::INFINITY, 0.0];
     let b = [1.0, 1.0];
     let res = metric.compute(&a, &b);
-    assert!(res.is_err(), "Distance computation should fail if inputs contain Infinity");
+    assert!(
+        res.is_err(),
+        "Distance computation should fail if inputs contain Infinity"
+    );
 
     // Euclidean with NaN
     let metric_e = DistanceMetric::Euclidean;
     let a = [0.0, f32::NAN];
     let b = [1.0, 1.0];
     let res = metric_e.compute(&a, &b);
-    assert!(res.is_err(), "Euclidean distance computation should fail if inputs contain NaN");
+    assert!(
+        res.is_err(),
+        "Euclidean distance computation should fail if inputs contain NaN"
+    );
 
     // DotProduct with NaN
     let metric_dp = DistanceMetric::DotProduct;
     let a = [f32::NAN, 0.0];
     let b = [1.0, 1.0];
     let res = metric_dp.compute(&a, &b);
-    assert!(res.is_err(), "DotProduct distance computation should fail if inputs contain NaN");
+    assert!(
+        res.is_err(),
+        "DotProduct distance computation should fail if inputs contain NaN"
+    );
 }
 
 #[test]
@@ -93,7 +111,10 @@ fn test_resource_tracker_edge_cases() {
 
 #[test]
 fn test_tx_buffer_orphan_reaper_concurrency() {
-    let buffer = Arc::new(TxBuffer::<String>::new_with_config(8, Duration::from_millis(5)));
+    let buffer = Arc::new(TxBuffer::<String>::new_with_config(
+        8,
+        Duration::from_millis(5),
+    ));
     let thread_count = 5;
     let iterations = 100;
     let mut handles = Vec::new();
@@ -105,7 +126,13 @@ fn test_tx_buffer_orphan_reaper_concurrency() {
             for i in 0..iterations {
                 let tx = TxId::new((t * iterations + i) as u64);
                 b.begin(tx);
-                b.stage(tx, IndexOp::Insert { doc_id: DocId::new(i as u64), data: "test".to_string() });
+                b.stage(
+                    tx,
+                    IndexOp::Insert {
+                        doc_id: DocId::new(i as u64),
+                        data: "test".to_string(),
+                    },
+                );
                 std::thread::sleep(Duration::from_micros(100));
             }
         }));
@@ -128,5 +155,8 @@ fn test_tx_buffer_orphan_reaper_concurrency() {
     // After letting it rest and reaping one last time, it should be clean
     std::thread::sleep(Duration::from_millis(10));
     buffer.reap_orphans();
-    assert!(buffer.is_empty(), "Orphan reaper should eventually clean everything");
+    assert!(
+        buffer.is_empty(),
+        "Orphan reaper should eventually clean everything"
+    );
 }

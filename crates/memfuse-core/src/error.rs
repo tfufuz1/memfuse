@@ -136,20 +136,128 @@ mod tests {
     }
 
     #[test]
-    fn test_error_display() {
-        let err = MemFuseError::NotFound("doc_1".to_string());
-        assert_eq!(err.to_string(), "Not found: doc_1");
-
-        let io_err = MemFuseError::Io(std::io::Error::other("disk failure"));
-        assert!(io_err.to_string().contains("I/O error: disk failure"));
-
-        let wal_err = MemFuseError::WalCorruption {
-            offset: 1024,
-            reason: "invalid header".to_string(),
-        };
+    fn test_error_display_all_variants() {
+        // Core & Logic
         assert_eq!(
-            wal_err.to_string(),
+            MemFuseError::Internal("test".into()).to_string(),
+            "Internal error: test"
+        );
+        assert_eq!(
+            MemFuseError::InvalidInput("test".into()).to_string(),
+            "Invalid input: test"
+        );
+        assert_eq!(
+            MemFuseError::NotFound("doc_1".into()).to_string(),
+            "Not found: doc_1"
+        );
+        assert_eq!(
+            MemFuseError::PolicyViolation("test".into()).to_string(),
+            "Policy violation: test"
+        );
+
+        // Storage Engine
+        assert_eq!(
+            MemFuseError::Storage("test".into()).to_string(),
+            "Storage error: test"
+        );
+        assert_eq!(
+            MemFuseError::WalCorruption {
+                offset: 1024,
+                reason: "invalid header".into()
+            }
+            .to_string(),
             "WAL corruption detected at offset 1024: invalid header"
+        );
+        assert_eq!(
+            MemFuseError::ChecksumMismatch {
+                path: "f".into(),
+                block_id: 1
+            }
+            .to_string(),
+            "Checksum mismatch: file=f, block=1"
+        );
+
+        // Transactions & Consistency
+        assert_eq!(
+            MemFuseError::Transaction("test".into()).to_string(),
+            "Transaction error: test"
+        );
+        assert_eq!(
+            MemFuseError::TransactionTimeout {
+                tx_id: 1,
+                elapsed_ms: 50
+            }
+            .to_string(),
+            "Transaction 1 timed out after 50ms"
+        );
+        assert_eq!(
+            MemFuseError::Conflict("test".into()).to_string(),
+            "Conflict: test"
+        );
+        assert_eq!(
+            MemFuseError::InvalidSequenceNumber(42).to_string(),
+            "Invalid sequence number: 42"
+        );
+
+        // Index & Search
+        assert_eq!(
+            MemFuseError::Index("test".into()).to_string(),
+            "Index error: test"
+        );
+        assert_eq!(
+            MemFuseError::HnswConnectivityDegraded {
+                deleted_ratio: 0.25
+            }
+            .to_string(),
+            "HNSW graph connectivity degraded: 0.2% deleted nodes"
+        );
+        assert_eq!(
+            MemFuseError::Text("test".into()).to_string(),
+            "Text engine error: test"
+        );
+
+        // Resources & Sandbox
+        assert_eq!(
+            MemFuseError::MemoryBudgetExceeded {
+                used_mb: 100,
+                limit_mb: 50
+            }
+            .to_string(),
+            "Memory budget exceeded: 100MB / 50MB"
+        );
+        assert_eq!(
+            MemFuseError::Sandbox("test".into()).to_string(),
+            "Sandbox error: test"
+        );
+        assert_eq!(
+            MemFuseError::MemoryLimitExceeded("test".into()).to_string(),
+            "Memory limit exceeded in sandbox: test"
+        );
+        assert_eq!(
+            MemFuseError::SandboxTimeout("test".into()).to_string(),
+            "Timeout exceeded in sandbox: test"
+        );
+
+        // Infrastructure
+        assert_eq!(
+            MemFuseError::Serialization("test".into()).to_string(),
+            "Serialization error: test"
+        );
+        assert_eq!(
+            MemFuseError::Crypto("test".into()).to_string(),
+            "Crypto error: test"
+        );
+        assert_eq!(
+            MemFuseError::CheckpointNotFound.to_string(),
+            "Checkpoint not found"
+        );
+        assert_eq!(
+            MemFuseError::Cluster("test".into()).to_string(),
+            "Cluster error: test"
+        );
+        assert_eq!(
+            MemFuseError::ParseError("test".into()).to_string(),
+            "Parse error: test"
         );
     }
 

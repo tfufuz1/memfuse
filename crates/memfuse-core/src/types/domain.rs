@@ -198,6 +198,13 @@ impl DistanceMetric {
     /// Unlike the f32 path (`compute()`), the u32 result is **not negated** since
     /// `u32` cannot represent negative values. The caller (e.g., HNSW quantized search)
     /// is responsible for inverting the ranking order when using DotProduct.
+    // TODO[STABILIZE][memfuse-core][CRITICAL][PANIC-SAFETY]
+    // PROBLEM: Euclidean and DotProduct distance computation on u8 vectors can cause integer overflow.
+    // BEWEIS: If vectors have length > 66050 and diff is maximum (255), sum/dot accumulates to > u32::MAX, causing panic in debug mode and wrapping in release mode.
+    // URSACHE: Sum/dot is accumulated in a u32 variable which is not guarded against overflow.
+    // LÖSUNG: Use saturating addition or check/cast to u64 during accumulation and return error/saturate, or validate max dimension at the start of the function.
+    // VERIFIKATION: Add a test `test_distance_metrics_u8_overflow` with vector length 100_000 populated with 255.
+    // ABHÄNGIGKEIT: None
     pub fn compute_u8(&self, a: &[u8], b: &[u8]) -> Result<u32> {
         if a.len() != b.len() {
             return Err(MemFuseError::invalid_input("Vector dimensions must match"));
@@ -345,6 +352,7 @@ impl Edge {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prop_assert_eq;
 
     #[test]
     fn test_doc_id_from_key_no_panic() {
@@ -492,5 +500,31 @@ mod tests {
         assert_eq!(edge.from.inner(), 1);
         assert_eq!(edge.to.inner(), 2);
         assert_eq!(edge.weight, 0.5);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn prop_docid_serialization(id in proptest::num::u64::ANY) {
+            let doc = DocId::new(id);
+            let ser = serde_json::to_string(&doc).unwrap();
+            let deser: DocId = serde_json::from_str(&ser).unwrap();
+            prop_assert_eq!(doc, deser);
+        }
+
+        #[test]
+        fn prop_txid_serialization(id in proptest::num::u64::ANY) {
+            let tx = TxId::new(id);
+            let ser = serde_json::to_string(&tx).unwrap();
+            let deser: TxId = serde_json::from_str(&ser).unwrap();
+            prop_assert_eq!(tx, deser);
+        }
+
+        #[test]
+        fn prop_entityid_serialization(id in proptest::num::u64::ANY) {
+            let ent = EntityId::new(id);
+            let ser = serde_json::to_string(&ent).unwrap();
+            let deser: EntityId = serde_json::from_str(&ser).unwrap();
+            prop_assert_eq!(ent, deser);
+        }
     }
 }

@@ -24,6 +24,12 @@ pub struct TextIndexMetadata {
     pub avg_doc_len_x1000: u64, // Fixed-point for BM25 caching (FIND-TXT-004)
 }
 
+#[derive(Default, Clone, Copy, Debug)]
+pub(crate) struct StagedStatsChange {
+    pub(crate) docs_delta: i64,
+    pub(crate) tokens_delta: i64,
+}
+
 /// An inverted index stored in the LSM engine.
 /// An inverted index tied to a specific collection namespace.
 pub struct InvertedIndex<S: StorageEngine> {
@@ -33,6 +39,8 @@ pub struct InvertedIndex<S: StorageEngine> {
     pub(crate) total_docs: Arc<AtomicU64>,
     pub(crate) total_tokens: Arc<AtomicU64>,
     pub(crate) avg_doc_len_x1000: Arc<AtomicU64>, // Cached fixed-point (FIND-TXT-004)
+    pub(crate) staged_stats: Arc<parking_lot::Mutex<HashMap<TxId, StagedStatsChange>>>,
+    commit_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl<S: StorageEngine> Clone for InvertedIndex<S> {
@@ -44,6 +52,8 @@ impl<S: StorageEngine> Clone for InvertedIndex<S> {
             total_docs: self.total_docs.clone(),
             total_tokens: self.total_tokens.clone(),
             avg_doc_len_x1000: self.avg_doc_len_x1000.clone(),
+            staged_stats: self.staged_stats.clone(),
+            commit_lock: self.commit_lock.clone(),
         }
     }
 }
@@ -70,6 +80,8 @@ impl<S: StorageEngine> InvertedIndex<S> {
             total_docs: Arc::new(AtomicU64::new(0)),
             total_tokens: Arc::new(AtomicU64::new(0)),
             avg_doc_len_x1000: Arc::new(AtomicU64::new(0)),
+            staged_stats: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            commit_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -185,34 +197,15 @@ impl<S: StorageEngine> InvertedIndex<S> {
             .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
         self.storage.put(tx, &fw_key, &fw_bytes).await?;
 
-        let meta_key = self.key("meta:stats");
-        let mut meta = if let Some(bytes) = self.storage.get(&meta_key).await? {
-            bincode::deserialize::<TextIndexMetadata>(&bytes)
-                .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?
+        // Stage stats changes (Option B: Atomics as Source of Truth, no direct read-modify-write)
+        let mut change = StagedStatsChange::default();
+        if is_update {
+            change.tokens_delta = (new_len as i64) - (old_len as i64);
         } else {
-            TextIndexMetadata::default()
-        };
-
-        meta.total_tokens = meta.total_tokens.saturating_sub(old_len as u64) + new_len as u64;
-        if !is_update {
-            meta.total_docs += 1;
+            change.docs_delta = 1;
+            change.tokens_delta = new_len as i64;
         }
-
-        let avg_len = if meta.total_docs > 0 {
-            (meta.total_tokens as f64 / meta.total_docs as f64 * 1000.0) as u64
-        } else {
-            0
-        };
-        meta.avg_doc_len_x1000 = avg_len;
-
-        let meta_bytes = bincode::serialize(&meta)
-            .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
-        self.storage.put(tx, &meta_key, &meta_bytes).await?;
-
-        // FIND-TXT-004: Update cached stats
-        self.total_docs.store(meta.total_docs, Ordering::SeqCst);
-        self.total_tokens.store(meta.total_tokens, Ordering::SeqCst);
-        self.avg_doc_len_x1000.store(avg_len, Ordering::SeqCst);
+        self.stage_stats_change(tx, change);
 
         for (term, tf) in tfs_vec {
             let pl_doc_key = self.key_with_term_doc(&term, doc_id);
@@ -259,13 +252,22 @@ impl<S: StorageEngine> InvertedIndex<S> {
             let term = String::from_utf8_lossy(parts[1]).to_string();
 
             // Read the *current* forward index to know which terms are live.
+            // DECISION-REF: Consistent with load_stats() (L92) — bincode errors must propagate,
+            // not be silently swallowed. Silent failure would cause phantom BM25 term deletion.
+            // AI-TAG[SPEC-DRIFT][MAJOR] RESOLVED: replaced unwrap_or_default() with map_err (ID: AGT-TXT-001)
             let fw_key = self.key_with_id("fw:", doc_id.inner());
             let is_live = if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
-                let live_terms: Vec<String> =
-                    bincode::deserialize::<Vec<String>>(&fw_bytes).unwrap_or_default();
+                let live_terms: Vec<String> = bincode::deserialize::<Vec<String>>(&fw_bytes)
+                    .map_err(|e| {
+                        MemFuseError::Storage(format!(
+                            "forward-index corrupt for doc {}: {}",
+                            doc_id.inner(),
+                            e
+                        ))
+                    })?;
                 live_terms.contains(&term)
             } else {
-                false // Document deleted
+                false // Document deleted — tombstone cleanup is safe
             };
 
             if !is_live {
@@ -311,30 +313,78 @@ impl<S: StorageEngine> InvertedIndex<S> {
         }
         self.storage.delete(tx, &fw_key).await?;
 
-        // Update global stats
-        let meta_key = self.key("meta:stats");
-        if let Some(bytes) = self.storage.get(&meta_key).await? {
-            let mut meta = bincode::deserialize::<TextIndexMetadata>(&bytes)
-                .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
-            meta.total_tokens = meta.total_tokens.saturating_sub(doc_len as u64);
-            meta.total_docs = meta.total_docs.saturating_sub(1);
-            let avg_len = if meta.total_docs > 0 {
-                (meta.total_tokens as f64 / meta.total_docs as f64 * 1000.0) as u64
+        // Stage stats changes
+        let change = StagedStatsChange {
+            docs_delta: -1,
+            tokens_delta: -(doc_len as i64),
+        };
+        self.stage_stats_change(tx, change);
+
+        Ok(())
+    }
+
+    fn stage_stats_change(&self, tx: TxId, change: StagedStatsChange) {
+        let mut guard = self.staged_stats.lock();
+        let entry = guard.entry(tx).or_default();
+        entry.docs_delta += change.docs_delta;
+        entry.tokens_delta += change.tokens_delta;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) async fn commit_stats(&self, tx: TxId) -> Result<()> {
+        let change = {
+            let mut guard = self.staged_stats.lock();
+            guard.remove(&tx).unwrap_or_default()
+        };
+
+        if change.docs_delta != 0 || change.tokens_delta != 0 {
+            if change.docs_delta > 0 {
+                self.total_docs
+                    .fetch_add(change.docs_delta as u64, Ordering::SeqCst);
+            } else if change.docs_delta < 0 {
+                self.total_docs
+                    .fetch_sub(change.docs_delta.unsigned_abs(), Ordering::SeqCst);
+            }
+
+            if change.tokens_delta > 0 {
+                self.total_tokens
+                    .fetch_add(change.tokens_delta as u64, Ordering::SeqCst);
+            } else if change.tokens_delta < 0 {
+                self.total_tokens
+                    .fetch_sub(change.tokens_delta.unsigned_abs(), Ordering::SeqCst);
+            }
+
+            let docs = self.total_docs.load(Ordering::SeqCst);
+            let tokens = self.total_tokens.load(Ordering::SeqCst);
+            let avg_len = if docs > 0 {
+                (tokens as f64 / docs as f64 * 1000.0) as u64
             } else {
                 0
             };
-            meta.avg_doc_len_x1000 = avg_len;
-
-            let meta_bytes = bincode::serialize(&meta)
-                .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
-            self.storage.put(tx, &meta_key, &meta_bytes).await?;
-
-            // FIND-TXT-004: Update cached stats
-            self.total_docs.store(meta.total_docs, Ordering::SeqCst);
-            self.total_tokens.store(meta.total_tokens, Ordering::SeqCst);
             self.avg_doc_len_x1000.store(avg_len, Ordering::SeqCst);
         }
 
+        let _guard = self.commit_lock.lock().await;
+        let docs = self.total_docs.load(Ordering::SeqCst);
+        let tokens = self.total_tokens.load(Ordering::SeqCst);
+        let avg_len = self.avg_doc_len_x1000.load(Ordering::SeqCst);
+
+        let meta = TextIndexMetadata {
+            total_docs: docs,
+            total_tokens: tokens,
+            avg_doc_len_x1000: avg_len,
+        };
+        let meta_bytes = bincode::serialize(&meta)
+            .map_err(|e| MemFuseError::Storage(format!("bincode: {}", e)))?;
+        let meta_key = self.key("meta:stats");
+
+        self.storage.put(tx, &meta_key, &meta_bytes).await
+    }
+
+    #[allow(dead_code)]
+    pub(crate) async fn rollback_stats(&self, tx: TxId) -> Result<()> {
+        let mut guard = self.staged_stats.lock();
+        guard.remove(&tx);
         Ok(())
     }
 
