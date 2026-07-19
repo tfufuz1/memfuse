@@ -411,5 +411,109 @@ mod tests {
             prop_assert_eq!(reaped.len(), tx_count);
             prop_assert!(buffer.is_empty());
         }
+
+        #[test]
+        fn prop_tx_buffer_stage_drain_stage_lifecycle(
+            tx_id_raw in 0..u64::MAX,
+            first_ops in proptest::collection::vec(0..100u64, 1..20),
+            second_ops in proptest::collection::vec(0..100u64, 1..20)
+        ) {
+            let buffer = TxBuffer::<u64>::new();
+            let tx = TxId::new(tx_id_raw);
+
+            // 1. Stage first batch
+            for &val in &first_ops {
+                buffer.stage(tx, IndexOp::Insert { doc_id: DocId::new(val), data: val });
+            }
+
+            // 2. Drain and verify matching first batch
+            let drained1 = buffer.drain(tx);
+            prop_assert_eq!(drained1.len(), first_ops.len());
+            for (idx, op) in drained1.into_iter().enumerate() {
+                match op {
+                    IndexOp::Insert { doc_id, data } => {
+                        prop_assert_eq!(doc_id.inner(), first_ops[idx]);
+                        prop_assert_eq!(data, first_ops[idx]);
+                    }
+                    _ => panic!("Expected Insert"),
+                }
+            }
+
+            // 3. Verify buffer is clean for this tx
+            prop_assert!(buffer.get_ops(tx).is_none());
+            prop_assert!(!buffer.has_tx(tx));
+
+            // 4. Stage second batch
+            for &val in &second_ops {
+                buffer.stage(tx, IndexOp::Insert { doc_id: DocId::new(val), data: val });
+            }
+
+            // 5. Drain and verify matching second batch exactly (no ghost leakage)
+            let drained2 = buffer.drain(tx);
+            prop_assert_eq!(drained2.len(), second_ops.len());
+            for (idx, op) in drained2.into_iter().enumerate() {
+                match op {
+                    IndexOp::Insert { doc_id, data } => {
+                        prop_assert_eq!(doc_id.inner(), second_ops[idx]);
+                        prop_assert_eq!(data, second_ops[idx]);
+                    }
+                    _ => panic!("Expected Insert"),
+                }
+            }
+            prop_assert!(buffer.is_empty());
+        }
+
+        #[test]
+        fn prop_tx_buffer_partial_discard_isolation(
+            tx_ids in proptest::collection::vec(0..u64::MAX, 2..40),
+            discard_indices in proptest::collection::vec(0..100usize, 1..20)
+        ) {
+            let buffer = TxBuffer::<u64>::new();
+
+            // Setup unique tx ids and stage one op each
+            let mut unique_txs = tx_ids;
+            unique_txs.sort_unstable();
+            unique_txs.dedup();
+            if unique_txs.len() < 2 {
+                return Ok(()); // Skip trivial cases
+            }
+
+            for &id in &unique_txs {
+                let tx = TxId::new(id);
+                buffer.stage(tx, IndexOp::Insert { doc_id: DocId::new(id), data: id });
+            }
+
+            // Determine which to discard
+            let mut to_discard = std::collections::HashSet::new();
+            for seed in discard_indices {
+                let idx = seed % unique_txs.len();
+                to_discard.insert(unique_txs[idx]);
+            }
+
+            // Discard selected
+            for &id in &to_discard {
+                buffer.discard(TxId::new(id));
+            }
+
+            // Verify isolated status: discarded are gone, others remain intact
+            for &id in &unique_txs {
+                let tx = TxId::new(id);
+                if to_discard.contains(&id) {
+                    prop_assert!(!buffer.has_tx(tx));
+                    prop_assert!(buffer.get_ops(tx).is_none());
+                } else {
+                    prop_assert!(buffer.has_tx(tx));
+                    let ops = buffer.get_ops(tx).unwrap();
+                    prop_assert_eq!(ops.len(), 1);
+                    match &ops[0] {
+                        IndexOp::Insert { doc_id, data } => {
+                            prop_assert_eq!(doc_id.inner(), id);
+                            prop_assert_eq!(*data, id);
+                        }
+                        _ => panic!("Expected Insert"),
+                    }
+                }
+            }
+        }
     }
 }

@@ -169,8 +169,10 @@ impl<S: StorageEngine> Collection<S> {
     pub async fn repair(&self) -> Result<()> {
         let mut repair_count = 0;
         let docs = self.storage.scan_prefix(&self.prefix).await?;
+        // FIND-DB-004: Use doc_to_node map directly for O(1) lookup per DocId,
+        // instead of iterating all nodes via all_doc_ids() which is O(N).
         let indexed_ids: std::collections::HashSet<DocId> =
-            self.index.all_doc_ids().await?.into_iter().collect();
+            self.index.all_doc_ids_from_map().into_iter().collect();
 
         tracing::info!("Starting integrity repair for collection '{}'", self.name);
         let start_time = std::time::Instant::now();

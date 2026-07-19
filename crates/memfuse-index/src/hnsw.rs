@@ -264,6 +264,22 @@ impl HnswIndex {
         }
     }
 
+    /// Returns all active (non-deleted) DocIds by reading the `doc_to_node` map directly.
+    ///
+    /// This is O(M) where M = number of mapped doc IDs, compared to `all_doc_ids()` which
+    /// is O(N) where N = total node count (including mmap). Use this for repair/reconciliation
+    /// where only the DocId set matters, not positional node data.
+    ///
+    /// # FIND-DB-004: HNSW Repair Acceleration
+    pub fn all_doc_ids_from_map(&self) -> Vec<DocId> {
+        let map = self.doc_to_node.read();
+        let deleted = self.deleted_nodes.read();
+        map.iter()
+            .filter(|(&_doc_id_raw, &node_idx)| !deleted.contains(node_idx as u64))
+            .map(|(&doc_id_raw, _)| DocId::new(doc_id_raw))
+            .collect()
+    }
+
     /// Triggers an async rebuild if the deletion threshold is exceeded.
     pub fn trigger_rebuild_async(&self) {
         if self.is_rebuild_required() {

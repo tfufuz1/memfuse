@@ -217,5 +217,112 @@ mod tests {
                 prop_assert_eq!(registry.min_active_seqno(), remaining_min);
             }
         }
+
+        /// Proptest: Proves that dropping guards one-by-one in arbitrary order
+        /// always maintains the correct min_active_seqno invariant.
+        ///
+        /// # Anti-Mirroring
+        /// Expected min is computed by maintaining an independent sorted list
+        /// of remaining sequence numbers, not by calling SnapshotRegistry methods.
+        #[test]
+        fn prop_snapshot_register_unregister_stress(
+            seqs in proptest::collection::vec(0..5000u64, 2..80),
+            // Indices into the guards vec to determine drop order
+            drop_order_seed in proptest::collection::vec(0..1000usize, 2..80),
+        ) {
+            let registry = Arc::new(SnapshotRegistry::new());
+            let mut guards: Vec<Option<SnapshotGuard>> = Vec::new();
+
+            // Register all
+            for &seq in &seqs {
+                guards.push(Some(registry.register(seq)));
+            }
+
+            // Build independent reference: sorted multiset of active seqs
+            let mut active_seqs: Vec<u64> = seqs.clone();
+            active_seqs.sort_unstable();
+
+            // Verify initial state
+            prop_assert_eq!(registry.min_active_seqno(), active_seqs[0]);
+
+            // Drop guards one-by-one using the seed to pick which to drop
+            let mut remaining_indices: Vec<usize> = (0..guards.len()).collect();
+            for seed_val in &drop_order_seed {
+                if remaining_indices.is_empty() {
+                    break;
+                }
+                let idx_in_remaining = seed_val % remaining_indices.len();
+                let guard_idx = remaining_indices.remove(idx_in_remaining);
+
+                // Drop the guard
+                let seq_val = guards[guard_idx].as_ref().unwrap().seq_no();
+                guards[guard_idx] = None;
+
+                // Remove from reference (one occurrence only)
+                if let Some(pos) = active_seqs.iter().position(|&s| s == seq_val) {
+                    active_seqs.remove(pos);
+                }
+
+                // Verify invariant
+                let expected_min = active_seqs.first().copied().unwrap_or(u64::MAX);
+                prop_assert_eq!(
+                    registry.min_active_seqno(),
+                    expected_min,
+                    "After dropping guard for seq={}, min should be {}",
+                    seq_val,
+                    expected_min
+                );
+            }
+        }
+
+        /// Proptest: Pin/Unpin combined with register/drop.
+        /// Proves that persistent pins and RAII guards coexist correctly.
+        ///
+        /// # Anti-Mirroring
+        /// Reference min is maintained in an independent BTreeMap<u64, usize>.
+        #[test]
+        fn prop_snapshot_pin_unpin_interleaving(
+            pin_seqs in proptest::collection::vec(0..500u64, 1..20),
+            guard_seqs in proptest::collection::vec(0..500u64, 1..20),
+        ) {
+            use std::collections::BTreeMap;
+            let registry = Arc::new(SnapshotRegistry::new());
+            let mut ref_counts: BTreeMap<u64, usize> = BTreeMap::new();
+
+            // Pin all
+            for &seq in &pin_seqs {
+                registry.pin(seq);
+                *ref_counts.entry(seq).or_default() += 1;
+            }
+
+            // Register guards
+            let mut guards = Vec::new();
+            for &seq in &guard_seqs {
+                guards.push(registry.register(seq));
+                *ref_counts.entry(seq).or_default() += 1;
+            }
+
+            // Verify combined min
+            let expected_min = ref_counts.keys().next().copied().unwrap_or(u64::MAX);
+            prop_assert_eq!(registry.min_active_seqno(), expected_min);
+
+            // Unpin all pins
+            for &seq in &pin_seqs {
+                registry.unpin(seq);
+                if let Some(count) = ref_counts.get_mut(&seq) {
+                    *count -= 1;
+                    if *count == 0 {
+                        ref_counts.remove(&seq);
+                    }
+                }
+            }
+
+            let expected_min2 = ref_counts.keys().next().copied().unwrap_or(u64::MAX);
+            prop_assert_eq!(registry.min_active_seqno(), expected_min2);
+
+            // Drop all guards
+            drop(guards);
+            prop_assert_eq!(registry.min_active_seqno(), u64::MAX);
+        }
     }
 }

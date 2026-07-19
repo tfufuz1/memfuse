@@ -386,4 +386,99 @@ mod tests {
             display
         );
     }
+
+    /// Mutation-robustness test: ChecksumMismatch fields must not be transposed.
+    #[test]
+    fn test_checksum_mismatch_fields_not_transposed() {
+        let err = MemFuseError::ChecksumMismatch {
+            path: "data_segment_003.sst".to_string(),
+            block_id: 887766,
+        };
+        let display = err.to_string();
+
+        // Check path and block_id are present
+        assert!(
+            display.contains("data_segment_003.sst"),
+            "ChecksumMismatch path must appear in display: {:?}",
+            display
+        );
+        assert!(
+            display.contains("887766"),
+            "ChecksumMismatch block_id must appear in display: {:?}",
+            display
+        );
+
+        // Verify correct field positions (path shouldn't be formatted into block position)
+        assert!(
+            display.contains("file=data_segment_003.sst"),
+            "Path formatted incorrectly: {:?}",
+            display
+        );
+        assert!(
+            display.contains("block=887766"),
+            "Block ID formatted incorrectly: {:?}",
+            display
+        );
+    }
+
+    /// Mutation-robustness test: TransactionTimeout fields must not be transposed.
+    #[test]
+    fn test_transaction_timeout_fields_not_transposed() {
+        let err = MemFuseError::TransactionTimeout {
+            tx_id: 112233,
+            elapsed_ms: 998877,
+        };
+        let display = err.to_string();
+
+        assert!(
+            display.contains("112233"),
+            "TransactionTimeout tx_id must appear in display: {:?}",
+            display
+        );
+        assert!(
+            display.contains("998877"),
+            "TransactionTimeout elapsed_ms must appear in display: {:?}",
+            display
+        );
+
+        // Position checks
+        assert!(
+            display.starts_with("Transaction 112233 timed out"),
+            "Transaction ID formatted in wrong place: {:?}",
+            display
+        );
+        assert!(
+            display.contains("after 998877ms"),
+            "Elapsed ms formatted in wrong place: {:?}",
+            display
+        );
+    }
+
+    /// Mutation-robustness test: MemoryBudgetExceeded fields must not be transposed.
+    #[test]
+    fn test_memory_budget_exceeded_fields_not_transposed() {
+        let err = MemFuseError::MemoryBudgetExceeded {
+            used_mb: 4096,
+            limit_mb: 8192,
+        };
+        let display = err.to_string();
+
+        assert!(
+            display.contains("4096"),
+            "MemoryBudgetExceeded used_mb must appear in display: {:?}",
+            display
+        );
+        assert!(
+            display.contains("8192"),
+            "MemoryBudgetExceeded limit_mb must appear in display: {:?}",
+            display
+        );
+
+        // Position checks
+        assert!(
+            display.contains("4096MB / 8192MB"),
+            "Used and limit MB fields are transposed or misformatted: {:?}",
+            display
+        );
+    }
 }

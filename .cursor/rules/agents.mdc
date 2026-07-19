@@ -1,6 +1,0 @@
----
-description: Universal agent rules and verification loops for all development tasks
-globs: *
-alwaysApply: true
----
-@AGENTS.md

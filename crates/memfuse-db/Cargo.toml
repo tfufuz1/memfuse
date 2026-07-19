@@ -43,3 +43,12 @@ cluster = []  # reactivate: cluster = ["dep:memfuse-cluster"]
 name = "migration_benchmarks"
 path = "../../benches/migration_benchmarks.rs"
 harness = false
+
+[[example]]
+name = "quickstart"
+
+[[example]]
+name = "hybrid_search"
+
+[[example]]
+name = "collections"
