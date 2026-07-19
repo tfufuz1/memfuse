@@ -1,69 +1,114 @@
-# MemFuse — Embedded Hybrid-Search for AI Agents
+# MemFuse — Eingebettete 4-Signal-Memory-Engine für lokale AI-Agenten
 
-MemFuse is a high-performance, embedded hybrid-search database written in Rust. It combines vector similarity search, keyword-based BM25, and relationship traversal into a single, unified "4-Signal Fusion" engine.
+MemFuse ist eine hochperformante, eingebettete Hybrid-Search-Engine in reinem Rust. Sie kombiniert Vektor-Ähnlichkeitssuche, BM25-Volltextsuche, Beziehungsgraph-Traversal und Metadaten-Filter zu einer einzigen **4-Signal-Fusion-Engine**.
 
-Designed for AI agents and local-first applications, MemFuse provides a production-ready, ACID-compliant storage layer with a minimal footprint.
+Designed für AI-Agenten und local-first-Anwendungen — kein Server, kein Docker, kein Cloud-Account.
 
----
-
-## 🚀 Key Features
-
-- **4-Signal Fusion**: Combines Vector, Text (BM25), Graph, and Metadata signals for unparalleled recall.
-- **ACID Compliant**: Transactional safety with MVCC and a robust Write-Ahead-Log (WAL).
-- **Embedded & Sovereign**: Zero external C-dependencies. Runs locally on Linux/macOS.
-- **SIMD Accelerated**: Hardware-accelerated vector distances (AVX-512, AVX2, NEON).
-- **Quantization (SQ8)**: Reduces memory footprint by up to 4x with minimal recall loss.
-- **Python Bindings**: Seamless integration with NumPy and the Python AI ecosystem.
+> ⚠️ **Status: Pre-Alpha (v0.1.0 ausstehend)** — Kern-Crates sind funktionsfähig, Python-Bindings und öffentliche Releases sind in Vorbereitung (siehe [Roadmap](#roadmap)).
 
 ---
 
-## 📦 Installation
+## 🎯 USP gegenüber ChromaDB / LanceDB / Qdrant
 
-### Rust
-Add MemFuse to your `Cargo.toml`:
+| Eigenschaft | MemFuse | ChromaDB | LanceDB | Qdrant |
+|---|---|---|---|---|
+| **In-Process (kein Server)** | ✅ | ✅ | ✅ | ❌ (Server) |
+| **4-Signal Fusion** | ✅ (Vektor+BM25+Graph+Meta) | ❌ (nur Vektor+Meta) | ❌ | ❌ |
+| **Zero-C-Deps (Default)** | ✅ Sovereign Core | ❌ | ❌ | ❌ |
+| **ACID + WAL** | ✅ | ❌ | ⚠️ | ✅ |
+| **Python Bindings** | 🟡 In Entwicklung | ✅ | ✅ | ✅ |
+
+---
+
+## 🚀 Features
+
+- **4-Signal Fusion**: Kombiniert Vektor (HNSW), Text (BM25), Graph (CSR) und Metadaten über Reciprocal Rank Fusion.
+- **ACID-Compliant**: Transaktionssicherheit mit MVCC und Write-Ahead-Log (WAL).
+- **Embedded & Sovereign**: Zero externe C-Abhängigkeiten. Läuft lokal auf Linux/macOS.
+- **SIMD-beschleunigt**: Hardware-beschleunigte Vektordistanzen (AVX-512, AVX2, NEON).
+- **Quantisierung (SQ8)**: Reduziert den Speicherbedarf um bis zu 4× bei minimalem Recall-Verlust.
+
+---
+
+## 📦 Installation (Rust — aktuell verfügbar)
+
 ```toml
+# Cargo.toml
 [dependencies]
-memfuse-db = "0.2.0"
+memfuse-db = { path = "crates/memfuse-db" }  # Noch kein crates.io-Release
 ```
 
-### Python
+## 🐍 Python (In Vorbereitung)
+
+> PyPI-Release ist in Phase 2 der Roadmap. Aktuell über `maturin develop` im Repo verwendbar.
+
 ```bash
-pip install memfuse
+# Lokale Entwicklung (erfordert Rust + maturin)
+cd crates/memfuse-py
+maturin develop
 ```
 
 ---
 
-## 🏎️ Quickstart (Python)
+## 🏎️ Quickstart (Rust)
 
-```python
-import memfuse
-import numpy as np
+```rust
+use memfuse_db::MemFuse;
 
-# Open or create a database
-with memfuse.open("./data", dimension=1536) as db:
-    # Insert a document with embedding and metadata
-    vector = np.random.rand(1536).astype("float32")
-    db.insert("doc1", vector, {"text": "Hello MemFuse!", "category": "AI"})
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let db = MemFuse::open("./data").await?;
+    let col = db.create_collection("agents", 1536).await?;
 
-    # Perform hybrid search
-    results = db.hybrid_search("Hello", vector, k=5)
-    
-    for r in results:
-        print(f"Found {r.id} with score {r.score}")
+    // Dokument einfügen
+    let vec = vec![0.1f32; 1536];
+    col.insert("doc1", &vec, Some(serde_json::json!({"text": "Hello MemFuse!"}))).await?;
+
+    // Hybrid-Suche
+    let results = col.hybrid_search("Hello", &vec, 5).await?;
+    for r in results {
+        println!("Found {} (score: {:.4})", r.id, r.score);
+    }
+
+    Ok(())
+}
 ```
 
 ---
 
-## 🛠️ Development
+## 🗺️ Roadmap
 
-MemFuse uses a strict MECE **Unified Documentation System**. For all details, see:
-- [README.md](./README.md) — This file, features and high-level introduction.
-- [CONSTITUTION.md](./CONSTITUTION.md) & [DEVELOPERS.md](./DEVELOPERS.md) — Mandatory developer policies.
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — System design DAG and invariants.
-- [docs/SOURCE_OF_TRUTH.md](./docs/SOURCE_OF_TRUTH.md) — The living document matching the exact current implementation state.
+| Phase | Ziel | Status |
+|---|---|---|
+| **P0** | CVE-Fixes (`memmap2`, `lru`), Scope-Bereinigung | 🟡 Aktiv |
+| **P1** | Zero-Panic durchsetzen, FIND-STO-001 (Phantom-Daten), `memfuse-graph` reaktivieren | 🟡 Aktiv |
+| **P2** | `memfuse-py` + pytest-Suite, PyPI alpha, crates.io v0.1.0 | ⬜ Geplant |
+| **P3** | Öffentliche Benchmarks (vs. ChromaDB/LanceDB), HN-Launch | ⬜ Geplant |
 
 ---
 
-## ⚖️ License
+## 🛠️ Entwicklung
 
-MemFuse is licensed under the Apache 2.0 / MIT License.
+```bash
+# Voraussetzung: Nix mit Flakes (empfohlen) oder Rust stable 1.89+
+nix develop
+
+# Build & Tests
+just check      # fmt + clippy + compile
+just test       # Testsuite
+just debt-audit # Zero-Panic + Security Audit
+```
+
+### Dokumentation
+- [README.md](./README.md) — Dieses Dokument.
+- [CONSTITUTION.md](./CONSTITUTION.md) & [DEVELOPERS.md](./DEVELOPERS.md) — Projekt-Governance.
+- [AGENTS.md](./AGENTS.md) — LLM-Agent-Regeln und Verifikationsschleifen.
+- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — Schichtmodell, Invarianten-Status.
+- [docs/SOURCE_OF_TRUTH.md](./docs/SOURCE_OF_TRUTH.md) — Living State Document (Backlog, Crate-Inventar, Roadmap).
+- [DECISIONS.md](./DECISIONS.md) — Architecture Decision Records (ADRs).
+
+---
+
+## ⚖️ Lizenz
+
+MIT OR Apache-2.0

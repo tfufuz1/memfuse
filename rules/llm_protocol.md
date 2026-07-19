@@ -48,9 +48,9 @@ graph TD
 
 ### Schleife 7: Rollentrennung Planer/Implementierer
 *   **Phasen-Trennung**: Planung, Code-Generierung und Validierung sind strikt getrennt.
-    1.  **Planer**: Erstellt `implementation_plan.md` und wartet auf Genehmigung.
-    2.  **Implementierer**: Arbeitet die Checkliste in `task.md` ab.
-    3.  **Verifizierer**: Führt die Tests aus und dokumentiert im `walkthrough.md`.
+    1.  **Planer**: Dokumentiert nicht-triviale Entscheidungen in `DECISIONS.md` (ADR) und wartet auf Genehmigung.
+    2.  **Implementierer**: Arbeitet den priorisierten Backlog aus `docs/SOURCE_OF_TRUTH.md` ab.
+    3.  **Verifizierer**: Führt `just triple-test` aus und aktualisiert den Status in `docs/SOURCE_OF_TRUTH.md`.
 
 ---
 
