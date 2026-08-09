@@ -67,7 +67,12 @@ async fn main() -> memfuse_core::Result<()> {
 
     println!("=== Hybrid Search: '{}' ===", text_query);
     for (i, result) in results.iter().enumerate() {
-        println!("  {}. {} (fused score: {:.4})", i + 1, result.id, result.score);
+        println!(
+            "  {}. {} (fused score: {:.4})",
+            i + 1,
+            result.id,
+            result.score
+        );
         if let Some(meta) = &result.metadata {
             if let Some(text) = meta.get("text").and_then(|v| v.as_str()) {
                 println!("     text: \"{}\"", text);

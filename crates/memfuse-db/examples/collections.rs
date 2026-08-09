@@ -93,7 +93,11 @@ async fn main() -> memfuse_core::Result<()> {
     let at_snapshot = agents.get_at_snapshot("reviewer", snapshot).await?;
     println!(
         "  'reviewer' visible at snapshot? {}",
-        if at_snapshot.is_some() { "yes" } else { "no (correct — inserted after snapshot)" }
+        if at_snapshot.is_some() {
+            "yes"
+        } else {
+            "no (correct — inserted after snapshot)"
+        }
     );
 
     // Reading at current DOES see it

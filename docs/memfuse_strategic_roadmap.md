@@ -1,241 +1,171 @@
-# MemFuse — Strategische Ausrichtung & Konkreter Fahrplan
-> Senior Rust Architect Review · Stand: 2026-07-19
+# MemFuse — Strategische Neuausrichtung & Roadmap (v2.0)
+> **Senior Rust Architect & Database System Designer Review**  
+> **Fokus: Laser-fokussierte 3-in-1 Agent-Memory-Engine** · Stand: 2026-07-19
 
 ---
 
-## 0. Ist-Zustand: Ehrliche Diagnose
+## 🏛️ Die strategische Krise: "Alles sein wollen" vs. "Unschlagbar werden"
 
-> [!CAUTION]
-> `just debt-audit` schlägt fehl mit **1 aktiver CVE** und **16+ Dateien mit `.unwrap()`** im Produktionscode — darunter Sovereign Core. Die "Zero-Panic"-Policy ist aktuell eine **Behauptung, kein bewiesener Zustand**.
+MemFuse leidet unter **Scope Creep**. Aktuell versucht das Projekt, eine Vektordatenbank, eine Volltextsuchmaschine, eine Graphdatenbank, ein Raft-basiertes verteiltes System (`memfuse-cluster`), eine WebAssembly-Sandbox (`memfuse-sandbox`) und ein eigenständiges Agenten-Ausführungssystem (`memfuse-saos-agent`) in einem einzigen Repository zu vereinen. 
 
-### Code-Realität vs. Dokumentation
+Das führt dazu, dass:
+1. **Kein Bereich produktionsreif ist**: `just debt-audit` schlägt wegen offener Sicherheitswarnungen (CVEs) fehl.
+2. **Kritische Invarianten gebrochen sind**: Die Zero-Panic-Doktrin wird durch 16+ Quelldateien mit `.unwrap()` verletzt.
+3. **Der Kern-USP nicht nutzbar ist**: Das Graph-Signal verliert nach einem Neustart alle Daten (Persistenz-Bug), und die Python-Anbindung (`memfuse-py`) hat 0 Tests und ist nicht im Build.
 
-| Dimension | Dokumentation (SOT) | Tatsächlicher Code-Zustand |
-|---|---|---|
-| Zero-Panic | `🟢 Clean` für alle 7 Crates | `unwrap()` in `memfuse-db`, `memfuse-store`, `memfuse-index`, `memfuse-core`, `memfuse-crypto`, `memfuse-graph` |
-| `memfuse-py` Tests | `0*` (blockiert durch C-Deps) | 0 Tests, auskommentiert aus Workspace |
-| `memfuse-graph` Persistenz | CSR implementiert, 8 Tests | **FIND-GRA-001**: Graph verliert alle Daten nach Neustart |
-| Snapshot Isolation | ✅ Verifiziert | **FIND-DB-003**: Dirty Reads möglich in Search-Pfad |
-| Compaction Safety | WAL robust | **FIND-STO-001**: Phantom-Daten nach Teil-Compaction |
-| Security | — | **RUSTSEC-2026-0186** (`memmap2`), **RUSTSEC-2026-0002** (`lru`) — aktive Advisories |
+### 🎯 Die neue Positionierung: Die ultimative 3-in-1 Agent-Memory-Engine
 
-### Was tatsächlich im Workspace ist
-
-```toml
-# Aktive Members (buildfähig):
-memfuse-core, memfuse-store, memfuse-index, memfuse-db,
-memfuse-text, memfuse-checkpoint, memfuse-crypto  # 7 Crates, ~13.600 LOC
-
-# Auskommentiert (NICHT buildbar als Workspace):
-# memfuse-graph, memfuse-py, memfuse-cluster,
-# memfuse-embed, memfuse-sandbox, memfuse-saos-agent
-```
-
-**Kritischer Gap:** `memfuse-graph` — das "Graph"-Signal der beworbenen 4-Signal-Fusion — ist **nicht im Build**. `memfuse-py` — der einzige Weg zu AI-Agent-Ökosystemen — ist **nicht im Build und hat 0 Tests**.
-
----
-
-## 1. Richtungsentscheidung: C ist richtig — aber der Weg ist falsch priorisiert
-
-**Strategie-Urteil:** Option C (lokale Agent-Memory-Library) ist der einzig gangbare Startpunkt. Die Analyse ist korrekt. Die Ausführungsreihenfolge ist es nicht.
-
-### Warum die aktuelle Priorisierung falsch ist
-
-Die bisherigen Sprints (1–3) haben sich auf interne Härtung konzentriert: ACID, WAL, Tests. Das ist wertvoll — aber das Produkt existiert für externe Nutzer nicht. Der erste Schritt für einen Nutzer wäre:
-
-```bash
-pip install memfuse  # → Package existiert nicht auf PyPI
-```
-
-Das ist der echte Blocker. Nicht die Compaction-Optimierung.
-
-### Die Bezos-Invarianten vs. aktueller Status
-
-| Invariante | Status | Kritischster Block |
-|---|---|---|
-| **1. Sofort funktioniert** | ❌ Kritisch | PyPI-Paket existiert nicht, keine Quickstart-Beispiele die wirklich laufen |
-| **2. Niemals Daten verliert** | ⚠️ Lücken | FIND-STO-001 (Phantom-Daten), FIND-DB-005 (2PC Split-Brain) |
-| **3. Blitzschnell** | ⚠️ Unbewiesen | Keine publizierten Benchmarks, kein Vergleich mit Konkurrenz |
-| **4. Keine Ops-Last** | ✅ Stark | Zero-C-Deps im Core, Embedded, kein Server |
-
-**Invariante 4 ist euer echter USP.** Baut alles andere darum.
-
----
-
-## 2. Nicht-Kern-Crates: Entscheidungsmatrix
-
-| Crate | LOC | Passt zu C? | Entscheidung | Begründung |
-|---|---|---|---|---|
-| `memfuse-graph` | 521 | ✅ Zentral | **Reaktivieren** | Ist Signal 3 der 4-Signal-Fusion. Ohne Graph kein USP gegenüber ChromaDB. FIND-GRA-001 (Persistenz) muss vorher gelöst werden. |
-| `memfuse-py` | ~1.000 | ✅ Kritisch | **Reaktivieren, höchste Prio** | Kein PyPI → keine Agent-Ökosystem-Anbindung → kein Vertriebskanal für C. FIND-PY-001 (Layer Leakage) beheben. |
-| `memfuse-embed` | 260 | ⚪ Nice-to-have | **Geparkt lassen** | Bringt ONNX/C-Deps mit. Widerspricht Zero-C-Deps im Default. Opt-in Feature-Flag später. |
-| `memfuse-cluster` | ~1.200 | ❌ Nein | **Aus Repo entfernen** | FIND-CLU-001/002/003: Alles kritisch, vollständig funktionsunfähig als Cluster-DB. Für ein eingebettetes lokales Produkt irrelevant. |
-| `memfuse-sandbox` | 627 | ❌ Nein | **Aus Repo entfernen** | WASM-Sandboxing ist ein anderes Produkt. |
-| `memfuse-saos-agent` | 551 | ❌ Nein | **Aus Repo entfernen** | Strategisch eingefroren, kein Bezug zu C. |
-
-**Netto-Effekt:** ~2.600 LOC toter Code raus, ~1.520 LOC (graph + py) rein und zur Chefsache gemacht.
-
----
-
-## 3. Konkreter Fahrplan (4 Phasen)
-
-### Phase 0 — Scope-Schnitt & Security (Woche 1–2)
-> **Ziel:** Saubere Basis. Keine offenen CVEs, kein Zombie-Code im Repo.
-
-| # | Task | Severity | Aufwand | Finding |
-|---|---|---|---|---|
-| P0-1 | `memfuse-cluster`, `memfuse-sandbox`, `memfuse-saos-agent` in separates `memfuse-agentos`-Repo verschieben (nicht löschen) | — | S | Scope-Fokus |
-| P0-2 | `memmap2` auf gepatchte Version upgraden oder durch Alternative ersetzen | 🔴 Sicherheit | S | RUSTSEC-2026-0186 |
-| P0-3 | `lru` upgraden oder durch `std::collections::HashMap` + manuelle LRU ersetzen | 🔴 Sicherheit | S | RUSTSEC-2026-0002 |
-| P0-4 | Docs konsolidieren: `docs/audits/` → Erkenntnisse in `SOURCE_OF_TRUTH.md`. Doppelte `memfuse_product_spec (1).md` löschen. Alle 6+ überlappenden Analyse-Docs auf eines reduzieren | — | S | Governance-Verstoß |
-| P0-5 | README/SOURCE_OF_TRUTH/Mission-Statement neu schreiben: *"MemFuse ist die eingebettete 4-Signal-Memory-Engine für lokale AI-Agenten"* | — | S | Produktklarheit |
-
----
-
-### Phase 1 — P0-Bugs (Kunden-Blocker) (Woche 2–6)
-> **Ziel:** Die 4 Bezos-Invarianten erfüllen. Kein Bug, der frühe Nutzer sofort verbrennt.
-
-#### 1a. Zero-Panic wirklich durchsetzen (Invariante 2)
-
-| # | Task | Severity | Aufwand | Finding |
-|---|---|---|---|---|
-| P1-1 | `unwrap()` in `memfuse-db/src/lib.rs` (L351, L754, L760, L768, L781, L786): RwLock-Panics → `parking_lot::RwLock` (panic-free) oder `map_err(|_| MemFuseError::LockPoisoned)` | 🔴 Kritisch | S | FIND-DB-001 |
-| P1-2 | `unwrap()` in `memfuse-db/src/collection.rs` (L74, L115, L125, L285, L318, L821): gleiche Strategie | 🔴 Kritisch | S | FIND-DB-001 |
-| P1-3 | `unwrap()` in `memfuse-db/src/chunker.rs` (L249, L253, L257, L277): Tests-Only prüfen, sonst `ok_or`-Mapping | 🔴 Kritisch | S | NEVER-Rule |
-| P1-4 | `memfuse-core` (`tx_buffer.rs`, `snapshot.rs`, `traits.rs`, `types/`): alle `unwrap()` auditieren und ersetzen | 🔴 Kritisch | M | NEVER-Rule |
-| P1-5 | `memfuse-store` (`wal.rs`, `lsm.rs`, `sstable.rs`, `compaction.rs`, `memtable.rs`): alle `unwrap()` auditieren | 🔴 Kritisch | M | NEVER-Rule |
-| P1-6 | `memfuse-crypto` (`wal_crypto.rs`, `crypto.rs`): `unwrap()` → `?` | 🔴 Kritisch | S | NEVER-Rule |
-
-> [!NOTE]
-> **Strategie für RwLock-unwraps:** Ersetze `std::sync::RwLock` durch `parking_lot::RwLock` (bereits in `[workspace.dependencies]`). `parking_lot::RwLock::read()` gibt direkt `RwLockReadGuard` zurück, kein `Result` — eliminiert alle Poison-unwraps auf einen Schlag.
-
-#### 1b. Datenverlust-Bugs (Invariante 2)
-
-| # | Task | Severity | Aufwand | Finding |
-|---|---|---|---|---|
-| P1-7 | **Compaction Tombstone Fix**: Tombstones in STCS nur löschen wenn Full-Compaction oder nachweislich unterstes Tier | 🔴 Kritisch | M | FIND-STO-001 |
-| P1-8 | **drop_collection Storage Leak**: `delete_prefix()` in LSM bei Collection-Drop implementieren | 🔴 Kritisch | M | FIND-DB-002 |
-| P1-9 | **Snapshot Isolation in Search**: `SnapshotGuard` in `search_with_filter` und `hydrate_from_tuples` einführen | 🔴 Kritisch | H | FIND-DB-003 |
-| P1-10 | **fsync WAL-Parent-Directory**: Directory-fsync nach UUID-Persistierung ergänzen | 🟢 Niedrig | S | FIND-STO-004 |
-
-#### 1c. Graph-Reaktivierung (4-Signal-Fusion reparieren)
-
-| # | Task | Severity | Aufwand | Finding |
-|---|---|---|---|---|
-| P1-11 | `memfuse-graph` in Workspace-Members reaktivieren (Cargo.toml) | — | XS | Scope |
-| P1-12 | **Graph Persistenz**: CSR-Serialisierung in `memfuse-store` WAL-Namespace integrieren (`__graph:..`) | 🔴 Kritisch | H | FIND-GRA-001 |
-| P1-13 | Graph-Compaction O(N+E) → inkrementell: staged edges lazy mergen statt full-rebuild | 🟡 Mittel | M | FIND-GRA-002 |
-| P1-14 | `MAX_TRAVERSAL_HOPS` zur Laufzeit konfigurierbar machen | 🟢 Niedrig | S | FIND-GRA-003 |
-
----
-
-### Phase 2 — Release-Fähigkeit (Woche 6–12)
-> **Ziel:** `v0.1.0` auf crates.io und PyPI. Erste externe Nutzer möglich.
-
-#### 2a. Python-Bindings (höchste Prio — Vertriebskanal)
-
-| # | Task | Severity | Aufwand | Finding |
-|---|---|---|---|---|
-| P2-1 | `memfuse-py` in Workspace-Members reaktivieren | — | XS | Scope |
-| P2-2 | **Layer-Leakage Fix**: FlatBuffer-Konstruktion (`search_fb`, `hybrid_search_fb`) aus `memfuse-py` in `memfuse-core::ipc` verschieben | 🔴 Kritisch | M | FIND-PY-001 |
-| P2-3 | GIL-Bottleneck: FlatBuffer-Konstruktion vollständig in `allow_threads`-Block verschieben | 🟡 Mittel | S | FIND-PY-002 |
-| P2-4 | **pytest-Testsuite**: ≥20 Integrationstests via `maturin develop` — Quickstart, CRUD, Hybrid-Search, Crash-Recovery | — | H | 0 Tests aktuell |
-| P2-5 | `pyproject.toml` vervollständigen + maturin CI-Pipeline | — | M | Release-Blockade |
-| P2-6 | PyPI v0.1.0-alpha veröffentlichen | — | S | Invariante 1 |
-
-#### 2b. Rust-API & crates.io
-
-| # | Task | Severity | Aufwand | Finding |
-|---|---|---|---|---|
-| P2-7 | Nightly-Abhängigkeiten prüfen: `rust-toolchain.toml` auf stable Rust 1.89+ migrieren wenn möglich | — | M | Stabilität |
-| P2-8 | `memfuse-db` Public API konsolidieren: `MemFuse::open(path)` als stabiler Entry-Point | — | M | DX |
-| P2-9 | 3 funktionierende Rust-Beispiele: `quickstart.rs`, `hybrid_search.rs`, `crash_recovery.rs` | — | M | Invariante 1 |
-| P2-10 | crates.io v0.1.0 Release | — | S | Vertriebskanal |
-
-#### 2c. HNSW-Qualität
-
-| # | Task | Severity | Aufwand | Finding |
-|---|---|---|---|---|
-| P2-11 | **SIGILL-Prüfung**: `is_x86_feature_detected!` vor jedem AVX-512-Pfad verifizieren | 🔴 Kritisch | S | FIND-IND-001 |
-| P2-12 | **SQ8 Per-Dimension**: Globale Min/Max-Quantisierung → per-dimension quantization | 🟡 Mittel | M | FIND-IND-002 |
-| P2-13 | HNSW-Save Endian-Safety: `to_le_bytes()` statt raw ptr cast | 🟡 Mittel | S | FIND-IND-003 |
-| P2-14 | DiskANN LRU-Eviction: `cache.clear()` → LRU-Eviction (nach P0-3 lru-Fix) | 🟢 Niedrig | S | FIND-IND-004 |
-
----
-
-### Phase 3 — Sichtbarkeit & Wachstum (Woche 12+)
-> **Ziel:** Externe Nutzer gewinnen. Benchmarks veröffentlichen. Community aufbauen.
-
-| # | Task | Aufwand | Rationale |
-|---|---|---|---|
-| P3-1 | **Öffentliche Benchmark-Suite**: MemFuse vs. ChromaDB vs. LanceDB — 1536-dim, 100K Docs, Hybrid Search Latenz (P50/P99), Throughput | H | Ohne Zahlen bleibt "4-Signal-Fusion" reine Behauptung |
-| P3-2 | `async-trait` → AFIT-Migration (Rust 1.75+) für Hot-Path-Latenz | M | Performance-Differenzierung |
-| P3-3 | `CancellationToken` für Graceful Shutdown in `memfuse-db` | S | Produktionsreife |
-| P3-4 | HNSW-Repair O(1): `doc_to_node` Map statt k=1-Search für Präsenzprüfung | M | FIND-DB-004 |
-| P3-5 | 2PC Recovery-Log: "Commit-Intents" persistent machen gegen Split-Brain | H | FIND-DB-005 |
-| P3-6 | HN/Reddit-Launch mit Benchmark-Zahlen | — | Einziger realistischer Weg zu echten Nutzern |
-| P3-7 | MCP (Model Context Protocol) Integration — macht MemFuse direkt nutzbar in Claude/GPT-Agents | M | Ecosystem-Anbindung |
-
----
-
-## 4. Kritischer Pfad (Dependency-Reihenfolge)
+Wir positionieren MemFuse radikal um. Wir konkurrieren nicht mit hochskalierenden Cloud-Datenbanken (Qdrant, Pinecone), sondern schaffen eine neue Kategorie: **Die lokale, in-process 3-in-1 Speicher-Engine für autonome KI-Agenten.**
 
 ```mermaid
-graph LR
-    P0-2["P0-2: CVE Fix memmap2"] --> P1-5["P1-5: Store unwraps"]
-    P0-3["P0-3: CVE Fix lru"] --> P2-14["P2-14: DiskANN Eviction"]
-    P1-1["P1-1..P1-6: Zero-Panic"] --> P2-4["P2-4: pytest Suite"]
-    P1-7["P1-7: Tombstone Fix"] --> P2-6["P2-6: PyPI Release"]
-    P1-8["P1-8: Storage Leak Fix"] --> P2-6
-    P1-11["P1-11: graph reaktivieren"] --> P1-12["P1-12: Graph Persistenz"]
-    P1-12 --> P2-1["P2-1..P2-6: Python Release"]
-    P2-11["P2-11: SIGILL Fix"] --> P3-1["P3-1: Benchmarks"]
-    P2-6["P2-6: PyPI Release"] --> P3-6["P3-6: HN/Reddit Launch"]
-    P3-1 --> P3-6
+graph TD
+    subgraph MemFuse 3-in-1 Engine
+        direction TB
+        V[Vektor-Suche: HNSW/SIMD] --> RRF[Reciprocal Rank Fusion]
+        T[Text-Suche: BM25] --> RRF
+        G[Graph-Navigation: CSR] --> RRF
+    end
+    RRF --> Context[Hochrelevanter LLM-Prompt-Kontext]
+    
+    style MemFuse 3-in-1 Engine fill:#1a1b26,stroke:#7aa2f7,stroke-width:2px;
 ```
 
-**Kritischer Pfad:** P0-2 → P1-7 → P1-8 → P1-9 → P2-6 → P3-6
+#### Warum diese Positionierung unschlagbar ist:
+* **Das Problem bei bestehenden DBs**: Agenten benötigen drei Arten von Gedächtnis: *episodisch* (Vektorsuche), *lexikalisch* (Volltextsuche) und *assoziativ* (Entity-Relation-Graphen). Derzeit müssen Entwickler dafür drei verschiedene Systeme betreiben (z. B. Chroma + Elasticsearch + Neo4j).
+* **Die MemFuse-Lösung**: Eine einzige Rust-Bibliothek, die in-process läuft (kein Server, kein Docker), zero C-Abhängigkeiten im Kern besitzt und alle drei Signale über **Reciprocal Rank Fusion (RRF)** zu einem optimalen Prompt-Kontext verschmilzt.
 
 ---
 
-## 5. Was die Nicht-Kern-Crates für Richtung A bedeuten
+## ✂️ Radikaler Scope-Schnitt (Entscheidungsmatrix)
 
-> [!TIP]
-> Richtung A (Sovereign Edge) ist **nicht widersprüchlich zu C** — es ist das gleiche Fundament, höher positioniert. Wenn C die Zero-C-Deps, ACID-Garantien und SIMD-Performance beweist (mit publizierten Benchmarks), ist der Pivot zu A in 12–18 Monaten trivial. Die `memfuse-cluster`- und `memfuse-sandbox`-Arbeit geht nicht verloren, sie wird in einem separaten Repo gepflegt bis die Community-Traktion von C sie rechtfertigt.
+Wir bereinigen das Repository und trennen uns von allen Modulen, die nicht direkt zu dieser Positionierung beitragen.
+
+| Crate | Status | Aktion | Begründung |
+| :--- | :--- | :--- | :--- |
+| `memfuse-core` | 🔴 Panics | **Härten** | Das Fundament für Typen, Fehler und Puffer. Alle `unwrap()` müssen eliminiert werden. |
+| `memfuse-store` | 🟡 Bugs / CVE | **Härten** | LSM-Tree und WAL. Beheben von FIND-STO-001 (Phantom-Daten) und Upgrade der CVE-behafteten Deps (`memmap2`, `lru`). |
+| `memfuse-index` | 🟡 Panics | **Härten** | HNSW-Vektorindex. Zero-Panic durchsetzen, Endian-Safety sichern. |
+| `memfuse-text` | 🟢 Clean | **Pflegen** | BM25-Volltextsuche. Stabil, wird unverändert übernommen. |
+| `memfuse-crypto`| 🟡 Panics | **Härten** | AES-GCM-SIV Verschlüsselung. Zero-Panic durchsetzen. |
+| `memfuse-graph` | 🔴 Kaputt | **Reaktivieren & Persistieren** | **Kritisch für USP!** CSR-Graph muss im LSM-Tree persistent gemacht werden (FIND-GRA-001 beheben), sonst verliert der Graph bei jedem Neustart alle Beziehungen. |
+| `memfuse-py` | 🔴 Keine Tests | **Reaktivieren & Stabilisieren** | **Der wichtigste Vertriebskanal!** Python-Entwickler bauen 95% aller KI-Agenten. Ohne PyPI-Paket existiert das Produkt am Markt nicht. |
+| `memfuse-embed` | 🧊 Frozen | **Optionalisieren (Feature-Gate)** | Das Einbetten von ONNX (`ort`) bringt schwere C-Laufzeitbibliotheken mit, was das "Sovereign Core"-Prinzip verletzt. Wird als rein optionales Feature ausgegliedert. |
+| `memfuse-cluster` | 🧊 Frozen | **Löschen / Auslagern** | Raft-Konsens und gRPC-Verteilung sind für eine in-process Engine irrelevant und verlangsamen die Entwicklung durch extreme Komplexität. |
+| `memfuse-sandbox` | 🧊 Frozen | **Löschen / Auslagern** | WebAssembly-Sandboxing ist Aufgabe des Agenten-Ausführungssystems, nicht der Speicher-Engine. |
+| `memfuse-saos-agent`| 🧊 Frozen | **Löschen / Auslagern** | MemFuse ist eine Datenbank/Memory-Engine, kein Agenten-Orchestrator. |
+
+> [!IMPORTANT]
+> Durch diese Ausmistung reduzieren wir die Codebasis um **über 2.500 Zeilen ungenutzten, fehlerhaften Legacy-Codes** und gewinnen den Fokus zurück, um die verbleibenden 6 Crates + Python-Bindings auf Enterprise-Niveau zu härten.
 
 ---
 
-## 6. Offene Fragen (Entscheidungen nötig)
+## 🗺️ Der konkrete Fahrplan (Roadmap v2.0)
 
-| # | Frage | Options | Empfehlung |
-|---|---|---|---|
-| F1 | Wie wird `memfuse-graph` persistiert? | (a) WAL-Namespace `__graph:`, (b) Eigenes `.graph`-Binärformat analog HNSW | (a) — nutzt bestehende WAL-Garantien, weniger Code |
-| F2 | `memmap2` CVE: Ersetzen oder warten auf Upstream-Patch? | (a) Auf `memmap2` 0.10+ warten, (b) `mmap`-Calls manuell via `std::fs` | Upstream-Patch prüfen, wenn >2 Wochen → manuelle Migration |
-| F3 | `lru` CVE: `lru`-Crate oder eigene Impl? | (a) `quick_cache` als Alternative, (b) `HashMap` + Slab | `quick_cache` prüfen (sound, aktiv gewartet) |
-| F4 | Python-API Scope: GIL-free oder Sync? | (a) Sync mit `allow_threads`, (b) `asyncio`-native via `pyo3-asyncio` | (a) zuerst — einfacher, reicht für MVP |
+Die Roadmap ist so aufgebaut, dass wir schnellstmöglich ein **funktionierendes Produkt am Markt platzieren**, anstatt uns in internen theoretischen Härtungen zu verlieren.
+
+### Phase 0: Scope-Bereinigung & Sicherheitsgarantien (Woche 1)
+> **Ziel**: Ein sauberes Repository ohne Altlasten und ohne bekannte Sicherheitslücken.
+
+- [ ] **P0-1: Repository-Entschlackung**: 
+  - Entfernen von `memfuse-cluster`, `memfuse-sandbox` und `memfuse-saos-agent` aus dem Cargo-Workspace.
+  - Archivieren dieser Crates in ein separates Backup-Repository (z. B. `memfuse-archived`).
+- [ ] **P0-2: Sicherheits-Updates (CVEs)**:
+  - Upgrade von `memmap2` auf eine sichere Version (RUSTSEC-2026-0186 beheben).
+  - Ersetzen der unsounden `lru`-Crate durch `quick_cache` (RUSTSEC-2026-0002 beheben).
+- [ ] **P0-3: Dokumenten-Konsolidierung**:
+  - Zusammenführen aller überlappenden Spezifikationen und Audits in ein einziges Living Document (`docs/SOURCE_OF_TRUTH.md`).
+  - Löschen veralteter oder doppelter `.md`-Dateien gemäß dem MECE-Prinzip.
 
 ---
 
-## 7. Exit-Kriterien (Definition of Done pro Phase)
+### Phase 1: Die 4-Signal-Garantie & Zero-Panic (Woche 2–4)
+> **Ziel**: Beseitigung aller Bugs, die zu Datenverlust oder Programmabstürzen führen. Aktivierung der Graph-Persistenz.
 
-### Phase 0 ✅ wenn:
-- [ ] `just debt-audit` ohne CVE-Fehler durchläuft
-- [ ] Nur 7 Core-Crates + graph + py im Workspace
-- [ ] Ein einziges konsolidiertes Analyse-Dokument (SOURCE_OF_TRUTH.md)
+- [ ] **P1-1: Radikaler Zero-Panic-Audit**:
+  - Ersetzen aller `std::sync::RwLock` durch `parking_lot::RwLock` in `memfuse-db` zur Eliminierung von Poison-Panics (Löscht 12+ `.unwrap()`).
+  - Systematisches Ersetzen aller verbleibenden `.unwrap()` und `.expect()` im Produktionscode durch sichere Fehlerfortpflanzung über `MemFuseError` und den `?`-Operator.
+- [ ] **P1-2: Behebung von Datenverlust-Bugs**:
+  - **FIND-STO-001 (Compaction Tombstone)**: Tombstones im LSM-Tree dürfen nur gelöscht werden, wenn es sich um eine vollständige Compaction (Full-Compaction) handelt, um Phantom-Daten zu verhindern.
+  - **FIND-DB-002 (drop_collection)**: Implementieren von `delete_prefix()` auf Storage-Ebene, um Datenleichen beim Löschen von Collections zu verhindern.
+  - **FIND-DB-003 (Dirty Reads)**: Einbinden von `SnapshotGuard` in den Suchpfad zur Gewährleistung echter Snapshot-Isolation (MVCC).
+- [ ] **P1-3: Graph-Persistenz (USP-Enabler)**:
+  - Reaktivierung des `memfuse-graph` Crates im Workspace.
+  - Implementierung einer CSR-Graph-Persistierung im LSM-Tree unter dem Namespace `__graph:`.
+  - Lösen des Persistenz-Bugs (FIND-GRA-001), sodass Beziehungen nach einem Neustart erhalten bleiben.
 
-### Phase 1 ✅ wenn:
-- [ ] `just triple-test` 3× grün
-- [ ] `rg 'unwrap()' crates --glob '*.rs'` liefert 0 Treffer außerhalb `#[cfg(test)]`
-- [ ] FIND-STO-001 Regression-Test existiert und ist grün
-- [ ] `memfuse-graph` ist im Workspace und Graph-State überlebt Neustart
+---
 
-### Phase 2 ✅ wenn:
-- [ ] `pip install memfuse` funktioniert (PyPI alpha)
-- [ ] 20+ pytest-Tests grün via `maturin develop`
-- [ ] `cargo add memfuse-db` + Quickstart-Beispiel kompiliert und läuft
-- [ ] crates.io v0.1.0 veröffentlicht
+### Phase 2: Python-First & Release-Bereitschaft (Woche 5–7)
+> **Ziel**: MemFuse wird für 95% der Agenten-Entwickler installierbar.
 
-### Phase 3 ✅ wenn:
-- [ ] Öffentliche Benchmark-Zahlen im README (Latenz, Throughput vs. Chroma/LanceDB)
-- [ ] HN-Post oder equivalent mit >100 Upvotes → reales Nutzerfeedback
+- [ ] **P2-1: Python FFI-Härtung (`memfuse-py`)**:
+  - Reaktivierung des `memfuse-py`-Crates im Workspace.
+  - Beheben des Layer-Leakage-Bugs (FIND-PY-001): Verschiebung der FlatBuffer-Generierung aus dem Python-Crate in den `memfuse-core::ipc`-Modul.
+  - Freigabe des Python-GIL während rechenintensiver Suchen oder Serialisierungen (`py.allow_threads`).
+- [ ] **P2-2: pytest-Testsuite**:
+  - Schreiben einer robusten Python-Testsuite mit mindestens 20 Integrationstests (CRUD, Hybrid-Search, Graph-Beziehungen, Crash-Recovery).
+- [ ] **P2-3: PyPI & crates.io Alpha-Release**:
+  - Veröffentlichung von `memfuse` auf PyPI (`pip install memfuse`).
+  - Veröffentlichung des Kern-Crates auf crates.io (`cargo add memfuse-db`).
+  - Bereitstellung von 3 ausführbaren Beispielen (`quickstart.py`, `hybrid_search.py`, `graph_memory.py`).
 
+---
+
+### Phase 3: Unschlagbarkeit beweisen (Woche 8+)
+> **Ziel**: Benchmarks veröffentlichen, das Entwickler-Ökosystem erobern und direkte LLM-Integration ermöglichen.
+
+- [ ] **P3-1: Model Context Protocol (MCP) Server**:
+  - Entwicklung eines eingebauten **MemFuse MCP-Servers**. Damit können moderne LLM-Clients wie Claude Desktop die lokale MemFuse-Datenbank direkt als Werkzeug nutzen, ohne dass Entwickler eine einzige Zeile Code schreiben müssen.
+- [ ] **P3-2: Performance-Benchmarks veröffentlichen**:
+  - Durchführung und Veröffentlichung verifizierter Vergleiche mit ChromaDB und LanceDB (Latenz im Suchpfad, Speicherbedarf bei SQ8-Quantisierung, RRF-Fusion-Genauigkeit).
+- [ ] **P3-3: Community Launch (HackerNews / Reddit)**:
+  - Vorstellung der Engine als: *"The local-first 3-in-1 vector, text & graph memory for AI agents"*.
+
+---
+
+## 📈 Der kritische Pfad der Implementierung
+
+```mermaid
+gantt
+    title MemFuse Implementierungs-Sequenz (Wochen)
+    dateFormat  X
+    axisFormat %d
+    
+    section Phase 0
+    Scope-Bereinigung & CVE Fixes :active, p0, 0, 1
+    
+    section Phase 1
+    Zero-Panic Audit & Lock-Refactoring : p1_1, 1, 2
+    Datenverlust-Bugs (LSM, MVCC) : p1_2, 2, 3
+    Graph-Persistenz im LSM-Tree : p1_3, 2, 4
+    
+    section Phase 2
+    Python-Bindings & FlatBuffer FFI : p2_1, 4, 5
+    pytest Integrationstests : p2_2, 5, 6
+    PyPI & crates.io Release : p2_3, 6, 7
+    
+    section Phase 3
+    MCP-Server Integration : p3_1, 7, 8
+    Benchmarks & Launch : p3_2, 8, 9
+```
+
+---
+
+## 🎛️ Definition of Done (Qualitäts-Gates)
+
+Eine Phase gilt erst als abgeschlossen, wenn folgende Kriterien erfüllt sind:
+
+### Phase 0
+* [ ] `just debt-audit` läuft fehlerfrei durch und meldet 0 bekannte CVEs.
+* [ ] Die Crates `memfuse-cluster`, `memfuse-sandbox` und `memfuse-saos-agent` sind vollständig aus dem Cargo-Workspace entfernt.
+* [ ] Die Dokumentation enthält keine redundanten oder widersprüchlichen Spezifikationsdateien mehr.
+
+### Phase 1
+* [ ] `cargo check --all-targets` und `cargo clippy --all-targets -- -D warnings` sind grün.
+* [ ] Eine Code-Suche mit `rg 'unwrap\(\)' crates/` liefert 0 Treffer im Produktionscode (ausgenommen Test-Module).
+* [ ] Ein Integrationstest beweist, dass Graph-Beziehungen einen Datenbank-Neustart (Crash-Recovery) fehlerfrei überleben.
+
+### Phase 2
+* [ ] `pip install memfuse` installiert die Bibliothek plattformübergreifend.
+* [ ] Die `pytest`-Suite verifiziert alle CRUD- und Hybrid-Search-Szenarien ohne Speicherlecks oder Abstürze.
+* [ ] Das offizielle Quickstart-Beispiel funktioniert per Copy-Paste.

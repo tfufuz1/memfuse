@@ -1,152 +1,112 @@
 # MemFuse — Source of Truth (SOT)
 
-> Dieses Dokument ist das einzige **Living State Document** für Architektur-Status, Crate-Inventar, offene Findings und die aktive Roadmap. Es wird **synchron mit dem Code** aktualisiert — niemals im Voraus. Keine anderen persistenten Specs existieren.
+> **Dieses Dokument ist das einzige Living State Document für Architektur-Status, Crate-Inventar, offene Findings und die aktive Roadmap. Es wird synchron mit dem Code aktualisiert — niemals im Voraus.**
 
 ---
 
 ## 1. Produktstrategie & Mission
 
-**MemFuse** ist die **eingebettete 4-Signal-Memory-Engine für lokale AI-Agenten**.
+**MemFuse** is the **embedded 3-in-1 Memory Engine for Local AI Agents** — combining Vector Search (semantic), BM25 Full-Text Search (lexical), and Entity-Relation Graph Traversal (associative) in a single in-process library.
 
-> *„Ein Agent braucht keinen Server, kein SQL, kein Kubernetes. Er braucht eine In-Process-Bibliothek mit 4-Signal Fusion, die direkt im Agent-Prozess lebt."*
-
-**Ausrichtung (ADR-007, 2026-07-19):**
-- **Primär (C)**: Embedded Agent-Memory-Library — `pip install memfuse` / `cargo add memfuse-db`
-- **Langfristig (A)**: Sovereign Edge-DB — baut auf denselben Sovereign-Core-Eigenschaften auf
-- **Feature**: DACH-Morphologie als Differenzierungsmerkmal, nicht eigene Produktlinie
-
-**USP gegenüber ChromaDB / LanceDB / Qdrant:**
-- 4-Signal Fusion (Vektor + BM25 + Graph + Metadata) in **einer** eingebetteten Library
-- Zero-C-Deps im Default-Profil (Sovereign Core)
-- ACID mit WAL-First und Snapshot-Isolation
+### 🎯 Kern-USP (Der 3-in-1 Vorteil)
+* **Keine Ops-Last**: In-process Library, zero Server, zero Docker, zero Kubernetes.
+* **4-Signal-Fusion (RRF)**: Vektor + Volltext + Graph + Metadaten-Filter vereint in einer einzigen Abfrage für optimalen LLM-Prompt-Kontext.
+* **Sovereign Core**: 100% Pure-Rust Core ohne C-Abhängigkeiten (ONNX-Embeddings optional per Feature-Gate).
+* **ACID-Garantie**: Transaktionssicherheit durch MVCC-Snapshot-Isolation und HMAC-chained WAL.
 
 ---
 
-## 2. Architektur
-
-### 2.1 Schichtmodell (DAG)
+## 2. Architektur-Topologie (DAG)
 
 ```
-Layer 0:  memfuse-core        — Typen, Traits, Fehler (keine Abhängigkeiten)
-Layer 1:  memfuse-store       — LSM-Tree, WAL, SSTables
-          memfuse-index       — HNSW, SIMD-Distanz, SQ8-Quantisierung
-          memfuse-text        — BM25, Inverted Index, Deutsche Morphologie
-          memfuse-crypto      — AES-GCM, HMAC-Chaining
-          memfuse-graph       — CSR-Graph, BFS   [🟡 Workspace-Reaktivierung ausstehend]
-Layer 2:  memfuse-db          — Collections, 4-Signal Fusion, RRF, 2PC
-Layer 3:  memfuse-py          — PyO3-Fassade     [🟡 Workspace-Reaktivierung ausstehend]
-          memfuse-embed       — ONNX (C-Deps, opt-in, feature-gated)   [🧊 Frozen]
-          memfuse-cluster     — Raft (kritische Bugs: FIND-CLU-001/002) [🧊 Frozen]
+Layer 0:  memfuse-core        — Typen, Primitiven, Fehler (keine Abhängigkeiten)
+Layer 1:  memfuse-store       — LSM-Tree, WAL, SSTables, Crypt-at-Rest
+          memfuse-index       — HNSW, SIMD-Distanzen, SQ8-Quantisierung
+          memfuse-text        — BM25, Inverted Index, Tokenizer
+          memfuse-crypto      — AES-GCM-SIV, HMAC-Chaining
+          memfuse-graph       — CSR-Graph, Entity-Relation Traversal [🟡 Reaktivierung & LSM-Persistenz aktiv]
+Layer 2:  memfuse-db          — Collections, RRF-Fusion, transaktionales 2PC
+Layer 3:  memfuse-py          — PyO3 Python FFI-Bindings [🟡 Reaktivierung & Tests aktiv]
 ```
 
-**Aktiver Workspace-Build** (buildfähig):
-`memfuse-core`, `memfuse-store`, `memfuse-index`, `memfuse-db`, `memfuse-text`, `memfuse-checkpoint`, `memfuse-crypto` — **7 Crates, ~13.600 LOC**
-
-**Nicht im Workspace** (auskommentiert in `Cargo.toml`):
-`memfuse-graph`, `memfuse-py`, `memfuse-cluster`, `memfuse-embed`, `memfuse-sandbox`, `memfuse-saos-agent`
-
-### 2.2 Kritische Invarianten
-
-| # | Invariante | Status | Enforcement |
-|---|---|---|---|
-| 1 | **Sovereign Core** (Zero-C-Deps) | ✅ Erfüllt | `#![forbid(unsafe_code)]` in Layer 0-2 (außer SIMD in `distance.rs`). C-Deps feature-gated. |
-| 2 | **Zero-Panic** | ⚠️ Angestrebt | Ziel: kein `.unwrap()`/`.expect()` außerhalb `#[cfg(test)]`. Aktuell: 16+ Dateien mit Verstößen. P1-Priorität. |
-| 3 | **WAL-First Consistency** | ✅ Erfüllt | HMAC-chained WAL, CRC32-Schutz, Fault-Injection-Tests grün. |
-| 4 | **Numerical Determinism** | ✅ Erfüllt | SIMD (AVX-512/AVX2) innerhalb `1e-4` von Skalar-Fallback via Proptest. |
-| 5 | **Snapshot Isolation (MVCC)** | ⚠️ Lücken | `get_at_seq` korrekt; **FIND-DB-003** offen: Search-Pfad nutzt keine SnapshotGuards → Dirty Reads möglich. |
-| 6 | **DAG Integrity** | ✅ Erfüllt | Unidirektionale Abhängigkeiten. `just dag-check` grün. |
+### 🧊 Deprecations & Auslagerung
+Um den Fokus zu wahren, werden folgende Crates aus dem Workspace entfernt und archiviert:
+* `memfuse-cluster` (Raft-Verteilung) -> Wird ausgelagert.
+* `memfuse-sandbox` (WASM Sandboxing) -> Wird ausgelagert.
+* `memfuse-saos-agent` (Agent Runner) -> Wird ausgelagert.
+* `memfuse-embed` (ONNX Embedder) -> Verbleibt im Repo, ist aber standardmäßig deaktiviert (opt-in feature).
 
 ---
 
-## 3. Crate-Inventar (Stand: 2026-07-19)
+## 3. Crate-Inventar & Status
 
-| Crate | Layer | LOC (ca.) | Tests | Status | Kritischste offene Findings |
-|---|---|---|---|---|---|
-| `memfuse-core` | 0 | 1.150 | 44 | 🟡 Panics | `unwrap()` in `tx_buffer.rs`, `snapshot.rs`, `types/` — Zero-Panic verletzt |
-| `memfuse-store` | 1 | 4.130 | 56 | 🟡 Bug | **FIND-STO-001**: Phantom-Daten nach Teil-Compaction. **RUSTSEC-2026-0186** (`memmap2`), **RUSTSEC-2026-0002** (`lru`) |
-| `memfuse-index` | 1 | 3.520 | 30 | 🟡 Panics | `unwrap()` in `hnsw.rs`, `persistence.rs`, `distance.rs`. FIND-IND-002: SQ8 globale Min/Max |
-| `memfuse-text` | 1 | 962 | 26 | 🟢 Clean | — |
-| `memfuse-crypto` | 1 | 313 | 21 | 🟡 Panics | `unwrap()` in `wal_crypto.rs`, `crypto.rs` |
-| `memfuse-graph` | 1 | 521 | 8 | 🔴 Nicht im Workspace | **FIND-GRA-001**: Keine Persistenz — Graph verliert alle Daten nach Neustart |
-| `memfuse-db` | 2 | 2.500 | 36 | 🔴 Bugs | **FIND-DB-001**: 12× `unwrap()` (RwLock). **FIND-DB-002**: Storage Leak bei drop_collection. **FIND-DB-003**: Dirty Reads möglich. |
-| `memfuse-py` | 3 | ~1.000 | 0 | 🔴 Nicht im Workspace | **FIND-PY-001**: Layer Leakage. 0 Tests. Kein PyPI-Release. |
-
----
-
-## 4. Aktiver Backlog (Geordnet nach Priorität)
-
-### P0 — Scope-Schnitt & Security (sofort)
-
-| ID | Task | Severity | Befund |
-|---|---|---|---|
-| P0-1 | `memfuse-cluster`, `memfuse-sandbox`, `memfuse-saos-agent` aus Repo entfernen (→ `memfuse-agentos` Repo) | — | Scope-Fokus |
-| P0-2 | `memmap2` auf gepatchte Version upgraden | 🔴 CVE | RUSTSEC-2026-0186 |
-| P0-3 | `lru` upgraden oder durch `quick_cache` ersetzen | 🔴 CVE | RUSTSEC-2026-0002 |
-
-### P1 — Zero-Panic durchsetzen (Kunden-Blocker)
-
-| ID | Task | Severity | Befund |
-|---|---|---|---|
-| P1-1 | `memfuse-db` RwLock-`unwrap()` → `parking_lot::RwLock` | 🔴 Kritisch | FIND-DB-001 |
-| P1-2 | `memfuse-core` `unwrap()` → `?` / `map_err` | 🔴 Kritisch | Zero-Panic |
-| P1-3 | `memfuse-store` `unwrap()` auditieren und ersetzen | 🔴 Kritisch | Zero-Panic |
-| P1-4 | `memfuse-crypto` `unwrap()` → `?` | 🔴 Kritisch | Zero-Panic |
-| P1-5 | **FIND-STO-001** Tombstone-Fix: nur bei Full-Compaction oder unterstem Tier löschen | 🔴 Kritisch | Phantom-Daten |
-| P1-6 | **FIND-DB-002** Storage Leak: `delete_prefix()` bei drop_collection | 🔴 Kritisch | Ressourcen-Leak |
-| P1-7 | **FIND-DB-003** Snapshot Isolation in Search: SnapshotGuard in `search_with_filter` | 🔴 Kritisch | Dirty Reads |
-| P1-8 | `memfuse-graph` in Workspace reaktivieren + **FIND-GRA-001** Persistenz implementieren | 🔴 Kritisch | Signal 3 fehlt |
-
-### P2 — Release-Fähigkeit
-
-| ID | Task | Severity | Befund |
-|---|---|---|---|
-| P2-1 | `memfuse-py` Workspace-Reaktivierung + **FIND-PY-001** Layer Leakage beheben | 🔴 | Vertriebskanal |
-| P2-2 | pytest-Testsuite ≥20 Tests via `maturin develop` | — | 0 Tests aktuell |
-| P2-3 | **FIND-IND-002** SQ8 Per-Dimension Quantisierung | 🟡 | Recall-Verlust |
-| P2-4 | **FIND-IND-003** HNSW-Save Endian-Safety | 🟡 | Portabilität |
-| P2-5 | PyPI v0.1.0-alpha Release | — | Invariante 1 |
-| P2-6 | crates.io v0.1.0 Release | — | Vertriebskanal |
-
-### P3 — Sichtbarkeit
-
-| ID | Task | |
-|---|---|---|
-| P3-1 | Öffentliche Benchmark-Suite (MemFuse vs. ChromaDB vs. LanceDB) | |
-| P3-2 | HN/Reddit-Launch mit Benchmark-Zahlen | |
-| P3-3 | MCP (Model Context Protocol) Integration | |
+| Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
+| :--- | :---: | :---: | :--- | :--- |
+| `memfuse-core` | 0 | ~1.150 | 🟡 Panics | Typen und Fehler. Eliminieren aller unwrap() Aufrufe. |
+| `memfuse-store` | 1 | ~4.130 | 🟡 Bug / CVE | LSM-Tree-Storage. Upgrade von memmap2 & lru (CVEs). |
+| `memfuse-index` | 1 | ~3.520 | 🟡 Panics | HNSW-Vektorindex. Zero-Panic-Audit. |
+| `memfuse-text` | 1 | ~960 | 🟢 Clean | BM25 Inverted Index für Lexical Search. |
+| `memfuse-crypto`| 1 | ~310 | 🟡 Panics | Krypto-Primitiven. Zero-Panic-Audit. |
+| `memfuse-graph` | 1 | ~520 | 🔴 Kaputt | CSR Graph. **Persistenz im LSM-Tree implementieren (FIND-GRA-001)**. |
+| `memfuse-db` | 2 | ~2.500 | 🟡 Panics | Collections-Orchestrator. RwLock-unwraps entfernen (parking_lot). |
+| `memfuse-py` | 3 | ~1.000 | 🔴 Keine Tests| PyO3-Fassade für Python-Anbindung. Integrationstests schreiben. |
 
 ---
 
-## 5. Security Advisories (Aktiv)
+## 4. Aktiver Backlog (Priorisiert nach Roadmap v2.0)
 
-| Advisory | Crate | Version | Severity | Pfad |
-|---|---|---|---|---|
-| RUSTSEC-2026-0186 | `memmap2` | 0.9.10 | ⚠️ Unsound | `memfuse-store`, `memfuse-index` |
-| RUSTSEC-2026-0002 | `lru` | 0.12.5 | ⚠️ Unsound | `memfuse-store` |
+### 🚀 P0: Scope-Bereinigung & Sicherheitsgarantien (Sofort)
+| ID | Task | Severity | Status | Rationale / Befund |
+| :--- | :--- | :---: | :---: | :--- |
+| **P0-1** | Unnötige Crates aus Cargo-Workspace entfernen | Major | 🟡 Aktiv | Fokus auf Kern-Bibliothek (Entfernen von cluster, sandbox, saos-agent). |
+| **P0-2** | Upgrade `memmap2` zur Behebung der Sicherheitswarnung | Blockierend | ⬜ Geplant | RUSTSEC-2026-0186 (unsound pointer offset). |
+| **P0-3** | Ersetzen von `lru` durch `quick_cache` | Blockierend | ⬜ Geplant | RUSTSEC-2026-0002 (unsound IterMut). |
+| **P0-4** | Zusammenführen redundanter Audit- und Spezifikationsdokumente | Minor | ⬜ Geplant | MECE-Konformität in Docs. |
+
+### 🔒 P1: Datenintegrität & Zero-Panic (Woche 2–4)
+| ID | Task | Severity | Status | Rationale / Befund |
+| :--- | :--- | :---: | :---: | :--- |
+| **P1-1** | RwLock-Panics in `memfuse-db` eliminieren | Kritisch | ⬜ Geplant | Umstellung auf `parking_lot::RwLock` zur Entfernung aller RwLock-unwrap(). |
+| **P1-2** | Zero-Panic-Härtung in Layer 0 & Layer 1 | Kritisch | ⬜ Geplant | Beseitigung aller `.unwrap()` und `.expect()` im Produktionscode. |
+| **P1-3** | LSM Tombstone-GC reparieren | Kritisch | ⬜ Geplant | **FIND-STO-001**: Phantom-Daten nach Teil-Compaction verhindern. |
+| **P1-4** | drop_collection Speicherleck beheben | Kritisch | ⬜ Geplant | **FIND-DB-002**: Implementieren von `delete_prefix` im LSM-Tree. |
+| **P1-5** | Snapshot-Isolation im Suchpfad erzwingen | Kritisch | ⬜ Geplant | **FIND-DB-003**: `SnapshotGuard` bei Hybrid- und Vektorsuchen nutzen. |
+| **P1-6** | Graph-Persistenz im LSM-Tree implementieren | Kritisch | ⬜ Geplant | **FIND-GRA-001**: CSR-Graph-Daten nach Neustart aus WAL/SSTable wiederherstellen. |
+
+### 🐍 P2: Python-Bindings & Release-Bereitschaft (Woche 5–7)
+| ID | Task | Severity | Status | Rationale / Befund |
+| :--- | :--- | :---: | :---: | :--- |
+| **P2-1** | Reaktivierung von `memfuse-py` im Workspace | Major | ⬜ Geplant | Bereitstellung der Python-Bindings. |
+| **P2-2** | Behebung von FFI-Layer-Leakage | Major | ⬜ Geplant | **FIND-PY-001**: FlatBuffer-Generierung nach `memfuse-core::ipc` verschieben. |
+| **P2-3** | GIL-Freigabe bei zeitintensiven Operationen | Major | ⬜ Geplant | **FIND-PY-002**: Nutzen von `py.allow_threads` im Suchpfad. |
+| **P2-4** | Aufbau der pytest-Suite (mindestens 20 Tests) | Major | ⬜ Geplant | Validierung der Python-Bindings unter Stress. |
+| **P2-5** | crates.io & PyPI Alpha-Releases (v0.1.0-alpha) | Major | ⬜ Geplant | Vertriebskanäle aktivieren. |
+
+### ⚡ P3: Unschlagbare Performance & Ökosystem (Woche 8+)
+| ID | Task | Severity | Status | Rationale / Befund |
+| :--- | :--- | :---: | :---: | :--- |
+| **P3-1** | MCP (Model Context Protocol) Server integrieren | Major | ⬜ Geplant | Direkte Kopplung von MemFuse an LLM-Clients wie Claude Desktop. |
+| **P3-2** | Benchmarks gegen ChromaDB und LanceDB erstellen | Minor | ⬜ Geplant | Nachweis der Performance und RRF-Präzision. |
+| **P3-3** | Community-Launch & Dokumentations-Rollout | Minor | ⬜ Geplant | Launch auf HackerNews, Reddit, GitHub. |
 
 ---
 
-## 6. Qualitäts-Gates
+## 🛡️ Aktive Sicherheitswarnungen (CVEs)
 
-```bash
-just check         # fmt + clippy + compile
-just test          # cargo test workspace
-just triple-test   # 3× test (Flaky-Detektor)
-just dag-check     # DAG-Integrität
-just debt-audit    # unwrap() + unsafe + std::fs scan
-```
-
-**Definition of Done (Phase 1):** `just triple-test` 3× grün, `rg 'unwrap()' crates --glob '*.rs'` liefert 0 Treffer außerhalb `#[cfg(test)]`, FIND-STO-001 Regression-Test grün, `memfuse-graph` im Workspace und Graph-State überlebt Neustart.
+1. **RUSTSEC-2026-0186** in `memmap2 0.9.10`: Unsound Pointer Offset. Betrifft: `memfuse-store`, `memfuse-index`.
+2. **RUSTSEC-2026-0002** in `lru 0.12.5`: Unsound IterMut. Betrifft: `memfuse-store`.
 
 ---
 
-## 7. Referenzen
+## 🚦 Qualitäts-Gates & Definition of Done
 
-| Dokument | Pfad | Zweck |
-|---|---|---|
-| Architektur-Diagramm | `docs/ARCHITECTURE.md` | Struktureller DAG, Invarianten-Status |
-| ADRs | `DECISIONS.md` | Architekturentscheidungen |
-| Agent-Regeln | `AGENTS.md` | LLM-Governance |
-| Sicherheitsmodell | `SECURITY.md` | Bedrohungsmodell |
-| Testphilosophie | `TESTING.md` | Teststandards |
-| Glossar | `GLOSSARY.md` | Domänenbegriffe |
+* **Automatisierter Gate-Stack**:
+  1. `just check`: Formatierung (rustfmt) und Compiler-Warnungen (Clippy) als Fehler behandeln.
+  2. `just test`: Gesamte Testsuite ausführen.
+  3. `just triple-test`: Führt cargo test 3x hintereinander aus (Flaky-Test-Detektor).
+  4. `just debt-audit`: Scannt den Code nach unwrap(), expect() und std::fs-Zugriffen.
+  
+* **Freigabekriterien für Commits**:
+  * Alle Gates müssen vollständig grün durchlaufen.
+  * Keine neuen `.unwrap()` oder `.expect()` im Produktionscode.
+  * Geänderte Bereiche müssen durch Tests abgesichert sein (Anti-Mirroring-Prinzip gemäß `TESTING.md` einhalten).
