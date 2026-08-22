@@ -83,11 +83,34 @@ impl EntityId {
     pub const fn inner(self) -> u64 {
         self.0
     }
+
+    pub fn as_bytes(&self) -> Vec<u8> {
+        self.0.to_string().into_bytes()
+    }
 }
 
 impl From<u64> for EntityId {
     fn from(id: u64) -> Self {
         Self(id)
+    }
+}
+
+impl From<&str> for EntityId {
+    fn from(s: &str) -> Self {
+        if let Ok(val) = s.parse::<u64>() {
+            Self(val)
+        } else {
+            let hash = blake3::hash(s.as_bytes());
+            let mut buf = [0u8; 8];
+            buf.copy_from_slice(&hash.as_bytes()[..8]);
+            Self(u64::from_le_bytes(buf))
+        }
+    }
+}
+
+impl From<String> for EntityId {
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
     }
 }
 
@@ -310,8 +333,11 @@ impl ScoredDocument {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
     pub id: EntityId,
+    #[serde(default)]
     pub name: String,
     pub entity_type: String,
+    #[serde(default)]
+    pub attributes: std::collections::HashMap<String, serde_json::Value>,
 }
 
 impl Entity {
@@ -320,6 +346,7 @@ impl Entity {
             id,
             name: name.into(),
             entity_type: entity_type.into(),
+            attributes: Default::default(),
         }
     }
 }
