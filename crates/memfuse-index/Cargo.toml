@@ -16,7 +16,7 @@ roaring = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
-memmap2 = "0.9"
+memmap2 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 
 [features]

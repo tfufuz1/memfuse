@@ -105,7 +105,7 @@ async fn test_sequential_large_batch_stats_correct(
         index
             .upsert_document(tx, doc_id, "alpha beta gamma")
             .await?;
-        storage.commit(tx).await?;
+        index.commit(tx).await?;
     }
 
     let stats = index.stats().await?;
@@ -120,7 +120,7 @@ async fn test_sequential_large_batch_stats_correct(
         let tx = TxId::new(100 + i);
         let doc_id = DocId::new(i + 1);
         index.upsert_document(tx, doc_id, "delta epsilon").await?;
-        storage.commit(tx).await?;
+        index.commit(tx).await?;
     }
 
     let stats = index.stats().await?;
@@ -145,14 +145,13 @@ async fn test_concurrent_upserts_no_panic() -> std::result::Result<(), Box<dyn s
     let mut handles = Vec::new();
     for i in 0..10u64 {
         let idx = index.clone();
-        let store = storage.clone();
         handles.push(tokio::spawn(async move {
             let tx = TxId::new(i + 1);
             let doc_id = DocId::new(i + 1);
             idx.upsert_document(tx, doc_id, "concurrent test data")
                 .await
                 .expect("upsert should not panic");
-            store.commit(tx).await.expect("commit");
+            idx.commit(tx).await.expect("commit");
         }));
     }
 
@@ -185,7 +184,7 @@ async fn test_concurrent_upserts_stats_eventual_count(
         let tx = TxId::new(i + 1);
         let doc_id = DocId::new(i + 1);
         index.upsert_document(tx, doc_id, "word").await?;
-        storage.commit(tx).await?;
+        index.commit(tx).await?;
     }
 
     let stats = index.stats().await?;

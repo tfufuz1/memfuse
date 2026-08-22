@@ -5,7 +5,7 @@
 //! require O(N_new_terms) puts instead of O(N_old_terms) deletes + O(N_new_terms) puts.
 
 use async_trait::async_trait;
-use memfuse_core::{DocId, Result, StorageEngine, TxId};
+use memfuse_core::{DocId, Result, StorageEngine, TextIndex, TxId};
 use memfuse_text::InvertedIndex;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -127,7 +127,7 @@ async fn test_first_insert_io_count() -> std::result::Result<(), Box<dyn std::er
     index
         .upsert_document(tx, doc_id, "alpha beta gamma delta")
         .await?;
-    storage.commit(tx).await?;
+    index.commit(tx).await?;
 
     // Expected: 4 terms + dl + fw + meta = 7 puts
     assert_eq!(
@@ -159,7 +159,7 @@ async fn test_tombstone_update_io_count() -> std::result::Result<(), Box<dyn std
     index
         .upsert_document(tx1, doc_id, "alpha beta gamma")
         .await?;
-    storage.commit(tx1).await?;
+    index.commit(tx1).await?;
     assert_eq!(storage.puts(), 6, "First insert: 3 + 3 = 6");
 
     // Reset for update measurement
@@ -168,7 +168,7 @@ async fn test_tombstone_update_io_count() -> std::result::Result<(), Box<dyn std
     // Update: entirely new 2 terms
     let tx2 = TxId::new(2);
     index.upsert_document(tx2, doc_id, "delta epsilon").await?;
-    storage.commit(tx2).await?;
+    index.commit(tx2).await?;
 
     // Tombstone path: 3 tbs + 1 dl + 1 fw + 1 meta + 2 terms = 8 puts
     assert_eq!(
@@ -199,19 +199,19 @@ async fn test_resolve_tombstones_cleanup_count(
     index
         .upsert_document(tx1, doc_id, "alpha beta gamma")
         .await?;
-    storage.commit(tx1).await?;
+    index.commit(tx1).await?;
 
     // Update: "alpha delta" (1 overlapping, 1 new, 2 removed: beta, gamma)
     let tx2 = TxId::new(2);
     index.upsert_document(tx2, doc_id, "alpha delta").await?;
-    storage.commit(tx2).await?;
+    index.commit(tx2).await?;
 
     storage.reset_counters();
 
     // Resolve tombstones: should delete "beta" and "gamma" entries + tombstone itself
     let tx3 = TxId::new(3);
     let resolved = index.resolve_tombstones(tx3).await?;
-    storage.commit(tx3).await?;
+    index.commit(tx3).await?;
 
     assert_eq!(resolved, 3, "Three tombstones resolved");
     // Deletes: 2 stale terms (beta, gamma) + 3 tombstones = 5
