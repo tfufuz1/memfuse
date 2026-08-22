@@ -1166,19 +1166,14 @@ impl<S: StorageEngine> Collection<S> {
             self.prefix.clone()
         };
 
-        // 1. Clean collection data (user keys, docs, rels, intents)
-        let entries = self.storage.scan_prefix(&prefix).await?;
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
-        for (k, _) in entries {
-            self.storage.delete(tx, &k).await?;
-        }
+
+        // 1. Clean collection data (user keys, docs, rels, intents)
+        self.storage.delete_prefix(tx, &prefix).await?;
 
         // 2. Clean text index namespace (FIND-DB-002)
         let txt_prefix = format!("__txt:{}:", self.name).into_bytes();
-        let txt_entries = self.storage.scan_prefix(&txt_prefix).await?;
-        for (k, _) in txt_entries {
-            self.storage.delete(tx, &k).await?;
-        }
+        self.storage.delete_prefix(tx, &txt_prefix).await?;
 
         self.storage.commit(tx).await?;
         Ok(())

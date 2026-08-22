@@ -314,6 +314,21 @@ impl LsmStorage {
         self.flush().await
     }
 
+    /// Evaluates whether compaction should run and performs it if needed.
+    #[doc(hidden)]
+    pub async fn maybe_compact(&self) -> Result<bool> {
+        let compaction_engine = CompactionEngine::new(
+            self.config.compaction.clone(),
+            Arc::clone(&self.snapshot_registry),
+            Arc::clone(&self.block_cache),
+            self.key_manager.clone(),
+            Arc::clone(&self.budget),
+        );
+        compaction_engine
+            .maybe_compact(&self.sstables, &self.config.path)
+            .await
+    }
+
     /// Signals the background compaction engine to stop.
     pub fn shutdown(&self) {
         self.cancel_token.cancel();

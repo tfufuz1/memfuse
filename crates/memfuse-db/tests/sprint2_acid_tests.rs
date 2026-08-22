@@ -6,6 +6,7 @@
 //!
 //! DECISION-REF: sprint_2_data_integrity_acid.md — Verifikationsplan
 
+use memfuse_core::StorageEngine;
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
 use tempfile::TempDir;
@@ -81,6 +82,92 @@ async fn test_drop_default_collection_is_rejected() {
         result.is_err(),
         "Dropping the default collection must return an error"
     );
+}
+
+#[tokio::test]
+async fn test_drop_collection_removes_all_data() {
+    let (db, _tmp) = setup_db(3).await;
+
+    // 1. Collection erstellen, mehrere Dokumente einfügen
+    let name = "col_drop_test";
+    let col = db.collection(name).await.expect("create col");
+    col.insert("doc1", &[1.0, 0.0, 0.0], Some(json!({"key": "val1"})))
+        .await
+        .expect("insert doc1");
+    col.insert("doc2", &[0.0, 1.0, 0.0], Some(json!({"key": "val2"})))
+        .await
+        .expect("insert doc2");
+
+    let col_prefix = format!("__col:{}:", name);
+    let before = db.inner_storage().scan_prefix(col_prefix.as_bytes()).await.expect("scan before");
+    assert!(!before.is_empty(), "Data keys must exist before drop");
+
+    // 2. drop_collection() aufrufen
+    db.drop_collection(name).await.expect("drop collection");
+
+    // 3. storage.scan_prefix("__col:<name>:") muss LEER sein
+    let after = db.inner_storage().scan_prefix(col_prefix.as_bytes()).await.expect("scan after");
+    assert!(after.is_empty(), "storage.scan_prefix for collection prefix must be empty after drop");
+
+    // 4. list_collections() darf den Namen nicht mehr enthalten
+    let list = db.list_collections().await.expect("list_collections");
+    assert!(!list.contains(&name.to_string()), "list_collections must not contain dropped collection name");
+}
+
+#[tokio::test]
+async fn test_partial_compaction_preserves_tombstones() {
+    use memfuse_store::{CompactionConfig, LsmConfig};
+    use memfuse_core::{TxId, StorageEngine};
+
+    let tmp = TempDir::new().expect("temp dir");
+    let config = LsmConfig {
+        path: tmp.path().to_path_buf(),
+        memtable_size_limit: 64, // small threshold to force flushes
+        compaction: CompactionConfig {
+            min_sstables_per_tier: 2,
+            ..CompactionConfig::default()
+        },
+        ..Default::default()
+    };
+
+    let storage = memfuse_store::LsmStorage::new(config).await.expect("create storage");
+
+    // 1. SSTable 0: Ältester Wert für key1
+    let tx1 = TxId::new(1);
+    storage.put(tx1, b"key1", b"original_value").await.expect("put key1 v1");
+    storage.commit(tx1).await.expect("commit tx1");
+    storage.flush().await.expect("flush 1");
+
+    // 2. SSTable 1: Neuerer Wert für key1
+    let tx2 = TxId::new(2);
+    storage.put(tx2, b"key1", b"updated_value").await.expect("put key1 v2");
+    storage.commit(tx2).await.expect("commit tx2");
+    storage.flush().await.expect("flush 2");
+
+    // 3. SSTable 2: Lösche key1 (Tombstone in SSTable 2)
+    let tx3 = TxId::new(3);
+    storage.delete(tx3, b"key1").await.expect("delete key1");
+    storage.commit(tx3).await.expect("commit tx3");
+    storage.flush().await.expect("flush 3");
+
+    // 4. SSTable 3: Weiterer Schlüssel
+    let tx4 = TxId::new(4);
+    storage.put(tx4, b"other_key", b"value4").await.expect("put other");
+    storage.commit(tx4).await.expect("commit tx4");
+    storage.flush().await.expect("flush 4");
+
+    // Vor Compaction: key1 muss None sein
+    assert!(storage.get(b"key1").await.unwrap().is_none());
+
+    // Führe eine (partielle) Compaction aus
+    let compacted = storage.maybe_compact().await.expect("maybe_compact");
+    assert!(compacted, "Compaction should have occurred");
+
+    // 5. Nach partieller Compaction: key1 MUSS weiterhin None sein!
+    // Falls der Tombstone bei partieller Compaction gelöscht worden wäre,
+    // würde key1 aus SSTable 0 ("original_value") wieder auftauchen (Phantom-Daten).
+    let val_after = storage.get(b"key1").await.expect("get key1 after compaction");
+    assert!(val_after.is_none(), "key1 must remain deleted and NOT materialise phantom data from SSTable 0");
 }
 
 // ---------------------------------------------------------------------------
