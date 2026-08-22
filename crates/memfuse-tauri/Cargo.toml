@@ -12,6 +12,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 memfuse-db = { workspace = true }
 memfuse-graph = { workspace = true }
+parking_lot = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
