@@ -522,6 +522,7 @@ impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
     }
 
     async fn commit(&self, tx: TxId) -> Result<()> {
+        self.commit_stats(tx).await?;
         self.storage.commit(tx).await
     }
 
@@ -777,6 +778,7 @@ mod tests {
         index
             .upsert_document(tx1, d1, "Rust is a fast programming language for systems.")
             .await?;
+        index.commit_stats(tx1).await?;
         storage.commit(tx1).await?;
 
         let tx2 = TxId::new(2);
@@ -784,6 +786,7 @@ mod tests {
         index
             .upsert_document(tx2, d2, "I like rust programming and rust ownership rules.")
             .await?;
+        index.commit_stats(tx2).await?;
         storage.commit(tx2).await?;
 
         let tx3 = TxId::new(3);
@@ -791,6 +794,7 @@ mod tests {
         index
             .upsert_document(tx3, d3, "Python is dynamically typed.")
             .await?;
+        index.commit_stats(tx3).await?;
         storage.commit(tx3).await?;
 
         let results = index.search_bm25("rust programming", 3, None).await?;
@@ -822,11 +826,13 @@ mod tests {
         let tx1 = TxId::new(1);
         let d1 = DocId::new(1);
         index.upsert_document(tx1, d1, "one two three").await?;
+        index.commit_stats(tx1).await?;
         storage.commit(tx1).await?;
 
         let tx2 = TxId::new(2);
         let d2 = DocId::new(2);
         index.upsert_document(tx2, d2, "four five").await?;
+        index.commit_stats(tx2).await?;
         storage.commit(tx2).await?;
 
         // total_docs = 2, total_tokens = 5
@@ -843,6 +849,7 @@ mod tests {
         // Update d1
         let tx3 = TxId::new(3);
         index.upsert_document(tx3, d1, "one").await?;
+        index.commit_stats(tx3).await?;
         storage.commit(tx3).await?;
 
         // total_docs = 2, total_tokens = 3 (5 - 3 + 1)
@@ -857,6 +864,7 @@ mod tests {
         // Delete d2
         let tx4 = TxId::new(4);
         index.delete_document(tx4, d2).await?;
+        index.commit_stats(tx4).await?;
         storage.commit(tx4).await?;
 
         // total_docs = 1, total_tokens = 1

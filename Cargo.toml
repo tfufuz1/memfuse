@@ -34,7 +34,7 @@ async-trait = "0.1"
 
 # Data structures
 bytes = "1"
-memmap2 = "0.9"
+memmap2 = "0.9.11"
 ahash = "0.8"
 itoa = "1"
 parking_lot = "0.12"
