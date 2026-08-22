@@ -6,6 +6,7 @@ use crate::filter::MetadataFilter;
 use memfuse_core::{DocId, Result, StorageEngine, TextIndex, TxId, VectorIndex};
 #[cfg(feature = "embed")]
 use memfuse_embed::TextEmbedder;
+use memfuse_graph::CsrGraph;
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;
 use memfuse_text::inverted::InvertedIndex;
@@ -52,6 +53,7 @@ pub struct Collection<S: StorageEngine = LsmStorage> {
     pub(crate) prefix: Vec<u8>,
     pub(crate) index: Arc<HnswIndex>,
     pub(crate) text_index: InvertedIndex<S>,
+    pub(crate) graph_index: Arc<CsrGraph>,
     pub(crate) storage: Arc<S>,
     pub(crate) next_tx: Arc<AtomicU64>,
     pub(crate) dimension: usize,
@@ -66,6 +68,7 @@ impl<S: StorageEngine> Clone for Collection<S> {
             prefix: self.prefix.clone(),
             index: self.index.clone(),
             text_index: self.text_index.clone(),
+            graph_index: self.graph_index.clone(),
             storage: self.storage.clone(),
             next_tx: self.next_tx.clone(),
             dimension: self.dimension,
@@ -83,6 +86,7 @@ impl<S: StorageEngine> Collection<S> {
         name: String,
         storage: Arc<S>,
         index: Arc<HnswIndex>,
+        graph_index: Arc<CsrGraph>,
         next_tx: Arc<AtomicU64>,
         dimension: usize,
     ) -> Self {
@@ -99,12 +103,18 @@ impl<S: StorageEngine> Collection<S> {
             prefix,
             index,
             text_index,
+            graph_index,
             storage,
             next_tx,
             dimension,
             #[cfg(feature = "embed")]
             embedder: parking_lot::RwLock::new(None),
         }
+    }
+
+    /// Returns the CSR graph index for this collection.
+    pub fn graph_index(&self) -> Arc<CsrGraph> {
+        self.graph_index.clone()
     }
 
     /// Sets the text embedder for this collection (consuming version).

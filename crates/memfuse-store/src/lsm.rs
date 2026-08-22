@@ -520,6 +520,16 @@ impl StorageEngine for LsmStorage {
         Ok(())
     }
 
+    async fn delete_prefix(&self, tx_id: TxId, prefix: &[u8]) -> Result<u64> {
+        let matching_keys = self.scan_prefix(prefix).await?;
+        let mut deleted = 0u64;
+        for (key, _) in matching_keys {
+            self.delete(tx_id, &key).await?;
+            deleted += 1;
+        }
+        Ok(deleted)
+    }
+
     async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
         let doc_id = {
             let hash = blake3::hash(key);
@@ -965,6 +975,34 @@ mod tests {
 
         let val = storage.get(b"key").await.expect("get");
         assert_eq!(val, None);
+    }
+
+    #[tokio::test]
+    async fn test_delete_prefix_removes_all_matching_keys() {
+        let (storage, _tmp) = test_storage().await;
+        let tx1 = TxId::new(1);
+
+        // 1. Mehrere Keys mit gemeinsamem Prefix "test:" einfügen
+        storage.put(tx1, b"test:1", b"val1").await.unwrap();
+        storage.put(tx1, b"test:2", b"val2").await.unwrap();
+        storage.put(tx1, b"test:3", b"val3").await.unwrap();
+        storage.put(tx1, b"other:1", b"val4").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        // 2. delete_prefix("test:") aufrufen in tx2
+        let tx2 = TxId::new(2);
+        let deleted = storage.delete_prefix(tx2, b"test:").await.unwrap();
+        assert_eq!(deleted, 3);
+        storage.commit(tx2).await.unwrap();
+
+        // 3. Prüfen: alle "test:*"-Keys sind weg, andere Keys bleiben unberührt
+        assert_eq!(storage.get(b"test:1").await.unwrap(), None);
+        assert_eq!(storage.get(b"test:2").await.unwrap(), None);
+        assert_eq!(storage.get(b"test:3").await.unwrap(), None);
+        assert_eq!(
+            storage.get(b"other:1").await.unwrap(),
+            Some(b"val4".to_vec())
+        );
     }
 
     #[tokio::test]

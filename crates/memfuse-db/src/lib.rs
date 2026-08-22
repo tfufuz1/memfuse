@@ -338,10 +338,15 @@ impl MemFuse {
         };
         let index = Arc::new(HnswIndex::new(hnsw_config));
 
+        let mut graph = memfuse_graph::CsrGraph::load_from_storage(self.storage.as_ref()).await?;
+        graph.set_storage(self.storage.clone());
+        let graph_index = Arc::new(graph);
+
         let col = Collection::new(
             name.to_string(),
             Arc::clone(&self.storage),
             index,
+            graph_index,
             Arc::clone(&self.next_tx),
             self.dimension,
         );
