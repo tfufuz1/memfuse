@@ -27,6 +27,9 @@ async-trait = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 futures-util = "0.3"
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [lib]
 name = "memfuse_tauri_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]

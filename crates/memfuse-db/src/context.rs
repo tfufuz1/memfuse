@@ -9,7 +9,7 @@
 // TEST: cargo test -p memfuse-db
 // DONE: ContextManager nutzt MarkdownChunker zur Dokument-Zerlegung.
 
-use memfuse_core::{ContextChunk, ContextWindow, Result, TokenBudget};
+use memfuse_core::{ContextChunk, ContextWindow, DocId, Result, TokenBudget};
 
 /// Manages autonomous context preparation for LLM consumption.
 ///
@@ -22,6 +22,33 @@ pub struct ContextManager {
     budget: TokenBudget,
     /// Adaptive relevance threshold.
     relevance_threshold: f32,
+}
+
+impl Default for ContextManager {
+    fn default() -> Self {
+        Self::with_defaults()
+    }
+}
+
+impl From<crate::SearchResult> for ContextChunk {
+    fn from(r: crate::SearchResult) -> Self {
+        let doc_id = DocId::from_key(&r.id).unwrap_or_else(|_| DocId::new(0));
+        let content = r
+            .metadata
+            .as_ref()
+            .and_then(|m| m.get("text").or_else(|| m.get("content")))
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_string();
+        let token_count = ContextManager::estimate_tokens(&content);
+        ContextChunk {
+            doc_id,
+            content,
+            relevance: r.score,
+            token_count,
+            metadata: r.metadata,
+        }
+    }
 }
 
 impl ContextManager {

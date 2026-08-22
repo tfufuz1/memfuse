@@ -141,6 +141,18 @@ pub struct ContextWindow {
     pub truncated: bool,
 }
 
+impl std::fmt::Display for ContextWindow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, chunk) in self.chunks.iter().enumerate() {
+            if i > 0 {
+                writeln!(f)?;
+            }
+            write!(f, "{}", chunk.content)?;
+        }
+        Ok(())
+    }
+}
+
 /// Evaluated result for hybrid/4-signal search.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScoredEntry {
