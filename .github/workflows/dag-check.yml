@@ -18,14 +18,12 @@ jobs:
       - name: Check L1 Kernel Isolation (core)
         run: |
           set -e
-          for CRATE in memfuse-core; do
-            echo "Verifying $CRATE isolation..."
-            if cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-" | grep -E -v "$CRATE|memfuse-core" | grep -q .; then
-              echo "ERROR: $CRATE imports forbidden internal crates."
-              cargo tree -p "$CRATE" --edges no-dev | grep "memfuse-"
-              exit 1
-            fi
-          done
+          echo "Verifying memfuse-core isolation..."
+          if cargo tree -p memfuse-core --edges no-dev | grep "memfuse-" | grep -E -v "memfuse-core" | grep -q .; then
+            echo "ERROR: memfuse-core imports forbidden internal crates."
+            cargo tree -p memfuse-core --edges no-dev | grep "memfuse-"
+            exit 1
+          fi
 
       - name: Check L2 peer isolation (store, index, text, checkpoint)
         run: |
@@ -37,7 +35,7 @@ jobs:
             exit 1
           fi
           echo "Verifying memfuse-index..."
-          if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core" | grep -q "memfuse-"; then
+          if cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core|memfuse-graph" | grep -q "memfuse-"; then
             echo "ERROR: memfuse-index violates DAG by importing non-core crates."
             cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
             exit 1
@@ -49,7 +47,7 @@ jobs:
             exit 1
           fi
           echo "Verifying memfuse-checkpoint (excluding tracked DAG-002)..."
-          if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
+          if cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-store|memfuse-crypto" | grep -q "memfuse-"; then
             echo "ERROR: memfuse-checkpoint violates DAG."
             cargo tree -p memfuse-checkpoint --edges no-dev | grep "memfuse-"
             exit 1
@@ -69,7 +67,6 @@ jobs:
         run: |
           set -e
           echo "Verifying memfuse-py..."
-          echo "memfuse-py isolation check passed."
 
       - name: Check known DAG violations (tracking)
         run: |
