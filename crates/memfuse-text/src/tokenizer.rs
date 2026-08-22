@@ -61,26 +61,40 @@ impl Default for GermanMorphTokenizer {
 
 impl Tokenizer for GermanMorphTokenizer {
     fn tokenize(&self, text: &str) -> Vec<String> {
-        use crate::morphology::MorphologicalTokenizer;
+        use crate::morphology::{normalize_umlauts, MorphologicalTokenizer};
         let stopwords = get_stopwords();
         let mut tokens = Vec::new();
 
         for word in text.unicode_words() {
             let lower = word.to_lowercase();
-            if stopwords.contains(&lower) {
+            let normalized = normalize_umlauts(&lower);
+            if stopwords.contains(&lower) || stopwords.contains(&normalized) {
                 continue;
             }
 
             let components = self.splitter.decompose(&lower);
             if components.len() > 1 {
                 // Collect component strings first to avoid borrow issues with lower
-                let comp_strs: Vec<String> = components.iter().map(|s| s.to_string()).collect();
+                let mut comp_strs: Vec<String> = Vec::new();
+                for c in &components {
+                    comp_strs.push(c.to_string());
+                    let norm_c = normalize_umlauts(c);
+                    if norm_c != *c {
+                        comp_strs.push(norm_c);
+                    }
+                }
                 // Keep original compound for exact matches
-                tokens.push(lower);
+                tokens.push(lower.clone());
+                if normalized != lower {
+                    tokens.push(normalized);
+                }
                 // Add decomposed components for recall
                 tokens.extend(comp_strs);
             } else {
-                tokens.push(lower);
+                tokens.push(lower.clone());
+                if normalized != lower {
+                    tokens.push(normalized);
+                }
             }
         }
         tokens

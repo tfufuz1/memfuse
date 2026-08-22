@@ -5,6 +5,36 @@
 
 // INVARIANT: Morphologische Inferenz-Optimierung (WP-6.5)
 
+/// KMU-Fachvokabular — ergänzt das Basis-Wörterbuch für Unternehmenskontexte.
+const KMU_DOMAIN_VOCABULARY: &[&str] = &[
+    // Geschäftsprozesse
+    "auftrags", "angebots", "rechnungs", "lieferungs", "bestellungs",
+    "kunden", "lieferanten", "vertrags", "zahlungs",
+    // HR
+    "mitarbeiter", "personal", "urlaubs", "gehalts", "arbeits",
+    "bewerbungs", "schulungs",
+    // Logistik
+    "lager", "bestands", "transport", "versand", "liefer", "fracht",
+    // Produktion
+    "fertigungs", "produktions", "qualitäts", "wartungs", "maschinen",
+    "prüfungs", "prozess",
+    // Compliance & Recht
+    "datenschutz", "compliance", "richtlinie", "genehmigungs",
+    "zertifizierungs", "haftungs",
+    // Finanzen
+    "finanz", "steuer", "buchhaltungs", "bilanz", "liquiditäts",
+];
+
+/// Normalisiert deutsche Umlaute für robusten Suchabgleich.
+pub fn normalize_umlauts(input: &str) -> String {
+    input
+        .to_lowercase()
+        .replace('ä', "ae")
+        .replace('ö', "oe")
+        .replace('ü', "ue")
+        .replace('ß', "ss")
+}
+
 /// Trait for morphological tokenization.
 ///
 /// Decomposes compound words into constituent morphemes.
@@ -85,21 +115,34 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             "rechte",
         ];
 
-        for &word in &dictionary {
-            if token.len() > word.len() && token.starts_with(word) {
-                let rest = &token[word.len()..];
+        let dictionary_iter = dictionary.iter().chain(KMU_DOMAIN_VOCABULARY.iter());
 
-                // Handle Fugen-s (e.g., Verfassung-s-gericht)
-                let actual_rest = if rest.starts_with('s') && rest.len() > 1 {
-                    &rest[1..]
-                } else {
-                    rest
-                };
+        for &word in dictionary_iter {
+            let norm_word = normalize_umlauts(word);
+            let matched_len = if token.starts_with(word) {
+                Some(word.len())
+            } else if norm_word != word && token.starts_with(&norm_word) {
+                Some(norm_word.len())
+            } else {
+                None
+            };
 
-                if actual_rest.len() >= self.min_component_len {
-                    let mut result = vec![&token[..word.len()]];
-                    result.extend(self.decompose(actual_rest));
-                    return result;
+            if let Some(w_len) = matched_len {
+                if token.len() > w_len {
+                    let rest = &token[w_len..];
+
+                    // Handle Fugen-s (e.g., Verfassung-s-gericht)
+                    let actual_rest = if rest.starts_with('s') && rest.len() > 1 {
+                        &rest[1..]
+                    } else {
+                        rest
+                    };
+
+                    if actual_rest.len() >= self.min_component_len {
+                        let mut result = vec![&token[..w_len]];
+                        result.extend(self.decompose(actual_rest));
+                        return result;
+                    }
                 }
             }
         }
@@ -168,6 +211,22 @@ mod tests {
         let result = splitter.decompose("Bundesverfassungsgericht");
         assert_eq!(result, vec!["Bundesverfassungsgericht"]);
         assert_eq!(splitter.language(), "de");
+    }
+
+    #[test]
+    fn test_kmu_domain_compounds() {
+        let splitter = GermanCompoundSplitter::new();
+        let result = splitter.decompose("lagerbestandsverwaltung");
+        assert!(result.len() > 1);
+
+        let result = splitter.decompose("urlaubsantragsprozess");
+        assert!(result.len() > 1);
+    }
+
+    #[test]
+    fn test_umlaut_normalization_kmu_terms() {
+        assert_eq!(normalize_umlauts("Änderungsantrag"), "aenderungsantrag");
+        assert_eq!(normalize_umlauts("Qualitätsprüfung"), "qualitaetspruefung");
     }
 
     #[test]
