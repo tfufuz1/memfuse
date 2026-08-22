@@ -17,8 +17,11 @@ tokio = { workspace = true }
 memmap2 = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
-rand = { workspace = true }
-lru = "0.12.5"
+
+rand = { workspace = true }lru = "0.12.5"
+quick_cache = { workspace = true }
+
+
 uuid = { version = "1", features = ["v4"] }
 tokio-util = { version = "0.7.18", features = ["rt"] }
 
