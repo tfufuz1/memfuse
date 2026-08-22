@@ -325,6 +325,29 @@ pub trait GraphIndex: Send + Sync + 'static {
         max_hops: usize,
     ) -> crate::Result<Vec<(crate::types::EntityId, f32)>>;
 
+    /// Traverses the entity graph starting from multiple anchor entities up to max_hops.
+    /// Aggregates decay weights (keeping max score per entity) across anchors.
+    async fn multi_traverse(
+        &self,
+        start_nodes: &[crate::types::EntityId],
+        max_hops: usize,
+    ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
+        let mut combined: std::collections::HashMap<crate::types::EntityId, f32> =
+            std::collections::HashMap::new();
+        for &start in start_nodes {
+            let results = self.traverse(start, max_hops).await?;
+            for (entity_id, score) in results {
+                combined
+                    .entry(entity_id)
+                    .and_modify(|s| *s = s.max(score))
+                    .or_insert(score);
+            }
+        }
+        let mut results: Vec<(crate::types::EntityId, f32)> = combined.into_iter().collect();
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        Ok(results)
+    }
+
     /// Traverses the entity graph using BFS up to a maximum number of hops at a specific sequence number.
     async fn traverse_at(
         &self,

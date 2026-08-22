@@ -121,7 +121,7 @@ async fn test_search_isolation_concurrent_writes() {
     // Search at seq_after_2 should find doc-1 and doc-2, but NOT doc-3
     // We'll use hybrid search which uses text index + storage hydration
     let results = col
-        .hybrid_search("initial new latest", &[1.0, 0.0, 0.0, 0.0], 10)
+        .hybrid_search("initial new latest", &[1.0, 0.0, 0.0, 0.0], 10, None)
         .await
         .expect("search");
 

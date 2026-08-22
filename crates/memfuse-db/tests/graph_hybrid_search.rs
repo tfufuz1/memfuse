@@ -1,0 +1,79 @@
+use memfuse_core::{Edge, Entity, EntityId, GraphIndex, TxId};
+use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
+use serde_json::json;
+use tempfile::TempDir;
+
+#[tokio::test]
+async fn test_hybrid_search_includes_graph_signal() {
+    let tmp = TempDir::new().expect("temp dir");
+    let config = MemFuseConfig {
+        dimension: 4,
+        distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
+    };
+
+    let db = MemFuse::open_with_config(tmp.path(), config)
+        .await
+        .expect("open db");
+    let col = db.collection("graph-test").await.expect("col");
+
+    // 1. Insert documents into collection
+    col.insert(
+        "anchor_doc",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(json!({"text": "anchor document about quantum physics"})),
+    )
+    .await
+    .expect("insert anchor_doc");
+
+    col.insert(
+        "target_doc",
+        &[0.0, 0.0, 0.0, 1.0], // Orthogonal vector
+        Some(json!({"text": "unrelated topic description xyz"})), // No text match
+    )
+    .await
+    .expect("insert target_doc");
+
+    // 2. Setup graph relationship between anchor_doc and target_doc
+    let graph = col.graph_index();
+    let tx = TxId::new(100);
+
+    let anchor_eid = EntityId::from("anchor_doc");
+    let target_eid = EntityId::from("target_doc");
+
+    graph
+        .add_entity(tx, Entity::new(anchor_eid, "anchor_doc", "Document"))
+        .await
+        .expect("add anchor entity");
+    graph
+        .add_entity(tx, Entity::new(target_eid, "target_doc", "Document"))
+        .await
+        .expect("add target entity");
+
+    graph
+        .add_edge(
+            tx,
+            Edge::new(anchor_eid, target_eid, "references").with_weight(1.0),
+        )
+        .await
+        .expect("add edge");
+
+    graph.commit(tx).await.expect("commit graph tx");
+
+    // 3. Perform hybrid_search with anchor_doc as anchor_entities
+    let results = col
+        .hybrid_search(
+            "nonmatchingquerytext",
+            &[0.0, 1.0, 0.0, 0.0],
+            10,
+            Some(&[anchor_eid]),
+        )
+        .await
+        .expect("hybrid_search with anchors");
+
+    // 4. Verify target_doc is present in hybrid search results due to the graph signal
+    assert!(
+        results.iter().any(|r| r.id == "target_doc"),
+        "target_doc should be included in hybrid search results via graph signal"
+    );
+}

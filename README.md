@@ -1,6 +1,6 @@
 # MemFuse — Die eingebettete 3-in-1 Memory Engine für lokale AI-Agenten
 
-MemFuse ist eine in-process Speicher-Engine in reinem Rust, die **Vektorsuche (HNSW)**, **BM25-Volltextsuche**, **Entity-Relation Graph-Traversal (CSR)** und **Metadaten-Filter** zu einer einzigen 4-Signal-Fusion-Engine kombiniert.
+MemFuse ist eine in-process Speicher-Engine in reinem Rust, die **Vektorsuche (HNSW)**, **BM25-Volltextsuche** und **Entity-Relation Graph-Traversal (CSR)** in einer 3-Signal-Fusion-Engine kombiniert (mit einem optionalen Metadaten-Filter).
 
 **Ersetzt ChromaDB + Elasticsearch + Neo4j durch ein einfaches `pip install memfuse`.**
 
@@ -13,7 +13,7 @@ Designed für autonome AI-Agenten und local-first Anwendungen — in-process, ke
 | Eigenschaft | MemFuse | ChromaDB | LanceDB | Kùzu / Neo4j |
 |---|---|---|---|---|
 | **In-Process (Embedded)** | ✅ | ✅ | ✅ | ⚠️ (Kùzu embedded / Neo4j Server) |
-| **3-in-1 Signal Fusion (RRF)** | ✅ (Vektor + BM25 + Graph + Meta) | ❌ (nur Vektor+Meta) | ❌ (kein Graph) | ❌ (kein Vektor/RRF) |
+| **3-Signal Fusion (RRF)** | ✅ (Vektor + BM25 + Wissensgraph) | ❌ (nur Vektor+Meta) | ❌ (kein Graph) | ❌ (kein Vektor/RRF) |
 | **Zero C-Deps (Sovereign Core)**| ✅ 100% Pure-Rust Core | ❌ | ❌ | ❌ |
 | **ACID + WAL** | ✅ MVCC + HMAC-WAL | ❌ | ⚠️ | ✅ |
 | **MCP Server Support** | ✅ Eingebaut in Python SDK | ❌ | ❌ | ❌ |
@@ -22,7 +22,7 @@ Designed für autonome AI-Agenten und local-first Anwendungen — in-process, ke
 
 ## 🚀 Key Features
 
-- **4-Signal Reciprocal Rank Fusion (RRF)**: Fusioniert episodische (Vektor), lexikalische (BM25) und assoziative (Graph) Signale in einer einzigen Abfrage.
+- **3-Signal Reciprocal Rank Fusion (RRF)**: Fusioniert episodische (Vektor), lexikalische (BM25) und assoziative (Wissensgraph) Signale in einer einzigen Abfrage (mit optionalem Metadaten-Filter).
 - **MCP Server Protocol**: Nahtlose Anbindung an Claude Desktop, Cursor und LLM-Agenten via Model Context Protocol.
 - **ACID & MVCC**: Strikte Transaktionssicherheit mit Write-Ahead-Log (WAL) und Snapshot-Isolation.
 - **SIMD & SQ8 Quantisierung**: Hardware-beschleunigte Distanzberechnung mit bis zu 4× Speicherersparnis.
@@ -49,7 +49,7 @@ col.insert(
     metadata={"text": "Kundenanfrage bezüglich Rückerstattung", "category": "support"}
 )
 
-# 4-Signal Hybrid-Suche
+# 3-Signal Hybrid-Suche (Vektor + BM25 + Wissensgraph)
 results = col.hybrid_search(
     query_text="Rückerstattung",
     query_vector=[0.1] * 1536,

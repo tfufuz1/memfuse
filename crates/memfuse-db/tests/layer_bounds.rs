@@ -95,7 +95,7 @@ async fn test_layer_003_hybrid_bm25_search() {
 
     // Search for "fox" - should find doc-1
     let results = db
-        .hybrid_search("fox", &[0.0, 0.0, 0.0, 0.0], 10)
+        .hybrid_search("fox", &[0.0, 0.0, 0.0, 0.0], 10, None)
         .await
         .expect("hybrid search");
     assert!(!results.is_empty());
@@ -103,7 +103,7 @@ async fn test_layer_003_hybrid_bm25_search() {
 
     // Search for "lazy dog" - should find doc-2 and doc-3
     let results2 = db
-        .hybrid_search("lazy dog", &[0.0, 0.0, 0.0, 0.0], 10)
+        .hybrid_search("lazy dog", &[0.0, 0.0, 0.0, 0.0], 10, None)
         .await
         .expect("hybrid search 2");
     let ids: Vec<String> = results2.iter().map(|r| r.id.clone()).collect();

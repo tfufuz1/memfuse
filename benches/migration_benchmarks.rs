@@ -28,7 +28,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
     c.bench_function("hybrid_search_latency", |b| {
         b.to_async(&rt).iter(|| async {
             let _ = db
-                .hybrid_search("quick fox", &vec![0.1; 1536], 5)
+                .hybrid_search("quick fox", &vec![0.1; 1536], 5, None)
                 .await
                 .unwrap();
         })

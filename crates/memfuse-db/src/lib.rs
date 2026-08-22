@@ -563,17 +563,18 @@ impl MemFuse {
             .await
     }
 
-    /// Performs hybrid search combining BM25 and vector search.
-    #[tracing::instrument(level = "trace", skip(self))]
+    /// Performs hybrid search combining BM25, vector search, and graph traversal.
+    #[tracing::instrument(level = "trace", skip(self, anchor_entities))]
     pub async fn hybrid_search(
         &self,
         text: &str,
         vector: &[f32],
         k: usize,
+        anchor_entities: Option<&[memfuse_core::EntityId]>,
     ) -> Result<Vec<SearchResult>> {
         self.default_col()
             .await?
-            .hybrid_search(text, vector, k)
+            .hybrid_search(text, vector, k, anchor_entities)
             .await
     }
 

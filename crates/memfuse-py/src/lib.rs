@@ -418,7 +418,7 @@ macro_rules! memfuse_crud_methods {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
                 let results = py
-                    .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, v, k)))
+                    .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, v, k, None)))
                     .map_err(memfuse_err)?;
                 results_to_py(py, results)
             }
@@ -443,7 +443,7 @@ macro_rules! memfuse_crud_methods {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
                 let results = py
-                    .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, v, k)))
+                    .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, v, k, None)))
                     .map_err(memfuse_err)?;
 
                 let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(1024);
