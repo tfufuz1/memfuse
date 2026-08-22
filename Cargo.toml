@@ -34,7 +34,8 @@ async-trait = "0.1"
 
 # Data structures
 bytes = "1"
-memmap2 = "0.9.11"
+memmap2 = "0.9.5"  # RUSTSEC-2026-0186 behoben
+quick_cache = "0.6"
 ahash = "0.8"
 itoa = "1"
 parking_lot = "0.12"

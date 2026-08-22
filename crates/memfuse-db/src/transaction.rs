@@ -12,7 +12,7 @@
 use crate::Collection;
 use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId, VectorIndex};
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 /// Status of a multi-index transaction during the 2-phase commit.
 #[derive(Debug, Serialize, Deserialize)]
@@ -47,22 +47,13 @@ impl<S: StorageEngine> DbTransaction<S> {
 
     /// Records keys and IDs that have been operated on for potential compensating rollback.
     pub fn record_keys(&self, forward: Vec<u8>, reverse: Vec<u8>, doc_id: DocId) {
-        let mut fw = match self.staged_forward_keys.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let mut fw = self.staged_forward_keys.lock();
         fw.push(forward);
 
-        let mut rev = match self.staged_reverse_keys.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let mut rev = self.staged_reverse_keys.lock();
         rev.push(reverse);
 
-        let mut ids = match self.staged_doc_ids.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let mut ids = self.staged_doc_ids.lock();
         ids.push(doc_id);
     }
 
@@ -81,10 +72,7 @@ impl<S: StorageEngine> DbTransaction<S> {
 
         // 1. Prepare phase: Write intent marker with staged IDs (FIND-DB-005)
         let doc_ids = {
-            let guard = match self.staged_doc_ids.lock() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
+            let guard = self.staged_doc_ids.lock();
             guard.clone()
         };
 
@@ -124,17 +112,11 @@ impl<S: StorageEngine> DbTransaction<S> {
             // Compensating transaction to rollback the LSM Storage since it's already committed
             // Implemented Durable Retry to prevent Split-Brain (HARD-004)
             let f_keys = {
-                let mut guard = match self.staged_forward_keys.lock() {
-                    Ok(g) => g,
-                    Err(p) => p.into_inner(),
-                };
+                let mut guard = self.staged_forward_keys.lock();
                 std::mem::take(&mut *guard)
             };
             let r_keys = {
-                let mut guard = match self.staged_reverse_keys.lock() {
-                    Ok(g) => g,
-                    Err(p) => p.into_inner(),
-                };
+                let mut guard = self.staged_reverse_keys.lock();
                 std::mem::take(&mut *guard)
             };
 
