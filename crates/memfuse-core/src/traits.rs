@@ -83,6 +83,19 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Deletes a key as part of a transaction.
     async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()>;
 
+    /// Deletes all key-value pairs whose key starts with `prefix` as part of a transaction.
+    ///
+    /// Returns the number of keys staged for deletion.
+    async fn delete_prefix(&self, tx_id: TxId, prefix: &[u8]) -> Result<u64> {
+        let matching_keys = self.scan_prefix(prefix).await?;
+        let mut deleted = 0u64;
+        for (key, _) in matching_keys {
+            self.delete(tx_id, &key).await?;
+            deleted += 1;
+        }
+        Ok(deleted)
+    }
+
     /// Commits a transaction — makes writes visible.
     async fn commit(&self, tx_id: TxId) -> Result<()>;
 
