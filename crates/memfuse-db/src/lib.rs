@@ -410,16 +410,24 @@ impl MemFuse {
             ));
         }
 
-        let mut guard = self.collections.write().await;
-        if let Some(col) = guard.remove(name) {
-            col.drop_collection().await?;
+        let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
 
-            // Remove from index
-            let col_idx_key = [b"__col_idx:\x00", name.as_bytes()].concat();
-            let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
-            self.storage.delete(tx, &col_idx_key).await?;
-            self.storage.commit(tx).await?;
-        }
+        // 1. Delete all collection data keys (prefix-based)
+        let col_data_prefix = format!("__col:{}:", name);
+        self.storage.delete_prefix(tx, col_data_prefix.as_bytes()).await?;
+
+        // 2. Delete all text index data keys for this collection
+        let txt_data_prefix = format!("__txt:{}:", name);
+        self.storage.delete_prefix(tx, txt_data_prefix.as_bytes()).await?;
+
+        // 3. Delete the index key itself
+        let col_idx_key = [b"__col_idx:\x00", name.as_bytes()].concat();
+        self.storage.delete(tx, &col_idx_key).await?;
+
+        // 4. Remove from in-memory collection registry
+        self.collections.write().await.remove(name);
+
+        self.storage.commit(tx).await?;
         Ok(())
     }
 

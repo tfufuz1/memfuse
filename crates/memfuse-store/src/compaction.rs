@@ -352,12 +352,23 @@ impl CompactionEngine {
                 let is_tombstone = (item.seq & TOMBSTONE_BIT) != 0;
                 let raw_seq = item.seq & !TOMBSTONE_BIT;
 
-                // FIND-STO-001: Tombstone-Retention — only GC tombstones during
-                // full compaction (or bottom-tier merge) when no older values can exist.
-                let can_gc_tombstone =
-                    is_tombstone && raw_seq < min_snapshot_seq && is_full_compaction;
-
-                if !can_gc_tombstone {
+                // FIND-STO-001: Tombstone-Retention
+                // Only GC tombstones during FULL compaction when no snapshot references them
+                // and no older SSTables outside this compaction round can contain older values.
+                if is_tombstone {
+                    if is_full_compaction && raw_seq < min_snapshot_seq {
+                        // Full-Compaction includes ALL SSTables of the collection →
+                        // Tombstone can safely be discarded without risking older values leaking.
+                        continue;
+                    } else {
+                        // Partial-Compaction: older SSTables outside this compaction
+                        // round could still contain the original value.
+                        // Tombstone MUST be preserved to prevent deleted keys from reappearing.
+                        builder
+                            .add(&item.key, &item.value, item.seq, item.tx)
+                            .await?;
+                    }
+                } else {
                     builder
                         .add(&item.key, &item.value, item.seq, item.tx)
                         .await?;
