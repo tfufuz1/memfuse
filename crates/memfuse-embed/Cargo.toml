@@ -8,9 +8,9 @@ description = "In-process vector embeddings for MemFuse using ONNX Runtime"
 
 [dependencies]
 memfuse-core = { workspace = true }
-ort = { workspace = true }
-tokenizers = { workspace = true }
-ndarray = { workspace = true }
+ort = { version = "2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "tracing", "download-binaries", "tls-rustls", "copy-dylibs", "api-24"] }
+tokenizers = "0.19"
+ndarray = "0.15"
 tracing = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }

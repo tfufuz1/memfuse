@@ -75,6 +75,17 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
+## ADR-008: Scope-Schnitt — KMU-RAG Neuausrichtung (2024)
+
+**Status**: Beschlossen
+**Kontext**: Das Projekt wird von einer Militär/Agenten-Engine zur SME-RAG-Engine umgebaut.
+**Entscheidung**: `memfuse-cluster`, `memfuse-sandbox`, `memfuse-saos-agent` und
+`memfuse-embed` werden aus dem aktiven Workspace entfernt (Archived Zone).
+`memfuse-graph` und `memfuse-py` werden reaktiviert.
+**Konsequenz**: Der Build fokussiert auf 9 Crates. Archived Crates bleiben im Repo.
+
+---
+
 ## Vorlage für neue ADRs
 ```markdown
 ## ADR-NNN: <Titel>

@@ -24,8 +24,12 @@ tokio = { version = "1", features = ["full"] }
 # auf die orchestrating Facade in memfuse-db. Dies ist eine beabsichtigte Ausnahme
 # vom Sovereign Core DAG, da Bindings per Definition an der Grenze zum Nutzer stehen.
 memfuse-core = { workspace = true }
-memfuse-db = { workspace = true, features = ["embed", "cluster"] }
-memfuse-embed = { workspace = true }
+memfuse-db = { workspace = true }
+memfuse-embed = { workspace = true, optional = true }
 flatbuffers = { workspace = true }
 serde_json.workspace = true
 pythonize = "0.24"
+
+[features]
+default = []
+embed = ["dep:memfuse-embed", "memfuse-db/embed"]
