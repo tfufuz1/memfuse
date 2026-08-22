@@ -10,6 +10,7 @@ members = [
     "crates/memfuse-crypto",
     "crates/memfuse-graph",
     "crates/memfuse-py",
+    "crates/memfuse-tauri",
 ]
 
 [workspace.package]
@@ -64,6 +65,7 @@ memfuse-checkpoint = { path = "crates/memfuse-checkpoint" }
 memfuse-crypto = { path = "crates/memfuse-crypto" }
 memfuse-graph = { path = "crates/memfuse-graph" }
 memfuse-py    = { path = "crates/memfuse-py" }
+memfuse-tauri = { path = "crates/memfuse-tauri" }
 memfuse-embed = { path = "crates/memfuse-embed" }
 
 # ── Archived Zone ──────────────────────────────────────────────────────────────
