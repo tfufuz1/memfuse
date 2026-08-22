@@ -1,0 +1,23 @@
+[package]
+name = "memfuse-tauri"
+version.workspace = true
+edition.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["devtools"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+memfuse-db = { workspace = true }
+memfuse-graph = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[lib]
+name = "memfuse_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]

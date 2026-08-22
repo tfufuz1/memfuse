@@ -39,6 +39,10 @@ check-text:
 check-py:
     nix develop -c cargo check -p memfuse-py
 
+# Modular check for memfuse-tauri
+check-tauri:
+    nix develop -c cargo check -p memfuse-tauri
+
 # Modular check for memfuse-embed
 check-embed:
     nix develop -c cargo check -p memfuse-embed
@@ -91,8 +95,14 @@ dag-check:
         exit 1
     fi
 
-    echo "--- Phase 4: L4 Bindings Isolation (py) ---"
+    echo "--- Phase 4: L4 Application & Bindings Isolation (py, tauri) ---"
     echo "Verifying memfuse-py..."
+    echo "Verifying memfuse-tauri..."
+    if cargo tree -p memfuse-tauri --edges no-dev | grep -E -q "memfuse-py"; then
+        echo "❌ ERROR: memfuse-tauri imports forbidden internal crates."
+        cargo tree -p memfuse-tauri --edges no-dev | grep -E "memfuse-py"
+        exit 1
+    fi
 
     echo "--- Known DAG Violations (Tracking) ---"
     for VIOLATION in "memfuse-checkpoint:memfuse-store:DAG-002" "memfuse-py:memfuse-db:DAG-003"; do
