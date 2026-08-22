@@ -63,7 +63,7 @@ async fn main() -> memfuse_core::Result<()> {
     let text_query = "memory safety garbage collection";
     let vector_query = [0.9, 0.1, 0.0, 0.0];
 
-    let results = db.hybrid_search(text_query, &vector_query, 3).await?;
+    let results = db.hybrid_search(text_query, &vector_query, 3, None).await?;
 
     println!("=== Hybrid Search: '{}' ===", text_query);
     for (i, result) in results.iter().enumerate() {

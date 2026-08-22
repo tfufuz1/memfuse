@@ -3,7 +3,7 @@
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 
 use crate::filter::MetadataFilter;
-use memfuse_core::{DocId, Result, StorageEngine, TextIndex, TxId, VectorIndex};
+use memfuse_core::{DocId, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex};
 #[cfg(feature = "embed")]
 use memfuse_embed::TextEmbedder;
 use memfuse_graph::CsrGraph;
@@ -937,44 +937,96 @@ impl<S: StorageEngine> Collection<S> {
         Ok(results)
     }
 
-    /// Performs hybrid search combining BM25 and vector search results via RRF.
+    /// Performs hybrid search combining BM25, vector search, and graph traversal results via RRF.
     #[tracing::instrument(level = "trace", skip(self, text, vector))]
     pub async fn hybrid_search(
         &self,
         text: &str,
         vector: &[f32],
         k: usize,
+        anchor_entities: Option<&[memfuse_core::EntityId]>,
     ) -> Result<Vec<crate::SearchResult>> {
         let seq = self.snapshot_seq().await?;
         let is_vector_zero = vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
 
-        match (is_text_empty, is_vector_zero) {
-            (true, true) => Ok(Vec::new()),
-            (true, false) => self.search_filtered_at(vector, k, None, seq).await,
-            (false, is_v_zero) => {
-                let bm25_results = self.text_index.search_at(text, k, seq).await?;
-                let text_results = self
-                    .hydrate_from_tuples_at(
-                        bm25_results
-                            .into_iter()
-                            .map(|sd| (sd.doc_id, sd.score))
-                            .collect(),
-                        seq,
-                    )
+        const MAX_TRAVERSAL_HOPS: usize = 3;
+
+        // 1. Vector Signal
+        let vector_results = if is_vector_zero {
+            Vec::new()
+        } else {
+            self.search_filtered_at(vector, k, None, seq).await?
+        };
+
+        // 2. Text Signal
+        let text_results = if is_text_empty {
+            Vec::new()
+        } else {
+            let bm25_results = self.text_index.search_at(text, k, seq).await?;
+            self.hydrate_from_tuples_at(
+                bm25_results
+                    .into_iter()
+                    .map(|sd| (sd.doc_id, sd.score))
+                    .collect(),
+                seq,
+            )
+            .await?
+        };
+
+        // 3. Graph Signal
+        // MAPPING CONVENTION: EntityIds derived from document keys match DocIds (via Blake3 hash).
+        // Graph entities whose EntityId matches a collection document are hydrated into SearchResult.
+        let graph_results = if let Some(anchors) = anchor_entities {
+            if anchors.is_empty() {
+                Vec::new()
+            } else {
+                let tuples = self
+                    .graph_index
+                    .multi_traverse(anchors, MAX_TRAVERSAL_HOPS)
                     .await?;
-
-                if is_v_zero {
-                    return Ok(text_results);
-                }
-
-                let vector_results = self.search_filtered_at(vector, k, None, seq).await?;
-                Ok(crate::fusion::reciprocal_rank_fusion(
-                    vec![vector_results, text_results],
-                    k,
-                ))
+                let doc_tuples = tuples
+                    .into_iter()
+                    .map(|(eid, score)| (memfuse_core::DocId::new(eid.inner()), score))
+                    .collect();
+                self.hydrate_from_tuples_at(doc_tuples, seq).await?
             }
+        } else if !text_results.is_empty() {
+            // Implicit fallback: derive anchors from text search matches
+            let implicit_anchors: Vec<memfuse_core::EntityId> = text_results
+                .iter()
+                .map(|r| memfuse_core::EntityId::from(r.id.as_str()))
+                .collect();
+            let tuples = self
+                .graph_index
+                .multi_traverse(&implicit_anchors, MAX_TRAVERSAL_HOPS)
+                .await?;
+            let doc_tuples = tuples
+                .into_iter()
+                .map(|(eid, score)| (memfuse_core::DocId::new(eid.inner()), score))
+                .collect();
+            self.hydrate_from_tuples_at(doc_tuples, seq).await?
+        } else {
+            Vec::new()
+        };
+
+        // If all signals are empty, return empty
+        if vector_results.is_empty() && text_results.is_empty() && graph_results.is_empty() {
+            return Ok(Vec::new());
         }
+
+        let mut signal_sets = Vec::new();
+        if !vector_results.is_empty() {
+            signal_sets.push(vector_results);
+        }
+        if !text_results.is_empty() {
+            signal_sets.push(text_results);
+        }
+        if !graph_results.is_empty() {
+            signal_sets.push(graph_results);
+        }
+
+        Ok(crate::fusion::reciprocal_rank_fusion(signal_sets, k))
     }
 
     /// Returns the name of the collection.
