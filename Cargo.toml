@@ -8,6 +8,8 @@ members = [
     "crates/memfuse-text",
     "crates/memfuse-checkpoint",
     "crates/memfuse-crypto",
+    "crates/memfuse-graph",
+    "crates/memfuse-py",
 ]
 
 [workspace.package]
@@ -60,15 +62,17 @@ memfuse-db = { path = "crates/memfuse-db" }
 memfuse-text = { path = "crates/memfuse-text" }
 memfuse-checkpoint = { path = "crates/memfuse-checkpoint" }
 memfuse-crypto = { path = "crates/memfuse-crypto" }
+memfuse-graph = { path = "crates/memfuse-graph" }
+memfuse-py    = { path = "crates/memfuse-py" }
+memfuse-embed = { path = "crates/memfuse-embed" }
 
-# 🧊 Frozen Zone — optional, not in workspace members
-# Activate only via explicit feature flags:
-# memfuse-sandbox = { path = "crates/memfuse-sandbox" }
-# memfuse-graph = { path = "crates/memfuse-graph" }
-# memfuse-cluster = { path = "crates/memfuse-cluster" }
-# memfuse-embed = { path = "crates/memfuse-embed" }
-# memfuse-saos-agent = { path = "crates/memfuse-saos-agent" }
-# memfuse-py = { path = "crates/memfuse-py" }
+# ── Archived Zone ──────────────────────────────────────────────────────────────
+# Diese Crates sind nicht Teil des aktiven Builds.
+# Nicht löschen — für spätere Reaktivierung aufbewahrt.
+# memfuse-cluster  → Raft/gRPC (für zukünftige Multi-Node-Setups)
+# memfuse-sandbox  → WASM-Sandboxing (für Plugin-System)
+# memfuse-saos-agent → Agenten-Orchestrierung (für späteres Agent-Framework)
+# memfuse-embed    → ONNX-Embeddings (wird via Feature-Flag optional)
 
 # 🧊 Frozen Zone — external deps for future reactivation
 # Cluster & Consensus (activate with memfuse-cluster feature)

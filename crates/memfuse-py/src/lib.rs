@@ -133,11 +133,6 @@ fn memfuse_err(e: memfuse_core::MemFuseError) -> PyErr {
     }
 }
 
-/// Helper for pythonize/depythonize errors.
-fn memfuse_python_err(e: pythonize::PythonizeError) -> PyErr {
-    pyo3::exceptions::PyValueError::new_err(format!("Metadata error: {}", e))
-}
-
 // ─── Python Types ───────────────────────────────────────────────────────────
 
 /// A single search result from MemFuse.
@@ -184,40 +179,6 @@ pub struct PyVectorIndexStats {
     pub memory_usage_bytes: usize,
     /// Number of HNSW layers.
     pub num_layers: usize,
-}
-
-/// Python wrapper for the in-process text embedder.
-#[pyclass(name = "TextEmbedder")]
-#[derive(Clone)]
-pub struct PyTextEmbedder {
-    pub(crate) inner: Arc<memfuse_embed::TextEmbedder>,
-}
-
-#[pymethods]
-impl PyTextEmbedder {
-    #[new]
-    #[pyo3(signature = (model_id=None))]
-    pub fn new(model_id: Option<&str>) -> PyResult<Self> {
-        let _ = model_id;
-        Err(pyo3::exceptions::PyValueError::new_err(
-            "Online model downloading is disabled to enforce air-gapped sovereignty (§1). \
-             Please use TextEmbedder.load(path) to load a local ONNX model."
-        ))
-    }
-
-    /// Loads a model from a local directory.
-    #[staticmethod]
-    pub fn load(path: &str) -> PyResult<Self> {
-        let embedder = memfuse_embed::TextEmbedder::load(path).map_err(memfuse_err)?;
-        Ok(Self {
-            inner: Arc::new(embedder),
-        })
-    }
-
-    /// Generates an embedding for a string.
-    pub fn embed(&self, text: &str) -> PyResult<Vec<f32>> {
-        self.inner.embed(text).map_err(memfuse_err)
-    }
 }
 
 #[pymethods]
@@ -435,76 +396,6 @@ macro_rules! memfuse_crud_methods {
                 builder.finish(response, None);
                 let data = builder.finished_data();
                 Ok(PyBytes::new(py, data))
-            }
-
-            /// Sets the text embedder for auto-embedding features.
-            pub fn set_embedder(
-                &mut self,
-                py: Python<'_>,
-                embedder: PyTextEmbedder,
-            ) -> PyResult<()> {
-                let rt = get_runtime()?;
-                py.allow_threads(|| rt.block_on(self.inner.set_embedder(embedder.inner.clone())))
-                    .map_err(memfuse_err)
-            }
-
-            /// Inserts a text document and automatically generates its embedding.
-            #[pyo3(signature = (id, text, metadata=None))]
-            pub fn insert_text<'py>(
-                &self,
-                py: Python<'py>,
-                id: &str,
-                text: &str,
-                metadata: Option<Bound<'py, pyo3::types::PyAny>>,
-            ) -> PyResult<()> {
-                let rt = get_runtime()?;
-                let m = if let Some(meta) = metadata {
-                    Some(depythonize(&meta).map_err(memfuse_python_err)?)
-                } else {
-                    None
-                };
-                py.allow_threads(|| rt.block_on(self.inner.insert_text_only(id, text, m)))
-                    .map_err(memfuse_err)
-            }
-
-            /// Upserts a text document and automatically generates its embedding.
-            #[pyo3(signature = (id, text, metadata=None))]
-            pub fn upsert_text<'py>(
-                &self,
-                py: Python<'py>,
-                id: &str,
-                text: &str,
-                metadata: Option<Bound<'py, pyo3::types::PyAny>>,
-            ) -> PyResult<()> {
-                let rt = get_runtime()?;
-                let m = if let Some(meta) = metadata {
-                    Some(depythonize(&meta).map_err(memfuse_python_err)?)
-                } else {
-                    None
-                };
-                py.allow_threads(|| rt.block_on(self.inner.upsert_text_only(id, text, m)))
-                    .map_err(memfuse_err)
-            }
-
-            /// Performs semantic search using a raw text query.
-            #[pyo3(signature = (text, k))]
-            pub fn search_text<'py>(
-                &self,
-                py: Python<'py>,
-                text: &str,
-                k: usize,
-            ) -> PyResult<Vec<PySearchResult>> {
-                if k == 0 || k > 1000 {
-                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                        "Search k must be between 1 and 1000. Got: {}",
-                        k
-                    )));
-                }
-                let rt = get_runtime()?;
-                let results = py
-                    .allow_threads(|| rt.block_on(self.inner.search_text(text, k)))
-                    .map_err(memfuse_err)?;
-                results_to_py(py, results)
             }
 
             /// Performs hybrid search combining BM25 and vector search results.
@@ -836,41 +727,6 @@ impl PyMemFuse {
         py.allow_threads(|| rt.block_on(self.inner.is_empty()))
             .map_err(memfuse_err)
     }
-
-    /// Initializes this node as a single-node Raft cluster.
-    pub fn init_cluster(&self, py: Python<'_>, node_id: u64, addr: &str) -> PyResult<()> {
-        let rt = get_runtime()?;
-        py.allow_threads(|| rt.block_on(self.inner.init_cluster(node_id, addr)))
-            .map_err(memfuse_err)
-    }
-
-    /// Joins an existing Raft cluster.
-    pub fn join_cluster(&self, py: Python<'_>, node_id: u64, addr: &str) -> PyResult<()> {
-        let rt = get_runtime()?;
-        py.allow_threads(|| rt.block_on(self.inner.join_cluster(node_id, addr)))
-            .map_err(memfuse_err)
-    }
-
-    /// Adds a new node to the cluster.
-    pub fn add_node(&self, py: Python<'_>, node_id: u64, addr: &str) -> PyResult<()> {
-        let rt = get_runtime()?;
-        py.allow_threads(|| rt.block_on(self.inner.add_node(node_id, addr)))
-            .map_err(memfuse_err)
-    }
-
-    /// Removes a node from the cluster.
-    pub fn remove_node(&self, py: Python<'_>, node_id: u64) -> PyResult<()> {
-        let rt = get_runtime()?;
-        py.allow_threads(|| rt.block_on(self.inner.remove_node(node_id)))
-            .map_err(memfuse_err)
-    }
-
-    /// Returns Raft metrics as a debug string.
-    pub fn raft_metrics(&self, py: Python<'_>) -> PyResult<String> {
-        let rt = get_runtime()?;
-        py.allow_threads(|| rt.block_on(self.inner.raft_metrics()))
-            .map_err(memfuse_err)
-    }
 }
 
 // ── Generated CRUD + Batch Methods ──
@@ -988,7 +844,6 @@ fn _memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<(
     m.add_class::<PyVectorIndexStats>()?;
     m.add_class::<PyStorageStats>()?;
     m.add_class::<PyDbStats>()?;
-    m.add_class::<PyTextEmbedder>()?;
 
     // Exceptions
     m.add("MemFuseError", _py.get_type::<MemFuseError>())?;
