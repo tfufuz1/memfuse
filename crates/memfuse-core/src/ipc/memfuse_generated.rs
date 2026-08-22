@@ -86,7 +86,7 @@ pub mod mem_fuse {
                 // Safety:
                 // Created from valid Table for this object
                 // which contains a valid value in this slot
-                unsafe { self._tab.get::<i8>(Embedding::VT_METRIC, Some(0)).unwrap() }
+                unsafe { self._tab.get::<i8>(Embedding::VT_METRIC, Some(0)).unwrap_or(0) }
             }
         }
 
@@ -250,7 +250,7 @@ pub mod mem_fuse {
                 unsafe {
                     self._tab
                         .get::<f32>(ScoredDocument::VT_SCORE, Some(0.0))
-                        .unwrap()
+                        .unwrap_or(0.0)
                 }
             }
             #[inline]
@@ -444,7 +444,7 @@ pub mod mem_fuse {
                 unsafe {
                     self._tab
                         .get::<u32>(SearchResponse::VT_TOTAL_HITS, Some(0))
-                        .unwrap()
+                        .unwrap_or(0)
                 }
             }
             #[inline]
@@ -455,7 +455,7 @@ pub mod mem_fuse {
                 unsafe {
                     self._tab
                         .get::<f32>(SearchResponse::VT_PROCESSING_TIME_MS, Some(0.0))
-                        .unwrap()
+                        .unwrap_or(0.0)
                 }
             }
         }

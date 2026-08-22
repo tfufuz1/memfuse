@@ -101,15 +101,13 @@ impl CompactionEngine {
             self.select_compaction_candidates(&ssts)
         };
 
-        let (indices, is_full_compaction, is_bottom_tier) = match candidates {
+        let (indices, is_full_compaction) = match candidates {
             Some(indices) if indices.len() >= 2 => {
                 let is_full = {
                     let ssts = sstables.read().await;
                     indices.len() == ssts.len()
                 };
-                // FIND-STO-001: Bottom-tier detection
-                let is_bottom = indices.contains(&0);
-                (indices, is_full, is_bottom)
+                (indices, is_full)
             }
             _ => return Ok(false),
         };
@@ -129,7 +127,7 @@ impl CompactionEngine {
             &input_ssts,
             &output_path,
             min_snapshot_seq,
-            is_full_compaction || is_bottom_tier,
+            is_full_compaction,
         )
         .await?;
 
