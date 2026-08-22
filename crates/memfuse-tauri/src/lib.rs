@@ -1,17 +1,19 @@
-// Crate memfuse-tauri library entrypoint
-#![forbid(unsafe_code)]
+mod state;
+pub mod commands;
 
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! Welcome to MemFuse Brain.", name)
-}
+use state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    tracing_subscriber::fmt::init();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .manage(AppState::new())
+        .invoke_handler(tauri::generate_handler![
+            // Commands werden in Prompt 10 ergänzt
+        ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect("error while running memfuse-brain application");
 }
