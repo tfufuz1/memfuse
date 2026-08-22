@@ -66,15 +66,13 @@ Die Roadmap ist so aufgebaut, dass wir schnellstmöglich ein **funktionierendes 
 ### Phase 0: Scope-Bereinigung & Sicherheitsgarantien (Woche 1)
 > **Ziel**: Ein sauberes Repository ohne Altlasten und ohne bekannte Sicherheitslücken.
 
-- [ ] **P0-1: Repository-Entschlackung**: 
-  - Entfernen von `memfuse-cluster`, `memfuse-sandbox` und `memfuse-saos-agent` aus dem Cargo-Workspace.
-  - Archivieren dieser Crates in ein separates Backup-Repository (z. B. `memfuse-archived`).
-- [ ] **P0-2: Sicherheits-Updates (CVEs)**:
-  - Upgrade von `memmap2` auf eine sichere Version (RUSTSEC-2026-0186 beheben).
-  - Ersetzen der unsounden `lru`-Crate durch `quick_cache` (RUSTSEC-2026-0002 beheben).
-- [ ] **P0-3: Dokumenten-Konsolidierung**:
-  - Zusammenführen aller überlappenden Spezifikationen und Audits in ein einziges Living Document (`docs/SOURCE_OF_TRUTH.md`).
-  - Löschen veralteter oder doppelter `.md`-Dateien gemäß dem MECE-Prinzip.
+- [x] **P0-1: Repository-Entschlackung**:
+  - Physisches Entfernen von `memfuse-cluster`, `memfuse-sandbox` und `memfuse-saos-agent` aus dem Cargo-Workspace.
+- [x] **P0-2: Sicherheits-Updates (CVEs)**:
+  - Upgrade von `memmap2` auf Version 0.9.11 (RUSTSEC-2026-0186 behoben).
+  - Upgrade der `lru`-Crate auf Version 0.12.5 (RUSTSEC-2026-0002 behoben).
+- [x] **P0-3: Dokumenten-Konsolidierung**:
+  - Aktualisierung des Living Document (`docs/SOURCE_OF_TRUTH.md`), `docs/ARCHITECTURE.md` und Abstimmung aller Dokumente.
 
 ---
 
@@ -156,9 +154,9 @@ gantt
 Eine Phase gilt erst als abgeschlossen, wenn folgende Kriterien erfüllt sind:
 
 ### Phase 0
-* [ ] `just debt-audit` läuft fehlerfrei durch und meldet 0 bekannte CVEs.
-* [ ] Die Crates `memfuse-cluster`, `memfuse-sandbox` und `memfuse-saos-agent` sind vollständig aus dem Cargo-Workspace entfernt.
-* [ ] Die Dokumentation enthält keine redundanten oder widersprüchlichen Spezifikationsdateien mehr.
+* [x] `just debt-audit` läuft fehlerfrei durch und meldet 0 bekannte CVEs.
+* [x] Die Crates `memfuse-cluster`, `memfuse-sandbox` und `memfuse-saos-agent` sind vollständig aus dem Cargo-Workspace entfernt.
+* [x] Die Dokumentation enthält keine redundanten oder widersprüchlichen Spezifikationsdateien mehr.
 
 ### Phase 1
 * [ ] `cargo check --all-targets` und `cargo clippy --all-targets -- -D warnings` sind grün.

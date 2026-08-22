@@ -29,7 +29,7 @@ Ein Verstoß gegen diese Abhängigkeitsrichtung ist ein schwerwiegender Architek
 *   **Layer 1: `memfuse-store` (LSM), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-crypto` (AES-GCM-SIV), `memfuse-checkpoint` (Snapshot)** — Hängen nur von core ab.
 *   **Layer 2: `memfuse-db`** — Orchestriert Layer 0 und Layer 1.
 *   **Layer 3: `memfuse-py`** — Reine PyO3-Fassade für memfuse-db (Null Logik!).
-*   **🧊 FROZEN ZONE**: `memfuse-sandbox`, `memfuse-saos-agent`, `memfuse-cluster`, `memfuse-embed`, `memfuse-graph` (Keine Codeänderungen ohne explizite §27-Freigabe).
+*   **🧊 FROZEN ZONE**: `memfuse-embed` (ONNX Embeddings, opt-in Feature, keine Codeänderungen ohne explizite Freigabe).
 
 ---
 

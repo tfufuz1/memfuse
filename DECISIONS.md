@@ -70,7 +70,7 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 *   **Begründung**: Option C erfordert den geringsten Pivot (80% des Codes existiert bereits), liefert in 4–8 Wochen überprüfbares Feedback (Benchmarks, PyPI-Downloads statt 12+ Monate Enterprise-Verkaufszyklen), und schließt Richtung A nicht aus — im Gegenteil: Zero-C-Deps und ACID-Garantien sind der Vorbereitungsschritt für Sovereign Edge. Die Sovereign-Core-Eigenschaften bleiben vollständig erhalten.
 *   **Konsequenzen**:
     - `memfuse-graph` und `memfuse-py` werden in den aktiven Workspace reaktiviert (höchste Priorität).
-    - `memfuse-cluster`, `memfuse-sandbox`, `memfuse-saos-agent` werden aus dem Repo entfernt (→ `memfuse-agentos` Repo).
+    - `memfuse-cluster`, `memfuse-sandbox`, `memfuse-saos-agent` wurden physisch aus dem Repo entfernt (ausgelagert).
     - README und alle Governance-Dokumente werden auf "eingebettete Agent-Memory-Library" ausgerichtet.
 
 ---

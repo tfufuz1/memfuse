@@ -137,7 +137,7 @@ pub struct MemFuse {
     raft: tokio::sync::OnceCell<memfuse_cluster::node::MemFuseRaft>,
     /// Global text embedder for default collection.
     #[cfg(feature = "embed")]
-    embedder: parking_lot::RwLock<Option<Arc<TextEmbedder>>>,
+    embedder: std::sync::RwLock<Option<Arc<TextEmbedder>>>,
 }
 
 // BL-01-DB-001: Snapshot-Recovery API now exposed via create_snapshot() /
@@ -169,7 +169,7 @@ impl MemFuse {
             #[cfg(feature = "cluster")]
             raft: tokio::sync::OnceCell::new(),
             #[cfg(feature = "embed")]
-            embedder: parking_lot::RwLock::new(None),
+            embedder: std::sync::RwLock::new(None),
         };
 
         // Initialize already existing collections from storage
@@ -348,7 +348,7 @@ impl MemFuse {
 
         // Inherit global embedder if set
         #[cfg(feature = "embed")]
-        if let Some(emb) = self.embedder.read().as_ref() {
+        if let Some(emb) = self.embedder.read().unwrap().as_ref() {
             col = col.with_embedder(Arc::clone(emb));
         }
 
@@ -751,13 +751,13 @@ impl MemFuse {
     #[tracing::instrument(level = "trace", skip(self, embedder))]
     pub async fn with_embedder(self, embedder: Arc<TextEmbedder>) -> Self {
         {
-            let mut guard = self.embedder.write();
+            let mut guard = self.embedder.write().unwrap();
             *guard = Some(Arc::clone(&embedder));
         }
         // Also update existing default collection if already loaded
         let collections = self.collections.read().await;
         if let Some(col) = collections.get("default") {
-            let mut guard = col.embedder.write();
+            let mut guard = col.embedder.write().unwrap();
             *guard = Some(Arc::clone(&embedder));
         }
         drop(collections);
@@ -765,7 +765,7 @@ impl MemFuse {
         // Actually, it's better to just update the map entry if it exists.
         let mut collections_write = self.collections.write().await;
         if let Some(col) = collections_write.get_mut("default") {
-            let mut guard = col.embedder.write();
+            let mut guard = col.embedder.write().unwrap();
             *guard = Some(Arc::clone(&embedder));
         }
         drop(collections_write);
@@ -778,12 +778,12 @@ impl MemFuse {
     #[tracing::instrument(level = "trace", skip(self, embedder))]
     pub async fn set_embedder(&self, embedder: Arc<TextEmbedder>) -> Result<()> {
         {
-            let mut guard = self.embedder.write();
+            let mut guard = self.embedder.write().unwrap();
             *guard = Some(Arc::clone(&embedder));
         }
         let mut collections_write = self.collections.write().await;
         if let Some(col) = collections_write.get_mut("default") {
-            let mut guard = col.embedder.write();
+            let mut guard = col.embedder.write().unwrap();
             *guard = Some(embedder);
         }
         Ok(())

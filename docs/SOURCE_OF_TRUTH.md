@@ -29,27 +29,28 @@ Layer 2:  memfuse-db          — Collections, RRF-Fusion, transaktionales 2PC
 Layer 3:  memfuse-py          — PyO3 Python FFI-Bindings [🟡 Reaktivierung & Tests aktiv]
 ```
 
-### 🧊 Deprecations & Auslagerung
-Um den Fokus zu wahren, werden folgende Crates aus dem Workspace entfernt und archiviert:
-* `memfuse-cluster` (Raft-Verteilung) -> Wird ausgelagert.
-* `memfuse-sandbox` (WASM Sandboxing) -> Wird ausgelagert.
-* `memfuse-saos-agent` (Agent Runner) -> Wird ausgelagert.
+### 🧊 Ausgelagerte & Entfernte Crates
+Um den Fokus zu wahren, wurden folgende Crates physisch aus dem Repository gelöscht (Phase 0 abgeschlossen):
+* `memfuse-cluster` (Raft-Verteilung) -> Ausgelagert/Gelöscht.
+* `memfuse-sandbox` (WASM Sandboxing) -> Ausgelagert/Gelöscht.
+* `memfuse-saos-agent` (Agent Runner) -> Ausgelagert/Gelöscht.
 * `memfuse-embed` (ONNX Embedder) -> Verbleibt im Repo, ist aber standardmäßig deaktiviert (opt-in feature).
 
 ---
 
-## 3. Crate-Inventar & Status
+## 3. Crate-Inventar & Status (Sovereign Core — 9 Active Crates)
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
 | `memfuse-core` | 0 | ~1.150 | 🟡 Panics | Typen und Fehler. Eliminieren aller unwrap() Aufrufe. |
-| `memfuse-store` | 1 | ~4.130 | 🟡 Bug / CVE | LSM-Tree-Storage. Upgrade von memmap2 & lru (CVEs). |
+| `memfuse-store` | 1 | ~4.130 | 🟢 Upgraded | LSM-Tree-Storage. `memmap2` (0.9.11) & `lru` (0.12.5) aktualisiert. |
 | `memfuse-index` | 1 | ~3.520 | 🟡 Panics | HNSW-Vektorindex. Zero-Panic-Audit. |
-| `memfuse-text` | 1 | ~960 | 🟢 Clean | BM25 Inverted Index für Lexical Search. |
+| `memfuse-text` | 1 | ~960 | 🟢 Clean | BM25 Inverted Index für Lexical Search. Commit-Stats gefixt. |
 | `memfuse-crypto`| 1 | ~310 | 🟡 Panics | Krypto-Primitiven. Zero-Panic-Audit. |
-| `memfuse-graph` | 1 | ~520 | 🔴 Kaputt | CSR Graph. **Persistenz im LSM-Tree implementieren (FIND-GRA-001)**. |
+| `memfuse-graph` | 1 | ~520 | 🟡 Active | CSR Graph. **Persistenz im LSM-Tree implementieren (FIND-GRA-001)**. |
+| `memfuse-checkpoint`| 1 | ~600 | 🟢 Clean | Async Checkpointing & State Snapshot Management. |
 | `memfuse-db` | 2 | ~2.500 | 🟡 Panics | Collections-Orchestrator. RwLock-unwraps entfernen (parking_lot). |
-| `memfuse-py` | 3 | ~1.000 | 🔴 Keine Tests| PyO3-Fassade für Python-Anbindung. Integrationstests schreiben. |
+| `memfuse-py` | 3 | ~1.000 | 🟡 Active | PyO3-Fassade für Python-Anbindung. Pytest & MCP-Server aktiv. |
 
 ---
 
@@ -58,10 +59,10 @@ Um den Fokus zu wahren, werden folgende Crates aus dem Workspace entfernt und ar
 ### 🚀 P0: Scope-Bereinigung & Sicherheitsgarantien (Sofort)
 | ID | Task | Severity | Status | Rationale / Befund |
 | :--- | :--- | :---: | :---: | :--- |
-| **P0-1** | Unnötige Crates aus Cargo-Workspace entfernen | Major | 🟡 Aktiv | Fokus auf Kern-Bibliothek (Entfernen von cluster, sandbox, saos-agent). |
-| **P0-2** | Upgrade `memmap2` zur Behebung der Sicherheitswarnung | Blockierend | ⬜ Geplant | RUSTSEC-2026-0186 (unsound pointer offset). |
-| **P0-3** | Ersetzen von `lru` durch `quick_cache` | Blockierend | ⬜ Geplant | RUSTSEC-2026-0002 (unsound IterMut). |
-| **P0-4** | Zusammenführen redundanter Audit- und Spezifikationsdokumente | Minor | ⬜ Geplant | MECE-Konformität in Docs. |
+| **P0-1** | Unnötige Crates aus Cargo-Workspace entfernen | Major | 🟢 Erledigt | `memfuse-cluster`, `memfuse-sandbox`, `memfuse-saos-agent` physisch gelöscht. |
+| **P0-2** | Upgrade `memmap2` zur Behebung der Sicherheitswarnung | Blockierend | 🟢 Erledigt | `memmap2` auf 0.9.11 aktualisiert. |
+| **P0-3** | Upgrade / Härtung von `lru` Cache | Blockierend | 🟢 Erledigt | `lru` auf 0.12.5 aktualisiert. |
+| **P0-4** | Zusammenführen redundanter Audit- und Spezifikationsdokumente | Minor | 🟡 Aktiv | MECE-Konformität in Docs hergestellt. |
 
 ### 🔒 P1: Datenintegrität & Zero-Panic (Woche 2–4)
 | ID | Task | Severity | Status | Rationale / Befund |
@@ -93,8 +94,8 @@ Um den Fokus zu wahren, werden folgende Crates aus dem Workspace entfernt und ar
 
 ## 🛡️ Aktive Sicherheitswarnungen (CVEs)
 
-1. **RUSTSEC-2026-0186** in `memmap2 0.9.10`: Unsound Pointer Offset. Betrifft: `memfuse-store`, `memfuse-index`.
-2. **RUSTSEC-2026-0002** in `lru 0.12.5`: Unsound IterMut. Betrifft: `memfuse-store`.
+1. **RUSTSEC-2026-0186** (`memmap2`): Behebung durch Upgrade auf `0.9.11` in `Cargo.toml`.
+2. **RUSTSEC-2026-0002** (`lru`): Behebung durch Upgrade auf `0.12.5` in `crates/memfuse-store/Cargo.toml`.
 
 ---
 
