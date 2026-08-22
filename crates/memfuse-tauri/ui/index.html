@@ -1,12 +1,55 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MemFuse Brain</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 2rem; }
+        #chat-log { border: 1px solid #ccc; padding: 1rem; min-height: 300px; margin-bottom: 1rem; }
+        input, button { padding: 0.5rem; font-size: 1rem; }
+    </style>
 </head>
 <body>
-    <h1>MemFuse Brain Desktop Application</h1>
-    <p>Tauri Shell & Backend-Anbindung Grundgerüst</p>
+    <h1>MemFuse Brain — Ihr lokaler Unternehmens-Assistent</h1>
+    <div id="chat-log"></div>
+    <input id="query-input" type="text" placeholder="Stellen Sie eine Frage..." style="width: 70%;">
+    <button id="send-btn">Senden</button>
+
+    <script type="module">
+        const { invoke } = window.__TAURI__.core;
+        const { listen } = window.__TAURI__.event;
+
+        const log = document.getElementById('chat-log');
+        const input = document.getElementById('query-input');
+        const btn = document.getElementById('send-btn');
+
+        let currentResponseEl = null;
+        listen('chat-token', (event) => {
+            if (currentResponseEl) {
+                currentResponseEl.textContent += event.payload;
+            }
+        });
+
+        btn.addEventListener('click', async () => {
+            const message = input.value;
+            if (!message) return;
+
+            log.innerHTML += `<p><strong>Sie:</strong> ${message}</p>`;
+            currentResponseEl = document.createElement('p');
+            currentResponseEl.innerHTML = '<strong>Assistent:</strong> ';
+            log.appendChild(currentResponseEl);
+            input.value = '';
+
+            try {
+                await invoke('chat_with_rag', {
+                    message,
+                    collectionName: 'dokumente',
+                    model: 'llama3.2',
+                });
+            } catch (e) {
+                currentResponseEl.textContent += `Fehler: ${e}`;
+            }
+        });
+    </script>
 </body>
 </html>

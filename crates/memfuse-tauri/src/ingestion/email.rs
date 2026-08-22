@@ -1,3 +1,4 @@
+use mailparse::MailHeaderMap;
 use memfuse_core::Result;
 use std::path::Path;
 
