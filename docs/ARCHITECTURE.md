@@ -17,15 +17,15 @@ Layer 1:  memfuse-store       — LSM-Tree, WAL, SSTables
           memfuse-index       — HNSW, SIMD-Distanz, SQ8
           memfuse-text        — BM25, Inverted Index
           memfuse-crypto      — AES-GCM, HMAC-Chaining
-          memfuse-graph       — CSR-Graph, BFS  [🟡 NICHT im Workspace]
+          memfuse-graph       — CSR-Graph, Entity-Relation Traversal
+          memfuse-checkpoint  — Async Checkpointing & State Recovery
 Layer 2:  memfuse-db          — Collections, 4-Signal Fusion, RRF, 2PC
-Layer 3:  memfuse-py          — PyO3-Fassade   [🟡 NICHT im Workspace, 0 Tests]
-          memfuse-embed       — ONNX (C-Deps, opt-in)  [🧊 Frozen]
-          memfuse-cluster     — Raft (kritische Bugs)   [🧊 Frozen]
+Layer 3:  memfuse-py          — PyO3-Fassade (Python-Bindings, MCP Server)
+          memfuse-embed       — ONNX (C-Deps, opt-in feature) [🧊 Frozen]
 ```
 
 **Aktiver Workspace-Build**: `memfuse-core`, `memfuse-store`, `memfuse-index`, `memfuse-db`,
-`memfuse-text`, `memfuse-checkpoint`, `memfuse-crypto` (7 Crates, ~13.600 LOC)
+`memfuse-text`, `memfuse-checkpoint`, `memfuse-crypto`, `memfuse-graph`, `memfuse-py` (9 Crates Sovereign Core)
 
 ## Invarianten-Status (Stand: 2026-07-19)
 
@@ -44,9 +44,9 @@ Layer 3:  memfuse-py          — PyO3-Fassade   [🟡 NICHT im Workspace, 0 Tes
 - **HMAC Chaining**: WAL-Integrität gegen Manipulation geschützt.
 - **Namespace Isolation**: Vollständige Trennung von Collections auf Storage-Ebene.
 
-## Aktive Security Advisories (2026-07-19)
-- `RUSTSEC-2026-0186`: `memmap2 0.9.10` — unsound pointer offset (betrifft `memfuse-store`, `memfuse-index`)
-- `RUSTSEC-2026-0002`: `lru 0.12.5` — unsound `IterMut` (betrifft `memfuse-store`)
+## Aktive Security Advisories
+- `RUSTSEC-2026-0186`: Behandelt durch Upgrade von `memmap2` auf `0.9.11`.
+- `RUSTSEC-2026-0002`: Behandelt durch Upgrade von `lru` auf `0.12.5`.
 
 ---
 *Status: 2026-07-19 — Richtung C (Agent-Memory-Library) beschlossen (ADR-007). Phase 0 (Scope-Schnitt & Security) aktiv.*

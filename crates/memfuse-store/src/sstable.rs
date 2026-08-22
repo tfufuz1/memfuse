@@ -16,23 +16,26 @@
 //! - **Zero Panic**: Production code paths avoid `unwrap()` and `expect()`, favoring explicit error handling.
 
 use bytes::{BufMut, Bytes, BytesMut};
+use lru::LruCache;
 use memfuse_core::{MemFuseError, Result};
 use memfuse_crypto::crypto::KeyManager;
 use parking_lot::RwLock;
-use quick_cache::sync::Cache;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
 /// Cache for SSTable blocks. Key is (file_id, block_offset).
-pub type BlockCache = RwLock<Cache<(u64, u64), Bytes>>;
+pub type BlockCache = RwLock<LruCache<(u64, u64), Bytes>>;
 
 /// Creates a new block cache instance. Capacity is in MB (assuming 4KB blocks).
 pub fn create_block_cache(capacity_mb: usize) -> Arc<BlockCache> {
     let capacity = capacity_mb * 256;
     let capacity = capacity.max(256); // minimum 1MB
-    Arc::new(RwLock::new(Cache::new(capacity)))
+    Arc::new(RwLock::new(LruCache::new(
+        NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::MIN),
+    )))
 }
 
 /// Block size for SSTable data blocks (4KB).
@@ -908,8 +911,8 @@ impl SstableReader {
 
     async fn get_block(&self, offset: u64, next_offset: u64) -> Result<Bytes> {
         let cached = {
-            let cache = self.block_cache.read();
-            cache.get(&(self.file_id, offset))
+            let mut cache = self.block_cache.write();
+            cache.get(&(self.file_id, offset)).cloned()
         };
 
         if let Some(block) = cached {
@@ -926,7 +929,7 @@ impl SstableReader {
             .await?;
             self.block_cache
                 .write()
-                .insert((self.file_id, offset), block.clone());
+                .put((self.file_id, offset), block.clone());
             Ok(block)
         }
     }

@@ -56,7 +56,7 @@ pub struct Collection<S: StorageEngine = LsmStorage> {
     pub(crate) next_tx: Arc<AtomicU64>,
     pub(crate) dimension: usize,
     #[cfg(feature = "embed")]
-    pub(crate) embedder: parking_lot::RwLock<Option<Arc<TextEmbedder>>>,
+    pub(crate) embedder: std::sync::RwLock<Option<Arc<TextEmbedder>>>,
 }
 
 impl<S: StorageEngine> Clone for Collection<S> {
@@ -70,8 +70,8 @@ impl<S: StorageEngine> Clone for Collection<S> {
             next_tx: self.next_tx.clone(),
             dimension: self.dimension,
             #[cfg(feature = "embed")]
-            embedder: parking_lot::RwLock::new(
-                self.embedder.read().as_ref().map(Arc::clone),
+            embedder: std::sync::RwLock::new(
+                self.embedder.read().unwrap().as_ref().map(Arc::clone),
             ),
         }
     }
@@ -103,7 +103,7 @@ impl<S: StorageEngine> Collection<S> {
             next_tx,
             dimension,
             #[cfg(feature = "embed")]
-            embedder: parking_lot::RwLock::new(None),
+            embedder: std::sync::RwLock::new(None),
         }
     }
 
@@ -112,7 +112,7 @@ impl<S: StorageEngine> Collection<S> {
     #[tracing::instrument(level = "trace", skip(self, embedder))]
     pub fn with_embedder(self, embedder: Arc<TextEmbedder>) -> Self {
         {
-            let mut guard = self.embedder.write();
+            let mut guard = self.embedder.write().unwrap();
             *guard = Some(embedder);
         }
         self
@@ -122,7 +122,7 @@ impl<S: StorageEngine> Collection<S> {
     #[cfg(feature = "embed")]
     #[tracing::instrument(level = "trace", skip(self, embedder))]
     pub async fn set_embedder(&self, embedder: Arc<TextEmbedder>) -> Result<()> {
-        let mut guard = self.embedder.write();
+        let mut guard = self.embedder.write().unwrap();
         *guard = Some(embedder);
         Ok(())
     }
@@ -282,7 +282,7 @@ impl<S: StorageEngine> Collection<S> {
         mut metadata: Option<serde_json::Value>,
     ) -> Result<()> {
         let embedding = {
-            let embedder_guard = self.embedder.read();
+            let embedder_guard = self.embedder.read().unwrap();
             let embedder = embedder_guard.as_ref().ok_or_else(|| {
                 memfuse_core::MemFuseError::Internal(
                     "No embedder configured for this collection".into(),
@@ -315,7 +315,7 @@ impl<S: StorageEngine> Collection<S> {
         mut metadata: Option<serde_json::Value>,
     ) -> Result<()> {
         let embedding = {
-            let embedder_guard = self.embedder.read();
+            let embedder_guard = self.embedder.read().unwrap();
             let embedder = embedder_guard.as_ref().ok_or_else(|| {
                 memfuse_core::MemFuseError::Internal(
                     "No embedder configured for this collection".into(),
@@ -818,7 +818,7 @@ impl<S: StorageEngine> Collection<S> {
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
         let embedding = {
-            let embedder_guard = self.embedder.read();
+            let embedder_guard = self.embedder.read().unwrap();
             let embedder = embedder_guard.as_ref().ok_or_else(|| {
                 memfuse_core::MemFuseError::Internal(
                     "No embedder configured for this collection".into(),

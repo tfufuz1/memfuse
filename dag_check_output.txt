@@ -1,28 +1,13 @@
 === DAG Integrity Check ===
---- Phase 1: L1 Kernel Isolation (core, runtime, orchestrator) ---
+--- Phase 1: L1 Kernel Isolation (core) ---
 Verifying memfuse-core isolation...
-Verifying memfuse-sandbox isolation...
-Verifying memfuse-saos-agent isolation...
-❌ ERROR: memfuse-saos-agent imports forbidden internal crates.
-memfuse-saos-agent v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-saos-agent)
-├── memfuse-checkpoint v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-checkpoint)
-│   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core)
-├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
-├── memfuse-db v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-db)
-│   ├── memfuse-checkpoint v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-checkpoint) (*)
-│   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
-│   ├── memfuse-index v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-index)
-│   │   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
-│   │   ├── memfuse-graph v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-graph)
-│   │   │   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
-│   ├── memfuse-sandbox v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-sandbox)
-│   │   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
-│   ├── memfuse-store v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-store)
-│   │   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
-│   │   ├── memfuse-crypto v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-crypto)
-│   │   │   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
-│   ├── memfuse-text v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-text)
-│   │   ├── memfuse-core v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-core) (*)
-├── memfuse-graph v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-graph) (*)
-├── memfuse-store v0.1.0 (/home/freddy/Arbeitsplatz/DEV/memfuse/crates/memfuse-store) (*)
-error: Recipe `dag-check` failed with exit code 1
+--- Phase 2: L2 Peer Isolation (store, index, text, checkpoint) ---
+Verifying memfuse-store...
+Verifying memfuse-index...
+Verifying memfuse-text...
+Verifying memfuse-checkpoint...
+--- Phase 3: L3 Orchestration Isolation (db) ---
+Verifying memfuse-db...
+--- Phase 4: L4 Bindings Isolation (py) ---
+Verifying memfuse-py...
+=== DAG-Check PASSED ===
