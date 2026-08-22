@@ -1,0 +1,107 @@
+use async_trait::async_trait;
+use memfuse_core::Result;
+use memfuse_db::{MemFuse, MemFuseConfig};
+use memfuse_tauri_lib::ingestion::{EmbeddingProvider, IngestionPipeline};
+use std::sync::Arc;
+use tempfile::TempDir;
+
+struct DummyEmbedder {
+    dim: usize,
+}
+
+#[async_trait]
+impl EmbeddingProvider for DummyEmbedder {
+    async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
+        Ok(vec![0.1f32; self.dim])
+    }
+}
+
+#[tokio::test]
+async fn test_ingest_markdown_file() {
+    let tmp = TempDir::new().expect("temp dir");
+    let db_path = tmp.path().join("db");
+    let config = MemFuseConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+
+    let db = MemFuse::open_with_config(&db_path, config)
+        .await
+        .expect("open db");
+
+    let collection = db.collection("test-ingest").await.expect("collection");
+
+    let embedder = Arc::new(DummyEmbedder { dim: 4 });
+    let pipeline = IngestionPipeline::new(embedder);
+
+    let doc_path = tmp.path().join("test_document.md");
+    let markdown_content = r#"# Architecture Overview
+
+MemFuse is an embedded hybrid-search memory engine.
+
+## Subsystem 1: Storage
+LSM-Tree provides crash-resilient key-value storage.
+
+## Subsystem 2: Vector Index
+HNSW provides fast k-NN vector search over document embeddings.
+"#;
+
+    std::fs::write(&doc_path, markdown_content).expect("write test md");
+
+    let report = pipeline
+        .ingest_file(&doc_path, &collection)
+        .await
+        .expect("ingest_file");
+
+    assert_eq!(report.file_path, doc_path.display().to_string());
+    assert!(report.chunks_created > 0);
+    assert!(report.errors.is_empty());
+
+    let results = collection
+        .search(&[0.1, 0.1, 0.1, 0.1], 5)
+        .await
+        .expect("search");
+
+    assert!(!results.is_empty());
+}
+
+#[tokio::test]
+async fn test_ingest_folder() {
+    let tmp = TempDir::new().expect("temp dir");
+    let db_path = tmp.path().join("db");
+    let config = MemFuseConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+
+    let db = MemFuse::open_with_config(&db_path, config)
+        .await
+        .expect("open db");
+
+    let collection = db.collection("folder-ingest").await.expect("collection");
+
+    let embedder = Arc::new(DummyEmbedder { dim: 4 });
+    let pipeline = IngestionPipeline::new(embedder);
+
+    let folder_path = tmp.path().join("docs");
+    std::fs::create_dir(&folder_path).expect("create folder");
+
+    let file1 = folder_path.join("doc1.txt");
+    let file2 = folder_path.join("doc2.markdown");
+    let file_unsupported = folder_path.join("file.xyz");
+
+    std::fs::write(&file1, "Simple text document content.").expect("write file1");
+    std::fs::write(&file2, "# Title\nMarkdown document content.").expect("write file2");
+    std::fs::write(&file_unsupported, "Ignored format.").expect("write file_unsupported");
+
+    let reports = pipeline
+        .ingest_folder(&folder_path, &collection)
+        .await
+        .expect("ingest_folder");
+
+    assert_eq!(reports.len(), 2);
+    for r in reports {
+        assert!(r.chunks_created > 0);
+        assert!(r.errors.is_empty());
+    }
+}
