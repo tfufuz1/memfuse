@@ -6,15 +6,23 @@
 // INVARIANT: CSR-Graph for 4-Signal Fusion
 
 use async_trait::async_trait;
-use memfuse_core::{Edge, Entity, EntityId, GraphIndex, GraphIndexStats, Result, TxId};
+use memfuse_core::{
+    Edge, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result, StorageEngine, TxId,
+};
 use parking_lot::RwLock;
 use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 
 /// Score decay factor per hop (0.7^hop).
 const SCORE_DECAY: f32 = 0.7;
 
 /// Maximum traversal depth.
 const MAX_TRAVERSAL_HOPS: u8 = 3;
+
+/// LSM-Key-Prefix für alle Graph-Entities.
+const GRAPH_ENTITY_PREFIX: &[u8] = b"__graph:entity:";
+/// LSM-Key-Prefix für alle Graph-Edges.
+const GRAPH_EDGE_PREFIX: &[u8] = b"__graph:edge:";
 
 /// Internal contiguous index for CSR arrays.
 type InternalIndex = usize;
@@ -138,6 +146,8 @@ impl GraphInner {
 /// Implements `GraphIndex` trait as Signal 3 in the 4-Signal Fusion architecture.
 pub struct CsrGraph {
     inner: RwLock<GraphInner>,
+    /// Optionaler Persistenz-Handle. None = reiner In-Memory-Modus (z.B. Tests).
+    storage: Option<Arc<dyn StorageEngine>>,
 }
 
 impl CsrGraph {
@@ -145,7 +155,113 @@ impl CsrGraph {
     pub fn new() -> Self {
         Self {
             inner: RwLock::new(GraphInner::new()),
+            storage: None,
         }
+    }
+
+    /// Creates a new CSR graph with persistent storage.
+    pub fn with_storage(storage: Arc<dyn StorageEngine>) -> Self {
+        Self {
+            inner: RwLock::new(GraphInner::new()),
+            storage: Some(storage),
+        }
+    }
+
+    /// Sets or replaces the persistent storage handle.
+    pub fn set_storage(&mut self, storage: Arc<dyn StorageEngine>) {
+        self.storage = Some(storage);
+    }
+
+    /// Directly inserts an entity into the CSR graph without staging.
+    pub fn insert_entity_direct(&self, entity: Entity) -> Result<()> {
+        let mut inner = self.inner.write();
+        let idx = inner.get_or_create_index(entity.id);
+        if idx >= inner.entities.len() {
+            inner.entities.resize(idx + 1, None);
+        }
+        inner.entities[idx] = Some(entity);
+        Ok(())
+    }
+
+    /// Directly inserts an edge into the CSR graph without staging.
+    pub fn insert_edge_direct(&self, from: EntityId, to: EntityId, weight: f32) -> Result<()> {
+        let mut inner = self.inner.write();
+        let from_idx = inner.get_or_create_index(from);
+        let to_idx = inner.get_or_create_index(to);
+        inner
+            .committed_staged
+            .entry(from_idx)
+            .or_default()
+            .push((to_idx, weight));
+        inner.is_dirty = true;
+        Ok(())
+    }
+
+    /// Persistiert eine einzelne Entity in den übergebenen Storage.
+    pub async fn persist_entity<S: StorageEngine + ?Sized>(
+        &self,
+        storage: &S,
+        tx: TxId,
+        entity: &Entity,
+    ) -> Result<()> {
+        let key = [GRAPH_ENTITY_PREFIX, entity.id.as_bytes().as_slice()].concat();
+        let value = bincode::serialize(entity)
+            .map_err(|e| MemFuseError::Internal(format!("graph entity serialize: {e}")))?;
+        storage.put(tx, &key, &value).await
+    }
+
+    /// Persistiert eine einzelne Edge in den übergebenen Storage.
+    pub async fn persist_edge<S: StorageEngine + ?Sized>(
+        &self,
+        storage: &S,
+        tx: TxId,
+        from: &EntityId,
+        to: &EntityId,
+        weight: f32,
+    ) -> Result<()> {
+        let key = [
+            GRAPH_EDGE_PREFIX,
+            from.as_bytes().as_slice(),
+            b":",
+            to.as_bytes().as_slice(),
+        ]
+        .concat();
+        let value = bincode::serialize(&weight)
+            .map_err(|e| MemFuseError::Internal(format!("graph edge serialize: {e}")))?;
+        storage.put(tx, &key, &value).await
+    }
+
+    /// Lädt den kompletten Graph-Zustand aus dem Storage (beim Startup).
+    pub async fn load_from_storage<S: StorageEngine + ?Sized>(storage: &S) -> Result<Self> {
+        let graph = Self::new();
+
+        let entity_entries = storage.scan_prefix(GRAPH_ENTITY_PREFIX).await?;
+        for (_, raw_value) in entity_entries {
+            let entity: Entity = bincode::deserialize(&raw_value)
+                .map_err(|e| MemFuseError::Internal(format!("graph entity deserialize: {e}")))?;
+            graph.insert_entity_direct(entity)?;
+        }
+
+        let edge_entries = storage.scan_prefix(GRAPH_EDGE_PREFIX).await?;
+        for (raw_key, raw_value) in edge_entries {
+            let weight: f32 = bincode::deserialize(&raw_value)
+                .map_err(|e| MemFuseError::Internal(format!("graph edge deserialize: {e}")))?;
+            let key_str = String::from_utf8_lossy(&raw_key);
+            let rest = key_str.strip_prefix("__graph:edge:").unwrap_or("");
+            if let Some((from_str, to_str)) = rest.split_once(':') {
+                let from_id = EntityId::from(from_str);
+                let to_id = EntityId::from(to_str);
+                graph.insert_edge_direct(from_id, to_id, weight)?;
+            }
+        }
+
+        graph.compact();
+
+        tracing::info!(
+            entities = graph.entity_count(),
+            "Graph aus Storage geladen"
+        );
+        Ok(graph)
     }
 
     /// Compacts the graph to optimize for traversal.
@@ -293,6 +409,39 @@ impl GraphIndex for CsrGraph {
     }
 
     async fn commit(&self, tx: TxId) -> Result<()> {
+        let (entities_to_commit, edges_to_commit) = {
+            let inner = self.inner.read();
+            let entities = inner.staged_entities.get(&tx).cloned();
+            let edges = inner.staged_edges.get(&tx).map(|tx_edges| {
+                let mut list = Vec::new();
+                for (&from_idx, to_list) in tx_edges {
+                    if let Some(&from_id) = inner.reverse_map.get(from_idx) {
+                        for &(to_idx, weight) in to_list {
+                            if let Some(&to_id) = inner.reverse_map.get(to_idx) {
+                                list.push((from_id, to_id, weight));
+                            }
+                        }
+                    }
+                }
+                list
+            });
+            (entities, edges)
+        };
+
+        if let Some(ref storage) = self.storage {
+            if let Some(ref entities) = entities_to_commit {
+                for entity in entities.values() {
+                    self.persist_entity(storage.as_ref(), tx, entity).await?;
+                }
+            }
+            if let Some(ref edges) = edges_to_commit {
+                for (from_id, to_id, weight) in edges {
+                    self.persist_edge(storage.as_ref(), tx, from_id, to_id, *weight)
+                        .await?;
+                }
+            }
+        }
+
         let mut inner = self.inner.write();
 
         // 1. Commit entities
@@ -328,9 +477,8 @@ impl GraphIndex for CsrGraph {
     }
 
     async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
-        // CSR Graph currently does not persist state across restarts or support physical rollback
-        // for committed transactions. In-memory staged transactions are handled by rollback().
-        // REAL physical rollback requires WAL replay or snapshot restoration.
+        // Physical rollback for CSR graph is driven by WAL replay or reloading state from storage.
+        // In-memory staged transactions are handled by rollback().
         Ok(())
     }
 

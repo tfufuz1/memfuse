@@ -12,6 +12,7 @@ memfuse-store = { workspace = true }
 memfuse-index = { workspace = true }
 memfuse-text = { workspace = true }
 memfuse-checkpoint = { workspace = true }
+memfuse-graph = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
