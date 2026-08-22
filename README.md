@@ -84,7 +84,7 @@ use memfuse_db::MemFuse;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = MemFuse::open("./data").await?;
-    let col = db.create_collection("agents", 1536).await?;
+    let col = db.collection("agents").await?;
 
     // Dokument einfügen
     let vec = vec![0.1f32; 1536];

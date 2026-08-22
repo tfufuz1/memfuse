@@ -97,6 +97,7 @@ async fn test_concurrent_checkpoint_creation_same_name() {
     for i in 0..10 {
         let m = manager.clone();
         handles.push(tokio::spawn(async move {
+            // Correct API call matching create_checkpoint(name, collection_id, seq_no, tx_id, metadata)
             m.create_checkpoint(
                 "same_name",
                 "coll",
