@@ -1,5 +1,6 @@
-mod state;
 pub mod commands;
+pub mod ingestion;
+mod state;
 
 use state::AppState;
 
