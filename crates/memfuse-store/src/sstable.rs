@@ -585,17 +585,15 @@ impl SstableReader {
 
         if trailer_len >= 54 {
             let magic_v1 = u32::from_le_bytes(
-                // INVARIANT: trailer_data[50..54] is always 4 bytes; len >= 54 checked above.
                 trailer_data[50..54]
                     .try_into()
-                    .expect("INVARIANT: 4-byte slice for magic_v1"),
+                    .map_err(|_| MemFuseError::Storage("Invalid trailer".into()))?,
             );
             if magic_v1 == 0x5853464D {
                 format_version = u16::from_le_bytes(
-                    // INVARIANT: trailer_data[48..50] is always 2 bytes; len >= 54 checked above.
                     trailer_data[48..50]
                         .try_into()
-                        .expect("INVARIANT: 2-byte slice for format_version"),
+                        .map_err(|_| MemFuseError::Storage("Invalid trailer".into()))?,
                 );
                 is_mfsx = true;
             }
@@ -603,10 +601,9 @@ impl SstableReader {
 
         if !is_mfsx && trailer_len >= 52 {
             let magic_v0 = u32::from_le_bytes(
-                // INVARIANT: trailer_data[48..52] is always 4 bytes; len >= 52 checked above.
                 trailer_data[48..52]
                     .try_into()
-                    .expect("INVARIANT: 4-byte slice for magic_v0"),
+                    .map_err(|_| MemFuseError::Storage("Invalid trailer".into()))?,
             );
             if magic_v0 == 0x5853464D {
                 is_mfsx = true;
