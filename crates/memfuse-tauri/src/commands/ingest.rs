@@ -12,7 +12,10 @@ pub async fn ingest_file(
 ) -> Result<IngestReport, String> {
     let db = {
         let db_guard = state.db.read();
-        db_guard.as_ref().cloned().ok_or("Keine Datenbank geöffnet")?
+        db_guard
+            .as_ref()
+            .cloned()
+            .ok_or("Keine Datenbank geöffnet")?
     };
     let collection = db
         .collection(&collection_name)
@@ -36,7 +39,10 @@ pub async fn ingest_folder(
 ) -> Result<Vec<IngestReport>, String> {
     let db = {
         let db_guard = state.db.read();
-        db_guard.as_ref().cloned().ok_or("Keine Datenbank geöffnet")?
+        db_guard
+            .as_ref()
+            .cloned()
+            .ok_or("Keine Datenbank geöffnet")?
     };
     let collection = db
         .collection(&collection_name)

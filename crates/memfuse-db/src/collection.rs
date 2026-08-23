@@ -73,9 +73,7 @@ impl<S: StorageEngine> Clone for Collection<S> {
             next_tx: self.next_tx.clone(),
             dimension: self.dimension,
             #[cfg(feature = "embed")]
-            embedder: parking_lot::RwLock::new(
-                self.embedder.read().as_ref().map(Arc::clone),
-            ),
+            embedder: parking_lot::RwLock::new(self.embedder.read().as_ref().map(Arc::clone)),
         }
     }
 }

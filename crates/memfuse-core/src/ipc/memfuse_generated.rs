@@ -86,7 +86,11 @@ pub mod mem_fuse {
                 // Safety:
                 // Created from valid Table for this object
                 // which contains a valid value in this slot
-                unsafe { self._tab.get::<i8>(Embedding::VT_METRIC, Some(0)).unwrap_or(0) }
+                unsafe {
+                    self._tab
+                        .get::<i8>(Embedding::VT_METRIC, Some(0))
+                        .unwrap_or(0)
+                }
             }
         }
 

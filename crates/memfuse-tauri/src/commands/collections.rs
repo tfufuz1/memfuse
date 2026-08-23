@@ -12,10 +12,7 @@ pub struct CollectionInfo {
 
 /// Öffnet oder erstellt eine lokale MemFuse-Datenbank am gegebenen Pfad.
 #[tauri::command]
-pub async fn open_database(
-    state: State<'_, AppState>,
-    path: String,
-) -> Result<(), String> {
+pub async fn open_database(state: State<'_, AppState>, path: String) -> Result<(), String> {
     let path_buf = PathBuf::from(&path);
     let db = MemFuse::open(&path_buf)
         .await
@@ -30,7 +27,10 @@ pub async fn open_database(
 pub async fn list_collections(state: State<'_, AppState>) -> Result<Vec<CollectionInfo>, String> {
     let db = {
         let db_guard = state.db.read();
-        db_guard.as_ref().cloned().ok_or("Keine Datenbank geöffnet")?
+        db_guard
+            .as_ref()
+            .cloned()
+            .ok_or("Keine Datenbank geöffnet")?
     };
 
     let names = db.list_collections().await.map_err(|e| e.to_string())?;
@@ -47,26 +47,26 @@ pub async fn list_collections(state: State<'_, AppState>) -> Result<Vec<Collecti
 }
 
 #[tauri::command]
-pub async fn create_collection(
-    state: State<'_, AppState>,
-    name: String,
-) -> Result<(), String> {
+pub async fn create_collection(state: State<'_, AppState>, name: String) -> Result<(), String> {
     let db = {
         let db_guard = state.db.read();
-        db_guard.as_ref().cloned().ok_or("Keine Datenbank geöffnet")?
+        db_guard
+            .as_ref()
+            .cloned()
+            .ok_or("Keine Datenbank geöffnet")?
     };
     db.collection(&name).await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn drop_collection(
-    state: State<'_, AppState>,
-    name: String,
-) -> Result<(), String> {
+pub async fn drop_collection(state: State<'_, AppState>, name: String) -> Result<(), String> {
     let db = {
         let db_guard = state.db.read();
-        db_guard.as_ref().cloned().ok_or("Keine Datenbank geöffnet")?
+        db_guard
+            .as_ref()
+            .cloned()
+            .ok_or("Keine Datenbank geöffnet")?
     };
     db.drop_collection(&name).await.map_err(|e| e.to_string())?;
     Ok(())

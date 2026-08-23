@@ -62,7 +62,7 @@ results = col.hybrid_search(
 Starten des integrierten MCP-Servers für Claude Desktop & AI-Tools:
 
 ```bash
-python -m memfuse.mcp --db-path ./agent_memory
+cargo run --bin memfuse-mcp-server -- --db-path ./firma_daten
 ```
 
 ---

@@ -30,11 +30,7 @@ impl IngestionPipeline {
     /// Liest eine Datei, erkennt das Format anhand der Endung, chunked den
     /// Text mit dem bestehenden MarkdownChunker und speichert die Chunks
     /// mit Embeddings in der übergebenen Collection.
-    pub async fn ingest_file(
-        &self,
-        path: &Path,
-        collection: &Collection,
-    ) -> Result<IngestReport> {
+    pub async fn ingest_file(&self, path: &Path, collection: &Collection) -> Result<IngestReport> {
         let extension = path
             .extension()
             .and_then(|e| e.to_str())
@@ -63,10 +59,7 @@ impl IngestionPipeline {
             }
         };
 
-        let file_name = path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy();
+        let file_name = path.file_name().unwrap_or_default().to_string_lossy();
 
         // Nutzt den bereits bestehenden MarkdownChunker aus memfuse-db
         let chunker = MarkdownChunker::with_defaults();
@@ -84,10 +77,7 @@ impl IngestionPipeline {
                     let doc_id = format!("{}#{}", file_name, idx);
                     let mut metadata = chunk.metadata.unwrap_or_else(|| serde_json::json!({}));
                     if let Some(obj) = metadata.as_object_mut() {
-                        obj.insert(
-                            "text".to_string(),
-                            serde_json::Value::String(chunk.content),
-                        );
+                        obj.insert("text".to_string(), serde_json::Value::String(chunk.content));
                         obj.insert(
                             "source".to_string(),
                             serde_json::Value::String(path.display().to_string()),

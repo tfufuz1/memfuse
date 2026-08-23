@@ -257,10 +257,7 @@ impl CsrGraph {
 
         graph.compact();
 
-        tracing::info!(
-            entities = graph.entity_count(),
-            "Graph aus Storage geladen"
-        );
+        tracing::info!(entities = graph.entity_count(), "Graph aus Storage geladen");
         Ok(graph)
     }
 

@@ -99,25 +99,39 @@ async fn test_drop_collection_removes_all_data() {
         .expect("insert doc2");
 
     let col_prefix = format!("__col:{}:", name);
-    let before = db.inner_storage().scan_prefix(col_prefix.as_bytes()).await.expect("scan before");
+    let before = db
+        .inner_storage()
+        .scan_prefix(col_prefix.as_bytes())
+        .await
+        .expect("scan before");
     assert!(!before.is_empty(), "Data keys must exist before drop");
 
     // 2. drop_collection() aufrufen
     db.drop_collection(name).await.expect("drop collection");
 
     // 3. storage.scan_prefix("__col:<name>:") muss LEER sein
-    let after = db.inner_storage().scan_prefix(col_prefix.as_bytes()).await.expect("scan after");
-    assert!(after.is_empty(), "storage.scan_prefix for collection prefix must be empty after drop");
+    let after = db
+        .inner_storage()
+        .scan_prefix(col_prefix.as_bytes())
+        .await
+        .expect("scan after");
+    assert!(
+        after.is_empty(),
+        "storage.scan_prefix for collection prefix must be empty after drop"
+    );
 
     // 4. list_collections() darf den Namen nicht mehr enthalten
     let list = db.list_collections().await.expect("list_collections");
-    assert!(!list.contains(&name.to_string()), "list_collections must not contain dropped collection name");
+    assert!(
+        !list.contains(&name.to_string()),
+        "list_collections must not contain dropped collection name"
+    );
 }
 
 #[tokio::test]
 async fn test_partial_compaction_preserves_tombstones() {
+    use memfuse_core::{StorageEngine, TxId};
     use memfuse_store::{CompactionConfig, LsmConfig};
-    use memfuse_core::{TxId, StorageEngine};
 
     let tmp = TempDir::new().expect("temp dir");
     let config = LsmConfig {
@@ -130,17 +144,25 @@ async fn test_partial_compaction_preserves_tombstones() {
         ..Default::default()
     };
 
-    let storage = memfuse_store::LsmStorage::new(config).await.expect("create storage");
+    let storage = memfuse_store::LsmStorage::new(config)
+        .await
+        .expect("create storage");
 
     // 1. SSTable 0: Ältester Wert für key1
     let tx1 = TxId::new(1);
-    storage.put(tx1, b"key1", b"original_value").await.expect("put key1 v1");
+    storage
+        .put(tx1, b"key1", b"original_value")
+        .await
+        .expect("put key1 v1");
     storage.commit(tx1).await.expect("commit tx1");
     storage.flush().await.expect("flush 1");
 
     // 2. SSTable 1: Neuerer Wert für key1
     let tx2 = TxId::new(2);
-    storage.put(tx2, b"key1", b"updated_value").await.expect("put key1 v2");
+    storage
+        .put(tx2, b"key1", b"updated_value")
+        .await
+        .expect("put key1 v2");
     storage.commit(tx2).await.expect("commit tx2");
     storage.flush().await.expect("flush 2");
 
@@ -152,7 +174,10 @@ async fn test_partial_compaction_preserves_tombstones() {
 
     // 4. SSTable 3: Weiterer Schlüssel
     let tx4 = TxId::new(4);
-    storage.put(tx4, b"other_key", b"value4").await.expect("put other");
+    storage
+        .put(tx4, b"other_key", b"value4")
+        .await
+        .expect("put other");
     storage.commit(tx4).await.expect("commit tx4");
     storage.flush().await.expect("flush 4");
 
@@ -166,8 +191,14 @@ async fn test_partial_compaction_preserves_tombstones() {
     // 5. Nach partieller Compaction: key1 MUSS weiterhin None sein!
     // Falls der Tombstone bei partieller Compaction gelöscht worden wäre,
     // würde key1 aus SSTable 0 ("original_value") wieder auftauchen (Phantom-Daten).
-    let val_after = storage.get(b"key1").await.expect("get key1 after compaction");
-    assert!(val_after.is_none(), "key1 must remain deleted and NOT materialise phantom data from SSTable 0");
+    let val_after = storage
+        .get(b"key1")
+        .await
+        .expect("get key1 after compaction");
+    assert!(
+        val_after.is_none(),
+        "key1 must remain deleted and NOT materialise phantom data from SSTable 0"
+    );
 }
 
 // ---------------------------------------------------------------------------
