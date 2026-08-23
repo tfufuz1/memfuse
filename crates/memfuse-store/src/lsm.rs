@@ -877,7 +877,10 @@ impl StorageEngine for LsmStorage {
         for mt in &state.immutable_memtables {
             for (k, v, seq, tx) in mt.iter() {
                 let raw_seq = seq & !TOMBSTONE_BIT;
-                if k.starts_with(prefix) && raw_seq <= seq_no && (tx <= last_tx || tx >= TxId::INTERNAL_BASE) {
+                if k.starts_with(prefix)
+                    && raw_seq <= seq_no
+                    && (tx <= last_tx || tx >= TxId::INTERNAL_BASE)
+                {
                     let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                         *entry = (v.to_vec(), seq);
@@ -889,7 +892,10 @@ impl StorageEngine for LsmStorage {
         // Collect from active memtable
         for (k, v, seq, tx) in state.memtable.iter() {
             let raw_seq = seq & !TOMBSTONE_BIT;
-            if k.starts_with(prefix) && raw_seq <= seq_no && (tx <= last_tx || tx >= TxId::INTERNAL_BASE) {
+            if k.starts_with(prefix)
+                && raw_seq <= seq_no
+                && (tx <= last_tx || tx >= TxId::INTERNAL_BASE)
+            {
                 let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                 if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                     *entry = (v.to_vec(), seq);

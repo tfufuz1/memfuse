@@ -9,6 +9,111 @@
 //! - Überschreitet der Verbrauch 95% des Budgets, wird `MemoryBudgetExceeded` geworfen.
 
 use crate::error::{MemFuseError, Result};
+use serde::{Deserialize, Serialize};
+
+/// Strategie für Token-Budget-Management.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum BudgetStrategy {
+    /// Konservativ: 80% des Limits als sicherer Puffer (Standard)
+    Conservative,
+    /// Aggressiv: 95% des Limits nutzen
+    Aggressive,
+    /// Exakt: Angabe des verfügbaren Fensters direkt
+    Exact(usize),
+}
+
+/// Token budget configuration for LLM context management.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TokenBudget {
+    /// Maximum total token limit.
+    pub limit: usize,
+    /// Strategy for calculating usable context window.
+    pub strategy: BudgetStrategy,
+    /// Reserved tokens for system prompt and generated answer.
+    pub reserved: usize,
+    /// Currently consumed tokens.
+    consumed: usize,
+}
+
+impl TokenBudget {
+    /// Creates a new token budget with an exact max limit and reserve tokens.
+    pub fn new(max_tokens: usize, reserve_tokens: usize) -> Self {
+        Self {
+            limit: max_tokens,
+            strategy: BudgetStrategy::Exact(max_tokens),
+            reserved: reserve_tokens,
+            consumed: 0,
+        }
+    }
+
+    /// Erstellt ein Budget für gängige Modelle.
+    pub fn for_model(model: &str) -> Self {
+        let limit = match model {
+            m if m.contains("gpt-4o") => 128_000,
+            m if m.contains("gpt-4") => 8_192,
+            m if m.contains("claude-3") => 200_000,
+            m if m.contains("claude-sonnet") => 200_000,
+            m if m.contains("llama3") => 8_192,
+            m if m.contains("mistral") => 32_768,
+            _ => 8_192, // sicherer Default
+        };
+        Self {
+            limit,
+            strategy: BudgetStrategy::Conservative,
+            reserved: 0,
+            consumed: 0,
+        }
+    }
+
+    /// Reserviert Token für System-Prompt und Antwort.
+    pub fn with_reserved(mut self, system_tokens: usize, answer_tokens: usize) -> Self {
+        self.reserved = system_tokens + answer_tokens;
+        self
+    }
+
+    /// Sets the budget strategy.
+    pub fn with_strategy(mut self, strategy: BudgetStrategy) -> Self {
+        self.strategy = strategy;
+        self
+    }
+
+    /// Calculates the effective token limit based on strategy.
+    pub fn effective_limit(&self) -> usize {
+        match self.strategy {
+            BudgetStrategy::Conservative => (self.limit as f64 * 0.8) as usize,
+            BudgetStrategy::Aggressive => (self.limit as f64 * 0.95) as usize,
+            BudgetStrategy::Exact(n) => n,
+        }
+    }
+
+    /// Returns tokens still available after subtracting reserved and consumed tokens.
+    pub fn available(&self) -> usize {
+        self.effective_limit()
+            .saturating_sub(self.reserved)
+            .saturating_sub(self.consumed)
+    }
+
+    /// Records `tokens` as consumed, reducing future availability.
+    pub fn consume(&mut self, tokens: usize) {
+        self.consumed = self.consumed.saturating_add(tokens);
+    }
+
+    /// Returns total tokens consumed so far.
+    pub fn consumed(&self) -> usize {
+        self.consumed
+    }
+}
+
+impl Default for TokenBudget {
+    fn default() -> Self {
+        Self {
+            limit: 8192,
+            strategy: BudgetStrategy::Conservative,
+            reserved: 512,
+            consumed: 0,
+        }
+    }
+}
 
 /// Resource budget for memory management.
 #[derive(Debug, Clone, Copy)]
@@ -224,5 +329,36 @@ mod tests {
         tracker.consume_memory(500).unwrap();
         let result = tracker.consume_memory(u64::MAX - 100);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_token_budget_for_model() {
+        let b = TokenBudget::for_model("gpt-4o");
+        assert_eq!(b.limit, 128_000);
+        assert_eq!(b.strategy, BudgetStrategy::Conservative);
+        // 80% of 128_000 = 102_400
+        assert_eq!(b.effective_limit(), 102_400);
+
+        let b2 = b.with_reserved(1000, 2000);
+        assert_eq!(b2.reserved, 3000);
+        assert_eq!(b2.available(), 102_400 - 3000);
+    }
+
+    #[test]
+    fn test_token_budget_strategies() {
+        let b = TokenBudget {
+            limit: 10_000,
+            strategy: BudgetStrategy::Aggressive,
+            reserved: 500,
+            consumed: 100,
+        };
+        // 95% of 10_000 = 9500
+        assert_eq!(b.effective_limit(), 9500);
+        // 9500 - 500 - 100 = 8900
+        assert_eq!(b.available(), 8900);
+
+        let b_exact = b.with_strategy(BudgetStrategy::Exact(4000));
+        assert_eq!(b_exact.effective_limit(), 4000);
+        assert_eq!(b_exact.available(), 3400);
     }
 }

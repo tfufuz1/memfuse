@@ -3,51 +3,6 @@ use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
-/// Token budget configuration for LLM context management.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenBudget {
-    pub max_tokens: usize,
-    pub reserve_tokens: usize,
-    consumed: usize,
-}
-
-impl TokenBudget {
-    pub fn new(max_tokens: usize, reserve_tokens: usize) -> Self {
-        Self {
-            max_tokens,
-            reserve_tokens,
-            consumed: 0,
-        }
-    }
-
-    /// Returns tokens still available after subtracting reserve and consumed.
-    pub fn available(&self) -> usize {
-        self.max_tokens
-            .saturating_sub(self.reserve_tokens)
-            .saturating_sub(self.consumed)
-    }
-
-    /// Records `tokens` as consumed, reducing future availability.
-    pub fn consume(&mut self, tokens: usize) {
-        self.consumed = self.consumed.saturating_add(tokens);
-    }
-
-    /// Returns total tokens consumed so far.
-    pub fn consumed(&self) -> usize {
-        self.consumed
-    }
-}
-
-impl Default for TokenBudget {
-    fn default() -> Self {
-        Self {
-            max_tokens: 4096,
-            reserve_tokens: 512,
-            consumed: 0,
-        }
-    }
-}
-
 /// Normalized fusion weights for hybrid search.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FusionWeights {
@@ -237,6 +192,7 @@ impl HybridQueryBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TokenBudget;
 
     #[test]
     fn test_fusion_weights_valid() {

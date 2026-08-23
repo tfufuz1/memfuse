@@ -198,6 +198,33 @@ impl CsrGraph {
         Ok(())
     }
 
+    /// Fügt eine Entity direkt in committed state ein (für `load_from_storage`).
+    /// Umgeht das TX-Staging, da beim Laden alle Daten bereits committed sind.
+    fn load_entity_direct(&self, entity: Entity) -> Result<()> {
+        let mut inner = self.inner.write();
+        let idx = inner.get_or_create_index(entity.id);
+        if idx >= inner.entities.len() {
+            inner.entities.resize(idx + 1, None);
+        }
+        inner.entities[idx] = Some(entity);
+        Ok(())
+    }
+
+    /// Fügt eine Edge direkt in `committed_staged` ein (für `load_from_storage`).
+    /// Umgeht das TX-Staging, da beim Laden alle Daten bereits committed sind.
+    fn load_edge_direct(&self, from: EntityId, to: EntityId, weight: f32) -> Result<()> {
+        let mut inner = self.inner.write();
+        let from_idx = inner.get_or_create_index(from);
+        let to_idx = inner.get_or_create_index(to);
+        inner
+            .committed_staged
+            .entry(from_idx)
+            .or_default()
+            .push((to_idx, weight));
+        inner.is_dirty = true;
+        Ok(())
+    }
+
     /// Persistiert eine einzelne Entity in den übergebenen Storage.
     pub async fn persist_entity<S: StorageEngine + ?Sized>(
         &self,
@@ -236,29 +263,50 @@ impl CsrGraph {
     pub async fn load_from_storage<S: StorageEngine + ?Sized>(storage: &S) -> Result<Self> {
         let graph = Self::new();
 
+        // 1. Entities laden
         let entity_entries = storage.scan_prefix(GRAPH_ENTITY_PREFIX).await?;
+        let mut entity_count = 0usize;
         for (_, raw_value) in entity_entries {
             let entity: Entity = bincode::deserialize(&raw_value)
                 .map_err(|e| MemFuseError::Internal(format!("graph entity deserialize: {e}")))?;
-            graph.insert_entity_direct(entity)?;
+            graph.load_entity_direct(entity)?;
+            entity_count += 1;
         }
 
+        // 2. Edges laden
         let edge_entries = storage.scan_prefix(GRAPH_EDGE_PREFIX).await?;
+        let mut edge_count = 0usize;
         for (raw_key, raw_value) in edge_entries {
-            let weight: f32 = bincode::deserialize(&raw_value)
-                .map_err(|e| MemFuseError::Internal(format!("graph edge deserialize: {e}")))?;
-            let key_str = String::from_utf8_lossy(&raw_key);
-            let rest = key_str.strip_prefix("__graph:edge:").unwrap_or("");
-            if let Some((from_str, to_str)) = rest.split_once(':') {
+            let weight: f32 = bincode::deserialize(&raw_value).map_err(|e| {
+                MemFuseError::Internal(format!("graph edge weight deserialize: {e}"))
+            })?;
+
+            // Key-Format: "__graph:edge:{from_id}:{to_id}"
+            let key_payload = raw_key
+                .get(GRAPH_EDGE_PREFIX.len()..)
+                .ok_or_else(|| MemFuseError::Internal("graph edge key zu kurz".into()))?;
+
+            let key_str = std::str::from_utf8(key_payload)
+                .map_err(|e| MemFuseError::Internal(format!("graph edge key UTF-8: {e}")))?;
+
+            if let Some((from_str, to_str)) = key_str.split_once(':') {
                 let from_id = EntityId::from(from_str);
                 let to_id = EntityId::from(to_str);
-                graph.insert_edge_direct(from_id, to_id, weight)?;
+                graph.load_edge_direct(from_id, to_id, weight)?;
+                edge_count += 1;
+            } else {
+                tracing::warn!(key = key_str, "Ungültiger graph edge key, übersprungen");
             }
         }
 
+        // 3. CSR kompaktieren — MUSS nach allen Edges aufgerufen werden
         graph.compact();
 
-        tracing::info!(entities = graph.entity_count(), "Graph aus Storage geladen");
+        tracing::info!(
+            entities = entity_count,
+            edges = edge_count,
+            "Graph aus Storage geladen und kompaktiert"
+        );
         Ok(graph)
     }
 

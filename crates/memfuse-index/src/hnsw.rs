@@ -173,6 +173,7 @@ struct HnswNode {
     vector: VectorData,
     connections: Vec<Vec<u32>>,
     _max_layer: usize,
+    committed_tx: u64,
 }
 
 /// Search candidate.
@@ -583,6 +584,8 @@ impl HnswIndexCore {
             }
         } else {
             // Safe unaligned F32 read
+            #[allow(unknown_lints)]
+            #[allow(clippy::chunks_exact_to_as_chunks)]
             let v: Vec<f32> = vector_bytes
                 .chunks_exact(4)
                 .take(self.config.dimension)
@@ -913,6 +916,7 @@ impl HnswIndexCore {
                 vector: vector_data,
                 connections: vec![vec![]; new_layer + 1],
                 _max_layer: new_layer,
+                committed_tx: 0,
             });
             mmap_node_count + idx
         };
@@ -1232,7 +1236,7 @@ impl HnswIndexCore {
             for (i, node) in nodes.iter().enumerate() {
                 let global_idx = mmap_count + i;
                 if !deleted_nodes.contains(global_idx as u64) {
-                    active.push((node.doc_id, node.vector.clone()));
+                    active.push((node.doc_id, node.vector.clone(), node.committed_tx));
                 }
             }
             (active, self.config.clone())
@@ -1255,7 +1259,7 @@ impl HnswIndexCore {
             *new_index.quantizer.write() = Some(q.clone());
         }
 
-        for (doc_id, vector) in active_nodes {
+        for (doc_id, vector, committed_tx) in active_nodes {
             match vector {
                 VectorData::F32(v) => {
                     new_index.do_insert(doc_id, &v)?;
@@ -1268,6 +1272,21 @@ impl HnswIndexCore {
                         q.dequantize(&v)
                     };
                     new_index.do_insert(doc_id, &dequantized)?;
+                }
+            }
+            let mmap_count = new_index
+                .mmap_index
+                .read()
+                .as_ref()
+                .map(|m| m.header.node_count as usize)
+                .unwrap_or(0);
+            if let Some(&global_idx) = new_index.doc_to_node.read().get(&doc_id.inner()) {
+                if global_idx >= mmap_count {
+                    let ram_idx = global_idx - mmap_count;
+                    let mut nodes = new_index.nodes.write();
+                    if let Some(node) = nodes.get_mut(ram_idx) {
+                        node.committed_tx = committed_tx;
+                    }
                 }
             }
         }
@@ -1665,6 +1684,21 @@ impl VectorIndex for HnswIndex {
             match op {
                 IndexOp::Insert { doc_id, data } => {
                     self.do_insert(doc_id, &data)?;
+                    let mmap_count = self
+                        .mmap_index
+                        .read()
+                        .as_ref()
+                        .map(|m| m.header.node_count as usize)
+                        .unwrap_or(0);
+                    if let Some(&global_idx) = self.doc_to_node.read().get(&doc_id.inner()) {
+                        if global_idx >= mmap_count {
+                            let ram_idx = global_idx - mmap_count;
+                            let mut nodes = self.nodes.write();
+                            if let Some(node) = nodes.get_mut(ram_idx) {
+                                node.committed_tx = tx.inner();
+                            }
+                        }
+                    }
                 }
                 IndexOp::Delete { doc_id, .. } => {
                     self.do_delete(doc_id)?;
@@ -1703,11 +1737,67 @@ impl VectorIndex for HnswIndex {
                 err
             )));
         }
-        // For HNSW, rollback_to_tx means we discard all staged transactions
-        // and potentially clear the RAM segment if we want to be safe.
-        // For now, we update last_tx_id to reflect the new state.
-        // REAL physical rollback requires tracking tx_id per node, which is a future WP.
-        self.last_tx_id.store(tx_id.inner(), Ordering::SeqCst);
+
+        let target = tx_id.inner();
+
+        // Unter write_mutex um Konkurrenz mit laufenden Inserts zu verhindern
+        let _guard = self.write_mutex.lock().await;
+
+        // 1. Sammle alle Nodes mit committed_tx > target_tx_id
+        let indices_to_remove: Vec<usize> = {
+            let nodes = self.nodes.read();
+            nodes
+                .iter()
+                .enumerate()
+                .filter(|(_, node)| node.committed_tx > target && node.committed_tx != 0)
+                .map(|(i, _)| i)
+                .collect()
+        };
+
+        if indices_to_remove.is_empty() {
+            self.last_tx_id.store(target, Ordering::SeqCst);
+            return Ok(());
+        }
+
+        // 2. Aus doc_to_node-Map entfernen
+        {
+            let nodes = self.nodes.read();
+            let mut map = self.doc_to_node.write();
+            for &idx in &indices_to_remove {
+                if let Some(node) = nodes.get(idx) {
+                    map.remove(&node.doc_id.inner());
+                }
+            }
+        }
+
+        // 3. Als deleted markieren (Soft-Delete — kein Rebuild nötig)
+        {
+            let mmap_count = self
+                .mmap_index
+                .read()
+                .as_ref()
+                .map(|m| m.header.node_count as usize)
+                .unwrap_or(0);
+            let mut deleted = self.deleted_nodes.write();
+            for &idx in &indices_to_remove {
+                deleted.insert((mmap_count + idx) as u64);
+            }
+            self.deleted_count
+                .fetch_add(indices_to_remove.len() as u64, Ordering::SeqCst);
+        }
+
+        // 4. TxBuffer bereinigen
+        self.tx_buffer.discard(tx_id);
+
+        // 5. last_tx_id zurücksetzen
+        self.last_tx_id.store(target, Ordering::SeqCst);
+
+        tracing::info!(
+            removed = indices_to_remove.len(),
+            rollback_target = target,
+            "HNSW physical rollback completed"
+        );
+
         Ok(())
     }
 

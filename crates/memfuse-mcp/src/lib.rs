@@ -1,241 +1,249 @@
-use axum::{
-    extract::State,
-    routing::{get, post},
-    Json, Router,
-};
+pub mod protocol;
+
 use memfuse_core::TextEmbeddingEngine;
 use memfuse_db::MemFuse;
-use memfuse_ollama::OllamaEmbedder;
-use serde_json::Value;
+use protocol::{JsonRpcRequest, JsonRpcResponse};
+use serde_json::{json, Value};
 use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-/// Shared state for the MCP server.
-pub struct McpServerState {
+/// MCP-Server mit stdio-Transport (JSON-RPC 2.0).
+///
+/// stdout ist dem Protokoll vorbehalten — Logs gehen ausschließlich nach stderr.
+pub struct McpServer {
     pub db: Arc<MemFuse>,
     pub embedder: Arc<dyn TextEmbeddingEngine>,
 }
 
-impl McpServerState {
-    pub fn new(db: Arc<MemFuse>) -> Self {
-        Self {
-            db,
-            embedder: Arc::new(OllamaEmbedder::with_defaults()),
-        }
-    }
-
-    pub fn with_embedder(db: Arc<MemFuse>, embedder: Arc<dyn TextEmbeddingEngine>) -> Self {
+impl McpServer {
+    pub fn new(db: Arc<MemFuse>, embedder: Arc<dyn TextEmbeddingEngine>) -> Self {
         Self { db, embedder }
     }
-}
 
-/// Creates the axum router with all MCP JSON-RPC / HTTP endpoints.
-pub fn create_router(state: Arc<McpServerState>) -> Router {
-    Router::new()
-        .route("/mcp/tools/list", get(list_tools))
-        .route("/mcp/tools/call", post(call_tool))
-        .with_state(state)
-}
+    /// Startet den MCP stdio-Loop.
+    ///
+    /// Liest zeilenweise von stdin, dispatcht JSON-RPC-Requests und schreibt
+    /// Antworten als einzelne JSON-Zeile nach stdout.
+    /// Der Loop endet, wenn stdin geschlossen wird (EOF).
+    pub async fn run_stdio(self: Arc<Self>) -> Result<(), Box<dyn std::error::Error>> {
+        let stdin = tokio::io::stdin();
+        let mut stdout = tokio::io::stdout();
+        let mut lines = BufReader::new(stdin).lines();
 
-async fn list_tools() -> Json<Value> {
-    Json(serde_json::json!({
-        "tools": [
-            {
-                "name": "memfuse_search",
-                "description": "Hybrid search across stored documents (vector + BM25 + graph — 4-Signal Fusion)",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "query": { "type": "string", "description": "Natural language query" },
-                        "collection": { "type": "string", "description": "Collection name", "default": "default" },
-                        "k": { "type": "integer", "description": "Number of results", "default": 10 }
-                    },
-                    "required": ["query"]
-                }
-            },
-            {
-                "name": "memfuse_get",
-                "description": "Retrieve a specific document by ID",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "id": { "type": "string", "description": "Document ID" },
-                        "collection": { "type": "string", "description": "Collection name", "default": "default" }
-                    },
-                    "required": ["id"]
-                }
-            },
-            {
-                "name": "memfuse_insert",
-                "description": "Store a document with embedding and metadata",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "id": { "type": "string", "description": "Document ID" },
-                        "text": { "type": "string", "description": "Document text (auto-chunked and embedded)" },
-                        "collection": { "type": "string", "description": "Collection name", "default": "default" },
-                        "metadata": { "type": "object", "description": "Optional metadata", "default": {} }
-                    },
-                    "required": ["id", "text"]
-                }
-            },
-            {
-                "name": "memfuse_collections",
-                "description": "List all available collections",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {}
+        while let Some(line) = lines.next_line().await? {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
+                Ok(req) => self.handle(req).await,
+                Err(e) => JsonRpcResponse::err(None, -32700, format!("Parse error: {e}")),
+            };
+
+            // MCP-Protokoll: eine JSON-Antwort pro Zeile, abgeschlossen mit '\n'.
+            let mut out = serde_json::to_string(&response)?;
+            out.push('\n');
+            stdout.write_all(out.as_bytes()).await?;
+            stdout.flush().await?;
+        }
+        Ok(())
+    }
+
+    pub async fn handle(&self, req: JsonRpcRequest) -> JsonRpcResponse {
+        let id = req.id.clone();
+        match req.method.as_str() {
+            // ── Lifecycle ──────────────────────────────────────────────────────
+            "initialize" => JsonRpcResponse::ok(
+                id,
+                json!({
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": { "tools": {} },
+                    "serverInfo": { "name": "memfuse", "version": "0.1.0" }
+                }),
+            ),
+            // Notification — Client bestätigt erfolgte Initialisierung; keine Antwort nötig,
+            // aber wir senden ein leeres ok damit kein Parse-Fehler im Client entsteht.
+            "initialized" => JsonRpcResponse::ok(id, json!({})),
+
+            // ── Tool-Discovery ─────────────────────────────────────────────────
+            "tools/list" => JsonRpcResponse::ok(
+                id,
+                json!({
+                    "tools": [
+                        {
+                            "name": "memfuse_search",
+                            "description": "Hybrid semantic search (vector + BM25 + graph) über gespeicherte Dokumente.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "query":      { "type": "string" },
+                                    "collection": { "type": "string", "default": "default" },
+                                    "k":          { "type": "integer", "default": 10 }
+                                },
+                                "required": ["query"]
+                            }
+                        },
+                        {
+                            "name": "memfuse_insert",
+                            "description": "Dokument einspeichern (auto-embedding, auto-chunking).",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "id":         { "type": "string" },
+                                    "text":       { "type": "string" },
+                                    "collection": { "type": "string", "default": "default" },
+                                    "metadata":   { "type": "object" }
+                                },
+                                "required": ["id", "text"]
+                            }
+                        },
+                        {
+                            "name": "memfuse_get",
+                            "description": "Dokument per ID abrufen.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "id":         { "type": "string" },
+                                    "collection": { "type": "string", "default": "default" }
+                                },
+                                "required": ["id"]
+                            }
+                        },
+                        {
+                            "name": "memfuse_collections",
+                            "description": "Alle Collections auflisten.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    ]
+                }),
+            ),
+
+            // ── Tool-Dispatch ──────────────────────────────────────────────────
+            "tools/call" => {
+                let tool_name = req
+                    .params
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let args = req.params.get("arguments").cloned().unwrap_or_default();
+
+                match self.call_tool(tool_name, &args).await {
+                    Ok(content) => JsonRpcResponse::ok(
+                        id,
+                        json!({
+                            "content": [{ "type": "text", "text": content.to_string() }]
+                        }),
+                    ),
+                    Err(e) => JsonRpcResponse::ok(
+                        id,
+                        json!({
+                            "isError": true,
+                            "content": [{ "type": "text", "text": e }]
+                        }),
+                    ),
                 }
             }
-        ]
-    }))
-}
 
-async fn call_tool(
-    State(state): State<Arc<McpServerState>>,
-    Json(request): Json<Value>,
-) -> Json<Value> {
-    let tool_name = match request
-        .get("name")
-        .or_else(|| request.get("params").and_then(|p| p.get("name")))
-        .and_then(|n| n.as_str())
-    {
-        Some(n) => n,
-        None => {
-            return Json(serde_json::json!({
-                "isError": true,
-                "content": [{ "type": "text", "text": "Missing required field: tool name" }]
-            }))
-        }
-    };
+            // ── Ping ───────────────────────────────────────────────────────────
+            "ping" => JsonRpcResponse::ok(id, json!({})),
 
-    let args = request
-        .get("arguments")
-        .or_else(|| request.get("params").and_then(|p| p.get("arguments")))
-        .cloned()
-        .unwrap_or_default();
-
-    let result = match tool_name {
-        "memfuse_search" => handle_search(&state, &args).await,
-        "memfuse_insert" => handle_insert(&state, &args).await,
-        "memfuse_get" => handle_get(&state, &args).await,
-        "memfuse_collections" => handle_collections(&state).await,
-        other => Err(format!("Unbekanntes Tool: {other}")),
-    };
-
-    match result {
-        Ok(value) => {
-            Json(serde_json::json!({ "content": [{ "type": "text", "text": value.to_string() }] }))
-        }
-        Err(e) => {
-            Json(serde_json::json!({ "isError": true, "content": [{ "type": "text", "text": e }] }))
+            // ── Unbekannte Methode ──────────────────────────────────────────────
+            other => JsonRpcResponse::err(id, -32601, format!("Method not found: {other}")),
         }
     }
-}
 
-async fn handle_search(state: &McpServerState, args: &Value) -> Result<Value, String> {
-    let query = args
-        .get("query")
-        .and_then(|v| v.as_str())
-        .ok_or("query fehlt")?;
-    let collection_name = args
-        .get("collection")
-        .and_then(|v| v.as_str())
-        .unwrap_or("default");
-    let k = args.get("k").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+    async fn call_tool(&self, name: &str, args: &Value) -> Result<Value, String> {
+        match name {
+            "memfuse_search" => {
+                let query = args
+                    .get("query")
+                    .and_then(|v| v.as_str())
+                    .ok_or("query fehlt")?;
+                let col_name = args
+                    .get("collection")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("default");
+                let k = args.get("k").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
 
-    let collection = state
-        .db
-        .collection(collection_name)
-        .await
-        .map_err(|e| e.to_string())?;
+                let col = self
+                    .db
+                    .collection(col_name)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let vec = self
+                    .embedder
+                    .embed(query)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let results = col
+                    .hybrid_search(query, &vec, k, None)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                serde_json::to_value(results).map_err(|e| e.to_string())
+            }
 
-    let query_vector = state
-        .embedder
-        .embed(query)
-        .await
-        .map_err(|e| format!("Embedding query failed: {e}"))?;
+            "memfuse_insert" => {
+                let id = args.get("id").and_then(|v| v.as_str()).ok_or("id fehlt")?;
+                let text = args
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .ok_or("text fehlt")?;
+                let col_name = args
+                    .get("collection")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("default");
 
-    let results = collection
-        .hybrid_search(query, &query_vector, k, None)
-        .await
-        .map_err(|e| e.to_string())?;
+                let mut metadata = args.get("metadata").cloned().unwrap_or_else(|| json!({}));
+                if !metadata.is_object() {
+                    metadata = json!({});
+                }
+                if let Some(obj) = metadata.as_object_mut() {
+                    obj.entry("text").or_insert_with(|| json!(text));
+                }
 
-    serde_json::to_value(results).map_err(|e| format!("Serialization error: {e}"))
-}
+                let embedding = self.embedder.embed(text).await.map_err(|e| e.to_string())?;
+                let col = self
+                    .db
+                    .collection(col_name)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                col.insert(id, &embedding, Some(metadata))
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(json!({ "ok": true, "id": id }))
+            }
 
-async fn handle_insert(state: &McpServerState, args: &Value) -> Result<Value, String> {
-    let id = args.get("id").and_then(|v| v.as_str()).ok_or("id fehlt")?;
-    let text = args
-        .get("text")
-        .and_then(|v| v.as_str())
-        .ok_or("text fehlt")?;
-    let collection_name = args
-        .get("collection")
-        .and_then(|v| v.as_str())
-        .unwrap_or("default");
+            "memfuse_get" => {
+                let id = args.get("id").and_then(|v| v.as_str()).ok_or("id fehlt")?;
+                let col_name = args
+                    .get("collection")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("default");
+                let col = self
+                    .db
+                    .collection(col_name)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                match col.get(id).await.map_err(|e| e.to_string())? {
+                    Some(doc) => serde_json::to_value(doc).map_err(|e| e.to_string()),
+                    None => Ok(json!(null)),
+                }
+            }
 
-    let mut metadata = args
-        .get("metadata")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}));
-    if !metadata.is_object() {
-        metadata = serde_json::json!({});
+            "memfuse_collections" => {
+                let names = self
+                    .db
+                    .list_collections()
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(json!({ "collections": names }))
+            }
+
+            other => Err(format!("Unbekanntes Tool: {other}")),
+        }
     }
-    if let Some(obj) = metadata.as_object_mut() {
-        obj.entry("text")
-            .or_insert_with(|| serde_json::Value::String(text.to_string()));
-    }
-
-    let embedding = state
-        .embedder
-        .embed(text)
-        .await
-        .map_err(|e| format!("Embedding text failed: {e}"))?;
-
-    let collection = state
-        .db
-        .collection(collection_name)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if embedding.len() != collection.dimension() {
-        return Err(format!(
-            "Embedding dimension {} does not match collection dimension {}",
-            embedding.len(),
-            collection.dimension()
-        ));
-    }
-
-    collection
-        .insert(id, &embedding, Some(metadata))
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(serde_json::json!({ "status": "inserted", "id": id }))
-}
-
-async fn handle_get(state: &McpServerState, args: &Value) -> Result<Value, String> {
-    let id = args.get("id").and_then(|v| v.as_str()).ok_or("id fehlt")?;
-    let collection_name = args
-        .get("collection")
-        .and_then(|v| v.as_str())
-        .unwrap_or("default");
-
-    let collection = state
-        .db
-        .collection(collection_name)
-        .await
-        .map_err(|e| e.to_string())?;
-    let doc = collection.get(id).await.map_err(|e| e.to_string())?;
-
-    serde_json::to_value(doc).map_err(|e| format!("Serialization error: {e}"))
-}
-
-async fn handle_collections(state: &McpServerState) -> Result<Value, String> {
-    let collections = state
-        .db
-        .list_collections()
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(serde_json::json!({ "collections": collections }))
 }

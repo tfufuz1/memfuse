@@ -1,45 +1,20 @@
 {
-  "name": "memfuse",
-  "version": "0.1.0",
-  "description": "Local-first hybrid vector + text search for AI agents",
-  "tools": [
-    {
-      "name": "memfuse_search",
-      "description": "Hybrid search across stored documents (vector + BM25 + metadata)",
-      "parameters": {
-        "query": {"type": "string", "description": "Natural language query"},
-        "collection": {"type": "string", "description": "Collection name", "default": "default"},
-        "k": {"type": "integer", "description": "Number of results", "default": 10}
+  "mcpServers": {
+    "memfuse": {
+      "command": "cargo",
+      "args": [
+        "run",
+        "--release",
+        "--bin",
+        "memfuse-mcp-server",
+        "--",
+        "--db-path",
+        "./memfuse_data"
+      ],
+      "env": {
+        "MEMFUSE_OLLAMA_URL": "http://localhost:11434",
+        "MEMFUSE_EMBED_MODEL": "nomic-embed-text"
       }
-    },
-    {
-      "name": "memfuse_get",
-      "description": "Retrieve a specific document by ID",
-      "parameters": {
-        "id": {"type": "string", "description": "Document ID"},
-        "collection": {"type": "string", "description": "Collection name", "default": "default"}
-      }
-    },
-    {
-      "name": "memfuse_insert",
-      "description": "Store a document with embedding and metadata",
-      "parameters": {
-        "id": {"type": "string", "description": "Document ID"},
-        "text": {"type": "string", "description": "Document text (auto-chunked and embedded)"},
-        "collection": {"type": "string", "description": "Collection name", "default": "default"},
-        "metadata": {"type": "object", "description": "Optional metadata", "default": {}}
-      }
-    },
-    {
-      "name": "memfuse_collections",
-      "description": "List all available collections",
-      "parameters": {}
     }
-  ],
-  "resources": [
-    {
-      "name": "memfuse_stats",
-      "description": "Database statistics (doc count, memory usage, index health)"
-    }
-  ]
+  }
 }
