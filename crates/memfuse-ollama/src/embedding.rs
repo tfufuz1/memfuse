@@ -1,7 +1,7 @@
 use crate::client::{OllamaClient, DEFAULT_BASE_URL, DEFAULT_EMBED_MODEL};
 use async_trait::async_trait;
 use futures_util::stream::{self, StreamExt};
-use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
+use memfuse_core::{Result, TextEmbeddingEngine};
 
 /// Implementation of `TextEmbeddingEngine` using Ollama's HTTP API.
 #[derive(Clone, Debug)]
@@ -41,8 +41,16 @@ impl TextEmbeddingEngine for OllamaEmbedder {
     }
 
     async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        let results: Vec<Result<Vec<f32>>> = stream::iter(texts.iter())
-            .map(|text| async move { self.embed(text).await })
+        let owned_texts: Vec<String> = texts.iter().map(|&s| s.to_string()).collect();
+        let client = self.client.clone();
+        let model = self.model.clone();
+
+        let results: Vec<Result<Vec<f32>>> = stream::iter(owned_texts)
+            .map(move |text| {
+                let client = client.clone();
+                let model = model.clone();
+                async move { client.embed(&model, &text).await }
+            })
             .buffer_unordered(self.concurrency)
             .collect()
             .await;
