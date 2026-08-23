@@ -3,9 +3,8 @@
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 
 use crate::filter::MetadataFilter;
+use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{DocId, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex};
-#[cfg(feature = "embed")]
-use memfuse_embed::TextEmbedder;
 use memfuse_graph::CsrGraph;
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;
@@ -57,8 +56,7 @@ pub struct Collection<S: StorageEngine = LsmStorage> {
     pub(crate) storage: Arc<S>,
     pub(crate) next_tx: Arc<AtomicU64>,
     pub(crate) dimension: usize,
-    #[cfg(feature = "embed")]
-    pub(crate) embedder: parking_lot::RwLock<Option<Arc<TextEmbedder>>>,
+    pub(crate) embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
 }
 
 impl<S: StorageEngine> Clone for Collection<S> {
@@ -72,7 +70,6 @@ impl<S: StorageEngine> Clone for Collection<S> {
             storage: self.storage.clone(),
             next_tx: self.next_tx.clone(),
             dimension: self.dimension,
-            #[cfg(feature = "embed")]
             embedder: parking_lot::RwLock::new(self.embedder.read().as_ref().map(Arc::clone)),
         }
     }
@@ -105,7 +102,6 @@ impl<S: StorageEngine> Collection<S> {
             storage,
             next_tx,
             dimension,
-            #[cfg(feature = "embed")]
             embedder: parking_lot::RwLock::new(None),
         }
     }
@@ -116,9 +112,8 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Sets the text embedder for this collection (consuming version).
-    #[cfg(feature = "embed")]
     #[tracing::instrument(level = "trace", skip(self, embedder))]
-    pub fn with_embedder(self, embedder: Arc<TextEmbedder>) -> Self {
+    pub fn with_embedder(self, embedder: Arc<dyn TextEmbeddingEngine>) -> Self {
         {
             let mut guard = self.embedder.write();
             *guard = Some(embedder);
@@ -127,9 +122,8 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Configures the text embedder for this collection.
-    #[cfg(feature = "embed")]
     #[tracing::instrument(level = "trace", skip(self, embedder))]
-    pub async fn set_embedder(&self, embedder: Arc<TextEmbedder>) -> Result<()> {
+    pub async fn set_embedder(&self, embedder: Arc<dyn TextEmbeddingEngine>) -> Result<()> {
         let mut guard = self.embedder.write();
         *guard = Some(embedder);
         Ok(())
@@ -281,7 +275,6 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Inserts a text document, automatically generating its embedding.
-    #[cfg(feature = "embed")]
     #[tracing::instrument(level = "trace", skip(self, text, metadata))]
     pub async fn insert_text_only(
         &self,
@@ -290,13 +283,18 @@ impl<S: StorageEngine> Collection<S> {
         mut metadata: Option<serde_json::Value>,
     ) -> Result<()> {
         let embedding = {
-            let embedder_guard = self.embedder.read();
-            let embedder = embedder_guard.as_ref().ok_or_else(|| {
-                memfuse_core::MemFuseError::Internal(
-                    "No embedder configured for this collection".into(),
-                )
-            })?;
-            embedder.embed(text)?
+            let embedder = {
+                let guard = self.embedder.read();
+                guard
+                    .as_ref()
+                    .ok_or_else(|| {
+                        memfuse_core::MemFuseError::Internal(
+                            "No embedder configured for this collection".into(),
+                        )
+                    })?
+                    .clone()
+            };
+            embedder.embed(text).await?
         };
 
         // Ensure text is in metadata for indexing
@@ -314,7 +312,6 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Upserts a text document, automatically generating its embedding.
-    #[cfg(feature = "embed")]
     #[tracing::instrument(level = "trace", skip(self, text, metadata))]
     pub async fn upsert_text_only(
         &self,
@@ -323,13 +320,18 @@ impl<S: StorageEngine> Collection<S> {
         mut metadata: Option<serde_json::Value>,
     ) -> Result<()> {
         let embedding = {
-            let embedder_guard = self.embedder.read();
-            let embedder = embedder_guard.as_ref().ok_or_else(|| {
-                memfuse_core::MemFuseError::Internal(
-                    "No embedder configured for this collection".into(),
-                )
-            })?;
-            embedder.embed(text)?
+            let embedder = {
+                let guard = self.embedder.read();
+                guard
+                    .as_ref()
+                    .ok_or_else(|| {
+                        memfuse_core::MemFuseError::Internal(
+                            "No embedder configured for this collection".into(),
+                        )
+                    })?
+                    .clone()
+            };
+            embedder.embed(text).await?
         };
 
         // Ensure text is in metadata for indexing
@@ -818,7 +820,6 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Performs semantic search using a raw text query (automatically embedded).
-    #[cfg(feature = "embed")]
     #[tracing::instrument(level = "trace", skip(self, query_text))]
     pub async fn search_text(
         &self,
@@ -826,13 +827,18 @@ impl<S: StorageEngine> Collection<S> {
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
         let embedding = {
-            let embedder_guard = self.embedder.read();
-            let embedder = embedder_guard.as_ref().ok_or_else(|| {
-                memfuse_core::MemFuseError::Internal(
-                    "No embedder configured for this collection".into(),
-                )
-            })?;
-            embedder.embed(query_text)?
+            let embedder = {
+                let guard = self.embedder.read();
+                guard
+                    .as_ref()
+                    .ok_or_else(|| {
+                        memfuse_core::MemFuseError::Internal(
+                            "No embedder configured for this collection".into(),
+                        )
+                    })?
+                    .clone()
+            };
+            embedder.embed(query_text).await?
         };
         self.search(&embedding, k).await
     }
@@ -1190,5 +1196,30 @@ impl<S: StorageEngine> Collection<S> {
 
         self.storage.commit(tx).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn test_collection_embedder_async_embed() {
+        use async_trait::async_trait;
+        use memfuse_core::TextEmbeddingEngine;
+        use std::sync::Arc;
+
+        struct FakeEmbedder;
+
+        #[async_trait]
+        impl TextEmbeddingEngine for FakeEmbedder {
+            async fn embed(&self, text: &str) -> memfuse_core::Result<Vec<f32>> {
+                Ok(vec![text.len() as f32 / 100.0; 4])
+            }
+        }
+
+        // Verify: compile-time proof that the method signature is async and
+        // accepts Arc<dyn TextEmbeddingEngine>.
+        let embedder: Arc<dyn TextEmbeddingEngine> = Arc::new(FakeEmbedder);
+        let result = embedder.embed("hello").await.unwrap();
+        assert_eq!(result.len(), 4);
     }
 }

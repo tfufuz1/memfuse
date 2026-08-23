@@ -40,9 +40,8 @@
 
 #![forbid(unsafe_code)]
 
+pub use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{DocId, Result, StorageEngine, TxId};
-#[cfg(feature = "embed")]
-use memfuse_embed::TextEmbedder;
 use memfuse_index::{HnswConfig, HnswIndex};
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
@@ -136,8 +135,7 @@ pub struct MemFuse {
     #[cfg(feature = "cluster")]
     raft: tokio::sync::OnceCell<memfuse_cluster::node::MemFuseRaft>,
     /// Global text embedder for default collection.
-    #[cfg(feature = "embed")]
-    embedder: parking_lot::RwLock<Option<Arc<TextEmbedder>>>,
+    embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
 }
 
 // BL-01-DB-001: Snapshot-Recovery API now exposed via create_snapshot() /
@@ -168,7 +166,6 @@ impl MemFuse {
             collections: tokio::sync::RwLock::new(std::collections::HashMap::new()),
             #[cfg(feature = "cluster")]
             raft: tokio::sync::OnceCell::new(),
-            #[cfg(feature = "embed")]
             embedder: parking_lot::RwLock::new(None),
         };
 
@@ -345,7 +342,7 @@ impl MemFuse {
         graph.set_storage(self.storage.clone());
         let graph_index = Arc::new(graph);
 
-        let col = Collection::new(
+        let mut col = Collection::new(
             name.to_string(),
             Arc::clone(&self.storage),
             index,
@@ -355,7 +352,6 @@ impl MemFuse {
         );
 
         // Inherit global embedder if set
-        #[cfg(feature = "embed")]
         if let Some(emb) = self.embedder.read().as_ref() {
             col = col.with_embedder(Arc::clone(emb));
         }
@@ -530,7 +526,6 @@ impl MemFuse {
     }
 
     /// Inserts a text document via the default collection.
-    #[cfg(feature = "embed")]
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn insert_text_only(
         &self,
@@ -545,7 +540,6 @@ impl MemFuse {
     }
 
     /// Upserts a text document via the default collection.
-    #[cfg(feature = "embed")]
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn upsert_text_only(
         &self,
@@ -560,7 +554,6 @@ impl MemFuse {
     }
 
     /// Performs text search via the default collection.
-    #[cfg(feature = "embed")]
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn search_text(&self, text: &str, k: usize) -> Result<Vec<SearchResult>> {
         self.default_col().await?.search_text(text, k).await
@@ -786,9 +779,8 @@ impl MemFuse {
     }
 
     /// Sets the text embedder for default collection operations.
-    #[cfg(feature = "embed")]
     #[tracing::instrument(level = "trace", skip(self, embedder))]
-    pub async fn with_embedder(self, embedder: Arc<TextEmbedder>) -> Self {
+    pub async fn with_embedder(self, embedder: Arc<dyn TextEmbeddingEngine>) -> Self {
         {
             let mut guard = self.embedder.write();
             *guard = Some(Arc::clone(&embedder));
@@ -813,9 +805,8 @@ impl MemFuse {
     }
 
     /// Sets the text embedder (non-consuming version).
-    #[cfg(feature = "embed")]
     #[tracing::instrument(level = "trace", skip(self, embedder))]
-    pub async fn set_embedder(&self, embedder: Arc<TextEmbedder>) -> Result<()> {
+    pub async fn set_embedder(&self, embedder: Arc<dyn TextEmbeddingEngine>) -> Result<()> {
         {
             let mut guard = self.embedder.write();
             *guard = Some(Arc::clone(&embedder));

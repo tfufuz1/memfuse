@@ -120,6 +120,21 @@ impl<T: Clone> TxBuffer<T> {
         entry.0.push(op);
     }
 
+    /// Stages multiple operations for a transaction in a single shard lock acquisition.
+    ///
+    /// All `ops` must belong to the same transaction. Since `shard_idx` is a pure
+    /// function of `tx.inner()`, all operations for a given `TxId` always land in
+    /// the same shard — a single write-lock acquisition covers the entire batch.
+    pub fn stage_many(&self, tx: TxId, ops: impl IntoIterator<Item = IndexOp<T>>) {
+        let shard_idx = self.shard_idx(tx);
+        let mut shard = self.shards[shard_idx].write();
+        let entry = shard
+            .ops
+            .entry(tx)
+            .or_insert_with(|| (Vec::new(), Instant::now()));
+        entry.0.extend(ops);
+    }
+
     /// Validates that the transaction has pending operations.
     pub fn validate_pending_ops(&self, tx: TxId) -> Result<()> {
         let shard_idx = self.shard_idx(tx);

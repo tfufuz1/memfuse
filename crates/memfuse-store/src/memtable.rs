@@ -1,9 +1,20 @@
 //! In-memory sorted MemTable for the LSM-Tree with MVCC support.
 //!
-//! Entries are stored in a `BTreeMap` where each key maps to a versioned list
-//! of values. This enables Snapshot Isolation by allowing point-in-time reads.
+//! Entries are sharded across `SHARD_COUNT` independent `BTreeMap` partitions,
+//! each protected by its own `parking_lot::RwLock`. This reduces write-lock
+//! contention when multiple coroutines insert concurrently (e.g. the 8-way
+//! `buffer_unordered` ingestion pipeline).
+//!
+//! The shard for a given key is selected deterministically via the first byte
+//! of the key modulo `SHARD_COUNT`. All MemFuse keys carry a fixed-length
+//! namespace prefix, so the first byte is always present.
+//!
+//! Within each shard, each key maps to a versioned list of values, enabling
+//! Snapshot Isolation through point-in-time reads.
 
-// INVARIANT: In-Memory Sortierter Puffer (hot writes).
+// INVARIANT: In-Memory Sortierter Puffer (hot writes), sharded for concurrency.
+// AI-NOTE: Sharding pattern mirrors memfuse-core::TxBuffer<T> (ADR-implicit).
+//          Key difference: TxBuffer shards by TxId, MemTable shards by key bytes.
 
 use bytes::Bytes;
 use parking_lot::RwLock;
@@ -15,31 +26,56 @@ type TransactionId = u64;
 type MemTableEntry = (SequenceNumber, Bytes, TransactionId);
 type MemTableMap = BTreeMap<Bytes, Vec<MemTableEntry>>;
 
+/// Number of independent shards. 16 provides sufficient parallelism for the
+/// 8-concurrent-embed pipeline while keeping memory overhead negligible.
+/// Must be > 0 (compile-time const, enforced by type system).
+const SHARD_COUNT: usize = 16;
+
+/// A single shard of the MemTable, holding a subset of the key space.
+#[derive(Debug)]
+struct MemTableShard {
+    entries: RwLock<MemTableMap>,
+}
+
 #[derive(Debug)]
 pub struct MemTable {
-    /// Maps UserKey -> Vec<(SequenceNumber, Value, TxId)>.
-    /// The Vec is sorted by SequenceNumber ascending.
-    entries: RwLock<MemTableMap>,
+    /// Sharded storage: each shard holds a disjoint subset of keys.
+    /// Shard selection is deterministic via `shard_for()`.
+    shards: [MemTableShard; SHARD_COUNT],
     size: AtomicUsize,
     min_tx: AtomicU64,
     max_tx: AtomicU64,
 }
 
 impl MemTable {
-    /// Creates a new empty MemTable.
+    /// Creates a new empty MemTable with `SHARD_COUNT` independent shards.
     pub fn new() -> Self {
         Self {
-            entries: RwLock::new(BTreeMap::new()),
+            shards: std::array::from_fn(|_| MemTableShard {
+                entries: RwLock::new(BTreeMap::new()),
+            }),
             size: AtomicUsize::new(0),
             min_tx: AtomicU64::new(u64::MAX),
             max_tx: AtomicU64::new(0),
         }
     }
 
+    /// Deterministic shard selector based on the first byte of the key.
+    ///
+    /// All MemFuse keys are namespaced with a fixed-length prefix (minimum
+    /// 10 bytes), so the first byte is always present. For an empty key
+    /// (which cannot occur in practice), we default to shard 0.
+    #[inline]
+    fn shard_for(key: &[u8]) -> usize {
+        // Zero-panic: modulo a compile-time const > 0.
+        key.first().copied().unwrap_or(0) as usize % SHARD_COUNT
+    }
+
     /// Inserts a key-value pair with a sequence number and transaction ID.
     pub fn put(&self, key: Bytes, value: Bytes, seq_no: u64, tx_id: u64) {
         let additional_size = key.len() + value.len() + 16; // Added tx_id
-        let mut entries = self.entries.write();
+        let shard_idx = Self::shard_for(&key);
+        let mut entries = self.shards[shard_idx].entries.write();
 
         let versions = entries.entry(key).or_default();
         versions.push((seq_no, value, tx_id));
@@ -82,7 +118,8 @@ impl MemTable {
 
     /// Retrieves the latest value and sequence number by key.
     pub fn get(&self, key: &[u8]) -> Option<(Bytes, u64)> {
-        let entries = self.entries.read();
+        let shard_idx = Self::shard_for(key);
+        let entries = self.shards[shard_idx].entries.read();
         entries
             .get(key)
             .and_then(|versions| versions.last().map(|(seq, val, _tx)| (val.clone(), *seq)))
@@ -90,7 +127,8 @@ impl MemTable {
 
     /// Retrieves a value, sequence number, and transaction ID by key at or below a specific sequence number.
     pub fn get_at_seq(&self, key: &[u8], seq_no: u64) -> Option<(Bytes, u64, u64)> {
-        let entries = self.entries.read();
+        let shard_idx = Self::shard_for(key);
+        let entries = self.shards[shard_idx].entries.read();
         let versions = entries.get(key)?;
 
         use memfuse_core::TOMBSTONE_BIT;
@@ -120,33 +158,52 @@ impl MemTable {
     }
 
     /// Returns true if the memtable is empty.
+    ///
+    /// WARNING: This reads all shards sequentially. The result is not an
+    /// atomic snapshot, but this method is only called on the flush guard
+    /// path which is a rare, single-threaded check.
     pub fn is_empty(&self) -> bool {
-        self.entries.read().is_empty()
+        self.shards.iter().all(|s| s.entries.read().is_empty())
     }
 
-    /// Iterates over all entries (all versions) in sorted order.
+    /// Iterates over all entries (all versions) in sorted key order.
     /// Returns (Key, Value, SeqNo, TxId).
+    ///
+    /// Collects from all shards and sorts by key to maintain the global
+    /// sorted-order invariant. Called only during flush (low-frequency).
     pub fn iter(&self) -> Vec<(Bytes, Bytes, u64, u64)> {
-        let entries = self.entries.read();
         let mut results = Vec::new();
-        for (k, versions) in entries.iter() {
-            for (seq, val, tx) in versions {
-                results.push((k.clone(), val.clone(), *seq, *tx));
+        for shard in &self.shards {
+            let entries = shard.entries.read();
+            for (k, versions) in entries.iter() {
+                for (seq, val, tx) in versions {
+                    results.push((k.clone(), val.clone(), *seq, *tx));
+                }
             }
         }
+        // Restore global sorted order: primary by key, secondary by seq_no
+        // within versions of the same key (already sorted per-shard via BTreeMap
+        // + push order, but cross-shard merge requires a sort).
+        results.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
         results
     }
 
-    /// Iterates over only the latest version of each key in sorted order.
+    /// Iterates over only the latest version of each key in sorted key order.
     /// Returns (Key, Value, SeqNo, TxId).
+    ///
+    /// Collects from all shards and sorts by key. Called only during flush.
     pub fn iter_latest(&self) -> Vec<(Bytes, Bytes, u64, u64)> {
-        let entries = self.entries.read();
-        let mut results = Vec::with_capacity(entries.len());
-        for (k, versions) in entries.iter() {
-            if let Some((seq, val, tx)) = versions.last() {
-                results.push((k.clone(), val.clone(), *seq, *tx));
+        let mut results = Vec::new();
+        for shard in &self.shards {
+            let entries = shard.entries.read();
+            for (k, versions) in entries.iter() {
+                if let Some((seq, val, tx)) = versions.last() {
+                    results.push((k.clone(), val.clone(), *seq, *tx));
+                }
             }
         }
+        // Restore global sorted order by key.
+        results.sort_by(|a, b| a.0.cmp(&b.0));
         results
     }
 }
@@ -257,5 +314,27 @@ mod tests {
         assert_eq!(entries[0].2, 2);
         assert_eq!(entries[1].0.as_ref(), b"b");
         assert_eq!(entries[1].2, 3);
+    }
+
+    #[test]
+    fn test_concurrent_put_no_data_loss() {
+        // Write 1000 keys from 8 threads, verify all are readable.
+        use std::sync::Arc;
+        let mt = Arc::new(MemTable::new());
+        let handles: Vec<_> = (0..8u64)
+            .map(|t| {
+                let mt = Arc::clone(&mt);
+                std::thread::spawn(move || {
+                    for i in 0..125u64 {
+                        let key = Bytes::from(format!("key-{}-{}", t, i));
+                        mt.put(key, Bytes::from("val"), t * 125 + i + 1, t);
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().expect("thread panicked"); // #[cfg(test)]
+        }
+        assert_eq!(mt.iter_latest().len(), 1000);
     }
 }

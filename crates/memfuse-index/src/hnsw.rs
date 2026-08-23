@@ -1189,6 +1189,17 @@ impl HnswIndexCore {
         (1.0 - deleted as f64 / total as f64).max(0.0)
     }
 
+    /// Returns Ok(()) if the index is healthy, or
+    /// Err(MemFuseError::HnswConnectivityDegraded { deleted_ratio }) if degraded.
+    pub fn check_connectivity(&self) -> memfuse_core::Result<()> {
+        let score = self.connectivity_score();
+        if score < self.config.rebuild_threshold {
+            let deleted_ratio = (1.0 - score) * 100.0;
+            return Err(memfuse_core::MemFuseError::HnswConnectivityDegraded { deleted_ratio });
+        }
+        Ok(())
+    }
+
     /// Checks if a rebuild is required based on the deletion ratio.
     pub fn is_rebuild_required(&self) -> bool {
         self.connectivity_score() < self.config.rebuild_threshold
@@ -1413,7 +1424,14 @@ impl VectorIndex for HnswIndex {
 
         let score = self.connectivity_score();
         if score < self.config.rebuild_threshold {
-            tracing::warn!("HNSW Index degraded: connectivity score {:.2} below threshold ({:.2}). Search quality may be reduced.", score, self.config.rebuild_threshold);
+            let deleted_ratio = (1.0 - score) * 100.0;
+            let err = memfuse_core::MemFuseError::HnswConnectivityDegraded { deleted_ratio };
+            tracing::warn!(
+                error = %err,
+                connectivity_score = score,
+                rebuild_threshold = self.config.rebuild_threshold,
+                "HNSW index degraded — consider calling rebuild()"
+            );
         }
 
         let nodes = self.nodes.read();
@@ -1517,7 +1535,14 @@ impl VectorIndex for HnswIndex {
 
         let score = self.connectivity_score();
         if score < self.config.rebuild_threshold {
-            tracing::warn!("HNSW Index degraded: connectivity score {:.2} below threshold ({:.2}). Search quality may be reduced.", score, self.config.rebuild_threshold);
+            let deleted_ratio = (1.0 - score) * 100.0;
+            let err = memfuse_core::MemFuseError::HnswConnectivityDegraded { deleted_ratio };
+            tracing::warn!(
+                error = %err,
+                connectivity_score = score,
+                rebuild_threshold = self.config.rebuild_threshold,
+                "HNSW index degraded — consider calling rebuild()"
+            );
         }
 
         let nodes = self.nodes.read();
@@ -2169,5 +2194,54 @@ mod tests {
         assert_eq!(ids2.len(), 8);
         assert!(!ids2.contains(&DocId::new(5)));
         assert!(!ids2.contains(&DocId::new(8)));
+    }
+
+    #[tokio::test]
+    async fn test_check_connectivity_returns_error_when_degraded() {
+        // Build a small index, delete enough nodes to cross the rebuild threshold.
+        let config = HnswConfig {
+            rebuild_threshold: 0.8, // trigger when >20% deleted
+            ..test_config(4)
+        };
+        let index = HnswIndex::new(config);
+        let tx = TxId::new(1);
+
+        for i in 0u64..5 {
+            let v = vec![i as f32, 0.0, 0.0, 0.0];
+            index.insert(tx, DocId::new(i), &v).await.unwrap();
+        }
+        index.commit(tx).await.unwrap();
+
+        // Delete 2 out of 5 → 40% deleted → score = 0.6 < threshold 0.8
+        let tx2 = TxId::new(2);
+        index.delete(tx2, DocId::new(0)).await.unwrap();
+        index.delete(tx2, DocId::new(1)).await.unwrap();
+        index.commit(tx2).await.unwrap();
+
+        let result = index.check_connectivity();
+        assert!(
+            matches!(
+                result,
+                Err(memfuse_core::MemFuseError::HnswConnectivityDegraded { .. })
+            ),
+            "Expected HnswConnectivityDegraded, got: {:?}",
+            result
+        );
+
+        if let Err(memfuse_core::MemFuseError::HnswConnectivityDegraded { deleted_ratio }) = result
+        {
+            assert!(
+                deleted_ratio > 39.0 && deleted_ratio < 41.0,
+                "deleted_ratio should be ~40%, got {}",
+                deleted_ratio
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_check_connectivity_ok_when_healthy() {
+        let index = HnswIndex::new(test_config(4));
+        // Empty index — connectivity_score returns 1.0, always healthy
+        assert!(index.check_connectivity().is_ok());
     }
 }

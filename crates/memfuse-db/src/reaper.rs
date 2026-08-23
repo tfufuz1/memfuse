@@ -8,6 +8,7 @@ use std::time::Duration;
 /// configured timeout without being committed or rolled back.
 pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
     buffer: Arc<TxBuffer<T>>,
+    hnsw_index: Arc<memfuse_index::hnsw::HnswIndex>,
     interval: Duration,
     cancel_token: tokio_util::sync::CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
@@ -28,6 +29,12 @@ pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
                         tracing::warn!(
                             "Orphan reaper cleaned up {} expired transactions",
                             expired.len()
+                        );
+                    }
+                    if let Err(err) = hnsw_index.check_connectivity() {
+                        tracing::warn!(
+                            error = %err,
+                            "HNSW index degraded — consider calling rebuild()"
                         );
                     }
                 }
@@ -65,8 +72,11 @@ mod tests {
         );
 
         let cancel_token = tokio_util::sync::CancellationToken::new();
+        let config = memfuse_index::hnsw::HnswConfig::default();
+        let hnsw_index = Arc::new(memfuse_index::hnsw::HnswIndex::new(config));
         let _reaper = start_orphan_reaper(
             buffer.clone(),
+            hnsw_index.clone(),
             Duration::from_millis(10),
             cancel_token.clone(),
         );

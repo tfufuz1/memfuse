@@ -537,12 +537,27 @@ impl StorageEngine for LsmStorage {
 
     async fn delete_prefix(&self, tx_id: TxId, prefix: &[u8]) -> Result<u64> {
         let matching_keys = self.scan_prefix(prefix).await?;
-        let mut deleted = 0u64;
-        for (key, _) in matching_keys {
-            self.delete(tx_id, &key).await?;
-            deleted += 1;
+        let count = matching_keys.len() as u64;
+        if count == 0 {
+            return Ok(0);
         }
-        Ok(deleted)
+
+        let ops: Vec<IndexOp<(Vec<u8>, Vec<u8>)>> = matching_keys
+            .into_iter()
+            .map(|(key, _value)| {
+                let hash = blake3::hash(&key);
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(&hash.as_bytes()[..8]);
+                let doc_id = DocId::new(u64::from_le_bytes(bytes));
+                IndexOp::Delete {
+                    doc_id,
+                    data: Some((key, Vec::new())),
+                }
+            })
+            .collect();
+
+        self.tx_buffer.stage_many(tx_id, ops);
+        Ok(count)
     }
 
     async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
@@ -1035,6 +1050,39 @@ mod tests {
             storage.get(b"other:1").await.unwrap(),
             Some(b"val4".to_vec())
         );
+    }
+
+    #[tokio::test]
+    async fn test_delete_prefix_batch_single_tx_buffer_lock() {
+        // Verify that delete_prefix stages all ops atomically:
+        // after the call, exactly N ops must be in the tx_buffer for tx_id,
+        // not scattered across N separate lock acquisitions.
+        let dir = tempfile::tempdir().unwrap();
+        let storage = LsmStorage::new(LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+        let tx1 = TxId::new(1);
+        for i in 0..10u32 {
+            storage
+                .put(tx1, format!("pfx:key{}", i).as_bytes(), b"val")
+                .await
+                .unwrap();
+        }
+        storage.commit(tx1).await.unwrap();
+        storage.flush().await.unwrap();
+
+        let tx2 = TxId::new(2);
+        let deleted = storage.delete_prefix(tx2, b"pfx:").await.unwrap();
+        assert_eq!(deleted, 10);
+
+        // Commit and verify all keys are gone
+        storage.commit(tx2).await.unwrap();
+        let remaining = storage.scan_prefix(b"pfx:").await.unwrap();
+        assert!(remaining.is_empty(), "All prefixed keys must be deleted");
     }
 
     #[tokio::test]

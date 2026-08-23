@@ -86,6 +86,10 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Deletes all key-value pairs whose key starts with `prefix` as part of a transaction.
     ///
     /// Returns the number of keys staged for deletion.
+    ///
+    /// Default O(n) implementation: scan all matching keys, then delete each individually.
+    /// Concrete implementors should override this with a batch operation (e.g. `stage_many`)
+    /// to avoid per-key lock overhead.
     async fn delete_prefix(&self, tx_id: TxId, prefix: &[u8]) -> Result<u64> {
         let matching_keys = self.scan_prefix(prefix).await?;
         let mut deleted = 0u64;
