@@ -160,7 +160,7 @@ async fn handle_search(state: &McpServerState, args: &Value) -> Result<Value, St
         .await
         .map_err(|e| e.to_string())?;
 
-    Ok(serde_json::to_value(results).unwrap_or_default())
+    serde_json::to_value(results).map_err(|e| format!("Serialization error: {e}"))
 }
 
 async fn handle_insert(state: &McpServerState, args: &Value) -> Result<Value, String> {
@@ -228,7 +228,7 @@ async fn handle_get(state: &McpServerState, args: &Value) -> Result<Value, Strin
         .map_err(|e| e.to_string())?;
     let doc = collection.get(id).await.map_err(|e| e.to_string())?;
 
-    Ok(serde_json::to_value(doc).unwrap_or(Value::Null))
+    serde_json::to_value(doc).map_err(|e| format!("Serialization error: {e}"))
 }
 
 async fn handle_collections(state: &McpServerState) -> Result<Value, String> {

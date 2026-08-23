@@ -261,6 +261,8 @@ impl LsmStorage {
 
             sstables.push(Arc::new(reader));
         }
+        // Explicitly sort SSTables by metadata().max_seq for guaranteed read-path ordering
+        sstables.sort_by_key(|sst| sst.metadata().max_seq);
         let sstables = Arc::new(RwLock::new(sstables));
         let snapshot_registry = Arc::new(SnapshotRegistry::new());
 
@@ -710,10 +712,13 @@ impl StorageEngine for LsmStorage {
             return Ok(());
         }
 
-        let flush_id = std::time::SystemTime::now()
+        let now_micros = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| MemFuseError::Storage(format!("Time error: {}", e)))?
             .as_micros();
+        static FLUSH_COUNTER: AtomicU64 = AtomicU64::new(0);
+        let count = FLUSH_COUNTER.fetch_add(1, Ordering::Relaxed) as u128;
+        let flush_id = (now_micros << 32) | (count & 0xFFFF_FFFF);
         let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
         let new_wal = Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?;
 
@@ -914,13 +919,15 @@ impl StorageEngine for LsmStorage {
         let sstables = self.sstables.read().await;
         let last_tx = self.last_committed_tx.load(Ordering::Acquire);
 
-        // 1. SSTables (oldest first → newer entries overwrite)
+        // 1. SSTables (filtered by visibility tx <= last_tx)
         for sst in sstables.iter() {
             let entries = sst.scan_range(start.map(|s| s), end.map(|e| e)).await?;
-            for (k, v, seq, _tx) in entries {
-                let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
-                if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
-                    *entry = (v.to_vec(), seq);
+            for (k, v, seq, tx) in entries {
+                if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
+                    let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
+                    if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                        *entry = (v.to_vec(), seq);
+                    }
                 }
             }
         }
@@ -949,7 +956,7 @@ impl StorageEngine for LsmStorage {
             }
         }
 
-        // 3. Active memtable (newest, always wins on tie)
+        // 3. Active memtable
         for (k, v, seq, tx) in state.memtable.iter() {
             if tx > last_tx && tx < TxId::INTERNAL_BASE {
                 continue;
@@ -964,7 +971,10 @@ impl StorageEngine for LsmStorage {
                 Bound::Unbounded => true,
             };
             if in_range {
-                map.insert(k.to_vec(), (v.to_vec(), seq));
+                let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
+                if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                    *entry = (v.to_vec(), seq);
+                }
             }
         }
 

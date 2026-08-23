@@ -204,7 +204,7 @@ impl OllamaClient {
         let mut stream = response.bytes_stream();
         let mut full_response = String::new();
 
-        while let Some(chunk_result) = stream.next().await {
+        'outer: while let Some(chunk_result) = stream.next().await {
             let bytes =
                 chunk_result.map_err(|e| MemFuseError::Internal(format!("Stream error: {e}")))?;
             for line in bytes.split(|&b| b == b'\n') {
@@ -217,7 +217,7 @@ impl OllamaClient {
                         full_response.push_str(&msg.content);
                     }
                     if chunk.done {
-                        break;
+                        break 'outer;
                     }
                 }
             }
