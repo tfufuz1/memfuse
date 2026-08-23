@@ -32,6 +32,7 @@ default = []
 bench = []
 sandbox = []
 cluster = []
+embed = []
 
 [[bench]]
 name = "migration_benchmarks"

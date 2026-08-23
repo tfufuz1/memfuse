@@ -412,6 +412,7 @@ macro_rules! memfuse_crud_methods {
             }
 
             /// Performs hybrid search combining BM25, vector search, and graph traversal results.
+            #[allow(clippy::too_many_arguments)]
             #[pyo3(signature = (text, vector, k, vector_weight=None, text_weight=None, graph_weight=None))]
             pub fn hybrid_search<'py>(
                 &self,
@@ -450,6 +451,7 @@ macro_rules! memfuse_crud_methods {
             }
 
             /// Performs hybrid search and returns results as FlatBuffer (zero-copy).
+            #[allow(clippy::too_many_arguments)]
             #[pyo3(signature = (text, vector, k, vector_weight=None, text_weight=None, graph_weight=None))]
             pub fn hybrid_search_fb<'py>(
                 &self,

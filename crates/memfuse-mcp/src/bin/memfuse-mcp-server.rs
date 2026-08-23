@@ -25,8 +25,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(McpServerState::with_embedder(Arc::new(db), embedder));
     let app = create_router(state);
 
-    let bind_addr = std::env::var("MEMFUSE_MCP_BIND")
-        .unwrap_or_else(|_| "127.0.0.1:3939".to_string());
+    let bind_addr =
+        std::env::var("MEMFUSE_MCP_BIND").unwrap_or_else(|_| "127.0.0.1:3939".to_string());
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!("MemFuse MCP-Server läuft auf http://{bind_addr}");
     axum::serve(listener, app).await?;

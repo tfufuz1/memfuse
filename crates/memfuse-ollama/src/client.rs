@@ -60,7 +60,9 @@ impl OllamaClient {
             .connect_timeout(std::time::Duration::from_secs(5))
             .build()
             .unwrap_or_else(|e| {
-                tracing::warn!("Failed to build HTTP client with timeouts: {e}, falling back to default");
+                tracing::warn!(
+                    "Failed to build HTTP client with timeouts: {e}, falling back to default"
+                );
                 reqwest::Client::new()
             });
         Self {

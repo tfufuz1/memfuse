@@ -779,7 +779,10 @@ mod tests {
 
         // Run maybe_compact, should return Ok(false) or abort cleanly without panic
         let result = engine.maybe_compact(&sstables, tmp.path()).await.unwrap();
-        assert!(!result, "Compaction should be aborted when candidates are modified");
+        assert!(
+            !result,
+            "Compaction should be aborted when candidates are modified"
+        );
     }
     #[tokio::test(flavor = "multi_thread")]
     async fn test_compaction_stress_and_gc() {

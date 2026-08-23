@@ -12,7 +12,7 @@ use tower::ServiceExt;
 async fn setup_app() -> (axum::Router, TempDir) {
     let tmp = TempDir::new().expect("temp dir");
     let db = MemFuse::open(tmp.path()).await.expect("open db");
-    let state = Arc::new(McpServerState { db: Arc::new(db) });
+    let state = Arc::new(McpServerState::new(Arc::new(db)));
     let app = create_router(state);
     (app, tmp)
 }
