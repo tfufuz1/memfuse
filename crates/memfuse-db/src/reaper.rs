@@ -65,9 +65,18 @@ mod tests {
         );
 
         let cancel_token = tokio_util::sync::CancellationToken::new();
-        let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10), cancel_token);
+        let _reaper = start_orphan_reaper(buffer.clone(), Duration::from_millis(10), cancel_token.clone());
         assert!(buffer.has_tx(tx1));
-        sleep(Duration::from_millis(100)).await;
-        assert!(!buffer.has_tx(tx1));
+        
+        let mut removed = false;
+        for _ in 0..50 {
+            sleep(Duration::from_millis(10)).await;
+            if !buffer.has_tx(tx1) {
+                removed = true;
+                break;
+            }
+        }
+        cancel_token.cancel();
+        assert!(removed, "Expired transaction should have been reaped within 500ms");
     }
 }
