@@ -1,4 +1,4 @@
-use memfuse_core::{DocId, Result};
+use memfuse_core::{DocId, Edge, Entity, EntityId, GraphIndex, Result, TxId};
 use memfuse_db::{chunker::MarkdownChunker, Collection};
 use std::path::Path;
 use std::sync::Arc;
@@ -72,12 +72,16 @@ impl IngestionPipeline {
         let mut errors = Vec::new();
 
         for (idx, chunk) in chunks.into_iter().enumerate() {
-            match self.embedder.embed(&chunk.content).await {
+            let chunk_text = chunk.content;
+            match self.embedder.embed(&chunk_text).await {
                 Ok(embedding) => {
                     let doc_id = format!("{}#{}", file_name, idx);
                     let mut metadata = chunk.metadata.unwrap_or_else(|| serde_json::json!({}));
                     if let Some(obj) = metadata.as_object_mut() {
-                        obj.insert("text".to_string(), serde_json::Value::String(chunk.content));
+                        obj.insert(
+                            "text".to_string(),
+                            serde_json::Value::String(chunk_text.clone()),
+                        );
                         obj.insert(
                             "source".to_string(),
                             serde_json::Value::String(path.display().to_string()),
@@ -88,6 +92,83 @@ impl IngestionPipeline {
                         errors.push(format!("Insert fehlgeschlagen: {e}"));
                     } else {
                         created += 1;
+
+                        // Extrahiere Entitäten aus dem Chunk-Text
+                        let extracted_entities =
+                            crate::ingestion::entities::SimpleEntityExtractor::extract(&chunk_text);
+                        if !extracted_entities.is_empty() {
+                            let graph = collection.graph_index();
+                            let tx = TxId::new(
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_nanos() as u64,
+                            );
+
+                            for entity_id in &extracted_entities {
+                                let entity =
+                                    Entity::new(*entity_id, "ExtractedTerm", "ExtractedTerm");
+                                if let Err(e) = graph.add_entity(tx, entity).await {
+                                    tracing::warn!(
+                                        "Entity-Insert fehlgeschlagen für {:?}: {e}",
+                                        entity_id
+                                    );
+                                }
+                            }
+
+                            for i in 0..extracted_entities.len() {
+                                for j in (i + 1)..extracted_entities.len() {
+                                    let _ = graph
+                                        .add_edge(
+                                            tx,
+                                            Edge::new(
+                                                extracted_entities[i],
+                                                extracted_entities[j],
+                                                "co_occurrence",
+                                            )
+                                            .with_weight(0.5),
+                                        )
+                                        .await;
+                                    let _ = graph
+                                        .add_edge(
+                                            tx,
+                                            Edge::new(
+                                                extracted_entities[j],
+                                                extracted_entities[i],
+                                                "co_occurrence",
+                                            )
+                                            .with_weight(0.5),
+                                        )
+                                        .await;
+                                }
+                            }
+
+                            let doc_entity_id = EntityId::from(doc_id.as_str());
+                            let doc_entity =
+                                Entity::new(doc_entity_id, doc_id.clone(), "Document");
+                            let _ = graph.add_entity(tx, doc_entity).await;
+
+                            for term_id in &extracted_entities {
+                                let _ = graph
+                                    .add_edge(
+                                        tx,
+                                        Edge::new(doc_entity_id, *term_id, "contains")
+                                            .with_weight(0.8),
+                                    )
+                                    .await;
+                                let _ = graph
+                                    .add_edge(
+                                        tx,
+                                        Edge::new(*term_id, doc_entity_id, "mentioned_in")
+                                            .with_weight(0.8),
+                                    )
+                                    .await;
+                            }
+
+                            if let Err(e) = graph.commit(tx).await {
+                                tracing::warn!("Graph tx commit failed: {e}");
+                            }
+                        }
                     }
                 }
                 Err(e) => errors.push(format!("Embedding fehlgeschlagen: {e}")),

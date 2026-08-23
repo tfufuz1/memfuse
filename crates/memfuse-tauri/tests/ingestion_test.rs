@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use memfuse_core::Result;
+use memfuse_core::{GraphIndex, Result};
 use memfuse_db::{MemFuse, MemFuseConfig};
 use memfuse_tauri_lib::ingestion::{EmbeddingProvider, IngestionPipeline};
 use std::sync::Arc;
@@ -104,4 +104,49 @@ async fn test_ingest_folder() {
         assert!(r.chunks_created > 0);
         assert!(r.errors.is_empty());
     }
+}
+
+#[tokio::test]
+async fn test_ingestion_creates_graph_entities() {
+    let tmp = TempDir::new().expect("temp dir");
+    let db_path = tmp.path().join("db");
+    let config = MemFuseConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+
+    let db = MemFuse::open_with_config(&db_path, config)
+        .await
+        .expect("open db");
+
+    let collection = db.collection("graph-entity-test").await.expect("collection");
+
+    let embedder = Arc::new(DummyEmbedder { dim: 4 });
+    let pipeline = IngestionPipeline::new(embedder);
+
+    let doc_path = tmp.path().join("anfrage.md");
+    let content = "Kunde Müller GmbH hat eine Anfrage gestellt.";
+    std::fs::write(&doc_path, content).expect("write anfrage md");
+
+    let report = pipeline
+        .ingest_file(&doc_path, &collection)
+        .await
+        .expect("ingest_file");
+
+    assert!(report.chunks_created > 0);
+    assert!(report.errors.is_empty());
+
+    let graph = collection.graph_index();
+    assert!(
+        graph.entity_count() > 0,
+        "Graph index should contain extracted entities"
+    );
+
+    let entity_id = memfuse_core::EntityId::from("Kunde Müller GmbH");
+    let traversal = graph.traverse(entity_id, 2).await.expect("traverse graph");
+
+    assert!(
+        !traversal.is_empty(),
+        "Extracted entity should exist in graph and have connections"
+    );
 }
