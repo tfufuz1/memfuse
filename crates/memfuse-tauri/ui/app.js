@@ -220,7 +220,12 @@ async function refreshModels() {
     }
 }
 
-// ── Chat (bestehende Funktionalität, angepasst an aktive Collection) ────
+// ── Mode Handling & Chat/Search ──────────────────────────────────────────
+let currentMode = 'chat';
+document.querySelectorAll('input[name="mode"]').forEach(radio => {
+    radio.addEventListener('change', (e) => { currentMode = e.target.value; });
+});
+
 let currentResponseEl = null;
 listen('chat-token', (event) => {
     if (currentResponseEl) {
@@ -234,6 +239,10 @@ document.getElementById('query-input').addEventListener('keydown', (e) => {
 });
 
 async function sendMessage() {
+    if (currentMode === 'search') {
+        return runDirectSearch();
+    }
+
     const input = document.getElementById('query-input');
     const message = input.value.trim();
     if (!message) return;
@@ -247,19 +256,69 @@ async function sendMessage() {
     currentResponseEl = document.createElement('p');
     currentResponseEl.innerHTML = '<strong>Assistent:</strong> ';
     chatLog.appendChild(currentResponseEl);
+
+    const sourcesEl = document.createElement('div');
+    sourcesEl.className = 'sources-box';
+    sourcesEl.style.cssText = 'font-size: 0.8rem; opacity: 0.75; margin: 0.3rem 0 1rem 1rem; border-left: 2px solid #444; padding-left: 0.6rem;';
+    chatLog.appendChild(sourcesEl);
+
     chatLog.scrollTop = chatLog.scrollHeight;
     input.value = '';
 
     const model = modelSelect.value || 'llama3.2';
 
     try {
-        await invoke('chat_with_rag', {
+        const response = await invoke('chat_with_rag', {
             message,
             collectionName: activeCollection,
             model,
         });
+
+        // response ist jetzt { answer, sources } statt reinem String
+        if (response.sources && response.sources.length > 0) {
+            sourcesEl.innerHTML = '<strong>📎 Quellen:</strong><br>' +
+                response.sources.map(s =>
+                    `• ${escapeHtml(s.source)} <span style="opacity:0.6">(Relevanz: ${(s.score * 100).toFixed(0)}%)</span>`
+                ).join('<br>');
+        }
     } catch (e) {
         currentResponseEl.textContent += `\n⚠️ Fehler: ${e}`;
+    }
+}
+
+async function runDirectSearch() {
+    const input = document.getElementById('query-input');
+    const query = input.value.trim();
+    if (!query || !activeCollection) return;
+
+    chatLog.innerHTML += `<p><strong>Suche:</strong> ${escapeHtml(query)}</p>`;
+    input.value = '';
+
+    try {
+        const results = await invoke('hybrid_search', {
+            query,
+            collectionName: activeCollection,
+            k: 8,
+        });
+
+        const resultsEl = document.createElement('div');
+        resultsEl.style.cssText = 'margin: 0.5rem 0 1rem 0;';
+        if (results.length === 0) {
+            resultsEl.textContent = 'Keine Treffer gefunden.';
+        } else {
+            resultsEl.innerHTML = results.map(r => `
+                <div style="border: 1px solid #ddd; border-radius: 6px; padding: 0.6rem; margin-bottom: 0.4rem;">
+                    <div style="font-size: 0.8rem; opacity: 0.7;">
+                        📄 ${escapeHtml(r.source)} — Relevanz: ${(r.score * 100).toFixed(0)}%
+                    </div>
+                    <div style="margin-top: 0.3rem;">${escapeHtml(r.text_preview)}...</div>
+                </div>
+            `).join('');
+        }
+        chatLog.appendChild(resultsEl);
+        chatLog.scrollTop = chatLog.scrollHeight;
+    } catch (e) {
+        chatLog.innerHTML += `<p>⚠️ Fehler: ${e}</p>`;
     }
 }
 

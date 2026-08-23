@@ -3,6 +3,12 @@ use crate::ollama::OllamaBridge;
 use crate::state::AppState;
 use tauri::{Emitter, State};
 
+#[derive(serde::Serialize)]
+pub struct ChatResponse {
+    pub answer: String,
+    pub sources: Vec<crate::commands::search::SearchResultDto>,
+}
+
 /// Streamt Chat-Antworten als Tauri-Events an das Frontend, statt sie
 /// als einzelnen Rückgabewert zu liefern.
 #[tauri::command]
@@ -12,7 +18,7 @@ pub async fn chat_with_rag(
     message: String,
     collection_name: String,
     model: String,
-) -> Result<String, String> {
+) -> Result<ChatResponse, String> {
     let db = {
         let db_guard = state.db.read();
         db_guard
@@ -33,6 +39,28 @@ pub async fn chat_with_rag(
         .await
         .map_err(|e| e.to_string())?;
 
+    let sources: Vec<crate::commands::search::SearchResultDto> = search_results
+        .iter()
+        .map(|r| crate::commands::search::SearchResultDto {
+            id: r.id.clone(),
+            score: r.score,
+            text_preview: r
+                .metadata
+                .as_ref()
+                .and_then(|m| m.get("text"))
+                .and_then(|t| t.as_str())
+                .map(|s| s.chars().take(200).collect())
+                .unwrap_or_default(),
+            source: r
+                .metadata
+                .as_ref()
+                .and_then(|m| m.get("source"))
+                .and_then(|s| s.as_str())
+                .unwrap_or("Unbekannt")
+                .to_string(),
+        })
+        .collect();
+
     let chunks: Vec<memfuse_core::ContextChunk> =
         search_results.into_iter().map(Into::into).collect();
 
@@ -51,7 +79,10 @@ pub async fn chat_with_rag(
         .await
         .map_err(|e| e.to_string())?;
 
-    Ok(full_response)
+    Ok(ChatResponse {
+        answer: full_response,
+        sources,
+    })
 }
 
 #[tauri::command]
