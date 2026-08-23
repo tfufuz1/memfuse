@@ -9,10 +9,32 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
+use async_trait::async_trait;
+use memfuse_core::{Result, TextEmbeddingEngine};
+
+#[derive(Debug)]
+struct MockEmbedder {
+    dimension: usize,
+}
+
+#[async_trait]
+impl TextEmbeddingEngine for MockEmbedder {
+    async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
+        Ok(vec![0.1f32; self.dimension])
+    }
+
+    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        Ok(vec![vec![0.1f32; self.dimension]; texts.len()])
+    }
+}
+
 async fn setup_app() -> (axum::Router, TempDir) {
     let tmp = TempDir::new().expect("temp dir");
     let db = MemFuse::open(tmp.path()).await.expect("open db");
-    let state = Arc::new(McpServerState::new(Arc::new(db)));
+    let collection = db.collection("my_docs").await.expect("collection");
+    let dim = collection.dimension();
+    let embedder = Arc::new(MockEmbedder { dimension: dim });
+    let state = Arc::new(McpServerState::with_embedder(Arc::new(db), embedder));
     let app = create_router(state);
     (app, tmp)
 }
