@@ -58,7 +58,7 @@ Layer 3:  memfuse-py          — PyO3-Fassade (Python-Bindings, MCP Server)
 
 ## Aktive Security Advisories
 - `RUSTSEC-2026-0186`: Behandelt durch Upgrade von `memmap2` auf `0.9.11`.
-- `RUSTSEC-2026-0002`: Behandelt durch Upgrade von `lru` auf `0.12.5`.
+- `RUSTSEC-2026-0002`: Behandelt durch Upgrade von `lru` auf `0.16.3`.
 
 ---
 *Status: 2026-07-19 — Richtung C (Agent-Memory-Library) beschlossen (ADR-007). Phase 0 (Scope-Schnitt & Security) aktiv.*

@@ -67,7 +67,7 @@ Um den Fokus zu wahren, wurden folgende Crates physisch aus dem Repository gelö
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
 | `memfuse-core` | 0 | ~1.150 | 🟡 Panics | Typen und Fehler. Eliminieren aller unwrap() Aufrufe. |
-| `memfuse-store` | 1 | ~4.130 | 🟢 Upgraded | LSM-Tree-Storage. `memmap2` (0.9.11) & `lru` (0.12.5) aktualisiert. |
+| `memfuse-store` | 1 | ~4.130 | 🟢 Upgraded | LSM-Tree-Storage. `memmap2` (0.9.11) & `lru` (0.16.3) aktualisiert. |
 | `memfuse-index` | 1 | ~3.520 | 🟡 Panics | HNSW-Vektorindex. Zero-Panic-Audit. |
 | `memfuse-text` | 1 | ~960 | 🟢 Clean | BM25 Inverted Index für Lexical Search. Commit-Stats gefixt. |
 | `memfuse-crypto`| 1 | ~310 | 🟡 Panics | Krypto-Primitiven. Zero-Panic-Audit. |
@@ -85,7 +85,7 @@ Um den Fokus zu wahren, wurden folgende Crates physisch aus dem Repository gelö
 | :--- | :--- | :---: | :---: | :--- |
 | **P0-1** | Unnötige Crates aus Cargo-Workspace entfernen | Major | 🟢 Erledigt | `memfuse-cluster`, `memfuse-sandbox`, `memfuse-saos-agent` physisch gelöscht. |
 | **P0-2** | Upgrade `memmap2` zur Behebung der Sicherheitswarnung | Blockierend | 🟢 Erledigt | `memmap2` auf 0.9.11 aktualisiert. |
-| **P0-3** | Upgrade / Härtung von `lru` Cache | Blockierend | 🟢 Erledigt | `lru` auf 0.12.5 aktualisiert. |
+| **P0-3** | Upgrade / Härtung von `lru` Cache | Blockierend | 🟢 Erledigt | `lru` auf 0.16.3 aktualisiert. |
 | **P0-4** | Zusammenführen redundanter Audit- und Spezifikationsdokumente | Minor | 🟡 Aktiv | MECE-Konformität in Docs hergestellt. |
 
 ### 🔒 P1: Datenintegrität & Zero-Panic (Woche 2–4)
@@ -119,7 +119,7 @@ Um den Fokus zu wahren, wurden folgende Crates physisch aus dem Repository gelö
 ## 🛡️ Aktive Sicherheitswarnungen (CVEs)
 
 1. **RUSTSEC-2026-0186** (`memmap2`): Behebung durch Upgrade auf `0.9.11` in `Cargo.toml`.
-2. **RUSTSEC-2026-0002** (`lru`): Behebung durch Upgrade auf `0.12.5` in `crates/memfuse-store/Cargo.toml`.
+2. **RUSTSEC-2026-0002** (`lru`): Behebung durch Upgrade auf `0.16.3` in `crates/memfuse-store/Cargo.toml`.
 
 ---
 

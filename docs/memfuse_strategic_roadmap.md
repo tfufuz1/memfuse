@@ -70,7 +70,7 @@ Die Roadmap ist so aufgebaut, dass wir schnellstmöglich ein **funktionierendes 
   - Physisches Entfernen von `memfuse-cluster`, `memfuse-sandbox` und `memfuse-saos-agent` aus dem Cargo-Workspace.
 - [x] **P0-2: Sicherheits-Updates (CVEs)**:
   - Upgrade von `memmap2` auf Version 0.9.11 (RUSTSEC-2026-0186 behoben).
-  - Upgrade der `lru`-Crate auf Version 0.12.5 (RUSTSEC-2026-0002 behoben).
+  - Upgrade der `lru`-Crate auf Version 0.16.3 (RUSTSEC-2026-0002 behoben).
 - [x] **P0-3: Dokumenten-Konsolidierung**:
   - Aktualisierung des Living Document (`docs/SOURCE_OF_TRUTH.md`), `docs/ARCHITECTURE.md` und Abstimmung aller Dokumente.
 
