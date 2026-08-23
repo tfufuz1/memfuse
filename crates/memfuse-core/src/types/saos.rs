@@ -58,7 +58,13 @@ pub struct FusionWeights {
 }
 
 impl FusionWeights {
-    pub fn new(vector: f32, text: f32, graph: f32, metadata: f32) -> Result<Self> {
+    /// Creates 3-signal fusion weights (vector, text, graph) summing to 1.0.
+    pub fn new(vector: f32, text: f32, graph: f32) -> Result<Self> {
+        Self::new_with_metadata(vector, text, graph, 0.0)
+    }
+
+    /// Creates 4-signal fusion weights. Currently, metadata must be 0.0 until metadata signal ranking is implemented.
+    pub fn new_with_metadata(vector: f32, text: f32, graph: f32, metadata: f32) -> Result<Self> {
         if !vector.is_finite() || !text.is_finite() || !graph.is_finite() || !metadata.is_finite() {
             return Err(MemFuseError::InvalidInput(
                 "Fusion weights must be finite numbers".into(),
@@ -70,9 +76,13 @@ impl FusionWeights {
                 "Fusion weights must be non-negative".into(),
             ));
         }
+        if metadata > 0.0 {
+            return Err(MemFuseError::InvalidInput(
+                "Metadata signal is not yet implemented; metadata weight must be 0.0".into(),
+            ));
+        }
         let sum = vector + text + graph + metadata;
         if (sum - 1.0).abs() > 1e-6 {
-            // C-2 issue resolved! f32::EPSILON -> 1e-6
             return Err(MemFuseError::InvalidInput(format!(
                 "Fusion weights must sum exactly to 1.0, got {}",
                 sum
@@ -230,14 +240,14 @@ mod tests {
 
     #[test]
     fn test_fusion_weights_valid() {
-        let w = FusionWeights::new(0.5, 0.5, 0.0, 0.0).expect("valid");
+        let w = FusionWeights::new(0.5, 0.5, 0.0).expect("valid");
         assert_eq!(w.vector(), 0.5);
         assert_eq!(w.text(), 0.5);
     }
 
     #[test]
     fn test_fusion_weights_invalid_sum() {
-        let result = FusionWeights::new(0.5, 0.6, 0.0, 0.0);
+        let result = FusionWeights::new(0.5, 0.6, 0.0);
         assert!(result.is_err());
         if let Err(MemFuseError::InvalidInput(msg)) = result {
             assert!(msg.contains("must sum exactly to 1.0"));
@@ -264,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_hybrid_query_builder_custom_weights() {
-        let weights = FusionWeights::new(0.4, 0.4, 0.1, 0.1).unwrap();
+        let weights = FusionWeights::new(0.4, 0.5, 0.1).unwrap();
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())
             .build()

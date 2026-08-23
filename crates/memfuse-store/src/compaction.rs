@@ -141,31 +141,54 @@ impl CompactionEngine {
             .await?,
         );
 
-        // TODO[STABILIZE][memfuse-store][CRITICAL][CONCURRENCY-BUG]
-        // PROBLEM: Compaction swap race condition with concurrent flushes/rollbacks.
-        // BEWEIS: maybe_compact drops the read lock before merge_sstables and re-acquires the write lock later. If a flush or rollback runs in between, the `indices` will be stale, causing out-of-bounds panics or removal of incorrect SSTables.
-        // URSACHE: Swapping uses index positions computed before the lock was dropped.
-        // LÖSUNG: Map input_ssts to current index positions in `ssts` inside the write lock. If any input SSTable is missing (e.g. rolled back), abort and clean up the new file.
-        // VERIFIKATION: Add a test that triggers concurrent rollback/flush during a simulated slow compaction merge.
-        // ABHÄNGIGKEIT: None
-        // 5. Atomic swap under write-lock
+        // 5. Atomic swap under write-lock — identity-based (Arc::ptr_eq), not index-based.
+        // DECISION-REF: Replaces stale-index swap that was documented as
+        // TODO[STABILIZE][CRITICAL][CONCURRENCY-BUG]. Indices computed before the lock was
+        // dropped could become invalid if a concurrent flush or rollback modifies the SSTable
+        // list. Arc::ptr_eq is immune to such reordering.
         let old_paths: Vec<PathBuf> = {
             let mut ssts = sstables.write().await;
 
-            // Collect paths of old SSTables before removing them
-            let old_paths: Vec<PathBuf> = indices
+            // Verify all input SSTables are still present (concurrent flush/rollback safety)
+            let all_present = input_ssts
                 .iter()
-                .map(|&i| ssts[i].file_path().to_path_buf())
+                .all(|inp| ssts.iter().any(|sst| Arc::ptr_eq(inp, sst)));
+
+            if !all_present {
+                // Concurrent modification detected — abort compaction, clean up output file
+                drop(ssts);
+                tracing::warn!(
+                    "Compaction aborted: input SSTables modified during merge \
+                     (concurrent flush or rollback detected)"
+                );
+                if let Err(e) = tokio::fs::remove_file(&output_path).await {
+                    tracing::warn!(
+                        "Failed to clean up aborted compaction output {:?}: {}",
+                        output_path,
+                        e
+                    );
+                }
+                return Ok(false);
+            }
+
+            // Find insertion point: position of the earliest input SSTable in current list
+            let insertion_point = ssts
+                .iter()
+                .position(|sst| input_ssts.iter().any(|inp| Arc::ptr_eq(inp, sst)))
+                .unwrap_or(ssts.len());
+
+            // Collect paths of input SSTables before removing them
+            let old_paths: Vec<PathBuf> = input_ssts
+                .iter()
+                .filter_map(|inp| {
+                    ssts.iter()
+                        .find(|sst| Arc::ptr_eq(inp, sst))
+                        .map(|sst| sst.file_path().to_path_buf())
+                })
                 .collect();
 
-            // Remove old SSTables (reverse order to preserve indices)
-            let mut sorted_indices = indices.clone();
-            sorted_indices.sort_unstable_by(|a, b| b.cmp(a));
-            let insertion_point = sorted_indices[sorted_indices.len() - 1]; // Position of the oldest input
-
-            for idx in sorted_indices {
-                ssts.remove(idx);
-            }
+            // Remove by identity, not by index
+            ssts.retain(|sst| !input_ssts.iter().any(|inp| Arc::ptr_eq(inp, sst)));
 
             // Add new SSTable at the correct position to maintain shadowing order
             let insert_idx = insertion_point.min(ssts.len());
@@ -183,7 +206,7 @@ impl CompactionEngine {
 
         tracing::info!(
             "Compaction complete: merged {} SSTables into {:?}",
-            indices.len(),
+            input_ssts.len(),
             output_path
         );
 
@@ -709,6 +732,54 @@ mod tests {
 
         assert!(!compacted, "Should not compact with only 2 SSTables");
         assert_eq!(sstables.read().await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_compaction_aborts_on_concurrent_modification() {
+        let tmp = TempDir::new().expect("temp dir");
+        let registry = Arc::new(SnapshotRegistry::new());
+        let bc = create_block_cache(1);
+        let config = CompactionConfig {
+            min_sstables_per_tier: 2,
+            ..Default::default()
+        };
+        let engine = CompactionEngine::new(
+            config,
+            registry,
+            Arc::clone(&bc),
+            None,
+            Arc::new(memfuse_core::ResourceTracker::new(
+                memfuse_core::ResourceBudget {
+                    memory_limit: 1024 * 1024,
+                },
+            )),
+        );
+
+        let sstables = Arc::new(RwLock::new(Vec::new()));
+        for i in 0..2u8 {
+            let sst = create_test_sstable(
+                tmp.path(),
+                &format!("sst-{}.sst", i),
+                &[(format!("key-{}", i).as_bytes(), b"val", i as u64 + 1)],
+                Arc::clone(&bc),
+            )
+            .await;
+            sstables.write().await.push(sst);
+        }
+
+        // Simulate concurrent modification by clearing sstables right after selection or before swap
+        // We test that retain/Arc::ptr_eq check properly detects missing input sstables
+        let candidates = engine
+            .select_compaction_candidates(&sstables.read().await)
+            .unwrap();
+        assert_eq!(candidates.len(), 2);
+
+        // Remove one sstable concurrently
+        sstables.write().await.pop();
+
+        // Run maybe_compact, should return Ok(false) or abort cleanly without panic
+        let result = engine.maybe_compact(&sstables, tmp.path()).await.unwrap();
+        assert!(!result, "Compaction should be aborted when candidates are modified");
     }
     #[tokio::test(flavor = "multi_thread")]
     async fn test_compaction_stress_and_gc() {

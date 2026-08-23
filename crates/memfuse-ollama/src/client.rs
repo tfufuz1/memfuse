@@ -11,7 +11,7 @@ pub const DEFAULT_EMBED_MODEL: &str = "nomic-embed-text";
 #[derive(Clone, Debug)]
 pub struct OllamaClient {
     base_url: String,
-    client: reqwest::Client,
+    pub(crate) client: reqwest::Client,
 }
 
 #[derive(Serialize)]
@@ -52,9 +52,20 @@ struct EmbedResponse {
 
 impl OllamaClient {
     pub fn new(base_url: impl Into<String>) -> Self {
+        // AI-NOTE: reqwest::Client::builder().build() only fails on invalid TLS config,
+        // which would be a compile-time/system-level issue. The unwrap_or_else fallback
+        // ensures we never panic, and timeout-less operation is still better than no client.
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to build HTTP client with timeouts: {e}, falling back to default");
+                reqwest::Client::new()
+            });
         Self {
             base_url: base_url.into(),
-            client: reqwest::Client::new(),
+            client,
         }
     }
 
@@ -93,8 +104,40 @@ impl OllamaClient {
         Ok(tags.models.into_iter().map(|m| m.name).collect())
     }
 
-    /// Generates vector embedding for a single text prompt via POST /api/embeddings
+    /// Generates vector embedding with retry logic for transient failures.
+    ///
+    /// Retries up to 3 times with exponential backoff (500ms, 1s, 2s).
+    /// This handles the common case where Ollama blocks briefly on first call
+    /// while loading the model into RAM.
     pub async fn embed(&self, model: &str, text: &str) -> Result<Vec<f32>> {
+        const MAX_RETRIES: u32 = 3;
+        let mut last_err = None;
+
+        for attempt in 0..MAX_RETRIES {
+            match self.try_embed(model, text).await {
+                Ok(v) => return Ok(v),
+                Err(e) => {
+                    if attempt < MAX_RETRIES - 1 {
+                        tracing::warn!(
+                            attempt = attempt + 1,
+                            max = MAX_RETRIES,
+                            "Ollama embed attempt failed, retrying: {e}"
+                        );
+                        let backoff_ms = 500u64 * (1u64 << attempt);
+                        tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                    }
+                    last_err = Some(e);
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| {
+            MemFuseError::Internal("Embed retries exhausted with no error captured".into())
+        }))
+    }
+
+    /// Single embed attempt via POST /api/embeddings (no retry).
+    async fn try_embed(&self, model: &str, text: &str) -> Result<Vec<f32>> {
         let url = format!("{}/api/embeddings", self.base_url);
         let request = EmbedRequest {
             model,

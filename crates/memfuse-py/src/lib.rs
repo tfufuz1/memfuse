@@ -431,7 +431,7 @@ macro_rules! memfuse_crud_methods {
                 }
                 let weights = match (vector_weight, text_weight, graph_weight) {
                     (Some(v), Some(t), Some(g)) => {
-                        Some(memfuse_core::FusionWeights::new(v, t, g, 0.0)
+                        Some(memfuse_core::FusionWeights::new(v, t, g)
                             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?)
                     }
                     (None, None, None) => None,
@@ -469,7 +469,7 @@ macro_rules! memfuse_crud_methods {
                 }
                 let weights = match (vector_weight, text_weight, graph_weight) {
                     (Some(v), Some(t), Some(g)) => {
-                        Some(memfuse_core::FusionWeights::new(v, t, g, 0.0)
+                        Some(memfuse_core::FusionWeights::new(v, t, g)
                             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?)
                     }
                     (None, None, None) => None,

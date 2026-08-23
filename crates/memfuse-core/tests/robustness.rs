@@ -9,17 +9,17 @@ use std::time::Duration;
 #[test]
 fn test_fusion_weights_nan_and_inf_prevention() {
     // Expose the NaN vulnerability: FusionWeights should not allow NaN weights.
-    let res_nan = FusionWeights::new(f32::NAN, 0.5, 0.5, 0.0);
+    let res_nan = FusionWeights::new(f32::NAN, 0.5, 0.5);
     assert!(res_nan.is_err(), "FusionWeights should reject NaN values");
 
-    let res_neg_nan = FusionWeights::new(-f32::NAN, 0.5, 0.5, 0.0);
+    let res_neg_nan = FusionWeights::new(-f32::NAN, 0.5, 0.5);
     assert!(
         res_neg_nan.is_err(),
         "FusionWeights should reject negative NaN values"
     );
 
     // Expose the Inf vulnerability: FusionWeights should not allow Inf weights.
-    let res_inf = FusionWeights::new(f32::INFINITY, 0.5, 0.5, 0.0);
+    let res_inf = FusionWeights::new(f32::INFINITY, 0.5, 0.5);
     assert!(
         res_inf.is_err(),
         "FusionWeights should reject Infinity values"
