@@ -54,8 +54,7 @@ async fn test_scan_prefix_excludes_tombstones() {
         "Genau ein Eintrag muss zurückgegeben werden"
     );
     assert_eq!(
-        results[0].1,
-        b"alive_value",
+        results[0].1, b"alive_value",
         "Der Wert des verbleibenden Eintrags muss korrekt sein"
     );
 }
@@ -100,8 +99,7 @@ async fn test_scan_prefix_excludes_tombstones_after_flush() {
         "Genau ein Eintrag muss zurückgegeben werden (Tombstone muss den SSTable-Eintrag überdecken)"
     );
     assert_eq!(
-        results[0].0,
-        b"ns:alive",
+        results[0].0, b"ns:alive",
         "Der verbleibende Key muss ns:alive sein"
     );
 }

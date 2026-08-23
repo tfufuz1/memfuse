@@ -282,14 +282,16 @@ impl HnswIndex {
     }
 
     /// Triggers an async rebuild if the deletion threshold is exceeded.
-    pub fn trigger_rebuild_async(&self) {
+    pub fn trigger_rebuild_async(&self) -> Option<tokio::task::JoinHandle<()>> {
         if self.is_rebuild_required() {
             let inner = std::sync::Arc::clone(&self.inner);
-            tokio::spawn(async move {
+            Some(tokio::spawn(async move {
                 if let Err(e) = inner.rebuild().await {
                     tracing::error!("Failed to rebuild HNSW index: {}", e);
                 }
-            });
+            }))
+        } else {
+            None
         }
     }
 
@@ -533,10 +535,12 @@ struct SearchContext<'a> {
 /// Liefert den aktuellen Rebuild-Status des Index.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RebuildStatus {
-    /// Kein Rebuild läuft.
+    /// Kein Rebuild läuft oder geplant.
     Idle,
     /// Rebuild läuft gerade im Hintergrund.
     Running,
+    /// Rebuild wurde getriggert, startet bald.
+    Pending,
 }
 
 impl HnswIndexCore {

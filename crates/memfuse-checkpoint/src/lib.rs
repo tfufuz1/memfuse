@@ -76,7 +76,9 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     fn next_tx(&self) -> TxId {
         TxId::new(
             TxId::INTERNAL_BASE
-                + self.next_internal_tx.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                + self
+                    .next_internal_tx
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
         )
     }
 
@@ -163,7 +165,10 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
             // 2. Erst nach erfolgreichem Storage-Delete entpinnen
             if let Err(e) = self.storage.unpin_checkpoint(checkpoint.seq_no).await {
-                tracing::warn!(seq = checkpoint.seq_no, "Unpin nach drop fehlgeschlagen: {e}");
+                tracing::warn!(
+                    seq = checkpoint.seq_no,
+                    "Unpin nach drop fehlgeschlagen: {e}"
+                );
             }
 
             // 3. Cache bereinigen
@@ -466,13 +471,13 @@ mod tests {
     async fn test_pin_before_unpin_invariant_on_failure() {
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "test");
-        
+
         // 1. Create first checkpoint successfully
         store
             .create_checkpoint("my_cp", "c1", 1, TxId::new(1), serde_json::json!({}))
             .await
             .unwrap();
-            
+
         assert!(storage.pinned.lock().contains(&1));
 
         // 2. Make next save fail
@@ -485,11 +490,17 @@ mod tests {
             .await;
 
         assert!(res.is_err());
-        
+
         // 4. Verify invariant: old checkpoint (1) must still be pinned!
-        assert!(storage.pinned.lock().contains(&1), "Old checkpoint should still be pinned because save failed");
-        
+        assert!(
+            storage.pinned.lock().contains(&1),
+            "Old checkpoint should still be pinned because save failed"
+        );
+
         // 5. Verify invariant: new checkpoint (2) should be unpinned (rolled back)!
-        assert!(!storage.pinned.lock().contains(&2), "New checkpoint should be unpinned after failure");
+        assert!(
+            !storage.pinned.lock().contains(&2),
+            "New checkpoint should be unpinned after failure"
+        );
     }
 }

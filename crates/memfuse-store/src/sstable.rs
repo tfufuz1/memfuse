@@ -34,14 +34,12 @@ pub fn create_block_cache(capacity_mb: usize) -> Arc<BlockCache> {
     // 1 MB = 256 Blöcke à 4 KB
     // Saturating-Mul verhindert Overflow-Wrapping in Release-Mode
     let capacity = capacity_mb
-        .saturating_mul(256)  // Overflow → usize::MAX (sicher)
-        .max(256)             // Minimum: 1 MB Cache (256 Blöcke)
-        .min(8 * 1024 * 256); // Maximum: 8 GB Cache (vernünftige Obergrenze)
+        .saturating_mul(256) // Overflow → usize::MAX (sicher)
+        .clamp(256, 8 * 1024 * 256); // Minimum: 1 MB, Maximum: 8 GB Cache
 
     Arc::new(RwLock::new(LruCache::new(
-        // NonZeroUsize::new(capacity) ist nach .max(256) garantiert > 0
-        NonZeroUsize::new(capacity)
-            .expect("capacity nach max(256) ist immer > 0"),
+        // NonZeroUsize::new(capacity) ist nach .clamp(256, ...) garantiert > 0
+        NonZeroUsize::new(capacity).expect("capacity nach clamp(256, ...) ist immer > 0"),
     )))
 }
 
@@ -84,8 +82,7 @@ impl BloomFilter {
         for i in 0..self.num_hashes {
             // Double Hashing: bit_idx = (h1 + i * h2) % num_bits
             // Garantiert gleichmäßige Verteilung ohne Wiederholungen für i < num_bits
-            let bit_idx = h1.wrapping_add((i as u64).wrapping_mul(h2)) as usize
-                % self.num_bits;
+            let bit_idx = h1.wrapping_add((i as u64).wrapping_mul(h2)) as usize % self.num_bits;
             self.bits[bit_idx / 64] |= 1u64 << (bit_idx % 64);
         }
     }
@@ -97,8 +94,7 @@ impl BloomFilter {
         }
         let (h1, h2) = Self::hash_pair(key);
         for i in 0..self.num_hashes {
-            let bit_idx = h1.wrapping_add((i as u64).wrapping_mul(h2)) as usize
-                % self.num_bits;
+            let bit_idx = h1.wrapping_add((i as u64).wrapping_mul(h2)) as usize % self.num_bits;
             if (self.bits[bit_idx / 64] & (1u64 << (bit_idx % 64))) == 0 {
                 return false;
             }
@@ -123,7 +119,7 @@ impl BloomFilter {
 
     pub fn to_bytes(&self) -> Vec<u8> {
         // MIGRATION NOTE: Bestehende SSTables mit altem Filter (probe-basiert)
-        // müssen bei der nächsten Compaction neu gebaut werden. 
+        // müssen bei der nächsten Compaction neu gebaut werden.
         // Das Serialisierungsformat bleibt kompatibel, daher ist kein aktives Handeln nötig.
         let mut buf = Vec::with_capacity(8 + 8 + self.bits.len() * 8);
         buf.put_u64_le(self.num_hashes as u64);
@@ -1625,7 +1621,9 @@ mod tests {
         // 1000 echte Elemente, Ziel-FPR = 1%
         let mut bf = BloomFilter::new(1000, 0.01);
         let keys: Vec<Vec<u8>> = (0..1000u32).map(|i| i.to_le_bytes().to_vec()).collect();
-        for k in &keys { bf.insert(k); }
+        for k in &keys {
+            bf.insert(k);
+        }
 
         // Alle echten Elemente müssen enthalten sein (zero false negatives)
         for k in &keys {
@@ -1993,9 +1991,9 @@ mod tests {
     #[test]
     fn test_block_cache_extreme_values() {
         // Darf nicht paniken oder overflowlen – prüft alle Grenzfälle.
-        let _ = create_block_cache(0);              // minimum → floor auf 256 Blöcke
-        let _ = create_block_cache(1);              // normal
-        let _ = create_block_cache(usize::MAX);     // overflow-Test → saturating → cap
+        let _ = create_block_cache(0); // minimum → floor auf 256 Blöcke
+        let _ = create_block_cache(1); // normal
+        let _ = create_block_cache(usize::MAX); // overflow-Test → saturating → cap
         let _ = create_block_cache(usize::MAX / 2); // near-overflow → saturating → cap
     }
 }
