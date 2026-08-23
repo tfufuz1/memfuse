@@ -21,6 +21,32 @@ offline, ohne dass ein einziges Byte Ihrer Daten das Gerät verlässt.
   "Urlaub", "Antrag", "Prozess" für bessere Trefferqualität
 - **Verschlüsselt** — AES-256-GCM auf Disk, HMAC-Anti-Tamper im WAL
 
+## Installation
+
+### Systemanforderungen
+
+- Windows 10/11, macOS 11+, oder eine gängige Linux-Distribution
+- [Ollama](https://ollama.com) muss separat installiert und gestartet sein
+  (MemFuse Brain nutzt Ollama als lokales LLM-Backend)
+- Mindestens ein Ollama-Modell heruntergeladen, z.B.:
+```bash
+  ollama pull llama3.2
+  ollama pull nomic-embed-text
+```
+
+### Installer herunterladen
+
+Native Installer für Windows (.msi/.exe), macOS (.dmg) und Linux
+(.AppImage/.deb) werden bei jedem Release unter GitHub Releases
+bereitgestellt.
+
+### Aus dem Quellcode bauen
+
+```bash
+cd crates/memfuse-tauri
+cargo tauri build
+```
+
 ## Architektur
 
 ```
