@@ -204,7 +204,7 @@ mod tests {
                 guards.push(registry.register(seq));
             }
 
-            let min_expected = *seqs.iter().min().unwrap();
+            let min_expected = *seqs.iter().min().expect("proptest guarantees non-empty vec");
             prop_assert_eq!(registry.min_active_seqno(), min_expected);
 
             guards.pop(); // Drop last element
@@ -213,7 +213,7 @@ mod tests {
             if guards.is_empty() {
                 prop_assert_eq!(registry.min_active_seqno(), u64::MAX);
             } else {
-                let remaining_min = guards.iter().map(|g| g.seq_no()).min().unwrap();
+                let remaining_min = guards.iter().map(|g| g.seq_no()).min().unwrap_or(u64::MAX);
                 prop_assert_eq!(registry.min_active_seqno(), remaining_min);
             }
         }
@@ -255,7 +255,7 @@ mod tests {
                 let guard_idx = remaining_indices.remove(idx_in_remaining);
 
                 // Drop the guard
-                let seq_val = guards[guard_idx].as_ref().unwrap().seq_no();
+                let seq_val = guards[guard_idx].as_ref().expect("guard must exist at selected index").seq_no();
                 guards[guard_idx] = None;
 
                 // Remove from reference (one occurrence only)

@@ -3,26 +3,6 @@ use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
-/// Unique identifier for a Namespace.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct NamespaceId(u64);
-
-impl NamespaceId {
-    pub fn new(id: u64) -> Self {
-        Self(id)
-    }
-
-    pub fn inner(&self) -> u64 {
-        self.0
-    }
-}
-
-impl std::fmt::Display for NamespaceId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "NS-{}", self.0)
-    }
-}
-
 /// Token budget configuration for LLM context management.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenBudget {
@@ -121,14 +101,6 @@ impl FusionWeights {
     pub fn metadata(&self) -> f32 {
         self.metadata
     }
-}
-
-/// Defines cross-namespace isolation guarantees.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum IsolationLevel {
-    Strict,
-    SharedRead,
-    Logical,
 }
 
 /// A chunk of context for LLM budget allocation.
@@ -321,13 +293,6 @@ mod tests {
         budget.consume(40); // Over consumption
         assert_eq!(budget.available(), 0);
         assert_eq!(budget.consumed(), 90);
-    }
-
-    #[test]
-    fn test_namespace_id() {
-        let ns = NamespaceId::new(123);
-        assert_eq!(ns.inner(), 123);
-        assert_eq!(ns.to_string(), "NS-123");
     }
 
     #[test]

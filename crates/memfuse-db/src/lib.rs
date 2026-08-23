@@ -62,14 +62,12 @@ use memfuse_sandbox::SandboxBridge;
 // mod Collection is used via pub mod collection
 pub mod filter;
 pub mod fusion;
-pub mod namespace;
 pub mod reaper;
 pub mod transaction;
 
 pub use collection::Collection;
 pub use filter::MetadataFilter;
 pub use memfuse_checkpoint;
-pub use namespace::{Namespace, NamespaceHandle, NamespaceRegistry};
 
 /// User-facing search result containing the ID, score, and optional metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
