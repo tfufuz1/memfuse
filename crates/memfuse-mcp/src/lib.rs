@@ -94,11 +94,19 @@ async fn call_tool(
     State(state): State<Arc<McpServerState>>,
     Json(request): Json<Value>,
 ) -> Json<Value> {
-    let tool_name = request
+    let tool_name = match request
         .get("name")
         .or_else(|| request.get("params").and_then(|p| p.get("name")))
         .and_then(|n| n.as_str())
-        .unwrap_or_default();
+    {
+        Some(n) => n,
+        None => {
+            return Json(serde_json::json!({
+                "isError": true,
+                "content": [{ "type": "text", "text": "Missing required field: tool name" }]
+            }))
+        }
+    };
 
     let args = request
         .get("arguments")

@@ -9,6 +9,7 @@ pub struct OllamaEmbedder {
     client: OllamaClient,
     model: String,
     concurrency: usize,
+    expected_dimension: Option<usize>,
 }
 
 impl OllamaEmbedder {
@@ -17,6 +18,7 @@ impl OllamaEmbedder {
             client: OllamaClient::new(base_url.into()),
             model: model.into(),
             concurrency: 8,
+            expected_dimension: None,
         }
     }
 
@@ -29,6 +31,11 @@ impl OllamaEmbedder {
         self
     }
 
+    pub fn with_expected_dimension(mut self, dim: usize) -> Self {
+        self.expected_dimension = Some(dim);
+        self
+    }
+
     pub fn model(&self) -> &str {
         &self.model
     }
@@ -37,7 +44,17 @@ impl OllamaEmbedder {
 #[async_trait]
 impl TextEmbeddingEngine for OllamaEmbedder {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        self.client.embed(&self.model, text).await
+        let vec = self.client.embed(&self.model, text).await?;
+        if let Some(dim) = self.expected_dimension {
+            if vec.len() != dim {
+                return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                    "Ollama embedding dimension mismatch: expected {}, got {}",
+                    dim,
+                    vec.len()
+                )));
+            }
+        }
+        Ok(vec)
     }
 
     async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {

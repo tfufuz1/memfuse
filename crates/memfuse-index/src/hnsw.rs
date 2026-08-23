@@ -75,7 +75,7 @@ impl Default for HnswConfig {
             ef_search: 64,
 
             distance_metric: DistanceMetric::Cosine,
-            rebuild_threshold: 0.5,
+            rebuild_threshold: 0.20,
             quantize: false,
         }
     }

@@ -605,10 +605,10 @@ impl MemFuse {
     }
 
     /// Deletes a document by its string ID.
-    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn delete(&self, id: &str) -> Result<()> {
-        let mut db_tx = self.default_col().await?.begin_transaction();
-        self.default_col().await?.delete_op(&mut db_tx, id).await?;
+        let col = self.default_col().await?;
+        let mut db_tx = col.begin_transaction();
+        col.delete_op(&mut db_tx, id).await?;
         db_tx.commit().await
     }
 

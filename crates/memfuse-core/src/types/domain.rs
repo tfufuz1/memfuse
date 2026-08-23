@@ -87,6 +87,16 @@ impl EntityId {
     pub fn as_bytes(&self) -> Vec<u8> {
         self.0.to_string().into_bytes()
     }
+
+    pub fn from_doc_id(doc_id: DocId) -> Self {
+        Self(doc_id.inner())
+    }
+
+    pub fn from_key(key: &str) -> Self {
+        DocId::from_key(key)
+            .map(|d| Self(d.inner()))
+            .unwrap_or_else(|_| Self::from(key))
+    }
 }
 
 impl From<u64> for EntityId {

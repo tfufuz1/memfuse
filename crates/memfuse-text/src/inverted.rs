@@ -59,15 +59,22 @@ impl<S: StorageEngine> Clone for InvertedIndex<S> {
 }
 
 impl<S: StorageEngine> InvertedIndex<S> {
-    /// Creates a new InvertedIndex tied to a specific collection namespace.
-    pub fn new(storage: Arc<S>, namespace: &str) -> Self {
+    /// Creates a new InvertedIndex tied to a specific collection namespace and optional language code.
+    pub fn new_with_language(storage: Arc<S>, namespace: &str, lang: Option<&str>) -> Self {
         let prefix = if namespace == "default" {
             b"__txt:default:".to_vec()
         } else {
             format!("__txt:{}:", namespace).into_bytes()
         };
 
-        let tokenizer: Arc<dyn Tokenizer> = if namespace.contains("de") {
+        let use_de = lang.map(|l| l.starts_with("de")).unwrap_or_else(|| {
+            namespace.contains("de")
+                || std::env::var("MEMFUSE_LANG")
+                    .map(|v| v.starts_with("de"))
+                    .unwrap_or(false)
+        });
+
+        let tokenizer: Arc<dyn Tokenizer> = if use_de {
             Arc::new(GermanMorphTokenizer::new())
         } else {
             Arc::new(DefaultTokenizer)
@@ -83,6 +90,17 @@ impl<S: StorageEngine> InvertedIndex<S> {
             staged_stats: Arc::new(parking_lot::Mutex::new(HashMap::new())),
             commit_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
+    }
+
+    /// Creates a new InvertedIndex tied to a specific collection namespace.
+    pub fn new(storage: Arc<S>, namespace: &str) -> Self {
+        Self::new_with_language(storage, namespace, None)
+    }
+
+    /// Sets a custom tokenizer for the inverted index.
+    pub fn with_tokenizer(mut self, tokenizer: Arc<dyn Tokenizer>) -> Self {
+        self.tokenizer = tokenizer;
+        self
     }
 
     /// Loads index statistics from storage into the cache.

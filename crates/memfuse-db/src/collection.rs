@@ -456,16 +456,7 @@ impl<S: StorageEngine> Collection<S> {
         }
 
         let db_tx = self.begin_transaction();
-        let exists = {
-            let key = self.namespaced_key(id.as_bytes(), 0);
-            self.storage.get(&key).await?.is_some()
-        };
-
-        let result = if exists {
-            self.update_op(&db_tx, id, embedding, metadata).await
-        } else {
-            self.insert_op(&db_tx, id, embedding, metadata).await
-        };
+        let result = self.update_op(&db_tx, id, embedding, metadata).await;
 
         match result {
             Ok(_) => db_tx.commit().await,
@@ -494,17 +485,9 @@ impl<S: StorageEngine> Collection<S> {
                     embedding.len()
                 )));
             }
-            let exists = {
-                let key = self.namespaced_key(id.as_bytes(), 0);
-                self.storage.get(&key).await?.is_some()
-            };
-            let result = if exists {
-                self.update_op(&db_tx, id, embedding, metadata.clone())
-                    .await
-            } else {
-                self.insert_op(&db_tx, id, embedding, metadata.clone())
-                    .await
-            };
+            let result = self
+                .update_op(&db_tx, id, embedding, metadata.clone())
+                .await;
             if let Err(e) = result {
                 if let Err(rollback_err) = db_tx.rollback().await {
                     tracing::error!(
@@ -1010,7 +993,7 @@ impl<S: StorageEngine> Collection<S> {
         } else if !text_results.is_empty() {
             let implicit_anchors: Vec<memfuse_core::EntityId> = text_results
                 .iter()
-                .map(|r| memfuse_core::EntityId::from(r.id.as_str()))
+                .map(|r| memfuse_core::EntityId::from_key(r.id.as_str()))
                 .collect();
             let tuples = self
                 .graph_index

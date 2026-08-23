@@ -731,9 +731,10 @@ impl StorageEngine for LsmStorage {
         let sst_path = {
             static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let seq = self.next_seq_no.load(Ordering::Relaxed);
             self.config
                 .path
-                .join(format!("sst-{:020}-{:04}.sst", flush_id, count % 10000))
+                .join(format!("sst-{:020}-{:06}.sst", seq, count % 1000000))
         };
         let mut builder =
             SstableBuilder::create_with_key_manager(&sst_path, self.key_manager.clone()).await?;
@@ -834,6 +835,7 @@ impl StorageEngine for LsmStorage {
         let mut map = std::collections::BTreeMap::new();
         let state = self.state.read().await;
         let sstables = self.sstables.read().await;
+        let last_tx = self.last_committed_tx.load(Ordering::Acquire);
 
         // Collect from SSTables
         for sst in sstables.iter() {
@@ -855,9 +857,9 @@ impl StorageEngine for LsmStorage {
             }
 
             let entries = sst.scan_prefix(prefix).await?;
-            for (k, v, seq, _tx) in entries {
+            for (k, v, seq, tx) in entries {
                 let raw_seq = seq & !TOMBSTONE_BIT;
-                if raw_seq <= seq_no {
+                if raw_seq <= seq_no && (tx <= last_tx || tx >= TxId::INTERNAL_BASE) {
                     let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                         *entry = (v.to_vec(), seq);
@@ -868,9 +870,9 @@ impl StorageEngine for LsmStorage {
 
         // Collect from immutable memtables
         for mt in &state.immutable_memtables {
-            for (k, v, seq, _tx) in mt.iter() {
+            for (k, v, seq, tx) in mt.iter() {
                 let raw_seq = seq & !TOMBSTONE_BIT;
-                if k.starts_with(prefix) && raw_seq <= seq_no {
+                if k.starts_with(prefix) && raw_seq <= seq_no && (tx <= last_tx || tx >= TxId::INTERNAL_BASE) {
                     let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                         *entry = (v.to_vec(), seq);
@@ -880,9 +882,9 @@ impl StorageEngine for LsmStorage {
         }
 
         // Collect from active memtable
-        for (k, v, seq, _tx) in state.memtable.iter() {
+        for (k, v, seq, tx) in state.memtable.iter() {
             let raw_seq = seq & !TOMBSTONE_BIT;
-            if k.starts_with(prefix) && raw_seq <= seq_no {
+            if k.starts_with(prefix) && raw_seq <= seq_no && (tx <= last_tx || tx >= TxId::INTERNAL_BASE) {
                 let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                 if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                     *entry = (v.to_vec(), seq);
@@ -1407,5 +1409,43 @@ mod tests {
             .maybe_compact(&storage.sstables, &storage.config.path)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_scan_prefix_at_uncommitted_isolation() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024,
+            max_ram_mb: 64,
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig {
+                min_sstables_per_tier: 2,
+                size_ratio: 4.0,
+                check_interval: Duration::from_secs(30),
+                yield_threshold: 1000,
+                max_memory_bytes: Some(1024 * 1024),
+            },
+            encryption_passphrase: None,
+        };
+        let storage = LsmStorage::new(config).await.expect("create storage");
+
+        // 1. Insert and commit doc1 under tx1
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"prefix:doc1", b"val1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        // 2. Stage uncommitted doc2 under tx2
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"prefix:doc2", b"val2").await.unwrap();
+        // tx2 NOT committed
+
+        // 3. Scan prefix at current committed snapshot seq
+        let seq = storage.last_seq_no().await.unwrap();
+        let scanned = storage.scan_prefix_at(b"prefix:", seq).await.unwrap();
+
+        // Uncommitted doc2 must NOT be visible in scan_prefix_at!
+        assert_eq!(scanned.len(), 1);
+        assert_eq!(scanned[0].0, b"prefix:doc1");
     }
 }

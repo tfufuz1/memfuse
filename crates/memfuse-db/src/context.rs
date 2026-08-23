@@ -32,7 +32,10 @@ impl Default for ContextManager {
 
 impl From<crate::SearchResult> for ContextChunk {
     fn from(r: crate::SearchResult) -> Self {
-        let doc_id = DocId::from_key(&r.id).unwrap_or_else(|_| DocId::new(0));
+        let doc_id = DocId::from_key(&r.id).unwrap_or_else(|e| {
+            tracing::error!("Failed to convert SearchResult id to DocId: {}", e);
+            DocId::MIN
+        });
         let content = r
             .metadata
             .as_ref()
