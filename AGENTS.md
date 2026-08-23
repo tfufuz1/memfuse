@@ -1,13 +1,15 @@
 # AGENTS.md — Universal Agent Rules & Verification Loops
-> Version: 4.0 · Sovereign Core Invariants · Vendor-Agnostisches Regelwerk
+> Version: 4.1 · Sovereign Core Invariants · Vendor-Agnostisches Regelwerk
 
 ## 0. Pflicht-Befehle (Vor jedem Commit ausführen!)
 ```bash
-just check          # Code-Formatierung prüfen + Clippy-Warnungen als Fehler behandeln
-just test           # Gesamte Testsuite ausführen
-just triple-test    # Führt cargo test 3x hintereinander aus (Flaky-Test-Detektor)
-just dag-check      # Überprüft die Einhaltung der strengen Crate-Abhängigkeitsrichtung
-just debt-audit     # Scannt den Code nach unwrap(), expect() und std::fs-Zugriffen
+cargo check --workspace --exclude memfuse-tauri # Workspace Kompilierbarkeit prüfen
+cargo test --workspace --exclude memfuse-tauri  # Gesamte Testsuite ausführen
+just check                                     # Code-Formatierung prüfen + Clippy-Warnungen als Fehler behandeln
+just test                                      # Gesamte Testsuite ausführen
+just triple-test                               # Führt cargo test 3x hintereinander aus (Flaky-Test-Detektor)
+just dag-check                                 # Überprüft die Einhaltung der strengen Crate-Abhängigkeitsrichtung
+just debt-audit                                # Scannt den Code nach unwrap(), expect() und std::fs-Zugriffen
 ```
 
 ---
@@ -25,17 +27,17 @@ Vor jeder Codeänderung MUSS das LLM folgende Dokumente im aktiven Kontext best�
 
 ## 2. DAG — Schichtenarchitektur (Unidirektional)
 Ein Verstoß gegen diese Abhängigkeitsrichtung ist ein schwerwiegender Architekturbruch, kein kosmetisches Problem:
-*   **Layer 0: `memfuse-core`** — Keine internen Abhängigkeiten, kein I/O, kein Async-Runtime.
-*   **Layer 1: `memfuse-store` (LSM), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-crypto` (AES-GCM-SIV), `memfuse-checkpoint` (Snapshot)** — Hängen nur von core ab.
-*   **Layer 2: `memfuse-db`** — Orchestriert Layer 0 und Layer 1.
-*   **Layer 3: `memfuse-py`** — Reine PyO3-Fassade für memfuse-db (Null Logik!).
-*   **🧊 FROZEN ZONE**: `memfuse-embed` (ONNX Embeddings, opt-in Feature, keine Codeänderungen ohne explizite Freigabe).
+*   **Layer 0: `memfuse-core`** — Keine internen Abhängigkeiten, kein I/O, kein Async-Runtime, stellt `TextEmbeddingEngine` Trait bereit.
+*   **Layer 1: `memfuse-store` (LSM), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-crypto` (AES-256-GCM), `memfuse-graph` (CSR Graph mit LSM-Persistenz unter `__graph:`), `memfuse-checkpoint` (Snapshot)** — Hängen nur von core ab.
+*   **Layer 2: `memfuse-db`** — Orchestriert Layer 0 und Layer 1 (4-Signal Fusion).
+*   **Layer 3: `memfuse-py`** (PyO3 Bindings), **`memfuse-ollama`** (Ollama HTTP Embedding Backend).
+*   **Layer 4: `memfuse-mcp`** (Axum HTTP / JSON-RPC MCP Server), **`memfuse-tauri`** (Tauri Desktop App "MemFuse Brain").
 
 ---
 
 ## 3. Aktions-Klassifikation (Tiers)
 *   **ALWAYS** (ohne Rückfrage ausführen):
-    - `just check` und `just test` vor jedem Commit ausführen.
+    - `cargo test --workspace --exclude memfuse-tauri` vor jedem Commit ausführen.
     - Jeden externen API-Aufruf gegen die gepinnte Version in `Cargo.lock` abgleichen, bevor er geschrieben wird.
     - `// SAFETY:`-Kommentare bei jedem `unsafe`-Block mit mathematisch/logischem Beweis.
 *   **ASK-FIRST** (nur mit expliziter menschlicher Freigabe):

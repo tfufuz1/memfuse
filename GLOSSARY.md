@@ -6,7 +6,7 @@ Dieses Glossar definiert die exakten Fachbegriffe der MemFuse-Domain. Abweichung
 
 | Begriff | Definition | Nicht verwenden |
 |---|---|---|
-| **Collection** | Logisch isolierter Namensraum (Vektoren + Text + Metadaten). | database, table, index |
+| **Collection** | Logisch isolierter Namensraum (Vektoren + Text + Graph + Metadaten). | database, table, index |
 | **Namespace** | Synonym für Collection auf LSM-Persistenzebene. | shard, partition |
 | **DocId** | Eindeutige ID aus Blake3-Hash des Keys. | document ID, row ID |
 
@@ -18,7 +18,7 @@ Dieses Glossar definiert die exakten Fachbegriffe der MemFuse-Domain. Abweichung
 | **SeqNo** | Monotone Sequenznummer (Bit 63 = Tombstone-Flag). | LSN, version |
 | **TxBuffer** | Transaktions-Staging-Bereich vor dem WAL/MemTable-Commit. | write buffer, batch |
 | **Snapshot Isolation** | Garantie, dass eine Transaktion einen konsistenten Zustand sieht — unabhängig von parallel laufenden Schreibern. | MVCC (unspezifisch) |
-| **2PC** | Two-Phase Commit zur atomaren Transaktionskoordination über LSM + HNSW + BM25. | double phase commit |
+| **2PC** | Two-Phase Commit zur atomaren Transaktionskoordination über LSM + HNSW + BM25 + Graph. | double phase commit |
 
 ## Persistenzschicht (LSM-Tree)
 
@@ -37,12 +37,22 @@ Dieses Glossar definiert die exakten Fachbegriffe der MemFuse-Domain. Abweichung
 |---|---|---|
 | **HNSW** | Hierarchical Navigable Small World — Graph-basierte Vektor-Indexierung mit SIMD-beschleunigter Distanzberechnung. | vector tree, knn graph |
 | **BM25** | Best Matching 25 — probabilistisches Relevanzmodell für Volltext-Suche (via `memfuse-text`). | tf-idf (veraltet) |
-| **RRF** | Reciprocal Rank Fusion — Kombination von HNSW- und BM25-Rängen ohne Score-Normalisierung. | score merger, rank fusion |
+| **CSR-Graph** | Compressed Sparse Row Graph — performante Graph-Datenstruktur in `memfuse-graph`, persistiert im LSM-Store unter `__graph:`. | adjacency list |
+| **4-Signal-Fusion** | Kombination aus Vektordistanz (HNSW), BM25-Lexik, CSR-Wissensgraph und Metadaten-Filterung via RRF. | hybrid search (unspezifisch) |
+| **RRF** | Reciprocal Rank Fusion — Kombination von HNSW-, BM25- und Graph-Rängen ohne Score-Normalisierung. | score merger, rank fusion |
+
+## Anwendungsschichten & Protokoelle
+
+| Begriff | Definition | Nicht verwenden |
+|---|---|---|
+| **OllamaEmbedder** | Local-First Embedding Provider in `memfuse-ollama`, der den `TextEmbeddingEngine`-Trait implementiert. | ONNX engine |
+| **MCP Server** | Model Context Protocol Server (`memfuse-mcp`) mit HTTP/JSON-RPC Endpunkten für LLM-Tools. | REST API |
+| **MemFuse Brain** | Tauri-basierte Desktop-Applikation (`memfuse-tauri`) mit Ingestion-Pipeline und Chat-UI. | Electron app |
 
 ## Fehlerbehandlung & Kryptographie
 
 | Begriff | Definition | Nicht verwenden |
 |---|---|---|
 | **MemFuseError** | Zentrale Error-Enum in `memfuse-core`. Einziger Fehlertyp im gesamten Projekt. | Custom Error, anyhow |
-| **AES-GCM-SIV** | Authentifizierte Verschlüsselung in `memfuse-crypto`. Nonce-Misuse-resistent. | AES-CBC, plaintext |
+| **AES-256-GCM** | Authentifizierte Verschlüsselung in `memfuse-crypto`. Nonce-Misuse-resistent. | AES-CBC, plaintext |
 | **HMAC-Chaining** | WAL-Integritätsschutz: Jeder Eintrag hasht den vorherigen HMAC mit ein. | checksum chain |
