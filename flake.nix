@@ -48,21 +48,29 @@
             pythonEnv
             maturin
 
-            # System libs for build
+            # System libs for build & Tauri Desktop GUI
             pkg-config
             openssl
             flatbuffers
+            glib
+            gtk3
+            webkitgtk_4_1
+            libsoup_3
+            pango
+            cairo
+            gdk-pixbuf
+            harfbuzz
           ];
 
           shellHook = ''
             export RUST_BACKTRACE=1
             export PYTHONPATH="${pythonEnv}/bin/python"
 
-            # OpenSSL linkage for Rust
+            # OpenSSL & GTK linkage for Rust & Tauri
             export OPENSSL_DIR="${pkgs.openssl.dev}"
             export OPENSSL_LIB_DIR="${pkgs.openssl.out}/lib"
             export OPENSSL_INCLUDE_DIR="${pkgs.openssl.dev}/include"
-            export PKG_CONFIG_PATH="${pkgs.openssl.dev}/lib/pkgconfig"
+            export PKG_CONFIG_PATH="${pkgs.openssl.dev}/lib/pkgconfig:${pkgs.glib.dev}/lib/pkgconfig:${pkgs.gtk3.dev}/lib/pkgconfig:${pkgs.webkitgtk_4_1.dev}/lib/pkgconfig:${pkgs.libsoup_3.dev}/lib/pkgconfig"
 
             echo "Memfuse Development Environment Loaded 🦀🐍"
           '';
