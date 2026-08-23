@@ -21,7 +21,10 @@ pub async fn hybrid_search(
 ) -> Result<Vec<SearchResultDto>, String> {
     let db = {
         let db_guard = state.db.read();
-        db_guard.as_ref().cloned().ok_or("Keine Datenbank geöffnet")?
+        db_guard
+            .as_ref()
+            .cloned()
+            .ok_or("Keine Datenbank geöffnet")?
     };
     let collection = db
         .collection(&collection_name)

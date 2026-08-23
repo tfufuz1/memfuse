@@ -414,11 +414,15 @@ impl MemFuse {
 
         // 1. Delete all collection data keys (prefix-based)
         let col_data_prefix = format!("__col:{}:", name);
-        self.storage.delete_prefix(tx, col_data_prefix.as_bytes()).await?;
+        self.storage
+            .delete_prefix(tx, col_data_prefix.as_bytes())
+            .await?;
 
         // 2. Delete all text index data keys for this collection
         let txt_data_prefix = format!("__txt:{}:", name);
-        self.storage.delete_prefix(tx, txt_data_prefix.as_bytes()).await?;
+        self.storage
+            .delete_prefix(tx, txt_data_prefix.as_bytes())
+            .await?;
 
         // 3. Delete the index key itself
         let col_idx_key = [b"__col_idx:\x00", name.as_bytes()].concat();

@@ -8,21 +8,51 @@
 /// KMU-Fachvokabular — ergänzt das Basis-Wörterbuch für Unternehmenskontexte.
 const KMU_DOMAIN_VOCABULARY: &[&str] = &[
     // Geschäftsprozesse
-    "auftrags", "angebots", "rechnungs", "lieferungs", "bestellungs",
-    "kunden", "lieferanten", "vertrags", "zahlungs",
+    "auftrags",
+    "angebots",
+    "rechnungs",
+    "lieferungs",
+    "bestellungs",
+    "kunden",
+    "lieferanten",
+    "vertrags",
+    "zahlungs",
     // HR
-    "mitarbeiter", "personal", "urlaubs", "gehalts", "arbeits",
-    "bewerbungs", "schulungs",
+    "mitarbeiter",
+    "personal",
+    "urlaubs",
+    "gehalts",
+    "arbeits",
+    "bewerbungs",
+    "schulungs",
     // Logistik
-    "lager", "bestands", "transport", "versand", "liefer", "fracht",
+    "lager",
+    "bestands",
+    "transport",
+    "versand",
+    "liefer",
+    "fracht",
     // Produktion
-    "fertigungs", "produktions", "qualitäts", "wartungs", "maschinen",
-    "prüfungs", "prozess",
+    "fertigungs",
+    "produktions",
+    "qualitäts",
+    "wartungs",
+    "maschinen",
+    "prüfungs",
+    "prozess",
     // Compliance & Recht
-    "datenschutz", "compliance", "richtlinie", "genehmigungs",
-    "zertifizierungs", "haftungs",
+    "datenschutz",
+    "compliance",
+    "richtlinie",
+    "genehmigungs",
+    "zertifizierungs",
+    "haftungs",
     // Finanzen
-    "finanz", "steuer", "buchhaltungs", "bilanz", "liquiditäts",
+    "finanz",
+    "steuer",
+    "buchhaltungs",
+    "bilanz",
+    "liquiditäts",
 ];
 
 /// Normalisiert deutsche Umlaute für robusten Suchabgleich.

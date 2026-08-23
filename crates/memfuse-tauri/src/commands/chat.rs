@@ -15,7 +15,10 @@ pub async fn chat_with_rag(
 ) -> Result<String, String> {
     let db = {
         let db_guard = state.db.read();
-        db_guard.as_ref().cloned().ok_or("Keine Datenbank geöffnet")?
+        db_guard
+            .as_ref()
+            .cloned()
+            .ok_or("Keine Datenbank geöffnet")?
     };
     let collection = db
         .collection(&collection_name)

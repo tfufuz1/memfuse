@@ -11,7 +11,10 @@ pub struct EmailContent {
 
 pub fn extract_email(path: &Path) -> Result<EmailContent> {
     let raw = std::fs::read(path).map_err(|e| {
-        memfuse_core::MemFuseError::Internal(format!("E-Mail lesen fehlgeschlagen für {:?}: {e}", path))
+        memfuse_core::MemFuseError::Internal(format!(
+            "E-Mail lesen fehlgeschlagen für {:?}: {e}",
+            path
+        ))
     })?;
 
     let parsed = mailparse::parse_mail(&raw).map_err(|e| {
@@ -22,11 +25,12 @@ pub fn extract_email(path: &Path) -> Result<EmailContent> {
         .headers
         .get_first_value("Subject")
         .unwrap_or_default();
-    let from = parsed
-        .headers
-        .get_first_value("From")
-        .unwrap_or_default();
+    let from = parsed.headers.get_first_value("From").unwrap_or_default();
     let body = parsed.get_body().unwrap_or_default();
 
-    Ok(EmailContent { subject, from, body })
+    Ok(EmailContent {
+        subject,
+        from,
+        body,
+    })
 }

@@ -11,6 +11,7 @@ members = [
     "crates/memfuse-graph",
     "crates/memfuse-py",
     "crates/memfuse-tauri",
+    "crates/memfuse-mcp",
 ]
 
 [workspace.package]

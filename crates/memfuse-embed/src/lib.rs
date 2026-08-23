@@ -14,7 +14,6 @@ use std::path::Path;
 use tokenizers::Tokenizer;
 use tracing::{debug, info};
 
-
 /// Handles text tokenization and ONNX model inference.
 #[derive(Debug)]
 pub struct TextEmbedder {

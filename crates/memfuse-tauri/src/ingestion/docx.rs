@@ -6,7 +6,10 @@ pub fn extract_docx_text(path: &Path) -> Result<String> {
     use docx_rs::*;
 
     let bytes = std::fs::read(path).map_err(|e| {
-        memfuse_core::MemFuseError::Internal(format!("DOCX lesen fehlgeschlagen für {:?}: {e}", path))
+        memfuse_core::MemFuseError::Internal(format!(
+            "DOCX lesen fehlgeschlagen für {:?}: {e}",
+            path
+        ))
     })?;
 
     let docx = read_docx(&bytes).map_err(|e| {

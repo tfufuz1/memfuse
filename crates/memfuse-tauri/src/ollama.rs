@@ -49,14 +49,12 @@ impl OllamaBridge {
     /// Prüft, ob Ollama erreichbar ist und listet verfügbare Modelle.
     pub async fn list_models(&self) -> Result<Vec<String>> {
         let url = format!("{}/api/tags", self.base_url);
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| MemFuseError::Internal(
-                format!("Ollama nicht erreichbar unter {}: {e}. Ist Ollama gestartet?", self.base_url)
-            ))?;
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            MemFuseError::Internal(format!(
+                "Ollama nicht erreichbar unter {}: {e}. Ist Ollama gestartet?",
+                self.base_url
+            ))
+        })?;
 
         #[derive(Deserialize)]
         struct TagsResponse {
@@ -95,8 +93,14 @@ impl OllamaBridge {
         let request = ChatRequest {
             model: model.to_string(),
             messages: vec![
-                ChatMessage { role: "system".into(), content: system_prompt },
-                ChatMessage { role: "user".into(), content: user_query.to_string() },
+                ChatMessage {
+                    role: "system".into(),
+                    content: system_prompt,
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: user_query.to_string(),
+                },
             ],
             stream: true,
         };
@@ -108,14 +112,16 @@ impl OllamaBridge {
             .json(&request)
             .send()
             .await
-            .map_err(|e| MemFuseError::Internal(format!("Ollama-Chat-Anfrage fehlgeschlagen: {e}")))?;
+            .map_err(|e| {
+                MemFuseError::Internal(format!("Ollama-Chat-Anfrage fehlgeschlagen: {e}"))
+            })?;
 
         let mut stream = response.bytes_stream();
         let mut full_response = String::new();
 
         while let Some(chunk_result) = stream.next().await {
-            let bytes = chunk_result
-                .map_err(|e| MemFuseError::Internal(format!("Stream-Fehler: {e}")))?;
+            let bytes =
+                chunk_result.map_err(|e| MemFuseError::Internal(format!("Stream-Fehler: {e}")))?;
             for line in bytes.split(|&b| b == b'\n') {
                 if line.is_empty() {
                     continue;
@@ -150,7 +156,10 @@ impl crate::ingestion::pipeline::EmbeddingProvider for OllamaBridge {
         }
 
         let url = format!("{}/api/embeddings", self.base_url);
-        let request = EmbedRequest { model: "nomic-embed-text", prompt: text };
+        let request = EmbedRequest {
+            model: "nomic-embed-text",
+            prompt: text,
+        };
 
         let response = self
             .client
@@ -160,10 +169,9 @@ impl crate::ingestion::pipeline::EmbeddingProvider for OllamaBridge {
             .await
             .map_err(|e| MemFuseError::Internal(format!("Ollama-Embedding fehlgeschlagen: {e}")))?;
 
-        let parsed: EmbedResponse = response
-            .json()
-            .await
-            .map_err(|e| MemFuseError::Internal(format!("Ollama-Embedding-Antwort ungültig: {e}")))?;
+        let parsed: EmbedResponse = response.json().await.map_err(|e| {
+            MemFuseError::Internal(format!("Ollama-Embedding-Antwort ungültig: {e}"))
+        })?;
 
         Ok(parsed.embedding)
     }
