@@ -1,140 +1,86 @@
-# MemFuse — Die eingebettete 3-in-1 Memory Engine für lokale AI-Agenten
+# MemFuse Brain
 
-MemFuse ist eine in-process Speicher-Engine in reinem Rust, die **Vektorsuche (HNSW)**, **BM25-Volltextsuche** und **Entity-Relation Graph-Traversal (CSR)** in einer 3-Signal-Fusion-Engine kombiniert (mit einem optionalen Metadaten-Filter).
+**Ihr lokaler, air-gapped Unternehmensassistent — mit professionellem Gedächtnis.**
 
-**Ersetzt ChromaDB + Elasticsearch + Neo4j durch ein einfaches `pip install memfuse`.**
+MemFuse Brain ist eine Desktop-Applikation, die Ihre Firmendokumente
+(PDF, Word, Markdown, E-Mails) durchsuchbar macht und über ein lokal
+laufendes Sprachmodell (via Ollama) Fragen dazu beantwortet — komplett
+offline, ohne dass ein einziges Byte Ihrer Daten das Gerät verlässt.
 
-Designed für autonome AI-Agenten und local-first Anwendungen — in-process, kein Server, kein Docker, kein Cloud-Account.
+> ⚠️ **Status: Aktive Entwicklung.** Kern-Suchengine ist produktionsreif
+> getestet (LSM-Tree, HNSW, BM25). Desktop-App und Ollama-Integration
+> befinden sich im Aufbau.
 
----
+## Warum MemFuse Brain?
 
-## 🎯 Warum MemFuse?
+- **Air-Gapped by Design** — keine Cloud, keine Telemetrie, kein API-Key nötig
+- **Zero-IT-Setup** — ein Installer, fertig. Kein Docker, kein Server, kein Admin
+- **3-Signal-Hybridsuche** — Vektorsuche (HNSW) + Volltextsuche (BM25) +
+  Wissensgraph, fusioniert via Reciprocal Rank Fusion
+- **Deutsche Morphologie** — versteht "Urlaubsantragsprozess" auch als
+  "Urlaub", "Antrag", "Prozess" für bessere Trefferqualität
+- **Verschlüsselt** — AES-256-GCM auf Disk, HMAC-Anti-Tamper im WAL
 
-| Eigenschaft | MemFuse | ChromaDB | LanceDB | Kùzu / Neo4j |
-|---|---|---|---|---|
-| **In-Process (Embedded)** | ✅ | ✅ | ✅ | ⚠️ (Kùzu embedded / Neo4j Server) |
-| **3-Signal Fusion (RRF)** | ✅ (Vektor + BM25 + Wissensgraph) | ❌ (nur Vektor+Meta) | ❌ (kein Graph) | ❌ (kein Vektor/RRF) |
-| **Zero C-Deps (Sovereign Core)**| ✅ 100% Pure-Rust Core | ❌ | ❌ | ❌ |
-| **ACID + WAL** | ✅ MVCC + HMAC-WAL | ❌ | ⚠️ | ✅ |
-| **MCP Server Support** | ✅ Eingebaut in Python SDK | ❌ | ❌ | ❌ |
+## Architektur
 
----
-
-## 🚀 Key Features
-
-- **3-Signal Reciprocal Rank Fusion (RRF)**: Fusioniert episodische (Vektor), lexikalische (BM25) und assoziative (Wissensgraph) Signale in einer einzigen Abfrage (mit optionalem Metadaten-Filter).
-- **MCP Server Protocol**: Nahtlose Anbindung an Claude Desktop, Cursor und LLM-Agenten via Model Context Protocol.
-- **ACID & MVCC**: Strikte Transaktionssicherheit mit Write-Ahead-Log (WAL) und Snapshot-Isolation.
-- **SIMD & SQ8 Quantisierung**: Hardware-beschleunigte Distanzberechnung mit bis zu 4× Speicherersparnis.
-- **Pure-Rust Sovereign Core**: Keine C-Bibliotheken oder externen System-Runtimes erforderlich.
-
----
-
-## 🐍 Python Integration
-
-```bash
-pip install memfuse
+```
+┌─────────────────────────────────────────┐
+│  MemFuse Brain (Tauri Desktop-App)       │
+│  ┌─────────────┐  ┌────────────────────┐│
+│  │ Chat-UI      │  │ Dokumenten-Import  ││
+│  └──────┬───────┘  └─────────┬──────────┘│
+│         │                     │            │
+│  ┌──────▼─────────────────────▼─────────┐ │
+│  │  Ollama-Bridge (lokales LLM)         │ │
+│  └──────┬─────────────────────────────  ┘ │
+│         │                                  │
+│  ┌──────▼─────────────────────────────┐   │
+│  │  MemFuse Core (3-Signal RAG-Engine) │   │
+│  │  Vektor + BM25 + Wissensgraph        │   │
+│  └───────────────────────────────────┘    │
+└─────────────────────────────────────────┘
+         Alles lokal. Nichts verlässt den Rechner.
 ```
 
-```python
-from memfuse import MemFuse
+## Für Entwickler: Rust-Crates
 
-db = MemFuse.open("./agent_memory")
-col = db.collection("context")
+Der Kern von MemFuse Brain ist als eigenständige, wiederverwendbare
+Rust-Bibliothek verfügbar:
 
-# Dokument mit Vektor, Text & Metadaten einfügen
-col.insert(
-    id="doc1",
-    vector=[0.1] * 1536,
-    metadata={"text": "Kundenanfrage bezüglich Rückerstattung", "category": "support"}
-)
-
-# 3-Signal Hybrid-Suche (Vektor + BM25 + Wissensgraph)
-results = col.hybrid_search(
-    query_text="Rückerstattung",
-    query_vector=[0.1] * 1536,
-    top_k=5
-)
+```toml
+[dependencies]
+memfuse-db = "0.1.0"
 ```
 
-### Model Context Protocol (MCP) Server
+```rust
+use memfuse_db::MemFuse;
 
-Starten des integrierten MCP-Servers für Claude Desktop & AI-Tools:
+let db = MemFuse::open("./meine_daten").await?;
+let col = db.collection("dokumente").await?;
+
+col.insert("doc-1", &embedding, Some(serde_json::json!({"text": "..."}))).await?;
+
+let results = col.hybrid_search("meine Anfrage", &query_embedding, 5, None).await?;
+```
+
+## MCP-Server (für Claude Desktop & andere MCP-Clients)
 
 ```bash
 cargo run --bin memfuse-mcp-server -- --db-path ./firma_daten
 ```
 
----
+## Roadmap
 
-## 📦 Rust Crate Usage
+- [x] LSM-Tree-Storage mit MVCC, WAL, Crash-Recovery
+- [x] HNSW-Vektorindex mit SIMD-Beschleunigung
+- [x] BM25-Volltextsuche mit deutscher Morphologie
+- [x] 3-Signal-Fusion (Vektor + BM25 + Wissensgraph) — persistiert & integriert
+- [x] Dokumenten-Ingestion (PDF, DOCX, Markdown, E-Mail)
+- [ ] Tauri-Desktop-App (UI in aktivem Aufbau)
+- [ ] Ollama-Chat-Integration mit Streaming
+- [ ] MCP-Server (axum/SSE)
+- [ ] Native Installer (Windows/macOS/Linux)
 
-```toml
-[dependencies]
-memfuse-db = { path = "crates/memfuse-db" }
-```
-
----
-
-## 🏎️ Quickstart (Rust)
-
-```rust
-use memfuse_db::MemFuse;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let db = MemFuse::open("./data").await?;
-    let col = db.collection("agents").await?;
-
-    // Dokument einfügen
-    let vec = vec![0.1f32; 1536];
-    col.insert("doc1", &vec, Some(serde_json::json!({"text": "Hello MemFuse!"}))).await?;
-
-    // Hybrid-Suche
-    let results = col.hybrid_search("Hello", &vec, 5).await?;
-    for r in results {
-        println!("Found {} (score: {:.4})", r.id, r.score);
-    }
-
-    Ok(())
-}
-```
-
----
-
-## 🗺️ Roadmap
-
-| Phase | Ziel | Status |
-|---|---|---|
-| **P0** | CVE-Fixes (`memmap2`, `lru`), Scope-Bereinigung | 🟢 Erledigt |
-| **P1** | Zero-Panic durchsetzen, FIND-STO-001 (Phantom-Daten), `memfuse-graph` reaktivieren | 🟡 Aktiv |
-| **P2** | `memfuse-py` + pytest-Suite, PyPI alpha, crates.io v0.1.0 | ⬜ Geplant |
-| **P3** | Öffentliche Benchmarks (vs. ChromaDB/LanceDB), HN-Launch | ⬜ Geplant |
-
----
-
-## 🛠️ Entwicklung
-
-```bash
-# Voraussetzung: Nix mit Flakes (empfohlen) oder Rust stable 1.89+
-nix develop
-
-# Build & Tests
-just check      # fmt + clippy + compile
-just test       # Testsuite
-just debt-audit # Zero-Panic + Security Audit
-```
-
-### Dokumentation
-- [README.md](./README.md) — Dieses Dokument.
-- [CONSTITUTION.md](./CONSTITUTION.md) & [DEVELOPERS.md](./DEVELOPERS.md) — Projekt-Governance.
-- [AGENTS.md](./AGENTS.md) — LLM-Agent-Regeln und Verifikationsschleifen.
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — Schichtmodell, Invarianten-Status.
-- [docs/SOURCE_OF_TRUTH.md](./docs/SOURCE_OF_TRUTH.md) — Living State Document (Backlog, Crate-Inventar, Roadmap).
-- [DECISIONS.md](./DECISIONS.md) — Architecture Decision Records (ADRs).
-
----
-
-## ⚖️ Lizenz
+## Lizenz
 
 MIT OR Apache-2.0
