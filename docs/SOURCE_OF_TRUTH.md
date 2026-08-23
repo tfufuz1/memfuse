@@ -4,6 +4,30 @@
 
 ---
 
+## Aktueller Projektstatus (Stand: nach Enterprise-Pivot v2)
+
+**Produkt**: MemFuse Brain — lokale, air-gapped RAG-Desktop-App für KMU
+**Kern-USP**: Echtes 3-Signal-Hybrid-RAG (Vektor+BM25+Graph), persistiert,
+in `hybrid_search()` fusioniert — kein Marketing-Versprechen mehr, sondern
+verifizierter Code-Zustand.
+
+### Aktive Crates
+- `memfuse-core`, `memfuse-store`, `memfuse-index`, `memfuse-text`,
+  `memfuse-crypto`, `memfuse-checkpoint` — Foundation (unverändert stabil)
+- `memfuse-graph` — CSR-Graph, jetzt persistent (LSM-Namespace `__graph:`)
+- `memfuse-db` — 3-Signal-Fusion inkl. Graph-Traversal
+- `memfuse-tauri` — Desktop-App-Shell, Ingestion, Ollama-Bridge
+- `memfuse-mcp` — Standalone MCP-Server
+
+### Bekannte Einschränkungen (ehrlich dokumentiert)
+- `memfuse-embed` (ONNX) ist weiterhin nicht buildbar ohne manuelle
+  Feature-Flag-Aktivierung — aktuell wird Ollama als primärer Embedding-Weg
+  genutzt, ONNX bleibt optionaler Zukunftsausbau.
+- Der MCP-Server unterstützt aktuell nur Text-Suche ohne Embedding-Insert,
+  da er keinen eingebetteten Embedder hält.
+
+---
+
 ## 1. Produktstrategie & Mission
 
 **MemFuse** is the **embedded 3-in-1 Memory Engine for Local AI Agents** — combining Vector Search (semantic), BM25 Full-Text Search (lexical), and Entity-Relation Graph Traversal (associative) in a single in-process library.

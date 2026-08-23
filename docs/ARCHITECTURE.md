@@ -1,5 +1,17 @@
 # MemFuse Architektur — Kurzreferenz
 
+## Architektur-Update: Desktop-Applikation (MemFuse Brain)
+
+Über dem bestehenden 3-Schichten-Modell (Triebwerk/Getriebe/Fassade) liegt
+nun eine vierte Schicht:
+
+**Layer 4 — Anwendung**:
+- `memfuse-tauri`: Desktop-Shell, IPC-Commands, Ingestion-Pipeline, Ollama-Bridge
+- `memfuse-mcp`: Standalone MCP-Server (axum/SSE) für externe LLM-Clients
+
+Diese Schicht kennt `memfuse-db` nur über dessen öffentliche API — keine
+Layer-Verletzung nach unten.
+
 ## Kern-Philosophie
 MemFuse ist die **eingebettete 4-Signal-Memory-Engine für lokale AI-Agenten** —
 air-gapped, zero-panic (angestrebt), 100% Pure-Rust Sovereign Core ohne externe C-Laufzeitumgebungen.
