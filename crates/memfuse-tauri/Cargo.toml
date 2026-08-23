@@ -29,6 +29,8 @@ futures-util = "0.3"
 
 [dev-dependencies]
 tempfile = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["full", "test-util"] }
 
 [lib]
 name = "memfuse_tauri_lib"
