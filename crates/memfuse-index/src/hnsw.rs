@@ -172,7 +172,7 @@ struct HnswNode {
     doc_id: DocId,
     vector: VectorData,
     connections: Vec<Vec<u32>>,
-    _max_layer: usize,
+    max_layer: usize,
     committed_tx: u64,
 }
 
@@ -530,7 +530,38 @@ struct SearchContext<'a> {
     mmap_node_count: usize,
 }
 
+/// Liefert den aktuellen Rebuild-Status des Index.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RebuildStatus {
+    /// Kein Rebuild läuft.
+    Idle,
+    /// Rebuild läuft gerade im Hintergrund.
+    Running,
+}
+
 impl HnswIndexCore {
+    /// Liefert den aktuellen Rebuild-Status des Index.
+    pub fn rebuild_status(&self) -> RebuildStatus {
+        if self.rebuilding.load(Ordering::SeqCst) {
+            RebuildStatus::Running
+        } else {
+            RebuildStatus::Idle
+        }
+    }
+
+    /// Wartet bis ein laufender Rebuild abgeschlossen ist.
+    /// Gibt `true` zurück wenn Rebuild abgeschlossen, `false` bei Timeout.
+    pub async fn wait_for_rebuild_with_timeout(&self, timeout: std::time::Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + timeout;
+        while self.rebuilding.load(Ordering::Acquire) {
+            if tokio::time::Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        true
+    }
+
     fn random_layer(&self) -> usize {
         let mut rng = rand::thread_rng();
         // ANCHOR:ALG-FIX:D2-002 — Guard gegen ln(0) = -∞ (INV-HNSW-2)
@@ -915,7 +946,7 @@ impl HnswIndexCore {
                 doc_id: id,
                 vector: vector_data,
                 connections: vec![vec![]; new_layer + 1],
-                _max_layer: new_layer,
+                max_layer: new_layer,
                 committed_tx: 0,
             });
             mmap_node_count + idx
@@ -1137,12 +1168,12 @@ impl HnswIndexCore {
                 for (i, node) in nodes.iter().enumerate() {
                     let global_idx = mmap_node_count + i;
                     if global_idx != idx && !deleted.contains(global_idx as u64) {
-                        if node._max_layer >= max_layer {
-                            max_layer = node._max_layer;
+                        if node.max_layer >= max_layer {
+                            max_layer = node.max_layer;
                             best_node = Some(global_idx);
                         }
-                        if node._max_layer >= max_ram_layer {
-                            max_ram_layer = node._max_layer;
+                        if node.max_layer >= max_ram_layer {
+                            max_ram_layer = node.max_layer;
                             best_ram_node = Some(global_idx);
                         }
                     }
@@ -1157,10 +1188,10 @@ impl HnswIndexCore {
                                     .map(|r| r.max_layer as usize)
                                     .unwrap_or(0)
                             } else {
-                                nodes[new_idx - mmap_node_count]._max_layer
+                                nodes[new_idx - mmap_node_count].max_layer
                             }
                         } else {
-                            nodes[new_idx]._max_layer
+                            nodes[new_idx].max_layer
                         };
                         self.max_layer
                             .store(node_max_layer as u64, Ordering::SeqCst);

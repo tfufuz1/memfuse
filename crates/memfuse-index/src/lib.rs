@@ -18,7 +18,7 @@ pub mod hnsw;
 pub mod persistence;
 pub mod quantize;
 
-pub use hnsw::{HnswConfig, HnswIndex};
+pub use hnsw::{HnswConfig, HnswIndex, RebuildStatus};
 #[cfg(feature = "graph")]
 pub use memfuse_graph::CsrGraph;
 pub use persistence::{HnswHeader, MmapIndex};

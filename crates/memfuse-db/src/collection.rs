@@ -255,7 +255,14 @@ impl<S: StorageEngine> Collection<S> {
 
             let stored: StoredDocument = match serde_json::from_slice(&value) {
                 Ok(d) => d,
-                Err(_) => continue,
+                Err(e) => {
+                    tracing::debug!(
+                        key = ?namespaced_key,
+                        error = %e,
+                        "Überspringe nicht-deserialisierbare Einträge bei repair (erwartet für Metadaten-Keys)"
+                    );
+                    continue;
+                }
             };
 
             let doc_id = DocId::from_key(&stored.id)?;

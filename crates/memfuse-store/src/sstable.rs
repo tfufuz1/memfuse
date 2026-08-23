@@ -31,10 +31,17 @@ pub type BlockCache = RwLock<LruCache<(u64, u64), Bytes>>;
 
 /// Creates a new block cache instance. Capacity is in MB (assuming 4KB blocks).
 pub fn create_block_cache(capacity_mb: usize) -> Arc<BlockCache> {
-    let capacity = capacity_mb * 256;
-    let capacity = capacity.max(256); // minimum 1MB
+    // 1 MB = 256 Blöcke à 4 KB
+    // Saturating-Mul verhindert Overflow-Wrapping in Release-Mode
+    let capacity = capacity_mb
+        .saturating_mul(256)  // Overflow → usize::MAX (sicher)
+        .max(256)             // Minimum: 1 MB Cache (256 Blöcke)
+        .min(8 * 1024 * 256); // Maximum: 8 GB Cache (vernünftige Obergrenze)
+
     Arc::new(RwLock::new(LruCache::new(
-        NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::MIN),
+        // NonZeroUsize::new(capacity) ist nach .max(256) garantiert > 0
+        NonZeroUsize::new(capacity)
+            .expect("capacity nach max(256) ist immer > 0"),
     )))
 }
 
@@ -1981,5 +1988,14 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_block_cache_extreme_values() {
+        // Darf nicht paniken oder overflowlen – prüft alle Grenzfälle.
+        let _ = create_block_cache(0);              // minimum → floor auf 256 Blöcke
+        let _ = create_block_cache(1);              // normal
+        let _ = create_block_cache(usize::MAX);     // overflow-Test → saturating → cap
+        let _ = create_block_cache(usize::MAX / 2); // near-overflow → saturating → cap
     }
 }
