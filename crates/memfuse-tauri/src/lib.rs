@@ -14,7 +14,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .manage(AppState::new())
         .setup(|app| {
-            let handle = app.handle().clone();
+            let _handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let bridge = crate::ollama::OllamaBridge::localhost();
                 match bridge.list_models().await {

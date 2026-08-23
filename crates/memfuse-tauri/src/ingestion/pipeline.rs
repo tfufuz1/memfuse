@@ -1,4 +1,4 @@
-use memfuse_core::{DocId, Edge, Entity, EntityId, GraphIndex, Result, TxId};
+use memfuse_core::{ContextChunk, DocId, Edge, Entity, EntityId, GraphIndex, Result, TxId};
 use memfuse_db::{chunker::MarkdownChunker, Collection};
 use std::path::Path;
 use std::sync::Arc;
@@ -74,7 +74,7 @@ impl IngestionPipeline {
         use futures_util::stream::{self, StreamExt};
         const EMBED_CONCURRENCY: usize = 8;
 
-        let embedding_results: Vec<(usize, memfuse_db::chunker::Chunk, Result<Vec<f32>>)> =
+        let embedding_results: Vec<(usize, ContextChunk, Result<Vec<f32>>)> =
             stream::iter(chunks.into_iter().enumerate())
                 .map(|(idx, chunk)| {
                     let embedder = Arc::clone(&self.embedder);

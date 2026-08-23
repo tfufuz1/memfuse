@@ -219,9 +219,29 @@ impl MemFuse {
                 "repair_on_open: found {} pending transaction intent(s), initiating recovery",
                 pending_intents.len()
             );
+        }
 
-            // 2. Mark each pending intent as "repaired" to prevent re-processing.
-            //    The actual data reconciliation happens in step 3 via Collection::repair().
+        // 2. Forward-commit: repair all loaded collections by re-syncing HNSW from LSM.
+        //    This deterministically replays any missing index entries that were lost
+        //    due to the crash (LSM committed but HNSW didn't).
+        let collections = self.collections.read().await;
+        let mut total_repairs = 0u64;
+        let mut all_repairs_succeeded = true;
+        for (name, col) in collections.iter() {
+            if let Err(e) = col.repair().await {
+                tracing::error!(
+                    "repair_on_open: failed to repair collection '{}': {}",
+                    name,
+                    e
+                );
+                all_repairs_succeeded = false;
+            } else {
+                total_repairs += 1;
+            }
+        }
+
+        // 3. Mark pending intents as "repaired" ONLY if collection repair succeeded.
+        if !pending_intents.is_empty() && all_repairs_succeeded {
             for intent_key in &pending_intents {
                 let tx = TxId::new(
                     self.next_tx
@@ -234,23 +254,6 @@ impl MemFuse {
                 if let Err(e) = self.storage.commit(tx).await {
                     tracing::error!("repair_on_open: failed to commit repaired marker: {}", e);
                 }
-            }
-        }
-
-        // 3. Forward-commit: repair all loaded collections by re-syncing HNSW from LSM.
-        //    This deterministically replays any missing index entries that were lost
-        //    due to the crash (LSM committed but HNSW didn't).
-        let collections = self.collections.read().await;
-        let mut total_repairs = 0u64;
-        for (name, col) in collections.iter() {
-            if let Err(e) = col.repair().await {
-                tracing::error!(
-                    "repair_on_open: failed to repair collection '{}': {}",
-                    name,
-                    e
-                );
-            } else {
-                total_repairs += 1;
             }
         }
 
@@ -428,10 +431,12 @@ impl MemFuse {
         let col_idx_key = [b"__col_idx:\x00", name.as_bytes()].concat();
         self.storage.delete(tx, &col_idx_key).await?;
 
-        // 4. Remove from in-memory collection registry
+        // 4. Commit deleting operations in persistent storage first
+        self.storage.commit(tx).await?;
+
+        // 5. Remove from in-memory collection registry ONLY after successful commit
         self.collections.write().await.remove(name);
 
-        self.storage.commit(tx).await?;
         Ok(())
     }
 
