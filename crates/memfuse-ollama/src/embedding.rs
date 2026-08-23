@@ -67,7 +67,17 @@ impl TextEmbeddingEngine for OllamaEmbedder {
 
         let mut output = Vec::with_capacity(results.len());
         for res in results {
-            output.push(res?);
+            let vec = res?;
+            if let Some(dim) = self.expected_dimension {
+                if vec.len() != dim {
+                    return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                        "Ollama embedding dimension mismatch: expected {}, got {}",
+                        dim,
+                        vec.len()
+                    )));
+                }
+            }
+            output.push(vec);
         }
         Ok(output)
     }

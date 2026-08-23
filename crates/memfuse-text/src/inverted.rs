@@ -68,10 +68,9 @@ impl<S: StorageEngine> InvertedIndex<S> {
         };
 
         let use_de = lang.map(|l| l.starts_with("de")).unwrap_or_else(|| {
-            namespace.contains("de")
-                || std::env::var("MEMFUSE_LANG")
-                    .map(|v| v.starts_with("de"))
-                    .unwrap_or(false)
+            std::env::var("MEMFUSE_LANG")
+                .map(|v| v.starts_with("de"))
+                .unwrap_or(true) // Default to German morphology for MemFuse Brain collections
         });
 
         let tokenizer: Arc<dyn Tokenizer> = if use_de {

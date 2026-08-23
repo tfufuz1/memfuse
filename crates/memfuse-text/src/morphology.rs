@@ -302,9 +302,12 @@ mod tests {
     #[test]
     fn test_german_splitter_scaffold() {
         let splitter = GermanCompoundSplitter::new();
-        // Fallback: returns original token
-        let parts = splitter.decompose("bundesverfassungsgericht");
-        assert_eq!(parts, vec!["bundesverfassungsgericht"]);
+        // Fallback: returns original token for unknown words
+        let fallback_parts = splitter.decompose("unbekannteswort");
+        assert_eq!(fallback_parts, vec!["unbekannteswort"]);
+        // Decomposition: splits known German compound words
+        let compound_parts = splitter.decompose("bundesverfassungsgericht");
+        assert_eq!(compound_parts, vec!["bundes", "verfassungs", "gericht"]);
         assert_eq!(splitter.language(), "de");
     }
 
