@@ -150,6 +150,42 @@
         </div>
     </main>
 
+    <div id="onboarding-overlay" style="
+        position: fixed; inset: 0; background: rgba(15,15,25,0.95);
+        display: flex; align-items: center; justify-content: center; z-index: 1000;
+    ">
+        <div style="max-width: 500px; background: #1a1a2e; padding: 2rem; border-radius: 12px; color: white;">
+            <h2>👋 Willkommen bei MemFuse Brain</h2>
+            <div id="onboarding-step-1">
+                <p>Ihr lokaler Unternehmensassistent. Bevor Sie starten, brauchen
+                   wir einen Ort für Ihre Daten — sie verlassen diesen Ordner nie.</p>
+                <button class="primary" id="onboarding-choose-folder" style="width: 100%; margin-top: 1rem;">
+                    📁 Datenordner wählen
+                </button>
+            </div>
+            <div id="onboarding-step-2" style="display: none;">
+                <p>✅ Datenordner eingerichtet.</p>
+                <p>Geben Sie Ihrem ersten Wissensbereich einen Namen (z.B. "Personalwesen",
+                   "Verträge", "Produktdokumentation"):</p>
+                <input type="text" id="onboarding-collection-name" placeholder="z.B. Personalwesen" style="width: 100%; margin-bottom: 0.5rem;">
+                <button class="primary" id="onboarding-create-collection" style="width: 100%;">
+                    Weiter
+                </button>
+            </div>
+            <div id="onboarding-step-3" style="display: none;">
+                <p>✅ Wissensbereich "<span id="onboarding-collection-display"></span>" erstellt.</p>
+                <p>Möchten Sie jetzt Dokumente importieren?</p>
+                <button class="primary" id="onboarding-import-now" style="width: 100%; margin-bottom: 0.5rem;">
+                    📂 Ordner mit Dokumenten importieren
+                </button>
+                <button id="onboarding-skip" style="width: 100%; background: none; border: 1px solid #444; color: #ccc; padding: 0.5rem; border-radius: 6px;">
+                    Später — direkt loslegen
+                </button>
+            </div>
+            <div id="onboarding-ollama-check" style="margin-top: 1rem; font-size: 0.8rem; opacity: 0.7;"></div>
+        </div>
+    </div>
+
     <script type="module" src="app.js"></script>
 </body>
 </html>
