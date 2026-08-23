@@ -2,54 +2,952 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>MemFuse Brain</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MemFuse Brain — Lokaler Unternehmens-Assistent</title>
     <style>
-        body { font-family: system-ui, sans-serif; margin: 2rem; }
-        #chat-log { border: 1px solid #ccc; padding: 1rem; min-height: 300px; margin-bottom: 1rem; }
-        input, button { padding: 0.5rem; font-size: 1rem; }
+        :root {
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-color: #0f172a;
+            --muted-text: #64748b;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --danger: #ef4444;
+            --danger-hover: #dc2626;
+            --border-color: #e2e8f0;
+            --radius: 8px;
+            --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.5;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        header {
+            background-color: var(--card-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-size: 0.875rem;
+            color: var(--muted-text);
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.25rem 0.6rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background-color: #f1f5f9;
+            color: #475569;
+        }
+
+        .status-badge.active {
+            background-color: #dcfce7;
+            color: #166534;
+        }
+
+        .nav-tabs {
+            display: flex;
+            background-color: var(--card-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 1.5rem;
+            gap: 0.5rem;
+        }
+
+        .nav-tab {
+            padding: 0.75rem 1rem;
+            border: none;
+            background: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--muted-text);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .nav-tab:hover {
+            color: var(--text-color);
+        }
+
+        .nav-tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        main {
+            flex: 1;
+            padding: 1.5rem;
+            overflow-y: auto;
+        }
+
+        .tab-content {
+            display: none;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 1.25rem;
+            margin-bottom: 1.25rem;
+            box-shadow: var(--shadow);
+        }
+
+        .card h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group:last-child {
+            margin-bottom: 0;
+        }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 0.35rem;
+            color: var(--text-color);
+        }
+
+        .input-row {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        input[type="text"], input[type="number"], select {
+            flex: 1;
+            padding: 0.55rem 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            font-size: 0.9rem;
+            background-color: #fff;
+            color: var(--text-color);
+            outline: none;
+        }
+
+        input[type="text"]:focus, select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+        }
+
+        button {
+            padding: 0.55rem 1rem;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .btn-secondary {
+            background-color: #e2e8f0;
+            color: #334155;
+        }
+
+        .btn-secondary:hover {
+            background-color: #cbd5e1;
+        }
+
+        .btn-danger {
+            background-color: var(--danger);
+            color: #fff;
+        }
+
+        .btn-danger:hover {
+            background-color: var(--danger-hover);
+        }
+
+        .status-msg {
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+            padding: 0.5rem 0.75rem;
+            border-radius: var(--radius);
+            display: none;
+        }
+
+        .status-msg.info {
+            display: block;
+            background-color: #eff6ff;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
+        }
+
+        .status-msg.success {
+            display: block;
+            background-color: #ecfdf5;
+            color: #065f46;
+            border: 1px solid #a7f3d0;
+        }
+
+        .status-msg.error {
+            display: block;
+            background-color: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        /* Tables & Lists */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            font-weight: 600;
+            color: var(--muted-text);
+            background-color: #f8fafc;
+        }
+
+        /* Search Results */
+        .result-item {
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 0.85rem;
+            margin-bottom: 0.75rem;
+            background-color: #fafafa;
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--muted-text);
+            margin-bottom: 0.35rem;
+        }
+
+        .result-preview {
+            font-size: 0.9rem;
+            color: var(--text-color);
+            white-space: pre-wrap;
+        }
+
+        /* Chat Layout */
+        #tab-chat {
+            height: 100%;
+        }
+
+        #tab-chat.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 220px);
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+        }
+
+        .chat-header {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            background-color: #fafafa;
+        }
+
+        #chat-log {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.85rem;
+        }
+
+        .msg {
+            max-width: 80%;
+            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            font-size: 0.92rem;
+            line-height: 1.5;
+        }
+
+        .msg-user {
+            align-self: flex-end;
+            background-color: var(--primary);
+            color: #fff;
+            border-bottom-right-radius: 2px;
+        }
+
+        .msg-assistant {
+            align-self: flex-start;
+            background-color: #f1f5f9;
+            color: var(--text-color);
+            border-bottom-left-radius: 2px;
+            border: 1px solid var(--border-color);
+        }
+
+        .chat-input-area {
+            padding: 0.75rem 1rem;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 0.5rem;
+        }
     </style>
 </head>
 <body>
-    <h1>MemFuse Brain — Ihr lokaler Unternehmens-Assistent</h1>
-    <div id="chat-log"></div>
-    <input id="query-input" type="text" placeholder="Stellen Sie eine Frage..." style="width: 70%;">
-    <button id="send-btn">Senden</button>
+    <header>
+        <h1><span>🧠</span> MemFuse Brain</h1>
+        <div class="header-status">
+            <span>DB Status:</span>
+            <span id="db-indicator" class="status-badge">Nicht verbunden</span>
+            <span>Ollama:</span>
+            <span id="ollama-indicator" class="status-badge">Unbekannt</span>
+        </div>
+    </header>
+
+    <nav class="nav-tabs">
+        <button class="nav-tab active" data-tab="tab-db">📁 Datenbank & Modelle</button>
+        <button class="nav-tab" data-tab="tab-collections">📚 Collections</button>
+        <button class="nav-tab" data-tab="tab-ingest">📥 Dokumente Importieren</button>
+        <button class="nav-tab" data-tab="tab-search">🔍 Hybridsuche</button>
+        <button class="nav-tab" data-tab="tab-chat">💬 RAG Chat</button>
+    </nav>
+
+    <main>
+        <!-- Tab 1: Database & Models -->
+        <div id="tab-db" class="tab-content active">
+            <div class="card">
+                <h2>Lokale MemFuse-Datenbank öffnen / erstellen</h2>
+                <div class="form-group">
+                    <label for="db-path-input">Pfad zur Datenbank (Ordner):</label>
+                    <div class="input-row">
+                        <input type="text" id="db-path-input" placeholder="z. B. ./memfuse_db">
+                        <button id="btn-browse-db" class="btn-secondary">Durchsuchen...</button>
+                        <button id="btn-open-db" class="btn-primary">Öffnen / Erstellen</button>
+                    </div>
+                </div>
+                <div id="db-open-status" class="status-msg"></div>
+            </div>
+
+            <div class="card">
+                <h2>Ollama LLM-Modell auswählen</h2>
+                <div class="form-group">
+                    <label for="model-select">Verfügbare Modelle:</label>
+                    <div class="input-row">
+                        <select id="model-select">
+                            <option value="llama3.2">llama3.2 (Standard)</option>
+                        </select>
+                        <button id="btn-refresh-models" class="btn-secondary">Modelle laden</button>
+                    </div>
+                </div>
+                <div id="models-status" class="status-msg"></div>
+            </div>
+        </div>
+
+        <!-- Tab 2: Collections -->
+        <div id="tab-collections" class="tab-content">
+            <div class="card">
+                <h2>Neue Collection erstellen</h2>
+                <div class="form-group">
+                    <div class="input-row">
+                        <input type="text" id="new-collection-input" placeholder="Collection-Name (z. B. vertraege)">
+                        <button id="btn-create-collection" class="btn-primary">Collection erstellen</button>
+                    </div>
+                </div>
+                <div id="collection-create-status" class="status-msg"></div>
+            </div>
+
+            <div class="card">
+                <h2>
+                    Vorhandene Collections
+                    <button id="btn-refresh-collections" class="btn-secondary" style="font-size:0.8rem; padding:0.3rem 0.6rem;">Aktualisieren</button>
+                </h2>
+                <div id="collections-list-container">
+                    <p style="color:var(--muted-text); font-size:0.9rem;">Keine Datenbank geöffnet oder keine Collections geladen.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 3: Document Ingestion -->
+        <div id="tab-ingest" class="tab-content">
+            <div class="card">
+                <h2>Einzelne Datei importieren</h2>
+                <div class="form-group">
+                    <label for="ingest-file-collection">Ziel-Collection:</label>
+                    <select id="ingest-file-collection" class="collection-dropdown"></select>
+                </div>
+                <div class="form-group">
+                    <label for="ingest-file-path">Dateipfad (PDF, DOCX, MD, TXT, EML):</label>
+                    <div class="input-row">
+                        <input type="text" id="ingest-file-path" placeholder="Pfad zur Datei...">
+                        <button id="btn-browse-file" class="btn-secondary">Durchsuchen...</button>
+                        <button id="btn-ingest-file" class="btn-primary">Datei importieren</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Ganzen Ordner importieren</h2>
+                <div class="form-group">
+                    <label for="ingest-folder-collection">Ziel-Collection:</label>
+                    <select id="ingest-folder-collection" class="collection-dropdown"></select>
+                </div>
+                <div class="form-group">
+                    <label for="ingest-folder-path">Ordnerpfad:</label>
+                    <div class="input-row">
+                        <input type="text" id="ingest-folder-path" placeholder="Pfad zum Ordner...">
+                        <button id="btn-browse-folder" class="btn-secondary">Durchsuchen...</button>
+                        <button id="btn-ingest-folder" class="btn-primary">Ordner importieren</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Import-Protokoll</h2>
+                <div id="ingest-report-output" style="font-size:0.875rem; font-family:monospace; color:#334155; white-space:pre-wrap;">Noch kein Import ausgeführt.</div>
+            </div>
+        </div>
+
+        <!-- Tab 4: Hybrid Search -->
+        <div id="tab-search" class="tab-content">
+            <div class="card">
+                <h2>Hybridsuche testen (Vektor + Volltext)</h2>
+                <div class="form-group">
+                    <label for="search-collection">Collection:</label>
+                    <select id="search-collection" class="collection-dropdown"></select>
+                </div>
+                <div class="form-group">
+                    <label for="search-query-input">Suchbegriff / Frage:</label>
+                    <input type="text" id="search-query-input" placeholder="Suchbegriff eingeben...">
+                </div>
+                <div class="form-group">
+                    <label for="search-k-input">Anzahl Ergebnisse (k):</label>
+                    <div class="input-row">
+                        <input type="number" id="search-k-input" value="5" min="1" max="50" style="max-width: 120px;">
+                        <button id="btn-run-search" class="btn-primary">Suche ausführen</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Suchergebnisse</h2>
+                <div id="search-results-output">
+                    <p style="color:var(--muted-text); font-size:0.9rem;">Geben Sie einen Suchbegriff ein und klicken Sie auf "Suche ausführen".</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 5: RAG Chat -->
+        <div id="tab-chat" class="tab-content">
+            <div class="chat-container">
+                <div class="chat-header">
+                    <div>
+                        <label style="margin-bottom:0;" for="chat-collection-select">Collection:</label>
+                        <select id="chat-collection-select" class="collection-dropdown" style="padding:0.3rem 0.5rem; font-size:0.85rem;"></select>
+                    </div>
+                    <div>
+                        <label style="margin-bottom:0;" for="chat-model-select">Modell:</label>
+                        <select id="chat-model-select" style="padding:0.3rem 0.5rem; font-size:0.85rem;">
+                            <option value="llama3.2">llama3.2</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="chat-log">
+                    <div class="msg msg-assistant">
+                        Hallo! Ich bin Ihr MemFuse Brain Assistent. Bitte öffnen Sie zuerst eine Datenbank und wählen Sie eine Collection, um mit Ihren Dokumenten zu chatten.
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <input id="query-input" type="text" placeholder="Stellen Sie eine Frage zu Ihren Dokumenten..." style="flex:1;">
+                    <button id="send-btn" class="btn-primary">Senden</button>
+                </div>
+            </div>
+        </div>
+    </main>
 
     <script type="module">
-        const { invoke } = window.__TAURI__.core;
-        const { listen } = window.__TAURI__.event;
+        // Safe access to Tauri APIs
+        const tauriCore = window.__TAURI__?.core || window.__TAURI__?.tauri;
+        const tauriEvent = window.__TAURI__?.event;
+        const invoke = tauriCore?.invoke || (async () => {
+            throw new Error("Tauri IPC ist nicht verfügbar (Webview Preview Mode)");
+        });
+        const listen = tauriEvent?.listen || (() => {});
 
-        const log = document.getElementById('chat-log');
-        const input = document.getElementById('query-input');
-        const btn = document.getElementById('send-btn');
+        // Application State
+        let currentDbPath = null;
+        let collectionsCache = [];
+        let activeModel = 'llama3.2';
+        let activeCollection = '';
 
-        let currentResponseEl = null;
-        listen('chat-token', (event) => {
-            if (currentResponseEl) {
-                currentResponseEl.textContent += event.payload;
+        // DOM Element Helpers
+        const getEl = (id) => document.getElementById(id);
+
+        // Tab Navigation Logic
+        const tabs = document.querySelectorAll('.nav-tab');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                const targetId = tab.getAttribute('data-tab');
+                getEl(targetId).classList.add('active');
+            });
+        });
+
+        // Status Message Helper
+        function showStatus(elementId, msg, type = 'info') {
+            const el = getEl(elementId);
+            if (!el) return;
+            el.textContent = msg;
+            el.className = `status-msg ${type}`;
+        }
+
+        // Dialog Helper using Tauri Plugin Dialog if available
+        async function openFileDialog(options = {}) {
+            try {
+                if (window.__TAURI__?.dialog?.open) {
+                    return await window.__TAURI__.dialog.open(options);
+                } else if (window.__TAURI_PLUGIN_DIALOG__?.open) {
+                    return await window.__TAURI_PLUGIN_DIALOG__.open(options);
+                }
+            } catch (e) {
+                console.warn('Tauri dialog plugin call failed:', e);
+            }
+            return null;
+        }
+
+        // Populate all collection dropdowns across the UI
+        function updateCollectionDropdowns() {
+            const dropdowns = document.querySelectorAll('.collection-dropdown');
+            dropdowns.forEach(select => {
+                const prevValue = select.value;
+                select.innerHTML = '';
+                if (collectionsCache.length === 0) {
+                    const opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = '-- Keine Collection verfügbar --';
+                    select.appendChild(opt);
+                } else {
+                    collectionsCache.forEach(c => {
+                        const opt = document.createElement('option');
+                        opt.value = c.name;
+                        opt.textContent = `${c.name} (${c.document_count ?? c.documentCount ?? 0} Docs)`;
+                        select.appendChild(opt);
+                    });
+                    if (prevValue && collectionsCache.some(c => c.name === prevValue)) {
+                        select.value = prevValue;
+                    } else if (activeCollection) {
+                        select.value = activeCollection;
+                    }
+                }
+            });
+            if (dropdowns.length > 0 && dropdowns[0].value) {
+                activeCollection = dropdowns[0].value;
+            }
+        }
+
+        // 1. OPEN DATABASE
+        async function handleOpenDatabase() {
+            const pathInput = getEl('db-path-input').value.trim();
+            if (!pathInput) {
+                showStatus('db-open-status', 'Bitte geben Sie einen Datenbankpfad ein.', 'error');
+                return;
+            }
+            showStatus('db-open-status', 'Datenbank wird geöffnet...', 'info');
+            try {
+                await invoke('open_database', { path: pathInput });
+                currentDbPath = pathInput;
+                getEl('db-indicator').textContent = `DB: ${pathInput}`;
+                getEl('db-indicator').classList.add('active');
+                showStatus('db-open-status', `Datenbank erfolgreich geöffnet/erstellt unter: ${pathInput}`, 'success');
+                await loadCollections();
+            } catch (err) {
+                showStatus('db-open-status', `Fehler beim Öffnen: ${err}`, 'error');
+            }
+        }
+
+        getEl('btn-open-db').addEventListener('click', handleOpenDatabase);
+        getEl('btn-browse-db').addEventListener('click', async () => {
+            const res = await openFileDialog({ directory: true, title: 'MemFuse Datenbank Ordner wählen' });
+            if (res && typeof res === 'string') {
+                getEl('db-path-input').value = res;
             }
         });
 
-        btn.addEventListener('click', async () => {
-            const message = input.value;
-            if (!message) return;
+        // 2. LIST COLLECTIONS
+        async function loadCollections() {
+            const container = getEl('collections-list-container');
+            try {
+                const list = await invoke('list_collections');
+                collectionsCache = list || [];
+                updateCollectionDropdowns();
 
-            log.innerHTML += `<p><strong>Sie:</strong> ${message}</p>`;
-            currentResponseEl = document.createElement('p');
-            currentResponseEl.innerHTML = '<strong>Assistent:</strong> ';
+                if (collectionsCache.length === 0) {
+                    container.innerHTML = '<p style="color:var(--muted-text); font-size:0.9rem;">Keine Collections in dieser Datenbank vorhanden.</p>';
+                    return;
+                }
+
+                let html = `<table><thead><tr><th>Collection Name</th><th>Dokumente</th><th>Aktionen</th></tr></thead><tbody>`;
+                collectionsCache.forEach(col => {
+                    const docCount = col.document_count ?? col.documentCount ?? 0;
+                    html += `<tr>
+                        <td><strong>${col.name}</strong></td>
+                        <td>${docCount}</td>
+                        <td>
+                            <button class="btn-danger btn-drop-col" data-name="${col.name}" style="padding:0.25rem 0.6rem; font-size:0.8rem;">Löschen</button>
+                        </td>
+                    </tr>`;
+                });
+                html += `</tbody></table>`;
+                container.innerHTML = html;
+
+                container.querySelectorAll('.btn-drop-col').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        const name = btn.getAttribute('data-name');
+                        if (confirm(`Möchten Sie die Collection "${name}" wirklich löschen?`)) {
+                            await handleDropCollection(name);
+                        }
+                    });
+                });
+            } catch (err) {
+                container.innerHTML = `<p style="color:var(--danger); font-size:0.9rem;">Fehler beim Laden der Collections: ${err}</p>`;
+            }
+        }
+
+        getEl('btn-refresh-collections').addEventListener('click', loadCollections);
+
+        // 3. CREATE COLLECTION
+        async function handleCreateCollection() {
+            const nameInput = getEl('new-collection-input').value.trim();
+            if (!nameInput) {
+                showStatus('collection-create-status', 'Bitte geben Sie einen Namen für die Collection ein.', 'error');
+                return;
+            }
+            try {
+                await invoke('create_collection', { name: nameInput });
+                getEl('new-collection-input').value = '';
+                showStatus('collection-create-status', `Collection "${nameInput}" wurde erstellt!`, 'success');
+                await loadCollections();
+            } catch (err) {
+                showStatus('collection-create-status', `Fehler beim Erstellen: ${err}`, 'error');
+            }
+        }
+
+        getEl('btn-create-collection').addEventListener('click', handleCreateCollection);
+
+        // 4. DROP COLLECTION
+        async function handleDropCollection(name) {
+            try {
+                await invoke('drop_collection', { name });
+                await loadCollections();
+            } catch (err) {
+                alert(`Fehler beim Löschen der Collection "${name}": ${err}`);
+            }
+        }
+
+        // 5. INGEST FILE
+        async function handleIngestFile() {
+            const filePath = getEl('ingest-file-path').value.trim();
+            const colName = getEl('ingest-file-collection').value;
+            const reportEl = getEl('ingest-report-output');
+
+            if (!colName) {
+                reportEl.textContent = 'Fehler: Bitte wählen Sie eine Ziel-Collection aus.';
+                return;
+            }
+            if (!filePath) {
+                reportEl.textContent = 'Fehler: Bitte geben Sie einen Dateipfad an.';
+                return;
+            }
+
+            reportEl.textContent = `Importiere Datei "${filePath}" in Collection "${colName}"...`;
+            try {
+                const report = await invoke('ingest_file', { filePath, collectionName: colName });
+                let errText = (report.errors && report.errors.length > 0) ? `\nFehler: ${report.errors.join(', ')}` : '';
+                reportEl.textContent = `[ERFOLG] Datei: ${report.file_path || filePath}\nErstellte Chunks: ${report.chunks_created ?? 0}${errText}`;
+                await loadCollections();
+            } catch (err) {
+                reportEl.textContent = `[FEHLER] Datei-Import fehlgeschlagen:\n${err}`;
+            }
+        }
+
+        getEl('btn-ingest-file').addEventListener('click', handleIngestFile);
+        getEl('btn-browse-file').addEventListener('click', async () => {
+            const res = await openFileDialog({
+                multiple: false,
+                filters: [{ name: 'Dokumente', extensions: ['pdf', 'docx', 'md', 'txt', 'eml'] }]
+            });
+            if (res && typeof res === 'string') {
+                getEl('ingest-file-path').value = res;
+            }
+        });
+
+        // 6. INGEST FOLDER
+        async function handleIngestFolder() {
+            const folderPath = getEl('ingest-folder-path').value.trim();
+            const colName = getEl('ingest-folder-collection').value;
+            const reportEl = getEl('ingest-report-output');
+
+            if (!colName) {
+                reportEl.textContent = 'Fehler: Bitte wählen Sie eine Ziel-Collection aus.';
+                return;
+            }
+            if (!folderPath) {
+                reportEl.textContent = 'Fehler: Bitte geben Sie einen Ordnerpfad an.';
+                return;
+            }
+
+            reportEl.textContent = `Importiere Ordner "${folderPath}" in Collection "${colName}"...`;
+            try {
+                const reports = await invoke('ingest_folder', { folderPath, collectionName: colName });
+                let totalChunks = 0;
+                let filesCount = reports ? reports.length : 0;
+                let summaryLines = [];
+
+                if (reports) {
+                    reports.forEach(r => {
+                        totalChunks += (r.chunks_created ?? 0);
+                        if (r.errors && r.errors.length > 0) {
+                            summaryLines.push(`  - ${r.file_path}: ${r.errors.join(', ')}`);
+                        }
+                    });
+                }
+
+                let out = `[ERFOLG] Ordner: ${folderPath}\nVerarbeitete Dateien: ${filesCount}\nGesamte Chunks: ${totalChunks}`;
+                if (summaryLines.length > 0) {
+                    out += `\n\nWarnungen/Fehler:\n` + summaryLines.join('\n');
+                }
+                reportEl.textContent = out;
+                await loadCollections();
+            } catch (err) {
+                reportEl.textContent = `[FEHLER] Ordner-Import fehlgeschlagen:\n${err}`;
+            }
+        }
+
+        getEl('btn-ingest-folder').addEventListener('click', handleIngestFolder);
+        getEl('btn-browse-folder').addEventListener('click', async () => {
+            const res = await openFileDialog({ directory: true, title: 'Ordner zum Importieren wählen' });
+            if (res && typeof res === 'string') {
+                getEl('ingest-folder-path').value = res;
+            }
+        });
+
+        // 7. HYBRID SEARCH
+        async function handleHybridSearch() {
+            const query = getEl('search-query-input').value.trim();
+            const colName = getEl('search-collection').value;
+            const kVal = parseInt(getEl('search-k-input').value, 10) || 5;
+            const outputEl = getEl('search-results-output');
+
+            if (!query) {
+                outputEl.innerHTML = '<p style="color:var(--danger);">Bitte geben Sie einen Suchbegriff ein.</p>';
+                return;
+            }
+            if (!colName) {
+                outputEl.innerHTML = '<p style="color:var(--danger);">Bitte wählen Sie eine Collection aus.</p>';
+                return;
+            }
+
+            outputEl.innerHTML = '<p style="color:var(--muted-text);">Suche läuft...</p>';
+            try {
+                const results = await invoke('hybrid_search', { query, collectionName: colName, k: kVal });
+                if (!results || results.length === 0) {
+                    outputEl.innerHTML = '<p style="color:var(--muted-text);">Keine passenden Treffer gefunden.</p>';
+                    return;
+                }
+
+                let html = '';
+                results.forEach((r, idx) => {
+                    const score = typeof r.score === 'number' ? r.score.toFixed(4) : r.score;
+                    const preview = r.text_preview || r.textPreview || 'Keine Vorschau verfügbar';
+                    const source = r.source || 'Unbekannt';
+                    html += `<div class="result-item">
+                        <div class="result-header">
+                            <span><strong>#${idx + 1}</strong> [ID: ${r.id}]</span>
+                            <span>Quelle: ${source} | Score: <strong>${score}</strong></span>
+                        </div>
+                        <div class="result-preview">${escapeHtml(preview)}</div>
+                    </div>`;
+                });
+                outputEl.innerHTML = html;
+            } catch (err) {
+                outputEl.innerHTML = `<p style="color:var(--danger);">Fehler bei der Suche: ${err}</p>`;
+            }
+        }
+
+        getEl('btn-run-search').addEventListener('click', handleHybridSearch);
+
+        // 8. LIST OLLAMA MODELS
+        async function loadOllamaModels() {
+            const select = getEl('model-select');
+            const chatModelSelect = getEl('chat-model-select');
+            const indicator = getEl('ollama-indicator');
+
+            try {
+                const models = await invoke('list_ollama_models');
+                if (models && models.length > 0) {
+                    select.innerHTML = '';
+                    chatModelSelect.innerHTML = '';
+                    models.forEach(m => {
+                        const opt = document.createElement('option');
+                        opt.value = m;
+                        opt.textContent = m;
+                        select.appendChild(opt);
+
+                        const opt2 = document.createElement('option');
+                        opt2.value = m;
+                        opt2.textContent = m;
+                        chatModelSelect.appendChild(opt2);
+                    });
+                    indicator.textContent = 'Aktiv';
+                    indicator.classList.add('active');
+                    showStatus('models-status', `${models.length} Modelle geladen.`, 'success');
+                } else {
+                    indicator.textContent = 'Keine Modelle';
+                    showStatus('models-status', 'Ollama ist erreichbar, aber keine Modelle installiert.', 'info');
+                }
+            } catch (err) {
+                indicator.textContent = 'Nicht erreichbar';
+                indicator.classList.remove('active');
+                showStatus('models-status', `Ollama nicht erreichbar: ${err}`, 'error');
+            }
+        }
+
+        getEl('btn-refresh-models').addEventListener('click', loadOllamaModels);
+
+        // 9. CHAT WITH RAG
+        const log = getEl('chat-log');
+        const chatInput = getEl('query-input');
+        const sendBtn = getEl('send-btn');
+
+        let currentResponseEl = null;
+
+        listen('chat-token', (event) => {
+            if (currentResponseEl && event.payload) {
+                currentResponseEl.textContent += event.payload;
+                log.scrollTop = log.scrollHeight;
+            }
+        });
+
+        async function handleSendChat() {
+            const message = chatInput.value.trim();
+            const colName = getEl('chat-collection-select').value;
+            const model = getEl('chat-model-select').value || 'llama3.2';
+
+            if (!message) return;
+            if (!colName) {
+                alert('Bitte wählen Sie zuerst eine Collection mit indizierten Dokumenten aus.');
+                return;
+            }
+
+            // Append User Message
+            const userMsgDiv = document.createElement('div');
+            userMsgDiv.className = 'msg msg-user';
+            userMsgDiv.textContent = message;
+            log.appendChild(userMsgDiv);
+
+            // Create Assistant Message Placeholder
+            currentResponseEl = document.createElement('div');
+            currentResponseEl.className = 'msg msg-assistant';
+            currentResponseEl.textContent = '';
             log.appendChild(currentResponseEl);
-            input.value = '';
+            log.scrollTop = log.scrollHeight;
+
+            chatInput.value = '';
 
             try {
                 await invoke('chat_with_rag', {
                     message,
-                    collectionName: 'dokumente',
-                    model: 'llama3.2',
+                    collectionName: colName,
+                    model,
                 });
             } catch (e) {
-                currentResponseEl.textContent += `Fehler: ${e}`;
+                if (currentResponseEl) {
+                    currentResponseEl.textContent += `\n[Fehler: ${e}]`;
+                }
             }
+        }
+
+        sendBtn.addEventListener('click', handleSendChat);
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') handleSendChat();
         });
+
+        // Helper: Escape HTML
+        function escapeHtml(str) {
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        // Initialize App on Startup
+        loadOllamaModels();
     </script>
 </body>
 </html>
