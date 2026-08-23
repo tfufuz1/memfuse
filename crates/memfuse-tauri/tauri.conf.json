@@ -23,11 +23,41 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "MemFuse Brain",
+    "category": "Productivity",
+    "shortDescription": "Lokaler, air-gapped KI-Assistent für Unternehmensdokumente",
+    "longDescription": "MemFuse Brain durchsucht Ihre Firmendokumente (PDF, Word, E-Mails) mit einer lokalen 3-Signal-Hybridsuche und beantwortet Fragen über ein lokal laufendes Sprachmodell (Ollama) — komplett offline, DSGVO-konform, ohne Cloud-Abhängigkeit.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "displayLanguageSelector": true,
+        "languages": [
+          "German",
+          "English"
+        ],
+        "installMode": "perMachine"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "hardenedRuntime": true,
+      "entitlements": null
+    },
+    "linux": {
+      "deb": {
+        "depends": []
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
   }
 }
