@@ -55,3 +55,34 @@ impl OllamaClient {
         })
     }
 }
+
+/// Gibt die Embedding-Dimension für bekannte Modelle zurück.
+/// Gibt `None` zurück wenn das Modell unbekannt ist.
+pub fn known_dimension(model: &str) -> Option<usize> {
+    // Normalisiere: Kleinbuchstaben, Strip Tag (z.B. ":latest")
+    let base = model.split(':').next().unwrap_or(model).to_lowercase();
+    match base.as_str() {
+        "nomic-embed-text" => Some(768),
+        "mxbai-embed-large" => Some(1024),
+        "all-minilm" => Some(384),
+        "snowflake-arctic-embed" => Some(1024),
+        "text-embedding-ada-002" => Some(1536), // OpenAI-kompatibel
+        "text-embedding-3-small" => Some(1536),
+        "text-embedding-3-large" => Some(3072),
+        "bge-large-en-v1.5" => Some(1024),
+        "bge-m3" => Some(1024),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_known_dimension_nomic() {
+        assert_eq!(known_dimension("nomic-embed-text"), Some(768));
+        assert_eq!(known_dimension("nomic-embed-text:latest"), Some(768));
+        assert_eq!(known_dimension("unknown-model-xyz"), None);
+    }
+}

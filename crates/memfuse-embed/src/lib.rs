@@ -3,35 +3,67 @@
 //! This crate provides a high-level API for generating vector embeddings from text
 //! without requiring external API calls. It uses the `ort` crate for ONNX Runtime
 //! and `tokenizers` for text preprocessing.
+//!
+//! All ONNX-related functionality is gated behind the `onnx` feature flag.
 
 #![deny(unsafe_code)]
 
+#[cfg(feature = "onnx")]
+use std::sync::Arc;
+
+#[cfg(feature = "onnx")]
 use async_trait::async_trait;
+#[cfg(feature = "onnx")]
 use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
-use ort::session::Session;
+#[cfg(feature = "onnx")]
 use ort::value::Value;
-use std::path::Path;
+#[cfg(feature = "onnx")]
+use std::path::{Path, PathBuf};
+#[cfg(feature = "onnx")]
 use tokenizers::Tokenizer;
+#[cfg(feature = "onnx")]
 use tracing::{debug, info};
 
 /// Handles text tokenization and ONNX model inference.
+///
+/// Uses `tokio::task::spawn_blocking` to offload ONNX inference to a blocking
+/// thread pool, preventing Tokio runtime starvation. A [`tokio::sync::Semaphore`]
+/// limits the number of concurrent inference operations.
+///
+/// # Architecture
+///
+/// Instead of holding a `std::sync::Mutex<Session>` (which blocks the Tokio
+/// thread on every `embed` call), this design:
+///
+/// 1. Stores only the model **path** and a shared **tokenizer**.
+/// 2. Creates a fresh ONNX `Session` inside each `spawn_blocking` task.
+/// 3. Uses a `Semaphore` to cap concurrent inferences (default: 2).
+#[cfg(feature = "onnx")]
 #[derive(Debug)]
 pub struct TextEmbedder {
-    session: std::sync::Mutex<Session>,
-    tokenizer: Tokenizer,
+    /// Path to the resolved ONNX model file.
+    session_path: PathBuf,
+    /// Shared tokenizer instance (thread-safe via `Arc`).
+    tokenizer: Arc<Tokenizer>,
+    /// Semaphore limiting parallel ONNX inference threads.
+    semaphore: Arc<tokio::sync::Semaphore>,
 }
 
+#[cfg(feature = "onnx")]
 #[async_trait]
 impl TextEmbeddingEngine for TextEmbedder {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        self.embed(text)
+        self.embed_async(text).await
     }
 }
 
+#[cfg(feature = "onnx")]
 impl TextEmbedder {
-    /// Creates a new embedder by loading a model and tokenizer from the specified directory.
+    /// Creates a new embedder by loading a tokenizer from the specified directory.
     ///
     /// The directory should contain `model.onnx` and `tokenizer.json`.
+    /// The ONNX session is created per-inference call via `spawn_blocking`,
+    /// so only the model path is stored here.
     pub fn load(model_dir: impl AsRef<Path>) -> Result<Self> {
         let model_dir = model_dir.as_ref();
         let model_path = if model_dir.join("model.onnx").exists() {
@@ -58,31 +90,60 @@ impl TextEmbedder {
         }
 
         info!("Loading tokenizer from {:?}", tokenizer_path);
-        let tokenizer = Tokenizer::from_file(tokenizer_path)
+        let tokenizer = Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| MemFuseError::Internal(format!("Failed to load tokenizer: {}", e)))?;
 
-        info!("Initializing ONNX session from {:?}", model_path);
-        let session = Session::builder()
-            .map_err(|e| {
-                MemFuseError::Internal(format!("Failed to create session builder: {}", e))
-            })?
-            .commit_from_file(model_path)
-            .map_err(|e| MemFuseError::Internal(format!("Failed to load model: {}", e)))?;
+        info!(
+            "Model path registered: {:?} (session created per inference call)",
+            model_path
+        );
 
         Ok(Self {
-            session: std::sync::Mutex::new(session),
-            tokenizer,
+            session_path: model_path,
+            tokenizer: Arc::new(tokenizer),
+            semaphore: Arc::new(tokio::sync::Semaphore::new(2)), // max 2 parallel inferences
         })
     }
 
-    /// Generates an embedding for the given text.
+    /// Generates an embedding for the given text using `spawn_blocking`.
     ///
-    /// This performs tokenization, forward pass, and mean pooling.
-    pub fn embed(&self, text: &str) -> Result<Vec<f32>> {
+    /// Acquires a semaphore permit to limit concurrent inference operations,
+    /// then offloads the blocking ONNX computation to Tokio's blocking thread pool.
+    pub async fn embed_async(&self, text: &str) -> Result<Vec<f32>> {
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
+            .map_err(|_| MemFuseError::Internal("Semaphore closed".into()))?;
+
+        let text = text.to_string();
+        let session_path = self.session_path.clone();
+        let tokenizer = self.tokenizer.clone();
+
+        tokio::task::spawn_blocking(move || {
+            // ONNX-Session pro spawn_blocking-Aufruf (thread-local, kein Mutex nötig)
+            let mut session = ort::session::Session::builder()
+                .map_err(|e| MemFuseError::Internal(format!("Session builder: {}", e)))?
+                .commit_from_file(&session_path)
+                .map_err(|e| MemFuseError::Internal(format!("Model load: {}", e)))?;
+
+            Self::run_inference(&mut session, &tokenizer, &text)
+        })
+        .await
+        .map_err(|e| MemFuseError::Internal(format!("spawn_blocking join: {}", e)))?
+    }
+
+    /// Performs tokenization, ONNX forward pass, mean pooling, and L2 normalization.
+    ///
+    /// This is a synchronous function intended to run inside `spawn_blocking`.
+    fn run_inference(
+        session: &mut ort::session::Session,
+        tokenizer: &Tokenizer,
+        text: &str,
+    ) -> Result<Vec<f32>> {
         debug!("Embedding text: {:?}", text);
 
-        let encoding = self
-            .tokenizer
+        let encoding = tokenizer
             .encode(text, true)
             .map_err(|e| MemFuseError::Internal(format!("Tokenization failed: {}", e)))?;
 
@@ -93,25 +154,20 @@ impl TextEmbedder {
         let input_ids_vec: Vec<i64> = input_ids.iter().map(|&id| id as i64).collect();
         let attention_mask_vec: Vec<i64> = attention_mask.iter().map(|&m| m as i64).collect();
 
-        // Run inference
         let input_ids_tensor = Value::from_array(([1, seq_len], input_ids_vec))
             .map_err(|e| MemFuseError::Internal(format!("Failed to create tensor: {}", e)))?;
         let attention_mask_tensor = Value::from_array(([1, seq_len], attention_mask_vec))
             .map_err(|e| MemFuseError::Internal(format!("Failed to create tensor: {}", e)))?;
 
-        let mut session_guard = self
-            .session
-            .lock()
-            .map_err(|_| MemFuseError::Internal("Session lock poisoned".into()))?;
-        let outputs = session_guard
+        let outputs = session
             .run(ort::inputs![
                 "input_ids" => input_ids_tensor,
                 "attention_mask" => attention_mask_tensor,
             ])
             .map_err(|e| MemFuseError::Internal(format!("ONNX inference failed: {}", e)))?;
 
+        // Mean Pooling over token embeddings, weighted by attention_mask
         let process_tensor = |shape: &[i64], data: &[f32]| -> Result<Vec<f32>> {
-            // Mean Pooling
             // shape: [batch=1, seq_len, hidden_size]
             if shape.len() != 3 {
                 return Err(MemFuseError::Internal(format!(
@@ -138,7 +194,7 @@ impl TextEmbedder {
                 }
             }
 
-            // L2 Normalization (typical for sentence embeddings)
+            // L2 Normalization (standard for sentence embeddings)
             let norm = mean_vec.iter().map(|x| x * x).sum::<f32>().sqrt();
             if norm > 0.0 {
                 for val in mean_vec.iter_mut() {
@@ -148,7 +204,7 @@ impl TextEmbedder {
             Ok(mean_vec)
         };
 
-        // Extract tensor
+        // Extract tensor — try named output first, fall back to positional
         if let Some(out) = outputs.get("last_hidden_state") {
             let (shape, data) = out
                 .try_extract_tensor::<f32>()
@@ -167,16 +223,20 @@ impl TextEmbedder {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "onnx")]
     use super::*;
+
+    #[cfg(feature = "onnx")]
     use std::fs::File;
-    use std::io::Write;
+    #[cfg(feature = "onnx")]
     use tempfile::tempdir;
 
+    #[cfg(feature = "onnx")]
     #[test]
     fn test_text_embedder_load_missing_files() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("tempdir creation failed in test");
 
-        // Empty directory - should fail at tokenizer existence check first
+        // Empty directory — should fail at tokenizer existence check first
         // because model_path defaults to model_dir if model.onnx is missing.
         let res = TextEmbedder::load(dir.path());
         match res {
@@ -185,7 +245,7 @@ mod tests {
         }
 
         // Create tokenizer but still missing model.onnx
-        File::create(dir.path().join("tokenizer.json")).unwrap();
+        File::create(dir.path().join("tokenizer.json")).expect("file creation failed in test");
         let res = TextEmbedder::load(dir.path());
         match res {
             Err(e) => {
@@ -197,22 +257,25 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "onnx")]
     #[test]
     fn test_text_embedder_load_invalid_content() {
-        let dir = tempdir().unwrap();
+        use std::io::Write;
+
+        let dir = tempdir().expect("tempdir creation failed in test");
         File::create(dir.path().join("model.onnx"))
-            .unwrap()
+            .expect("file creation failed in test")
             .write_all(b"invalid")
-            .unwrap();
+            .expect("write failed in test");
         File::create(dir.path().join("tokenizer.json"))
-            .unwrap()
+            .expect("file creation failed in test")
             .write_all(b"invalid")
-            .unwrap();
+            .expect("write failed in test");
 
         let res = TextEmbedder::load(dir.path());
         assert!(res.is_err());
         // Error could be from tokenizer or ONNX
-        let err_msg = res.unwrap_err().to_string();
+        let err_msg = res.err().map(|e| e.to_string()).unwrap_or_default();
         assert!(
             err_msg.contains("Failed to load tokenizer")
                 || err_msg.contains("Failed to load model")
@@ -221,7 +284,8 @@ mod tests {
 
     #[test]
     fn test_formatting_safety() {
-        // Just verify that using std::fmt::Debug on a pseudo-initialized or similar struct doesn't panic.
+        use memfuse_core::MemFuseError;
+        // Verify that Debug formatting on MemFuseError doesn't panic
         let err = MemFuseError::Internal("test".into());
         let formatted = format!("{:?}", err);
         assert!(formatted.contains("Internal"));
@@ -229,6 +293,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_embedding_engine() {
+        use async_trait::async_trait;
+        use memfuse_core::{Result, TextEmbeddingEngine};
+
         struct MockEngine;
         #[async_trait]
         impl TextEmbeddingEngine for MockEngine {
@@ -238,7 +305,7 @@ mod tests {
         }
 
         let engine = MockEngine;
-        let res = engine.embed("memfuse").await.unwrap();
+        let res = engine.embed("memfuse").await.expect("mock embed failed");
         assert_eq!(res, vec![7.0]);
     }
 }

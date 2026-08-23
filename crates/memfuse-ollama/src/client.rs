@@ -50,6 +50,19 @@ struct EmbedResponse {
     embedding: Vec<f32>,
 }
 
+/// Batch-Embedding Request für `/api/embed` (Ollama ≥ 0.3.9).
+#[derive(Serialize)]
+struct BatchEmbedRequest<'a> {
+    model: &'a str,
+    input: Vec<&'a str>,
+}
+
+/// Batch-Embedding Response.
+#[derive(Deserialize)]
+struct BatchEmbedResponse {
+    embeddings: Vec<Vec<f32>>,
+}
+
 impl OllamaClient {
     pub fn new(base_url: impl Into<String>) -> Self {
         // AI-NOTE: reqwest::Client::builder().build() only fails on invalid TLS config,
@@ -161,6 +174,75 @@ impl OllamaClient {
         Ok(parsed.embedding)
     }
 
+    /// Generiert Embeddings für mehrere Texte in einem einzelnen HTTP-Request.
+    ///
+    /// Nutzt den `/api/embed`-Endpunkt (Ollama ≥ 0.3.9).
+    /// Fällt automatisch auf sequentielle Einzelrequests zurück, wenn der
+    /// Batch-Endpunkt nicht verfügbar ist (404 oder Connection Error).
+    pub async fn embed_batch(&self, model: &str, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Versuche Batch-Endpunkt zuerst
+        match self.try_embed_batch(model, texts).await {
+            Ok(embeddings) => {
+                if embeddings.len() == texts.len() {
+                    return Ok(embeddings);
+                }
+                // Längen-Mismatch — Fallback
+                tracing::warn!(
+                    expected = texts.len(),
+                    got = embeddings.len(),
+                    "Ollama batch embed returned wrong count, falling back to sequential"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Ollama /api/embed not available, falling back to sequential"
+                );
+            }
+        }
+
+        // Fallback: sequentiell mit bestehender retry-fähiger embed()
+        let mut results = Vec::with_capacity(texts.len());
+        for text in texts {
+            results.push(self.embed(model, text).await?);
+        }
+        Ok(results)
+    }
+
+    async fn try_embed_batch(&self, model: &str, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        let url = format!("{}/api/embed", self.base_url);
+        let request = BatchEmbedRequest {
+            model,
+            input: texts.to_vec(),
+        };
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| MemFuseError::Internal(format!("Batch embed request: {e}")))?;
+
+        if !response.status().is_success() {
+            return Err(MemFuseError::Internal(format!(
+                "Batch embed HTTP {}",
+                response.status()
+            )));
+        }
+
+        let parsed: BatchEmbedResponse = response
+            .json()
+            .await
+            .map_err(|e| MemFuseError::Internal(format!("Batch embed response parse: {e}")))?;
+
+        Ok(parsed.embeddings)
+    }
+
     /// Streams RAG chat response token by token via POST /api/chat
     pub async fn chat_with_rag_streaming(
         &self,
@@ -224,5 +306,20 @@ impl OllamaClient {
         }
 
         Ok(full_response)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::embedding::OllamaEmbedder;
+    use memfuse_core::TextEmbeddingEngine;
+
+    #[tokio::test]
+    async fn test_embed_batch_empty() {
+        // OllamaClient mit nicht-erreichbarer URL
+        // embed_batch([]) soll sofort Ok(vec![]) zurückgeben ohne Netzwerk-Call
+        let embedder = OllamaEmbedder::new("http://127.0.0.1:1", "test");
+        let result = embedder.embed_batch(&[]).await.unwrap();
+        assert!(result.is_empty());
     }
 }

@@ -9,16 +9,34 @@ use memfuse_graph::CsrGraph;
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;
 use memfuse_text::inverted::InvertedIndex;
+use memfuse_text::Language;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-/// Internal document structure for persistence.
+/// Vollständiges Dokument (für user_key, key_type=0) — enthält Embedding.
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct StoredDocument {
     pub id: String,
     pub embedding: Vec<f32>,
     pub metadata: Option<serde_json::Value>,
+}
+
+/// Leichtgewichtige Metadaten (für doc_key, key_type=1) — KEIN Embedding.
+/// Wird für DocId-basierte Hydration nach HNSW/BM25-Suche verwendet.
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct StoredDocumentMeta {
+    pub id: String,
+    pub metadata: Option<serde_json::Value>,
+}
+
+impl From<&StoredDocument> for StoredDocumentMeta {
+    fn from(doc: &StoredDocument) -> Self {
+        Self {
+            id: doc.id.clone(),
+            metadata: doc.metadata.clone(),
+        }
+    }
 }
 
 /// Helper to unify how we extract text from metadata.
@@ -76,7 +94,11 @@ impl<S: StorageEngine> Clone for Collection<S> {
 }
 
 impl<S: StorageEngine> Collection<S> {
-    /// Creates a new `Collection` instance.
+    /// Creates a new `Collection` instance with explicit language configuration.
+    ///
+    /// The `language` parameter controls the BM25 tokenizer. Use `Language::German`
+    /// for German compound splitting, `Language::English` (default) for standard
+    /// whitespace tokenization.
     pub fn new(
         name: String,
         storage: Arc<S>,
@@ -84,6 +106,7 @@ impl<S: StorageEngine> Collection<S> {
         graph_index: Arc<CsrGraph>,
         next_tx: Arc<AtomicU64>,
         dimension: usize,
+        language: Language,
     ) -> Self {
         let prefix = if name == "default" {
             b"".to_vec()
@@ -91,7 +114,7 @@ impl<S: StorageEngine> Collection<S> {
             format!("__col:{}:\x00", name).into_bytes()
         };
 
-        let text_index = InvertedIndex::new(storage.clone(), &name);
+        let text_index = InvertedIndex::new_with_language(storage.clone(), &name, language);
 
         Self {
             name,
@@ -392,15 +415,19 @@ impl<S: StorageEngine> Collection<S> {
             embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
+        let meta_only = StoredDocumentMeta::from(&stored);
+
+        // user_key (key_type=0): Vollständiges Dokument (für get() und repair())
         // Document serialization is unencrypted before being sent to storage.
         // If Encryption-at-Rest is enabled, it's encrypted in the storage layer (WP-3.2).
-        let data = serde_json::to_vec(&stored)?;
-
         let user_key = self.namespaced_key(id.as_bytes(), 0);
-        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-
+        let data = serde_json::to_vec(&stored)?;
         self.storage.put(tx, &user_key, &data).await?;
-        self.storage.put(tx, &doc_key, &data).await?;
+
+        // doc_key (key_type=1): NUR Metadaten (für Hydration nach Vektorsuche)
+        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+        let meta_data = serde_json::to_vec(&meta_only)?;
+        self.storage.put(tx, &doc_key, &meta_data).await?;
 
         // Record for compensating transaction
         db_tx.record_keys(user_key, doc_key, doc_id);
@@ -577,12 +604,14 @@ impl<S: StorageEngine> Collection<S> {
             embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
+        let meta_only = StoredDocumentMeta::from(&stored);
         let data = serde_json::to_vec(&stored)?;
 
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+        let meta_data = serde_json::to_vec(&meta_only)?;
 
         self.storage.put(tx, &user_key, &data).await?;
-        self.storage.put(tx, &doc_key, &data).await?;
+        self.storage.put(tx, &doc_key, &meta_data).await?;
 
         db_tx.record_keys(user_key, doc_key, doc_id);
 
@@ -779,13 +808,22 @@ impl<S: StorageEngine> Collection<S> {
                 for sd in scored_docs {
                     let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
                     if let Some(bytes) = self.storage.get_at_seq(&doc_key, seq).await? {
-                        let stored: StoredDocument = serde_json::from_slice(&bytes)?;
-                        let metadata = stored.metadata.as_ref().unwrap_or(&serde_json::Value::Null);
-                        if filter.matches(metadata) {
+                        let (id, doc_metadata) = if let Ok(meta) =
+                            serde_json::from_slice::<StoredDocumentMeta>(&bytes)
+                        {
+                            (meta.id, meta.metadata)
+                        } else if let Ok(full) = serde_json::from_slice::<StoredDocument>(&bytes) {
+                            (full.id, full.metadata)
+                        } else {
+                            tracing::warn!(doc_id = ?sd.doc_id, "Could not deserialize doc_key");
+                            continue;
+                        };
+                        let meta_ref = doc_metadata.as_ref().unwrap_or(&serde_json::Value::Null);
+                        if filter.matches(meta_ref) {
                             results.push(crate::SearchResult {
-                                id: stored.id,
+                                id,
                                 score: sd.score,
-                                metadata: stored.metadata,
+                                metadata: doc_metadata,
                             });
                             if results.len() >= k {
                                 break;
@@ -843,10 +881,17 @@ impl<S: StorageEngine> Collection<S> {
         let mut matched = std::collections::HashSet::new();
 
         for (_, v) in entries {
-            let stored: StoredDocument = serde_json::from_slice(&v)?;
-            let metadata = stored.metadata.as_ref().unwrap_or(&serde_json::Value::Null);
+            let (id, doc_metadata) =
+                if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&v) {
+                    (meta.id, meta.metadata)
+                } else if let Ok(full) = serde_json::from_slice::<StoredDocument>(&v) {
+                    (full.id, full.metadata)
+                } else {
+                    continue;
+                };
+            let metadata = doc_metadata.as_ref().unwrap_or(&serde_json::Value::Null);
             if filter.matches(metadata) {
-                matched.insert(DocId::from_key(&stored.id)?);
+                matched.insert(DocId::from_key(&id)?);
             }
         }
 
@@ -889,11 +934,19 @@ impl<S: StorageEngine> Collection<S> {
         for sd in scored_docs {
             let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
             if let Some(bytes) = self.storage.get_at_seq(&doc_key, seq).await? {
-                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                let (id, metadata) =
+                    if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&bytes) {
+                        (meta.id, meta.metadata)
+                    } else if let Ok(full) = serde_json::from_slice::<StoredDocument>(&bytes) {
+                        (full.id, full.metadata)
+                    } else {
+                        tracing::warn!(doc_id = ?sd.doc_id, "Could not deserialize doc_key");
+                        continue;
+                    };
                 results.push(crate::SearchResult {
-                    id: stored.id,
+                    id,
                     score: sd.score,
-                    metadata: stored.metadata,
+                    metadata,
                 });
             }
         }
@@ -913,11 +966,19 @@ impl<S: StorageEngine> Collection<S> {
         for (doc_id, score) in scored_tuples {
             let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
             if let Some(bytes) = self.storage.get_at_seq(&doc_key, seq).await? {
-                let stored: StoredDocument = serde_json::from_slice(&bytes)?;
+                let (id, metadata) =
+                    if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&bytes) {
+                        (meta.id, meta.metadata)
+                    } else if let Ok(full) = serde_json::from_slice::<StoredDocument>(&bytes) {
+                        (full.id, full.metadata)
+                    } else {
+                        tracing::warn!(doc_id = ?doc_id, "Could not deserialize doc_key");
+                        continue;
+                    };
                 results.push(crate::SearchResult {
-                    id: stored.id,
+                    id,
                     score,
-                    metadata: stored.metadata,
+                    metadata,
                 });
             }
         }
@@ -1133,23 +1194,71 @@ impl<S: StorageEngine> Collection<S> {
     /// Rebuilds the HNSW index from storage.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn load_index(&self) -> Result<()> {
-        let prefix = if self.name == "default" {
-            b"__docid:".to_vec()
+        // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: load_index now scans user_keys (key_type=0)
+        // because doc_keys (key_type=1) no longer contain embeddings (ID: AGT-DB-002).
+        let scan_prefix = if self.name == "default" {
+            b"".to_vec()
         } else {
             let mut p = self.prefix.clone();
-            p.push(1);
+            p.push(0); // key_type=0
             p
         };
 
-        let entries = self.storage.scan_prefix(&prefix).await?;
+        let entries = self.storage.scan_prefix(&scan_prefix).await?;
         let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
-        for (_, v) in entries {
-            let stored: StoredDocument = serde_json::from_slice(&v)?;
+        for (k, v) in entries {
+            if self.name == "default" && k.starts_with(b"__") {
+                continue;
+            }
+
+            let stored: StoredDocument = match serde_json::from_slice(&v) {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
             let doc_id = DocId::from_key(&stored.id)?;
             self.index.insert(tx, doc_id, &stored.embedding).await?;
         }
         self.index.commit(tx).await?;
         Ok(())
+    }
+
+    /// Migrates old doc_keys (with Embedding) to new doc_keys (only Metadata).
+    /// Safe to call multiple times (idempotent).
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn migrate_doc_keys_v1(&self) -> Result<u64> {
+        let prefix = if self.name == "default" {
+            b"__docid:".to_vec()
+        } else {
+            let mut p = self.prefix.clone();
+            p.push(1); // docid mapping type
+            p
+        };
+
+        let entries = self.storage.scan_prefix(&prefix).await?;
+        let mut migrated_count = 0;
+        let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+
+        for (k, v) in entries {
+            // Try parsing as full document first (which indicates it needs migration)
+            if let Ok(full) = serde_json::from_slice::<StoredDocument>(&v) {
+                let meta_only = StoredDocumentMeta::from(&full);
+                if let Ok(meta_data) = serde_json::to_vec(&meta_only) {
+                    self.storage.put(tx, &k, &meta_data).await?;
+                    migrated_count += 1;
+                }
+            }
+        }
+
+        if migrated_count > 0 {
+            self.storage.commit(tx).await?;
+            tracing::info!(
+                "Migrated {} legacy doc_keys to new format in collection '{}'",
+                migrated_count,
+                self.name
+            );
+        }
+
+        Ok(migrated_count)
     }
 
     /// Loads text index statistics from storage.

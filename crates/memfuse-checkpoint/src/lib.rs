@@ -57,6 +57,8 @@ pub struct PersistentCheckpointStore<S: memfuse_core::StorageEngine> {
     namespace: String,
     /// Lock für sequentielle Schreiboperationen auf den Storage (HIGH-002)
     write_lock: tokio::sync::Mutex<()>,
+    /// Atomarer Zähler für interne TxIds (vermeidet Kollisionen)
+    next_internal_tx: std::sync::atomic::AtomicU64,
 }
 
 impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
@@ -67,7 +69,15 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             name_index: RwLock::new(HashMap::new()),
             namespace: namespace.into(),
             write_lock: tokio::sync::Mutex::new(()),
+            next_internal_tx: std::sync::atomic::AtomicU64::new(0),
         }
+    }
+
+    fn next_tx(&self) -> TxId {
+        TxId::new(
+            TxId::INTERNAL_BASE
+                + self.next_internal_tx.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        )
     }
 
     /// Creates a new persistent checkpoint.
@@ -93,22 +103,40 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
         let _guard = self.write_lock.lock().await;
 
-        // 1. Unpin old checkpoint with same name if it exists (Ensures name uniqueness)
-        if let Some(old) = self.get_checkpoint_internal(name).await? {
-            self.storage.unpin_checkpoint(old.seq_no).await?;
-        }
+        // Lade alten Checkpoint (für späteres Unpin)
+        let old_checkpoint = self.get_checkpoint_internal(name).await?;
 
-        // 2. Pin the sequence number in storage to prevent GC
+        // 1. NEU: Pin des NEUEN Checkpoints ZUERST
         self.storage.pin_checkpoint(seq_no).await?;
 
-        // 3. Persist checkpoint metadata
-        let result = self.save_checkpoint_internal(meta.clone()).await;
+        // 2. Persistiere den neuen Checkpoint
+        let save_result = self.save_checkpoint_internal(meta.clone()).await;
 
-        if result.is_err() {
-            // rollback: unpin if save failed (FIND-CHK-001)
+        if let Err(e) = save_result {
+            // Rollback: neuen Checkpoint entpinnen (save fehlgeschlagen)
             let _ = self.storage.unpin_checkpoint(seq_no).await;
-            return result.map(|_| meta);
+            return Err(e);
         }
+
+        // 3. ERST JETZT alten Checkpoint entpinnen (sicher, weil neuer gespeichert)
+        if let Some(old) = old_checkpoint {
+            if old.seq_no != seq_no {
+                if let Err(e) = self.storage.unpin_checkpoint(old.seq_no).await {
+                    // Nicht-fatal: loggern aber fortfahren
+                    tracing::warn!(
+                        old_seq = old.seq_no,
+                        "Konnte alten Checkpoint nicht entpinnen: {e}"
+                    );
+                }
+                // Alten Checkpoint aus Cache entfernen
+                self.checkpoints.write().remove(&old.seq_no);
+                self.name_index.write().remove(&old.name);
+            }
+        }
+
+        // 4. Neuen Checkpoint in Cache eintragen
+        self.checkpoints.write().insert(seq_no, meta.clone());
+        self.name_index.write().insert(name.to_string(), seq_no);
 
         Ok(meta)
     }
@@ -118,22 +146,27 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let _guard = self.write_lock.lock().await;
 
         if let Some(checkpoint) = self.get_checkpoint_internal(name).await? {
-            // 1. Unpin in storage
-            self.storage.unpin_checkpoint(checkpoint.seq_no).await?;
-
-            // 2. Remove from persistent storage
+            // 1. Zuerst aus Storage löschen (mit eindeutiger TxId)
             let key = format!("{}:checkpoint:{}", self.namespace, name);
-            let tx = TxId::new(TxId::INTERNAL_BASE);
-            if let Err(e) = self.storage.delete(tx, key.as_bytes()).await {
-                let _ = self.storage.rollback(tx).await;
+
+            // FIX CHK-002: Generiere eine eindeutige TxId statt INTERNAL_BASE
+            let unique_tx = self.next_tx();
+
+            if let Err(e) = self.storage.delete(unique_tx, key.as_bytes()).await {
+                let _ = self.storage.rollback(unique_tx).await;
                 return Err(e);
             }
-            if let Err(e) = self.storage.commit(tx).await {
-                let _ = self.storage.rollback(tx).await;
+            if let Err(e) = self.storage.commit(unique_tx).await {
+                let _ = self.storage.rollback(unique_tx).await;
                 return Err(e);
             }
 
-            // 3. Update cache
+            // 2. Erst nach erfolgreichem Storage-Delete entpinnen
+            if let Err(e) = self.storage.unpin_checkpoint(checkpoint.seq_no).await {
+                tracing::warn!(seq = checkpoint.seq_no, "Unpin nach drop fehlgeschlagen: {e}");
+            }
+
+            // 3. Cache bereinigen
             self.checkpoints.write().remove(&checkpoint.seq_no);
             self.name_index.write().remove(&checkpoint.name);
         }
@@ -146,7 +179,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let value =
             serde_json::to_vec(&meta).map_err(|e| MemFuseError::Serialization(e.to_string()))?;
 
-        let tx = TxId::new(TxId::INTERNAL_BASE);
+        let tx = self.next_tx();
         if let Err(e) = self.storage.put(tx, key.as_bytes(), &value).await {
             let _ = self.storage.rollback(tx).await;
             return Err(e);
@@ -427,5 +460,36 @@ mod tests {
 
         assert!(res.is_err());
         assert!(!storage.pinned.lock().contains(&seq_no));
+    }
+
+    #[tokio::test]
+    async fn test_pin_before_unpin_invariant_on_failure() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
+        
+        // 1. Create first checkpoint successfully
+        store
+            .create_checkpoint("my_cp", "c1", 1, TxId::new(1), serde_json::json!({}))
+            .await
+            .unwrap();
+            
+        assert!(storage.pinned.lock().contains(&1));
+
+        // 2. Make next save fail
+        let cp_key = b"test:checkpoint:my_cp";
+        *storage.fail_on_put.lock() = Some(cp_key.to_vec());
+
+        // 3. Try to overwrite with a new checkpoint, which will fail
+        let res = store
+            .create_checkpoint("my_cp", "c1", 2, TxId::new(2), serde_json::json!({}))
+            .await;
+
+        assert!(res.is_err());
+        
+        // 4. Verify invariant: old checkpoint (1) must still be pinned!
+        assert!(storage.pinned.lock().contains(&1), "Old checkpoint should still be pinned because save failed");
+        
+        // 5. Verify invariant: new checkpoint (2) should be unpinned (rolled back)!
+        assert!(!storage.pinned.lock().contains(&2), "New checkpoint should be unpinned after failure");
     }
 }

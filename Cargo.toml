@@ -9,6 +9,7 @@ members = [
     "crates/memfuse-checkpoint",
     "crates/memfuse-crypto",
     "crates/memfuse-graph",
+    "crates/memfuse-embed",
     "crates/memfuse-py",
     "crates/memfuse-tauri",
     "crates/memfuse-mcp",
@@ -66,6 +67,7 @@ memfuse-text = { path = "crates/memfuse-text" }
 memfuse-checkpoint = { path = "crates/memfuse-checkpoint" }
 memfuse-crypto = { path = "crates/memfuse-crypto" }
 memfuse-graph = { path = "crates/memfuse-graph" }
+memfuse-embed = { path = "crates/memfuse-embed" }
 memfuse-py    = { path = "crates/memfuse-py" }
 memfuse-tauri = { path = "crates/memfuse-tauri" }
 memfuse-mcp   = { path = "crates/memfuse-mcp" }

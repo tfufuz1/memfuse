@@ -10,7 +10,7 @@ pub mod inverted;
 pub mod morphology;
 pub mod tokenizer;
 
-pub use inverted::{BM25MorphIndex, InvertedIndex};
+pub use inverted::{BM25MorphIndex, InvertedIndex, Language};
 pub use morphology::{normalize_umlauts, GermanCompoundSplitter, MorphologicalTokenizer};
 pub use tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 

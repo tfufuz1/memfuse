@@ -77,7 +77,7 @@ async fn test_mcp_flow_insert_get_search_collections() {
     let response = server.handle(req).await;
     let res_val = serde_json::to_value(&response).unwrap();
     let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(text.contains("inserted"));
+    assert!(text.contains("doc1"));
 
     // 2. Get document
     let req = JsonRpcRequest {

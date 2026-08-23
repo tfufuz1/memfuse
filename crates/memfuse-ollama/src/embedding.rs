@@ -1,6 +1,5 @@
 use crate::client::{OllamaClient, DEFAULT_BASE_URL, DEFAULT_EMBED_MODEL};
 use async_trait::async_trait;
-use futures_util::stream::{self, StreamExt};
 use memfuse_core::{Result, TextEmbeddingEngine};
 
 /// Implementation of `TextEmbeddingEngine` using Ollama's HTTP API.
@@ -58,17 +57,14 @@ impl TextEmbeddingEngine for OllamaEmbedder {
     }
 
     async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        let owned_texts: Vec<String> = texts.iter().map(|s| s.to_string()).collect();
-        let results: Vec<Result<Vec<f32>>> = stream::iter(owned_texts)
-            .map(|text| async move { self.client.embed(&self.model, &text).await })
-            .buffer_unordered(self.concurrency)
-            .collect()
-            .await;
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        let mut output = Vec::with_capacity(results.len());
-        for res in results {
-            let vec = res?;
-            if let Some(dim) = self.expected_dimension {
+        let output = self.client.embed_batch(&self.model, texts).await?;
+
+        if let Some(dim) = self.expected_dimension {
+            for vec in &output {
                 if vec.len() != dim {
                     return Err(memfuse_core::MemFuseError::invalid_input(format!(
                         "Ollama embedding dimension mismatch: expected {}, got {}",
@@ -77,8 +73,8 @@ impl TextEmbeddingEngine for OllamaEmbedder {
                     )));
                 }
             }
-            output.push(vec);
         }
+
         Ok(output)
     }
 }

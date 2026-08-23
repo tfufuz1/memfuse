@@ -1,6 +1,6 @@
 mod client;
 mod embedding;
-mod model_info;
+pub mod model_info;
 
 pub use client::{OllamaClient, DEFAULT_BASE_URL, DEFAULT_EMBED_MODEL};
 pub use embedding::OllamaEmbedder;

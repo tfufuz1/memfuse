@@ -67,6 +67,7 @@ pub mod transaction;
 pub use collection::Collection;
 pub use filter::MetadataFilter;
 pub use memfuse_checkpoint;
+pub use memfuse_text::Language;
 
 /// User-facing search result containing the ID, score, and optional metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,8 +113,11 @@ pub struct MemFuseConfig {
 
 impl Default for MemFuseConfig {
     fn default() -> Self {
+        // Dimension passt zum Standard-Embed-Modell (nomic-embed-text = 768)
+        let dimension = 768; // sicherer Fallback für nomic-embed-text
+
         Self {
-            dimension: 1536,
+            dimension,
             max_elements: 1_000_000,
             distance_metric: memfuse_core::DistanceMetric::Cosine,
             encryption_passphrase: None,
@@ -158,6 +162,30 @@ impl MemFuse {
         let storage = Arc::new(LsmStorage::new(lsm_config).await?);
         let last_tx = storage.last_tx_id().await?.inner();
         let next_tx = Arc::new(AtomicU64::new(last_tx + 1));
+
+        // Dimension-Check: prüfe ob gespeicherte Dim mit Config übereinstimmt
+        let dim_key = b"__meta:dimension";
+        if let Some(stored_dim_bytes) = storage.get(dim_key).await? {
+            if let Ok(s) = std::str::from_utf8(&stored_dim_bytes) {
+                if let Ok(stored_dim) = s.parse::<usize>() {
+                    if stored_dim != config.dimension {
+                        return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                            "Dimension mismatch: DB wurde mit dim={} erstellt, \
+                             Config fordert dim={}. \
+                             Passe MemFuseConfig::dimension an oder nutze eine neue DB.",
+                            stored_dim, config.dimension
+                        )));
+                    }
+                }
+            }
+        } else {
+            // Erste Öffnung: Dimension persistieren
+            let tx = TxId::new(0); // Internal bootstrap TX
+            storage
+                .put(tx, dim_key, config.dimension.to_string().as_bytes())
+                .await?;
+            storage.commit(tx).await?;
+        }
 
         let db = Self {
             storage,
@@ -349,6 +377,7 @@ impl MemFuse {
             graph_index,
             Arc::clone(&self.next_tx),
             self.dimension,
+            Language::English,
         );
 
         // Inherit global embedder if set

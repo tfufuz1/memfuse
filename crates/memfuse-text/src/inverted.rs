@@ -16,6 +16,39 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+/// Supported tokenizer languages for BM25 text indexing.
+///
+/// Controls which tokenizer is used for document indexing and query processing.
+/// Use `Language::from_iso()` to parse ISO-639-1 language codes.
+///
+/// **Important**: Language is configured explicitly — namespace names do NOT
+/// determine the tokenizer language.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum Language {
+    /// English tokenizer (default, whitespace-based + stopword filtering).
+    #[default]
+    English,
+    /// German morphology tokenizer (compound splitting + umlaut normalization).
+    German,
+    /// Custom tokenizer — override via `with_tokenizer()`.
+    Custom,
+}
+
+impl Language {
+    /// Parses an ISO-639-1 language code ("de", "de-AT", "en", "en-US").
+    ///
+    /// Only the primary subtag (before the first '-') is evaluated.
+    /// Unknown codes fall back to `Language::English` (safe default).
+    pub fn from_iso(code: &str) -> Self {
+        let prefix = code.split('-').next().unwrap_or("").to_lowercase();
+        match prefix.as_str() {
+            "de" => Self::German,
+            "en" => Self::English,
+            _ => Self::English,
+        }
+    }
+}
+
 /// Consolidated metadata for the text index.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct TextIndexMetadata {
@@ -59,24 +92,23 @@ impl<S: StorageEngine> Clone for InvertedIndex<S> {
 }
 
 impl<S: StorageEngine> InvertedIndex<S> {
-    /// Creates a new InvertedIndex tied to a specific collection namespace and optional language code.
-    pub fn new_with_language(storage: Arc<S>, namespace: &str, lang: Option<&str>) -> Self {
+    /// Creates a new InvertedIndex with explicit language configuration.
+    ///
+    /// # Language Selection
+    /// Use `Language::from_iso("de")` for German,
+    /// `Language::English` (default) for all other languages.
+    ///
+    /// **NOT** namespace-based — namespace names do NOT determine language.
+    pub fn new_with_language(storage: Arc<S>, namespace: &str, language: Language) -> Self {
         let prefix = if namespace == "default" {
             b"__txt:default:".to_vec()
         } else {
             format!("__txt:{}:", namespace).into_bytes()
         };
 
-        let use_de = lang.map(|l| l.starts_with("de")).unwrap_or_else(|| {
-            std::env::var("MEMFUSE_LANG")
-                .map(|v| v.starts_with("de"))
-                .unwrap_or(true) // Default to German morphology for MemFuse Brain collections
-        });
-
-        let tokenizer: Arc<dyn Tokenizer> = if use_de {
-            Arc::new(GermanMorphTokenizer::new())
-        } else {
-            Arc::new(DefaultTokenizer)
+        let tokenizer: Arc<dyn Tokenizer> = match language {
+            Language::German => Arc::new(GermanMorphTokenizer::new()),
+            Language::English | Language::Custom => Arc::new(DefaultTokenizer),
         };
 
         Self {
@@ -91,9 +123,9 @@ impl<S: StorageEngine> InvertedIndex<S> {
         }
     }
 
-    /// Creates a new InvertedIndex tied to a specific collection namespace.
+    /// Creates a new InvertedIndex with English tokenizer (default).
     pub fn new(storage: Arc<S>, namespace: &str) -> Self {
-        Self::new_with_language(storage, namespace, None)
+        Self::new_with_language(storage, namespace, Language::English)
     }
 
     /// Sets a custom tokenizer for the inverted index.
@@ -646,6 +678,8 @@ impl<S: StorageEngine> TextIndex for BM25MorphIndex<S> {
 
 #[cfg(test)]
 mod tests {
+    use super::Language;
+
     use super::*;
     use parking_lot::RwLock;
 
@@ -1041,6 +1075,85 @@ mod tests {
         // At latest (None or higher seq), both should exist
         let results_latest = index.search("rust", 10).await?;
         assert_eq!(results_latest.len(), 2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_language_from_iso() {
+        assert_eq!(Language::from_iso("de"), Language::German);
+        assert_eq!(Language::from_iso("de-AT"), Language::German);
+        assert_eq!(Language::from_iso("de-DE"), Language::German);
+        assert_eq!(Language::from_iso("en"), Language::English);
+        assert_eq!(Language::from_iso("en-US"), Language::English);
+        assert_eq!(Language::from_iso("en-GB"), Language::English);
+        // False-positive protection: these namespace-like strings must NOT match German
+        assert_eq!(Language::from_iso("developer"), Language::English);
+        assert_eq!(Language::from_iso("indexed"), Language::English);
+        assert_eq!(Language::from_iso("model"), Language::English);
+        assert_eq!(Language::from_iso("indexed_docs"), Language::English);
+        assert_eq!(Language::from_iso("mode"), Language::English);
+        // Unknown codes fall back to English
+        assert_eq!(Language::from_iso("fr"), Language::English);
+        assert_eq!(Language::from_iso("ja"), Language::English);
+        assert_eq!(Language::from_iso(""), Language::English);
+    }
+
+    #[test]
+    fn test_language_default_is_english() {
+        assert_eq!(Language::default(), Language::English);
+    }
+
+    #[tokio::test]
+    async fn test_new_with_language_german_tokenizes_compounds() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new_with_language(storage.clone(), "test_de", Language::German);
+
+        let tx = TxId::new(1);
+        let doc_id = DocId::new(1);
+        index
+            .upsert_document(tx, doc_id, "Bundesverfassungsgericht")
+            .await?;
+        index.commit_stats(tx).await?;
+        storage.commit(tx).await?;
+
+        // German tokenizer should decompose "Bundesverfassungsgericht" into components
+        let results = index.search_bm25("gericht", 10, None).await?;
+        assert_eq!(
+            results.len(),
+            1,
+            "German tokenizer should find compound component 'gericht'"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_new_default_english_does_not_split_compounds() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "test_en");
+
+        let tx = TxId::new(1);
+        let doc_id = DocId::new(1);
+        index
+            .upsert_document(tx, doc_id, "Bundesverfassungsgericht")
+            .await?;
+        index.commit_stats(tx).await?;
+        storage.commit(tx).await?;
+
+        // English tokenizer should NOT decompose German compounds
+        let results = index.search_bm25("gericht", 10, None).await?;
+        assert_eq!(
+            results.len(),
+            0,
+            "English tokenizer should not split German compounds"
+        );
+
+        // But exact match should work
+        let results_exact = index
+            .search_bm25("bundesverfassungsgericht", 10, None)
+            .await?;
+        assert_eq!(results_exact.len(), 1, "Exact match should still work");
 
         Ok(())
     }
