@@ -83,6 +83,123 @@ document.getElementById('create-collection-btn').addEventListener('click', async
     }
 });
 
+// ── Dokumenten-Import ─────────────────────────────────────────────────────
+document.getElementById('import-file-btn').addEventListener('click', async () => {
+    if (!checkCollectionSelected()) return;
+
+    const selected = await open({
+        directory: false,
+        multiple: false,
+        filters: [
+            { name: 'Unterstützte Dokumente', extensions: ['pdf', 'docx', 'md', 'txt', 'eml'] }
+        ],
+    });
+    if (!selected) return;
+
+    await runImport(async () => {
+        return await invoke('ingest_file', {
+            filePath: selected,
+            collectionName: activeCollection,
+        });
+    }, [selected]);
+});
+
+document.getElementById('import-folder-btn').addEventListener('click', async () => {
+    if (!checkCollectionSelected()) return;
+
+    const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Ordner mit Dokumenten wählen',
+    });
+    if (!selected) return;
+
+    await runImport(async () => {
+        return await invoke('ingest_folder', {
+            folderPath: selected,
+            collectionName: activeCollection,
+        });
+    }, null, true);
+});
+
+listen('ingest-progress', (event) => {
+    const report = event.payload;
+    if (!report) return;
+    const logEl = document.getElementById('import-log');
+    if (!logEl) return;
+
+    const errCount = (report.errors || []).length;
+    const line = document.createElement('div');
+    const fileName = report.file_path ? report.file_path.split(/[/\\]/).pop() : 'Datei';
+
+    if (errCount > 0) {
+        line.innerHTML = `⚠️ ${fileName}: ${report.chunks_created || 0} Abschnitte, ${errCount} Fehler`;
+        line.title = report.errors.join('\n');
+    } else {
+        line.innerHTML = `✅ ${fileName}: ${report.chunks_created || 0} Abschnitte`;
+    }
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+});
+
+function checkCollectionSelected() {
+    if (!activeCollection) {
+        alert('Bitte wählen Sie zuerst eine Collection aus, in die importiert werden soll.');
+        return false;
+    }
+    return true;
+}
+
+async function runImport(importFn, filePaths, isFolder = false) {
+    const progressEl = document.getElementById('import-progress');
+    const statusEl = document.getElementById('import-status');
+    const logEl = document.getElementById('import-log');
+
+    progressEl.style.display = 'block';
+    statusEl.innerHTML = (isFolder ? 'Ordner wird importiert... ' : 'Datei wird importiert... ') + '<span class="spinner"></span>';
+    logEl.innerHTML = '';
+
+    try {
+        const result = await importFn();
+        const reports = Array.isArray(result) ? result : [result];
+
+        let totalChunks = 0;
+        let totalErrors = 0;
+
+        // Falls es sich um eine Einzeldatei handelt oder die Progress Events nicht genutzt wurden
+        if (!isFolder) {
+            logEl.innerHTML = '';
+            for (const report of reports) {
+                totalChunks += report.chunks_created || 0;
+                const errCount = (report.errors || []).length;
+                totalErrors += errCount;
+
+                const line = document.createElement('div');
+                const fileName = report.file_path.split(/[/\\]/).pop();
+                if (errCount > 0) {
+                    line.innerHTML = `⚠️ ${fileName}: ${report.chunks_created} Abschnitte, ${errCount} Fehler`;
+                    line.title = report.errors.join('\n');
+                } else {
+                    line.innerHTML = `✅ ${fileName}: ${report.chunks_created} Abschnitte`;
+                }
+                logEl.appendChild(line);
+            }
+        } else {
+            for (const report of reports) {
+                totalChunks += report.chunks_created || 0;
+                totalErrors += (report.errors || []).length;
+            }
+        }
+
+        statusEl.textContent = `Fertig: ${totalChunks} Abschnitte importiert` +
+            (totalErrors > 0 ? `, ${totalErrors} Fehler` : '');
+
+        await refreshCollections();  // Dokumentenzähler aktualisieren
+    } catch (e) {
+        statusEl.textContent = `❌ Import fehlgeschlagen: ${e}`;
+    }
+}
+
 // ── Ollama-Modelle laden ─────────────────────────────────────────────────
 async function refreshModels() {
     try {

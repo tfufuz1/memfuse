@@ -33,6 +33,7 @@ pub async fn ingest_file(
 
 #[tauri::command]
 pub async fn ingest_folder(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     folder_path: String,
     collection_name: String,
@@ -52,8 +53,31 @@ pub async fn ingest_folder(
     let embedder = Arc::new(OllamaBridge::localhost());
     let pipeline = IngestionPipeline::new(embedder);
 
-    pipeline
-        .ingest_folder(std::path::Path::new(&folder_path), &collection)
-        .await
-        .map_err(|e| e.to_string())
+    let folder = std::path::Path::new(&folder_path);
+    let mut reports = Vec::new();
+    let supported = ["pdf", "docx", "md", "markdown", "txt", "eml"];
+
+    for entry in walkdir::WalkDir::new(folder)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let ext = entry
+            .path()
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if supported.contains(&ext.as_str()) {
+            let report = pipeline
+                .ingest_file(entry.path(), &collection)
+                .await
+                .map_err(|e| e.to_string())?;
+            use tauri::Emitter;
+            let _ = app.emit("ingest-progress", &report);
+            reports.push(report);
+        }
+    }
+
+    Ok(reports)
 }
