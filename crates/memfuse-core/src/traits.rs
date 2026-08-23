@@ -245,6 +245,16 @@ pub trait VectorIndex: Send + Sync + 'static {
 pub trait TextEmbeddingEngine: Send + Sync + 'static {
     /// Generates an embedding for the given text.
     async fn embed(&self, text: &str) -> Result<Vec<f32>>;
+
+    /// Generates embeddings for multiple texts.
+    /// Default implementation executes sequential calls.
+    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        let mut results = Vec::with_capacity(texts.len());
+        for text in texts {
+            results.push(self.embed(text).await?);
+        }
+        Ok(results)
+    }
 }
 
 /// Statistics for a text index.

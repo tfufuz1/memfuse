@@ -822,6 +822,23 @@ impl StorageEngine for LsmStorage {
 
         // Collect from SSTables
         for sst in sstables.iter() {
+            let first = sst.first_key();
+            let last = sst.last_key();
+            if !first.is_empty() && !last.is_empty() {
+                if prefix > last.as_ref() {
+                    continue;
+                }
+                let mut prefix_end = prefix.to_vec();
+                if let Some(last_byte) = prefix_end.last_mut() {
+                    if let Some(next_byte) = last_byte.checked_add(1) {
+                        *last_byte = next_byte;
+                        if first.as_ref() >= prefix_end.as_slice() {
+                            continue;
+                        }
+                    }
+                }
+            }
+
             let entries = sst.scan_prefix(prefix).await?;
             for (k, v, seq, _tx) in entries {
                 let raw_seq = seq & !TOMBSTONE_BIT;

@@ -86,7 +86,8 @@ impl GraphInner {
 
     /// Compacts staged edges into the CSR arrays.
     fn compact(&mut self) {
-        if !self.is_dirty {
+        if !self.is_dirty || self.committed_staged.is_empty() {
+            self.is_dirty = false;
             return;
         }
 

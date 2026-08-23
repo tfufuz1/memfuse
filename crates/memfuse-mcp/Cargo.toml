@@ -5,6 +5,8 @@ edition.workspace = true
 
 [dependencies]
 memfuse-db = { workspace = true }
+memfuse-core = { workspace = true }
+memfuse-ollama = { workspace = true }
 axum = { version = "0.7", features = ["json"] }
 tokio = { workspace = true }
 serde = { workspace = true }

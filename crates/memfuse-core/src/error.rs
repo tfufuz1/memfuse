@@ -25,6 +25,9 @@ pub enum MemFuseError {
     #[error("Policy violation: {0}")]
     PolicyViolation(String),
 
+    #[error("Namespace violation: {0}")]
+    NamespaceViolation(String),
+
     // ═══ Storage Engine ═══
     #[error("Storage error: {0}")]
     Storage(String),
@@ -206,10 +209,10 @@ mod tests {
         );
         assert_eq!(
             MemFuseError::HnswConnectivityDegraded {
-                deleted_ratio: 0.25
+                deleted_ratio: 25.0
             }
             .to_string(),
-            "HNSW graph connectivity degraded: 0.2% deleted nodes"
+            "HNSW graph connectivity degraded: 25.0% deleted nodes"
         );
         assert_eq!(
             MemFuseError::Text("test".into()).to_string(),

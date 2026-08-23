@@ -42,7 +42,20 @@ fn get_runtime() -> PyResult<&'static Runtime> {
         return Ok(rt);
     }
 
+    let worker_threads = std::env::var("MEMFUSE_WORKER_THREADS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or_else(|| {
+            (std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4)
+                / 2)
+            .max(2)
+        });
+
     let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(worker_threads)
+        .thread_name("memfuse-py-worker")
         .enable_all()
         .build()
         .map_err(|e| {
@@ -398,14 +411,17 @@ macro_rules! memfuse_crud_methods {
                 Ok(PyBytes::new(py, data))
             }
 
-            /// Performs hybrid search combining BM25 and vector search results.
-            #[pyo3(signature = (text, vector, k))]
+            /// Performs hybrid search combining BM25, vector search, and graph traversal results.
+            #[pyo3(signature = (text, vector, k, vector_weight=None, text_weight=None, graph_weight=None))]
             pub fn hybrid_search<'py>(
                 &self,
                 py: Python<'py>,
                 text: &str,
                 vector: PyReadonlyArray1<'py, f32>,
                 k: usize,
+                vector_weight: Option<f32>,
+                text_weight: Option<f32>,
+                graph_weight: Option<f32>,
             ) -> PyResult<Vec<PySearchResult>> {
                 if k == 0 || k > 1000 {
                     return Err(pyo3::exceptions::PyValueError::new_err(format!(
@@ -413,24 +429,37 @@ macro_rules! memfuse_crud_methods {
                         k
                     )));
                 }
+                let weights = match (vector_weight, text_weight, graph_weight) {
+                    (Some(v), Some(t), Some(g)) => {
+                        Some(memfuse_core::FusionWeights::new(v, t, g, 0.0)
+                            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?)
+                    }
+                    (None, None, None) => None,
+                    _ => return Err(pyo3::exceptions::PyValueError::new_err(
+                        "Must specify either all three weights (vector_weight, text_weight, graph_weight) or none"
+                    )),
+                };
                 let rt = get_runtime()?;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
                 let results = py
-                    .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, v, k, None)))
+                    .allow_threads(|| rt.block_on(self.inner.hybrid_search_with_weights(text, v, k, None, weights.as_ref())))
                     .map_err(memfuse_err)?;
                 results_to_py(py, results)
             }
 
             /// Performs hybrid search and returns results as FlatBuffer (zero-copy).
-            #[pyo3(signature = (text, vector, k))]
+            #[pyo3(signature = (text, vector, k, vector_weight=None, text_weight=None, graph_weight=None))]
             pub fn hybrid_search_fb<'py>(
                 &self,
                 py: Python<'py>,
                 text: &str,
                 vector: PyReadonlyArray1<'py, f32>,
                 k: usize,
+                vector_weight: Option<f32>,
+                text_weight: Option<f32>,
+                graph_weight: Option<f32>,
             ) -> PyResult<Bound<'py, PyBytes>> {
                 if k == 0 || k > 1000 {
                     return Err(pyo3::exceptions::PyValueError::new_err(format!(
@@ -438,12 +467,22 @@ macro_rules! memfuse_crud_methods {
                         k
                     )));
                 }
+                let weights = match (vector_weight, text_weight, graph_weight) {
+                    (Some(v), Some(t), Some(g)) => {
+                        Some(memfuse_core::FusionWeights::new(v, t, g, 0.0)
+                            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?)
+                    }
+                    (None, None, None) => None,
+                    _ => return Err(pyo3::exceptions::PyValueError::new_err(
+                        "Must specify either all three weights (vector_weight, text_weight, graph_weight) or none"
+                    )),
+                };
                 let rt = get_runtime()?;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
                 let results = py
-                    .allow_threads(|| rt.block_on(self.inner.hybrid_search(text, v, k, None)))
+                    .allow_threads(|| rt.block_on(self.inner.hybrid_search_with_weights(text, v, k, None, weights.as_ref())))
                     .map_err(memfuse_err)?;
 
                 let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(1024);

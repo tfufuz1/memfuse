@@ -119,7 +119,10 @@ async fn test_ingestion_creates_graph_entities() {
         .await
         .expect("open db");
 
-    let collection = db.collection("graph-entity-test").await.expect("collection");
+    let collection = db
+        .collection("graph-entity-test")
+        .await
+        .expect("collection");
 
     let embedder = Arc::new(DummyEmbedder { dim: 4 });
     let pipeline = IngestionPipeline::new(embedder);

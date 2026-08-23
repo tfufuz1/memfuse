@@ -62,7 +62,10 @@ async fn test_full_pipeline_ingest_search_and_chat_context() {
     let db = MemFuse::open_with_config(&db_path, config.clone())
         .await
         .expect("DB öffnen");
-    let collection = db.collection("hr_docs").await.expect("Collection erstellen");
+    let collection = db
+        .collection("hr_docs")
+        .await
+        .expect("Collection erstellen");
 
     // ── 3. Ordner importieren ─────────────────────────────────────────────
     let embedder: Arc<dyn EmbeddingProvider> = Arc::new(KeywordEmbedder);
@@ -72,9 +75,16 @@ async fn test_full_pipeline_ingest_search_and_chat_context() {
         .await
         .expect("Ordner-Import");
 
-    assert_eq!(reports.len(), 3, "Alle 3 Testdokumente sollten verarbeitet werden");
+    assert_eq!(
+        reports.len(),
+        3,
+        "Alle 3 Testdokumente sollten verarbeitet werden"
+    );
     let total_chunks: usize = reports.iter().map(|r| r.chunks_created).sum();
-    assert!(total_chunks >= 3, "Mindestens 1 Chunk pro Dokument erwartet");
+    assert!(
+        total_chunks >= 3,
+        "Mindestens 1 Chunk pro Dokument erwartet"
+    );
     for report in &reports {
         assert!(
             report.errors.is_empty(),

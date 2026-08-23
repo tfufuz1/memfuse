@@ -96,11 +96,13 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // SAFETY: Hardware-Support-Check und Bounds-Validation.
-            // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
-            // Dimensionen werden durch compute_distance validiert.
-            // SAFETY: Hardware support detected and bounds checked.
             return unsafe { cosine_distance_avx2(a, b) };
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            return unsafe { cosine_distance_neon(a, b) };
         }
     }
     // Stable fallback (autovectorizable by compiler)
@@ -116,19 +118,17 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
     {
         // Try AVX-512
         if is_x86_feature_detected!("avx512f") {
-            // SAFETY: Hardware-Support-Check und Bounds-Validation.
-            // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
-            // Dimensionen werden durch compute_distance validiert.
-            // SAFETY: Hardware support detected and bounds checked.
             return unsafe { euclidean_distance_avx512(a, b) };
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // SAFETY: Hardware-Support-Check und Bounds-Validation.
-            // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
-            // Dimensionen werden durch compute_distance validiert.
-            // SAFETY: Hardware support detected and bounds checked.
             return unsafe { euclidean_distance_avx2(a, b) };
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            return unsafe { euclidean_distance_neon(a, b) };
         }
     }
     // Stable fallback (autovectorizable by compiler)
@@ -144,19 +144,17 @@ pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
     {
         // Try AVX-512
         if is_x86_feature_detected!("avx512f") {
-            // SAFETY: Hardware-Support-Check und Bounds-Validation.
-            // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
-            // Dimensionen werden durch compute_distance validiert.
-            // SAFETY: Hardware support detected and bounds checked.
             return unsafe { -dot_product_avx512(a, b) };
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // SAFETY: Hardware-Support-Check und Bounds-Validation.
-            // BEGRÜNDUNG: AVX2 und FMA Support wurde via is_x86_feature_detected geprüft.
-            // Dimensionen werden durch compute_distance validiert.
-            // SAFETY: Hardware support detected and bounds checked.
             return unsafe { -dot_product_avx2(a, b) };
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            return unsafe { -dot_product_neon(a, b) };
         }
     }
     // Stable fallback (autovectorizable by compiler)
@@ -194,6 +192,116 @@ pub fn euclidean_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
 /// Scalar implementation of dot product.
 pub fn dot_product_scalar(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
+}
+
+// -----------------------------------------------------------------------------
+// ARM/NEON Implementations for AArch64
+// -----------------------------------------------------------------------------
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[allow(unsafe_code)]
+/// # Safety
+/// Caller must ensure `a` and `b` contain non-NaN elements and CPU supports NEON.
+unsafe fn cosine_distance_neon(a: &[f32], b: &[f32]) -> f32 {
+    use std::arch::aarch64::*;
+
+    let n = a.len().min(b.len());
+    let chunks = n / 4;
+
+    let mut dot_v = unsafe { vdupq_n_f32(0.0) };
+    let mut norm_a_v = unsafe { vdupq_n_f32(0.0) };
+    let mut norm_b_v = unsafe { vdupq_n_f32(0.0) };
+
+    for i in 0..chunks {
+        unsafe {
+            let va = vld1q_f32(a.as_ptr().add(i * 4));
+            let vb = vld1q_f32(b.as_ptr().add(i * 4));
+            dot_v = vmlaq_f32(dot_v, va, vb);
+            norm_a_v = vmlaq_f32(norm_a_v, va, va);
+            norm_b_v = vmlaq_f32(norm_b_v, vb, vb);
+        }
+    }
+
+    let mut dot = unsafe { vaddvq_f32(dot_v) };
+    let mut norm_a = unsafe { vaddvq_f32(norm_a_v) };
+    let mut norm_b = unsafe { vaddvq_f32(norm_b_v) };
+
+    for i in (chunks * 4)..n {
+        let x = a[i];
+        let y = b[i];
+        dot += x * y;
+        norm_a += x * x;
+        norm_b += y * y;
+    }
+
+    if norm_a == 0.0 || norm_b == 0.0 {
+        1.0
+    } else {
+        1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[allow(unsafe_code)]
+/// # Safety
+/// Caller must ensure CPU supports NEON and pointer accesses stay within slice bounds.
+unsafe fn euclidean_distance_neon(a: &[f32], b: &[f32]) -> f32 {
+    use std::arch::aarch64::*;
+
+    let n = a.len().min(b.len());
+    let chunks = n / 4;
+
+    let mut sum_v = unsafe { vdupq_n_f32(0.0) };
+
+    for i in 0..chunks {
+        unsafe {
+            let va = vld1q_f32(a.as_ptr().add(i * 4));
+            let vb = vld1q_f32(b.as_ptr().add(i * 4));
+            let diff = vsubq_f32(va, vb);
+            sum_v = vmlaq_f32(sum_v, diff, diff);
+        }
+    }
+
+    let mut sum = unsafe { vaddvq_f32(sum_v) };
+
+    for i in (chunks * 4)..n {
+        let diff = a[i] - b[i];
+        sum += diff * diff;
+    }
+
+    sum.sqrt()
+}
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[allow(unsafe_code)]
+/// # Safety
+/// Caller must ensure CPU supports NEON and pointer accesses stay within slice bounds.
+unsafe fn dot_product_neon(a: &[f32], b: &[f32]) -> f32 {
+    use std::arch::aarch64::*;
+
+    let n = a.len().min(b.len());
+    let chunks = n / 4;
+
+    let mut sum_v = unsafe { vdupq_n_f32(0.0) };
+
+    for i in 0..chunks {
+        unsafe {
+            let va = vld1q_f32(a.as_ptr().add(i * 4));
+            let vb = vld1q_f32(b.as_ptr().add(i * 4));
+            sum_v = vmlaq_f32(sum_v, va, vb);
+        }
+    }
+
+    let mut sum = unsafe { vaddvq_f32(sum_v) };
+
+    for i in (chunks * 4)..n {
+        sum += a[i] * b[i];
+    }
+
+    sum
 }
 
 // ANCHOR:REFACTOR:WP-0.0-STABLESIMD — Removed std_simd functions
@@ -1277,6 +1385,22 @@ mod tests {
                     diff
                 );
             }
+        }
+    }
+
+    #[test]
+    fn neon_matches_scalar_within_tolerance() {
+        #[cfg(target_arch = "aarch64")]
+        {
+            let a: Vec<f32> = (0..768).map(|i| (i as f32) * 0.001).collect();
+            let b: Vec<f32> = (0..768).map(|i| ((i + 37) as f32) * 0.001).collect();
+            let scalar = cosine_distance_scalar(&a, &b);
+            let neon = unsafe { cosine_distance_neon(&a, &b) };
+            assert!(
+                (scalar - neon).abs() < 1e-6,
+                "NEON/Scalar difference: {}",
+                (scalar - neon).abs()
+            );
         }
     }
 }

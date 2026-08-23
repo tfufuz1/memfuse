@@ -71,9 +71,28 @@ impl IngestionPipeline {
         let mut created = 0;
         let mut errors = Vec::new();
 
-        for (idx, chunk) in chunks.into_iter().enumerate() {
+        use futures_util::stream::{self, StreamExt};
+        const EMBED_CONCURRENCY: usize = 8;
+
+        let embedding_results: Vec<(usize, memfuse_db::chunker::Chunk, Result<Vec<f32>>)> =
+            stream::iter(chunks.into_iter().enumerate())
+                .map(|(idx, chunk)| {
+                    let embedder = Arc::clone(&self.embedder);
+                    async move {
+                        let res = embedder.embed(&chunk.content).await;
+                        (idx, chunk, res)
+                    }
+                })
+                .buffer_unordered(EMBED_CONCURRENCY)
+                .collect()
+                .await;
+
+        let mut sorted = embedding_results;
+        sorted.sort_by_key(|(idx, _, _)| *idx);
+
+        for (idx, chunk, embed_res) in sorted {
             let chunk_text = chunk.content;
-            match self.embedder.embed(&chunk_text).await {
+            match embed_res {
                 Ok(embedding) => {
                     let doc_id = format!("{}#{}", file_name, idx);
                     let mut metadata = chunk.metadata.unwrap_or_else(|| serde_json::json!({}));
@@ -144,8 +163,7 @@ impl IngestionPipeline {
                             }
 
                             let doc_entity_id = EntityId::from(doc_id.as_str());
-                            let doc_entity =
-                                Entity::new(doc_entity_id, doc_id.clone(), "Document");
+                            let doc_entity = Entity::new(doc_entity_id, doc_id.clone(), "Document");
                             let _ = graph.add_entity(tx, doc_entity).await;
 
                             for term_id in &extracted_entities {

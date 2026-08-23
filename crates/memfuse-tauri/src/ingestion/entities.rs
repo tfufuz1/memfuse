@@ -47,7 +47,10 @@ impl SimpleEntityExtractor {
     }
 
     fn is_capitalized_candidate(word: &str) -> bool {
-        word.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
+        word.chars()
+            .next()
+            .map(|c| c.is_uppercase())
+            .unwrap_or(false)
             && word.len() > 2
             && !Self::is_common_sentence_starter(word)
     }

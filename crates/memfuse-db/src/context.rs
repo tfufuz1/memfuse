@@ -113,13 +113,15 @@ impl ContextManager {
 
     /// Estimates the token count of a text string.
     ///
-    /// Rough approximation: ~4 characters per token for English,
-    /// ~3 characters per token for German (compound words).
+    /// Calibrated for German/multilingual subword tokenization (compounds).
+    /// Configurable via `MEMFUSE_TOKEN_FACTOR` environment variable (default: 1.6).
     pub fn estimate_tokens(text: &str) -> usize {
-        // Simple whitespace-based estimate with compound-word adjustment
         let words: usize = text.split_whitespace().count();
-        // Average 1.3 tokens per word (accounting for subword tokenization)
-        ((words as f64) * 1.3).ceil() as usize
+        let factor: f64 = std::env::var("MEMFUSE_TOKEN_FACTOR")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1.6);
+        ((words as f64) * factor).ceil() as usize
     }
 }
 

@@ -13,6 +13,7 @@ tauri-plugin-fs = "2"
 memfuse-core = { workspace = true }
 memfuse-db = { workspace = true }
 memfuse-graph = { workspace = true }
+memfuse-ollama = { workspace = true }
 parking_lot = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

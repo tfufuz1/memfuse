@@ -9,23 +9,28 @@ pub fn reciprocal_rank_fusion(
     result_sets: Vec<Vec<SearchResult>>,
     max_results: usize,
 ) -> Vec<SearchResult> {
+    let weighted_sets = result_sets.into_iter().map(|set| (set, 1.0)).collect();
+    weighted_reciprocal_rank_fusion(weighted_sets, max_results)
+}
+
+/// Weighted Reciprocal Rank Fusion.
+/// Multiplies the RRF contribution of each search signal set by its configured weight.
+pub fn weighted_reciprocal_rank_fusion(
+    result_sets: Vec<(Vec<SearchResult>, f32)>,
+    max_results: usize,
+) -> Vec<SearchResult> {
     let k = 60;
+    let mut fused: HashMap<String, (f32, Option<serde_json::Value>)> = HashMap::new();
 
-    // id -> (total_score, metadata)
-    let mut fused_scores: HashMap<String, (f32, Option<serde_json::Value>)> = HashMap::new();
-
-    for cur_set in result_sets {
-        for (rank, cur_doc) in cur_set.into_iter().enumerate() {
-            // Rank is 1-indexed for the formula usually, so rank + 1
-            let score = 1.0 / ((k + rank + 1) as f32);
-            let entry = fused_scores
-                .entry(cur_doc.id)
-                .or_insert((0.0, cur_doc.metadata));
+    for (result_set, weight) in result_sets {
+        for (rank, doc) in result_set.into_iter().enumerate() {
+            let score = weight / ((k + rank + 1) as f32);
+            let entry = fused.entry(doc.id).or_insert((0.0, doc.metadata));
             entry.0 += score;
         }
     }
 
-    let mut final_results: Vec<SearchResult> = fused_scores
+    let mut ranked: Vec<SearchResult> = fused
         .into_iter()
         .map(|(id, (score, metadata))| SearchResult {
             id,
@@ -34,15 +39,21 @@ pub fn reciprocal_rank_fusion(
         })
         .collect();
 
-    // Sort descending by score
-    final_results.sort_by(|a, b| {
+    ranked.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    final_results.truncate(max_results);
+    ranked.truncate(max_results);
+    ranked
+}
 
-    final_results
+/// Converts optional FusionWeights into (vector, text, graph) weight tuple.
+pub fn weights_to_signal_factors(weights: Option<&memfuse_core::FusionWeights>) -> (f32, f32, f32) {
+    match weights {
+        Some(w) => (w.vector(), w.text(), w.graph()),
+        None => (1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0),
+    }
 }
 
 #[cfg(test)]

@@ -944,6 +944,20 @@ impl<S: StorageEngine> Collection<S> {
         k: usize,
         anchor_entities: Option<&[memfuse_core::EntityId]>,
     ) -> Result<Vec<crate::SearchResult>> {
+        self.hybrid_search_with_weights(text, vector, k, anchor_entities, None)
+            .await
+    }
+
+    /// Performs hybrid search with custom fusion weights for vector, text, and graph signals.
+    #[tracing::instrument(level = "trace", skip(self, text, vector))]
+    pub async fn hybrid_search_with_weights(
+        &self,
+        text: &str,
+        vector: &[f32],
+        k: usize,
+        anchor_entities: Option<&[memfuse_core::EntityId]>,
+        weights: Option<&memfuse_core::FusionWeights>,
+    ) -> Result<Vec<crate::SearchResult>> {
         let seq = self.snapshot_seq().await?;
         let is_vector_zero = vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
@@ -973,8 +987,6 @@ impl<S: StorageEngine> Collection<S> {
         };
 
         // 3. Graph Signal
-        // MAPPING CONVENTION: EntityIds derived from document keys match DocIds (via Blake3 hash).
-        // Graph entities whose EntityId matches a collection document are hydrated into SearchResult.
         let graph_results = if let Some(anchors) = anchor_entities {
             if anchors.is_empty() {
                 Vec::new()
@@ -990,7 +1002,6 @@ impl<S: StorageEngine> Collection<S> {
                 self.hydrate_from_tuples_at(doc_tuples, seq).await?
             }
         } else if !text_results.is_empty() {
-            // Implicit fallback: derive anchors from text search matches
             let implicit_anchors: Vec<memfuse_core::EntityId> = text_results
                 .iter()
                 .map(|r| memfuse_core::EntityId::from(r.id.as_str()))
@@ -1008,23 +1019,27 @@ impl<S: StorageEngine> Collection<S> {
             Vec::new()
         };
 
-        // If all signals are empty, return empty
         if vector_results.is_empty() && text_results.is_empty() && graph_results.is_empty() {
             return Ok(Vec::new());
         }
 
+        let (vw, tw, gw) = crate::fusion::weights_to_signal_factors(weights);
+
         let mut signal_sets = Vec::new();
         if !vector_results.is_empty() {
-            signal_sets.push(vector_results);
+            signal_sets.push((vector_results, vw));
         }
         if !text_results.is_empty() {
-            signal_sets.push(text_results);
+            signal_sets.push((text_results, tw));
         }
         if !graph_results.is_empty() {
-            signal_sets.push(graph_results);
+            signal_sets.push((graph_results, gw));
         }
 
-        Ok(crate::fusion::reciprocal_rank_fusion(signal_sets, k))
+        Ok(crate::fusion::weighted_reciprocal_rank_fusion(
+            signal_sets,
+            k,
+        ))
     }
 
     /// Returns the name of the collection.

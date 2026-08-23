@@ -12,6 +12,7 @@ members = [
     "crates/memfuse-py",
     "crates/memfuse-tauri",
     "crates/memfuse-mcp",
+    "crates/memfuse-ollama",
 ]
 
 [workspace.package]
@@ -67,7 +68,8 @@ memfuse-crypto = { path = "crates/memfuse-crypto" }
 memfuse-graph = { path = "crates/memfuse-graph" }
 memfuse-py    = { path = "crates/memfuse-py" }
 memfuse-tauri = { path = "crates/memfuse-tauri" }
-memfuse-embed = { path = "crates/memfuse-embed" }
+memfuse-mcp   = { path = "crates/memfuse-mcp" }
+memfuse-ollama = { path = "crates/memfuse-ollama" }
 
 # ── Archived Zone ──────────────────────────────────────────────────────────────
 # memfuse-cluster, memfuse-sandbox, memfuse-saos-agent wurden in Phase 0 ausgelagert.

@@ -21,9 +21,6 @@ async-trait = { workspace = true }
 parking_lot = { workspace = true }
 tokio-util = { version = "0.7.18", features = ["rt"] }
 
-# 🧊 Frozen Zone — uncomment to reactivate
-memfuse-embed = { workspace = true, optional = true }
-
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile = { workspace = true }
@@ -33,9 +30,6 @@ proptest = "1.4"
 [features]
 default = []
 bench = []
-# 🧊 Frozen features — stubs declared to silence cfg(feature) warnings.
-# Uncomment dep: links above AND dep entries to fully reactivate.
-embed = ["dep:memfuse-embed"]
 sandbox = []
 cluster = []
 

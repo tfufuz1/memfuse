@@ -3,13 +3,29 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use memfuse_core::TextEmbeddingEngine;
 use memfuse_db::MemFuse;
+use memfuse_ollama::OllamaEmbedder;
 use serde_json::Value;
 use std::sync::Arc;
 
 /// Shared state for the MCP server.
 pub struct McpServerState {
     pub db: Arc<MemFuse>,
+    pub embedder: Arc<dyn TextEmbeddingEngine>,
+}
+
+impl McpServerState {
+    pub fn new(db: Arc<MemFuse>) -> Self {
+        Self {
+            db,
+            embedder: Arc::new(OllamaEmbedder::with_defaults()),
+        }
+    }
+
+    pub fn with_embedder(db: Arc<MemFuse>, embedder: Arc<dyn TextEmbeddingEngine>) -> Self {
+        Self { db, embedder }
+    }
 }
 
 /// Creates the axum router with all MCP JSON-RPC / HTTP endpoints.
@@ -25,7 +41,7 @@ async fn list_tools() -> Json<Value> {
         "tools": [
             {
                 "name": "memfuse_search",
-                "description": "Hybrid search across stored documents (vector + BM25 + metadata)",
+                "description": "Hybrid search across stored documents (vector + BM25 + graph — 4-Signal Fusion)",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -125,9 +141,14 @@ async fn handle_search(state: &McpServerState, args: &Value) -> Result<Value, St
         .await
         .map_err(|e| e.to_string())?;
 
-    let zeros = vec![0.0f32; collection.dimension()];
+    let query_vector = state
+        .embedder
+        .embed(query)
+        .await
+        .map_err(|e| format!("Embedding query failed: {e}"))?;
+
     let results = collection
-        .hybrid_search(query, &zeros, k, None)
+        .hybrid_search(query, &query_vector, k, None)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -157,15 +178,28 @@ async fn handle_insert(state: &McpServerState, args: &Value) -> Result<Value, St
             .or_insert_with(|| serde_json::Value::String(text.to_string()));
     }
 
+    let embedding = state
+        .embedder
+        .embed(text)
+        .await
+        .map_err(|e| format!("Embedding text failed: {e}"))?;
+
     let collection = state
         .db
         .collection(collection_name)
         .await
         .map_err(|e| e.to_string())?;
 
-    let zeros = vec![0.0f32; collection.dimension()];
+    if embedding.len() != collection.dimension() {
+        return Err(format!(
+            "Embedding dimension {} does not match collection dimension {}",
+            embedding.len(),
+            collection.dimension()
+        ));
+    }
+
     collection
-        .insert(id, &zeros, Some(metadata))
+        .insert(id, &embedding, Some(metadata))
         .await
         .map_err(|e| e.to_string())?;
 

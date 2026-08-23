@@ -45,7 +45,11 @@ impl std::fmt::Debug for VolatileEncryptionKey {
 
 impl PartialEq for VolatileEncryptionKey {
     fn eq(&self, other: &Self) -> bool {
-        self.key_bytes == other.key_bytes
+        let mut diff = 0u8;
+        for (a, b) in self.key_bytes.iter().zip(other.key_bytes.iter()) {
+            diff |= a ^ b;
+        }
+        diff == 0
     }
 }
 

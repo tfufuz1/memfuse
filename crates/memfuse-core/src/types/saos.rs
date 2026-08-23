@@ -113,6 +113,14 @@ impl FusionWeights {
     pub fn text(&self) -> f32 {
         self.text
     }
+
+    pub fn graph(&self) -> f32 {
+        self.graph
+    }
+
+    pub fn metadata(&self) -> f32 {
+        self.metadata
+    }
 }
 
 /// Defines cross-namespace isolation guarantees.

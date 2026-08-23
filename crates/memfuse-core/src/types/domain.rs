@@ -253,20 +253,20 @@ impl DistanceMetric {
                 Ok((dist.clamp(0.0, 2.0) * 1_000_000.0) as u32)
             }
             Self::Euclidean => {
-                let mut sum = 0u32;
+                let mut sum = 0u64;
                 for (&x, &y) in a.iter().zip(b.iter()) {
-                    let diff = x as i32 - y as i32;
-                    sum += (diff * diff) as u32;
+                    let diff = (x as i64) - (y as i64);
+                    sum += (diff * diff) as u64;
                 }
-                Ok(sum)
+                Ok(sum.min(u32::MAX as u64) as u32)
             }
             Self::DotProduct => {
                 // Raw dot product (unsigned). Caller handles ranking inversion.
-                let mut dot = 0u32;
+                let mut dot = 0u64;
                 for (&x, &y) in a.iter().zip(b.iter()) {
-                    dot += x as u32 * y as u32;
+                    dot += (x as u64) * (y as u64);
                 }
-                Ok(dot)
+                Ok(dot.min(u32::MAX as u64) as u32)
             }
         }
     }

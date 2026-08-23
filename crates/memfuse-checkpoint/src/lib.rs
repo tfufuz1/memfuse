@@ -1,8 +1,5 @@
 //! Checkpoint-Registry für Time-Travel und MVCC-basiertes Snapshotting.
 //!
-//! # Status
-//! 🛑 FROZEN — Teil des SAOS-Stacks (Phase 5)
-//!
 //! # Architektur
 //! `PersistentCheckpointStore` delegiert Persistenz an ein [`memfuse_core::StorageEngine`]-Objekt
 //! und cacht aktive Checkpoints in einem thread-sicheren In-Memory-Store (`parking_lot::RwLock`).
@@ -52,8 +49,10 @@ pub trait CheckpointRegistry: Send + Sync {
 /// - Keine Panics (Zero-Panic Doctrine)
 pub struct PersistentCheckpointStore<S: memfuse_core::StorageEngine> {
     storage: Arc<S>,
-    /// Registrierte Checkpoints im Arbeitsspeicher — geschützt durch RwLock
+    /// Registrierte Checkpoints im Arbeitsspeicher — geschützt durch RwLock (seq_no -> meta)
     checkpoints: RwLock<HashMap<u64, CheckpointMeta>>,
+    /// O(1) Index für Name -> seq_no Lookup
+    name_index: RwLock<HashMap<String, u64>>,
     /// Namespace-Präfix für Storage-Keys
     namespace: String,
     /// Lock für sequentielle Schreiboperationen auf den Storage (HIGH-002)
@@ -65,6 +64,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         Self {
             storage,
             checkpoints: RwLock::new(HashMap::new()),
+            name_index: RwLock::new(HashMap::new()),
             namespace: namespace.into(),
             write_lock: tokio::sync::Mutex::new(()),
         }
@@ -135,6 +135,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
             // 3. Update cache
             self.checkpoints.write().remove(&checkpoint.seq_no);
+            self.name_index.write().remove(&checkpoint.name);
         }
         Ok(())
     }
@@ -156,17 +157,23 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         }
 
         // In-Memory Cache aktualisieren
+        self.name_index
+            .write()
+            .insert(meta.name.clone(), meta.seq_no);
         self.checkpoints.write().insert(meta.seq_no, meta);
         Ok(())
     }
 
     /// Internal helper to get checkpoint by name without extra locking.
     async fn get_checkpoint_internal(&self, name: &str) -> Result<Option<CheckpointMeta>> {
-        // Erst In-Memory prüfen
+        // Erst O(1) In-Memory Name-Index prüfen
         {
-            let cache = self.checkpoints.read();
-            if let Some(cp) = cache.values().find(|c| c.name == name) {
-                return Ok(Some(cp.clone()));
+            let name_idx = self.name_index.read();
+            if let Some(&seq_no) = name_idx.get(name) {
+                let cache = self.checkpoints.read();
+                if let Some(cp) = cache.get(&seq_no) {
+                    return Ok(Some(cp.clone()));
+                }
             }
         }
 
@@ -176,6 +183,10 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             Some(bytes) => {
                 let meta: CheckpointMeta = serde_json::from_slice(&bytes)
                     .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+                self.name_index
+                    .write()
+                    .insert(meta.name.clone(), meta.seq_no);
+                self.checkpoints.write().insert(meta.seq_no, meta.clone());
                 Ok(Some(meta))
             }
             None => Ok(None),
@@ -197,9 +208,12 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         // Cache synchronisieren
         {
             let mut cache = self.checkpoints.write();
-            cache.clear(); // Ensure cache matches storage
+            let mut name_idx = self.name_index.write();
+            cache.clear();
+            name_idx.clear();
             for meta in &result {
                 cache.insert(meta.seq_no, meta.clone());
+                name_idx.insert(meta.name.clone(), meta.seq_no);
             }
         }
 

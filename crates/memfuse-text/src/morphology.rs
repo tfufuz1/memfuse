@@ -68,7 +68,8 @@ pub fn normalize_umlauts(input: &str) -> String {
 /// Trait for morphological tokenization.
 ///
 /// Decomposes compound words into constituent morphemes.
-/// Example: "Bundesverfassungsgericht" -> ["Bundes", "verfassungs", "gericht"]
+/// Note: Input tokens SHOULD be lowercased before passing to `decompose`.
+/// Example: "bundesverfassungsgericht" -> ["bundes", "verfassungs", "gericht"]
 pub trait MorphologicalTokenizer: Send + Sync {
     /// Decomposes a token into its morphological components.
     fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str>;
@@ -80,6 +81,7 @@ pub trait MorphologicalTokenizer: Send + Sync {
 /// German compound word splitter.
 ///
 /// Uses dictionary-based + frequency statistics approach.
+/// Input tokens should be lowercased for dictionary matching.
 /// Fallback: returns the original token unsplit.
 pub struct GermanCompoundSplitter {
     /// Minimum component length for splitting.
