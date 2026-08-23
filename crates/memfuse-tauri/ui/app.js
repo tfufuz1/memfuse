@@ -327,3 +327,82 @@ function escapeHtml(str) {
     div.textContent = str;
     return div.innerHTML;
 }
+
+// ── Onboarding-Flow ────────────────────────────────────────────────────
+const onboardingOverlay = document.getElementById('onboarding-overlay');
+
+async function checkOnboardingNeeded() {
+    // Onboarding zeigen, solange keine Datenbank geöffnet ist
+    if (!dbOpen) {
+        onboardingOverlay.style.display = 'flex';
+        await checkOllamaAvailability();
+    } else {
+        onboardingOverlay.style.display = 'none';
+    }
+}
+
+async function checkOllamaAvailability() {
+    const statusEl = document.getElementById('onboarding-ollama-check');
+    try {
+        const models = await invoke('list_ollama_models');
+        if (models.length > 0) {
+            statusEl.innerHTML = `✅ Ollama gefunden mit ${models.length} Modell(en)`;
+        } else {
+            statusEl.innerHTML = `⚠️ Ollama läuft, aber kein Modell installiert. ` +
+                `Führen Sie <code>ollama pull llama3.2</code> in einem Terminal aus.`;
+        }
+    } catch (e) {
+        statusEl.innerHTML = `⚠️ Ollama wurde nicht gefunden. Bitte installieren Sie ` +
+            `Ollama von <a href="https://ollama.com" target="_blank" style="color:#6ab0ff;">ollama.com</a> ` +
+            `und starten Sie es, bevor Sie fortfahren.`;
+    }
+}
+
+document.getElementById('onboarding-choose-folder').addEventListener('click', async () => {
+    const selected = await open({ directory: true, multiple: false });
+    if (!selected) return;
+
+    try {
+        await invoke('open_database', { path: selected });
+        dbOpen = true;
+        dbStatusEl.textContent = `✅ Verbunden: ${selected}`;
+        dbStatusEl.classList.add('connected');
+
+        document.getElementById('onboarding-step-1').style.display = 'none';
+        document.getElementById('onboarding-step-2').style.display = 'block';
+    } catch (e) {
+        alert(`Fehler beim Öffnen der Datenbank: ${e}`);
+    }
+});
+
+document.getElementById('onboarding-create-collection').addEventListener('click', async () => {
+    const name = document.getElementById('onboarding-collection-name').value.trim();
+    if (!name) {
+        alert('Bitte geben Sie einen Namen ein.');
+        return;
+    }
+
+    try {
+        await invoke('create_collection', { name });
+        activeCollection = name;
+        document.getElementById('onboarding-collection-display').textContent = name;
+        document.getElementById('onboarding-step-2').style.display = 'none';
+        document.getElementById('onboarding-step-3').style.display = 'block';
+        await refreshCollections();
+        selectCollection(name);
+    } catch (e) {
+        alert(`Collection konnte nicht erstellt werden: ${e}`);
+    }
+});
+
+document.getElementById('onboarding-import-now').addEventListener('click', async () => {
+    onboardingOverlay.style.display = 'none';
+    document.getElementById('import-folder-btn').click();  // bestehenden Import-Flow triggern
+});
+
+document.getElementById('onboarding-skip').addEventListener('click', () => {
+    onboardingOverlay.style.display = 'none';
+});
+
+// Beim App-Start aufrufen:
+checkOnboardingNeeded();
