@@ -116,11 +116,15 @@ impl ContextManager {
     /// Calibrated for German/multilingual subword tokenization (compounds).
     /// Configurable via `MEMFUSE_TOKEN_FACTOR` environment variable (default: 1.6).
     pub fn estimate_tokens(text: &str) -> usize {
+        static TOKEN_FACTOR: std::sync::LazyLock<f64> = std::sync::LazyLock::new(|| {
+            std::env::var("MEMFUSE_TOKEN_FACTOR")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(1.6)
+        });
+
         let words: usize = text.split_whitespace().count();
-        let factor: f64 = std::env::var("MEMFUSE_TOKEN_FACTOR")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(1.6);
+        let factor: f64 = *TOKEN_FACTOR;
         ((words as f64) * factor).ceil() as usize
     }
 }

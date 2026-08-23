@@ -56,6 +56,18 @@ const KMU_DOMAIN_VOCABULARY: &[&str] = &[
 ];
 
 /// Normalisiert deutsche Umlaute für robusten Suchabgleich.
+///
+/// # Example
+/// ```
+/// use memfuse_text::morphology::{normalize_umlauts, GermanCompoundSplitter};
+/// use memfuse_text::morphology::MorphologicalTokenizer;
+///
+/// let splitter = GermanCompoundSplitter::new();
+/// let normalized = normalize_umlauts("Bundesverfassungsgericht");
+/// // normalized is now "bundesverfassungsgericht"
+/// let parts = splitter.decompose(&normalized);
+/// // parts contains morphological components
+/// ```
 pub fn normalize_umlauts(input: &str) -> String {
     input
         .to_lowercase()
@@ -68,7 +80,13 @@ pub fn normalize_umlauts(input: &str) -> String {
 /// Trait for morphological tokenization.
 ///
 /// Decomposes compound words into constituent morphemes.
-/// Note: Input tokens SHOULD be lowercased before passing to `decompose`.
+///
+/// # Input Contract
+/// Input tokens MUST be lowercased before passing to `decompose`. Passing
+/// mixed-case or uppercase tokens causes silent dictionary misses and returns
+/// the original token without decomposition. Use `normalize_umlauts()` from
+/// this module to prepare input correctly.
+///
 /// Example: "bundesverfassungsgericht" -> ["bundes", "verfassungs", "gericht"]
 pub trait MorphologicalTokenizer: Send + Sync {
     /// Decomposes a token into its morphological components.
@@ -81,7 +99,12 @@ pub trait MorphologicalTokenizer: Send + Sync {
 /// German compound word splitter.
 ///
 /// Uses dictionary-based + frequency statistics approach.
-/// Input tokens should be lowercased for dictionary matching.
+///
+/// # Input Contract
+/// Input tokens MUST be lowercased (and ideally normalized with
+/// [`normalize_umlauts`]) before calling [`MorphologicalTokenizer::decompose`].
+/// Uppercase input causes silent dictionary misses; there is no partial match.
+///
 /// Fallback: returns the original token unsplit.
 pub struct GermanCompoundSplitter {
     /// Minimum component length for splitting.
@@ -117,6 +140,13 @@ impl Default for GermanCompoundSplitter {
 
 impl MorphologicalTokenizer for GermanCompoundSplitter {
     fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
+        debug_assert!(
+            token == token.to_lowercase(),
+            "GermanCompoundSplitter::decompose received non-lowercase input: {:?}. \
+             Call normalize_umlauts() or to_lowercase() before decompose().",
+            token
+        );
+
         // Simple recursive splitting based on a set of known components
         // and common German compound patterns (Fugen-S etc.)
 
@@ -237,11 +267,44 @@ mod tests {
     use super::*;
 
     #[test]
+    #[should_panic(expected = "non-lowercase input")]
+    fn test_decompose_panics_on_uppercase_in_debug() {
+        let splitter = GermanCompoundSplitter::new();
+        // This must panic in debug mode because input is not lowercased.
+        let _ = splitter.decompose("Bundesverfassungsgericht");
+    }
+
+    #[test]
+    fn test_decompose_accepts_lowercase() {
+        let splitter = GermanCompoundSplitter::new();
+        // Must not panic — correctly lowercased input.
+        let parts = splitter.decompose("bundesverfassungsgericht");
+        // The splitter should return at least the original token as a fallback.
+        assert!(!parts.is_empty());
+    }
+
+    #[test]
+    fn test_normalize_umlauts_produces_valid_input_for_splitter() {
+        let splitter = GermanCompoundSplitter::new();
+        let tokens = ["Bundesverfassungsgericht", "Überwachungsgesetz", "Straße"];
+        for token in &tokens {
+            let normalized = normalize_umlauts(token);
+            // After normalization, decompose must not panic.
+            let parts = splitter.decompose(&normalized);
+            assert!(
+                !parts.is_empty(),
+                "decompose must return at least one part for {:?}",
+                token
+            );
+        }
+    }
+
+    #[test]
     fn test_german_splitter_scaffold() {
         let splitter = GermanCompoundSplitter::new();
         // Fallback: returns original token
-        let result = splitter.decompose("Bundesverfassungsgericht");
-        assert_eq!(result, vec!["Bundesverfassungsgericht"]);
+        let parts = splitter.decompose("bundesverfassungsgericht");
+        assert_eq!(parts, vec!["bundesverfassungsgericht"]);
         assert_eq!(splitter.language(), "de");
     }
 

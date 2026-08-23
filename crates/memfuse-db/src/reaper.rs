@@ -34,8 +34,11 @@ pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
                     if let Err(err) = hnsw_index.check_connectivity() {
                         tracing::warn!(
                             error = %err,
-                            "HNSW index degraded — consider calling rebuild()"
+                            "HNSW index degraded — triggering automatic rebuild"
                         );
+                        if let Err(rebuild_err) = hnsw_index.rebuild().await {
+                            tracing::error!(error = %rebuild_err, "HNSW rebuild failed");
+                        }
                     }
                 }
                 _ = cancel_token.cancelled() => {

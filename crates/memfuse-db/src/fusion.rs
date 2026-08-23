@@ -25,8 +25,11 @@ pub fn weighted_reciprocal_rank_fusion(
     for (result_set, weight) in result_sets {
         for (rank, doc) in result_set.into_iter().enumerate() {
             let score = weight / ((k + rank + 1) as f32);
-            let entry = fused.entry(doc.id).or_insert((0.0, doc.metadata));
+            let entry = fused.entry(doc.id).or_insert((0.0, None));
             entry.0 += score;
+            if entry.1.is_none() {
+                entry.1 = doc.metadata;
+            }
         }
     }
 

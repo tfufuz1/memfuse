@@ -179,7 +179,8 @@ impl MarkdownChunker {
         let mut final_sections: Vec<RawSection> = Vec::new();
         for sec in limited_sections {
             if let Some(last) = final_sections.last_mut() {
-                if last.tokens < self.config.min_tokens && (last.tokens + sec.tokens) <= hard_limit
+                if (last.tokens < self.config.min_tokens || sec.tokens < self.config.min_tokens)
+                    && (last.tokens + sec.tokens) <= hard_limit
                 {
                     // Prepend newline before pushing the extra lines if needed, wait, lines themselves might not have newlines
                     // If we just join lines and split later, it's safer. Let's just extend.

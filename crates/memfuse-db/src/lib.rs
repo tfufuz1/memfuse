@@ -785,21 +785,11 @@ impl MemFuse {
             let mut guard = self.embedder.write();
             *guard = Some(Arc::clone(&embedder));
         }
-        // Also update existing default collection if already loaded
-        let collections = self.collections.read().await;
-        if let Some(col) = collections.get("default") {
-            let mut guard = col.embedder.write();
-            *guard = Some(Arc::clone(&embedder));
+        let mut cols = self.collections.write().await;
+        if let Some(col) = cols.get_mut("default") {
+            *col.embedder.write() = Some(embedder);
         }
-        drop(collections);
-
-        // Actually, it's better to just update the map entry if it exists.
-        let mut collections_write = self.collections.write().await;
-        if let Some(col) = collections_write.get_mut("default") {
-            let mut guard = col.embedder.write();
-            *guard = Some(Arc::clone(&embedder));
-        }
-        drop(collections_write);
+        drop(cols);
 
         self
     }
