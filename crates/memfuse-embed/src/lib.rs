@@ -242,7 +242,7 @@ impl TextEmbedder {
         let attention_mask_tensor = Value::from_array(([1, seq_len], attention_mask_vec))
             .map_err(|e| MemFuseError::Internal(format!("Failed to create tensor: {}", e)))?;
 
-        let has_token_type_ids = session.inputs().iter().any(|input| input.name == "token_type_ids");
+        let has_token_type_ids = session.inputs().iter().any(|input| input.name() == "token_type_ids");
         
         let outputs = if has_token_type_ids {
             let token_type_ids = encoding.get_type_ids();
