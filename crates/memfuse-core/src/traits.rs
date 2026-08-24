@@ -361,6 +361,8 @@ pub trait TextIndex: Send + Sync + 'static {
 ///
 /// # TxId-Origin-Invariant (AGT-GRAPH-001)
 ///
+/// **Aufrufer MÜSSEN tx entweder aus der Collection-eigenen next_tx-Sequenz oder aus TxId::INTERNAL_BASE-Offset-Bereich beziehen.**
+///
 /// **Aufrufer MÜSSEN sicherstellen, dass `tx`-Argumente für [`add_entity`],
 /// [`add_edge`] und [`commit`] ausschließlich aus einer der folgenden beiden
 /// kanonischen Quellen stammen:**

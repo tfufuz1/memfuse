@@ -418,8 +418,8 @@ impl GraphIndex for CsrGraph {
             tracing::warn!(
                 tx_id = tx.inner(),
                 hint = "Wall-Clock-ns-Bereich",
-                "AGT-GRAPH-001: Verdächtiger TxId in add_entity — \
-                 möglicherweise nicht aus kanonischer Collection-Sequenz. \
+                "AGT-GRAPH-001: Verdächtiger TxId in add_entity (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
+                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
                  Rollback-Korrelation kann verletzt sein."
             );
         }
@@ -438,8 +438,8 @@ impl GraphIndex for CsrGraph {
             tracing::warn!(
                 tx_id = tx.inner(),
                 hint = "Wall-Clock-ns-Bereich",
-                "AGT-GRAPH-001: Verdächtiger TxId in add_edge — \
-                 möglicherweise nicht aus kanonischer Collection-Sequenz. \
+                "AGT-GRAPH-001: Verdächtiger TxId in add_edge (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
+                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
                  Rollback-Korrelation kann verletzt sein."
             );
         }
@@ -555,8 +555,8 @@ impl GraphIndex for CsrGraph {
             tracing::warn!(
                 tx_id = tx.inner(),
                 hint = "Wall-Clock-ns-Bereich",
-                "AGT-GRAPH-001: Verdächtiger TxId in commit — \
-                 möglicherweise nicht aus kanonischer Collection-Sequenz. \
+                "AGT-GRAPH-001: Verdächtiger TxId in commit (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
+                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
                  Rollback-Korrelation kann verletzt sein."
             );
         }
@@ -677,6 +677,36 @@ impl GraphIndex for CsrGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use tracing::subscriber::Subscriber;
+    use tracing::Event;
+    use tracing::Id;
+    use tracing::Metadata;
+    use tracing::span::Attributes;
+    use tracing::span::Record;
+
+    struct WarnCounterSubscriber {
+        warn_count: Arc<AtomicUsize>,
+    }
+
+    impl Subscriber for WarnCounterSubscriber {
+        fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, _span: &Attributes<'_>) -> Id {
+            Id::from_u64(1)
+        }
+        fn record(&self, _span: &Id, _values: &Record<'_>) {}
+        fn record_follows_from(&self, _span: &Id, _follows: &Id) {}
+        fn event(&self, event: &Event<'_>) {
+            if *event.metadata().level() == tracing::Level::WARN {
+                self.warn_count.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        fn enter(&self, _span: &Id) {}
+        fn exit(&self, _span: &Id) {}
+    }
 
     async fn setup_test_graph() -> CsrGraph {
         let graph = CsrGraph::new();
@@ -1120,5 +1150,53 @@ mod tests {
         graph.commit(wallclock_tx).await.unwrap();
 
         assert_eq!(graph.entity_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_wallclock_nanos_txid_triggers_defensive_warning() {
+        let warn_count = Arc::new(AtomicUsize::new(0));
+        let subscriber = WarnCounterSubscriber {
+            warn_count: warn_count.clone(),
+        };
+
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let graph = CsrGraph::new();
+        // Aus Wall-Clock-Nanosekunden abgeleiteter TxId-Wert (astronomisch groß, aber unter INTERNAL_BASE)
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_nanos() as u64;
+        let wallclock_tx = TxId::new(nanos);
+
+        assert!(
+            super::is_suspicious_tx_id(wallclock_tx),
+            "Wallclock nanos TxId ({nanos}) must be detected as suspicious"
+        );
+
+        graph
+            .add_entity(
+                wallclock_tx,
+                Entity::new(EntityId::new(200), "WallClockEntity", "Type"),
+            )
+            .await
+            .unwrap();
+
+        graph
+            .add_edge(
+                wallclock_tx,
+                Edge::new(EntityId::new(200), EntityId::new(201), "rel"),
+            )
+            .await
+            .unwrap();
+
+        graph.commit(wallclock_tx).await.unwrap();
+
+        // Warnung MUSS 3x gefeuert haben (add_entity, add_edge, commit)
+        assert_eq!(
+            warn_count.load(Ordering::SeqCst),
+            3,
+            "Defensive warning must fire for add_entity, add_edge, and commit when using wall-clock TxId"
+        );
     }
 }
