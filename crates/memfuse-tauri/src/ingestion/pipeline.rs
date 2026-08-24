@@ -117,12 +117,7 @@ impl IngestionPipeline {
                             crate::ingestion::entities::SimpleEntityExtractor::extract(&chunk_text);
                         if !extracted_entities.is_empty() {
                             let graph = collection.graph_index();
-                            let tx = TxId::new(
-                                std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_nanos() as u64,
-                            );
+                            let tx = collection.next_tx();
 
                             for entity_id in &extracted_entities {
                                 let entity =
@@ -137,7 +132,7 @@ impl IngestionPipeline {
 
                             for i in 0..extracted_entities.len() {
                                 for j in (i + 1)..extracted_entities.len() {
-                                    let _ = graph
+                                    if let Err(e) = graph
                                         .add_edge(
                                             tx,
                                             Edge::new(
@@ -147,8 +142,13 @@ impl IngestionPipeline {
                                             )
                                             .with_weight(0.5),
                                         )
-                                        .await;
-                                    let _ = graph
+                                        .await
+                                    {
+                                        tracing::warn!(
+                                            "Edge-Insert (co_occurrence ->) fehlgeschlagen: {e}"
+                                        );
+                                    }
+                                    if let Err(e) = graph
                                         .add_edge(
                                             tx,
                                             Edge::new(
@@ -158,29 +158,42 @@ impl IngestionPipeline {
                                             )
                                             .with_weight(0.5),
                                         )
-                                        .await;
+                                        .await
+                                    {
+                                        tracing::warn!(
+                                            "Edge-Insert (co_occurrence <-) fehlgeschlagen: {e}"
+                                        );
+                                    }
                                 }
                             }
 
                             let doc_entity_id = EntityId::from(doc_id.as_str());
                             let doc_entity = Entity::new(doc_entity_id, doc_id.clone(), "Document");
-                            let _ = graph.add_entity(tx, doc_entity).await;
+                            if let Err(e) = graph.add_entity(tx, doc_entity).await {
+                                tracing::warn!("Doc Entity-Insert fehlgeschlagen für {doc_id}: {e}");
+                            }
 
                             for term_id in &extracted_entities {
-                                let _ = graph
+                                if let Err(e) = graph
                                     .add_edge(
                                         tx,
                                         Edge::new(doc_entity_id, *term_id, "contains")
                                             .with_weight(0.8),
                                     )
-                                    .await;
-                                let _ = graph
+                                    .await
+                                {
+                                    tracing::warn!("Edge-Insert (contains) fehlgeschlagen: {e}");
+                                }
+                                if let Err(e) = graph
                                     .add_edge(
                                         tx,
                                         Edge::new(*term_id, doc_entity_id, "mentioned_in")
                                             .with_weight(0.8),
                                     )
-                                    .await;
+                                    .await
+                                {
+                                    tracing::warn!("Edge-Insert (mentioned_in) fehlgeschlagen: {e}");
+                                }
                             }
 
                             if let Err(e) = graph.commit(tx).await {
