@@ -52,6 +52,21 @@ fn is_suspicious_tx_id(tx: TxId) -> bool {
     (WALLCLOCK_TX_HEURISTIC_MIN..TxId::INTERNAL_BASE).contains(&v)
 }
 
+/// Configuration parameters for [`CsrGraph`].
+#[derive(Debug, Clone)]
+pub struct CsrGraphConfig {
+    /// Rebuild threshold: max number of uncompacted pending edges in delta buffer before triggering an automatic full CSR rebuild.
+    pub rebuild_threshold: usize,
+}
+
+impl Default for CsrGraphConfig {
+    fn default() -> Self {
+        Self {
+            rebuild_threshold: 1000,
+        }
+    }
+}
+
 /// Internal contiguous index for CSR arrays.
 type InternalIndex = usize;
 
@@ -74,11 +89,13 @@ struct GraphInner {
 
     /// Staging for entities not yet committed, grouped by TxId.
     staged_entities: HashMap<TxId, HashMap<EntityId, Entity>>,
-    /// Staging for edges not yet compacted into CSR arrays, grouped by TxId.
+    /// Staging for edges not yet committed, grouped by TxId.
     staged_edges: HashMap<TxId, HashMap<InternalIndex, Vec<(InternalIndex, f32)>>>,
-    /// Edges that have been committed but not yet compacted.
-    committed_staged: HashMap<InternalIndex, Vec<(InternalIndex, f32)>>,
-    /// Flag indicating if the CSR arrays are up to date.
+    /// Edges that have been committed but not yet compacted into CSR arrays (delta buffer).
+    pending_edges: HashMap<InternalIndex, Vec<(InternalIndex, f32)>>,
+    /// Total number of uncompacted edges currently in `pending_edges`.
+    pending_edge_count: usize,
+    /// Flag indicating if there are uncompacted pending edges.
     is_dirty: bool,
 }
 
@@ -93,7 +110,8 @@ impl GraphInner {
             weights: Vec::new(),
             staged_entities: HashMap::new(),
             staged_edges: HashMap::new(),
-            committed_staged: HashMap::new(),
+            pending_edges: HashMap::new(),
+            pending_edge_count: 0,
             is_dirty: false,
         }
     }
@@ -112,27 +130,23 @@ impl GraphInner {
         }
     }
 
-    /// Compacts staged edges into the CSR arrays.
+    /// Compacts pending edges in the delta buffer into the main CSR arrays.
     fn compact(&mut self) {
-        if !self.is_dirty || self.committed_staged.is_empty() {
+        if !self.is_dirty || self.pending_edges.is_empty() {
+            self.pending_edge_count = 0;
             self.is_dirty = false;
             return;
         }
 
         let num_nodes = self.reverse_map.len();
         let mut new_offsets = Vec::with_capacity(num_nodes + 1);
-        let mut new_targets = Vec::new();
-        let mut new_weights = Vec::new();
+        let mut new_targets = Vec::with_capacity(self.targets.len() + self.pending_edge_count);
+        let mut new_weights = Vec::with_capacity(self.weights.len() + self.pending_edge_count);
 
         let mut current_offset = 0;
         new_offsets.push(current_offset);
 
         for i in 0..num_nodes {
-            // Combine existing CSR edges (if any) and staged edges
-            // Note: In this simple implementation, we just rebuild from scratch
-            // for simplicity, or we could merge.
-            // For now, let's assume we rebuild from the staged + old CSR.
-
             // 1. Get neighbors from old CSR
             let old_start = if i < self.offsets.len() - 1 {
                 self.offsets[i]
@@ -151,8 +165,8 @@ impl GraphInner {
                 current_offset += 1;
             }
 
-            // 2. Get neighbors from committed_staged (FIND-GRA-001)
-            if let Some(staged) = self.committed_staged.get(&i) {
+            // 2. Get neighbors from pending_edges (FIND-GRA-001)
+            if let Some(staged) = self.pending_edges.get(&i) {
                 for &(target, weight) in staged {
                     new_targets.push(target);
                     new_weights.push(weight);
@@ -165,7 +179,8 @@ impl GraphInner {
         self.offsets = new_offsets;
         self.targets = new_targets;
         self.weights = new_weights;
-        self.committed_staged.clear();
+        self.pending_edges.clear();
+        self.pending_edge_count = 0;
         self.is_dirty = false;
     }
 }
@@ -174,23 +189,36 @@ impl GraphInner {
 ///
 /// Implements `GraphIndex` trait as Signal 3 in the 4-Signal Fusion architecture.
 pub struct CsrGraph {
+    config: CsrGraphConfig,
     inner: RwLock<GraphInner>,
     /// Optionaler Persistenz-Handle. None = reiner In-Memory-Modus (z.B. Tests).
     storage: Option<Arc<dyn StorageEngine>>,
 }
 
 impl CsrGraph {
-    /// Creates a new, empty CSR graph.
+    /// Creates a new, empty CSR graph with default configuration.
     pub fn new() -> Self {
+        Self::with_config(CsrGraphConfig::default())
+    }
+
+    /// Creates a new, empty CSR graph with specified configuration.
+    pub fn with_config(config: CsrGraphConfig) -> Self {
         Self {
+            config,
             inner: RwLock::new(GraphInner::new()),
             storage: None,
         }
     }
 
-    /// Creates a new CSR graph with persistent storage.
+    /// Creates a new CSR graph with persistent storage and default config.
     pub fn with_storage(storage: Arc<dyn StorageEngine>) -> Self {
+        Self::with_config_and_storage(CsrGraphConfig::default(), storage)
+    }
+
+    /// Creates a new CSR graph with configuration and persistent storage.
+    pub fn with_config_and_storage(config: CsrGraphConfig, storage: Arc<dyn StorageEngine>) -> Self {
         Self {
+            config,
             inner: RwLock::new(GraphInner::new()),
             storage: Some(storage),
         }
@@ -218,11 +246,15 @@ impl CsrGraph {
         let from_idx = inner.get_or_create_index(from);
         let to_idx = inner.get_or_create_index(to);
         inner
-            .committed_staged
+            .pending_edges
             .entry(from_idx)
             .or_default()
             .push((to_idx, weight));
+        inner.pending_edge_count += 1;
         inner.is_dirty = true;
+        if inner.pending_edge_count >= self.config.rebuild_threshold {
+            inner.compact();
+        }
         Ok(())
     }
 
@@ -238,17 +270,18 @@ impl CsrGraph {
         Ok(())
     }
 
-    /// Fügt eine Edge direkt in `committed_staged` ein (für `load_from_storage`).
+    /// Fügt eine Edge direkt in `pending_edges` ein (für `load_from_storage`).
     /// Umgeht das TX-Staging, da beim Laden alle Daten bereits committed sind.
     fn load_edge_direct(&self, from: EntityId, to: EntityId, weight: f32) -> Result<()> {
         let mut inner = self.inner.write();
         let from_idx = inner.get_or_create_index(from);
         let to_idx = inner.get_or_create_index(to);
         inner
-            .committed_staged
+            .pending_edges
             .entry(from_idx)
             .or_default()
             .push((to_idx, weight));
+        inner.pending_edge_count += 1;
         inner.is_dirty = true;
         Ok(())
     }
@@ -338,15 +371,17 @@ impl CsrGraph {
         Ok(graph)
     }
 
-    /// Compacts the graph to optimize for traversal.
+    /// Force compacts the graph delta buffer into the main CSR arrays to optimize traversal layout.
     pub fn compact(&self) {
         // Double-checked locking to avoid unnecessary write locks (FIND-GRA-002)
-        if !self.inner.read().is_dirty {
+        let inner_read = self.inner.read();
+        if !inner_read.is_dirty && inner_read.pending_edges.is_empty() {
             return;
         }
+        drop(inner_read);
 
         let mut inner = self.inner.write();
-        if inner.is_dirty {
+        if inner.is_dirty || !inner.pending_edges.is_empty() {
             inner.compact();
         }
     }
@@ -360,11 +395,7 @@ impl CsrGraph {
     pub fn edge_count(&self) -> usize {
         let inner = self.inner.read();
         inner.targets.len()
-            + inner
-                .committed_staged
-                .values()
-                .map(|v| v.len())
-                .sum::<usize>()
+            + inner.pending_edge_count
             + inner
                 .staged_edges
                 .values()
@@ -427,9 +458,8 @@ impl GraphIndex for CsrGraph {
     }
 
     async fn traverse(&self, start: EntityId, max_hops: usize) -> Result<Vec<(EntityId, f32)>> {
-        // Ensure graph is compacted for traversal
-        self.compact();
-
+        // Merge-read: read directly from both compacted CSR arrays AND uncompacted pending_edges delta buffer.
+        // No full compact() call is required before traversal.
         let inner = self.inner.read();
         let start_idx = match inner.id_map.get(&start) {
             Some(&idx) => idx,
@@ -461,7 +491,7 @@ impl GraphIndex for CsrGraph {
             }
 
             if hop < effective_max {
-                // CSR traversal
+                // 1. CSR traversal (compacted edges)
                 if node_idx < inner.offsets.len() - 1 {
                     let start_edge = inner.offsets[node_idx];
                     let end_edge = inner.offsets[node_idx + 1];
@@ -482,6 +512,23 @@ impl GraphIndex for CsrGraph {
                             {
                                 queue.push_back((neighbor_idx, hop + 1, next_score));
                             }
+                        }
+                    }
+                }
+
+                // 2. Delta buffer traversal (uncompacted committed edges)
+                if let Some(pending) = inner.pending_edges.get(&node_idx) {
+                    for &(neighbor_idx, weight) in pending {
+                        let next_score = current_score * SCORE_DECAY * weight;
+
+                        if (!visited.contains_key(&neighbor_idx)
+                            || visited[&neighbor_idx] < next_score)
+                            && inner
+                                .entities
+                                .get(neighbor_idx)
+                                .is_some_and(|e| e.is_some())
+                        {
+                            queue.push_back((neighbor_idx, hop + 1, next_score));
                         }
                     }
                 }
@@ -562,14 +609,22 @@ impl GraphIndex for CsrGraph {
         // 2. Commit edges
         if let Some(tx_edges) = inner.staged_edges.remove(&tx) {
             for (from_idx, edges) in tx_edges {
+                let count = edges.len();
                 inner
-                    .committed_staged
+                    .pending_edges
                     .entry(from_idx)
                     .or_default()
                     .extend(edges);
+                inner.pending_edge_count += count;
             }
             inner.is_dirty = true;
         }
+
+        // Auto-rebuild CSR arrays if pending delta buffer reaches or exceeds threshold
+        if inner.pending_edge_count >= self.config.rebuild_threshold {
+            inner.compact();
+        }
+
         Ok(())
     }
 
@@ -598,11 +653,7 @@ impl GraphIndex for CsrGraph {
         let inner = self.inner.read();
         let num_entities = inner.entities.iter().flatten().count();
         let num_edges = inner.targets.len()
-            + inner
-                .committed_staged
-                .values()
-                .map(|v| v.len())
-                .sum::<usize>()
+            + inner.pending_edge_count
             + inner
                 .staged_edges
                 .values()
@@ -719,6 +770,69 @@ mod tests {
             assert_eq!(inner.offsets[0], 0);
             assert_eq!(inner.offsets[1], 1);
         }
+    }
+
+    #[tokio::test]
+    async fn test_csr_delta_buffer_uncompacted_traversal() {
+        // Test that committed edges in the pending_edges delta buffer (uncompacted)
+        // are correctly traversed without needing compact() call.
+        let graph = CsrGraph::with_config(CsrGraphConfig {
+            rebuild_threshold: 1000,
+        });
+        let tx = TxId::new(1);
+
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(1), "A", "Node"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(2), "B", "Node"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(3), "C", "Node"))
+            .await
+            .unwrap();
+
+        graph
+            .add_edge(
+                tx,
+                Edge::new(EntityId::new(1), EntityId::new(2), "knows").with_weight(1.0),
+            )
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        // Edge 1->2 is committed in pending_edges (uncompacted)
+        {
+            let inner = graph.inner.read();
+            assert!(inner.is_dirty);
+            assert_eq!(inner.pending_edge_count, 1);
+            assert_eq!(inner.targets.len(), 0); // Not in CSR targets yet
+        }
+
+        // Traversal MUST find Entity 2 directly from pending_edges delta buffer
+        let results = graph.traverse(EntityId::new(1), 1).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, EntityId::new(2));
+
+        // Add second edge 2->3 in next transaction
+        let tx2 = TxId::new(2);
+        graph
+            .add_edge(
+                tx2,
+                Edge::new(EntityId::new(2), EntityId::new(3), "knows").with_weight(0.8),
+            )
+            .await
+            .unwrap();
+        graph.commit(tx2).await.unwrap();
+
+        // Traversal from 1 (max 2 hops) MUST find both 2 and 3 through delta buffer
+        let results_2hop = graph.traverse(EntityId::new(1), 2).await.unwrap();
+        assert_eq!(results_2hop.len(), 2);
+        let ids: Vec<_> = results_2hop.iter().map(|(id, _)| id.inner()).collect();
+        assert!(ids.contains(&2));
+        assert!(ids.contains(&3));
     }
 
     #[tokio::test]
