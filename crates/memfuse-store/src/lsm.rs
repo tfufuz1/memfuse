@@ -134,6 +134,9 @@ impl LsmStorage {
                     format!("Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}")
                 ))?;
             if let Ok(dir) = tokio::fs::File::open(parent).await {
+                // AI-TAG[SMELL][CRITICAL] RESOLVED: Log directory fsync failures instead of silent ignore (ID: AGT-AUDIT-005)
+                if let Err(e) = dir.sync_all().await {
+                    tracing::warn!("Directory fsync failed for {:?}: {}", parent, e);
                 // AI-TAG[SMELL][CRITICAL] Silent Failure bei WAL sync_all(). [RESOLVED]
                 // KONTEXT: AGENTS.md §3 (NEVER - "Keine stummen Fehler"). WAL durability compromised.
                 // ANWEISUNG: Fehler propagieren oder mindestens kritisch loggen.

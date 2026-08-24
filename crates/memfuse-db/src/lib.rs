@@ -254,22 +254,22 @@ impl MemFuse {
         //    due to the crash (LSM committed but HNSW didn't).
         let collections = self.collections.read().await;
         let mut total_repairs = 0u64;
-        let mut all_repairs_succeeded = true;
+        let mut repair_errors: Vec<String> = Vec::new();
         for (name, col) in collections.iter() {
             if let Err(e) = col.repair().await {
                 tracing::error!(
-                    "repair_on_open: failed to repair collection '{}': {}",
+                    "repair_on_open: Collection '{}' konnte nicht repariert werden: {}",
                     name,
                     e
                 );
-                all_repairs_succeeded = false;
+                repair_errors.push(format!("'{}': {}", name, e));
             } else {
                 total_repairs += 1;
             }
         }
 
         // 3. Mark pending intents as "repaired" ONLY if collection repair succeeded.
-        if !pending_intents.is_empty() && all_repairs_succeeded {
+        if !pending_intents.is_empty() && repair_errors.is_empty() {
             for intent_key in &pending_intents {
                 let tx = TxId::new(
                     self.next_tx
@@ -293,6 +293,16 @@ impl MemFuse {
                 pending_intents.len(),
                 total_repairs
             );
+        }
+
+        if !repair_errors.is_empty() {
+            return Err(memfuse_core::MemFuseError::Storage(format!(
+                "repair_on_open: {} Collection(s) konnten nach Crash nicht \
+                 wiederhergestellt werden: {}. \
+                 Datenbankintegrität nicht garantiert — manuelle Intervention erforderlich.",
+                repair_errors.len(),
+                repair_errors.join(", ")
+            )));
         }
 
         Ok(())
@@ -1363,5 +1373,64 @@ mod tests {
             let found_repaired = entries.iter().any(|(_, v)| v == b"repaired");
             assert!(found_repaired, "Intent should be marked as repaired");
         }
+    }
+
+    #[tokio::test]
+    async fn test_repair_on_open_failure_propagates_error() {
+        let tmp = tempfile::TempDir::new().expect("temp dir");
+        let path = tmp.path().to_path_buf();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+
+        {
+            let db = MemFuse::open_with_config(&path, config.clone())
+                .await
+                .expect("open 1");
+            let col = db.collection("corrupt-test").await.expect("col");
+
+            // Create a pending intent and a doc_key (key_type=1) with dim mismatch,
+            // but NO user_key (key_type=0) so load_index during initialize_collections succeeds.
+            let doc_id = DocId::from_key("corrupt-doc").expect("doc_id");
+            let stored = crate::collection::StoredDocument {
+                id: "corrupt-doc".to_string(),
+                embedding: vec![1.0, 0.0], // dim mismatch (2 instead of 4)
+                metadata: None,
+            };
+            let data = serde_json::to_vec(&stored).expect("json");
+
+            let doc_key = col.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+            let tx = TxId::new(db.next_tx.fetch_add(1, Ordering::SeqCst));
+
+            db.storage.put(tx, &doc_key, &data).await.expect("put doc_key");
+
+            // Write pending intent (key_type=3) referencing doc_id
+            let intent_key = col.namespaced_key(tx.inner().to_le_bytes().as_ref(), 3);
+            let intent = crate::transaction::CommitIntent::Pending {
+                doc_ids: vec![doc_id],
+            };
+            let intent_bytes = serde_json::to_vec(&intent).expect("intent json");
+            db.storage
+                .put(tx, &intent_key, &intent_bytes)
+                .await
+                .expect("put intent");
+
+            db.storage.commit(tx).await.expect("commit");
+
+            db.close().await.expect("close");
+        }
+
+        // Re-open with database: repair_on_open will invoke col.repair() which fails on dimension mismatch
+        let res = MemFuse::open_with_config(&path, config).await;
+        assert!(res.is_err(), "open_with_config should fail when repair fails");
+
+        let err_msg = res.err().unwrap().to_string(); // unwrap allowed
+        assert!(
+            err_msg.contains("repair_on_open")
+                && err_msg.contains("Datenbankintegrität nicht garantiert"),
+            "Expected repair error message, got: {}",
+            err_msg
+        );
     }
 }
