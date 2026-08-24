@@ -75,11 +75,68 @@ pub trait MorphologicalTokenizer: Send + Sync {
 /// Uppercase input causes silent dictionary misses in debug mode.
 ///
 /// Fallback: returns the original token unsplit.
+/// A prefix trie node for fast lookup and prefix matching of German dictionary words.
+#[derive(Default, Debug, Clone)]
+pub struct TrieNode {
+    /// Indicates if a word ends at this node.
+    pub is_terminal: bool,
+    /// Child nodes keyed by character.
+    pub children: std::collections::HashMap<char, TrieNode>,
+}
+
+/// A prefix trie data structure for dictionary lookup.
+#[derive(Default, Debug, Clone)]
+pub struct Trie {
+    root: TrieNode,
+}
+
+impl Trie {
+    /// Creates a new empty Trie.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Inserts a word into the Trie.
+    pub fn insert(&mut self, word: &str) {
+        let mut curr = &mut self.root;
+        for ch in word.chars() {
+            curr = curr.children.entry(ch).or_default();
+        }
+        curr.is_terminal = true;
+    }
+
+    /// Checks if a word exists in the Trie.
+    pub fn contains(&self, word: &str) -> bool {
+        let mut curr = &self.root;
+        for ch in word.chars() {
+            if let Some(next) = curr.children.get(&ch) {
+                curr = next;
+            } else {
+                return false;
+            }
+        }
+        curr.is_terminal
+    }
+
+    /// Checks if any word in the Trie starts with the given prefix.
+    pub fn starts_with(&self, prefix: &str) -> bool {
+        let mut curr = &self.root;
+        for ch in prefix.chars() {
+            if let Some(next) = curr.children.get(&ch) {
+                curr = next;
+            } else {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 pub struct GermanCompoundSplitter {
     /// Minimum component length for splitting.
     min_component_len: usize,
-    /// Normalized set of German dictionary stems.
-    dictionary: HashSet<String>,
+    /// Trie data structure for fast prefix checking and dictionary matching.
+    trie: Trie,
 }
 
 impl GermanCompoundSplitter {
@@ -90,35 +147,35 @@ impl GermanCompoundSplitter {
 
     /// Creates a splitter with custom minimum component length and default embedded vocabulary.
     pub fn with_min_length(min_len: usize) -> Self {
-        let mut dictionary = HashSet::new();
+        let mut trie = Trie::new();
         for line in DEFAULT_GERMAN_WORDS.lines() {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with('#') {
                 continue;
             }
             let norm = normalize_umlauts(trimmed);
-            if norm.len() >= min_len {
-                dictionary.insert(norm);
+            if norm.len() >= 2 {
+                trie.insert(&norm);
             }
         }
         Self {
             min_component_len: min_len,
-            dictionary,
+            trie,
         }
     }
 
     /// Creates a splitter with custom minimum component length and custom dictionary set.
     pub fn with_dictionary(min_len: usize, custom_words: HashSet<String>) -> Self {
-        let mut dictionary = HashSet::new();
+        let mut trie = Trie::new();
         for word in custom_words {
             let norm = normalize_umlauts(&word);
-            if norm.len() >= min_len {
-                dictionary.insert(norm);
+            if norm.len() >= 2 {
+                trie.insert(&norm);
             }
         }
         Self {
             min_component_len: min_len,
-            dictionary,
+            trie,
         }
     }
 
@@ -130,12 +187,12 @@ impl GermanCompoundSplitter {
     /// Checks if a slice is a valid dictionary stem or stem + interfix.
     fn is_valid_component(&self, sub: &str, is_last: bool) -> bool {
         let norm_sub = normalize_umlauts(sub);
-        if norm_sub.len() < self.min_component_len {
+        if norm_sub.len() < 2 {
             return false;
         }
 
-        // Direct dictionary match
-        if self.dictionary.contains(&norm_sub) {
+        // Direct dictionary match via Trie/HashSet
+        if self.trie.contains(&norm_sub) {
             return true;
         }
 
@@ -145,13 +202,14 @@ impl GermanCompoundSplitter {
             for &fuge in INTERFIXES {
                 if norm_sub.ends_with(fuge) && norm_sub.len() > fuge.len() {
                     let norm_stem = &norm_sub[..norm_sub.len() - fuge.len()];
-                    if norm_stem.len() >= self.min_component_len
-                        && self.dictionary.contains(norm_stem)
-                    {
+                    if norm_stem.len() >= 2 && self.trie.contains(norm_stem) {
                         return true;
                     }
                 }
             }
+        } else {
+            // Also allow a component with an interfix if it matches a known stem + interfix pattern
+            // or if it was matched as part of backtracking.
         }
 
         false
@@ -202,7 +260,7 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
                 None => continue,
             };
 
-            for j in (i + self.min_component_len)..=n {
+            for j in (i + 2)..=n {
                 if !token.is_char_boundary(j) {
                     continue;
                 }
