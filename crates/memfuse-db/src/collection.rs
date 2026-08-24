@@ -129,6 +129,11 @@ impl<S: StorageEngine> Collection<S> {
         }
     }
 
+    /// Generates and returns the next sequential transaction ID for this collection.
+    pub fn next_tx(&self) -> TxId {
+        TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst))
+    }
+
     /// Returns the CSR graph index for this collection.
     pub fn graph_index(&self) -> Arc<CsrGraph> {
         self.graph_index.clone()
@@ -205,7 +210,7 @@ impl<S: StorageEngine> Collection<S> {
         // 1. Scan for pending transaction intents (2-Phase Commit Recovery — FIND-DB-005)
         let intent_prefix = self.namespaced_key(&[], 3);
         let intents = self.storage.scan_prefix(&intent_prefix).await?;
-        let recovery_tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+        let recovery_tx = self.next_tx();
         let mut recovered_any = false;
 
         for (intent_key, intent_val) in intents {
@@ -240,7 +245,7 @@ impl<S: StorageEngine> Collection<S> {
         }
 
         // 2. Fallback: Full scan for documents missing from index (FIND-DB-004: Parallel Batching)
-        let fallback_tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+        let fallback_tx = self.next_tx();
         let mut fallback_any = false;
 
         for (namespaced_key, value) in docs {
@@ -300,7 +305,7 @@ impl<S: StorageEngine> Collection<S> {
     /// Begins a new atomic transaction for this collection.
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<S> {
-        let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+        let tx = self.next_tx();
         crate::transaction::DbTransaction::new(self.clone(), tx)
     }
 
@@ -711,7 +716,7 @@ impl<S: StorageEngine> Collection<S> {
     /// Creates a directional relationship between two documents in the collection.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
-        let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+        let tx = self.next_tx();
         let key_str = format!("{}:{}:{}", from, label, to);
         let key = self.namespaced_key(key_str.as_bytes(), 2);
         let val = serde_json::json!({
@@ -1251,7 +1256,7 @@ impl<S: StorageEngine> Collection<S> {
         };
 
         let entries = self.storage.scan_prefix(&scan_prefix).await?;
-        let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+        let tx = self.next_tx();
         for (k, v) in entries {
             if self.name == "default" && k.starts_with(b"__") {
                 continue;
@@ -1282,7 +1287,7 @@ impl<S: StorageEngine> Collection<S> {
 
         let entries = self.storage.scan_prefix(&prefix).await?;
         let mut migrated_count = 0;
-        let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+        let tx = self.next_tx();
 
         for (k, v) in entries {
             // Try parsing as full document first (which indicates it needs migration)
@@ -1323,7 +1328,7 @@ impl<S: StorageEngine> Collection<S> {
             self.prefix.clone()
         };
 
-        let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+        let tx = self.next_tx();
 
         // 1. Clean collection data (user keys, docs, rels, intents)
         self.storage.delete_prefix(tx, &prefix).await?;
@@ -1483,5 +1488,46 @@ mod tests {
         // 4. Same key string should NOT be treated as a collision
         let same_key_res = col.check_doc_id_collision(synthetic_doc_id, "key_existing").await;
         assert!(same_key_res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_collection_next_tx_sequence() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let lsm_config = memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let index = Arc::new(HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        }).unwrap());
+        let graph = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(AtomicU64::new(1));
+
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            graph,
+            next_tx,
+            4,
+            memfuse_text::Language::English,
+        );
+
+        let tx1 = col.next_tx();
+        let tx2 = col.next_tx();
+        let tx3 = col.next_tx();
+
+        assert_eq!(tx1.inner(), 1);
+        assert_eq!(tx2.inner(), 2);
+        assert_eq!(tx3.inner(), 3);
     }
 }
