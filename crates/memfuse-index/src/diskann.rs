@@ -499,6 +499,14 @@ impl DiskAnnIndex {
 
             let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;
 
+            if inner.config.sector_size != header.sector_size as usize {
+                return Err(MemFuseError::Index(format!(
+                    "DiskANN-Index inkompatibel: Config-sector_size={} stimmt nicht mit \
+                     Header-sector_size={} überein. Index muss neu aufgebaut werden.",
+                    inner.config.sector_size, header.sector_size
+                )));
+            }
+
             if header.quantized != 0 {
                 let dim = header.dimension as usize;
                 let range = (header.q_max - header.q_min).max(1e-6);
@@ -989,6 +997,45 @@ mod tests {
         let err_msg = result.err().unwrap().to_string(); // unwrap allowed (AGENT:03)
         assert!(
             err_msg.contains("neighbor_count 13 überschreitet max_degree 8"),
+            "Unexpected error message: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_load_rejects_sector_size_mismatch() {
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap allowed (AGENT:03)
+        let index_path = temp_dir.path().join("sector_mismatch_test.idx");
+
+        let build_config = DiskAnnConfig {
+            index_path: index_path.clone(),
+            dimension: 8,
+            max_degree: 4,
+            sector_size: 4096,
+            distance_metric: DistanceMetric::Euclidean,
+            ..DiskAnnConfig::default()
+        };
+
+        let index = DiskAnnIndex::try_new(build_config).expect("valid config");
+        let vectors = vec![vec![1.0; 8]];
+        let ids = vec![DocId::from(1)];
+        index.build(&vectors, &ids).await.expect("build");
+
+        let load_config = DiskAnnConfig {
+            index_path,
+            dimension: 8,
+            max_degree: 4,
+            sector_size: 2048,
+            distance_metric: DistanceMetric::Euclidean,
+            ..DiskAnnConfig::default()
+        };
+
+        let reloaded_index = DiskAnnIndex::try_new(load_config).expect("valid config");
+        let load_res = reloaded_index.load().await;
+        assert!(load_res.is_err());
+        let err_msg = load_res.err().unwrap().to_string(); // unwrap allowed (AGENT:03)
+        assert!(
+            err_msg.contains("DiskANN-Index inkompatibel: Config-sector_size=2048 stimmt nicht mit Header-sector_size=4096 überein"),
             "Unexpected error message: {}",
             err_msg
         );
