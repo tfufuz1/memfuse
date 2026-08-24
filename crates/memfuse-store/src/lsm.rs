@@ -117,6 +117,22 @@ impl LsmStorage {
 
         // 🛡️ SICHERUNG: Directory FSync (FIND-STO-004)
         if let Some(parent) = config.path.parent() {
+            // fsync propagiert korrekt (behoben 2026-08-24)
+            let parent = if parent.as_os_str().is_empty() {
+                std::path::Path::new(".")
+            } else {
+                parent
+            };
+            let dir = tokio::fs::File::open(parent)
+                .await
+                .map_err(|e| MemFuseError::Storage(
+                    format!("Verzeichnis für fsync konnte nicht geöffnet werden: {e}")
+                ))?;
+            dir.sync_all()
+                .await
+                .map_err(|e| MemFuseError::Storage(
+                    format!("Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}")
+                ))?;
             if let Ok(dir) = tokio::fs::File::open(parent).await {
                 // AI-TAG[SMELL][CRITICAL] Silent Failure bei WAL sync_all(). [RESOLVED]
                 // KONTEXT: AGENTS.md §3 (NEVER - "Keine stummen Fehler"). WAL durability compromised.
