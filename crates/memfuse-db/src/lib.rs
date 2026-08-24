@@ -367,7 +367,7 @@ impl MemFuse {
             dimension: self.dimension,
             ..Default::default()
         };
-        let index = Arc::new(HnswIndex::new(hnsw_config));
+        let index = Arc::new(HnswIndex::try_new(hnsw_config)?);
 
         let mut graph = memfuse_graph::CsrGraph::load_from_storage(self.storage.as_ref()).await?;
         graph.set_storage(self.storage.clone());

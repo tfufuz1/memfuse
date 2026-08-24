@@ -247,7 +247,37 @@ pub struct HnswIndexCore {
 }
 
 impl HnswIndex {
+    /// Creates a new HNSW index, validating configuration upfront.
+    pub fn try_new(config: HnswConfig) -> Result<Self> {
+        config.validate()?;
+        let ml = 1.0 / (config.m as f64).ln();
+        Ok(Self {
+            inner: std::sync::Arc::new(HnswIndexCore {
+                config,
+                validation_error: None,
+                nodes: RwLock::new(Vec::new()),
+                doc_to_node: RwLock::new(AHashMap::new()),
+                entry_point: RwLock::new(None),
+                ram_entry_point: RwLock::new(None),
+                max_layer: AtomicU64::new(0),
+
+                ml,
+                tx_buffer: TxBuffer::new_with_config(16, std::time::Duration::from_secs(60)),
+                deleted_nodes: RwLock::new(RoaringTreemap::new()),
+                deleted_count: AtomicU64::new(0),
+                rebuilding: AtomicBool::new(false),
+                write_mutex: Mutex::new(()),
+                quantizer: RwLock::new(None),
+                mmap_index: RwLock::new(None),
+                last_tx_id: AtomicU64::new(0),
+            }),
+        })
+    }
+
     /// Creates a new HNSW index.
+    #[deprecated(
+        note = "Nutze try_new() für sofortige Fehlererkennung — new() versteckt Konfigurationsfehler bis zum ersten insert()/search()"
+    )]
     pub fn new(config: HnswConfig) -> Self {
         let validation_error = config.validate().err().map(|e| e.to_string());
         let ml = 1.0 / (config.m as f64).ln();
@@ -1294,7 +1324,7 @@ impl HnswIndexCore {
         };
 
         // 2. Build fresh index (this will be the NEW RAM segment)
-        let new_index = HnswIndex::new(config);
+        let new_index = HnswIndex::try_new(config)?;
 
         // Ensure new_index knows about the Mmap segment to link against it
         {
@@ -1981,6 +2011,23 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_try_new_invalid_config_fails_immediately() {
+        let config = HnswConfig {
+            ef_construction: 1,
+            m: 100, // Invalid: ef_construction < m
+            ..test_config(4)
+        };
+        let result = HnswIndex::try_new(config);
+        assert!(result.is_err(), "try_new must fail immediately on invalid config");
+        let err_msg = format!("{}", result.err().unwrap());
+        assert!(
+            err_msg.contains("ef_construction (1) must be >= m (100)"),
+            "Unexpected error message: {}",
+            err_msg
+        );
+    }
+
     #[tokio::test]
     async fn test_invalid_config_error() {
         let config = HnswConfig {
@@ -1988,6 +2035,7 @@ mod tests {
             m: 10, // Invalid: ef_construction < m
             ..test_config(4)
         };
+        #[allow(deprecated)]
         let index = HnswIndex::new(config);
         let tx = TxId::new(1);
         let result = index.insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0]).await;
