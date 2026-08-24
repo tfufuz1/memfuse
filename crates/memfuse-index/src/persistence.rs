@@ -178,9 +178,12 @@ pub struct MmapIndex {
 }
 
 impl MmapIndex {
+    #[allow(unsafe_code)]
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let file = std::fs::File::open(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
+            
+        // SAFETY: ADR-017 authorisiert explizite Mmap-Nutzung in index persistence. File deskriptor ist valide.
         let mmap = unsafe { memmap2::Mmap::map(&file) }
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 

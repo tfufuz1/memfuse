@@ -1,0 +1,8 @@
+{
+  "contextFiles": ["AGENTS.md", "WORKING_STATE.md"],
+  "autoRead": ["AGENTS.md", "WORKING_STATE.md"],
+  "sessionStartChecks": [
+    "cat WORKING_STATE.md",
+    "grep -rn 'AI-TAG\\[SMELL\\]\\[CRITICAL\\]' crates/ --include='*.rs' | grep -v RESOLVED | head -20"
+  ]
+}

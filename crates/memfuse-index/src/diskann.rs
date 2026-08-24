@@ -337,12 +337,12 @@ impl DiskAnnIndex {
         use tokio::io::AsyncWriteExt;
 
         let n = vectors.len();
+        let tmp_path = self.inner.config.index_path.with_extension("idx.tmp");
         let mut file = OpenOptions::new()
-            .read(true)
             .write(true)
             .create(true)
             .truncate(true)
-            .open(&self.inner.config.index_path)
+            .open(&tmp_path)
             .await
             .map_err(MemFuseError::Io)?;
 
@@ -421,6 +421,10 @@ impl DiskAnnIndex {
             }
         }
         file.sync_all().await.map_err(MemFuseError::Io)?;
+        drop(file);
+        tokio::fs::rename(&tmp_path, &self.inner.config.index_path)
+            .await
+            .map_err(MemFuseError::Io)?;
         Ok(())
     }
 
@@ -486,9 +490,11 @@ impl DiskAnnIndex {
         tokio::task::spawn_blocking(move || {
             use std::sync::atomic::Ordering;
             let file = std::fs::File::open(&inner.config.index_path).map_err(MemFuseError::Io)?;
-            // SAFETY: ADR-017 authorizes unsafe Mmap in diskann.rs.
-            // The file descriptor `file` is valid as it was successfully opened on the previous line.
-            // The resulting Mmap object will manage the memory-mapped region correctly.
+            // SAFETY: write_to_file() schreibt ausschließlich in eine temporäre Datei
+            // und ersetzt den index_path atomar per rename(). Bestehende Mmap-Instanzen
+            // sehen die alte, konsistente Inode bis sie selbst geschlossen werden.
+            // (POSIX rename()-Semantik, ADR-017 erweitert durch Mmap-Race-Fix 2026-08-24)
+            #[allow(unsafe_code)]
             let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? };
 
             let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;

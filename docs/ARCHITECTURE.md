@@ -1,8 +1,8 @@
 # MemFuse Architektur — Kurzreferenz
 
-## Architektur-Update: Desktop-Applikation & 12 Workspace Crates
+## Architektur-Update: Desktop-Applikation & 13 Workspace Crates
 
-MemFuse ist in ein 5-Schichten-Modell (Layer 0–4) gegliedert. Sämtliche 12 Crates im Workspace halten sich an den strikten gerichteten azyklischen Graphen (DAG).
+MemFuse ist in ein 5-Schichten-Modell (Layer 0–4) gegliedert. Sämtliche 13 Crates im Workspace (12 Kern-Crates + 1 optionales Crate) halten sich an den strikten gerichteten azyklischen Graphen (DAG).
 
 ```
 Layer 0:  memfuse-core        — Shared Kernel: Typen, Traits, Fehler, TextEmbeddingEngine
@@ -15,11 +15,12 @@ Layer 1:  memfuse-store       — LSM-Tree, WAL, SSTables, Crypt-at-Rest
 Layer 2:  memfuse-db          — Collections, 4-Signal Fusion (Vektor + BM25 + Graph + Metadaten), RRF, 2PC
 Layer 3:  memfuse-py          — PyO3-Fassade (Python-Bindings)
           memfuse-ollama      — Ollama HTTP Client & OllamaEmbedder Provider
-Layer 4:  memfuse-mcp         — Standalone MCP-Server (axum HTTP / JSON-RPC)
+          memfuse-embed       — ONNX-Embeddings (optional, Feature-gated, default=[])
+Layer 4:  memfuse-mcp         — Standalone MCP-Server (stdio JSON-RPC 2.0, ADR-010)
           memfuse-tauri       — Desktop-Shell ("MemFuse Brain"), IPC-Commands, Ingestion-Pipeline
 ```
 
-**Aktiver Workspace-Build**: 12 Crates (`memfuse-core`, `memfuse-store`, `memfuse-index`, `memfuse-text`, `memfuse-crypto`, `memfuse-graph`, `memfuse-checkpoint`, `memfuse-db`, `memfuse-py`, `memfuse-ollama`, `memfuse-mcp`, `memfuse-tauri`).
+**Aktiver Workspace-Build**: 13 Crates (`memfuse-core`, `memfuse-store`, `memfuse-index`, `memfuse-text`, `memfuse-crypto`, `memfuse-graph`, `memfuse-checkpoint`, `memfuse-db`, `memfuse-py`, `memfuse-ollama`, `memfuse-mcp`, `memfuse-tauri`, `memfuse-embed` [optional]).
 
 ## Kern-Philosophie
 MemFuse ist die **eingebettete 4-Signal-Memory-Engine & RAG-Desktop-App für lokale AI-Agenten** —
@@ -37,7 +38,7 @@ air-gapped, zero-panic (angestrebt), 100% Pure-Rust Sovereign Core (mit Ollama a
 | Invariante | Status | Befund |
 |---|---|---|
 | **Souveränität** (Zero-C-Deps im Core) | ✅ Erfüllt | Core-Schichten laufen in Pure Rust. Ollama übernimmt LLM/Embeddings via HTTP. |
-| **Zero-Panic** | 🟢 Gehäret | Fehlerbehandlung über `MemFuseError` und `?`-Operator propagiert. |
+| **Zero-Panic** | 🟡 In Arbeit | Offene `.expect()`-Stellen: `SessionPool::pop()/push()` (memfuse-embed), `snapshot.rs` (memfuse-core). Status → 🟢 wenn `grep -rn '.expect(' crates/*/src/` null ergibt (exkl. tests). |
 | **Determinismus** (SIMD) | ✅ Erfüllt | Cross-Check SIMD vs. Skalar via Proptest. |
 | **WAL-Crash-Consistency** | ✅ Erfüllt | Fault-Injection im WAL, HMAC-Chaining. |
 | **Graph-Persistenz** | ✅ Erfüllt | Persistierung im LSM-Tree unter den Präfixen `__graph:entity:` und `__graph:edge:`. |

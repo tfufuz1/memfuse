@@ -134,3 +134,52 @@ async fn test_mcp_flow_insert_get_search_collections() {
     let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
     assert!(text.contains("my_docs"));
 }
+
+#[tokio::test]
+async fn test_invalid_tool_name() {
+    let (server, _tmp) = setup_app().await;
+
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(5)),
+        method: "tools/call".to_string(),
+        params: json!({
+            "name": "memfuse_does_not_exist",
+            "arguments": {}
+        }),
+    };
+
+    let response = server.handle(req).await;
+    let res_val = serde_json::to_value(&response).unwrap();
+    let is_error = res_val["result"]["isError"].as_bool().unwrap_or(false);
+    assert!(is_error);
+    
+    let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("Unbekanntes Tool"));
+}
+
+#[tokio::test]
+async fn test_missing_arguments() {
+    let (server, _tmp) = setup_app().await;
+
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(6)),
+        method: "tools/call".to_string(),
+        params: json!({
+            "name": "memfuse_insert",
+            "arguments": {
+                // missing "id" and "text"
+                "collection": "my_docs"
+            }
+        }),
+    };
+
+    let response = server.handle(req).await;
+    let res_val = serde_json::to_value(&response).unwrap();
+    let is_error = res_val["result"]["isError"].as_bool().unwrap_or(false);
+    assert!(is_error);
+    
+    let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("id fehlt") || text.contains("text fehlt"));
+}
