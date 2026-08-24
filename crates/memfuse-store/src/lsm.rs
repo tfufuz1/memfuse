@@ -118,11 +118,13 @@ impl LsmStorage {
         // 🛡️ SICHERUNG: Directory FSync (FIND-STO-004)
         if let Some(parent) = config.path.parent() {
             if let Ok(dir) = tokio::fs::File::open(parent).await {
-                // AI-TAG[SMELL][CRITICAL] Silent Failure bei WAL sync_all().
+                // AI-TAG[SMELL][CRITICAL] Silent Failure bei WAL sync_all(). [RESOLVED]
                 // KONTEXT: AGENTS.md §3 (NEVER - "Keine stummen Fehler"). WAL durability compromised.
                 // ANWEISUNG: Fehler propagieren oder mindestens kritisch loggen.
                 // ID: AGT-AUDIT-005
-                let _ = dir.sync_all().await;
+                if let Err(e) = dir.sync_all().await {
+                    tracing::warn!("Failed to fsync parent directory {:?}: {}", parent, e);
+                }
             }
         }
 
