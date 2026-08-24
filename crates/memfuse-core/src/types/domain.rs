@@ -52,6 +52,18 @@ impl DocId {
         self.0
     }
 
+    /// Derives a `DocId` from a string key using the first 8 bytes (64 bits) of its BLAKE3 hash.
+    ///
+    /// # Kollisionssicherheit & Entwurfsentscheidung (ADR-016)
+    /// Durch die Trunkierung auf 64 Bit besteht bei sehr großen Dokumentenmengen (ca. 2^32 bzw. ~4 Milliarden Keys)
+    /// eine theoretische Kollisionswahrscheinlichkeit von ~50% (Geburtstagsparadoxon).
+    ///
+    /// Um stille Datenkorruption zu verhindern, führt die Orchestrierungsschicht (`memfuse-db::Collection`)
+    /// bei Einfügeoperationen (`insert_op` / `update_op`) eine Kollisionsprüfung durch (Reverse-Lookup des `doc_key`).
+    /// Sollte eine Kollision mit einem abweichenden Originalschlüssel erkannt werden, wird die Operation
+    /// mit `MemFuseError::Internal` abgelehnt (Fail-Safe statt Fail-Silent).
+    ///
+    /// See **ADR-016** in `DECISIONS.md`.
     pub fn from_key(key: &str) -> Result<Self> {
         let hash = blake3::hash(key.as_bytes());
         let bytes = hash

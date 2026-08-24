@@ -407,6 +407,33 @@ impl<S: StorageEngine> Collection<S> {
         }
     }
 
+    /// Checks if a `doc_id` collision exists for a different user key string.
+    ///
+    /// Reads the `doc_key` mapping (key_type=1) for `doc_id`. If a document already exists under this `doc_id`
+    /// but points to a different string key `id`, this indicates a 64-bit hash collision (BEFUND AGT-CORE-002).
+    /// Returns `MemFuseError::Internal` to enforce fail-safe operation (ADR-016).
+    pub(crate) async fn check_doc_id_collision(&self, doc_id: DocId, id: &str) -> Result<()> {
+        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+        if let Some(val) = self.storage.get(&doc_key).await? {
+            let existing_id = if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&val) {
+                Some(meta.id)
+            } else if let Ok(full) = serde_json::from_slice::<StoredDocument>(&val) {
+                Some(full.id)
+            } else {
+                None
+            };
+
+            if let Some(existing) = existing_id {
+                if existing != id {
+                    return Err(memfuse_core::MemFuseError::Internal(format!(
+                        "DocId-Kollision erkannt für Schlüssel '{id}' — bitte Support kontaktieren"
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub async fn insert_op(
         &self,
         db_tx: &crate::transaction::DbTransaction<S>,
@@ -416,6 +443,8 @@ impl<S: StorageEngine> Collection<S> {
     ) -> Result<()> {
         let tx = db_tx.tx_id;
         let doc_id = DocId::from_key(id)?;
+
+        self.check_doc_id_collision(doc_id, id).await?;
 
         let stored = StoredDocument {
             id: id.to_string(),
@@ -600,6 +629,8 @@ impl<S: StorageEngine> Collection<S> {
     ) -> Result<()> {
         let tx = db_tx.tx_id;
         let doc_id = DocId::from_key(id)?;
+
+        self.check_doc_id_collision(doc_id, id).await?;
 
         let user_key = self.namespaced_key(id.as_bytes(), 0);
 
@@ -1379,5 +1410,78 @@ mod tests {
             res_max.is_empty(),
             "k=usize::MAX on empty DB must return empty without overflow panic"
         );
+    }
+
+    #[tokio::test]
+    async fn test_doc_id_collision_rejected() {
+        use memfuse_core::{DocId, MemFuseError, StorageEngine, TxId};
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let lsm_config = memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let index = Arc::new(HnswIndex::new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        }));
+        let graph = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(AtomicU64::new(1));
+
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            graph,
+            next_tx.clone(),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        // 1. Insert first document normally
+        let id1 = "key_alpha";
+        let emb1 = vec![1.0, 0.0, 0.0, 0.0];
+        col.insert(id1, &emb1, None).await.unwrap();
+
+        // Verify key_alpha exists
+        let doc1 = col.get(id1).await.unwrap();
+        assert!(doc1.is_some());
+
+        // 2. Synthetically inject a mapping for a fixed DocId (e.g. DocId::new(42)) pointing to "key_existing"
+        let synthetic_doc_id = DocId::new(42);
+        let tx = TxId::new(next_tx.fetch_add(1, Ordering::SeqCst));
+        let doc_key = col.namespaced_key(&synthetic_doc_id.inner().to_le_bytes(), 1);
+        let existing_meta = super::StoredDocumentMeta {
+            id: "key_existing".to_string(),
+            metadata: None,
+        };
+        let meta_bytes = serde_json::to_vec(&existing_meta).unwrap();
+        col.storage.put(tx, &doc_key, &meta_bytes).await.unwrap();
+        col.storage.commit(tx).await.unwrap();
+
+        // 3. Directly test check_doc_id_collision with a different string key (e.g., "key_new")
+        let collision_res = col.check_doc_id_collision(synthetic_doc_id, "key_new").await;
+        assert!(collision_res.is_err());
+        match collision_res {
+            Err(MemFuseError::Internal(msg)) => {
+                assert!(
+                    msg.contains("DocId-Kollision erkannt für Schlüssel 'key_new'"),
+                    "Unexpected error message: {}",
+                    msg
+                );
+            }
+            res => panic!("Expected MemFuseError::Internal, got {:?}", res),
+        }
+
+        // 4. Same key string should NOT be treated as a collision
+        let same_key_res = col.check_doc_id_collision(synthetic_doc_id, "key_existing").await;
+        assert!(same_key_res.is_ok());
     }
 }
