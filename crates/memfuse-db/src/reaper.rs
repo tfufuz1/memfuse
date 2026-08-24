@@ -76,7 +76,7 @@ mod tests {
 
         let cancel_token = tokio_util::sync::CancellationToken::new();
         let config = memfuse_index::hnsw::HnswConfig::default();
-        let hnsw_index = Arc::new(memfuse_index::hnsw::HnswIndex::new(config));
+        let hnsw_index = Arc::new(memfuse_index::hnsw::HnswIndex::try_new(config).unwrap());
         let _reaper = start_orphan_reaper(
             buffer.clone(),
             hnsw_index.clone(),

@@ -1380,7 +1380,7 @@ mod tests {
             dimension: 4,
             ..Default::default()
         };
-        let index = Arc::new(HnswIndex::new(hnsw_config));
+        let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap());
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(1));
 
@@ -1428,10 +1428,10 @@ mod tests {
             ..Default::default()
         };
         let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
-        let index = Arc::new(HnswIndex::new(memfuse_index::HnswConfig {
+        let index = Arc::new(HnswIndex::try_new(memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
-        }));
+        }).unwrap());
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(1));
 
