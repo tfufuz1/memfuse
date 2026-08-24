@@ -330,13 +330,22 @@ impl Wal {
         // 🛡️ SICHERUNG: Directory FSync (FIND-STO-004)
         if is_new {
             if let Some(parent) = path.parent() {
-                if let Ok(dir) = tokio::fs::File::open(parent).await {
-                    // AI-TAG[SMELL][CRITICAL] Silent Failure bei WAL sync_all().
-                    // KONTEXT: AGENTS.md §3 (NEVER - "Keine stummen Fehler"). WAL durability compromised.
-                    // ANWEISUNG: Fehler propagieren oder mindestens kritisch loggen.
-                    // ID: AGT-AUDIT-006
-                    let _ = dir.sync_all().await;
-                }
+                // fsync propagiert korrekt (behoben 2026-08-24)
+                let parent = if parent.as_os_str().is_empty() {
+                    Path::new(".")
+                } else {
+                    parent
+                };
+                let dir = tokio::fs::File::open(parent)
+                    .await
+                    .map_err(|e| MemFuseError::Storage(
+                        format!("Verzeichnis für fsync konnte nicht geöffnet werden: {e}")
+                    ))?;
+                dir.sync_all()
+                    .await
+                    .map_err(|e| MemFuseError::Storage(
+                        format!("Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}")
+                    ))?;
             }
         }
 
@@ -412,16 +421,23 @@ impl Wal {
             }
 
             // FSync parent directory to persist directory entry
-            if let Some(parent_dir) = key_path.parent() {
-                if !parent_dir.as_os_str().is_empty() {
-                    if let Ok(dir) = tokio::fs::File::open(parent_dir).await {
-                        // AI-TAG[SMELL][CRITICAL] Silent Failure bei WAL sync_all().
-                        // KONTEXT: AGENTS.md §3 (NEVER - "Keine stummen Fehler"). WAL durability compromised.
-                        // ANWEISUNG: Fehler propagieren oder mindestens kritisch loggen.
-                        // ID: AGT-AUDIT-007
-                        let _ = dir.sync_all().await;
-                    }
-                }
+            if let Some(parent) = key_path.parent() {
+                // fsync propagiert korrekt (behoben 2026-08-24)
+                let parent = if parent.as_os_str().is_empty() {
+                    Path::new(".")
+                } else {
+                    parent
+                };
+                let dir = tokio::fs::File::open(parent)
+                    .await
+                    .map_err(|e| MemFuseError::Storage(
+                        format!("Verzeichnis für fsync konnte nicht geöffnet werden: {e}")
+                    ))?;
+                dir.sync_all()
+                    .await
+                    .map_err(|e| MemFuseError::Storage(
+                        format!("Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}")
+                    ))?;
             }
 
             Ok(key)
@@ -463,13 +479,22 @@ impl Wal {
 
             // FIND-STO-004: FSync parent directory to persist the new directory entry
             if let Some(parent) = uuid_path.parent() {
-                if let Ok(dir) = tokio::fs::File::open(parent).await {
-                    // AI-TAG[SMELL][CRITICAL] Silent Failure bei WAL sync_all().
-                    // KONTEXT: AGENTS.md §3 (NEVER - "Keine stummen Fehler"). WAL durability compromised.
-                    // ANWEISUNG: Fehler propagieren oder mindestens kritisch loggen.
-                    // ID: AGT-AUDIT-008
-                    let _ = dir.sync_all().await;
-                }
+                // fsync propagiert korrekt (behoben 2026-08-24)
+                let parent = if parent.as_os_str().is_empty() {
+                    Path::new(".")
+                } else {
+                    parent
+                };
+                let dir = tokio::fs::File::open(parent)
+                    .await
+                    .map_err(|e| MemFuseError::Storage(
+                        format!("Verzeichnis für fsync konnte nicht geöffnet werden: {e}")
+                    ))?;
+                dir.sync_all()
+                    .await
+                    .map_err(|e| MemFuseError::Storage(
+                        format!("Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}")
+                    ))?;
             }
 
             Ok(bytes)

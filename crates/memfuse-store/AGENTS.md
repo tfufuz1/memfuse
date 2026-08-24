@@ -6,11 +6,7 @@
 EVERY `sync_all()` and `sync_data()` call MUST propagate errors with `?`.
 NEVER use `let _ = dir.sync_all()` — this silently drops WAL durability guarantees.
 
-**Known violations (AI-TAG[SMELL][CRITICAL]):**
-- `wal.rs:338` — `let _ = dir.sync_all().await;` (AGT-AUDIT-006)
-- `wal.rs:422` — `let _ = dir.sync_all().await;`
-- `wal.rs:471` — `let _ = dir.sync_all().await;`
-- `lsm.rs:125` — `let _ = dir.sync_all().await;`
+**Known violations:** None (resolved 2026-08-24).
 
 ### last_committed_tx — Single Load Rule
 In `get_at_seq()` and `scan_prefix_at()`: load `last_committed_tx` ONCE at the
