@@ -24,6 +24,34 @@ const GRAPH_ENTITY_PREFIX: &[u8] = b"__graph:entity:";
 /// LSM-Key-Prefix für alle Graph-Edges.
 const GRAPH_EDGE_PREFIX: &[u8] = b"__graph:edge:";
 
+/// Untere Schranke für Wall-Clock-abgeleitete TxId-Heuristik.
+///
+/// Unix-Nanosekunden seit Epoch lagen am 01-01-2014 bei ca. 1.39×10¹⁸.
+/// TxIds, die in diesen Bereich fallen **und** unterhalb von `INTERNAL_BASE`
+/// liegen, sind höchstwahrscheinlich wall-clock-abgeleitet und verletzen das
+/// TxId-Origin-Invariant (AGT-GRAPH-001).
+///
+/// Wert gewählt als `1_400_000_000 * 1_000_000_000` (1. Jan 2014 UTC in ns).
+const WALLCLOCK_TX_HEURISTIC_MIN: u64 = 1_400_000_000_000_000_000;
+
+/// Prüft, ob `tx` aus einem verdächtigen (wall-clock-ähnlichen) Bereich stammt.
+///
+/// Gibt `true` zurück, wenn `tx` zwischen [`WALLCLOCK_TX_HEURISTIC_MIN`] und
+/// `TxId::INTERNAL_BASE` liegt — ein Bereich, in dem keine kanonische
+/// Collection-Sequenz operiert, aber Unix-Nanosekunden-Werte liegen würden.
+///
+/// # AI-NOTE[BOUNDARY-MISSING][MAJOR]
+/// KONTEXT: AGT-GRAPH-001 — add_entity/add_edge/commit akzeptieren TxIds ohne
+///   Herkunftsvalidierung. Harte Ablehnung ist nicht möglich, da der Graph
+///   keinen Zugriff auf den `next_tx`-Höchststand der aufrufenden Collection hat.
+/// ANWEISUNG: Bei `true` => tracing::warn! loggen. Keine Ablehnung (kein Err).
+/// ID: AGT-GRAPH-001
+#[inline]
+fn is_suspicious_tx_id(tx: TxId) -> bool {
+    let v = tx.inner();
+    v >= WALLCLOCK_TX_HEURISTIC_MIN && v < TxId::INTERNAL_BASE
+}
+
 /// Internal contiguous index for CSR arrays.
 type InternalIndex = usize;
 
@@ -354,6 +382,16 @@ impl Default for CsrGraph {
 #[async_trait]
 impl GraphIndex for CsrGraph {
     async fn add_entity(&self, tx: TxId, entity: Entity) -> Result<()> {
+        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
+        if is_suspicious_tx_id(tx) {
+            tracing::warn!(
+                tx_id = tx.inner(),
+                hint = "Wall-Clock-ns-Bereich",
+                "AGT-GRAPH-001: Verdächtiger TxId in add_entity — \
+                 möglicherweise nicht aus kanonischer Collection-Sequenz. \
+                 Rollback-Korrelation kann verletzt sein."
+            );
+        }
         let mut inner = self.inner.write();
         inner
             .staged_entities
@@ -364,6 +402,16 @@ impl GraphIndex for CsrGraph {
     }
 
     async fn add_edge(&self, tx: TxId, edge: Edge) -> Result<()> {
+        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
+        if is_suspicious_tx_id(tx) {
+            tracing::warn!(
+                tx_id = tx.inner(),
+                hint = "Wall-Clock-ns-Bereich",
+                "AGT-GRAPH-001: Verdächtiger TxId in add_edge — \
+                 möglicherweise nicht aus kanonischer Collection-Sequenz. \
+                 Rollback-Korrelation kann verletzt sein."
+            );
+        }
         let mut inner = self.inner.write();
         let from_idx = inner.get_or_create_index(edge.from);
         let to_idx = inner.get_or_create_index(edge.to);
@@ -455,6 +503,16 @@ impl GraphIndex for CsrGraph {
     }
 
     async fn commit(&self, tx: TxId) -> Result<()> {
+        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
+        if is_suspicious_tx_id(tx) {
+            tracing::warn!(
+                tx_id = tx.inner(),
+                hint = "Wall-Clock-ns-Bereich",
+                "AGT-GRAPH-001: Verdächtiger TxId in commit — \
+                 möglicherweise nicht aus kanonischer Collection-Sequenz. \
+                 Rollback-Korrelation kann verletzt sein."
+            );
+        }
         let (entities_to_commit, edges_to_commit) = {
             let inner = self.inner.read();
             let entities = inner.staged_entities.get(&tx).cloned();
@@ -883,5 +941,61 @@ mod tests {
             "Expected Entity 2 in results, got {:?}",
             targets
         );
+    }
+
+    #[tokio::test]
+    async fn test_suspicious_txid_does_not_silently_overwrite() {
+        let graph = CsrGraph::new();
+
+        // Simulated Quelle A: Kanonische TxId (z.B. 42)
+        let tx_source_a = TxId::new(42);
+        // Simulated Quelle B: Kollidierende TxId mit demselben Wert 42 aus anderer Herkunft
+        let tx_source_b = TxId::new(42);
+
+        graph
+            .add_entity(tx_source_a, Entity::new(EntityId::new(10), "EntityFromA", "TypeA"))
+            .await
+            .unwrap();
+
+        // Staging unter gleicher TxId ueberschreibt staged entity fuer EntityId(10) in der staged HashMap
+        graph
+            .add_entity(tx_source_b, Entity::new(EntityId::new(10), "EntityFromB", "TypeB"))
+            .await
+            .unwrap();
+
+        graph.commit(tx_source_a).await.unwrap();
+
+        // Nach Commit ist der Zustand deterministisch (letzte staged Entity gewinnt)
+        let inner = graph.inner.read();
+        let idx = inner.id_map.get(&EntityId::new(10)).unwrap();
+        let entity = inner.entities[*idx].as_ref().unwrap();
+        assert_eq!(entity.name, "EntityFromB");
+    }
+
+    #[tokio::test]
+    async fn test_wallclock_txid_warn_but_no_panic() {
+        let graph = CsrGraph::new();
+        // Wall-clock-aehnlicher TxId (~1.7e18 ns)
+        let wallclock_tx = TxId::new(1_700_000_000_000_000_000);
+
+        assert!(super::is_suspicious_tx_id(wallclock_tx));
+
+        // Ausfuehrung darf nicht paniquen oder fehlschlagen
+        graph
+            .add_entity(wallclock_tx, Entity::new(EntityId::new(100), "WallClockEntity", "Type"))
+            .await
+            .unwrap();
+
+        graph
+            .add_edge(
+                wallclock_tx,
+                Edge::new(EntityId::new(100), EntityId::new(101), "rel"),
+            )
+            .await
+            .unwrap();
+
+        graph.commit(wallclock_tx).await.unwrap();
+
+        assert_eq!(graph.entity_count(), 1);
     }
 }

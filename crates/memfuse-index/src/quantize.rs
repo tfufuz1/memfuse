@@ -20,6 +20,11 @@ pub struct ScalarQuantizer {
 
 impl ScalarQuantizer {
     /// Creates a new ScalarQuantizer trained on a batch of vectors to find per-dimension min/max.
+    ///
+    /// For long-lived or growing collections, callers should periodically recalibrate the
+    /// quantizer (e.g., during index rebuilds) using a representative sample of active vectors.
+    /// Without recalibration, new vectors that fall outside the initial range will be clamped,
+    /// leading to degraded quantization accuracy.
     pub fn train(batch: &[&[f32]], dimension: usize) -> Self {
         let mut mins = vec![f32::MAX; dimension];
         let mut maxes = vec![f32::MIN; dimension];

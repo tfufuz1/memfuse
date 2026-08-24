@@ -22,6 +22,7 @@ serde = { workspace = true, features = ["derive"] }
 [features]
 default = []
 graph = ["dep:memfuse-graph"]
+experimental-diskann = []
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }

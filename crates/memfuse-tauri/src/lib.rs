@@ -41,6 +41,9 @@ pub fn run() {
             commands::hybrid_search,
             commands::chat_with_rag,
             commands::list_ollama_models,
+            commands::run_regex_transform,
+            commands::run_bulk_regex_transform,
+            commands::validate_regex_pattern,
         ])
         .run(tauri::generate_context!())
         .expect("error while running memfuse-brain application");

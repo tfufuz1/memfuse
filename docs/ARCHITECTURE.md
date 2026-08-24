@@ -7,7 +7,7 @@ MemFuse ist in ein 5-Schichten-Modell (Layer 0–4) gegliedert. Sämtliche 12 Cr
 ```
 Layer 0:  memfuse-core        — Shared Kernel: Typen, Traits, Fehler, TextEmbeddingEngine
 Layer 1:  memfuse-store       — LSM-Tree, WAL, SSTables, Crypt-at-Rest
-          memfuse-index       — HNSW, SIMD-Distanz, SQ8-Quantisierung
+          memfuse-index       — HNSW, SIMD-Distanz, SQ8-Quantisierung (DiskANN experimental via Feature)
           memfuse-text        — BM25, Inverted Index, Deutsche Morphologie
           memfuse-crypto      — AES-256-GCM, HMAC-Chaining
           memfuse-graph       — CSR-Graph, Entity-Relation Traversal (LSM-Persistierung unter __graph:)
@@ -30,6 +30,7 @@ air-gapped, zero-panic (angestrebt), 100% Pure-Rust Sovereign Core (mit Ollama a
 - **Embedding Backend**: Ollama HTTP Inferenz (`memfuse-ollama`) als primäres Embedding-Backend (ADR-008).
 - **4-Signal Fusion**: Vektor + BM25 + Wissensgraph + Metadaten-Filter, kombiniert mittels Reciprocal Rank Fusion (RRF).
 - **Feature**: DACH-Morphologie (German Compound Splitter) als Differenzierungsmerkmal für deutsche Sprache.
+- **DiskANN**: Out-of-Core Vektorsuche ist experimentell und hinter dem Cargo-Feature `experimental-diskann` verborgen, da sie noch nicht produktionsreif in `memfuse-db` integriert ist.
 
 ## Invarianten-Status
 

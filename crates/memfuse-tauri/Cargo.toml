@@ -20,6 +20,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+regex = { workspace = true }
 pdf-extract = "0.7"
 docx-rs = "0.4"
 mailparse = "0.15"

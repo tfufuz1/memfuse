@@ -43,6 +43,7 @@ ahash = "0.8"
 itoa = "1"
 parking_lot = "0.12"
 roaring = "0.10"
+regex = "1"
 
 # Crypto & hashing
 blake3 = "1"

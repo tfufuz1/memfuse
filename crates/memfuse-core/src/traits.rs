@@ -21,6 +21,35 @@ pub trait Checkpoint: Send + Sync + 'static {
     async fn restore(&self, state: &WorkflowState) -> Result<()>;
 }
 
+/// Unified Checkpoint Coordinator Trait combining named, TxId+seq_no-scoped, persistent checkpoints.
+///
+/// # DECISION-REF
+/// ADR-011 — Consolidated Checkpoint Subsystem Architecture (resolving AGT-STORE-002).
+#[async_trait]
+pub trait CheckpointCoordinator: Send + Sync + 'static {
+    /// Type representing checkpoint metadata.
+    type Meta: Send + Sync;
+
+    /// Creates and persists a new named checkpoint.
+    async fn create_named_checkpoint(
+        &self,
+        name: &str,
+        collection_id: &str,
+        seq_no: u64,
+        tx_id: TxId,
+        metadata: serde_json::Value,
+    ) -> Result<Self::Meta>;
+
+    /// Restores database state to a named checkpoint.
+    async fn restore_named_checkpoint(&self, name: &str) -> Result<Self::Meta>;
+
+    /// Deletes a checkpoint by name.
+    async fn drop_named_checkpoint(&self, name: &str) -> Result<()>;
+
+    /// Lists all active checkpoints.
+    async fn list_named_checkpoints(&self) -> Result<Vec<Self::Meta>>;
+}
+
 /// Represents a point-in-time view of the database.
 pub trait Snapshot: Send + Sync {
     /// Returns the sequence number for this snapshot.
@@ -329,6 +358,37 @@ pub trait TextIndex: Send + Sync + 'static {
 ///
 /// # Dyn-Kompatibilität
 /// Durch `#[async_trait]` vtable-kompatibel.
+///
+/// # TxId-Origin-Invariant (AGT-GRAPH-001)
+///
+/// **Aufrufer MÜSSEN sicherstellen, dass `tx`-Argumente für [`add_entity`],
+/// [`add_edge`] und [`commit`] ausschließlich aus einer der folgenden beiden
+/// kanonischen Quellen stammen:**
+///
+/// 1. **Collection-eigene Sequenz**: Der `next_tx: Arc<AtomicU64>` Zähler in
+///    `memfuse-db/src/collection.rs`, der kollisionsfrei aufsteigend inkrementiert
+///    wird. Solche TxIds liegen typischerweise im Bereich `[1, ~10^12]`.
+///
+/// 2. **Interner Systembereich**: `TxId::INTERNAL_BASE` (`u64::MAX - 1_000_000`)
+///    aufwärts — reserviert für Checkpoint, WAL-Replay und andere
+///    System-Transaktionen (Muster: `memfuse-checkpoint/src/lib.rs:76-79`).
+///
+/// **Verbotene Quellen:**
+/// - Wall-Clock-abgeleitete TxIds (z.B. `SystemTime::now().as_nanos() as u64`
+///   ≈ `1.7×10¹⁸`). Diese liegen zufällig zwischen den beiden erlaubten
+///   Bereichen und korrumpieren die `rollback_to_tx()`-Kausalordnung: Der Graph
+///   "vergisst" nie committed Daten, aber Time-Travel-Wiederherstellung kann
+///   die falsche Transaktionsgrenze wählen.
+/// - Beliebige fremde IDs ohne Korrelation zur Collection-eigenen Sequenz.
+///
+/// Implementierungen DÜRFEN bei Verletzung dieses Vertrags eine Warnung loggen
+/// (mittels `tracing::warn!`), aber MÜSSEN die Operation nicht hart ablehnen,
+/// da der `next_tx`-Höchststand der aufrufenden Collection dem Graph nicht
+/// bekannt ist.
+///
+/// [`add_entity`]: GraphIndex::add_entity
+/// [`add_edge`]: GraphIndex::add_edge
+/// [`commit`]: GraphIndex::commit
 #[async_trait]
 pub trait GraphIndex: Send + Sync + 'static {
     /// Traverses the entity graph using BFS up to a maximum number of hops.

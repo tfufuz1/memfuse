@@ -1,6 +1,26 @@
 //! Encryption utilities for MemFuse.
 //!
-//! Implements AES-256-GCM encryption and HKDF-SHA256 key derivation.
+//! Implements AES-256-GCM-SIV encryption and HKDF-SHA256 key derivation.
+//!
+//! # Nonce Design
+//!
+//! The **only** public encryption entry-point is [`KeyManager::encrypt_auto_nonce`],
+//! which generates a collision-resistant 12-byte nonce composed of:
+//! - 4 bytes: random `nonce_prefix` generated once per `KeyManager` instance.
+//! - 8 bytes: monotonically increasing `AtomicU64` counter (starts at 1).
+//!
+//! Per-file key isolation via [`KeyManager::derive_file_key`] (HKDF-Expand) ensures
+//! that even if two instances share a nonce counter value, they operate on
+//! cryptographically independent keys, making (key, nonce) collisions impossible.
+//!
+// AI-NOTE[BOUNDARY-MISSING][RESOLVED] AGT-CRYPTO-001: The former `encrypt(&self, data, nonce_val: u64)`
+// method has been removed (2026-08-24). It had zero callers (verified workspace-wide via
+// `grep -rn ".encrypt("`) and posed a latent nonce-reuse risk: callers could supply an
+// arbitrary u64 without any uniqueness guarantee. The ONLY safe encryption path is
+// `encrypt_auto_nonce`, which is enforced by this removal. No corresponding `decrypt(u64)`
+// existed, so the removed method could not even form a valid round-trip from outside the crate.
+// KONTEXT: crates/memfuse-crypto/src/crypto.rs — resolved by removal, no callers.
+// ID: AGT-CRYPTO-001
 
 #![forbid(unsafe_code)]
 
@@ -114,21 +134,6 @@ impl KeyManager {
             .map_err(|e| MemFuseError::Storage(format!("Encryption failed: {}", e)))?;
 
         Ok((ciphertext, nonce_bytes))
-    }
-
-    /// Encrypts a block of data with a given nonce value.
-    pub fn encrypt(&self, data: &[u8], nonce_val: u64) -> Result<Vec<u8>> {
-        let cipher = Aes256GcmSiv::new_from_slice(self.key.as_bytes())
-            .map_err(|e| MemFuseError::Storage(format!("Crypto error: {}", e)))?;
-
-        let mut nonce_bytes = [0u8; 12];
-        nonce_bytes[0..4].copy_from_slice(&self.nonce_prefix);
-        nonce_bytes[4..12].copy_from_slice(&nonce_val.to_le_bytes());
-        let nonce = Nonce::from_slice(&nonce_bytes);
-
-        cipher
-            .encrypt(nonce, data)
-            .map_err(|e| MemFuseError::Storage(format!("Encryption failed: {}", e)))
     }
 
     /// Decrypts a block of data using a full 12-byte nonce.

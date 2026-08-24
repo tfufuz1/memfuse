@@ -12,6 +12,7 @@
 // BEGRÜNDUNG: SIMD-Intrinsics in distance.rs benötigen unsafe für Performance.
 #![deny(unsafe_code)]
 
+#[cfg(feature = "experimental-diskann")]
 pub mod diskann;
 pub mod distance;
 pub mod hnsw;

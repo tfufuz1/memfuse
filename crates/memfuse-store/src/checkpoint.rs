@@ -3,19 +3,10 @@
 //! AUDIT:2026-05-23 STATUS:IMPLEMENTED (P0 Remediation)
 //! Enables exact state reconstruction of an SAOS database at any given transaction ID.
 
-// AI-TAG[DUPLICATION][MAJOR] Two parallel checkpoint subsystems with overlapping responsibilities
-// BEFUND: `memfuse-store/src/checkpoint.rs` implements `Checkpointer` + `CheckpointGuard` for
-//         WAL-based time-travel (TxId → rollback). The separate `memfuse-checkpoint` crate implements
-//         `PersistentCheckpointStore` + `CheckpointMeta` for named, persistent checkpoints with metadata.
-//         Both concepts are "checkpoints" and both call `storage.rollback_to_tx()`.
-//         Discovery: `memfuse-db/Cargo.toml` depends on `memfuse-checkpoint`; `memfuse-store` owns the other.
-// RISIKO: Two independent checkpoint vocabularies cause agent confusion and potential double-rollback.
-//         Future code may accidentally mix `StateCheckpoint` (TxId-scoped) with `CheckpointMeta`
-//         (named + seq_no-scoped), leading to invariant violations (§7 MECE-Primat).
-// EMPFEHLUNG: Consolidate into single trait in `memfuse-core::traits` — one concept, one crate.
-//             `Checkpointer` (RAII guard pattern) → stays in `memfuse-store` as internal impl.
-//             `PersistentCheckpointStore` → move interface to `memfuse-core`, implementation to `memfuse-store`.
-//             `memfuse-checkpoint` crate becomes redundant after consolidation.
+// DECISION-REF: ADR-011 — Consolidated Checkpoint Subsystem Architecture (resolving AGT-STORE-002)
+// ARCHITEKTUR: `Checkpointer` + `CheckpointGuard` sind als interne RAII-Klassen in `memfuse-store` verankert
+//             für transaktionale Rollback-Sicherung (TxId-skopiert). Das gemeinsame Trait `CheckpointCoordinator`
+//             in `memfuse-core` vereint die benannten, persistenten Checkpoints (`PersistentCheckpointStore` aus `memfuse-checkpoint`).
 use crate::lsm::LsmStorage;
 use memfuse_core::{MemFuseError, Result, TxId};
 use std::sync::Arc;
@@ -85,20 +76,17 @@ impl Checkpointer {
 
     /// Records a new checkpoint at the current transaction ID marking an agent step.
     /// Returns a RAII guard that will rollback the state if dropped without commit.
-    pub fn create_checkpoint(&self, tx_id: TxId) -> CheckpointGuard {
-        // AI-TAG[SMELL][MINOR] SystemTime::now() fallback to epoch (0ms) on pre-epoch system clocks
-        // BEFUND: `unwrap_or_default()` returns Duration::ZERO if clock is before UNIX_EPOCH.
-        //         Non-critical on standard Linux systems, but silently produces timestamp=0.
-        // RISIKO: Checkpoint ordering by timestamp becomes unreliable on misconfigured clocks.
-        // EMPFEHLUNG: Use `unwrap_or(Duration::MAX)` to make anomalies visible, or log a warning.
+    // DECISION-REF: AGT-STORE-001 resolved — SystemTime error propagated via Result instead of unwrap_or_default()
+    pub fn create_checkpoint(&self, tx_id: TxId) -> Result<CheckpointGuard> {
+        let timestamp_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| MemFuseError::Storage(format!("System clock error: {}", e)))?
+            .as_millis() as u64;
         let cp = StateCheckpoint {
             tx_id,
-            timestamp_ms: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64,
+            timestamp_ms,
         };
-        CheckpointGuard::new(cp, Arc::clone(&self.storage))
+        Ok(CheckpointGuard::new(cp, Arc::clone(&self.storage)))
     }
 
     /// Rolls the database state back to a specific checkpoint.
@@ -133,7 +121,7 @@ mod tests {
         storage.put(tx1, b"key1", b"val1").await.unwrap();
         storage.commit(tx1).await.unwrap();
 
-        let cp1_guard = checkpointer.create_checkpoint(tx1);
+        let cp1_guard = checkpointer.create_checkpoint(tx1).unwrap();
         let cp1 = cp1_guard.commit().expect("commit"); // explicit commit to prevent auto-rollback
 
         let tx2 = TxId::new(2);
@@ -170,7 +158,7 @@ mod tests {
 
         {
             // Create a checkpoint guard but do NOT commit it.
-            let _cp_guard = checkpointer.create_checkpoint(tx1);
+            let _cp_guard = checkpointer.create_checkpoint(tx1).unwrap();
 
             let tx2 = TxId::new(2);
             storage.put(tx2, b"key2", b"val2").await.unwrap();

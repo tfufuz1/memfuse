@@ -307,6 +307,36 @@ impl<S: memfuse_core::StorageEngine> CheckpointRegistry for PersistentCheckpoint
 }
 
 #[async_trait]
+impl<S: memfuse_core::StorageEngine> memfuse_core::traits::CheckpointCoordinator
+    for PersistentCheckpointStore<S>
+{
+    type Meta = CheckpointMeta;
+
+    async fn create_named_checkpoint(
+        &self,
+        name: &str,
+        collection_id: &str,
+        seq_no: u64,
+        tx_id: TxId,
+        metadata: serde_json::Value,
+    ) -> Result<Self::Meta> {
+        self.create_checkpoint(name, collection_id, seq_no, tx_id, metadata).await
+    }
+
+    async fn restore_named_checkpoint(&self, name: &str) -> Result<Self::Meta> {
+        self.restore_checkpoint(name).await
+    }
+
+    async fn drop_named_checkpoint(&self, name: &str) -> Result<()> {
+        self.drop_checkpoint(name).await
+    }
+
+    async fn list_named_checkpoints(&self) -> Result<Vec<Self::Meta>> {
+        self.list_checkpoints().await
+    }
+}
+
+#[async_trait]
 impl<S: memfuse_core::StorageEngine> memfuse_core::traits::Checkpoint
     for PersistentCheckpointStore<S>
 {

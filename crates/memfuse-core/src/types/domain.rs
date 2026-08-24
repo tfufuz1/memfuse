@@ -23,6 +23,16 @@ pub struct WorkflowState {
 /// Bit mask for identifying tombstones in sequence numbers.
 pub const TOMBSTONE_BIT: u64 = 1 << 63;
 
+/// Maximum number of search results that any hybrid/vector/text search may return.
+///
+/// This cap is applied at the orchestration layer (memfuse-db) before forwarding `k`
+/// to HNSW and BM25 sub-searches. All upstream layers (memfuse-mcp, memfuse-tauri,
+/// memfuse-py) MUST reference this constant — never duplicate the literal `1000`.
+///
+/// # DECISION-REF
+/// AGT-DB-003 — Boundary defence at Layer 2 against unbounded `k` from untrusted JSON-RPC.
+pub const MAX_SEARCH_K: usize = 1_000;
+
 /// Internal document identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
@@ -231,13 +241,11 @@ impl DistanceMetric {
     /// Unlike the f32 path (`compute()`), the u32 result is **not negated** since
     /// `u32` cannot represent negative values. The caller (e.g., HNSW quantized search)
     /// is responsible for inverting the ranking order when using DotProduct.
-    // TODO[STABILIZE][memfuse-core][CRITICAL][PANIC-SAFETY]
-    // PROBLEM: Euclidean and DotProduct distance computation on u8 vectors can cause integer overflow.
-    // BEWEIS: If vectors have length > 66050 and diff is maximum (255), sum/dot accumulates to > u32::MAX, causing panic in debug mode and wrapping in release mode.
-    // URSACHE: Sum/dot is accumulated in a u32 variable which is not guarded against overflow.
-    // LÖSUNG: Use saturating addition or check/cast to u64 during accumulation and return error/saturate, or validate max dimension at the start of the function.
-    // VERIFIKATION: Add a test `test_distance_metrics_u8_overflow` with vector length 100_000 populated with 255.
-    // ABHÄNGIGKEIT: None
+    // DECISION-REF: AGT-CORE-001 — Overflow-Schutz in compute_u8() bereits implementiert.
+    // KONTEXT: Alle drei Zweige akkumulieren in u64 (Euclidean: diff²-Summe, DotProduct: Produkt-Summe)
+    //          bzw. f64 (Cosine) und sättigen per .min(u32::MAX as u64). Kein Overflow möglich.
+    //          Regressionstest: test_distance_metrics_u8_overflow (100_000 Elemente à 255).
+    // ID: AGT-CORE-001
     pub fn compute_u8(&self, a: &[u8], b: &[u8]) -> Result<u32> {
         if a.len() != b.len() {
             return Err(MemFuseError::invalid_input("Vector dimensions must match"));
@@ -490,6 +498,59 @@ mod tests {
         );
         // Cosine: identical vectors → distance 0.0 → 0
         assert_eq!(DistanceMetric::Cosine.compute_u8(&a, &a).unwrap(), 0);
+    }
+
+    /// Regressionstest für AGT-CORE-001: Beweist, dass compute_u8() bei Vektoren der Länge
+    /// 100_000 mit allen Elementen = 255 in keinem der drei Zweige panikt oder überläuft.
+    ///
+    /// Worst-case-Analyse:
+    /// - Euclidean: diff=0 (identische Vektoren) → sum=0. Maximaler Fall: diff=255, sum = 255²×100_000
+    ///   = 6_502_500_000 < u64::MAX. Gesättigter Rückgabewert: 4_294_967_295 (u32::MAX).
+    /// - DotProduct: 255×255×100_000 = 6_502_500_000 < u64::MAX. Gesättigter Rückgabewert: u32::MAX.
+    /// - Cosine: f64-Akkumulation, kein Ganzzahl-Overflow möglich.
+    #[test]
+    fn test_distance_metrics_u8_overflow() {
+        // Identische Vektoren (diff=0): Euclidean=0, DotProduct=saturiert, Cosine=0
+        let max_vec: Vec<u8> = vec![255u8; 100_000];
+        let same_vec: Vec<u8> = vec![255u8; 100_000];
+
+        // Euclidean: identische Vektoren → Distanz 0
+        let eucl_same =
+            DistanceMetric::Euclidean.compute_u8(&max_vec, &same_vec).unwrap();
+        assert_eq!(eucl_same, 0, "Euclidean distance of identical vectors must be 0");
+
+        // DotProduct: 255*255*100_000 = 6_502_500_000 > u32::MAX → muss auf u32::MAX sättigen
+        let dot_same =
+            DistanceMetric::DotProduct.compute_u8(&max_vec, &same_vec).unwrap();
+        assert_eq!(
+            dot_same,
+            u32::MAX,
+            "DotProduct must saturate to u32::MAX for 100_000-element all-255 vectors"
+        );
+
+        // Cosine: identische Vektoren → Distanz 0 (cos_dist = 1 - 1 = 0)
+        let cos_same =
+            DistanceMetric::Cosine.compute_u8(&max_vec, &same_vec).unwrap();
+        assert_eq!(cos_same, 0, "Cosine distance of identical vectors must be 0");
+
+        // Worst-case Euclidean: maximale Differenz (255 vs. 0) → sum = 255²×100_000 = 6_502_500_000
+        // Muss auf u32::MAX sättigen
+        let zero_vec: Vec<u8> = vec![0u8; 100_000];
+        let eucl_max =
+            DistanceMetric::Euclidean.compute_u8(&max_vec, &zero_vec).unwrap();
+        assert_eq!(
+            eucl_max,
+            u32::MAX,
+            "Euclidean must saturate to u32::MAX for max-diff 100_000-element vectors"
+        );
+
+        // Cosine: senkrechte Vektoren (255..255 vs. 0..0) → Sonderfall: Nullvektor → Distanz 1.0
+        let cos_zero =
+            DistanceMetric::Cosine.compute_u8(&max_vec, &zero_vec).unwrap();
+        assert_eq!(
+            cos_zero, 1_000_000,
+            "Cosine distance against zero vector must be 1.0 (scaled: 1_000_000)"
+        );
     }
 
     #[test]

@@ -831,6 +831,7 @@ impl<S: StorageEngine> Collection<S> {
                                 id,
                                 score: sd.score,
                                 metadata: doc_metadata,
+                                matched_signals: vec![],
                             });
                             if results.len() >= k {
                                 break;
@@ -954,6 +955,7 @@ impl<S: StorageEngine> Collection<S> {
                     id,
                     score: sd.score,
                     metadata,
+                    matched_signals: vec![],
                 });
             }
         }
@@ -986,6 +988,7 @@ impl<S: StorageEngine> Collection<S> {
                     id,
                     score,
                     metadata,
+                    matched_signals: vec![],
                 });
             }
         }
@@ -1015,6 +1018,11 @@ impl<S: StorageEngine> Collection<S> {
         anchor_entities: Option<&[memfuse_core::EntityId]>,
         weights: Option<&memfuse_core::FusionWeights>,
     ) -> Result<Vec<crate::SearchResult>> {
+        if k == 0 {
+            return Ok(Vec::new());
+        }
+        let k = k.min(memfuse_core::MAX_SEARCH_K);
+
         let seq = self.snapshot_seq().await?;
         let is_vector_zero = vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
@@ -1084,13 +1092,13 @@ impl<S: StorageEngine> Collection<S> {
 
         let mut signal_sets = Vec::new();
         if !vector_results.is_empty() {
-            signal_sets.push((vector_results, vw));
+            signal_sets.push(("vector".to_string(), vector_results, vw));
         }
         if !text_results.is_empty() {
-            signal_sets.push((text_results, tw));
+            signal_sets.push(("text".to_string(), text_results, tw));
         }
         if !graph_results.is_empty() {
-            signal_sets.push((graph_results, gw));
+            signal_sets.push(("graph".to_string(), graph_results, gw));
         }
 
         Ok(crate::fusion::weighted_reciprocal_rank_fusion(
@@ -1320,5 +1328,56 @@ mod tests {
         let embedder: Arc<dyn TextEmbeddingEngine> = Arc::new(FakeEmbedder);
         let result = embedder.embed("hello").await.unwrap();
         assert_eq!(result.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_hybrid_search_k_clamping_boundaries() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let lsm_config = memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let hnsw_config = memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let index = Arc::new(HnswIndex::new(hnsw_config));
+        let graph = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(AtomicU64::new(1));
+
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            graph,
+            next_tx,
+            4,
+            memfuse_text::Language::English,
+        );
+
+        // 1. k = 0 boundary check (must short-circuit to empty results without panic)
+        let res_zero = col
+            .hybrid_search("test", &[0.1, 0.2, 0.3, 0.4], 0, None)
+            .await
+            .unwrap();
+        assert!(res_zero.is_empty(), "k=0 must return empty result list");
+
+        // 2. k = usize::MAX boundary check (must clamp to MAX_SEARCH_K without panic/overflow)
+        let res_max = col
+            .hybrid_search("test", &[0.0, 0.0, 0.0, 0.0], usize::MAX, None)
+            .await
+            .unwrap();
+        assert!(
+            res_max.is_empty(),
+            "k=usize::MAX on empty DB must return empty without overflow panic"
+        );
     }
 }

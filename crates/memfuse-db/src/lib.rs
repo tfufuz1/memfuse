@@ -78,6 +78,9 @@ pub struct SearchResult {
     pub score: f32,
     /// Metadata associated with the document (if any).
     pub metadata: Option<Value>,
+    /// List of signals (e.g. "vector", "text", "graph") that matched this document.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub matched_signals: Vec<String>,
 }
 
 /// User-facing document structure.

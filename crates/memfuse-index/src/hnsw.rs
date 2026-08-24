@@ -63,6 +63,9 @@ pub struct HnswConfig {
     pub rebuild_threshold: f64,
     /// Whether to apply SQ8 Scalar Quantization to the index vectors to reduce RAM.
     pub quantize: bool,
+    /// Sample size used for ScalarQuantizer recalibration during rebuilds.
+    /// Default is 10,000 to balance speed and accuracy.
+    pub quantizer_recalibration_sample_size: usize,
 }
 
 impl Default for HnswConfig {
@@ -73,10 +76,10 @@ impl Default for HnswConfig {
             m: 16,
             ef_construction: 200,
             ef_search: 64,
-
             distance_metric: DistanceMetric::Cosine,
             rebuild_threshold: 0.20,
             quantize: false,
+            quantizer_recalibration_sample_size: 10_000,
         }
     }
 }
@@ -147,6 +150,12 @@ impl HnswConfigBuilder {
     /// Enable or disable scalar quantization (SQ8) to reduce footprint.
     pub fn quantize(mut self, quantize: bool) -> Self {
         self.config.quantize = quantize;
+        self
+    }
+
+    /// Sets the sample size used for ScalarQuantizer recalibration during rebuilds.
+    pub fn quantizer_recalibration_sample_size(mut self, size: usize) -> Self {
+        self.config.quantizer_recalibration_sample_size = size;
         self
     }
 
@@ -232,7 +241,7 @@ pub struct HnswIndexCore {
     deleted_count: AtomicU64,
     rebuilding: AtomicBool,
     write_mutex: Mutex<()>,
-    quantizer: RwLock<Option<crate::quantize::ScalarQuantizer>>,
+    pub quantizer: RwLock<Option<crate::quantize::ScalarQuantizer>>,
     mmap_index: RwLock<Option<crate::persistence::MmapIndex>>,
     last_tx_id: AtomicU64,
 }
@@ -1288,10 +1297,26 @@ impl HnswIndexCore {
             }
         }
 
-        // Copy quantizer to new index to maintain parity
         let quantizer_guard = self.quantizer.read();
-        if let Some(q) = quantizer_guard.as_ref() {
-            *new_index.quantizer.write() = Some(q.clone());
+        if let Some(old_q) = quantizer_guard.as_ref() {
+            // Train a new quantizer on a sample of active nodes to prevent clamping loss
+            let sample_size = self.config.quantizer_recalibration_sample_size.min(active_nodes.len());
+            let mut train_data = Vec::with_capacity(sample_size);
+            
+            for (_, vector, _) in active_nodes.iter().take(sample_size) {
+                match vector {
+                    VectorData::F32(v) => train_data.push(v.clone()),
+                    VectorData::U8(v) => train_data.push(old_q.dequantize(v)),
+                }
+            }
+            
+            if !train_data.is_empty() {
+                let training_refs: Vec<&[f32]> = train_data.iter().map(|v| v.as_slice()).collect();
+                let new_q = crate::quantize::ScalarQuantizer::train(&training_refs, self.config.dimension);
+                *new_index.quantizer.write() = Some(new_q);
+            } else {
+                *new_index.quantizer.write() = Some(old_q.clone());
+            }
         }
 
         for (doc_id, vector, committed_tx) in active_nodes {
@@ -1941,6 +1966,7 @@ mod tests {
             distance_metric: DistanceMetric::Euclidean,
             rebuild_threshold: 0.8,
             quantize: false,
+            ..Default::default()
         }
     }
 

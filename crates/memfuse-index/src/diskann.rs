@@ -1,6 +1,7 @@
 //! DiskANN Out-of-Core Vector Search (WP-4.3).
 
 #![allow(unsafe_code)]
+#![doc(hidden)]
 
 use crate::distance::compute_distance;
 use ahash::AHashMap;

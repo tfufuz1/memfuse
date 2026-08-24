@@ -122,7 +122,7 @@ impl CompactionEngine {
 
         // 3. Perform the merge (no lock held — this is the expensive part)
         let min_snapshot_seq = self.snapshot_registry.min_active_seqno();
-        let output_path = Self::generate_sst_path(data_path);
+        let output_path = Self::generate_sst_path(data_path)?;
         self.merge_sstables(
             &input_ssts,
             &output_path,
@@ -414,14 +414,14 @@ impl CompactionEngine {
     }
 
     /// Generates a unique SSTable file path using microsecond timestamp.
-    fn generate_sst_path(data_path: &std::path::Path) -> PathBuf {
+    fn generate_sst_path(data_path: &std::path::Path) -> Result<PathBuf> {
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let id = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
+            .map_err(|e| memfuse_core::MemFuseError::Storage(format!("System clock error: {}", e)))?
             .as_micros();
         let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        data_path.join(format!("sst-compact-{:020}-{:04}.sst", id, count % 10000))
+        Ok(data_path.join(format!("sst-compact-{:020}-{:04}.sst", id, count % 10000)))
     }
 
     /// Runs the background compaction loop.
@@ -782,6 +782,17 @@ mod tests {
         assert!(
             !result,
             "Compaction should be aborted when candidates are modified"
+        );
+    }
+
+    #[test]
+    fn test_generate_sst_path_uniqueness() {
+        let tmp = TempDir::new().expect("temp dir");
+        let path1 = CompactionEngine::generate_sst_path(tmp.path()).expect("path 1");
+        let path2 = CompactionEngine::generate_sst_path(tmp.path()).expect("path 2");
+        assert_ne!(
+            path1, path2,
+            "Rapid sequential calls must produce distinct SSTable paths"
         );
     }
     #[tokio::test(flavor = "multi_thread")]
