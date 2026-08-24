@@ -18,11 +18,88 @@ use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
 #[cfg(feature = "onnx")]
 use ort::value::Value;
 #[cfg(feature = "onnx")]
-use std::path::{Path, PathBuf};
+use std::path::Path;
 #[cfg(feature = "onnx")]
 use tokenizers::Tokenizer;
 #[cfg(feature = "onnx")]
 use tracing::{debug, info};
+
+#[cfg(feature = "onnx")]
+struct SessionPool {
+    sessions: std::sync::Mutex<Vec<ort::session::Session>>,
+}
+
+#[cfg(feature = "onnx")]
+impl SessionPool {
+    fn new(sessions: Vec<ort::session::Session>) -> Self {
+        Self {
+            sessions: std::sync::Mutex::new(sessions),
+        }
+    }
+
+    fn pop(&self) -> ort::session::Session {
+        self.sessions
+            .lock()
+            .expect("SessionPool lock poisoned")
+            .pop()
+            .expect("SessionPool exhausted, semaphore leak?")
+    }
+
+    fn push(&self, session: ort::session::Session) {
+        self.sessions
+            .lock()
+            .expect("SessionPool lock poisoned")
+            .push(session);
+    }
+}
+
+#[cfg(feature = "onnx")]
+impl std::fmt::Debug for SessionPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionPool").finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "onnx")]
+struct SessionGuard {
+    pool: Arc<SessionPool>,
+    session: Option<ort::session::Session>,
+}
+
+#[cfg(feature = "onnx")]
+impl SessionGuard {
+    fn new(pool: Arc<SessionPool>) -> Self {
+        let session = pool.pop();
+        Self {
+            pool,
+            session: Some(session),
+        }
+    }
+}
+
+#[cfg(feature = "onnx")]
+impl Drop for SessionGuard {
+    fn drop(&mut self) {
+        if let Some(session) = self.session.take() {
+            self.pool.push(session);
+        }
+    }
+}
+
+#[cfg(feature = "onnx")]
+impl std::ops::Deref for SessionGuard {
+    type Target = ort::session::Session;
+    fn deref(&self) -> &Self::Target {
+        self.session.as_ref().unwrap()
+    }
+}
+
+#[cfg(feature = "onnx")]
+impl std::ops::DerefMut for SessionGuard {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.session.as_mut().unwrap()
+    }
+}
 
 /// Handles text tokenization and ONNX model inference.
 ///
@@ -35,18 +112,19 @@ use tracing::{debug, info};
 /// Instead of holding a `std::sync::Mutex<Session>` (which blocks the Tokio
 /// thread on every `embed` call), this design:
 ///
-/// 1. Stores only the model **path** and a shared **tokenizer**.
-/// 2. Creates a fresh ONNX `Session` inside each `spawn_blocking` task.
-/// 3. Uses a `Semaphore` to cap concurrent inferences (default: 2).
+/// 1. Stores a pre-loaded `SessionPool` populated at initialization.
+/// 2. Uses a `Semaphore` to limit concurrent inferences.
+/// 3. Safely lends sessions out of the pool for the duration of inference inside
+///    `spawn_blocking` via a RAII guard, returning them even on panics.
 #[cfg(feature = "onnx")]
 #[derive(Debug)]
 pub struct TextEmbedder {
-    /// Path to the resolved ONNX model file.
-    session_path: PathBuf,
     /// Shared tokenizer instance (thread-safe via `Arc`).
     tokenizer: Arc<Tokenizer>,
     /// Semaphore limiting parallel ONNX inference threads.
     semaphore: Arc<tokio::sync::Semaphore>,
+    /// Pre-loaded Session Pool.
+    pool: Arc<SessionPool>,
 }
 
 #[cfg(feature = "onnx")]
@@ -59,11 +137,10 @@ impl TextEmbeddingEngine for TextEmbedder {
 
 #[cfg(feature = "onnx")]
 impl TextEmbedder {
-    /// Creates a new embedder by loading a tokenizer from the specified directory.
+    /// Creates a new embedder by loading a tokenizer and ONNX models from the specified directory.
     ///
     /// The directory should contain `model.onnx` and `tokenizer.json`.
-    /// The ONNX session is created per-inference call via `spawn_blocking`,
-    /// so only the model path is stored here.
+    /// ONNX sessions are loaded upfront into a pool to prevent per-inference overhead.
     pub fn load(model_dir: impl AsRef<Path>) -> Result<Self> {
         let model_dir = model_dir.as_ref();
         let model_path = if model_dir.join("model.onnx").exists() {
@@ -93,15 +170,25 @@ impl TextEmbedder {
         let tokenizer = Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| MemFuseError::Internal(format!("Failed to load tokenizer: {}", e)))?;
 
+        let pool_size = 2; // Limit max parallel inferences
         info!(
-            "Model path registered: {:?} (session created per inference call)",
-            model_path
+            "Model path registered: {:?} (pre-loading {} sessions)",
+            model_path, pool_size
         );
 
+        let mut sessions = Vec::with_capacity(pool_size);
+        for _ in 0..pool_size {
+            let session = ort::session::Session::builder()
+                .map_err(|e| MemFuseError::Internal(format!("Session builder: {}", e)))?
+                .commit_from_file(&model_path)
+                .map_err(|e| MemFuseError::Internal(format!("Model load: {}", e)))?;
+            sessions.push(session);
+        }
+
         Ok(Self {
-            session_path: model_path,
             tokenizer: Arc::new(tokenizer),
-            semaphore: Arc::new(tokio::sync::Semaphore::new(2)), // max 2 parallel inferences
+            semaphore: Arc::new(tokio::sync::Semaphore::new(pool_size)),
+            pool: Arc::new(SessionPool::new(sessions)),
         })
     }
 
@@ -117,17 +204,13 @@ impl TextEmbedder {
             .map_err(|_| MemFuseError::Internal("Semaphore closed".into()))?;
 
         let text = text.to_string();
-        let session_path = self.session_path.clone();
+        let pool = self.pool.clone();
         let tokenizer = self.tokenizer.clone();
 
         tokio::task::spawn_blocking(move || {
-            // ONNX-Session pro spawn_blocking-Aufruf (thread-local, kein Mutex nötig)
-            let mut session = ort::session::Session::builder()
-                .map_err(|e| MemFuseError::Internal(format!("Session builder: {}", e)))?
-                .commit_from_file(&session_path)
-                .map_err(|e| MemFuseError::Internal(format!("Model load: {}", e)))?;
-
-            Self::run_inference(&mut session, &tokenizer, &text)
+            // Guard borrows session from pool, restores it on drop
+            let mut session_guard = SessionGuard::new(pool);
+            Self::run_inference(&mut session_guard, &tokenizer, &text)
         })
         .await
         .map_err(|e| MemFuseError::Internal(format!("spawn_blocking join: {}", e)))?
@@ -159,12 +242,24 @@ impl TextEmbedder {
         let attention_mask_tensor = Value::from_array(([1, seq_len], attention_mask_vec))
             .map_err(|e| MemFuseError::Internal(format!("Failed to create tensor: {}", e)))?;
 
-        let outputs = session
-            .run(ort::inputs![
+        let has_token_type_ids = session.inputs().iter().any(|input| input.name == "token_type_ids");
+        
+        let outputs = if has_token_type_ids {
+            let token_type_ids = encoding.get_type_ids();
+            let token_type_ids_vec: Vec<i64> = token_type_ids.iter().map(|&id| id as i64).collect();
+            let token_type_ids_tensor = Value::from_array(([1, seq_len], token_type_ids_vec))
+                .map_err(|e| MemFuseError::Internal(format!("Failed to create tensor: {}", e)))?;
+            session.run(ort::inputs![
                 "input_ids" => input_ids_tensor,
                 "attention_mask" => attention_mask_tensor,
-            ])
-            .map_err(|e| MemFuseError::Internal(format!("ONNX inference failed: {}", e)))?;
+                "token_type_ids" => token_type_ids_tensor,
+            ]).map_err(|e| MemFuseError::Internal(format!("ONNX inference failed: {}", e)))?
+        } else {
+            session.run(ort::inputs![
+                "input_ids" => input_ids_tensor,
+                "attention_mask" => attention_mask_tensor,
+            ]).map_err(|e| MemFuseError::Internal(format!("ONNX inference failed: {}", e)))?
+        };
 
         // Mean Pooling over token embeddings, weighted by attention_mask
         let process_tensor = |shape: &[i64], data: &[f32]| -> Result<Vec<f32>> {
