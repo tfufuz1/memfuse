@@ -1,0 +1,62 @@
+name: Context Integrity Gates
+
+on: [push, pull_request]
+
+jobs:
+  context-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Gate 1: Keine ungelösten kritischen AI-TAGs"
+        run: |
+          COUNT=$(grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ \
+            --include="*.rs" | grep -vc "RESOLVED" || true)
+          if [ "$COUNT" -gt 0 ]; then
+            echo "❌ $COUNT ungelöste AI-TAG[SMELL][CRITICAL] gefunden"
+            grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v "RESOLVED"
+            exit 1
+          fi
+          echo "✅ Keine offenen kritischen Tags"
+
+      - name: "Gate 2: Kein .expect() in Produktionscode"
+        run: |
+          # Nur in src/, nicht in tests/ und nicht in SAFETY-approved Stellen
+          FOUND=$(grep -rn "\.expect(" crates/*/src/ --include="*.rs" \
+            | grep -v "// SAFETY-approved expect" \
+            | grep -v "SessionPool" || true)  # SessionPool noch in Sprint 2
+          # Warnung, kein Fehler (Sprint 2 behebt dies)
+          if [ -n "$FOUND" ]; then
+            echo "⚠️ .expect() Aufrufe in Produktionscode (Sprint-2-Tasks):"
+            echo "$FOUND"
+          fi
+
+      - name: "Gate 3: Kein silent let _ für IO-Operationen"
+        run: |
+          if grep -rn "let _ = .*sync\|let _ = .*flush\|let _ = .*write" \
+             crates/ --include="*.rs"; then
+            echo "❌ Silent IO-Fehler gefunden — propagiere mit ?"
+            exit 1
+          fi
+          echo "✅ Keine silent IO-Fehler"
+
+      - name: "Gate 4: axum nicht in memfuse-mcp"
+        run: |
+          if grep -q "axum" crates/memfuse-mcp/Cargo.toml 2>/dev/null; then
+            echo "❌ axum-Dependency in memfuse-mcp — ADR-010 verletzt (stdio only)"
+            exit 1
+          fi
+          echo "✅ memfuse-mcp korrekt: kein axum"
+
+      - name: "Gate 5: WORKING_STATE.md existiert und ist aktuell"
+        run: |
+          if [ ! -f "WORKING_STATE.md" ]; then
+            echo "❌ WORKING_STATE.md fehlt — Session-Handoff nicht möglich"
+            exit 1
+          fi
+          # Datum-Check: nicht älter als 7 Tage bei aktiver Entwicklung
+          DAYS_OLD=$(( ($(date +%s) - $(date -r WORKING_STATE.md +%s)) / 86400 ))
+          if [ "$DAYS_OLD" -gt 7 ]; then
+            echo "⚠️ WORKING_STATE.md ist $DAYS_OLD Tage alt — bitte aktualisieren"
+          fi
+          echo "✅ WORKING_STATE.md vorhanden"

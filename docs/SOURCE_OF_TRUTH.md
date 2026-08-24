@@ -10,7 +10,7 @@
 **Kern-USP**: Echtes 4-Signal-Hybrid-RAG (Vektor + BM25 + Wissensgraph + Metadaten-Filter), persistiert,
 in `hybrid_search()` fusioniert — verifizierter Code-Zustand.
 
-### Aktive Workspace Crates (12 Crates Sovereign Core & Shells)
+### Aktive Workspace Crates (12 Kern-Crates + 1 optionales Crate)
 - `memfuse-core` (Layer 0) — Typen, Primitiven, Fehler, Shared Traits (`TextEmbeddingEngine`)
 - `memfuse-store` (Layer 1) — LSM-Tree, WAL, SSTables, Crypt-at-Rest
 - `memfuse-index` (Layer 1) — HNSW-Vektorindex, SIMD-Distanzen, SQ8-Quantisierung
@@ -21,13 +21,14 @@ in `hybrid_search()` fusioniert — verifizierter Code-Zustand.
 - `memfuse-db` (Layer 2) — Collections Orchestrator, 4-Signal-Fusion, RRF, Transaktionalität
 - `memfuse-py` (Layer 3) — PyO3 Python-Bindings, CRUD & Hybrid-Suche
 - `memfuse-ollama` (Layer 3) — Ollama HTTP Client & `OllamaEmbedder` für Vektor-Embeddings
-- `memfuse-mcp` (Layer 4) — Standalone MCP-Server (axum HTTP / JSON-RPC) mit Ollama-Embedding-Integration (`memfuse_search`, `memfuse_insert`, `memfuse_get`, `memfuse_collections`)
+- `memfuse-mcp` (Layer 4) — Standalone MCP-Server (stdio JSON-RPC 2.0, ADR-010) mit Ollama-Embedding-Integration (`memfuse_search`, `memfuse_insert`, `memfuse_get`, `memfuse_collections`)
+- `memfuse-embed` (Layer 3, **optional**) — ONNX-Embeddings, Feature-gated (`default = []`). Bewusste Randstellung — Pure-Rust-USP durch `default=[]` gewahrt. Wird bei Bedarf mit `--features onnx` aktiviert.
 - `memfuse-tauri` (Layer 4) — MemFuse Brain Desktop-App (Tauri IPC, Ingestion-Pipeline, Chat-UI, Ollama-Diagnose)
 
 ### System-Setup & Status
-- **Embedding-Backend**: Ollama via `memfuse-ollama` ist primäres Backend (ADR-008).
+- **Embedding-Backend**: Ollama via `memfuse-ollama` ist primäres Backend (ADR-008). `memfuse-embed` (ONNX) ist optional verfügbar.
 - **Graph-Persistenz**: CSR-Graph wird über LSM-Store unter den Präfixen `__graph:entity:` und `__graph:edge:` vollständig persistiert.
-- **MCP-Server**: Unterstützt Volltext-, Hybrid-Suche, Dokumenten-Retrieval und automatisches Embedding beim Einfügen über `memfuse-ollama`.
+- **MCP-Server**: stdio JSON-RPC 2.0 Transport (ADR-010). Unterstützt Volltext-, Hybrid-Suche, Dokumenten-Retrieval und automatisches Embedding beim Einfügen über `memfuse-ollama`.
 
 ---
 
@@ -56,13 +57,14 @@ Layer 1:  memfuse-store       — LSM-Tree, WAL, SSTables, Crypt-at-Rest
 Layer 2:  memfuse-db          — Collections, 4-Signal-Fusion, RRF, transaktionales 2PC
 Layer 3:  memfuse-py          — PyO3 Python FFI-Bindings
           memfuse-ollama      — Ollama Client & Embedder Provider
-Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) HTTP/JSON-RPC Server
+Layer 3:  memfuse-embed       — ONNX Embeddings (optional, Feature-gated, default=[])
+Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.0 Server (ADR-010)
           memfuse-tauri       — Desktop Application Shell ("MemFuse Brain")
 ```
 
 ---
 
-## 3. Crate-Inventar & Status (12 Active Crates)
+## 3. Crate-Inventar & Status (12 Kern-Crates + 1 optionales Crate)
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
@@ -76,8 +78,9 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) HTTP/JSON-RPC Ser
 | `memfuse-db` | 2 | ~2.500 | 🟢 Active | Collections Orchestrator, 4-Signal-Fusion. |
 | `memfuse-py` | 3 | ~1.000 | 🟢 Active | PyO3-Fassade für Python. |
 | `memfuse-ollama` | 3 | ~400 | 🟢 Active | Ollama HTTP Embedding Client & Model Info. |
-| `memfuse-mcp` | 4 | ~350 | 🟢 Active | MCP Server für Tool Calls (`memfuse_search`, `memfuse_insert`, etc.). |
+| `memfuse-mcp` | 4 | ~350 | 🟢 Active | MCP Server (stdio JSON-RPC 2.0, ADR-010) für Tool Calls. |
 | `memfuse-tauri` | 4 | ~2.100 | 🟢 Active | Tauri Desktop App Shell ("MemFuse Brain"), Ingestion Pipeline. |
+| `memfuse-embed` | 3 | ~400 | 🧊 Optional | ONNX-Embeddings, Feature-gated (`default=[]`). Pure-Rust-USP gewahrt. |
 
 ---
 
@@ -88,3 +91,8 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) HTTP/JSON-RPC Ser
   2. `cargo test --workspace`: Gesamte Testsuite ausführen.
   3. `just check`: Formatierung und Clippy-Warnungen als Fehler behandeln.
   4. `just triple-test`: Führt cargo test 3x hintereinander aus (Flaky-Test-Detektor).
+
+* **Invarianten-Status**:
+  - **Zero-Panic**: 🟡 In Arbeit — offene `.expect()`-Stellen: `SessionPool::pop()`/`push()` in memfuse-embed (3 Stellen), `snapshot.rs` in memfuse-core (2 Stellen). Status wird auf 🟢 gesetzt wenn: `grep -rn '.expect(' crates/*/src/ --include='*.rs'` null ergibt (exkl. `#[cfg(test)]`).
+
+* **CI-Verifikations-Prinzip**: Statusindikatoren (🟢/🟡/🔴) werden AUSSCHLIESSLICH durch CI-Ergebnisse gesetzt, niemals manuell durch Agenten-Einschätzung.

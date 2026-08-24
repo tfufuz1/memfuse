@@ -337,12 +337,12 @@ impl DiskAnnIndex {
         use tokio::io::AsyncWriteExt;
 
         let n = vectors.len();
+        let tmp_path = self.inner.config.index_path.with_extension("idx.tmp");
         let mut file = OpenOptions::new()
-            .read(true)
             .write(true)
             .create(true)
             .truncate(true)
-            .open(&self.inner.config.index_path)
+            .open(&tmp_path)
             .await
             .map_err(MemFuseError::Io)?;
 
@@ -421,6 +421,10 @@ impl DiskAnnIndex {
             }
         }
         file.sync_all().await.map_err(MemFuseError::Io)?;
+        drop(file);
+        tokio::fs::rename(&tmp_path, &self.inner.config.index_path)
+            .await
+            .map_err(MemFuseError::Io)?;
         Ok(())
     }
 
@@ -486,9 +490,11 @@ impl DiskAnnIndex {
         tokio::task::spawn_blocking(move || {
             use std::sync::atomic::Ordering;
             let file = std::fs::File::open(&inner.config.index_path).map_err(MemFuseError::Io)?;
-            // SAFETY: ADR-017 authorizes unsafe Mmap in diskann.rs.
-            // The file descriptor `file` is valid as it was successfully opened on the previous line.
-            // The resulting Mmap object will manage the memory-mapped region correctly.
+            // SAFETY: write_to_file() schreibt ausschließlich in eine temporäre Datei
+            // und ersetzt den index_path atomar per rename(). Bestehende Mmap-Instanzen
+            // sehen die alte, konsistente Inode bis sie selbst geschlossen werden.
+            // (POSIX rename()-Semantik, ADR-017 erweitert durch Mmap-Race-Fix 2026-08-24)
+            #[allow(unsafe_code)]
             let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? };
 
             let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;
@@ -593,7 +599,15 @@ impl DiskAnnIndex {
                 .map_err(|_| MemFuseError::Index("Invalid neighbor count".into()))?,
         ) as usize;
         cursor += 4;
-        let mut neighbors = Vec::with_capacity(neighbor_count);
+
+        if neighbor_count > header.max_degree as usize {
+            return Err(MemFuseError::Index(format!(
+                "Korrupter DiskANN-Node {}: neighbor_count {} überschreitet max_degree {}",
+                index, neighbor_count, header.max_degree
+            )));
+        }
+
+        let mut neighbors = Vec::with_capacity(neighbor_count.min(header.max_degree as usize));
         for _ in 0..neighbor_count {
             neighbors.push(u32::from_le_bytes(
                 node_data[cursor..cursor + 4]
@@ -929,5 +943,54 @@ mod tests {
         let results = index.search(query, 1).await.expect("Search failed");
         assert!(!results.is_empty());
         assert_eq!(results[0].doc_id, ids[150]);
+    }
+
+    #[tokio::test]
+    async fn test_load_node_rejects_corrupt_neighbor_count() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let index_path = temp_dir.path().join("corrupt_test.idx");
+
+        let max_degree = 8;
+        let dimension = 16;
+        let config = DiskAnnConfig {
+            index_path: index_path.clone(),
+            dimension,
+            max_degree,
+            beam_width: 8,
+            distance_metric: DistanceMetric::Euclidean,
+            quantize: false,
+            ..DiskAnnConfig::default()
+        };
+
+        let index = DiskAnnIndex::try_new(config.clone()).expect("valid config");
+        let vectors = vec![vec![1.0f32; dimension]];
+        let ids = vec![DocId::from(1)];
+
+        index.build(&vectors, &ids).await.expect("Build failed");
+
+        // Mutate neighbor_count of node 0 in the binary index file to be > max_degree
+        let mut data = tokio::fs::read(&index_path).await.expect("read file");
+
+        // Offset layout: sector_size (4096) + dimension * 4 bytes (64)
+        let neighbor_count_offset = config.sector_size + (dimension * 4);
+        let corrupt_count: u32 = (max_degree + 5) as u32;
+        data[neighbor_count_offset..neighbor_count_offset + 4]
+            .copy_from_slice(&corrupt_count.to_le_bytes());
+
+        tokio::fs::write(&index_path, &data)
+            .await
+            .expect("write corrupt file");
+
+        let reloaded_index = DiskAnnIndex::try_new(config).expect("valid config");
+        reloaded_index.load().await.expect("Load header & mmap");
+
+        let result = reloaded_index.load_node(0);
+        assert!(result.is_err());
+        let err_msg = result.err().unwrap().to_string(); // unwrap allowed (AGENT:03)
+        assert!(
+            err_msg.contains("neighbor_count 13 überschreitet max_degree 8"),
+            "Unexpected error message: {}",
+            err_msg
+        );
     }
 }
