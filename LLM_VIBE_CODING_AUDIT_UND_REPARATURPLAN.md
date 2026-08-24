@@ -241,6 +241,9 @@ let tx = TxId::new(
 | **Lazy Error Stashing** | Storing validation errors in struct fields instead of returning `Result`. | `memfuse-index/src/hnsw.rs:241` | Delayed runtime panics/errors far from construction. | Refactor constructor to return `Result<Self>`. |
 | **Full O(N) Rebuild in Maintenance** | Rebuilding entire data structure during incremental updates. | `memfuse-graph/src/csr.rs:88` | Severe latency spikes ($O(N \cdot K)$) on frequent commits. | Implement incremental delta buffers for CSR compaction. |
 | **Duplicate Trait Abstractions** | Creating local duplicate traits instead of using shared core traits. | `memfuse-tauri/src/ingestion/pipeline.rs:17` | Prevents inter-op and forces unnecessary wrapper structs. | Use `memfuse_core::TextEmbeddingEngine`. |
+| **Unsafe Override** | Bypassing architectural rules restricting `unsafe` code. | `memfuse-index/src/diskann.rs:490` | Severe violation of memory safety invariants. | Remove or ADR-legitimize `Mmap`. |
+| **Silent IO Failure** | Swallowing fsync errors (`let _ = ...`). | `memfuse-store/src/wal.rs`, `lsm.rs` | Destroys WAL durability guarantees. | Propagate or critically log errors. |
+| **Missing Test Gates** | Entire crates lacking unit tests. | `memfuse-mcp`, `memfuse-py` | Violates production-readiness exit criteria. | Implement core testing suite for MCP server. |
 
 ---
 
@@ -264,6 +267,14 @@ graph TD
     B --> C[Phase 3: Performance Optimization & Incremental CSR]
     C --> D[Phase 4: Verification & Final Gate Check]
 ```
+
+### Phase 0: Architecture Invariant Enforcement (Blocker)
+1. **Fix Unsafe Code (`memfuse-index/src/diskann.rs`)**:
+   - Address `unsafe { Mmap::map(...) }` without `SAFETY:` comment. Create ADR to explicitly permit or remove.
+2. **Fix WAL Silent Failures (`memfuse-store/src/wal.rs`, `lsm.rs`)**:
+   - Replace `let _ = dir.sync_all().await;` with proper error propagation or critical logging.
+3. **Establish Test Gates (`memfuse-mcp`, `memfuse-py`)**:
+   - Write initial test suites to pass `AGENTS.md` verification gates.
 
 ### Phase 1: Security & TxId Fixes (Immediate Priority)
 1. **Fix WAL HMAC Hardcoded Fallback (`memfuse-store/src/wal.rs`)**:

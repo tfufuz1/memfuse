@@ -1,4 +1,3 @@
-#![allow(unsafe_code)]
 // ANCHOR:DEBT:WP-0.0-ZEROPANIC — Eradicate .unwrap() in persistence.rs
 // TEST: grep -c ".unwrap()" crates/memfuse-index/src/persistence.rs
 // DONE: Alle .unwrap() Aufrufe auf try_into() sind durch ? ersetzt.

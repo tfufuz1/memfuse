@@ -1,6 +1,5 @@
 //! DiskANN Out-of-Core Vector Search (WP-4.3).
 
-#![allow(unsafe_code)]
 #![doc(hidden)]
 
 use crate::distance::compute_distance;
@@ -487,6 +486,9 @@ impl DiskAnnIndex {
         tokio::task::spawn_blocking(move || {
             use std::sync::atomic::Ordering;
             let file = std::fs::File::open(&inner.config.index_path).map_err(MemFuseError::Io)?;
+            // SAFETY: ADR-017 authorizes unsafe Mmap in diskann.rs.
+            // The file descriptor `file` is valid as it was successfully opened on the previous line.
+            // The resulting Mmap object will manage the memory-mapped region correctly.
             let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? };
 
             let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;
