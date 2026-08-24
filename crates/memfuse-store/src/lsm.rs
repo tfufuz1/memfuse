@@ -479,8 +479,8 @@ impl StorageEngine for LsmStorage {
     }
 
     async fn get_at_seq(&self, key: &[u8], seq_no: u64) -> Result<Option<Vec<u8>>> {
-        let state = self.state.read().await;
         let last_tx = self.last_committed_tx.load(Ordering::Acquire);
+        let state = self.state.read().await;
         tracing::debug!(
             "LsmStorage::get_at_seq key={:?} seq={} last_tx={}",
             String::from_utf8_lossy(key),
@@ -512,7 +512,6 @@ impl StorageEngine for LsmStorage {
 
         // 3. SSTables (newest first, filtered by seq_no and last_tx)
         let sstables = self.sstables.read().await;
-        let last_tx = self.last_committed_tx.load(Ordering::Acquire);
         for sst in sstables.iter().rev() {
             // SSTables already only contain entries up to their last_key.
             // But we still need to check the entry's seq_no and tx_id.
@@ -862,10 +861,10 @@ impl StorageEngine for LsmStorage {
     }
 
     async fn scan_prefix_at(&self, prefix: &[u8], seq_no: u64) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        let last_tx = self.last_committed_tx.load(Ordering::Acquire);
         let mut map = std::collections::BTreeMap::new();
         let state = self.state.read().await;
         let sstables = self.sstables.read().await;
-        let last_tx = self.last_committed_tx.load(Ordering::Acquire);
 
         // Collect from SSTables
         for sst in sstables.iter() {
@@ -945,10 +944,10 @@ impl StorageEngine for LsmStorage {
     ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         use std::ops::Bound;
 
+        let last_tx = self.last_committed_tx.load(Ordering::Acquire);
         let mut map = std::collections::BTreeMap::<Vec<u8>, (Vec<u8>, u64)>::new();
         let state = self.state.read().await;
         let sstables = self.sstables.read().await;
-        let last_tx = self.last_committed_tx.load(Ordering::Acquire);
 
         // 1. SSTables (filtered by visibility tx <= last_tx)
         for sst in sstables.iter() {
