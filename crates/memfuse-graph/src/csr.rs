@@ -49,7 +49,7 @@ const WALLCLOCK_TX_HEURISTIC_MIN: u64 = 1_400_000_000_000_000_000;
 #[inline]
 fn is_suspicious_tx_id(tx: TxId) -> bool {
     let v = tx.inner();
-    v >= WALLCLOCK_TX_HEURISTIC_MIN && v < TxId::INTERNAL_BASE
+    (WALLCLOCK_TX_HEURISTIC_MIN..TxId::INTERNAL_BASE).contains(&v)
 }
 
 /// Internal contiguous index for CSR arrays.
@@ -953,13 +953,19 @@ mod tests {
         let tx_source_b = TxId::new(42);
 
         graph
-            .add_entity(tx_source_a, Entity::new(EntityId::new(10), "EntityFromA", "TypeA"))
+            .add_entity(
+                tx_source_a,
+                Entity::new(EntityId::new(10), "EntityFromA", "TypeA"),
+            )
             .await
             .unwrap();
 
         // Staging unter gleicher TxId ueberschreibt staged entity fuer EntityId(10) in der staged HashMap
         graph
-            .add_entity(tx_source_b, Entity::new(EntityId::new(10), "EntityFromB", "TypeB"))
+            .add_entity(
+                tx_source_b,
+                Entity::new(EntityId::new(10), "EntityFromB", "TypeB"),
+            )
             .await
             .unwrap();
 
@@ -982,7 +988,10 @@ mod tests {
 
         // Ausfuehrung darf nicht paniquen oder fehlschlagen
         graph
-            .add_entity(wallclock_tx, Entity::new(EntityId::new(100), "WallClockEntity", "Type"))
+            .add_entity(
+                wallclock_tx,
+                Entity::new(EntityId::new(100), "WallClockEntity", "Type"),
+            )
             .await
             .unwrap();
 

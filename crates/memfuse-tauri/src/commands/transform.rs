@@ -288,8 +288,7 @@ pub async fn run_bulk_regex_transform(
             .await
             .map_err(|e| format!("Semaphore-Fehler: {e}"))?;
 
-        let result =
-            run_regex_transformation(&pattern, &flags, &replacement, &input).await;
+        let result = run_regex_transformation(&pattern, &flags, &replacement, &input).await;
         results.push(result);
         // _permit wird hier gedroppt → Permit für nächste Iteration freigegeben
     }
@@ -346,21 +345,30 @@ mod tests {
     #[test]
     fn test_simple_replacement() {
         let result = transform!("foo", "", "bar", "foo baz foo").unwrap();
-        assert_eq!(result.output, "bar baz foo", "Ohne 'g'-Flag nur erste Ersetzung");
+        assert_eq!(
+            result.output, "bar baz foo",
+            "Ohne 'g'-Flag nur erste Ersetzung"
+        );
         assert_eq!(result.replacements_made, 1);
     }
 
     #[test]
     fn test_global_flag_replaces_all() {
         let result = transform!("foo", "g", "bar", "foo baz foo").unwrap();
-        assert_eq!(result.output, "bar baz bar", "Mit 'g'-Flag alle Vorkommen ersetzen");
+        assert_eq!(
+            result.output, "bar baz bar",
+            "Mit 'g'-Flag alle Vorkommen ersetzen"
+        );
         assert_eq!(result.replacements_made, 2);
     }
 
     #[test]
     fn test_no_match_returns_original() {
         let result = transform!("xyz", "g", "bar", "foo baz foo").unwrap();
-        assert_eq!(result.output, "foo baz foo", "Keine Ersetzung bei keinem Match");
+        assert_eq!(
+            result.output, "foo baz foo",
+            "Keine Ersetzung bei keinem Match"
+        );
         assert_eq!(result.replacements_made, 0);
     }
 
@@ -394,7 +402,10 @@ mod tests {
     fn test_input_too_large_normal_pattern() {
         let large_input = "a".repeat(MAX_REGEX_INPUT_BYTES + 1);
         let err = transform!("a", "g", "b", &large_input).unwrap_err();
-        assert!(err.contains("Eingabe zu groß"), "Limit-Fehler erwartet: {err}");
+        assert!(
+            err.contains("Eingabe zu groß"),
+            "Limit-Fehler erwartet: {err}"
+        );
         assert!(
             !err.contains("strukturell komplex"),
             "Einfaches Pattern sollte kein 'komplex'-Label erhalten"
@@ -407,7 +418,10 @@ mod tests {
         let complex_pattern = "(a)(b)(c)(d)(e)(f)(g)(h)(i)";
         let large_input = "a".repeat(MAX_REGEX_INPUT_BYTES_COMPLEX + 1);
         let err = transform!(complex_pattern, "g", "x", &large_input).unwrap_err();
-        assert!(err.contains("Eingabe zu groß"), "Limit-Fehler erwartet: {err}");
+        assert!(
+            err.contains("Eingabe zu groß"),
+            "Limit-Fehler erwartet: {err}"
+        );
         assert!(
             err.contains("strukturell komplex"),
             "Komplexes Pattern sollte 'komplex'-Label enthalten: {err}"
@@ -416,9 +430,18 @@ mod tests {
 
     #[test]
     fn test_is_structurally_complex_simple_pattern() {
-        assert!(!is_structurally_complex("foo"), "Einfaches Pattern ist nicht komplex");
-        assert!(!is_structurally_complex(r"\d+"), "Einfache Quantifizierung ist nicht komplex");
-        assert!(!is_structurally_complex("(a|b)"), "Eine Gruppe, eine Alternative ist nicht komplex");
+        assert!(
+            !is_structurally_complex("foo"),
+            "Einfaches Pattern ist nicht komplex"
+        );
+        assert!(
+            !is_structurally_complex(r"\d+"),
+            "Einfache Quantifizierung ist nicht komplex"
+        );
+        assert!(
+            !is_structurally_complex("(a|b)"),
+            "Eine Gruppe, eine Alternative ist nicht komplex"
+        );
     }
 
     #[test]
@@ -461,8 +484,7 @@ mod tests {
         assert!(result.is_valid, "Pattern ist syntaktisch gültig");
         assert!(result.is_complex, "Sollte als komplex eingestuft werden");
         assert_eq!(
-            result.effective_input_limit,
-            MAX_REGEX_INPUT_BYTES_COMPLEX,
+            result.effective_input_limit, MAX_REGEX_INPUT_BYTES_COMPLEX,
             "Komplexes Pattern muss reduziertes Limit haben"
         );
     }

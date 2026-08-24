@@ -73,6 +73,33 @@ impl ScalarQuantizer {
         }
     }
 
+    /// Expands mins/maxes to accommodate out-of-bounds vectors, recomputing scales.
+    pub fn expand_bounds_to_fit(&mut self, vector: &[f32]) -> bool {
+        let mut changed = false;
+        for i in 0..self.dimension.min(vector.len()) {
+            let val = vector[i];
+            if val < self.mins[i] {
+                self.mins[i] = val;
+                changed = true;
+            }
+            if val > self.maxes[i] {
+                self.maxes[i] = val;
+                changed = true;
+            }
+        }
+        if changed {
+            for i in 0..self.dimension {
+                if (self.maxes[i] - self.mins[i]).abs() < f32::EPSILON {
+                    self.maxes[i] = self.mins[i] + 1e-6;
+                }
+                let range = self.maxes[i] - self.mins[i];
+                self.scales[i] = 255.0 / range;
+                self.inv_scales[i] = range / 255.0;
+            }
+        }
+        changed
+    }
+
     /// Quantizes an `f32` vector to `u8`.
     pub fn quantize(&self, vector: &[f32]) -> Vec<u8> {
         vector

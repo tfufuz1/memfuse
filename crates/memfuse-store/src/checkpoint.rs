@@ -3,10 +3,10 @@
 //! AUDIT:2026-05-23 STATUS:IMPLEMENTED (P0 Remediation)
 //! Enables exact state reconstruction of an SAOS database at any given transaction ID.
 
-// DECISION-REF: ADR-011 — Consolidated Checkpoint Subsystem Architecture (resolving AGT-STORE-002)
-// ARCHITEKTUR: `Checkpointer` + `CheckpointGuard` sind als interne RAII-Klassen in `memfuse-store` verankert
-//             für transaktionale Rollback-Sicherung (TxId-skopiert). Das gemeinsame Trait `CheckpointCoordinator`
-//             in `memfuse-core` vereint die benannten, persistenten Checkpoints (`PersistentCheckpointStore` aus `memfuse-checkpoint`).
+// DECISION-REF: ADR-011 — Consolidated Checkpoint Subsystem Architecture
+// DECISION-REF: ADR-015 — Integration von RAII CheckpointGuard in memfuse-checkpoint (AGT-CKPT-001 / AGT-STORE-002)
+// ARCHITEKTUR: `memfuse-checkpoint` stellt den generischen `CheckpointGuard<S: StorageEngine>` und `PersistentCheckpointStore`
+//             bereit. `memfuse-store::checkpoint` bietet LSM-spezifische transactional rollbacks (TxId-skopiert).
 use crate::lsm::LsmStorage;
 use memfuse_core::{MemFuseError, Result, TxId};
 use std::sync::Arc;

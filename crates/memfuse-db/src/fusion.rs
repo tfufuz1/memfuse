@@ -219,7 +219,10 @@ mod tests {
         for _ in 0..20 {
             let fused = reciprocal_rank_fusion(vec![vectors.clone(), keywords.clone()], 2);
             assert_eq!(fused.len(), 2);
-            assert_eq!(fused[0].id, "X", "Secondary sort by ID must place X before Y");
+            assert_eq!(
+                fused[0].id, "X",
+                "Secondary sort by ID must place X before Y"
+            );
             assert_eq!(fused[1].id, "Y");
             assert!((fused[0].score - fused[1].score).abs() < f32::EPSILON);
         }
@@ -242,7 +245,9 @@ mod tests {
             vec![SearchResult {
                 id: "doc1".to_string(),
                 score: 0.8,
-                metadata: Some(serde_json::json!({"graph_key": "val2", "shared_key": "from_graph"})),
+                metadata: Some(
+                    serde_json::json!({"graph_key": "val2", "shared_key": "from_graph"}),
+                ),
                 matched_signals: vec![],
             }],
             1.0,

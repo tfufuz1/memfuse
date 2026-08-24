@@ -515,13 +515,18 @@ mod tests {
         let same_vec: Vec<u8> = vec![255u8; 100_000];
 
         // Euclidean: identische Vektoren → Distanz 0
-        let eucl_same =
-            DistanceMetric::Euclidean.compute_u8(&max_vec, &same_vec).unwrap();
-        assert_eq!(eucl_same, 0, "Euclidean distance of identical vectors must be 0");
+        let eucl_same = DistanceMetric::Euclidean
+            .compute_u8(&max_vec, &same_vec)
+            .unwrap();
+        assert_eq!(
+            eucl_same, 0,
+            "Euclidean distance of identical vectors must be 0"
+        );
 
         // DotProduct: 255*255*100_000 = 6_502_500_000 > u32::MAX → muss auf u32::MAX sättigen
-        let dot_same =
-            DistanceMetric::DotProduct.compute_u8(&max_vec, &same_vec).unwrap();
+        let dot_same = DistanceMetric::DotProduct
+            .compute_u8(&max_vec, &same_vec)
+            .unwrap();
         assert_eq!(
             dot_same,
             u32::MAX,
@@ -529,15 +534,20 @@ mod tests {
         );
 
         // Cosine: identische Vektoren → Distanz 0 (cos_dist = 1 - 1 = 0)
-        let cos_same =
-            DistanceMetric::Cosine.compute_u8(&max_vec, &same_vec).unwrap();
-        assert_eq!(cos_same, 0, "Cosine distance of identical vectors must be 0");
+        let cos_same = DistanceMetric::Cosine
+            .compute_u8(&max_vec, &same_vec)
+            .unwrap();
+        assert_eq!(
+            cos_same, 0,
+            "Cosine distance of identical vectors must be 0"
+        );
 
         // Worst-case Euclidean: maximale Differenz (255 vs. 0) → sum = 255²×100_000 = 6_502_500_000
         // Muss auf u32::MAX sättigen
         let zero_vec: Vec<u8> = vec![0u8; 100_000];
-        let eucl_max =
-            DistanceMetric::Euclidean.compute_u8(&max_vec, &zero_vec).unwrap();
+        let eucl_max = DistanceMetric::Euclidean
+            .compute_u8(&max_vec, &zero_vec)
+            .unwrap();
         assert_eq!(
             eucl_max,
             u32::MAX,
@@ -545,8 +555,9 @@ mod tests {
         );
 
         // Cosine: senkrechte Vektoren (255..255 vs. 0..0) → Sonderfall: Nullvektor → Distanz 1.0
-        let cos_zero =
-            DistanceMetric::Cosine.compute_u8(&max_vec, &zero_vec).unwrap();
+        let cos_zero = DistanceMetric::Cosine
+            .compute_u8(&max_vec, &zero_vec)
+            .unwrap();
         assert_eq!(
             cos_zero, 1_000_000,
             "Cosine distance against zero vector must be 1.0 (scaled: 1_000_000)"

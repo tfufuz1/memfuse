@@ -1,59 +1,10 @@
-//! Morphologische Inferenz-Optimierung (WP-6.5).
-//!
-//! Sprachbewusste Tokenisierung für europäische Sprachen.
-//! Compound-Splitting für Deutsch zur Token-Reduktion.
+use std::collections::HashSet;
 
-// INVARIANT: Morphologische Inferenz-Optimierung (WP-6.5)
-
-/// KMU-Fachvokabular — ergänzt das Basis-Wörterbuch für Unternehmenskontexte.
-const KMU_DOMAIN_VOCABULARY: &[&str] = &[
-    // Geschäftsprozesse
-    "auftrags",
-    "angebots",
-    "rechnungs",
-    "lieferungs",
-    "bestellungs",
-    "kunden",
-    "lieferanten",
-    "vertrags",
-    "zahlungs",
-    // HR
-    "mitarbeiter",
-    "personal",
-    "urlaubs",
-    "gehalts",
-    "arbeits",
-    "bewerbungs",
-    "schulungs",
-    // Logistik
-    "lager",
-    "bestands",
-    "transport",
-    "versand",
-    "liefer",
-    "fracht",
-    // Produktion
-    "fertigungs",
-    "produktions",
-    "qualitäts",
-    "wartungs",
-    "maschinen",
-    "prüfungs",
-    "prozess",
-    // Compliance & Recht
-    "datenschutz",
-    "compliance",
-    "richtlinie",
-    "genehmigungs",
-    "zertifizierungs",
-    "haftungs",
-    // Finanzen
-    "finanz",
-    "steuer",
-    "buchhaltungs",
-    "bilanz",
-    "liquiditäts",
-];
+/// KMU-Fachvokabular und allgemeiner deutscher Wortschatz.
+///
+/// Zur Kompilierzeit eingebettetes Wörterbuch (aus `data/german_words.txt`).
+/// Verhindert Hartcodierung im Quelltext und ermöglicht einfache Erweiterbarkeit.
+const DEFAULT_GERMAN_WORDS: &str = include_str!("data/german_words.txt");
 
 /// Normalisiert deutsche Umlaute für robusten Suchabgleich.
 ///
@@ -96,33 +47,78 @@ pub trait MorphologicalTokenizer: Send + Sync {
     fn language(&self) -> &str;
 }
 
-/// German compound word splitter.
+/// German compound word splitter (*Komposita-Zerleger*).
 ///
-/// Uses dictionary-based + frequency statistics approach.
+/// Uses dictionary-based recursive segmentation powered by Dynamic Programming (DP).
+///
+/// # Architecture & Algorithm
+/// - **Embedded Dictionary**: Thousands of common German stems, root words, prefixes, and KMU
+///   enterprise vocabulary loaded at compile time via `include_str!("data/german_words.txt")`.
+/// - **Dynamic Programming (DP)**: Evaluates candidate segmentations of a token to find valid
+///   stem paths, preferring decompositions with fewer segments and longer constituent components.
+/// - **Interfix Candidates (Fugenelemente)**: Supports interfixes `-s-`, `-en-`, `-e-`, `-er-`,
+///   `-n-`, and `-es-` occurring strictly between dictionary-matched components.
+///
+/// # Explicit Linguistic Limitations
+/// 1. **Homograph Ambiguity**: Words with identical spellings that yield multiple valid split paths
+///    (e.g., *Wachstube* $\rightarrow$ *Wachs-Tube* vs. *Wach-Stube*) are resolved deterministically
+///    by segment count and stem length heuristic. Context-aware semantic disambiguation requires an
+///    upstream LLM/POS tagger.
+/// 2. **Unseen Stems & Proper Nouns**: Unknown company names, foreign loanwords, or unlisted stems
+///    will fail dictionary lookup and safely fall back to returning the full original token unsplit.
+/// 3. **Interfix Overgeneration Guard**: Interfixes are strictly constrained between recognized
+///    dictionary stems, preventing invalid splitting of non-compound words ending in `-es` or `-en`.
 ///
 /// # Input Contract
 /// Input tokens MUST be lowercased (and ideally normalized with
 /// [`normalize_umlauts`]) before calling [`MorphologicalTokenizer::decompose`].
-/// Uppercase input causes silent dictionary misses; there is no partial match.
+/// Uppercase input causes silent dictionary misses in debug mode.
 ///
 /// Fallback: returns the original token unsplit.
 pub struct GermanCompoundSplitter {
     /// Minimum component length for splitting.
     min_component_len: usize,
+    /// Normalized set of German dictionary stems.
+    dictionary: HashSet<String>,
 }
 
 impl GermanCompoundSplitter {
-    /// Creates a new German compound splitter.
+    /// Creates a new German compound splitter loaded with the embedded German vocabulary.
     pub fn new() -> Self {
+        Self::with_min_length(3)
+    }
+
+    /// Creates a splitter with custom minimum component length and default embedded vocabulary.
+    pub fn with_min_length(min_len: usize) -> Self {
+        let mut dictionary = HashSet::new();
+        for line in DEFAULT_GERMAN_WORDS.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            let norm = normalize_umlauts(trimmed);
+            if norm.len() >= min_len {
+                dictionary.insert(norm);
+            }
+        }
         Self {
-            min_component_len: 3,
+            min_component_len: min_len,
+            dictionary,
         }
     }
 
-    /// Creates a splitter with custom minimum component length.
-    pub fn with_min_length(min_len: usize) -> Self {
+    /// Creates a splitter with custom minimum component length and custom dictionary set.
+    pub fn with_dictionary(min_len: usize, custom_words: HashSet<String>) -> Self {
+        let mut dictionary = HashSet::new();
+        for word in custom_words {
+            let norm = normalize_umlauts(&word);
+            if norm.len() >= min_len {
+                dictionary.insert(norm);
+            }
+        }
         Self {
             min_component_len: min_len,
+            dictionary,
         }
     }
 
@@ -130,12 +126,49 @@ impl GermanCompoundSplitter {
     pub fn min_component_len(&self) -> usize {
         self.min_component_len
     }
+
+    /// Checks if a slice is a valid dictionary stem or stem + interfix.
+    fn is_valid_component(&self, sub: &str, is_last: bool) -> bool {
+        let norm_sub = normalize_umlauts(sub);
+        if norm_sub.len() < self.min_component_len {
+            return false;
+        }
+
+        // Direct dictionary match
+        if self.dictionary.contains(&norm_sub) {
+            return true;
+        }
+
+        // Interfix candidates (Fugenelemente) — allowed strictly between components
+        if !is_last {
+            const INTERFIXES: &[&str] = &["s", "en", "e", "er", "n", "es"];
+            for &fuge in INTERFIXES {
+                if norm_sub.ends_with(fuge) && norm_sub.len() > fuge.len() {
+                    let norm_stem = &norm_sub[..norm_sub.len() - fuge.len()];
+                    if norm_stem.len() >= self.min_component_len
+                        && self.dictionary.contains(norm_stem)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
 }
 
 impl Default for GermanCompoundSplitter {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[derive(Clone, Debug)]
+struct PathNode {
+    prev: usize,
+    segment_count: usize,
+    min_segment_len: usize,
 }
 
 impl MorphologicalTokenizer for GermanCompoundSplitter {
@@ -147,65 +180,83 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             token
         );
 
-        // Simple recursive splitting based on a set of known components
-        // and common German compound patterns (Fugen-S etc.)
-
         if token.len() <= self.min_component_len {
             return vec![token];
         }
 
-        // Common components in technical/legal German compounds
-        let dictionary = [
-            "bundes",
-            "verfassungs",
-            "gericht",
-            "gesetz",
-            "entwurf",
-            "daten",
-            "bank",
-            "speicher",
-            "vektor",
-            "suche",
-            "system",
-            "steuerung",
-            "verwaltung",
-            "bericht",
-            "prüfung",
-            "schutz",
-            "sicherheit",
-            "zugriff",
-            "rechte",
-        ];
+        let n = token.len();
+        let mut dp: Vec<Option<PathNode>> = vec![None; n + 1];
+        dp[0] = Some(PathNode {
+            prev: 0,
+            segment_count: 0,
+            min_segment_len: usize::MAX,
+        });
 
-        let dictionary_iter = dictionary.iter().chain(KMU_DOMAIN_VOCABULARY.iter());
+        for i in 0..n {
+            if !token.is_char_boundary(i) {
+                continue;
+            }
 
-        for &word in dictionary_iter {
-            let norm_word = normalize_umlauts(word);
-            let matched_len = if token.starts_with(word) {
-                Some(word.len())
-            } else if norm_word != word && token.starts_with(&norm_word) {
-                Some(norm_word.len())
-            } else {
-                None
+            let current_node = match &dp[i] {
+                Some(node) => node.clone(),
+                None => continue,
             };
 
-            if let Some(w_len) = matched_len {
-                if token.len() > w_len {
-                    let rest = &token[w_len..];
+            for j in (i + self.min_component_len)..=n {
+                if !token.is_char_boundary(j) {
+                    continue;
+                }
 
-                    // Handle Fugen-s (e.g., Verfassung-s-gericht)
-                    let actual_rest = if rest.starts_with('s') && rest.len() > 1 {
-                        &rest[1..]
-                    } else {
-                        rest
+                let sub = &token[i..j];
+                let is_last = j == n;
+
+                if self.is_valid_component(sub, is_last) {
+                    let sub_char_count = sub.chars().count();
+                    let new_seg_count = current_node.segment_count + 1;
+                    let new_min_len = current_node.min_segment_len.min(sub_char_count);
+
+                    let candidate = PathNode {
+                        prev: i,
+                        segment_count: new_seg_count,
+                        min_segment_len: new_min_len,
                     };
 
-                    if actual_rest.len() >= self.min_component_len {
-                        let mut result = vec![&token[..w_len]];
-                        result.extend(self.decompose(actual_rest));
-                        return result;
+                    let update = match &dp[j] {
+                        None => true,
+                        Some(existing) => {
+                            if candidate.segment_count < existing.segment_count {
+                                true
+                            } else if candidate.segment_count == existing.segment_count {
+                                candidate.min_segment_len > existing.min_segment_len
+                            } else {
+                                false
+                            }
+                        }
+                    };
+
+                    if update {
+                        dp[j] = Some(candidate);
                     }
                 }
+            }
+        }
+
+        // Backtrack optimal path if compound decomposition (>= 2 segments) was found
+        if let Some(ref target_node) = dp[n] {
+            if target_node.segment_count >= 2 {
+                let mut path = Vec::with_capacity(target_node.segment_count);
+                let mut curr = n;
+                while curr > 0 {
+                    if let Some(ref node) = dp[curr] {
+                        let prev = node.prev;
+                        path.push(&token[prev..curr]);
+                        curr = prev;
+                    } else {
+                        break;
+                    }
+                }
+                path.reverse();
+                return path;
             }
         }
 
@@ -270,16 +321,13 @@ mod tests {
     #[should_panic(expected = "non-lowercase input")]
     fn test_decompose_panics_on_uppercase_in_debug() {
         let splitter = GermanCompoundSplitter::new();
-        // This must panic in debug mode because input is not lowercased.
         let _ = splitter.decompose("Bundesverfassungsgericht");
     }
 
     #[test]
     fn test_decompose_accepts_lowercase() {
         let splitter = GermanCompoundSplitter::new();
-        // Must not panic — correctly lowercased input.
         let parts = splitter.decompose("bundesverfassungsgericht");
-        // The splitter should return at least the original token as a fallback.
         assert!(!parts.is_empty());
     }
 
@@ -289,7 +337,6 @@ mod tests {
         let tokens = ["Bundesverfassungsgericht", "Überwachungsgesetz", "Straße"];
         for token in &tokens {
             let normalized = normalize_umlauts(token);
-            // After normalization, decompose must not panic.
             let parts = splitter.decompose(&normalized);
             assert!(
                 !parts.is_empty(),
@@ -302,10 +349,9 @@ mod tests {
     #[test]
     fn test_german_splitter_scaffold() {
         let splitter = GermanCompoundSplitter::new();
-        // Fallback: returns original token for unknown words
         let fallback_parts = splitter.decompose("unbekannteswort");
         assert_eq!(fallback_parts, vec!["unbekannteswort"]);
-        // Decomposition: splits known German compound words
+
         let compound_parts = splitter.decompose("bundesverfassungsgericht");
         assert_eq!(compound_parts, vec!["bundes", "verfassungs", "gericht"]);
         assert_eq!(splitter.language(), "de");
@@ -315,10 +361,10 @@ mod tests {
     fn test_kmu_domain_compounds() {
         let splitter = GermanCompoundSplitter::new();
         let result = splitter.decompose("lagerbestandsverwaltung");
-        assert!(result.len() > 1);
+        assert_eq!(result, vec!["lager", "bestands", "verwaltung"]);
 
         let result = splitter.decompose("urlaubsantragsprozess");
-        assert!(result.len() > 1);
+        assert_eq!(result, vec!["urlaubs", "antrags", "prozess"]);
     }
 
     #[test]
@@ -358,14 +404,341 @@ mod tests {
             decomposed_tokens: decomposed_count,
         };
 
-        // Bundesverfassungsgericht -> [bundes, verfassungs, gericht] (+2)
-        // Gesetzentwurf -> [gesetz, entwurf] (+1)
-        // Datensicherheit -> [daten, sicherheit] (+1)
-        // Total original: 8
-        // Total decomposed: 8 + 2 + 1 + 1 = 12
-        // Ratio: 12/8 = 1.5 (+50%)
-
         println!("Expansion Ratio: {}", metrics.expansion_ratio());
         assert!(metrics.expansion_ratio() > 1.2, "Expansion should be > 20%");
+    }
+
+    struct KmuTestCase {
+        word: &'static str,
+        expected: &'static [&'static str],
+        interfix_type: &'static str,
+    }
+
+    #[test]
+    fn test_kmu_55_compounds_suite() {
+        let splitter = GermanCompoundSplitter::new();
+
+        // 55 Realistic German KMU compounds with linguistic ground truth references.
+        let test_cases = [
+            // Fugen-s
+            KmuTestCase {
+                word: "arbeitsvertrag",
+                expected: &["arbeits", "vertrag"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "auftragsbestaetigung",
+                expected: &["auftrags", "bestaetigung"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "rechnungsbetrag",
+                expected: &["rechnungs", "betrag"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "geschaeftsfuehrung",
+                expected: &["geschaefts", "fuehrung"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "qualitaetspruefung",
+                expected: &["qualitaets", "pruefung"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "versicherungsnetzwerk",
+                expected: &["versicherungs", "netzwerk"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "entwicklungsumgebung",
+                expected: &["entwicklungs", "umgebung"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "sicherheitsueberpruefung",
+                expected: &["sicherheits", "ueberpruefung"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "beratungsgespraech",
+                expected: &["beratungs", "gespraech"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "verwendungszweck",
+                expected: &["verwendungs", "zweck"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "forschungsprojekt",
+                expected: &["forschungs", "projekt"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "zahlungsziel",
+                expected: &["zahlungs", "ziel"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "verwaltungskosten",
+                expected: &["verwaltungs", "kosten"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "schulungsunterlagen",
+                expected: &["schulungs", "unterlagen"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "lieferungsvereinbarung",
+                expected: &["lieferungs", "vereinbarung"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "wartungsarbeiten",
+                expected: &["wartungs", "arbeiten"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "bewerbungsunterlagen",
+                expected: &["bewerbungs", "unterlagen"],
+                interfix_type: "-s-",
+            },
+            KmuTestCase {
+                word: "gehaltsabrechnung",
+                expected: &["gehalts", "abrechnung"],
+                interfix_type: "-s-",
+            },
+            // Fugen-en / Fugen-n
+            KmuTestCase {
+                word: "blumenladen",
+                expected: &["blumen", "laden"],
+                interfix_type: "-n-",
+            },
+            KmuTestCase {
+                word: "firmenleitung",
+                expected: &["firmen", "leitung"],
+                interfix_type: "-en-",
+            },
+            KmuTestCase {
+                word: "kundenbetreuung",
+                expected: &["kunden", "betreuung"],
+                interfix_type: "-n-",
+            },
+            KmuTestCase {
+                word: "expertenwissen",
+                expected: &["experten", "wissen"],
+                interfix_type: "-n-",
+            },
+            KmuTestCase {
+                word: "lieferantenkatalog",
+                expected: &["lieferanten", "katalog"],
+                interfix_type: "-en-",
+            },
+            KmuTestCase {
+                word: "strassenverkehr",
+                expected: &["strassen", "verkehr"],
+                interfix_type: "-n-",
+            },
+            KmuTestCase {
+                word: "sonnenenergie",
+                expected: &["sonnen", "energie"],
+                interfix_type: "-n-",
+            },
+            KmuTestCase {
+                word: "schraubenschluessel",
+                expected: &["schrauben", "schluessel"],
+                interfix_type: "-n-",
+            },
+            KmuTestCase {
+                word: "taschenrechner",
+                expected: &["taschen", "rechner"],
+                interfix_type: "-n-",
+            },
+            KmuTestCase {
+                word: "taschendieb",
+                expected: &["taschen", "dieb"],
+                interfix_type: "-n-",
+            },
+            // Fugen-e
+            KmuTestCase {
+                word: "hundehuette",
+                expected: &["hunde", "huette"],
+                interfix_type: "-e-",
+            },
+            KmuTestCase {
+                word: "lagereingang",
+                expected: &["lager", "eingang"],
+                interfix_type: "-e-/zero",
+            },
+            KmuTestCase {
+                word: "schweinebraten",
+                expected: &["schweine", "braten"],
+                interfix_type: "-e-",
+            },
+            KmuTestCase {
+                word: "lesebuch",
+                expected: &["lese", "buch"],
+                interfix_type: "-e-",
+            },
+            // Fugen-er
+            KmuTestCase {
+                word: "kinderbuch",
+                expected: &["kinder", "buch"],
+                interfix_type: "-er-",
+            },
+            KmuTestCase {
+                word: "maennerchor",
+                expected: &["maenner", "chor"],
+                interfix_type: "-er-",
+            },
+            KmuTestCase {
+                word: "bilderbuch",
+                expected: &["bilder", "buch"],
+                interfix_type: "-er-",
+            },
+            KmuTestCase {
+                word: "woerterbuch",
+                expected: &["woerter", "buch"],
+                interfix_type: "-er-",
+            },
+            KmuTestCase {
+                word: "gueterverkehr",
+                expected: &["gueter", "verkehr"],
+                interfix_type: "-er-",
+            },
+            KmuTestCase {
+                word: "geisterstadt",
+                expected: &["geister", "stadt"],
+                interfix_type: "-er-",
+            },
+            KmuTestCase {
+                word: "huehnerei",
+                expected: &["huehner", "ei"],
+                interfix_type: "-er-",
+            },
+            // Fugen-es
+            KmuTestCase {
+                word: "tagesordnung",
+                expected: &["tages", "ordnung"],
+                interfix_type: "-es-",
+            },
+            KmuTestCase {
+                word: "landesgericht",
+                expected: &["landes", "gericht"],
+                interfix_type: "-es-",
+            },
+            // Zero Interfix
+            KmuTestCase {
+                word: "personalausweis",
+                expected: &["personal", "ausweis"],
+                interfix_type: "zero",
+            },
+            KmuTestCase {
+                word: "pflegeheim",
+                expected: &["pflege", "heim"],
+                interfix_type: "zero",
+            },
+            KmuTestCase {
+                word: "handtuch",
+                expected: &["hand", "tuch"],
+                interfix_type: "zero",
+            },
+            KmuTestCase {
+                word: "datenspeicher",
+                expected: &["daten", "speicher"],
+                interfix_type: "zero",
+            },
+            KmuTestCase {
+                word: "vektorsuche",
+                expected: &["vektor", "suche"],
+                interfix_type: "zero",
+            },
+            KmuTestCase {
+                word: "bilanzanalyse",
+                expected: &["bilanz", "analyse"],
+                interfix_type: "zero",
+            },
+            KmuTestCase {
+                word: "gesetzbuch",
+                expected: &["gesetz", "buch"],
+                interfix_type: "zero",
+            },
+            // Multi-stem compounds (3+ components)
+            KmuTestCase {
+                word: "bundesverfassungsgericht",
+                expected: &["bundes", "verfassungs", "gericht"],
+                interfix_type: "multi-stem",
+            },
+            KmuTestCase {
+                word: "hauptbahnhof",
+                expected: &["haupt", "bahn", "hof"],
+                interfix_type: "multi-stem",
+            },
+            KmuTestCase {
+                word: "lagerbestandsverwaltung",
+                expected: &["lager", "bestands", "verwaltung"],
+                interfix_type: "multi-stem",
+            },
+            KmuTestCase {
+                word: "urlaubsantragsprozess",
+                expected: &["urlaubs", "antrags", "prozess"],
+                interfix_type: "multi-stem",
+            },
+            KmuTestCase {
+                word: "datenschutzrichtlinie",
+                expected: &["datenschutz", "richtlinie"],
+                interfix_type: "KMU compound",
+            },
+            KmuTestCase {
+                word: "qualitaetsmanagementsystem",
+                expected: &["qualitaets", "management", "system"],
+                interfix_type: "multi-stem",
+            },
+            KmuTestCase {
+                word: "datenschutzerklaerung",
+                expected: &["datenschutz", "erklaerung"],
+                interfix_type: "KMU compound",
+            },
+        ];
+
+        let total_cases = test_cases.len();
+        assert!(
+            total_cases >= 50,
+            "Suite must contain at least 50 test cases, found {}",
+            total_cases
+        );
+
+        let mut passed = 0;
+        for tc in &test_cases {
+            let actual = splitter.decompose(tc.word);
+            let is_correct = actual == tc.expected;
+            if is_correct {
+                passed += 1;
+            } else {
+                println!(
+                    "FAILED case [{}] '{}': expected {:?}, got {:?}",
+                    tc.interfix_type, tc.word, tc.expected, actual
+                );
+            }
+        }
+
+        let pass_rate = (passed as f64) / (total_cases as f64);
+        println!(
+            "KMU Compound Suite Results: {}/{} passed ({:.1}%)",
+            passed,
+            total_cases,
+            pass_rate * 100.0
+        );
+
+        assert!(
+            pass_rate >= 0.90,
+            "Accuracy exit criterion failed: expected >= 90.0%, got {:.1}% ({}/{})",
+            pass_rate * 100.0,
+            passed,
+            total_cases
+        );
     }
 }

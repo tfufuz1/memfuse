@@ -15,7 +15,6 @@ async fn test_quantizer_recalibration() {
         distance_metric: memfuse_core::DistanceMetric::Euclidean,
         quantize: true,
         quantizer_recalibration_sample_size: 1000,
-        ..Default::default()
     };
     let index = Arc::new(HnswIndex::new(config));
 
@@ -43,9 +42,12 @@ async fn test_quantizer_recalibration() {
 
     // Phase 2: Insert out-of-distribution vectors [100.0, 200.0]
     let ood_vector = vec![150.0, 150.0, 150.0, 150.0];
-    index.insert(TxId(2), DocId(256), &ood_vector).await.unwrap();
+    index
+        .insert(TxId(2), DocId(256), &ood_vector)
+        .await
+        .unwrap();
     index.commit(TxId(2)).await.unwrap();
-    
+
     // Trigger rebuild to recalibrate
     index.rebuild().await.unwrap();
 
@@ -59,7 +61,10 @@ async fn test_quantizer_recalibration() {
 
     // After rebuild: the out-of-distribution vector is correctly quantized (no clamping)
     let new_ood_vector = vec![160.0, 160.0, 160.0, 160.0];
-    index.insert(TxId(3), DocId(257), &new_ood_vector).await.unwrap();
+    index
+        .insert(TxId(3), DocId(257), &new_ood_vector)
+        .await
+        .unwrap();
     index.commit(TxId(3)).await.unwrap();
 
     let search_res = index.search(&new_ood_vector, 1).await.unwrap();

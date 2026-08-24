@@ -932,7 +932,14 @@ impl HnswIndexCore {
         }
 
         let vector_data = if self.config.quantize {
-            if let Some(q) = self.quantizer.read().as_ref() {
+            if let Some(mut q_guard) = self.quantizer.try_write() {
+                if let Some(q) = q_guard.as_mut() {
+                    q.expand_bounds_to_fit(vector);
+                    VectorData::U8(q.quantize(vector))
+                } else {
+                    VectorData::F32(vector.to_vec())
+                }
+            } else if let Some(q) = self.quantizer.read().as_ref() {
                 VectorData::U8(q.quantize(vector))
             } else {
                 VectorData::F32(vector.to_vec())
@@ -1300,19 +1307,23 @@ impl HnswIndexCore {
         let quantizer_guard = self.quantizer.read();
         if let Some(old_q) = quantizer_guard.as_ref() {
             // Train a new quantizer on a sample of active nodes to prevent clamping loss
-            let sample_size = self.config.quantizer_recalibration_sample_size.min(active_nodes.len());
+            let sample_size = self
+                .config
+                .quantizer_recalibration_sample_size
+                .min(active_nodes.len());
             let mut train_data = Vec::with_capacity(sample_size);
-            
+
             for (_, vector, _) in active_nodes.iter().take(sample_size) {
                 match vector {
                     VectorData::F32(v) => train_data.push(v.clone()),
                     VectorData::U8(v) => train_data.push(old_q.dequantize(v)),
                 }
             }
-            
+
             if !train_data.is_empty() {
                 let training_refs: Vec<&[f32]> = train_data.iter().map(|v| v.as_slice()).collect();
-                let new_q = crate::quantize::ScalarQuantizer::train(&training_refs, self.config.dimension);
+                let new_q =
+                    crate::quantize::ScalarQuantizer::train(&training_refs, self.config.dimension);
                 *new_index.quantizer.write() = Some(new_q);
             } else {
                 *new_index.quantizer.write() = Some(old_q.clone());

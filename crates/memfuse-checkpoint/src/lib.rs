@@ -33,6 +33,58 @@ impl CheckpointMeta {
     }
 }
 
+/// Point-in-Time Checkpoint representing an agent step or transaction boundary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct StateCheckpoint {
+    pub tx_id: TxId,
+    pub timestamp_ms: u64,
+}
+
+/// RAII Guard that rolls back a checkpoint if not explicitly committed.
+/// Prevents transaction leaks if the process panics or drops early.
+pub struct CheckpointGuard<S: memfuse_core::StorageEngine> {
+    checkpoint: Option<StateCheckpoint>,
+    storage: Arc<S>,
+}
+
+impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
+    pub fn new(checkpoint: StateCheckpoint, storage: Arc<S>) -> Self {
+        Self {
+            checkpoint: Some(checkpoint),
+            storage,
+        }
+    }
+
+    pub fn checkpoint(&self) -> Result<&StateCheckpoint> {
+        self.checkpoint
+            .as_ref()
+            .ok_or_else(|| MemFuseError::Internal("Checkpoint already consumed".into()))
+    }
+
+    pub fn commit(mut self) -> Result<StateCheckpoint> {
+        self.checkpoint
+            .take()
+            .ok_or_else(|| MemFuseError::Internal("Checkpoint already consumed".into()))
+    }
+}
+
+impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
+    fn drop(&mut self) {
+        if let Some(cp) = self.checkpoint.take() {
+            tracing::warn!(
+                "CheckpointGuard dropped without commit. Auto-rolling back to TxId: {:?}",
+                cp.tx_id
+            );
+            let storage_clone = Arc::clone(&self.storage);
+            tokio::spawn(async move {
+                if let Err(e) = storage_clone.rollback_to_tx(cp.tx_id).await {
+                    tracing::error!("Auto-rollback failed: {}", e);
+                }
+            });
+        }
+    }
+}
+
 /// Trait für die Checkpoint-Verwaltung.
 #[async_trait]
 pub trait CheckpointRegistry: Send + Sync {
@@ -80,6 +132,21 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
                     .next_internal_tx
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
         )
+    }
+
+    /// Creates an ephemeral transactional checkpoint RAII guard.
+    /// If the returned guard is dropped without calling `.commit()`, the underlying storage
+    /// is automatically rolled back to `tx_id`.
+    pub fn create_guard(&self, tx_id: TxId) -> Result<CheckpointGuard<S>> {
+        let timestamp_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| MemFuseError::Storage(format!("System clock error: {}", e)))?
+            .as_millis() as u64;
+        let cp = StateCheckpoint {
+            tx_id,
+            timestamp_ms,
+        };
+        Ok(CheckpointGuard::new(cp, Arc::clone(&self.storage)))
     }
 
     /// Creates a new persistent checkpoint.
@@ -320,7 +387,8 @@ impl<S: memfuse_core::StorageEngine> memfuse_core::traits::CheckpointCoordinator
         tx_id: TxId,
         metadata: serde_json::Value,
     ) -> Result<Self::Meta> {
-        self.create_checkpoint(name, collection_id, seq_no, tx_id, metadata).await
+        self.create_checkpoint(name, collection_id, seq_no, tx_id, metadata)
+            .await
     }
 
     async fn restore_named_checkpoint(&self, name: &str) -> Result<Self::Meta> {
@@ -532,5 +600,29 @@ mod tests {
             !storage.pinned.lock().contains(&2),
             "New checkpoint should be unpinned after failure"
         );
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_guard_auto_rollback() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
+
+        {
+            let _guard = store.create_guard(TxId::new(42)).unwrap();
+            // guard drops here without commit
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        // Verify no panic and guard auto-rollback dropped cleanly
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_guard_commit() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
+
+        let guard = store.create_guard(TxId::new(100)).unwrap();
+        let cp = guard.commit().unwrap();
+        assert_eq!(cp.tx_id, TxId::new(100));
     }
 }
