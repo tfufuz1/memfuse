@@ -29,6 +29,10 @@ impl WalOp {
     }
 }
 
+/// Legacy static HMAC integrity key used strictly for backward-compatibility fallback during WAL replay of legacy databases.
+/// ANCHOR: MIGRATION-WAL-HMAC-001
+pub const LEGACY_INTEGRITY_KEY: [u8; 32] = *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0";
+
 /// A single entry in the Write-Ahead Log.
 #[derive(Debug, Clone)]
 pub struct WalEntry {
@@ -268,6 +272,7 @@ pub struct Wal {
     file: tokio::sync::Mutex<tokio::fs::File>,
     size: std::sync::atomic::AtomicU64,
     key_manager: Option<Arc<KeyManager>>,
+    fallback_integrity_key: Option<[u8; 32]>,
     /// Last HMAC written to the log, used for hash-chaining.
     last_hmac: tokio::sync::Mutex<[u8; 32]>,
 }
@@ -301,11 +306,12 @@ impl Wal {
         // filename.  This makes the WAL's cryptographic sub-key independent of
         // the filesystem path — renaming or moving the file cannot cause nonce-
         // reuse between two WAL instances sharing the same master key.
-        let derived_key_manager = if let Some(km) = key_manager {
+        let (derived_key_manager, fallback_integrity_key) = if let Some(km) = key_manager {
             let uuid_bytes = Self::load_or_create_wal_uuid(&path).await?;
-            Some(Arc::new(km.derive_file_key(&uuid_bytes)?))
+            (Some(Arc::new(km.derive_file_key(&uuid_bytes)?)), None)
         } else {
-            None
+            let key = Self::load_or_create_integrity_key(&path).await?;
+            (None, Some(key))
         };
 
         let mut is_new = false;
@@ -340,6 +346,7 @@ impl Wal {
             size: std::sync::atomic::AtomicU64::new(metadata.len()),
             file: tokio::sync::Mutex::new(file),
             key_manager: derived_key_manager,
+            fallback_integrity_key,
             last_hmac: tokio::sync::Mutex::new([0u8; 32]),
         };
 
@@ -353,6 +360,64 @@ impl Wal {
         }
 
         Ok(wal)
+    }
+
+    /// Loads or generates a persistent, random 32-byte integrity key in `.wal_integrity_key`
+    /// located in the same parent directory as the WAL file.
+    async fn load_or_create_integrity_key(wal_path: &Path) -> Result<[u8; 32]> {
+        let parent = wal_path.parent().unwrap_or_else(|| Path::new(""));
+        let key_path = if parent.as_os_str().is_empty() {
+            PathBuf::from(".wal_integrity_key")
+        } else {
+            parent.join(".wal_integrity_key")
+        };
+
+        if key_path.exists() {
+            let bytes = tokio::fs::read(&key_path).await.map_err(|e| {
+                MemFuseError::Storage(format!("Failed to read WAL integrity key: {}", e))
+            })?;
+            if bytes.len() != 32 {
+                return Err(MemFuseError::Storage(format!(
+                    "WAL integrity key has unexpected length: {} (expected 32)",
+                    bytes.len()
+                )));
+            }
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            Ok(arr)
+        } else {
+            use rand::RngCore;
+            let mut key = [0u8; 32];
+            rand::thread_rng().fill_bytes(&mut key);
+
+            tokio::fs::write(&key_path, &key).await.map_err(|e| {
+                MemFuseError::Storage(format!("Failed to write WAL integrity key: {}", e))
+            })?;
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Err(e) = tokio::fs::set_permissions(
+                    &key_path,
+                    std::fs::Permissions::from_mode(0o600),
+                )
+                .await
+                {
+                    tracing::warn!("Failed to set restrictive permissions (0600) on WAL integrity key: {}", e);
+                }
+            }
+
+            // FSync parent directory to persist directory entry
+            if let Some(parent_dir) = key_path.parent() {
+                if !parent_dir.as_os_str().is_empty() {
+                    if let Ok(dir) = tokio::fs::File::open(parent_dir).await {
+                        let _ = dir.sync_all().await;
+                    }
+                }
+            }
+
+            Ok(key)
+        }
     }
 
     /// Loads the WAL's persistent UUID from a `.uuid` sidecar file next to the
@@ -480,8 +545,12 @@ impl Wal {
     fn get_integrity_key(&self) -> Result<[u8; 32]> {
         if let Some(km) = &self.key_manager {
             km.integrity_key()
+        } else if let Some(key) = self.fallback_integrity_key {
+            Ok(key)
         } else {
-            Ok(*b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0")
+            Err(MemFuseError::Storage(
+                "Integrity key missing from WAL state".into(),
+            ))
         }
     }
 
@@ -516,11 +585,8 @@ impl Wal {
         let mut pos = 0u64;
         let mut current_chain_hmac = [0u8; 32];
 
-        let integrity_key = if let Some(km) = &self.key_manager {
-            km.integrity_key()?
-        } else {
-            *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0"
-        };
+        let mut integrity_key = self.get_integrity_key()?;
+        let mut using_legacy_key = false;
 
         loop {
             let mut len_bytes = [0u8; 4];
@@ -624,12 +690,32 @@ impl Wal {
                 }
             };
 
-            let recomputed_checksum = WalEntry::compute_checksum(
+            let mut recomputed_checksum = WalEntry::compute_checksum(
                 &entry.op,
                 entry.seq_no,
                 &integrity_key,
                 entry.prev_hmac,
             )?;
+
+            if (recomputed_checksum != entry.checksum || entry.prev_hmac != current_chain_hmac)
+                && !using_legacy_key
+            {
+                let legacy_recomputed = WalEntry::compute_checksum(
+                    &entry.op,
+                    entry.seq_no,
+                    &LEGACY_INTEGRITY_KEY,
+                    entry.prev_hmac,
+                )?;
+                if legacy_recomputed == entry.checksum && entry.prev_hmac == current_chain_hmac {
+                    tracing::warn!(
+                        "WAL nutzt veralteten Integritätsschlüssel — Datenbank sollte neu initialisiert werden"
+                    );
+                    integrity_key = LEGACY_INTEGRITY_KEY;
+                    recomputed_checksum = legacy_recomputed;
+                    using_legacy_key = true;
+                }
+            }
+
             if recomputed_checksum != entry.checksum || entry.prev_hmac != current_chain_hmac {
                 if pos >= file_size {
                     tracing::warn!(
@@ -730,10 +816,11 @@ mod tests {
             key: b"key".to_vec(),
             value: b"value".to_vec(),
         };
+        let dummy_key = b"test-integrity-key-32-bytes-long!";
         let entry = WalEntry::try_new(
             op,
             100,
-            b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0",
+            dummy_key,
             [0u8; 32],
         )
         .expect("try_new");
@@ -929,10 +1016,11 @@ mod tests {
             key: b"key".to_vec(),
             value: b"value".to_vec(),
         };
+        let dummy_key = b"test-integrity-key-32-bytes-long!";
         let entry = WalEntry::try_new(
             op,
             1,
-            b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0",
+            dummy_key,
             [0u8; 32],
         )
         .expect("try_new");
@@ -1020,7 +1108,7 @@ mod tests {
             key: b"k".to_vec(),
             value: b"v".to_vec(),
         };
-        let integrity_key = b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0";
+        let integrity_key = b"test-integrity-key-32-bytes-long!";
         let entry = WalEntry::try_new(op, 12345, integrity_key, [0u8; 32]).expect("try_new");
 
         let original_bytes = entry.to_bytes().expect("serialization failed");
@@ -1058,6 +1146,139 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn test_wal_random_integrity_keys_per_instance() {
+        let dir1 = tempdir().expect("tempdir1");
+        let dir2 = tempdir().expect("tempdir2");
+        let wal_path1 = dir1.path().join("wal1.log");
+        let wal_path2 = dir2.path().join("wal2.log");
+
+        let wal1 = Wal::open(&wal_path1).await.expect("open wal1");
+        let wal2 = Wal::open(&wal_path2).await.expect("open wal2");
+
+        let key1 = wal1.get_integrity_key().expect("key1");
+        let key2 = wal2.get_integrity_key().expect("key2");
+
+        assert_ne!(
+            key1, key2,
+            "Two independent WAL instances must receive unique random integrity keys"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_wal_tampered_wrong_key_entry_detected() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("tamper_wal.log");
+
+        let valid_op = WalOp::Put {
+            tx_id: TxId::new(1),
+            key: b"secure_key".to_vec(),
+            value: b"secure_val".to_vec(),
+        };
+
+        {
+            let wal = Wal::open(&wal_path).await.expect("open wal");
+            let entry = wal.create_entry(valid_op.clone(), 1).await.expect("create entry");
+            wal.append(&entry).await.expect("append valid entry");
+        }
+
+        {
+            // Inject an entry forged with an arbitrary wrong key
+            let wrong_key = b"wrong-attacker-integrity-key-32!";
+            let forged_op = WalOp::Put {
+                tx_id: TxId::new(2),
+                key: b"forged_key".to_vec(),
+                value: b"forged_val".to_vec(),
+            };
+            // Previous HMAC is the valid entry's HMAC, but key is wrong
+            let last_valid_entry = Wal::open(&wal_path)
+                .await
+                .expect("open")
+                .replay()
+                .await
+                .expect("replay")[0]
+                .1
+                .clone();
+
+            let forged_entry = WalEntry::try_new(
+                forged_op,
+                2,
+                wrong_key,
+                last_valid_entry.checksum,
+            )
+            .expect("create forged entry");
+
+            // Also append a 3rd entry so the forged entry is in the middle of the file (pos < file_size)
+            let trailing_entry = WalEntry::try_new(
+                WalOp::Put {
+                    tx_id: TxId::new(3),
+                    key: b"trailing".to_vec(),
+                    value: b"val".to_vec(),
+                },
+                3,
+                wrong_key,
+                forged_entry.checksum,
+            )
+            .expect("create trailing entry");
+
+            let mut file = tokio::fs::OpenOptions::new()
+                .append(true)
+                .open(&wal_path)
+                .await
+                .expect("open file for append");
+            file.write_all(&forged_entry.to_bytes().expect("to_bytes"))
+                .await
+                .expect("write forged entry");
+            file.write_all(&trailing_entry.to_bytes().expect("to_bytes"))
+                .await
+                .expect("write trailing entry");
+        }
+
+        let wal_reopen = Wal::open(&wal_path).await;
+        assert!(
+            wal_reopen.is_err() || wal_reopen.unwrap().replay().await.is_err(),
+            "Replaying a WAL with a wrong-key forged entry must fail HMAC verification"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_wal_legacy_key_fallback_migration() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("legacy_wal.log");
+
+        {
+            // Manually construct a WAL entry with the legacy static integrity key
+            let op = WalOp::Put {
+                tx_id: TxId::new(1),
+                key: b"legacy_key".to_vec(),
+                value: b"legacy_val".to_vec(),
+            };
+            let legacy_entry = WalEntry::try_new(
+                op,
+                1,
+                &LEGACY_INTEGRITY_KEY,
+                [0u8; 32],
+            )
+            .expect("legacy entry");
+
+            tokio::fs::write(&wal_path, legacy_entry.to_bytes().expect("to_bytes"))
+                .await
+                .expect("write legacy WAL");
+        }
+
+        // Opening and replaying should fallback to LEGACY_INTEGRITY_KEY and succeed
+        let wal = Wal::open(&wal_path).await.expect("open legacy wal");
+        let entries = wal.replay().await.expect("replay legacy wal");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].1.seq_no, 1);
+        if let WalOp::Put { key, value, .. } = &entries[0].1.op {
+            assert_eq!(key, b"legacy_key");
+            assert_eq!(value, b"legacy_val");
+        } else {
+            panic!("Expected Put op");
+        }
+    }
+
     #[test]
     fn test_wal_entry_crc_roundtrip() {
         let op = WalOp::Put {
@@ -1065,10 +1286,11 @@ mod tests {
             key: b"test_key".to_vec(),
             value: b"test_value".to_vec(),
         };
+        let dummy_key = b"test-integrity-key-32-bytes-long!";
         let entry = WalEntry::try_new(
             op,
             100,
-            b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0",
+            dummy_key,
             [0u8; 32],
         )
         .expect("try_new");
