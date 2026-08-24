@@ -42,6 +42,7 @@ air-gapped, zero-panic (angestrebt), 100% Pure-Rust Sovereign Core (mit Ollama a
 | **WAL-Crash-Consistency** | ✅ Erfüllt | Fault-Injection im WAL, HMAC-Chaining. |
 | **Graph-Persistenz** | ✅ Erfüllt | Persistierung im LSM-Tree unter den Präfixen `__graph:entity:` und `__graph:edge:`. |
 | **DAG Integrity** | ✅ Erfüllt | Unidirektionale Schichten-Abhängigkeiten von Layer 0 bis Layer 4. |
+| **Disk-I/O Isolation** | ✅ Erfüllt | tokio::fs für Metadaten/Lifecycle, std::fs::File ausschließlich innerhalb spawn_blocking für Block-Level Random-Access (ADR-012). |
 
 ## Sicherheit & Privacy
 - **HKDF Key Derivation**: Kryptographischer Kontext pro Datei.
