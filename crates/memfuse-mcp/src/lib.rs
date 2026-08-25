@@ -1,6 +1,6 @@
 pub mod protocol;
 
-use memfuse_core::{DocId, TextEmbeddingEngine};
+use memfuse_core::{DocId, TextEmbeddingEngine, MAX_SEARCH_K};
 use memfuse_db::chunker::{ChunkerConfig, MarkdownChunker};
 use memfuse_db::MemFuse;
 use protocol::{JsonRpcRequest, JsonRpcResponse};
@@ -11,6 +11,18 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 /// MCP-Server mit stdio-Transport (JSON-RPC 2.0).
 ///
 /// stdout ist dem Protokoll vorbehalten — Logs gehen ausschließlich nach stderr.
+fn validate_collection_name(name: &str) -> Result<(), String> {
+    if name.is_empty() || name.len() > 256 {
+        return Err(format!("Invalid collection name length: {}", name.len()));
+    }
+    if name.contains('\0') || name.contains(':') || name.contains('/') {
+        return Err(format!(
+            "Collection name '{name}' contains forbidden characters"
+        ));
+    }
+    Ok(())
+}
+
 pub struct McpServer {
     pub db: Arc<MemFuse>,
     pub embedder: Arc<dyn TextEmbeddingEngine>,
@@ -168,7 +180,17 @@ impl McpServer {
                     .get("collection")
                     .and_then(|v| v.as_str())
                     .unwrap_or("default");
-                let k = args.get("k").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+                validate_collection_name(col_name)?;
+
+                let k_raw = args.get("k").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+                let k = k_raw.min(MAX_SEARCH_K);
+                if k_raw > MAX_SEARCH_K {
+                    tracing::warn!(
+                        requested_k = k_raw,
+                        capped_k = k,
+                        "Client requested k={k_raw} which exceeds MAX_SEARCH_K={MAX_SEARCH_K}. Capping."
+                    );
+                }
 
                 let col = self
                     .db
@@ -192,11 +214,28 @@ impl McpServer {
                     .get("text")
                     .and_then(|v| v.as_str())
                     .ok_or("text fehlt")?;
+                if text.is_empty() {
+                    return Err("text cannot be empty".to_string());
+                }
+                const MAX_INSERT_TEXT_BYTES: usize = 10 * 1024 * 1024; // 10MB
+                if text.len() > MAX_INSERT_TEXT_BYTES {
+                    return Err(format!(
+                        "text too large: {}MB > 10MB limit",
+                        text.len() / 1_048_576
+                    ));
+                }
+
                 let id = args.get("id").and_then(|v| v.as_str()).ok_or("id fehlt")?;
+                if id.is_empty() {
+                    return Err("id cannot be empty".to_string());
+                }
+
                 let col_name = args
                     .get("collection")
                     .and_then(|v| v.as_str())
                     .unwrap_or("default");
+                validate_collection_name(col_name)?;
+
                 let base_metadata = args
                     .get("metadata")
                     .and_then(|v| v.as_object())
@@ -211,7 +250,8 @@ impl McpServer {
 
                 // AUTO-CHUNKING: Text in semantische Einheiten aufteilen mit MarkdownChunker (~512 Tokens)
                 let chunker = MarkdownChunker::new(ChunkerConfig::default());
-                let doc_id = DocId::from_key(id).unwrap_or_else(|_| DocId::new(0));
+                let doc_id = DocId::from_key(id)
+                    .map_err(|e| format!("Invalid document ID '{id}': {e}"))?;
                 let chunks = chunker.chunk(doc_id, text);
 
                 if chunks.is_empty() {
@@ -275,10 +315,15 @@ impl McpServer {
 
             "memfuse_get" => {
                 let id = args.get("id").and_then(|v| v.as_str()).ok_or("id fehlt")?;
+                if id.is_empty() {
+                    return Err("id cannot be empty".to_string());
+                }
                 let col_name = args
                     .get("collection")
                     .and_then(|v| v.as_str())
                     .unwrap_or("default");
+                validate_collection_name(col_name)?;
+
                 let col = self
                     .db
                     .collection(col_name)

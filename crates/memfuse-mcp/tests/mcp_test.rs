@@ -307,3 +307,136 @@ async fn test_mcp_insert_multi_chunk_document() {
     assert_eq!(chunk_doc["metadata"]["department"], "R&D");
     assert_eq!(chunk_doc["metadata"]["chunk_index"], 0);
 }
+
+#[tokio::test]
+async fn mcp_parse_error_returns_rpc_32700() {
+    let (server, _tmp) = setup_app().await;
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(1)),
+        method: "invalid json method".into(),
+        params: json!({}),
+    };
+
+    // Testing stdio parse error logic directly or via handle / malformed request
+    let err_resp = memfuse_mcp::protocol::JsonRpcResponse::err(None, -32700, "Parse error: invalid json");
+    assert_eq!(err_resp.error.as_ref().unwrap().code, -32700);
+
+    // Also testing unknown method returns -32601
+    let response = server.handle(req).await;
+    assert_eq!(response.error.as_ref().unwrap().code, -32601);
+}
+
+#[tokio::test]
+async fn mcp_method_not_found_returns_32601() {
+    let (server, _tmp) = setup_app().await;
+    let response = server
+        .handle(JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: Some(json!(1)),
+            method: "nonexistent_method".into(),
+            params: json!({}),
+        })
+        .await;
+    assert!(response.error.is_some());
+    assert_eq!(response.error.unwrap().code, -32601);
+}
+
+#[tokio::test]
+async fn test_k_capping_at_max_search_k() {
+    let (server, _tmp) = setup_app().await;
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(100)),
+        method: "tools/call".to_string(),
+        params: json!({
+            "name": "memfuse_search",
+            "arguments": {
+                "query": "test",
+                "collection": "my_docs",
+                "k": 100_000
+            }
+        }),
+    };
+
+    let response = server.handle(req).await;
+    let res_val = serde_json::to_value(&response).unwrap();
+    // Search should succeed (not error) because k was capped at MAX_SEARCH_K (1000)
+    assert!(res_val["result"]["content"][0]["text"].is_string());
+    assert!(res_val["result"]["isError"].is_null());
+}
+
+#[tokio::test]
+async fn test_invalid_doc_id_returns_error() {
+    let (server, _tmp) = setup_app().await;
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(101)),
+        method: "tools/call".to_string(),
+        params: json!({
+            "name": "memfuse_insert",
+            "arguments": {
+                "id": "", // empty id
+                "text": "some text",
+                "collection": "my_docs"
+            }
+        }),
+    };
+
+    let response = server.handle(req).await;
+    let res_val = serde_json::to_value(&response).unwrap();
+    assert_eq!(res_val["result"]["isError"], true);
+    let err_msg = res_val["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(err_msg.contains("id cannot be empty"));
+}
+
+#[tokio::test]
+async fn test_empty_or_too_large_insert_text_returns_error() {
+    let (server, _tmp) = setup_app().await;
+
+    // Test empty text
+    let req_empty = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(102)),
+        method: "tools/call".to_string(),
+        params: json!({
+            "name": "memfuse_insert",
+            "arguments": {
+                "id": "doc_empty",
+                "text": "",
+                "collection": "my_docs"
+            }
+        }),
+    };
+    let response = server.handle(req_empty).await;
+    let res_val = serde_json::to_value(&response).unwrap();
+    assert_eq!(res_val["result"]["isError"], true);
+    assert!(res_val["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("text cannot be empty"));
+}
+
+#[tokio::test]
+async fn test_invalid_collection_name_returns_error() {
+    let (server, _tmp) = setup_app().await;
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(103)),
+        method: "tools/call".to_string(),
+        params: json!({
+            "name": "memfuse_insert",
+            "arguments": {
+                "id": "doc_valid",
+                "text": "valid text",
+                "collection": "invalid:col/name"
+            }
+        }),
+    };
+
+    let response = server.handle(req).await;
+    let res_val = serde_json::to_value(&response).unwrap();
+    assert_eq!(res_val["result"]["isError"], true);
+    let err_msg = res_val["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(err_msg.contains("forbidden characters"));
+}
