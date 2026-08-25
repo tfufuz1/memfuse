@@ -460,6 +460,14 @@ impl LsmStorage {
 
 #[async_trait::async_trait]
 impl StorageEngine for LsmStorage {
+    /// # ACID-Garantie
+    /// Bietet Snapshot-Isolations-Point-Reads des aktuellsten committed Zustands.
+    ///
+    /// # Fehler
+    /// Gibt `Err` zurück, wenn I/O auf SSTables fehlschlägt oder Block-Dekodierung scheitert.
+    ///
+    /// # Panics
+    /// Panikt nicht in Produktionscode.
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let current_max_seq = self.next_seq_no.load(Ordering::Acquire);
         let res = self.get_at_seq(key, current_max_seq).await?;
@@ -472,19 +480,36 @@ impl StorageEngine for LsmStorage {
         Ok(res)
     }
 
+    /// # ACID-Garantie
+    /// Garantierte Snapshot-Isolation zum angegebenen Sequenz-Zeitpunkt ohne Phantom-Reads.
+    ///
+    /// # Fehler
+    /// Gibt `Err` zurück bei I/O- oder Dekodierungsfehlern.
+    ///
+    /// # Panics
+    /// Panikt nicht in Produktionscode.
     async fn get_at_seq(&self, key: &[u8], seq_no: u64) -> Result<Option<Vec<u8>>> {
-        let last_tx = self.last_committed_tx.load(Ordering::Acquire);
+        // Genau EINMAL laden — Snapshot-Konsistenz über die gesamte Methode (INVARIANT-2)
+        let snapshot_tx = self.last_committed_tx.load(Ordering::Acquire);
         let state = self.state.read().await;
         tracing::debug!(
-            "LsmStorage::get_at_seq key={:?} seq={} last_tx={}",
+            "LsmStorage::get_at_seq key={:?} seq={} snapshot_tx={}",
             String::from_utf8_lossy(key),
             seq_no,
-            last_tx
+            snapshot_tx
         );
 
-        // 1. MemTable (only if seq_no in entry <= target seq_no AND tx_id <= last_tx)
-        if let Some((val, seq, tx)) = state.memtable.get_at_seq(key, seq_no) {
-            if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
+        // 1. MemTable (only if seq_no in entry <= target seq_no AND tx_id <= snapshot_tx)
+        if let Some((val, seq, _tx)) = state.memtable.get_at_seq(key, seq_no, snapshot_tx) {
+            if (seq & TOMBSTONE_BIT) != 0 {
+                return Ok(None);
+            }
+            return Ok(Some(val.to_vec()));
+        }
+
+        // 2. Immutable MemTables (newest first)
+        for mt in state.immutable_memtables.iter().rev() {
+            if let Some((val, seq, _tx)) = mt.get_at_seq(key, seq_no, snapshot_tx) {
                 if (seq & TOMBSTONE_BIT) != 0 {
                     return Ok(None);
                 }
@@ -492,32 +517,20 @@ impl StorageEngine for LsmStorage {
             }
         }
 
-        // 2. Immutable MemTables (newest first)
-        for mt in state.immutable_memtables.iter().rev() {
-            if let Some((val, seq, tx)) = mt.get_at_seq(key, seq_no) {
-                if tx <= last_tx {
-                    if (seq & TOMBSTONE_BIT) != 0 {
-                        return Ok(None);
-                    }
-                    return Ok(Some(val.to_vec()));
-                }
-            }
-        }
-
-        // 3. SSTables (newest first, filtered by seq_no and last_tx)
+        // 3. SSTables (newest first, filtered by seq_no and snapshot_tx)
         let sstables = self.sstables.read().await;
         for sst in sstables.iter().rev() {
             // SSTables already only contain entries up to their last_key.
             // But we still need to check the entry's seq_no and tx_id.
             if let Some((val, seq, tx)) = sst.get(key).await? {
                 tracing::debug!(
-                    "LsmStorage::get_at_seq SSTable check: seq={} target_seq={} tx={} last_tx={}",
+                    "LsmStorage::get_at_seq SSTable check: seq={} target_seq={} tx={} snapshot_tx={}",
                     seq & !TOMBSTONE_BIT,
                     seq_no,
                     tx,
-                    last_tx
+                    snapshot_tx
                 );
-                if (seq & !TOMBSTONE_BIT) <= seq_no && tx <= last_tx {
+                if (seq & !TOMBSTONE_BIT) <= seq_no && tx <= snapshot_tx {
                     if (seq & TOMBSTONE_BIT) != 0 {
                         tracing::debug!("LsmStorage::get_at_seq FOUND TOMBSTONE");
                         return Ok(None);
@@ -533,6 +546,14 @@ impl StorageEngine for LsmStorage {
         Ok(None)
     }
 
+    /// # ACID-Garantie
+    /// Staged die Insertion im In-Memory TxBuffer. Wird erst nach `commit()` dauerhaft.
+    ///
+    /// # Fehler
+    /// Gibt `Err` zurück, wenn das Speicherbudget (95%) überschritten ist.
+    ///
+    /// # Panics
+    /// Panikt nicht in Produktionscode.
     async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
         self.apply_backpressure().await;
         if !self.budget.has_memory_capacity() {
@@ -580,6 +601,14 @@ impl StorageEngine for LsmStorage {
         Ok(count)
     }
 
+    /// # ACID-Garantie
+    /// Staged einen Tombstone im TxBuffer. Erst nach `commit()` wirksam.
+    ///
+    /// # Fehler
+    /// Gibt `Err` zurück, wenn das Speicherbudget überschritten ist.
+    ///
+    /// # Panics
+    /// Panikt nicht in Produktionscode.
     async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
         let doc_id = {
             let hash = blake3::hash(key);
@@ -598,6 +627,15 @@ impl StorageEngine for LsmStorage {
         Ok(())
     }
 
+    /// # ACID-Garantie
+    /// Serialisiertes Group-Commit in das WAL inkl. fsync. Atomares Rollback bei I/O-Fehler.
+    /// Nach erfolgreichem Return ist die Transaktion absturzsicher auf Disk (INVARIANT-1).
+    ///
+    /// # Fehler
+    /// Gibt `Err` bei Disk-/I/O-Fehlern zurück und stellt den vorherigen WAL-Zustand wieder her.
+    ///
+    /// # Panics
+    /// Panikt nicht in Produktionscode.
     async fn commit(&self, tx_id: TxId) -> Result<()> {
         self.apply_backpressure().await;
         if !self.budget.has_memory_capacity() {
@@ -705,11 +743,27 @@ impl StorageEngine for LsmStorage {
         Ok(())
     }
 
+    /// # ACID-Garantie
+    /// Verwirft uncommitted Operationen einer spezifischen Transaktion aus dem Buffer.
+    ///
+    /// # Fehler
+    /// Gibt `Err` bei internen Puffer-Fehlern zurück.
+    ///
+    /// # Panics
+    /// Panikt nicht in Produktionscode.
     async fn rollback(&self, tx_id: TxId) -> Result<()> {
         self.tx_buffer.discard(tx_id);
         Ok(())
     }
 
+    /// # ACID-Garantie
+    /// Physikalische Truncation des WAL und Zurücksetzen aller Statedaten auf target_tx.
+    ///
+    /// # Fehler
+    /// Gibt `Err` bei I/O- oder Truncate-Fehlern zurück.
+    ///
+    /// # Panics
+    /// Panikt nicht in Produktionscode.
     async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
         Self::rollback_to_tx(self, tx_id).await
     }
@@ -724,6 +778,14 @@ impl StorageEngine for LsmStorage {
         Ok(())
     }
 
+    /// # ACID-Garantie
+    /// Atomarer Flush der aktiven MemTable in eine unveränderliche SSTable auf Disk.
+    ///
+    /// # Fehler
+    /// Gibt `Err` zurück, wenn SSTable-Erstellung oder fsync fehlschlägt.
+    ///
+    /// # Panics
+    /// Panikt nicht in Produktionscode.
     async fn flush(&self) -> Result<()> {
         let mut state = self.state.write().await;
         if state.memtable.is_empty() {

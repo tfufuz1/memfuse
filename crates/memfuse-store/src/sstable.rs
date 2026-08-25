@@ -29,6 +29,10 @@ use tokio::io::AsyncWriteExt;
 /// Cache for SSTable blocks. Key is (file_id, block_offset).
 pub type BlockCache = RwLock<LruCache<(u64, u64), Bytes>>;
 
+/// Magic bytes for SSTable file trailer.
+pub const SSTABLE_MAGIC_MFSX: u32 = 0x5853464D; // "MFSX" in hex
+pub const SSTABLE_MAGIC_LEGACY: u32 = 0x4D465354; // "MFST" in hex
+
 /// Creates a new block cache instance. Capacity is in MB (assuming 4KB blocks).
 pub fn create_block_cache(capacity_mb: usize) -> Arc<BlockCache> {
     // 1 MB = 256 Blöcke à 4 KB
@@ -37,10 +41,9 @@ pub fn create_block_cache(capacity_mb: usize) -> Arc<BlockCache> {
         .saturating_mul(256) // Overflow → usize::MAX (sicher)
         .clamp(256, 8 * 1024 * 256); // Minimum: 1 MB, Maximum: 8 GB Cache
 
-    Arc::new(RwLock::new(LruCache::new(
-        // NonZeroUsize::new(capacity) ist nach .clamp(256, ...) garantiert > 0
-        NonZeroUsize::new(capacity).expect("capacity nach clamp(256, ...) ist immer > 0"),
-    )))
+    let non_zero_cap = NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::MIN);
+
+    Arc::new(RwLock::new(LruCache::new(non_zero_cap)))
 }
 
 /// Block size for SSTable data blocks (4KB).
@@ -455,8 +458,8 @@ impl SstableBuilder {
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
 
         self.file
-            .write_u32_le(0x5853464D)
-            .await // "MFSX" in hex
+            .write_u32_le(SSTABLE_MAGIC_MFSX)
+            .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
 
         self.file
@@ -596,7 +599,7 @@ impl SstableReader {
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("Invalid trailer".into()))?,
             );
-            if magic_v1 == 0x5853464D {
+            if magic_v1 == SSTABLE_MAGIC_MFSX {
                 format_version = u16::from_le_bytes(
                     trailer_data[48..50]
                         .try_into()
@@ -612,7 +615,7 @@ impl SstableReader {
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("Invalid trailer".into()))?,
             );
-            if magic_v0 == 0x5853464D {
+            if magic_v0 == SSTABLE_MAGIC_MFSX {
                 is_mfsx = true;
                 format_version = 0;
             }
@@ -667,7 +670,7 @@ impl SstableReader {
             // Read magic from the very end of 54-byte buffer (which would be the same as end of 52-byte if we read 54)
             let magic_legacy =
                 u32::from_le_bytes(trailer_data[50..54].try_into().unwrap_or([0; 4]));
-            if magic_legacy == 0x4D465354 {
+            if magic_legacy == SSTABLE_MAGIC_LEGACY {
                 // Backward-compatible 12-byte trailer: [index_offset: u64][magic: u32]
                 u64::from_le_bytes(
                     trailer_data[42..50]

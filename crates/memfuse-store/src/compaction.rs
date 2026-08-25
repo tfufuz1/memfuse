@@ -362,18 +362,18 @@ impl CompactionEngine {
                 tokio::task::yield_now().await;
             }
 
-            // Deduplicate: only keep the first (highest seq_no) entry for each key
+            let is_tombstone = (item.seq & TOMBSTONE_BIT) != 0;
+            let raw_seq = item.seq & !TOMBSTONE_BIT;
+
+            // Deduplicate: older versions of the same key are dropped unless an active snapshot covers raw_seq
             let is_duplicate = if let Some(ref lk) = last_key {
-                lk == &item.key
+                lk == &item.key && (min_snapshot_seq == u64::MAX || raw_seq < min_snapshot_seq)
             } else {
                 false
             };
 
             if !is_duplicate {
                 last_key = Some(item.key.clone());
-
-                let is_tombstone = (item.seq & TOMBSTONE_BIT) != 0;
-                let raw_seq = item.seq & !TOMBSTONE_BIT;
 
                 // FIND-STO-001: Tombstone-Retention
                 // Only GC tombstones during FULL compaction when no snapshot references them
@@ -523,7 +523,7 @@ mod tests {
 
         let output = tmp.path().join("merged.sst");
         engine
-            .merge_sstables(&[sst1, sst2], &output, 0, true)
+            .merge_sstables(&[sst1, sst2], &output, u64::MAX, true)
             .await
             .expect("merge");
 
