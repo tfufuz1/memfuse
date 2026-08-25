@@ -37,19 +37,25 @@ impl SessionPool {
         }
     }
 
-    fn pop(&self) -> ort::session::Session {
-        self.sessions
+    fn pop(&self) -> Result<ort::session::Session> {
+        let mut guard = self
+            .sessions
             .lock()
-            .expect("SessionPool lock poisoned")
-            .pop()
-            .expect("SessionPool exhausted, semaphore leak?")
+            .map_err(|_| MemFuseError::Internal(
+                "SessionPool: Mutex lock poisoned — runtime state corrupted".into()
+            ))?;
+        guard.pop().ok_or_else(|| MemFuseError::Internal(
+            "SessionPool exhausted: mehr Sessions angefordert als Semaphore erlauben — \
+             das ist ein Semaphore-Leak im Aufrufer".into()
+        ))
     }
 
     fn push(&self, session: ort::session::Session) {
-        self.sessions
-            .lock()
-            .expect("SessionPool lock poisoned")
-            .push(session);
+        if let Ok(mut guard) = self.sessions.lock() {
+            guard.push(session);
+        } else {
+            tracing::error!("SessionPool lock poisoned during push");
+        }
     }
 }
 
@@ -68,12 +74,12 @@ struct SessionGuard {
 
 #[cfg(feature = "onnx")]
 impl SessionGuard {
-    fn new(pool: Arc<SessionPool>) -> Self {
-        let session = pool.pop();
-        Self {
+    fn new(pool: Arc<SessionPool>) -> Result<Self> {
+        let session = pool.pop()?;
+        Ok(Self {
             pool,
             session: Some(session),
-        }
+        })
     }
 }
 
@@ -209,7 +215,7 @@ impl TextEmbedder {
 
         tokio::task::spawn_blocking(move || {
             // Guard borrows session from pool, restores it on drop
-            let mut session_guard = SessionGuard::new(pool);
+            let mut session_guard = SessionGuard::new(pool)?;
             Self::run_inference(&mut session_guard, &tokenizer, &text)
         })
         .await

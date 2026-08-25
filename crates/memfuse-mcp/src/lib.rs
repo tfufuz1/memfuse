@@ -1,6 +1,7 @@
 pub mod protocol;
 
-use memfuse_core::TextEmbeddingEngine;
+use memfuse_core::{DocId, TextEmbeddingEngine};
+use memfuse_db::chunker::{ChunkerConfig, MarkdownChunker};
 use memfuse_db::MemFuse;
 use protocol::{JsonRpcRequest, JsonRpcResponse};
 use serde_json::{json, Value};
@@ -196,25 +197,63 @@ impl McpServer {
                     .get("collection")
                     .and_then(|v| v.as_str())
                     .unwrap_or("default");
+                let metadata = args.get("metadata").cloned();
 
-                let mut metadata = args.get("metadata").cloned().unwrap_or_else(|| json!({}));
-                if !metadata.is_object() {
-                    metadata = json!({});
-                }
-                if let Some(obj) = metadata.as_object_mut() {
-                    obj.entry("text").or_insert_with(|| json!(text));
-                }
-
-                let embedding = self.embedder.embed(text).await.map_err(|e| e.to_string())?;
                 let col = self
                     .db
                     .collection(col_name)
                     .await
                     .map_err(|e| e.to_string())?;
-                col.insert(id, &embedding, Some(metadata))
-                    .await
-                    .map_err(|e| e.to_string())?;
-                Ok(json!({ "ok": true, "id": id }))
+
+                // AUTO-CHUNKING: Text in semantische Einheiten aufteilen
+                // Verhindert Embedding-Verwässerung bei Dokumenten >512 Tokens
+                let chunker = MarkdownChunker::new(ChunkerConfig::default());
+                let doc_id = DocId::from_key(id).unwrap_or_else(|_| DocId::new(0));
+                let chunks = chunker.chunk(doc_id, text);
+
+                let chunks_to_process: Vec<String> = if chunks.is_empty() {
+                    vec![text.to_string()]
+                } else {
+                    chunks.into_iter().map(|c| c.content).collect()
+                };
+
+                let total = chunks_to_process.len();
+                for (i, chunk_text) in chunks_to_process.iter().enumerate() {
+                    let chunk_id = if total == 1 {
+                        id.to_string()
+                    } else {
+                        format!("{id}:chunk:{i}")
+                    };
+
+                    let embedding = self
+                        .embedder
+                        .embed(chunk_text)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    let mut chunk_meta = metadata.clone().unwrap_or_else(|| json!({}));
+                    if !chunk_meta.is_object() {
+                        chunk_meta = json!({});
+                    }
+                    if let Some(obj) = chunk_meta.as_object_mut() {
+                        obj.entry("text").or_insert_with(|| json!(chunk_text.clone()));
+                        if total > 1 {
+                            obj.insert("_chunk_index".into(), json!(i));
+                            obj.insert("_chunk_total".into(), json!(total));
+                            obj.insert("_source_id".into(), json!(id));
+                        }
+                    }
+
+                    col.insert(&chunk_id, &embedding, Some(chunk_meta))
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+
+                Ok(json!({
+                    "inserted": id,
+                    "chunks": total,
+                    "collection": col_name
+                }))
             }
 
             "memfuse_get" => {

@@ -1,8 +1,9 @@
 //! End-to-End-Test: Simuliert den vollständigen Nutzerpfad von MemFuse Brain
 //! ohne echtes Ollama (Mock-Embedder), aber mit echter Storage-Engine.
 
+use memfuse_core::TextEmbeddingEngine;
 use memfuse_db::{MemFuse, MemFuseConfig};
-use memfuse_tauri_lib::ingestion::{EmbeddingProvider, IngestionPipeline};
+use memfuse_tauri_lib::ingestion::IngestionPipeline;
 use std::sync::Arc;
 use tempfile::tempdir;
 
@@ -13,7 +14,7 @@ use tempfile::tempdir;
 struct KeywordEmbedder;
 
 #[async_trait::async_trait]
-impl EmbeddingProvider for KeywordEmbedder {
+impl TextEmbeddingEngine for KeywordEmbedder {
     async fn embed(&self, text: &str) -> memfuse_core::Result<Vec<f32>> {
         let lower = text.to_lowercase();
         let dim_urlaub = if lower.contains("urlaub") { 1.0 } else { 0.0 };
@@ -68,7 +69,7 @@ async fn test_full_pipeline_ingest_search_and_chat_context() {
         .expect("Collection erstellen");
 
     // ── 3. Ordner importieren ─────────────────────────────────────────────
-    let embedder: Arc<dyn EmbeddingProvider> = Arc::new(KeywordEmbedder);
+    let embedder: Arc<dyn TextEmbeddingEngine> = Arc::new(KeywordEmbedder);
     let pipeline = IngestionPipeline::new(embedder.clone());
     let reports = pipeline
         .ingest_folder(&docs_dir, &collection)

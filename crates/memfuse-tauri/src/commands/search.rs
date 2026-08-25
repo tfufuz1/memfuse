@@ -1,4 +1,4 @@
-use crate::ingestion::pipeline::EmbeddingProvider;
+use memfuse_core::TextEmbeddingEngine;
 use crate::ollama::OllamaBridge;
 use crate::state::AppState;
 use serde::Serialize;

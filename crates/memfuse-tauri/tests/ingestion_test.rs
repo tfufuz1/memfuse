@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use memfuse_core::{GraphIndex, Result};
+use memfuse_core::{GraphIndex, Result, TextEmbeddingEngine};
 use memfuse_db::{MemFuse, MemFuseConfig};
-use memfuse_tauri_lib::ingestion::{EmbeddingProvider, IngestionPipeline};
+use memfuse_tauri_lib::ingestion::IngestionPipeline;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -10,7 +10,7 @@ struct DummyEmbedder {
 }
 
 #[async_trait]
-impl EmbeddingProvider for DummyEmbedder {
+impl TextEmbeddingEngine for DummyEmbedder {
     async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
         Ok(vec![0.1f32; self.dim])
     }
