@@ -77,3 +77,58 @@ async fn test_hybrid_search_includes_graph_signal() {
         "target_doc should be included in hybrid search results via graph signal"
     );
 }
+
+#[tokio::test]
+async fn test_relate_updates_graph_index_and_affects_hybrid_search() {
+    let tmp = TempDir::new().expect("temp dir");
+    let config = MemFuseConfig {
+        dimension: 4,
+        distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
+    };
+
+    let db = MemFuse::open_with_config(tmp.path(), config)
+        .await
+        .expect("open db");
+    let col = db.collection("relate-graph-test").await.expect("col");
+
+    // 1. Insert documents
+    col.insert(
+        "doc_a",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(json!({"text": "document A"})),
+    )
+    .await
+    .expect("insert doc_a");
+
+    col.insert(
+        "doc_b",
+        &[0.0, 0.0, 0.0, 1.0], // Orthogonal vector
+        Some(json!({"text": "unrelated content B"})),
+    )
+    .await
+    .expect("insert doc_b");
+
+    // 2. Call relate() via public API
+    col.relate("doc_a", "doc_b", "references")
+        .await
+        .expect("relate doc_a -> doc_b");
+
+    // 3. Perform hybrid_search with doc_a as anchor entity
+    let anchor_eid = memfuse_core::EntityId::from_key("doc_a");
+    let results = col
+        .hybrid_search(
+            "nonmatchingtext",
+            &[0.0, 1.0, 0.0, 0.0],
+            10,
+            Some(&[anchor_eid]),
+        )
+        .await
+        .expect("hybrid_search with anchor doc_a");
+
+    // 4. Verify doc_b is returned via graph signal created by relate()
+    assert!(
+        results.iter().any(|r| r.id == "doc_b"),
+        "doc_b should be included in hybrid search results via graph signal created by relate()"
+    );
+}

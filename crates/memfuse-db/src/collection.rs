@@ -734,7 +734,7 @@ impl<S: StorageEngine> Collection<S> {
     /// Creates a directional relationship between two documents in the collection.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
-        let tx = self.next_tx();
+        let tx = self.allocate_tx();
         let key_str = format!("{}:{}:{}", from, label, to);
         let key = self.namespaced_key(key_str.as_bytes(), 2);
         let val = serde_json::json!({
@@ -746,28 +746,29 @@ impl<S: StorageEngine> Collection<S> {
 
         self.storage.put(tx, &key, &bytes).await?;
         self.storage.commit(tx).await?;
+
+        let from_id = memfuse_core::EntityId::from_key(from);
+        let to_id = memfuse_core::EntityId::from_key(to);
+
+        let graph_tx = self.allocate_tx();
+
+        let from_entity = memfuse_core::Entity::new(from_id, from, "Node");
+        let to_entity = memfuse_core::Entity::new(to_id, to, "Node");
+        self.graph_index.add_entity(graph_tx, from_entity).await?;
+        self.graph_index.add_entity(graph_tx, to_entity).await?;
+
+        let edge = memfuse_core::Edge::new(from_id, to_id, label);
+        self.graph_index.add_edge(graph_tx, edge).await?;
+        self.graph_index.commit(graph_tx).await?;
+
         Ok(())
     }
 
     /// Creates a bidirectional relationship atomically.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn relate_bidirectional(&self, from: &str, to: &str, label: &str) -> Result<()> {
-        let db_tx = self.begin_transaction();
-        let tx = db_tx.tx_id;
-
-        let key1_str = format!("{}:{}:{}", from, label, to);
-        let key1 = self.namespaced_key(key1_str.as_bytes(), 2);
-        let val1 = serde_json::json!({"from": from, "to": to, "label": label});
-        let bytes1 = serde_json::to_vec(&val1)?;
-        self.storage.put(tx, &key1, &bytes1).await?;
-
-        let key2_str = format!("{}:{}:{}", to, label, from);
-        let key2 = self.namespaced_key(key2_str.as_bytes(), 2);
-        let val2 = serde_json::json!({"from": to, "to": from, "label": label});
-        let bytes2 = serde_json::to_vec(&val2)?;
-        self.storage.put(tx, &key2, &bytes2).await?;
-
-        db_tx.commit().await?;
+        self.relate(from, to, label).await?;
+        self.relate(to, from, label).await?;
         Ok(())
     }
 
