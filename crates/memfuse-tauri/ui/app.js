@@ -42,8 +42,8 @@ async function refreshCollections() {
             const item = document.createElement('div');
             item.className = 'collection-item' + (col.name === activeCollection ? ' active' : '');
             item.innerHTML = `
-                <span>${col.name} <small style="opacity:0.6">(${col.document_count})</small></span>
-                <button class="delete-btn" data-name="${col.name}">✕</button>
+                <span>${escapeHtml(col.name)} <small style="opacity:0.6">(${col.document_count})</small></span>
+                <button class="delete-btn" data-name="${escapeHtml(col.name)}">✕</button>
             `;
             item.querySelector('span').addEventListener('click', () => selectCollection(col.name));
             item.querySelector('.delete-btn').addEventListener('click', async (ev) => {
@@ -133,10 +133,10 @@ listen('ingest-progress', (event) => {
     const fileName = report.file_path ? report.file_path.split(/[/\\]/).pop() : 'Datei';
 
     if (errCount > 0) {
-        line.innerHTML = `⚠️ ${fileName}: ${report.chunks_created || 0} Abschnitte, ${errCount} Fehler`;
+        line.innerHTML = `⚠️ ${escapeHtml(fileName)}: ${report.chunks_created || 0} Abschnitte, ${errCount} Fehler`;
         line.title = report.errors.join('\n');
     } else {
-        line.innerHTML = `✅ ${fileName}: ${report.chunks_created || 0} Abschnitte`;
+        line.innerHTML = `✅ ${escapeHtml(fileName)}: ${report.chunks_created || 0} Abschnitte`;
     }
     logEl.appendChild(line);
     logEl.scrollTop = logEl.scrollHeight;
@@ -177,10 +177,10 @@ async function runImport(importFn, filePaths, isFolder = false) {
                 const line = document.createElement('div');
                 const fileName = report.file_path.split(/[/\\]/).pop();
                 if (errCount > 0) {
-                    line.innerHTML = `⚠️ ${fileName}: ${report.chunks_created} Abschnitte, ${errCount} Fehler`;
+                    line.innerHTML = `⚠️ ${escapeHtml(fileName)}: ${report.chunks_created} Abschnitte, ${errCount} Fehler`;
                     line.title = report.errors.join('\n');
                 } else {
-                    line.innerHTML = `✅ ${fileName}: ${report.chunks_created} Abschnitte`;
+                    line.innerHTML = `✅ ${escapeHtml(fileName)}: ${report.chunks_created} Abschnitte`;
                 }
                 logEl.appendChild(line);
             }
@@ -318,14 +318,17 @@ async function runDirectSearch() {
         chatLog.appendChild(resultsEl);
         chatLog.scrollTop = chatLog.scrollHeight;
     } catch (e) {
-        chatLog.innerHTML += `<p>⚠️ Fehler: ${e}</p>`;
+        chatLog.innerHTML += `<p>⚠️ Fehler: ${escapeHtml(e)}</p>`;
     }
 }
 
 function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }
 
 // ── Onboarding-Flow ────────────────────────────────────────────────────

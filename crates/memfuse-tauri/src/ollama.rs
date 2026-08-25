@@ -44,7 +44,7 @@ impl OllamaBridge {
 }
 
 #[async_trait::async_trait]
-impl crate::ingestion::pipeline::EmbeddingProvider for OllamaBridge {
+impl memfuse_core::TextEmbeddingEngine for OllamaBridge {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
         self.client.embed(&self.model, text).await
     }

@@ -81,6 +81,7 @@ pub struct Collection<S: StorageEngine = LsmStorage> {
     pub(crate) next_tx: Arc<AtomicU64>,
     pub(crate) dimension: usize,
     pub(crate) embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
+    pub(crate) insert_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl<S: StorageEngine> Clone for Collection<S> {
@@ -95,6 +96,7 @@ impl<S: StorageEngine> Clone for Collection<S> {
             next_tx: self.next_tx.clone(),
             dimension: self.dimension,
             embedder: parking_lot::RwLock::new(self.embedder.read().as_ref().map(Arc::clone)),
+            insert_lock: self.insert_lock.clone(),
         }
     }
 }
@@ -132,6 +134,7 @@ impl<S: StorageEngine> Collection<S> {
             next_tx,
             dimension,
             embedder: parking_lot::RwLock::new(None),
+            insert_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -411,6 +414,8 @@ impl<S: StorageEngine> Collection<S> {
                 embedding.len()
             )));
         }
+
+        let _guard = self.insert_lock.lock().await;
 
         let db_tx = self.begin_transaction();
 

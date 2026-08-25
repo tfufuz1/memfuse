@@ -1,4 +1,6 @@
-use memfuse_core::{ContextChunk, DocId, Edge, Entity, EntityId, GraphIndex, Result, TxId};
+use memfuse_core::{
+    ContextChunk, DocId, Edge, Entity, EntityId, GraphIndex, Result, TextEmbeddingEngine, TxId,
+};
 use memfuse_db::{chunker::MarkdownChunker, Collection};
 use std::path::Path;
 use std::sync::Arc;
@@ -11,19 +13,12 @@ pub struct IngestReport {
     pub errors: Vec<String>,
 }
 
-/// Trait für eine Embedding-Funktion — abstrahiert vom konkreten
-/// Backend (Ollama, OpenAI, lokales ONNX-Modell etc.).
-#[async_trait::async_trait]
-pub trait EmbeddingProvider: Send + Sync {
-    async fn embed(&self, text: &str) -> Result<Vec<f32>>;
-}
-
 pub struct IngestionPipeline {
-    embedder: Arc<dyn EmbeddingProvider>,
+    embedder: Arc<dyn TextEmbeddingEngine>,
 }
 
 impl IngestionPipeline {
-    pub fn new(embedder: Arc<dyn EmbeddingProvider>) -> Self {
+    pub fn new(embedder: Arc<dyn TextEmbeddingEngine>) -> Self {
         Self { embedder }
     }
 
