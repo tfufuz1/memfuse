@@ -248,25 +248,25 @@ mod tests {
         assert!(mt.get_at_seq(b"key1", 5, u64::MAX).is_none());
 
         // Exact match
-        let (val, seq, tx) = mt.get_at_seq(b"key1", 20, u64::MAX).unwrap(); // unwrap
+        let (val, seq, tx) = mt.get_at_seq(b"key1", 20, u64::MAX).unwrap();
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
         assert_eq!(tx, 2);
 
         // Between versions
-        let (val, seq, tx) = mt.get_at_seq(b"key1", 25, u64::MAX).unwrap(); // unwrap
+        let (val, seq, tx) = mt.get_at_seq(b"key1", 25, u64::MAX).unwrap();
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
         assert_eq!(tx, 2);
 
         // Filtered by max_tx: seq 20 has tx=2, max_tx=1 should fallback to seq 10 tx 1
-        let (val, seq, tx) = mt.get_at_seq(b"key1", 25, 1).unwrap(); // unwrap
+        let (val, seq, tx) = mt.get_at_seq(b"key1", 25, 1).unwrap();
         assert_eq!(val.as_ref(), b"v1");
         assert_eq!(seq, 10);
         assert_eq!(tx, 1);
 
         // Latest version
-        let (val, seq, tx) = mt.get_at_seq(b"key1", 100, u64::MAX).unwrap(); // unwrap
+        let (val, seq, tx) = mt.get_at_seq(b"key1", 100, u64::MAX).unwrap();
         assert_eq!(val.as_ref(), b"v3");
         assert_eq!(seq, 30);
         assert_eq!(tx, 3);
@@ -297,15 +297,13 @@ mod tests {
         mt.put(key.clone(), Bytes::new(), 20 | TOMBSTONE_BIT, 2);
 
         // Read at seq 15 -> should get val1
-        let (val, seq, tx) = mt.get_at_seq(&key, 15, u64::MAX).expect("Should find v1"); // expect
+        let (val, seq, tx) = mt.get_at_seq(&key, 15, u64::MAX).expect("Should find v1");
         assert_eq!(val.as_ref(), b"val1");
         assert_eq!(seq, 10);
         assert_eq!(tx, 1);
 
         // Read at seq 25 -> should get tombstone
-        let (val, seq, tx) = mt
-            .get_at_seq(&key, 25, u64::MAX)
-            .expect("Should find tombstone"); // expect
+        let (val, seq, tx) = mt.get_at_seq(&key, 25, u64::MAX).expect("Should find tombstone");
         assert_eq!(val.len(), 0);
         assert_eq!(seq, 20 | TOMBSTONE_BIT);
         assert_eq!(tx, 2);

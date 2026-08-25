@@ -2,25 +2,34 @@ use serde::{Deserialize, Serialize};
 
 /// Metadata filter expressions for pre/post filtering.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum FilterExpr {
     /// Exact match: field == value
     Eq {
+        /// Target metadata field name.
         field: String,
+        /// Expected field value.
         value: serde_json::Value,
     },
     /// Greater than: field > value
     Gt {
+        /// Target metadata field name.
         field: String,
+        /// Comparison threshold value.
         value: serde_json::Value,
     },
     /// Less than: field < value
     Lt {
+        /// Target metadata field name.
         field: String,
+        /// Comparison threshold value.
         value: serde_json::Value,
     },
     /// In set: field IN (values)
     In {
+        /// Target metadata field name.
         field: String,
+        /// List of candidate matching values.
         values: Vec<serde_json::Value>,
     },
     /// Logical AND

@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 /// Strategie für Token-Budget-Management.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum BudgetStrategy {
     /// Konservativ: 80% des Limits als sicherer Puffer (Standard)
     Conservative,
@@ -154,6 +155,11 @@ impl ResourceTracker {
         }
     }
 
+    /// Attempts to consume `bytes` of memory from the tracked budget.
+    ///
+    /// # Errors
+    /// Returns `Err(MemFuseError::MemoryBudgetExceeded)` if consuming `bytes`
+    /// exceeds the configured memory limit.
     pub fn consume_memory(&self, bytes: u64) -> Result<()> {
         loop {
             let current = self.memory_used.load(std::sync::atomic::Ordering::Acquire);
@@ -206,10 +212,12 @@ impl ResourceTracker {
         }
     }
 
+    /// Returns current memory usage in bytes.
     pub fn memory_used(&self) -> u64 {
         self.memory_used.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns a reference to the configured resource budget.
     pub fn budget(&self) -> &ResourceBudget {
         &self.budget
     }

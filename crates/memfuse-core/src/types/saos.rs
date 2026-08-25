@@ -51,18 +51,22 @@ impl FusionWeights {
         })
     }
 
+    /// Returns the vector signal weight component.
     pub fn vector(&self) -> f32 {
         self.vector
     }
 
+    /// Returns the text signal weight component.
     pub fn text(&self) -> f32 {
         self.text
     }
 
+    /// Returns the graph signal weight component.
     pub fn graph(&self) -> f32 {
         self.graph
     }
 
+    /// Returns the metadata signal weight component.
     pub fn metadata(&self) -> f32 {
         self.metadata
     }
@@ -71,18 +75,26 @@ impl FusionWeights {
 /// A chunk of context for LLM budget allocation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextChunk {
+    /// Document identifier associated with this chunk.
     pub doc_id: DocId,
+    /// Text content of the chunk.
     pub content: String,
+    /// Computed relevance score.
     pub relevance: f32,
+    /// Estimated token count for LLM context calculation.
     pub token_count: usize,
+    /// Optional metadata associated with the chunk.
     pub metadata: Option<serde_json::Value>,
 }
 
 /// An aggregated context window constrained by a token budget.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextWindow {
+    /// List of included context chunks.
     pub chunks: Vec<ContextChunk>,
+    /// Total aggregated token count.
     pub total_tokens: usize,
+    /// Indicates whether context chunks were truncated to fit the budget.
     pub truncated: bool,
 }
 
@@ -101,23 +113,33 @@ impl std::fmt::Display for ContextWindow {
 /// Evaluated result for hybrid/4-signal search.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScoredEntry {
+    /// Unique result identifier.
     pub id: String,
+    /// Combined final score after signal fusion.
     pub final_score: f32,
+    /// Associated entry metadata.
     pub metadata: Option<serde_json::Value>,
 }
 
 /// A unified query traversing multiple index signals.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HybridQuery {
+    /// Optional full-text query string.
     pub text_query: Option<String>,
+    /// Optional vector query embedding.
     pub vector_query: Option<Vec<f32>>,
+    /// Optional starting node ID for graph traversal search.
     pub graph_start_node: Option<String>,
+    /// Fusion weights across vector, text, and graph signals.
     pub fusion_weights: FusionWeights,
+    /// Optional metadata expression filter.
     pub filter: Option<FilterExpr>,
+    /// Maximum number of search results to return.
     pub k: usize,
 }
 
 impl HybridQuery {
+    /// Creates a new `HybridQueryBuilder`.
     pub fn builder() -> HybridQueryBuilder {
         HybridQueryBuilder::default()
     }
@@ -135,40 +157,51 @@ pub struct HybridQueryBuilder {
 }
 
 impl HybridQueryBuilder {
+    /// Creates a new `HybridQueryBuilder` with empty default options.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Sets the full-text search query string.
     pub fn with_text_query(mut self, q: impl Into<String>) -> Self {
         self.text_query = Some(q.into());
         self
     }
 
+    /// Sets the vector query embedding.
     pub fn with_vector_query(mut self, v: Vec<f32>) -> Self {
         self.vector_query = Some(v);
         self
     }
 
+    /// Sets the graph start node for graph traversal search.
     pub fn with_graph_start_node(mut self, start: impl Into<String>) -> Self {
         self.graph_start_node = Some(start.into());
         self
     }
 
+    /// Sets custom signal fusion weights.
     pub fn with_fusion_weights(mut self, weights: FusionWeights) -> Self {
         self.fusion_weights = Some(weights);
         self
     }
 
+    /// Sets a metadata expression filter on the query.
     pub fn with_filter(mut self, filter: FilterExpr) -> Self {
         self.filter = Some(filter);
         self
     }
 
+    /// Sets the top-K limit for the query.
     pub fn with_k(mut self, k: usize) -> Self {
         self.k = Some(k);
         self
     }
 
+    /// Builds the `HybridQuery` instance.
+    ///
+    /// # Errors
+    /// Returns `Err` if query parameters or fusion weights fail validation.
     pub fn build(self) -> Result<HybridQuery> {
         Ok(HybridQuery {
             text_query: self.text_query,

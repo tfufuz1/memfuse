@@ -11,88 +11,138 @@ pub type Result<T> = std::result::Result<T, MemFuseError>;
 
 /// Unified error type for all MemFuse operations.
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum MemFuseError {
     // ═══ Core & Logic ═══
+    /// Internal engine logic error.
     #[error("Internal error: {0}")]
     Internal(String),
 
+    /// Invalid user or API argument input.
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
+    /// Resource, key, or document not found.
     #[error("Not found: {0}")]
     NotFound(String),
 
+    /// Security or execution policy violation.
     #[error("Policy violation: {0}")]
     PolicyViolation(String),
 
+    /// Multi-tenant or collection namespace violation.
     #[error("Namespace violation: {0}")]
     NamespaceViolation(String),
 
     // ═══ Storage Engine ═══
+    /// Storage layer failure.
     #[error("Storage error: {0}")]
     Storage(String),
 
+    /// Standard I/O error wrapper.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// Data integrity corruption detected in Write-Ahead Log.
     #[error("WAL corruption detected at offset {offset}: {reason}")]
-    WalCorruption { offset: u64, reason: String },
+    WalCorruption {
+        /// Byte offset in WAL file where corruption occurred.
+        offset: u64,
+        /// Detail text describing corruption cause.
+        reason: String,
+    },
 
+    /// Block checksum validation failure.
     #[error("Checksum mismatch: file={path}, block={block_id}")]
-    ChecksumMismatch { path: String, block_id: u64 },
+    ChecksumMismatch {
+        /// File path of corrupted storage block.
+        path: String,
+        /// Block identifier.
+        block_id: u64,
+    },
 
     // ═══ Transactions & Consistency ═══
+    /// Transaction lifecycle or execution failure.
     #[error("Transaction error: {0}")]
     Transaction(String),
 
+    /// Transaction execution timeout exceeded.
     #[error("Transaction {tx_id} timed out after {elapsed_ms}ms")]
-    TransactionTimeout { tx_id: u64, elapsed_ms: u64 },
+    TransactionTimeout {
+        /// Identifier of timed out transaction.
+        tx_id: u64,
+        /// Elapsed time in milliseconds before timeout.
+        elapsed_ms: u64,
+    },
 
+    /// Data conflict during commit or mutation.
     #[error("Conflict: {0}")]
     Conflict(String),
 
+    /// Out-of-order or invalid sequence number.
     #[error("Invalid sequence number: {0}")]
     InvalidSequenceNumber(u64),
 
     // ═══ Index & Search ═══
+    /// General index operation failure.
     #[error("Index error: {0}")]
     Index(String),
 
+    /// HNSW graph degradation warning threshold reached.
     #[error("HNSW graph connectivity degraded: {deleted_ratio:.1}% deleted nodes")]
-    HnswConnectivityDegraded { deleted_ratio: f64 },
+    HnswConnectivityDegraded {
+        /// Ratio of deleted tombstone nodes in graph.
+        deleted_ratio: f64,
+    },
 
+    /// Text search engine operation failure.
     #[error("Text engine error: {0}")]
     Text(String),
 
     // ═══ Resources & Sandbox ═══
+    /// Configured memory allocation budget exceeded.
     #[error("Memory budget exceeded: {used_mb}MB / {limit_mb}MB")]
-    MemoryBudgetExceeded { used_mb: u64, limit_mb: u64 },
+    MemoryBudgetExceeded {
+        /// Currently used memory in MB.
+        used_mb: u64,
+        /// Configured memory limit in MB.
+        limit_mb: u64,
+    },
 
+    /// Code or query sandbox execution error.
     #[error("Sandbox error: {0}")]
     Sandbox(String),
 
+    /// Sandbox memory limit breach.
     #[error("Memory limit exceeded in sandbox: {0}")]
     MemoryLimitExceeded(String),
 
+    /// Sandbox execution timeout breach.
     #[error("Timeout exceeded in sandbox: {0}")]
     SandboxTimeout(String),
 
     // ═══ Infrastructure ═══
+    /// Data serialization or deserialization error.
     #[error("Serialization error: {0}")]
     Serialization(String),
 
+    /// JSON processing error wrapper.
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
+    /// Cryptographic operation error.
     #[error("Crypto error: {0}")]
     Crypto(String),
 
+    /// Requested checkpoint missing or deleted.
     #[error("Checkpoint not found")]
     CheckpointNotFound,
 
+    /// Distributed cluster operation error.
     #[error("Cluster error: {0}")]
     Cluster(String),
 
+    /// Data parsing error.
     #[error("Parse error: {0}")]
     ParseError(String),
 }
@@ -266,10 +316,13 @@ mod tests {
 
     #[test]
     fn test_from_conversions() {
+        use std::error::Error;
+
         // Io
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
         let m_err: MemFuseError = io_err.into();
         assert!(matches!(m_err, MemFuseError::Io(_)));
+        assert!(m_err.source().is_some());
 
         // Json
         let json_str = "{ invalid }";
@@ -277,6 +330,11 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(json_str).unwrap_err();
         let m_err2: MemFuseError = json_err.into();
         assert!(matches!(m_err2, MemFuseError::Json(_)));
+        assert!(m_err2.source().is_some());
+
+        // Other variants should return None for source()
+        let m_err3 = MemFuseError::Internal("test".into());
+        assert!(m_err3.source().is_none());
     }
 
     #[test]
