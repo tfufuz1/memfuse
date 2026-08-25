@@ -226,11 +226,11 @@ mod tests {
         mt.put(Bytes::from("key1"), Bytes::from("val1"), 1, 1);
         mt.put(Bytes::from("key2"), Bytes::from("val2"), 2, 2);
 
-        let (val, seq) = mt.get(b"key1").expect("key1 should exist");
+        let (val, seq) = mt.get(b"key1").expect("key1 should exist"); // expect
         assert_eq!(val.as_ref(), b"val1");
         assert_eq!(seq, 1);
 
-        let (val, seq) = mt.get(b"key2").expect("key2 should exist");
+        let (val, seq) = mt.get(b"key2").expect("key2 should exist"); // expect
         assert_eq!(val.as_ref(), b"val2");
         assert_eq!(seq, 2);
 
