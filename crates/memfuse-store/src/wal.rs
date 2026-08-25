@@ -1,4 +1,9 @@
 //! Write-Ahead Log (WAL) for durability and crash recovery with HMAC chaining.
+// FILE-CONTEXT
+// ZWECK: Write-Ahead-Log mit HMAC-Chaining für crash-sichere WAL-Operationen
+// INVARIANTEN: fsync NACH jedem Schreibvorgang (ADR-002); WAL VOR MemTable schreiben
+// NICHT-OFFENSICHTLICH: sync_all() auf dem Verzeichnis-FD nötig, nicht nur auf der Datei
+// SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md ADR-002
 
 use memfuse_core::{MemFuseError, Result, TxId};
 use memfuse_crypto::crypto::KeyManager;

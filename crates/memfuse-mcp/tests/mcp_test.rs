@@ -183,3 +183,48 @@ async fn test_missing_arguments() {
     let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
     assert!(text.contains("id fehlt") || text.contains("text fehlt"));
 }
+
+// ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS — Error-Path Coverage
+#[tokio::test]
+async fn test_malformed_request_returns_error() {
+    // TESTZWECK: Fehlende Pflichtparameter müssen Fehlermeldung erzeugen
+    // REFERENZWERT: JSON-RPC 2.0 Spec — Fehlerfall hat "error"-Feld
+    let (server, _tmp) = setup_app().await;
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(99)),
+        method: "tools/call".to_string(),
+        params: json!({
+            "name": "memfuse_insert",
+            "arguments": { "id": "doc_without_text", "collection": "test" }
+            // "text" fehlt absichtlich
+        }),
+    };
+    let response = server.handle(req).await;
+    let val = serde_json::to_value(&response).unwrap();
+    assert!(
+        val.get("error").is_some()
+            || val["result"]["content"][0]["text"].as_str().unwrap_or("").contains("error")
+            || val["result"]["isError"].as_bool().unwrap_or(false),
+        "Fehlender 'text'-Parameter muss Fehlermeldung erzeugen: {val}"
+    );
+}
+
+#[tokio::test]
+async fn test_unknown_tool_returns_error() {
+    // TESTZWECK: Unbekannte Tool-Namen müssen Fehler zurückgeben
+    let (server, _tmp) = setup_app().await;
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(42)),
+        method: "tools/call".to_string(),
+        params: json!({ "name": "nonexistent_tool_xyz_abc", "arguments": {} }),
+    };
+    let response = server.handle(req).await;
+    let val = serde_json::to_value(&response).unwrap();
+    let text = val["result"]["content"][0]["text"].as_str().unwrap_or("");
+    assert!(
+        text.contains("Unknown") || text.contains("Unbekanntes") || text.contains("not found") || text.contains("error") || val["result"]["isError"].as_bool().unwrap_or(false),
+        "Unbekanntes Tool muss Fehler zurückgeben, got: {text}"
+    );
+}

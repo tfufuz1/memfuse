@@ -1,4 +1,10 @@
 //! LSM-Tree (Log-Structured Merge-Tree) storage engine.
+// FILE-CONTEXT
+// ZWECK: LSM-Tree-Implementierung (MemTable + SSTable + Compaction)
+// INVARIANTEN: Compaction darf keine Daten verlieren; WAL-Replay vor MemTable-Aufbau
+// NICHT-OFFENSICHTLICH: Compaction-Lock muss VOR MemTable-Lock genommen werden (Deadlock-Gefahr)
+// SIEHE AUCH: wal.rs, sstable.rs, DECISIONS.md ADR-003
+
 // TODO: Missing module documentation
 // INVARIANT: Zentraler Storage-Engine-Orchestrator des Triebwerks.
 // IMPLEMENTS: StorageEngine Trait (memfuse-core/src/traits.rs)
