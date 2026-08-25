@@ -109,8 +109,8 @@ mod tests {
             }
         });
 
-        let embedder = OllamaEmbedder::new(server_url, "nomic-embed-text")
-            .with_expected_dimension(768);
+        let embedder =
+            OllamaEmbedder::new(server_url, "nomic-embed-text").with_expected_dimension(768);
 
         let result = embedder.embed("test text").await;
         assert!(result.is_err());

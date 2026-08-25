@@ -722,7 +722,11 @@ mod tests {
                 .entry(key.to_vec())
                 .or_default()
                 .push((value.to_vec(), seq));
-            self.staged.write().entry(tx_id).or_default().push(key.to_vec());
+            self.staged
+                .write()
+                .entry(tx_id)
+                .or_default()
+                .push(key.to_vec());
             Ok(())
         }
         async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
@@ -739,7 +743,11 @@ mod tests {
                     vec![(Vec::new(), seq | memfuse_core::TOMBSTONE_BIT)],
                 );
             }
-            self.staged.write().entry(tx_id).or_default().push(key.to_vec());
+            self.staged
+                .write()
+                .entry(tx_id)
+                .or_default()
+                .push(key.to_vec());
             Ok(())
         }
         async fn commit(&self, tx_id: TxId) -> Result<()> {
@@ -1077,14 +1085,23 @@ mod tests {
         let tx1 = TxId::new(1);
         let doc_id = DocId::new(100);
 
-        index.insert(tx1, doc_id, "German morphological search engine").await?;
+        index
+            .insert(tx1, doc_id, "German morphological search engine")
+            .await?;
         assert_eq!(index.search("morphological", 10).await?.len(), 1);
 
         index.rollback(tx1).await?;
 
         let results = index.search("morphological", 10).await?;
-        assert!(results.is_empty(), "Rolled-back insert must not be visible in search results");
-        assert_eq!(index.len().await, 0, "Index length must be 0 after rollback");
+        assert!(
+            results.is_empty(),
+            "Rolled-back insert must not be visible in search results"
+        );
+        assert_eq!(
+            index.len().await,
+            0,
+            "Index length must be 0 after rollback"
+        );
 
         Ok(())
     }

@@ -303,7 +303,9 @@ mod tests {
         assert_eq!(tx, 1);
 
         // Read at seq 25 -> should get tombstone
-        let (val, seq, tx) = mt.get_at_seq(&key, 25, u64::MAX).expect("Should find tombstone");
+        let (val, seq, tx) = mt
+            .get_at_seq(&key, 25, u64::MAX)
+            .expect("Should find tombstone");
         assert_eq!(val.len(), 0);
         assert_eq!(seq, 20 | TOMBSTONE_BIT);
         assert_eq!(tx, 2);

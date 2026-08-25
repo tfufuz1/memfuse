@@ -319,7 +319,8 @@ async fn mcp_parse_error_returns_rpc_32700() {
     };
 
     // Testing stdio parse error logic directly or via handle / malformed request
-    let err_resp = memfuse_mcp::protocol::JsonRpcResponse::err(None, -32700, "Parse error: invalid json");
+    let err_resp =
+        memfuse_mcp::protocol::JsonRpcResponse::err(None, -32700, "Parse error: invalid json");
     assert_eq!(err_resp.error.as_ref().unwrap().code, -32700);
 
     // Also testing unknown method returns -32601

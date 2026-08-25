@@ -9,10 +9,7 @@ pub async fn extract_docx_text(path: &Path) -> Result<String> {
             use docx_rs::*;
 
             let bytes = std::fs::read(&path_buf).map_err(|e| {
-                MemFuseError::Internal(format!(
-                    "DOCX lesen fehlgeschlagen für {:?}: {e}",
-                    path_buf
-                ))
+                MemFuseError::Internal(format!("DOCX lesen fehlgeschlagen für {:?}: {e}", path_buf))
             })?;
 
             let docx = read_docx(&bytes).map_err(|e| {

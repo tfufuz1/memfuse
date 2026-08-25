@@ -2493,7 +2493,10 @@ mod tests {
         // Verify search() still works and returns non-deleted nodes
         let query = vec![75.0, 1.0, 0.0, 0.0];
         let results = idx.search(&query, 5).await.unwrap();
-        assert!(!results.is_empty(), "Search after rebuild should return results");
+        assert!(
+            !results.is_empty(),
+            "Search after rebuild should return results"
+        );
         for doc in results {
             assert!(
                 doc.doc_id.inner() >= 51,

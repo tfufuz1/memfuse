@@ -40,6 +40,7 @@ impl WalOp {
 /// 1. This key is ONLY used during replay of pre-migration WAL files when per-file key verification fails.
 /// 2. It is NEVER used for new write or append operations (all new WAL writes derive an integrity key via `KeyManager`).
 /// 3. After successful replay and LSM compaction into SSTables, old WAL files using `LEGACY_INTEGRITY_KEY` are superseded and truncated/removed.
+///
 /// ANCHOR: MIGRATION-WAL-HMAC-001
 pub const LEGACY_INTEGRITY_KEY: [u8; 32] = *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0";
 
@@ -348,16 +349,12 @@ impl Wal {
                 } else {
                     parent
                 };
-                let dir = tokio::fs::File::open(parent).await.map_err(|e| {
-                    MemFuseError::Storage(format!(
-                        "WAL dir open failed: {e}"
-                    ))
-                })?;
-                dir.sync_all().await.map_err(|e| {
-                    MemFuseError::Storage(format!(
-                        "WAL dir fsync failed: {e}"
-                    ))
-                })?;
+                let dir = tokio::fs::File::open(parent)
+                    .await
+                    .map_err(|e| MemFuseError::Storage(format!("WAL dir open failed: {e}")))?;
+                dir.sync_all()
+                    .await
+                    .map_err(|e| MemFuseError::Storage(format!("WAL dir fsync failed: {e}")))?;
             }
         }
 

@@ -702,14 +702,14 @@ mod tests {
         let store = Arc::new(PersistentCheckpointStore::new(storage, "test"));
 
         let mut tasks = JoinSet::new();
-        for i in 0..8 {
+        for i in 0..8u64 {
             let store = Arc::clone(&store);
             tasks.spawn(async move {
                 store
                     .create_named_checkpoint(
                         &format!("cp-{i}"),
                         "col1",
-                        i as u64,
+                        i,
                         TxId::new(TxId::INTERNAL_BASE + i),
                         serde_json::json!({}),
                     )

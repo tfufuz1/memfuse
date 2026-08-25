@@ -112,7 +112,9 @@ pub fn sanitize_prompt_input(text: &str) -> String {
 /// Validates that model name does not contain invalid path traversal or whitespace control characters.
 pub fn validate_model_name(name: &str) -> Result<()> {
     if name.is_empty() {
-        return Err(MemFuseError::InvalidInput("Model name cannot be empty".into()));
+        return Err(MemFuseError::InvalidInput(
+            "Model name cannot be empty".into(),
+        ));
     }
     if name.contains('/') || name.contains('\n') || name.contains('\r') {
         return Err(MemFuseError::PolicyViolation(format!(
@@ -248,7 +250,9 @@ impl OllamaClient {
             .json(&request)
             .send()
             .await
-            .map_err(|e| MemFuseError::Storage(format!("Batch embed request network error: {e}")))?;
+            .map_err(|e| {
+                MemFuseError::Storage(format!("Batch embed request network error: {e}"))
+            })?;
 
         if !response.status().is_success() {
             return Err(MemFuseError::Internal(format!(
@@ -343,7 +347,10 @@ impl OllamaClient {
             .send()
             .await
             .map_err(|e| {
-                MemFuseError::Storage(format!("Ollama connection network error at {}: {e}", self.base_url))
+                MemFuseError::Storage(format!(
+                    "Ollama connection network error at {}: {e}",
+                    self.base_url
+                ))
             })?;
 
         if !response.status().is_success() {
@@ -428,8 +435,8 @@ impl OllamaClient {
         let mut full_response = String::new();
 
         'outer: while let Some(chunk_result) = stream.next().await {
-            let bytes =
-                chunk_result.map_err(|e| MemFuseError::Storage(format!("Stream interrupted: {e}")))?;
+            let bytes = chunk_result
+                .map_err(|e| MemFuseError::Storage(format!("Stream interrupted: {e}")))?;
             for line in bytes.split(|&b| b == b'\n') {
                 if line.is_empty() {
                     continue;
@@ -562,7 +569,9 @@ mod tests {
         let sanitized = sanitize_prompt_input(malicious);
         assert_ne!(sanitized, malicious);
         assert!(sanitized.contains("[REDACTED]"));
-        assert!(!sanitized.to_lowercase().contains("ignore all previous instructions"));
+        assert!(!sanitized
+            .to_lowercase()
+            .contains("ignore all previous instructions"));
 
         // Verify that embed/chat with sanitized prompt doesn't panic
         assert_eq!(client.base_url(), "http://localhost:11434");

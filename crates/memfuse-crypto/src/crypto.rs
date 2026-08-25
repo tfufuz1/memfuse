@@ -107,9 +107,7 @@ impl KeyManager {
             .map_err(|_| MemFuseError::Crypto("Invalid PRK length".to_string()))?;
         let mut key = [0u8; 32];
         hk.expand(b"memfuse-hmac-sha256-key", &mut key)
-            .map_err(|e| {
-                MemFuseError::Crypto(format!("HKDF integrity expansion failed: {}", e))
-            })?;
+            .map_err(|e| MemFuseError::Crypto(format!("HKDF integrity expansion failed: {}", e)))?;
         Ok(key)
     }
 

@@ -175,7 +175,10 @@ mod tests {
             let german_tokens = german_tokenizer.tokenize(text);
             // German morph tokenizer may expand compounds, but for these edge cases token count is within reasonable limits
             assert!(
-                !german_tokens.is_empty() || text.trim().is_empty() || text == &"." || text == &"🦀",
+                !german_tokens.is_empty()
+                    || text.trim().is_empty()
+                    || text == &"."
+                    || text == &"🦀",
                 "GermanMorphTokenizer must complete without panic for edge case input"
             );
         }
