@@ -213,6 +213,7 @@ impl<S: StorageEngine> Collection<S> {
     /// and reconciles them. This is critical for crash recovery.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn repair(&self) -> Result<()> {
+        let _guard = self.insert_lock.lock().await;
         let mut repair_count = 0;
         let docs = self.storage.scan_prefix(&self.prefix).await?;
         // FIND-DB-004: Use doc_to_node map directly for O(1) lookup per DocId,
@@ -507,6 +508,7 @@ impl<S: StorageEngine> Collection<S> {
         &self,
         docs: &[(String, Vec<f32>, Option<serde_json::Value>)],
     ) -> Result<()> {
+        let _guard = self.insert_lock.lock().await;
         let db_tx = self.begin_transaction();
         for (id, embedding, metadata) in docs {
             if let Err(e) = self
@@ -541,6 +543,7 @@ impl<S: StorageEngine> Collection<S> {
             )));
         }
 
+        let _guard = self.insert_lock.lock().await;
         let db_tx = self.begin_transaction();
         let result = self.update_op(&db_tx, id, embedding, metadata).await;
 
@@ -561,6 +564,7 @@ impl<S: StorageEngine> Collection<S> {
         &self,
         docs: &[(String, Vec<f32>, Option<serde_json::Value>)],
     ) -> Result<()> {
+        let _guard = self.insert_lock.lock().await;
         let db_tx = self.begin_transaction();
         for (id, embedding, metadata) in docs {
             if embedding.len() != self.dimension {
@@ -630,6 +634,7 @@ impl<S: StorageEngine> Collection<S> {
             )));
         }
 
+        let _guard = self.insert_lock.lock().await;
         let db_tx = self.begin_transaction();
 
         match self.update_op(&db_tx, id, embedding, metadata).await {
@@ -693,6 +698,7 @@ impl<S: StorageEngine> Collection<S> {
     /// Deletes a document from the collection by its ID.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn delete(&self, id: &str) -> Result<()> {
+        let _guard = self.insert_lock.lock().await;
         let mut db_tx = self.begin_transaction();
 
         match self.delete_op(&mut db_tx, id).await {
@@ -734,6 +740,7 @@ impl<S: StorageEngine> Collection<S> {
     /// Creates a directional relationship between two documents in the collection.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
+        let _guard = self.insert_lock.lock().await;
         let tx = self.allocate_tx();
         let key_str = format!("{}:{}:{}", from, label, to);
         let key = self.namespaced_key(key_str.as_bytes(), 2);
@@ -1339,6 +1346,7 @@ impl<S: StorageEngine> Collection<S> {
     /// Removes all data belonging to this collection from storage.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn drop_collection(&self) -> Result<()> {
+        let _guard = self.insert_lock.lock().await;
         let prefix = if self.name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(
                 "Cannot drop default collection",
@@ -1602,5 +1610,94 @@ mod tests {
         assert_eq!(tx1.inner(), 100);
         assert_eq!(tx2.inner(), 101);
         assert_eq!(tx3.inner(), 102);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_insert_and_write_ops_lock_safety() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let lsm_config = memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let graph = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(AtomicU64::new(1));
+
+        let col = Arc::new(super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            graph,
+            next_tx,
+            4,
+            memfuse_text::Language::English,
+        ));
+
+        let mut handles = Vec::new();
+
+        // Task 1: Single inserts
+        {
+            let c = col.clone();
+            handles.push(tokio::spawn(async move {
+                for i in 0..10 {
+                    let id = format!("single_doc_{i}");
+                    c.insert(&id, &[1.0, 0.0, 0.0, 0.0], None).await.unwrap();
+                }
+            }));
+        }
+
+        // Task 2: Insert many
+        {
+            let c = col.clone();
+            handles.push(tokio::spawn(async move {
+                let docs: Vec<_> = (0..5)
+                    .map(|i| (format!("batch_doc_{i}"), vec![0.0, 1.0, 0.0, 0.0], None))
+                    .collect();
+                c.insert_many(&docs).await.unwrap();
+            }));
+        }
+
+        // Task 3: Upsert & Update
+        {
+            let c = col.clone();
+            handles.push(tokio::spawn(async move {
+                for i in 0..5 {
+                    let id = format!("upsert_doc_{i}");
+                    c.upsert(&id, &[0.0, 0.0, 1.0, 0.0], None).await.unwrap();
+                    c.update(&id, &[0.0, 0.0, 1.0, 1.0], None).await.unwrap();
+                }
+            }));
+        }
+
+        // Task 4: Upsert many
+        {
+            let c = col.clone();
+            handles.push(tokio::spawn(async move {
+                let docs: Vec<_> = (0..5)
+                    .map(|i| (format!("upsert_batch_{i}"), vec![0.5, 0.5, 0.0, 0.0], None))
+                    .collect();
+                c.upsert_many(&docs).await.unwrap();
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        assert!(col.len().await > 0);
     }
 }
