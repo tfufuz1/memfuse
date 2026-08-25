@@ -271,10 +271,7 @@ impl MemFuse {
         // 3. Mark pending intents as "repaired" ONLY if collection repair succeeded.
         if !pending_intents.is_empty() && repair_errors.is_empty() {
             for intent_key in &pending_intents {
-                let tx = TxId::new(
-                    self.next_tx
-                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
-                );
+                let tx = self.allocate_tx();
                 if let Err(e) = self.storage.put(tx, intent_key, b"repaired").await {
                     tracing::error!("repair_on_open: failed to mark intent as repaired: {}", e);
                     continue;
@@ -401,7 +398,7 @@ impl MemFuse {
         // Register in storage if not default
         if name != "default" {
             let col_idx_key = [b"__col_idx:\x00", name.as_bytes()].concat();
-            let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+            let tx = self.allocate_tx();
             self.storage.put(tx, &col_idx_key, b"{}").await?;
             self.storage.commit(tx).await?;
         }
@@ -413,6 +410,12 @@ impl MemFuse {
         write_guard.insert(name.to_string(), col.clone());
 
         Ok(col)
+    }
+
+    /// Allokiert eine eindeutige, atomar inkrementierte Transaction-ID.
+    /// EINZIGE legale TxId-Quelle für externe Crates (verhindert Kollisionen).
+    pub fn allocate_tx(&self) -> TxId {
+        TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst))
     }
 
     /// Lists all existing collection names (including those persisted in storage).
@@ -451,7 +454,7 @@ impl MemFuse {
             ));
         }
 
-        let tx = TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst));
+        let tx = self.allocate_tx();
 
         // 1. Delete all collection data keys (prefix-based)
         let col_data_prefix = format!("__col:{}:", name);
