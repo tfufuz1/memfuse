@@ -134,6 +134,13 @@ impl<S: StorageEngine> Collection<S> {
         TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst))
     }
 
+    /// Allokiert eine eindeutige, atomar inkrementierte Transaction-ID.
+    /// Externe Crates verwenden diese Methode statt eigener TxId-Generierung.
+    /// Verhindert TxId-Kollisionen bei paralleler Ingestion (EMBED_CONCURRENCY > 1).
+    pub fn allocate_tx(&self) -> TxId {
+        TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst))
+    }
+
     /// Returns the CSR graph index for this collection.
     pub fn graph_index(&self) -> Arc<CsrGraph> {
         self.graph_index.clone()
@@ -1529,5 +1536,46 @@ mod tests {
         assert_eq!(tx1.inner(), 1);
         assert_eq!(tx2.inner(), 2);
         assert_eq!(tx3.inner(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_collection_allocate_tx_sequence() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let lsm_config = memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let index = Arc::new(HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        }).unwrap());
+        let graph = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(AtomicU64::new(100));
+
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            graph,
+            next_tx,
+            4,
+            memfuse_text::Language::English,
+        );
+
+        let tx1 = col.allocate_tx();
+        let tx2 = col.allocate_tx();
+        let tx3 = col.allocate_tx();
+
+        assert_eq!(tx1.inner(), 100);
+        assert_eq!(tx2.inner(), 101);
+        assert_eq!(tx3.inner(), 102);
     }
 }
