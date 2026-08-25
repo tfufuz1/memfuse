@@ -495,10 +495,10 @@ impl DiskAnnIndex {
         tokio::task::spawn_blocking(move || {
             use std::sync::atomic::Ordering;
             let file = std::fs::File::open(&inner.config.index_path).map_err(MemFuseError::Io)?;
-            // SAFETY: write_to_file() schreibt ausschließlich in eine temporäre Datei
-            // und ersetzt den index_path atomar per rename(). Bestehende Mmap-Instanzen
-            // sehen die alte, konsistente Inode bis sie selbst geschlossen werden.
-            // (POSIX rename()-Semantik, ADR-017 erweitert durch Mmap-Race-Fix 2026-08-24)
+            // SAFETY: Invariant: `file` is a valid, read-only open handle to `index_path` and the underlying inode is immutable during read.
+            //         Guarantor: `std::fs::File::open` verifies file existence and access permissions prior to mapping.
+            //         Why: `write_to_file()` writes to `.tmp` then renames atomically; POSIX `rename()` guarantees existing readers see the old consistent inode while new loaders see the complete new file.
+            //         ADR-017: Memory mapping permitted in `diskann.rs`.
             #[allow(unsafe_code)]
             let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? };
 

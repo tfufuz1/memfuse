@@ -2461,4 +2461,48 @@ mod tests {
         // Empty index — connectivity_score returns 1.0, always healthy
         assert!(index.check_connectivity().is_ok());
     }
+
+    #[tokio::test]
+    async fn hnsw_rebuild_triggers_after_threshold() {
+        let config = HnswConfig {
+            rebuild_threshold: 0.5,
+            max_elements: 100,
+            dimension: 4,
+            ..Default::default()
+        };
+        let idx = HnswIndex::try_new(config).unwrap();
+        let tx = TxId::new(1);
+
+        // Insert 100 vectors
+        for i in 0u64..100 {
+            let v = vec![i as f32, 1.0, 0.0, 0.0];
+            idx.insert(tx, DocId::new(i), &v).await.unwrap();
+        }
+        idx.commit(tx).await.unwrap();
+
+        // Delete 51 vectors -> >50% deleted, crossing 0.5 threshold
+        let tx2 = TxId::new(2);
+        for i in 0u64..51 {
+            idx.delete(tx2, DocId::new(i)).await.unwrap();
+        }
+        idx.commit(tx2).await.unwrap();
+
+        // Wait briefly for background rebuild task to complete
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Verify search() still works and returns non-deleted nodes
+        let query = vec![75.0, 1.0, 0.0, 0.0];
+        let results = idx.search(&query, 5).await.unwrap();
+        assert!(
+            !results.is_empty(),
+            "Search after rebuild should return results"
+        );
+        for doc in results {
+            assert!(
+                doc.doc_id.inner() >= 51,
+                "Deleted doc_id {} was found in search results",
+                doc.doc_id.inner()
+            );
+        }
+    }
 }

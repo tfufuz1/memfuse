@@ -429,8 +429,10 @@ pub trait GraphIndex: Send + Sync + 'static {
         to: crate::types::EntityId,
         label: &str,
     ) -> crate::Result<()> {
-        self.add_edge(tx, crate::types::Edge::new(from, to, label)).await?;
-        self.add_edge(tx, crate::types::Edge::new(to, from, label)).await?;
+        self.add_edge(tx, crate::types::Edge::new(from, to, label))
+            .await?;
+        self.add_edge(tx, crate::types::Edge::new(to, from, label))
+            .await?;
         Ok(())
     }
 

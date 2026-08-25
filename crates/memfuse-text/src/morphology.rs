@@ -430,7 +430,10 @@ mod tests {
     fn umlaut_normalization_is_consistent() {
         let n1 = normalize_umlauts("Müller");
         let n2 = normalize_umlauts("Müller");
-        assert_eq!(n1, n2, "Same input must produce same output (deterministic)");
+        assert_eq!(
+            n1, n2,
+            "Same input must produce same output (deterministic)"
+        );
         assert!(
             n1.contains("ue") || n1.contains('ü'),
             "Must either substitute or preserve consistently"
@@ -456,7 +459,10 @@ mod tests {
     #[test]
     fn test_german_compounds_explicit_cases() {
         let splitter = GermanCompoundSplitter::new();
-        assert_eq!(splitter.decompose("datenbankserver"), vec!["datenbank", "server"]);
+        assert_eq!(
+            splitter.decompose("datenbankserver"),
+            vec!["datenbank", "server"]
+        );
         assert_eq!(
             splitter.decompose("unternehmensassistent"),
             vec!["unternehmens", "assistent"]

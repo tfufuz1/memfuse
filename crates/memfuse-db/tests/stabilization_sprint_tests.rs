@@ -36,16 +36,27 @@ async fn test_allocate_tx_concurrent_monotonicity() {
     all_txs.sort_unstable();
     let original_len = all_txs.len();
     all_txs.dedup();
-    assert_eq!(all_txs.len(), original_len, "All allocated TxIds must be strictly unique!");
+    assert_eq!(
+        all_txs.len(),
+        original_len,
+        "All allocated TxIds must be strictly unique!"
+    );
 }
 
 #[tokio::test]
 async fn test_concurrent_inserts_toctou_safety() {
     let tmp = TempDir::new().expect("temp dir");
-    let db = Arc::new(MemFuse::open_with_config(tmp.path(), MemFuseConfig {
-        dimension: 4,
-        ..Default::default()
-    }).await.expect("open db"));
+    let db = Arc::new(
+        MemFuse::open_with_config(
+            tmp.path(),
+            MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("open db"),
+    );
 
     let col = Arc::new(db.collection("toctou-test").await.expect("col"));
 
@@ -58,13 +69,22 @@ async fn test_concurrent_inserts_toctou_safety() {
         handles.push(tokio::spawn(async move {
             b.wait().await;
             let doc_id = format!("same_key_{}", i);
-            col_clone.insert(&doc_id, &[1.0, 0.0, 0.0, 0.0], Some(json!({"text": "concurrent test"}))).await
+            col_clone
+                .insert(
+                    &doc_id,
+                    &[1.0, 0.0, 0.0, 0.0],
+                    Some(json!({"text": "concurrent test"})),
+                )
+                .await
         }));
     }
 
     for handle in handles {
         let res = handle.await.expect("join task");
-        assert!(res.is_ok(), "Concurrent inserts with distinct string keys should succeed without TOCTOU race");
+        assert!(
+            res.is_ok(),
+            "Concurrent inserts with distinct string keys should succeed without TOCTOU race"
+        );
     }
 }
 
@@ -117,13 +137,7 @@ async fn test_hybrid_search_uses_all_signals_and_weights() {
     // Hybrid search with custom fusion weights
     let weights = FusionWeights::new(0.5, 0.3, 0.2).unwrap();
     let results = col
-        .hybrid_search_with_weights(
-            text_query,
-            &vector_query,
-            10,
-            None,
-            Some(&weights),
-        )
+        .hybrid_search_with_weights(text_query, &vector_query, 10, None, Some(&weights))
         .await
         .unwrap();
 

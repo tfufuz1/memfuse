@@ -349,16 +349,12 @@ impl Wal {
                 } else {
                     parent
                 };
-                let dir = tokio::fs::File::open(parent).await.map_err(|e| {
-                    MemFuseError::Storage(format!(
-                        "WAL dir open failed: {e}"
-                    ))
-                })?;
-                dir.sync_all().await.map_err(|e| {
-                    MemFuseError::Storage(format!(
-                        "WAL dir fsync failed: {e}"
-                    ))
-                })?;
+                let dir = tokio::fs::File::open(parent)
+                    .await
+                    .map_err(|e| MemFuseError::Storage(format!("WAL dir open failed: {e}")))?;
+                dir.sync_all()
+                    .await
+                    .map_err(|e| MemFuseError::Storage(format!("WAL dir fsync failed: {e}")))?;
             }
         }
 

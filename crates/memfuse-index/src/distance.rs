@@ -1459,4 +1459,25 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn cosine_distance_self_is_zero() {
+        let v = vec![1.0f32, 2.0, 3.0, 4.0];
+        let d = compute_distance(&v, &v, DistanceMetric::Cosine).unwrap();
+        assert!(d.abs() < 1e-6, "cos_distance(v, v) must be ~0, got {d}");
+    }
+
+    #[test]
+    fn euclidean_distance_self_is_zero() {
+        let v = vec![1.0f32, 0.5, -1.0, 2.0];
+        let d = compute_distance(&v, &v, DistanceMetric::Euclidean).unwrap();
+        assert!(d.abs() < 1e-6, "euclidean(v, v) must be ~0, got {d}");
+    }
+
+    #[test]
+    fn distance_mismatched_dims_returns_err() {
+        let a = vec![1.0f32, 2.0];
+        let b = vec![1.0f32, 2.0, 3.0];
+        assert!(compute_distance(&a, &b, DistanceMetric::Cosine).is_err());
+    }
 }

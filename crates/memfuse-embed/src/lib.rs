@@ -422,7 +422,8 @@ mod tests {
 
     #[cfg(feature = "onnx")]
     #[test]
-    fn test_text_embedder_load_missing_files() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    fn test_text_embedder_load_missing_files() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
         let dir = tempdir()?;
 
         // Empty directory — missing model file check first or tokenizer check
@@ -450,7 +451,8 @@ mod tests {
 
     #[cfg(feature = "onnx")]
     #[test]
-    fn test_text_embedder_load_invalid_content() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    fn test_text_embedder_load_invalid_content(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         use std::io::Write;
 
         let dir = tempdir()?;

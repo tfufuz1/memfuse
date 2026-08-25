@@ -417,10 +417,7 @@ impl CsrGraph {
         drop(inner_read);
 
         let mut inner = self.inner.write();
-        if inner.is_dirty
-            || !inner.pending_edges.is_empty()
-            || !inner.tombstoned_edges.is_empty()
-        {
+        if inner.is_dirty || !inner.pending_edges.is_empty() || !inner.tombstoned_edges.is_empty() {
             inner.compact();
         }
     }
@@ -446,7 +443,10 @@ impl CsrGraph {
             for edge_idx in start_edge..end_edge {
                 let neighbor_idx = inner.targets[edge_idx];
                 if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
-                    && inner.entities.get(neighbor_idx).is_some_and(|e| e.is_some())
+                    && inner
+                        .entities
+                        .get(neighbor_idx)
+                        .is_some_and(|e| e.is_some())
                 {
                     if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
                         if !neighbors.contains(&id) {
@@ -461,7 +461,10 @@ impl CsrGraph {
         if let Some(pending) = inner.pending_edges.get(&start_idx) {
             for &(neighbor_idx, _) in pending {
                 if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
-                    && inner.entities.get(neighbor_idx).is_some_and(|e| e.is_some())
+                    && inner
+                        .entities
+                        .get(neighbor_idx)
+                        .is_some_and(|e| e.is_some())
                 {
                     if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
                         if !neighbors.contains(&id) {
@@ -1447,11 +1450,26 @@ mod tests {
         let id_b = EntityId::new(2);
         let id_c = EntityId::new(3);
 
-        graph.add_entity(tx, Entity::new(id_a, "A", "T")).await.unwrap();
-        graph.add_entity(tx, Entity::new(id_b, "B", "T")).await.unwrap();
-        graph.add_entity(tx, Entity::new(id_c, "C", "T")).await.unwrap();
-        graph.add_edge(tx, Edge::new(id_a, id_b, "rel")).await.unwrap();
-        graph.add_edge(tx, Edge::new(id_a, id_c, "rel")).await.unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_a, "A", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_b, "B", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_c, "C", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(id_a, id_b, "rel"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(id_a, id_c, "rel"))
+            .await
+            .unwrap();
         graph.commit(tx).await.unwrap();
 
         let n = graph.neighbors(id_a).await.unwrap();
@@ -1467,9 +1485,18 @@ mod tests {
         let id_a = EntityId::new(1);
         let id_b = EntityId::new(2);
 
-        graph.add_entity(tx1, Entity::new(id_a, "A", "T")).await.unwrap();
-        graph.add_entity(tx1, Entity::new(id_b, "B", "T")).await.unwrap();
-        graph.add_edge(tx1, Edge::new(id_a, id_b, "rel")).await.unwrap();
+        graph
+            .add_entity(tx1, Entity::new(id_a, "A", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx1, Entity::new(id_b, "B", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx1, Edge::new(id_a, id_b, "rel"))
+            .await
+            .unwrap();
         graph.commit(tx1).await.unwrap();
 
         assert!(graph.neighbors(id_a).await.unwrap().contains(&id_b));
@@ -1499,9 +1526,18 @@ mod tests {
         let id_a = EntityId::new(1);
         let id_b = EntityId::new(2);
 
-        graph.add_entity(tx, Entity::new(id_a, "A", "T")).await.unwrap();
-        graph.add_entity(tx, Entity::new(id_b, "B", "T")).await.unwrap();
-        graph.add_bidirectional(tx, id_a, id_b, "knows").await.unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_a, "A", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_b, "B", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_bidirectional(tx, id_a, id_b, "knows")
+            .await
+            .unwrap();
         graph.commit(tx).await.unwrap();
 
         let n_a = graph.neighbors(id_a).await.unwrap();
@@ -1542,8 +1578,14 @@ mod tests {
         let r3 = ranks[&EntityId::new(3)];
 
         // Downstream nodes in linear chain receive PageRank flow
-        assert!(r2 > r1, "Node 2 rank ({r2}) should be higher than Node 1 ({r1})");
-        assert!(r3 > r2, "Node 3 rank ({r3}) should be higher than Node 2 ({r2})");
+        assert!(
+            r2 > r1,
+            "Node 2 rank ({r2}) should be higher than Node 1 ({r1})"
+        );
+        assert!(
+            r3 > r2,
+            "Node 3 rank ({r3}) should be higher than Node 2 ({r2})"
+        );
     }
 
     #[tokio::test]
@@ -1579,7 +1621,11 @@ mod tests {
         // Must return finite results without duplicates
         let ids: Vec<_> = results.iter().map(|(id, _)| *id).collect();
         let unique_ids: std::collections::HashSet<_> = ids.iter().copied().collect();
-        assert_eq!(ids.len(), unique_ids.len(), "Results must not contain duplicates");
+        assert_eq!(
+            ids.len(),
+            unique_ids.len(),
+            "Results must not contain duplicates"
+        );
         assert!(ids.contains(&id_b), "Must contain node B");
         assert!(!ids.contains(&id_a), "Must not contain start node A");
     }
@@ -1642,7 +1688,10 @@ mod tests {
 
         for i in 1..=20 {
             graph
-                .add_entity(tx0, Entity::new(EntityId::new(i), format!("Node{i}"), "Type"))
+                .add_entity(
+                    tx0,
+                    Entity::new(EntityId::new(i), format!("Node{i}"), "Type"),
+                )
                 .await
                 .unwrap();
         }

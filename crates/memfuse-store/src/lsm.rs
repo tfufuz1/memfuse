@@ -1545,9 +1545,14 @@ mod tests {
         };
 
         {
-            let storage = LsmStorage::new(config.clone()).await.expect("create storage");
+            let storage = LsmStorage::new(config.clone())
+                .await
+                .expect("create storage");
             let tx = TxId::new(1);
-            storage.put(tx, b"persistent_key", b"persistent_val").await.expect("put");
+            storage
+                .put(tx, b"persistent_key", b"persistent_val")
+                .await
+                .expect("put");
             storage.commit(tx).await.expect("commit");
         } // drop storage instance
 
@@ -1597,7 +1602,9 @@ mod tests {
             },
             encryption_passphrase: None,
         };
-        let storage = LsmStorage::new(config.clone()).await.expect("create storage");
+        let storage = LsmStorage::new(config.clone())
+            .await
+            .expect("create storage");
 
         let tx1 = TxId::new(1);
         storage.put(tx1, b"key1", b"val1").await.unwrap();
@@ -1637,7 +1644,10 @@ mod tests {
         }
 
         let last_seq = storage.last_seq_no().await.unwrap();
-        assert_eq!(last_seq, 10, "10 commits must generate sequence numbers 1..10 monotonically");
+        assert_eq!(
+            last_seq, 10,
+            "10 commits must generate sequence numbers 1..10 monotonically"
+        );
     }
 
     #[tokio::test]
