@@ -85,6 +85,14 @@ mod tests {
     }
 
     #[test]
+    fn bm25_handles_extreme_tf() {
+        // tf = u32::MAX (4 billion occurrences)
+        let score = score_term(u32::MAX, 1000, 500.0, 1, 1_000_000);
+        assert!(score.is_finite(), "BM25 must return finite score for extreme tf");
+        assert!(score >= 0.0);
+    }
+
+    #[test]
     fn test_bm25_extreme_values() {
         // Very small avg_doc_len
         let score = score_term(1, 1, 1e-10, 1, 10);

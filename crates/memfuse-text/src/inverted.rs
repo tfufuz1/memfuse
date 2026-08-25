@@ -554,6 +554,10 @@ impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
             .collect())
     }
 
+    /// Searches the inverted index at a specific MVCC sequence number snapshot.
+    ///
+    /// Snapshot isolation is preserved by delegating to `search_bm25_at()`, which uses
+    /// `scan_prefix_at()` and `get_at_seq()` on the underlying `StorageEngine`.
     async fn search_at(&self, query: &str, k: usize, seq_no: u64) -> Result<Vec<ScoredDocument>> {
         let results = self.search_bm25(query, k, Some(seq_no)).await?;
         Ok(results
@@ -576,6 +580,7 @@ impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
     }
 
     async fn rollback(&self, tx: TxId) -> Result<()> {
+        self.rollback_stats(tx).await?;
         self.storage.rollback(tx).await
     }
 
@@ -688,6 +693,8 @@ mod tests {
     struct MockStorage {
         // Map from Key -> Vec<(Value, SeqNo)>
         store: MockStoreMap,
+        // TxId -> Vec<Key> staged for current transaction
+        staged: RwLock<HashMap<TxId, Vec<Vec<u8>>>>,
         next_seq: std::sync::atomic::AtomicU64,
     }
 
@@ -695,6 +702,7 @@ mod tests {
         fn new() -> Self {
             Self {
                 store: MockStoreMap::new(HashMap::new()),
+                staged: RwLock::new(HashMap::new()),
                 next_seq: std::sync::atomic::AtomicU64::new(1),
             }
         }
@@ -705,7 +713,7 @@ mod tests {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
             self.get_at_seq(key, u64::MAX).await
         }
-        async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+        async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
             let seq = self
                 .next_seq
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -714,9 +722,10 @@ mod tests {
                 .entry(key.to_vec())
                 .or_default()
                 .push((value.to_vec(), seq));
+            self.staged.write().entry(tx_id).or_default().push(key.to_vec());
             Ok(())
         }
-        async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
+        async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
             // Write a "tombstone" (empty value) with new sequence
             let seq = self
                 .next_seq
@@ -730,12 +739,24 @@ mod tests {
                     vec![(Vec::new(), seq | memfuse_core::TOMBSTONE_BIT)],
                 );
             }
+            self.staged.write().entry(tx_id).or_default().push(key.to_vec());
             Ok(())
         }
-        async fn commit(&self, _tx_id: TxId) -> Result<()> {
+        async fn commit(&self, tx_id: TxId) -> Result<()> {
+            self.staged.write().remove(&tx_id);
             Ok(())
         }
-        async fn rollback(&self, _tx_id: TxId) -> Result<()> {
+        async fn rollback(&self, tx_id: TxId) -> Result<()> {
+            let keys = self.staged.write().remove(&tx_id).unwrap_or_default();
+            let mut store = self.store.write();
+            for k in keys {
+                if let Some(versions) = store.get_mut(&k) {
+                    versions.pop();
+                    if versions.is_empty() {
+                        store.remove(&k);
+                    }
+                }
+            }
             Ok(())
         }
         async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
@@ -1044,6 +1065,26 @@ mod tests {
             assert!(!score.is_nan());
             assert!(!score.is_infinite());
         }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn inverted_index_rollback_cleans_up() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "rollback_test");
+
+        let tx1 = TxId::new(1);
+        let doc_id = DocId::new(100);
+
+        index.insert(tx1, doc_id, "German morphological search engine").await?;
+        assert_eq!(index.search("morphological", 10).await?.len(), 1);
+
+        index.rollback(tx1).await?;
+
+        let results = index.search("morphological", 10).await?;
+        assert!(results.is_empty(), "Rolled-back insert must not be visible in search results");
+        assert_eq!(index.len().await, 0, "Index length must be 0 after rollback");
 
         Ok(())
     }
