@@ -87,7 +87,7 @@ impl McpServer {
                         },
                         {
                             "name": "memfuse_insert",
-                            "description": "Dokument einspeichern (auto-embedding, auto-chunking).",
+                            "description": "Dokument einspeichern (auto-embedding, auto-chunking mit MarkdownChunker, ~512 Tokens).",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
@@ -188,16 +188,23 @@ impl McpServer {
             }
 
             "memfuse_insert" => {
-                let id = args.get("id").and_then(|v| v.as_str()).ok_or("id fehlt")?;
                 let text = args
                     .get("text")
                     .and_then(|v| v.as_str())
                     .ok_or("text fehlt")?;
+                let id = args
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .ok_or("id fehlt")?;
                 let col_name = args
                     .get("collection")
                     .and_then(|v| v.as_str())
                     .unwrap_or("default");
-                let metadata = args.get("metadata").cloned();
+                let base_metadata = args
+                    .get("metadata")
+                    .and_then(|v| v.as_object())
+                    .cloned()
+                    .unwrap_or_default();
 
                 let col = self
                     .db
@@ -205,20 +212,22 @@ impl McpServer {
                     .await
                     .map_err(|e| e.to_string())?;
 
-                // AUTO-CHUNKING: Text in semantische Einheiten aufteilen
-                // Verhindert Embedding-Verwässerung bei Dokumenten >512 Tokens
+                // AUTO-CHUNKING: Text in semantische Einheiten aufteilen mit MarkdownChunker (~512 Tokens)
                 let chunker = MarkdownChunker::new(ChunkerConfig::default());
                 let doc_id = DocId::from_key(id).unwrap_or_else(|_| DocId::new(0));
                 let chunks = chunker.chunk(doc_id, text);
 
-                let chunks_to_process: Vec<String> = if chunks.is_empty() {
-                    vec![text.to_string()]
-                } else {
-                    chunks.into_iter().map(|c| c.content).collect()
-                };
+                if chunks.is_empty() {
+                    return Ok(json!({
+                        "ok": false,
+                        "error": "Text konnte nicht in Chunks aufgeteilt werden (leer?)"
+                    }));
+                }
 
-                let total = chunks_to_process.len();
-                for (i, chunk_text) in chunks_to_process.iter().enumerate() {
+                let total = chunks.len();
+                let mut inserted_chunk_ids = Vec::new();
+
+                for (i, chunk) in chunks.iter().enumerate() {
                     let chunk_id = if total == 1 {
                         id.to_string()
                     } else {
@@ -227,32 +236,42 @@ impl McpServer {
 
                     let embedding = self
                         .embedder
-                        .embed(chunk_text)
+                        .embed(&chunk.content)
                         .await
                         .map_err(|e| e.to_string())?;
 
-                    let mut chunk_meta = metadata.clone().unwrap_or_else(|| json!({}));
-                    if !chunk_meta.is_object() {
-                        chunk_meta = json!({});
-                    }
+                    let mut chunk_meta = json!({
+                        "text": &chunk.content,
+                        "source_id": id,
+                        "chunk_index": i,
+                        "chunk_total": total
+                    });
+
                     if let Some(obj) = chunk_meta.as_object_mut() {
-                        obj.entry("text")
-                            .or_insert_with(|| json!(chunk_text.clone()));
-                        if total > 1 {
-                            obj.insert("_chunk_index".into(), json!(i));
-                            obj.insert("_chunk_total".into(), json!(total));
-                            obj.insert("_source_id".into(), json!(id));
+                        if let Some(meta) = &chunk.metadata {
+                            if let Some(m_obj) = meta.as_object() {
+                                for (k, v) in m_obj {
+                                    obj.insert(k.clone(), v.clone());
+                                }
+                            }
+                        }
+                        for (k, v) in &base_metadata {
+                            obj.entry(k.clone()).or_insert_with(|| v.clone());
                         }
                     }
 
                     col.insert(&chunk_id, &embedding, Some(chunk_meta))
                         .await
                         .map_err(|e| e.to_string())?;
+
+                    inserted_chunk_ids.push(chunk_id);
                 }
 
                 Ok(json!({
-                    "inserted": id,
-                    "chunks": total,
+                    "ok": true,
+                    "id": id,
+                    "chunks_inserted": inserted_chunk_ids.len(),
+                    "chunk_ids": inserted_chunk_ids,
                     "collection": col_name
                 }))
             }

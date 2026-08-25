@@ -235,3 +235,66 @@ async fn test_unknown_tool_returns_error() {
         "Unbekanntes Tool muss Fehler zurückgeben, got: {text}"
     );
 }
+
+#[tokio::test]
+async fn test_mcp_insert_multi_chunk_document() {
+    let (server, _tmp) = setup_app().await;
+
+    // Create a multi-heading document with enough text per section to exceed minimum token threshold (> 50 tokens)
+    let paragraph_a = "Dies ist der erste Abschnitt eines längeren Dokuments über künstliche Intelligenz. ".repeat(10);
+    let paragraph_b = "Dies ist der zweite Abschnitt über maschinelles Lernen und Neuronale Netze. ".repeat(10);
+    let markdown_doc = format!("# Abschnitt 1: KI-Grundlagen\n{}\n\n## Abschnitt 2: Deep Learning\n{}", paragraph_a, paragraph_b);
+
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(10)),
+        method: "tools/call".to_string(),
+        params: json!({
+            "name": "memfuse_insert",
+            "arguments": {
+                "id": "doc_multi",
+                "text": markdown_doc,
+                "collection": "my_docs",
+                "metadata": { "department": "R&D" }
+            }
+        }),
+    };
+
+    let response = server.handle(req).await;
+    let res_val = serde_json::to_value(&response).unwrap();
+    let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
+
+    let insert_res: serde_json::Value = serde_json::from_str(text).unwrap();
+    assert_eq!(insert_res["ok"], true);
+    assert_eq!(insert_res["id"], "doc_multi");
+
+    let chunks_inserted = insert_res["chunks_inserted"].as_u64().unwrap();
+    assert!(chunks_inserted > 1, "Expected document to be split into multiple chunks, got {chunks_inserted}");
+
+    let chunk_ids = insert_res["chunk_ids"].as_array().unwrap();
+    assert_eq!(chunk_ids.len(), chunks_inserted as usize);
+    assert_eq!(chunk_ids[0], "doc_multi:chunk:0");
+
+    // Retrieve chunk 0 via memfuse_get
+    let req_get = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(11)),
+        method: "tools/call".to_string(),
+        params: json!({
+            "name": "memfuse_get",
+            "arguments": {
+                "id": "doc_multi:chunk:0",
+                "collection": "my_docs"
+            }
+        }),
+    };
+
+    let get_response = server.handle(req_get).await;
+    let get_val = serde_json::to_value(&get_response).unwrap();
+    let get_text = get_val["result"]["content"][0]["text"].as_str().unwrap();
+    let chunk_doc: serde_json::Value = serde_json::from_str(get_text).unwrap();
+
+    assert_eq!(chunk_doc["metadata"]["source_id"], "doc_multi");
+    assert_eq!(chunk_doc["metadata"]["department"], "R&D");
+    assert_eq!(chunk_doc["metadata"]["chunk_index"], 0);
+}
