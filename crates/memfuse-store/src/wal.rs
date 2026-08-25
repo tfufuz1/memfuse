@@ -341,16 +341,16 @@ impl Wal {
                 } else {
                     parent
                 };
-                let dir = tokio::fs::File::open(parent)
-                    .await
-                    .map_err(|e| MemFuseError::Storage(
-                        format!("Verzeichnis für fsync konnte nicht geöffnet werden: {e}")
-                    ))?;
-                dir.sync_all()
-                    .await
-                    .map_err(|e| MemFuseError::Storage(
-                        format!("Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}")
-                    ))?;
+                let dir = tokio::fs::File::open(parent).await.map_err(|e| {
+                    MemFuseError::Storage(format!(
+                        "Verzeichnis für fsync konnte nicht geöffnet werden: {e}"
+                    ))
+                })?;
+                dir.sync_all().await.map_err(|e| {
+                    MemFuseError::Storage(format!(
+                        "Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}"
+                    ))
+                })?;
             }
         }
 
@@ -415,13 +415,14 @@ impl Wal {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                if let Err(e) = tokio::fs::set_permissions(
-                    &key_path,
-                    std::fs::Permissions::from_mode(0o600),
-                )
-                .await
+                if let Err(e) =
+                    tokio::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600))
+                        .await
                 {
-                    tracing::warn!("Failed to set restrictive permissions (0600) on WAL integrity key: {}", e);
+                    tracing::warn!(
+                        "Failed to set restrictive permissions (0600) on WAL integrity key: {}",
+                        e
+                    );
                 }
             }
 
@@ -433,16 +434,16 @@ impl Wal {
                 } else {
                     parent
                 };
-                let dir = tokio::fs::File::open(parent)
-                    .await
-                    .map_err(|e| MemFuseError::Storage(
-                        format!("Verzeichnis für fsync konnte nicht geöffnet werden: {e}")
-                    ))?;
-                dir.sync_all()
-                    .await
-                    .map_err(|e| MemFuseError::Storage(
-                        format!("Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}")
-                    ))?;
+                let dir = tokio::fs::File::open(parent).await.map_err(|e| {
+                    MemFuseError::Storage(format!(
+                        "Verzeichnis für fsync konnte nicht geöffnet werden: {e}"
+                    ))
+                })?;
+                dir.sync_all().await.map_err(|e| {
+                    MemFuseError::Storage(format!(
+                        "Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}"
+                    ))
+                })?;
             }
 
             Ok(key)
@@ -490,16 +491,16 @@ impl Wal {
                 } else {
                     parent
                 };
-                let dir = tokio::fs::File::open(parent)
-                    .await
-                    .map_err(|e| MemFuseError::Storage(
-                        format!("Verzeichnis für fsync konnte nicht geöffnet werden: {e}")
-                    ))?;
-                dir.sync_all()
-                    .await
-                    .map_err(|e| MemFuseError::Storage(
-                        format!("Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}")
-                    ))?;
+                let dir = tokio::fs::File::open(parent).await.map_err(|e| {
+                    MemFuseError::Storage(format!(
+                        "Verzeichnis für fsync konnte nicht geöffnet werden: {e}"
+                    ))
+                })?;
+                dir.sync_all().await.map_err(|e| {
+                    MemFuseError::Storage(format!(
+                        "Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}"
+                    ))
+                })?;
             }
 
             Ok(bytes)
@@ -859,13 +860,7 @@ mod tests {
             value: b"value".to_vec(),
         };
         let dummy_key = b"test-integrity-key-32-bytes-long!";
-        let entry = WalEntry::try_new(
-            op,
-            100,
-            dummy_key,
-            [0u8; 32],
-        )
-        .expect("try_new");
+        let entry = WalEntry::try_new(op, 100, dummy_key, [0u8; 32]).expect("try_new");
         let bytes = entry.to_bytes().expect("serialization failed");
 
         // 4 (len) + 4 (crc) + 8 (seq) + 32 (hmac) + 32 (prev) + 1 (op) + 8 (tx) + 4 (klen) + 3 (k) + 4 (vlen) + 5 (v) = 105
@@ -1059,13 +1054,7 @@ mod tests {
             value: b"value".to_vec(),
         };
         let dummy_key = b"test-integrity-key-32-bytes-long!";
-        let entry = WalEntry::try_new(
-            op,
-            1,
-            dummy_key,
-            [0u8; 32],
-        )
-        .expect("try_new");
+        let entry = WalEntry::try_new(op, 1, dummy_key, [0u8; 32]).expect("try_new");
 
         let mut bytes = entry.to_bytes().expect("serialization failed");
 
@@ -1220,7 +1209,10 @@ mod tests {
 
         {
             let wal = Wal::open(&wal_path).await.expect("open wal");
-            let entry = wal.create_entry(valid_op.clone(), 1).await.expect("create entry");
+            let entry = wal
+                .create_entry(valid_op.clone(), 1)
+                .await
+                .expect("create entry");
             wal.append(&entry).await.expect("append valid entry");
         }
 
@@ -1242,13 +1234,9 @@ mod tests {
                 .1
                 .clone();
 
-            let forged_entry = WalEntry::try_new(
-                forged_op,
-                2,
-                wrong_key,
-                last_valid_entry.checksum,
-            )
-            .expect("create forged entry");
+            let forged_entry =
+                WalEntry::try_new(forged_op, 2, wrong_key, last_valid_entry.checksum)
+                    .expect("create forged entry");
 
             // Also append a 3rd entry so the forged entry is in the middle of the file (pos < file_size)
             let trailing_entry = WalEntry::try_new(
@@ -1295,13 +1283,8 @@ mod tests {
                 key: b"legacy_key".to_vec(),
                 value: b"legacy_val".to_vec(),
             };
-            let legacy_entry = WalEntry::try_new(
-                op,
-                1,
-                &LEGACY_INTEGRITY_KEY,
-                [0u8; 32],
-            )
-            .expect("legacy entry");
+            let legacy_entry =
+                WalEntry::try_new(op, 1, &LEGACY_INTEGRITY_KEY, [0u8; 32]).expect("legacy entry");
 
             tokio::fs::write(&wal_path, legacy_entry.to_bytes().expect("to_bytes"))
                 .await
@@ -1329,13 +1312,7 @@ mod tests {
             value: b"test_value".to_vec(),
         };
         let dummy_key = b"test-integrity-key-32-bytes-long!";
-        let entry = WalEntry::try_new(
-            op,
-            100,
-            dummy_key,
-            [0u8; 32],
-        )
-        .expect("try_new");
+        let entry = WalEntry::try_new(op, 100, dummy_key, [0u8; 32]).expect("try_new");
 
         let bytes = entry.to_bytes().expect("serialization failed");
         let decoded = WalEntry::from_bytes(&bytes[4..]).expect("Roundtrip must work");

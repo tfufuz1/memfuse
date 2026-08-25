@@ -1,8 +1,13 @@
+#[cfg(feature = "onnx")]
 use criterion::{criterion_group, criterion_main, Criterion};
+#[cfg(feature = "onnx")]
 use memfuse_embed::TextEmbedder;
+#[cfg(feature = "onnx")]
 use std::path::PathBuf;
+#[cfg(feature = "onnx")]
 use tokio::runtime::Runtime;
 
+#[cfg(feature = "onnx")]
 fn bench_embed(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
 
@@ -30,5 +35,10 @@ fn bench_embed(c: &mut Criterion) {
     });
 }
 
+#[cfg(feature = "onnx")]
 criterion_group!(benches, bench_embed);
+#[cfg(feature = "onnx")]
 criterion_main!(benches);
+
+#[cfg(not(feature = "onnx"))]
+fn main() {}

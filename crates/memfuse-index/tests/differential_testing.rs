@@ -22,9 +22,9 @@ async fn test_differential_quantization_sq8_10000_queries() {
         ..Default::default()
     };
 
-    let index_f32 = HnswIndex::new(config.clone());
+    let index_f32 = HnswIndex::try_new(config.clone()).unwrap();
     config.quantize = true;
-    let index_sq8 = HnswIndex::new(config);
+    let index_sq8 = HnswIndex::try_new(config).unwrap();
 
     let mut rng = rand::thread_rng();
     let mut data = Vec::with_capacity(num_vectors);

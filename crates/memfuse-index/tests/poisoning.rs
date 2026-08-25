@@ -8,7 +8,7 @@ async fn test_nan_poisoning_prevention() {
         dimension: 4,
         ..Default::default()
     };
-    let index = HnswIndex::new(config);
+    let index = HnswIndex::try_new(config).unwrap();
 
     let tx = TxId(1);
     let id = DocId(1);
@@ -30,7 +30,7 @@ async fn test_inf_poisoning_prevention() {
         dimension: 4,
         ..Default::default()
     };
-    let index = HnswIndex::new(config);
+    let index = HnswIndex::try_new(config).unwrap();
 
     let tx = TxId(1);
     let id = DocId(1);
@@ -52,7 +52,7 @@ async fn test_neg_inf_poisoning_prevention() {
         dimension: 4,
         ..Default::default()
     };
-    let index = HnswIndex::new(config);
+    let index = HnswIndex::try_new(config).unwrap();
 
     let tx = TxId(1);
     let id = DocId(1);

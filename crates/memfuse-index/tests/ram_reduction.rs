@@ -18,9 +18,9 @@ async fn test_ram_reduction_4x() {
         ..Default::default()
     };
 
-    let index_f32 = HnswIndex::new(config.clone());
+    let index_f32 = HnswIndex::try_new(config.clone()).unwrap();
     config.quantize = true;
-    let index_sq8 = HnswIndex::new(config);
+    let index_sq8 = HnswIndex::try_new(config).unwrap();
 
     let tx = TxId::new(1);
     for i in 0..num_vectors {

@@ -1451,10 +1451,13 @@ mod tests {
             ..Default::default()
         };
         let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
-        let index = Arc::new(HnswIndex::try_new(memfuse_index::HnswConfig {
-            dimension: 4,
-            ..Default::default()
-        }).unwrap());
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(1));
 
@@ -1490,7 +1493,9 @@ mod tests {
         col.storage.commit(tx).await.unwrap();
 
         // 3. Directly test check_doc_id_collision with a different string key (e.g., "key_new")
-        let collision_res = col.check_doc_id_collision(synthetic_doc_id, "key_new").await;
+        let collision_res = col
+            .check_doc_id_collision(synthetic_doc_id, "key_new")
+            .await;
         assert!(collision_res.is_err());
         match collision_res {
             Err(MemFuseError::Internal(msg)) => {
@@ -1504,7 +1509,9 @@ mod tests {
         }
 
         // 4. Same key string should NOT be treated as a collision
-        let same_key_res = col.check_doc_id_collision(synthetic_doc_id, "key_existing").await;
+        let same_key_res = col
+            .check_doc_id_collision(synthetic_doc_id, "key_existing")
+            .await;
         assert!(same_key_res.is_ok());
     }
 
@@ -1523,10 +1530,13 @@ mod tests {
             ..Default::default()
         };
         let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
-        let index = Arc::new(HnswIndex::try_new(memfuse_index::HnswConfig {
-            dimension: 4,
-            ..Default::default()
-        }).unwrap());
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(1));
 
@@ -1564,10 +1574,13 @@ mod tests {
             ..Default::default()
         };
         let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
-        let index = Arc::new(HnswIndex::try_new(memfuse_index::HnswConfig {
-            dimension: 4,
-            ..Default::default()
-        }).unwrap());
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(100));
 

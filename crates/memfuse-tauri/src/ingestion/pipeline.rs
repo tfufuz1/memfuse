@@ -165,7 +165,9 @@ impl IngestionPipeline {
                             let doc_entity_id = EntityId::from(doc_id.as_str());
                             let doc_entity = Entity::new(doc_entity_id, doc_id.clone(), "Document");
                             if let Err(e) = graph.add_entity(tx, doc_entity).await {
-                                tracing::warn!("Doc Entity-Insert fehlgeschlagen für {doc_id}: {e}");
+                                tracing::warn!(
+                                    "Doc Entity-Insert fehlgeschlagen für {doc_id}: {e}"
+                                );
                             }
 
                             for term_id in &extracted_entities {
@@ -187,7 +189,9 @@ impl IngestionPipeline {
                                     )
                                     .await
                                 {
-                                    tracing::warn!("Edge-Insert (mentioned_in) fehlgeschlagen: {e}");
+                                    tracing::warn!(
+                                        "Edge-Insert (mentioned_in) fehlgeschlagen: {e}"
+                                    );
                                 }
                             }
 

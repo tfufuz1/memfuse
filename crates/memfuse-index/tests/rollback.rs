@@ -8,7 +8,7 @@ async fn test_hnsw_rollback_to_tx_removes_nodes() {
         dimension: 4,
         ..Default::default()
     };
-    let index = HnswIndex::new(config);
+    let index = HnswIndex::try_new(config).unwrap();
 
     // 1. Insert doc 1 with TX=1 and commit
     let tx1 = TxId::new(1);

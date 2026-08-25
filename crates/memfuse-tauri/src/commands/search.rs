@@ -1,6 +1,7 @@
 use memfuse_core::TextEmbeddingEngine;
 use crate::ollama::OllamaBridge;
 use crate::state::AppState;
+use memfuse_core::TextEmbeddingEngine;
 use serde::Serialize;
 use tauri::State;
 

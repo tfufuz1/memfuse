@@ -248,23 +248,30 @@ impl TextEmbedder {
         let attention_mask_tensor = Value::from_array(([1, seq_len], attention_mask_vec))
             .map_err(|e| MemFuseError::Internal(format!("Failed to create tensor: {}", e)))?;
 
-        let has_token_type_ids = session.inputs().iter().any(|input| input.name() == "token_type_ids");
-        
+        let has_token_type_ids = session
+            .inputs()
+            .iter()
+            .any(|input| input.name() == "token_type_ids");
+
         let outputs = if has_token_type_ids {
             let token_type_ids = encoding.get_type_ids();
             let token_type_ids_vec: Vec<i64> = token_type_ids.iter().map(|&id| id as i64).collect();
             let token_type_ids_tensor = Value::from_array(([1, seq_len], token_type_ids_vec))
                 .map_err(|e| MemFuseError::Internal(format!("Failed to create tensor: {}", e)))?;
-            session.run(ort::inputs![
-                "input_ids" => input_ids_tensor,
-                "attention_mask" => attention_mask_tensor,
-                "token_type_ids" => token_type_ids_tensor,
-            ]).map_err(|e| MemFuseError::Internal(format!("ONNX inference failed: {}", e)))?
+            session
+                .run(ort::inputs![
+                    "input_ids" => input_ids_tensor,
+                    "attention_mask" => attention_mask_tensor,
+                    "token_type_ids" => token_type_ids_tensor,
+                ])
+                .map_err(|e| MemFuseError::Internal(format!("ONNX inference failed: {}", e)))?
         } else {
-            session.run(ort::inputs![
-                "input_ids" => input_ids_tensor,
-                "attention_mask" => attention_mask_tensor,
-            ]).map_err(|e| MemFuseError::Internal(format!("ONNX inference failed: {}", e)))?
+            session
+                .run(ort::inputs![
+                    "input_ids" => input_ids_tensor,
+                    "attention_mask" => attention_mask_tensor,
+                ])
+                .map_err(|e| MemFuseError::Internal(format!("ONNX inference failed: {}", e)))?
         };
 
         // Mean Pooling over token embeddings, weighted by attention_mask

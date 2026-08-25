@@ -40,8 +40,7 @@ impl ScalarQuantizer {
         }
 
         for vec in batch {
-            for i in 0..dimension.min(vec.len()) {
-                let val = vec[i];
+            for (i, &val) in vec.iter().take(dimension).enumerate() {
                 if val < mins[i] {
                     mins[i] = val;
                 }
@@ -76,8 +75,7 @@ impl ScalarQuantizer {
     /// Expands mins/maxes to accommodate out-of-bounds vectors, recomputing scales.
     pub fn expand_bounds_to_fit(&mut self, vector: &[f32]) -> bool {
         let mut changed = false;
-        for i in 0..self.dimension.min(vector.len()) {
-            let val = vector[i];
+        for (i, &val) in vector.iter().take(self.dimension).enumerate() {
             if val < self.mins[i] {
                 self.mins[i] = val;
                 changed = true;

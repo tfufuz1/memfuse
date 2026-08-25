@@ -16,7 +16,7 @@ async fn test_quantizer_recalibration() {
         quantize: true,
         quantizer_recalibration_sample_size: 1000,
     };
-    let index = Arc::new(HnswIndex::new(config));
+    let index = Arc::new(HnswIndex::try_new(config).unwrap());
 
     // Phase 1: Lazy training on initial 256 vectors with small values [0.0, 1.0]
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
