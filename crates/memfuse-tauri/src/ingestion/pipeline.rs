@@ -33,13 +33,13 @@ impl IngestionPipeline {
             .to_lowercase();
 
         let raw_text = match extension.as_str() {
-            "pdf" => crate::ingestion::pdf::extract_pdf_text(path)?,
-            "docx" => crate::ingestion::docx::extract_docx_text(path)?,
+            "pdf" => crate::ingestion::pdf::extract_pdf_text(path).await?,
+            "docx" => crate::ingestion::docx::extract_docx_text(path).await?,
             "md" | "markdown" | "txt" => std::fs::read_to_string(path).map_err(|e| {
                 memfuse_core::MemFuseError::Internal(format!("Datei lesen fehlgeschlagen: {e}"))
             })?,
             "eml" => {
-                let email = crate::ingestion::email::extract_email(path)?;
+                let email = crate::ingestion::email::extract_email(path).await?;
                 format!(
                     "Betreff: {}\nVon: {}\n\n{}",
                     email.subject, email.from, email.body
@@ -54,7 +54,15 @@ impl IngestionPipeline {
             }
         };
 
-        let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| {
+                memfuse_core::MemFuseError::InvalidInput(format!(
+                    "Pfad hat keinen Dateinamen: {:?}",
+                    path
+                ))
+            })?
+            .to_string_lossy();
 
         // Nutzt den bereits bestehenden MarkdownChunker aus memfuse-db
         let chunker = MarkdownChunker::with_defaults();
@@ -201,7 +209,7 @@ impl IngestionPipeline {
                         }
                     }
                 }
-                Err(e) => errors.push(format!("Embedding fehlgeschlagen: {e}")),
+                Err(e) => errors.push(format!("Chunk {idx}: Embedding fehlgeschlagen: {e}")),
             }
         }
 
