@@ -37,16 +37,28 @@ async function refreshCollections() {
     if (!dbOpen) return;
     try {
         const collections = await invoke('list_collections');
-        collectionsListEl.innerHTML = '';
+        collectionsListEl.textContent = '';
         for (const col of collections) {
             const item = document.createElement('div');
             item.className = 'collection-item' + (col.name === activeCollection ? ' active' : '');
-            item.innerHTML = `
-                <span>${escapeHtml(col.name)} <small style="opacity:0.6">(${col.document_count})</small></span>
-                <button class="delete-btn" data-name="${escapeHtml(col.name)}">✕</button>
-            `;
-            item.querySelector('span').addEventListener('click', () => selectCollection(col.name));
-            item.querySelector('.delete-btn').addEventListener('click', async (ev) => {
+
+            const span = document.createElement('span');
+            span.textContent = `${col.name} `;
+            const small = document.createElement('small');
+            small.style.opacity = '0.6';
+            small.textContent = `(${col.document_count})`;
+            span.appendChild(small);
+
+            const btn = document.createElement('button');
+            btn.className = 'delete-btn';
+            btn.dataset.name = col.name;
+            btn.textContent = '✕';
+
+            item.appendChild(span);
+            item.appendChild(btn);
+
+            span.addEventListener('click', () => selectCollection(col.name));
+            btn.addEventListener('click', async (ev) => {
                 ev.stopPropagation();
                 if (confirm(`Collection "${col.name}" wirklich löschen? Alle Dokumente gehen verloren.`)) {
                     await invoke('drop_collection', { name: col.name });
@@ -133,10 +145,10 @@ listen('ingest-progress', (event) => {
     const fileName = report.file_path ? report.file_path.split(/[/\\]/).pop() : 'Datei';
 
     if (errCount > 0) {
-        line.innerHTML = `⚠️ ${escapeHtml(fileName)}: ${report.chunks_created || 0} Abschnitte, ${errCount} Fehler`;
+        line.textContent = `⚠️ ${fileName}: ${report.chunks_created || 0} Abschnitte, ${errCount} Fehler`;
         line.title = report.errors.join('\n');
     } else {
-        line.innerHTML = `✅ ${escapeHtml(fileName)}: ${report.chunks_created || 0} Abschnitte`;
+        line.textContent = `✅ ${fileName}: ${report.chunks_created || 0} Abschnitte`;
     }
     logEl.appendChild(line);
     logEl.scrollTop = logEl.scrollHeight;
@@ -156,8 +168,11 @@ async function runImport(importFn, filePaths, isFolder = false) {
     const logEl = document.getElementById('import-log');
 
     progressEl.style.display = 'block';
-    statusEl.innerHTML = (isFolder ? 'Ordner wird importiert... ' : 'Datei wird importiert... ') + '<span class="spinner"></span>';
-    logEl.innerHTML = '';
+    statusEl.textContent = isFolder ? 'Ordner wird importiert... ' : 'Datei wird importiert... ';
+    const spinner = document.createElement('span');
+    spinner.className = 'spinner';
+    statusEl.appendChild(spinner);
+    logEl.textContent = '';
 
     try {
         const result = await importFn();
@@ -168,7 +183,7 @@ async function runImport(importFn, filePaths, isFolder = false) {
 
         // Falls es sich um eine Einzeldatei handelt oder die Progress Events nicht genutzt wurden
         if (!isFolder) {
-            logEl.innerHTML = '';
+            logEl.textContent = '';
             for (const report of reports) {
                 totalChunks += report.chunks_created || 0;
                 const errCount = (report.errors || []).length;
@@ -177,10 +192,10 @@ async function runImport(importFn, filePaths, isFolder = false) {
                 const line = document.createElement('div');
                 const fileName = report.file_path.split(/[/\\]/).pop();
                 if (errCount > 0) {
-                    line.innerHTML = `⚠️ ${escapeHtml(fileName)}: ${report.chunks_created} Abschnitte, ${errCount} Fehler`;
+                    line.textContent = `⚠️ ${fileName}: ${report.chunks_created} Abschnitte, ${errCount} Fehler`;
                     line.title = report.errors.join('\n');
                 } else {
-                    line.innerHTML = `✅ ${escapeHtml(fileName)}: ${report.chunks_created} Abschnitte`;
+                    line.textContent = `✅ ${fileName}: ${report.chunks_created} Abschnitte`;
                 }
                 logEl.appendChild(line);
             }
@@ -204,9 +219,11 @@ async function runImport(importFn, filePaths, isFolder = false) {
 async function refreshModels() {
     try {
         const models = await invoke('list_ollama_models');
-        modelSelect.innerHTML = '';
+        modelSelect.textContent = '';
         if (models.length === 0) {
-            modelSelect.innerHTML = '<option>Kein Ollama-Modell gefunden</option>';
+            const opt = document.createElement('option');
+            opt.textContent = 'Kein Ollama-Modell gefunden';
+            modelSelect.appendChild(opt);
             return;
         }
         for (const m of models) {
@@ -216,7 +233,10 @@ async function refreshModels() {
             modelSelect.appendChild(opt);
         }
     } catch (e) {
-        modelSelect.innerHTML = '<option>⚠️ Ollama nicht erreichbar</option>';
+        modelSelect.textContent = '';
+        const opt = document.createElement('option');
+        opt.textContent = '⚠️ Ollama nicht erreichbar';
+        modelSelect.appendChild(opt);
     }
 }
 
@@ -252,9 +272,17 @@ async function sendMessage() {
         return;
     }
 
-    chatLog.innerHTML += `<p><strong>Sie:</strong> ${escapeHtml(message)}</p>`;
+    const userMsgEl = document.createElement('p');
+    const userStrong = document.createElement('strong');
+    userStrong.textContent = 'Sie: ';
+    userMsgEl.appendChild(userStrong);
+    userMsgEl.appendChild(document.createTextNode(message));
+    chatLog.appendChild(userMsgEl);
+
     currentResponseEl = document.createElement('p');
-    currentResponseEl.innerHTML = '<strong>Assistent:</strong> ';
+    const assistStrong = document.createElement('strong');
+    assistStrong.textContent = 'Assistent: ';
+    currentResponseEl.appendChild(assistStrong);
     chatLog.appendChild(currentResponseEl);
 
     const sourcesEl = document.createElement('div');
@@ -274,12 +302,21 @@ async function sendMessage() {
             model,
         });
 
-        // response ist jetzt { answer, sources } statt reinem String
         if (response.sources && response.sources.length > 0) {
-            sourcesEl.innerHTML = '<strong>📎 Quellen:</strong><br>' +
-                response.sources.map(s =>
-                    `• ${escapeHtml(s.source)} <span style="opacity:0.6">(Relevanz: ${(s.score * 100).toFixed(0)}%)</span>`
-                ).join('<br>');
+            sourcesEl.textContent = '';
+            const header = document.createElement('strong');
+            header.textContent = '📎 Quellen:';
+            sourcesEl.appendChild(header);
+            sourcesEl.appendChild(document.createElement('br'));
+            for (const s of response.sources) {
+                const srcItem = document.createElement('div');
+                srcItem.textContent = `• ${s.source} `;
+                const relSpan = document.createElement('span');
+                relSpan.style.opacity = '0.6';
+                relSpan.textContent = `(Relevanz: ${(s.score * 100).toFixed(0)}%)`;
+                srcItem.appendChild(relSpan);
+                sourcesEl.appendChild(srcItem);
+            }
         }
     } catch (e) {
         currentResponseEl.textContent += `\n⚠️ Fehler: ${e}`;
@@ -291,7 +328,12 @@ async function runDirectSearch() {
     const query = input.value.trim();
     if (!query || !activeCollection) return;
 
-    chatLog.innerHTML += `<p><strong>Suche:</strong> ${escapeHtml(query)}</p>`;
+    const searchMsgEl = document.createElement('p');
+    const searchStrong = document.createElement('strong');
+    searchStrong.textContent = 'Suche: ';
+    searchMsgEl.appendChild(searchStrong);
+    searchMsgEl.appendChild(document.createTextNode(query));
+    chatLog.appendChild(searchMsgEl);
     input.value = '';
 
     try {
@@ -306,19 +348,30 @@ async function runDirectSearch() {
         if (results.length === 0) {
             resultsEl.textContent = 'Keine Treffer gefunden.';
         } else {
-            resultsEl.innerHTML = results.map(r => `
-                <div style="border: 1px solid #ddd; border-radius: 6px; padding: 0.6rem; margin-bottom: 0.4rem;">
-                    <div style="font-size: 0.8rem; opacity: 0.7;">
-                        📄 ${escapeHtml(r.source)} — Relevanz: ${(r.score * 100).toFixed(0)}%
-                    </div>
-                    <div style="margin-top: 0.3rem;">${escapeHtml(r.text_preview)}...</div>
-                </div>
-            `).join('');
+            resultsEl.textContent = '';
+            for (const r of results) {
+                const card = document.createElement('div');
+                card.style.cssText = 'border: 1px solid #ddd; border-radius: 6px; padding: 0.6rem; margin-bottom: 0.4rem;';
+
+                const meta = document.createElement('div');
+                meta.style.cssText = 'font-size: 0.8rem; opacity: 0.7;';
+                meta.textContent = `📄 ${r.source} — Relevanz: ${(r.score * 100).toFixed(0)}%`;
+
+                const body = document.createElement('div');
+                body.style.cssText = 'margin-top: 0.3rem;';
+                body.textContent = `${r.text_preview}...`;
+
+                card.appendChild(meta);
+                card.appendChild(body);
+                resultsEl.appendChild(card);
+            }
         }
         chatLog.appendChild(resultsEl);
         chatLog.scrollTop = chatLog.scrollHeight;
     } catch (e) {
-        chatLog.innerHTML += `<p>⚠️ Fehler: ${escapeHtml(e)}</p>`;
+        const errorMsgEl = document.createElement('p');
+        errorMsgEl.textContent = `⚠️ Fehler: ${e}`;
+        chatLog.appendChild(errorMsgEl);
     }
 }
 
@@ -349,15 +402,14 @@ async function checkOllamaAvailability() {
     try {
         const models = await invoke('list_ollama_models');
         if (models.length > 0) {
-            statusEl.innerHTML = `✅ Ollama gefunden mit ${models.length} Modell(en)`;
+            statusEl.textContent = `✅ Ollama gefunden mit ${models.length} Modell(en)`;
         } else {
-            statusEl.innerHTML = `⚠️ Ollama läuft, aber kein Modell installiert. ` +
-                `Führen Sie <code>ollama pull llama3.2</code> in einem Terminal aus.`;
+            statusEl.textContent = `⚠️ Ollama läuft, aber kein Modell installiert. ` +
+                `Führen Sie 'ollama pull llama3.2' in einem Terminal aus.`;
         }
     } catch (e) {
-        statusEl.innerHTML = `⚠️ Ollama wurde nicht gefunden. Bitte installieren Sie ` +
-            `Ollama von <a href="https://ollama.com" target="_blank" style="color:#6ab0ff;">ollama.com</a> ` +
-            `und starten Sie es, bevor Sie fortfahren.`;
+        statusEl.textContent = `⚠️ Ollama wurde nicht gefunden. Bitte installieren Sie ` +
+            `Ollama von https://ollama.com und starten Sie es, bevor Sie fortfahren.`;
     }
 }
 
