@@ -125,31 +125,33 @@ impl MemTable {
             .and_then(|versions| versions.last().map(|(seq, val, _tx)| (val.clone(), *seq)))
     }
 
-    /// Retrieves a value, sequence number, and transaction ID by key at or below a specific sequence number.
-    pub fn get_at_seq(&self, key: &[u8], seq_no: u64) -> Option<(Bytes, u64, u64)> {
+    /// Retrieves a value, sequence number, and transaction ID by key at or below a specific sequence number
+    /// and bounded by maximum transaction ID for Snapshot Isolation.
+    pub fn get_at_seq(&self, key: &[u8], seq_no: u64, max_tx: u64) -> Option<(Bytes, u64, u64)> {
         let shard_idx = Self::shard_for(key);
         let entries = self.shards[shard_idx].entries.read();
         let versions = entries.get(key)?;
 
-        use memfuse_core::TOMBSTONE_BIT;
+        use memfuse_core::{TxId, TOMBSTONE_BIT};
 
-        // Binary search for the latest version <= seq_no
-        // We must mask the TOMBSTONE_BIT during comparison because the search key
-        // is a clean sequence number.
-        match versions.binary_search_by_key(&seq_no, |(s, _, _)| *s & !TOMBSTONE_BIT) {
-            Ok(idx) => {
-                let (s, v, tx) = &versions[idx];
-                Some((v.clone(), *s, *tx))
-            }
-            Err(idx) => {
-                if idx == 0 {
-                    None
-                } else {
-                    let (s, v, tx) = &versions[idx - 1];
-                    Some((v.clone(), *s, *tx))
+        let idx = match versions.binary_search_by_key(&seq_no, |(s, _, _)| *s & !TOMBSTONE_BIT) {
+            Ok(i) => i,
+            Err(i) => {
+                if i == 0 {
+                    return None;
                 }
+                i - 1
+            }
+        };
+
+        // Linear search backwards for the latest version satisfying (tx <= max_tx || tx >= INTERNAL_BASE)
+        for i in (0..=idx).rev() {
+            let (s, v, tx) = &versions[i];
+            if *tx <= max_tx || *tx >= TxId::INTERNAL_BASE {
+                return Some((v.clone(), *s, *tx));
             }
         }
+        None
     }
 
     /// Returns the approximate size in bytes.
@@ -243,22 +245,28 @@ mod tests {
         mt.put(Bytes::from("key1"), Bytes::from("v3"), 30, 3);
 
         // Before any version
-        assert!(mt.get_at_seq(b"key1", 5).is_none());
+        assert!(mt.get_at_seq(b"key1", 5, u64::MAX).is_none());
 
         // Exact match
-        let (val, seq, tx) = mt.get_at_seq(b"key1", 20).unwrap();
+        let (val, seq, tx) = mt.get_at_seq(b"key1", 20, u64::MAX).unwrap();
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
         assert_eq!(tx, 2);
 
         // Between versions
-        let (val, seq, tx) = mt.get_at_seq(b"key1", 25).unwrap();
+        let (val, seq, tx) = mt.get_at_seq(b"key1", 25, u64::MAX).unwrap();
         assert_eq!(val.as_ref(), b"v2");
         assert_eq!(seq, 20);
         assert_eq!(tx, 2);
 
+        // Filtered by max_tx: seq 20 has tx=2, max_tx=1 should fallback to seq 10 tx 1
+        let (val, seq, tx) = mt.get_at_seq(b"key1", 25, 1).unwrap();
+        assert_eq!(val.as_ref(), b"v1");
+        assert_eq!(seq, 10);
+        assert_eq!(tx, 1);
+
         // Latest version
-        let (val, seq, tx) = mt.get_at_seq(b"key1", 100).unwrap();
+        let (val, seq, tx) = mt.get_at_seq(b"key1", 100, u64::MAX).unwrap();
         assert_eq!(val.as_ref(), b"v3");
         assert_eq!(seq, 30);
         assert_eq!(tx, 3);
@@ -289,13 +297,13 @@ mod tests {
         mt.put(key.clone(), Bytes::new(), 20 | TOMBSTONE_BIT, 2);
 
         // Read at seq 15 -> should get val1
-        let (val, seq, tx) = mt.get_at_seq(&key, 15).expect("Should find v1");
+        let (val, seq, tx) = mt.get_at_seq(&key, 15, u64::MAX).expect("Should find v1");
         assert_eq!(val.as_ref(), b"val1");
         assert_eq!(seq, 10);
         assert_eq!(tx, 1);
 
         // Read at seq 25 -> should get tombstone
-        let (val, seq, tx) = mt.get_at_seq(&key, 25).expect("Should find tombstone");
+        let (val, seq, tx) = mt.get_at_seq(&key, 25, u64::MAX).expect("Should find tombstone");
         assert_eq!(val.len(), 0);
         assert_eq!(seq, 20 | TOMBSTONE_BIT);
         assert_eq!(tx, 2);
