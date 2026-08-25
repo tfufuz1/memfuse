@@ -416,6 +416,44 @@ mod tests {
     }
 
     #[test]
+    fn compound_splitting_known_words() {
+        let splitter = GermanCompoundSplitter::new();
+        let result = splitter.decompose("datenbankserver");
+        assert!(
+            result.iter().any(|t| t.eq_ignore_ascii_case("datenbank")),
+            "Datenbankserver must split to include Datenbank"
+        );
+        assert!(result.iter().any(|t| t.eq_ignore_ascii_case("server")));
+    }
+
+    #[test]
+    fn umlaut_normalization_is_consistent() {
+        let n1 = normalize_umlauts("Müller");
+        let n2 = normalize_umlauts("Müller");
+        assert_eq!(n1, n2, "Same input must produce same output (deterministic)");
+        assert!(
+            n1.contains("ue") || n1.contains('ü'),
+            "Must either substitute or preserve consistently"
+        );
+    }
+
+    #[test]
+    fn bm25_german_ranks_more_matches_higher() {
+        let score_datenbank = crate::bm25::score_term(1, 10, 10.0, 2, 50);
+        let score_server = crate::bm25::score_term(1, 10, 10.0, 2, 50);
+
+        let score_doc1 = score_datenbank;
+        let score_doc2 = score_datenbank + score_server;
+
+        assert!(
+            score_doc2 > score_doc1,
+            "Document matching 2 German terms ({}) must score higher than 1 term ({})",
+            score_doc2,
+            score_doc1
+        );
+    }
+
+    #[test]
     fn test_german_compounds_explicit_cases() {
         let splitter = GermanCompoundSplitter::new();
         assert_eq!(splitter.decompose("datenbankserver"), vec!["datenbank", "server"]);

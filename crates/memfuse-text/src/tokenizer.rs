@@ -110,6 +110,29 @@ pub fn tokenize(text: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn tokenizer_never_panics(s in ".*") {
+            let _ = DefaultTokenizer.tokenize(&s);
+        }
+
+        #[test]
+        fn german_tokenizer_never_panics(s in ".*") {
+            let _ = GermanMorphTokenizer::new().tokenize(&s);
+        }
+    }
+
+    #[test]
+    fn test_tokenizer_edge_cases_bounded() {
+        let long_str = "a".repeat(100_000);
+        let edge_cases = ["", " \t\n", "🦀🦀🦀", long_str.as_str(), "\0", "ÄÖÜß"];
+        for input in &edge_cases {
+            let tokens = DefaultTokenizer.tokenize(input);
+            assert!(tokens.len() <= input.chars().count() + 1);
+        }
+    }
 
     #[test]
     fn test_tokenizer_handles_unicode() {
