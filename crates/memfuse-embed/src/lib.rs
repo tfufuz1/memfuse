@@ -22,7 +22,7 @@ use std::path::Path;
 #[cfg(feature = "onnx")]
 use tokenizers::Tokenizer;
 #[cfg(feature = "onnx")]
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 #[cfg(feature = "onnx")]
 struct SessionPool {
@@ -37,7 +37,7 @@ impl SessionPool {
         }
     }
 
-    fn pop(&self) -> Result<ort::session::Session, MemFuseError> {
+    fn pop(&self) -> Result<ort::session::Session> {
         let mut pool = self.sessions.lock().map_err(|_| {
             MemFuseError::Internal("SessionPool-Mutex vergiftet (Panic in Worker-Thread?)".into())
         })?;
@@ -122,7 +122,29 @@ impl std::ops::DerefMut for SessionGuard {
 /// 3. Safely lends sessions out of the pool for the duration of inference inside
 ///    `spawn_blocking` via a RAII guard, returning them even on panics.
 #[cfg(feature = "onnx")]
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TextEmbedderConfig {
+    /// Maximum number of tokens per text sequence (default: 512).
+    pub max_sequence_length: usize,
+    /// Number of pre-allocated ONNX sessions in the pool (default: 2).
+    pub pool_size: usize,
+}
+
+#[cfg(feature = "onnx")]
+impl Default for TextEmbedderConfig {
+    fn default() -> Self {
+        Self {
+            max_sequence_length: 512,
+            pool_size: 2,
+        }
+    }
+}
+
+#[cfg(feature = "onnx")]
+pub type OnnxEmbedder = TextEmbedder;
+
+#[cfg(feature = "onnx")]
+#[derive(Debug, Clone)]
 pub struct TextEmbedder {
     /// Shared tokenizer instance (thread-safe via `Arc`).
     tokenizer: Arc<Tokenizer>,
@@ -130,6 +152,8 @@ pub struct TextEmbedder {
     semaphore: Arc<tokio::sync::Semaphore>,
     /// Pre-loaded Session Pool.
     pool: Arc<SessionPool>,
+    /// Configuration settings for the embedder.
+    config: TextEmbedderConfig,
 }
 
 #[cfg(feature = "onnx")]
@@ -138,34 +162,76 @@ impl TextEmbeddingEngine for TextEmbedder {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
         self.embed_async(text).await
     }
+
+    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        let mut handles = Vec::with_capacity(texts.len());
+        for text in texts {
+            let text_owned = text.to_string();
+            let embedder = self.clone();
+            handles.push(tokio::spawn(async move {
+                embedder.embed_async(&text_owned).await
+            }));
+        }
+
+        let mut results = Vec::with_capacity(texts.len());
+        for handle in handles {
+            let res = handle
+                .await
+                .map_err(|e| MemFuseError::Internal(format!("embed_batch task join: {}", e)))??;
+            results.push(res);
+        }
+        Ok(results)
+    }
 }
 
 #[cfg(feature = "onnx")]
 impl TextEmbedder {
+    /// Creates a new embedder from a model directory. Alias for `load`.
+    pub fn new(model_dir: impl AsRef<Path>) -> Result<Self> {
+        Self::load(model_dir)
+    }
+
     /// Creates a new embedder by loading a tokenizer and ONNX models from the specified directory.
     ///
     /// The directory should contain `model.onnx` and `tokenizer.json`.
     /// ONNX sessions are loaded upfront into a pool to prevent per-inference overhead.
     pub fn load(model_dir: impl AsRef<Path>) -> Result<Self> {
+        Self::load_with_config(model_dir, TextEmbedderConfig::default())
+    }
+
+    /// Creates a new embedder with a custom configuration.
+    pub fn load_with_config(
+        model_dir: impl AsRef<Path>,
+        config: TextEmbedderConfig,
+    ) -> Result<Self> {
         let model_dir = model_dir.as_ref();
-        let model_path = if model_dir.join("model.onnx").exists() {
+        let model_path = if model_dir.is_file() {
+            model_dir.to_path_buf()
+        } else if model_dir.join("model.onnx").exists() {
             model_dir.join("model.onnx")
         } else if model_dir.join("onnx/model.onnx").exists() {
             model_dir.join("onnx/model.onnx")
         } else {
-            model_dir.to_path_buf() // Assume the path itself is the model
+            model_dir.join("model.onnx")
         };
 
-        let tokenizer_path = model_dir.join("tokenizer.json");
+        let tokenizer_path = if model_dir.is_file() {
+            model_dir
+                .parent()
+                .map(|p| p.join("tokenizer.json"))
+                .unwrap_or_else(|| Path::new("tokenizer.json").to_path_buf())
+        } else {
+            model_dir.join("tokenizer.json")
+        };
 
         if !model_path.exists() {
-            return Err(MemFuseError::Internal(format!(
-                "Model file not found at {:?}",
+            return Err(MemFuseError::NotFound(format!(
+                "ONNX model file not found at {:?}",
                 model_path
             )));
         }
         if !tokenizer_path.exists() {
-            return Err(MemFuseError::Internal(format!(
+            return Err(MemFuseError::NotFound(format!(
                 "Tokenizer file not found at {:?}",
                 tokenizer_path
             )));
@@ -175,7 +241,7 @@ impl TextEmbedder {
         let tokenizer = Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| MemFuseError::Internal(format!("Failed to load tokenizer: {}", e)))?;
 
-        let pool_size = 2; // Limit max parallel inferences
+        let pool_size = config.pool_size;
         info!(
             "Model path registered: {:?} (pre-loading {} sessions)",
             model_path, pool_size
@@ -194,6 +260,7 @@ impl TextEmbedder {
             tokenizer: Arc::new(tokenizer),
             semaphore: Arc::new(tokio::sync::Semaphore::new(pool_size)),
             pool: Arc::new(SessionPool::new(sessions)),
+            config,
         })
     }
 
@@ -211,11 +278,12 @@ impl TextEmbedder {
         let text = text.to_string();
         let pool = self.pool.clone();
         let tokenizer = self.tokenizer.clone();
+        let max_sequence_length = self.config.max_sequence_length;
 
         tokio::task::spawn_blocking(move || {
             // Guard borrows session from pool, restores it on drop
             let mut session_guard = SessionGuard::new(pool)?;
-            Self::run_inference(&mut session_guard, &tokenizer, &text)
+            Self::run_inference(&mut session_guard, &tokenizer, &text, max_sequence_length)
         })
         .await
         .map_err(|e| MemFuseError::Internal(format!("spawn_blocking join: {}", e)))?
@@ -228,6 +296,7 @@ impl TextEmbedder {
         session: &mut ort::session::Session,
         tokenizer: &Tokenizer,
         text: &str,
+        max_sequence_length: usize,
     ) -> Result<Vec<f32>> {
         debug!("Embedding text: {:?}", text);
 
@@ -235,8 +304,22 @@ impl TextEmbedder {
             .encode(text, true)
             .map_err(|e| MemFuseError::Internal(format!("Tokenization failed: {}", e)))?;
 
-        let input_ids = encoding.get_ids();
-        let attention_mask = encoding.get_attention_mask();
+        let mut input_ids = encoding.get_ids().to_vec();
+        let mut attention_mask = encoding.get_attention_mask().to_vec();
+        let mut type_ids = encoding.get_type_ids().to_vec();
+
+        if input_ids.len() > max_sequence_length {
+            warn!(
+                tokens = input_ids.len(),
+                max = max_sequence_length,
+                "Input text exceeds max sequence length and will be truncated. \
+                 Consider using MarkdownChunker before embedding."
+            );
+            input_ids.truncate(max_sequence_length);
+            attention_mask.truncate(max_sequence_length);
+            type_ids.truncate(max_sequence_length);
+        }
+
         let seq_len = input_ids.len();
 
         let input_ids_vec: Vec<i64> = input_ids.iter().map(|&id| id as i64).collect();
@@ -253,8 +336,7 @@ impl TextEmbedder {
             .any(|input| input.name() == "token_type_ids");
 
         let outputs = if has_token_type_ids {
-            let token_type_ids = encoding.get_type_ids();
-            let token_type_ids_vec: Vec<i64> = token_type_ids.iter().map(|&id| id as i64).collect();
+            let token_type_ids_vec: Vec<i64> = type_ids.iter().map(|&id| id as i64).collect();
             let token_type_ids_tensor = Value::from_array(([1, seq_len], token_type_ids_vec))
                 .map_err(|e| MemFuseError::Internal(format!("Failed to create tensor: {}", e)))?;
             session
@@ -340,34 +422,35 @@ mod tests {
 
     #[cfg(feature = "onnx")]
     #[test]
-    fn test_text_embedder_load_missing_files() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_text_embedder_load_missing_files() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let dir = tempdir()?;
 
-        // Empty directory — should fail at tokenizer existence check first
-        // because model_path defaults to model_dir if model.onnx is missing.
+        // Empty directory — missing model file check first or tokenizer check
         let res = TextEmbedder::load(dir.path());
-        match res {
-            Err(e) => assert!(e.to_string().contains("Tokenizer file not found")),
-            Ok(_) => panic!("Should have failed"),
-        }
+        assert!(res.is_err());
+        let err = res.err().unwrap();
+        assert!(matches!(err, MemFuseError::NotFound(_)));
 
         // Create tokenizer but still missing model.onnx
         File::create(dir.path().join("tokenizer.json"))?;
         let res = TextEmbedder::load(dir.path());
-        match res {
-            Err(e) => {
-                let msg = e.to_string();
-                // Should fail at tokenizer loading because it's empty
-                assert!(msg.contains("Failed to load tokenizer"));
-            }
-            Ok(_) => panic!("Should have failed"),
-        }
+        assert!(res.is_err());
+        let err = res.err().unwrap();
+        assert!(matches!(err, MemFuseError::NotFound(_)));
         Ok(())
     }
 
     #[cfg(feature = "onnx")]
     #[test]
-    fn test_text_embedder_load_invalid_content() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_text_embedder_config_default() {
+        let cfg = TextEmbedderConfig::default();
+        assert_eq!(cfg.max_sequence_length, 512);
+        assert_eq!(cfg.pool_size, 2);
+    }
+
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn test_text_embedder_load_invalid_content() -> std::result::Result<(), Box<dyn std::error::Error>> {
         use std::io::Write;
 
         let dir = tempdir()?;
@@ -425,7 +508,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mock_embedding_engine() -> Result<(), Box<dyn std::error::Error>> {
+    async fn test_mock_embedding_engine() -> std::result::Result<(), Box<dyn std::error::Error>> {
         use async_trait::async_trait;
         use memfuse_core::{Result, TextEmbeddingEngine};
 
