@@ -1,4 +1,10 @@
 //! Logically isolated Collections inside the MemFuse database.
+// FILE-CONTEXT
+// ZWECK: Collection-API — zentraler Einstiegspunkt für Insert/Search/Delete
+// INVARIANTEN: TxId monoton steigend (AtomicU64, SeqCst); kein direkter DB-Zugriff ohne TxId
+// NICHT-OFFENSICHTLICH: SystemTime als TxId-Fallback ist unsicher bei EMBED_CONCURRENCY>1
+// SIEHE AUCH: memfuse-db/AGENTS.md, DECISIONS.md ADR-005
+
 // INVARIANT: Logische Isolation (Namespaces).
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 

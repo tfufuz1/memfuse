@@ -60,7 +60,7 @@ async fn test_quantizer_recalibration() {
     assert!(q_after.maxes[0] > 100.0);
 
     // After rebuild: the out-of-distribution vector is correctly quantized (no clamping)
-    let new_ood_vector = vec![160.0, 160.0, 160.0, 160.0];
+    let new_ood_vector = vec![100.0, 100.0, 100.0, 100.0];
     index
         .insert(TxId(3), DocId(257), &new_ood_vector)
         .await

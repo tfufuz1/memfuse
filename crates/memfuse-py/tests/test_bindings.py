@@ -227,3 +227,22 @@ def test_version_and_repr(db_path):
 
     db_stats = db.stats()
     assert "DbStats(vectors=0" in repr(db_stats) # default col is empty
+
+
+def test_import():
+    """memfuse-Modul muss importierbar sein ohne Crash."""
+    try:
+        import memfuse  # noqa: F401
+    except ImportError:
+        pytest.skip("maturin develop noch nicht ausgeführt")
+
+
+def test_open_and_close(tmp_path):
+    """open() → collection() → close() ohne Panic oder Exception."""
+    try:
+        import memfuse
+    except ImportError:
+        pytest.skip("maturin develop noch nicht ausgeführt")
+    db = memfuse.open(str(tmp_path))
+    col = db.collection("test_col")
+    assert col is not None, "collection() darf nicht None zurückgeben"

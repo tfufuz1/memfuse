@@ -1,0 +1,96 @@
+name: Rust CI
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy (-D warnings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --workspace --exclude memfuse-tauri -- -D warnings
+
+  test:
+    name: Test Suite (Triple-Run Flaky-Detection)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run 1
+        run: cargo test --workspace --exclude memfuse-tauri
+      - name: Run 2 (Flaky-Check)
+        run: cargo test --workspace --exclude memfuse-tauri
+      - name: Run 3 (Flaky-Check Final)
+        run: cargo test --workspace --exclude memfuse-tauri
+
+  context-gates:
+    name: Context-Enforcement Gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Gate 1: Keine offenen CRITICAL/BLOCKER AI-TAGs"
+        run: |
+          OPEN=$(grep -rn "AI-TAG\[.*\]\[CRITICAL\]\|AI-TAG\[.*\]\[BLOCKER\]" \
+            crates/ --include="*.rs" | grep -v "RESOLVED" || true)
+          if [ -n "$OPEN" ]; then
+            echo "❌ Offene CRITICAL/BLOCKER AI-TAGs — Merge blockiert:"
+            echo "$OPEN"
+            exit 1
+          fi
+          echo "✅ Keine offenen CRITICAL/BLOCKER Tags"
+
+      - name: "Gate 2: Kein .unwrap()/.expect() außerhalb von Tests"
+        run: |
+          VIOLATIONS=$(grep -rn "\.expect(\|\.unwrap()" crates/*/src/*.rs \
+            --include="*.rs" 2>/dev/null | \
+            grep -v "^Binary\|//.*expect\|//.*unwrap\|#\[cfg(test" || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "❌ .unwrap()/.expect() in Produktionscode:"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+          echo "✅ Kein .unwrap()/.expect() in Produktionscode"
+
+      - name: "Gate 3: Kein let _ = bei sync_all/fsync"
+        run: |
+          SILENT=$(grep -rn "let _ = .*sync_all\|let _ = .*fsync" \
+            crates/ --include="*.rs" || true)
+          if [ -n "$SILENT" ]; then
+            echo "❌ Stummer fsync-Fehler — WAL-Durability-Verletzung:"
+            echo "$SILENT"
+            exit 1
+          fi
+          echo "✅ Kein stummer fsync"
+
+      - name: "Gate 4: unsafe nur in autorisierten Dateien (ADR-017)"
+        run: |
+          UNAUTHORIZED=$(grep -rln "unsafe {" crates/ --include="*.rs" | \
+            grep -v "distance.rs\|diskann.rs\|persistence.rs" || true)
+          if [ -n "$UNAUTHORIZED" ]; then
+            echo "❌ unsafe in nicht autorisierter Datei (ADR-017):"
+            echo "$UNAUTHORIZED"
+            exit 1
+          fi
+          echo "✅ unsafe nur in autorisierten Dateien"
