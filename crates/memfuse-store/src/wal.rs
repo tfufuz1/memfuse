@@ -35,6 +35,11 @@ impl WalOp {
 }
 
 /// Legacy static HMAC integrity key used strictly for backward-compatibility fallback during WAL replay of legacy databases.
+///
+/// Cryptographic Audit Guarantee (Task E):
+/// 1. This key is ONLY used during replay of pre-migration WAL files when per-file key verification fails.
+/// 2. It is NEVER used for new write or append operations (all new WAL writes derive an integrity key via `KeyManager`).
+/// 3. After successful replay and LSM compaction into SSTables, old WAL files using `LEGACY_INTEGRITY_KEY` are superseded and truncated/removed.
 /// ANCHOR: MIGRATION-WAL-HMAC-001
 pub const LEGACY_INTEGRITY_KEY: [u8; 32] = *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0";
 

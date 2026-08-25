@@ -50,7 +50,7 @@ pub struct WalHmac {
 impl WalHmac {
     pub fn new(integrity_key: &[u8]) -> Result<Self> {
         let mac = Hmac::<Sha256>::new_from_slice(integrity_key)
-            .map_err(|e| memfuse_core::MemFuseError::Storage(format!("HMAC key error: {}", e)))?;
+            .map_err(|e| memfuse_core::MemFuseError::Crypto(format!("HMAC key error: {}", e)))?;
         Ok(Self { mac })
     }
 
@@ -201,5 +201,74 @@ mod tests {
         assert_eq!(decrypted.as_slice(), data);
 
         Ok(())
+    }
+
+    fn create_entry(
+        key: &[u8],
+        prev_hmac: [u8; 32],
+        seq_no: u64,
+        op_type: u8,
+        k: &[u8],
+        v: &[u8],
+    ) -> WalEntrySnapshot {
+        let mut hmac = WalHmac::new(key).expect("hmac init");
+        hmac.update(&prev_hmac);
+        hmac.update(&seq_no.to_le_bytes());
+        hmac.update(&[op_type]);
+        hmac.update(k);
+        if op_type == 0 {
+            hmac.update(v);
+        }
+        let checksum = hmac.finalize();
+        WalEntrySnapshot {
+            seq_no,
+            op_type,
+            key: k.to_vec(),
+            value: v.to_vec(),
+            checksum,
+            prev_hmac,
+        }
+    }
+
+    #[test]
+    fn hmac_chain_detects_tampered_entry() {
+        let key = b"integrity-key-32-bytes-long-----";
+        let e1 = create_entry(key, [0u8; 32], 1, 0, b"key1", b"val1");
+        let e2 = create_entry(key, e1.checksum, 2, 0, b"key2", b"val2");
+
+        // Tamper with entry 2's payload value
+        let mut tampered_e2 = e2.clone();
+        tampered_e2.value = b"tampered_val2".to_vec();
+
+        let e3 = create_entry(key, e2.checksum, 3, 0, b"key3", b"val3");
+
+        let mut verifier = IntegrityVerifier::new(key);
+        verifier.verify_and_update(&e1, 10).expect("e1 valid");
+
+        // Verification of tampered entry 2 must fail
+        assert!(verifier.verify_and_update(&tampered_e2, 20).is_err());
+
+        // Verification of entry 3 with original e2's prev_hmac must fail because verifier chain was not updated with tampered e2
+        assert!(verifier.verify_and_update(&e3, 30).is_err());
+    }
+
+    #[test]
+    fn hmac_chain_detects_deleted_entry() {
+        let key = b"integrity-key-32-bytes-long-----";
+        let e1 = create_entry(key, [0u8; 32], 1, 0, b"key1", b"val1");
+        let e2 = create_entry(key, e1.checksum, 2, 0, b"key2", b"val2");
+        let e3 = create_entry(key, e2.checksum, 3, 0, b"key3", b"val3");
+
+        let mut verifier = IntegrityVerifier::new(key);
+        verifier.verify_and_update(&e1, 10).expect("e1 valid");
+
+        // Skip entry 2 (removed entry) and attempt to verify entry 3 directly
+        let err = verifier.verify_and_update(&e3, 30).unwrap_err();
+        if let memfuse_core::MemFuseError::WalCorruption { offset, reason } = err {
+            assert_eq!(offset, 30);
+            assert!(reason.contains("HMAC mismatch"));
+        } else {
+            panic!("Expected WalCorruption error");
+        }
     }
 }
