@@ -1,6 +1,6 @@
 use crate::client::{OllamaClient, DEFAULT_BASE_URL, DEFAULT_EMBED_MODEL};
 use async_trait::async_trait;
-use memfuse_core::{Result, TextEmbeddingEngine};
+use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
 
 /// Implementation of `TextEmbeddingEngine` using Ollama's HTTP API.
 #[derive(Clone, Debug)]
@@ -44,12 +44,13 @@ impl OllamaEmbedder {
 impl TextEmbeddingEngine for OllamaEmbedder {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
         let vec = self.client.embed(&self.model, text).await?;
-        if let Some(dim) = self.expected_dimension {
-            if vec.len() != dim {
-                return Err(memfuse_core::MemFuseError::invalid_input(format!(
-                    "Ollama embedding dimension mismatch: expected {}, got {}",
-                    dim,
-                    vec.len()
+        if let Some(expected_dim) = self.expected_dimension {
+            if vec.len() != expected_dim {
+                return Err(MemFuseError::Index(format!(
+                    "Ollama returned embedding of dimension {} but expected {}. Model '{}' may have changed. Rebuild the HNSW index.",
+                    vec.len(),
+                    expected_dim,
+                    self.model
                 )));
             }
         }
@@ -63,18 +64,63 @@ impl TextEmbeddingEngine for OllamaEmbedder {
 
         let output = self.client.embed_batch(&self.model, texts).await?;
 
-        if let Some(dim) = self.expected_dimension {
+        if let Some(expected_dim) = self.expected_dimension {
             for vec in &output {
-                if vec.len() != dim {
-                    return Err(memfuse_core::MemFuseError::invalid_input(format!(
-                        "Ollama embedding dimension mismatch: expected {}, got {}",
-                        dim,
-                        vec.len()
+                if vec.len() != expected_dim {
+                    return Err(MemFuseError::Index(format!(
+                        "Ollama returned embedding of dimension {} but expected {}. Model '{}' may have changed. Rebuild the HNSW index.",
+                        vec.len(),
+                        expected_dim,
+                        self.model
                     )));
                 }
             }
         }
 
         Ok(output)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_dimension_validation_mismatch_returns_index_error() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                let body = serde_json::json!({
+                    "embedding": [0.1, 0.2, 0.3] // 3 dimensions
+                })
+                .to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let embedder = OllamaEmbedder::new(server_url, "nomic-embed-text")
+            .with_expected_dimension(768);
+
+        let result = embedder.embed("test text").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            MemFuseError::Index(msg) => {
+                assert!(msg.contains("Ollama returned embedding of dimension 3 but expected 768"));
+                assert!(msg.contains("Model 'nomic-embed-text' may have changed"));
+            }
+            _ => panic!("Expected MemFuseError::Index, got {:?}", err),
+        }
     }
 }
