@@ -240,7 +240,15 @@ impl LsmStorage {
         };
         let resource_tracker = Arc::new(ResourceTracker::new(budget_config));
         if replayed_size > 0 {
-            let _ = resource_tracker.consume_memory(replayed_size);
+            // consume_memory returning Err should not abort startup (allowing state recovery),
+            // but MUST be observable in logs so budget accounting inaccuracies are visible.
+            if let Err(e) = resource_tracker.consume_memory(replayed_size) {
+                tracing::warn!(
+                    replayed_bytes = replayed_size,
+                    "Memory budget tracking failed after WAL replay: {e}. \
+                     Budget accounting may be inaccurate until next flush."
+                );
+            }
         }
 
         let tx_buffer = TxBuffer::new_with_config(16, config.tx_timeout);
@@ -405,7 +413,15 @@ impl LsmStorage {
 
         for path in sst_to_remove {
             tracing::info!("Removing SSTable during rollback: {:?}", path);
-            let _ = tokio::fs::remove_file(path).await;
+            // Best-effort cleanup: do not abort rollback recovery if file removal fails.
+            // The SSTable is superseded by restored WAL replay state, so its orphaned presence is safe but wastes disk space.
+            if let Err(e) = tokio::fs::remove_file(&path).await {
+                tracing::error!(
+                    path = ?path,
+                    "Failed to remove orphaned SSTable during rollback: {e}. \
+                     Manual cleanup may be required."
+                );
+            }
         }
 
         // 5. Re-populate memtable from truncated WAL
@@ -703,16 +719,10 @@ impl StorageEngine for LsmStorage {
             )));
         }
 
-        // --- PHASE 3: Apply to MemTable ---
-        for (key, value, seq) in mem_updates {
-            let entry_size = key.len() + value.len() + 8;
-            let _ = self.budget.consume_memory(entry_size as u64);
-            state
-                .memtable
-                .put(Bytes::from(key), Bytes::from(value), seq, tx_id.inner());
-        }
-
-        // Update last committed transaction ID if it is not a system transaction
+        // INVARIANT (Task D - Commit Ordering):
+        // 1. WAL append must succeed FIRST (done in PHASE 2).
+        // 2. last_committed_tx.store() must happen AFTER successful WAL append (done here before/during MemTable write).
+        // 3. MemTable write happens AFTER WAL append succeeds.
         if tx_id.inner() < TxId::INTERNAL_BASE {
             let mut current = self.last_committed_tx.load(Ordering::Acquire);
             while tx_id.inner() > current {
@@ -733,6 +743,17 @@ impl StorageEngine for LsmStorage {
             } else if tx_id.inner() == 0 {
                 tracing::warn!("LsmStorage::commit tx=0 called — ignoring visibility update to prevent blackout");
             }
+        }
+
+        // --- PHASE 3: Apply to MemTable ---
+        for (key, value, seq) in mem_updates {
+            let entry_size = key.len() + value.len() + 8;
+            if let Err(e) = self.budget.consume_memory(entry_size as u64) {
+                tracing::warn!("Memory budget tracking warning during commit: {e}");
+            }
+            state
+                .memtable
+                .put(Bytes::from(key), Bytes::from(value), seq, tx_id.inner());
         }
 
         // Check if flush is needed
@@ -918,6 +939,8 @@ impl StorageEngine for LsmStorage {
     }
 
     async fn scan_prefix_at(&self, prefix: &[u8], seq_no: u64) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        // INVARIANT (Task C - Single snapshot boundary):
+        // last_committed_tx is loaded EXACTLY ONCE at start and passed through for snapshot isolation.
         let last_tx = self.last_committed_tx.load(Ordering::Acquire);
         let mut map = std::collections::BTreeMap::new();
         let state = self.state.read().await;
@@ -1507,6 +1530,114 @@ mod tests {
             .maybe_compact(&storage.sstables, &storage.config.path)
             .await
             .unwrap(); // unwrap
+    }
+
+    #[tokio::test]
+    async fn test_wal_survives_process_restart() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 64,
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+
+        {
+            let storage = LsmStorage::new(config.clone()).await.expect("create storage");
+            let tx = TxId::new(1);
+            storage.put(tx, b"persistent_key", b"persistent_val").await.expect("put");
+            storage.commit(tx).await.expect("commit");
+        } // drop storage instance
+
+        {
+            let storage = LsmStorage::new(config).await.expect("reopen storage");
+            let val = storage.get(b"persistent_key").await.expect("get");
+            assert_eq!(val, Some(b"persistent_val".to_vec()));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_mvcc_snapshot_isolation() {
+        let (storage, _tmp) = test_storage().await;
+
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key", b"val_t1").await.expect("put t1");
+        storage.commit(tx1).await.expect("commit t1");
+        let seq_t1 = storage.last_seq_no().await.expect("seq t1");
+
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"key", b"val_t2").await.expect("put t2");
+        storage.commit(tx2).await.expect("commit t2");
+
+        // Read at seq_t1 should exclude T2's update
+        let val_at_t1 = storage.get_at_seq(b"key", seq_t1).await.expect("get at t1");
+        assert_eq!(val_at_t1, Some(b"val_t1".to_vec()));
+
+        // Current get should return T2's value
+        let val_current = storage.get(b"key").await.expect("get current");
+        assert_eq!(val_current, Some(b"val_t2".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn test_compaction_roundtrip() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024,
+            max_ram_mb: 64,
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig {
+                min_sstables_per_tier: 2,
+                size_ratio: 2.0,
+                check_interval: Duration::from_millis(10),
+                yield_threshold: 100,
+                max_memory_bytes: Some(1024 * 1024),
+            },
+            encryption_passphrase: None,
+        };
+        let storage = LsmStorage::new(config.clone()).await.expect("create storage");
+
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key1", b"val1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+        storage.force_flush().await.unwrap();
+
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"key2", b"val2").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+        storage.force_flush().await.unwrap();
+
+        let compact_res = storage.maybe_compact().await.expect("compact");
+        assert!(compact_res, "Compaction should occur");
+
+        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
+        assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn test_sequence_numbers_strictly_monotonic_across_concurrent_commits() {
+        let storage = Arc::new(test_storage().await.0);
+        let mut handles = Vec::new();
+
+        for i in 1..=10u64 {
+            let st = Arc::clone(&storage);
+            handles.push(tokio::spawn(async move {
+                let tx = TxId::new(i);
+                st.put(tx, format!("concurrent_key_{i}").as_bytes(), b"val")
+                    .await
+                    .unwrap();
+                st.commit(tx).await.unwrap();
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        let last_seq = storage.last_seq_no().await.unwrap();
+        assert_eq!(last_seq, 10, "10 commits must generate sequence numbers 1..10 monotonically");
     }
 
     #[tokio::test]

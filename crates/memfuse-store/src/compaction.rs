@@ -899,6 +899,8 @@ mod tests {
         // Non-deleted data MUST be present
         for i in 5000..10000 {
             let key = format!("doc-{:04}", i);
+            // SAFETY: This panic is in a test-only context. A missing key after
+            // compaction is a test logic error, not a production code path.
             let val = storage
                 .get(key.as_bytes())
                 .await

@@ -332,10 +332,12 @@ impl Wal {
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to open WAL: {}", e)))?;
 
-        // 🛡️ SICHERUNG: Directory FSync (FIND-STO-004)
+        // 🛡️ SICHERUNG: Directory FSync (FIND-STO-004 / Task G)
         if is_new {
+            file.sync_all()
+                .await
+                .map_err(|e| MemFuseError::Storage(format!("WAL fsync: {e}")))?;
             if let Some(parent) = path.parent() {
-                // fsync propagiert korrekt (behoben 2026-08-24)
                 let parent = if parent.as_os_str().is_empty() {
                     Path::new(".")
                 } else {
@@ -343,12 +345,12 @@ impl Wal {
                 };
                 let dir = tokio::fs::File::open(parent).await.map_err(|e| {
                     MemFuseError::Storage(format!(
-                        "Verzeichnis für fsync konnte nicht geöffnet werden: {e}"
+                        "WAL dir open failed: {e}"
                     ))
                 })?;
                 dir.sync_all().await.map_err(|e| {
                     MemFuseError::Storage(format!(
-                        "Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}"
+                        "WAL dir fsync failed: {e}"
                     ))
                 })?;
             }
@@ -546,7 +548,7 @@ impl Wal {
         file.flush()
             .await
             .map_err(|e| MemFuseError::Storage(format!("WAL batch flush failed: {}", e)))?;
-        file.sync_data()
+        file.sync_all()
             .await
             .map_err(|e| MemFuseError::Storage(format!("WAL batch fsync failed: {}", e)))?;
 
@@ -1005,6 +1007,40 @@ mod tests {
             matches!(result, Err(MemFuseError::WalCorruption { .. })),
             "Expected WalCorruption error, got {:?}",
             result
+        );
+    }
+
+    #[tokio::test]
+    async fn wal_tolerates_truncated_tail() {
+        let dir = tempdir().expect("tempdir"); // expect
+        let path = dir.path().join("test.wal");
+
+        {
+            let wal = Wal::open(&path).await.expect("open WAL"); // expect
+            for i in 1..=4 {
+                let op = WalOp::Put {
+                    tx_id: TxId::new(i),
+                    key: format!("key{}", i).into_bytes(),
+                    value: format!("val{}", i).into_bytes(),
+                };
+                let entry = wal.create_entry(op, i).await.expect("create entry"); // expect
+                wal.append(&entry).await.expect("append entry"); // expect
+            }
+        }
+
+        // Truncate file in the middle of 4th entry
+        let mut data = fs::read(&path).await.expect("read wal"); // expect
+        let truncated_len = data.len() - 10;
+        data.truncate(truncated_len);
+        fs::write(&path, data).await.expect("write truncated wal"); // expect
+
+        let wal2 = Wal::open(&path).await.expect("reopen WAL"); // expect
+        let entries = wal2.replay().await.expect("replay WAL"); // expect
+
+        assert_eq!(
+            entries.len(),
+            3,
+            "Replay must return exactly 3 valid entries without error"
         );
     }
 
