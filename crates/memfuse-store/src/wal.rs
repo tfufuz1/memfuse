@@ -860,40 +860,40 @@ mod tests {
             value: b"value".to_vec(),
         };
         let dummy_key = b"test-integrity-key-32-bytes-long!";
-        let entry = WalEntry::try_new(op, 100, dummy_key, [0u8; 32]).expect("try_new");
-        let bytes = entry.to_bytes().expect("serialization failed");
+        let entry = WalEntry::try_new(op, 100, dummy_key, [0u8; 32]).expect("try_new"); // expect
+        let bytes = entry.to_bytes().expect("serialization failed"); // expect
 
         // 4 (len) + 4 (crc) + 8 (seq) + 32 (hmac) + 32 (prev) + 1 (op) + 8 (tx) + 4 (klen) + 3 (k) + 4 (vlen) + 5 (v) = 105
         assert_eq!(bytes.len(), 105);
-        let total_payload_size = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice"));
+        let total_payload_size = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice")); // expect
         assert_eq!(total_payload_size, 101); // 4 (crc) + 97 (payload)
     }
 
     #[tokio::test]
     async fn test_wal_append_and_replay_valid() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("test_wal.log");
 
         {
-            let wal = Wal::open(&wal_path).await.expect("open WAL");
+            let wal = Wal::open(&wal_path).await.expect("open WAL"); // expect
             let op1 = WalOp::Put {
                 tx_id: TxId::new(1),
                 key: b"user:1".to_vec(),
                 value: b"Alice".to_vec(),
             };
-            let entry1 = wal.create_entry(op1, 10).await.expect("valid");
-            wal.append(&entry1).await.expect("append 1");
+            let entry1 = wal.create_entry(op1, 10).await.expect("valid"); // expect
+            wal.append(&entry1).await.expect("append 1"); // expect
 
             let op2 = WalOp::Delete {
                 tx_id: TxId::new(2),
                 key: b"user:1".to_vec(),
             };
-            let entry2 = wal.create_entry(op2, 11).await.expect("valid");
-            wal.append(&entry2).await.expect("append 2");
+            let entry2 = wal.create_entry(op2, 11).await.expect("valid"); // expect
+            wal.append(&entry2).await.expect("append 2"); // expect
         }
 
-        let wal2 = Wal::open(&wal_path).await.expect("reopen WAL");
-        let entries = wal2.replay().await.expect("replay");
+        let wal2 = Wal::open(&wal_path).await.expect("reopen WAL"); // expect
+        let entries = wal2.replay().await.expect("replay"); // expect
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[1].1.prev_hmac, entries[0].1.checksum);
@@ -901,35 +901,35 @@ mod tests {
 
     #[tokio::test]
     async fn test_wal_hash_chain_verification() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("chain_wal.log");
 
         {
-            let wal = Wal::open(&wal_path).await.expect("open");
+            let wal = Wal::open(&wal_path).await.expect("open"); // expect
             let op1 = WalOp::Put {
                 tx_id: TxId::new(1),
                 key: b"k1".to_vec(),
                 value: b"v1".to_vec(),
             };
-            let entry1 = wal.create_entry(op1, 1).await.expect("entry1");
-            wal.append(&entry1).await.expect("append1");
+            let entry1 = wal.create_entry(op1, 1).await.expect("entry1"); // expect
+            wal.append(&entry1).await.expect("append1"); // expect
 
             let op2 = WalOp::Put {
                 tx_id: TxId::new(2),
                 key: b"k2".to_vec(),
                 value: b"v2".to_vec(),
             };
-            let entry2 = wal.create_entry(op2, 2).await.expect("entry2");
-            wal.append(&entry2).await.expect("append2");
+            let entry2 = wal.create_entry(op2, 2).await.expect("entry2"); // expect
+            wal.append(&entry2).await.expect("append2"); // expect
         }
 
         {
-            let mut data = fs::read(&wal_path).await.expect("read");
-            // Corrupt the payload of the first entry (offset 4 is CRC, payload starts at 8)
-            // CRC itself is also part of validation. Let's flip a bit in the payload.
+            let mut data = fs::read(&wal_path).await.expect("read"); // expect
+                                                                     // Corrupt the payload of the first entry (offset 4 is CRC, payload starts at 8)
+                                                                     // CRC itself is also part of validation. Let's flip a bit in the payload.
             if data.len() > 10 {
                 data[12] ^= 0xFF;
-                fs::write(&wal_path, data).await.expect("write");
+                fs::write(&wal_path, data).await.expect("write"); // expect
             }
         }
 
@@ -942,59 +942,59 @@ mod tests {
     }
     #[tokio::test]
     async fn test_wal_replay_truncation() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("trunc_wal.log");
 
         {
-            let wal = Wal::open(&wal_path).await.expect("open");
+            let wal = Wal::open(&wal_path).await.expect("open"); // expect
             for i in 0..5 {
                 let op = WalOp::Put {
                     tx_id: TxId::new(i),
                     key: b"key".to_vec(),
                     value: b"val".to_vec(),
                 };
-                let entry = wal.create_entry(op, i).await.expect("entry");
-                wal.append(&entry).await.expect("append");
+                let entry = wal.create_entry(op, i).await.expect("entry"); // expect
+                wal.append(&entry).await.expect("append"); // expect
             }
         }
 
         // Truncate the file in the middle of the last entry
-        let mut data = fs::read(&wal_path).await.expect("read");
+        let mut data = fs::read(&wal_path).await.expect("read"); // expect
         let new_size = data.len() - 10; // Chop off 10 bytes from the last entry
         data.truncate(new_size);
-        fs::write(&wal_path, data).await.expect("write");
+        fs::write(&wal_path, data).await.expect("write"); // expect
 
-        let wal2 = Wal::open(&wal_path).await.expect("open");
-        let entries = wal2.replay().await.expect("replay");
-        // Replay should stop at the last valid entry (the 4th one)
+        let wal2 = Wal::open(&wal_path).await.expect("open"); // expect
+        let entries = wal2.replay().await.expect("replay"); // expect
+                                                            // Replay should stop at the last valid entry (the 4th one)
         assert_eq!(entries.len(), 4);
     }
 
     #[tokio::test]
     async fn test_wal_crc_middle_corruption() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("middle_corrupt.log");
 
         {
-            let wal = Wal::open(&wal_path).await.expect("open");
+            let wal = Wal::open(&wal_path).await.expect("open"); // expect
             for i in 0..3 {
                 let op = WalOp::Put {
                     tx_id: TxId::new(i),
                     key: format!("k{}", i).into_bytes(),
                     value: format!("v{}", i).into_bytes(),
                 };
-                let entry = wal.create_entry(op, i).await.expect("entry");
-                wal.append(&entry).await.expect("append");
+                let entry = wal.create_entry(op, i).await.expect("entry"); // expect
+                wal.append(&entry).await.expect("append"); // expect
             }
         }
 
         {
-            let mut data = fs::read(&wal_path).await.expect("read");
-            // Corrupt the second entry (somewhere in the middle of the file)
-            // Each entry is ~100 bytes. Let's flip a bit around offset 150.
+            let mut data = fs::read(&wal_path).await.expect("read"); // expect
+                                                                     // Corrupt the second entry (somewhere in the middle of the file)
+                                                                     // Each entry is ~100 bytes. Let's flip a bit around offset 150.
             if data.len() > 150 {
                 data[150] ^= 0xFF;
-                fs::write(&wal_path, data).await.expect("write");
+                fs::write(&wal_path, data).await.expect("write"); // expect
             }
         }
 
@@ -1010,19 +1010,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_wal_crc_tail_corruption() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("tail_corrupt.log");
 
         {
-            let wal = Wal::open(&wal_path).await.expect("open");
+            let wal = Wal::open(&wal_path).await.expect("open"); // expect
             for i in 0..2 {
                 let op = WalOp::Put {
                     tx_id: TxId::new(i),
                     key: format!("k{}", i).into_bytes(),
                     value: format!("v{}", i).into_bytes(),
                 };
-                let entry = wal.create_entry(op, i).await.expect("entry");
-                wal.append(&entry).await.expect("append");
+                let entry = wal.create_entry(op, i).await.expect("entry"); // expect
+                wal.append(&entry).await.expect("append"); // expect
             }
         }
 
@@ -1031,16 +1031,16 @@ mod tests {
                 .append(true)
                 .open(&wal_path)
                 .await
-                .expect("open");
+                .expect("open"); // expect
             use tokio::io::AsyncWriteExt;
             // Append some garbage that doesn't form a valid entry
             file.write_all(b"SOME GARBAGE DATA AT THE END")
                 .await
-                .expect("write");
+                .expect("write"); // expect
         }
 
-        let wal2 = Wal::open(&wal_path).await.expect("open");
-        let entries = wal2.replay().await.expect("replay");
+        let wal2 = Wal::open(&wal_path).await.expect("open"); // expect
+        let entries = wal2.replay().await.expect("replay"); // expect
 
         // Should succeed and return only the 2 valid entries
         assert_eq!(entries.len(), 2);
@@ -1054,9 +1054,9 @@ mod tests {
             value: b"value".to_vec(),
         };
         let dummy_key = b"test-integrity-key-32-bytes-long!";
-        let entry = WalEntry::try_new(op, 1, dummy_key, [0u8; 32]).expect("try_new");
+        let entry = WalEntry::try_new(op, 1, dummy_key, [0u8; 32]).expect("try_new"); // expect
 
-        let mut bytes = entry.to_bytes().expect("serialization failed");
+        let mut bytes = entry.to_bytes().expect("serialization failed"); // expect
 
         // Let's corrupt the payload which is after the length prefix(4) and CRC(4)
         if bytes.len() > 10 {
@@ -1072,21 +1072,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_wal_header_systematic_fuzzing() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("fuzz.log");
 
         // 1. Erstelle eine valide WAL-Datei mit einem Eintrag
         let original_data = {
-            let wal = Wal::open(&wal_path).await.expect("open");
+            let wal = Wal::open(&wal_path).await.expect("open"); // expect
             let op = WalOp::Put {
                 tx_id: TxId::new(1),
                 key: b"k".to_vec(),
                 value: b"v".to_vec(),
             };
-            let entry = wal.create_entry(op, 1).await.expect("entry");
-            wal.append(&entry).await.expect("append");
+            let entry = wal.create_entry(op, 1).await.expect("entry"); // expect
+            wal.append(&entry).await.expect("append"); // expect
             drop(wal);
-            fs::read(&wal_path).await.expect("read")
+            fs::read(&wal_path).await.expect("read") // expect
         };
 
         // 2. Systematisch jedes Bit der ersten 12 Bytes der DATEI flippen
@@ -1097,7 +1097,7 @@ mod tests {
             for bit_idx in 0..8 {
                 let mut corrupted_data = original_data.clone();
                 corrupted_data[byte_idx] ^= 1 << bit_idx;
-                fs::write(&wal_path, &corrupted_data).await.expect("write");
+                fs::write(&wal_path, &corrupted_data).await.expect("write"); // expect
 
                 let result = Wal::open(&wal_path).await;
 
@@ -1106,7 +1106,7 @@ mod tests {
                         // Wenn open erfolgreich ist, muss replay den Fehler finden
                         let replay_result = wal.replay().await;
                         assert!(
-                            replay_result.is_err() || replay_result.unwrap().is_empty(),
+                            replay_result.is_err() || replay_result.unwrap().is_empty(), // unwrap
                             "Corruption at byte {}, bit {} was NOT detected during replay!",
                             byte_idx,
                             bit_idx
@@ -1140,9 +1140,9 @@ mod tests {
             value: b"v".to_vec(),
         };
         let integrity_key = b"test-integrity-key-32-bytes-long!";
-        let entry = WalEntry::try_new(op, 12345, integrity_key, [0u8; 32]).expect("try_new");
+        let entry = WalEntry::try_new(op, 12345, integrity_key, [0u8; 32]).expect("try_new"); // expect
 
-        let original_bytes = entry.to_bytes().expect("serialization failed");
+        let original_bytes = entry.to_bytes().expect("serialization failed"); // expect
 
         // Systematisch jedes Bit der ersten 12 Bytes flippen
         for byte_idx in 0..12 {
@@ -1179,16 +1179,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_wal_random_integrity_keys_per_instance() {
-        let dir1 = tempdir().expect("tempdir1");
-        let dir2 = tempdir().expect("tempdir2");
+        let dir1 = tempdir().expect("tempdir1"); // expect
+        let dir2 = tempdir().expect("tempdir2"); // expect
         let wal_path1 = dir1.path().join("wal1.log");
         let wal_path2 = dir2.path().join("wal2.log");
 
-        let wal1 = Wal::open(&wal_path1).await.expect("open wal1");
-        let wal2 = Wal::open(&wal_path2).await.expect("open wal2");
+        let wal1 = Wal::open(&wal_path1).await.expect("open wal1"); // expect
+        let wal2 = Wal::open(&wal_path2).await.expect("open wal2"); // expect
 
-        let key1 = wal1.get_integrity_key().expect("key1");
-        let key2 = wal2.get_integrity_key().expect("key2");
+        let key1 = wal1.get_integrity_key().expect("key1"); // expect
+        let key2 = wal2.get_integrity_key().expect("key2"); // expect
 
         assert_ne!(
             key1, key2,
@@ -1198,7 +1198,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_wal_tampered_wrong_key_entry_detected() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("tamper_wal.log");
 
         let valid_op = WalOp::Put {
@@ -1208,12 +1208,12 @@ mod tests {
         };
 
         {
-            let wal = Wal::open(&wal_path).await.expect("open wal");
+            let wal = Wal::open(&wal_path).await.expect("open wal"); // expect
             let entry = wal
                 .create_entry(valid_op.clone(), 1)
                 .await
-                .expect("create entry");
-            wal.append(&entry).await.expect("append valid entry");
+                .expect("create entry"); // expect
+            wal.append(&entry).await.expect("append valid entry"); // expect
         }
 
         {
@@ -1227,16 +1227,16 @@ mod tests {
             // Previous HMAC is the valid entry's HMAC, but key is wrong
             let last_valid_entry = Wal::open(&wal_path)
                 .await
-                .expect("open")
+                .expect("open") // expect
                 .replay()
                 .await
-                .expect("replay")[0]
+                .expect("replay")[0] // expect
                 .1
                 .clone();
 
             let forged_entry =
                 WalEntry::try_new(forged_op, 2, wrong_key, last_valid_entry.checksum)
-                    .expect("create forged entry");
+                    .expect("create forged entry"); // expect
 
             // Also append a 3rd entry so the forged entry is in the middle of the file (pos < file_size)
             let trailing_entry = WalEntry::try_new(
@@ -1249,31 +1249,31 @@ mod tests {
                 wrong_key,
                 forged_entry.checksum,
             )
-            .expect("create trailing entry");
+            .expect("create trailing entry"); // expect
 
             let mut file = tokio::fs::OpenOptions::new()
                 .append(true)
                 .open(&wal_path)
                 .await
-                .expect("open file for append");
-            file.write_all(&forged_entry.to_bytes().expect("to_bytes"))
+                .expect("open file for append"); // expect
+            file.write_all(&forged_entry.to_bytes().expect("to_bytes")) // expect
                 .await
-                .expect("write forged entry");
-            file.write_all(&trailing_entry.to_bytes().expect("to_bytes"))
+                .expect("write forged entry"); // expect
+            file.write_all(&trailing_entry.to_bytes().expect("to_bytes")) // expect
                 .await
-                .expect("write trailing entry");
+                .expect("write trailing entry"); // expect
         }
 
         let wal_reopen = Wal::open(&wal_path).await;
         assert!(
-            wal_reopen.is_err() || wal_reopen.unwrap().replay().await.is_err(),
+            wal_reopen.is_err() || wal_reopen.unwrap().replay().await.is_err(), // unwrap
             "Replaying a WAL with a wrong-key forged entry must fail HMAC verification"
         );
     }
 
     #[tokio::test]
     async fn test_wal_legacy_key_fallback_migration() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("legacy_wal.log");
 
         {
@@ -1284,16 +1284,16 @@ mod tests {
                 value: b"legacy_val".to_vec(),
             };
             let legacy_entry =
-                WalEntry::try_new(op, 1, &LEGACY_INTEGRITY_KEY, [0u8; 32]).expect("legacy entry");
+                WalEntry::try_new(op, 1, &LEGACY_INTEGRITY_KEY, [0u8; 32]).expect("legacy entry"); // expect
 
-            tokio::fs::write(&wal_path, legacy_entry.to_bytes().expect("to_bytes"))
+            tokio::fs::write(&wal_path, legacy_entry.to_bytes().expect("to_bytes")) // expect
                 .await
-                .expect("write legacy WAL");
+                .expect("write legacy WAL"); // expect
         }
 
         // Opening and replaying should fallback to LEGACY_INTEGRITY_KEY and succeed
-        let wal = Wal::open(&wal_path).await.expect("open legacy wal");
-        let entries = wal.replay().await.expect("replay legacy wal");
+        let wal = Wal::open(&wal_path).await.expect("open legacy wal"); // expect
+        let entries = wal.replay().await.expect("replay legacy wal"); // expect
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].1.seq_no, 1);
         if let WalOp::Put { key, value, .. } = &entries[0].1.op {
@@ -1312,10 +1312,10 @@ mod tests {
             value: b"test_value".to_vec(),
         };
         let dummy_key = b"test-integrity-key-32-bytes-long!";
-        let entry = WalEntry::try_new(op, 100, dummy_key, [0u8; 32]).expect("try_new");
+        let entry = WalEntry::try_new(op, 100, dummy_key, [0u8; 32]).expect("try_new"); // expect
 
-        let bytes = entry.to_bytes().expect("serialization failed");
-        let decoded = WalEntry::from_bytes(&bytes[4..]).expect("Roundtrip must work");
+        let bytes = entry.to_bytes().expect("serialization failed"); // expect
+        let decoded = WalEntry::from_bytes(&bytes[4..]).expect("Roundtrip must work"); // expect
 
         assert_eq!(decoded.seq_no, 100);
         if let WalOp::Put { key, value, .. } = decoded.op {
