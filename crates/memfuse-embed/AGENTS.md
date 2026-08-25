@@ -12,4 +12,4 @@
 - `rules/dependencies.md` — Feature-Gated ONNX Dependency Isolation
 
 ## Offene Pflicht-Tests (ANCHOR-Status)
-- ANCHOR[TEST:EMB-001] STATUS:OPEN — Zero-Panic Refactoring für SessionPool
+- ANCHOR[TEST:EMB-001] STATUS:DONE — Zero-Panic Refactoring für SessionPool
