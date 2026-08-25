@@ -494,9 +494,9 @@ impl CsrGraph {
 
         // Out-degree per node
         let mut out_degree = vec![0usize; n];
-        for i in 0..n {
+        for (i, deg) in out_degree.iter_mut().enumerate().take(n) {
             if i < inner.offsets.len() - 1 {
-                out_degree[i] = inner.offsets[i + 1] - inner.offsets[i];
+                *deg = inner.offsets[i + 1] - inner.offsets[i];
             }
         }
 
@@ -1545,6 +1545,88 @@ mod tests {
         // Downstream nodes in linear chain receive PageRank flow
         assert!(r2 > r1, "Node 2 rank ({r2}) should be higher than Node 1 ({r1})");
         assert!(r3 > r2, "Node 3 rank ({r3}) should be higher than Node 2 ({r2})");
+    }
+
+    #[tokio::test]
+    async fn traverse_handles_cycles_without_infinite_loop() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+        let id_a = EntityId::from_key("node_a");
+        let id_b = EntityId::from_key("node_b");
+
+        graph
+            .add_entity(tx, Entity::new(id_a, "Node A", "Type"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_b, "Node B", "Type"))
+            .await
+            .unwrap();
+
+        // A -> B and B -> A cycle
+        graph
+            .add_edge(tx, Edge::new(id_a, id_b, "relates"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(id_b, id_a, "relates"))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        // traverse with max_hops=10 (capped by MAX_TRAVERSAL_HOPS internal logic)
+        let results = graph.traverse(id_a, 10).await.unwrap();
+
+        // Must return finite results without duplicates
+        let ids: Vec<_> = results.iter().map(|(id, _)| *id).collect();
+        let unique_ids: std::collections::HashSet<_> = ids.iter().copied().collect();
+        assert_eq!(ids.len(), unique_ids.len(), "Results must not contain duplicates");
+        assert!(ids.contains(&id_b), "Must contain node B");
+        assert!(!ids.contains(&id_a), "Must not contain start node A");
+    }
+
+    #[tokio::test]
+    async fn multi_traverse_keeps_highest_score_per_entity() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+        let id_a = EntityId::from_key("node_a");
+        let id_b = EntityId::from_key("node_b");
+        let id_c = EntityId::from_key("node_c");
+
+        graph
+            .add_entity(tx, Entity::new(id_a, "Node A", "Type"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_b, "Node B", "Type"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_c, "Node C", "Type"))
+            .await
+            .unwrap();
+
+        // A -> C (weight 1.0) => hop score = 1.0 * 0.7 = 0.7
+        graph
+            .add_edge(tx, Edge::new(id_a, id_c, "relates").with_weight(1.0))
+            .await
+            .unwrap();
+        // B -> C (weight 0.7) => hop score = 1.0 * 0.7 * 0.7 = 0.49
+        graph
+            .add_edge(tx, Edge::new(id_b, id_c, "relates").with_weight(0.7))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        let results = graph.multi_traverse(&[id_a, id_b], 1).await.unwrap();
+        let c_score = results.iter().find(|(id, _)| *id == id_c).map(|(_, s)| *s);
+
+        assert!(c_score.is_some(), "Node C must be in traversal results");
+        let score = c_score.unwrap();
+        assert!(
+            (score - 0.7).abs() < 1e-4,
+            "Multi-traverse must keep max score 0.7, got {score}"
+        );
     }
 
     #[tokio::test]
