@@ -346,19 +346,6 @@ impl Wal {
                     .map_err(|e| MemFuseError::Storage(
                         format!("Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}")
                     ))?;
-                if let Ok(dir) = tokio::fs::File::open(parent).await {
-                    // AI-TAG[SMELL][CRITICAL] RESOLVED: Log directory fsync failures instead of silent ignore (ID: AGT-AUDIT-006)
-                    if let Err(e) = dir.sync_all().await {
-                        tracing::warn!("Directory fsync failed for WAL parent {:?}: {}", parent, e);
-                    }
-                    // AI-TAG[SMELL][CRITICAL] Silent Failure bei WAL sync_all(). [RESOLVED]
-                    // KONTEXT: AGENTS.md §3 (NEVER - "Keine stummen Fehler"). WAL durability compromised.
-                    // ANWEISUNG: Fehler propagieren oder mindestens kritisch loggen.
-                    // ID: AGT-AUDIT-006
-                    if let Err(e) = dir.sync_all().await {
-                        tracing::warn!("Failed to fsync WAL parent directory {:?}: {}", parent, e);
-                    }
-                }
             }
         }
 
@@ -508,19 +495,6 @@ impl Wal {
                     .map_err(|e| MemFuseError::Storage(
                         format!("Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}")
                     ))?;
-                if let Ok(dir) = tokio::fs::File::open(parent).await {
-                    // AI-TAG[SMELL][CRITICAL] RESOLVED: Log directory fsync failures instead of silent ignore (ID: AGT-AUDIT-008)
-                    if let Err(e) = dir.sync_all().await {
-                        tracing::warn!("Directory fsync failed for UUID sidecar parent {:?}: {}", parent, e);
-                    }
-                    // AI-TAG[SMELL][CRITICAL] Silent Failure bei WAL sync_all(). [RESOLVED]
-                    // KONTEXT: AGENTS.md §3 (NEVER - "Keine stummen Fehler"). WAL durability compromised.
-                    // ANWEISUNG: Fehler propagieren oder mindestens kritisch loggen.
-                    // ID: AGT-AUDIT-008
-                    if let Err(e) = dir.sync_all().await {
-                        tracing::warn!("Failed to fsync WAL UUID parent directory {:?}: {}", parent, e);
-                    }
-                }
             }
 
             Ok(bytes)
