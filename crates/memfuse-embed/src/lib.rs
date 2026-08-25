@@ -38,18 +38,16 @@ impl SessionPool {
     }
 
     fn pop(&self) -> Result<ort::session::Session> {
-        let mut guard = self.sessions.lock().map_err(|_| {
-            MemFuseError::Internal(
-                "SessionPool: Mutex lock poisoned — runtime state corrupted".into(),
-            )
-        })?;
-        guard.pop().ok_or_else(|| {
-            MemFuseError::Internal(
-                "SessionPool exhausted: mehr Sessions angefordert als Semaphore erlauben — \
-             das ist ein Semaphore-Leak im Aufrufer"
-                    .into(),
-            )
-        })
+        let mut guard = self
+            .sessions
+            .lock()
+            .map_err(|_| MemFuseError::Internal(
+                "SessionPool: Mutex lock poisoned — runtime state corrupted".into()
+            ))?;
+        guard.pop().ok_or_else(|| MemFuseError::Internal(
+            "SessionPool exhausted: mehr Sessions angefordert als Semaphore erlauben — \
+             das ist ein Semaphore-Leak im Aufrufer".into()
+        ))
     }
 
     fn push(&self, session: ort::session::Session) {

@@ -236,8 +236,7 @@ impl McpServer {
                         chunk_meta = json!({});
                     }
                     if let Some(obj) = chunk_meta.as_object_mut() {
-                        obj.entry("text")
-                            .or_insert_with(|| json!(chunk_text.clone()));
+                        obj.entry("text").or_insert_with(|| json!(chunk_text.clone()));
                         if total > 1 {
                             obj.insert("_chunk_index".into(), json!(i));
                             obj.insert("_chunk_total".into(), json!(total));
