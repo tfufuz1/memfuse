@@ -183,7 +183,10 @@ impl MmapIndex {
         let file = std::fs::File::open(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
 
-        // SAFETY: ADR-017 authorisiert explizite Mmap-Nutzung in index persistence. File deskriptor ist valide.
+        // SAFETY: Invariant: `file` is a valid open file descriptor to a read-only persisted HNSW file and the file mapping remains valid for the object lifetime.
+        //         Guarantor: `std::fs::File::open` successfully returned a valid file handle above.
+        //         Why: `open()` guarantees access permissions and valid file descriptor; atomic rename on save prevents truncation/SIGBUS during read mapping.
+        //         ADR-017: Memory mapping permitted in `persistence.rs`.
         let mmap = unsafe { memmap2::Mmap::map(&file) }
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
