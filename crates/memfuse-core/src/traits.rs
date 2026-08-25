@@ -427,11 +427,10 @@ pub trait GraphIndex: Send + Sync + 'static {
         tx: crate::types::TxId,
         from: crate::types::EntityId,
         to: crate::types::EntityId,
-        label: impl Into<String> + Send,
+        label: &str,
     ) -> crate::Result<()> {
-        let label_str = label.into();
-        self.add_edge(tx, crate::types::Edge::new(from, to, label_str.clone())).await?;
-        self.add_edge(tx, crate::types::Edge::new(to, from, label_str)).await?;
+        self.add_edge(tx, crate::types::Edge::new(from, to, label)).await?;
+        self.add_edge(tx, crate::types::Edge::new(to, from, label)).await?;
         Ok(())
     }
 
@@ -523,6 +522,17 @@ pub trait DistanceCalculator: Send + Sync {
 
     /// Computes the distance between two u8 vectors.
     fn compute_u8(&self, a: &[u8], b: &[u8]) -> Result<u32>;
+}
+
+#[cfg(test)]
+mod dyn_safety_checks {
+    use super::*;
+
+    fn _assert_dyn_storage_engine(_: &dyn StorageEngine) {}
+    fn _assert_dyn_vector_index(_: &dyn VectorIndex) {}
+    fn _assert_dyn_text_index(_: &dyn TextIndex) {}
+    fn _assert_dyn_graph_index(_: &dyn GraphIndex) {}
+    fn _assert_dyn_text_embedding_engine(_: &dyn TextEmbeddingEngine) {}
 }
 
 #[cfg(test)]
