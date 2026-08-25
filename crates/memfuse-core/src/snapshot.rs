@@ -107,6 +107,7 @@ pub struct SnapshotGuard {
 }
 
 impl SnapshotGuard {
+    /// Returns the sequence number pinned by this snapshot guard.
     pub fn seq_no(&self) -> u64 {
         self.seq_no
     }

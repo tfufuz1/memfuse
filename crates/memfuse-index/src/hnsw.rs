@@ -1580,6 +1580,7 @@ impl VectorIndex for HnswIndex {
                 DistanceMetric::Cosine => 1.0 - final_dist,
                 DistanceMetric::Euclidean => 1.0 / (1.0 + final_dist),
                 DistanceMetric::DotProduct => -final_dist,
+                _ => unreachable!(),
             };
             results.push(ScoredDocument::new(doc_id, score));
         }
@@ -1701,6 +1702,7 @@ impl VectorIndex for HnswIndex {
                 DistanceMetric::Cosine => 1.0 - final_dist,
                 DistanceMetric::Euclidean => 1.0 / (1.0 + final_dist),
                 DistanceMetric::DotProduct => -final_dist,
+                _ => unreachable!(),
             };
             results.push(ScoredDocument::new(doc_id, score));
         }
@@ -1804,6 +1806,7 @@ impl VectorIndex for HnswIndex {
                     self.do_delete(doc_id)?;
                     deleted_any = true;
                 }
+                _ => unreachable!(),
             }
         }
 

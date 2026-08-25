@@ -39,14 +39,18 @@ pub const MAX_SEARCH_K: usize = 1_000;
 pub struct DocId(pub u64);
 
 impl DocId {
+    /// Maximum possible `DocId` value (`u64::MAX`).
     pub const MAX: Self = Self(u64::MAX);
+    /// Minimum possible `DocId` value (`0`).
     pub const MIN: Self = Self(0);
 
+    /// Creates a new `DocId` wrapping the provided `u64` identifier.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
+    /// Returns the inner raw `u64` identifier.
     #[inline]
     pub const fn inner(self) -> u64 {
         self.0
@@ -65,6 +69,9 @@ impl DocId {
     ///
     /// See **ADR-016** in `DECISIONS.md`.
     pub fn from_key(key: &str) -> Result<Self> {
+        if key.is_empty() {
+            return Err(MemFuseError::InvalidInput("Key cannot be empty".to_string()));
+        }
         let hash = blake3::hash(key.as_bytes());
         let bytes = hash
             .as_bytes()
@@ -96,24 +103,29 @@ impl std::fmt::Display for DocId {
 pub struct EntityId(pub u64);
 
 impl EntityId {
+    /// Creates a new `EntityId` wrapping the provided `u64` identifier.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
+    /// Returns the inner raw `u64` identifier.
     #[inline]
     pub const fn inner(self) -> u64 {
         self.0
     }
 
+    /// Converts the entity identifier into its string byte representation.
     pub fn as_bytes(&self) -> Vec<u8> {
         self.0.to_string().into_bytes()
     }
 
+    /// Creates an `EntityId` directly from a `DocId`.
     pub fn from_doc_id(doc_id: DocId) -> Self {
         Self(doc_id.inner())
     }
 
+    /// Derives an `EntityId` from a string key.
     pub fn from_key(key: &str) -> Self {
         DocId::from_key(key)
             .map(|d| Self(d.inner()))
@@ -158,16 +170,22 @@ impl std::fmt::Display for EntityId {
 pub struct TxId(pub u64);
 
 impl TxId {
-    /// Base for internal/system transaction IDs. Internal TxIds count upward
-    /// from this value to avoid collision with user-facing TxIds (which count
-    /// upward from 1). This reserves the top ~1M of the u64 space for system use.
+    /// Invalid or uninitialized transaction identifier sentinel value.
+    pub const INVALID: Self = Self(0);
+
+    /// Base for internal/system transaction IDs (`u64::MAX - 1_000_000`).
+    /// Internal TxIds count upward from this value to avoid collision with
+    /// user-facing TxIds (which count upward from 1). This reserves the top ~1M of
+    /// the u64 space for system/internal engine operations.
     pub const INTERNAL_BASE: u64 = u64::MAX - 1_000_000;
 
+    /// Creates a new `TxId` wrapping the provided `u64` transaction identifier.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
+    /// Returns the inner raw `u64` transaction identifier.
     #[inline]
     pub const fn inner(self) -> u64 {
         self.0
@@ -188,10 +206,14 @@ impl std::fmt::Display for TxId {
 
 /// Distance metric for vector comparison.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
+#[non_exhaustive]
 pub enum DistanceMetric {
+    /// Cosine distance (`1.0 - cos(angle)`).
     #[default]
     Cosine,
+    /// Euclidean (L2) distance.
     Euclidean,
+    /// Dot product distance (negated inner product for f32).
     DotProduct,
 }
 
@@ -315,28 +337,34 @@ impl crate::traits::DistanceCalculator for DistanceMetric {
 /// Vector embedding representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Embedding {
+    /// Raw vector data elements.
     pub data: Vec<f32>,
 }
 
 impl Embedding {
+    /// Creates a new vector embedding from `f32` slice or vector.
     pub fn new(data: Vec<f32>) -> Self {
         Self { data }
     }
 
+    /// Returns the dimension (length) of the embedding vector.
     #[inline]
     pub fn dim(&self) -> usize {
         self.data.len()
     }
 
+    /// Returns the vector data as an `f32` slice.
     #[inline]
     pub fn as_slice(&self) -> &[f32] {
         &self.data
     }
 
+    /// Computes the Euclidean L2 norm of the vector.
     pub fn l2_norm(&self) -> f32 {
         self.data.iter().map(|x| x * x).sum::<f32>().sqrt()
     }
 
+    /// Returns an L2-unit-normalized clone of this embedding.
     pub fn normalize(&self) -> Self {
         let norm = self.l2_norm();
         if norm == 0.0 {
@@ -349,28 +377,36 @@ impl Embedding {
 /// A scored search result.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ScoredDocument {
+    /// Identifier of the scored document.
     pub doc_id: DocId,
+    /// Relevance or similarity score.
     pub score: f32,
 }
 
 impl ScoredDocument {
+    /// Creates a new `ScoredDocument` with document ID and score.
     pub fn new(doc_id: DocId, score: f32) -> Self {
         Self { doc_id, score }
     }
 }
 
-/// Graph entity.
+/// Graph entity node representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
+    /// Unique entity identifier.
     pub id: EntityId,
+    /// Human-readable entity name.
     #[serde(default)]
     pub name: String,
+    /// Categorical entity type.
     pub entity_type: String,
+    /// Flexible key-value attribute metadata map.
     #[serde(default)]
     pub attributes: std::collections::HashMap<String, serde_json::Value>,
 }
 
 impl Entity {
+    /// Creates a new `Entity` with id, name, and type.
     pub fn new(id: EntityId, name: impl Into<String>, entity_type: impl Into<String>) -> Self {
         Self {
             id,
@@ -381,16 +417,21 @@ impl Entity {
     }
 }
 
-/// Graph edge.
+/// Graph directed edge representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Edge {
+    /// Source entity identifier.
     pub from: EntityId,
+    /// Destination entity identifier.
     pub to: EntityId,
+    /// Relationship label.
     pub label: String,
+    /// Numeric relationship weight (default 1.0).
     pub weight: f32,
 }
 
 impl Edge {
+    /// Creates a new `Edge` between source and target entities with a label.
     pub fn new(from: EntityId, to: EntityId, label: impl Into<String>) -> Self {
         Self {
             from,
@@ -400,6 +441,7 @@ impl Edge {
         }
     }
 
+    /// Sets a custom weight on the edge.
     pub fn with_weight(mut self, weight: f32) -> Self {
         self.weight = weight;
         self
@@ -409,12 +451,12 @@ impl Edge {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::prop_assert_eq;
+    use proptest::{prop_assert, prop_assert_eq};
 
     #[test]
     fn test_doc_id_from_key_no_panic() {
+        assert!(DocId::from_key("").is_err());
         let keys = vec![
-            "",
             "a",
             "short",
             "very_long_key_that_exceeds_blake3_block_size_maybe_not_really_but_long",
@@ -609,6 +651,11 @@ mod tests {
         let tx = TxId::internal();
         assert_eq!(tx.inner(), TxId::INTERNAL_BASE);
         assert!(tx.to_string().contains("TxId"));
+
+        let invalid = TxId::INVALID;
+        assert_eq!(invalid.inner(), 0);
+        assert!(invalid < tx);
+        assert_eq!(invalid, TxId::new(0));
     }
 
     #[test]
@@ -630,6 +677,12 @@ mod tests {
             let ser = serde_json::to_string(&doc).unwrap();
             let deser: DocId = serde_json::from_str(&ser).unwrap();
             prop_assert_eq!(doc, deser);
+        }
+
+        #[test]
+        fn doc_id_non_empty_strings_never_panic(s in "[a-zA-Z0-9_-]{1,256}") {
+            let res = DocId::from_key(&s);
+            prop_assert!(res.is_ok());
         }
 
         #[test]
