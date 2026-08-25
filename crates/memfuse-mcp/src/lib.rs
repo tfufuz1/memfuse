@@ -192,10 +192,7 @@ impl McpServer {
                     .get("text")
                     .and_then(|v| v.as_str())
                     .ok_or("text fehlt")?;
-                let id = args
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .ok_or("id fehlt")?;
+                let id = args.get("id").and_then(|v| v.as_str()).ok_or("id fehlt")?;
                 let col_name = args
                     .get("collection")
                     .and_then(|v| v.as_str())
