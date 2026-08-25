@@ -89,7 +89,7 @@ impl MemTable {
             if tx_id >= current_min
                 || self
                     .min_tx
-                    .compare_exchange(current_min, tx_id, Ordering::Release, Ordering::Relaxed)
+                    .compare_exchange(current_min, tx_id, Ordering::AcqRel, Ordering::Acquire)
                     .is_ok()
             {
                 break;
@@ -100,7 +100,7 @@ impl MemTable {
             if tx_id <= current_max
                 || self
                     .max_tx
-                    .compare_exchange(current_max, tx_id, Ordering::Release, Ordering::Relaxed)
+                    .compare_exchange(current_max, tx_id, Ordering::AcqRel, Ordering::Acquire)
                     .is_ok()
             {
                 break;
