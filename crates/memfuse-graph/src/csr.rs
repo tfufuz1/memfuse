@@ -10,7 +10,7 @@ use memfuse_core::{
     Edge, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result, StorageEngine, TxId,
 };
 use parking_lot::RwLock;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 /// Score decay factor per hop (0.7^hop).
@@ -91,11 +91,15 @@ struct GraphInner {
     staged_entities: HashMap<TxId, HashMap<EntityId, Entity>>,
     /// Staging for edges not yet committed, grouped by TxId.
     staged_edges: HashMap<TxId, HashMap<InternalIndex, Vec<(InternalIndex, f32)>>>,
+    /// Staging for edge removals not yet committed, grouped by TxId.
+    staged_removals: HashMap<TxId, Vec<(InternalIndex, InternalIndex)>>,
     /// Edges that have been committed but not yet compacted into CSR arrays (delta buffer).
     pending_edges: HashMap<InternalIndex, Vec<(InternalIndex, f32)>>,
+    /// Tombstoned edges that have been removed and should be excluded during compaction and traversal.
+    tombstoned_edges: HashSet<(InternalIndex, InternalIndex)>,
     /// Total number of uncompacted edges currently in `pending_edges`.
     pending_edge_count: usize,
-    /// Flag indicating if there are uncompacted pending edges.
+    /// Flag indicating if there are uncompacted pending edges or modifications.
     is_dirty: bool,
 }
 
@@ -110,7 +114,9 @@ impl GraphInner {
             weights: Vec::new(),
             staged_entities: HashMap::new(),
             staged_edges: HashMap::new(),
+            staged_removals: HashMap::new(),
             pending_edges: HashMap::new(),
+            tombstoned_edges: HashSet::new(),
             pending_edge_count: 0,
             is_dirty: false,
         }
@@ -132,7 +138,7 @@ impl GraphInner {
 
     /// Compacts pending edges in the delta buffer into the main CSR arrays.
     fn compact(&mut self) {
-        if !self.is_dirty || self.pending_edges.is_empty() {
+        if !self.is_dirty || (self.pending_edges.is_empty() && self.tombstoned_edges.is_empty()) {
             self.pending_edge_count = 0;
             self.is_dirty = false;
             return;
@@ -160,17 +166,22 @@ impl GraphInner {
             };
 
             for j in old_start..old_end {
-                new_targets.push(self.targets[j]);
-                new_weights.push(self.weights[j]);
-                current_offset += 1;
+                let target = self.targets[j];
+                if !self.tombstoned_edges.contains(&(i, target)) {
+                    new_targets.push(target);
+                    new_weights.push(self.weights[j]);
+                    current_offset += 1;
+                }
             }
 
             // 2. Get neighbors from pending_edges (FIND-GRA-001)
             if let Some(staged) = self.pending_edges.get(&i) {
                 for &(target, weight) in staged {
-                    new_targets.push(target);
-                    new_weights.push(weight);
-                    current_offset += 1;
+                    if !self.tombstoned_edges.contains(&(i, target)) {
+                        new_targets.push(target);
+                        new_weights.push(weight);
+                        current_offset += 1;
+                    }
                 }
             }
             new_offsets.push(current_offset);
@@ -180,6 +191,7 @@ impl GraphInner {
         self.targets = new_targets;
         self.weights = new_weights;
         self.pending_edges.clear();
+        self.tombstoned_edges.clear();
         self.pending_edge_count = 0;
         self.is_dirty = false;
     }
@@ -323,6 +335,24 @@ impl CsrGraph {
         storage.put(tx, &key, &value).await
     }
 
+    /// Löscht eine einzelne Edge aus dem übergebenen Storage.
+    pub async fn delete_edge_persistence<S: StorageEngine + ?Sized>(
+        &self,
+        storage: &S,
+        tx: TxId,
+        from: &EntityId,
+        to: &EntityId,
+    ) -> Result<()> {
+        let key = [
+            GRAPH_EDGE_PREFIX,
+            from.as_bytes().as_slice(),
+            b":",
+            to.as_bytes().as_slice(),
+        ]
+        .concat();
+        storage.delete(tx, &key).await
+    }
+
     /// Lädt den kompletten Graph-Zustand aus dem Storage (beim Startup).
     pub async fn load_from_storage<S: StorageEngine + ?Sized>(storage: &S) -> Result<Self> {
         let graph = Self::new();
@@ -378,15 +408,148 @@ impl CsrGraph {
     pub fn compact(&self) {
         // Double-checked locking to avoid unnecessary write locks (FIND-GRA-002)
         let inner_read = self.inner.read();
-        if !inner_read.is_dirty && inner_read.pending_edges.is_empty() {
+        if !inner_read.is_dirty
+            && inner_read.pending_edges.is_empty()
+            && inner_read.tombstoned_edges.is_empty()
+        {
             return;
         }
         drop(inner_read);
 
         let mut inner = self.inner.write();
-        if inner.is_dirty || !inner.pending_edges.is_empty() {
+        if inner.is_dirty
+            || !inner.pending_edges.is_empty()
+            || !inner.tombstoned_edges.is_empty()
+        {
             inner.compact();
         }
+    }
+
+    /// Returns direct 1-hop outgoing neighbors of `start`.
+    pub async fn neighbors(&self, start: EntityId) -> Result<Vec<EntityId>> {
+        let inner = self.inner.read();
+        let start_idx = match inner.id_map.get(&start) {
+            Some(&idx) => idx,
+            None => return Ok(Vec::new()),
+        };
+
+        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
+            return Ok(Vec::new());
+        }
+
+        let mut neighbors = Vec::new();
+
+        // 1. CSR targets
+        if start_idx < inner.offsets.len() - 1 {
+            let start_edge = inner.offsets[start_idx];
+            let end_edge = inner.offsets[start_idx + 1];
+            for edge_idx in start_edge..end_edge {
+                let neighbor_idx = inner.targets[edge_idx];
+                if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
+                    && inner.entities.get(neighbor_idx).is_some_and(|e| e.is_some())
+                {
+                    if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
+                        if !neighbors.contains(&id) {
+                            neighbors.push(id);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Pending edges
+        if let Some(pending) = inner.pending_edges.get(&start_idx) {
+            for &(neighbor_idx, _) in pending {
+                if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
+                    && inner.entities.get(neighbor_idx).is_some_and(|e| e.is_some())
+                {
+                    if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
+                        if !neighbors.contains(&id) {
+                            neighbors.push(id);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(neighbors)
+    }
+
+    /// Calculates PageRank for all entities in the graph using the CSR layout.
+    pub fn pagerank(
+        &self,
+        damping_factor: f32,
+        max_iterations: usize,
+        tolerance: f32,
+    ) -> HashMap<EntityId, f32> {
+        self.compact();
+        let inner = self.inner.read();
+        let n = inner.reverse_map.len();
+        if n == 0 {
+            return HashMap::new();
+        }
+
+        let mut ranks = vec![1.0 / (n as f32); n];
+        let d = damping_factor;
+
+        // Out-degree per node
+        let mut out_degree = vec![0usize; n];
+        for i in 0..n {
+            if i < inner.offsets.len() - 1 {
+                out_degree[i] = inner.offsets[i + 1] - inner.offsets[i];
+            }
+        }
+
+        for _iter in 0..max_iterations {
+            let mut next_ranks = vec![(1.0 - d) / (n as f32); n];
+
+            // Account for dangling nodes (out_degree == 0)
+            let dangling_sum: f32 = (0..n)
+                .filter(|&i| out_degree[i] == 0)
+                .map(|i| ranks[i])
+                .sum();
+            let dangling_contrib = d * dangling_sum / (n as f32);
+            for r in &mut next_ranks {
+                *r += dangling_contrib;
+            }
+
+            // Distribute rank across outgoing edges
+            for i in 0..n {
+                let deg = out_degree[i];
+                if deg > 0 {
+                    let share = d * ranks[i] / (deg as f32);
+                    let start = inner.offsets[i];
+                    let end = inner.offsets[i + 1];
+                    for edge_idx in start..end {
+                        let target = inner.targets[edge_idx];
+                        next_ranks[target] += share;
+                    }
+                }
+            }
+
+            // Check convergence
+            let diff: f32 = ranks
+                .iter()
+                .zip(next_ranks.iter())
+                .map(|(a, b)| (a - b).abs())
+                .sum();
+
+            ranks = next_ranks;
+
+            if diff < tolerance {
+                break;
+            }
+        }
+
+        let mut result = HashMap::new();
+        for (idx, &rank) in ranks.iter().enumerate() {
+            if inner.entities.get(idx).is_some_and(|e| e.is_some()) {
+                if let Some(&id) = inner.reverse_map.get(idx) {
+                    result.insert(id, rank);
+                }
+            }
+        }
+        result
     }
 
     /// Returns the number of committed entities in the graph.
@@ -501,6 +664,9 @@ impl GraphIndex for CsrGraph {
 
                     for edge_idx in start_edge..end_edge {
                         let neighbor_idx = inner.targets[edge_idx];
+                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
+                            continue;
+                        }
                         let weight = inner.weights[edge_idx];
                         let next_score = current_score * SCORE_DECAY * weight;
 
@@ -522,6 +688,9 @@ impl GraphIndex for CsrGraph {
                 // 2. Delta buffer traversal (uncompacted committed edges)
                 if let Some(pending) = inner.pending_edges.get(&node_idx) {
                     for &(neighbor_idx, weight) in pending {
+                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
+                            continue;
+                        }
                         let next_score = current_score * SCORE_DECAY * weight;
 
                         if (!visited.contains_key(&neighbor_idx)
@@ -563,7 +732,7 @@ impl GraphIndex for CsrGraph {
                  Rollback-Korrelation kann verletzt sein."
             );
         }
-        let (entities_to_commit, edges_to_commit) = {
+        let (entities_to_commit, edges_to_commit, removals_to_commit) = {
             let inner = self.inner.read();
             let entities = inner.staged_entities.get(&tx).cloned();
             let edges = inner.staged_edges.get(&tx).map(|tx_edges| {
@@ -579,7 +748,18 @@ impl GraphIndex for CsrGraph {
                 }
                 list
             });
-            (entities, edges)
+            let removals = inner.staged_removals.get(&tx).map(|tx_removals| {
+                let mut list = Vec::new();
+                for &(f_idx, t_idx) in tx_removals {
+                    if let (Some(&from_id), Some(&to_id)) =
+                        (inner.reverse_map.get(f_idx), inner.reverse_map.get(t_idx))
+                    {
+                        list.push((from_id, to_id, f_idx, t_idx));
+                    }
+                }
+                list
+            });
+            (entities, edges, removals)
         };
 
         if let Some(ref storage) = self.storage {
@@ -591,6 +771,12 @@ impl GraphIndex for CsrGraph {
             if let Some(ref edges) = edges_to_commit {
                 for (from_id, to_id, weight) in edges {
                     self.persist_edge(storage.as_ref(), tx, from_id, to_id, *weight)
+                        .await?;
+                }
+            }
+            if let Some(ref removals) = removals_to_commit {
+                for (from_id, to_id, _, _) in removals {
+                    self.delete_edge_persistence(storage.as_ref(), tx, from_id, to_id)
                         .await?;
                 }
             }
@@ -623,6 +809,17 @@ impl GraphIndex for CsrGraph {
             inner.is_dirty = true;
         }
 
+        // 3. Commit removals
+        if let Some(tx_removals) = inner.staged_removals.remove(&tx) {
+            for (f_idx, t_idx) in tx_removals {
+                if let Some(pending) = inner.pending_edges.get_mut(&f_idx) {
+                    pending.retain(|&(target, _)| target != t_idx);
+                }
+                inner.tombstoned_edges.insert((f_idx, t_idx));
+                inner.is_dirty = true;
+            }
+        }
+
         // Auto-rebuild CSR arrays if pending delta buffer reaches or exceeds threshold
         if inner.pending_edge_count >= self.config.rebuild_threshold {
             inner.compact();
@@ -631,10 +828,51 @@ impl GraphIndex for CsrGraph {
         Ok(())
     }
 
+    async fn remove_edge(&self, tx: TxId, from: EntityId, to: EntityId) -> Result<()> {
+        if is_suspicious_tx_id(tx) {
+            tracing::warn!(
+                tx_id = tx.inner(),
+                hint = "Wall-Clock-ns-Bereich",
+                "AGT-GRAPH-001: Verdächtiger TxId in remove_edge (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
+                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet."
+            );
+        }
+        let mut inner = self.inner.write();
+        let from_idx = inner.id_map.get(&from).copied();
+        let to_idx = inner.id_map.get(&to).copied();
+
+        if let (Some(f_idx), Some(t_idx)) = (from_idx, to_idx) {
+            inner
+                .staged_removals
+                .entry(tx)
+                .or_default()
+                .push((f_idx, t_idx));
+        }
+        Ok(())
+    }
+
+    async fn add_bidirectional(
+        &self,
+        tx: TxId,
+        from: EntityId,
+        to: EntityId,
+        label: impl Into<String> + Send,
+    ) -> Result<()> {
+        let label_str = label.into();
+        self.add_edge(tx, Edge::new(from, to, label_str.clone())).await?;
+        self.add_edge(tx, Edge::new(to, from, label_str)).await?;
+        Ok(())
+    }
+
+    async fn neighbors(&self, start: EntityId) -> Result<Vec<EntityId>> {
+        self.neighbors(start).await
+    }
+
     async fn rollback(&self, tx: TxId) -> Result<()> {
         let mut inner = self.inner.write();
         inner.staged_entities.remove(&tx);
         inner.staged_edges.remove(&tx);
+        inner.staged_removals.remove(&tx);
         Ok(())
     }
 
@@ -1199,6 +1437,160 @@ mod tests {
         assert!(
             warn_count.load(Ordering::SeqCst) >= 1,
             "Defensive warning must fire for add_entity, add_edge, and commit when using wall-clock TxId"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_neighbors_api() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+        let id_a = EntityId::new(1);
+        let id_b = EntityId::new(2);
+        let id_c = EntityId::new(3);
+
+        graph.add_entity(tx, Entity::new(id_a, "A", "T")).await.unwrap();
+        graph.add_entity(tx, Entity::new(id_b, "B", "T")).await.unwrap();
+        graph.add_entity(tx, Entity::new(id_c, "C", "T")).await.unwrap();
+        graph.add_edge(tx, Edge::new(id_a, id_b, "rel")).await.unwrap();
+        graph.add_edge(tx, Edge::new(id_a, id_c, "rel")).await.unwrap();
+        graph.commit(tx).await.unwrap();
+
+        let n = graph.neighbors(id_a).await.unwrap();
+        assert_eq!(n.len(), 2);
+        assert!(n.contains(&id_b));
+        assert!(n.contains(&id_c));
+    }
+
+    #[tokio::test]
+    async fn test_remove_edge_uncompacted_and_compacted() {
+        let graph = CsrGraph::new();
+        let tx1 = TxId::new(1);
+        let id_a = EntityId::new(1);
+        let id_b = EntityId::new(2);
+
+        graph.add_entity(tx1, Entity::new(id_a, "A", "T")).await.unwrap();
+        graph.add_entity(tx1, Entity::new(id_b, "B", "T")).await.unwrap();
+        graph.add_edge(tx1, Edge::new(id_a, id_b, "rel")).await.unwrap();
+        graph.commit(tx1).await.unwrap();
+
+        assert!(graph.neighbors(id_a).await.unwrap().contains(&id_b));
+
+        // Remove edge in tx2
+        let tx2 = TxId::new(2);
+        graph.remove_edge(tx2, id_a, id_b).await.unwrap();
+        graph.commit(tx2).await.unwrap();
+
+        assert!(
+            !graph.neighbors(id_a).await.unwrap().contains(&id_b),
+            "Edge A->B should not exist after remove_edge commit"
+        );
+
+        // Compact graph and verify edge remains removed
+        graph.compact();
+        assert!(
+            !graph.neighbors(id_a).await.unwrap().contains(&id_b),
+            "Edge A->B should remain removed after compact"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_add_bidirectional() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+        let id_a = EntityId::new(1);
+        let id_b = EntityId::new(2);
+
+        graph.add_entity(tx, Entity::new(id_a, "A", "T")).await.unwrap();
+        graph.add_entity(tx, Entity::new(id_b, "B", "T")).await.unwrap();
+        graph.add_bidirectional(tx, id_a, id_b, "knows").await.unwrap();
+        graph.commit(tx).await.unwrap();
+
+        let n_a = graph.neighbors(id_a).await.unwrap();
+        let n_b = graph.neighbors(id_b).await.unwrap();
+
+        assert!(n_a.contains(&id_b), "neighbors(A) must contain B");
+        assert!(n_b.contains(&id_a), "neighbors(B) must contain A");
+    }
+
+    #[tokio::test]
+    async fn test_pagerank_linear_chain() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+
+        for i in 1..=3 {
+            graph
+                .add_entity(tx, Entity::new(EntityId::new(i), format!("N{i}"), "Type"))
+                .await
+                .unwrap();
+        }
+
+        // 1 -> 2 -> 3
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "edge"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(3), "edge"))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        let ranks = graph.pagerank(0.85, 100, 1e-6);
+        assert_eq!(ranks.len(), 3);
+
+        let r1 = ranks[&EntityId::new(1)];
+        let r2 = ranks[&EntityId::new(2)];
+        let r3 = ranks[&EntityId::new(3)];
+
+        // Downstream nodes in linear chain receive PageRank flow
+        assert!(r2 > r1, "Node 2 rank ({r2}) should be higher than Node 1 ({r1})");
+        assert!(r3 > r2, "Node 3 rank ({r3}) should be higher than Node 2 ({r2})");
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_add_edge() {
+        let graph = Arc::new(CsrGraph::new());
+        let tx0 = TxId::new(1);
+
+        // Pre-create center entity
+        let center_id = EntityId::new(0);
+        graph
+            .add_entity(tx0, Entity::new(center_id, "Center", "Type"))
+            .await
+            .unwrap();
+
+        for i in 1..=20 {
+            graph
+                .add_entity(tx0, Entity::new(EntityId::new(i), format!("Node{i}"), "Type"))
+                .await
+                .unwrap();
+        }
+        graph.commit(tx0).await.unwrap();
+
+        let mut handles = Vec::new();
+
+        for i in 1..=20 {
+            let g = graph.clone();
+            let handle = tokio::spawn(async move {
+                let tx = TxId::new(100 + i);
+                let target = EntityId::new(i);
+                g.add_edge(tx, Edge::new(center_id, target, "connect"))
+                    .await
+                    .unwrap();
+                g.commit(tx).await.unwrap();
+            });
+            handles.push(handle);
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        let neighbors = graph.neighbors(center_id).await.unwrap();
+        assert_eq!(
+            neighbors.len(),
+            20,
+            "All 20 concurrent edges must be committed without lost updates"
         );
     }
 }
