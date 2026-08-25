@@ -416,6 +416,20 @@ mod tests {
     }
 
     #[test]
+    fn test_german_compounds_explicit_cases() {
+        let splitter = GermanCompoundSplitter::new();
+        assert_eq!(splitter.decompose("datenbankserver"), vec!["datenbank", "server"]);
+        assert_eq!(
+            splitter.decompose("unternehmensassistent"),
+            vec!["unternehmens", "assistent"]
+        );
+        assert_eq!(
+            splitter.decompose("krankenversicherung"),
+            vec!["kranken", "versicherung"]
+        );
+    }
+
+    #[test]
     fn test_kmu_domain_compounds() {
         let splitter = GermanCompoundSplitter::new();
         let result = splitter.decompose("lagerbestandsverwaltung");

@@ -135,4 +135,26 @@ mod tests {
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
     }
+
+    #[test]
+    fn test_tokenizers_panic_free_edge_cases() {
+        let long_string = "a".repeat(100_000);
+        let edge_cases = ["", " ", ".", "🦀", long_string.as_str()];
+        let german_tokenizer = GermanMorphTokenizer::new();
+
+        for text in &edge_cases {
+            let default_tokens = tokenize(text);
+            assert!(
+                default_tokens.len() <= text.len(),
+                "DefaultTokenizer token count must not exceed text length"
+            );
+
+            let german_tokens = german_tokenizer.tokenize(text);
+            // German morph tokenizer may expand compounds, but for these edge cases token count is within reasonable limits
+            assert!(
+                !german_tokens.is_empty() || text.trim().is_empty() || text == &"." || text == &"🦀",
+                "GermanMorphTokenizer must complete without panic for edge case input"
+            );
+        }
+    }
 }

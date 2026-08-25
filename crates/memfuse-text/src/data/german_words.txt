@@ -1,5 +1,5 @@
-# MemFuse German Words Vocabulary
 
+# MemFuse German Words Vocabulary
 ab
 abrechnung
 absatz
@@ -32,6 +32,7 @@ archiv
 arm
 art
 artikel
+assistent
 ast
 auf
 aufgabe
@@ -130,6 +131,7 @@ computer
 dach
 datei
 daten
+datenbank
 datenschutz
 dauer
 deckung
@@ -464,6 +466,8 @@ korrektur
 kosten
 kraft
 kran
+krank
+kranken
 kraut
 krebs
 kredit
@@ -862,6 +866,7 @@ selbst
 sender
 senior
 senkung
+server
 service
 sessel
 sicherheit
@@ -1051,6 +1056,8 @@ umwelt
 unfall
 union
 unterlagen
+unternehmen
+unternehmens
 unternehmung
 untersuchung
 urlaub
