@@ -37,17 +37,17 @@ impl SessionPool {
         }
     }
 
-    fn pop(&self) -> Result<ort::session::Session> {
-        let mut guard = self.sessions.lock().map_err(|_| {
+    fn pop(&self) -> Result<ort::session::Session, MemFuseError> {
+        let mut pool = self
+            .sessions
+            .lock()
+            .map_err(|_| MemFuseError::Internal(
+                "SessionPool-Mutex vergiftet (Panic in Worker-Thread?)".into(),
+            ))?;
+
+        pool.pop().ok_or_else(|| {
             MemFuseError::Internal(
-                "SessionPool: Mutex lock poisoned — runtime state corrupted".into(),
-            )
-        })?;
-        guard.pop().ok_or_else(|| {
-            MemFuseError::Internal(
-                "SessionPool exhausted: mehr Sessions angefordert als Semaphore erlauben — \
-             das ist ein Semaphore-Leak im Aufrufer"
-                    .into(),
+                "SessionPool erschöpft — Semaphore-Leck im Embedder-Code?".into(),
             )
         })
     }
@@ -343,8 +343,8 @@ mod tests {
 
     #[cfg(feature = "onnx")]
     #[test]
-    fn test_text_embedder_load_missing_files() {
-        let dir = tempdir().expect("tempdir creation failed in test");
+    fn test_text_embedder_load_missing_files() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
 
         // Empty directory — should fail at tokenizer existence check first
         // because model_path defaults to model_dir if model.onnx is missing.
@@ -355,7 +355,7 @@ mod tests {
         }
 
         // Create tokenizer but still missing model.onnx
-        File::create(dir.path().join("tokenizer.json")).expect("file creation failed in test");
+        File::create(dir.path().join("tokenizer.json"))?;
         let res = TextEmbedder::load(dir.path());
         match res {
             Err(e) => {
@@ -365,22 +365,17 @@ mod tests {
             }
             Ok(_) => panic!("Should have failed"),
         }
+        Ok(())
     }
 
     #[cfg(feature = "onnx")]
     #[test]
-    fn test_text_embedder_load_invalid_content() {
+    fn test_text_embedder_load_invalid_content() -> Result<(), Box<dyn std::error::Error>> {
         use std::io::Write;
 
-        let dir = tempdir().expect("tempdir creation failed in test");
-        File::create(dir.path().join("model.onnx"))
-            .expect("file creation failed in test")
-            .write_all(b"invalid")
-            .expect("write failed in test");
-        File::create(dir.path().join("tokenizer.json"))
-            .expect("file creation failed in test")
-            .write_all(b"invalid")
-            .expect("write failed in test");
+        let dir = tempdir()?;
+        File::create(dir.path().join("model.onnx"))?.write_all(b"invalid")?;
+        File::create(dir.path().join("tokenizer.json"))?.write_all(b"invalid")?;
 
         let res = TextEmbedder::load(dir.path());
         assert!(res.is_err());
@@ -390,6 +385,37 @@ mod tests {
             err_msg.contains("Failed to load tokenizer")
                 || err_msg.contains("Failed to load model")
         );
+        Ok(())
+    }
+
+    // ANCHOR[TEST:EMB-001]
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn test_session_pool_exhaustion() {
+        let pool = SessionPool::new(vec![]);
+        let res = pool.pop();
+        assert!(res.is_err());
+        let err_msg = res.err().unwrap().to_string();
+        assert!(err_msg.contains("SessionPool erschöpft"));
+    }
+
+    // ANCHOR[TEST:EMB-001]
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn test_session_pool_poisoned() {
+        let pool = Arc::new(SessionPool::new(vec![]));
+        let pool_clone = pool.clone();
+
+        let _ = std::thread::spawn(move || {
+            let _guard = pool_clone.sessions.lock().unwrap();
+            panic!("Poisoning mutex for testing");
+        })
+        .join();
+
+        let res = pool.pop();
+        assert!(res.is_err());
+        let err_msg = res.err().unwrap().to_string();
+        assert!(err_msg.contains("SessionPool-Mutex vergiftet"));
     }
 
     #[test]
@@ -402,7 +428,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mock_embedding_engine() {
+    async fn test_mock_embedding_engine() -> Result<(), Box<dyn std::error::Error>> {
         use async_trait::async_trait;
         use memfuse_core::{Result, TextEmbeddingEngine};
 
@@ -415,7 +441,8 @@ mod tests {
         }
 
         let engine = MockEngine;
-        let res = engine.embed("memfuse").await.expect("mock embed failed");
+        let res = engine.embed("memfuse").await?;
         assert_eq!(res, vec![7.0]);
+        Ok(())
     }
 }
