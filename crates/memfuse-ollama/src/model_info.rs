@@ -12,6 +12,8 @@ pub struct ModelInfo {
 impl OllamaClient {
     /// Retrieves model info via POST /api/show
     pub async fn show_model(&self, model: &str) -> Result<ModelInfo> {
+        crate::client::validate_model_name(model)?;
+
         #[derive(Serialize)]
         struct ShowRequest<'a> {
             name: &'a str,
@@ -84,5 +86,14 @@ mod tests {
         assert_eq!(known_dimension("nomic-embed-text"), Some(768));
         assert_eq!(known_dimension("nomic-embed-text:latest"), Some(768));
         assert_eq!(known_dimension("unknown-model-xyz"), None);
+    }
+
+    #[test]
+    fn model_info_deserializes_correctly() {
+        let json = r#"{"modelfile":"FROM nomic-embed-text","parameter_size":"137M","quantization_level":"Q4_0"}"#;
+        let info: ModelInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.modelfile.as_deref(), Some("FROM nomic-embed-text"));
+        assert_eq!(info.parameter_size.as_deref(), Some("137M"));
+        assert_eq!(info.quantization_level.as_deref(), Some("Q4_0"));
     }
 }
