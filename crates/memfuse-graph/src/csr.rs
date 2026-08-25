@@ -856,11 +856,10 @@ impl GraphIndex for CsrGraph {
         tx: TxId,
         from: EntityId,
         to: EntityId,
-        label: impl Into<String> + Send,
+        label: &str,
     ) -> Result<()> {
-        let label_str = label.into();
-        self.add_edge(tx, Edge::new(from, to, label_str.clone())).await?;
-        self.add_edge(tx, Edge::new(to, from, label_str)).await?;
+        self.add_edge(tx, Edge::new(from, to, label)).await?;
+        self.add_edge(tx, Edge::new(to, from, label)).await?;
         Ok(())
     }
 

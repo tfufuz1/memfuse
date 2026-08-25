@@ -42,6 +42,11 @@ impl DocId {
     /// Maximum possible `DocId` value (`u64::MAX`).
     pub const MAX: Self = Self(u64::MAX);
     /// Minimum possible `DocId` value (`0`).
+    ///
+    /// Note: `DocId(0)` is conventionally treated as a sentinel/null value
+    /// by the MCP layer (`memfuse-mcp/src/lib.rs` line 214 uses it as a
+    /// fallback). Callers SHOULD use `DocId::from_key()` and propagate errors
+    /// rather than falling back to `DocId::new(0)`.
     pub const MIN: Self = Self(0);
 
     /// Creates a new `DocId` wrapping the provided `u64` identifier.
@@ -173,10 +178,21 @@ impl TxId {
     /// Invalid or uninitialized transaction identifier sentinel value.
     pub const INVALID: Self = Self(0);
 
-    /// Base for internal/system transaction IDs (`u64::MAX - 1_000_000`).
-    /// Internal TxIds count upward from this value to avoid collision with
-    /// user-facing TxIds (which count upward from 1). This reserves the top ~1M of
-    /// the u64 space for system/internal engine operations.
+    /// Lower bound of the internal system transaction ID range.
+    ///
+    /// TxIds are issued from two canonical sources only:
+    /// - Collection sequences: AtomicU64 counters starting at 1, typically
+    ///   in range [1, ~10^12]. Managed by `Collection::allocate_tx()`.
+    /// - Internal system range: [INTERNAL_BASE, u64::MAX], reserved for
+    ///   checkpoint, WAL replay, and other subsystem transactions.
+    ///
+    /// Wall-clock-derived TxIds (Unix nanoseconds, ~1.7e18) fall between
+    /// these two ranges and corrupt `rollback_to_tx()` causal ordering because
+    /// the graph cannot determine the correct transaction boundary.
+    ///
+    /// Value: `u64::MAX - 1_000_000`
+    ///
+    /// See also: AGT-GRAPH-001, DECISIONS.md ADR-016
     pub const INTERNAL_BASE: u64 = u64::MAX - 1_000_000;
 
     /// Creates a new `TxId` wrapping the provided `u64` transaction identifier.
@@ -680,9 +696,20 @@ mod tests {
         }
 
         #[test]
-        fn doc_id_non_empty_strings_never_panic(s in "[a-zA-Z0-9_-]{1,256}") {
-            let res = DocId::from_key(&s);
-            prop_assert!(res.is_ok());
+        fn doc_id_from_key_is_deterministic(s in "[a-zA-Z0-9_\\-]{1,256}") {
+            let id1 = DocId::from_key(&s).unwrap();
+            let id2 = DocId::from_key(&s).unwrap();
+            prop_assert_eq!(id1, id2, "Same key must produce same DocId");
+        }
+
+        #[test]
+        fn doc_id_from_key_never_panics(s in ".*") {
+            let _ = DocId::from_key(&s);
+        }
+
+        #[test]
+        fn doc_id_from_empty_key_is_err(s in "") {
+            prop_assert!(DocId::from_key(&s).is_err());
         }
 
         #[test]
