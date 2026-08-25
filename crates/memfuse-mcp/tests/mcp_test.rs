@@ -241,9 +241,15 @@ async fn test_mcp_insert_multi_chunk_document() {
     let (server, _tmp) = setup_app().await;
 
     // Create a multi-heading document with enough text per section to exceed minimum token threshold (> 50 tokens)
-    let paragraph_a = "Dies ist der erste Abschnitt eines längeren Dokuments über künstliche Intelligenz. ".repeat(10);
-    let paragraph_b = "Dies ist der zweite Abschnitt über maschinelles Lernen und Neuronale Netze. ".repeat(10);
-    let markdown_doc = format!("# Abschnitt 1: KI-Grundlagen\n{}\n\n## Abschnitt 2: Deep Learning\n{}", paragraph_a, paragraph_b);
+    let paragraph_a =
+        "Dies ist der erste Abschnitt eines längeren Dokuments über künstliche Intelligenz. "
+            .repeat(10);
+    let paragraph_b =
+        "Dies ist der zweite Abschnitt über maschinelles Lernen und Neuronale Netze. ".repeat(10);
+    let markdown_doc = format!(
+        "# Abschnitt 1: KI-Grundlagen\n{}\n\n## Abschnitt 2: Deep Learning\n{}",
+        paragraph_a, paragraph_b
+    );
 
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
@@ -269,7 +275,10 @@ async fn test_mcp_insert_multi_chunk_document() {
     assert_eq!(insert_res["id"], "doc_multi");
 
     let chunks_inserted = insert_res["chunks_inserted"].as_u64().unwrap();
-    assert!(chunks_inserted > 1, "Expected document to be split into multiple chunks, got {chunks_inserted}");
+    assert!(
+        chunks_inserted > 1,
+        "Expected document to be split into multiple chunks, got {chunks_inserted}"
+    );
 
     let chunk_ids = insert_res["chunk_ids"].as_array().unwrap();
     assert_eq!(chunk_ids.len(), chunks_inserted as usize);

@@ -38,12 +38,9 @@ impl SessionPool {
     }
 
     fn pop(&self) -> Result<ort::session::Session, MemFuseError> {
-        let mut pool = self
-            .sessions
-            .lock()
-            .map_err(|_| MemFuseError::Internal(
-                "SessionPool-Mutex vergiftet (Panic in Worker-Thread?)".into(),
-            ))?;
+        let mut pool = self.sessions.lock().map_err(|_| {
+            MemFuseError::Internal("SessionPool-Mutex vergiftet (Panic in Worker-Thread?)".into())
+        })?;
 
         pool.pop().ok_or_else(|| {
             MemFuseError::Internal(
