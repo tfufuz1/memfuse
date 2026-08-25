@@ -1,6 +1,6 @@
-use memfuse_core::TextEmbeddingEngine;
 use crate::ollama::OllamaBridge;
 use crate::state::AppState;
+use memfuse_core::TextEmbeddingEngine;
 use tauri::{Emitter, State};
 
 #[derive(serde::Serialize)]

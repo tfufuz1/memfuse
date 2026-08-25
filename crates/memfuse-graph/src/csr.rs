@@ -216,7 +216,10 @@ impl CsrGraph {
     }
 
     /// Creates a new CSR graph with configuration and persistent storage.
-    pub fn with_config_and_storage(config: CsrGraphConfig, storage: Arc<dyn StorageEngine>) -> Self {
+    pub fn with_config_and_storage(
+        config: CsrGraphConfig,
+        storage: Arc<dyn StorageEngine>,
+    ) -> Self {
         Self {
             config,
             inner: RwLock::new(GraphInner::new()),
@@ -679,12 +682,12 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+    use tracing::span::Attributes;
+    use tracing::span::Record;
     use tracing::subscriber::Subscriber;
     use tracing::Event;
     use tracing::Id;
     use tracing::Metadata;
-    use tracing::span::Attributes;
-    use tracing::span::Record;
 
     struct WarnCounterSubscriber {
         warn_count: Arc<AtomicUsize>,

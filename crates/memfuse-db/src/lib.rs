@@ -1403,7 +1403,10 @@ mod tests {
             let doc_key = col.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
             let tx = TxId::new(db.next_tx.fetch_add(1, Ordering::SeqCst));
 
-            db.storage.put(tx, &doc_key, &data).await.expect("put doc_key");
+            db.storage
+                .put(tx, &doc_key, &data)
+                .await
+                .expect("put doc_key");
 
             // Write pending intent (key_type=3) referencing doc_id
             let intent_key = col.namespaced_key(tx.inner().to_le_bytes().as_ref(), 3);
@@ -1423,7 +1426,10 @@ mod tests {
 
         // Re-open with database: repair_on_open will invoke col.repair() which fails on dimension mismatch
         let res = MemFuse::open_with_config(&path, config).await;
-        assert!(res.is_err(), "open_with_config should fail when repair fails");
+        assert!(
+            res.is_err(),
+            "open_with_config should fail when repair fails"
+        );
 
         let err_msg = res.err().unwrap().to_string(); // unwrap allowed
         assert!(

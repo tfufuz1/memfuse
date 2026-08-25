@@ -129,16 +129,16 @@ impl LsmStorage {
             } else {
                 parent
             };
-            let dir = tokio::fs::File::open(parent)
-                .await
-                .map_err(|e| MemFuseError::Storage(
-                    format!("Verzeichnis für fsync konnte nicht geöffnet werden: {e}")
-                ))?;
-            dir.sync_all()
-                .await
-                .map_err(|e| MemFuseError::Storage(
-                    format!("Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}")
-                ))?;
+            let dir = tokio::fs::File::open(parent).await.map_err(|e| {
+                MemFuseError::Storage(format!(
+                    "Verzeichnis für fsync konnte nicht geöffnet werden: {e}"
+                ))
+            })?;
+            dir.sync_all().await.map_err(|e| {
+                MemFuseError::Storage(format!(
+                    "Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}"
+                ))
+            })?;
         }
 
         // Persistent Salt Management (FIND-CRY-001)

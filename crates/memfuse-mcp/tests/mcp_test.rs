@@ -153,7 +153,7 @@ async fn test_invalid_tool_name() {
     let res_val = serde_json::to_value(&response).unwrap();
     let is_error = res_val["result"]["isError"].as_bool().unwrap_or(false);
     assert!(is_error);
-    
+
     let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
     assert!(text.contains("Unbekanntes Tool"));
 }
@@ -179,7 +179,7 @@ async fn test_missing_arguments() {
     let res_val = serde_json::to_value(&response).unwrap();
     let is_error = res_val["result"]["isError"].as_bool().unwrap_or(false);
     assert!(is_error);
-    
+
     let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
     assert!(text.contains("id fehlt") || text.contains("text fehlt"));
 }
@@ -204,7 +204,10 @@ async fn test_malformed_request_returns_error() {
     let val = serde_json::to_value(&response).unwrap();
     assert!(
         val.get("error").is_some()
-            || val["result"]["content"][0]["text"].as_str().unwrap_or("").contains("error")
+            || val["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap_or("")
+                .contains("error")
             || val["result"]["isError"].as_bool().unwrap_or(false),
         "Fehlender 'text'-Parameter muss Fehlermeldung erzeugen: {val}"
     );
@@ -224,7 +227,11 @@ async fn test_unknown_tool_returns_error() {
     let val = serde_json::to_value(&response).unwrap();
     let text = val["result"]["content"][0]["text"].as_str().unwrap_or("");
     assert!(
-        text.contains("Unknown") || text.contains("Unbekanntes") || text.contains("not found") || text.contains("error") || val["result"]["isError"].as_bool().unwrap_or(false),
+        text.contains("Unknown")
+            || text.contains("Unbekanntes")
+            || text.contains("not found")
+            || text.contains("error")
+            || val["result"]["isError"].as_bool().unwrap_or(false),
         "Unbekanntes Tool muss Fehler zurückgeben, got: {text}"
     );
 }

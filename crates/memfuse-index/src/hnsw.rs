@@ -2018,7 +2018,10 @@ mod tests {
             ..test_config(4)
         };
         let result = HnswIndex::try_new(config);
-        assert!(result.is_err(), "try_new must fail immediately on invalid config");
+        assert!(
+            result.is_err(),
+            "try_new must fail immediately on invalid config"
+        );
         let err_msg = format!("{}", result.err().unwrap());
         assert!(
             err_msg.contains("ef_construction (1) must be >= m (100)"),
@@ -2046,7 +2049,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_and_search() {
-        let index = HnswIndex::new(test_config(4));
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
         let tx = TxId::new(1);
 
         // Insert 3 vectors
@@ -2075,7 +2078,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete() {
-        let index = HnswIndex::new(test_config(4));
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
 
         let tx1 = TxId::new(1);
         index
@@ -2095,7 +2098,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rollback() {
-        let index = HnswIndex::new(test_config(4));
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
 
         let tx = TxId::new(1);
         index
@@ -2109,7 +2112,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_search() {
-        let index = HnswIndex::new(test_config(4));
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
         let results = index
             .search(&[1.0, 0.0, 0.0, 0.0], 5)
             .await
@@ -2119,7 +2122,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dimension_mismatch() {
-        let index = HnswIndex::new(test_config(4));
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
         let tx = TxId::new(1);
         let result = index.insert(tx, DocId::new(1), &[1.0, 0.0]).await;
         assert!(result.is_err());
@@ -2127,7 +2130,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_filtered_search() {
-        let index = HnswIndex::new(test_config(4));
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
         let tx = TxId::new(1);
 
         index
@@ -2157,12 +2160,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_rebuild_and_stats() {
-        let index = HnswIndex::new(HnswConfig {
+        let index = HnswIndex::try_new(HnswConfig {
             dimension: 2,
             rebuild_threshold: 0.8,
             distance_metric: DistanceMetric::Euclidean,
             ..test_config(2)
-        });
+        })
+        .unwrap();
         let tx = TxId::new(1);
 
         for i in 1..=5u64 {
@@ -2207,13 +2211,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_rebuild_quantized_persistence() {
-        let index = HnswIndex::new(HnswConfig {
+        let index = HnswIndex::try_new(HnswConfig {
             dimension: 4,
             quantize: true,
             rebuild_threshold: 0.1, // Trigger easily
             distance_metric: DistanceMetric::Euclidean,
             ..test_config(4)
-        });
+        })
+        .unwrap();
         let tx = TxId::new(1);
 
         // Insert enough vectors to train quantizer (>= 50)
@@ -2266,7 +2271,7 @@ mod tests {
             quantize: false,
             ..test_config(4)
         };
-        let index = HnswIndex::new(config.clone());
+        let index = HnswIndex::try_new(config.clone()).unwrap();
         let tx1 = TxId::new(1);
 
         // 1. Initial Insert (RAM)
@@ -2280,7 +2285,7 @@ mod tests {
         index.save(&index_path).await.expect("save");
 
         // 3. Clear RAM and load via Mmap
-        let index_mmap = HnswIndex::new(config.clone());
+        let index_mmap = HnswIndex::try_new(config.clone()).unwrap();
         index_mmap.load_mmap(&index_path).await.expect("load mmap");
 
         assert_eq!(index_mmap.len().await, 50);
@@ -2339,7 +2344,7 @@ mod tests {
             quantize: true,
             ..test_config(16)
         };
-        let index = HnswIndex::new(config);
+        let index = HnswIndex::try_new(config).unwrap();
         let tx = TxId::new(1);
 
         // 1. Train quantizer with some data
@@ -2376,7 +2381,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_all_doc_ids() {
-        let index = HnswIndex::new(test_config(4));
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
         let tx = TxId::new(1);
 
         for i in 1..=10u64 {
@@ -2412,7 +2417,7 @@ mod tests {
             rebuild_threshold: 0.8, // trigger when >20% deleted
             ..test_config(4)
         };
-        let index = HnswIndex::new(config);
+        let index = HnswIndex::try_new(config).unwrap();
         let tx = TxId::new(1);
 
         for i in 0u64..5 {
@@ -2449,7 +2454,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_connectivity_ok_when_healthy() {
-        let index = HnswIndex::new(test_config(4));
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
         // Empty index — connectivity_score returns 1.0, always healthy
         assert!(index.check_connectivity().is_ok());
     }
