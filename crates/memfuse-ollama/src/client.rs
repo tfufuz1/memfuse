@@ -352,7 +352,7 @@ mod tests {
                 let _ = socket.read(&mut buf).await;
                 let response =
                     "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 21\r\n\r\nInternal Server Error";
-                let _ = socket.write_all(response.as_bytes()).await;
+                socket.write_all(response.as_bytes()).await.ok();
             }
         });
 
@@ -399,7 +399,7 @@ mod tests {
                     body.len(),
                     body
                 );
-                let _ = socket.write_all(response.as_bytes()).await;
+                socket.write_all(response.as_bytes()).await.ok();
             }
         });
 
