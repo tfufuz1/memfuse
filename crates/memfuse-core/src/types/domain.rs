@@ -70,9 +70,7 @@ impl DocId {
     /// See **ADR-016** in `DECISIONS.md`.
     pub fn from_key(key: &str) -> Result<Self> {
         if key.is_empty() {
-            return Err(MemFuseError::InvalidInput(
-                "Key cannot be empty".to_string(),
-            ));
+            return Err(MemFuseError::InvalidInput("Key cannot be empty".to_string()));
         }
         let hash = blake3::hash(key.as_bytes());
         let bytes = hash
