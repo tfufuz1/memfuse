@@ -11,7 +11,22 @@ use memfuse_core::{MemFuseError, Result, TxId, WorkflowState};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+static CHECKPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn monotonic_timestamp_ms() -> u64 {
+    let wall_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    // Ensure monotonic: max(wall_clock, last_seen)
+    CHECKPOINT_COUNTER
+        .fetch_max(wall_ms, Ordering::SeqCst)
+        .max(wall_ms)
+}
 
 /// Metadata for a persistent checkpoint.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -75,18 +90,17 @@ impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
                 tx_id = ?cp.tx_id,
                 "CheckpointGuard dropped without commit. Attempting async rollback."
             );
-            let storage_clone = Arc::clone(&self.storage);
-            // Only spawn if we are inside a tokio runtime
+            let storage = Arc::clone(&self.storage);
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 handle.spawn(async move {
-                    if let Err(e) = storage_clone.rollback_to_tx(cp.tx_id).await {
-                        tracing::error!("CheckpointGuard auto-rollback failed: {e}");
+                    if let Err(e) = storage.rollback_to_tx(cp.tx_id).await {
+                        tracing::error!("Checkpoint auto-rollback failed: {e}");
                     }
                 });
             } else {
                 tracing::error!(
-                    tx_id = ?cp.tx_id,
-                    "CheckpointGuard dropped outside tokio runtime. Rollback skipped."
+                    "CheckpointGuard dropped outside tokio runtime — rollback lost for {:?}",
+                    cp.tx_id
                 );
             }
         }
@@ -153,10 +167,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     /// If the returned guard is dropped without calling `.commit()`, the underlying storage
     /// is automatically rolled back to `tx_id`.
     pub fn create_guard(&self, tx_id: TxId) -> Result<CheckpointGuard<S>> {
-        let timestamp_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| MemFuseError::Storage(format!("System clock error: {}", e)))?
-            .as_millis() as u64;
+        let timestamp_ms = monotonic_timestamp_ms();
         let cp = StateCheckpoint {
             tx_id,
             timestamp_ms,
@@ -179,10 +190,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             seq_no,
             tx_id,
             metadata,
-            created_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| MemFuseError::Internal(e.to_string()))?
-                .as_secs(),
+            created_at: monotonic_timestamp_ms(),
         };
 
         let _guard = self.write_lock.lock().await;
@@ -371,12 +379,12 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     /// Restores the system to a specific checkpoint by name.
     /// This will rollback the underlying storage to the transaction ID of the checkpoint.
     pub async fn restore_checkpoint(&self, name: &str) -> Result<CheckpointMeta> {
+        let _guard = self.write_lock.lock().await;
+
         let meta = self
             .get_checkpoint_internal(name)
             .await?
             .ok_or_else(|| MemFuseError::NotFound(format!("Checkpoint '{}' not found", name)))?;
-
-        let _guard = self.write_lock.lock().await;
 
         // 1. Rollback storage state
         self.storage.rollback_to_tx(meta.tx_id).await?;
@@ -472,6 +480,7 @@ mod tests {
         data: Mutex<HashMap<Vec<u8>, Vec<u8>>>,
         pinned: Mutex<HashSet<u64>>,
         fail_on_put: Mutex<Option<Vec<u8>>>,
+        rolled_back_tx: Mutex<Vec<TxId>>,
     }
 
     impl MockStorage {
@@ -480,6 +489,7 @@ mod tests {
                 data: Mutex::new(HashMap::new()),
                 pinned: Mutex::new(HashSet::new()),
                 fail_on_put: Mutex::new(None),
+                rolled_back_tx: Mutex::new(Vec::new()),
             }
         }
     }
@@ -511,7 +521,8 @@ mod tests {
         async fn rollback(&self, _tx_id: TxId) -> Result<()> {
             Ok(())
         }
-        async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
+        async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
+            self.rolled_back_tx.lock().push(tx_id);
             Ok(())
         }
         async fn last_seq_no(&self) -> Result<u64> {
@@ -641,7 +652,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_checkpoint_guard_auto_rollback() {
+    async fn checkpoint_guard_rollback_on_drop() {
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
@@ -651,17 +662,56 @@ mod tests {
         }
 
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        // Verify no panic and guard auto-rollback dropped cleanly
+        let rolled_back = storage.rolled_back_tx.lock().clone();
+        assert_eq!(rolled_back, vec![TxId::new(42)]);
     }
 
     #[tokio::test]
-    async fn test_checkpoint_guard_commit() {
+    async fn checkpoint_guard_commit_prevents_rollback() {
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
         let guard = store.create_guard(TxId::new(100)).unwrap();
         let cp = guard.commit().unwrap();
         assert_eq!(cp.tx_id, TxId::new(100));
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(
+            storage.rolled_back_tx.lock().is_empty(),
+            "Committed guard should not perform rollback"
+        );
+    }
+
+    #[test]
+    fn timestamp_ms_is_monotonic() {
+        let t1 = monotonic_timestamp_ms();
+        let t2 = monotonic_timestamp_ms();
+        assert!(t2 >= t1, "Timestamp must be monotonic");
+    }
+
+    #[tokio::test]
+    async fn list_checkpoints_empty_initially() {
+        use memfuse_core::traits::CheckpointCoordinator;
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage, "test");
+
+        let list = store.list_named_checkpoints().await.unwrap();
+        assert!(list.is_empty());
+    }
+
+    #[tokio::test]
+    async fn checkpoint_not_found_returns_err() {
+        use memfuse_core::traits::CheckpointCoordinator;
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage, "test");
+
+        let res = store.restore_named_checkpoint("nonexistent").await;
+        match res {
+            Err(MemFuseError::NotFound(msg)) => {
+                assert!(msg.contains("nonexistent"));
+            }
+            other => panic!("Expected MemFuseError::NotFound, got {:?}", other),
+        }
     }
 
     #[tokio::test]
