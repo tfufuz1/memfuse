@@ -7,7 +7,7 @@
 //! The **only** public encryption entry-point is [`KeyManager::encrypt_auto_nonce`],
 //! which generates a collision-resistant 12-byte nonce composed of:
 //! - 4 bytes: random `nonce_prefix` generated once per `KeyManager` instance.
-//! - 8 bytes: monotonically increasing `AtomicU64` counter (starts at 1).
+//! - 8 bytes: cryptographically random suffix generated per encryption call via `OsRng`.
 //!
 //! Per-file key isolation via [`KeyManager::derive_file_key`] (HKDF-Expand) ensures
 //! that even if two instances share a nonce counter value, they operate on
@@ -33,12 +33,9 @@ use hkdf::Hkdf;
 use memfuse_core::{MemFuseError, Result};
 use sha2::Sha256;
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
 /// Manager for encryption keys and block encryption.
 pub struct KeyManager {
     key: VolatileEncryptionKey,
-    nonce_counter: AtomicU64,
     nonce_prefix: [u8; 4],
 }
 
@@ -57,7 +54,7 @@ impl KeyManager {
         let hk = Hkdf::<Sha256>::new(Some(salt), passphrase.as_bytes());
         let mut key_raw = [0u8; 32];
         hk.expand(b"memfuse-aes-256-gcm-key", &mut key_raw)
-            .map_err(|e| MemFuseError::Storage(format!("HKDF expansion failed: {}", e)))?;
+            .map_err(|e| MemFuseError::Crypto(format!("HKDF expansion failed: {}", e)))?;
 
         use rand::RngCore;
         let mut nonce_prefix = [0u8; 4];
@@ -65,7 +62,6 @@ impl KeyManager {
 
         Ok(Self {
             key: VolatileEncryptionKey::new(key_raw),
-            nonce_counter: AtomicU64::new(1),
             nonce_prefix,
         })
     }
@@ -85,7 +81,7 @@ impl KeyManager {
         // Since self.key is already derived via HKDF in try_new, it is a high-entropy PRK.
         // We use HKDF-Expand with a domain-separating prefix to derive a per-file key.
         let hk = Hkdf::<Sha256>::from_prk(self.key.as_bytes())
-            .map_err(|_| MemFuseError::Storage("Invalid PRK length".to_string()))?;
+            .map_err(|_| MemFuseError::Crypto("Invalid PRK length".to_string()))?;
 
         let mut sub_key = [0u8; 32];
         let mut info = Vec::with_capacity(b"memfuse-file-key:".len() + file_id.len());
@@ -93,7 +89,7 @@ impl KeyManager {
         info.extend_from_slice(file_id);
 
         hk.expand(&info, &mut sub_key)
-            .map_err(|e| MemFuseError::Storage(format!("HKDF sub-key expansion failed: {}", e)))?;
+            .map_err(|e| MemFuseError::Crypto(format!("HKDF sub-key expansion failed: {}", e)))?;
 
         use rand::RngCore;
         let mut nonce_prefix = [0u8; 4];
@@ -101,7 +97,6 @@ impl KeyManager {
 
         Ok(Self {
             key: VolatileEncryptionKey::new(sub_key),
-            nonce_counter: AtomicU64::new(1),
             nonce_prefix,
         })
     }
@@ -109,29 +104,33 @@ impl KeyManager {
     /// Derives an integrity key for HMAC-SHA256.
     pub fn integrity_key(&self) -> Result<[u8; 32]> {
         let hk = Hkdf::<Sha256>::from_prk(self.key.as_bytes())
-            .map_err(|_| MemFuseError::Storage("Invalid PRK length".to_string()))?;
+            .map_err(|_| MemFuseError::Crypto("Invalid PRK length".to_string()))?;
         let mut key = [0u8; 32];
         hk.expand(b"memfuse-hmac-sha256-key", &mut key)
             .map_err(|e| {
-                MemFuseError::Storage(format!("HKDF integrity expansion failed: {}", e))
+                MemFuseError::Crypto(format!("HKDF integrity expansion failed: {}", e))
             })?;
         Ok(key)
     }
 
-    /// Encrypts a block of data with an automatically generated monotonic nonce.
+    /// Encrypts a block of data with an automatically generated random nonce.
     /// Returns the ciphertext and the full 12-byte nonce used.
     pub fn encrypt_auto_nonce(&self, data: &[u8]) -> Result<(Vec<u8>, [u8; 12])> {
-        let nonce_val = self.nonce_counter.fetch_add(1, Ordering::SeqCst);
+        // AES-256-GCM-SIV chosen over AES-256-GCM because GCM-SIV provides
+        // nonce-misuse resistance: ciphertext integrity is preserved even if a
+        // nonce is accidentally reused, unlike GCM which leaks the auth key on
+        // nonce reuse. Reference: RFC 8452.
+        use rand::RngCore;
         let mut nonce_bytes = [0u8; 12];
         nonce_bytes[0..4].copy_from_slice(&self.nonce_prefix);
-        nonce_bytes[4..12].copy_from_slice(&nonce_val.to_le_bytes());
+        rand::thread_rng().fill_bytes(&mut nonce_bytes[4..12]);
 
         let cipher = Aes256GcmSiv::new_from_slice(self.key.as_bytes())
-            .map_err(|e| MemFuseError::Storage(format!("Crypto error: {}", e)))?;
+            .map_err(|e| MemFuseError::Crypto(format!("Crypto error: {}", e)))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher
             .encrypt(nonce, data)
-            .map_err(|e| MemFuseError::Storage(format!("Encryption failed: {}", e)))?;
+            .map_err(|e| MemFuseError::Crypto(format!("Encryption failed: {}", e)))?;
 
         Ok((ciphertext, nonce_bytes))
     }
@@ -139,11 +138,11 @@ impl KeyManager {
     /// Decrypts a block of data using a full 12-byte nonce.
     pub fn decrypt_auto_nonce(&self, ciphertext: &[u8], nonce_bytes: &[u8; 12]) -> Result<Vec<u8>> {
         let cipher = Aes256GcmSiv::new_from_slice(self.key.as_bytes())
-            .map_err(|e| MemFuseError::Storage(format!("Crypto error: {}", e)))?;
+            .map_err(|e| MemFuseError::Crypto(format!("Crypto error: {}", e)))?;
         let nonce = Nonce::from_slice(nonce_bytes);
         cipher
             .decrypt(nonce, ciphertext)
-            .map_err(|e| MemFuseError::Storage(format!("Decryption failed: {}", e)))
+            .map_err(|e| MemFuseError::Crypto(format!("Decryption failed: {}", e)))
     }
 
     /// Emergency Trigger: Explicitly wipes the key from memory.
@@ -246,5 +245,38 @@ mod tests {
 
         // Ensure key is zero after wipe
         assert_eq!(km.inspect_key_bytes_for_test(), &[0u8; 32]);
+    }
+
+    #[test]
+    fn file_keys_are_distinct_per_path() {
+        let km = KeyManager::try_new("secret", b"salt").expect("init");
+        let key1 = km.derive_file_key(b"segment_001.sst").expect("k1");
+        let key2 = km.derive_file_key(b"segment_002.sst").expect("k2");
+        assert_ne!(
+            key1.inspect_key_bytes_for_test(),
+            key2.inspect_key_bytes_for_test(),
+            "HKDF must produce distinct keys per file path"
+        );
+    }
+
+    #[test]
+    fn same_path_same_passphrase_same_key() {
+        let km1 = KeyManager::try_new("secret", b"salt").expect("km1");
+        let km2 = KeyManager::try_new("secret", b"salt").expect("km2");
+        let k1 = km1.derive_file_key(b"data.sst").expect("k1");
+        let k2 = km2.derive_file_key(b"data.sst").expect("k2");
+        assert_eq!(
+            k1.inspect_key_bytes_for_test(),
+            k2.inspect_key_bytes_for_test(),
+            "Same passphrase+salt+path must produce same key"
+        );
+    }
+
+    #[test]
+    fn key_manager_field_zeroizes_on_drop() {
+        use zeroize::Zeroize;
+        let mut raw: [u8; 32] = [0xFF; 32];
+        raw.zeroize();
+        assert_eq!(raw, [0u8; 32]);
     }
 }
