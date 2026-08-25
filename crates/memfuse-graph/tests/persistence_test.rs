@@ -124,3 +124,37 @@ async fn test_graph_survives_reload() {
         results
     );
 }
+
+#[tokio::test]
+async fn edges_survive_restart() {
+    let dir = tempdir().unwrap();
+    let config = LsmConfig {
+        path: dir.path().to_path_buf(),
+        ..Default::default()
+    };
+    let storage = Arc::new(LsmStorage::new(config).await.unwrap());
+    let graph = CsrGraph::with_storage(storage.clone());
+    let tx = TxId::new(1);
+    let id_a = EntityId::from("id_a");
+    let id_b = EntityId::from("id_b");
+
+    graph
+        .add_entity(tx, Entity::new(id_a, "Node A", "Type"))
+        .await
+        .unwrap();
+    graph
+        .add_entity(tx, Entity::new(id_b, "Node B", "Type"))
+        .await
+        .unwrap();
+    graph
+        .add_edge(tx, Edge::new(id_a, id_b, "relates"))
+        .await
+        .unwrap();
+    graph.commit(tx).await.unwrap();
+    storage.commit(tx).await.unwrap();
+
+    // Simuliere Neustart: neuer Graph aus derselben Storage
+    let graph2 = CsrGraph::load_from_storage(storage.as_ref()).await.unwrap();
+    let neighbors = graph2.neighbors(id_a).await.unwrap();
+    assert!(neighbors.contains(&id_b), "Kante nicht persistiert!");
+}

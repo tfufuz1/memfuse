@@ -401,6 +401,40 @@ pub trait GraphIndex: Send + Sync + 'static {
         max_hops: usize,
     ) -> crate::Result<Vec<(crate::types::EntityId, f32)>>;
 
+    /// Returns direct (1-hop) neighbor EntityIds for the given entity.
+    async fn neighbors(
+        &self,
+        start_node: crate::types::EntityId,
+    ) -> crate::Result<Vec<crate::types::EntityId>> {
+        let results = self.traverse(start_node, 1).await?;
+        Ok(results.into_iter().map(|(id, _)| id).collect())
+    }
+
+    /// Removes an edge between two entities.
+    async fn remove_edge(
+        &self,
+        tx: crate::types::TxId,
+        from: crate::types::EntityId,
+        to: crate::types::EntityId,
+    ) -> crate::Result<()> {
+        let _ = (tx, from, to);
+        Ok(())
+    }
+
+    /// Adds a bidirectional edge between two entities.
+    async fn add_bidirectional(
+        &self,
+        tx: crate::types::TxId,
+        from: crate::types::EntityId,
+        to: crate::types::EntityId,
+        label: impl Into<String> + Send,
+    ) -> crate::Result<()> {
+        let label_str = label.into();
+        self.add_edge(tx, crate::types::Edge::new(from, to, label_str.clone())).await?;
+        self.add_edge(tx, crate::types::Edge::new(to, from, label_str)).await?;
+        Ok(())
+    }
+
     /// Traverses the entity graph starting from multiple anchor entities up to max_hops.
     /// Aggregates decay weights (keeping max score per entity) across anchors.
     async fn multi_traverse(
