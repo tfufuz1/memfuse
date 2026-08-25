@@ -1,5 +1,10 @@
 //! Pure BM25 scoring functions.
 
+/// Default k1 parameter for BM25 term frequency saturation scaling.
+pub const BM25_K1: f32 = 1.2;
+/// Default b parameter for BM25 document length normalization penalty tuning.
+pub const BM25_B: f32 = 0.75;
+
 /// Calculates the BM25 score for a single term in a document.
 ///
 /// # Arguments
@@ -12,9 +17,6 @@ pub fn score_term(tf: u32, doc_len: u32, avg_doc_len: f32, df: u32, n: u32) -> f
     if n == 0 || df == 0 || tf == 0 {
         return 0.0;
     }
-    // Constant parameters for BM25
-    let k1 = 1.2;
-    let b = 0.75;
 
     let tf = tf as f32;
     let doc_len = doc_len as f32;
@@ -36,11 +38,9 @@ pub fn score_term(tf: u32, doc_len: u32, avg_doc_len: f32, df: u32, n: u32) -> f
     let avg_doc = avg_doc_len.max(1.0);
     let norm_doc_len = doc_len / avg_doc;
 
-    let tf_numerator = tf * (k1 + 1.0);
-    let tf_denominator = tf + k1 * (1.0 - b + b * norm_doc_len);
+    let tf_numerator = tf * (BM25_K1 + 1.0);
+    let tf_denominator = tf + BM25_K1 * (1.0 - BM25_B + BM25_B * norm_doc_len);
 
-    // tf_denominator is guaranteed to be >= 0.3 since k1=1.2, b=0.75, tf>=0, norm_doc_len>=0
-    // 1.2 * (0.25 + 0.75 * norm_doc_len) >= 0.3
     idf * (tf_numerator / tf_denominator)
 }
 
@@ -95,5 +95,27 @@ mod tests {
         let score = score_term(1, 10, 10.0, 10, 10);
         assert!(!score.is_nan());
         assert!(score >= 0.0);
+    }
+
+    #[test]
+    fn test_bm25_score_monotonicity_more_matches() {
+        // Single term match ("Katze" in doc 1) vs dual term match ("Katze" and "Hund" in doc 2)
+        // Corpus: N = 100, avg_doc_len = 10.0
+        // Term "Katze": df = 5
+        // Term "Hund": df = 5
+        // Doc 1: "Die Katze saß auf dem Dach" (doc_len = 6, Katze tf = 1, Hund tf = 0)
+        // Doc 2: "Die Katze und der Hund auf dem Dach" (doc_len = 8, Katze tf = 1, Hund tf = 1)
+        let score_katze = score_term(1, 6, 10.0, 5, 100);
+        let score_hund = score_term(1, 8, 10.0, 5, 100);
+
+        let score_1 = score_katze; // 1 term matched
+        let score_2 = score_katze + score_hund; // 2 terms matched
+
+        assert!(
+            score_2 > score_1,
+            "Mehr Term-Matches müssen höheren Score geben (score_2: {}, score_1: {})",
+            score_2,
+            score_1
+        );
     }
 }
