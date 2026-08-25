@@ -650,6 +650,7 @@ impl StorageEngine for LsmStorage {
                         mem_updates.push((key.clone(), Vec::new(), seq_no | TOMBSTONE_BIT));
                     }
                 }
+                _ => unreachable!(),
             }
         }
 

@@ -19,6 +19,7 @@
 // Vor jeder Änderung: `cargo check -p memfuse-db` um Downstream-Bruch zu erkennen.
 
 #![deny(unsafe_code)]
+#![warn(missing_docs)]
 
 pub mod error;
 pub mod ipc;

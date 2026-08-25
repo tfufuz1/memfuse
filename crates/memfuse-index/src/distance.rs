@@ -76,6 +76,7 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
         DistanceMetric::Cosine => cosine_distance(a, b),
         DistanceMetric::Euclidean => euclidean_distance(a, b),
         DistanceMetric::DotProduct => dot_product_distance(a, b),
+        _ => unreachable!(),
     })
 }
 
@@ -1415,6 +1416,7 @@ mod tests {
                     DistanceMetric::Cosine => cosine_distance_scalar(&a, &b),
                     DistanceMetric::Euclidean => euclidean_distance_scalar(&a, &b),
                     DistanceMetric::DotProduct => dot_product_scalar(&a, &b),
+                    _ => unreachable!(),
                 };
 
                 let simd = compute_distance(&a, &b, metric).unwrap();
