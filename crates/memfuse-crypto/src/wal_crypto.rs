@@ -107,10 +107,10 @@ impl IntegrityVerifier {
         let prev_hmac_valid = entry.prev_hmac.ct_eq(&self.last_hmac);
 
         if bool::from(!checksum_valid) || bool::from(!prev_hmac_valid) {
-            return Err(memfuse_core::MemFuseError::WalCorruption {
+            return Err(memfuse_core::MemFuseError::wal_corruption(
                 offset,
-                reason: format!("HMAC mismatch for seq {}", entry.seq_no),
-            });
+                format!("HMAC mismatch for seq {}", entry.seq_no),
+            ));
         }
 
         self.last_hmac = computed;
@@ -279,7 +279,7 @@ mod tests {
 
         // Skip entry 2 (removed entry) and attempt to verify entry 3 directly
         let err = verifier.verify_and_update(&e3, 30).unwrap_err();
-        if let memfuse_core::MemFuseError::WalCorruption { offset, reason } = err {
+        if let memfuse_core::MemFuseError::WalCorruption { offset, reason, .. } = err {
             assert_eq!(offset, 30);
             assert!(reason.contains("HMAC mismatch"));
         } else {

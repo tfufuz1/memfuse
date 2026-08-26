@@ -648,32 +648,32 @@ impl Wal {
                 if pos + 4 + len as u64 > file_size {
                     // STO-001: Massive Fehl-Länge am Anfang ist Korruption, am Ende (Tail) ignorable.
                     if entries.is_empty() && file_size > 64 {
-                        return Err(MemFuseError::WalCorruption {
-                            offset: pos,
-                            reason: format!(
+                        return Err(MemFuseError::wal_corruption(
+                            pos,
+                            format!(
                                 "WAL entry length ({}) exceeds hard limit and file size",
                                 len
                             ),
-                        });
+                        ));
                     }
                     tracing::warn!("WAL tail corruption (huge len) at offset {}", pos);
                     break;
                 }
-                return Err(MemFuseError::WalCorruption {
-                    offset: pos,
-                    reason: format!("WAL entry too large ({} bytes)", len),
-                });
+                return Err(MemFuseError::wal_corruption(
+                    pos,
+                    format!("WAL entry too large ({} bytes)", len),
+                ));
             }
 
             if pos + 4 + len as u64 > file_size {
                 if entries.is_empty() && file_size > 64 {
-                    return Err(MemFuseError::WalCorruption {
-                        offset: pos,
-                        reason: format!(
+                    return Err(MemFuseError::wal_corruption(
+                        pos,
+                        format!(
                             "WAL entry length ({}) exceeds file size ({}) at start of file",
                             len, file_size
                         ),
-                    });
+                    ));
                 }
                 tracing::warn!("WAL tail corruption (partial entry) at offset {}", pos);
                 break;
@@ -729,10 +729,7 @@ impl Wal {
                         } else {
                             format!("Deserialization failed: {}", e)
                         };
-                        return Err(MemFuseError::WalCorruption {
-                            offset: entry_start_pos,
-                            reason,
-                        });
+                        return Err(MemFuseError::wal_corruption(entry_start_pos, reason));
                     }
                 }
             };
@@ -771,13 +768,13 @@ impl Wal {
                     );
                     break;
                 } else {
-                    return Err(MemFuseError::WalCorruption {
-                        offset: entry_start_pos,
-                        reason: format!(
+                    return Err(MemFuseError::wal_corruption(
+                        entry_start_pos,
+                        format!(
                             "HMAC/Chain failure in middle of WAL: recomputed={:?}, stored={:?}, prev_hmac={:?}, current_chain={:?}",
                             recomputed_checksum, entry.checksum, entry.prev_hmac, current_chain_hmac
                         ),
-                    });
+                    ));
                 }
             }
             current_chain_hmac = entry.checksum;
