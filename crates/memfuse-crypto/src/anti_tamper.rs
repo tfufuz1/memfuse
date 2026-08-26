@@ -1,17 +1,17 @@
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 /// Defines a cryptographic key that is explicitly zeroed out when dropped
 /// or when an emergency trigger is activated, protecting against cold-boot attacks.
 #[derive(Zeroize)]
 #[zeroize(drop)]
 pub struct VolatileEncryptionKey {
-    key_bytes: [u8; 32], // AES-256 Key
+    key_bytes: Zeroizing<[u8; 32]>, // AES-256 Key
 }
 
 impl VolatileEncryptionKey {
     /// Creates a new volatile key from a raw 32-byte array.
     pub fn new(raw: [u8; 32]) -> Self {
-        Self { key_bytes: raw }
+        Self { key_bytes: Zeroizing::new(raw) }
     }
 
     /// Emergency Trigger: Explicitly wipes the key from memory.
@@ -24,7 +24,7 @@ impl VolatileEncryptionKey {
 
     /// Accessor for cryptographic operations.
     pub fn as_bytes(&self) -> &[u8] {
-        &self.key_bytes
+        self.key_bytes.as_slice()
     }
 
     /// Test-only method to inspect key bytes.
@@ -96,5 +96,29 @@ mod tests {
         let debug_str = format!("{key:?}");
         assert!(!debug_str.contains("171")); // 0xAB in decimal
         assert!(debug_str.contains("REDACTED"));
+    }
+
+    #[test]
+    fn test_zeroize_on_drop_wipes_memory() {
+        let raw: [u8; 32] = [0xCD; 32];
+        let ptr: *const u8;
+        {
+            let key = VolatileEncryptionKey::new(raw);
+            ptr = key.as_bytes().as_ptr();
+            // Precondition: check that memory contains original non-zero key bytes
+            // SAFETY: `key` is alive in this scope and `ptr` points directly to its heap/stack buffer.
+            unsafe {
+                let slice = std::slice::from_raw_parts(ptr, 32);
+                assert_eq!(slice, &[0xCD; 32]);
+            }
+            // `key` goes out of scope here and its drop/zeroize handler is invoked.
+        }
+
+        // SAFETY: We dereference `ptr` immediately after `key` is dropped in this single-threaded, controlled unit test frame
+        // to inspect that the drop handler ran and zeroed out the underlying memory array before stack reuse.
+        unsafe {
+            let cleared_slice = std::slice::from_raw_parts(ptr, 32);
+            assert_eq!(cleared_slice, &[0x00; 32], "Memory MUST be zeroed after drop");
+        }
     }
 }
