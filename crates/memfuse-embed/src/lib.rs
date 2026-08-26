@@ -9,6 +9,8 @@
 #![deny(unsafe_code)]
 
 #[cfg(feature = "onnx")]
+use std::path::{Path, PathBuf};
+#[cfg(feature = "onnx")]
 use std::sync::Arc;
 
 #[cfg(feature = "onnx")]
@@ -18,8 +20,6 @@ use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
 #[cfg(feature = "onnx")]
 use ort::value::Value;
 #[cfg(feature = "onnx")]
-use std::path::Path;
-#[cfg(feature = "onnx")]
 use tokenizers::Tokenizer;
 #[cfg(feature = "onnx")]
 use tracing::{debug, info, warn};
@@ -27,109 +27,13 @@ use tracing::{debug, info, warn};
 pub mod reranker;
 pub use reranker::{CrossEncoderReranker, RerankConfig, RerankResult};
 
-#[cfg(feature = "onnx")]
-pub(crate) struct SessionPool {
-    sessions: std::sync::Mutex<Vec<ort::session::Session>>,
-}
-
-#[cfg(feature = "onnx")]
-impl SessionPool {
-    pub(crate) fn new(sessions: Vec<ort::session::Session>) -> Self {
-        Self {
-            sessions: std::sync::Mutex::new(sessions),
-        }
-    }
-
-    pub(crate) fn pop(&self) -> Result<ort::session::Session> {
-        let mut pool = self.sessions.lock().map_err(|_| {
-            MemFuseError::Internal("SessionPool-Mutex vergiftet (Panic in Worker-Thread?)".into())
-        })?;
-
-        pool.pop().ok_or_else(|| {
-            MemFuseError::Internal(
-                "SessionPool erschöpft — Semaphore-Leck im Embedder-Code?".into(),
-            )
-        })
-    }
-
-    pub(crate) fn push(&self, session: ort::session::Session) {
-        if let Ok(mut guard) = self.sessions.lock() {
-            guard.push(session);
-        } else {
-            tracing::error!("SessionPool lock poisoned during push");
-        }
-    }
-}
-
-#[cfg(feature = "onnx")]
-impl std::fmt::Debug for SessionPool {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SessionPool").finish_non_exhaustive()
-    }
-}
-
-#[cfg(feature = "onnx")]
-pub(crate) struct SessionGuard {
-    pool: Arc<SessionPool>,
-    session: Option<ort::session::Session>,
-}
-
-#[cfg(feature = "onnx")]
-impl SessionGuard {
-    pub(crate) fn new(pool: Arc<SessionPool>) -> Result<Self> {
-        let session = pool.pop()?;
-        Ok(Self {
-            pool,
-            session: Some(session),
-        })
-    }
-}
-
-#[cfg(feature = "onnx")]
-impl Drop for SessionGuard {
-    fn drop(&mut self) {
-        if let Some(session) = self.session.take() {
-            self.pool.push(session);
-        }
-    }
-}
-
-#[cfg(feature = "onnx")]
-impl std::ops::Deref for SessionGuard {
-    type Target = ort::session::Session;
-    fn deref(&self) -> &Self::Target {
-        self.session.as_ref().unwrap()
-    }
-}
-
-#[cfg(feature = "onnx")]
-impl std::ops::DerefMut for SessionGuard {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.session.as_mut().unwrap()
-    }
-}
-
-/// Handles text tokenization and ONNX model inference.
-///
-/// Uses `tokio::task::spawn_blocking` to offload ONNX inference to a blocking
-/// thread pool, preventing Tokio runtime starvation. A [`tokio::sync::Semaphore`]
-/// limits the number of concurrent inference operations.
-///
-/// # Architecture
-///
-/// Instead of holding a `std::sync::Mutex<Session>` (which blocks the Tokio
-/// thread on every `embed` call), this design:
-///
-/// 1. Stores a pre-loaded `SessionPool` populated at initialization.
-/// 2. Uses a `Semaphore` to limit concurrent inferences.
-/// 3. Safely lends sessions out of the pool for the duration of inference inside
-///    `spawn_blocking` via a RAII guard, returning them even on panics.
+/// Configuration settings for the text embedder.
 #[cfg(feature = "onnx")]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TextEmbedderConfig {
     /// Maximum number of tokens per text sequence (default: 512).
     pub max_sequence_length: usize,
-    /// Number of pre-allocated ONNX sessions in the pool (default: 2).
+    /// Maximum parallel ONNX inference threads (default: 2).
     pub pool_size: usize,
     /// Expected output embedding dimension (optional).
     pub expected_dim: Option<usize>,
@@ -149,15 +53,20 @@ impl Default for TextEmbedderConfig {
 #[cfg(feature = "onnx")]
 pub type OnnxEmbedder = TextEmbedder;
 
+/// Handles text tokenization and ONNX model inference.
+///
+/// Uses `tokio::task::spawn_blocking` to offload ONNX inference to a blocking
+/// thread pool, preventing Tokio runtime starvation. A [`tokio::sync::Semaphore`]
+/// limits the number of concurrent inference operations.
 #[cfg(feature = "onnx")]
 #[derive(Debug, Clone)]
 pub struct TextEmbedder {
+    /// Path to model directory or model.onnx file.
+    session_path: PathBuf,
     /// Shared tokenizer instance (thread-safe via `Arc`).
     tokenizer: Arc<Tokenizer>,
     /// Semaphore limiting parallel ONNX inference threads.
     semaphore: Arc<tokio::sync::Semaphore>,
-    /// Pre-loaded Session Pool.
-    pool: Arc<SessionPool>,
     /// Configuration settings for the embedder.
     config: TextEmbedderConfig,
     /// Expected output embedding dimension.
@@ -214,10 +123,9 @@ impl TextEmbedder {
         Self::load(model_dir)
     }
 
-    /// Creates a new embedder by loading a tokenizer and ONNX models from the specified directory.
+    /// Creates a new embedder by loading a tokenizer and ONNX model path from the specified directory.
     ///
     /// The directory should contain `model.onnx` and `tokenizer.json`.
-    /// ONNX sessions are loaded upfront into a pool to prevent per-inference overhead.
     pub fn load(model_dir: impl AsRef<Path>) -> Result<Self> {
         Self::load_with_config(model_dir, TextEmbedderConfig::default())
     }
@@ -245,25 +153,11 @@ impl TextEmbedder {
             .map_err(|e| MemFuseError::Internal(format!("Failed to load tokenizer: {}", e)))?;
 
         let pool_size = config.pool_size;
-        info!(
-            "Model path registered: {:?} (pre-loading {} sessions)",
-            model_path, pool_size
-        );
-
-        let mut sessions = Vec::with_capacity(pool_size);
-        for _ in 0..pool_size {
-            let session = ort::session::Session::builder()
-                .map_err(|e| MemFuseError::Internal(format!("Session builder: {}", e)))?
-                .commit_from_file(&model_path)
-                .map_err(|e| MemFuseError::Internal(format!("Model load: {}", e)))?;
-            sessions.push(session);
-        }
-
         let expected_dim = config.expected_dim;
         Ok(Self {
+            session_path: model_path,
             tokenizer: Arc::new(tokenizer),
             semaphore: Arc::new(tokio::sync::Semaphore::new(pool_size)),
-            pool: Arc::new(SessionPool::new(sessions)),
             config,
             expected_dim,
         })
@@ -280,23 +174,24 @@ impl TextEmbedder {
     /// Acquires a semaphore permit to limit concurrent inference operations,
     /// then offloads the blocking ONNX computation to Tokio's blocking thread pool.
     pub async fn embed_async(&self, text: &str) -> Result<Vec<f32>> {
-        let _permit =
-            tokio::time::timeout(std::time::Duration::from_secs(30), self.semaphore.acquire())
-                .await
-                .map_err(|_| {
-                    MemFuseError::Internal("ONNX session pool exhausted (timeout 30s)".into())
-                })?
-                .map_err(|e| MemFuseError::Internal(format!("Semaphore closed: {e}")))?;
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
+            .map_err(|_| MemFuseError::Internal("Semaphore closed".into()))?;
 
         let text = text.to_string();
-        let pool = self.pool.clone();
+        let session_path = self.session_path.clone();
         let tokenizer = self.tokenizer.clone();
         let max_sequence_length = self.config.max_sequence_length;
 
         let output = tokio::task::spawn_blocking(move || {
-            // Guard borrows session from pool, restores it on drop
-            let mut session_guard = SessionGuard::new(pool)?;
-            Self::run_inference(&mut session_guard, &tokenizer, &text, max_sequence_length)
+            let mut session = ort::session::Session::builder()
+                .map_err(|e| MemFuseError::Internal(format!("Session builder: {}", e)))?
+                .commit_from_file(&session_path)
+                .map_err(|e| MemFuseError::Internal(format!("Model load: {}", e)))?;
+
+            Self::run_inference(&mut session, &tokenizer, &text, max_sequence_length)
         })
         .await
         .map_err(|e| MemFuseError::Internal(format!("spawn_blocking join: {}", e)))??;
@@ -486,43 +381,13 @@ mod tests {
 
         let res = TextEmbedder::load(dir.path());
         assert!(res.is_err());
-        // Error could be from tokenizer or ONNX
         let err_msg = res.err().map(|e| e.to_string()).unwrap_or_default();
         assert!(
             err_msg.contains("Failed to load tokenizer")
                 || err_msg.contains("Failed to load model")
+                || err_msg.contains("InvalidInput")
         );
         Ok(())
-    }
-
-    // ANCHOR[TEST:EMB-001]
-    #[cfg(feature = "onnx")]
-    #[test]
-    fn test_session_pool_exhaustion() {
-        let pool = SessionPool::new(vec![]);
-        let res = pool.pop();
-        assert!(res.is_err());
-        let err_msg = res.err().unwrap().to_string();
-        assert!(err_msg.contains("SessionPool erschöpft"));
-    }
-
-    // ANCHOR[TEST:EMB-001]
-    #[cfg(feature = "onnx")]
-    #[test]
-    fn test_session_pool_poisoned() {
-        let pool = Arc::new(SessionPool::new(vec![]));
-        let pool_clone = pool.clone();
-
-        let _ = std::thread::spawn(move || {
-            let _guard = pool_clone.sessions.lock().unwrap();
-            panic!("Poisoning mutex for testing");
-        })
-        .join();
-
-        let res = pool.pop();
-        assert!(res.is_err());
-        let err_msg = res.err().unwrap().to_string();
-        assert!(err_msg.contains("SessionPool-Mutex vergiftet"));
     }
 
     #[test]
