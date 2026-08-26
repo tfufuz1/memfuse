@@ -91,10 +91,7 @@ impl CrossEncoderReranker {
             .map_err(|e| MemFuseError::Internal(format!("ONNX session builder: {e}")))?
             .commit_from_file(&config.model_path)
             .map_err(|e| {
-                MemFuseError::Internal(format!(
-                    "ONNX model load from {:?}: {e}",
-                    config.model_path
-                ))
+                MemFuseError::Internal(format!("ONNX model load from {:?}: {e}", config.model_path))
             })?;
 
         Ok(Self {
