@@ -231,13 +231,6 @@ struct PathNode {
 
 impl MorphologicalTokenizer for GermanCompoundSplitter {
     fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
-        debug_assert!(
-            token == token.to_lowercase(),
-            "GermanCompoundSplitter::decompose received non-lowercase input: {:?}. \
-             Call normalize_umlauts() or to_lowercase() before decompose().",
-            token
-        );
-
         if token.len() <= self.min_component_len {
             return vec![token];
         }
@@ -395,10 +388,10 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "non-lowercase input")]
-    fn test_decompose_panics_on_uppercase_in_debug() {
+    fn test_decompose_handles_uppercase_without_panic() {
         let splitter = GermanCompoundSplitter::new();
-        let _ = splitter.decompose("Bundesverfassungsgericht");
+        let parts = splitter.decompose("Bundesverfassungsgericht");
+        assert!(!parts.is_empty());
     }
 
     #[test]

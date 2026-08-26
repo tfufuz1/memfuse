@@ -1169,11 +1169,12 @@ mod tests {
     #[test]
     fn test_language_from_iso() {
         assert_eq!(Language::from_iso("de"), Language::German);
-        assert_eq!(Language::from_iso("de-AT"), Language::German);
         assert_eq!(Language::from_iso("de-DE"), Language::German);
+        assert_eq!(Language::from_iso("de-AT"), Language::German);
         assert_eq!(Language::from_iso("en"), Language::English);
         assert_eq!(Language::from_iso("en-US"), Language::English);
         assert_eq!(Language::from_iso("en-GB"), Language::English);
+        assert_eq!(Language::from_iso("zh-CN"), Language::English);
         // False-positive protection: these namespace-like strings must NOT match German
         assert_eq!(Language::from_iso("developer"), Language::English);
         assert_eq!(Language::from_iso("indexed"), Language::English);
@@ -1241,6 +1242,117 @@ mod tests {
             .search_bm25("bundesverfassungsgericht", 10, None)
             .await?;
         assert_eq!(results_exact.len(), 1, "Exact match should still work");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_avgdl_accuracy_incremental_updates() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "test_avgdl");
+
+        // Step 1: Insert 10 documents of varying length
+        // We use distinct words so DefaultTokenizer doesn't filter them out as stopwords.
+        let docs = [
+            "alpha",                                              // 1 token
+            "beta gamma",                                         // 2 tokens
+            "delta epsilon zeta",                                 // 3 tokens
+            "eta theta iota kappa",                               // 4 tokens
+            "lambda mu nu xi omicron",                            // 5 tokens
+            "pi rho sigma tau upsilon phi",                       // 6 tokens
+            "chi psi omega apple banana cherry",                  // 7 tokens
+            "date elderberry fig grape hazelnut kiwi lemon",       // 8 tokens
+            "mango nectarine orange papaya quince raspberry strawberry tangerine", // 9 tokens
+            "ugli vanilla walnut ximenia yuzu ziziphus apricot blueberry cranberry durian", // 10 tokens
+        ];
+
+        let mut current_doc_lengths = HashMap::new();
+
+        for (i, text) in docs.iter().enumerate() {
+            let doc_id = DocId::new((i + 1) as u64);
+            let tx = TxId::new((i + 1) as u64);
+            let tokens = DefaultTokenizer.tokenize(text);
+            current_doc_lengths.insert(doc_id, tokens.len() as u64);
+
+            index.upsert_document(tx, doc_id, text).await?;
+            index.commit_stats(tx).await?;
+            storage.commit(tx).await?;
+        }
+
+        assert_eq!(index.total_docs.load(Ordering::SeqCst), 10);
+
+        // Step 2: Delete 5 documents (DocId 1..=5)
+        for i in 1..=5 {
+            let doc_id = DocId::new(i as u64);
+            let tx = TxId::new(100 + i as u64);
+            current_doc_lengths.remove(&doc_id);
+
+            index.delete_document(tx, doc_id).await?;
+            index.commit_stats(tx).await?;
+            storage.commit(tx).await?;
+        }
+
+        assert_eq!(index.total_docs.load(Ordering::SeqCst), 5);
+
+        // Step 3: Insert 5 more documents (DocId 11..=15)
+        let new_docs = [
+            "ant bee cat dog",                                    // 4 tokens
+            "elephant fox giraffe hippo iguana",                  // 5 tokens
+            "jaguar koala lion monkey newt owl",                  // 6 tokens
+            "panda quail rabbit snake tiger urchin vulture",       // 7 tokens
+            "whale wolf yak zebra ant bee cat dog elephant",       // 9 tokens
+        ];
+
+        for (i, text) in new_docs.iter().enumerate() {
+            let doc_id = DocId::new((11 + i) as u64);
+            let tx = TxId::new(200 + i as u64);
+            let tokens = DefaultTokenizer.tokenize(text);
+            current_doc_lengths.insert(doc_id, tokens.len() as u64);
+
+            index.upsert_document(tx, doc_id, text).await?;
+            index.commit_stats(tx).await?;
+            storage.commit(tx).await?;
+        }
+
+        // Verify state
+        let total_docs = index.total_docs.load(Ordering::SeqCst);
+        let total_tokens = index.total_tokens.load(Ordering::SeqCst);
+        assert_eq!(total_docs, 10, "Should have 10 active documents");
+
+        let expected_total_tokens: u64 = current_doc_lengths.values().sum();
+        assert_eq!(total_tokens, expected_total_tokens, "Total tokens must match active documents");
+
+        let expected_avgdl = expected_total_tokens as f64 / total_docs as f64;
+        let actual_avgdl = index.avg_doc_len_x1000.load(Ordering::SeqCst) as f64 / 1000.0;
+
+        assert!(
+            (actual_avgdl - expected_avgdl).abs() < 0.001,
+            "avgdl ({}) must equal mean length of current 10 documents ({})",
+            actual_avgdl,
+            expected_avgdl
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_german_tokenizer_symmetry_index_and_query() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new_with_language(storage.clone(), "test_de_symmetry", Language::German);
+
+        let tx = TxId::new(1);
+        let doc_id = DocId::new(42);
+        index
+            .upsert_document(tx, doc_id, "Datenbankmanagement")
+            .await?;
+        index.commit_stats(tx).await?;
+        storage.commit(tx).await?;
+
+        // Indexing "Datenbankmanagement" with German tokenizer decomposes into "datenbank" and "management".
+        // Querying "Datenbank" with identical German tokenizer must return the indexed document.
+        let results = index.search_bm25("Datenbank", 10, None).await?;
+        assert_eq!(results.len(), 1, "Query 'Datenbank' must return document indexed with 'Datenbankmanagement'");
+        assert_eq!(results[0].0, doc_id);
 
         Ok(())
     }
