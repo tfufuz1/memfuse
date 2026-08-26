@@ -1,3 +1,5 @@
+//! Bekannte Ollama-Modell-Dimensionen für Embedding-Modelle.
+
 use crate::client::OllamaClient;
 use memfuse_core::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
