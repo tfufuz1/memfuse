@@ -1254,14 +1254,14 @@ mod tests {
         // Step 1: Insert 10 documents of varying length
         // We use distinct words so DefaultTokenizer doesn't filter them out as stopwords.
         let docs = [
-            "alpha",                                              // 1 token
-            "beta gamma",                                         // 2 tokens
-            "delta epsilon zeta",                                 // 3 tokens
-            "eta theta iota kappa",                               // 4 tokens
-            "lambda mu nu xi omicron",                            // 5 tokens
-            "pi rho sigma tau upsilon phi",                       // 6 tokens
-            "chi psi omega apple banana cherry",                  // 7 tokens
-            "date elderberry fig grape hazelnut kiwi lemon",       // 8 tokens
+            "alpha",                                                                        // 1 token
+            "beta gamma",                                    // 2 tokens
+            "delta epsilon zeta",                            // 3 tokens
+            "eta theta iota kappa",                          // 4 tokens
+            "lambda mu nu xi omicron",                       // 5 tokens
+            "pi rho sigma tau upsilon phi",                  // 6 tokens
+            "chi psi omega apple banana cherry",             // 7 tokens
+            "date elderberry fig grape hazelnut kiwi lemon", // 8 tokens
             "mango nectarine orange papaya quince raspberry strawberry tangerine", // 9 tokens
             "ugli vanilla walnut ximenia yuzu ziziphus apricot blueberry cranberry durian", // 10 tokens
         ];
@@ -1296,11 +1296,11 @@ mod tests {
 
         // Step 3: Insert 5 more documents (DocId 11..=15)
         let new_docs = [
-            "ant bee cat dog",                                    // 4 tokens
-            "elephant fox giraffe hippo iguana",                  // 5 tokens
-            "jaguar koala lion monkey newt owl",                  // 6 tokens
-            "panda quail rabbit snake tiger urchin vulture",       // 7 tokens
-            "whale wolf yak zebra ant bee cat dog elephant",       // 9 tokens
+            "ant bee cat dog",                               // 4 tokens
+            "elephant fox giraffe hippo iguana",             // 5 tokens
+            "jaguar koala lion monkey newt owl",             // 6 tokens
+            "panda quail rabbit snake tiger urchin vulture", // 7 tokens
+            "whale wolf yak zebra ant bee cat dog elephant", // 9 tokens
         ];
 
         for (i, text) in new_docs.iter().enumerate() {
@@ -1320,7 +1320,10 @@ mod tests {
         assert_eq!(total_docs, 10, "Should have 10 active documents");
 
         let expected_total_tokens: u64 = current_doc_lengths.values().sum();
-        assert_eq!(total_tokens, expected_total_tokens, "Total tokens must match active documents");
+        assert_eq!(
+            total_tokens, expected_total_tokens,
+            "Total tokens must match active documents"
+        );
 
         let expected_avgdl = expected_total_tokens as f64 / total_docs as f64;
         let actual_avgdl = index.avg_doc_len_x1000.load(Ordering::SeqCst) as f64 / 1000.0;
@@ -1338,7 +1341,8 @@ mod tests {
     #[tokio::test]
     async fn test_german_tokenizer_symmetry_index_and_query() -> Result<()> {
         let storage = Arc::new(MockStorage::new());
-        let index = InvertedIndex::new_with_language(storage.clone(), "test_de_symmetry", Language::German);
+        let index =
+            InvertedIndex::new_with_language(storage.clone(), "test_de_symmetry", Language::German);
 
         let tx = TxId::new(1);
         let doc_id = DocId::new(42);
@@ -1351,7 +1355,11 @@ mod tests {
         // Indexing "Datenbankmanagement" with German tokenizer decomposes into "datenbank" and "management".
         // Querying "Datenbank" with identical German tokenizer must return the indexed document.
         let results = index.search_bm25("Datenbank", 10, None).await?;
-        assert_eq!(results.len(), 1, "Query 'Datenbank' must return document indexed with 'Datenbankmanagement'");
+        assert_eq!(
+            results.len(),
+            1,
+            "Query 'Datenbank' must return document indexed with 'Datenbankmanagement'"
+        );
         assert_eq!(results[0].0, doc_id);
 
         Ok(())

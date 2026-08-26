@@ -690,7 +690,11 @@ impl<S: StorageEngine> Collection<S> {
 
         // Re-insert into HNSW
         if let Err(e) = self.index.delete(tx, doc_id).await {
-            tracing::warn!("[COL-HNSW-DELETE] Failed to delete doc {:?} from HNSW index: {}", doc_id, e);
+            tracing::warn!(
+                "[COL-HNSW-DELETE] Failed to delete doc {:?} from HNSW index: {}",
+                doc_id,
+                e
+            );
         }
         self.index.insert(tx, doc_id, embedding).await?;
 
@@ -735,7 +739,11 @@ impl<S: StorageEngine> Collection<S> {
         db_tx.record_keys(user_key, doc_key, doc_id);
 
         if let Err(e) = self.index.delete(tx, doc_id).await {
-            tracing::warn!("[COL-HNSW-DELETE] Failed to delete doc {:?} from HNSW index: {}", doc_id, e);
+            tracing::warn!(
+                "[COL-HNSW-DELETE] Failed to delete doc {:?} from HNSW index: {}",
+                doc_id,
+                e
+            );
         }
 
         Ok(())
@@ -1774,14 +1782,21 @@ mod tests {
         use tempfile::tempdir;
 
         let dir = tempdir().unwrap();
-        let storage = Arc::new(LsmStorage::new(memfuse_store::LsmConfig {
-            path: dir.path().to_path_buf(),
-            ..Default::default()
-        }).await.unwrap());
-        let index = Arc::new(HnswIndex::try_new(memfuse_index::HnswConfig {
-            dimension: 4,
-            ..Default::default()
-        }).unwrap());
+        let storage = Arc::new(
+            LsmStorage::new(memfuse_store::LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
         let col = super::Collection::new(
             "default".to_string(),
             storage,
@@ -1792,7 +1807,13 @@ mod tests {
             memfuse_text::Language::English,
         );
 
-        col.insert("doc_no_created_at", &[1.0, 0.0, 0.0, 0.0], Some(json!({"ttl_ms": 10}))).await.unwrap();
+        col.insert(
+            "doc_no_created_at",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"ttl_ms": 10})),
+        )
+        .await
+        .unwrap();
         let reaped = col.trigger_reaper().await.unwrap();
         assert_eq!(reaped, 0);
         assert!(col.get("doc_no_created_at").await.unwrap().is_some());
@@ -1809,14 +1830,21 @@ mod tests {
         use tempfile::tempdir;
 
         let dir = tempdir().unwrap();
-        let storage = Arc::new(LsmStorage::new(memfuse_store::LsmConfig {
-            path: dir.path().to_path_buf(),
-            ..Default::default()
-        }).await.unwrap());
-        let index = Arc::new(HnswIndex::try_new(memfuse_index::HnswConfig {
-            dimension: 4,
-            ..Default::default()
-        }).unwrap());
+        let storage = Arc::new(
+            LsmStorage::new(memfuse_store::LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
         let col = super::Collection::new(
             "default".to_string(),
             storage,
@@ -1827,7 +1855,13 @@ mod tests {
             memfuse_text::Language::English,
         );
 
-        col.insert("doc_zero_ttl", &[1.0, 0.0, 0.0, 0.0], Some(json!({"created_at_ms": 100, "ttl_ms": 0}))).await.unwrap();
+        col.insert(
+            "doc_zero_ttl",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"created_at_ms": 100, "ttl_ms": 0})),
+        )
+        .await
+        .unwrap();
         let reaped = col.trigger_reaper().await.unwrap();
         assert_eq!(reaped, 0);
         assert!(col.get("doc_zero_ttl").await.unwrap().is_some());
@@ -1844,14 +1878,21 @@ mod tests {
         use tempfile::tempdir;
 
         let dir = tempdir().unwrap();
-        let storage = Arc::new(LsmStorage::new(memfuse_store::LsmConfig {
-            path: dir.path().to_path_buf(),
-            ..Default::default()
-        }).await.unwrap());
-        let index = Arc::new(HnswIndex::try_new(memfuse_index::HnswConfig {
-            dimension: 4,
-            ..Default::default()
-        }).unwrap());
+        let storage = Arc::new(
+            LsmStorage::new(memfuse_store::LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
         let col = super::Collection::new(
             "default".to_string(),
             storage,
@@ -1862,7 +1903,13 @@ mod tests {
             memfuse_text::Language::English,
         );
 
-        col.insert("doc_overflow", &[1.0, 0.0, 0.0, 0.0], Some(json!({"created_at_ms": u64::MAX - 10, "ttl_ms": 100}))).await.unwrap();
+        col.insert(
+            "doc_overflow",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"created_at_ms": u64::MAX - 10, "ttl_ms": 100})),
+        )
+        .await
+        .unwrap();
         let reaped = col.trigger_reaper().await.unwrap();
         assert_eq!(reaped, 0);
         assert!(col.get("doc_overflow").await.unwrap().is_some());

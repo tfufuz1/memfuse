@@ -2025,7 +2025,9 @@ mod tests {
         let path = tmp.path().join("cache_eviction_test.sst");
 
         // Create a 1-block cache directly (capacity = 1 block)
-        let cache = Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(1).expect("non-zero")))); // expect #[cfg(test)]
+        let cache = Arc::new(RwLock::new(LruCache::new(
+            NonZeroUsize::new(1).expect("non-zero"),
+        ))); // expect #[cfg(test)]
 
         // Build an SSTable with 3 distinct blocks by inserting large values (>3000 bytes)
         let mut builder = SstableBuilder::create(&path).await.expect("create"); // expect #[cfg(test)]
@@ -2087,8 +2089,14 @@ mod tests {
             2,
             "Both duplicate key entries must coexist in iter()"
         );
-        assert_eq!(iter_entries[0], (Bytes::from_static(b"k"), Bytes::from_static(b"val1"), 1));
-        assert_eq!(iter_entries[1], (Bytes::from_static(b"k"), Bytes::from_static(b"val2"), 2));
+        assert_eq!(
+            iter_entries[0],
+            (Bytes::from_static(b"k"), Bytes::from_static(b"val1"), 1)
+        );
+        assert_eq!(
+            iter_entries[1],
+            (Bytes::from_static(b"k"), Bytes::from_static(b"val2"), 2)
+        );
 
         // 2. Verify via stream()
         let reader_arc = Arc::new(reader);
@@ -2097,8 +2105,14 @@ mod tests {
         let e2 = stream.next().await.expect("next").expect("entry 2"); // expect #[cfg(test)]
         let e_end = stream.next().await.expect("next"); // expect #[cfg(test)]
 
-        assert_eq!(e1, (Bytes::from_static(b"k"), Bytes::from_static(b"val1"), 1, 10));
-        assert_eq!(e2, (Bytes::from_static(b"k"), Bytes::from_static(b"val2"), 2, 20));
+        assert_eq!(
+            e1,
+            (Bytes::from_static(b"k"), Bytes::from_static(b"val1"), 1, 10)
+        );
+        assert_eq!(
+            e2,
+            (Bytes::from_static(b"k"), Bytes::from_static(b"val2"), 2, 20)
+        );
         assert!(e_end.is_none());
     }
 }

@@ -2138,7 +2138,11 @@ mod tests {
 
         assert_eq!(results.len(), 3);
         for res in &results {
-            assert_ne!(res.doc_id, DocId::new(0), "Deleted entry point node 0 must not be returned");
+            assert_ne!(
+                res.doc_id,
+                DocId::new(0),
+                "Deleted entry point node 0 must not be returned"
+            );
         }
     }
 
