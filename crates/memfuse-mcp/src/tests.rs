@@ -98,13 +98,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_request_id_echo_roundtrip() {
+        let (server, _tmp) = create_mock_server().await;
+
+        // String ID
+        let req1 = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: Some(json!("abc-123")),
+            method: "ping".into(),
+            params: json!({}),
+        };
+        let resp1 = server.handle(req1).await;
+        assert_eq!(resp1.id, Some(json!("abc-123")));
+        assert_eq!(resp1.jsonrpc, "2.0");
+
+        // Numeric ID
+        let req2 = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: Some(json!(42)),
+            method: "ping".into(),
+            params: json!({}),
+        };
+        let resp2 = server.handle(req2).await;
+        assert_eq!(resp2.id, Some(json!(42)));
+        assert_eq!(resp2.jsonrpc, "2.0");
+    }
+
+    #[tokio::test]
     async fn test_unknown_method_returns_method_not_found() {
         let (server, _tmp) = create_mock_server().await;
         let req = make_request("nonexistent/method", json!({}));
         let response = server.handle(req).await;
         assert_eq!(response.jsonrpc, "2.0");
-        assert!(response.error.is_some());
-        assert_eq!(response.error.unwrap().code, -32601);
+        assert_eq!(response.id, Some(json!(1)));
+        let err = response.error.expect("error object expected");
+        assert_eq!(err.code, -32601);
     }
 
     #[tokio::test]
@@ -113,8 +141,55 @@ mod tests {
         let req = make_request("tools/call", json!({ "arguments": {} }));
         let response = server.handle(req).await;
         assert_eq!(response.jsonrpc, "2.0");
+        assert_eq!(response.id, Some(json!(1)));
         assert!(response.error.is_some());
         assert_eq!(response.error.unwrap().code, -32602);
+    }
+
+    #[tokio::test]
+    async fn test_missing_required_param_returns_invalid_params_32602() {
+        let (server, _tmp) = create_mock_server().await;
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: Some(json!(101)),
+            method: "memfuse_insert".into(),
+            params: json!({
+                // missing required "id" field
+                "collection": "default",
+                "text": "some text"
+            }),
+        };
+        let response = server.handle(req).await;
+        assert_eq!(response.id, Some(json!(101)));
+        let err = response.error.expect("error expected for missing required param");
+        assert_eq!(err.code, -32602);
+        assert!(err.message.contains("id"));
+    }
+
+    #[tokio::test]
+    async fn test_internal_error_returns_32603() {
+        use crate::protocol::McpError;
+        let err = McpError::internal_error("storage layer failure");
+        assert_eq!(err.code(), -32603);
+        let resp = JsonRpcResponse::from_error(Some(json!(102)), err);
+        assert_eq!(resp.id, Some(json!(102)));
+        let err_obj = resp.error.expect("error expected");
+        assert_eq!(err_obj.code, -32603);
+        assert_eq!(err_obj.message, "storage layer failure");
+    }
+
+    #[tokio::test]
+    async fn test_notification_expects_no_response() {
+        let (server, _tmp) = create_mock_server().await;
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: None,
+            method: "initialized".into(),
+            params: json!({}),
+        };
+        assert!(req.id.is_none());
+        let response = server.handle(req).await;
+        assert_eq!(response.id, None);
     }
 
     #[tokio::test]

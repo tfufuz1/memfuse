@@ -58,7 +58,13 @@ impl McpServer {
                 Ok(val) => {
                     let req_id = val.get("id").cloned();
                     match serde_json::from_value::<JsonRpcRequest>(val) {
-                        Ok(req) => self.handle(req).await,
+                        Ok(req) => {
+                            if req.id.is_none() || req.id == Some(Value::Null) {
+                                let _ = self.handle(req).await;
+                                continue; // notification: no response required
+                            }
+                            self.handle(req).await
+                        }
                         Err(e) => JsonRpcResponse::err(
                             req_id,
                             -32600,
@@ -188,6 +194,13 @@ impl McpServer {
                 }
             }
 
+            "memfuse_search" | "memfuse_insert" | "memfuse_get" | "memfuse_collections" => {
+                match self.call_tool(req.method.as_str(), &req.params).await {
+                    Ok(res) => JsonRpcResponse::ok(id, res),
+                    Err(e) => JsonRpcResponse::from_error(id, e),
+                }
+            }
+
             // ── Ping ───────────────────────────────────────────────────────────
             "ping" => JsonRpcResponse::ok(id, json!({})),
 
@@ -199,20 +212,28 @@ impl McpServer {
     async fn call_tool(&self, name: &str, args: &Value) -> Result<Value, McpError> {
         match name {
             "memfuse_search" => {
-                let query = args
-                    .get("query")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| McpError::invalid_params("query fehlt"))?;
-                let col_raw = args
-                    .get("collection")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("default");
-                let col_name = if col_raw.trim().is_empty() {
-                    "default"
-                } else {
-                    col_raw
+                let query = match args.get("query") {
+                    Some(v) => v.as_str().ok_or_else(|| {
+                        McpError::invalid_params("Invalid params: 'query' must be a string")
+                    })?,
+                    None => {
+                        return Err(McpError::invalid_params("missing required field: 'query'"));
+                    }
                 };
-                validate_collection_name(col_name)?;
+
+                let col_name = if let Some(col_val) = args.get("collection") {
+                    let s = col_val.as_str().ok_or_else(|| {
+                        McpError::invalid_params("Invalid params: 'collection' must be a string")
+                    })?;
+                    if s.trim().is_empty() {
+                        "default"
+                    } else {
+                        validate_collection_name(s)?;
+                        s
+                    }
+                } else {
+                    "default"
+                };
 
                 let k_val = args.get("k").or_else(|| args.get("limit"));
                 let k_raw = match k_val {
@@ -250,39 +271,81 @@ impl McpServer {
             }
 
             "memfuse_insert" => {
-                let text = args
-                    .get("text")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| McpError::invalid_params("text fehlt"))?;
-                if text.is_empty() {
-                    return Err(McpError::invalid_params("text cannot be empty"));
-                }
-                const MAX_INSERT_TEXT_BYTES: usize = 10 * 1024 * 1024; // 10MB
-                if text.len() > MAX_INSERT_TEXT_BYTES {
-                    return Err(McpError::invalid_params(format!(
-                        "text too large: {}MB > 10MB limit",
-                        text.len() / 1_048_576
-                    )));
-                }
-
-                let id = args
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| McpError::invalid_params("id fehlt"))?;
-                if id.is_empty() {
-                    return Err(McpError::invalid_params("id cannot be empty"));
-                }
-
-                let col_raw = args
-                    .get("collection")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("default");
-                let col_name = if col_raw.trim().is_empty() {
-                    "default"
+                // Validate collection parameter if present
+                let col_name = if let Some(col_val) = args.get("collection") {
+                    let s = col_val.as_str().ok_or_else(|| {
+                        McpError::invalid_params("Invalid params: 'collection' must be a string")
+                    })?;
+                    if s.trim().is_empty() {
+                        "default"
+                    } else {
+                        validate_collection_name(s)?;
+                        s
+                    }
                 } else {
-                    col_raw
+                    "default"
                 };
-                validate_collection_name(col_name)?;
+
+                // Validate id parameter
+                let id = match args.get("id") {
+                    Some(v) => {
+                        let s = v.as_str().ok_or_else(|| {
+                            McpError::invalid_params("Invalid params: 'id' must be a string")
+                        })?;
+                        if s.is_empty() {
+                            return Err(McpError::invalid_params("id cannot be empty"));
+                        }
+                        s
+                    }
+                    None => {
+                        return Err(McpError::invalid_params("id fehlt: missing required field 'id'"));
+                    }
+                };
+
+                // Validate vector / text parameters
+                let vec_val = args.get("vector");
+                let text_val = args.get("text");
+
+                let vector_opt: Option<Vec<f32>> = if let Some(v) = vec_val {
+                    let arr = v.as_array().ok_or_else(|| {
+                        McpError::invalid_params("Invalid params: 'vector' must be an array of numbers")
+                    })?;
+                    let mut vec = Vec::with_capacity(arr.len());
+                    for elem in arr {
+                        let num = elem.as_f64().ok_or_else(|| {
+                            McpError::invalid_params("Invalid params: 'vector' must contain numbers")
+                        })?;
+                        vec.push(num as f32);
+                    }
+                    Some(vec)
+                } else {
+                    None
+                };
+
+                let text_opt = if let Some(t) = text_val {
+                    let s = t.as_str().ok_or_else(|| {
+                        McpError::invalid_params("Invalid params: 'text' must be a string")
+                    })?;
+                    if s.is_empty() {
+                        return Err(McpError::invalid_params("text cannot be empty"));
+                    }
+                    const MAX_INSERT_TEXT_BYTES: usize = 10 * 1024 * 1024; // 10MB
+                    if s.len() > MAX_INSERT_TEXT_BYTES {
+                        return Err(McpError::invalid_params(format!(
+                            "text too large: {}MB > 10MB limit",
+                            s.len() / 1_048_576
+                        )));
+                    }
+                    Some(s)
+                } else {
+                    None
+                };
+
+                if vector_opt.is_none() && text_opt.is_none() {
+                    return Err(McpError::invalid_params(
+                        "text/vector fehlt: missing required field 'vector' or 'text'",
+                    ));
+                }
 
                 let base_metadata = args
                     .get("metadata")
@@ -296,7 +359,33 @@ impl McpServer {
                     .await
                     .map_err(McpError::from)?;
 
+                if let Some(vector) = vector_opt {
+                    let mut meta = json!({
+                        "source_id": id,
+                    });
+                    if let Some(obj) = meta.as_object_mut() {
+                        if let Some(text) = text_opt {
+                            obj.insert("text".to_string(), json!(text));
+                        }
+                        for (k, v) in &base_metadata {
+                            obj.entry(k.clone()).or_insert_with(|| v.clone());
+                        }
+                    }
+                    col.insert(id, &vector, Some(meta))
+                        .await
+                        .map_err(McpError::from)?;
+
+                    return Ok(json!({
+                        "ok": true,
+                        "id": id,
+                        "chunks_inserted": 1,
+                        "chunk_ids": [id],
+                        "collection": col_name
+                    }));
+                }
+
                 // AUTO-CHUNKING: Text in semantische Einheiten aufteilen mit MarkdownChunker (~512 Tokens)
+                let text = text_opt.unwrap();
                 let chunker = MarkdownChunker::new(ChunkerConfig::default());
                 let doc_id = DocId::from_key(id).map_err(|e| {
                     McpError::invalid_params(format!("Invalid document ID '{}': {}", id, e))
@@ -363,23 +452,34 @@ impl McpServer {
             }
 
             "memfuse_get" => {
-                let id = args
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| McpError::invalid_params("id fehlt"))?;
-                if id.is_empty() {
-                    return Err(McpError::invalid_params("id cannot be empty"));
-                }
-                let col_raw = args
-                    .get("collection")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("default");
-                let col_name = if col_raw.trim().is_empty() {
-                    "default"
-                } else {
-                    col_raw
+                let id = match args.get("id") {
+                    Some(v) => {
+                        let s = v.as_str().ok_or_else(|| {
+                            McpError::invalid_params("Invalid params: 'id' must be a string")
+                        })?;
+                        if s.is_empty() {
+                            return Err(McpError::invalid_params("id cannot be empty"));
+                        }
+                        s
+                    }
+                    None => {
+                        return Err(McpError::invalid_params("id fehlt: missing required field 'id'"));
+                    }
                 };
-                validate_collection_name(col_name)?;
+
+                let col_name = if let Some(col_val) = args.get("collection") {
+                    let s = col_val.as_str().ok_or_else(|| {
+                        McpError::invalid_params("Invalid params: 'collection' must be a string")
+                    })?;
+                    if s.trim().is_empty() {
+                        "default"
+                    } else {
+                        validate_collection_name(s)?;
+                        s
+                    }
+                } else {
+                    "default"
+                };
 
                 let col = self
                     .db
