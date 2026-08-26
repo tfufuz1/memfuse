@@ -165,6 +165,52 @@ mod tests {
     use super::*;
 
     #[test]
+    fn memfuse_error_display_no_panic() {
+        let variants = [
+            MemFuseError::Internal("test".into()),
+            MemFuseError::InvalidInput("test".into()),
+            MemFuseError::NotFound("test".into()),
+            MemFuseError::Storage("test".into()),
+            MemFuseError::PolicyViolation("test".into()),
+            MemFuseError::NamespaceViolation("test".into()),
+            MemFuseError::WalCorruption {
+                offset: 10,
+                reason: "test".into(),
+            },
+            MemFuseError::ChecksumMismatch {
+                path: "file".into(),
+                block_id: 1,
+            },
+            MemFuseError::Transaction("test".into()),
+            MemFuseError::TransactionTimeout {
+                tx_id: 1,
+                elapsed_ms: 100,
+            },
+            MemFuseError::Conflict("test".into()),
+            MemFuseError::InvalidSequenceNumber(1),
+            MemFuseError::Index("test".into()),
+            MemFuseError::HnswConnectivityDegraded { deleted_ratio: 0.1 },
+            MemFuseError::Text("test".into()),
+            MemFuseError::MemoryBudgetExceeded {
+                used_mb: 10,
+                limit_mb: 5,
+            },
+            MemFuseError::Sandbox("test".into()),
+            MemFuseError::MemoryLimitExceeded("test".into()),
+            MemFuseError::SandboxTimeout("test".into()),
+            MemFuseError::Serialization("test".into()),
+            MemFuseError::Crypto("test".into()),
+            MemFuseError::CheckpointNotFound,
+            MemFuseError::Cluster("test".into()),
+            MemFuseError::ParseError("test".into()),
+        ];
+        for v in &variants {
+            let _ = format!("{v}");
+            let _ = format!("{v:?}");
+        }
+    }
+
+    #[test]
     fn test_invalid_input_helper() {
         let err = MemFuseError::invalid_input("bad param");
         match err {
