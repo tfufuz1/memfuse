@@ -2492,7 +2492,7 @@ mod tests {
 
         // Delete 2 out of 5 → 40% deleted → score = 0.6 < threshold 0.8
         let tx2 = TxId::new(2);
-        index.delete(tx2, DocId::new(0)).await.unwrap();
+        index.delete(tx2, DocId::new(0)).await.unwrap(); // #[test]
         index.delete(tx2, DocId::new(1)).await.unwrap();
         index.commit(tx2).await.unwrap();
 

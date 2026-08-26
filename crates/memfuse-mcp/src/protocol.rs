@@ -2,6 +2,77 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use thiserror::Error;
+
+/// MCP Error representation matching standard JSON-RPC 2.0 error codes.
+#[derive(Debug, Error)]
+pub enum McpError {
+    #[error("{0}")]
+    ParseError(String),
+    #[error("{0}")]
+    InvalidRequest(String),
+    #[error("{0}")]
+    MethodNotFound(String),
+    #[error("{0}")]
+    InvalidParams(String),
+    #[error("{0}")]
+    InternalError(String),
+}
+
+impl McpError {
+    pub fn parse_error(msg: impl Into<String>) -> Self {
+        Self::ParseError(msg.into())
+    }
+
+    pub fn invalid_request(msg: impl Into<String>) -> Self {
+        Self::InvalidRequest(msg.into())
+    }
+
+    pub fn method_not_found(msg: impl Into<String>) -> Self {
+        Self::MethodNotFound(msg.into())
+    }
+
+    pub fn invalid_params(msg: impl Into<String>) -> Self {
+        Self::InvalidParams(msg.into())
+    }
+
+    pub fn internal_error(msg: impl Into<String>) -> Self {
+        Self::InternalError(msg.into())
+    }
+
+    pub fn code(&self) -> i32 {
+        match self {
+            Self::ParseError(_) => -32700,
+            Self::InvalidRequest(_) => -32600,
+            Self::MethodNotFound(_) => -32601,
+            Self::InvalidParams(_) => -32602,
+            Self::InternalError(_) => -32603,
+        }
+    }
+}
+
+impl From<memfuse_core::MemFuseError> for McpError {
+    fn from(err: memfuse_core::MemFuseError) -> Self {
+        match err {
+            memfuse_core::MemFuseError::InvalidInput(msg) => Self::invalid_params(msg),
+            memfuse_core::MemFuseError::NotFound(msg) => Self::invalid_params(msg),
+            memfuse_core::MemFuseError::NamespaceViolation(msg) => Self::invalid_params(msg),
+            other => Self::internal_error(other.to_string()),
+        }
+    }
+}
+
+impl From<String> for McpError {
+    fn from(msg: String) -> Self {
+        Self::invalid_params(msg)
+    }
+}
+
+impl From<&str> for McpError {
+    fn from(msg: &str) -> Self {
+        Self::invalid_params(msg.to_string())
+    }
+}
 
 /// Eingehende JSON-RPC 2.0 Nachricht (Request oder Notification).
 #[derive(Debug, Serialize, Deserialize)]
@@ -58,5 +129,10 @@ impl JsonRpcResponse {
                 data: None,
             }),
         }
+    }
+
+    /// Convert an McpError directly into a JsonRpcResponse.
+    pub fn from_error(id: Option<Value>, err: McpError) -> Self {
+        Self::err(id, err.code(), err.to_string())
     }
 }
