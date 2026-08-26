@@ -408,9 +408,14 @@ impl CsrGraph {
         // 3. CSR kompaktieren — MUSS nach allen Edges aufgerufen werden
         graph.compact();
 
+        if let Ok(last_tx) = storage.last_tx_id().await {
+            graph.last_tx_id.fetch_max(last_tx.inner(), Ordering::SeqCst);
+        }
+
         tracing::info!(
             entities = entity_count,
             edges = edge_count,
+            last_tx = graph.last_tx_id.load(Ordering::SeqCst),
             "Graph aus Storage geladen und kompaktiert"
         );
         Ok(graph)
@@ -570,6 +575,16 @@ impl CsrGraph {
     /// Returns the number of committed entities in the graph.
     pub fn entity_count(&self) -> usize {
         self.inner.read().entities.iter().flatten().count()
+    }
+
+    /// Checks if a committed entity exists in the graph.
+    pub fn entity_exists(&self, id: EntityId) -> bool {
+        let inner = self.inner.read();
+        if let Some(&idx) = inner.id_map.get(&id) {
+            inner.entities.get(idx).is_some_and(|e| e.is_some())
+        } else {
+            false
+        }
     }
 
     /// Returns the number of edges in the graph.
