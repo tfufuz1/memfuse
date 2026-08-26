@@ -1,6 +1,5 @@
 use futures_util::StreamExt;
 use memfuse_core::{MemFuseError, Result};
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -8,6 +7,8 @@ use std::time::Duration;
 pub const DEFAULT_BASE_URL: &str = "http://localhost:11434";
 /// Standard embedding model for SME usage (multilingual support for German)
 pub const DEFAULT_EMBED_MODEL: &str = "nomic-embed-text";
+/// Default maximum retry attempts for transient errors
+pub const MAX_RETRIES: u32 = 3;
 
 /// Configuration options for the Ollama HTTP client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,7 +32,7 @@ impl Default for OllamaConfig {
             model: DEFAULT_EMBED_MODEL.to_string(),
             request_timeout: Duration::from_secs(30),
             connect_timeout: Duration::from_secs(5),
-            max_retries: 3,
+            max_retries: MAX_RETRIES,
         }
     }
 }
@@ -151,6 +152,11 @@ pub fn validate_model_name(name: &str) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+/// Helper to check if a reqwest error is a transient network error (timeout or connection error).
+pub fn is_transient_network_error(err: &reqwest::Error) -> bool {
+    err.is_timeout() || err.is_connect()
 }
 
 /// Helper to classify transient network errors for retry.
@@ -280,12 +286,14 @@ impl OllamaClient {
             }
         }
 
-        // Fallback: sequentiell mit bestehender retry-fähiger embed()
-        let mut results = Vec::with_capacity(texts.len());
-        for text in texts {
-            results.push(self.embed(model, text).await?);
+        // Fallback: parallel using join_all to preserve input ordering
+        let futures = texts.iter().map(|text| self.embed(model, text));
+        let results = futures_util::future::join_all(futures).await;
+        let mut embeddings = Vec::with_capacity(texts.len());
+        for res in results {
+            embeddings.push(res?);
         }
-        Ok(results)
+        Ok(embeddings)
     }
 
     pub async fn try_embed_batch(&self, model: &str, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
@@ -306,7 +314,7 @@ impl OllamaClient {
             .send()
             .await
             .map_err(|e| {
-                if e.is_timeout() || e.is_connect() {
+                if is_transient_network_error(&e) {
                     MemFuseError::Io(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
                         format!("Batch embed request network error: {e}"),
@@ -412,9 +420,8 @@ impl OllamaClient {
     /// Generates vector embedding with retry logic for transient failures.
     ///
     /// Retries up to `max_retries` (default: 3) times with exponential backoff
-    /// (base 500ms * 2^attempt) and 0..100ms jitter (500ms+jitter, 1000ms+jitter, 2000ms+jitter).
+    /// (100ms * 2^attempt) and 0..100ms jitter, capped at 5 seconds.
     ///
-    /// Maximum total wait time for 3 retries: ~3.5s to 3.8s max.
     /// Retries only on transient network failures or 5xx HTTP status codes.
     /// Client errors (4xx) are returned immediately without retry.
     pub async fn embed(&self, model: &str, text: &str) -> Result<Vec<f32>> {
@@ -426,20 +433,20 @@ impl OllamaClient {
             match self.try_embed(model, text).await {
                 Ok(v) => return Ok(v),
                 Err(e) if is_transient_error(&e) => {
+                    last_err = Some(e);
                     if attempt + 1 < max_retries {
-                        let jitter_ms = rand::thread_rng().gen_range(0..100);
-                        let base_ms = 500u64 * (1u64 << attempt);
-                        let backoff_ms = base_ms + jitter_ms;
+                        let base_delay = Duration::from_millis(100 * 2u64.pow(attempt));
+                        let jitter = Duration::from_millis(rand::random::<u64>() % 100);
+                        let delay = (base_delay + jitter).min(Duration::from_secs(5));
                         tracing::warn!(
                             attempt = attempt + 1,
                             max = max_retries,
-                            backoff_ms = backoff_ms,
-                            "Ollama embed transient network error, retrying: {e}"
+                            delay_ms = delay.as_millis(),
+                            "Ollama embed transient network error, retrying: {}",
+                            last_err.as_ref().unwrap()
                         );
-                        let delay = Duration::from_millis(backoff_ms);
                         tokio::time::sleep(delay).await;
                     }
-                    last_err = Some(e);
                 }
                 Err(e) => return Err(e),
             }
@@ -470,7 +477,7 @@ impl OllamaClient {
             .send()
             .await
             .map_err(|e| {
-                if e.is_timeout() || e.is_connect() {
+                if is_transient_network_error(&e) {
                     MemFuseError::Io(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
                         format!("Ollama connection network error at {}: {e}", self.base_url()),
@@ -489,7 +496,8 @@ impl OllamaClient {
                 .text()
                 .await
                 .unwrap_or_else(|_| "<body unreadable>".into());
-            if status == reqwest::StatusCode::NOT_FOUND || body.to_lowercase().contains("not found") {
+            let lower = body.to_lowercase();
+            if lower.contains("model") && lower.contains("not found") || status == reqwest::StatusCode::NOT_FOUND {
                 return Err(MemFuseError::NotFound(format!(
                     "Ollama model '{model}' not found. Run: ollama pull {model}"
                 )));
@@ -1061,6 +1069,99 @@ mod tests {
             }
             _ => panic!("Expected MemFuseError::NotFound, got {:?}", err),
         }
+    }
+
+    #[tokio::test]
+    async fn test_is_transient_network_error() {
+        // Connect to a dead port to generate a reqwest connection error
+        let err = reqwest::Client::new()
+            .get("http://127.0.0.1:1")
+            .timeout(Duration::from_millis(100))
+            .send()
+            .await
+            .unwrap_err();
+        assert!(is_transient_network_error(&err));
+    }
+
+    #[tokio::test]
+    async fn test_max_retries_exhaustion() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+        let attempts = Arc::new(AtomicU32::new(0));
+        let attempts_clone = attempts.clone();
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                attempts_clone.fetch_add(1, Ordering::SeqCst);
+                let response = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 11\r\n\r\nUnavailable";
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        let res = client.embed("nomic-embed-text", "hello").await;
+        assert!(res.is_err());
+        // Max retries is MAX_RETRIES (3)
+        assert_eq!(attempts.load(Ordering::SeqCst), MAX_RETRIES);
+    }
+
+    #[tokio::test]
+    async fn test_embed_batch_fallback_preserves_order() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 2048];
+                let n = socket.read(&mut buf).await.unwrap_or(0);
+                let req_str = String::from_utf8_lossy(&buf[..n]);
+
+                if req_str.starts_with("POST /api/embed ") {
+                    let body = r#"{"error":"batch endpoint disabled"}"#;
+                    let response = format!(
+                        "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    socket.write_all(response.as_bytes()).await.ok();
+                } else if req_str.starts_with("POST /api/embeddings ") {
+                    let val = if req_str.contains("text1") {
+                        1.0
+                    } else if req_str.contains("text2") {
+                        2.0
+                    } else {
+                        3.0
+                    };
+                    let body = serde_json::json!({ "embedding": [val] }).to_string();
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    socket.write_all(response.as_bytes()).await.ok();
+                }
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        let res = client
+            .embed_batch("nomic-embed-text", &["text1", "text2", "text3"])
+            .await
+            .unwrap();
+
+        assert_eq!(res.len(), 3);
+        assert_eq!(res[0], vec![1.0]);
+        assert_eq!(res[1], vec![2.0]);
+        assert_eq!(res[2], vec![3.0]);
     }
 
     #[tokio::test]
