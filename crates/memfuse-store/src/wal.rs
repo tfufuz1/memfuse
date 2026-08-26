@@ -123,10 +123,10 @@ impl WalEntry {
         let mut buf = Vec::with_capacity(total_size);
 
         // 1. Length Prefix
-        if total_payload_size > u32::MAX as usize {
+        if total_payload_size > MAX_WAL_ENTRY_SIZE as usize {
             return Err(MemFuseError::Serialization(format!(
-                "WAL entry too large: {} bytes",
-                total_payload_size
+                "WAL entry too large: {} bytes (max {})",
+                total_payload_size, MAX_WAL_ENTRY_SIZE
             )));
         }
         buf.extend_from_slice(&(total_payload_size as u32).to_le_bytes());
@@ -300,6 +300,9 @@ impl std::fmt::Debug for Wal {
 /// Maximum WAL size before triggering a flush (128MB).
 pub const MAX_WAL_SIZE: u64 = 128 * 1024 * 1024;
 
+/// Maximum size for a single WAL entry payload (64MB).
+pub const MAX_WAL_ENTRY_SIZE: u32 = 64 * 1024 * 1024;
+
 impl Wal {
     /// Opens or creates a WAL file.
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
@@ -342,20 +345,19 @@ impl Wal {
         if is_new {
             file.sync_all()
                 .await
-                .map_err(|e| MemFuseError::Storage(format!("WAL fsync: {e}")))?;
-            if let Some(parent) = path.parent() {
-                let parent = if parent.as_os_str().is_empty() {
-                    Path::new(".")
-                } else {
-                    parent
-                };
-                let dir = tokio::fs::File::open(parent)
-                    .await
-                    .map_err(|e| MemFuseError::Storage(format!("WAL dir open failed: {e}")))?;
-                dir.sync_all()
-                    .await
-                    .map_err(|e| MemFuseError::Storage(format!("WAL dir fsync failed: {e}")))?;
-            }
+                .map_err(|e| MemFuseError::Storage(format!("WAL file fsync failed for {}: {}", path.display(), e)))?;
+            let parent = path.parent().unwrap_or_else(|| Path::new(""));
+            let dir_path = if parent.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                parent
+            };
+            let dir = tokio::fs::File::open(dir_path)
+                .await
+                .map_err(|e| MemFuseError::Storage(format!("WAL dir open failed for {}: {}", dir_path.display(), e)))?;
+            dir.sync_all()
+                .await
+                .map_err(|e| MemFuseError::Storage(format!("WAL dir fsync failed for {}: {}", dir_path.display(), e)))?;
         }
 
         let metadata = file
@@ -431,24 +433,26 @@ impl Wal {
             }
 
             // FSync parent directory to persist directory entry
-            if let Some(parent) = key_path.parent() {
-                // fsync propagiert korrekt (behoben 2026-08-24)
-                let parent = if parent.as_os_str().is_empty() {
-                    Path::new(".")
-                } else {
-                    parent
-                };
-                let dir = tokio::fs::File::open(parent).await.map_err(|e| {
-                    MemFuseError::Storage(format!(
-                        "Verzeichnis für fsync konnte nicht geöffnet werden: {e}"
-                    ))
-                })?;
-                dir.sync_all().await.map_err(|e| {
-                    MemFuseError::Storage(format!(
-                        "Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}"
-                    ))
-                })?;
-            }
+            let parent = key_path.parent().unwrap_or_else(|| Path::new(""));
+            let dir_path = if parent.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                parent
+            };
+            let dir = tokio::fs::File::open(dir_path).await.map_err(|e| {
+                MemFuseError::Storage(format!(
+                    "WAL integrity key dir open failed for {}: {}",
+                    dir_path.display(),
+                    e
+                ))
+            })?;
+            dir.sync_all().await.map_err(|e| {
+                MemFuseError::Storage(format!(
+                    "WAL integrity key dir fsync failed for {}: {}",
+                    dir_path.display(),
+                    e
+                ))
+            })?;
 
             Ok(key)
         }
@@ -488,24 +492,26 @@ impl Wal {
             })?;
 
             // FIND-STO-004: FSync parent directory to persist the new directory entry
-            if let Some(parent) = uuid_path.parent() {
-                // fsync propagiert korrekt (behoben 2026-08-24)
-                let parent = if parent.as_os_str().is_empty() {
-                    Path::new(".")
-                } else {
-                    parent
-                };
-                let dir = tokio::fs::File::open(parent).await.map_err(|e| {
-                    MemFuseError::Storage(format!(
-                        "Verzeichnis für fsync konnte nicht geöffnet werden: {e}"
-                    ))
-                })?;
-                dir.sync_all().await.map_err(|e| {
-                    MemFuseError::Storage(format!(
-                        "Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}"
-                    ))
-                })?;
-            }
+            let parent = uuid_path.parent().unwrap_or_else(|| Path::new(""));
+            let dir_path = if parent.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                parent
+            };
+            let dir = tokio::fs::File::open(dir_path).await.map_err(|e| {
+                MemFuseError::Storage(format!(
+                    "WAL UUID dir open failed for {}: {}",
+                    dir_path.display(),
+                    e
+                ))
+            })?;
+            dir.sync_all().await.map_err(|e| {
+                MemFuseError::Storage(format!(
+                    "WAL UUID dir fsync failed for {}: {}",
+                    dir_path.display(),
+                    e
+                ))
+            })?;
 
             Ok(bytes)
         }
@@ -546,13 +552,13 @@ impl Wal {
         let mut file = self.file.lock().await;
         file.write_all(&total_bytes)
             .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL batch write failed: {}", e)))?;
+            .map_err(|e| MemFuseError::Storage(format!("WAL batch write failed for {}: {}", self.path.display(), e)))?;
         file.flush()
             .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL batch flush failed: {}", e)))?;
+            .map_err(|e| MemFuseError::Storage(format!("WAL batch flush failed for {}: {}", self.path.display(), e)))?;
         file.sync_all()
             .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL batch fsync failed: {}", e)))?;
+            .map_err(|e| MemFuseError::Storage(format!("WAL batch fsync failed for {}: {}", self.path.display(), e)))?;
 
         self.size.fetch_add(
             total_bytes.len() as u64,
@@ -644,7 +650,7 @@ impl Wal {
             };
             let len = u32::from_le_bytes(len_bytes) as usize;
 
-            if len > 128 * 1024 * 1024 {
+            if len > MAX_WAL_ENTRY_SIZE as usize {
                 if pos + 4 + len as u64 > file_size {
                     // STO-001: Massive Fehl-Länge am Anfang ist Korruption, am Ende (Tail) ignorable.
                     if entries.is_empty() && file_size > 64 {
@@ -1359,5 +1365,122 @@ mod tests {
         } else {
             panic!("Wrong op type");
         }
+    }
+
+    #[tokio::test]
+    async fn test_wal_crash_consistency_write_without_fsync() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("crash_sim.wal");
+
+        // 1. Open WAL and append an entry
+        {
+            let wal = Wal::open(&wal_path).await.expect("open wal");
+            let op = WalOp::Put {
+                tx_id: TxId::new(100),
+                key: b"crash_k".to_vec(),
+                value: b"crash_v".to_vec(),
+            };
+            let entry = wal.create_entry(op, 1).await.expect("create entry");
+
+            // Manually simulate a write + flush to OS buffer WITHOUT file.sync_all()
+            let mut file = tokio::fs::OpenOptions::new()
+                .append(true)
+                .open(&wal_path)
+                .await
+                .expect("open for append");
+            let bytes = entry.to_bytes().expect("to_bytes");
+            file.write_all(&bytes).await.expect("write_all");
+            file.flush().await.expect("flush");
+            // File dropped without calling sync_all() (simulating crash before fsync)
+            drop(file);
+            drop(wal);
+        }
+
+        // 2. Re-open WAL and replay
+        let wal_reopen = Wal::open(&wal_path).await;
+        assert!(wal_reopen.is_ok(), "WAL open after crash should succeed");
+        let wal = wal_reopen.unwrap();
+
+        let replay_result = wal.replay().await;
+        match replay_result {
+            Ok(entries) => {
+                // Should either find the entry or empty set, never panic
+                if !entries.is_empty() {
+                    assert_eq!(entries.len(), 1);
+                    assert_eq!(entries[0].1.seq_no, 1);
+                }
+            }
+            Err(e) => {
+                panic!("replay() failed unexpectedly with error: {:?}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_append_batch_partial_write_atomicity() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("partial_batch.wal");
+
+        let wal = Wal::open(&wal_path).await.expect("open wal");
+        let ops = vec![
+            (
+                WalOp::Put {
+                    tx_id: TxId::new(1),
+                    key: b"b1".to_vec(),
+                    value: b"v1".to_vec(),
+                },
+                1,
+            ),
+            (
+                WalOp::Put {
+                    tx_id: TxId::new(1),
+                    key: b"b2".to_vec(),
+                    value: b"v2".to_vec(),
+                },
+                2,
+            ),
+            (
+                WalOp::Put {
+                    tx_id: TxId::new(1),
+                    key: b"b3".to_vec(),
+                    value: b"v3".to_vec(),
+                },
+                3,
+            ),
+        ];
+
+        let entries = wal.prepare_batch(ops).await.expect("prepare_batch");
+        assert_eq!(entries.len(), 3);
+
+        // Serialize all 3 entries into a single bytes payload
+        let mut batch_bytes = Vec::new();
+        for e in &entries {
+            batch_bytes.extend_from_slice(&e.to_bytes().expect("to_bytes"));
+        }
+
+        // Truncate the batch in the middle of entry 2 (partial write during crash)
+        // Each entry is ~101 bytes. Total ~303 bytes.
+        // Subtracting 120 bytes leaves ~183 bytes, truncating entry 2 mid-write.
+        let truncated_len = batch_bytes.len() - 120;
+        let truncated_bytes = &batch_bytes[..truncated_len];
+
+        // Append the truncated bytes directly to the WAL file
+        {
+            let mut file = tokio::fs::OpenOptions::new()
+                .append(true)
+                .open(&wal_path)
+                .await
+                .expect("open for append");
+            file.write_all(truncated_bytes).await.expect("write_all");
+            file.flush().await.expect("flush");
+        }
+
+        // Reopen and replay
+        let wal2 = Wal::open(&wal_path).await.expect("reopen");
+        let replay_entries = wal2.replay().await.expect("replay must succeed without panic");
+
+        // Replay must recover entry 1 (which was fully written) and cleanly discard the truncated tail
+        assert_eq!(replay_entries.len(), 1, "Only entry 1 should be recovered");
+        assert_eq!(replay_entries[0].1.seq_no, 1);
     }
 }
