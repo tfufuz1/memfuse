@@ -1208,7 +1208,10 @@ mod tests {
         let col_b = db.collection("beta").await.unwrap();
         col_a.insert("doc1", &vec, None).await.unwrap();
         let results = col_b.search(&vec, 10).await.unwrap();
-        assert!(results.is_empty(), "Collection B must not see Collection A's data");
+        assert!(
+            results.is_empty(),
+            "Collection B must not see Collection A's data"
+        );
     }
 
     #[tokio::test]
