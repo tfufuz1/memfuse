@@ -9,7 +9,9 @@
 // ALGORITHMUS: Gruppiere SSTables nach Größenklasse → Merge wenn >= min_sstables_per_tier.
 // TOMBSTONE-GC: Tombstones werden NUR gelöscht wenn seq < min_active_seqno (MVCC-SAFE).
 // ATOMARER SWAP: Merge unter read-lock, SSTable-Liste swap unter write-lock.
-// INVARIANTE: Während Compaction sind alte SSTables noch lesbar (readers halten Arc).
+// INVARIANTE-COMP-1: Merge-Iterator liest alle Kandidaten-SSTables vollständig. Kein Key-Value-Paar geht verloren.
+// INVARIANTE-COMP-2: Tombstone-GC löscht Tombstones nur wenn seq < min_active_snapshot.
+// INVARIANTE-COMP-3: Atomarer SSTable-Swap: Alte SSTables bleiben lesbar (über Arc) bis swap, neue Datei ist vollständig fsynced.
 // LIFECYCLE: run_loop() -> maybe_compact() -> select_candidates() -> merge_sstables()
 //!
 //! Implements a Size-Tiered Compaction Strategy (STCS):
