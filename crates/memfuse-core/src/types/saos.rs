@@ -111,8 +111,7 @@ impl ContextChunk {
     pub fn combined_text_owned(&self) -> String {
         match &self.contextual_prefix {
             Some(prefix) if !prefix.is_empty() => {
-                let mut combined =
-                    String::with_capacity(prefix.len() + 2 + self.content.len());
+                let mut combined = String::with_capacity(prefix.len() + 2 + self.content.len());
                 combined.push_str(prefix);
                 combined.push_str("\n\n");
                 combined.push_str(&self.content);
@@ -133,7 +132,9 @@ impl ContextChunk {
 
     /// Gibt true zurück wenn contextual_prefix gesetzt und nicht leer.
     pub fn has_context_prefix(&self) -> bool {
-        self.contextual_prefix.as_deref().is_some_and(|p| !p.is_empty())
+        self.contextual_prefix
+            .as_deref()
+            .is_some_and(|p| !p.is_empty())
     }
 }
 
@@ -409,7 +410,10 @@ mod tests {
             metadata: None,
             contextual_prefix: Some("Dokument Kontext".to_string()),
         };
-        assert_eq!(chunk.combined_text_owned(), "Dokument Kontext\n\nRaw content");
+        assert_eq!(
+            chunk.combined_text_owned(),
+            "Dokument Kontext\n\nRaw content"
+        );
         assert!(chunk.has_context_prefix());
     }
 

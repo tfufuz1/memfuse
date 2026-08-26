@@ -493,9 +493,7 @@ impl OllamaClient {
         body["message"]["content"]
             .as_str()
             .map(|s| s.trim().to_string())
-            .ok_or_else(|| {
-                MemFuseError::Internal("Ollama response missing message.content".into())
-            })
+            .ok_or_else(|| MemFuseError::Internal("Ollama response missing message.content".into()))
     }
 
     /// Generates non-streaming text completion via POST /api/generate.
@@ -816,7 +814,10 @@ mod tests {
         });
 
         let client = OllamaClient::new(server_url);
-        let text = client.generate_text("llama3.2", "Test prompt").await.unwrap();
+        let text = client
+            .generate_text("llama3.2", "Test prompt")
+            .await
+            .unwrap();
         assert_eq!(text, "Generierter Kontext-Präfix");
     }
 
