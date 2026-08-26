@@ -55,9 +55,12 @@ pub mod collection;
 pub mod context;
 
 #[cfg(feature = "sandbox")]
-use async_trait::async_trait;
-#[cfg(feature = "sandbox")]
-use memfuse_sandbox::SandboxBridge;
+pub trait SandboxBridge: Send + Sync {
+    fn db_search(&self, query: &[u8], k: usize) -> impl std::future::Future<Output = Result<Vec<u8>>> + Send;
+    fn db_insert(&self, key: &[u8], value: &[u8]) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn db_get(&self, key: &[u8]) -> impl std::future::Future<Output = Result<Option<Vec<u8>>>> + Send;
+}
+
 // mod Collection is used via pub mod collection
 pub mod filter;
 pub mod fusion;
@@ -137,7 +140,7 @@ pub struct MemFuse {
     storage: Arc<LsmStorage>,
     next_tx: Arc<AtomicU64>,
     dimension: usize,
-    collections: tokio::sync::RwLock<std::collections::HashMap<String, Collection<LsmStorage>>>,
+    collections: tokio::sync::RwLock<std::collections::HashMap<String, Arc<Collection<LsmStorage>>>>,
     /// Optional Raft handle for cluster replication.
     #[cfg(feature = "cluster")]
     raft: tokio::sync::OnceCell<memfuse_cluster::node::MemFuseRaft>,
@@ -156,6 +159,17 @@ impl MemFuse {
     /// Opens or creates a MemFuse database with custom configuration.
     #[tracing::instrument(level = "trace", skip(path, config))]
     pub async fn open_with_config(path: impl AsRef<Path>, config: MemFuseConfig) -> Result<Self> {
+        if config.dimension == 0 {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "dimension must be > 0",
+            ));
+        }
+        if config.dimension > 65536 {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "dimension exceeds maximum",
+            ));
+        }
+
         let lsm_config = memfuse_store::LsmConfig {
             path: path.as_ref().to_path_buf(),
             encryption_passphrase: config.encryption_passphrase.clone(),
@@ -343,7 +357,7 @@ impl MemFuse {
     /// Returns a specific collection (namespace).
     /// Creates the collection if it does not already exist.
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn collection(&self, name: &str) -> Result<Collection<LsmStorage>> {
+    pub async fn collection(&self, name: &str) -> Result<Arc<Collection<LsmStorage>>> {
         // Validation
         if name.len() > 64 {
             return Err(memfuse_core::MemFuseError::invalid_input(
@@ -361,13 +375,13 @@ impl MemFuse {
 
         let read_guard = self.collections.read().await;
         if let Some(col) = read_guard.get(name) {
-            return Ok(col.clone());
+            return Ok(Arc::clone(col));
         }
         drop(read_guard);
 
         let mut write_guard = self.collections.write().await;
         if let Some(col) = write_guard.get(name) {
-            return Ok(col.clone());
+            return Ok(Arc::clone(col));
         }
 
         let hnsw_config = HnswConfig {
@@ -407,15 +421,20 @@ impl MemFuse {
         col.load_index().await?;
         col.load_text_stats().await?;
 
-        write_guard.insert(name.to_string(), col.clone());
+        let col_arc = Arc::new(col);
+        write_guard.insert(name.to_string(), Arc::clone(&col_arc));
 
-        Ok(col)
+        Ok(col_arc)
     }
 
     /// Allokiert eine eindeutige, atomar inkrementierte Transaction-ID.
     /// EINZIGE legale TxId-Quelle für externe Crates (verhindert Kollisionen).
     pub fn allocate_tx(&self) -> TxId {
-        TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst))
+        let id = self.next_tx.fetch_add(1, Ordering::SeqCst);
+        if id >= TxId::INTERNAL_BASE {
+            panic!("TxId counter exhausted — INTERNAL_BASE range collision");
+        }
+        TxId::new(id)
     }
 
     /// Lists all existing collection names (including those persisted in storage).
@@ -483,7 +502,7 @@ impl MemFuse {
 
     // --- Legacy Backwards Compatibility Methods (Wraps "default" collection) ---
 
-    async fn default_col(&self) -> Result<Collection<LsmStorage>> {
+    async fn default_col(&self) -> Result<Arc<Collection<LsmStorage>>> {
         self.collection("default").await
     }
 
@@ -827,8 +846,8 @@ impl MemFuse {
             let mut guard = self.embedder.write();
             *guard = Some(Arc::clone(&embedder));
         }
-        let mut cols = self.collections.write().await;
-        if let Some(col) = cols.get_mut("default") {
+        let cols = self.collections.read().await;
+        if let Some(col) = cols.get("default") {
             *col.embedder.write() = Some(embedder);
         }
         drop(cols);
@@ -843,8 +862,8 @@ impl MemFuse {
             let mut guard = self.embedder.write();
             *guard = Some(Arc::clone(&embedder));
         }
-        let mut collections_write = self.collections.write().await;
-        if let Some(col) = collections_write.get_mut("default") {
+        let collections_read = self.collections.read().await;
+        if let Some(col) = collections_read.get("default") {
             let mut guard = col.embedder.write();
             *guard = Some(embedder);
         }
@@ -866,7 +885,6 @@ impl MemFuse {
 }
 
 #[cfg(feature = "sandbox")]
-#[async_trait]
 impl SandboxBridge for MemFuse {
     async fn db_search(&self, query: &[u8], k: usize) -> Result<Vec<u8>> {
         // Assume query is a binary f32 array (little endian)
@@ -915,6 +933,7 @@ impl SandboxBridge for MemFuse {
         }
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -1198,6 +1217,48 @@ mod tests {
     }
 
     #[tokio::test]
+    #[should_panic(expected = "TxId counter exhausted — INTERNAL_BASE range collision")]
+    async fn test_allocate_tx_exhaustion_panics() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(tmp.path(), config)
+            .await
+            .expect("open db");
+        db.next_tx.store(TxId::INTERNAL_BASE, Ordering::SeqCst);
+        let _ = db.allocate_tx();
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_collection_idempotency() {
+        let (db, _tmp) = test_db(4).await;
+        let db = Arc::new(db);
+        let mut handles = Vec::new();
+
+        for _ in 0..10 {
+            let db_clone = db.clone();
+            handles.push(tokio::spawn(async move {
+                db_clone.collection("c").await.expect("collection c")
+            }));
+        }
+
+        let mut cols = Vec::new();
+        for handle in handles {
+            cols.push(handle.await.expect("join handle"));
+        }
+
+        let first = &cols[0];
+        for col in &cols[1..] {
+            assert!(
+                Arc::ptr_eq(first, col),
+                "collection(\"c\") must return the exact same Arc instance"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn collections_are_isolated() {
         let (db, _tmp) = test_db(4).await;
         let vec = vec![1.0, 0.0, 0.0, 0.0];
@@ -1239,6 +1300,45 @@ mod tests {
         assert_eq!(search_a.len(), 1);
         assert_eq!(search_a[0].id, "k1");
         assert_eq!(search_a[0].metadata.as_ref().expect("test")["val"], "a");
+    }
+
+    #[tokio::test]
+    async fn test_close_and_reopen_100_docs() {
+        let tmp = TempDir::new().expect("temp dir");
+        let path = tmp.path().to_path_buf();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+
+        {
+            let db = MemFuse::open_with_config(&path, config.clone())
+                .await
+                .expect("open 1");
+            for i in 0..100 {
+                let id = format!("doc-{}", i);
+                let val = (i as f32) / 100.0;
+                db.insert(&id, &[val, 1.0 - val, 0.0, 0.0], Some(json!({"idx": i})))
+                    .await
+                    .expect("insert");
+            }
+            db.close().await.expect("close");
+        }
+
+        {
+            let db = MemFuse::open_with_config(&path, config)
+                .await
+                .expect("open 2");
+            assert_eq!(db.len().await.expect("len"), 100);
+            for i in 0..100 {
+                let id = format!("doc-{}", i);
+                let doc = db.get(&id).await.expect("get").expect("exists");
+                assert_eq!(doc.id, id);
+                assert_eq!(doc.metadata.expect("valid")["idx"], i);
+            }
+            let results = db.search(&[0.5, 0.5, 0.0, 0.0], 10).await.expect("search");
+            assert_eq!(results.len(), 10);
+        }
     }
 
     #[tokio::test]
