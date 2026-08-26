@@ -1,4 +1,6 @@
 pub mod protocol;
+#[cfg(test)]
+mod tests;
 
 use memfuse_core::{DocId, TextEmbeddingEngine, MAX_SEARCH_K};
 use memfuse_db::chunker::{ChunkerConfig, MarkdownChunker};
@@ -49,8 +51,18 @@ impl McpServer {
                 continue;
             }
 
-            let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-                Ok(req) => self.handle(req).await,
+            let response = match serde_json::from_str::<Value>(trimmed) {
+                Ok(val) => {
+                    let req_id = val.get("id").cloned();
+                    match serde_json::from_value::<JsonRpcRequest>(val) {
+                        Ok(req) => self.handle(req).await,
+                        Err(e) => JsonRpcResponse::err(
+                            req_id,
+                            -32600,
+                            format!("Invalid Request: {e}"),
+                        ),
+                    }
+                }
                 Err(e) => JsonRpcResponse::err(None, -32700, format!("Parse error: {e}")),
             };
 
@@ -65,6 +77,13 @@ impl McpServer {
 
     pub async fn handle(&self, req: JsonRpcRequest) -> JsonRpcResponse {
         let id = req.id.clone();
+        if req.jsonrpc != "2.0" {
+            return JsonRpcResponse::err(
+                id,
+                -32600,
+                format!("Invalid Request: jsonrpc version must be '2.0', got '{}'", req.jsonrpc),
+            );
+        }
         match req.method.as_str() {
             // ── Lifecycle ──────────────────────────────────────────────────────
             "initialize" => JsonRpcResponse::ok(
@@ -137,11 +156,16 @@ impl McpServer {
 
             // ── Tool-Dispatch ──────────────────────────────────────────────────
             "tools/call" => {
-                let tool_name = req
-                    .params
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let tool_name = match req.params.get("name").and_then(|v| v.as_str()) {
+                    Some(name) if !name.is_empty() => name,
+                    _ => {
+                        return JsonRpcResponse::err(
+                            id,
+                            -32602,
+                            "Invalid params: missing or empty tool 'name'",
+                        );
+                    }
+                };
                 let args = req.params.get("arguments").cloned().unwrap_or_default();
 
                 match self.call_tool(tool_name, &args).await {
@@ -176,13 +200,25 @@ impl McpServer {
                     .get("query")
                     .and_then(|v| v.as_str())
                     .ok_or("query fehlt")?;
-                let col_name = args
+                let col_raw = args
                     .get("collection")
                     .and_then(|v| v.as_str())
                     .unwrap_or("default");
+                let col_name = if col_raw.trim().is_empty() {
+                    "default"
+                } else {
+                    col_raw
+                };
                 validate_collection_name(col_name)?;
 
-                let k_raw = args.get("k").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+                let k_val = args.get("k").or_else(|| args.get("limit"));
+                let k_raw = match k_val {
+                    Some(Value::Number(n)) => {
+                        n.as_u64().ok_or("k/limit muss eine positive Ganzzahl sein")? as usize
+                    }
+                    Some(_) => return Err("k/limit muss eine Zahl sein".to_string()),
+                    None => 10,
+                };
                 let k = k_raw.min(MAX_SEARCH_K);
                 if k_raw > MAX_SEARCH_K {
                     tracing::warn!(
@@ -230,10 +266,15 @@ impl McpServer {
                     return Err("id cannot be empty".to_string());
                 }
 
-                let col_name = args
+                let col_raw = args
                     .get("collection")
                     .and_then(|v| v.as_str())
                     .unwrap_or("default");
+                let col_name = if col_raw.trim().is_empty() {
+                    "default"
+                } else {
+                    col_raw
+                };
                 validate_collection_name(col_name)?;
 
                 let base_metadata = args
@@ -318,10 +359,15 @@ impl McpServer {
                 if id.is_empty() {
                     return Err("id cannot be empty".to_string());
                 }
-                let col_name = args
+                let col_raw = args
                     .get("collection")
                     .and_then(|v| v.as_str())
                     .unwrap_or("default");
+                let col_name = if col_raw.trim().is_empty() {
+                    "default"
+                } else {
+                    col_raw
+                };
                 validate_collection_name(col_name)?;
 
                 let col = self
