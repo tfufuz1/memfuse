@@ -5,7 +5,6 @@
 // NICHT-OFFENSICHTLICH: Compaction-Lock muss VOR MemTable-Lock genommen werden (Deadlock-Gefahr)
 // SIEHE AUCH: wal.rs, sstable.rs, DECISIONS.md ADR-003
 
-// TODO: Missing module documentation
 // INVARIANT: Zentraler Storage-Engine-Orchestrator des Triebwerks.
 // IMPLEMENTS: StorageEngine Trait (memfuse-core/src/traits.rs)
 // READ-PATH:  get() → Active MemTable → Immutable MemTables → SSTables (newest first)
@@ -34,11 +33,23 @@
 //! 1. Check the active MemTable.
 //! 2. Check immutable MemTables (from newest to oldest).
 //! 3. Check SSTables (from newest to oldest).
+//!    Newer sequence numbers shadow older ones for the same key.
 //!
 //! ## Write Path
 //! 1. Operations are staged in the `TxBuffer`.
-//! 2. On `commit()`, operations are assigned sequence numbers, written to the WAL,
-//!    and then applied to the active MemTable.
+//! 2. On `commit()`, operations acquire `commit_mutex` to serialize sequence assignment,
+//!    are written to the WAL (with fsync durability), and applied to the active MemTable.
+//! 3. When the MemTable exceeds `memtable_size_limit`, it rotates to an immutable MemTable
+//!    and is flushed asynchronously to a new SSTable file on disk.
+//!
+//! ## Compaction
+//! Compaction runs as a background task. When the number of SSTables in a tier exceeds
+//! configured thresholds, compaction merges multiple SSTables into a single new SSTable,
+//! deduplicating key versions and garbage-collecting tombstones not pinned by active snapshots.
+//!
+//! ## `commit_mutex` Role
+//! `commit_mutex` serializes commits, ensuring that sequence number allocation, WAL logging,
+//! and MemTable updates are strictly atomic and sequential, preventing snapshot inversion.
 
 use crate::compaction::{CompactionConfig, CompactionEngine};
 use crate::memtable::MemTable;
@@ -367,6 +378,13 @@ impl LsmStorage {
     pub async fn wait_shutdown(&self) {
         self.shutdown();
         self.task_tracker.wait().await;
+    }
+
+    /// Gracefully closes the storage engine, stopping background tasks and flushing active memtable to disk.
+    pub async fn close(&self) -> Result<()> {
+        self.wait_shutdown().await;
+        self.flush().await?;
+        Ok(())
     }
 
     /// Spawns a background task tracked by this storage instance.
@@ -814,13 +832,8 @@ impl StorageEngine for LsmStorage {
             return Ok(());
         }
 
-        let now_micros = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| MemFuseError::Storage(format!("Time error: {}", e)))?
-            .as_micros();
         static FLUSH_COUNTER: AtomicU64 = AtomicU64::new(0);
-        let count = FLUSH_COUNTER.fetch_add(1, Ordering::Relaxed) as u128;
-        let flush_id = (now_micros << 32) | (count & 0xFFFF_FFFF);
+        let flush_id = FLUSH_COUNTER.fetch_add(1, Ordering::SeqCst);
         let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
         let new_wal = Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?;
 
@@ -1686,5 +1699,103 @@ mod tests {
         // Uncommitted doc2 must NOT be visible in scan_prefix_at!
         assert_eq!(scanned.len(), 1);
         assert_eq!(scanned[0].0, b"prefix:doc1");
+    }
+
+    #[tokio::test]
+    async fn test_get_at_seq_mvcc_sequence_correctness() {
+        let (storage, _tmp) = test_storage().await;
+        let key = b"mvcc_key";
+
+        // Seq 1: insert val "a"
+        let tx1 = TxId::new(1);
+        storage.put(tx1, key, b"a").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx1).await.unwrap(); // unwrap #[cfg(test)]
+        let seq1 = storage.last_seq_no().await.unwrap(); // unwrap #[cfg(test)]
+        assert_eq!(seq1, 1);
+
+        // Seq 2: delete key
+        let tx2 = TxId::new(2);
+        storage.delete(tx2, key).await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx2).await.unwrap(); // unwrap #[cfg(test)]
+        let seq2 = storage.last_seq_no().await.unwrap(); // unwrap #[cfg(test)]
+        assert_eq!(seq2, 2);
+
+        // Seq 3: insert val "b"
+        let tx3 = TxId::new(3);
+        storage.put(tx3, key, b"b").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx3).await.unwrap(); // unwrap #[cfg(test)]
+        let seq3 = storage.last_seq_no().await.unwrap(); // unwrap #[cfg(test)]
+        assert_eq!(seq3, 3);
+
+        // get_at_seq(key, 0) -> None
+        let val_seq0 = storage.get_at_seq(key, 0).await.unwrap(); // unwrap #[cfg(test)]
+        assert_eq!(val_seq0, None, "seq 0 should be before any write");
+
+        // get_at_seq(key, 1) -> Some("a")
+        let val_seq1 = storage.get_at_seq(key, 1).await.unwrap(); // unwrap #[cfg(test)]
+        assert_eq!(val_seq1, Some(b"a".to_vec()));
+
+        // get_at_seq(key, 2) -> None (tombstoned)
+        let val_seq2 = storage.get_at_seq(key, 2).await.unwrap(); // unwrap #[cfg(test)]
+        assert_eq!(val_seq2, None, "seq 2 should return None for tombstone");
+
+        // get_at_seq(key, 3) -> Some("b")
+        let val_seq3 = storage.get_at_seq(key, 3).await.unwrap(); // unwrap #[cfg(test)]
+        assert_eq!(val_seq3, Some(b"b".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn test_scan_prefix_memtable_shadows_sstable() {
+        let (storage, _tmp) = test_storage().await;
+
+        // 1. Put key "pfx:a" = "old" and flush to SSTable
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"pfx:a", b"old").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx1).await.unwrap(); // unwrap #[cfg(test)]
+        storage.force_flush().await.unwrap(); // unwrap #[cfg(test)]
+
+        // Verify it is in SSTable
+        let stats = storage.stats().await.unwrap(); // unwrap #[cfg(test)]
+        assert!(stats.num_segments > 0, "SSTable segment must exist");
+
+        // 2. Put key "pfx:a" = "new" in active MemTable (unflushed)
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"pfx:a", b"new").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx2).await.unwrap(); // unwrap #[cfg(test)]
+
+        // 3. Scan prefix "pfx:" and verify "new" is returned
+        let results = storage.scan_prefix(b"pfx:").await.unwrap(); // unwrap #[cfg(test)]
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, b"pfx:a");
+        assert_eq!(results[0].1, b"new");
+    }
+
+    #[tokio::test]
+    async fn test_close_durability() {
+        let tmp = TempDir::new().unwrap(); // unwrap #[cfg(test)]
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 64,
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+
+        // 1. Open storage, write, commit WITHOUT explicit force_flush(), call close()
+        {
+            let storage = LsmStorage::new(config.clone()).await.unwrap(); // unwrap #[cfg(test)]
+            let tx = TxId::new(1);
+            storage.put(tx, b"close_key", b"close_val").await.unwrap(); // unwrap #[cfg(test)]
+            storage.commit(tx).await.unwrap(); // unwrap #[cfg(test)]
+            storage.close().await.unwrap(); // unwrap #[cfg(test)]
+        }
+
+        // 2. Reopen storage and read key — written data must be present
+        {
+            let storage = LsmStorage::new(config).await.unwrap(); // unwrap #[cfg(test)]
+            let val = storage.get(b"close_key").await.unwrap(); // unwrap #[cfg(test)]
+            assert_eq!(val, Some(b"close_val".to_vec()));
+        }
     }
 }
