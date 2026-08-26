@@ -61,7 +61,14 @@ pub struct BloomFilter {
 }
 
 impl BloomFilter {
-    /// Creates a new Bloom filter for the expected number of elements.
+    /// Creates a new Bloom filter for the expected number of elements and target false positive rate (fpr).
+    ///
+    /// ## FPR Trade-off
+    /// - `fpr = 0.01` (1%) uses ~9.6 bits/element.
+    /// - `fpr = 0.001` (0.1%) uses ~14.4 bits/element.
+    ///
+    /// Note: The default `fpr` used in [`SstableBuilder`] should be documented as a tunable
+    /// parameter and referenced in [`crate::lsm::LsmConfig`] where it should be configurable.
     pub fn new(expected_elements: usize, fpr: f64) -> Self {
         let n = expected_elements.max(1);
         let p = fpr.clamp(0.0001, 0.1);
@@ -111,8 +118,16 @@ impl BloomFilter {
         let hash = blake3::hash(key);
         let bytes = hash.as_bytes();
 
-        let h1 = u64::from_le_bytes(bytes[0..8].try_into().unwrap_or([0u8; 8]));
-        let mut h2 = u64::from_le_bytes(bytes[8..16].try_into().unwrap_or([0u8; 8]));
+        let h1 = u64::from_le_bytes(
+            bytes[0..8]
+                .try_into()
+                .expect("BLAKE3 hash is always >= 16 bytes"),
+        );
+        let mut h2 = u64::from_le_bytes(
+            bytes[8..16]
+                .try_into()
+                .expect("BLAKE3 hash is always >= 16 bytes"),
+        );
 
         // h2 muss ungerade sein für double hashing (verhindert Zyklen)
         h2 |= 1;
@@ -257,6 +272,9 @@ pub struct SstableMetadata {
 }
 
 /// A builder for creating new SSTables.
+///
+/// Note: Uses a whole-SSTable Bloom filter with a default FPR. The Bloom filter FPR should be
+/// treated as a tunable parameter and configured via [`crate::lsm::LsmConfig`].
 pub struct SstableBuilder {
     file: File,
     block_builder: BlockBuilder,
@@ -668,8 +686,11 @@ impl SstableReader {
             )
         } else {
             // Read magic from the very end of 54-byte buffer (which would be the same as end of 52-byte if we read 54)
-            let magic_legacy =
-                u32::from_le_bytes(trailer_data[50..54].try_into().unwrap_or([0; 4]));
+            let magic_legacy = u32::from_le_bytes(
+                trailer_data[50..54]
+                    .try_into()
+                    .map_err(|_| MemFuseError::checksum_mismatch(path_buf.to_string_lossy(), 0))?,
+            );
             if magic_legacy == SSTABLE_MAGIC_LEGACY {
                 // Backward-compatible 12-byte trailer: [index_offset: u64][magic: u32]
                 u64::from_le_bytes(
@@ -1996,5 +2017,88 @@ mod tests {
         let _ = create_block_cache(1); // normal
         let _ = create_block_cache(usize::MAX); // overflow-Test → saturating → cap
         let _ = create_block_cache(usize::MAX / 2); // near-overflow → saturating → cap
+    }
+
+    #[tokio::test]
+    async fn test_block_cache_eviction_under_load() {
+        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
+        let path = tmp.path().join("cache_eviction_test.sst");
+
+        // Create a 1-block cache directly (capacity = 1 block)
+        let cache = Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(1).expect("non-zero")))); // expect #[cfg(test)]
+
+        // Build an SSTable with 3 distinct blocks by inserting large values (>3000 bytes)
+        let mut builder = SstableBuilder::create(&path).await.expect("create"); // expect #[cfg(test)]
+        let val = vec![0xAB; 3000];
+        builder.add(b"key1", &val, 1, 0).await.expect("add key1"); // expect #[cfg(test)]
+        builder.add(b"key2", &val, 2, 0).await.expect("add key2"); // expect #[cfg(test)]
+        builder.add(b"key3", &val, 3, 0).await.expect("add key3"); // expect #[cfg(test)]
+        builder.finish().await.expect("finish"); // expect #[cfg(test)]
+
+        let reader = SstableReader::open(&path, cache.clone())
+            .await
+            .expect("open"); // expect #[cfg(test)]
+
+        assert_eq!(reader.index.len(), 3, "SSTable should have 3 data blocks");
+
+        let offset1 = reader.index[0].1;
+        let offset2 = reader.index[1].1;
+        let offset3 = reader.index[2].1;
+
+        // 1. Read key1 -> populates cache with block 1
+        let res1 = reader.get(b"key1").await.expect("get key1"); // expect #[cfg(test)]
+        assert!(res1.is_some());
+        assert_eq!(cache.read().len(), 1);
+        assert!(cache.read().contains(&(reader.file_id, offset1)));
+
+        // 2. Read key2 -> cache miss, evicts block 1, populates block 2
+        let res2 = reader.get(b"key2").await.expect("get key2"); // expect #[cfg(test)]
+        assert!(res2.is_some());
+        assert_eq!(cache.read().len(), 1);
+        assert!(!cache.read().contains(&(reader.file_id, offset1)));
+        assert!(cache.read().contains(&(reader.file_id, offset2)));
+
+        // 3. Read key3 -> cache miss, evicts block 2, populates block 3
+        let res3 = reader.get(b"key3").await.expect("get key3"); // expect #[cfg(test)]
+        assert!(res3.is_some());
+        assert_eq!(cache.read().len(), 1);
+        assert!(!cache.read().contains(&(reader.file_id, offset1)));
+        assert!(!cache.read().contains(&(reader.file_id, offset2)));
+        assert!(cache.read().contains(&(reader.file_id, offset3)));
+    }
+
+    #[tokio::test]
+    async fn test_sstable_builder_duplicate_keys_coexist() {
+        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
+        let path = tmp.path().join("duplicate_keys.sst");
+        let bc = create_block_cache(1);
+
+        let mut builder = SstableBuilder::create(&path).await.expect("create"); // expect #[cfg(test)]
+        builder.add(b"k", b"val1", 1, 10).await.expect("add seq 1"); // expect #[cfg(test)]
+        builder.add(b"k", b"val2", 2, 20).await.expect("add seq 2"); // expect #[cfg(test)]
+        builder.finish().await.expect("finish"); // expect #[cfg(test)]
+
+        let reader = SstableReader::open(&path, bc).await.expect("open"); // expect #[cfg(test)]
+
+        // 1. Verify via iter()
+        let iter_entries = reader.iter().await.expect("iter"); // expect #[cfg(test)]
+        assert_eq!(
+            iter_entries.len(),
+            2,
+            "Both duplicate key entries must coexist in iter()"
+        );
+        assert_eq!(iter_entries[0], (Bytes::from_static(b"k"), Bytes::from_static(b"val1"), 1));
+        assert_eq!(iter_entries[1], (Bytes::from_static(b"k"), Bytes::from_static(b"val2"), 2));
+
+        // 2. Verify via stream()
+        let reader_arc = Arc::new(reader);
+        let mut stream = reader_arc.stream().await.expect("stream"); // expect #[cfg(test)]
+        let e1 = stream.next().await.expect("next").expect("entry 1"); // expect #[cfg(test)]
+        let e2 = stream.next().await.expect("next").expect("entry 2"); // expect #[cfg(test)]
+        let e_end = stream.next().await.expect("next"); // expect #[cfg(test)]
+
+        assert_eq!(e1, (Bytes::from_static(b"k"), Bytes::from_static(b"val1"), 1, 10));
+        assert_eq!(e2, (Bytes::from_static(b"k"), Bytes::from_static(b"val2"), 2, 20));
+        assert!(e_end.is_none());
     }
 }
