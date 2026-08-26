@@ -69,6 +69,7 @@ impl EncryptedWal {
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use zeroize::{Zeroize, Zeroizing};
 
 /// Stateful wrapper around HMAC-SHA256 initialized with WAL domain separation.
 ///
@@ -127,6 +128,7 @@ pub struct WalEntrySnapshot {
 /// - Maintains running `last_hmac` state across entries to enforce sequential hash-chain continuity.
 /// - Performs constant-time comparison (`subtle::ConstantTimeEq`) of checksums and `prev_hmac`
 ///   to prevent timing side-channel attacks.
+/// - Zeroizes key material on drop to prevent secret key leakage from memory.
 /// - Any HMAC discrepancy or broken chain link immediately halts verification.
 ///
 /// # Usage
@@ -136,16 +138,18 @@ pub struct WalEntrySnapshot {
 /// # Errors
 /// Emits `MemFuseError::WalCorruption` immediately if `checksum` or `prev_hmac` does not match,
 /// or `MemFuseError::Crypto` if HMAC initialization fails.
+#[derive(Zeroize)]
+#[zeroize(drop)]
 pub struct IntegrityVerifier {
     last_hmac: [u8; 32],
-    integrity_key: Vec<u8>,
+    integrity_key: Zeroizing<Vec<u8>>,
 }
 
 impl IntegrityVerifier {
     pub fn new(integrity_key: &[u8]) -> Self {
         Self {
             last_hmac: [0u8; 32],
-            integrity_key: integrity_key.to_vec(),
+            integrity_key: Zeroizing::new(integrity_key.to_vec()),
         }
     }
 
