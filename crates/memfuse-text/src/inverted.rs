@@ -1351,12 +1351,16 @@ mod tests {
             relevance: 1.0,
             token_count: 5,
             metadata: None,
-            contextual_prefix: Some("Diese Passage beschreibt die Bundeshauptstadt Berlin.".to_string()),
+            contextual_prefix: Some(
+                "Diese Passage beschreibt die Bundeshauptstadt Berlin.".to_string(),
+            ),
         };
 
         let tx = TxId::new(1);
         // combined_text_owned() returns "Diese Passage beschreibt die Bundeshauptstadt Berlin.\n\nInformationen über Wirtschaftspolitik."
-        index.insert(tx, chunk.doc_id, &chunk.combined_text_owned()).await?;
+        index
+            .insert(tx, chunk.doc_id, &chunk.combined_text_owned())
+            .await?;
         index.commit(tx).await?;
 
         // Query for prefix term "Bundeshauptstadt" should match chunk even though content doesn't contain it
