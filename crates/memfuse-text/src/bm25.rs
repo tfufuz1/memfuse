@@ -1,11 +1,56 @@
-//! Pure BM25 scoring functions.
+//! Pure BM25 scoring functions and parameter structure.
+
+use memfuse_core::{MemFuseError, Result};
 
 /// Default k1 parameter for BM25 term frequency saturation scaling.
 pub const BM25_K1: f32 = 1.2;
 /// Default b parameter for BM25 document length normalization penalty tuning.
 pub const BM25_B: f32 = 0.75;
 
-/// Calculates the BM25 score for a single term in a document.
+/// BM25 scoring model parameters.
+///
+/// Recommendations (Robertson-Walker defaults):
+/// - `k1`: Term frequency saturation control parameter. Recommended default value is `1.5` (well-studied range `1.2..2.0`). Must be non-negative (`k1 >= 0.0`).
+/// - `b`: Document length normalization penalty parameter. Recommended default value is `0.75` (range `0.0..1.0`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BM25 {
+    pub k1: f32,
+    pub b: f32,
+}
+
+impl BM25 {
+    /// Creates a new `BM25` configuration after validating `k1` and `b`.
+    ///
+    /// # Errors
+    /// Returns `MemFuseError::InvalidInput` if `k1 < 0.0` or `k1` is NaN,
+    /// or if `b` is outside `[0.0, 1.0]` or is NaN.
+    pub fn new(k1: f32, b: f32) -> Result<Self> {
+        if k1 < 0.0 || k1.is_nan() {
+            return Err(MemFuseError::InvalidInput("k1 must be >= 0.0".into()));
+        }
+        if !(0.0..=1.0).contains(&b) || b.is_nan() {
+            return Err(MemFuseError::InvalidInput("b must be in [0.0, 1.0]".into()));
+        }
+        Ok(Self { k1, b })
+    }
+
+    /// Calculates the BM25 score for a single term using this instance's `k1` and `b`.
+    pub fn score_term(&self, tf: u32, doc_len: u32, avg_doc_len: f32, df: u32, n: u32) -> f32 {
+        score_term_with_params(tf, doc_len, avg_doc_len, df, n, self.k1, self.b)
+    }
+}
+
+impl Default for BM25 {
+    /// Returns default `BM25` parameters (`k1 = 1.5`, `b = 0.75`), the Robertson-Walker recommended defaults.
+    fn default() -> Self {
+        Self {
+            k1: 1.5,
+            b: 0.75,
+        }
+    }
+}
+
+/// Calculates the BM25 score for a single term in a document using default `BM25_K1` and `BM25_B`.
 ///
 /// # Arguments
 /// * `tf` - Term frequency in the document
@@ -14,6 +59,19 @@ pub const BM25_B: f32 = 0.75;
 /// * `df` - Document frequency (number of documents containing the term)
 /// * `n` - Total number of documents in the collection
 pub fn score_term(tf: u32, doc_len: u32, avg_doc_len: f32, df: u32, n: u32) -> f32 {
+    score_term_with_params(tf, doc_len, avg_doc_len, df, n, BM25_K1, BM25_B)
+}
+
+/// Calculates the BM25 score for a single term in a document using custom `k1` and `b` parameters.
+pub fn score_term_with_params(
+    tf: u32,
+    doc_len: u32,
+    avg_doc_len: f32,
+    df: u32,
+    n: u32,
+    k1: f32,
+    b: f32,
+) -> f32 {
     if n == 0 || df == 0 || tf == 0 {
         return 0.0;
     }
@@ -38,8 +96,8 @@ pub fn score_term(tf: u32, doc_len: u32, avg_doc_len: f32, df: u32, n: u32) -> f
     let avg_doc = avg_doc_len.max(1.0);
     let norm_doc_len = doc_len / avg_doc;
 
-    let tf_numerator = tf * (BM25_K1 + 1.0);
-    let tf_denominator = tf + BM25_K1 * (1.0 - BM25_B + BM25_B * norm_doc_len);
+    let tf_numerator = tf * (k1 + 1.0);
+    let tf_denominator = tf + k1 * (1.0 - b + b * norm_doc_len);
 
     idf * (tf_numerator / tf_denominator)
 }
@@ -68,6 +126,44 @@ mod tests {
             );
             assert!(score >= 0.0, "Negativ für {:?}", (tf, doc_len, avg, df, n));
         }
+    }
+
+    #[test]
+    fn test_bm25_new_validation() {
+        assert!(BM25::new(1.5, 0.75).is_ok());
+        assert!(BM25::new(0.0, 0.0).is_ok());
+        assert!(BM25::new(2.0, 1.0).is_ok());
+
+        // Negative k1
+        let err_k1 = BM25::new(-0.1, 0.75).unwrap_err();
+        assert!(matches!(err_k1, MemFuseError::InvalidInput(_)));
+        if let MemFuseError::InvalidInput(msg) = err_k1 {
+            assert_eq!(msg, "k1 must be >= 0.0");
+        }
+
+        // NaN k1
+        let err_k1_nan = BM25::new(f32::NAN, 0.75).unwrap_err();
+        assert!(matches!(err_k1_nan, MemFuseError::InvalidInput(_)));
+
+        // b out of bounds
+        let err_b_neg = BM25::new(1.5, -0.01).unwrap_err();
+        assert!(matches!(err_b_neg, MemFuseError::InvalidInput(_)));
+        if let MemFuseError::InvalidInput(msg) = err_b_neg {
+            assert_eq!(msg, "b must be in [0.0, 1.0]");
+        }
+
+        let err_b_high = BM25::new(1.5, 1.01).unwrap_err();
+        assert!(matches!(err_b_high, MemFuseError::InvalidInput(_)));
+
+        let err_b_nan = BM25::new(1.5, f32::NAN).unwrap_err();
+        assert!(matches!(err_b_nan, MemFuseError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn test_bm25_default() {
+        let default_bm25 = BM25::default();
+        assert_eq!(default_bm25.k1, 1.5);
+        assert_eq!(default_bm25.b, 0.75);
     }
 
     #[test]
