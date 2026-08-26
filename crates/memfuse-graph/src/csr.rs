@@ -285,19 +285,18 @@ impl CsrGraph {
         Ok(())
     }
 
-    /// Fügt eine Entity direkt in committed state ein (für `load_from_storage`).
-    /// Umgeht das TX-Staging, da beim Laden alle Daten bereits committed sind.
+    /// Fügt eine Entity direkt ein (für load_from_storage).
     fn load_entity_direct(&self, entity: Entity) -> Result<()> {
         let mut inner = self.inner.write();
         let idx = inner.get_or_create_index(entity.id);
-        if idx >= inner.entities.len() {
-            inner.entities.resize(idx + 1, None);
+        while inner.entities.len() <= idx {
+            inner.entities.push(None);
         }
         inner.entities[idx] = Some(entity);
         Ok(())
     }
 
-    /// Fügt eine Edge direkt in `pending_edges` ein (für `load_from_storage`).
+    /// Fügt eine Edge direkt in committed_staged / pending_edges ein (für load_from_storage).
     /// Umgeht das TX-Staging, da beim Laden alle Daten bereits committed sind.
     fn load_edge_direct(&self, from: EntityId, to: EntityId, weight: f32) -> Result<()> {
         let mut inner = self.inner.write();

@@ -25,9 +25,7 @@ use tokenizers::Tokenizer;
 use tracing::{debug, info, warn};
 
 pub mod reranker;
-#[cfg(feature = "onnx")]
-pub use reranker::OnnxCrossEncoderReranker;
-pub use reranker::RankedCandidate;
+pub use reranker::{CrossEncoderReranker, RerankConfig, RerankResult};
 
 /// Configuration settings for the text embedder.
 #[cfg(feature = "onnx")]
