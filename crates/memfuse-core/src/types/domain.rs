@@ -135,11 +135,16 @@ impl EntityId {
         Self(doc_id.inner())
     }
 
-    /// Derives an `EntityId` from a string key.
-    pub fn from_key(key: &str) -> Self {
-        DocId::from_key(key)
-            .map(|d| Self(d.inner()))
-            .unwrap_or_else(|_| Self::from(key))
+    /// Derives an `EntityId` from a string key using the first 8 bytes of its BLAKE3 hash.
+    ///
+    /// # Errors
+    /// Returns `MemFuseError::InvalidInput` if `key` is empty, mirroring `DocId::from_key`.
+    ///
+    /// # Infallible Fallback
+    /// If you need the old infallible behaviour (parse-as-u64 or hash), use `EntityId::from(key)` directly.
+    /// Prefer this fallible variant for consistency with `DocId` at API boundaries.
+    pub fn from_key(key: &str) -> Result<Self> {
+        DocId::from_key(key).map(|d| Self(d.inner()))
     }
 }
 
@@ -150,6 +155,8 @@ impl From<u64> for EntityId {
 }
 
 impl From<&str> for EntityId {
+    /// Infallible conversion: parses as `u64` first, then falls back to BLAKE3 hash.
+    /// For consistent error handling at API boundaries, prefer `EntityId::from_key`.
     fn from(s: &str) -> Self {
         if let Ok(val) = s.parse::<u64>() {
             Self(val)
@@ -678,6 +685,12 @@ mod tests {
     fn doc_id_valid_key_is_ok() {
         let id = DocId::from_key("valid-key-123").unwrap();
         assert!(id.inner() > 0);
+    }
+
+    #[test]
+    fn test_entity_id_from_key_empty_err() {
+        assert!(EntityId::from_key("").is_err());
+        assert!(EntityId::from_key("node_1").is_ok());
     }
 
     #[test]

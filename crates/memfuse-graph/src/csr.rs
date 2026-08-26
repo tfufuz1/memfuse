@@ -1623,8 +1623,8 @@ mod tests {
     async fn traverse_handles_cycles_without_infinite_loop() {
         let graph = CsrGraph::new();
         let tx = TxId::new(1);
-        let id_a = EntityId::from_key("node_a");
-        let id_b = EntityId::from_key("node_b");
+        let id_a = EntityId::from_key("node_a").expect("test: non-empty key must succeed");
+        let id_b = EntityId::from_key("node_b").expect("test: non-empty key must succeed");
 
         graph
             .add_entity(tx, Entity::new(id_a, "Node A", "Type"))
@@ -1665,9 +1665,9 @@ mod tests {
     async fn multi_traverse_keeps_highest_score_per_entity() {
         let graph = CsrGraph::new();
         let tx = TxId::new(1);
-        let id_a = EntityId::from_key("node_a");
-        let id_b = EntityId::from_key("node_b");
-        let id_c = EntityId::from_key("node_c");
+        let id_a = EntityId::from_key("node_a").expect("test: non-empty key must succeed");
+        let id_b = EntityId::from_key("node_b").expect("test: non-empty key must succeed");
+        let id_c = EntityId::from_key("node_c").expect("test: non-empty key must succeed");
 
         graph
             .add_entity(tx, Entity::new(id_a, "Node A", "Type"))
