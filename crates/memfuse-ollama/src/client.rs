@@ -298,14 +298,12 @@ impl OllamaClient {
             }
         }
 
-        // Fallback: parallel using join_all to preserve input ordering
-        let futures = texts.iter().map(|text| self.embed(model, text));
-        let results = futures_util::future::join_all(futures).await;
-        let mut embeddings = Vec::with_capacity(texts.len());
-        for res in results {
-            embeddings.push(res?);
+        // Fallback: sequentiell mit bestehender retry-fähiger embed()
+        let mut results = Vec::with_capacity(texts.len());
+        for text in texts {
+            results.push(self.embed(model, text).await?);
         }
-        Ok(embeddings)
+        Ok(results)
     }
 
     pub async fn try_embed_batch(&self, model: &str, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
@@ -602,7 +600,7 @@ impl OllamaClient {
                             max = max_retries,
                             delay_ms = delay.as_millis(),
                             "Ollama embed transient network error, retrying: {}",
-                            last_err.as_ref().unwrap()
+                            last_err.as_ref().unwrap() // unwrap allowed
                         );
                         tokio::time::sleep(delay).await;
                     }
