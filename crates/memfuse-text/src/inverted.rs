@@ -1078,6 +1078,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn staged_insert_not_visible_before_commit() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "staged_test");
+        let tx = TxId::new(1);
+        let doc_id = DocId::new(42);
+
+        let seq_before = storage.last_seq_no().await?;
+
+        index.upsert_document(tx, doc_id, "test content").await?;
+
+        // Before commit (with snapshot isolation at previous committed sequence), search returns empty
+        let results_before = index.search_bm25_at("test", 10, Some(seq_before)).await?;
+        assert!(results_before.is_empty(), "Uncommitted upsert must not be visible at seq_before");
+
+        // After commit: readable
+        index.commit(tx).await?;
+        let results_after = index.search("test", 10).await?;
+        assert!(!results_after.is_empty(), "Committed insert must be visible in search");
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn inverted_index_rollback_cleans_up() -> Result<()> {
         let storage = Arc::new(MockStorage::new());
         let index = InvertedIndex::new(storage.clone(), "rollback_test");

@@ -376,6 +376,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn german_tokenizer_splits_compounds() {
+        use crate::tokenizer::Tokenizer;
+        let tok = crate::tokenizer::GermanMorphTokenizer::new();
+        let tokens = tok.tokenize("Datenbankentwicklung");
+        assert!(tokens.iter().any(|t| t == "Datenbank" || t == "datenbank"));
+    }
+
+    #[test]
+    fn german_tokenizer_normalizes_umlauts() {
+        use crate::tokenizer::Tokenizer;
+        let tok = crate::tokenizer::GermanMorphTokenizer::new();
+        let tokens = tok.tokenize("Bücher");
+        // "Bücher" → "buecher" oder ähnlich
+        assert!(tokens.iter().any(|t: &String| t.contains("ue") || t.contains("buch")));
+    }
+
+    #[test]
     #[should_panic(expected = "non-lowercase input")]
     fn test_decompose_panics_on_uppercase_in_debug() {
         let splitter = GermanCompoundSplitter::new();
