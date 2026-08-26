@@ -131,10 +131,13 @@ mod tests {
     #[test]
     fn test_tokenizer_edge_cases_bounded() {
         let long_str = "a".repeat(100_000);
-        let edge_cases = ["", " \t\n", "🦀🦀🦀", long_str.as_str(), "\0", "ÄÖÜß"];
+        let edge_cases = ["", " \t\n", "🦀🦀", long_str.as_str(), "\0", "ÄÖÜß"];
+        let german_tok = GermanMorphTokenizer::new();
         for input in &edge_cases {
             let tokens = DefaultTokenizer.tokenize(input);
             assert!(tokens.len() <= input.chars().count() + 1);
+            let g_tokens = german_tok.tokenize(input);
+            let _ = g_tokens;
         }
     }
 
