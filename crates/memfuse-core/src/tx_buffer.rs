@@ -3,6 +3,11 @@
 //! Sharded into sub-buffers to reduce lock contention.
 //! Each shard is independently locked, allowing concurrent writers
 //! to different transactions.
+//!
+//! # INVARIANT
+//! To avoid deadlocks, callers must never acquire more than one shard lock simultaneously.
+//! In multi-shard sweeps, `reap_orphans()` acquires all shards sequentially in ascending index
+//! order (index 0 to N-1), acquiring and releasing each shard lock one at a time via `try_write()`.
 
 // INVARIANT: Sharded Transaction Buffer für lock-freie Concurrency.
 
@@ -63,11 +68,13 @@ impl<T: Clone> TxShard<T> {
 ///
 /// Sharded into sub-buffers to reduce lock contention.
 ///
-/// ### Locking Strategy
+/// # INVARIANT
 /// Each shard is protected by an independent `parking_lot::RwLock`.
 /// Standard acquisition order: Read-lock for queries, Write-lock for mutations.
 /// To avoid deadlocks, cross-shard operations must never acquire more than
-/// one shard lock simultaneously.
+/// one shard lock simultaneously. Operations that process all shards (like `reap_orphans()`)
+/// MUST iterate over shards sequentially in ascending index order (from shard 0 to N-1)
+/// and release each lock before acquiring the next.
 #[derive(Debug)]
 pub struct TxBuffer<T: Clone> {
     shards: Vec<RwLock<TxShard<T>>>,
@@ -200,6 +207,10 @@ impl<T: Clone> TxBuffer<T> {
     }
 
     /// Cleans up expired transactions.
+    ///
+    /// # INVARIANT
+    /// Acquires shard locks sequentially in ascending index order (0 to N-1),
+    /// dropping each lock before attempting the next to guarantee deadlock-free execution.
     pub fn reap_orphans(&self) -> Vec<TxId> {
         // Estimate capacity based on a single shard to avoid locking all shards for `len()`
         let estimated_cap = self.shards[0].read().ops.len() * self.shards.len();
@@ -312,6 +323,49 @@ mod tests {
 
         let expired = buffer.reap_orphans();
         assert_eq!(expired, vec![tx]);
+        assert!(buffer.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_has_tx_concurrent() {
+        let buffer = Arc::new(TxBuffer::<String>::new());
+        let num_tasks = 8;
+        let mut handles = Vec::new();
+
+        for i in 0..num_tasks {
+            let buffer = buffer.clone();
+            let tx = TxId::new(i as u64 + 100);
+            handles.push(tokio::spawn(async move {
+                buffer.begin(tx);
+                buffer.stage(
+                    tx,
+                    IndexOp::Insert {
+                        doc_id: DocId::new(i as u64),
+                        data: format!("data_{i}"),
+                    },
+                );
+                // Return tx ID for caller verification
+                tx
+            }));
+        }
+
+        let mut txs = Vec::new();
+        for h in handles {
+            let tx = h.await.expect("task failed");
+            txs.push(tx);
+        }
+
+        // Verify has_tx returns true for all concurrently active transactions
+        for &tx in &txs {
+            assert!(buffer.has_tx(tx));
+        }
+
+        // Commit / drain all transactions and verify has_tx returns false
+        for &tx in &txs {
+            buffer.drain(tx);
+            assert!(!buffer.has_tx(tx));
+        }
+
         assert!(buffer.is_empty());
     }
 

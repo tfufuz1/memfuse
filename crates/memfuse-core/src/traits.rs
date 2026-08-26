@@ -23,6 +23,11 @@ pub trait Checkpoint: Send + Sync + 'static {
 
 /// Unified Checkpoint Coordinator Trait combining named, TxId+seq_no-scoped, persistent checkpoints.
 ///
+/// # Dyn-Safety Note
+/// This trait is intentionally NOT dyn-compatible without specifying the associated type `Meta`
+/// (e.g. `Arc<dyn CheckpointCoordinator<Meta = ...>>`) or using a concrete type, due to the
+/// associated type `type Meta: Send + Sync`.
+///
 /// # DECISION-REF
 /// ADR-011 — Consolidated Checkpoint Subsystem Architecture (resolving AGT-STORE-002).
 #[async_trait]
@@ -57,7 +62,7 @@ pub trait Snapshot: Send + Sync {
 }
 
 /// Statistics for a vector index.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VectorIndexStats {
     /// Number of active (non-deleted) vectors.
     pub num_vectors: usize,
@@ -68,7 +73,7 @@ pub struct VectorIndexStats {
 }
 
 /// Statistics for the storage engine.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StorageStats {
     /// Number of SSTable segments.
     pub num_segments: usize,
@@ -530,11 +535,11 @@ pub trait DistanceCalculator: Send + Sync {
 mod dyn_safety_checks {
     use super::*;
 
-    fn _assert_dyn_storage_engine(_: &dyn StorageEngine) {}
-    fn _assert_dyn_vector_index(_: &dyn VectorIndex) {}
-    fn _assert_dyn_text_index(_: &dyn TextIndex) {}
-    fn _assert_dyn_graph_index(_: &dyn GraphIndex) {}
-    fn _assert_dyn_text_embedding_engine(_: &dyn TextEmbeddingEngine) {}
+    fn _storage_engine_is_dyn_safe(_: &dyn StorageEngine) {}
+    fn _vector_index_is_dyn_safe(_: &dyn VectorIndex) {}
+    fn _text_index_is_dyn_safe(_: &dyn TextIndex) {}
+    fn _graph_index_is_dyn_safe(_: &dyn GraphIndex) {}
+    fn _text_embedding_is_dyn_safe(_: &dyn TextEmbeddingEngine) {}
 }
 
 #[cfg(test)]
