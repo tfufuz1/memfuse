@@ -72,7 +72,11 @@ impl Tokenizer for GermanMorphTokenizer {
                 continue;
             }
 
-            let components = self.splitter.decompose(&lower);
+            let components = if normalized.chars().all(|c| !c.is_uppercase()) {
+                self.splitter.decompose(&normalized)
+            } else {
+                vec![normalized.as_str()]
+            };
             if components.len() > 1 {
                 // Collect component strings first to avoid borrow issues with lower
                 let mut comp_strs: Vec<String> = Vec::new();
