@@ -5,9 +5,9 @@
 //! contention when multiple coroutines insert concurrently (e.g. the 8-way
 //! `buffer_unordered` ingestion pipeline).
 //!
-//! The shard for a given key is selected deterministically via the first byte
-//! of the key modulo `SHARD_COUNT`. All MemFuse keys carry a fixed-length
-//! namespace prefix, so the first byte is always present.
+//! The shard for a given key is selected deterministically via the full-key
+//! BLAKE3 hash modulo `SHARD_COUNT` to prevent lock contention on shared key
+//! prefixes (e.g. `__col:`, `__docid:`).
 //!
 //! Within each shard, each key maps to a versioned list of values, enabling
 //! Snapshot Isolation through point-in-time reads.
@@ -75,15 +75,20 @@ impl MemTable {
         }
     }
 
-    /// Deterministic shard selector based on the first byte of the key.
-    ///
-    /// All MemFuse keys are namespaced with a fixed-length prefix (minimum
-    /// 10 bytes), so the first byte is always present. For an empty key
-    /// (which cannot occur in practice), we default to shard 0.
+    /// Deterministic shard selector based on a BLAKE3 hash of the entire key.
     #[inline]
     fn shard_for(key: &[u8]) -> usize {
+        // Hash the FULL key, not just the first byte. Namespaced keys share
+        // long common prefixes (e.g. "__col:hr:\0", "__docid:"), so any shard
+        // selector must mix all input bytes to avoid skew — a single-byte or
+        // prefix-only discriminator is provably insufficient given MemFuse's
+        // key layout (see Collection::namespaced_key() in
+        // crates/memfuse-db/src/collection.rs).
         // Zero-panic: modulo a compile-time const > 0.
-        key.first().copied().unwrap_or(0) as usize % SHARD_COUNT
+        let hash = blake3::hash(key);
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&hash.as_bytes()[..8]);
+        (u64::from_le_bytes(bytes) as usize) % SHARD_COUNT
     }
 
     /// Inserts a key-value pair with a sequence number and transaction ID.
@@ -461,6 +466,50 @@ mod tests {
         // Originally: tx A = 3 * (5 + 5 + 16) = 78; tx B = 2 * (5 + 5 + 16) = 52. Total = 130.
         // After rollback tx A: remaining size should be 52.
         assert_eq!(mt.size(), 52);
+    }
+
+    #[test]
+    fn test_shard_distribution_for_realistic_collection_keys() {
+        // Simulates the actual key shapes produced during ingestion into ONE
+        // named collection ("hr") — the primary workload this sharding
+        // targets. Mirrors Collection::namespaced_key() for key_type == 0.
+        use std::collections::HashSet;
+
+        let mut shards_hit = HashSet::new();
+        for i in 0..1000u32 {
+            let mut key = b"__col:hr:\x00".to_vec();
+            key.push(0u8); // key_type = 0 (user key)
+            key.extend_from_slice(format!("doc-{i}").as_bytes());
+            shards_hit.insert(MemTable::shard_for(&key));
+        }
+        assert!(
+            shards_hit.len() >= SHARD_COUNT / 2,
+            "Realistic collection keys must spread across at least half the \
+             shards; got only {} distinct shards — sharding provides no \
+             contention relief for this key shape.",
+            shards_hit.len()
+        );
+    }
+
+    #[test]
+    fn test_shard_distribution_for_docid_mapping_keys() {
+        // Mirrors the __docid: keys written on every insert() in the default
+        // collection (Collection::insert_op, key_type == 1).
+        use std::collections::HashSet;
+
+        let mut shards_hit = HashSet::new();
+        for i in 0u64..1000 {
+            let mut key = b"__docid:".to_vec();
+            key.extend_from_slice(&i.to_le_bytes());
+            shards_hit.insert(MemTable::shard_for(&key));
+        }
+        assert!(
+            shards_hit.len() >= SHARD_COUNT / 2,
+            "Docid-mapping keys (written on every insert) must spread across \
+             at least half the shards; got only {} — every insert() call \
+             would otherwise serialize on a handful of shards.",
+            shards_hit.len()
+        );
     }
 
     #[test]
