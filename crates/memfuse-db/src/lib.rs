@@ -1201,6 +1201,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn collections_are_isolated() {
+        let (db, _tmp) = test_db(4).await;
+        let vec = vec![1.0, 0.0, 0.0, 0.0];
+        let col_a = db.collection("alpha").await.unwrap();
+        let col_b = db.collection("beta").await.unwrap();
+        col_a.insert("doc1", &vec, None).await.unwrap();
+        let results = col_b.search(&vec, 10).await.unwrap();
+        assert!(results.is_empty(), "Collection B must not see Collection A's data");
+    }
+
+    #[tokio::test]
     async fn test_collections_are_isolated() {
         let (db, _tmp) = test_db(4).await;
         let col_a = db.collection("a").await.expect("col a");

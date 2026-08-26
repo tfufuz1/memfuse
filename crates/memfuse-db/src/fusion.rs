@@ -49,6 +49,9 @@ pub fn weighted_reciprocal_rank_fusion(
     let mut fused: HashMap<String, (f32, Option<serde_json::Value>, Vec<String>)> = HashMap::new();
 
     for (signal_name, result_set, weight) in result_sets {
+        if weight <= 0.0 {
+            continue;
+        }
         for (rank, doc) in result_set.into_iter().enumerate() {
             let score = weight / ((k + rank + 1) as f32);
             let entry = fused.entry(doc.id).or_insert((0.0, None, Vec::new()));
@@ -138,6 +141,52 @@ mod tests {
 
         let ids: Vec<&str> = fused.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(ids, vec!["doc_b", "doc_a", "doc_d", "doc_c"]);
+    }
+
+    #[test]
+    fn fusion_empty_inputs_returns_empty() {
+        let result = reciprocal_rank_fusion(vec![vec![], vec![]], 10);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn fusion_respects_max_results() {
+        let large_set: Vec<SearchResult> = (0..100)
+            .map(|i| SearchResult {
+                id: format!("doc-{i}"),
+                score: i as f32 / 100.0,
+                metadata: None,
+                matched_signals: vec![],
+            })
+            .collect();
+        let result = reciprocal_rank_fusion(vec![large_set], 5);
+        assert_eq!(result.len(), 5);
+    }
+
+    #[test]
+    fn fusion_ignores_zero_or_negative_weight() {
+        let set1 = vec![SearchResult {
+            id: "doc-1".to_string(),
+            score: 0.9,
+            metadata: None,
+            matched_signals: vec![],
+        }];
+        let set2 = vec![SearchResult {
+            id: "doc-2".to_string(),
+            score: 0.8,
+            metadata: None,
+            matched_signals: vec![],
+        }];
+
+        let result = weighted_reciprocal_rank_fusion(
+            vec![
+                ("signal1".to_string(), set1, 1.0),
+                ("signal2".to_string(), set2, 0.0),
+            ],
+            10,
+        );
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].id, "doc-1");
     }
 
     #[test]

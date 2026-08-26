@@ -1343,6 +1343,56 @@ impl<S: StorageEngine> Collection<S> {
         self.text_index.load_stats().await
     }
 
+    /// Scans the collection for documents with expired TTLs and deletes them.
+    ///
+    /// Reads `created_at_ms` (or `timestamp_ms`) and `ttl_ms` from document metadata.
+    /// Time calculations use UTC unix timestamp milliseconds.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn trigger_reaper(&self) -> Result<usize> {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?
+            .as_millis() as u64;
+
+        let docs = self.scan_prefix("").await?;
+        let mut expired_ids = Vec::new();
+
+        for (id, val) in docs {
+            let meta_obj = val
+                .get("metadata")
+                .and_then(|m| m.as_object())
+                .or_else(|| val.as_object());
+
+            if let Some(obj) = meta_obj {
+                if let Some(ttl_val) = obj.get("ttl_ms").and_then(|v| v.as_u64()) {
+                    let created_at = obj
+                        .get("created_at_ms")
+                        .or_else(|| obj.get("timestamp_ms"))
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(now_ms);
+
+                    if now_ms >= created_at.saturating_add(ttl_val) {
+                        expired_ids.push(id);
+                    }
+                }
+            }
+        }
+
+        let count = expired_ids.len();
+        for id in expired_ids {
+            if let Err(e) = self.delete(&id).await {
+                tracing::error!(
+                    collection = %self.name,
+                    id = %id,
+                    error = %e,
+                    "Reaper failed to delete expired document"
+                );
+            }
+        }
+
+        Ok(count)
+    }
+
     /// Removes all data belonging to this collection from storage.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn drop_collection(&self) -> Result<()> {
