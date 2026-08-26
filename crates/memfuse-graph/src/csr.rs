@@ -11,6 +11,7 @@ use memfuse_core::{
 };
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 /// Score decay factor per hop (0.7^hop).
@@ -153,6 +154,8 @@ impl GraphInner {
         new_offsets.push(current_offset);
 
         for i in 0..num_nodes {
+            let mut node_edges = Vec::new();
+
             // 1. Get neighbors from old CSR
             let old_start = if i < self.offsets.len() - 1 {
                 self.offsets[i]
@@ -168,9 +171,7 @@ impl GraphInner {
             for j in old_start..old_end {
                 let target = self.targets[j];
                 if !self.tombstoned_edges.contains(&(i, target)) {
-                    new_targets.push(target);
-                    new_weights.push(self.weights[j]);
-                    current_offset += 1;
+                    node_edges.push((target, self.weights[j]));
                 }
             }
 
@@ -178,12 +179,20 @@ impl GraphInner {
             if let Some(staged) = self.pending_edges.get(&i) {
                 for &(target, weight) in staged {
                     if !self.tombstoned_edges.contains(&(i, target)) {
-                        new_targets.push(target);
-                        new_weights.push(weight);
-                        current_offset += 1;
+                        node_edges.push((target, weight));
                     }
                 }
             }
+
+            // Stable sort target indices for deterministic CSR layout
+            node_edges.sort_by_key(|&(target, _)| target);
+
+            for (target, weight) in node_edges {
+                new_targets.push(target);
+                new_weights.push(weight);
+                current_offset += 1;
+            }
+
             new_offsets.push(current_offset);
         }
 
@@ -205,6 +214,7 @@ pub struct CsrGraph {
     inner: RwLock<GraphInner>,
     /// Optionaler Persistenz-Handle. None = reiner In-Memory-Modus (z.B. Tests).
     storage: Option<Arc<dyn StorageEngine>>,
+    last_tx_id: AtomicU64,
 }
 
 impl CsrGraph {
@@ -219,6 +229,7 @@ impl CsrGraph {
             config,
             inner: RwLock::new(GraphInner::new()),
             storage: None,
+            last_tx_id: AtomicU64::new(0),
         }
     }
 
@@ -236,6 +247,7 @@ impl CsrGraph {
             config,
             inner: RwLock::new(GraphInner::new()),
             storage: Some(storage),
+            last_tx_id: AtomicU64::new(0),
         }
     }
 
@@ -828,6 +840,8 @@ impl GraphIndex for CsrGraph {
             inner.compact();
         }
 
+        self.last_tx_id.fetch_max(tx.inner(), Ordering::SeqCst);
+
         Ok(())
     }
 
@@ -885,7 +899,7 @@ impl GraphIndex for CsrGraph {
     }
 
     async fn last_tx_id(&self) -> Result<u64> {
-        Ok(0)
+        Ok(self.last_tx_id.load(Ordering::SeqCst))
     }
 
     async fn len(&self) -> usize {
@@ -1721,6 +1735,77 @@ mod tests {
             neighbors.len(),
             20,
             "All 20 concurrent edges must be committed without lost updates"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_staged_edges_invisible_to_concurrent_readers() {
+        let graph = CsrGraph::new();
+        let tx_a = TxId::new(10);
+        let id_1 = EntityId::new(1);
+        let id_2 = EntityId::new(2);
+
+        // Stage entity 1 & 2, and edge 1->2 in Tx A
+        graph
+            .add_entity(tx_a, Entity::new(id_1, "Node 1", "Type"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx_a, Entity::new(id_2, "Node 2", "Type"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx_a, Edge::new(id_1, id_2, "staged_edge"))
+            .await
+            .unwrap();
+
+        // Concurrent read (no TxId context): neighbors(1) must NOT include node 2
+        let n_before = graph.neighbors(id_1).await.unwrap();
+        assert!(
+            !n_before.contains(&id_2),
+            "Uncommitted staged edge must not be visible to readers"
+        );
+
+        // Tx A commits
+        graph.commit(tx_a).await.unwrap();
+
+        // Second read: neighbors(1) MUST include node 2
+        let n_after = graph.neighbors(id_1).await.unwrap();
+        assert!(
+            n_after.contains(&id_2),
+            "Committed edge must be visible to readers"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_last_tx_id_tracking() {
+        let graph = CsrGraph::new();
+        assert_eq!(graph.last_tx_id().await.unwrap(), 0);
+
+        let tx1 = TxId::new(5);
+        graph
+            .add_entity(tx1, Entity::new(EntityId::new(1), "E1", "T"))
+            .await
+            .unwrap();
+        graph.commit(tx1).await.unwrap();
+
+        assert_eq!(
+            graph.last_tx_id().await.unwrap(),
+            5,
+            "last_tx_id should be updated to 5 after committing Tx 5"
+        );
+
+        let tx2 = TxId::new(12);
+        graph
+            .add_entity(tx2, Entity::new(EntityId::new(2), "E2", "T"))
+            .await
+            .unwrap();
+        graph.commit(tx2).await.unwrap();
+
+        assert_eq!(
+            graph.last_tx_id().await.unwrap(),
+            12,
+            "last_tx_id should be updated to 12 after committing Tx 12"
         );
     }
 }
