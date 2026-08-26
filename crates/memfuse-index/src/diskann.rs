@@ -64,15 +64,22 @@ impl DiskAnnHeader {
             return Err(MemFuseError::Index("Header too small".into()));
         }
         if &bytes[0..4] != DISKANN_MAGIC {
-            return Err(MemFuseError::Index("Invalid DiskANN magic".into()));
+            return Err(MemFuseError::Storage("Invalid DiskANN file: bad magic".into()));
+        }
+        let version = u16::from_le_bytes(
+            bytes[4..6]
+                .try_into()
+                .map_err(|_| MemFuseError::Index("Invalid version".into()))?,
+        );
+        if version != DISKANN_VERSION {
+            return Err(MemFuseError::Storage(format!(
+                "DiskANN version mismatch: expected {}, got {}",
+                DISKANN_VERSION, version
+            )));
         }
         Ok(Self {
             magic: *DISKANN_MAGIC,
-            version: u16::from_le_bytes(
-                bytes[4..6]
-                    .try_into()
-                    .map_err(|_| MemFuseError::Index("Invalid version".into()))?,
-            ),
+            version,
             node_count: u64::from_le_bytes(
                 bytes[6..14]
                     .try_into()
@@ -183,6 +190,7 @@ struct DiskAnnIndexInner {
     cache: RwLock<AHashMap<u32, CachedNode>>,
     doc_ids: RwLock<Vec<DocId>>,
     quantizer: RwLock<Option<crate::quantize::ScalarQuantizer>>,
+    drift_warn_count: AtomicU64,
 }
 
 impl DiskAnnIndex {
@@ -213,6 +221,7 @@ impl DiskAnnIndex {
                 cache: RwLock::new(AHashMap::new()),
                 doc_ids: RwLock::new(Vec::new()),
                 quantizer: RwLock::new(None),
+                drift_warn_count: AtomicU64::new(0),
             }),
         })
     }
@@ -233,6 +242,30 @@ impl DiskAnnIndex {
                 q.symmetric_dist(v_a, v_b, self.inner.config.distance_metric)
             }
             _ => Err(MemFuseError::Index("Mixed vector types".into())),
+        }
+    }
+
+    fn check_quantizer_drift(&self, vector: &[f32]) {
+        let mut q_guard = self.inner.quantizer.write();
+        if let Some(ref mut q) = *q_guard {
+            let drift = q.check_drift(vector);
+            if drift > 0.10 {
+                use std::sync::atomic::Ordering;
+                let count = self.inner.drift_warn_count.fetch_add(1, Ordering::Relaxed) + 1;
+                tracing::warn!(
+                    drift = %format!("{:.1}%", drift * 100.0),
+                    warn_count = count,
+                    "Quantization drift > 10% detected — ScalarQuantizer recalibration recommended."
+                );
+                if count >= 100 {
+                    tracing::warn!(
+                        warn_count = count,
+                        "Quantization drift threshold (100) exceeded; auto-retraining quantizer via bound expansion."
+                    );
+                    q.expand_bounds_to_fit(vector);
+                    self.inner.drift_warn_count.store(0, Ordering::Relaxed);
+                }
+            }
         }
     }
 
@@ -327,6 +360,27 @@ impl DiskAnnIndex {
         self.write_to_file(&graph, vectors, ids).await?;
         self.load().await?;
 
+        self.verify_graph_integrity_debug()?;
+
+        Ok(())
+    }
+
+    fn verify_graph_integrity_debug(&self) -> Result<()> {
+        #[cfg(debug_assertions)]
+        {
+            let node_count = self.inner.header.read().map(|h| h.node_count as u32).unwrap_or(0);
+            let max_degree = self.inner.config.max_degree;
+            for i in 0..node_count {
+                let node = self.load_node(i)?;
+                assert!(
+                    node.neighbors.len() <= max_degree,
+                    "Graph integrity violation: Node {} has {} neighbors, exceeding max_degree {}",
+                    i,
+                    node.neighbors.len(),
+                    max_degree
+                );
+            }
+        }
         Ok(())
     }
 
@@ -544,8 +598,22 @@ impl DiskAnnIndex {
             *inner.mmap.write() = Some(mmap);
 
             let mut ids = Vec::with_capacity(header.node_count as usize);
+            let sector_size = header.sector_size as usize;
+            let start_offset = DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
+            let read_size = node_size_bytes;
+            assert_eq!(
+                read_size % sector_size,
+                0,
+                "Read size must be a multiple of sector_size"
+            );
+
             for i in 0..header.node_count as u32 {
-                let offset = header.sector_size as usize + (i as usize * node_size_bytes);
+                let offset = start_offset + (i as usize * node_size_bytes);
+                assert_eq!(
+                    offset % sector_size,
+                    0,
+                    "Read offset must be sector-aligned"
+                );
                 let inner_mmap = inner.mmap.read();
                 let mmap_ref = inner_mmap
                     .as_ref()
@@ -579,10 +647,24 @@ impl DiskAnnIndex {
             .as_ref()
             .ok_or_else(|| MemFuseError::Index("Header missing".into()))?;
 
+        use std::sync::atomic::Ordering;
+        let sector_size = header.sector_size as usize;
         let node_size = self.inner.node_size_bytes.load(Ordering::SeqCst) as usize;
+        let read_size = node_size;
+        assert_eq!(
+            read_size % sector_size,
+            0,
+            "Read size must be a multiple of sector_size"
+        );
+
         let start_offset =
-            DiskAnnHeader::SIZE.div_ceil(header.sector_size as usize) * header.sector_size as usize;
+            DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
         let node_offset = start_offset + (index as usize * node_size);
+        assert_eq!(
+            node_offset % sector_size,
+            0,
+            "Node read offset must be sector-aligned"
+        );
 
         if node_offset + node_size > mmap.len() {
             return Err(MemFuseError::Index("Node offset out of bounds".into()));
@@ -671,6 +753,8 @@ impl DiskAnnIndex {
             return Ok(Vec::new());
         }
 
+        self.check_quantizer_drift(query);
+
         let query = query.to_vec();
         let self_clone = self.clone();
 
@@ -750,6 +834,7 @@ impl DiskAnnIndex {
                 DistanceMetric::Cosine => 1.0 - c.distance,
                 DistanceMetric::Euclidean => 1.0 / (1.0 + c.distance),
                 DistanceMetric::DotProduct => -c.distance,
+                _ => 1.0 / (1.0 + c.distance),
             };
             final_results.push(ScoredDocument::new(node.doc_id, score));
         }
@@ -768,7 +853,8 @@ impl Clone for DiskAnnIndex {
 
 #[async_trait::async_trait]
 impl VectorIndex for DiskAnnIndex {
-    async fn insert(&self, _tx: TxId, _id: DocId, _embedding: &[f32]) -> Result<()> {
+    async fn insert(&self, _tx: TxId, _id: DocId, embedding: &[f32]) -> Result<()> {
+        self.check_quantizer_drift(embedding);
         Err(MemFuseError::InvalidInput(
             "DiskAnn is a read-only out-of-core index. Use build() for batch creation.".to_string(),
         ))
@@ -1007,6 +1093,99 @@ mod tests {
             "Unexpected error message: {}",
             err_msg
         );
+    }
+
+    #[tokio::test]
+    async fn test_load_rejects_bad_magic() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let index_path = temp_dir.path().join("bad_magic_test.idx");
+
+        let config = DiskAnnConfig {
+            index_path: index_path.clone(),
+            dimension: 8,
+            max_degree: 4,
+            distance_metric: DistanceMetric::Euclidean,
+            ..DiskAnnConfig::default()
+        };
+
+        let index = DiskAnnIndex::try_new(config.clone()).expect("valid config");
+        let vectors = vec![vec![1.0; 8]];
+        let ids = vec![DocId::from(1)];
+        index.build(&vectors, &ids).await.expect("build");
+
+        // Mutate magic bytes
+        let mut data = tokio::fs::read(&index_path).await.expect("read file");
+        data[0..4].copy_from_slice(b"BADM");
+        tokio::fs::write(&index_path, &data).await.expect("write bad magic file");
+
+        let reloaded_index = DiskAnnIndex::try_new(config).expect("valid config");
+        let load_res = reloaded_index.load().await;
+        assert!(load_res.is_err());
+        let err_msg = load_res.err().unwrap().to_string(); // unwrap allowed (AGENT:03)
+        assert!(
+            err_msg.contains("Invalid DiskANN file: bad magic"),
+            "Unexpected error message: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_load_rejects_version_mismatch() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let index_path = temp_dir.path().join("version_mismatch_test.idx");
+
+        let config = DiskAnnConfig {
+            index_path: index_path.clone(),
+            dimension: 8,
+            max_degree: 4,
+            distance_metric: DistanceMetric::Euclidean,
+            ..DiskAnnConfig::default()
+        };
+
+        let index = DiskAnnIndex::try_new(config.clone()).expect("valid config");
+        let vectors = vec![vec![1.0; 8]];
+        let ids = vec![DocId::from(1)];
+        index.build(&vectors, &ids).await.expect("build");
+
+        // Mutate version to 99
+        let mut data = tokio::fs::read(&index_path).await.expect("read file");
+        data[4..6].copy_from_slice(&99u16.to_le_bytes());
+        tokio::fs::write(&index_path, &data).await.expect("write bad version file");
+
+        let reloaded_index = DiskAnnIndex::try_new(config).expect("valid config");
+        let load_res = reloaded_index.load().await;
+        assert!(load_res.is_err());
+        let err_msg = load_res.err().unwrap().to_string(); // unwrap allowed (AGENT:03)
+        assert!(
+            err_msg.contains("DiskANN version mismatch"),
+            "Unexpected error message: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_write_to_file_uses_tmp_and_atomic_rename() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let index_path = temp_dir.path().join("atomic_save_test.idx");
+        let tmp_path = index_path.with_extension("idx.tmp");
+
+        let config = DiskAnnConfig {
+            index_path: index_path.clone(),
+            dimension: 8,
+            max_degree: 4,
+            sector_size: 4096,
+            distance_metric: DistanceMetric::Euclidean,
+            ..DiskAnnConfig::default()
+        };
+
+        let index = DiskAnnIndex::try_new(config).expect("valid config");
+        let vectors = vec![vec![1.0; 8]];
+        let ids = vec![DocId::from(1)];
+        index.build(&vectors, &ids).await.expect("build");
+
+        // After build completes, index_path must exist and .tmp must NOT exist
+        assert!(index_path.exists(), "Final index file must exist after atomic rename");
+        assert!(!tmp_path.exists(), "Temporary file .tmp must be cleaned up / renamed");
     }
 
     #[tokio::test]
