@@ -66,12 +66,12 @@ cargo run -p memfuse-mcp --bin memfuse-mcp-server -- --db-path ./firma_daten
             Alles lokal. Nichts verlässt den Rechner.
 ```
 
-## Workspace Crates (12 Active Crates)
+## Workspace Crates (13 Active Crates)
 
 - **Layer 0**: `memfuse-core` (Typen, Traits, Error)
 - **Layer 1**: `memfuse-store` (LSM-Tree), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-crypto` (AES-GCM), `memfuse-graph` (CSR Graph), `memfuse-checkpoint` (Snapshotting)
 - **Layer 2**: `memfuse-db` (Collections & 4-Signal Fusion)
-- **Layer 3**: `memfuse-py` (Python PyO3 Bindings), `memfuse-ollama` (Ollama Client & Embeddings)
+- **Layer 3**: `memfuse-py` (Python PyO3 Bindings), `memfuse-ollama` (Ollama Client & Embeddings), `memfuse-embed` (ONNX-Embeddings, **optional**, Feature-gated, `default=[]`)
 - **Layer 4**: `memfuse-mcp` (MCP Server), `memfuse-tauri` (Desktop App Shell)
 
 ## Für Entwickler: Rust-Crates
