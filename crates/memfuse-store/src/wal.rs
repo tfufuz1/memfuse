@@ -703,7 +703,9 @@ impl Wal {
                         reader
                             .seek(std::io::SeekFrom::Start(0))
                             .await
-                            .map_err(|e| MemFuseError::Storage(format!("WAL seek failed: {}", e)))?;
+                            .map_err(|e| {
+                                MemFuseError::Storage(format!("WAL seek failed: {}", e))
+                            })?;
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(entries),
@@ -769,14 +771,15 @@ impl Wal {
             let chunk_start_pos = pos;
             pos += (4 + len) as u64;
 
-            if version == WalVersion::V2 && self.key_manager.is_some() {
-                let km = self.key_manager.as_ref().unwrap();
+            if let (WalVersion::V2, Some(km)) = (version, &self.key_manager) {
                 if entry_data_raw.len() < 12 {
                     if pos >= file_size {
                         tracing::warn!("WAL truncated during read at offset {}", chunk_start_pos);
                         break;
                     }
-                    return Err(MemFuseError::Storage("WAL entry too short for nonce".into()));
+                    return Err(MemFuseError::Storage(
+                        "WAL entry too short for nonce".into(),
+                    ));
                 }
                 let mut nonce = [0u8; 12];
                 nonce.copy_from_slice(&entry_data_raw[0..12]);
@@ -871,8 +874,7 @@ impl Wal {
 
                     if let Err(e) = verifier.verify_and_update(&snapshot, chunk_start_pos) {
                         if !using_legacy_key {
-                            let mut legacy_verifier =
-                                IntegrityVerifier::new(&LEGACY_INTEGRITY_KEY);
+                            let mut legacy_verifier = IntegrityVerifier::new(&LEGACY_INTEGRITY_KEY);
                             if legacy_verifier
                                 .verify_and_update(&snapshot, chunk_start_pos)
                                 .is_ok()
@@ -1691,13 +1693,39 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let wal_path = dir.path().join("single_nonce_test.wal");
 
-        let km = Arc::new(KeyManager::try_new("test_passphrase", b"salt123456789012345678901234567890").expect("km"));
-        let wal = Wal::open_with_key_manager(&wal_path, Some(km)).await.expect("open wal");
+        let km = Arc::new(
+            KeyManager::try_new("test_passphrase", b"salt123456789012345678901234567890")
+                .expect("km"),
+        );
+        let wal = Wal::open_with_key_manager(&wal_path, Some(km))
+            .await
+            .expect("open wal");
 
         let ops = vec![
-            (WalOp::Put { tx_id: TxId::new(1), key: b"k1".to_vec(), value: b"v1".to_vec() }, 100),
-            (WalOp::Put { tx_id: TxId::new(1), key: b"k2".to_vec(), value: b"v2".to_vec() }, 101),
-            (WalOp::Put { tx_id: TxId::new(1), key: b"k3".to_vec(), value: b"v3".to_vec() }, 102),
+            (
+                WalOp::Put {
+                    tx_id: TxId::new(1),
+                    key: b"k1".to_vec(),
+                    value: b"v1".to_vec(),
+                },
+                100,
+            ),
+            (
+                WalOp::Put {
+                    tx_id: TxId::new(1),
+                    key: b"k2".to_vec(),
+                    value: b"v2".to_vec(),
+                },
+                101,
+            ),
+            (
+                WalOp::Put {
+                    tx_id: TxId::new(1),
+                    key: b"k3".to_vec(),
+                    value: b"v3".to_vec(),
+                },
+                102,
+            ),
         ];
 
         let batch = wal.prepare_batch(ops).await.expect("prepare batch");
@@ -1726,19 +1754,46 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let wal_path = dir.path().join("roundtrip_test.wal");
 
-        let km = Arc::new(KeyManager::try_new("passphrase123", b"salt123456789012345678901234567890").expect("km"));
-        let wal = Wal::open_with_key_manager(&wal_path, Some(km.clone())).await.expect("open wal");
+        let km = Arc::new(
+            KeyManager::try_new("passphrase123", b"salt123456789012345678901234567890")
+                .expect("km"),
+        );
+        let wal = Wal::open_with_key_manager(&wal_path, Some(km.clone()))
+            .await
+            .expect("open wal");
 
         let ops = vec![
-            (WalOp::Put { tx_id: TxId::new(1), key: b"alice_key".to_vec(), value: b"alice_value".to_vec() }, 1),
-            (WalOp::Put { tx_id: TxId::new(2), key: b"bob_key".to_vec(), value: b"bob_value".to_vec() }, 2),
-            (WalOp::Delete { tx_id: TxId::new(3), key: b"alice_key".to_vec() }, 3),
+            (
+                WalOp::Put {
+                    tx_id: TxId::new(1),
+                    key: b"alice_key".to_vec(),
+                    value: b"alice_value".to_vec(),
+                },
+                1,
+            ),
+            (
+                WalOp::Put {
+                    tx_id: TxId::new(2),
+                    key: b"bob_key".to_vec(),
+                    value: b"bob_value".to_vec(),
+                },
+                2,
+            ),
+            (
+                WalOp::Delete {
+                    tx_id: TxId::new(3),
+                    key: b"alice_key".to_vec(),
+                },
+                3,
+            ),
         ];
 
         let batch = wal.prepare_batch(ops).await.expect("prepare_batch");
         wal.append_batch(&batch).await.expect("append_batch");
 
-        let wal_reopen = Wal::open_with_key_manager(&wal_path, Some(km)).await.expect("reopen wal");
+        let wal_reopen = Wal::open_with_key_manager(&wal_path, Some(km))
+            .await
+            .expect("reopen wal");
         let replayed = wal_reopen.replay().await.expect("replay");
 
         assert_eq!(replayed.len(), 3);
@@ -1767,7 +1822,10 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let wal_path = dir.path().join("v1_legacy_format.wal");
 
-        let km = Arc::new(KeyManager::try_new("legacy_passphrase", b"salt123456789012345678901234567890").expect("km"));
+        let km = Arc::new(
+            KeyManager::try_new("legacy_passphrase", b"salt123456789012345678901234567890")
+                .expect("km"),
+        );
 
         // Derive sub-key for file ID (same derivation Wal::open_with_key_manager does)
         let uuid_bytes = Wal::load_or_create_wal_uuid(&wal_path).await.expect("uuid");
@@ -1776,7 +1834,11 @@ mod tests {
         // Manually construct an old V1 encrypted WAL file (no MFW2 header, each entry encrypted separately)
         let integrity_key = sub_km.integrity_key().expect("integrity key");
 
-        let op1 = WalOp::Put { tx_id: TxId::new(10), key: b"legacy_k1".to_vec(), value: b"legacy_v1".to_vec() };
+        let op1 = WalOp::Put {
+            tx_id: TxId::new(10),
+            key: b"legacy_k1".to_vec(),
+            value: b"legacy_v1".to_vec(),
+        };
         let entry1 = WalEntry::try_new(op1, 100, &integrity_key, [0u8; 32]).expect("entry1");
         let bytes1 = entry1.to_bytes().expect("bytes1");
 
@@ -1789,7 +1851,11 @@ mod tests {
         v1_file_data.extend_from_slice(&nonce1);
         v1_file_data.extend_from_slice(&encrypted1);
 
-        let op2 = WalOp::Put { tx_id: TxId::new(11), key: b"legacy_k2".to_vec(), value: b"legacy_v2".to_vec() };
+        let op2 = WalOp::Put {
+            tx_id: TxId::new(11),
+            key: b"legacy_k2".to_vec(),
+            value: b"legacy_v2".to_vec(),
+        };
         let entry2 = WalEntry::try_new(op2, 101, &integrity_key, entry1.checksum).expect("entry2");
         let bytes2 = entry2.to_bytes().expect("bytes2");
 
@@ -1801,13 +1867,21 @@ mod tests {
         v1_file_data.extend_from_slice(&nonce2);
         v1_file_data.extend_from_slice(&encrypted2);
 
-        fs::write(&wal_path, &v1_file_data).await.expect("write v1 wal");
+        fs::write(&wal_path, &v1_file_data)
+            .await
+            .expect("write v1 wal");
 
         // Reopen via standard Wal::open_with_key_manager and replay
-        let wal = Wal::open_with_key_manager(&wal_path, Some(km)).await.expect("open v1 wal");
+        let wal = Wal::open_with_key_manager(&wal_path, Some(km))
+            .await
+            .expect("open v1 wal");
         let replayed = wal.replay().await.expect("replay v1 wal");
 
-        assert_eq!(replayed.len(), 2, "Both V1 entries must be replayed correctly");
+        assert_eq!(
+            replayed.len(),
+            2,
+            "Both V1 entries must be replayed correctly"
+        );
         assert_eq!(replayed[0].1.seq_no, 100);
         assert_eq!(replayed[1].1.seq_no, 101);
         assert_eq!(replayed[1].1.prev_hmac, replayed[0].1.checksum);
@@ -1818,23 +1892,56 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let wal_path = dir.path().join("batch_truncation.wal");
 
-        let km = Arc::new(KeyManager::try_new("passphrase123", b"salt123456789012345678901234567890").expect("km"));
+        let km = Arc::new(
+            KeyManager::try_new("passphrase123", b"salt123456789012345678901234567890")
+                .expect("km"),
+        );
 
         {
-            let wal = Wal::open_with_key_manager(&wal_path, Some(km.clone())).await.expect("open wal");
+            let wal = Wal::open_with_key_manager(&wal_path, Some(km.clone()))
+                .await
+                .expect("open wal");
 
             // Batch 1: 2 entries
             let ops1 = vec![
-                (WalOp::Put { tx_id: TxId::new(1), key: b"k1".to_vec(), value: b"v1".to_vec() }, 1),
-                (WalOp::Put { tx_id: TxId::new(1), key: b"k2".to_vec(), value: b"v2".to_vec() }, 2),
+                (
+                    WalOp::Put {
+                        tx_id: TxId::new(1),
+                        key: b"k1".to_vec(),
+                        value: b"v1".to_vec(),
+                    },
+                    1,
+                ),
+                (
+                    WalOp::Put {
+                        tx_id: TxId::new(1),
+                        key: b"k2".to_vec(),
+                        value: b"v2".to_vec(),
+                    },
+                    2,
+                ),
             ];
             let batch1 = wal.prepare_batch(ops1).await.expect("prepare 1");
             wal.append_batch(&batch1).await.expect("append 1");
 
             // Batch 2: 2 entries
             let ops2 = vec![
-                (WalOp::Put { tx_id: TxId::new(2), key: b"k3".to_vec(), value: b"v3".to_vec() }, 3),
-                (WalOp::Put { tx_id: TxId::new(2), key: b"k4".to_vec(), value: b"v4".to_vec() }, 4),
+                (
+                    WalOp::Put {
+                        tx_id: TxId::new(2),
+                        key: b"k3".to_vec(),
+                        value: b"v3".to_vec(),
+                    },
+                    3,
+                ),
+                (
+                    WalOp::Put {
+                        tx_id: TxId::new(2),
+                        key: b"k4".to_vec(),
+                        value: b"v4".to_vec(),
+                    },
+                    4,
+                ),
             ];
             let batch2 = wal.prepare_batch(ops2).await.expect("prepare 2");
             wal.append_batch(&batch2).await.expect("append 2");
@@ -1844,13 +1951,24 @@ mod tests {
         let mut data = fs::read(&wal_path).await.expect("read wal");
         let truncated_len = data.len() - 15; // chop off 15 bytes from Batch 2's ciphertext
         data.truncate(truncated_len);
-        fs::write(&wal_path, &data).await.expect("write truncated wal");
+        fs::write(&wal_path, &data)
+            .await
+            .expect("write truncated wal");
 
         // Reopen and replay
-        let wal2 = Wal::open_with_key_manager(&wal_path, Some(km)).await.expect("reopen wal");
-        let replayed = wal2.replay().await.expect("replay must succeed by recovering Batch 1");
+        let wal2 = Wal::open_with_key_manager(&wal_path, Some(km))
+            .await
+            .expect("reopen wal");
+        let replayed = wal2
+            .replay()
+            .await
+            .expect("replay must succeed by recovering Batch 1");
 
-        assert_eq!(replayed.len(), 2, "Batch 1 (2 entries) must be recovered, Batch 2 truncated");
+        assert_eq!(
+            replayed.len(),
+            2,
+            "Batch 1 (2 entries) must be recovered, Batch 2 truncated"
+        );
         assert_eq!(replayed[0].1.seq_no, 1);
         assert_eq!(replayed[1].1.seq_no, 2);
     }

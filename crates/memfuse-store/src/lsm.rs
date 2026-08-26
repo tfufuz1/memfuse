@@ -441,10 +441,10 @@ impl LsmStorage {
                 static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
                 let count = COUNTER.fetch_add(1, Ordering::Relaxed);
                 let seq = self.next_seq_no.load(Ordering::Relaxed);
-                let new_sst_path = self
-                    .config
-                    .path
-                    .join(format!("sst-{:020}-{:06}.sst", seq, count % 1000000));
+                let new_sst_path =
+                    self.config
+                        .path
+                        .join(format!("sst-{:020}-{:06}.sst", seq, count % 1000000));
 
                 let mut builder = SstableBuilder::create_with_key_manager(
                     &new_sst_path,
@@ -1549,7 +1549,10 @@ mod tests {
             let tx = TxId::new(i);
             let key = format!("k{:02}", i);
             let val = format!("v{:02}", i);
-            storage.put(tx, key.as_bytes(), val.as_bytes()).await.unwrap();
+            storage
+                .put(tx, key.as_bytes(), val.as_bytes())
+                .await
+                .unwrap();
             storage.commit(tx).await.unwrap();
         }
         storage.force_flush().await.unwrap();
@@ -1563,21 +1566,34 @@ mod tests {
         }
 
         // 2. Call rollback_to_tx(TxId::new(5))
-        storage.rollback_to_tx(TxId::new(5)).await.expect("rollback");
+        storage
+            .rollback_to_tx(TxId::new(5))
+            .await
+            .expect("rollback");
 
         // 3. Inspect SSTable on disk: entry count should be 5 and max_tx_id <= 5
         {
             let sstables = storage.sstables.read().await;
-            assert_eq!(sstables.len(), 1, "Spanning SSTable should be recompacted into 1 new SSTable");
+            assert_eq!(
+                sstables.len(),
+                1,
+                "Spanning SSTable should be recompacted into 1 new SSTable"
+            );
             assert_eq!(sstables[0].metadata().max_tx_id, 5);
 
             let mut count = 0;
             let mut stream = sstables[0].stream().await.unwrap();
             while let Some((_k, _v, _seq, tx)) = stream.next_entry().await.unwrap() {
-                assert!(tx <= 5, "SSTable on disk must not contain entries with tx_id > 5");
+                assert!(
+                    tx <= 5,
+                    "SSTable on disk must not contain entries with tx_id > 5"
+                );
                 count += 1;
             }
-            assert_eq!(count, 5, "Surviving on-disk entry count must equal exactly 5");
+            assert_eq!(
+                count, 5,
+                "Surviving on-disk entry count must equal exactly 5"
+            );
         }
 
         // 4. Assert entries <= 5 are readable and > 5 are not
@@ -1613,13 +1629,19 @@ mod tests {
             let tx = TxId::new(i);
             let key = format!("k{:02}", i);
             let val = format!("v{:02}", i);
-            storage.put(tx, key.as_bytes(), val.as_bytes()).await.unwrap();
+            storage
+                .put(tx, key.as_bytes(), val.as_bytes())
+                .await
+                .unwrap();
             storage.commit(tx).await.unwrap();
         }
         storage.force_flush().await.unwrap();
 
         // 2. Rollback to TX 5 (all entries in SSTable are > 5)
-        storage.rollback_to_tx(TxId::new(5)).await.expect("rollback");
+        storage
+            .rollback_to_tx(TxId::new(5))
+            .await
+            .expect("rollback");
 
         // 3. Verify SSTable is completely dropped
         {

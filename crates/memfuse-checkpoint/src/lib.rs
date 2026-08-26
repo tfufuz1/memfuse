@@ -70,6 +70,15 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
         }
     }
 
+    /// Erstellt einen neuen CheckpointGuard für einen Agenten-Schritt.
+    pub async fn for_agent_step(storage: Arc<S>, tx: TxId) -> Result<Self> {
+        let cp = StateCheckpoint {
+            tx_id: tx,
+            timestamp_ms: monotonic_timestamp_ms(),
+        };
+        Ok(Self::new(cp, storage))
+    }
+
     pub fn checkpoint(&self) -> Result<&StateCheckpoint> {
         self.checkpoint
             .as_ref()
@@ -805,5 +814,20 @@ mod tests {
 
         // Should not panic when dropped outside a tokio runtime context
         let _guard = store.create_guard(TxId::new(999)).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_guard_for_agent_step() {
+        let storage = Arc::new(MockStorage::new());
+        let guard = CheckpointGuard::for_agent_step(storage.clone(), TxId::new(55))
+            .await
+            .unwrap();
+
+        let cp = guard.checkpoint().unwrap();
+        assert_eq!(cp.tx_id, TxId::new(55));
+        assert!(cp.timestamp_ms > 0);
+
+        let committed = guard.commit().unwrap();
+        assert_eq!(committed.tx_id, TxId::new(55));
     }
 }

@@ -440,7 +440,10 @@ impl OllamaClient {
                 if is_transient_network_error(&e) {
                     MemFuseError::Io(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
-                        format!("Ollama generate connection error at {}: {e}", self.base_url()),
+                        format!(
+                            "Ollama generate connection error at {}: {e}",
+                            self.base_url()
+                        ),
                     ))
                 } else {
                     MemFuseError::Storage(format!(

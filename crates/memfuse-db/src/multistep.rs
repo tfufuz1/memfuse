@@ -123,7 +123,10 @@ impl<S: StorageEngine> MultiStepEngine<S> {
             }
 
             for sub_q in &sub_qs {
-                let sub_results = self.collection.hybrid_search(sub_q, vector, k, None).await?;
+                let sub_results = self
+                    .collection
+                    .hybrid_search(sub_q, vector, k, None)
+                    .await?;
                 all_result_sets.push(sub_results.clone());
                 current_results = sub_results;
                 sub_queries.push(sub_q.clone());
@@ -276,7 +279,7 @@ mod tests {
         let rewriter = DummyRewriter {
             responses: std::sync::Mutex::new(vec![
                 vec!["rust programming".to_string()], // round 2
-                vec![],                                // round 3 (stop)
+                vec![],                               // round 3 (stop)
             ]),
         };
 

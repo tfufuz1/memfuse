@@ -27,15 +27,8 @@ impl ContextPrefixer {
     /// # Sicherheit
     /// Der `whole_doc`-String wird auf `max_doc_context_chars` gekürzt (DENY Prompt Injection).
     /// Newlines in `chunk_text` werden NICHT gefiltert (absichtlich – Inhaltsteil).
-    pub async fn generate_prefix(
-        &self,
-        whole_doc: &str,
-        chunk_text: &str,
-    ) -> Result<String> {
-        let doc_context: String = whole_doc
-            .chars()
-            .take(self.max_doc_context_chars)
-            .collect();
+    pub async fn generate_prefix(&self, whole_doc: &str, chunk_text: &str) -> Result<String> {
+        let doc_context: String = whole_doc.chars().take(self.max_doc_context_chars).collect();
 
         let prompt = format!(
             "<document>\n{doc_context}\n</document>\n\n\
@@ -49,11 +42,7 @@ impl ContextPrefixer {
 
     /// Generiert Präfixe für mehrere Chunks eines Dokuments.
     /// Nutzt das gleiche `whole_doc` für alle Chunks (= Prompt Caching Pattern).
-    pub async fn generate_batch(
-        &self,
-        whole_doc: &str,
-        chunks: &[String],
-    ) -> Result<Vec<String>> {
+    pub async fn generate_batch(&self, whole_doc: &str, chunks: &[String]) -> Result<Vec<String>> {
         let mut results = Vec::with_capacity(chunks.len());
         for chunk in chunks {
             let prefix = self.generate_prefix(whole_doc, chunk).await?;
@@ -131,10 +120,7 @@ mod tests {
         let client = OllamaClient::new(server_url);
         let prefixer = ContextPrefixer::new(client, "llama3");
         let chunks = vec!["Chunk 1".to_string(), "Chunk 2".to_string()];
-        let prefixes = prefixer
-            .generate_batch("Dokument", &chunks)
-            .await
-            .unwrap();
+        let prefixes = prefixer.generate_batch("Dokument", &chunks).await.unwrap();
         assert_eq!(prefixes.len(), 2);
         assert_eq!(prefixes[0], "Präfix");
         assert_eq!(prefixes[1], "Präfix");

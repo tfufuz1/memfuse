@@ -115,7 +115,8 @@ async fn test_relate_updates_graph_index_and_affects_hybrid_search() {
         .expect("relate doc_a -> doc_b");
 
     // 3. Perform hybrid_search with doc_a as anchor entity
-    let anchor_eid = memfuse_core::EntityId::from_key("doc_a").expect("test: non-empty key must succeed");
+    let anchor_eid =
+        memfuse_core::EntityId::from_key("doc_a").expect("test: non-empty key must succeed");
     let results = col
         .hybrid_search(
             "nonmatchingtext",

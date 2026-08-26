@@ -173,10 +173,7 @@ impl IngestionPipeline {
                     let doc_id = format!("{}#{}", file_name, idx);
                     let mut metadata = chunk.metadata.unwrap_or_else(|| serde_json::json!({}));
                     if let Some(obj) = metadata.as_object_mut() {
-                        obj.insert(
-                            "text".to_string(),
-                            serde_json::Value::String(index_text),
-                        );
+                        obj.insert("text".to_string(), serde_json::Value::String(index_text));
                         if let Some(prefix) = &chunk.contextual_prefix {
                             obj.insert(
                                 "contextual_prefix".to_string(),
@@ -196,7 +193,9 @@ impl IngestionPipeline {
 
                         // Extrahiere Entitäten aus dem Chunk-Text
                         let extracted_entities =
-                            crate::ingestion::entities::SimpleEntityExtractor::extract(&raw_content);
+                            crate::ingestion::entities::SimpleEntityExtractor::extract(
+                                &raw_content,
+                            );
 
                         if !extracted_entities.is_empty() {
                             let graph = collection.graph_index();
