@@ -72,7 +72,9 @@ pub trait MorphologicalTokenizer: Send + Sync {
 /// # Input Contract
 /// Input tokens MUST be lowercased (and ideally normalized with
 /// [`normalize_umlauts`]) before calling [`MorphologicalTokenizer::decompose`].
-/// Uppercase input causes silent dictionary misses in debug mode.
+/// Uppercase input triggers a `debug_assert!` panic in debug builds and
+/// causes silent dictionary misses (fallback: token returned unsplit) in
+/// release builds.
 ///
 /// Fallback: returns the original token unsplit.
 /// A prefix trie node for fast lookup and prefix matching of German dictionary words.
@@ -231,6 +233,13 @@ struct PathNode {
 
 impl MorphologicalTokenizer for GermanCompoundSplitter {
     fn decompose<'a>(&self, token: &'a str) -> Vec<&'a str> {
+        debug_assert!(
+            token.chars().all(|c| !c.is_uppercase()),
+            "GermanCompoundSplitter::decompose received non-lowercase input: {:?}. \
+             Call normalize_umlauts() before decompose().",
+            token
+        );
+
         if token.len() <= self.min_component_len {
             return vec![token];
         }
@@ -388,11 +397,13 @@ mod tests {
     }
 
     #[test]
-    fn test_decompose_handles_uppercase_without_panic() {
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "non-lowercase input")]
+    fn test_decompose_panics_on_uppercase_in_debug() {
         let splitter = GermanCompoundSplitter::new();
-        let parts = splitter.decompose("Bundesverfassungsgericht");
-        assert!(!parts.is_empty());
+        let _ = splitter.decompose("Bundesverfassungsgericht");
     }
+
 
     #[test]
     fn test_decompose_accepts_lowercase() {
