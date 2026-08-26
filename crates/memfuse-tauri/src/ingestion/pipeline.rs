@@ -1,5 +1,6 @@
 use memfuse_core::{
-    ContextChunk, DocId, Edge, Entity, EntityId, GraphIndex, MemFuseError, Result, TextEmbeddingEngine,
+    ContextChunk, DocId, Edge, Entity, EntityId, GraphIndex, MemFuseError, Result,
+    TextEmbeddingEngine,
 };
 use memfuse_db::{chunker::MarkdownChunker, Collection};
 use std::path::Path;
@@ -81,7 +82,10 @@ impl IngestionPipeline {
     /// mit Embeddings in der übergebenen Collection.
     pub async fn ingest_file(&self, path: &Path, collection: &Collection) -> Result<IngestReport> {
         let metadata = std::fs::metadata(path).map_err(|e| {
-            MemFuseError::Internal(format!("Datei-Metadaten lesen fehlgeschlagen für {:?}: {e}", path))
+            MemFuseError::Internal(format!(
+                "Datei-Metadaten lesen fehlgeschlagen für {:?}: {e}",
+                path
+            ))
         })?;
 
         if metadata.len() > MAX_INGEST_FILE_SIZE_BYTES {
@@ -115,10 +119,7 @@ impl IngestionPipeline {
         let file_name = path
             .file_name()
             .ok_or_else(|| {
-                MemFuseError::InvalidInput(format!(
-                    "Pfad hat keinen Dateinamen: {:?}",
-                    path
-                ))
+                MemFuseError::InvalidInput(format!("Pfad hat keinen Dateinamen: {:?}", path))
             })?
             .to_string_lossy();
 

@@ -264,10 +264,13 @@ mod tests {
     fn test_chunk_text_unicode_german_umlauts() {
         // German string with umlauts (ä, ö, ü, ß) and unicode characters.
         // Total character count = 100 unicode chars (50 chars * 2).
-        let text = "Äpfel, Öle, Übermut und Straße sind wunderschön!! "
-            .repeat(2);
+        let text = "Äpfel, Öle, Übermut und Straße sind wunderschön!! ".repeat(2);
         let char_count = text.chars().count();
-        assert!(char_count >= 100, "Test string must have at least 100 chars, got {}", char_count);
+        assert!(
+            char_count >= 100,
+            "Test string must have at least 100 chars, got {}",
+            char_count
+        );
 
         let chunks = chunk_text(&text, 30);
         assert!(!chunks.is_empty());

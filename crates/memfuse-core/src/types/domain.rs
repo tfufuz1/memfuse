@@ -674,7 +674,6 @@ mod tests {
         assert!(f32_close < f32_far, "f32 ranking mismatch");
     }
 
-
     #[test]
     fn doc_id_valid_key_is_ok() {
         let id = DocId::from_key("valid-key-123").unwrap();

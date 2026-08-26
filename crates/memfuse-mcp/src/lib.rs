@@ -65,11 +65,9 @@ impl McpServer {
                             }
                             self.handle(req).await
                         }
-                        Err(e) => JsonRpcResponse::err(
-                            req_id,
-                            -32600,
-                            format!("Invalid Request: {e}"),
-                        ),
+                        Err(e) => {
+                            JsonRpcResponse::err(req_id, -32600, format!("Invalid Request: {e}"))
+                        }
                     }
                 }
                 Err(e) => JsonRpcResponse::err(None, -32700, format!("Parse error: {e}")),
@@ -90,7 +88,10 @@ impl McpServer {
             return JsonRpcResponse::err(
                 id,
                 -32600,
-                format!("Invalid Request: jsonrpc version must be '2.0', got '{}'", req.jsonrpc),
+                format!(
+                    "Invalid Request: jsonrpc version must be '2.0', got '{}'",
+                    req.jsonrpc
+                ),
             );
         }
         match req.method.as_str() {
@@ -237,10 +238,9 @@ impl McpServer {
 
                 let k_val = args.get("k").or_else(|| args.get("limit"));
                 let k_raw = match k_val {
-                    Some(Value::Number(n)) => n
-                        .as_u64()
-                        .ok_or_else(|| McpError::invalid_params("k/limit muss eine positive Ganzzahl sein"))?
-                        as usize,
+                    Some(Value::Number(n)) => n.as_u64().ok_or_else(|| {
+                        McpError::invalid_params("k/limit muss eine positive Ganzzahl sein")
+                    })? as usize,
                     Some(_) => return Err(McpError::invalid_params("k/limit muss eine Zahl sein")),
                     None => 10,
                 };
@@ -253,11 +253,7 @@ impl McpServer {
                     );
                 }
 
-                let col = self
-                    .db
-                    .collection(col_name)
-                    .await
-                    .map_err(McpError::from)?;
+                let col = self.db.collection(col_name).await.map_err(McpError::from)?;
                 let vec = self
                     .embedder
                     .embed(query)
@@ -298,7 +294,9 @@ impl McpServer {
                         s
                     }
                     None => {
-                        return Err(McpError::invalid_params("id fehlt: missing required field 'id'"));
+                        return Err(McpError::invalid_params(
+                            "id fehlt: missing required field 'id'",
+                        ));
                     }
                 };
 
@@ -308,12 +306,16 @@ impl McpServer {
 
                 let vector_opt: Option<Vec<f32>> = if let Some(v) = vec_val {
                     let arr = v.as_array().ok_or_else(|| {
-                        McpError::invalid_params("Invalid params: 'vector' must be an array of numbers")
+                        McpError::invalid_params(
+                            "Invalid params: 'vector' must be an array of numbers",
+                        )
                     })?;
                     let mut vec = Vec::with_capacity(arr.len());
                     for elem in arr {
                         let num = elem.as_f64().ok_or_else(|| {
-                            McpError::invalid_params("Invalid params: 'vector' must contain numbers")
+                            McpError::invalid_params(
+                                "Invalid params: 'vector' must contain numbers",
+                            )
                         })?;
                         vec.push(num as f32);
                     }
@@ -353,11 +355,7 @@ impl McpServer {
                     .cloned()
                     .unwrap_or_default();
 
-                let col = self
-                    .db
-                    .collection(col_name)
-                    .await
-                    .map_err(McpError::from)?;
+                let col = self.db.collection(col_name).await.map_err(McpError::from)?;
 
                 if let Some(vector) = vector_opt {
                     let mut meta = json!({
@@ -463,7 +461,9 @@ impl McpServer {
                         s
                     }
                     None => {
-                        return Err(McpError::invalid_params("id fehlt: missing required field 'id'"));
+                        return Err(McpError::invalid_params(
+                            "id fehlt: missing required field 'id'",
+                        ));
                     }
                 };
 
@@ -481,11 +481,7 @@ impl McpServer {
                     "default"
                 };
 
-                let col = self
-                    .db
-                    .collection(col_name)
-                    .await
-                    .map_err(McpError::from)?;
+                let col = self.db.collection(col_name).await.map_err(McpError::from)?;
                 match col.get(id).await.map_err(McpError::from)? {
                     Some(doc) => serde_json::to_value(doc)
                         .map_err(|e| McpError::internal_error(e.to_string())),
@@ -494,15 +490,13 @@ impl McpServer {
             }
 
             "memfuse_collections" => {
-                let names = self
-                    .db
-                    .list_collections()
-                    .await
-                    .map_err(McpError::from)?;
+                let names = self.db.list_collections().await.map_err(McpError::from)?;
                 Ok(json!({ "collections": names }))
             }
 
-            other => Err(McpError::invalid_params(format!("Unbekanntes Tool: {other}"))),
+            other => Err(McpError::invalid_params(format!(
+                "Unbekanntes Tool: {other}"
+            ))),
         }
     }
 }

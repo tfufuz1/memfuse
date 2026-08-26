@@ -151,9 +151,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     // collision with Collection-sequenced TxIds [1, ~10^12].
     // See: DECISIONS.md AGT-GRAPH-001, TxId::INTERNAL_BASE
     fn next_tx(&self) -> Result<TxId> {
-        let id = self
-            .next_internal_tx
-            .fetch_add(1, Ordering::SeqCst);
+        let id = self.next_internal_tx.fetch_add(1, Ordering::SeqCst);
         assert!(
             id < TxId::INTERNAL_BASE + 999_999,
             "Checkpoint TxId counter overflow"
