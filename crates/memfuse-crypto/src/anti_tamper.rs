@@ -11,7 +11,9 @@ pub struct VolatileEncryptionKey {
 impl VolatileEncryptionKey {
     /// Creates a new volatile key from a raw 32-byte array.
     pub fn new(raw: [u8; 32]) -> Self {
-        Self { key_bytes: Zeroizing::new(raw) }
+        Self {
+            key_bytes: Zeroizing::new(raw),
+        }
     }
 
     /// Emergency Trigger: Explicitly wipes the key from memory.
@@ -118,7 +120,10 @@ mod tests {
         // to inspect that the drop handler ran and zeroed out the underlying memory array before stack reuse.
         unsafe {
             let cleared_slice = std::slice::from_raw_parts(ptr, 32);
-            assert_eq!(cleared_slice, &[0x00; 32], "Memory MUST be zeroed after drop");
+            assert_eq!(
+                cleared_slice, &[0x00; 32],
+                "Memory MUST be zeroed after drop"
+            );
         }
     }
 }

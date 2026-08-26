@@ -409,7 +409,9 @@ impl CsrGraph {
         graph.compact();
 
         if let Ok(last_tx) = storage.last_tx_id().await {
-            graph.last_tx_id.fetch_max(last_tx.inner(), Ordering::SeqCst);
+            graph
+                .last_tx_id
+                .fetch_max(last_tx.inner(), Ordering::SeqCst);
         }
 
         tracing::info!(

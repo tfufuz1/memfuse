@@ -9,9 +9,8 @@ pub fn extract_docx_bytes(bytes: &[u8]) -> Result<String> {
     std::panic::catch_unwind(|| {
         use docx_rs::*;
 
-        let docx = read_docx(bytes).map_err(|e| {
-            MemFuseError::Internal(format!("DOCX parsing failed: {e:?}"))
-        })?;
+        let docx = read_docx(bytes)
+            .map_err(|e| MemFuseError::Internal(format!("DOCX parsing failed: {e:?}")))?;
 
         let mut text_buf = String::new();
 

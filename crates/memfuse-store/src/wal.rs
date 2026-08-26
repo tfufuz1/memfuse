@@ -343,21 +343,33 @@ impl Wal {
 
         // 🛡️ SICHERUNG: Directory FSync (FIND-STO-004 / Task G)
         if is_new {
-            file.sync_all()
-                .await
-                .map_err(|e| MemFuseError::Storage(format!("WAL file fsync failed for {}: {}", path.display(), e)))?;
+            file.sync_all().await.map_err(|e| {
+                MemFuseError::Storage(format!(
+                    "WAL file fsync failed for {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?;
             let parent = path.parent().unwrap_or_else(|| Path::new(""));
             let dir_path = if parent.as_os_str().is_empty() {
                 Path::new(".")
             } else {
                 parent
             };
-            let dir = tokio::fs::File::open(dir_path)
-                .await
-                .map_err(|e| MemFuseError::Storage(format!("WAL dir open failed for {}: {}", dir_path.display(), e)))?;
-            dir.sync_all()
-                .await
-                .map_err(|e| MemFuseError::Storage(format!("WAL dir fsync failed for {}: {}", dir_path.display(), e)))?;
+            let dir = tokio::fs::File::open(dir_path).await.map_err(|e| {
+                MemFuseError::Storage(format!(
+                    "WAL dir open failed for {}: {}",
+                    dir_path.display(),
+                    e
+                ))
+            })?;
+            dir.sync_all().await.map_err(|e| {
+                MemFuseError::Storage(format!(
+                    "WAL dir fsync failed for {}: {}",
+                    dir_path.display(),
+                    e
+                ))
+            })?;
         }
 
         let metadata = file
@@ -550,15 +562,27 @@ impl Wal {
         }
 
         let mut file = self.file.lock().await;
-        file.write_all(&total_bytes)
-            .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL batch write failed for {}: {}", self.path.display(), e)))?;
-        file.flush()
-            .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL batch flush failed for {}: {}", self.path.display(), e)))?;
-        file.sync_all()
-            .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL batch fsync failed for {}: {}", self.path.display(), e)))?;
+        file.write_all(&total_bytes).await.map_err(|e| {
+            MemFuseError::Storage(format!(
+                "WAL batch write failed for {}: {}",
+                self.path.display(),
+                e
+            ))
+        })?;
+        file.flush().await.map_err(|e| {
+            MemFuseError::Storage(format!(
+                "WAL batch flush failed for {}: {}",
+                self.path.display(),
+                e
+            ))
+        })?;
+        file.sync_all().await.map_err(|e| {
+            MemFuseError::Storage(format!(
+                "WAL batch fsync failed for {}: {}",
+                self.path.display(),
+                e
+            ))
+        })?;
 
         self.size.fetch_add(
             total_bytes.len() as u64,
@@ -757,7 +781,10 @@ impl Wal {
             if let Err(e) = verifier.verify_and_update(&snapshot, entry_start_pos) {
                 if !using_legacy_key {
                     let mut legacy_verifier = IntegrityVerifier::new(&LEGACY_INTEGRITY_KEY);
-                    if legacy_verifier.verify_and_update(&snapshot, entry_start_pos).is_ok() {
+                    if legacy_verifier
+                        .verify_and_update(&snapshot, entry_start_pos)
+                        .is_ok()
+                    {
                         tracing::warn!(
                             "WAL nutzt veralteten Integritätsschlüssel — Datenbank sollte neu initialisiert werden"
                         );
@@ -1463,7 +1490,10 @@ mod tests {
 
         // Reopen and replay
         let wal2 = Wal::open(&wal_path).await.expect("reopen");
-        let replay_entries = wal2.replay().await.expect("replay must succeed without panic");
+        let replay_entries = wal2
+            .replay()
+            .await
+            .expect("replay must succeed without panic");
 
         // Replay must recover entry 1 (which was fully written) and cleanly discard the truncated tail
         assert_eq!(replay_entries.len(), 1, "Only entry 1 should be recovered");

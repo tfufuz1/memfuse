@@ -77,7 +77,10 @@ mod tests {
 
         for _ in 0..MAX_CONCURRENT_REGEX_OPS {
             let permit = state.regex_semaphore.try_acquire();
-            assert!(permit.is_ok(), "Permit allocation should succeed within limit");
+            assert!(
+                permit.is_ok(),
+                "Permit allocation should succeed within limit"
+            );
             permits.push(permit.unwrap());
         }
 

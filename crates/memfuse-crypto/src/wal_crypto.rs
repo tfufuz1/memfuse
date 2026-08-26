@@ -342,7 +342,9 @@ mod tests {
         corrupted_entry.checksum[0] ^= 0x01; // Flip a single bit in checksum
 
         let mut verifier = IntegrityVerifier::new(key);
-        let err = verifier.verify_and_update(&corrupted_entry, 100).unwrap_err();
+        let err = verifier
+            .verify_and_update(&corrupted_entry, 100)
+            .unwrap_err();
         if let memfuse_core::MemFuseError::WalCorruption { offset, reason, .. } = err {
             assert_eq!(offset, 100);
             assert!(reason.contains("HMAC mismatch"));

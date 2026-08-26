@@ -330,7 +330,8 @@ impl OllamaClient {
                 .text()
                 .await
                 .unwrap_or_else(|_| "<body unreadable>".into());
-            if status == reqwest::StatusCode::NOT_FOUND || body.to_lowercase().contains("not found") {
+            if status == reqwest::StatusCode::NOT_FOUND || body.to_lowercase().contains("not found")
+            {
                 return Err(MemFuseError::NotFound(format!(
                     "Ollama model '{model}' not found. Run: ollama pull {model}"
                 )));
@@ -480,7 +481,10 @@ impl OllamaClient {
                 if is_transient_network_error(&e) {
                     MemFuseError::Io(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
-                        format!("Ollama connection network error at {}: {e}", self.base_url()),
+                        format!(
+                            "Ollama connection network error at {}: {e}",
+                            self.base_url()
+                        ),
                     ))
                 } else {
                     MemFuseError::Storage(format!(
@@ -497,7 +501,9 @@ impl OllamaClient {
                 .await
                 .unwrap_or_else(|_| "<body unreadable>".into());
             let lower = body.to_lowercase();
-            if lower.contains("model") && lower.contains("not found") || status == reqwest::StatusCode::NOT_FOUND {
+            if lower.contains("model") && lower.contains("not found")
+                || status == reqwest::StatusCode::NOT_FOUND
+            {
                 return Err(MemFuseError::NotFound(format!(
                     "Ollama model '{model}' not found. Run: ollama pull {model}"
                 )));
@@ -625,7 +631,7 @@ mod tests {
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
-            while let Ok((mut socket, _)) = listener.accept().await {
+            if let Ok((mut socket, _)) = listener.accept().await {
                 use tokio::io::{AsyncReadExt, AsyncWriteExt};
                 let mut buf = [0u8; 1024];
                 let _ = socket.read(&mut buf).await;
@@ -890,7 +896,10 @@ mod tests {
         });
 
         let client = OllamaClient::new(server_url);
-        let res = client.embed("nomic-embed-text", "single text").await.unwrap();
+        let res = client
+            .embed("nomic-embed-text", "single text")
+            .await
+            .unwrap();
         assert_eq!(res, vec![0.5, 0.25]);
     }
 
@@ -982,7 +991,8 @@ mod tests {
                 let count = attempts_clone.fetch_add(1, Ordering::SeqCst);
 
                 if count == 0 {
-                    let response = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 11\r\n\r\nUnavailable";
+                    let response =
+                        "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 11\r\n\r\nUnavailable";
                     socket.write_all(response.as_bytes()).await.ok();
                 } else {
                     let body = serde_json::json!({ "embedding": [0.9, 0.8] }).to_string();
@@ -1021,9 +1031,9 @@ mod tests {
                 let _ = socket.read(&mut buf).await;
                 attempts_clone.fetch_add(1, Ordering::SeqCst);
 
-                let response = "HTTP/1.1 400 Bad Request\r\nContent-Length: 15\r\n\r\nInvalid payload";
+                let response =
+                    "HTTP/1.1 400 Bad Request\r\nContent-Length: 15\r\n\r\nInvalid payload";
                 socket.write_all(response.as_bytes()).await.ok();
-                break;
             }
         });
 
@@ -1100,7 +1110,8 @@ mod tests {
                 let mut buf = [0u8; 1024];
                 let _ = socket.read(&mut buf).await;
                 attempts_clone.fetch_add(1, Ordering::SeqCst);
-                let response = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 11\r\n\r\nUnavailable";
+                let response =
+                    "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 11\r\n\r\nUnavailable";
                 socket.write_all(response.as_bytes()).await.ok();
             }
         });
@@ -1193,10 +1204,16 @@ mod tests {
 
         let client = OllamaClient::new(server_url);
         assert!(client.is_model_available("nomic-embed-text").await);
-        assert!(client.ensure_model_available("nomic-embed-text").await.is_ok());
+        assert!(client
+            .ensure_model_available("nomic-embed-text")
+            .await
+            .is_ok());
 
         assert!(!client.is_model_available("nonexistent-model").await);
-        let err = client.ensure_model_available("nonexistent-model").await.unwrap_err();
+        let err = client
+            .ensure_model_available("nonexistent-model")
+            .await
+            .unwrap_err();
         assert!(matches!(err, MemFuseError::NotFound(_)));
     }
 }

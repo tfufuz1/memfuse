@@ -120,9 +120,15 @@ mod tests {
         });
 
         let client = OllamaClient::new(server_url);
-        assert!(client.validate_model_available("nomic-embed-text").await.is_ok());
+        assert!(client
+            .validate_model_available("nomic-embed-text")
+            .await
+            .is_ok());
 
-        let err = client.validate_model_available("missing-model").await.unwrap_err();
+        let err = client
+            .validate_model_available("missing-model")
+            .await
+            .unwrap_err();
         match err {
             MemFuseError::InvalidInput(msg) => {
                 assert!(msg.contains("Ollama model 'missing-model' not found"));

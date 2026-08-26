@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
     use crate::McpServer;
@@ -66,7 +67,10 @@ mod tests {
         let req = make_request("tools/list", json!({}));
         let response = server.handle(req).await;
         assert_eq!(response.jsonrpc, "2.0");
-        let tools = response.result.unwrap()["tools"].as_array().unwrap().clone();
+        let tools = response.result.unwrap()["tools"]
+            .as_array()
+            .unwrap()
+            .clone();
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"memfuse_search"));
         assert!(names.contains(&"memfuse_insert"));
@@ -161,7 +165,9 @@ mod tests {
         };
         let response = server.handle(req).await;
         assert_eq!(response.id, Some(json!(101)));
-        let err = response.error.expect("error expected for missing required param");
+        let err = response
+            .error
+            .expect("error expected for missing required param");
         assert_eq!(err.code, -32602);
         assert!(err.message.contains("id"));
     }
@@ -226,7 +232,9 @@ mod tests {
             .or_else(|_| std::fs::read_to_string("crates/memfuse-mcp/src/lib.rs"))
             .expect("read lib.rs");
         let bin_source = std::fs::read_to_string("src/bin/memfuse-mcp-server.rs")
-            .or_else(|_| std::fs::read_to_string("crates/memfuse-mcp/src/bin/memfuse-mcp-server.rs"))
+            .or_else(|_| {
+                std::fs::read_to_string("crates/memfuse-mcp/src/bin/memfuse-mcp-server.rs")
+            })
             .expect("read bin");
 
         let stdout_writes = source

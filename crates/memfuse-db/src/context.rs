@@ -125,7 +125,8 @@ impl ContextManager {
                         }
                         if best_len > 0 {
                             truncated_chunk.content = content_chars[..best_len].iter().collect();
-                            truncated_chunk.token_count = Self::estimate_tokens(&truncated_chunk.content);
+                            truncated_chunk.token_count =
+                                Self::estimate_tokens(&truncated_chunk.content);
                             total_tokens += truncated_chunk.token_count;
                             selected.push(truncated_chunk);
                         }
