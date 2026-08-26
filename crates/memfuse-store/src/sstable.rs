@@ -118,16 +118,8 @@ impl BloomFilter {
         let hash = blake3::hash(key);
         let bytes = hash.as_bytes();
 
-        let h1 = u64::from_le_bytes(
-            bytes[0..8]
-                .try_into()
-                .expect("BLAKE3 hash is always >= 16 bytes"),
-        );
-        let mut h2 = u64::from_le_bytes(
-            bytes[8..16]
-                .try_into()
-                .expect("BLAKE3 hash is always >= 16 bytes"),
-        );
+        let h1 = u64::from_le_bytes(bytes[0..8].try_into().unwrap_or([0u8; 8]));
+        let mut h2 = u64::from_le_bytes(bytes[8..16].try_into().unwrap_or([0u8; 8]));
 
         // h2 muss ungerade sein für double hashing (verhindert Zyklen)
         h2 |= 1;
