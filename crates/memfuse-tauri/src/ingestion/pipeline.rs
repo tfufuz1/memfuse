@@ -153,7 +153,8 @@ impl IngestionPipeline {
                 .map(|(idx, chunk)| {
                     let embedder = Arc::clone(&self.embedder);
                     async move {
-                        let res = embedder.embed(&chunk.content).await;
+                        let text_to_embed = chunk.combined_text_owned();
+                        let res = embedder.embed(&text_to_embed).await;
                         (idx, chunk, res)
                     }
                 })
@@ -165,7 +166,8 @@ impl IngestionPipeline {
         sorted.sort_by_key(|(idx, _, _)| *idx);
 
         for (idx, chunk, embed_res) in sorted {
-            let chunk_text = chunk.content;
+            let index_text = chunk.combined_text_owned();
+            let raw_content = chunk.content;
             match embed_res {
                 Ok(embedding) => {
                     let doc_id = format!("{}#{}", file_name, idx);
@@ -173,8 +175,14 @@ impl IngestionPipeline {
                     if let Some(obj) = metadata.as_object_mut() {
                         obj.insert(
                             "text".to_string(),
-                            serde_json::Value::String(chunk_text.clone()),
+                            serde_json::Value::String(index_text),
                         );
+                        if let Some(prefix) = &chunk.contextual_prefix {
+                            obj.insert(
+                                "contextual_prefix".to_string(),
+                                serde_json::Value::String(prefix.clone()),
+                            );
+                        }
                         obj.insert(
                             "source".to_string(),
                             serde_json::Value::String(path.display().to_string()),
@@ -188,7 +196,7 @@ impl IngestionPipeline {
 
                         // Extrahiere Entitäten aus dem Chunk-Text
                         let extracted_entities =
-                            crate::ingestion::entities::SimpleEntityExtractor::extract(&chunk_text);
+                            crate::ingestion::entities::SimpleEntityExtractor::extract(&raw_content);
 
                         if !extracted_entities.is_empty() {
                             let graph = collection.graph_index();

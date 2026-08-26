@@ -215,6 +215,7 @@ impl MarkdownChunker {
                     relevance: 1.0,
                     token_count,
                     metadata,
+                    contextual_prefix: None,
                 }
             })
             .collect()
