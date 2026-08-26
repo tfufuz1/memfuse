@@ -161,10 +161,11 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     // See: DECISIONS.md AGT-GRAPH-001, TxId::INTERNAL_BASE
     fn next_tx(&self) -> Result<TxId> {
         let id = self.next_internal_tx.fetch_add(1, Ordering::SeqCst);
-        assert!(
-            id < TxId::INTERNAL_BASE + 999_999,
-            "Checkpoint TxId counter overflow"
-        );
+        if id >= TxId::INTERNAL_BASE + 999_999 {
+            return Err(MemFuseError::Internal(
+                "Checkpoint TxId counter overflow".to_string(),
+            ));
+        }
         Ok(TxId::new(id))
     }
 
@@ -829,5 +830,45 @@ mod tests {
 
         let committed = guard.commit().unwrap();
         assert_eq!(committed.tx_id, TxId::new(55));
+    }
+
+    #[tokio::test]
+    async fn test_drop_checkpoint_uses_unique_tx_and_unpins() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
+
+        store
+            .create_checkpoint("drop_me", "col1", 42, TxId::new(1), serde_json::json!({}))
+            .await
+            .unwrap();
+
+        assert!(storage.pinned.lock().contains(&42));
+        assert!(store.get_checkpoint("drop_me").await.unwrap().is_some());
+
+        store.drop_checkpoint("drop_me").await.unwrap();
+
+        assert!(
+            !storage.pinned.lock().contains(&42),
+            "Checkpoint seq_no 42 should be unpinned after drop"
+        );
+        assert!(store.get_checkpoint("drop_me").await.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_next_tx_overflow_returns_err() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage, "test");
+
+        store
+            .next_internal_tx
+            .store(TxId::INTERNAL_BASE + 999_999, Ordering::SeqCst);
+
+        let res = store.next_tx();
+        assert!(res.is_err());
+        if let Err(MemFuseError::Internal(msg)) = res {
+            assert!(msg.contains("overflow"));
+        } else {
+            panic!("Expected Internal error on overflow");
+        }
     }
 }

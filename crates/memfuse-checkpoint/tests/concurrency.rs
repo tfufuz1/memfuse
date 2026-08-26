@@ -124,3 +124,45 @@ async fn test_concurrent_checkpoint_creation_same_name() {
         checkpoints.len()
     );
 }
+
+#[tokio::test]
+async fn test_concurrent_drop_checkpoints() {
+    let storage = Arc::new(MockStorage::new());
+    let manager = Arc::new(PersistentCheckpointStore::new(storage.clone(), "test"));
+
+    // Create 10 checkpoints
+    for i in 0..10 {
+        manager
+            .create_checkpoint(
+                &format!("cp_{i}"),
+                "coll",
+                i as u64,
+                TxId::new(i as u64),
+                serde_json::json!({}),
+            )
+            .await
+            .unwrap();
+    }
+
+    let mut handles = Vec::new();
+    for i in 0..10 {
+        let m = manager.clone();
+        handles.push(tokio::spawn(async move {
+            m.drop_checkpoint(&format!("cp_{i}")).await
+        }));
+    }
+
+    for h in handles {
+        h.await.unwrap().unwrap();
+    }
+
+    let remaining = manager.list_checkpoints().await.unwrap();
+    assert!(
+        remaining.is_empty(),
+        "All checkpoints should have been dropped concurrently"
+    );
+    assert!(
+        storage.pinned.lock().is_empty(),
+        "All checkpoint seq_nos should be unpinned after drops"
+    );
+}
