@@ -1093,4 +1093,94 @@ mod tests {
             "Compaction loop did not shut down gracefully"
         );
     }
+
+    #[tokio::test]
+    async fn concurrent_flush_and_compact_is_safe() {
+        use crate::lsm::{LsmConfig, LsmStorage};
+        use memfuse_core::traits::StorageEngine;
+
+        for _iteration in 0..10 {
+            let tmp = tempfile::TempDir::new().unwrap();
+            let config = LsmConfig {
+                path: tmp.path().to_path_buf(),
+                memtable_size_limit: 1024,
+                max_ram_mb: 64,
+                tx_timeout: std::time::Duration::from_secs(60),
+                compaction: CompactionConfig {
+                    min_sstables_per_tier: 2,
+                    size_ratio: 2.0,
+                    check_interval: std::time::Duration::from_millis(10),
+                    yield_threshold: 100,
+                    max_memory_bytes: Some(1024 * 1024),
+                },
+                encryption_passphrase: None,
+            };
+
+            let storage = Arc::new(LsmStorage::new(config).await.expect("create storage"));
+
+            // Insert initial data and flush to create SSTables
+            for i in 0..10u64 {
+                let tx = memfuse_core::TxId::new(i + 1);
+                let key = format!("key-{:04}", i);
+                let val = format!("val-{:04}", i);
+                storage
+                    .put(tx, key.as_bytes(), val.as_bytes())
+                    .await
+                    .expect("put");
+                storage.commit(tx).await.expect("commit");
+            }
+            storage.force_flush().await.expect("flush 1");
+
+            for i in 10..20u64 {
+                let tx = memfuse_core::TxId::new(i + 1);
+                let key = format!("key-{:04}", i);
+                let val = format!("val-{:04}", i);
+                storage
+                    .put(tx, key.as_bytes(), val.as_bytes())
+                    .await
+                    .expect("put");
+                storage.commit(tx).await.expect("commit");
+            }
+            storage.force_flush().await.expect("flush 2");
+
+            // Write un-flushed memtable data for concurrent flush task
+            for i in 20..30u64 {
+                let tx = memfuse_core::TxId::new(i + 1);
+                let key = format!("key-{:04}", i);
+                let val = format!("val-{:04}", i);
+                storage
+                    .put(tx, key.as_bytes(), val.as_bytes())
+                    .await
+                    .expect("put");
+                storage.commit(tx).await.expect("commit");
+            }
+
+            let s1 = Arc::clone(&storage);
+            let s2 = Arc::clone(&storage);
+
+            let flush_handle = tokio::spawn(async move {
+                s1.force_flush().await
+            });
+
+            let compact_handle = tokio::spawn(async move {
+                s2.maybe_compact().await
+            });
+
+            let (flush_res, compact_res) = tokio::join!(flush_handle, compact_handle);
+            flush_res.expect("flush task joined").expect("flush succeeded");
+            compact_res.expect("compact task joined").expect("compact succeeded");
+
+            // Verify data readability
+            for i in 0..30u64 {
+                let key = format!("key-{:04}", i);
+                let expected_val = format!("val-{:04}", i);
+                let val = storage
+                    .get(key.as_bytes())
+                    .await
+                    .expect("get")
+                    .expect("key must exist");
+                assert_eq!(val, expected_val.as_bytes());
+            }
+        }
+    }
 }

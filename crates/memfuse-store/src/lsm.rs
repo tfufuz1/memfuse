@@ -251,13 +251,11 @@ impl LsmStorage {
         };
         let resource_tracker = Arc::new(ResourceTracker::new(budget_config));
         if replayed_size > 0 {
-            // consume_memory returning Err should not abort startup (allowing state recovery),
-            // but MUST be observable in logs so budget accounting inaccuracies are visible.
             if let Err(e) = resource_tracker.consume_memory(replayed_size) {
                 tracing::warn!(
                     replayed_bytes = replayed_size,
-                    "Memory budget tracking failed after WAL replay: {e}. \
-                     Budget accounting may be inaccurate until next flush."
+                    "Memory budget tracking nach WAL-Replay fehlgeschlagen: {e}. \
+                     Budget-Accounting unpräzise bis zum nächsten Flush."
                 );
             }
         }
@@ -487,8 +485,7 @@ impl LsmStorage {
             if let Err(e) = tokio::fs::remove_file(&path).await {
                 tracing::error!(
                     path = ?path,
-                    "Failed to remove orphaned SSTable during rollback: {e}. \
-                     Manual cleanup may be required."
+                    "Orphaned SSTable konnte nicht entfernt werden: {e}. Manuelles Cleanup nötig."
                 );
             }
         }
