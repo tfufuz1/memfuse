@@ -532,14 +532,23 @@ pub trait DistanceCalculator: Send + Sync {
 }
 
 #[cfg(test)]
-mod dyn_safety_checks {
+mod dyn_safety {
     use super::*;
 
-    fn _storage_engine_is_dyn_safe(_: &dyn StorageEngine) {}
-    fn _vector_index_is_dyn_safe(_: &dyn VectorIndex) {}
-    fn _text_index_is_dyn_safe(_: &dyn TextIndex) {}
-    fn _graph_index_is_dyn_safe(_: &dyn GraphIndex) {}
-    fn _text_embedding_is_dyn_safe(_: &dyn TextEmbeddingEngine) {}
+    fn _assert_dyn_storage(_: Option<&dyn StorageEngine>) {}
+    fn _assert_dyn_vector(_: Option<&dyn VectorIndex>) {}
+    fn _assert_dyn_text(_: Option<&dyn TextIndex>) {}
+    fn _assert_dyn_graph(_: Option<&dyn GraphIndex>) {}
+    fn _assert_dyn_embedding(_: Option<&dyn TextEmbeddingEngine>) {}
+
+    #[test]
+    fn test_dyn_safety_compiles() {
+        _assert_dyn_storage(None);
+        _assert_dyn_vector(None);
+        _assert_dyn_text(None);
+        _assert_dyn_graph(None);
+        _assert_dyn_embedding(None);
+    }
 }
 
 #[cfg(test)]
