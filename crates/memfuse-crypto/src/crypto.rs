@@ -33,7 +33,6 @@ use aes_gcm_siv::{
 use hkdf::Hkdf;
 use memfuse_core::{MemFuseError, Result};
 use sha2::Sha256;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Manager for encryption keys and block encryption.
 pub struct KeyManager {
