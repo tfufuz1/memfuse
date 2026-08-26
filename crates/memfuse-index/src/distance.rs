@@ -1480,4 +1480,93 @@ mod tests {
         let b = vec![1.0f32, 2.0, 3.0];
         assert!(compute_distance(&a, &b, DistanceMetric::Cosine).is_err());
     }
+
+    #[test]
+    fn test_euclidean_distance_sq_f32_u8_quantized_accuracy() {
+        // Task E: Verify euclidean_distance_sq_f32_u8 dequantizes on the fly and matches full precision L2 within 1% error budget.
+        let dims = 128;
+        let query: Vec<f32> = (0..dims).map(|i| (i as f32 * 0.05).sin()).collect();
+        let original: Vec<f32> = (0..dims).map(|i| ((i + 10) as f32 * 0.05).cos()).collect();
+
+        // Quantize original f32 vector into u8 per-dimension
+        let mut mins = Vec::with_capacity(dims);
+        let mut alphas = Vec::with_capacity(dims);
+        let mut quantized = Vec::with_capacity(dims);
+
+        for &val in &original {
+            // Per dimension bounds (simulation of per-dim quantization bounds)
+            let min_val = val - 0.5;
+            let max_val = val + 0.5;
+            let alpha = (max_val - min_val) / 255.0;
+            let q_byte = ((val - min_val) / alpha).round().clamp(0.0, 255.0) as u8;
+
+            mins.push(min_val);
+            alphas.push(alpha);
+            quantized.push(q_byte);
+        }
+
+        let quantized_sq_dist = euclidean_distance_sq_f32_u8(&query, &quantized, &alphas, &mins);
+        let quantized_dist = quantized_sq_dist.sqrt();
+
+        let full_precision_dist = euclidean_distance_scalar(&query, &original);
+
+        let relative_error = (quantized_dist - full_precision_dist).abs() / full_precision_dist;
+        assert!(
+            relative_error < 0.01,
+            "Quantized distance error too high: relative_error={}, quantized_dist={}, full_precision_dist={}",
+            relative_error, quantized_dist, full_precision_dist
+        );
+    }
+
+    proptest::proptest! {
+        // Task D: Property test verifying AVX2/SIMD vs Scalar distance parity within 1e-4 tolerance.
+        #[test]
+        fn prop_simd_vs_scalar_parity(
+            v1 in proptest::collection::vec(-10.0..10.0f32, 1..256),
+            v2 in proptest::collection::vec(-10.0..10.0f32, 1..256)
+        ) {
+            let len = v1.len().min(v2.len());
+            let a = &v1[..len];
+            let b = &v2[..len];
+
+            // Test AVX2 directly if feature detected on x86_64
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+            {
+                if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                    // SAFETY: Hardware support detected via is_x86_feature_detected. Slices have equal length.
+                    let cos_avx2 = unsafe { cosine_distance_avx2(a, b) };
+                    let cos_scalar = cosine_distance_scalar(a, b);
+                    proptest::prop_assert!(
+                        (cos_avx2 - cos_scalar).abs() < 1e-4,
+                        "AVX2 Cosine mismatch: avx2={}, scalar={}, diff={}",
+                        cos_avx2, cos_scalar, (cos_avx2 - cos_scalar).abs()
+                    );
+
+                    // SAFETY: Hardware support detected via is_x86_feature_detected. Slices have equal length.
+                    let euc_avx2 = unsafe { euclidean_distance_avx2(a, b) };
+                    let euc_scalar = euclidean_distance_scalar(a, b);
+                    proptest::prop_assert!(
+                        (euc_avx2 - euc_scalar).abs() < 1e-4,
+                        "AVX2 Euclidean mismatch: avx2={}, scalar={}, diff={}",
+                        euc_avx2, euc_scalar, (euc_avx2 - euc_scalar).abs()
+                    );
+                }
+            }
+
+            // General SIMD dispatch vs Scalar check
+            let cos_simd = compute_distance(a, b, DistanceMetric::Cosine).unwrap();
+            let cos_scalar = cosine_distance_scalar(a, b);
+            proptest::prop_assert!(
+                (cos_simd - cos_scalar).abs() < 1e-4,
+                "Cosine dispatch mismatch: simd={}, scalar={}", cos_simd, cos_scalar
+            );
+
+            let euc_simd = compute_distance(a, b, DistanceMetric::Euclidean).unwrap();
+            let euc_scalar = euclidean_distance_scalar(a, b);
+            proptest::prop_assert!(
+                (euc_simd - euc_scalar).abs() < 1e-4,
+                "Euclidean dispatch mismatch: simd={}, scalar={}", euc_simd, euc_scalar
+            );
+        }
+    }
 }
