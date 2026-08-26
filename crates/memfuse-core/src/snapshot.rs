@@ -15,11 +15,18 @@ use std::sync::Arc;
 
 /// Registry for active read snapshots.
 ///
-/// ### Locking Strategy
-/// Uses a single `parking_lot::Mutex` to protect the map of active snapshots.
-/// Updates to `min_active_seqno` use atomic operations with Release/Acquire
-/// semantics to ensure visibility across threads without holding the lock
-/// during reads.
+/// ### Synchronization & Memory Ordering Strategy
+/// - **Single-Writer Exclusivity via Mutex**: All modifications to active snapshot reference
+///   counts (`register`, `pin`, `release`) acquire the `self.active` `parking_lot::Mutex`.
+///   This guarantees serialized state transitions and single-writer updates to `min_active_seqno`.
+/// - **Lock-Free Reads with Acquire/Release**: Reads of `min_active_seqno()` perform a lockless
+///   atomic load using `Ordering::Acquire`. Updates in `update_min()` store the calculated minimum
+///   using `Ordering::Release`.
+/// - **Sufficiency**: `Ordering::Release` on writes paired with `Ordering::Acquire` on reads is
+///   the minimum safe memory ordering for single-writer, many-reader scenarios without holding
+///   a lock. It establishes a release-acquire ordering guarantee between registration/deregistration
+///   state changes and reader threads (such as LSM compaction workers), preventing instruction
+///   reordering across the atomic synchronization boundary.
 #[derive(Debug)]
 pub struct SnapshotRegistry {
     active: Mutex<BTreeMap<u64, usize>>,
@@ -54,7 +61,11 @@ impl SnapshotRegistry {
         }
     }
 
-    /// Returns the minimum active sequence number (u64::MAX if none).
+    /// Returns the minimum active sequence number (`u64::MAX` if none).
+    ///
+    /// Uses `Ordering::Acquire` to synchronize with `Ordering::Release` writes in `update_min`.
+    /// This allows reader threads (e.g., compaction processes) to safely query the minimum
+    /// active snapshot sequence without acquiring the `active` mutex lock.
     #[inline]
     pub fn min_active_seqno(&self) -> u64 {
         self.min_active_seqno.load(Ordering::Acquire)
@@ -95,6 +106,10 @@ impl SnapshotRegistry {
         // SAFETY: u64::MAX is the correct default when no snapshots are active.
         // It allows the LSM compaction to garbage collect ALL tombstones, as
         // all existing records will have seq_no < u64::MAX.
+        //
+        // Memory Ordering: Ordering::Release is required to publish all snapshot state updates
+        // made under the `active` mutex lock to concurrent readers calling `min_active_seqno()`
+        // with Ordering::Acquire.
         let min = active.keys().next().copied().unwrap_or(u64::MAX);
         self.min_active_seqno.store(min, Ordering::Release);
     }
@@ -191,6 +206,31 @@ mod tests {
 
         drop(g2);
         assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
+    fn test_double_registration_and_sequential_drop() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        let g1 = registry.register(42);
+        let g2 = registry.register(42);
+
+        assert_eq!(registry.min_active_seqno(), 42);
+
+        // Dropping one guard decrements ref-count to 1; seq_no 42 is still active.
+        drop(g1);
+        assert_eq!(
+            registry.min_active_seqno(),
+            42,
+            "min_active_seqno must remain 42 while second guard is active"
+        );
+
+        // Dropping second guard decrements ref-count to 0 and removes entry.
+        drop(g2);
+        assert_eq!(
+            registry.min_active_seqno(),
+            u64::MAX,
+            "min_active_seqno must return u64::MAX after all guards are dropped"
+        );
     }
 
     proptest::proptest! {

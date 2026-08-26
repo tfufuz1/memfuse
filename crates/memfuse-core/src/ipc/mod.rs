@@ -1,4 +1,21 @@
-//! IPC protocol definitions for FlatBuffers.
+//! Inter-Process Communication (IPC) protocol definitions for MemFuse.
+//!
+//! # FlatBuffers Code Generation
+//! The Rust code in [`memfuse_generated`] is **auto-generated** from the FlatBuffers schema
+//! located at `schemas/memfuse.fbs`.
+//!
+//! ### Regeneration Instructions
+//! If the FlatBuffers schema (`schemas/memfuse.fbs`) is modified:
+//! 1. Ensure `flatc` (FlatBuffers compiler) is installed.
+//! 2. Run the following command from the repository root:
+//!    ```bash
+//!    flatc --rust -o crates/memfuse-core/src/ipc schemas/memfuse.fbs
+//!    ```
+//! 3. Verify generated output compiles without warnings or errors.
+//!
+//! ### **IMPORTANT NOTICE**
+//! The file `crates/memfuse-core/src/ipc/memfuse_generated.rs` **MUST NOT BE HAND-EDITED**.
+//! Any manual changes will be overwritten during future schema code regeneration cycles.
 
 #[allow(clippy::all)]
 #[allow(missing_docs)]
