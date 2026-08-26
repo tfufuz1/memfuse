@@ -7,7 +7,7 @@
 
 use memfuse_core::{MemFuseError, Result, TxId};
 use memfuse_crypto::crypto::KeyManager;
-use memfuse_crypto::wal_crypto::WalHmac;
+use memfuse_crypto::wal_crypto::{IntegrityVerifier, WalEntrySnapshot, WalHmac};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -636,9 +636,9 @@ impl Wal {
 
         let mut entries = Vec::new();
         let mut pos = 0u64;
-        let mut current_chain_hmac = [0u8; 32];
 
-        let mut integrity_key = self.get_integrity_key()?;
+        let integrity_key = self.get_integrity_key()?;
+        let mut verifier = IntegrityVerifier::new(&integrity_key);
         let mut using_legacy_key = false;
 
         loop {
@@ -740,50 +740,36 @@ impl Wal {
                 }
             };
 
-            let mut recomputed_checksum = WalEntry::compute_checksum(
-                &entry.op,
-                entry.seq_no,
-                &integrity_key,
-                entry.prev_hmac,
-            )?;
+            let (op_type, key, value) = match &entry.op {
+                WalOp::Put { key, value, .. } => (0u8, key.clone(), value.clone()),
+                WalOp::Delete { key, .. } => (1u8, key.clone(), Vec::new()),
+            };
 
-            if (recomputed_checksum != entry.checksum || entry.prev_hmac != current_chain_hmac)
-                && !using_legacy_key
-            {
-                let legacy_recomputed = WalEntry::compute_checksum(
-                    &entry.op,
-                    entry.seq_no,
-                    &LEGACY_INTEGRITY_KEY,
-                    entry.prev_hmac,
-                )?;
-                if legacy_recomputed == entry.checksum && entry.prev_hmac == current_chain_hmac {
-                    tracing::warn!(
-                        "WAL nutzt veralteten Integritätsschlüssel — Datenbank sollte neu initialisiert werden"
-                    );
-                    integrity_key = LEGACY_INTEGRITY_KEY;
-                    recomputed_checksum = legacy_recomputed;
-                    using_legacy_key = true;
-                }
-            }
+            let snapshot = WalEntrySnapshot {
+                seq_no: entry.seq_no,
+                op_type,
+                key,
+                value,
+                checksum: entry.checksum,
+                prev_hmac: entry.prev_hmac,
+            };
 
-            if recomputed_checksum != entry.checksum || entry.prev_hmac != current_chain_hmac {
-                if pos >= file_size {
-                    tracing::warn!(
-                        "WAL entry at offset {} has invalid checksum or broken chain at tail, truncating",
-                        entry_start_pos
-                    );
-                    break;
+            if let Err(e) = verifier.verify_and_update(&snapshot, entry_start_pos) {
+                if !using_legacy_key {
+                    let mut legacy_verifier = IntegrityVerifier::new(&LEGACY_INTEGRITY_KEY);
+                    if legacy_verifier.verify_and_update(&snapshot, entry_start_pos).is_ok() {
+                        tracing::warn!(
+                            "WAL nutzt veralteten Integritätsschlüssel — Datenbank sollte neu initialisiert werden"
+                        );
+                        verifier = legacy_verifier;
+                        using_legacy_key = true;
+                    } else {
+                        return Err(e);
+                    }
                 } else {
-                    return Err(MemFuseError::wal_corruption(
-                        entry_start_pos,
-                        format!(
-                            "HMAC/Chain failure in middle of WAL: recomputed={:?}, stored={:?}, prev_hmac={:?}, current_chain={:?}",
-                            recomputed_checksum, entry.checksum, entry.prev_hmac, current_chain_hmac
-                        ),
-                    ));
+                    return Err(e);
                 }
             }
-            current_chain_hmac = entry.checksum;
 
             entries.push((entry.seq_no, entry, pos));
         }

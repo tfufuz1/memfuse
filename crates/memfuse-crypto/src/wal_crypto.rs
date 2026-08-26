@@ -14,7 +14,21 @@ pub trait KmsProvider {
     fn get_key(&self) -> Result<Vec<u8>>;
 }
 
-/// A wrapper handling logical Wal append encryption logic.
+/// Encrypted WAL chunk provider that handles transparent encryption/decryption of WAL payloads.
+///
+/// # Invariants
+/// - Uses per-file sub-key derivation via `KeyManager::derive_file_key()` to prevent nonce-reuse
+///   across independent WAL streams sharing a master key.
+/// - Prepends a unique 12-byte random nonce to every encrypted chunk output.
+///
+/// # Usage
+/// Use when writing or reading encrypted WAL logs at rest. Call `encrypt_chunk` to wrap
+/// plain payload bytes into an encrypted chunk with prepended nonce, and `decrypt_chunk`
+/// to recover the original payload.
+///
+/// # Errors
+/// Emits `MemFuseError::Crypto` if encryption/decryption fails, key derivation fails,
+/// or if chunk length is less than 12 bytes during decryption.
 pub struct EncryptedWal {
     key_manager: KeyManager,
 }
@@ -30,27 +44,53 @@ impl EncryptedWal {
     }
 
     /// Wraps the internal WAL chunk in AES-256-GCM stream.
-    pub fn encrypt_chunk(&self, payload: &[u8]) -> Result<(Vec<u8>, [u8; 12])> {
-        self.key_manager.encrypt_auto_nonce(payload)
+    /// Prepends the 12-byte nonce to the encrypted ciphertext.
+    pub fn encrypt_chunk(&self, payload: &[u8]) -> Result<Vec<u8>> {
+        let (ciphertext, nonce) = self.key_manager.encrypt_auto_nonce(payload)?;
+        let mut out = Vec::with_capacity(12 + ciphertext.len());
+        out.extend_from_slice(&nonce);
+        out.extend_from_slice(&ciphertext);
+        Ok(out)
     }
 
-    /// Decrypts the WAL chunk from the AES-256-GCM stream.
-    pub fn decrypt_chunk(&self, ciphertext: &[u8], nonce: &[u8; 12]) -> Result<Vec<u8>> {
-        self.key_manager.decrypt_auto_nonce(ciphertext, nonce)
+    /// Decrypts the WAL chunk by extracting the prepended 12-byte nonce from the data.
+    pub fn decrypt_chunk(&self, data: &[u8]) -> Result<Vec<u8>> {
+        if data.len() < 12 {
+            return Err(memfuse_core::MemFuseError::Crypto(
+                "Encrypted WAL chunk too short for 12-byte nonce".into(),
+            ));
+        }
+        let mut nonce = [0u8; 12];
+        nonce.copy_from_slice(&data[0..12]);
+        let ciphertext = &data[12..];
+        self.key_manager.decrypt_auto_nonce(ciphertext, &nonce)
     }
 }
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
+/// Stateful wrapper around HMAC-SHA256 initialized with WAL domain separation.
+///
+/// # Invariants
+/// - Initialized with `b"memfuse-wal-v1"` domain separation string as the first updated block,
+///   preventing cross-context HMAC collisions if the integrity key is reused elsewhere.
+///
+/// # Usage
+/// Use to compute deterministic 32-byte HMAC-SHA256 checksums over WAL entry fields and
+/// previous chain links during WAL appends or verification.
+///
+/// # Errors
+/// Emits `MemFuseError::Crypto` if key initialization fails.
 pub struct WalHmac {
     mac: Hmac<Sha256>,
 }
 
 impl WalHmac {
     pub fn new(integrity_key: &[u8]) -> Result<Self> {
-        let mac = Hmac::<Sha256>::new_from_slice(integrity_key)
+        let mut mac = Hmac::<Sha256>::new_from_slice(integrity_key)
             .map_err(|e| memfuse_core::MemFuseError::Crypto(format!("HMAC key error: {}", e)))?;
+        mac.update(b"memfuse-wal-v1");
         Ok(Self { mac })
     }
 
@@ -63,7 +103,14 @@ impl WalHmac {
     }
 }
 
-/// A snapshot of a WAL entry for cryptographic verification.
+/// Immutable snapshot of a WAL entry used for cryptographic integrity verification.
+///
+/// # Invariants
+/// - Captures entry fields (`seq_no`, `op_type`, `key`, `value`, `checksum`, `prev_hmac`)
+///   required to recompute the entry's HMAC-SHA256 checksum and verify hash-chain continuity.
+///
+/// # Usage
+/// Passed to `IntegrityVerifier::verify_and_update()` during WAL replay or recovery.
 #[derive(Debug, Clone)]
 pub struct WalEntrySnapshot {
     pub seq_no: u64,
@@ -74,7 +121,21 @@ pub struct WalEntrySnapshot {
     pub prev_hmac: [u8; 32],
 }
 
-/// Helper for stateful verification of a WAL HMAC chain.
+/// Stateful verifier for WAL HMAC-SHA256 hash chains.
+///
+/// # Invariants
+/// - Maintains running `last_hmac` state across entries to enforce sequential hash-chain continuity.
+/// - Performs constant-time comparison (`subtle::ConstantTimeEq`) of checksums and `prev_hmac`
+///   to prevent timing side-channel attacks.
+/// - Any HMAC discrepancy or broken chain link immediately halts verification.
+///
+/// # Usage
+/// Instantiate with the WAL's integrity key at the start of replay and call `verify_and_update()`
+/// sequentially for each deserialized WAL entry.
+///
+/// # Errors
+/// Emits `MemFuseError::WalCorruption` immediately if `checksum` or `prev_hmac` does not match,
+/// or `MemFuseError::Crypto` if HMAC initialization fails.
 pub struct IntegrityVerifier {
     last_hmac: [u8; 32],
     integrity_key: Vec<u8>,
@@ -103,10 +164,9 @@ impl IntegrityVerifier {
 
         use subtle::ConstantTimeEq;
         let computed = mac.finalize();
-        let checksum_valid = computed.ct_eq(&entry.checksum);
-        let prev_hmac_valid = entry.prev_hmac.ct_eq(&self.last_hmac);
-
-        if bool::from(!checksum_valid) || bool::from(!prev_hmac_valid) {
+        if computed.ct_eq(&entry.checksum).unwrap_u8() == 0
+            || entry.prev_hmac.ct_eq(&self.last_hmac).unwrap_u8() == 0
+        {
             return Err(memfuse_core::MemFuseError::wal_corruption(
                 offset,
                 format!("HMAC mismatch for seq {}", entry.seq_no),
@@ -198,11 +258,40 @@ mod tests {
         let km = crate::crypto::KeyManager::try_new("test-pass", b"salt1")?;
         let wal = EncryptedWal::new(km, b"test-wal.log")?;
         let data = b"wal-entry-data-to-encrypt";
-        let (encrypted, nonce) = wal.encrypt_chunk(data)?;
+        let encrypted = wal.encrypt_chunk(data)?;
         assert_ne!(encrypted.as_slice(), data);
 
-        let decrypted = wal.decrypt_chunk(&encrypted, &nonce)?;
+        let decrypted = wal.decrypt_chunk(&encrypted)?;
         assert_eq!(decrypted.as_slice(), data);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_encrypted_wal_1mb_roundtrip() -> Result<()> {
+        let km = crate::crypto::KeyManager::try_new("test-pass-1mb", b"salt1234")?;
+        let wal = EncryptedWal::new(km, b"test-wal-1mb.log")?;
+
+        // 1MB payload
+        let size = 1024 * 1024;
+        let mut payload = vec![0u8; size];
+        for (i, byte) in payload.iter_mut().enumerate() {
+            *byte = (i % 251) as u8;
+        }
+
+        // Encrypt (prepends nonce)
+        let encrypted = wal.encrypt_chunk(&payload)?;
+        assert!(encrypted.len() >= 12 + size);
+        assert_ne!(&encrypted[12..], &payload[..]);
+
+        // Simulate serialization/deserialization over bytes
+        let serialized_bytes = encrypted.clone();
+        let deserialized_bytes = serialized_bytes.as_slice();
+
+        // Decrypt
+        let decrypted = wal.decrypt_chunk(deserialized_bytes)?;
+        assert_eq!(decrypted.len(), payload.len());
+        assert_eq!(decrypted, payload);
 
         Ok(())
     }
@@ -243,6 +332,23 @@ mod tests {
 
         let mut verifier = IntegrityVerifier::new(key);
         assert!(verifier.verify_and_update(&tampered_e1, 10).is_err());
+    }
+
+    #[test]
+    fn test_single_bit_checksum_corruption() {
+        let key = b"integrity-key-32-bytes-long-----";
+        let entry = create_entry(key, [0u8; 32], 1, 0, b"key1", b"val1");
+        let mut corrupted_entry = entry.clone();
+        corrupted_entry.checksum[0] ^= 0x01; // Flip a single bit in checksum
+
+        let mut verifier = IntegrityVerifier::new(key);
+        let err = verifier.verify_and_update(&corrupted_entry, 100).unwrap_err();
+        if let memfuse_core::MemFuseError::WalCorruption { offset, reason, .. } = err {
+            assert_eq!(offset, 100);
+            assert!(reason.contains("HMAC mismatch"));
+        } else {
+            panic!("Expected WalCorruption error");
+        }
     }
 
     #[test]
