@@ -177,7 +177,11 @@ impl std::fmt::Display for EntityId {
 pub struct TxId(pub u64);
 
 impl TxId {
-    /// Invalid or uninitialized transaction identifier sentinel value.
+    /// Invalid or uninitialized transaction identifier sentinel value (`0`).
+    ///
+    /// `TxId(0)` is reserved as an uninitialized sentinel or null identifier across the system.
+    /// Transaction allocation sequences start at 1 (`Collection::allocate_tx()`), making `0`
+    /// an explicit indicator of unassigned or invalid transaction context.
     pub const INVALID: Self = Self(0);
 
     /// Lower bound of the internal system transaction ID range.
@@ -662,6 +666,26 @@ mod tests {
         let f32_close = DistanceMetric::Cosine.compute(&q_f32, &c_f32).unwrap();
         let f32_far = DistanceMetric::Cosine.compute(&q_f32, &f_f32).unwrap();
         assert!(f32_close < f32_far, "f32 ranking mismatch");
+    }
+
+    #[test]
+    fn doc_id_empty_key_is_err() {
+        assert!(DocId::from_key("").is_err());
+    }
+
+    #[test]
+    fn doc_id_valid_key_is_ok() {
+        let id = DocId::from_key("valid-key-123").unwrap();
+        assert!(id.inner() > 0);
+    }
+
+    #[test]
+    fn tx_id_ordering_is_consistent() {
+        let t1 = TxId::new(1);
+        let t2 = TxId::new(2);
+        assert!(t1 < t2);
+        assert!(t2 > t1);
+        assert_eq!(t1, TxId::new(1));
     }
 
     #[test]
