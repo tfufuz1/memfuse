@@ -88,4 +88,13 @@ mod tests {
         key.emergency_wipe();
         assert_eq!(key.inspect_key_bytes_for_test(), &[0x00; 32]);
     }
+
+    #[test]
+    fn test_key_debug_redacts_key() {
+        let raw: [u8; 32] = [0xAB; 32];
+        let key = VolatileEncryptionKey::new(raw);
+        let debug_str = format!("{key:?}");
+        assert!(!debug_str.contains("171")); // 0xAB in decimal
+        assert!(debug_str.contains("REDACTED"));
+    }
 }

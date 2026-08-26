@@ -24,6 +24,7 @@
 
 #![forbid(unsafe_code)]
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use crate::anti_tamper::VolatileEncryptionKey;
 use aes_gcm_siv::{
     aead::{Aead, KeyInit},
@@ -37,6 +38,7 @@ use sha2::Sha256;
 pub struct KeyManager {
     key: VolatileEncryptionKey,
     nonce_prefix: [u8; 4],
+    nonce_counter: AtomicU64,
 }
 
 impl std::fmt::Debug for KeyManager {
@@ -63,6 +65,7 @@ impl KeyManager {
         Ok(Self {
             key: VolatileEncryptionKey::new(key_raw),
             nonce_prefix,
+            nonce_counter: AtomicU64::new(0),
         })
     }
 
@@ -98,6 +101,7 @@ impl KeyManager {
         Ok(Self {
             key: VolatileEncryptionKey::new(sub_key),
             nonce_prefix,
+            nonce_counter: AtomicU64::new(0),
         })
     }
 
@@ -118,10 +122,11 @@ impl KeyManager {
         // nonce-misuse resistance: ciphertext integrity is preserved even if a
         // nonce is accidentally reused, unlike GCM which leaks the auth key on
         // nonce reuse. Reference: RFC 8452.
-        use rand::RngCore;
         let mut nonce_bytes = [0u8; 12];
         nonce_bytes[0..4].copy_from_slice(&self.nonce_prefix);
-        rand::thread_rng().fill_bytes(&mut nonce_bytes[4..12]);
+        // SeqCst nötig: verhindert Reordering in multi-threaded Szenarien
+        let nonce_val = self.nonce_counter.fetch_add(1, Ordering::SeqCst);
+        nonce_bytes[4..12].copy_from_slice(&nonce_val.to_be_bytes());
 
         let cipher = Aes256GcmSiv::new_from_slice(self.key.as_bytes())
             .map_err(|e| MemFuseError::Crypto(format!("Crypto error: {}", e)))?;
@@ -276,5 +281,60 @@ mod tests {
         let mut raw: [u8; 32] = [0xFF; 32];
         raw.zeroize();
         assert_eq!(raw, [0u8; 32]);
+    }
+
+    #[test]
+    fn key_manager_debug_redacts_key() {
+        let (km, _) = KeyManager::try_new_random_salt("test-passphrase").unwrap();
+        let debug_str = format!("{km:?}");
+        assert!(!debug_str.contains("test-passphrase"));
+        assert!(debug_str.contains("REDACTED"));
+    }
+
+    #[test]
+    fn test_nonce_uniqueness() {
+        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("try_new");
+        let data = b"sample payload";
+        let mut nonces = std::collections::HashSet::new();
+        for _ in 0..1000 {
+            let (_, nonce) = km.encrypt_auto_nonce(data).expect("encrypt");
+            assert!(nonces.insert(nonce), "Nonce reuse detected!");
+        }
+    }
+
+    #[test]
+    fn test_wrong_key_fails_decrypt() {
+        let km1 = KeyManager::try_new("pass1", b"salt1").expect("try_new");
+        let km2 = KeyManager::try_new("pass2", b"salt1").expect("try_new");
+        let data = b"top secret data";
+
+        let (encrypted, nonce) = km1.encrypt_auto_nonce(data).expect("encrypt");
+        let result = km2.decrypt_auto_nonce(&encrypted, &nonce);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_hkdf_derive_file_key_deterministic() {
+        let km1 = KeyManager::try_new("secret", b"salt").expect("km1");
+        let km2 = KeyManager::try_new("secret", b"salt").expect("km2");
+        let sub1 = km1.derive_file_key(b"file_123").expect("sub1");
+        let sub2 = km2.derive_file_key(b"file_123").expect("sub2");
+        assert_eq!(
+            sub1.inspect_key_bytes_for_test(),
+            sub2.inspect_key_bytes_for_test(),
+            "Same input MUST yield deterministic sub-keys"
+        );
+    }
+
+    #[test]
+    fn test_hkdf_derive_file_key_different_per_file() {
+        let km = KeyManager::try_new("secret", b"salt").expect("km");
+        let sub1 = km.derive_file_key(b"file_A").expect("sub1");
+        let sub2 = km.derive_file_key(b"file_B").expect("sub2");
+        assert_ne!(
+            sub1.inspect_key_bytes_for_test(),
+            sub2.inspect_key_bytes_for_test(),
+            "Different file_ids MUST yield different sub-keys"
+        );
     }
 }
