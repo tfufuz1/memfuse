@@ -17,6 +17,7 @@
 | 2 | EmbeddingProvider Trait-Duplikat (P2-8) | ✅ Erledigt 2026-08-25 | Fix 6 (memfuse-tauri) |
 | 3 | EntityId::from_key fallibel (FIX-01) | ✅ Erledigt 2026-08-25 | crates/memfuse-core, memfuse-db, memfuse-graph |
 | — | Governance-Overhaul (AGENTS.md v5) | ✅ Erledigt 2026-08-24 | Factual errors corrected, session protocol added |
+| — | Audit Consolidate & Clean | ✅ Erledigt 2026-08-25 | Konsoliderter Master-Bericht erstellt, 5 alte Dokumente entfernt |
 
 ## Offene AI-TAGs (automatisch prüfen!)
 
