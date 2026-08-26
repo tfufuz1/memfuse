@@ -16,7 +16,7 @@ pub async fn open_database(state: State<'_, AppState>, path: String) -> Result<(
     let path_buf = PathBuf::from(&path);
     let db = MemFuse::open(&path_buf)
         .await
-        .map_err(|e| format!("Datenbank konnte nicht geöffnet werden: {e}"))?;
+        .map_err(|e| format!("Failed to open database: {e}"))?;
 
     *state.db.write() = Some(std::sync::Arc::new(db));
     *state.db_path.write() = Some(path_buf);
@@ -30,7 +30,7 @@ pub async fn list_collections(state: State<'_, AppState>) -> Result<Vec<Collecti
         db_guard
             .as_ref()
             .cloned()
-            .ok_or("Keine Datenbank geöffnet")?
+            .ok_or_else(|| "No database is open. Please open or create a database first.".to_string())?
     };
 
     let names = db.list_collections().await.map_err(|e| e.to_string())?;
@@ -53,7 +53,7 @@ pub async fn create_collection(state: State<'_, AppState>, name: String) -> Resu
         db_guard
             .as_ref()
             .cloned()
-            .ok_or("Keine Datenbank geöffnet")?
+            .ok_or_else(|| "No database is open. Please open or create a database first.".to_string())?
     };
     db.collection(&name).await.map_err(|e| e.to_string())?;
     Ok(())
@@ -66,7 +66,7 @@ pub async fn drop_collection(state: State<'_, AppState>, name: String) -> Result
         db_guard
             .as_ref()
             .cloned()
-            .ok_or("Keine Datenbank geöffnet")?
+            .ok_or_else(|| "No database is open. Please open or create a database first.".to_string())?
     };
     db.drop_collection(&name).await.map_err(|e| e.to_string())?;
     Ok(())

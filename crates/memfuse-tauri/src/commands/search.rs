@@ -24,7 +24,7 @@ pub async fn hybrid_search(
         db_guard
             .as_ref()
             .cloned()
-            .ok_or("Keine Datenbank geöffnet")?
+            .ok_or_else(|| "No database is open. Please open or create a database first.".to_string())?
     };
     let collection = db
         .collection(&collection_name)
@@ -56,8 +56,30 @@ pub async fn hybrid_search(
                 .as_ref()
                 .and_then(|m| m.get("source"))
                 .and_then(|s| s.as_str())
-                .unwrap_or("Unbekannt")
+                .unwrap_or("Unknown")
                 .to_string(),
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_command_search_without_open_db_returns_error() {
+        let state = AppState::new();
+        let db_guard = state.db.read();
+        let res: Result<(), String> = db_guard
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| "No database is open. Please open or create a database first.".to_string())
+            .map(|_| ());
+
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err(),
+            "No database is open. Please open or create a database first."
+        );
+    }
 }

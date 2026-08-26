@@ -69,4 +69,29 @@ mod tests {
             "Semaphore muss mit MAX_CONCURRENT_REGEX_OPS Permits initialisiert sein"
         );
     }
+
+    #[test]
+    fn test_semaphore_limit_not_exceeded() {
+        let state = AppState::new();
+        let mut permits = Vec::new();
+
+        for _ in 0..MAX_CONCURRENT_REGEX_OPS {
+            let permit = state.regex_semaphore.try_acquire();
+            assert!(permit.is_ok(), "Permit allocation should succeed within limit");
+            permits.push(permit.unwrap());
+        }
+
+        assert_eq!(state.regex_semaphore.available_permits(), 0);
+        assert!(
+            state.regex_semaphore.try_acquire().is_err(),
+            "Acquiring permit beyond limit must fail"
+        );
+
+        permits.pop();
+        assert_eq!(state.regex_semaphore.available_permits(), 1);
+        assert!(
+            state.regex_semaphore.try_acquire().is_ok(),
+            "Acquiring permit after drop should succeed"
+        );
+    }
 }
