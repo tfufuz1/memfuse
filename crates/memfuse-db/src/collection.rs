@@ -140,14 +140,22 @@ impl<S: StorageEngine> Collection<S> {
 
     /// Generates and returns the next sequential transaction ID for this collection.
     pub fn next_tx(&self) -> TxId {
-        TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst))
+        let id = self.next_tx.fetch_add(1, Ordering::SeqCst);
+        if id >= TxId::INTERNAL_BASE {
+            panic!("TxId counter exhausted — INTERNAL_BASE range collision");
+        }
+        TxId::new(id)
     }
 
     /// Allokiert eine eindeutige, atomar inkrementierte Transaction-ID.
     /// Externe Crates verwenden diese Methode statt eigener TxId-Generierung.
     /// Verhindert TxId-Kollisionen bei paralleler Ingestion (EMBED_CONCURRENCY > 1).
     pub fn allocate_tx(&self) -> TxId {
-        TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst))
+        let id = self.next_tx.fetch_add(1, Ordering::SeqCst);
+        if id >= TxId::INTERNAL_BASE {
+            panic!("TxId counter exhausted — INTERNAL_BASE range collision");
+        }
+        TxId::new(id)
     }
 
     /// Returns the CSR graph index for this collection.
@@ -1392,21 +1400,31 @@ impl<S: StorageEngine> Collection<S> {
 
                 if let Some(expire_at) = created_at.checked_add(ttl_val) {
                     if now_ms >= expire_at {
-                        expired_ids.push(id);
+                        expired_ids.push((id, expire_at));
                     }
                 }
             }
         }
 
         let count = expired_ids.len();
-        for id in expired_ids {
-            if let Err(e) = self.delete(&id).await {
-                tracing::error!(
-                    collection = %self.name,
-                    id = %id,
-                    error = %e,
-                    "Reaper failed to delete expired document"
-                );
+        for (id, expire_at) in expired_ids {
+            match self.delete(&id).await {
+                Ok(_) => {
+                    tracing::debug!(
+                        collection = %self.name,
+                        doc_id = %id,
+                        expire_at = expire_at,
+                        "Reaped expired TTL document"
+                    );
+                }
+                Err(e) => {
+                    tracing::error!(
+                        collection = %self.name,
+                        id = %id,
+                        error = %e,
+                        "Reaper failed to delete expired document"
+                    );
+                }
             }
         }
 

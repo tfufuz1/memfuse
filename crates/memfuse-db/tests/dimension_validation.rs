@@ -21,3 +21,29 @@ async fn test_open_dimension_mismatch_fails() {
     let err = result.err().unwrap();
     assert!(err.to_string().contains("Dimension mismatch"));
 }
+
+#[tokio::test]
+async fn test_open_dimension_zero_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = MemFuseConfig {
+        dimension: 0,
+        ..Default::default()
+    };
+    let result = MemFuse::open_with_config(dir.path(), config).await;
+    assert!(result.is_err());
+    let err = result.err().unwrap();
+    assert!(err.to_string().contains("dimension must be > 0"));
+}
+
+#[tokio::test]
+async fn test_open_dimension_too_large_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = MemFuseConfig {
+        dimension: 100_000,
+        ..Default::default()
+    };
+    let result = MemFuse::open_with_config(dir.path(), config).await;
+    assert!(result.is_err());
+    let err = result.err().unwrap();
+    assert!(err.to_string().contains("dimension exceeds maximum"));
+}

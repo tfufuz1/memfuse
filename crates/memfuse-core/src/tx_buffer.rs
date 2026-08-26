@@ -207,18 +207,29 @@ impl<T: Clone> TxBuffer<T> {
     }
 
     /// Cleans up expired transactions.
+    /// Reaps expired orphan transactions.
     ///
     /// # INVARIANT
     /// Acquires shard locks sequentially in ascending index order (0 to N-1),
     /// dropping each lock before attempting the next to guarantee deadlock-free execution.
     pub fn reap_orphans(&self) -> Vec<TxId> {
-        // Estimate capacity based on a single shard to avoid locking all shards for `len()`
-        let estimated_cap = self.shards[0].read().ops.len() * self.shards.len();
-        let mut expired = Vec::with_capacity(estimated_cap);
+        self.reap_orphans_bounded(usize::MAX)
+    }
+
+    /// Reaps up to `max` expired orphan transactions across shards.
+    ///
+    /// # INVARIANT
+    /// Acquires shard locks sequentially in ascending index order (0 to N-1),
+    /// dropping each lock before attempting the next to guarantee deadlock-free execution.
+    pub fn reap_orphans_bounded(&self, max: usize) -> Vec<TxId> {
+        let mut expired = Vec::new();
         for shard_lock in &self.shards {
+            if expired.len() >= max {
+                break;
+            }
             if let Some(mut shard) = shard_lock.try_write() {
                 shard.ops.retain(|tx, (_, created)| {
-                    if created.elapsed() > self.tx_timeout {
+                    if expired.len() < max && created.elapsed() > self.tx_timeout {
                         expired.push(*tx);
                         false
                     } else {

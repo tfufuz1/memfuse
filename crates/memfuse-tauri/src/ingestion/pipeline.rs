@@ -47,8 +47,9 @@ pub fn extract_text_from_bytes(bytes: &[u8], extension: &str) -> Result<String> 
                 email.subject, email.from, email.body
             ))
         }
-        other => Err(MemFuseError::InvalidInput(format!(
-            "Unsupported file format: .{other}"
+        "" => Err(MemFuseError::InvalidInput("File has no extension".into())),
+        ext => Err(MemFuseError::InvalidInput(format!(
+            "Unsupported file type: .{ext}"
         ))),
     }
 }
@@ -58,7 +59,7 @@ pub fn ingest_bytes(bytes: &[u8], filename_or_ext: &str) -> Result<Vec<String>> 
     let ext = Path::new(filename_or_ext)
         .extension()
         .and_then(|e| e.to_str())
-        .unwrap_or(filename_or_ext);
+        .unwrap_or(if filename_or_ext.contains('.') { "" } else { filename_or_ext });
 
     let raw_text = extract_text_from_bytes(bytes, ext)?;
     if raw_text.trim().is_empty() {
@@ -334,7 +335,18 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
-            err_msg.contains("Unsupported file format: .xyz"),
+            err_msg.contains("Unsupported file type: .xyz"),
+            "Error message was: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_command_ingest_no_extension() {
+        let result = extract_text_from_bytes(b"some content", "");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("File has no extension"),
             "Error message was: {err_msg}"
         );
     }

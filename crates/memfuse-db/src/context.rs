@@ -101,6 +101,36 @@ impl ContextManager {
         for chunk in chunks {
             if total_tokens + chunk.token_count > available {
                 truncated = true;
+                if selected.is_empty() && available > 0 {
+                    let remaining = available.saturating_sub(total_tokens);
+                    let mut truncated_chunk = chunk;
+                    let content_chars: Vec<char> = truncated_chunk.content.chars().collect();
+                    if !content_chars.is_empty() && remaining > 0 {
+                        let mut low = 0;
+                        let mut high = content_chars.len();
+                        let mut best_len = 0;
+                        while low <= high {
+                            let mid = (low + high) / 2;
+                            let sub: String = content_chars[..mid].iter().collect();
+                            let tokens = Self::estimate_tokens(&sub);
+                            if tokens <= remaining {
+                                best_len = mid;
+                                low = mid + 1;
+                            } else {
+                                if mid == 0 {
+                                    break;
+                                }
+                                high = mid - 1;
+                            }
+                        }
+                        if best_len > 0 {
+                            truncated_chunk.content = content_chars[..best_len].iter().collect();
+                            truncated_chunk.token_count = Self::estimate_tokens(&truncated_chunk.content);
+                            total_tokens += truncated_chunk.token_count;
+                            selected.push(truncated_chunk);
+                        }
+                    }
+                }
                 break;
             }
             total_tokens += chunk.token_count;
@@ -274,6 +304,31 @@ mod tests {
     fn test_token_estimation() {
         let tokens = ContextManager::estimate_tokens("hello world foo bar");
         assert!(tokens >= 4); // At least 4 words
+    }
+
+    #[test]
+    fn test_single_document_exceeds_budget() {
+        let budget = TokenBudget::new(20, 10); // 10 available
+        let mgr = ContextManager::new(budget);
+
+        let long_content = "This is a very long text that will definitely exceed the small available token budget of 10 tokens.";
+        let token_count = ContextManager::estimate_tokens(long_content);
+        assert!(token_count > 10);
+
+        let chunks = vec![ContextChunk {
+            doc_id: DocId::new(1),
+            content: long_content.into(),
+            relevance: 0.9,
+            token_count,
+            metadata: None,
+        }];
+
+        let window = mgr.prepare_context(chunks).expect("valid test value");
+        assert_eq!(window.chunks.len(), 1);
+        assert!(window.truncated);
+        assert!(window.total_tokens <= 10);
+        assert!(window.total_tokens > 0);
+        assert!(!window.chunks[0].content.is_empty());
     }
 }
 
