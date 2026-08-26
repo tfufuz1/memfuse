@@ -31,6 +31,11 @@ pub enum MemFuseError {
     PolicyViolation(String),
 
     /// Multi-tenant or collection namespace violation.
+    ///
+    /// Emitted by the collection orchestration layer (`collection.rs` / `memfuse-db`)
+    /// when cross-tenant or unauthorized collection key access is attempted.
+    /// API callers handling this error should return an HTTP 403 Forbidden
+    /// response rather than an HTTP 500 internal server error.
     #[error("Namespace violation: {0}")]
     NamespaceViolation(String),
 
@@ -45,6 +50,7 @@ pub enum MemFuseError {
 
     /// Data integrity corruption detected in Write-Ahead Log.
     #[error("WAL corruption detected at offset {offset}: {reason}")]
+    #[non_exhaustive]
     WalCorruption {
         /// Byte offset in WAL file where corruption occurred.
         offset: u64,
@@ -54,6 +60,7 @@ pub enum MemFuseError {
 
     /// Block checksum validation failure.
     #[error("Checksum mismatch: file={path}, block={block_id}")]
+    #[non_exhaustive]
     ChecksumMismatch {
         /// File path of corrupted storage block.
         path: String,
@@ -145,12 +152,32 @@ pub enum MemFuseError {
     /// Data parsing error.
     #[error("Parse error: {0}")]
     ParseError(String),
+
+    /// Bincode serialization or deserialization error wrapper.
+    #[error("Bincode error: {0}")]
+    Bincode(#[from] bincode::Error),
 }
 
 impl MemFuseError {
     /// Creates an `InvalidInput` error from any displayable value.
     pub fn invalid_input(msg: impl Into<String>) -> Self {
         Self::InvalidInput(msg.into())
+    }
+
+    /// Creates a `WalCorruption` error.
+    pub fn wal_corruption(offset: u64, reason: impl Into<String>) -> Self {
+        Self::WalCorruption {
+            offset,
+            reason: reason.into(),
+        }
+    }
+
+    /// Creates a `ChecksumMismatch` error.
+    pub fn checksum_mismatch(path: impl Into<String>, block_id: u64) -> Self {
+        Self::ChecksumMismatch {
+            path: path.into(),
+            block_id,
+        }
     }
 }
 
@@ -358,6 +385,11 @@ mod tests {
             MemFuseError::ParseError("test".into()).to_string(),
             "Parse error: test"
         );
+        let bincode_err: bincode::Error = Box::new(bincode::ErrorKind::Custom("test".into()));
+        assert_eq!(
+            MemFuseError::Bincode(bincode_err).to_string(),
+            "Bincode error: test"
+        );
     }
 
     #[test]
@@ -377,6 +409,12 @@ mod tests {
         let m_err2: MemFuseError = json_err.into();
         assert!(matches!(m_err2, MemFuseError::Json(_)));
         assert!(m_err2.source().is_some());
+
+        // Bincode
+        let bincode_err: bincode::Error = Box::new(bincode::ErrorKind::Custom("test bincode".into()));
+        let m_err_bc: MemFuseError = bincode_err.into();
+        assert!(matches!(m_err_bc, MemFuseError::Bincode(_)));
+        assert!(m_err_bc.source().is_some());
 
         // Other variants should return None for source()
         let m_err3 = MemFuseError::Internal("test".into());
@@ -585,6 +623,36 @@ mod tests {
         assert!(
             display.contains("4096MB / 8192MB"),
             "Used and limit MB fields are transposed or misformatted: {:?}",
+            display
+        );
+    }
+
+    /// Mutation-robustness test: asserts HnswConnectivityDegraded deleted_ratio is preserved as-is.
+    ///
+    /// Checks that the deleted_ratio is preserved without scaling (not divided/multiplied by 100)
+    /// and that the formatting accurately reflects the ratio.
+    #[test]
+    fn test_hnsw_connectivity_degraded_preserves_ratio() {
+        let sentinel_ratio = 37.42;
+        let err = MemFuseError::HnswConnectivityDegraded {
+            deleted_ratio: sentinel_ratio,
+        };
+
+        if let MemFuseError::HnswConnectivityDegraded { deleted_ratio } = err {
+            assert!(
+                (deleted_ratio - sentinel_ratio).abs() < f64::EPSILON,
+                "deleted_ratio must be preserved as-is: expected {}, got {}",
+                sentinel_ratio,
+                deleted_ratio
+            );
+        } else {
+            panic!("Expected MemFuseError::HnswConnectivityDegraded");
+        }
+
+        let display = err.to_string();
+        assert!(
+            display.contains("37.4%"),
+            "Display formatting must contain '37.4%': got {:?}",
             display
         );
     }

@@ -9,6 +9,8 @@ description = "Core types, traits, and error handling for MemFuse"
 [dependencies]
 # Standard error derive macro for MemFuseError.
 thiserror = { workspace = true }
+# Bincode serialization error support.
+bincode = { workspace = true }
 # Serialization and deserialization framework for core types and stats.
 serde = { workspace = true }
 # JSON metadata representation and serialization in core traits and errors.
