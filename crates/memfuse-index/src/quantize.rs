@@ -4,18 +4,37 @@ use crate::distance::euclidean_distance_sq_f32_u8;
 use memfuse_core::DistanceMetric;
 
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// An 8-bit Scalar Quantizer (SQ8) with per-dimension scaling.
 ///
 /// Quantization reduces the memory footprint of vector storage by 4x.
 /// Per-dimension scaling improves recall by adapting to different value ranges.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ScalarQuantizer {
     pub mins: Vec<f32>,
     pub maxes: Vec<f32>,
     pub scales: Vec<f32>,
     pub inv_scales: Vec<f32>,
     pub dimension: usize,
+    #[serde(skip, default)]
+    pub total_queries: AtomicU64,
+    #[serde(skip, default)]
+    pub out_of_range_queries: AtomicU64,
+}
+
+impl Clone for ScalarQuantizer {
+    fn clone(&self) -> Self {
+        Self {
+            mins: self.mins.clone(),
+            maxes: self.maxes.clone(),
+            scales: self.scales.clone(),
+            inv_scales: self.inv_scales.clone(),
+            dimension: self.dimension,
+            total_queries: AtomicU64::new(self.total_queries.load(Ordering::Relaxed)),
+            out_of_range_queries: AtomicU64::new(self.out_of_range_queries.load(Ordering::Relaxed)),
+        }
+    }
 }
 
 impl ScalarQuantizer {
@@ -36,6 +55,8 @@ impl ScalarQuantizer {
                 scales: vec![255.0; dimension],
                 inv_scales: vec![1.0 / 255.0; dimension],
                 dimension,
+                total_queries: AtomicU64::new(0),
+                out_of_range_queries: AtomicU64::new(0),
             };
         }
 
@@ -69,6 +90,8 @@ impl ScalarQuantizer {
             scales,
             inv_scales,
             dimension,
+            total_queries: AtomicU64::new(0),
+            out_of_range_queries: AtomicU64::new(0),
         }
     }
 
@@ -100,6 +123,30 @@ impl ScalarQuantizer {
 
     /// Quantizes an `f32` vector to `u8`.
     pub fn quantize(&self, vector: &[f32]) -> Vec<u8> {
+        let mut is_out = false;
+        for (i, &v) in vector.iter().enumerate().take(self.dimension) {
+            if v < self.mins[i] || v > self.maxes[i] {
+                is_out = true;
+                break;
+            }
+        }
+
+        let total = self.total_queries.fetch_add(1, Ordering::Relaxed) + 1;
+        let out_cnt = if is_out {
+            self.out_of_range_queries.fetch_add(1, Ordering::Relaxed) + 1
+        } else {
+            self.out_of_range_queries.load(Ordering::Relaxed)
+        };
+
+        if total >= 20 && (out_cnt as f64 / total as f64) > 0.05 {
+            let ratio = (out_cnt as f64 / total as f64) * 100.0;
+            tracing::warn!(
+                out_of_range_ratio = %format!("{:.1}%", ratio),
+                total_queries = total,
+                "Over 5% of quantized queries are outside the trained range — ScalarQuantizer recalibration is recommended."
+            );
+        }
+
         vector
             .iter()
             .enumerate()

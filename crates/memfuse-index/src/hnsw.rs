@@ -43,6 +43,9 @@ use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::Mutex;
 
+/// Default deletion threshold (30% deleted nodes) that triggers graph rebuild / connectivity warnings.
+pub const HNSW_REBUILD_THRESHOLD: f64 = 0.30;
+
 /// Configuration parameters for the HNSW index.
 #[derive(Debug, Clone)]
 pub struct HnswConfig {
@@ -52,13 +55,19 @@ pub struct HnswConfig {
     pub max_elements: usize,
     /// Number of connections per element (M parameter).
     pub m: usize,
-    /// Dynamic candidate list size during construction.
+    /// Dynamic candidate list size during graph construction (`ef_construction`).
+    ///
+    /// Quality/speed trade-off parameter:
+    /// - `ef_construction >= M * 2`: Recommended for high recall (default M=16, so ef >= 32).
+    /// - Higher `ef_construction`: Improves graph connectivity and recall quality, but slows down vector insertions.
+    /// - Minimum required: `ef_construction >= M` (absolute minimum; values below `M` yield poor recall and will fail validation).
     pub ef_construction: usize,
     /// Dynamic candidate list size during search.
     pub ef_search: usize,
     /// Distance metric.
     pub distance_metric: DistanceMetric,
-    /// Rebuild threshold (ratio of deleted nodes).
+    /// Rebuild threshold (fraction of active nodes remaining below which rebuild is triggered or warning is logged).
+    /// Defaults to `HNSW_REBUILD_THRESHOLD` (0.30, i.e., 30% deleted nodes).
     pub rebuild_threshold: f64,
     /// Whether to apply SQ8 Scalar Quantization to the index vectors to reduce RAM.
     pub quantize: bool,
@@ -76,7 +85,7 @@ impl Default for HnswConfig {
             ef_construction: 200,
             ef_search: 64,
             distance_metric: DistanceMetric::Cosine,
-            rebuild_threshold: 0.20,
+            rebuild_threshold: 1.0 - HNSW_REBUILD_THRESHOLD,
             quantize: false,
             quantizer_recalibration_sample_size: 10_000,
         }
@@ -552,6 +561,8 @@ impl HnswIndex {
                 scales: vec![scale; dim],
                 inv_scales: vec![inv_scale; dim],
                 dimension: dim,
+                total_queries: AtomicU64::new(0),
+                out_of_range_queries: AtomicU64::new(0),
             });
         }
 
@@ -1275,6 +1286,9 @@ impl HnswIndexCore {
 
     /// Returns Ok(()) if the index is healthy, or
     /// Err(MemFuseError::HnswConnectivityDegraded { deleted_ratio }) if degraded.
+    ///
+    /// Checks the current graph connectivity against the configured rebuild threshold
+    /// (by default `1.0 - HNSW_REBUILD_THRESHOLD`, where `HNSW_REBUILD_THRESHOLD` = 30% deleted nodes).
     pub fn check_connectivity(&self) -> memfuse_core::Result<()> {
         let score = self.connectivity_score();
         if score < self.config.rebuild_threshold {
@@ -2100,6 +2114,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_entry_point_deletion_search() {
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let tx1 = TxId::new(1);
+
+        // Insert 5 nodes. First node (DocId(0)) will be the initial entry point.
+        for i in 0u64..5 {
+            let v = vec![i as f32, 0.0, 0.0, 0.0];
+            index.insert(tx1, DocId::new(i), &v).await.expect("insert");
+        }
+        index.commit(tx1).await.expect("commit");
+
+        // Delete node 0 (the entry point)
+        let tx2 = TxId::new(2);
+        index.delete(tx2, DocId::new(0)).await.expect("delete");
+        index.commit(tx2).await.expect("commit");
+
+        // Search must successfully return results from remaining nodes without panicking
+        let results = index
+            .search(&[1.0, 0.0, 0.0, 0.0], 3)
+            .await
+            .expect("search should succeed after entry point deletion");
+
+        assert_eq!(results.len(), 3);
+        for res in &results {
+            assert_ne!(res.doc_id, DocId::new(0), "Deleted entry point node 0 must not be returned");
+        }
+    }
+
+    #[tokio::test]
     async fn test_rollback() {
         let index = HnswIndex::try_new(test_config(4)).unwrap();
 
@@ -2260,6 +2303,24 @@ mod tests {
             .await
             .expect("search");
         assert_eq!(results[0].doc_id, DocId::new(60));
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn prop_insert_nan_returns_error(
+            prefix in proptest::collection::vec(proptest::num::f32::NORMAL, 0..3),
+            suffix in proptest::collection::vec(proptest::num::f32::NORMAL, 0..3),
+        ) {
+            let mut v = prefix;
+            v.push(f32::NAN);
+            v.extend(suffix);
+
+            let config = test_config(v.len());
+            let index = HnswIndex::try_new(config).unwrap();
+            let result = index.do_insert(DocId::new(1), &v);
+
+            proptest::prop_assert!(result.is_err(), "Inserting vector containing NaN must return error");
+        }
     }
 
     #[tokio::test]
