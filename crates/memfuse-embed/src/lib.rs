@@ -24,20 +24,25 @@ use tokenizers::Tokenizer;
 #[cfg(feature = "onnx")]
 use tracing::{debug, info, warn};
 
+pub mod reranker;
+pub use reranker::RankedCandidate;
 #[cfg(feature = "onnx")]
-struct SessionPool {
+pub use reranker::OnnxCrossEncoderReranker;
+
+#[cfg(feature = "onnx")]
+pub(crate) struct SessionPool {
     sessions: std::sync::Mutex<Vec<ort::session::Session>>,
 }
 
 #[cfg(feature = "onnx")]
 impl SessionPool {
-    fn new(sessions: Vec<ort::session::Session>) -> Self {
+    pub(crate) fn new(sessions: Vec<ort::session::Session>) -> Self {
         Self {
             sessions: std::sync::Mutex::new(sessions),
         }
     }
 
-    fn pop(&self) -> Result<ort::session::Session> {
+    pub(crate) fn pop(&self) -> Result<ort::session::Session> {
         let mut pool = self.sessions.lock().map_err(|_| {
             MemFuseError::Internal("SessionPool-Mutex vergiftet (Panic in Worker-Thread?)".into())
         })?;
@@ -49,7 +54,7 @@ impl SessionPool {
         })
     }
 
-    fn push(&self, session: ort::session::Session) {
+    pub(crate) fn push(&self, session: ort::session::Session) {
         if let Ok(mut guard) = self.sessions.lock() {
             guard.push(session);
         } else {
@@ -66,14 +71,14 @@ impl std::fmt::Debug for SessionPool {
 }
 
 #[cfg(feature = "onnx")]
-struct SessionGuard {
+pub(crate) struct SessionGuard {
     pool: Arc<SessionPool>,
     session: Option<ort::session::Session>,
 }
 
 #[cfg(feature = "onnx")]
 impl SessionGuard {
-    fn new(pool: Arc<SessionPool>) -> Result<Self> {
+    pub(crate) fn new(pool: Arc<SessionPool>) -> Result<Self> {
         let session = pool.pop()?;
         Ok(Self {
             pool,

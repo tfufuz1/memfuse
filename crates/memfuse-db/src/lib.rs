@@ -664,6 +664,23 @@ impl MemFuse {
             .await
     }
 
+    /// Performs hybrid search combining BM25, vector search, and graph traversal, followed by optional Cross-Encoder reranking.
+    #[cfg(feature = "reranking")]
+    #[tracing::instrument(level = "trace", skip(self, reranker, anchor_entities))]
+    pub async fn hybrid_search_reranked(
+        &self,
+        text: &str,
+        vector: &[f32],
+        k: usize,
+        reranker: Option<&memfuse_embed::OnnxCrossEncoderReranker>,
+        anchor_entities: Option<&[memfuse_core::EntityId]>,
+    ) -> Result<Vec<SearchResult>> {
+        self.default_col()
+            .await?
+            .hybrid_search_reranked(text, vector, k, reranker, anchor_entities)
+            .await
+    }
+
     /// Performs hybrid search with custom signal fusion weights.
     #[tracing::instrument(level = "trace", skip(self, anchor_entities, weights))]
     pub async fn hybrid_search_with_weights(
