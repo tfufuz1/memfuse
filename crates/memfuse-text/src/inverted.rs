@@ -1356,4 +1356,91 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_idf_recalculation_after_delete() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "idf_test");
+
+        // Insert doc1: "rust compiler"
+        let tx1 = TxId::new(1);
+        let d1 = DocId::new(1);
+        index.insert(tx1, d1, "rust compiler").await?;
+        index.commit(tx1).await?;
+
+        // Insert doc2: "rust language"
+        let tx2 = TxId::new(2);
+        let d2 = DocId::new(2);
+        index.insert(tx2, d2, "rust language").await?;
+        index.commit(tx2).await?;
+
+        // Search for "rust" when N=2, df=2
+        let search_before = index.search_bm25("rust", 10, None).await?;
+        assert_eq!(search_before.len(), 2);
+        let score_before_d2 = search_before.iter().find(|(id, _)| *id == d2).unwrap().1;
+
+        // Delete doc1
+        let tx3 = TxId::new(3);
+        index.delete(tx3, d1).await?;
+        index.commit(tx3).await?;
+
+        // Search for "rust" when N=1, df=1
+        let search_after = index.search_bm25("rust", 10, None).await?;
+        assert_eq!(search_after.len(), 1);
+        assert_eq!(search_after[0].0, d2);
+        let score_after_d2 = search_after[0].1;
+
+        // Scores should be non-NaN, non-infinite
+        assert!(!score_before_d2.is_nan() && !score_before_d2.is_infinite());
+        assert!(!score_after_d2.is_nan() && !score_after_d2.is_infinite());
+
+        // When N decreases from 2 to 1 and df decreases from 2 to 1,
+        // (N - df + 0.5) / (df + 0.5) goes from (2 - 2 + 0.5)/(2 + 0.5) = 0.5/2.5 = 0.2 (floor 1e-6)
+        // to (1 - 1 + 0.5)/(1 + 0.5) = 0.5/1.5 = 1/3 (floor 1e-6 as idf_arg <= 1.0).
+        // But let's verify score_after_d2 > score_before_d2 with terms having idf_arg > 1.0:
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_idf_recalculation_with_rare_term_after_delete() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "idf_rare_test");
+
+        // Corpus: doc1 ("common rare"), doc2 ("common rare"), doc3..doc10 ("common filler")
+        // term "rare" starts with N=10, df=2
+        let tx = TxId::new(1);
+        let d1 = DocId::new(1);
+        let d2 = DocId::new(2);
+        index.insert(tx, d1, "common rare").await?;
+        index.insert(tx, d2, "common rare").await?;
+        for i in 3..=10 {
+            index.insert(tx, DocId::new(i), "common filler").await?;
+        }
+        index.commit(tx).await?;
+
+        // Score for "rare" in d2 when N=10, df=2
+        let search_before = index.search_bm25("rare", 10, None).await?;
+        let score_before = search_before.iter().find(|(id, _)| *id == d2).unwrap().1;
+
+        // Delete d1 -> N=9, df=1 for "rare"
+        let tx_del = TxId::new(2);
+        index.delete(tx_del, d1).await?;
+        index.commit(tx_del).await?;
+
+        // Score for "rare" in d2 when N=9, df=1
+        let search_after = index.search_bm25("rare", 10, None).await?;
+        let score_after = search_after.iter().find(|(id, _)| *id == d2).unwrap().1;
+
+        // With N=10, df=2: idf_arg = (10 - 2 + 0.5)/(2 + 0.5) = 8.5 / 2.5 = 3.4 -> ln(3.4) ~= 1.2237
+        // With N=9, df=1: idf_arg = (9 - 1 + 0.5)/(1 + 0.5) = 8.5 / 1.5 = 5.6667 -> ln(5.6667) ~= 1.7346
+        // So IDF and score_after must be significantly higher than score_before
+        assert!(
+            score_after > score_before,
+            "Deleting doc containing 'rare' decreased df from 2 to 1, so BM25 score for 'rare' must increase (after: {}, before: {})",
+            score_after,
+            score_before
+        );
+
+        Ok(())
+    }
 }
