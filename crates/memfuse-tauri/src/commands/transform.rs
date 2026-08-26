@@ -253,7 +253,7 @@ pub async fn run_regex_transform(
     let _permit = state
         .regex_semaphore
         .try_acquire()
-        .map_err(|_| "Zu viele gleichzeitige Regex-Operationen — bitte kurz warten")?;
+        .map_err(|_| "Too many concurrent regex operations - please wait".to_string())?;
 
     run_regex_transformation(
         &request.pattern,
@@ -286,7 +286,7 @@ pub async fn run_bulk_regex_transform(
             .regex_semaphore
             .acquire()
             .await
-            .map_err(|e| format!("Semaphore-Fehler: {e}"))?;
+            .map_err(|e| format!("Semaphore error: {e}"))?;
 
         let result = run_regex_transformation(&pattern, &flags, &replacement, &input).await;
         results.push(result);
@@ -340,6 +340,13 @@ mod tests {
                 .unwrap()
                 .block_on(run_regex_transformation($pattern, $flags, $repl, $input))
         };
+    }
+
+    #[test]
+    fn test_transform_valid_regex() {
+        let result = transform!(r"\b\w+\b", "g", "X", "hello world").unwrap();
+        assert_eq!(result.output, "X X");
+        assert_eq!(result.replacements_made, 2);
     }
 
     #[test]

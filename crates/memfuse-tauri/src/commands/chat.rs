@@ -24,7 +24,7 @@ pub async fn chat_with_rag(
         db_guard
             .as_ref()
             .cloned()
-            .ok_or("Keine Datenbank geöffnet")?
+            .ok_or_else(|| "No database is open. Please open or create a database first.".to_string())?
     };
     let collection = db
         .collection(&collection_name)
@@ -56,7 +56,7 @@ pub async fn chat_with_rag(
                 .as_ref()
                 .and_then(|m| m.get("source"))
                 .and_then(|s| s.as_str())
-                .unwrap_or("Unbekannt")
+                .unwrap_or("Unknown")
                 .to_string(),
         })
         .collect();
