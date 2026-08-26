@@ -83,6 +83,7 @@ impl TextEmbeddingEngine for OllamaEmbedder {
             return Ok(Vec::new());
         }
 
+        // Nutze nativen Batch-Endpunkt (mit Fallback im Client)
         let output = self.client.embed_batch(&self.model, texts).await?;
 
         if let Some(expected_dim) = self.expected_dimension {
@@ -105,6 +106,21 @@ impl TextEmbeddingEngine for OllamaEmbedder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_embed_batch_empty() {
+        // OllamaClient mit nicht-erreichbarer URL
+        let client = OllamaClient::new("http://127.0.0.1:1"); // Closed port
+        // embed_batch([]) soll sofort Ok(vec![]) zurückgeben ohne Netzwerk-Call
+        let embedder = OllamaEmbedder {
+            client,
+            model: "test".into(),
+            concurrency: 4,
+            expected_dimension: None,
+        };
+        let result = embedder.embed_batch(&[]).await.unwrap(); // unwrap allowed
+        assert!(result.is_empty());
+    }
 
     #[tokio::test]
     async fn test_dimension_validation_mismatch_returns_index_error() {
