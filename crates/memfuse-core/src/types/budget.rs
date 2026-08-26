@@ -55,12 +55,7 @@ impl TokenBudget {
     /// whenever new model releases or naming conventions ship.
     pub fn for_model(model: &str) -> Self {
         let limit = match model {
-            m if m.contains("claude-4")
-                || m.contains("claude-opus-4")
-                || m.contains("claude-sonnet-4") =>
-            {
-                200_000
-            }
+            m if m.contains("claude-4") || m.contains("claude-opus-4") || m.contains("claude-sonnet-4") => 200_000,
             m if m.contains("gpt-4o-mini") => 128_000,
             m if m.contains("gpt-4o") => 128_000,
             m if m.contains("gpt-4") => 8_192,

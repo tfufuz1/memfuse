@@ -95,6 +95,20 @@ impl ScalarQuantizer {
         }
     }
 
+    /// Calculates quantization drift as the fraction of dimensions falling outside [mins[i], maxes[i]].
+    pub fn check_drift(&self, vector: &[f32]) -> f32 {
+        if self.dimension == 0 || vector.is_empty() {
+            return 0.0;
+        }
+        let out_count = vector
+            .iter()
+            .take(self.dimension)
+            .enumerate()
+            .filter(|(i, &v)| v < self.mins[*i] || v > self.maxes[*i])
+            .count();
+        out_count as f32 / self.dimension as f32
+    }
+
     /// Expands mins/maxes to accommodate out-of-bounds vectors, recomputing scales.
     pub fn expand_bounds_to_fit(&mut self, vector: &[f32]) -> bool {
         let mut changed = false;
@@ -271,6 +285,21 @@ impl ScalarQuantizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_check_drift() {
+        let v1 = vec![0.0, 0.0, 0.0, 0.0];
+        let v2 = vec![10.0, 10.0, 10.0, 10.0];
+        let q = ScalarQuantizer::train(&[v1.as_slice(), v2.as_slice()], 4);
+
+        // Vector within range [0, 10] -> 0 drift
+        let in_range = vec![0.5, 5.0, 2.0, 9.9];
+        assert_eq!(q.check_drift(&in_range), 0.0);
+
+        // 2 out of 4 dimensions out of range -> 0.5 drift
+        let out_range = vec![-1.0, 5.0, 15.0, 3.0];
+        assert_eq!(q.check_drift(&out_range), 0.5);
+    }
 
     #[test]
     fn test_quantize_dequantize_roundtrip() {
