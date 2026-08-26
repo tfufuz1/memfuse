@@ -72,12 +72,18 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
         }
     }
 
-    Ok(match metric {
+    let dist = match metric {
         DistanceMetric::Cosine => cosine_distance(a, b),
         DistanceMetric::Euclidean => euclidean_distance(a, b),
         DistanceMetric::DotProduct => dot_product_distance(a, b),
-        _ => unreachable!(),
-    })
+        other => {
+            return Err(memfuse_core::MemFuseError::Index(format!(
+                "Unsupported DistanceMetric variant: {other:?} — \
+                 add a match arm here when extending the enum"
+            )));
+        }
+    };
+    Ok(dist)
 }
 
 /// Computes cosine distance (1 - similarity).
@@ -1416,7 +1422,10 @@ mod tests {
                     DistanceMetric::Cosine => cosine_distance_scalar(&a, &b),
                     DistanceMetric::Euclidean => euclidean_distance_scalar(&a, &b),
                     DistanceMetric::DotProduct => dot_product_scalar(&a, &b),
-                    _ => unreachable!(),
+                    other => panic!(
+                        "Test infrastructure: unhandled DistanceMetric variant {other:?}. \
+                         Add a scalar impl to this test block when adding enum variants."
+                    ),
                 };
 
                 let simd = compute_distance(&a, &b, metric).unwrap();
