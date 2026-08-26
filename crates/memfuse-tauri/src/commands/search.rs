@@ -1,3 +1,4 @@
+use crate::commands::collections::validate_collection_name;
 use crate::ollama::OllamaBridge;
 use crate::state::AppState;
 use memfuse_core::TextEmbeddingEngine;
@@ -12,6 +13,8 @@ pub struct SearchResultDto {
     pub source: String,
 }
 
+const MAX_QUERY_LEN: usize = 65_536; // 64 KiB
+
 #[tauri::command]
 pub async fn hybrid_search(
     state: State<'_, AppState>,
@@ -19,6 +22,10 @@ pub async fn hybrid_search(
     collection_name: String,
     k: usize,
 ) -> Result<Vec<SearchResultDto>, String> {
+    if query.len() > MAX_QUERY_LEN {
+        return Err("Query too long".to_string());
+    }
+    validate_collection_name(&collection_name)?;
     let db = {
         let db_guard = state.db.read();
         db_guard

@@ -36,7 +36,7 @@
 //! gleichzeitig aktiv sein — auch wenn ein hypothetischer Hang auftritt.
 
 use crate::state::AppState;
-use regex::Regex;
+use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tauri::State;
@@ -151,9 +151,12 @@ async fn run_regex_transformation(
     }
 
     // ── 2. Pattern kompilieren ───────────────────────────────────────────────
-    // `Regex::new()` lehnt Backreferences und Lookahead/Lookbehind mit
-    // einem klaren Fehler ab — kein Panic, kein Hang.
-    let re = Regex::new(pattern).map_err(|e| format!("Ungültiges Regex-Pattern: {e}"))?;
+    // `RegexBuilder` setzt ein `size_limit` (10 KiB) gegen übergroße /
+    // katastrophale Regex-Kompilierungen und ReDoS-Muster.
+    let re = RegexBuilder::new(pattern)
+        .size_limit(10 * 1024)
+        .build()
+        .map_err(|e| format!("Ungültiges Regex-Pattern: {e}"))?;
 
     // ── 3. Matching in spawn_blocking mit Timeout ────────────────────────────
     //
@@ -311,7 +314,7 @@ pub fn validate_regex_pattern(pattern: String) -> RegexValidationResult {
         MAX_REGEX_INPUT_BYTES
     };
 
-    match Regex::new(&pattern) {
+    match RegexBuilder::new(&pattern).size_limit(10 * 1024).build() {
         Ok(_) => RegexValidationResult {
             is_valid: true,
             error: String::new(),
@@ -519,6 +522,18 @@ mod tests {
         assert!(
             err.contains("Ungültiges Regex-Pattern"),
             "Lookahead muss abgelehnt werden: {err}"
+        );
+    }
+
+    #[test]
+    fn test_size_limit_rejection() {
+        // Test, dass ein Pattern, das das size_limit (10 KiB) überschreitet,
+        // als Fehler zurückgegeben und nicht gecrasht wird.
+        let oversized_pattern = r"[a-z]".repeat(20_000);
+        let err = transform!(&oversized_pattern, "", "", "input").unwrap_err();
+        assert!(
+            err.contains("Ungültiges Regex-Pattern"),
+            "Oversized pattern size_limit violation should be returned as error: {err}"
         );
     }
 }
