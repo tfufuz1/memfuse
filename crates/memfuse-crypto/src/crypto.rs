@@ -112,10 +112,9 @@ impl KeyManager {
     /// Encrypts a block of data with an automatically generated random nonce.
     /// Returns the ciphertext and the full 12-byte nonce used.
     pub fn encrypt_auto_nonce(&self, data: &[u8]) -> Result<(Vec<u8>, [u8; 12])> {
-        // AES-256-GCM-SIV chosen over AES-256-GCM because GCM-SIV provides
-        // nonce-misuse resistance: ciphertext integrity is preserved even if a
-        // nonce is accidentally reused, unlike GCM which leaks the auth key on
-        // nonce reuse. Reference: RFC 8452.
+        // AES-256-GCM-SIV: nonce-reuse-resistant (RFC 8452). Ciphertext-Integrität
+        // bleibt auch bei versehentlicher Nonce-Wiederverwendung gewahrt, anders
+        // als bei AES-GCM das bei Nonce-Reuse den Auth-Key leakt.
         let mut nonce_bytes = [0u8; 12];
         nonce_bytes[0..4].copy_from_slice(&self.nonce_prefix);
         // SAFETY: Fresh 8-byte random suffix generated per call via OsRng avoids atomic counter persistence requirements.
@@ -266,6 +265,17 @@ mod tests {
             k1.inspect_key_bytes_for_test(),
             k2.inspect_key_bytes_for_test(),
             "Same passphrase+salt+path must produce same key"
+        );
+    }
+
+    #[test]
+    fn same_passphrase_salt_path_gives_same_key() {
+        let km1 = KeyManager::try_new("secret", b"salt").expect("km1");
+        let km2 = KeyManager::try_new("secret", b"salt").expect("km2");
+        assert_eq!(
+            km1.derive_file_key(b"data.sst").expect("k1").inspect_key_bytes_for_test(),
+            km2.derive_file_key(b"data.sst").expect("k2").inspect_key_bytes_for_test(),
+            "HKDF muss bei gleichem Passphrase, Salt und Pfad denselben Key liefern"
         );
     }
 
