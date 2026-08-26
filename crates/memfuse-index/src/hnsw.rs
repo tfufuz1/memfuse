@@ -1828,7 +1828,17 @@ impl VectorIndex for HnswIndex {
                     self.do_delete(doc_id)?;
                     deleted_any = true;
                 }
-                _ => unreachable!(),
+                // AI-TAG[PANIC-SAFETY][CRITICAL] — IndexOp ist #[non_exhaustive]; neue Varianten
+                // müssen hier explizit behandelt werden, bevor sie in den HNSW-Commit-Pfad gelangen.
+                // ANWEISUNG: Neue IndexOp-Variante → Arm hier hinzufügen oder UpdateNotSupported zurückgeben.
+                // ID: FIX-03-INDEXOP
+                other => {
+                    return Err(MemFuseError::Index(format!(
+                        "HNSW commit received unsupported IndexOp variant: {:?}. \
+                         Add a handler arm before enabling this operation.",
+                        std::mem::discriminant(&other)
+                    )));
+                }
             }
         }
 
