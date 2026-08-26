@@ -44,12 +44,19 @@ Ist dies nicht der Fall, existiert eine Testlücke im entsprechenden Zweig.
 
 ---
 
-## 5. Test-Code-Freigaben (Allowances)
+## 5. Hermetic Feature Gate Check
+Feature-gated crates (such as `memfuse-embed` with the `onnx` feature) must build cleanly when default features are disabled:
+```bash
+cargo check -p memfuse-embed --no-default-features
+```
+This check verifies zero leakage of optional dependencies or types into non-feature-gated modules.
+
+## 6. Test-Code-Freigaben (Allowances)
 *   **Permitted**: `.unwrap()` und `.expect()` sind in Test-Code (`#[cfg(test)]`) und Test-Hilfsfunktionen erlaubt.
 *   **Production Code**: Diese Ausnahmen gelten **niemals** für den von Tests aufgerufenen Produktionscode. Produktionscode muss fehlerfrei über `Result` propagieren.
 
 ---
 
-## 6. Weiterführende Regeln
+## 7. Weiterführende Regeln
 *   [rules/testing.md](file:///home/freddy/Arbeitsplatz/DEV/memfuse/rules/testing.md) — Anti-Test-Mirroring & required categories.
 *   [rules/test_quality.md](file:///home/freddy/Arbeitsplatz/DEV/memfuse/rules/test_quality.md) — Detaillierte Code-Beispiele für Test-Qualität.
