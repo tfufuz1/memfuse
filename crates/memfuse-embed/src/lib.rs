@@ -128,6 +128,8 @@ pub struct TextEmbedderConfig {
     pub max_sequence_length: usize,
     /// Number of pre-allocated ONNX sessions in the pool (default: 2).
     pub pool_size: usize,
+    /// Expected output embedding dimension (optional).
+    pub expected_dim: Option<usize>,
 }
 
 #[cfg(feature = "onnx")]
@@ -136,6 +138,7 @@ impl Default for TextEmbedderConfig {
         Self {
             max_sequence_length: 512,
             pool_size: 2,
+            expected_dim: None,
         }
     }
 }
@@ -154,6 +157,8 @@ pub struct TextEmbedder {
     pool: Arc<SessionPool>,
     /// Configuration settings for the embedder.
     config: TextEmbedderConfig,
+    /// Expected output embedding dimension.
+    expected_dim: Option<usize>,
 }
 
 #[cfg(feature = "onnx")]
@@ -174,13 +179,28 @@ impl TextEmbeddingEngine for TextEmbedder {
         }
 
         let mut results = Vec::with_capacity(texts.len());
+        let mut parallel_failed = false;
         for handle in handles {
-            let res = handle
-                .await
-                .map_err(|e| MemFuseError::Internal(format!("embed_batch task join: {}", e)))??;
-            results.push(res);
+            match handle.await {
+                Ok(Ok(res)) => results.push(res),
+                Ok(Err(e)) => return Err(e),
+                Err(_) => {
+                    parallel_failed = true;
+                    break;
+                }
+            }
         }
-        Ok(results)
+
+        if !parallel_failed && results.len() == texts.len() {
+            return Ok(results);
+        }
+
+        // Sequential fallback path
+        let mut seq_results = Vec::with_capacity(texts.len());
+        for text in texts {
+            seq_results.push(self.embed_async(text).await?);
+        }
+        Ok(seq_results)
     }
 }
 
@@ -204,38 +224,20 @@ impl TextEmbedder {
         model_dir: impl AsRef<Path>,
         config: TextEmbedderConfig,
     ) -> Result<Self> {
-        let model_dir = model_dir.as_ref();
-        let model_path = if model_dir.is_file() {
-            model_dir.to_path_buf()
-        } else if model_dir.join("model.onnx").exists() {
-            model_dir.join("model.onnx")
-        } else if model_dir.join("onnx/model.onnx").exists() {
-            model_dir.join("onnx/model.onnx")
-        } else {
-            model_dir.join("model.onnx")
-        };
-
-        let tokenizer_path = if model_dir.is_file() {
-            model_dir
-                .parent()
-                .map(|p| p.join("tokenizer.json"))
-                .unwrap_or_else(|| Path::new("tokenizer.json").to_path_buf())
-        } else {
-            model_dir.join("tokenizer.json")
-        };
-
-        if !model_path.exists() {
-            return Err(MemFuseError::NotFound(format!(
-                "ONNX model file not found at {:?}",
-                model_path
-            )));
+        let path = model_dir.as_ref();
+        if !path.join("tokenizer.json").exists() {
+            return Err(MemFuseError::InvalidInput(
+                "tokenizer.json not found".into(),
+            ));
         }
-        if !tokenizer_path.exists() {
-            return Err(MemFuseError::NotFound(format!(
-                "Tokenizer file not found at {:?}",
-                tokenizer_path
-            )));
+        if !path.join("model.onnx").exists() {
+            return Err(MemFuseError::InvalidInput(
+                "model.onnx not found".into(),
+            ));
         }
+
+        let model_path = path.join("model.onnx");
+        let tokenizer_path = path.join("tokenizer.json");
 
         info!("Loading tokenizer from {:?}", tokenizer_path);
         let tokenizer = Tokenizer::from_file(&tokenizer_path)
@@ -256,12 +258,20 @@ impl TextEmbedder {
             sessions.push(session);
         }
 
+        let expected_dim = config.expected_dim;
         Ok(Self {
             tokenizer: Arc::new(tokenizer),
             semaphore: Arc::new(tokio::sync::Semaphore::new(pool_size)),
             pool: Arc::new(SessionPool::new(sessions)),
             config,
+            expected_dim,
         })
+    }
+
+    /// Sets the expected embedding output dimension for post-inference validation.
+    pub fn with_expected_dimension(mut self, dim: usize) -> Self {
+        self.expected_dim = Some(dim);
+        self
     }
 
     /// Generates an embedding for the given text using `spawn_blocking`.
@@ -269,24 +279,38 @@ impl TextEmbedder {
     /// Acquires a semaphore permit to limit concurrent inference operations,
     /// then offloads the blocking ONNX computation to Tokio's blocking thread pool.
     pub async fn embed_async(&self, text: &str) -> Result<Vec<f32>> {
-        let _permit = self
-            .semaphore
-            .acquire()
-            .await
-            .map_err(|_| MemFuseError::Internal("Semaphore closed".into()))?;
+        let _permit = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            self.semaphore.acquire(),
+        )
+        .await
+        .map_err(|_| MemFuseError::Internal("ONNX session pool exhausted (timeout 30s)".into()))?
+        .map_err(|e| MemFuseError::Internal(format!("Semaphore closed: {e}")))?;
 
         let text = text.to_string();
         let pool = self.pool.clone();
         let tokenizer = self.tokenizer.clone();
         let max_sequence_length = self.config.max_sequence_length;
 
-        tokio::task::spawn_blocking(move || {
+        let output = tokio::task::spawn_blocking(move || {
             // Guard borrows session from pool, restores it on drop
             let mut session_guard = SessionGuard::new(pool)?;
             Self::run_inference(&mut session_guard, &tokenizer, &text, max_sequence_length)
         })
         .await
-        .map_err(|e| MemFuseError::Internal(format!("spawn_blocking join: {}", e)))?
+        .map_err(|e| MemFuseError::Internal(format!("spawn_blocking join: {}", e)))??;
+
+        if let Some(expected_dim) = self.expected_dim {
+            if output.len() != expected_dim {
+                return Err(MemFuseError::InvalidInput(format!(
+                    "Model output dim {} != expected {}",
+                    output.len(),
+                    expected_dim
+                )));
+            }
+        }
+
+        Ok(output)
     }
 
     /// Performs tokenization, ONNX forward pass, mean pooling, and L2 normalization.
@@ -426,18 +450,18 @@ mod tests {
     {
         let dir = tempdir()?;
 
-        // Empty directory — missing model file check first or tokenizer check
+        // Empty directory — missing tokenizer.json check first
         let res = TextEmbedder::load(dir.path());
         assert!(res.is_err());
         let err = res.err().unwrap();
-        assert!(matches!(err, MemFuseError::NotFound(_)));
+        assert!(matches!(err, MemFuseError::InvalidInput(_)));
 
         // Create tokenizer but still missing model.onnx
         File::create(dir.path().join("tokenizer.json"))?;
         let res = TextEmbedder::load(dir.path());
         assert!(res.is_err());
         let err = res.err().unwrap();
-        assert!(matches!(err, MemFuseError::NotFound(_)));
+        assert!(matches!(err, MemFuseError::InvalidInput(_)));
         Ok(())
     }
 
@@ -525,6 +549,45 @@ mod tests {
         let engine = MockEngine;
         let res = engine.embed("memfuse").await?;
         assert_eq!(res, vec![7.0]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_embed_batch_ordering_and_fallback() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        use async_trait::async_trait;
+        use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
+
+        struct MockOrderedEngine {
+            fail_on: Option<String>,
+        }
+
+        #[async_trait]
+        impl TextEmbeddingEngine for MockOrderedEngine {
+            async fn embed(&self, text: &str) -> Result<Vec<f32>> {
+                if let Some(ref fail) = self.fail_on {
+                    if text == fail {
+                        return Err(MemFuseError::InvalidInput(format!("Failed on {text}")));
+                    }
+                }
+                Ok(vec![text.len() as f32, (text.chars().next().unwrap_or('a') as u32) as f32])
+            }
+        }
+
+        let engine = MockOrderedEngine { fail_on: None };
+        let texts = vec!["a", "b", "c"];
+        let batch_res = engine.embed_batch(&texts).await?;
+        assert_eq!(batch_res.len(), 3);
+        assert_eq!(batch_res[0], vec![1.0, 'a' as u32 as f32]);
+        assert_eq!(batch_res[1], vec![1.0, 'b' as u32 as f32]);
+        assert_eq!(batch_res[2], vec![1.0, 'c' as u32 as f32]);
+
+        // Error propagation test
+        let failing_engine = MockOrderedEngine { fail_on: Some("b".into()) };
+        let err_res = failing_engine.embed_batch(&texts).await;
+        assert!(err_res.is_err());
+        let err_msg = err_res.err().unwrap().to_string();
+        assert!(err_msg.contains("Failed on b"));
+
         Ok(())
     }
 }
