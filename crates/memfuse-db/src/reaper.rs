@@ -2,6 +2,10 @@ use memfuse_core::tx_buffer::TxBuffer;
 use std::sync::Arc;
 use std::time::Duration;
 
+/// Maximum number of orphan transactions processed in a single reaper tick
+/// to avoid starving foreground operations.
+pub const MAX_ORPHANS_PER_TICK: usize = 100;
+
 /// Starts a background task to periodically clean up orphan transactions.
 ///
 /// This reaper handles the cleanup of transactions that have exceeded their
@@ -24,7 +28,13 @@ pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
         loop {
             tokio::select! {
                 _ = ticker.tick() => {
-                    let expired = buffer.reap_orphans();
+                    let buf = buffer.clone();
+                    let expired = tokio::task::spawn_blocking(move || {
+                        buf.reap_orphans_bounded(MAX_ORPHANS_PER_TICK)
+                    })
+                    .await
+                    .unwrap_or_default();
+
                     if !expired.is_empty() {
                         tracing::warn!(
                             "Orphan reaper cleaned up {} expired transactions",
@@ -36,8 +46,14 @@ pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
                             error = %err,
                             "HNSW index degraded — triggering automatic rebuild"
                         );
-                        if let Err(rebuild_err) = hnsw_index.rebuild().await {
-                            tracing::error!(error = %rebuild_err, "HNSW rebuild failed");
+                        match tokio::time::timeout(Duration::from_secs(120), hnsw_index.rebuild()).await {
+                            Ok(Ok(())) => {},
+                            Ok(Err(rebuild_err)) => {
+                                tracing::error!(error = %rebuild_err, "HNSW rebuild failed");
+                            }
+                            Err(_) => {
+                                tracing::warn!("HNSW rebuild timed out after 120s; skipping this tick");
+                            }
                         }
                     }
                 }

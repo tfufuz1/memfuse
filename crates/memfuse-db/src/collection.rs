@@ -1392,21 +1392,31 @@ impl<S: StorageEngine> Collection<S> {
 
                 if let Some(expire_at) = created_at.checked_add(ttl_val) {
                     if now_ms >= expire_at {
-                        expired_ids.push(id);
+                        expired_ids.push((id, expire_at));
                     }
                 }
             }
         }
 
         let count = expired_ids.len();
-        for id in expired_ids {
-            if let Err(e) = self.delete(&id).await {
-                tracing::error!(
-                    collection = %self.name,
-                    id = %id,
-                    error = %e,
-                    "Reaper failed to delete expired document"
-                );
+        for (id, expire_at) in expired_ids {
+            match self.delete(&id).await {
+                Ok(_) => {
+                    tracing::debug!(
+                        collection = %self.name,
+                        doc_id = %id,
+                        expire_at = expire_at,
+                        "Reaped expired TTL document"
+                    );
+                }
+                Err(e) => {
+                    tracing::error!(
+                        collection = %self.name,
+                        id = %id,
+                        error = %e,
+                        "Reaper failed to delete expired document"
+                    );
+                }
             }
         }
 
