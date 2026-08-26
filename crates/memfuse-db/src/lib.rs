@@ -1390,6 +1390,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_repair_on_open_idempotent_with_existing_vector() {
+        use memfuse_core::VectorIndex;
+        let tmp = tempfile::TempDir::new().expect("temp dir");
+        let path = tmp.path().to_path_buf();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+
+        // 1. Create a doc in LSM and also insert its vector into HNSW, but leave intent as Pending
+        {
+            let db = MemFuse::open_with_config(&path, config.clone())
+                .await
+                .expect("open 1");
+            let col = db.collection("idempotent-test").await.expect("col");
+
+            let doc_id = DocId::from_key("already-indexed-doc").expect("doc_id");
+            let stored = crate::collection::StoredDocument {
+                id: "already-indexed-doc".to_string(),
+                embedding: vec![1.0, 0.0, 0.0, 0.0],
+                metadata: Some(json!({"status": "already_indexed"})),
+            };
+            let data = serde_json::to_vec(&stored).expect("json");
+
+            let user_key = col.namespaced_key(b"already-indexed-doc", 0);
+            let doc_key = col.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+
+            let tx = TxId::new(db.next_tx.fetch_add(1, Ordering::SeqCst));
+            db.storage
+                .put(tx, &user_key, &data)
+                .await
+                .expect("put user");
+            db.storage.put(tx, &doc_key, &data).await.expect("put doc");
+
+            // Insert into HNSW directly as well
+            col.index
+                .insert(tx, doc_id, &stored.embedding)
+                .await
+                .expect("insert hnsw");
+            col.index.commit(tx).await.expect("commit index");
+
+            // Manually write a Pending intent
+            let intent_key = col.namespaced_key(tx.inner().to_le_bytes().as_ref(), 3);
+            let intent = crate::transaction::CommitIntent::Pending {
+                doc_ids: vec![doc_id],
+            };
+            let intent_bytes = serde_json::to_vec(&intent).expect("serialize intent");
+            db.storage
+                .put(tx, &intent_key, &intent_bytes)
+                .await
+                .expect("put intent");
+
+            db.storage.commit(tx).await.expect("commit storage");
+
+            db.close().await.expect("close");
+        }
+
+        // 2. Re-open: repair_on_open triggers. Since vector is already in index or re-inserted idempotently, it must succeed.
+        {
+            let db = MemFuse::open_with_config(&path, config)
+                .await
+                .expect("open 2 (repair idempotent)");
+            let col = db.collection("idempotent-test").await.expect("col");
+
+            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0].id, "already-indexed-doc");
+        }
+    }
+
+    #[tokio::test]
     async fn test_repair_on_open_failure_propagates_error() {
         let tmp = tempfile::TempDir::new().expect("temp dir");
         let path = tmp.path().to_path_buf();

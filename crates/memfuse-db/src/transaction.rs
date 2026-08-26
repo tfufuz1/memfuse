@@ -88,7 +88,7 @@ impl<S: StorageEngine> DbTransaction<S> {
             guard.clone()
         };
 
-        let intent = CommitIntent::Pending { doc_ids };
+        let intent = CommitIntent::Pending { doc_ids: doc_ids.clone() };
         let intent_bytes = serde_json::to_vec(&intent).map_err(|e| {
             MemFuseError::Transaction(format!("Failed to serialize commit intent: {}", e))
         })?;
@@ -196,6 +196,9 @@ impl<S: StorageEngine> DbTransaction<S> {
 
             if !success {
                 tracing::error!(
+                    target: "memfuse.invariant",
+                    event = "split_brain",
+                    doc_ids = ?doc_ids,
                     "[INV-DB-3] FATAL: Compensating transaction failed after {} attempts. \
                      Index DB potential split-brain detected! Repair-on-Open required.",
                     max_attempts

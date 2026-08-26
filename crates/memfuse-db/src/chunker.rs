@@ -229,9 +229,58 @@ fn parts_first(_line: &str, h_level: u8) -> String {
     s
 }
 
+/// Splits a text string into chunks of at most `chunk_size` Unicode characters (code points),
+/// safely respecting UTF-8 character boundaries using `str::char_indices()`.
+pub fn chunk_text(text: &str, chunk_size: usize) -> Vec<&str> {
+    if text.is_empty() || chunk_size == 0 {
+        return Vec::new();
+    }
+
+    let mut chunks = Vec::new();
+    let mut char_count = 0;
+    let mut start_byte = 0;
+
+    for (byte_idx, _ch) in text.char_indices() {
+        if char_count == chunk_size {
+            chunks.push(&text[start_byte..byte_idx]);
+            start_byte = byte_idx;
+            char_count = 0;
+        }
+        char_count += 1;
+    }
+
+    if start_byte < text.len() {
+        chunks.push(&text[start_byte..]);
+    }
+
+    chunks
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_chunk_text_unicode_german_umlauts() {
+        // German string with umlauts (ä, ö, ü, ß) and unicode characters.
+        // Total character count = 100 unicode chars (50 chars * 2).
+        let text = "Äpfel, Öle, Übermut und Straße sind wunderschön!! "
+            .repeat(2);
+        let char_count = text.chars().count();
+        assert!(char_count >= 100, "Test string must have at least 100 chars, got {}", char_count);
+
+        let chunks = chunk_text(&text, 30);
+        assert!(!chunks.is_empty());
+
+        for chunk in &chunks {
+            // Check that chunk is valid UTF-8 (slice indexing would panic otherwise)
+            assert!(std::str::from_utf8(chunk.as_bytes()).is_ok());
+            assert!(chunk.chars().count() <= 30);
+        }
+
+        let reassembled = chunks.join("");
+        assert_eq!(reassembled, text);
+    }
 
     #[test]
     fn chunker_empty_input() {

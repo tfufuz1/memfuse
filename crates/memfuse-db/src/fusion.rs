@@ -44,6 +44,10 @@ pub fn weighted_reciprocal_rank_fusion(
     result_sets: Vec<(String, Vec<SearchResult>, f32)>,
     max_results: usize,
 ) -> Vec<SearchResult> {
+    // The constant k=60 is the industry standard (Cormack et al., 2009).
+    // It balances the precision/recall trade-off by smoothing rank impact:
+    // higher k prevents top-ranked outliers in one signal from completely dominating,
+    // while ensuring items appearing in multiple search signals accumulate significant boost.
     let k = 60;
     // Map: id -> (score, metadata, matched_signals)
     let mut fused: HashMap<String, (f32, Option<serde_json::Value>, Vec<String>)> = HashMap::new();
@@ -98,6 +102,36 @@ pub fn weights_to_signal_factors(weights: Option<&memfuse_core::FusionWeights>) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_rrf_dual_signal_higher_than_single_signal() {
+        let set1 = vec![SearchResult {
+            id: "doc_both".to_string(),
+            score: 0.99,
+            metadata: None,
+            matched_signals: vec![],
+        }];
+        let set2 = vec![
+            SearchResult {
+                id: "doc_both".to_string(),
+                score: 0.95,
+                metadata: None,
+                matched_signals: vec![],
+            },
+            SearchResult {
+                id: "doc_single".to_string(),
+                score: 0.99,
+                metadata: None,
+                matched_signals: vec![],
+            },
+        ];
+
+        let fused = reciprocal_rank_fusion(vec![set1, set2], 10);
+        assert_eq!(fused.len(), 2);
+        assert_eq!(fused[0].id, "doc_both", "Document ranked #1 in both signals must score higher than doc ranked #1 in only one signal");
+        assert_eq!(fused[1].id, "doc_single");
+        assert!(fused[0].score > fused[1].score);
+    }
 
     #[test]
     fn test_rrf_combines_result_sets() {
