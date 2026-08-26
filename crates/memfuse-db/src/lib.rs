@@ -137,7 +137,9 @@ pub struct MemFuseConfig {
 impl Default for MemFuseConfig {
     fn default() -> Self {
         // Dimension passt zum Standard-Embed-Modell (nomic-embed-text = 768)
-        let dimension = 768; // sicherer Fallback für nomic-embed-text
+        let default_model = memfuse_ollama::DEFAULT_EMBED_MODEL;
+        let dimension = memfuse_ollama::model_info::known_dimension(default_model)
+            .unwrap_or(768); // sicherer Fallback = nomic-embed-text
 
         Self {
             dimension,
@@ -1668,5 +1670,30 @@ mod tests {
             "Expected repair error message, got: {}",
             err_msg
         );
+    }
+
+    #[tokio::test]
+    async fn test_open_dimension_mismatch_fails() {
+        let dir = tempfile::tempdir().unwrap(); // unwrap allowed
+        let config_768 = MemFuseConfig {
+            dimension: 768,
+            ..Default::default()
+        };
+        let _db = MemFuse::open_with_config(dir.path(), config_768)
+            .await
+            .unwrap(); // unwrap allowed
+
+        // Zweites Öffnen mit falscher Dimension muss früh fehlschlagen
+        let config_1536 = MemFuseConfig {
+            dimension: 1536,
+            ..Default::default()
+        };
+        let result = MemFuse::open_with_config(dir.path(), config_1536).await;
+        assert!(result.is_err());
+        let err_msg = match result {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("expected error"),
+        };
+        assert!(err_msg.contains("Dimension mismatch"));
     }
 }
