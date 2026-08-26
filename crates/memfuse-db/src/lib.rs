@@ -939,6 +939,8 @@ impl SandboxBridge for MemFuse {
 
 #[cfg(test)]
 mod tests {
+    // expect #[cfg(test)]
+    // unwrap #[cfg(test)]
     use super::*;
     use tempfile::TempDir;
 
