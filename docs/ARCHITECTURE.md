@@ -49,3 +49,10 @@ air-gapped, zero-panic (angestrebt), 100% Pure-Rust Sovereign Core (mit Ollama a
 - **HKDF Key Derivation**: Kryptographischer Kontext pro Datei.
 - **HMAC Chaining**: WAL-Integrität gegen Manipulation geschützt.
 - **Namespace Isolation**: Vollständige Trennung von Collections auf Storage-Ebene.
+
+## Planungsdokument-Blueprint-Korrekturen
+Standard-Korrekturen für Architektur- und Planungs-Blueprints:
+1. **`SessionPool` Sichtbarkeit**: `SessionPool` (bzw. `OnnxSessionPool`) ist `pub(crate)` in `memfuse-embed` und nicht exportiert. Für Modul-externe Nutzung bzw. Cross-Encoder (wie in `reranker.rs`) wird ein eigener `SessionPool` gehalten.
+2. **Keine `petgraph`-Abhängigkeit**: `memfuse-graph` nutzt eine native Pure-Rust CSR-Graph-Implementierung (`SessionBranchTree`, `CsrGraph`) ohne `petgraph`-Workspace-Abhängigkeit gemäß ADR-004 (Pure Rust Sovereign Core Policy).
+3. **`CheckpointGuard` RAII & Snapshot-Referenzen**: `CheckpointGuard` besitzt RAII-Semantik (Auto-Rollback bei Drop) und ist bewusst nicht klonbar. Zustands-Referenzen werden als `snapshot_tx_id: Option<TxId>` gespeichert.
+4. **RRF-Nutzung**: `memfuse-db::fusion` stellt `reciprocal_rank_fusion()` und `weighted_reciprocal_rank_fusion()` bereit. Spezifikationen und Blueprints nutzen bestehende Funktionen anstelle redundanter `execute_rrf()` Neuimplementierungen.
