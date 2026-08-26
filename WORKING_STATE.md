@@ -15,6 +15,7 @@
 | 2 | SessionPool `pop()` → Result (P2-6) | ✅ Erledigt 2026-08-25 | Fix 4 (memfuse-embed/src/lib.rs) |
 | 2 | XSS durch innerHTML (P2-7) | ✅ Erledigt 2026-08-25 | Fix 5 (memfuse-tauri/ui/app.js) |
 | 2 | EmbeddingProvider Trait-Duplikat (P2-8) | ✅ Erledigt 2026-08-25 | Fix 6 (memfuse-tauri) |
+| 3 | IndexOp `unreachable!()` Fix (FIX-03-INDEXOP) | ✅ Erledigt 2026-08-25 | `_ => unreachable!()` replaced with explicit error handling in `hnsw.rs` |
 | — | Governance-Overhaul (AGENTS.md v5) | ✅ Erledigt 2026-08-24 | Factual errors corrected, session protocol added |
 
 ## Offene AI-TAGs (automatisch prüfen!)
