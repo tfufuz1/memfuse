@@ -1,3 +1,4 @@
+use crate::commands::collections::validate_collection_name;
 use crate::ingestion::pipeline::{IngestReport, IngestionPipeline};
 use crate::ollama::OllamaBridge;
 use crate::state::AppState;
@@ -10,6 +11,7 @@ pub async fn ingest_file(
     file_path: String,
     collection_name: String,
 ) -> Result<IngestReport, String> {
+    validate_collection_name(&collection_name)?;
     let db = {
         let db_guard = state.db.read();
         db_guard
@@ -38,6 +40,7 @@ pub async fn ingest_folder(
     folder_path: String,
     collection_name: String,
 ) -> Result<Vec<IngestReport>, String> {
+    validate_collection_name(&collection_name)?;
     let db = {
         let db_guard = state.db.read();
         db_guard

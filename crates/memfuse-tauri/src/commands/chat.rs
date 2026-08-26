@@ -1,3 +1,4 @@
+use crate::commands::collections::validate_collection_name;
 use crate::ollama::OllamaBridge;
 use crate::state::AppState;
 use memfuse_core::TextEmbeddingEngine;
@@ -9,6 +10,8 @@ pub struct ChatResponse {
     pub sources: Vec<crate::commands::search::SearchResultDto>,
 }
 
+const MAX_QUERY_LEN: usize = 65_536; // 64 KiB
+
 /// Streamt Chat-Antworten als Tauri-Events an das Frontend, statt sie
 /// als einzelnen Rückgabewert zu liefern.
 #[tauri::command]
@@ -19,6 +22,10 @@ pub async fn chat_with_rag(
     collection_name: String,
     model: String,
 ) -> Result<ChatResponse, String> {
+    if message.len() > MAX_QUERY_LEN {
+        return Err("Query too long".to_string());
+    }
+    validate_collection_name(&collection_name)?;
     let db = {
         let db_guard = state.db.read();
         db_guard
@@ -74,7 +81,9 @@ pub async fn chat_with_rag(
     let app_clone = app.clone();
     let full_response = bridge
         .chat_with_rag_streaming(&model, &message, &context.to_string(), move |token| {
-            let _ = app_clone.emit("chat-token", token);
+            if let Err(e) = app_clone.emit("chat-token", token) {
+                tracing::debug!("Chat token emit failed (client disconnected?): {}", e);
+            }
         })
         .await
         .map_err(|e| e.to_string())?;
