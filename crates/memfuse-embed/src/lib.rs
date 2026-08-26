@@ -25,9 +25,7 @@ use tokenizers::Tokenizer;
 use tracing::{debug, info, warn};
 
 pub mod reranker;
-#[cfg(feature = "onnx")]
-pub use reranker::OnnxCrossEncoderReranker;
-pub use reranker::RankedCandidate;
+pub use reranker::{CrossEncoderReranker, RerankConfig, RerankResult};
 
 #[cfg(feature = "onnx")]
 pub(crate) struct SessionPool {

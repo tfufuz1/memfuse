@@ -678,7 +678,7 @@ impl MemFuse {
         text: &str,
         vector: &[f32],
         k: usize,
-        reranker: Option<&memfuse_embed::OnnxCrossEncoderReranker>,
+        reranker: Option<&memfuse_embed::CrossEncoderReranker>,
         anchor_entities: Option<&[memfuse_core::EntityId]>,
     ) -> Result<Vec<SearchResult>> {
         self.default_col()
