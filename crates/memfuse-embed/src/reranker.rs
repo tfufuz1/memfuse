@@ -86,13 +86,8 @@ impl OnnxCrossEncoderReranker {
             let mut scored = Vec::with_capacity(candidates.len());
 
             for (idx, candidate) in candidates.iter().enumerate() {
-                let score = Self::score_pair(
-                    &mut session_guard,
-                    &tokenizer,
-                    &query,
-                    candidate,
-                    max_len,
-                )?;
+                let score =
+                    Self::score_pair(&mut session_guard, &tokenizer, &query, candidate, max_len)?;
                 scored.push((idx, score));
             }
 

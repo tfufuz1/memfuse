@@ -25,7 +25,9 @@ fn bench_wal_encryption(c: &mut Criterion) {
                         KeyManager::try_new("passphrase123", b"salt123456789012345678901234567890")
                             .unwrap(),
                     );
-                    let wal = Wal::open_with_key_manager(&wal_path, Some(km)).await.unwrap();
+                    let wal = Wal::open_with_key_manager(&wal_path, Some(km))
+                        .await
+                        .unwrap();
 
                     let ops: Vec<_> = (0..s)
                         .map(|i| {
@@ -61,7 +63,9 @@ fn bench_wal_encryption(c: &mut Criterion) {
                         KeyManager::try_new("passphrase123", b"salt123456789012345678901234567890")
                             .unwrap(),
                     );
-                    let wal = Wal::open_with_key_manager(&wal_path, Some(km)).await.unwrap();
+                    let wal = Wal::open_with_key_manager(&wal_path, Some(km))
+                        .await
+                        .unwrap();
 
                     let ops: Vec<_> = (0..s)
                         .map(|i| {

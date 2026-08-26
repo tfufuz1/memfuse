@@ -1109,7 +1109,9 @@ impl<S: StorageEngine> Collection<S> {
     ) -> Result<Vec<crate::SearchResult>> {
         // Schritt 1: Standard-Hybrid-Suche mit erhöhtem k (Reranking braucht mehr Kandidaten)
         let pre_rerank_k = if reranker.is_some() { k * 3 } else { k };
-        let mut results = self.hybrid_search(text, vector, pre_rerank_k, anchor_entities).await?;
+        let mut results = self
+            .hybrid_search(text, vector, pre_rerank_k, anchor_entities)
+            .await?;
 
         // Schritt 2: Optional Cross-Encoder Reranking
         if let Some(reranker) = reranker {
@@ -2044,12 +2046,20 @@ mod tests {
             memfuse_text::Language::English,
         );
 
-        col.insert("d1", &[1.0, 0.0, 0.0, 0.0], Some(serde_json::json!({"text": "rust language"})))
-            .await
-            .unwrap();
-        col.insert("d2", &[0.9, 0.1, 0.0, 0.0], Some(serde_json::json!({"text": "python language"})))
-            .await
-            .unwrap();
+        col.insert(
+            "d1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(serde_json::json!({"text": "rust language"})),
+        )
+        .await
+        .unwrap();
+        col.insert(
+            "d2",
+            &[0.9, 0.1, 0.0, 0.0],
+            Some(serde_json::json!({"text": "python language"})),
+        )
+        .await
+        .unwrap();
 
         let res = col
             .hybrid_search_reranked("rust", &[1.0, 0.0, 0.0, 0.0], 1, None, None)
