@@ -11,15 +11,30 @@
 //!
 //! Within each shard, each key maps to a versioned list of values, enabling
 //! Snapshot Isolation through point-in-time reads.
+//!
+//! ## Module Invariants
+//! - **INVARIANT 1**: All entries are keyed by (key, seq_no). Higher seq_no shadows lower for same key.
+//! - **INVARIANT 2**: Tombstone entries have TOMBSTONE_BIT set in seq_no.
+//! - **INVARIANT 3**: flush() serializes entries in ascending key order (required by SSTable format).
+//! - **INVARIANT 4**: rollback(tx_id) removes ALL entries from that transaction atomically.
 
 // INVARIANT: In-Memory Sortierter Puffer (hot writes), sharded for concurrency.
 // AI-NOTE: Sharding pattern mirrors memfuse-core::TxBuffer<T> (ADR-implicit).
 //          Key difference: TxBuffer shards by TxId, MemTable shards by key bytes.
 
 use bytes::Bytes;
+use memfuse_core::TOMBSTONE_BIT;
 use parking_lot::RwLock;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+
+const _: () = assert!(TOMBSTONE_BIT == 1u64 << 63);
+
+/// Helper function to check if a sequence number has TOMBSTONE_BIT set.
+#[inline]
+pub const fn is_tombstone(seq: u64) -> bool {
+    (seq & TOMBSTONE_BIT) != 0
+}
 
 type SequenceNumber = u64;
 type TransactionId = u64;
@@ -114,6 +129,44 @@ impl MemTable {
             self.min_tx.load(Ordering::Acquire),
             self.max_tx.load(Ordering::Acquire),
         )
+    }
+
+    /// Removes all entries associated with the specified transaction ID from the MemTable.
+    pub fn rollback(&self, tx_id: u64) {
+        let mut total_freed_size = 0usize;
+        let mut new_min_tx = u64::MAX;
+        let mut new_max_tx = 0u64;
+        let mut has_entries = false;
+
+        for shard in &self.shards {
+            let mut entries = shard.entries.write();
+            entries.retain(|key, versions| {
+                versions.retain(|(_seq, val, tx)| {
+                    if *tx == tx_id {
+                        total_freed_size += key.len() + val.len() + 16;
+                        false
+                    } else {
+                        new_min_tx = new_min_tx.min(*tx);
+                        new_max_tx = new_max_tx.max(*tx);
+                        has_entries = true;
+                        true
+                    }
+                });
+                !versions.is_empty()
+            });
+        }
+
+        if total_freed_size > 0 {
+            self.size.fetch_sub(total_freed_size, Ordering::Relaxed);
+        }
+
+        if !has_entries {
+            self.min_tx.store(u64::MAX, Ordering::Release);
+            self.max_tx.store(0, Ordering::Release);
+        } else {
+            self.min_tx.store(new_min_tx, Ordering::Release);
+            self.max_tx.store(new_max_tx, Ordering::Release);
+        }
     }
 
     /// Retrieves the latest value and sequence number by key.
@@ -324,6 +377,87 @@ mod tests {
         assert_eq!(entries[0].2, 2);
         assert_eq!(entries[1].0.as_ref(), b"b");
         assert_eq!(entries[1].2, 3);
+    }
+
+    #[test]
+    fn test_iter_ordering_across_shards() {
+        let mt = MemTable::new();
+        // Insert keys that map to various shards in reverse order
+        let keys = vec!["z", "m", "a", "k", "b", "c", "x", "p"];
+        for (i, &k) in keys.iter().enumerate() {
+            mt.put(
+                Bytes::from(k),
+                Bytes::from(format!("val_{}", k)),
+                (i + 1) as u64,
+                (i + 1) as u64,
+            );
+        }
+
+        let latest = mt.iter_latest();
+        let fetched_keys: Vec<&[u8]> = latest.iter().map(|(k, _, _, _)| k.as_ref()).collect();
+        assert_eq!(fetched_keys, vec![b"a", b"b", b"c", b"k", b"m", b"p", b"x", b"z"]);
+
+        let all = mt.iter();
+        let fetched_all_keys: Vec<&[u8]> = all.iter().map(|(k, _, _, _)| k.as_ref()).collect();
+        assert_eq!(
+            fetched_all_keys,
+            vec![b"a", b"b", b"c", b"k", b"m", b"p", b"x", b"z"]
+        );
+    }
+
+    #[test]
+    fn test_size_estimation_accuracy() {
+        let mt = MemTable::new();
+        assert_eq!(mt.size(), 0);
+
+        // Put key (len 4), val (len 4), overhead 16 => size = 24
+        let key1 = Bytes::from("key1");
+        let val1 = Bytes::from("val1");
+        mt.put(key1, val1, 1, 1);
+        assert_eq!(mt.size(), 24);
+
+        // Put delete tombstone: key (len 4), val (len 0), overhead 16 => size += 20
+        let key1_del = Bytes::from("key1");
+        mt.put(key1_del, Bytes::new(), 2 | TOMBSTONE_BIT, 1);
+        assert_eq!(mt.size(), 44);
+    }
+
+    #[test]
+    fn test_transaction_rollback() {
+        let mt = MemTable::new();
+
+        // Begin tx A (tx_id = 100), put 3 keys
+        mt.put(Bytes::from("keyA1"), Bytes::from("valA1"), 1, 100);
+        mt.put(Bytes::from("keyA2"), Bytes::from("valA2"), 2, 100);
+        mt.put(Bytes::from("keyA3"), Bytes::from("valA3"), 3, 100);
+
+        // Begin tx B (tx_id = 200), put 2 keys
+        mt.put(Bytes::from("keyB1"), Bytes::from("valB1"), 4, 200);
+        mt.put(Bytes::from("keyB2"), Bytes::from("valB2"), 5, 200);
+
+        assert_eq!(mt.iter_latest().len(), 5);
+
+        // Rollback tx A
+        mt.rollback(100);
+
+        // Scan all keys — only B's keys should appear
+        let latest = mt.iter_latest();
+        assert_eq!(latest.len(), 2);
+        assert_eq!(latest[0].0.as_ref(), b"keyB1");
+        assert_eq!(latest[0].3, 200);
+        assert_eq!(latest[1].0.as_ref(), b"keyB2");
+        assert_eq!(latest[1].3, 200);
+
+        assert!(mt.get(b"keyA1").is_none());
+        assert!(mt.get(b"keyA2").is_none());
+        assert!(mt.get(b"keyA3").is_none());
+        assert!(mt.get(b"keyB1").is_some());
+        assert!(mt.get(b"keyB2").is_some());
+
+        // Verify size tracking updated after rollback
+        // Originally: tx A = 3 * (5 + 5 + 16) = 78; tx B = 2 * (5 + 5 + 16) = 52. Total = 130.
+        // After rollback tx A: remaining size should be 52.
+        assert_eq!(mt.size(), 52);
     }
 
     #[test]

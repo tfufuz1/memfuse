@@ -10,6 +10,18 @@ pub struct ModelInfo {
 }
 
 impl OllamaClient {
+    /// Validates that the model exists in Ollama via GET /api/tags before invoking embeddings/chat.
+    pub async fn validate_model_available(&self, model: &str) -> Result<()> {
+        crate::client::validate_model_name(model)?;
+        if !self.is_model_available(model).await {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Ollama model '{}' not found. Run: ollama pull {}",
+                model, model
+            )));
+        }
+        Ok(())
+    }
+
     /// Retrieves model info via POST /api/show
     pub async fn show_model(&self, model: &str) -> Result<ModelInfo> {
         crate::client::validate_model_name(model)?;
@@ -80,6 +92,45 @@ pub fn known_dimension(model: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_validate_model_available() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                let body = serde_json::json!({
+                    "models": [
+                        { "name": "nomic-embed-text:latest" }
+                    ]
+                })
+                .to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        assert!(client.validate_model_available("nomic-embed-text").await.is_ok());
+
+        let err = client.validate_model_available("missing-model").await.unwrap_err();
+        match err {
+            MemFuseError::InvalidInput(msg) => {
+                assert!(msg.contains("Ollama model 'missing-model' not found"));
+                assert!(msg.contains("Run: ollama pull missing-model"));
+            }
+            _ => panic!("Expected MemFuseError::InvalidInput, got {:?}", err),
+        }
+    }
 
     #[test]
     fn test_known_dimension_nomic() {

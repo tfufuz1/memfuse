@@ -521,6 +521,8 @@ impl DiskAnnIndex {
                     scales: vec![255.0 / range; dim],
                     inv_scales: vec![range / 255.0; dim],
                     dimension: dim,
+                    total_queries: std::sync::atomic::AtomicU64::new(0),
+                    out_of_range_queries: std::sync::atomic::AtomicU64::new(0),
                 });
             }
 

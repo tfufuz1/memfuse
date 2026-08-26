@@ -132,7 +132,7 @@ pub struct PersistentCheckpointStore<S: memfuse_core::StorageEngine> {
     /// Lock für sequentielle Schreiboperationen auf den Storage (HIGH-002)
     write_lock: tokio::sync::Mutex<()>,
     /// Atomarer Zähler für interne TxIds (vermeidet Kollisionen)
-    next_internal_tx: std::sync::atomic::AtomicU64,
+    next_internal_tx: AtomicU64,
 }
 
 impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
@@ -143,7 +143,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             name_index: RwLock::new(HashMap::new()),
             namespace: namespace.into(),
             write_lock: tokio::sync::Mutex::new(()),
-            next_internal_tx: std::sync::atomic::AtomicU64::new(0),
+            next_internal_tx: AtomicU64::new(TxId::INTERNAL_BASE),
         }
     }
 
@@ -151,16 +151,14 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     // collision with Collection-sequenced TxIds [1, ~10^12].
     // See: DECISIONS.md AGT-GRAPH-001, TxId::INTERNAL_BASE
     fn next_tx(&self) -> Result<TxId> {
-        let raw = self
+        let id = self
             .next_internal_tx
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        if raw >= 1_000_000 {
-            // Counter exhausted (1M internal checkpoint TxIds should be unreachable)
-            return Err(MemFuseError::Internal(
-                "Checkpoint TxId counter exhausted".into(),
-            ));
-        }
-        Ok(TxId::new(TxId::INTERNAL_BASE + raw))
+            .fetch_add(1, Ordering::SeqCst);
+        assert!(
+            id < TxId::INTERNAL_BASE + 999_999,
+            "Checkpoint TxId counter overflow"
+        );
+        Ok(TxId::new(id))
     }
 
     /// Creates an ephemeral transactional checkpoint RAII guard.
@@ -198,19 +196,24 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         // Lade alten Checkpoint (für späteres Unpin)
         let old_checkpoint = self.get_checkpoint_internal(name).await?;
 
-        // 1. NEU: Pin des NEUEN Checkpoints ZUERST
+        // 1. Pin new checkpoint's seq_no (MUST happen BEFORE storage.save())
         self.storage.pin_checkpoint(seq_no).await?;
 
-        // 2. Persistiere den neuen Checkpoint
+        // 2. storage.save() the new checkpoint
         let save_result = self.save_checkpoint_internal(meta.clone()).await;
 
+        // 3. If save() fails: unpin the new seq_no, return error
         if let Err(e) = save_result {
-            // Rollback: neuen Checkpoint entpinnen (save fehlgeschlagen)
-            let _ = self.storage.unpin_checkpoint(seq_no).await;
+            if let Err(unpin_err) = self.storage.unpin_checkpoint(seq_no).await {
+                tracing::warn!(
+                    seq = seq_no,
+                    "Failed to unpin new checkpoint after save failure: {unpin_err}"
+                );
+            }
             return Err(e);
         }
 
-        // 3. ERST JETZT alten Checkpoint entpinnen (sicher, weil neuer gespeichert)
+        // 4. If save() succeeds: unpin the old checkpoint's seq_no
         if let Some(old) = old_checkpoint {
             if old.seq_no != seq_no {
                 if let Err(e) = self.storage.unpin_checkpoint(old.seq_no).await {
@@ -229,7 +232,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             }
         }
 
-        // 4. Neuen Checkpoint in Cache eintragen
+        // 5. Update the stored checkpoint reference
         self.checkpoints.write().insert(seq_no, meta.clone());
         self.name_index.write().insert(name.to_string(), seq_no);
 
@@ -248,21 +251,15 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             let unique_tx = self.next_tx()?;
 
             if let Err(e) = self.storage.delete(unique_tx, key.as_bytes()).await {
-                // Best-effort rollback on error path. We are already returning Err above.
-                // Rollback failure here would leave a phantom transaction in the buffer
-                // which will be garbage-collected by the TxBuffer orphan reaper.
-                // We deliberately do not propagate this secondary error to avoid masking
-                // the primary error.
-                let _ = self.storage.rollback(unique_tx).await;
+                if let Err(e) = self.storage.rollback(unique_tx).await {
+                    tracing::warn!("Checkpoint rollback failed (non-fatal, TxId leaked): {}", e);
+                }
                 return Err(e);
             }
             if let Err(e) = self.storage.commit(unique_tx).await {
-                // Best-effort rollback on error path. We are already returning Err above.
-                // Rollback failure here would leave a phantom transaction in the buffer
-                // which will be garbage-collected by the TxBuffer orphan reaper.
-                // We deliberately do not propagate this secondary error to avoid masking
-                // the primary error.
-                let _ = self.storage.rollback(unique_tx).await;
+                if let Err(e) = self.storage.rollback(unique_tx).await {
+                    tracing::warn!("Checkpoint rollback failed (non-fatal, TxId leaked): {}", e);
+                }
                 return Err(e);
             }
 
@@ -289,21 +286,15 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
         let tx = self.next_tx()?;
         if let Err(e) = self.storage.put(tx, key.as_bytes(), &value).await {
-            // Best-effort rollback on error path. We are already returning Err above.
-            // Rollback failure here would leave a phantom transaction in the buffer
-            // which will be garbage-collected by the TxBuffer orphan reaper.
-            // We deliberately do not propagate this secondary error to avoid masking
-            // the primary error.
-            let _ = self.storage.rollback(tx).await;
+            if let Err(e) = self.storage.rollback(tx).await {
+                tracing::warn!("Checkpoint rollback failed (non-fatal, TxId leaked): {}", e);
+            }
             return Err(e);
         }
         if let Err(e) = self.storage.commit(tx).await {
-            // Best-effort rollback on error path. We are already returning Err above.
-            // Rollback failure here would leave a phantom transaction in the buffer
-            // which will be garbage-collected by the TxBuffer orphan reaper.
-            // We deliberately do not propagate this secondary error to avoid masking
-            // the primary error.
-            let _ = self.storage.rollback(tx).await;
+            if let Err(e) = self.storage.rollback(tx).await {
+                tracing::warn!("Checkpoint rollback failed (non-fatal, TxId leaked): {}", e);
+            }
             return Err(e);
         }
 
@@ -384,7 +375,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let meta = self
             .get_checkpoint_internal(name)
             .await?
-            .ok_or_else(|| MemFuseError::NotFound(format!("Checkpoint '{}' not found", name)))?;
+            .ok_or(MemFuseError::CheckpointNotFound)?;
 
         // 1. Rollback storage state
         self.storage.rollback_to_tx(meta.tx_id).await?;
@@ -706,12 +697,43 @@ mod tests {
         let store = PersistentCheckpointStore::new(storage, "test");
 
         let res = store.restore_named_checkpoint("nonexistent").await;
-        match res {
-            Err(MemFuseError::NotFound(msg)) => {
-                assert!(msg.contains("nonexistent"));
-            }
-            other => panic!("Expected MemFuseError::NotFound, got {:?}", other),
+        assert!(matches!(res, Err(MemFuseError::CheckpointNotFound)));
+    }
+
+    #[tokio::test]
+    async fn test_list_named_checkpoints_after_reopen() {
+        use memfuse_core::traits::CheckpointCoordinator;
+        let storage = Arc::new(MockStorage::new());
+        {
+            let store1 = PersistentCheckpointStore::new(storage.clone(), "test");
+            store1
+                .create_named_checkpoint(
+                    "cp1",
+                    "col1",
+                    1,
+                    TxId::new(TxId::INTERNAL_BASE + 1),
+                    serde_json::json!({}),
+                )
+                .await
+                .unwrap();
+            store1
+                .create_named_checkpoint(
+                    "cp2",
+                    "col1",
+                    2,
+                    TxId::new(TxId::INTERNAL_BASE + 2),
+                    serde_json::json!({}),
+                )
+                .await
+                .unwrap();
         }
+
+        let store2 = PersistentCheckpointStore::new(storage.clone(), "test");
+        let list = store2.list_named_checkpoints().await.unwrap();
+
+        assert_eq!(list.len(), 2);
+        let names: Vec<_> = list.into_iter().map(|m| m.name).collect();
+        assert_eq!(names, vec!["cp1", "cp2"]);
     }
 
     #[tokio::test]

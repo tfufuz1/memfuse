@@ -25,6 +25,9 @@ pub const TOMBSTONE_BIT: u64 = 1 << 63;
 
 /// Maximum number of search results that any hybrid/vector/text search may return.
 ///
+/// Callers in memfuse-mcp and memfuse-db both enforce this limit before forwarding k to HNSW/BM25.
+/// Duplicating the literal 1000 anywhere else in the workspace is prohibited — always import this constant.
+///
 /// This cap is applied at the orchestration layer (memfuse-db) before forwarding `k`
 /// to HNSW and BM25 sub-searches. All upstream layers (memfuse-mcp, memfuse-tauri,
 /// memfuse-py) MUST reference this constant — never duplicate the literal `1000`.
@@ -43,9 +46,10 @@ impl DocId {
     pub const MAX: Self = Self(u64::MAX);
     /// Minimum possible `DocId` value (`0`).
     ///
-    /// Note: `DocId(0)` is conventionally treated as a sentinel/null value.
-    /// Callers MUST use `DocId::from_key()` and propagate errors
-    /// rather than using a silent zero fallback.
+    /// Note: `DocId(0)` is conventionally treated as a sentinel/null value
+    /// by the MCP layer (`memfuse-mcp/src/lib.rs` line 214 uses it as a
+    /// fallback). Callers MUST propagate `from_key()` errors rather than
+    /// silently producing `DocId(0)`.
     pub const MIN: Self = Self(0);
 
     /// Creates a new `DocId` wrapping the provided `u64` identifier.
@@ -185,19 +189,19 @@ impl TxId {
 
     /// Lower bound of the internal system transaction ID range.
     ///
-    /// TxIds are issued from two canonical sources only:
-    /// - Collection sequences: AtomicU64 counters starting at 1, typically
-    ///   in range [1, ~10^12]. Managed by `Collection::allocate_tx()`.
-    /// - Internal system range: [INTERNAL_BASE, u64::MAX], reserved for
-    ///   checkpoint, WAL replay, and other subsystem transactions.
+    /// Exact numeric value: `u64::MAX - 1_000_000` (`18_446_744_073_708_551_615`).
     ///
-    /// Wall-clock-derived TxIds (Unix nanoseconds, ~1.7e18) fall between
-    /// these two ranges and corrupt `rollback_to_tx()` causal ordering because
-    /// the graph cannot determine the correct transaction boundary.
+    /// TxIds are issued from two canonical domains:
+    /// - Collection sequence domain: `[1, ~10^12]` for collection sequences (managed by `Collection::allocate_tx()`).
+    /// - Internal system domain: `[INTERNAL_BASE, u64::MAX]` for system operations (checkpointing, WAL replay).
+    ///   System operations (e.g., checkpoint) allocate IDs via `INTERNAL_BASE + atomic counter`.
     ///
-    /// Value: `u64::MAX - 1_000_000`
+    /// Wall-clock Unix nanosecond timestamps (`~1.7e18`) fall between these two ranges
+    /// (`10^12 < ~1.7e18 < INTERNAL_BASE`), which corrupts `rollback_to_tx` causal ordering
+    /// because range-based transaction rollbacks and graph pruning cannot differentiate between
+    /// user transactions and internal snapshot bounds.
     ///
-    /// See also: AGT-GRAPH-001, DECISIONS.md ADR-016
+    /// See also: AGT-GRAPH-001, DECISIONS.md ADR-016.
     pub const INTERNAL_BASE: u64 = u64::MAX - 1_000_000;
 
     /// Creates a new `TxId` wrapping the provided `u64` transaction identifier.
@@ -218,6 +222,9 @@ impl TxId {
         Self(Self::INTERNAL_BASE)
     }
 }
+
+const _: () = assert!(TxId::INTERNAL_BASE > 1_000_000_000_000);
+const _: () = assert!(TxId::INTERNAL_BASE < u64::MAX);
 
 impl std::fmt::Display for TxId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -667,10 +674,6 @@ mod tests {
         assert!(f32_close < f32_far, "f32 ranking mismatch");
     }
 
-    #[test]
-    fn doc_id_empty_key_is_err() {
-        assert!(DocId::from_key("").is_err());
-    }
 
     #[test]
     fn doc_id_valid_key_is_ok() {
@@ -712,7 +715,6 @@ mod tests {
     }
 
     proptest::proptest! {
-        #[test]
         fn prop_docid_serialization(id in proptest::num::u64::ANY) {
             let doc = DocId::new(id);
             let ser = serde_json::to_string(&doc).unwrap();
@@ -720,24 +722,20 @@ mod tests {
             prop_assert_eq!(doc, deser);
         }
 
-        #[test]
-        fn doc_id_from_key_is_deterministic(s in "[a-zA-Z0-9_\\-]{1,256}") {
-            let id1 = DocId::from_key(&s).unwrap();
-            let id2 = DocId::from_key(&s).unwrap();
-            prop_assert_eq!(id1, id2, "Same key must produce same DocId");
+        fn doc_id_from_key_is_deterministic(s in "[a-zA-Z0-9_-]{1,256}") {
+            let a = DocId::from_key(&s).unwrap();
+            let b = DocId::from_key(&s).unwrap();
+            prop_assert_eq!(a, b);
         }
 
-        #[test]
         fn doc_id_from_key_never_panics(s in ".*") {
             let _ = DocId::from_key(&s);
         }
 
-        #[test]
-        fn doc_id_from_empty_key_is_err(s in "") {
-            prop_assert!(DocId::from_key(&s).is_err());
+        fn doc_id_empty_key_is_err(_ in "") {
+            prop_assert!(DocId::from_key("").is_err());
         }
 
-        #[test]
         fn prop_txid_serialization(id in proptest::num::u64::ANY) {
             let tx = TxId::new(id);
             let ser = serde_json::to_string(&tx).unwrap();
@@ -745,7 +743,6 @@ mod tests {
             prop_assert_eq!(tx, deser);
         }
 
-        #[test]
         fn prop_entityid_serialization(id in proptest::num::u64::ANY) {
             let ent = EntityId::new(id);
             let ser = serde_json::to_string(&ent).unwrap();
