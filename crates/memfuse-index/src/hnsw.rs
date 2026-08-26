@@ -655,7 +655,7 @@ impl HnswIndexCore {
         mmap: &crate::persistence::MmapIndex,
         record: &crate::persistence::NodeRecord,
     ) -> Result<f32> {
-        let vector_bytes = mmap.get_vector(record);
+        let vector_bytes = mmap.get_vector(record)?;
         if mmap.header.quantized != 0 {
             let guard = self.quantizer.read();
             let q = guard
@@ -848,7 +848,7 @@ impl HnswIndexCore {
             if let Some(mmap) = ctx.mmap {
                 if idx < ctx.mmap_node_count {
                     let record = mmap.get_node_record(idx)?;
-                    let bytes = mmap.get_vector(&record);
+                    let bytes = mmap.get_vector(&record)?;
                     return if mmap.header.quantized != 0 {
                         Ok(VectorData::U8(bytes.to_vec()))
                     } else {
