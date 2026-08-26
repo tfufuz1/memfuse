@@ -5,7 +5,7 @@ mod tests;
 use memfuse_core::{DocId, TextEmbeddingEngine, MAX_SEARCH_K};
 use memfuse_db::chunker::{ChunkerConfig, MarkdownChunker};
 use memfuse_db::MemFuse;
-use protocol::{JsonRpcRequest, JsonRpcResponse};
+use protocol::{JsonRpcRequest, JsonRpcResponse, McpError};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -13,14 +13,17 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 /// MCP-Server mit stdio-Transport (JSON-RPC 2.0).
 ///
 /// stdout ist dem Protokoll vorbehalten — Logs gehen ausschließlich nach stderr.
-fn validate_collection_name(name: &str) -> Result<(), String> {
+fn validate_collection_name(name: &str) -> Result<(), McpError> {
     if name.is_empty() || name.len() > 256 {
-        return Err(format!("Invalid collection name length: {}", name.len()));
+        return Err(McpError::invalid_params(format!(
+            "Invalid collection name length: {}",
+            name.len()
+        )));
     }
     if name.contains('\0') || name.contains(':') || name.contains('/') {
-        return Err(format!(
+        return Err(McpError::invalid_params(format!(
             "Collection name '{name}' contains forbidden characters"
-        ));
+        )));
     }
     Ok(())
 }
@@ -179,7 +182,7 @@ impl McpServer {
                         id,
                         json!({
                             "isError": true,
-                            "content": [{ "type": "text", "text": e }]
+                            "content": [{ "type": "text", "text": e.to_string() }]
                         }),
                     ),
                 }
@@ -193,13 +196,13 @@ impl McpServer {
         }
     }
 
-    async fn call_tool(&self, name: &str, args: &Value) -> Result<Value, String> {
+    async fn call_tool(&self, name: &str, args: &Value) -> Result<Value, McpError> {
         match name {
             "memfuse_search" => {
                 let query = args
                     .get("query")
                     .and_then(|v| v.as_str())
-                    .ok_or("query fehlt")?;
+                    .ok_or_else(|| McpError::invalid_params("query fehlt"))?;
                 let col_raw = args
                     .get("collection")
                     .and_then(|v| v.as_str())
@@ -213,18 +216,19 @@ impl McpServer {
 
                 let k_val = args.get("k").or_else(|| args.get("limit"));
                 let k_raw = match k_val {
-                    Some(Value::Number(n)) => {
-                        n.as_u64().ok_or("k/limit muss eine positive Ganzzahl sein")? as usize
-                    }
-                    Some(_) => return Err("k/limit muss eine Zahl sein".to_string()),
+                    Some(Value::Number(n)) => n
+                        .as_u64()
+                        .ok_or_else(|| McpError::invalid_params("k/limit muss eine positive Ganzzahl sein"))?
+                        as usize,
+                    Some(_) => return Err(McpError::invalid_params("k/limit muss eine Zahl sein")),
                     None => 10,
                 };
                 let k = k_raw.min(MAX_SEARCH_K);
                 if k_raw > MAX_SEARCH_K {
                     tracing::warn!(
                         requested_k = k_raw,
-                        capped_k = k,
-                        "Client requested k={k_raw} which exceeds MAX_SEARCH_K={MAX_SEARCH_K}. Capping."
+                        capped_k = MAX_SEARCH_K,
+                        "Client k capped to MAX_SEARCH_K"
                     );
                 }
 
@@ -232,38 +236,41 @@ impl McpServer {
                     .db
                     .collection(col_name)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(McpError::from)?;
                 let vec = self
                     .embedder
                     .embed(query)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| McpError::internal_error(e.to_string()))?;
                 let results = col
                     .hybrid_search(query, &vec, k, None)
                     .await
-                    .map_err(|e| e.to_string())?;
-                serde_json::to_value(results).map_err(|e| e.to_string())
+                    .map_err(McpError::from)?;
+                serde_json::to_value(results).map_err(|e| McpError::internal_error(e.to_string()))
             }
 
             "memfuse_insert" => {
                 let text = args
                     .get("text")
                     .and_then(|v| v.as_str())
-                    .ok_or("text fehlt")?;
+                    .ok_or_else(|| McpError::invalid_params("text fehlt"))?;
                 if text.is_empty() {
-                    return Err("text cannot be empty".to_string());
+                    return Err(McpError::invalid_params("text cannot be empty"));
                 }
                 const MAX_INSERT_TEXT_BYTES: usize = 10 * 1024 * 1024; // 10MB
                 if text.len() > MAX_INSERT_TEXT_BYTES {
-                    return Err(format!(
+                    return Err(McpError::invalid_params(format!(
                         "text too large: {}MB > 10MB limit",
                         text.len() / 1_048_576
-                    ));
+                    )));
                 }
 
-                let id = args.get("id").and_then(|v| v.as_str()).ok_or("id fehlt")?;
+                let id = args
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| McpError::invalid_params("id fehlt"))?;
                 if id.is_empty() {
-                    return Err("id cannot be empty".to_string());
+                    return Err(McpError::invalid_params("id cannot be empty"));
                 }
 
                 let col_raw = args
@@ -287,12 +294,13 @@ impl McpServer {
                     .db
                     .collection(col_name)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(McpError::from)?;
 
                 // AUTO-CHUNKING: Text in semantische Einheiten aufteilen mit MarkdownChunker (~512 Tokens)
                 let chunker = MarkdownChunker::new(ChunkerConfig::default());
-                let doc_id =
-                    DocId::from_key(id).map_err(|e| format!("Invalid document ID '{id}': {e}"))?;
+                let doc_id = DocId::from_key(id).map_err(|e| {
+                    McpError::invalid_params(format!("Invalid document ID '{}': {}", id, e))
+                })?;
                 let chunks = chunker.chunk(doc_id, text);
 
                 if chunks.is_empty() {
@@ -316,7 +324,7 @@ impl McpServer {
                         .embedder
                         .embed(&chunk.content)
                         .await
-                        .map_err(|e| e.to_string())?;
+                        .map_err(|e| McpError::internal_error(e.to_string()))?;
 
                     let mut chunk_meta = json!({
                         "text": &chunk.content,
@@ -340,7 +348,7 @@ impl McpServer {
 
                     col.insert(&chunk_id, &embedding, Some(chunk_meta))
                         .await
-                        .map_err(|e| e.to_string())?;
+                        .map_err(McpError::from)?;
 
                     inserted_chunk_ids.push(chunk_id);
                 }
@@ -355,9 +363,12 @@ impl McpServer {
             }
 
             "memfuse_get" => {
-                let id = args.get("id").and_then(|v| v.as_str()).ok_or("id fehlt")?;
+                let id = args
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| McpError::invalid_params("id fehlt"))?;
                 if id.is_empty() {
-                    return Err("id cannot be empty".to_string());
+                    return Err(McpError::invalid_params("id cannot be empty"));
                 }
                 let col_raw = args
                     .get("collection")
@@ -374,9 +385,10 @@ impl McpServer {
                     .db
                     .collection(col_name)
                     .await
-                    .map_err(|e| e.to_string())?;
-                match col.get(id).await.map_err(|e| e.to_string())? {
-                    Some(doc) => serde_json::to_value(doc).map_err(|e| e.to_string()),
+                    .map_err(McpError::from)?;
+                match col.get(id).await.map_err(McpError::from)? {
+                    Some(doc) => serde_json::to_value(doc)
+                        .map_err(|e| McpError::internal_error(e.to_string())),
                     None => Ok(json!(null)),
                 }
             }
@@ -386,11 +398,11 @@ impl McpServer {
                     .db
                     .list_collections()
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(McpError::from)?;
                 Ok(json!({ "collections": names }))
             }
 
-            other => Err(format!("Unbekanntes Tool: {other}")),
+            other => Err(McpError::invalid_params(format!("Unbekanntes Tool: {other}"))),
         }
     }
 }

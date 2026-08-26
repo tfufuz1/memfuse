@@ -441,3 +441,65 @@ async fn test_invalid_collection_name_returns_error() {
     let err_msg = res_val["result"]["content"][0]["text"].as_str().unwrap();
     assert!(err_msg.contains("forbidden characters"));
 }
+
+#[tokio::test]
+async fn test_stdio_transport_stability() {
+    let tmp = tempfile::TempDir::new().expect("temp dir");
+    let bin_path = env!("CARGO_BIN_EXE_memfuse-mcp-server");
+
+    let mut child = tokio::process::Command::new(bin_path)
+        .arg("--db-path")
+        .arg(tmp.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn memfuse-mcp-server binary");
+
+    let mut stdin = child.stdin.take().expect("stdin handle");
+    let stdout = child.stdout.take().expect("stdout handle");
+
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": 999,
+        "method": "tools/call",
+        "params": {
+            "name": "memfuse_insert",
+            "arguments": {
+                "id": "stdio_doc_test",
+                "text": "Inserting document via stdio transport test",
+                "collection": "default"
+            }
+        }
+    });
+
+    let mut req_bytes = serde_json::to_vec(&req).expect("serialize req");
+    req_bytes.push(b'\n');
+
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    stdin.write_all(&req_bytes).await.expect("write to stdin");
+    stdin.flush().await.expect("flush stdin");
+
+    let mut lines = BufReader::new(stdout).lines();
+    let line = lines
+        .next_line()
+        .await
+        .expect("read response line")
+        .expect("response line present");
+
+    let resp: serde_json::Value = serde_json::from_str(&line).expect("parse json response");
+
+    assert_eq!(resp["jsonrpc"], "2.0");
+    assert_eq!(resp["id"], 999);
+    assert!(
+        resp.get("error").is_none(),
+        "Response should not contain error field: {resp}"
+    );
+    assert!(
+        resp.get("result").is_some(),
+        "Response must contain result field: {resp}"
+    );
+
+    drop(stdin);
+    let _ = child.wait().await;
+}

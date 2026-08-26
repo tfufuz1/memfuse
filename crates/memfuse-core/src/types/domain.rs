@@ -43,10 +43,9 @@ impl DocId {
     pub const MAX: Self = Self(u64::MAX);
     /// Minimum possible `DocId` value (`0`).
     ///
-    /// Note: `DocId(0)` is conventionally treated as a sentinel/null value
-    /// by the MCP layer (`memfuse-mcp/src/lib.rs` line 214 uses it as a
-    /// fallback). Callers SHOULD use `DocId::from_key()` and propagate errors
-    /// rather than falling back to `DocId::new(0)`.
+    /// Note: `DocId(0)` is conventionally treated as a sentinel/null value.
+    /// Callers MUST use `DocId::from_key()` and propagate errors
+    /// rather than using a silent zero fallback.
     pub const MIN: Self = Self(0);
 
     /// Creates a new `DocId` wrapping the provided `u64` identifier.
