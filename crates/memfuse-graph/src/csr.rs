@@ -11,6 +11,7 @@ use memfuse_core::{
 };
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 /// Score decay factor per hop (0.7^hop).
@@ -153,6 +154,8 @@ impl GraphInner {
         new_offsets.push(current_offset);
 
         for i in 0..num_nodes {
+            let mut node_edges: Vec<(InternalIndex, f32)> = Vec::new();
+
             // 1. Get neighbors from old CSR
             let old_start = if i < self.offsets.len() - 1 {
                 self.offsets[i]
@@ -168,9 +171,7 @@ impl GraphInner {
             for j in old_start..old_end {
                 let target = self.targets[j];
                 if !self.tombstoned_edges.contains(&(i, target)) {
-                    new_targets.push(target);
-                    new_weights.push(self.weights[j]);
-                    current_offset += 1;
+                    node_edges.push((target, self.weights[j]));
                 }
             }
 
@@ -178,12 +179,20 @@ impl GraphInner {
             if let Some(staged) = self.pending_edges.get(&i) {
                 for &(target, weight) in staged {
                     if !self.tombstoned_edges.contains(&(i, target)) {
-                        new_targets.push(target);
-                        new_weights.push(weight);
-                        current_offset += 1;
+                        node_edges.push((target, weight));
                     }
                 }
             }
+
+            // 3. Stably sort outgoing edges by target index for reproducible CSR layout
+            node_edges.sort_by_key(|&(target, _)| target);
+
+            for (target, weight) in node_edges {
+                new_targets.push(target);
+                new_weights.push(weight);
+                current_offset += 1;
+            }
+
             new_offsets.push(current_offset);
         }
 
@@ -205,6 +214,7 @@ pub struct CsrGraph {
     inner: RwLock<GraphInner>,
     /// Optionaler Persistenz-Handle. None = reiner In-Memory-Modus (z.B. Tests).
     storage: Option<Arc<dyn StorageEngine>>,
+    last_tx_id: AtomicU64,
 }
 
 impl CsrGraph {
@@ -219,6 +229,7 @@ impl CsrGraph {
             config,
             inner: RwLock::new(GraphInner::new()),
             storage: None,
+            last_tx_id: AtomicU64::new(0),
         }
     }
 
@@ -236,6 +247,7 @@ impl CsrGraph {
             config,
             inner: RwLock::new(GraphInner::new()),
             storage: Some(storage),
+            last_tx_id: AtomicU64::new(0),
         }
     }
 
@@ -396,9 +408,14 @@ impl CsrGraph {
         // 3. CSR kompaktieren — MUSS nach allen Edges aufgerufen werden
         graph.compact();
 
+        if let Ok(last_tx) = storage.last_tx_id().await {
+            graph.last_tx_id.fetch_max(last_tx.inner(), Ordering::SeqCst);
+        }
+
         tracing::info!(
             entities = entity_count,
             edges = edge_count,
+            last_tx = graph.last_tx_id.load(Ordering::SeqCst),
             "Graph aus Storage geladen und kompaktiert"
         );
         Ok(graph)
@@ -558,6 +575,16 @@ impl CsrGraph {
     /// Returns the number of committed entities in the graph.
     pub fn entity_count(&self) -> usize {
         self.inner.read().entities.iter().flatten().count()
+    }
+
+    /// Checks if a committed entity exists in the graph.
+    pub fn entity_exists(&self, id: EntityId) -> bool {
+        let inner = self.inner.read();
+        if let Some(&idx) = inner.id_map.get(&id) {
+            inner.entities.get(idx).is_some_and(|e| e.is_some())
+        } else {
+            false
+        }
     }
 
     /// Returns the number of edges in the graph.
@@ -828,6 +855,8 @@ impl GraphIndex for CsrGraph {
             inner.compact();
         }
 
+        self.last_tx_id.fetch_max(tx.inner(), Ordering::SeqCst);
+
         Ok(())
     }
 
@@ -885,7 +914,7 @@ impl GraphIndex for CsrGraph {
     }
 
     async fn last_tx_id(&self) -> Result<u64> {
-        Ok(0)
+        Ok(self.last_tx_id.load(Ordering::SeqCst))
     }
 
     async fn len(&self) -> usize {
@@ -1722,5 +1751,176 @@ mod tests {
             20,
             "All 20 concurrent edges must be committed without lost updates"
         );
+    }
+
+    #[tokio::test]
+    async fn test_staged_edges_invisible_until_commit() {
+        let graph = CsrGraph::new();
+        let tx_setup = TxId::new(1);
+        let id_1 = EntityId::new(1);
+        let id_2 = EntityId::new(2);
+
+        graph
+            .add_entity(tx_setup, Entity::new(id_1, "Node 1", "Type"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx_setup, Entity::new(id_2, "Node 2", "Type"))
+            .await
+            .unwrap();
+        graph.commit(tx_setup).await.unwrap();
+
+        assert!(graph.entity_exists(id_1));
+        assert!(graph.entity_exists(id_2));
+
+        // Tx A stages an edge (src=1, dst=2)
+        let tx_a = TxId::new(2);
+        graph
+            .add_edge(tx_a, Edge::new(id_1, id_2, "relates").with_weight(1.0))
+            .await
+            .unwrap();
+
+        // Concurrent read (no TxId context): neighbors(1) must NOT include node 2
+        let initial_neighbors = graph.neighbors(id_1).await.unwrap();
+        assert!(
+            !initial_neighbors.contains(&id_2),
+            "Uncommitted staged edge must not be visible to readers"
+        );
+
+        let initial_traverse = graph.traverse(id_1, 1).await.unwrap();
+        assert_eq!(
+            initial_traverse.len(),
+            0,
+            "Uncommitted staged edge must not be visible to traverse"
+        );
+
+        // Tx A commits
+        graph.commit(tx_a).await.unwrap();
+
+        // Second read: neighbors(1) MUST include node 2
+        let committed_neighbors = graph.neighbors(id_1).await.unwrap();
+        assert!(
+            committed_neighbors.contains(&id_2),
+            "Committed edge must be visible to readers"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_entity_id_allocation_under_write_lock() {
+        let graph = Arc::new(CsrGraph::new());
+        let mut handles = Vec::new();
+
+        for i in 1..=50 {
+            let g = graph.clone();
+            let handle = tokio::spawn(async move {
+                let tx = TxId::new(i);
+                let entity_id = EntityId::new(1000 + i);
+                g.add_entity(tx, Entity::new(entity_id, format!("Entity_{i}"), "Test"))
+                    .await
+                    .unwrap();
+                g.commit(tx).await.unwrap();
+            });
+            handles.push(handle);
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        let inner = graph.inner.read();
+        assert_eq!(inner.reverse_map.len(), 50);
+        assert_eq!(inner.id_map.len(), 50);
+
+        // Verify contiguous indices 0..50
+        for (idx, &id) in inner.reverse_map.iter().enumerate() {
+            assert_eq!(inner.id_map.get(&id), Some(&idx));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_csr_rebuild_sorted_edges_and_zero_degree_nodes() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+
+        let n0 = EntityId::new(10);
+        let n1 = EntityId::new(11);
+        let n2 = EntityId::new(12);
+        let n3 = EntityId::new(13);
+
+        // Add entities 0..3
+        graph.add_entity(tx, Entity::new(n0, "N0", "T")).await.unwrap();
+        graph.add_entity(tx, Entity::new(n1, "N1", "T")).await.unwrap();
+        graph.add_entity(tx, Entity::new(n2, "N2", "T")).await.unwrap();
+        graph.add_entity(tx, Entity::new(n3, "N3", "T")).await.unwrap();
+
+        // Add edges out of order for N0 (to N3, N1, N2)
+        graph.add_edge(tx, Edge::new(n0, n3, "rel").with_weight(0.3)).await.unwrap();
+        graph.add_edge(tx, Edge::new(n0, n1, "rel").with_weight(0.1)).await.unwrap();
+        graph.add_edge(tx, Edge::new(n0, n2, "rel").with_weight(0.2)).await.unwrap();
+
+        // N1 has 0 outgoing edges!
+
+        // N2 has edge to N0
+        graph.add_edge(tx, Edge::new(n2, n0, "rel").with_weight(0.5)).await.unwrap();
+
+        // N3 has edges to N2, N1
+        graph.add_edge(tx, Edge::new(n3, n2, "rel").with_weight(0.8)).await.unwrap();
+        graph.add_edge(tx, Edge::new(n3, n1, "rel").with_weight(0.7)).await.unwrap();
+
+        graph.commit(tx).await.unwrap();
+        graph.compact();
+
+        let inner = graph.inner.read();
+
+        // Check internal indices
+        let idx0 = inner.id_map[&n0];
+        let idx1 = inner.id_map[&n1];
+        let idx2 = inner.id_map[&n2];
+        let idx3 = inner.id_map[&n3];
+
+        // 1. Verify Node 0 targets are stably sorted by InternalIndex
+        let n0_start = inner.offsets[idx0];
+        let n0_end = inner.offsets[idx0 + 1];
+        let n0_targets: Vec<_> = inner.targets[n0_start..n0_end].to_vec();
+        let mut expected_n0 = vec![idx1, idx2, idx3];
+        expected_n0.sort();
+        assert_eq!(n0_targets, expected_n0, "Node 0 targets must be stably sorted by internal index");
+
+        // 2. Verify Node 1 (0 outgoing edges) has empty offset span
+        let n1_start = inner.offsets[idx1];
+        let n1_end = inner.offsets[idx1 + 1];
+        assert_eq!(n1_start, n1_end, "Zero degree node must have empty offset span");
+
+        // 3. Verify Node 3 targets are stably sorted
+        let n3_start = inner.offsets[idx3];
+        let n3_end = inner.offsets[idx3 + 1];
+        let n3_targets: Vec<_> = inner.targets[n3_start..n3_end].to_vec();
+        let mut expected_n3 = vec![idx1, idx2];
+        expected_n3.sort();
+        assert_eq!(n3_targets, expected_n3, "Node 3 targets must be stably sorted");
+    }
+
+    #[tokio::test]
+    async fn test_last_tx_id_tracking() {
+        let graph = CsrGraph::new();
+        assert_eq!(graph.last_tx_id().await.unwrap(), 0);
+
+        let tx1 = TxId::new(10);
+        graph
+            .add_entity(tx1, Entity::new(EntityId::new(1), "E1", "T"))
+            .await
+            .unwrap();
+        graph.commit(tx1).await.unwrap();
+
+        assert_eq!(graph.last_tx_id().await.unwrap(), 10);
+
+        let tx2 = TxId::new(25);
+        graph
+            .add_entity(tx2, Entity::new(EntityId::new(2), "E2", "T"))
+            .await
+            .unwrap();
+        graph.commit(tx2).await.unwrap();
+
+        assert_eq!(graph.last_tx_id().await.unwrap(), 25);
     }
 }
