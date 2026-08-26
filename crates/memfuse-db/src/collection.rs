@@ -689,7 +689,9 @@ impl<S: StorageEngine> Collection<S> {
         }
 
         // Re-insert into HNSW
-        let _ = self.index.delete(tx, doc_id).await;
+        if let Err(e) = self.index.delete(tx, doc_id).await {
+            tracing::warn!("[COL-HNSW-DELETE] Failed to delete doc {:?} from HNSW index: {}", doc_id, e);
+        }
         self.index.insert(tx, doc_id, embedding).await?;
 
         Ok(())
@@ -732,7 +734,9 @@ impl<S: StorageEngine> Collection<S> {
 
         db_tx.record_keys(user_key, doc_key, doc_id);
 
-        let _ = self.index.delete(tx, doc_id).await;
+        if let Err(e) = self.index.delete(tx, doc_id).await {
+            tracing::warn!("[COL-HNSW-DELETE] Failed to delete doc {:?} from HNSW index: {}", doc_id, e);
+        }
 
         Ok(())
     }
@@ -1364,14 +1368,22 @@ impl<S: StorageEngine> Collection<S> {
                 .or_else(|| val.as_object());
 
             if let Some(obj) = meta_obj {
-                if let Some(ttl_val) = obj.get("ttl_ms").and_then(|v| v.as_u64()) {
-                    let created_at = obj
-                        .get("created_at_ms")
-                        .or_else(|| obj.get("timestamp_ms"))
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(now_ms);
+                let ttl_val = match obj.get("ttl_ms").and_then(|v| v.as_u64()) {
+                    Some(ttl) if ttl > 0 => ttl,
+                    _ => continue, // Missing or ttl_ms == 0 means non-expiring
+                };
 
-                    if now_ms >= created_at.saturating_add(ttl_val) {
+                let created_at = match obj
+                    .get("created_at_ms")
+                    .or_else(|| obj.get("timestamp_ms"))
+                    .and_then(|v| v.as_u64())
+                {
+                    Some(c) => c,
+                    None => continue, // Missing created_at_ms means non-expiring
+                };
+
+                if let Some(expire_at) = created_at.checked_add(ttl_val) {
+                    if now_ms >= expire_at {
                         expired_ids.push(id);
                     }
                 }
@@ -1749,5 +1761,110 @@ mod tests {
         }
 
         assert!(col.len().await > 0);
+    }
+
+    #[tokio::test]
+    async fn test_ttl_missing_created_at_does_not_expire() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use serde_json::json;
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let storage = Arc::new(LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        }).await.unwrap());
+        let index = Arc::new(HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        }).unwrap());
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            Arc::new(CsrGraph::new()),
+            Arc::new(AtomicU64::new(1)),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        col.insert("doc_no_created_at", &[1.0, 0.0, 0.0, 0.0], Some(json!({"ttl_ms": 10}))).await.unwrap();
+        let reaped = col.trigger_reaper().await.unwrap();
+        assert_eq!(reaped, 0);
+        assert!(col.get("doc_no_created_at").await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_ttl_zero_does_not_expire() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use serde_json::json;
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let storage = Arc::new(LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        }).await.unwrap());
+        let index = Arc::new(HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        }).unwrap());
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            Arc::new(CsrGraph::new()),
+            Arc::new(AtomicU64::new(1)),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        col.insert("doc_zero_ttl", &[1.0, 0.0, 0.0, 0.0], Some(json!({"created_at_ms": 100, "ttl_ms": 0}))).await.unwrap();
+        let reaped = col.trigger_reaper().await.unwrap();
+        assert_eq!(reaped, 0);
+        assert!(col.get("doc_zero_ttl").await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_ttl_overflow_does_not_expire() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use serde_json::json;
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let storage = Arc::new(LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        }).await.unwrap());
+        let index = Arc::new(HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        }).unwrap());
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            Arc::new(CsrGraph::new()),
+            Arc::new(AtomicU64::new(1)),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        col.insert("doc_overflow", &[1.0, 0.0, 0.0, 0.0], Some(json!({"created_at_ms": u64::MAX - 10, "ttl_ms": 100}))).await.unwrap();
+        let reaped = col.trigger_reaper().await.unwrap();
+        assert_eq!(reaped, 0);
+        assert!(col.get("doc_overflow").await.unwrap().is_some());
     }
 }

@@ -651,10 +651,7 @@ impl MemFuse {
 
     /// Deletes a document by its string ID.
     pub async fn delete(&self, id: &str) -> Result<()> {
-        let col = self.default_col().await?;
-        let mut db_tx = col.begin_transaction();
-        col.delete_op(&mut db_tx, id).await?;
-        db_tx.commit().await
+        self.default_col().await?.delete(id).await
     }
 
     /// Creates a bidirectional relationship between two documents.
