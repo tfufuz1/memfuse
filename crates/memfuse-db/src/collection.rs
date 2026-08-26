@@ -257,9 +257,33 @@ impl<S: StorageEngine> Collection<S> {
                     if !indexed_ids.contains(&doc_id) {
                         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
                         if let Some(val) = self.storage.get(&doc_key).await? {
-                            if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&val) {
+                            let meta_id = serde_json::from_slice::<StoredDocumentMeta>(&val)
+                                .map(|m| m.id)
+                                .ok();
+
+                            let mut embedding = None;
+                            if let Some(ref id_str) = meta_id {
+                                let user_key = self.namespaced_key(id_str.as_bytes(), 0);
+                                if let Some(user_val) = self.storage.get(&user_key).await? {
+                                    if let Ok(stored) =
+                                        serde_json::from_slice::<StoredDocument>(&user_val)
+                                    {
+                                        embedding = Some(stored.embedding);
+                                    }
+                                }
+                            }
+
+                            // Fallback for legacy format where embedding was stored directly in doc_key
+                            // (or cases where user_key is not present)
+                            if embedding.is_none() {
+                                if let Ok(full) = serde_json::from_slice::<StoredDocument>(&val) {
+                                    embedding = Some(full.embedding);
+                                }
+                            }
+
+                            if let Some(emb) = embedding {
                                 self.index
-                                    .insert(recovery_tx, doc_id, &stored.embedding)
+                                    .insert(recovery_tx, doc_id, &emb)
                                     .await?;
                                 repair_count += 1;
                                 recovered_any = true;
@@ -1377,7 +1401,9 @@ impl<S: StorageEngine> Collection<S> {
                 Err(_) => continue,
             };
             let doc_id = DocId::from_key(&stored.id)?;
-            self.index.insert(tx, doc_id, &stored.embedding).await?;
+            if let Err(e) = self.index.insert(tx, doc_id, &stored.embedding).await {
+                tracing::warn!(doc_id = ?doc_id, error = %e, "Konnte Dokument bei load_index nicht in Index einfügen");
+            }
         }
         self.index.commit(tx).await?;
         Ok(())
@@ -2012,6 +2038,81 @@ mod tests {
         let reaped = col.trigger_reaper().await.unwrap();
         assert_eq!(reaped, 0);
         assert!(col.get("doc_overflow").await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_migrate_doc_keys_v1() {
+        use memfuse_core::{DocId, StorageEngine, TxId};
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use serde_json::json;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap(); // unwrap allowed (AGENT:04)
+        let storage = Arc::new(
+            LsmStorage::new(memfuse_store::LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(), // unwrap allowed (AGENT:04)
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(), // unwrap allowed (AGENT:04)
+        );
+        let next_tx = Arc::new(AtomicU64::new(1));
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage.clone(),
+            index,
+            Arc::new(CsrGraph::new()),
+            next_tx.clone(),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        // Inject legacy doc_key (containing embedding in StoredDocument)
+        let doc_id = DocId::from_key("legacy_doc_1").unwrap(); // unwrap allowed (AGENT:04)
+        let doc_key = col.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+        let legacy_doc = super::StoredDocument {
+            id: "legacy_doc_1".to_string(),
+            embedding: vec![1.0, 0.0, 0.0, 0.0],
+            metadata: Some(json!({"topic": "legacy"})),
+        };
+        let legacy_bytes = serde_json::to_vec(&legacy_doc).unwrap(); // unwrap allowed (AGENT:04)
+
+        // Put user_key and legacy doc_key in storage
+        let tx = TxId::new(next_tx.fetch_add(1, Ordering::SeqCst));
+        let user_key = col.namespaced_key(b"legacy_doc_1", 0);
+        storage.put(tx, &user_key, &legacy_bytes).await.unwrap(); // unwrap allowed (AGENT:04)
+        storage.put(tx, &doc_key, &legacy_bytes).await.unwrap(); // unwrap allowed (AGENT:04)
+        storage.commit(tx).await.unwrap(); // unwrap allowed (AGENT:04)
+
+        // Verify doc_key currently contains full StoredDocument
+        let raw_before = storage.get(&doc_key).await.unwrap().unwrap(); // unwrap allowed (AGENT:04)
+        assert!(serde_json::from_slice::<super::StoredDocument>(&raw_before).is_ok());
+
+        // Run migration
+        let count = col.migrate_doc_keys_v1().await.unwrap(); // unwrap allowed (AGENT:04)
+        assert_eq!(count, 1);
+
+        // Verify doc_key now contains StoredDocumentMeta (and fails parsing as StoredDocument due to missing embedding)
+        let raw_after = storage.get(&doc_key).await.unwrap().unwrap(); // unwrap allowed (AGENT:04)
+        let meta: super::StoredDocumentMeta = serde_json::from_slice(&raw_after).unwrap(); // unwrap allowed (AGENT:04)
+        assert_eq!(meta.id, "legacy_doc_1");
+        assert_eq!(meta.metadata.unwrap()["topic"], "legacy"); // unwrap allowed (AGENT:04)
+        assert!(serde_json::from_slice::<super::StoredDocument>(&raw_after).is_err());
+
+        // Idempotency check: running migration again returns 0
+        let count_again = col.migrate_doc_keys_v1().await.unwrap(); // unwrap allowed (AGENT:04)
+        assert_eq!(count_again, 0);
     }
 
     #[tokio::test]

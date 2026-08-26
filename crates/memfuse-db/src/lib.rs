@@ -438,6 +438,7 @@ impl MemFuse {
         // Load existing data into HNSW and Text index cache
         col.load_index().await?;
         col.load_text_stats().await?;
+        col.migrate_doc_keys_v1().await?;
 
         let col_arc = Arc::new(col);
         write_guard.insert(name.to_string(), Arc::clone(&col_arc));
@@ -1613,8 +1614,7 @@ mod tests {
                 .expect("open 1");
             let col = db.collection("corrupt-test").await.expect("col");
 
-            // Create a pending intent and a doc_key (key_type=1) with dim mismatch,
-            // but NO user_key (key_type=0) so load_index during initialize_collections succeeds.
+            // Create a pending intent, user_key (key_type=0) with dim mismatch, and doc_key (key_type=1)
             let doc_id = DocId::from_key("corrupt-doc").expect("doc_id");
             let stored = crate::collection::StoredDocument {
                 id: "corrupt-doc".to_string(),
@@ -1622,12 +1622,19 @@ mod tests {
                 metadata: None,
             };
             let data = serde_json::to_vec(&stored).expect("json");
+            let meta_only = crate::collection::StoredDocumentMeta::from(&stored);
+            let meta_data = serde_json::to_vec(&meta_only).expect("meta json");
 
+            let user_key = col.namespaced_key(b"corrupt-doc", 0);
             let doc_key = col.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
             let tx = TxId::new(db.next_tx.fetch_add(1, Ordering::SeqCst));
 
             db.storage
-                .put(tx, &doc_key, &data)
+                .put(tx, &user_key, &data)
+                .await
+                .expect("put user_key");
+            db.storage
+                .put(tx, &doc_key, &meta_data)
                 .await
                 .expect("put doc_key");
 
