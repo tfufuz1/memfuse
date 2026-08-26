@@ -64,7 +64,9 @@ impl DiskAnnHeader {
             return Err(MemFuseError::Index("Header too small".into()));
         }
         if &bytes[0..4] != DISKANN_MAGIC {
-            return Err(MemFuseError::Storage("Invalid DiskANN file: bad magic".into()));
+            return Err(MemFuseError::Storage(
+                "Invalid DiskANN file: bad magic".into(),
+            ));
         }
         let version = u16::from_le_bytes(
             bytes[4..6]
@@ -368,7 +370,12 @@ impl DiskAnnIndex {
     fn verify_graph_integrity_debug(&self) -> Result<()> {
         #[cfg(debug_assertions)]
         {
-            let node_count = self.inner.header.read().map(|h| h.node_count as u32).unwrap_or(0);
+            let node_count = self
+                .inner
+                .header
+                .read()
+                .map(|h| h.node_count as u32)
+                .unwrap_or(0);
             let max_degree = self.inner.config.max_degree;
             for i in 0..node_count {
                 let node = self.load_node(i)?;
@@ -657,8 +664,7 @@ impl DiskAnnIndex {
             "Read size must be a multiple of sector_size"
         );
 
-        let start_offset =
-            DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
+        let start_offset = DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
         let node_offset = start_offset + (index as usize * node_size);
         assert_eq!(
             node_offset % sector_size,
@@ -1116,7 +1122,9 @@ mod tests {
         // Mutate magic bytes
         let mut data = tokio::fs::read(&index_path).await.expect("read file");
         data[0..4].copy_from_slice(b"BADM");
-        tokio::fs::write(&index_path, &data).await.expect("write bad magic file");
+        tokio::fs::write(&index_path, &data)
+            .await
+            .expect("write bad magic file");
 
         let reloaded_index = DiskAnnIndex::try_new(config).expect("valid config");
         let load_res = reloaded_index.load().await;
@@ -1150,7 +1158,9 @@ mod tests {
         // Mutate version to 99
         let mut data = tokio::fs::read(&index_path).await.expect("read file");
         data[4..6].copy_from_slice(&99u16.to_le_bytes());
-        tokio::fs::write(&index_path, &data).await.expect("write bad version file");
+        tokio::fs::write(&index_path, &data)
+            .await
+            .expect("write bad version file");
 
         let reloaded_index = DiskAnnIndex::try_new(config).expect("valid config");
         let load_res = reloaded_index.load().await;
@@ -1184,8 +1194,14 @@ mod tests {
         index.build(&vectors, &ids).await.expect("build");
 
         // After build completes, index_path must exist and .tmp must NOT exist
-        assert!(index_path.exists(), "Final index file must exist after atomic rename");
-        assert!(!tmp_path.exists(), "Temporary file .tmp must be cleaned up / renamed");
+        assert!(
+            index_path.exists(),
+            "Final index file must exist after atomic rename"
+        );
+        assert!(
+            !tmp_path.exists(),
+            "Temporary file .tmp must be cleaned up / renamed"
+        );
     }
 
     #[tokio::test]

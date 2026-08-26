@@ -59,7 +59,11 @@ pub fn ingest_bytes(bytes: &[u8], filename_or_ext: &str) -> Result<Vec<String>> 
     let ext = Path::new(filename_or_ext)
         .extension()
         .and_then(|e| e.to_str())
-        .unwrap_or(if filename_or_ext.contains('.') { "" } else { filename_or_ext });
+        .unwrap_or(if filename_or_ext.contains('.') {
+            ""
+        } else {
+            filename_or_ext
+        });
 
     let raw_text = extract_text_from_bytes(bytes, ext)?;
     if raw_text.trim().is_empty() {

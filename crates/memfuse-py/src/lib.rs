@@ -708,9 +708,7 @@ impl PyMemFuse {
         let col = py
             .allow_threads(|| rt.block_on(self.inner.collection(name)))
             .map_err(memfuse_err)?;
-        Ok(PyCollection {
-            inner: Arc::new(col),
-        })
+        Ok(PyCollection { inner: col })
     }
 
     /// Lists all existing collection names.
