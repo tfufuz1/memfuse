@@ -45,7 +45,9 @@ impl HnswHeader {
                 .map_err(|_| MemFuseError::Storage("Invalid magic offset".into()))?,
         );
         if magic != HNSW_MAGIC {
-            return Err(MemFuseError::Storage("Invalid HNSW magic".into()));
+            return Err(MemFuseError::Storage(
+                "Not a valid HNSW file: bad magic".into(),
+            ));
         }
 
         Ok(Self {
@@ -183,9 +185,11 @@ impl MmapIndex {
         let file = std::fs::File::open(path)
             .map_err(|e| MemFuseError::Storage(format!("Failed to open HNSW file: {}", e)))?;
 
-        // SAFETY: Invariant: `file` is a valid open file descriptor to a read-only persisted HNSW file and the file mapping remains valid for the object lifetime.
+        // SAFETY: Invariant: `file` is a valid open file descriptor to a read-only persisted HNSW file, and the mapping remains valid for the entire duration of `MmapIndex`.
         //         Guarantor: `std::fs::File::open` successfully returned a valid file handle above.
-        //         Why: `open()` guarantees access permissions and valid file descriptor; atomic rename on save prevents truncation/SIGBUS during read mapping.
+        //         Lifetime: Wrapping `memmap2::Mmap` inside `Arc<Mmap>` ensures the memory mapping stays alive as long as `MmapIndex` or any clone exists.
+        //         POSIX Unlink/Truncation & SIGBUS Defense: atomic rename on `save()` creates a new temp file and replaces the path, never truncating the file in place. On POSIX, deleting or replacing an open file retains the active file descriptor and mmap region intact until dropped.
+        //         UB Prevention: Opening as read-only mapping (`Mmap::map`) prevents data races or undefined behavior from writes.
         //         ADR-017: Memory mapping permitted in `persistence.rs`.
         let mmap = unsafe { memmap2::Mmap::map(&file) }
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
@@ -213,7 +217,7 @@ impl MmapIndex {
         NodeRecord::from_bytes(&self.mmap[offset..offset + NodeRecord::SIZE])
     }
 
-    pub fn get_vector(&self, record: &NodeRecord) -> &[u8] {
+    pub fn get_vector(&self, record: &NodeRecord) -> Result<&[u8]> {
         let dim = self.header.dimension as usize;
         let size = if self.header.quantized != 0 {
             dim
@@ -221,7 +225,10 @@ impl MmapIndex {
             dim * 4
         };
         let offset = record.vector_offset as usize;
-        &self.mmap[offset..offset + size]
+        if offset + size > self.mmap.len() {
+            return Err(MemFuseError::Storage("Vector data out of bounds".into()));
+        }
+        Ok(&self.mmap[offset..offset + size])
     }
 
     pub fn get_connections(&self, record: &NodeRecord, layer: usize) -> Result<Vec<u32>> {
@@ -285,35 +292,65 @@ impl MmapIndex {
 mod tests {
     use super::*;
 
-    pub const HNSW_MAGIC: u32 = 0x484E5357; // "HNSW"
-    pub const HNSW_VERSION: u16 = 1;
-
     #[tokio::test]
     async fn test_mmap_open_async() -> memfuse_core::Result<()> {
+        use crate::hnsw::{HnswConfig, HnswIndex};
+        use memfuse_core::{DocId, DistanceMetric, TxId, VectorIndex};
+
         let temp_dir = tempfile::tempdir().map_err(|e| MemFuseError::Storage(e.to_string()))?;
         let path = temp_dir.path().join("test_async.hnsw");
 
-        let header = HnswHeader {
-            magic: HNSW_MAGIC,
-            version: HNSW_VERSION,
-            dimension: 128,
+        // 1. Write an HNSW index with 100 vectors of dimension 4
+        let config = HnswConfig {
+            dimension: 4,
             m: 16,
-            metric: 0,
-            quantized: 0,
-            q_min: 0.0,
-            q_max: 0.0,
-            node_count: 0,
-            entry_point: -1,
-            nodes_offset: HnswHeader::SIZE as u64,
-            connections_offset: HnswHeader::SIZE as u64,
-            last_tx_id: 0,
+            ef_construction: 200,
+            ef_search: 64,
+            distance_metric: DistanceMetric::Euclidean,
+            ..Default::default()
         };
+        let index = HnswIndex::try_new(config.clone())?;
+        let tx = TxId::new(1);
 
-        std::fs::write(&path, header.to_bytes())
-            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let mut vectors = Vec::with_capacity(100);
+        for i in 1..=100u64 {
+            let vec = vec![i as f32, (i * 2) as f32, (i * 3) as f32, (i * 4) as f32];
+            index.insert(tx, DocId::new(i), &vec).await?;
+            vectors.push((DocId::new(i), vec));
+        }
+        index.commit(tx).await?;
 
-        let index = MmapIndex::open_async(path).await?;
-        assert_eq!(index.header.dimension, 128);
+        // 2. Save to disk
+        index.save(&path).await?;
+
+        // 3. Open via mmap
+        let mmap_index = HnswIndex::try_new(config)?;
+        mmap_index.load_mmap(&path).await?;
+
+        // 4. Search for 5 nearest neighbors of a query vector
+        let query = vec![50.1, 100.2, 150.3, 200.4];
+        let search_results = mmap_index.search(&query, 5).await?;
+        assert_eq!(search_results.len(), 5);
+
+        // 5. Verify the returned doc_ids match expected nearest neighbors by brute force
+        let mut brute_force: Vec<(DocId, f32)> = vectors
+            .iter()
+            .map(|(doc_id, v)| {
+                let dist: f32 = v
+                    .iter()
+                    .zip(query.iter())
+                    .map(|(a, b)| (a - b).powi(2))
+                    .sum::<f32>()
+                    .sqrt();
+                (*doc_id, dist)
+            })
+            .collect();
+        brute_force.sort_by(|a, b| a.1.total_cmp(&b.1));
+
+        let expected_doc_ids: Vec<DocId> = brute_force.iter().take(5).map(|(id, _)| *id).collect();
+        let returned_doc_ids: Vec<DocId> = search_results.iter().map(|r| r.doc_id).collect();
+
+        assert_eq!(returned_doc_ids, expected_doc_ids);
         Ok(())
     }
 }
