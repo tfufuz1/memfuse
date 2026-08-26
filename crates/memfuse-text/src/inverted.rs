@@ -1090,12 +1090,18 @@ mod tests {
 
         // Before commit (with snapshot isolation at previous committed sequence), search returns empty
         let results_before = index.search_bm25_at("test", 10, Some(seq_before)).await?;
-        assert!(results_before.is_empty(), "Uncommitted upsert must not be visible at seq_before");
+        assert!(
+            results_before.is_empty(),
+            "Uncommitted upsert must not be visible at seq_before"
+        );
 
         // After commit: readable
         index.commit(tx).await?;
         let results_after = index.search("test", 10).await?;
-        assert!(!results_after.is_empty(), "Committed insert must be visible in search");
+        assert!(
+            !results_after.is_empty(),
+            "Committed insert must be visible in search"
+        );
 
         Ok(())
     }

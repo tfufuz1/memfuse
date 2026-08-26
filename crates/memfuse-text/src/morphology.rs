@@ -389,7 +389,9 @@ mod tests {
         let tok = crate::tokenizer::GermanMorphTokenizer::new();
         let tokens = tok.tokenize("Bücher");
         // "Bücher" → "buecher" oder ähnlich
-        assert!(tokens.iter().any(|t: &String| t.contains("ue") || t.contains("buch")));
+        assert!(tokens
+            .iter()
+            .any(|t: &String| t.contains("ue") || t.contains("buch")));
     }
 
     #[test]

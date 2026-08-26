@@ -55,13 +55,17 @@ mod tests {
             (0, 0, 0.0, 0, 0),               // alles null
             (1, 0, 0.0, 0, 1),               // doc_len = 0
             (1, 1, 0.0, 0, 1),               // avg_doc_len = 0
-            (u32::MAX, 1, 1.0, 1, 1),         // maximale tf
+            (u32::MAX, 1, 1.0, 1, 1),        // maximale tf
             (1, 1, 1.0, u32::MAX, u32::MAX), // df = n (alle Docs)
         ];
         for (tf, doc_len, avg, df, n) in cases {
             let score = score_term(tf, doc_len, avg, df, n);
             assert!(!score.is_nan(), "NaN für {:?}", (tf, doc_len, avg, df, n));
-            assert!(!score.is_infinite(), "Infinity für {:?}", (tf, doc_len, avg, df, n));
+            assert!(
+                !score.is_infinite(),
+                "Infinity für {:?}",
+                (tf, doc_len, avg, df, n)
+            );
             assert!(score >= 0.0, "Negativ für {:?}", (tf, doc_len, avg, df, n));
         }
     }

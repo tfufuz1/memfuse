@@ -59,7 +59,10 @@ async fn test_compaction_preserves_all_data() {
         let tx = TxId::new(i + 1);
         let key = format!("key-{:03}", i);
         let val = format!("val-{:03}", i);
-        storage.put(tx, key.as_bytes(), val.as_bytes()).await.expect("put");
+        storage
+            .put(tx, key.as_bytes(), val.as_bytes())
+            .await
+            .expect("put");
         storage.commit(tx).await.expect("commit");
     }
 
@@ -70,7 +73,10 @@ async fn test_compaction_preserves_all_data() {
         let tx = TxId::new(i + 1);
         let key = format!("key-{:03}", i);
         let val = format!("val-{:03}", i);
-        storage.put(tx, key.as_bytes(), val.as_bytes()).await.expect("put");
+        storage
+            .put(tx, key.as_bytes(), val.as_bytes())
+            .await
+            .expect("put");
         storage.commit(tx).await.expect("commit");
     }
     storage.force_flush().await.expect("flush 2");
@@ -81,8 +87,16 @@ async fn test_compaction_preserves_all_data() {
     for i in 0..200 {
         let key = format!("key-{:03}", i);
         let expected_val = format!("val-{:03}", i);
-        let res = storage.get(key.as_bytes()).await.expect("get after compaction");
-        assert_eq!(res, Some(expected_val.into_bytes()), "key mismatch at index {}", i);
+        let res = storage
+            .get(key.as_bytes())
+            .await
+            .expect("get after compaction");
+        assert_eq!(
+            res,
+            Some(expected_val.into_bytes()),
+            "key mismatch at index {}",
+            i
+        );
     }
 }
 
@@ -96,7 +110,10 @@ async fn test_memtable_flush_atomic() {
     let storage = LsmStorage::new(config).await.expect("create storage");
 
     let tx = TxId::new(1);
-    storage.put(tx, b"atomic_key", b"atomic_val").await.expect("put");
+    storage
+        .put(tx, b"atomic_key", b"atomic_val")
+        .await
+        .expect("put");
     storage.commit(tx).await.expect("commit");
 
     storage.force_flush().await.expect("force flush");
