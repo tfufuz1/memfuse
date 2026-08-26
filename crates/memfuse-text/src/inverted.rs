@@ -1339,6 +1339,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_contextual_bm25_indexes_prefix_terms() -> Result<()> {
+        use memfuse_core::ContextChunk;
+
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "contextual_test");
+
+        let chunk = ContextChunk {
+            doc_id: DocId::new(10),
+            content: "Informationen über Wirtschaftspolitik.".to_string(),
+            relevance: 1.0,
+            token_count: 5,
+            metadata: None,
+            contextual_prefix: Some("Diese Passage beschreibt die Bundeshauptstadt Berlin.".to_string()),
+        };
+
+        let tx = TxId::new(1);
+        // combined_text_owned() returns "Diese Passage beschreibt die Bundeshauptstadt Berlin.\n\nInformationen über Wirtschaftspolitik."
+        index.insert(tx, chunk.doc_id, &chunk.combined_text_owned()).await?;
+        index.commit(tx).await?;
+
+        // Query for prefix term "Bundeshauptstadt" should match chunk even though content doesn't contain it
+        let results = index.search("Bundeshauptstadt", 10).await?;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].doc_id, chunk.doc_id);
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_german_tokenizer_symmetry_index_and_query() -> Result<()> {
         let storage = Arc::new(MockStorage::new());
         let index =

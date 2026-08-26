@@ -103,14 +103,37 @@ impl ContextChunk {
         &self.content
     }
 
-    /// Gibt owned String zurück: "prefix\n\ncontent" oder nur content.
+    /// Kombinierten Text für BM25-Indizierung und Embedding.
+    /// Entspricht Anthropic Contextual BM25: prefix + "\n\n" + content.
+    ///
+    /// Allokiert nur wenn `contextual_prefix` gesetzt. Akzeptabel für
+    /// Ingestion-Pipeline (1× pro Chunk, kein Hot-Path).
     pub fn combined_text_owned(&self) -> String {
         match &self.contextual_prefix {
             Some(prefix) if !prefix.is_empty() => {
-                format!("{}\n\n{}", prefix, self.content)
+                let mut combined =
+                    String::with_capacity(prefix.len() + 2 + self.content.len());
+                combined.push_str(prefix);
+                combined.push_str("\n\n");
+                combined.push_str(&self.content);
+                combined
             }
             _ => self.content.clone(),
         }
+    }
+
+    /// Kombinierter Token-Count (Heuristik: chars/4 ≈ Tokens).
+    /// Verwendet für Budget-Management in `memfuse-db/src/context.rs`.
+    pub fn combined_token_count(&self) -> usize {
+        match &self.contextual_prefix {
+            Some(p) if !p.is_empty() => self.token_count + p.len() / 4,
+            _ => self.token_count,
+        }
+    }
+
+    /// Gibt true zurück wenn contextual_prefix gesetzt und nicht leer.
+    pub fn has_context_prefix(&self) -> bool {
+        self.contextual_prefix.as_deref().is_some_and(|p| !p.is_empty())
     }
 }
 
@@ -377,29 +400,8 @@ mod tests {
     }
 
     #[test]
-    fn test_context_chunk_combined_text() {
-        let chunk_no_prefix = ContextChunk {
-            doc_id: DocId::new(1),
-            content: "Raw content".to_string(),
-            relevance: 1.0,
-            token_count: 2,
-            metadata: None,
-            contextual_prefix: None,
-        };
-        assert_eq!(chunk_no_prefix.combined_text_owned(), "Raw content");
-        assert_eq!(chunk_no_prefix.combined_text_for_indexing(), "Raw content");
-
-        let chunk_empty_prefix = ContextChunk {
-            doc_id: DocId::new(1),
-            content: "Raw content".to_string(),
-            relevance: 1.0,
-            token_count: 2,
-            metadata: None,
-            contextual_prefix: Some("".to_string()),
-        };
-        assert_eq!(chunk_empty_prefix.combined_text_owned(), "Raw content");
-
-        let chunk_with_prefix = ContextChunk {
+    fn test_combined_text_with_prefix() {
+        let chunk = ContextChunk {
             doc_id: DocId::new(1),
             content: "Raw content".to_string(),
             relevance: 1.0,
@@ -407,20 +409,66 @@ mod tests {
             metadata: None,
             contextual_prefix: Some("Dokument Kontext".to_string()),
         };
-        assert_eq!(
-            chunk_with_prefix.combined_text_owned(),
-            "Dokument Kontext\n\nRaw content"
-        );
+        assert_eq!(chunk.combined_text_owned(), "Dokument Kontext\n\nRaw content");
+        assert!(chunk.has_context_prefix());
+    }
 
-        // Verify Serde backwards compatibility when contextual_prefix is omitted in JSON
-        let json_data = r#"{
-            "doc_id": 1,
-            "content": "Legacy content",
-            "relevance": 0.9,
-            "token_count": 3
-        }"#;
-        let deser: ContextChunk = serde_json::from_str(json_data).unwrap();
-        assert_eq!(deser.content, "Legacy content");
-        assert!(deser.contextual_prefix.is_none());
+    #[test]
+    fn test_combined_text_without_prefix_returns_content() {
+        let chunk = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "Raw content".to_string(),
+            relevance: 1.0,
+            token_count: 2,
+            metadata: None,
+            contextual_prefix: None,
+        };
+        assert_eq!(chunk.combined_text_owned(), "Raw content");
+        assert!(!chunk.has_context_prefix());
+    }
+
+    #[test]
+    fn test_combined_text_empty_prefix_returns_content() {
+        let chunk = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "Raw content".to_string(),
+            relevance: 1.0,
+            token_count: 2,
+            metadata: None,
+            contextual_prefix: Some("".to_string()),
+        };
+        assert_eq!(chunk.combined_text_owned(), "Raw content");
+        assert!(!chunk.has_context_prefix());
+    }
+
+    #[test]
+    fn test_serde_backward_compat_no_prefix_field() {
+        let json = r#"{"doc_id":1,"content":"X","relevance":0.5,"token_count":1}"#;
+        let chunk: ContextChunk = serde_json::from_str(json).expect("deserialize");
+        assert!(chunk.contextual_prefix.is_none());
+    }
+
+    #[test]
+    fn test_combined_token_count_with_prefix() {
+        let chunk_no_prefix = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "Raw content".to_string(),
+            relevance: 1.0,
+            token_count: 10,
+            metadata: None,
+            contextual_prefix: None,
+        };
+        assert_eq!(chunk_no_prefix.combined_token_count(), 10);
+
+        let chunk_with_prefix = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "Raw content".to_string(),
+            relevance: 1.0,
+            token_count: 10,
+            metadata: None,
+            contextual_prefix: Some("1234567812345678".to_string()), // 16 chars -> +4 tokens
+        };
+        assert_eq!(chunk_with_prefix.combined_token_count(), 14);
+        assert!(chunk_with_prefix.combined_token_count() > chunk_with_prefix.token_count);
     }
 }

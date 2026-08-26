@@ -419,6 +419,87 @@ impl OllamaClient {
         }
     }
 
+    /// Sendet eine einfache Chat-Anfrage (non-streaming) und gibt die
+    /// vollständige Antwort zurück.
+    ///
+    /// Verwendet für Kontextpräfix-Generierung in der Ingestion-Pipeline.
+    /// Für Streaming-Chat: `chat_with_rag_streaming()` verwenden.
+    ///
+    /// # Sicherheit
+    /// - `prompt` wird via `sanitize_prompt_input()` bereinigt
+    /// - Leerstring nach Bereinigung → `MemFuseError::InvalidInput`
+    /// - `model` wird via `validate_model_name()` validiert
+    ///
+    /// # Fehler
+    /// - `MemFuseError::Storage` / `MemFuseError::Io` bei HTTP-Fehlern
+    /// - `MemFuseError::InvalidInput` für leere/invalide Inputs
+    pub async fn generate_text(&self, model: &str, prompt: &str) -> Result<String> {
+        validate_model_name(model)?;
+        let sanitized = sanitize_prompt_input(prompt);
+        if sanitized.trim().is_empty() {
+            return Err(MemFuseError::InvalidInput(
+                "generate_text: prompt is empty after sanitization".into(),
+            ));
+        }
+
+        let request = serde_json::json!({
+            "model": model,
+            "messages": [{"role": "user", "content": sanitized}],
+            "stream": false
+        });
+
+        let url = format!("{}/api/chat", self.base_url());
+        let response = self
+            .client
+            .post(&url)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| {
+                if is_transient_network_error(&e) {
+                    MemFuseError::Io(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!("Ollama generate_text network error: {e}"),
+                    ))
+                } else {
+                    MemFuseError::Storage(format!("Ollama generate_text network error: {e}"))
+                }
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            let lower = body.to_lowercase();
+            if lower.contains("model") && lower.contains("not found")
+                || status == reqwest::StatusCode::NOT_FOUND
+            {
+                return Err(MemFuseError::NotFound(format!(
+                    "Ollama model '{model}' not found. Run: ollama pull {model}"
+                )));
+            }
+            if status == reqwest::StatusCode::BAD_REQUEST {
+                return Err(MemFuseError::InvalidInput(format!(
+                    "Ollama generate_text HTTP 400 — {body}"
+                )));
+            }
+            return Err(MemFuseError::Internal(format!(
+                "Ollama generate_text failed: HTTP {status}: {body}"
+            )));
+        }
+
+        let body: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| MemFuseError::Internal(format!("JSON parse: {e}")))?;
+
+        body["message"]["content"]
+            .as_str()
+            .map(|s| s.trim().to_string())
+            .ok_or_else(|| {
+                MemFuseError::Internal("Ollama response missing message.content".into())
+            })
+    }
+
     /// Generates non-streaming text completion via POST /api/generate.
     pub async fn generate(&self, model: &str, prompt: &str) -> Result<String> {
         validate_model_name(model)?;
@@ -700,6 +781,53 @@ mod tests {
     use super::*;
     use crate::embedding::OllamaEmbedder;
     use memfuse_core::TextEmbeddingEngine;
+
+    #[tokio::test]
+    #[ignore = "requires running Ollama instance"]
+    async fn test_generate_text_returns_string() {
+        let client = OllamaClient::new("http://localhost:11434");
+        let res = client.generate_text("llama3.2", "Hello").await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_generate_text_mock_success() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+                let body = serde_json::json!({
+                    "message": {
+                        "role": "assistant",
+                        "content": " Generierter Kontext-Präfix "
+                    }
+                })
+                .to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        let text = client.generate_text("llama3.2", "Test prompt").await.unwrap();
+        assert_eq!(text, "Generierter Kontext-Präfix");
+    }
+
+    #[tokio::test]
+    async fn test_generate_text_empty_prompt_error() {
+        let client = OllamaClient::new("http://localhost:11434");
+        let res = client.generate_text("llama3.2", "   ").await;
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+    }
 
     #[tokio::test]
     async fn test_is_available() {
