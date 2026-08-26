@@ -690,6 +690,8 @@ impl MemFuse {
     }
 
     /// Returns combined statistics for the vector index and storage engine.
+    ///
+    /// Stats are approximate and may be briefly inconsistent across subsystems due to concurrent operations.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn stats(&self) -> Result<DbStats> {
         Ok(DbStats {
