@@ -409,17 +409,68 @@ impl LsmStorage {
         state.memtable = Arc::new(MemTable::new());
         state.immutable_memtables.clear();
 
-        // 3. Handle SSTables: Remove SSTables that are entirely newer than target_tx
+        // 3. Handle SSTables: Remove SSTables that are entirely newer than target_tx,
+        // and recompact SSTables that span target_tx to physically delete post-rollback entries.
         let mut sstables_lock = self.sstables.write().await;
         let mut sst_to_remove = Vec::new();
+        let mut spanning_sstables = Vec::new();
+
         sstables_lock.retain(|sst| {
-            if sst.metadata().min_tx_id > target_tx.inner() {
+            let meta = sst.metadata();
+            if meta.min_tx_id > target_tx.inner() {
                 sst_to_remove.push(sst.file_path().to_path_buf());
+                false
+            } else if meta.min_tx_id <= target_tx.inner() && meta.max_tx_id > target_tx.inner() {
+                spanning_sstables.push(Arc::clone(sst));
                 false
             } else {
                 true
             }
         });
+
+        for spanning in spanning_sstables {
+            let mut surviving_entries = Vec::new();
+            let mut stream = spanning.stream().await?;
+            while let Some((k, v, seq, tx)) = stream.next_entry().await? {
+                if tx <= target_tx.inner() {
+                    surviving_entries.push((k, v, seq, tx));
+                }
+            }
+
+            if !surviving_entries.is_empty() {
+                static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                let count = COUNTER.fetch_add(1, Ordering::Relaxed);
+                let seq = self.next_seq_no.load(Ordering::Relaxed);
+                let new_sst_path = self
+                    .config
+                    .path
+                    .join(format!("sst-{:020}-{:06}.sst", seq, count % 1000000));
+
+                let mut builder = SstableBuilder::create_with_key_manager(
+                    &new_sst_path,
+                    self.key_manager.clone(),
+                )
+                .await?;
+
+                for (k, v, seq, tx) in surviving_entries {
+                    builder.add(&k, &v, seq, tx).await?;
+                }
+                builder.finish().await?;
+
+                let new_reader = SstableReader::open_with_key_manager(
+                    &new_sst_path,
+                    Arc::clone(&self.block_cache),
+                    self.key_manager.clone(),
+                )
+                .await?;
+
+                sstables_lock.push(Arc::new(new_reader));
+            }
+
+            sst_to_remove.push(spanning.file_path().to_path_buf());
+        }
+
+        sstables_lock.sort_by_key(|sst| sst.metadata().max_seq);
 
         // 4. Update next_seq_no and last_committed_tx
         // Find max_seq from kept SSTables to avoid regressing next_seq_no
@@ -1478,6 +1529,103 @@ mod tests {
         );
         assert_eq!(storage.get(b"k3").await.unwrap(), None); // unwrap
         assert_eq!(storage.get(b"k4").await.unwrap(), None); // unwrap
+    }
+
+    #[tokio::test]
+    async fn test_rollback_recompacts_spanning_sstable() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 64,
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+        let storage = LsmStorage::new(config).await.expect("create storage");
+
+        // 1. Write entries with tx_id 1..=10 and flush to an SSTable
+        for i in 1..=10u64 {
+            let tx = TxId::new(i);
+            let key = format!("k{:02}", i);
+            let val = format!("v{:02}", i);
+            storage.put(tx, key.as_bytes(), val.as_bytes()).await.unwrap();
+            storage.commit(tx).await.unwrap();
+        }
+        storage.force_flush().await.unwrap();
+
+        // Ensure we have 1 SSTable spanning tx 1..10
+        {
+            let sstables = storage.sstables.read().await;
+            assert_eq!(sstables.len(), 1);
+            assert_eq!(sstables[0].metadata().min_tx_id, 1);
+            assert_eq!(sstables[0].metadata().max_tx_id, 10);
+        }
+
+        // 2. Call rollback_to_tx(TxId::new(5))
+        storage.rollback_to_tx(TxId::new(5)).await.expect("rollback");
+
+        // 3. Inspect SSTable on disk: entry count should be 5 and max_tx_id <= 5
+        {
+            let sstables = storage.sstables.read().await;
+            assert_eq!(sstables.len(), 1, "Spanning SSTable should be recompacted into 1 new SSTable");
+            assert_eq!(sstables[0].metadata().max_tx_id, 5);
+
+            let mut count = 0;
+            let mut stream = sstables[0].stream().await.unwrap();
+            while let Some((_k, _v, _seq, tx)) = stream.next_entry().await.unwrap() {
+                assert!(tx <= 5, "SSTable on disk must not contain entries with tx_id > 5");
+                count += 1;
+            }
+            assert_eq!(count, 5, "Surviving on-disk entry count must equal exactly 5");
+        }
+
+        // 4. Assert entries <= 5 are readable and > 5 are not
+        for i in 1..=5u64 {
+            let key = format!("k{:02}", i);
+            let expected = format!("v{:02}", i);
+            let val = storage.get(key.as_bytes()).await.unwrap();
+            assert_eq!(val, Some(expected.into_bytes()));
+        }
+
+        for i in 6..=10u64 {
+            let key = format!("k{:02}", i);
+            let val = storage.get(key.as_bytes()).await.unwrap();
+            assert_eq!(val, None);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rollback_drops_sstable_fully_stale_after_recompaction() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 64,
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+        let storage = LsmStorage::new(config).await.expect("create storage");
+
+        // 1. Write entries for tx 10..=15 and flush
+        for i in 10..=15u64 {
+            let tx = TxId::new(i);
+            let key = format!("k{:02}", i);
+            let val = format!("v{:02}", i);
+            storage.put(tx, key.as_bytes(), val.as_bytes()).await.unwrap();
+            storage.commit(tx).await.unwrap();
+        }
+        storage.force_flush().await.unwrap();
+
+        // 2. Rollback to TX 5 (all entries in SSTable are > 5)
+        storage.rollback_to_tx(TxId::new(5)).await.expect("rollback");
+
+        // 3. Verify SSTable is completely dropped
+        {
+            let sstables = storage.sstables.read().await;
+            assert!(sstables.is_empty(), "Fully stale SSTable must be dropped");
+        }
     }
 
     #[tokio::test]
