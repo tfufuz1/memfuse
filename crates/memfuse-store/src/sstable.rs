@@ -716,10 +716,10 @@ impl SstableReader {
                 );
                 let payload = &bloom_data_raw[4..];
                 if crc32fast::hash(payload) != stored_crc {
-                    return Err(MemFuseError::ChecksumMismatch {
-                        path: path_buf.to_string_lossy().to_string(),
-                        block_id: bloom_offset,
-                    });
+                    return Err(MemFuseError::checksum_mismatch(
+                        path_buf.to_string_lossy(),
+                        bloom_offset,
+                    ));
                 }
                 payload
             } else {
@@ -761,10 +761,10 @@ impl SstableReader {
             );
             let payload = &index_data_raw[4..];
             if crc32fast::hash(payload) != stored_crc {
-                return Err(MemFuseError::ChecksumMismatch {
-                    path: path_buf.to_string_lossy().to_string(),
-                    block_id: index_offset,
-                });
+                return Err(MemFuseError::checksum_mismatch(
+                    path_buf.to_string_lossy(),
+                    index_offset,
+                ));
             }
             payload
         } else {
@@ -905,10 +905,10 @@ impl SstableReader {
             let computed_crc = crc32fast::hash(payload);
 
             if stored_crc != computed_crc {
-                return Err(MemFuseError::ChecksumMismatch {
-                    path: path.to_string_lossy().to_string(),
-                    block_id: offset,
-                });
+                return Err(MemFuseError::checksum_mismatch(
+                    path.to_string_lossy(),
+                    offset,
+                ));
             }
             Ok(Bytes::copy_from_slice(payload))
         } else {
