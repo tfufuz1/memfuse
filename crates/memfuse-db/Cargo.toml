@@ -13,6 +13,7 @@ memfuse-index = { workspace = true }
 memfuse-text = { workspace = true }
 memfuse-checkpoint = { workspace = true }
 memfuse-graph = { workspace = true }
+memfuse-embed = { workspace = true, optional = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
@@ -32,6 +33,7 @@ default = []
 bench = []
 sandbox = []
 cluster = []
+reranking = ["memfuse-embed/onnx"]
 
 [[bench]]
 name = "migration_benchmarks"

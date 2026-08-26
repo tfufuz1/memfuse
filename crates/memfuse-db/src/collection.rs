@@ -1096,6 +1096,58 @@ impl<S: StorageEngine> Collection<S> {
             .await
     }
 
+    /// Performs hybrid search combining BM25, vector search, and graph traversal, followed by optional Cross-Encoder reranking.
+    #[cfg(feature = "reranking")]
+    #[tracing::instrument(level = "trace", skip(self, text, vector, reranker, anchor_entities))]
+    pub async fn hybrid_search_reranked(
+        &self,
+        text: &str,
+        vector: &[f32],
+        k: usize,
+        reranker: Option<&memfuse_embed::OnnxCrossEncoderReranker>,
+        anchor_entities: Option<&[memfuse_core::EntityId]>,
+    ) -> Result<Vec<crate::SearchResult>> {
+        // Schritt 1: Standard-Hybrid-Suche mit erhöhtem k (Reranking braucht mehr Kandidaten)
+        let pre_rerank_k = if reranker.is_some() { k * 3 } else { k };
+        let mut results = self.hybrid_search(text, vector, pre_rerank_k, anchor_entities).await?;
+
+        // Schritt 2: Optional Cross-Encoder Reranking
+        if let Some(reranker) = reranker {
+            let candidates: Vec<String> = results
+                .iter()
+                .map(|r| {
+                    r.metadata
+                        .as_ref()
+                        .and_then(|m| m.get("text").or_else(|| m.get("content")))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&r.id)
+                        .to_string()
+                })
+                .collect();
+
+            let ranked = reranker.rerank(text, candidates).await?;
+
+            // Reihenfolge gemäß Cross-Encoder anpassen
+            let mut reranked_results = Vec::with_capacity(k);
+            for (original_idx, ce_score) in ranked.into_iter().take(k) {
+                if let Some(mut result) = results.get(original_idx).cloned() {
+                    // CE-Score in Metadata für Debugging eintragen
+                    if let Some(meta) = result.metadata.as_mut() {
+                        if let Some(obj) = meta.as_object_mut() {
+                            obj.insert("ce_score".to_string(), serde_json::json!(ce_score));
+                        }
+                    }
+                    result.score = ce_score; // Cross-Encoder Score ist maßgeblich
+                    reranked_results.push(result);
+                }
+            }
+            return Ok(reranked_results);
+        }
+
+        results.truncate(k);
+        Ok(results)
+    }
+
     /// Performs hybrid search with custom fusion weights for vector, text, and graph signals.
     #[tracing::instrument(level = "trace", skip(self, text, vector))]
     pub async fn hybrid_search_with_weights(
@@ -1954,5 +2006,57 @@ mod tests {
         let reaped = col.trigger_reaper().await.unwrap();
         assert_eq!(reaped, 0);
         assert!(col.get("doc_overflow").await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "reranking")]
+    async fn test_hybrid_search_reranked_none() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(memfuse_store::LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            Arc::new(CsrGraph::new()),
+            Arc::new(AtomicU64::new(1)),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        col.insert("d1", &[1.0, 0.0, 0.0, 0.0], Some(serde_json::json!({"text": "rust language"})))
+            .await
+            .unwrap();
+        col.insert("d2", &[0.9, 0.1, 0.0, 0.0], Some(serde_json::json!({"text": "python language"})))
+            .await
+            .unwrap();
+
+        let res = col
+            .hybrid_search_reranked("rust", &[1.0, 0.0, 0.0, 0.0], 1, None, None)
+            .await
+            .unwrap();
+
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].id, "d1");
     }
 }
