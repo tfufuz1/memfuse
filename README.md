@@ -97,7 +97,7 @@ let results = col.hybrid_search("meine Anfrage", &query_embedding, 5, None).awai
 
 ## MCP-Server (für Claude Desktop & andere MCP-Clients)
 
-Der `memfuse-mcp`-Server stellt JSON-RPC/HTTP-Endpunkte für MCP-Tools bereit (`memfuse_search`, `memfuse_insert`, `memfuse_get`, `memfuse_collections`):
+Der `memfuse-mcp`-Server stellt MCP-Tools über stdio JSON-RPC 2.0 bereit (ADR-010) (`memfuse_search`, `memfuse_insert`, `memfuse_get`, `memfuse_collections`):
 
 ```bash
 cargo run -p memfuse-mcp --bin memfuse-mcp-server -- --db-path ./firma_daten
@@ -113,7 +113,7 @@ cargo run -p memfuse-mcp --bin memfuse-mcp-server -- --db-path ./firma_daten
 - [x] Dokumenten-Ingestion (PDF, DOCX, Markdown, E-Mail)
 - [x] Tauri-Desktop-App (`memfuse-tauri`) & Ingestion-Pipeline
 - [x] Ollama-Integration (`memfuse-ollama`) & Diagnostic Checks
-- [x] Standalone MCP-Server (`memfuse-mcp`) mit HTTP/JSON-RPC Endpunkten
+- [x] Standalone MCP-Server (`memfuse-mcp`) mit stdio JSON-RPC 2.0 (ADR-010)
 
 ## Lizenz
 
