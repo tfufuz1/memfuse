@@ -13,3 +13,5 @@
 pub mod anti_tamper;
 pub mod crypto;
 pub mod wal_crypto;
+
+pub use crypto::KeyManager as CryptoKey;

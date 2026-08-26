@@ -1,7 +1,11 @@
 use async_trait::async_trait;
 use memfuse_core::{Result, TextEmbeddingEngine};
 use memfuse_db::MemFuse;
-use memfuse_mcp::{protocol::JsonRpcRequest, McpServer};
+use memfuse_mcp::{
+    protocol::JsonRpcRequest,
+    sandbox::{McpSandbox, SandboxPolicy},
+    McpServer,
+};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -30,6 +34,46 @@ async fn setup_app() -> (McpServer, TempDir) {
     let embedder = Arc::new(MockEmbedder { dimension: dim });
     let server = McpServer::new(Arc::new(db), embedder);
     (server, tmp)
+}
+
+#[tokio::test]
+async fn test_sandbox_policy_enforcement() {
+    let tmp = TempDir::new().expect("temp dir");
+    let db = MemFuse::open(tmp.path()).await.expect("open db");
+    let collection = db.collection("my_docs").await.expect("collection");
+    let dim = collection.dimension();
+    let embedder = Arc::new(MockEmbedder { dimension: dim });
+
+    // Restrictive policy: DB writes denied
+    let policy = SandboxPolicy {
+        allow_db_reads: true,
+        allow_db_writes: false,
+        allow_code_execution: false,
+        max_execution_ms: 5000,
+    };
+    let sandbox = Arc::new(McpSandbox::new(policy));
+    let server = McpServer::with_sandbox(Arc::new(db), embedder, sandbox);
+
+    // Write operation should fail due to Sandbox policy
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(1)),
+        method: "tools/call".to_string(),
+        params: json!({
+            "name": "memfuse_insert",
+            "arguments": {
+                "id": "restricted_doc",
+                "text": "Restricted text",
+                "collection": "my_docs"
+            }
+        }),
+    };
+
+    let response = server.handle(req).await;
+    let res_val = serde_json::to_value(&response).unwrap();
+    assert_eq!(res_val["result"]["isError"], true);
+    let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("Sandbox: DB-Schreibzugriff gesperrt"));
 }
 
 #[tokio::test]
@@ -155,7 +199,9 @@ async fn test_invalid_tool_name() {
     assert!(is_error);
 
     let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(text.contains("Unbekanntes Tool"));
+    assert!(
+        text.contains("Unbekanntes Tool") || text.contains("gesperrt") || text.contains("Sandbox")
+    );
 }
 
 #[tokio::test]

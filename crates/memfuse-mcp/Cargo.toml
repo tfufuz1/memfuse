@@ -6,7 +6,11 @@ edition.workspace = true
 [dependencies]
 memfuse-db = { workspace = true }
 memfuse-core = { workspace = true }
+memfuse-crypto = { workspace = true }
 memfuse-ollama = { workspace = true }
+zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
+rand = { workspace = true }
+parking_lot = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
