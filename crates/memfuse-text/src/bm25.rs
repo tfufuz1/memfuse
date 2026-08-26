@@ -49,6 +49,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn bm25_no_nan_or_infinity() {
+        // Alle Grenzfall-Kombinationen
+        let cases = [
+            (0, 0, 0.0, 0, 0),               // alles null
+            (1, 0, 0.0, 0, 1),               // doc_len = 0
+            (1, 1, 0.0, 0, 1),               // avg_doc_len = 0
+            (u32::MAX, 1, 1.0, 1, 1),         // maximale tf
+            (1, 1, 1.0, u32::MAX, u32::MAX), // df = n (alle Docs)
+        ];
+        for (tf, doc_len, avg, df, n) in cases {
+            let score = score_term(tf, doc_len, avg, df, n);
+            assert!(!score.is_nan(), "NaN für {:?}", (tf, doc_len, avg, df, n));
+            assert!(!score.is_infinite(), "Infinity für {:?}", (tf, doc_len, avg, df, n));
+            assert!(score >= 0.0, "Negativ für {:?}", (tf, doc_len, avg, df, n));
+        }
+    }
+
+    #[test]
     fn test_bm25_score() {
         let score = score_term(2, 100, 150.0, 10, 1000);
         assert!(score > 0.0);
