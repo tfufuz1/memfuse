@@ -1,7 +1,5 @@
 #[cfg(test)]
-#[allow(clippy::module_inception)]
-mod tests {
-    use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
+use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
     use crate::McpServer;
     use async_trait::async_trait;
     use memfuse_core::{Result, TextEmbeddingEngine};
@@ -249,4 +247,3 @@ mod tests {
             "No println! or print! allowed in memfuse-mcp — use stderr/tracing"
         );
     }
-}

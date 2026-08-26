@@ -11,6 +11,10 @@ impl SimpleEntityExtractor {
     /// (Personen, Firmen, Abteilungen) — deutsche Substantiv-Großschreibung
     /// macht dies überraschend robust für Geschäftsdokumente.
     pub fn extract(text: &str) -> Vec<EntityId> {
+        if text.trim().is_empty() {
+            return Vec::new();
+        }
+
         let mut entities = HashSet::new();
 
         // Muster 1: Aufeinanderfolgende großgeschriebene Wörter
@@ -112,5 +116,18 @@ mod tests {
         let entities = SimpleEntityExtractor::extract(text);
         let starter = EntityId::from("Diese Anfrage");
         assert!(!entities.contains(&starter));
+    }
+
+    #[test]
+    fn test_empty_input_returns_empty_vec() {
+        let entities = SimpleEntityExtractor::extract("");
+        assert!(entities.is_empty());
+    }
+
+    #[test]
+    fn test_no_entities_found_returns_empty_vec() {
+        let text = "hier ist nur kleingeschriebener text ohne namen";
+        let entities = SimpleEntityExtractor::extract(text);
+        assert!(entities.is_empty());
     }
 }

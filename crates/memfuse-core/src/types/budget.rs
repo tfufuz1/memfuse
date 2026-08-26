@@ -48,8 +48,15 @@ impl TokenBudget {
     }
 
     /// Erstellt ein Budget für gängige Modelle.
+    ///
+    /// # Maintenance Note
+    /// Model name patterns use string matching. Explicit model family patterns
+    /// (e.g. `claude-4`, `claude-opus-4`, `claude-sonnet-4`, `gpt-4o-mini`) must be updated
+    /// whenever new model releases or naming conventions ship.
     pub fn for_model(model: &str) -> Self {
         let limit = match model {
+            m if m.contains("claude-4") || m.contains("claude-opus-4") || m.contains("claude-sonnet-4") => 200_000,
+            m if m.contains("gpt-4o-mini") => 128_000,
             m if m.contains("gpt-4o") => 128_000,
             m if m.contains("gpt-4") => 8_192,
             m if m.contains("claude-3") => 200_000,
@@ -350,6 +357,12 @@ mod tests {
         let b2 = b.with_reserved(1000, 2000);
         assert_eq!(b2.reserved, 3000);
         assert_eq!(b2.available(), 102_400 - 3000);
+
+        // Test explicit model patterns
+        assert_eq!(TokenBudget::for_model("claude-4").limit, 200_000);
+        assert_eq!(TokenBudget::for_model("claude-opus-4").limit, 200_000);
+        assert_eq!(TokenBudget::for_model("claude-sonnet-4").limit, 200_000);
+        assert_eq!(TokenBudget::for_model("gpt-4o-mini").limit, 128_000);
     }
 
     #[test]

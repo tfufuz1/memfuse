@@ -140,14 +140,22 @@ impl<S: StorageEngine> Collection<S> {
 
     /// Generates and returns the next sequential transaction ID for this collection.
     pub fn next_tx(&self) -> TxId {
-        TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst))
+        let id = self.next_tx.fetch_add(1, Ordering::SeqCst);
+        if id >= TxId::INTERNAL_BASE {
+            panic!("TxId counter exhausted — INTERNAL_BASE range collision");
+        }
+        TxId::new(id)
     }
 
     /// Allokiert eine eindeutige, atomar inkrementierte Transaction-ID.
     /// Externe Crates verwenden diese Methode statt eigener TxId-Generierung.
     /// Verhindert TxId-Kollisionen bei paralleler Ingestion (EMBED_CONCURRENCY > 1).
     pub fn allocate_tx(&self) -> TxId {
-        TxId::new(self.next_tx.fetch_add(1, Ordering::SeqCst))
+        let id = self.next_tx.fetch_add(1, Ordering::SeqCst);
+        if id >= TxId::INTERNAL_BASE {
+            panic!("TxId counter exhausted — INTERNAL_BASE range collision");
+        }
+        TxId::new(id)
     }
 
     /// Returns the CSR graph index for this collection.

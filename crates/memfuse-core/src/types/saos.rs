@@ -20,6 +20,11 @@ impl FusionWeights {
 
     /// Creates 4-signal fusion weights. Currently, metadata must be 0.0 until metadata signal ranking is implemented.
     pub fn new_with_metadata(vector: f32, text: f32, graph: f32, metadata: f32) -> Result<Self> {
+        if vector.is_nan() || text.is_nan() || graph.is_nan() || metadata.is_nan() {
+            return Err(MemFuseError::InvalidInput(
+                "Fusion weights must not be NaN".into(),
+            ));
+        }
         if !vector.is_finite() || !text.is_finite() || !graph.is_finite() || !metadata.is_finite() {
             return Err(MemFuseError::InvalidInput(
                 "Fusion weights must be finite numbers".into(),
@@ -292,6 +297,39 @@ mod tests {
         budget.consume(40); // Over consumption
         assert_eq!(budget.available(), 0);
         assert_eq!(budget.consumed(), 90);
+    }
+
+    #[test]
+    fn test_fusion_weights_nan() {
+        let res = FusionWeights::new_with_metadata(f32::NAN, 0.5, 0.5, 0.0);
+        assert!(res.is_err());
+        if let Err(MemFuseError::InvalidInput(msg)) = res {
+            assert_eq!(msg, "Fusion weights must not be NaN");
+        } else {
+            panic!("Expected InvalidInput error");
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn prop_fusion_weights_never_panics(
+            v in proptest::num::f32::ANY,
+            t in proptest::num::f32::ANY,
+            g in proptest::num::f32::ANY,
+            m in proptest::num::f32::ANY,
+        ) {
+            let res = FusionWeights::new_with_metadata(v, t, g, m);
+            if v.is_nan() || t.is_nan() || g.is_nan() || m.is_nan() {
+                let err = res.expect_err("NaN inputs must return an error");
+                if let MemFuseError::InvalidInput(msg) = err {
+                    proptest::prop_assert_eq!(msg, "Fusion weights must not be NaN");
+                } else {
+                    proptest::prop_assert!(false, "Expected InvalidInput for NaN");
+                }
+            } else if !v.is_finite() || !t.is_finite() || !g.is_finite() || !m.is_finite() {
+                proptest::prop_assert!(res.is_err());
+            }
+        }
     }
 
     #[test]
