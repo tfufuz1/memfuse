@@ -329,17 +329,37 @@ impl HnswIndex {
     }
 
     /// Triggers an async rebuild if the deletion threshold is exceeded.
-    pub fn trigger_rebuild_async(&self) -> Option<tokio::task::JoinHandle<()>> {
+    pub fn trigger_rebuild_async(&self) -> Option<tokio::task::JoinHandle<Result<()>>> {
         if self.is_rebuild_required() {
             let inner = std::sync::Arc::clone(&self.inner);
             Some(tokio::spawn(async move {
-                if let Err(e) = inner.rebuild().await {
+                let res = inner.rebuild().await;
+                if let Err(ref e) = res {
                     tracing::error!("Failed to rebuild HNSW index: {}", e);
                 }
+                res
             }))
         } else {
             None
         }
+    }
+
+    /// Liefert den aktuellen Rebuild-Status des Index.
+    pub fn rebuild_status(&self) -> RebuildStatus {
+        self.inner.rebuild_status()
+    }
+
+    /// Wartet bis ein laufender Rebuild abgeschlossen ist.
+    /// Nutzt standardmäßig ein Timeout von 60 Sekunden.
+    /// Gibt `true` zurück wenn Rebuild abgeschlossen, `false` bei Timeout.
+    pub async fn wait_for_rebuild(&self) -> bool {
+        self.inner.wait_for_rebuild().await
+    }
+
+    /// Wartet bis ein laufender Rebuild abgeschlossen ist.
+    /// Gibt `true` zurück wenn Rebuild abgeschlossen, `false` bei Timeout.
+    pub async fn wait_for_rebuild_with_timeout(&self, timeout: std::time::Duration) -> bool {
+        self.inner.wait_for_rebuild_with_timeout(timeout).await
     }
 
     /// Persists the index to a flat file.
@@ -421,7 +441,7 @@ impl HnswIndex {
             let mut current_pos = vectors_offset;
             for (i, node) in nodes.iter().enumerate() {
                 node_records[i].doc_id = node.doc_id.inner();
-                node_records[i].max_layer = node.connections.len().saturating_sub(1) as u8;
+                node_records[i].max_layer = node.max_layer as u8;
                 node_records[i].vector_offset = current_pos;
 
                 match &node.vector {
@@ -600,6 +620,14 @@ impl HnswIndexCore {
         } else {
             RebuildStatus::Idle
         }
+    }
+
+    /// Wartet bis ein laufender Rebuild abgeschlossen ist.
+    /// Nutzt standardmäßig ein Timeout von 60 Sekunden.
+    /// Gibt `true` zurück wenn Rebuild abgeschlossen, `false` bei Timeout.
+    pub async fn wait_for_rebuild(&self) -> bool {
+        self.wait_for_rebuild_with_timeout(std::time::Duration::from_secs(60))
+            .await
     }
 
     /// Wartet bis ein laufender Rebuild abgeschlossen ist.
@@ -2586,6 +2614,77 @@ mod tests {
                 "Deleted doc_id {} was found in search results",
                 doc.doc_id.inner()
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rebuild_status_and_wait() {
+        let config = HnswConfig {
+            rebuild_threshold: 0.5,
+            dimension: 4,
+            ..test_config(4)
+        };
+        let index = HnswIndex::try_new(config).unwrap();
+        assert_eq!(index.rebuild_status(), RebuildStatus::Idle);
+        assert!(
+            index
+                .wait_for_rebuild_with_timeout(std::time::Duration::from_millis(50))
+                .await
+        );
+        assert!(index.wait_for_rebuild().await);
+
+        let tx = TxId::new(1);
+        for i in 0u64..10 {
+            index
+                .insert(tx, DocId::new(i), &[i as f32, 0.0, 0.0, 0.0])
+                .await
+                .unwrap();
+        }
+        index.commit(tx).await.unwrap();
+
+        let tx2 = TxId::new(2);
+        for i in 0u64..6 {
+            index.delete(tx2, DocId::new(i)).await.unwrap();
+        }
+
+        // Commit triggers trigger_rebuild_async
+        index.commit(tx2).await.unwrap();
+        assert!(
+            index
+                .wait_for_rebuild_with_timeout(std::time::Duration::from_secs(5))
+                .await
+        );
+        assert_eq!(index.rebuild_status(), RebuildStatus::Idle);
+    }
+
+    #[tokio::test]
+    async fn test_trigger_rebuild_async_join_handle() {
+        let config = HnswConfig {
+            rebuild_threshold: 0.5,
+            dimension: 4,
+            ..test_config(4)
+        };
+        let index = HnswIndex::try_new(config).unwrap();
+        let tx = TxId::new(1);
+        for i in 0u64..10 {
+            index
+                .insert(tx, DocId::new(i), &[i as f32, 0.0, 0.0, 0.0])
+                .await
+                .unwrap();
+        }
+        index.commit(tx).await.unwrap();
+
+        assert!(index.trigger_rebuild_async().is_none());
+
+        let tx2 = TxId::new(2);
+        for i in 0u64..6 {
+            index.delete(tx2, DocId::new(i)).await.unwrap();
+        }
+        index.commit(tx2).await.unwrap();
+
+        if let Some(handle) = index.trigger_rebuild_async() {
+            let res = handle.await.unwrap();
+            assert!(res.is_ok());
         }
     }
 }
