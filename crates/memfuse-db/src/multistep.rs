@@ -1,0 +1,307 @@
+// memfuse-db/src/multistep.rs
+// Multi-Step Iterative Retrieval Engine (OpenAI o-series Pattern)
+
+use crate::{Collection, SearchResult};
+use memfuse_core::{Result, StorageEngine};
+use std::sync::Arc;
+
+/// Konfiguration für Multi-Step Retrieval.
+#[derive(Debug, Clone)]
+pub struct MultiStepConfig {
+    /// Maximale Iterationsrunden (OpenAI-Pattern: 3).
+    pub max_rounds: usize,
+    /// Mindest-Score-Schwellenwert: unter diesem Wert gilt Runde als unzureichend.
+    pub quality_threshold: f32,
+    /// Minimale Anzahl an Treffern die den Threshold überschreiten müssen.
+    pub min_quality_hits: usize,
+}
+
+impl Default for MultiStepConfig {
+    fn default() -> Self {
+        Self {
+            max_rounds: 3,
+            quality_threshold: 0.5,
+            min_quality_hits: 2,
+        }
+    }
+}
+
+/// Ergebnis einer Multi-Step-Suche mit Audit-Informationen.
+#[derive(Debug)]
+pub struct MultiStepResult {
+    pub results: Vec<SearchResult>,
+    /// Anzahl der tatsächlich durchgeführten Runden.
+    pub rounds_executed: usize,
+    /// Queries die in den Folgerunden verwendet wurden.
+    pub sub_queries: Vec<String>,
+}
+
+/// Multi-Step Retrieval Engine.
+///
+/// Implementiert iteratives Query-Rewriting für komplexe Agenten-Abfragen.
+/// Erfordert ein `QueryRewriter`-Trait für LLM-basiertes Rewriting.
+pub struct MultiStepEngine<S: StorageEngine> {
+    collection: Arc<Collection<S>>,
+    config: MultiStepConfig,
+}
+
+/// Trait für Query-Rewriting (LLM-agnostisch).
+#[async_trait::async_trait]
+pub trait QueryRewriter: Send + Sync {
+    /// Generiert alternative Teil-Queries basierend auf bisherigen Ergebnissen.
+    ///
+    /// `original_query` – die ursprüngliche Anfrage
+    /// `current_results` – bisherige Ergebnisse (leer bei erstem Aufruf)
+    /// Gibt leeren Vec zurück wenn kein Rewriting nötig.
+    async fn rewrite(
+        &self,
+        original_query: &str,
+        current_results: &[SearchResult],
+    ) -> Result<Vec<String>>;
+}
+
+impl<S: StorageEngine> MultiStepEngine<S> {
+    pub fn new(collection: Arc<Collection<S>>, config: MultiStepConfig) -> Self {
+        Self { collection, config }
+    }
+
+    /// Führt iterative Hybrid-Suche durch.
+    ///
+    /// Runde 1: Standard-Hybrid-Suche mit `original_query`.
+    /// Runde 2–N: Falls Qualität unzureichend, QueryRewriter generiert Sub-Queries.
+    /// Ergebnisse werden via RRF über alle Runden fusioniert.
+    pub async fn search(
+        &self,
+        original_query: &str,
+        vector: &[f32],
+        k: usize,
+        rewriter: Option<&dyn QueryRewriter>,
+    ) -> Result<MultiStepResult> {
+        use crate::fusion::reciprocal_rank_fusion;
+
+        let mut all_result_sets: Vec<Vec<SearchResult>> = Vec::new();
+        let mut sub_queries: Vec<String> = Vec::new();
+        let mut rounds_executed = 0;
+
+        // Runde 1: Standard-Suche
+        let round1 = self
+            .collection
+            .hybrid_search(original_query, vector, k * 2, None)
+            .await?;
+        all_result_sets.push(round1.clone());
+        rounds_executed += 1;
+
+        // Qualitätsprüfung
+        if self.quality_sufficient(&round1) || rewriter.is_none() {
+            let fused = reciprocal_rank_fusion(all_result_sets, k);
+            return Ok(MultiStepResult {
+                results: fused,
+                rounds_executed,
+                sub_queries,
+            });
+        }
+
+        // Runde 2–max_rounds: Query-Rewriting
+        let rewriter = match rewriter {
+            Some(r) => r,
+            None => {
+                let fused = reciprocal_rank_fusion(all_result_sets, k);
+                return Ok(MultiStepResult {
+                    results: fused,
+                    rounds_executed,
+                    sub_queries,
+                });
+            }
+        };
+
+        let mut current_results = round1;
+
+        for _round in 2..=self.config.max_rounds {
+            let sub_qs = rewriter.rewrite(original_query, &current_results).await?;
+            if sub_qs.is_empty() {
+                break;
+            }
+
+            for sub_q in &sub_qs {
+                let sub_results = self.collection.hybrid_search(sub_q, vector, k, None).await?;
+                all_result_sets.push(sub_results.clone());
+                current_results = sub_results;
+                sub_queries.push(sub_q.clone());
+            }
+
+            rounds_executed += 1;
+            if self.quality_sufficient(&current_results) {
+                break;
+            }
+        }
+
+        let fused = reciprocal_rank_fusion(all_result_sets, k);
+        Ok(MultiStepResult {
+            results: fused,
+            rounds_executed,
+            sub_queries,
+        })
+    }
+
+    fn quality_sufficient(&self, results: &[SearchResult]) -> bool {
+        let high_quality = results
+            .iter()
+            .filter(|r| r.score >= self.config.quality_threshold)
+            .count();
+        high_quality >= self.config.min_quality_hits
+    }
+}
+
+/// Ollama-basierter QueryRewriter.
+/// Implementierung in `memfuse-ollama` – hier nur Stub-Trait.
+pub struct OllamaQueryRewriter {
+    // client: Arc<memfuse_ollama::OllamaClient>,
+    // model: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::{HnswConfig, HnswIndex};
+    use memfuse_store::{LsmConfig, LsmStorage};
+    use std::sync::atomic::AtomicU64;
+    use tempfile::tempdir;
+
+    struct DummyRewriter {
+        responses: std::sync::Mutex<Vec<Vec<String>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl QueryRewriter for DummyRewriter {
+        async fn rewrite(
+            &self,
+            _original_query: &str,
+            _current_results: &[SearchResult],
+        ) -> Result<Vec<String>> {
+            let mut guard = self.responses.lock().unwrap();
+            if !guard.is_empty() {
+                Ok(guard.remove(0))
+            } else {
+                Ok(vec![])
+            }
+        }
+    }
+
+    async fn create_test_collection() -> Arc<Collection<LsmStorage>> {
+        let dir = tempdir().expect("tempdir");
+        let lsm_config = LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.expect("lsm storage"));
+        let hnsw_config = HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let index = Arc::new(HnswIndex::try_new(hnsw_config).expect("hnsw index"));
+        let graph = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(AtomicU64::new(1));
+
+        let col = Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            graph,
+            next_tx,
+            4,
+            memfuse_text::Language::English,
+        );
+
+        Arc::new(col)
+    }
+
+    #[tokio::test]
+    async fn test_multistep_single_round_sufficient() {
+        let col = create_test_collection().await;
+        col.insert(
+            "doc1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(serde_json::json!({"text": "rust programming"})),
+        )
+        .await
+        .expect("insert");
+        col.insert(
+            "doc2",
+            &[0.9, 0.1, 0.0, 0.0],
+            Some(serde_json::json!({"text": "rust language"})),
+        )
+        .await
+        .expect("insert");
+
+        let config = MultiStepConfig {
+            max_rounds: 3,
+            quality_threshold: 0.001,
+            min_quality_hits: 1,
+        };
+        let engine = MultiStepEngine::new(col, config);
+
+        let rewriter = DummyRewriter {
+            responses: std::sync::Mutex::new(vec![vec!["sub query 1".to_string()]]),
+        };
+
+        let result = engine
+            .search("rust", &[1.0, 0.0, 0.0, 0.0], 5, Some(&rewriter))
+            .await
+            .expect("search");
+
+        assert_eq!(result.rounds_executed, 1);
+        assert!(result.sub_queries.is_empty());
+        assert!(!result.results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_multistep_query_rewriting_triggers() {
+        let col = create_test_collection().await;
+        col.insert(
+            "doc1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(serde_json::json!({"text": "rust programming"})),
+        )
+        .await
+        .expect("insert");
+
+        let config = MultiStepConfig {
+            max_rounds: 3,
+            quality_threshold: 0.99, // high threshold, round 1 won't meet min_quality_hits=2
+            min_quality_hits: 2,
+        };
+        let engine = MultiStepEngine::new(col, config);
+
+        let rewriter = DummyRewriter {
+            responses: std::sync::Mutex::new(vec![
+                vec!["rust programming".to_string()], // round 2
+                vec![],                                // round 3 (stop)
+            ]),
+        };
+
+        let result = engine
+            .search("rust", &[1.0, 0.0, 0.0, 0.0], 5, Some(&rewriter))
+            .await
+            .expect("search");
+
+        assert_eq!(result.rounds_executed, 2);
+        assert_eq!(result.sub_queries, vec!["rust programming"]);
+        assert!(!result.results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_multistep_no_rewriter_provided() {
+        let col = create_test_collection().await;
+        let config = MultiStepConfig::default();
+        let engine = MultiStepEngine::new(col, config);
+
+        let result = engine
+            .search("query", &[1.0, 0.0, 0.0, 0.0], 5, None)
+            .await
+            .expect("search");
+
+        assert_eq!(result.rounds_executed, 1);
+        assert!(result.sub_queries.is_empty());
+    }
+}

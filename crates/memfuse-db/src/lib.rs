@@ -75,8 +75,11 @@ pub trait SandboxBridge: Send + Sync {
 // mod Collection is used via pub mod collection
 pub mod filter;
 pub mod fusion;
+pub mod multistep;
 pub mod reaper;
 pub mod transaction;
+
+pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
 
 pub use collection::Collection;
 pub use filter::MetadataFilter;
