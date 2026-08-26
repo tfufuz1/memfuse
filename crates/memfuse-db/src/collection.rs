@@ -1104,7 +1104,7 @@ impl<S: StorageEngine> Collection<S> {
         text: &str,
         vector: &[f32],
         k: usize,
-        reranker: Option<&memfuse_embed::OnnxCrossEncoderReranker>,
+        reranker: Option<&memfuse_embed::CrossEncoderReranker>,
         anchor_entities: Option<&[memfuse_core::EntityId]>,
     ) -> Result<Vec<crate::SearchResult>> {
         // Schritt 1: Standard-Hybrid-Suche mit erhöhtem k (Reranking braucht mehr Kandidaten)
@@ -1115,7 +1115,7 @@ impl<S: StorageEngine> Collection<S> {
 
         // Schritt 2: Optional Cross-Encoder Reranking
         if let Some(reranker) = reranker {
-            let candidates: Vec<String> = results
+            let candidate_texts: Vec<String> = results
                 .iter()
                 .map(|r| {
                     r.metadata
@@ -1127,23 +1127,27 @@ impl<S: StorageEngine> Collection<S> {
                 })
                 .collect();
 
-            let ranked = reranker.rerank(text, candidates).await?;
-
-            // Reihenfolge gemäß Cross-Encoder anpassen
-            let mut reranked_results = Vec::with_capacity(k);
-            for (original_idx, ce_score) in ranked.into_iter().take(k) {
-                if let Some(mut result) = results.get(original_idx).cloned() {
-                    // CE-Score in Metadata für Debugging eintragen
-                    if let Some(meta) = result.metadata.as_mut() {
-                        if let Some(obj) = meta.as_object_mut() {
-                            obj.insert("ce_score".to_string(), serde_json::json!(ce_score));
+            match reranker.rerank(text, &candidate_texts).await {
+                Ok(ranked) => {
+                    let mut reranked_results = Vec::with_capacity(k);
+                    for r in ranked.into_iter().take(k) {
+                        if let Some(mut result) = results.get(r.original_index).cloned() {
+                            if let Some(meta) = result.metadata.as_mut() {
+                                if let Some(obj) = meta.as_object_mut() {
+                                    obj.insert("ce_score".to_string(), serde_json::json!(r.score));
+                                }
+                            }
+                            result.score = r.score;
+                            reranked_results.push(result);
                         }
                     }
-                    result.score = ce_score; // Cross-Encoder Score ist maßgeblich
-                    reranked_results.push(result);
+                    tracing::debug!("Reranking applied: {} candidates", reranked_results.len());
+                    return Ok(reranked_results);
+                }
+                Err(e) => {
+                    tracing::warn!("Reranking failed (using RRF order): {e}");
                 }
             }
-            return Ok(reranked_results);
         }
 
         results.truncate(k);
