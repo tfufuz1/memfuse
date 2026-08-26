@@ -234,6 +234,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn chunker_empty_input() {
+        let chunks = MarkdownChunker::with_defaults().chunk(DocId::new(1), "");
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn chunker_single_chunk_no_split() {
+        let text = "Short text";
+        let chunks = MarkdownChunker::with_defaults().chunk(DocId::new(1), text);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].content, text);
+    }
+
+    #[test]
+    fn chunker_respects_max_chunk_size() {
+        let text = (0..50)
+            .map(|_| "word ".repeat(20))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let config = ChunkerConfig {
+            max_tokens: 100,
+            min_tokens: 10,
+            ..Default::default()
+        };
+        let chunks = MarkdownChunker::new(config).chunk(DocId::new(1), &text);
+        let limit = (100.0 * 1.2) as usize;
+        for chunk in &chunks {
+            assert!(
+                chunk.token_count <= limit,
+                "Chunk too large: {}",
+                chunk.token_count
+            );
+        }
+    }
+
+    #[test]
     fn test_chunk_by_headings() {
         let markdown = "# Title\nSome intro.\n## Section 1\nContent 1\n### Sub 1\nSub content";
         let doc_id = DocId::new(1);

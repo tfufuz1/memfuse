@@ -99,4 +99,58 @@ mod tests {
             "Expired transaction should have been reaped within 500ms"
         );
     }
+
+    #[tokio::test]
+    async fn reaper_deletes_expired_documents() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use serde_json::json;
+        use std::sync::atomic::AtomicU64;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let lsm_config = memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let graph = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(AtomicU64::new(1));
+
+        let col = crate::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            graph,
+            next_tx,
+            4,
+            memfuse_text::Language::English,
+        );
+
+        let vec = vec![1.0, 0.0, 0.0, 0.0];
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        col.insert(
+            "doc1",
+            &vec,
+            Some(json!({"created_at_ms": now_ms - 100, "ttl_ms": 50})),
+        )
+        .await
+        .unwrap();
+
+        col.trigger_reaper().await.unwrap();
+        let result = col.get("doc1").await.unwrap();
+        assert!(result.is_none(), "Expired document must be deleted");
+    }
 }
