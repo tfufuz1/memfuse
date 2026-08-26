@@ -774,8 +774,8 @@ impl<S: StorageEngine> Collection<S> {
         self.storage.put(tx, &key, &bytes).await?;
         self.storage.commit(tx).await?;
 
-        let from_id = memfuse_core::EntityId::from_key(from);
-        let to_id = memfuse_core::EntityId::from_key(to);
+        let from_id = memfuse_core::EntityId::from_key(from)?;
+        let to_id = memfuse_core::EntityId::from_key(to)?;
 
         let graph_tx = self.allocate_tx();
 
@@ -1152,7 +1152,7 @@ impl<S: StorageEngine> Collection<S> {
             let implicit_anchors: Vec<memfuse_core::EntityId> = text_results
                 .iter()
                 .map(|r| memfuse_core::EntityId::from_key(r.id.as_str()))
-                .collect();
+                .collect::<Result<Vec<_>>>()?;
             let tuples = self
                 .graph_index
                 .multi_traverse(&implicit_anchors, MAX_TRAVERSAL_HOPS)
