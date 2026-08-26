@@ -1,4 +1,5 @@
 pub mod protocol;
+pub mod sandbox;
 #[cfg(test)]
 mod tests;
 
@@ -6,6 +7,7 @@ use memfuse_core::{DocId, TextEmbeddingEngine, MAX_SEARCH_K};
 use memfuse_db::chunker::{ChunkerConfig, MarkdownChunker};
 use memfuse_db::MemFuse;
 use protocol::{JsonRpcRequest, JsonRpcResponse, McpError};
+use sandbox::{McpSandbox, SandboxPolicy};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -31,11 +33,30 @@ fn validate_collection_name(name: &str) -> Result<(), McpError> {
 pub struct McpServer {
     pub db: Arc<MemFuse>,
     pub embedder: Arc<dyn TextEmbeddingEngine>,
+    pub sandbox: Arc<McpSandbox>,
 }
 
 impl McpServer {
     pub fn new(db: Arc<MemFuse>, embedder: Arc<dyn TextEmbeddingEngine>) -> Self {
-        Self { db, embedder }
+        let policy = SandboxPolicy {
+            allow_db_reads: true,
+            allow_db_writes: true,
+            allow_code_execution: false,
+            max_execution_ms: 5_000,
+        };
+        Self::with_sandbox(db, embedder, Arc::new(McpSandbox::new(policy)))
+    }
+
+    pub fn with_sandbox(
+        db: Arc<MemFuse>,
+        embedder: Arc<dyn TextEmbeddingEngine>,
+        sandbox: Arc<McpSandbox>,
+    ) -> Self {
+        Self {
+            db,
+            embedder,
+            sandbox,
+        }
     }
 
     /// Startet den MCP stdio-Loop.
@@ -211,6 +232,9 @@ impl McpServer {
     }
 
     async fn call_tool(&self, name: &str, args: &Value) -> Result<Value, McpError> {
+        self.sandbox
+            .validate_tool_call(name, args)
+            .map_err(McpError::from)?;
         match name {
             "memfuse_search" => {
                 let query = match args.get("query") {
