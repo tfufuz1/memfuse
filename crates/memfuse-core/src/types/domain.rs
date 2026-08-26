@@ -198,15 +198,14 @@ impl TxId {
     ///
     /// Exact numeric value: `u64::MAX - 1_000_000` (`18_446_744_073_708_551_615`).
     ///
-    /// TxIds are issued from two canonical domains:
-    /// - Collection sequence domain: `[1, ~10^12]` for collection sequences (managed by `Collection::allocate_tx()`).
-    /// - Internal system domain: `[INTERNAL_BASE, u64::MAX]` for system operations (checkpointing, WAL replay).
-    ///   System operations (e.g., checkpoint) allocate IDs via `INTERNAL_BASE + atomic counter`.
+    /// Dieser Grenzwert definiert die Trennlinie zwischen Collection-sequenzierten TxIds
+    /// (`[1, ~10^12]`, verwaltet von `Collection::allocate_tx()`) und system-internen TxIds
+    /// (`[INTERNAL_BASE, u64::MAX]`, verwaltet von `INTERNAL_BASE + atomic counter`).
     ///
-    /// Wall-clock Unix nanosecond timestamps (`~1.7e18`) fall between these two ranges
-    /// (`10^12 < ~1.7e18 < INTERNAL_BASE`), which corrupts `rollback_to_tx` causal ordering
-    /// because range-based transaction rollbacks and graph pruning cannot differentiate between
-    /// user transactions and internal snapshot bounds.
+    /// Wall-clock-abgeleitete TxIds (Unix-Nanos `~1.7e18`) fallen in den Zwischenbereich
+    /// (`10^12 < ~1.7e18 < INTERNAL_BASE`) und korrumpieren `rollback_to_tx()`-Kausalität,
+    /// da bereichsbasierte Transaktions-Rollbacks und Graph-Pruning nicht zwischen
+    /// Benutzertransaktionen und internen Snapshot-Grenzen unterscheiden können.
     ///
     /// See also: AGT-GRAPH-001, DECISIONS.md ADR-016.
     pub const INTERNAL_BASE: u64 = u64::MAX - 1_000_000;
@@ -230,7 +229,10 @@ impl TxId {
     }
 }
 
-const _: () = assert!(TxId::INTERNAL_BASE > 1_000_000_000_000);
+const _: () = assert!(
+    TxId::INTERNAL_BASE > 1_000_000_000_000u64,
+    "INTERNAL_BASE must be above the collection-sequence range"
+);
 const _: () = assert!(TxId::INTERNAL_BASE < u64::MAX);
 
 impl std::fmt::Display for TxId {
@@ -688,6 +690,11 @@ mod tests {
     }
 
     #[test]
+    fn doc_id_from_empty_returns_err() {
+        assert!(DocId::from_key("").is_err());
+    }
+
+    #[test]
     fn test_entity_id_from_key_empty_err() {
         assert!(EntityId::from_key("").is_err());
         assert!(EntityId::from_key("node_1").is_ok());
@@ -734,10 +741,10 @@ mod tests {
             prop_assert_eq!(doc, deser);
         }
 
-        fn doc_id_from_key_is_deterministic(s in "[a-zA-Z0-9_-]{1,256}") {
-            let a = DocId::from_key(&s).unwrap();
-            let b = DocId::from_key(&s).unwrap();
-            prop_assert_eq!(a, b);
+        fn doc_id_from_key_deterministic(s in "[a-zA-Z0-9_\\-]{1,256}") {
+            let id1 = DocId::from_key(&s).unwrap();
+            let id2 = DocId::from_key(&s).unwrap();
+            prop_assert_eq!(id1, id2);
         }
 
         fn doc_id_from_key_never_panics(s in ".*") {
