@@ -1,4 +1,4 @@
-use crate::client::{OllamaClient, DEFAULT_BASE_URL, DEFAULT_EMBED_MODEL};
+use crate::client::{OllamaClient, OllamaConfig, DEFAULT_BASE_URL, DEFAULT_EMBED_MODEL};
 use async_trait::async_trait;
 use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
 
@@ -13,9 +13,26 @@ pub struct OllamaEmbedder {
 
 impl OllamaEmbedder {
     pub fn new(base_url: impl Into<String>, model: impl Into<String>) -> Self {
+        let base_url_str = base_url.into();
+        let model_str = model.into();
+        let config = OllamaConfig {
+            base_url: base_url_str,
+            model: model_str.clone(),
+            ..Default::default()
+        };
         Self {
-            client: OllamaClient::new(base_url.into()),
-            model: model.into(),
+            client: OllamaClient::with_config(config),
+            model: model_str,
+            concurrency: 8,
+            expected_dimension: None,
+        }
+    }
+
+    pub fn with_config(config: OllamaConfig) -> Self {
+        let model = config.model.clone();
+        Self {
+            client: OllamaClient::with_config(config),
+            model,
             concurrency: 8,
             expected_dimension: None,
         }
@@ -23,6 +40,10 @@ impl OllamaEmbedder {
 
     pub fn with_defaults() -> Self {
         Self::new(DEFAULT_BASE_URL, DEFAULT_EMBED_MODEL)
+    }
+
+    pub fn config(&self) -> &OllamaConfig {
+        self.client.config()
     }
 
     pub fn with_concurrency(mut self, concurrency: usize) -> Self {

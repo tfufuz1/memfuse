@@ -1,16 +1,45 @@
 use futures_util::StreamExt;
 use memfuse_core::{MemFuseError, Result};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 /// Standard Ollama base URL
 pub const DEFAULT_BASE_URL: &str = "http://localhost:11434";
 /// Standard embedding model for SME usage (multilingual support for German)
 pub const DEFAULT_EMBED_MODEL: &str = "nomic-embed-text";
 
+/// Configuration options for the Ollama HTTP client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaConfig {
+    /// Base URL for the Ollama instance (default: `http://localhost:11434`)
+    pub base_url: String,
+    /// Model name for embedding generation (default: `nomic-embed-text`)
+    pub model: String,
+    /// Timeout for individual HTTP requests (default: 30 seconds)
+    pub request_timeout: Duration,
+    /// Timeout for establishing TCP connection (default: 5 seconds)
+    pub connect_timeout: Duration,
+    /// Maximum number of retries for transient errors (default: 3)
+    pub max_retries: u32,
+}
+
+impl Default for OllamaConfig {
+    fn default() -> Self {
+        Self {
+            base_url: DEFAULT_BASE_URL.to_string(),
+            model: DEFAULT_EMBED_MODEL.to_string(),
+            request_timeout: Duration::from_secs(30),
+            connect_timeout: Duration::from_secs(5),
+            max_retries: 3,
+        }
+    }
+}
+
 /// HTTP client for interacting with a local Ollama instance.
 #[derive(Clone, Debug)]
 pub struct OllamaClient {
-    base_url: String,
+    pub(crate) config: OllamaConfig,
     pub(crate) client: reqwest::Client,
 }
 
@@ -125,18 +154,43 @@ pub fn validate_model_name(name: &str) -> Result<()> {
 }
 
 /// Helper to classify transient network errors for retry.
-fn is_transient_error(e: &MemFuseError) -> bool {
-    matches!(e, MemFuseError::Storage(msg) if {
-        let l = msg.to_lowercase();
-        l.contains("timeout") || l.contains("connect") || l.contains("network")
-    })
+///
+/// Returns true only for transient network failures (I/O error, connection reset, timeout)
+/// or 5xx server errors (500, 502, 503, 504).
+/// Returns false for 4xx client errors (400 Invalid Input, 404 Not Found, etc.).
+pub fn is_transient_error(e: &MemFuseError) -> bool {
+    match e {
+        MemFuseError::Io(_) => true,
+        MemFuseError::Storage(msg) | MemFuseError::Internal(msg) => {
+            let l = msg.to_lowercase();
+            l.contains("503")
+                || l.contains("500")
+                || l.contains("502")
+                || l.contains("504")
+                || l.contains("timeout")
+                || l.contains("connect")
+                || l.contains("connection reset")
+                || l.contains("broken pipe")
+        }
+        _ => false,
+    }
 }
 
 impl OllamaClient {
+    /// Creates a new `OllamaClient` with the specified base URL and default timeout config.
     pub fn new(base_url: impl Into<String>) -> Self {
+        let config = OllamaConfig {
+            base_url: base_url.into(),
+            ..Default::default()
+        };
+        Self::with_config(config)
+    }
+
+    /// Creates a new `OllamaClient` with custom configuration parameters.
+    pub fn with_config(config: OllamaConfig) -> Self {
         let client = match reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(config.request_timeout)
+            .connect_timeout(config.connect_timeout)
             .build()
         {
             Ok(c) => c,
@@ -147,15 +201,12 @@ impl OllamaClient {
                 reqwest::Client::new()
             }
         };
-        Self {
-            base_url: base_url.into(),
-            client,
-        }
+        Self { config, client }
     }
 
     /// Health check verifying Ollama availability via GET /api/tags
     pub async fn is_available(&self) -> bool {
-        let url = format!("{}/api/tags", self.base_url);
+        let url = format!("{}/api/tags", self.base_url());
         match self
             .client
             .get(&url)
@@ -166,19 +217,19 @@ impl OllamaClient {
             Ok(r) if r.status().is_success() => true,
             Ok(r) => {
                 tracing::warn!(
-                    base_url = %self.base_url,
+                    base_url = %self.base_url(),
                     status = %r.status(),
                     "Ollama health check at {} returned unsuccessful status",
-                    self.base_url
+                    self.base_url()
                 );
                 false
             }
             Err(e) => {
                 tracing::warn!(
-                    base_url = %self.base_url,
+                    base_url = %self.base_url(),
                     error = %e,
                     "Ollama service unavailable at {}",
-                    self.base_url
+                    self.base_url()
                 );
                 false
             }
@@ -186,11 +237,15 @@ impl OllamaClient {
     }
 
     pub fn with_defaults() -> Self {
-        Self::new(DEFAULT_BASE_URL)
+        Self::with_config(OllamaConfig::default())
     }
 
     pub fn base_url(&self) -> &str {
-        &self.base_url
+        &self.config.base_url
+    }
+
+    pub fn config(&self) -> &OllamaConfig {
+        &self.config
     }
 
     /// Generiert Embeddings für mehrere Texte in einem einzelnen HTTP-Request.
@@ -233,12 +288,12 @@ impl OllamaClient {
         Ok(results)
     }
 
-    async fn try_embed_batch(&self, model: &str, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+    pub async fn try_embed_batch(&self, model: &str, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
         validate_model_name(model)?;
         let sanitized_texts: Vec<String> = texts.iter().map(|t| sanitize_prompt_input(t)).collect();
         let sanitized_refs: Vec<&str> = sanitized_texts.iter().map(|s| s.as_str()).collect();
 
-        let url = format!("{}/api/embed", self.base_url);
+        let url = format!("{}/api/embed", self.base_url());
         let request = BatchEmbedRequest {
             model,
             input: sanitized_refs,
@@ -251,13 +306,34 @@ impl OllamaClient {
             .send()
             .await
             .map_err(|e| {
-                MemFuseError::Storage(format!("Batch embed request network error: {e}"))
+                if e.is_timeout() || e.is_connect() {
+                    MemFuseError::Io(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!("Batch embed request network error: {e}"),
+                    ))
+                } else {
+                    MemFuseError::Storage(format!("Batch embed request network error: {e}"))
+                }
             })?;
 
         if !response.status().is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<body unreadable>".into());
+            if status == reqwest::StatusCode::NOT_FOUND || body.to_lowercase().contains("not found") {
+                return Err(MemFuseError::NotFound(format!(
+                    "Ollama model '{model}' not found. Run: ollama pull {model}"
+                )));
+            }
+            if status == reqwest::StatusCode::BAD_REQUEST {
+                return Err(MemFuseError::InvalidInput(format!(
+                    "Batch embed HTTP 400 — {body}"
+                )));
+            }
             return Err(MemFuseError::Internal(format!(
-                "Batch embed HTTP {}",
-                response.status()
+                "Batch embed HTTP {status} — {body}"
             )));
         }
 
@@ -266,16 +342,24 @@ impl OllamaClient {
             .await
             .map_err(|e| MemFuseError::Internal(format!("Batch embed response parse: {e}")))?;
 
+        if parsed.embeddings.len() != texts.len() {
+            return Err(MemFuseError::Internal(format!(
+                "Batch embed response count mismatch: expected {}, got {}",
+                texts.len(),
+                parsed.embeddings.len()
+            )));
+        }
+
         Ok(parsed.embeddings)
     }
 
     /// List available models in Ollama via GET /api/tags
     pub async fn list_models(&self) -> Result<Vec<String>> {
-        let url = format!("{}/api/tags", self.base_url);
+        let url = format!("{}/api/tags", self.base_url());
         let response = self.client.get(&url).send().await.map_err(|e| {
             MemFuseError::Internal(format!(
                 "Ollama not reachable at {}: {e}. Is Ollama running?",
-                self.base_url
+                self.base_url()
             ))
         })?;
 
@@ -296,24 +380,63 @@ impl OllamaClient {
         Ok(tags.models.into_iter().map(|m| m.name).collect())
     }
 
+    /// Verifies if a specific model is available in the Ollama instance.
+    pub async fn is_model_available(&self, model: &str) -> bool {
+        if validate_model_name(model).is_err() {
+            return false;
+        }
+        match self.list_models().await {
+            Ok(models) => {
+                let req_base = model.split(':').next().unwrap_or(model).to_lowercase();
+                models.iter().any(|m| {
+                    let m_lower = m.to_lowercase();
+                    m_lower == model.to_lowercase()
+                        || m_lower.split(':').next().unwrap_or(&m_lower) == req_base
+                })
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Ensures that the specified model exists; returns `MemFuseError::NotFound` with helpful instruction if missing.
+    pub async fn ensure_model_available(&self, model: &str) -> Result<()> {
+        validate_model_name(model)?;
+        if !self.is_model_available(model).await {
+            return Err(MemFuseError::NotFound(format!(
+                "Ollama model '{model}' not found. Run: ollama pull {model}"
+            )));
+        }
+        Ok(())
+    }
+
     /// Generates vector embedding with retry logic for transient failures.
     ///
-    /// Retries up to 3 times with exponential backoff (100ms, 200ms, 400ms).
+    /// Retries up to `max_retries` (default: 3) times with exponential backoff
+    /// (base 500ms * 2^attempt) and 0..100ms jitter (500ms+jitter, 1000ms+jitter, 2000ms+jitter).
+    ///
+    /// Maximum total wait time for 3 retries: ~3.5s to 3.8s max.
+    /// Retries only on transient network failures or 5xx HTTP status codes.
+    /// Client errors (4xx) are returned immediately without retry.
     pub async fn embed(&self, model: &str, text: &str) -> Result<Vec<f32>> {
         validate_model_name(model)?;
         let mut last_err = None;
+        let max_retries = self.config.max_retries;
 
-        for attempt in 0..3 {
+        for attempt in 0..max_retries {
             match self.try_embed(model, text).await {
                 Ok(v) => return Ok(v),
                 Err(e) if is_transient_error(&e) => {
-                    if attempt < 2 {
+                    if attempt + 1 < max_retries {
+                        let jitter_ms = rand::thread_rng().gen_range(0..100);
+                        let base_ms = 500u64 * (1u64 << attempt);
+                        let backoff_ms = base_ms + jitter_ms;
                         tracing::warn!(
                             attempt = attempt + 1,
-                            max = 3,
+                            max = max_retries,
+                            backoff_ms = backoff_ms,
                             "Ollama embed transient network error, retrying: {e}"
                         );
-                        let delay = std::time::Duration::from_millis(100 * (1 << attempt));
+                        let delay = Duration::from_millis(backoff_ms);
                         tokio::time::sleep(delay).await;
                     }
                     last_err = Some(e);
@@ -331,10 +454,10 @@ impl OllamaClient {
     }
 
     /// Single embed attempt via POST /api/embeddings (no retry).
-    async fn try_embed(&self, model: &str, text: &str) -> Result<Vec<f32>> {
+    pub async fn try_embed(&self, model: &str, text: &str) -> Result<Vec<f32>> {
         validate_model_name(model)?;
         let sanitized_text = sanitize_prompt_input(text);
-        let url = format!("{}/api/embeddings", self.base_url);
+        let url = format!("{}/api/embeddings", self.base_url());
         let request = EmbedRequest {
             model,
             prompt: &sanitized_text,
@@ -347,10 +470,17 @@ impl OllamaClient {
             .send()
             .await
             .map_err(|e| {
-                MemFuseError::Storage(format!(
-                    "Ollama connection network error at {}: {e}",
-                    self.base_url
-                ))
+                if e.is_timeout() || e.is_connect() {
+                    MemFuseError::Io(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!("Ollama connection network error at {}: {e}", self.base_url()),
+                    ))
+                } else {
+                    MemFuseError::Storage(format!(
+                        "Ollama connection network error at {}: {e}",
+                        self.base_url()
+                    ))
+                }
             })?;
 
         if !response.status().is_success() {
@@ -359,6 +489,16 @@ impl OllamaClient {
                 .text()
                 .await
                 .unwrap_or_else(|_| "<body unreadable>".into());
+            if status == reqwest::StatusCode::NOT_FOUND || body.to_lowercase().contains("not found") {
+                return Err(MemFuseError::NotFound(format!(
+                    "Ollama model '{model}' not found. Run: ollama pull {model}"
+                )));
+            }
+            if status == reqwest::StatusCode::BAD_REQUEST {
+                return Err(MemFuseError::InvalidInput(format!(
+                    "Ollama embedding request failed: HTTP 400 — {body}"
+                )));
+            }
             return Err(MemFuseError::Internal(format!(
                 "Ollama embedding request failed: HTTP {} — {}",
                 status, body
@@ -410,7 +550,7 @@ impl OllamaClient {
             stream: true,
         };
 
-        let url = format!("{}/api/chat", self.base_url);
+        let url = format!("{}/api/chat", self.base_url());
         let response = self
             .client
             .post(&url)
@@ -477,13 +617,13 @@ mod tests {
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener.accept().await {
+            while let Ok((mut socket, _)) = listener.accept().await {
                 use tokio::io::{AsyncReadExt, AsyncWriteExt};
                 let mut buf = [0u8; 1024];
                 let _ = socket.read(&mut buf).await;
                 let body = r#"{"models":[]}"#;
                 let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
                     body.len(),
                     body
                 );
@@ -593,7 +733,7 @@ mod tests {
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener.accept().await {
+            while let Ok((mut socket, _)) = listener.accept().await {
                 use tokio::io::{AsyncReadExt, AsyncWriteExt};
                 let mut buf = [0u8; 1024];
                 let _ = socket.read(&mut buf).await;
@@ -622,7 +762,7 @@ mod tests {
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener.accept().await {
+            while let Ok((mut socket, _)) = listener.accept().await {
                 use tokio::io::{AsyncReadExt, AsyncWriteExt};
                 let mut buf = [0u8; 1024];
                 let _ = socket.read(&mut buf).await;
@@ -697,5 +837,265 @@ mod tests {
 
         assert_eq!(result, "Hallo Welt!");
         assert_eq!(tokens, vec!["Hallo ", "Welt!"]);
+    }
+
+    #[test]
+    fn test_client_uses_custom_base_url() {
+        let custom_url = "http://192.168.1.100:11434";
+        let client = OllamaClient::new(custom_url);
+        assert_eq!(client.base_url(), custom_url);
+    }
+
+    #[test]
+    fn test_ollama_config_defaults() {
+        let config = OllamaConfig::default();
+        assert_eq!(config.base_url, DEFAULT_BASE_URL);
+        assert_eq!(config.model, DEFAULT_EMBED_MODEL);
+        assert_eq!(config.request_timeout, Duration::from_secs(30));
+        assert_eq!(config.connect_timeout, Duration::from_secs(5));
+        assert_eq!(config.max_retries, 3);
+
+        let client = OllamaClient::with_config(config.clone());
+        assert_eq!(client.config().max_retries, 3);
+        assert_eq!(client.base_url(), DEFAULT_BASE_URL);
+    }
+
+    #[tokio::test]
+    async fn test_embed_single_text_success() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                let body = serde_json::json!({ "embedding": [0.5, 0.25] }).to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        let res = client.embed("nomic-embed-text", "single text").await.unwrap();
+        assert_eq!(res, vec![0.5, 0.25]);
+    }
+
+    #[tokio::test]
+    async fn test_batch_embed_count_mismatch_is_error() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                // Client asked for 3 texts, server returns 1 embedding
+                let body = serde_json::json!({ "embeddings": [[0.1, 0.2]] }).to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        let result = client
+            .try_embed_batch("nomic-embed-text", &["a", "b", "c"])
+            .await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Batch embed response count mismatch"));
+        assert!(err_msg.contains("expected 3, got 1"));
+    }
+
+    #[tokio::test]
+    async fn test_batch_embed_success() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 2048];
+                let _ = socket.read(&mut buf).await;
+                let body = serde_json::json!({
+                    "embeddings": [
+                        [0.1, 0.2],
+                        [0.3, 0.4]
+                    ]
+                })
+                .to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        let res = client
+            .embed_batch("nomic-embed-text", &["first", "second"])
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0], vec![0.1, 0.2]);
+        assert_eq!(res[1], vec![0.3, 0.4]);
+    }
+
+    #[tokio::test]
+    async fn test_retry_on_503() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+        let attempts = Arc::new(AtomicU32::new(0));
+        let attempts_clone = attempts.clone();
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                let count = attempts_clone.fetch_add(1, Ordering::SeqCst);
+
+                if count == 0 {
+                    let response = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 11\r\n\r\nUnavailable";
+                    socket.write_all(response.as_bytes()).await.ok();
+                } else {
+                    let body = serde_json::json!({ "embedding": [0.9, 0.8] }).to_string();
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    socket.write_all(response.as_bytes()).await.ok();
+                    break;
+                }
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        let res = client.embed("nomic-embed-text", "hello").await.unwrap();
+        assert_eq!(res, vec![0.9, 0.8]);
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn test_no_retry_on_400() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+        let attempts = Arc::new(AtomicU32::new(0));
+        let attempts_clone = attempts.clone();
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                attempts_clone.fetch_add(1, Ordering::SeqCst);
+
+                let response = "HTTP/1.1 400 Bad Request\r\nContent-Length: 15\r\n\r\nInvalid payload";
+                socket.write_all(response.as_bytes()).await.ok();
+                break;
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        let result = client.embed("nomic-embed-text", "bad request test").await;
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), MemFuseError::InvalidInput(_)));
+        // Must NOT retry 400 -> exactly 1 attempt
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_model_not_found_error_message() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                let body = r#"{"error":"model 'custom-model' not found"}"#;
+                let response = format!(
+                    "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        let result = client.embed("custom-model", "test prompt").await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            MemFuseError::NotFound(msg) => {
+                assert!(msg.contains("Ollama model 'custom-model' not found"));
+                assert!(msg.contains("Run: ollama pull custom-model"));
+            }
+            _ => panic!("Expected MemFuseError::NotFound, got {:?}", err),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ensure_model_available() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                let body = serde_json::json!({
+                    "models": [
+                        { "name": "nomic-embed-text:latest" },
+                        { "name": "llama3:8b" }
+                    ]
+                })
+                .to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        assert!(client.is_model_available("nomic-embed-text").await);
+        assert!(client.ensure_model_available("nomic-embed-text").await.is_ok());
+
+        assert!(!client.is_model_available("nonexistent-model").await);
+        let err = client.ensure_model_available("nonexistent-model").await.unwrap_err();
+        assert!(matches!(err, MemFuseError::NotFound(_)));
     }
 }
