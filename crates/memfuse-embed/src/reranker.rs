@@ -2,7 +2,7 @@
 //! ONNX Cross-Encoder Reranker für Post-RRF Filtering.
 
 #[cfg(feature = "onnx")]
-use std::path::Path;
+use std::path::{Path, PathBuf};
 #[cfg(feature = "onnx")]
 use std::sync::Arc;
 
@@ -10,9 +10,6 @@ use std::sync::Arc;
 use memfuse_core::{MemFuseError, Result};
 #[cfg(feature = "onnx")]
 use tokenizers::Tokenizer;
-
-#[cfg(feature = "onnx")]
-use crate::{SessionGuard, SessionPool};
 
 /// Scored pair: (original_index, cross-encoder-score)
 pub type RankedCandidate = (usize, f32);
@@ -25,9 +22,11 @@ pub type RankedCandidate = (usize, f32);
 /// # Feature-Flag
 /// Nur aktiv mit `features = ["onnx"]`.
 #[cfg(feature = "onnx")]
+#[derive(Clone)]
 pub struct OnnxCrossEncoderReranker {
-    pool: Arc<SessionPool>,
+    session_path: PathBuf,
     tokenizer: Arc<Tokenizer>,
+    semaphore: Arc<tokio::sync::Semaphore>,
     max_sequence_length: usize,
 }
 
@@ -49,18 +48,10 @@ impl OnnxCrossEncoderReranker {
         let tokenizer = Tokenizer::from_file(path.join("tokenizer.json"))
             .map_err(|e| MemFuseError::Internal(format!("CrossEncoder tokenizer: {e}")))?;
 
-        let mut sessions = Vec::with_capacity(pool_size);
-        for _ in 0..pool_size {
-            let session = ort::session::Session::builder()
-                .map_err(|e| MemFuseError::Internal(format!("Session builder: {e}")))?
-                .commit_from_file(path.join("model.onnx"))
-                .map_err(|e| MemFuseError::Internal(format!("Model load: {e}")))?;
-            sessions.push(session);
-        }
-
         Ok(Self {
-            pool: Arc::new(SessionPool::new(sessions)),
+            session_path: path.join("model.onnx"),
             tokenizer: Arc::new(tokenizer),
+            semaphore: Arc::new(tokio::sync::Semaphore::new(pool_size.max(1))),
             max_sequence_length: 512,
         })
     }
@@ -76,18 +67,27 @@ impl OnnxCrossEncoderReranker {
             return Ok(Vec::new());
         }
 
-        let pool = Arc::clone(&self.pool);
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
+            .map_err(|_| MemFuseError::Internal("Semaphore closed".into()))?;
+
+        let session_path = self.session_path.clone();
         let tokenizer = Arc::clone(&self.tokenizer);
         let max_len = self.max_sequence_length;
         let query = query.to_string();
 
         tokio::task::spawn_blocking(move || {
-            let mut session_guard = SessionGuard::new(pool)?;
+            let mut session = ort::session::Session::builder()
+                .map_err(|e| MemFuseError::Internal(format!("Session builder: {e}")))?
+                .commit_from_file(&session_path)
+                .map_err(|e| MemFuseError::Internal(format!("Model load: {e}")))?;
+
             let mut scored = Vec::with_capacity(candidates.len());
 
             for (idx, candidate) in candidates.iter().enumerate() {
-                let score =
-                    Self::score_pair(&mut session_guard, &tokenizer, &query, candidate, max_len)?;
+                let score = Self::score_pair(&mut session, &tokenizer, &query, candidate, max_len)?;
                 scored.push((idx, score));
             }
 
