@@ -56,9 +56,20 @@ pub mod context;
 
 #[cfg(feature = "sandbox")]
 pub trait SandboxBridge: Send + Sync {
-    fn db_search(&self, query: &[u8], k: usize) -> impl std::future::Future<Output = Result<Vec<u8>>> + Send;
-    fn db_insert(&self, key: &[u8], value: &[u8]) -> impl std::future::Future<Output = Result<()>> + Send;
-    fn db_get(&self, key: &[u8]) -> impl std::future::Future<Output = Result<Option<Vec<u8>>>> + Send;
+    fn db_search(
+        &self,
+        query: &[u8],
+        k: usize,
+    ) -> impl std::future::Future<Output = Result<Vec<u8>>> + Send;
+    fn db_insert(
+        &self,
+        key: &[u8],
+        value: &[u8],
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn db_get(
+        &self,
+        key: &[u8],
+    ) -> impl std::future::Future<Output = Result<Option<Vec<u8>>>> + Send;
 }
 
 // mod Collection is used via pub mod collection
@@ -140,7 +151,8 @@ pub struct MemFuse {
     storage: Arc<LsmStorage>,
     next_tx: Arc<AtomicU64>,
     dimension: usize,
-    collections: tokio::sync::RwLock<std::collections::HashMap<String, Arc<Collection<LsmStorage>>>>,
+    collections:
+        tokio::sync::RwLock<std::collections::HashMap<String, Arc<Collection<LsmStorage>>>>,
     /// Optional Raft handle for cluster replication.
     #[cfg(feature = "cluster")]
     raft: tokio::sync::OnceCell<memfuse_cluster::node::MemFuseRaft>,
@@ -935,7 +947,6 @@ impl SandboxBridge for MemFuse {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

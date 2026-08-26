@@ -1,23 +1,17 @@
 #[cfg(test)]
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
-    use crate::McpServer;
-    use async_trait::async_trait;
-    use memfuse_core::{Result, TextEmbeddingEngine};
-    use memfuse_db::MemFuse;
-    use serde_json::{json, Value};
-    use std::sync::Arc;
-    use tempfile::TempDir;
+use crate::McpServer;
+use async_trait::async_trait;
+use memfuse_core::{Result, TextEmbeddingEngine};
+use memfuse_db::MemFuse;
+use serde_json::{json, Value};
+use std::sync::Arc;
+use tempfile::TempDir;
 
-    #[derive(Debug)]
-    struct MockEmbedder {
-        dimension: usize,
-    }
-
-    #[async_trait]
-    impl TextEmbeddingEngine for MockEmbedder {
-        async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
-            Ok(vec![0.1f32; self.dimension])
-        }
+#[derive(Debug)]
+struct MockEmbedder {
+    dimension: usize,
+}
 
 #[async_trait]
 impl TextEmbeddingEngine for MockEmbedder {
@@ -48,23 +42,6 @@ fn make_request(method: &str, params: Value) -> JsonRpcRequest {
         params,
     }
 }
-
-    #[tokio::test]
-    async fn test_tools_list_returns_all_tools() {
-        let (server, _tmp) = create_mock_server().await;
-        let req = make_request("tools/list", json!({}));
-        let response = server.handle(req).await;
-        assert_eq!(response.jsonrpc, "2.0");
-        let tools = response.result.unwrap()["tools"]
-            .as_array()
-            .unwrap()
-            .clone();
-        let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
-        assert!(names.contains(&"memfuse_search"));
-        assert!(names.contains(&"memfuse_insert"));
-        assert!(names.contains(&"memfuse_get"));
-        assert!(names.contains(&"memfuse_collections"));
-    }
 
 #[tokio::test]
 async fn test_tools_list_returns_all_tools() {
@@ -144,28 +121,6 @@ async fn test_unknown_method_returns_method_not_found() {
     assert_eq!(err.code, -32601);
 }
 
-    #[tokio::test]
-    async fn test_missing_required_param_returns_invalid_params_32602() {
-        let (server, _tmp) = create_mock_server().await;
-        let req = JsonRpcRequest {
-            jsonrpc: "2.0".into(),
-            id: Some(json!(101)),
-            method: "memfuse_insert".into(),
-            params: json!({
-                // missing required "id" field
-                "collection": "default",
-                "text": "some text"
-            }),
-        };
-        let response = server.handle(req).await;
-        assert_eq!(response.id, Some(json!(101)));
-        let err = response
-            .error
-            .expect("error expected for missing required param");
-        assert_eq!(err.code, -32602);
-        assert!(err.message.contains("id"));
-    }
-
 #[tokio::test]
 async fn test_missing_required_param_returns_invalid_params_32602() {
     let (server, _tmp) = create_mock_server().await;
@@ -214,26 +169,24 @@ async fn test_notification_expects_no_response() {
     assert_eq!(response.id, None);
 }
 
-    #[tokio::test]
-    async fn test_stdout_not_polluted_by_logs() {
-        let source = std::fs::read_to_string("src/lib.rs")
-            .or_else(|_| std::fs::read_to_string("crates/memfuse-mcp/src/lib.rs"))
-            .expect("read lib.rs");
-        let bin_source = std::fs::read_to_string("src/bin/memfuse-mcp-server.rs")
-            .or_else(|_| {
-                std::fs::read_to_string("crates/memfuse-mcp/src/bin/memfuse-mcp-server.rs")
-            })
-            .expect("read bin");
+#[tokio::test]
+async fn test_stdout_not_polluted_by_logs() {
+    let source = std::fs::read_to_string("src/lib.rs")
+        .or_else(|_| std::fs::read_to_string("crates/memfuse-mcp/src/lib.rs"))
+        .expect("read lib.rs");
+    let bin_source = std::fs::read_to_string("src/bin/memfuse-mcp-server.rs")
+        .or_else(|_| std::fs::read_to_string("crates/memfuse-mcp/src/bin/memfuse-mcp-server.rs"))
+        .expect("read bin");
 
-        let stdout_writes = source
-            .lines()
-            .chain(bin_source.lines())
-            .filter(|line| !line.trim().starts_with("//"))
-            .filter(|line| line.contains("println!") || line.contains("print!"))
-            .count();
+    let stdout_writes = source
+        .lines()
+        .chain(bin_source.lines())
+        .filter(|line| !line.trim().starts_with("//"))
+        .filter(|line| line.contains("println!") || line.contains("print!"))
+        .count();
 
-        assert_eq!(
-            stdout_writes, 0,
-            "No println! or print! allowed in memfuse-mcp — use stderr/tracing"
-        );
-    }
+    assert_eq!(
+        stdout_writes, 0,
+        "No println! or print! allowed in memfuse-mcp — use stderr/tracing"
+    );
+}
