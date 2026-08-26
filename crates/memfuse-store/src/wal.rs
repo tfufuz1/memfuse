@@ -34,6 +34,15 @@ impl WalOp {
     }
 }
 
+/// Magic header for V2 batch-encrypted WAL files (`b"MFW2"`).
+pub const WAL_V2_HEADER: [u8; 4] = *b"MFW2";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WalVersion {
+    V1,
+    V2,
+}
+
 /// Legacy static HMAC integrity key used strictly for backward-compatibility fallback during WAL replay of legacy databases.
 ///
 /// Cryptographic Audit Guarantee (Task E):
@@ -541,24 +550,35 @@ impl Wal {
         }
 
         let mut total_bytes = Vec::new();
+        let current_size = self.size();
+
+        // Write V2 header if file is currently empty (size == 0)
+        if current_size == 0 {
+            total_bytes.extend_from_slice(&WAL_V2_HEADER);
+        }
+
         let mut last_hmac_val = [0u8; 32];
 
-        for entry in entries {
-            let mut bytes = entry.to_bytes()?;
-
-            if let Some(km) = &self.key_manager {
-                if bytes.len() > 4 {
-                    let payload = &bytes[4..];
-                    let (encrypted, nonce) = km.encrypt_auto_nonce(payload)?;
-                    let mut new_bytes = Vec::with_capacity(4 + 12 + encrypted.len());
-                    new_bytes.extend_from_slice(&((12 + encrypted.len()) as u32).to_le_bytes());
-                    new_bytes.extend_from_slice(&nonce);
-                    new_bytes.extend_from_slice(&encrypted);
-                    bytes = new_bytes;
-                }
+        if let Some(km) = &self.key_manager {
+            let mut batch_plaintext = Vec::new();
+            for entry in entries {
+                let bytes = entry.to_bytes()?;
+                batch_plaintext.extend_from_slice(&bytes);
+                last_hmac_val = entry.checksum;
             }
-            total_bytes.extend_from_slice(&bytes);
-            last_hmac_val = entry.checksum;
+
+            let (encrypted, nonce) = km.encrypt_auto_nonce(&batch_plaintext)?;
+            let chunk_len = (12 + encrypted.len()) as u32;
+
+            total_bytes.extend_from_slice(&chunk_len.to_le_bytes());
+            total_bytes.extend_from_slice(&nonce);
+            total_bytes.extend_from_slice(&encrypted);
+        } else {
+            for entry in entries {
+                let bytes = entry.to_bytes()?;
+                total_bytes.extend_from_slice(&bytes);
+                last_hmac_val = entry.checksum;
+            }
         }
 
         let mut file = self.file.lock().await;
@@ -661,9 +681,35 @@ impl Wal {
         let mut entries = Vec::new();
         let mut pos = 0u64;
 
+        if file_size == 0 {
+            return Ok(entries);
+        }
+
         let integrity_key = self.get_integrity_key()?;
         let mut verifier = IntegrityVerifier::new(&integrity_key);
         let mut using_legacy_key = false;
+
+        // Detect version from header
+        let mut version = WalVersion::V1;
+        if file_size >= 4 {
+            let mut header_bytes = [0u8; 4];
+            match reader.read_exact(&mut header_bytes).await {
+                Ok(_) => {
+                    if header_bytes == WAL_V2_HEADER {
+                        version = WalVersion::V2;
+                        pos = 4;
+                    } else {
+                        // Rewind to 0 if not V2 header
+                        reader
+                            .seek(std::io::SeekFrom::Start(0))
+                            .await
+                            .map_err(|e| MemFuseError::Storage(format!("WAL seek failed: {}", e)))?;
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(entries),
+                Err(e) => return Err(MemFuseError::Storage(format!("WAL read failed: {}", e))),
+            }
+        }
 
         loop {
             let mut len_bytes = [0u8; 4];
@@ -720,85 +766,225 @@ impl Wal {
                 Err(e) => return Err(MemFuseError::Storage(format!("WAL read failed: {}", e))),
             };
 
-            let entry_start_pos = pos;
+            let chunk_start_pos = pos;
             pos += (4 + len) as u64;
 
-            let decrypted_data;
-            let entry_data = if let Some(km) = &self.key_manager {
+            if version == WalVersion::V2 && self.key_manager.is_some() {
+                let km = self.key_manager.as_ref().unwrap();
                 if entry_data_raw.len() < 12 {
-                    return Err(MemFuseError::Storage(
-                        "WAL entry too short for nonce".into(),
-                    ));
+                    if pos >= file_size {
+                        tracing::warn!("WAL truncated during read at offset {}", chunk_start_pos);
+                        break;
+                    }
+                    return Err(MemFuseError::Storage("WAL entry too short for nonce".into()));
                 }
                 let mut nonce = [0u8; 12];
                 nonce.copy_from_slice(&entry_data_raw[0..12]);
-                decrypted_data = km.decrypt_auto_nonce(&entry_data_raw[12..], &nonce)?;
-                &decrypted_data
-            } else {
-                &entry_data_raw
-            };
-
-            let entry = match WalEntry::from_bytes(entry_data) {
-                Ok(e) => e,
-                Err(e) => {
-                    let err_msg = format!("{}", e);
-                    let is_crc_error = err_msg.contains("CRC mismatch");
-
-                    // Tail corruption (partial entry) is allowed if it's NOT a CRC mismatch
-                    // A CRC mismatch in a fully read entry is always a corruption error.
-                    if pos >= file_size && !is_crc_error {
-                        tracing::warn!(
-                            "WAL truncation at tail (offset {}), partial entry: {}",
-                            entry_start_pos,
-                            e
-                        );
-                        break;
-                    } else {
-                        let reason = if is_crc_error {
-                            format!("CRC validation failed: {}", e)
+                let decrypted_data = match km.decrypt_auto_nonce(&entry_data_raw[12..], &nonce) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        if pos >= file_size {
+                            tracing::warn!(
+                                "WAL truncation at tail (offset {}), decryption failed: {}",
+                                chunk_start_pos,
+                                e
+                            );
+                            break;
                         } else {
-                            format!("Deserialization failed: {}", e)
-                        };
-                        return Err(MemFuseError::wal_corruption(entry_start_pos, reason));
+                            return Err(MemFuseError::wal_corruption(
+                                chunk_start_pos,
+                                format!("Decryption failed: {}", e),
+                            ));
+                        }
                     }
+                };
+
+                let mut slice = decrypted_data.as_slice();
+                while !slice.is_empty() {
+                    if slice.len() < 4 {
+                        if pos >= file_size {
+                            tracing::warn!(
+                                "WAL truncation at tail (offset {}), incomplete inner framing",
+                                chunk_start_pos
+                            );
+                            break;
+                        }
+                        return Err(MemFuseError::wal_corruption(
+                            chunk_start_pos,
+                            "Truncated inner WAL entry length in batch",
+                        ));
+                    }
+                    let inner_len = u32::from_le_bytes(slice[0..4].try_into().unwrap()) as usize;
+                    if slice.len() < 4 + inner_len {
+                        if pos >= file_size {
+                            tracing::warn!(
+                                "WAL truncation at tail (offset {}), incomplete inner payload",
+                                chunk_start_pos
+                            );
+                            break;
+                        }
+                        return Err(MemFuseError::wal_corruption(
+                            chunk_start_pos,
+                            "Truncated inner WAL entry in batch",
+                        ));
+                    }
+                    let inner_entry_bytes = &slice[4..4 + inner_len];
+                    slice = &slice[4 + inner_len..];
+
+                    let entry = match WalEntry::from_bytes(inner_entry_bytes) {
+                        Ok(e) => e,
+                        Err(e) => {
+                            let err_msg = format!("{}", e);
+                            let is_crc_error = err_msg.contains("CRC mismatch");
+
+                            if pos >= file_size && !is_crc_error {
+                                tracing::warn!(
+                                    "WAL truncation at tail (offset {}), partial entry: {}",
+                                    chunk_start_pos,
+                                    e
+                                );
+                                break;
+                            } else {
+                                let reason = if is_crc_error {
+                                    format!("CRC validation failed: {}", e)
+                                } else {
+                                    format!("Deserialization failed: {}", e)
+                                };
+                                return Err(MemFuseError::wal_corruption(chunk_start_pos, reason));
+                            }
+                        }
+                    };
+
+                    let (op_type, key, value) = match &entry.op {
+                        WalOp::Put { key, value, .. } => (0u8, key.clone(), value.clone()),
+                        WalOp::Delete { key, .. } => (1u8, key.clone(), Vec::new()),
+                    };
+
+                    let snapshot = WalEntrySnapshot {
+                        seq_no: entry.seq_no,
+                        op_type,
+                        key,
+                        value,
+                        checksum: entry.checksum,
+                        prev_hmac: entry.prev_hmac,
+                    };
+
+                    if let Err(e) = verifier.verify_and_update(&snapshot, chunk_start_pos) {
+                        if !using_legacy_key {
+                            let mut legacy_verifier =
+                                IntegrityVerifier::new(&LEGACY_INTEGRITY_KEY);
+                            if legacy_verifier
+                                .verify_and_update(&snapshot, chunk_start_pos)
+                                .is_ok()
+                            {
+                                tracing::warn!(
+                                    "WAL nutzt veralteten Integritätsschlüssel — Datenbank sollte neu initialisiert werden"
+                                );
+                                verifier = legacy_verifier;
+                                using_legacy_key = true;
+                            } else {
+                                return Err(e);
+                            }
+                        } else {
+                            return Err(e);
+                        }
+                    }
+
+                    entries.push((entry.seq_no, entry, pos));
                 }
-            };
+            } else {
+                let decrypted_data;
+                let entry_data = if let Some(km) = &self.key_manager {
+                    if entry_data_raw.len() < 12 {
+                        return Err(MemFuseError::Storage(
+                            "WAL entry too short for nonce".into(),
+                        ));
+                    }
+                    let mut nonce = [0u8; 12];
+                    nonce.copy_from_slice(&entry_data_raw[0..12]);
+                    decrypted_data = match km.decrypt_auto_nonce(&entry_data_raw[12..], &nonce) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            if pos >= file_size {
+                                tracing::warn!(
+                                    "WAL truncation at tail (offset {}), decryption failed: {}",
+                                    chunk_start_pos,
+                                    e
+                                );
+                                break;
+                            } else {
+                                return Err(MemFuseError::wal_corruption(
+                                    chunk_start_pos,
+                                    format!("Decryption failed: {}", e),
+                                ));
+                            }
+                        }
+                    };
+                    &decrypted_data
+                } else {
+                    &entry_data_raw
+                };
 
-            let (op_type, key, value) = match &entry.op {
-                WalOp::Put { key, value, .. } => (0u8, key.clone(), value.clone()),
-                WalOp::Delete { key, .. } => (1u8, key.clone(), Vec::new()),
-            };
+                let entry = match WalEntry::from_bytes(entry_data) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        let err_msg = format!("{}", e);
+                        let is_crc_error = err_msg.contains("CRC mismatch");
 
-            let snapshot = WalEntrySnapshot {
-                seq_no: entry.seq_no,
-                op_type,
-                key,
-                value,
-                checksum: entry.checksum,
-                prev_hmac: entry.prev_hmac,
-            };
+                        if pos >= file_size && !is_crc_error {
+                            tracing::warn!(
+                                "WAL truncation at tail (offset {}), partial entry: {}",
+                                chunk_start_pos,
+                                e
+                            );
+                            break;
+                        } else {
+                            let reason = if is_crc_error {
+                                format!("CRC validation failed: {}", e)
+                            } else {
+                                format!("Deserialization failed: {}", e)
+                            };
+                            return Err(MemFuseError::wal_corruption(chunk_start_pos, reason));
+                        }
+                    }
+                };
 
-            if let Err(e) = verifier.verify_and_update(&snapshot, entry_start_pos) {
-                if !using_legacy_key {
-                    let mut legacy_verifier = IntegrityVerifier::new(&LEGACY_INTEGRITY_KEY);
-                    if legacy_verifier
-                        .verify_and_update(&snapshot, entry_start_pos)
-                        .is_ok()
-                    {
-                        tracing::warn!(
-                            "WAL nutzt veralteten Integritätsschlüssel — Datenbank sollte neu initialisiert werden"
-                        );
-                        verifier = legacy_verifier;
-                        using_legacy_key = true;
+                let (op_type, key, value) = match &entry.op {
+                    WalOp::Put { key, value, .. } => (0u8, key.clone(), value.clone()),
+                    WalOp::Delete { key, .. } => (1u8, key.clone(), Vec::new()),
+                };
+
+                let snapshot = WalEntrySnapshot {
+                    seq_no: entry.seq_no,
+                    op_type,
+                    key,
+                    value,
+                    checksum: entry.checksum,
+                    prev_hmac: entry.prev_hmac,
+                };
+
+                if let Err(e) = verifier.verify_and_update(&snapshot, chunk_start_pos) {
+                    if !using_legacy_key {
+                        let mut legacy_verifier = IntegrityVerifier::new(&LEGACY_INTEGRITY_KEY);
+                        if legacy_verifier
+                            .verify_and_update(&snapshot, chunk_start_pos)
+                            .is_ok()
+                        {
+                            tracing::warn!(
+                                "WAL nutzt veralteten Integritätsschlüssel — Datenbank sollte neu initialisiert werden"
+                            );
+                            verifier = legacy_verifier;
+                            using_legacy_key = true;
+                        } else {
+                            return Err(e);
+                        }
                     } else {
                         return Err(e);
                     }
-                } else {
-                    return Err(e);
                 }
-            }
 
-            entries.push((entry.seq_no, entry, pos));
+                entries.push((entry.seq_no, entry, pos));
+            }
         }
 
         Ok(entries)
@@ -1498,5 +1684,174 @@ mod tests {
         // Replay must recover entry 1 (which was fully written) and cleanly discard the truncated tail
         assert_eq!(replay_entries.len(), 1, "Only entry 1 should be recovered");
         assert_eq!(replay_entries[0].1.seq_no, 1);
+    }
+
+    #[tokio::test]
+    async fn test_batch_encryption_single_nonce_layout() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("single_nonce_test.wal");
+
+        let km = Arc::new(KeyManager::try_new("test_passphrase", b"salt123456789012345678901234567890").expect("km"));
+        let wal = Wal::open_with_key_manager(&wal_path, Some(km)).await.expect("open wal");
+
+        let ops = vec![
+            (WalOp::Put { tx_id: TxId::new(1), key: b"k1".to_vec(), value: b"v1".to_vec() }, 100),
+            (WalOp::Put { tx_id: TxId::new(1), key: b"k2".to_vec(), value: b"v2".to_vec() }, 101),
+            (WalOp::Put { tx_id: TxId::new(1), key: b"k3".to_vec(), value: b"v3".to_vec() }, 102),
+        ];
+
+        let batch = wal.prepare_batch(ops).await.expect("prepare batch");
+        assert_eq!(batch.len(), 3);
+
+        wal.append_batch(&batch).await.expect("append batch");
+
+        let file_bytes = fs::read(&wal_path).await.expect("read wal file");
+
+        // Layout:
+        // Offset 0..4: WAL_V2_HEADER (b"MFW2")
+        // Offset 4..8: batch chunk_len (u32 LE)
+        // Offset 8..20: single 12-byte nonce
+        // Offset 20..: AES-GCM-SIV ciphertext
+        assert_eq!(&file_bytes[0..4], &WAL_V2_HEADER);
+        let chunk_len = u32::from_le_bytes(file_bytes[4..8].try_into().unwrap()) as usize;
+        assert_eq!(file_bytes.len(), 4 + 4 + chunk_len);
+
+        // Verify there is exactly one batch chunk header (12-byte nonce) in the file for N=3 entries
+        let nonce_bytes = &file_bytes[8..20];
+        assert_eq!(nonce_bytes.len(), 12);
+    }
+
+    #[tokio::test]
+    async fn test_batch_encrypted_wal_roundtrip() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("roundtrip_test.wal");
+
+        let km = Arc::new(KeyManager::try_new("passphrase123", b"salt123456789012345678901234567890").expect("km"));
+        let wal = Wal::open_with_key_manager(&wal_path, Some(km.clone())).await.expect("open wal");
+
+        let ops = vec![
+            (WalOp::Put { tx_id: TxId::new(1), key: b"alice_key".to_vec(), value: b"alice_value".to_vec() }, 1),
+            (WalOp::Put { tx_id: TxId::new(2), key: b"bob_key".to_vec(), value: b"bob_value".to_vec() }, 2),
+            (WalOp::Delete { tx_id: TxId::new(3), key: b"alice_key".to_vec() }, 3),
+        ];
+
+        let batch = wal.prepare_batch(ops).await.expect("prepare_batch");
+        wal.append_batch(&batch).await.expect("append_batch");
+
+        let wal_reopen = Wal::open_with_key_manager(&wal_path, Some(km)).await.expect("reopen wal");
+        let replayed = wal_reopen.replay().await.expect("replay");
+
+        assert_eq!(replayed.len(), 3);
+        assert_eq!(replayed[0].1.seq_no, 1);
+        assert_eq!(replayed[1].1.seq_no, 2);
+        assert_eq!(replayed[2].1.seq_no, 3);
+
+        if let WalOp::Put { key, value, tx_id } = &replayed[0].1.op {
+            assert_eq!(key, b"alice_key");
+            assert_eq!(value, b"alice_value");
+            assert_eq!(*tx_id, TxId::new(1));
+        } else {
+            panic!("Expected Put op");
+        }
+
+        if let WalOp::Delete { key, tx_id } = &replayed[2].1.op {
+            assert_eq!(key, b"alice_key");
+            assert_eq!(*tx_id, TxId::new(3));
+        } else {
+            panic!("Expected Delete op");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_old_v1_format_backward_compatibility() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("v1_legacy_format.wal");
+
+        let km = Arc::new(KeyManager::try_new("legacy_passphrase", b"salt123456789012345678901234567890").expect("km"));
+
+        // Derive sub-key for file ID (same derivation Wal::open_with_key_manager does)
+        let uuid_bytes = Wal::load_or_create_wal_uuid(&wal_path).await.expect("uuid");
+        let sub_km = km.derive_file_key(&uuid_bytes).expect("derive file key");
+
+        // Manually construct an old V1 encrypted WAL file (no MFW2 header, each entry encrypted separately)
+        let integrity_key = sub_km.integrity_key().expect("integrity key");
+
+        let op1 = WalOp::Put { tx_id: TxId::new(10), key: b"legacy_k1".to_vec(), value: b"legacy_v1".to_vec() };
+        let entry1 = WalEntry::try_new(op1, 100, &integrity_key, [0u8; 32]).expect("entry1");
+        let bytes1 = entry1.to_bytes().expect("bytes1");
+
+        let payload1 = &bytes1[4..];
+        let (encrypted1, nonce1) = sub_km.encrypt_auto_nonce(payload1).expect("enc1");
+
+        let mut v1_file_data = Vec::new();
+        let chunk_len1 = (12 + encrypted1.len()) as u32;
+        v1_file_data.extend_from_slice(&chunk_len1.to_le_bytes());
+        v1_file_data.extend_from_slice(&nonce1);
+        v1_file_data.extend_from_slice(&encrypted1);
+
+        let op2 = WalOp::Put { tx_id: TxId::new(11), key: b"legacy_k2".to_vec(), value: b"legacy_v2".to_vec() };
+        let entry2 = WalEntry::try_new(op2, 101, &integrity_key, entry1.checksum).expect("entry2");
+        let bytes2 = entry2.to_bytes().expect("bytes2");
+
+        let payload2 = &bytes2[4..];
+        let (encrypted2, nonce2) = sub_km.encrypt_auto_nonce(payload2).expect("enc2");
+
+        let chunk_len2 = (12 + encrypted2.len()) as u32;
+        v1_file_data.extend_from_slice(&chunk_len2.to_le_bytes());
+        v1_file_data.extend_from_slice(&nonce2);
+        v1_file_data.extend_from_slice(&encrypted2);
+
+        fs::write(&wal_path, &v1_file_data).await.expect("write v1 wal");
+
+        // Reopen via standard Wal::open_with_key_manager and replay
+        let wal = Wal::open_with_key_manager(&wal_path, Some(km)).await.expect("open v1 wal");
+        let replayed = wal.replay().await.expect("replay v1 wal");
+
+        assert_eq!(replayed.len(), 2, "Both V1 entries must be replayed correctly");
+        assert_eq!(replayed[0].1.seq_no, 100);
+        assert_eq!(replayed[1].1.seq_no, 101);
+        assert_eq!(replayed[1].1.prev_hmac, replayed[0].1.checksum);
+    }
+
+    #[tokio::test]
+    async fn test_batch_encrypted_wal_truncation_crash_consistency() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("batch_truncation.wal");
+
+        let km = Arc::new(KeyManager::try_new("passphrase123", b"salt123456789012345678901234567890").expect("km"));
+
+        {
+            let wal = Wal::open_with_key_manager(&wal_path, Some(km.clone())).await.expect("open wal");
+
+            // Batch 1: 2 entries
+            let ops1 = vec![
+                (WalOp::Put { tx_id: TxId::new(1), key: b"k1".to_vec(), value: b"v1".to_vec() }, 1),
+                (WalOp::Put { tx_id: TxId::new(1), key: b"k2".to_vec(), value: b"v2".to_vec() }, 2),
+            ];
+            let batch1 = wal.prepare_batch(ops1).await.expect("prepare 1");
+            wal.append_batch(&batch1).await.expect("append 1");
+
+            // Batch 2: 2 entries
+            let ops2 = vec![
+                (WalOp::Put { tx_id: TxId::new(2), key: b"k3".to_vec(), value: b"v3".to_vec() }, 3),
+                (WalOp::Put { tx_id: TxId::new(2), key: b"k4".to_vec(), value: b"v4".to_vec() }, 4),
+            ];
+            let batch2 = wal.prepare_batch(ops2).await.expect("prepare 2");
+            wal.append_batch(&batch2).await.expect("append 2");
+        }
+
+        // Truncate the file mid-ciphertext of Batch 2
+        let mut data = fs::read(&wal_path).await.expect("read wal");
+        let truncated_len = data.len() - 15; // chop off 15 bytes from Batch 2's ciphertext
+        data.truncate(truncated_len);
+        fs::write(&wal_path, &data).await.expect("write truncated wal");
+
+        // Reopen and replay
+        let wal2 = Wal::open_with_key_manager(&wal_path, Some(km)).await.expect("reopen wal");
+        let replayed = wal2.replay().await.expect("replay must succeed by recovering Batch 1");
+
+        assert_eq!(replayed.len(), 2, "Batch 1 (2 entries) must be recovered, Batch 2 truncated");
+        assert_eq!(replayed[0].1.seq_no, 1);
+        assert_eq!(replayed[1].1.seq_no, 2);
     }
 }
