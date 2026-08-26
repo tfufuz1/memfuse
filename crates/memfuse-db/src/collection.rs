@@ -50,6 +50,12 @@ fn extract_text(metadata: &Option<serde_json::Value>) -> Option<String> {
     let mut document_text = String::new();
     if let Some(m) = metadata {
         if let Some(m_obj) = m.as_object() {
+            if let Some(s) = m_obj.get("contextual_prefix").and_then(|v| v.as_str()) {
+                if !s.is_empty() {
+                    document_text.push_str(s);
+                    document_text.push_str("\n\n");
+                }
+            }
             if let Some(s) = m_obj.get("text").and_then(|v| v.as_str()) {
                 document_text.push_str(s);
                 document_text.push(' ');
@@ -1883,6 +1889,23 @@ mod tests {
         let reaped = col.trigger_reaper().await.unwrap();
         assert_eq!(reaped, 0);
         assert!(col.get("doc_zero_ttl").await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_extract_text_with_contextual_prefix() {
+        use serde_json::json;
+
+        let meta = Some(json!({
+            "contextual_prefix": "Dokumenten-Kontext-Präfix",
+            "text": "Chunk Haupttext"
+        }));
+
+        let extracted = super::extract_text(&meta);
+        assert!(extracted.is_some());
+        let text = extracted.unwrap();
+        assert!(text.contains("Dokumenten-Kontext-Präfix"));
+        assert!(text.contains("Chunk Haupttext"));
+        assert_eq!(text, "Dokumenten-Kontext-Präfix\n\nChunk Haupttext");
     }
 
     #[tokio::test]

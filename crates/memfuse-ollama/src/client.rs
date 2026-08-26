@@ -70,6 +70,18 @@ struct ChatMessageResponse {
 }
 
 #[derive(Serialize)]
+struct GenerateRequest<'a> {
+    model: &'a str,
+    prompt: &'a str,
+    stream: bool,
+}
+
+#[derive(Deserialize)]
+struct GenerateResponse {
+    response: String,
+}
+
+#[derive(Serialize)]
 struct EmbedRequest<'a> {
     model: &'a str,
     prompt: &'a str,
@@ -405,6 +417,68 @@ impl OllamaClient {
             }
             Err(_) => false,
         }
+    }
+
+    /// Generates non-streaming text completion via POST /api/generate.
+    pub async fn generate(&self, model: &str, prompt: &str) -> Result<String> {
+        validate_model_name(model)?;
+        let sanitized_prompt = sanitize_prompt_input(prompt);
+        let url = format!("{}/api/generate", self.base_url());
+        let request = GenerateRequest {
+            model,
+            prompt: &sanitized_prompt,
+            stream: false,
+        };
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| {
+                if is_transient_network_error(&e) {
+                    MemFuseError::Io(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!("Ollama generate connection error at {}: {e}", self.base_url()),
+                    ))
+                } else {
+                    MemFuseError::Storage(format!(
+                        "Ollama generate connection error at {}: {e}",
+                        self.base_url()
+                    ))
+                }
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<body unreadable>".into());
+            let lower = body.to_lowercase();
+            if lower.contains("model") && lower.contains("not found")
+                || status == reqwest::StatusCode::NOT_FOUND
+            {
+                return Err(MemFuseError::NotFound(format!(
+                    "Ollama model '{model}' not found. Run: ollama pull {model}"
+                )));
+            }
+            if status == reqwest::StatusCode::BAD_REQUEST {
+                return Err(MemFuseError::InvalidInput(format!(
+                    "Ollama generate request failed: HTTP 400 — {body}"
+                )));
+            }
+            return Err(MemFuseError::Internal(format!(
+                "Ollama generate request failed: HTTP {status} — {body}"
+            )));
+        }
+
+        let parsed: GenerateResponse = response.json().await.map_err(|e| {
+            MemFuseError::Internal(format!("Invalid Ollama generate response: {e}"))
+        })?;
+
+        Ok(parsed.response)
     }
 
     /// Ensures that the specified model exists; returns `MemFuseError::NotFound` with helpful instruction if missing.

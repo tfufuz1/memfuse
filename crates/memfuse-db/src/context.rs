@@ -50,6 +50,7 @@ impl From<crate::SearchResult> for ContextChunk {
             relevance: r.score,
             token_count,
             metadata: r.metadata,
+            contextual_prefix: None,
         }
     }
 }
@@ -277,6 +278,7 @@ mod tests {
                 relevance: 0.9,
                 token_count: 50,
                 metadata: None,
+                contextual_prefix: None,
             },
             ContextChunk {
                 doc_id: DocId::new(2),
@@ -284,6 +286,7 @@ mod tests {
                 relevance: 0.5,
                 token_count: 50,
                 metadata: None,
+                contextual_prefix: None,
             },
             ContextChunk {
                 doc_id: DocId::new(3),
@@ -291,6 +294,7 @@ mod tests {
                 relevance: 0.3,
                 token_count: 50,
                 metadata: None,
+                contextual_prefix: None,
             },
         ];
 
@@ -322,6 +326,7 @@ mod tests {
             relevance: 0.9,
             token_count,
             metadata: None,
+            contextual_prefix: None,
         }];
 
         let window = mgr.prepare_context(chunks).expect("valid test value");
