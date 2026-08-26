@@ -175,9 +175,7 @@ async fn test_stdout_not_polluted_by_logs() {
         .or_else(|_| std::fs::read_to_string("crates/memfuse-mcp/src/lib.rs"))
         .expect("read lib.rs");
     let bin_source = std::fs::read_to_string("src/bin/memfuse-mcp-server.rs")
-        .or_else(|_| {
-            std::fs::read_to_string("crates/memfuse-mcp/src/bin/memfuse-mcp-server.rs")
-        })
+        .or_else(|_| std::fs::read_to_string("crates/memfuse-mcp/src/bin/memfuse-mcp-server.rs"))
         .expect("read bin");
 
     let stdout_writes = source
