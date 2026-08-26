@@ -404,7 +404,6 @@ mod tests {
         let _ = splitter.decompose("Bundesverfassungsgericht");
     }
 
-
     #[test]
     fn test_decompose_accepts_lowercase() {
         let splitter = GermanCompoundSplitter::new();
