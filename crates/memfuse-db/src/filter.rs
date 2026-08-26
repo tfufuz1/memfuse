@@ -20,6 +20,8 @@ pub enum FilterOp {
     In,
     /// Not in a set of values
     NotIn,
+    /// Field existence check
+    Exists,
 }
 
 /// Advanced metadata filter for document retrieval and search.
@@ -74,6 +76,15 @@ impl MetadataFilter {
                         FilterOp::NotIn => {
                             if let Some(arr) = value.as_array() {
                                 !arr.contains(actual_value)
+                            } else if let Some(arr) = actual_value.as_array() {
+                                !arr.contains(value)
+                            } else {
+                                true
+                            }
+                        }
+                        FilterOp::Exists => {
+                            if let Some(b) = value.as_bool() {
+                                b
                             } else {
                                 true
                             }
@@ -81,7 +92,17 @@ impl MetadataFilter {
                     }
                 } else {
                     // Field not present
-                    matches!(op, FilterOp::Ne | FilterOp::NotIn)
+                    match op {
+                        FilterOp::Ne | FilterOp::NotIn => true,
+                        FilterOp::Exists => {
+                            if let Some(b) = value.as_bool() {
+                                !b
+                            } else {
+                                false
+                            }
+                        }
+                        _ => false,
+                    }
                 }
             }
             MetadataFilter::And(filters) => filters.iter().all(|f| f.matches(metadata)),
@@ -102,5 +123,80 @@ fn compare_values(a: &Value, b: &Value) -> Option<std::cmp::Ordering> {
         }
         (Value::String(as_str), Value::String(bs_str)) => as_str.partial_cmp(bs_str),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_filter_in_nin_exists_operators() {
+        let meta = json!({
+            "category": "electronics",
+            "tags": ["laptop", "gadget"],
+            "price": 1000
+        });
+
+        // $in test
+        let filter_in = MetadataFilter::Condition {
+            field: "category".to_string(),
+            op: FilterOp::In,
+            value: json!(["electronics", "books"]),
+        };
+        assert!(filter_in.matches(&meta));
+
+        let filter_in_tag = MetadataFilter::Condition {
+            field: "tags".to_string(),
+            op: FilterOp::In,
+            value: json!("laptop"),
+        };
+        assert!(filter_in_tag.matches(&meta));
+
+        // $nin test
+        let filter_nin = MetadataFilter::Condition {
+            field: "category".to_string(),
+            op: FilterOp::NotIn,
+            value: json!(["clothing", "books"]),
+        };
+        assert!(filter_nin.matches(&meta));
+
+        // $exists test
+        let filter_exists_true = MetadataFilter::Condition {
+            field: "category".to_string(),
+            op: FilterOp::Exists,
+            value: json!(true),
+        };
+        assert!(filter_exists_true.matches(&meta));
+
+        let filter_exists_false = MetadataFilter::Condition {
+            field: "non_existent_field".to_string(),
+            op: FilterOp::Exists,
+            value: json!(false),
+        };
+        assert!(filter_exists_false.matches(&meta));
+
+        let filter_exists_missing = MetadataFilter::Condition {
+            field: "non_existent_field".to_string(),
+            op: FilterOp::Exists,
+            value: json!(true),
+        };
+        assert!(!filter_exists_missing.matches(&meta));
+    }
+
+    #[test]
+    fn test_filter_type_mismatch_safety() {
+        let meta = json!({
+            "count": 42
+        });
+
+        let filter_mismatch_in = MetadataFilter::Condition {
+            field: "count".to_string(),
+            op: FilterOp::In,
+            value: json!("not_an_array_or_number"),
+        };
+        // Should return false, not panic
+        assert!(!filter_mismatch_in.matches(&meta));
     }
 }
