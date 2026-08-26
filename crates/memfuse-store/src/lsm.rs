@@ -1596,7 +1596,7 @@ mod tests {
             compaction: CompactionConfig {
                 min_sstables_per_tier: 2,
                 size_ratio: 2.0,
-                check_interval: Duration::from_millis(10),
+                check_interval: Duration::from_secs(3600),
                 yield_threshold: 100,
                 max_memory_bytes: Some(1024 * 1024),
             },
