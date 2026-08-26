@@ -411,7 +411,8 @@ mod tests {
         assert!(m_err2.source().is_some());
 
         // Bincode
-        let bincode_err: bincode::Error = Box::new(bincode::ErrorKind::Custom("test bincode".into()));
+        let bincode_err: bincode::Error =
+            Box::new(bincode::ErrorKind::Custom("test bincode".into()));
         let m_err_bc: MemFuseError = bincode_err.into();
         assert!(matches!(m_err_bc, MemFuseError::Bincode(_)));
         assert!(m_err_bc.source().is_some());

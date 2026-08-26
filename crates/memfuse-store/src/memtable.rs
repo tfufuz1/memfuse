@@ -383,7 +383,7 @@ mod tests {
     fn test_iter_ordering_across_shards() {
         let mt = MemTable::new();
         // Insert keys that map to various shards in reverse order
-        let keys = vec!["z", "m", "a", "k", "b", "c", "x", "p"];
+        let keys = ["z", "m", "a", "k", "b", "c", "x", "p"];
         for (i, &k) in keys.iter().enumerate() {
             mt.put(
                 Bytes::from(k),
@@ -395,7 +395,10 @@ mod tests {
 
         let latest = mt.iter_latest();
         let fetched_keys: Vec<&[u8]> = latest.iter().map(|(k, _, _, _)| k.as_ref()).collect();
-        assert_eq!(fetched_keys, vec![b"a", b"b", b"c", b"k", b"m", b"p", b"x", b"z"]);
+        assert_eq!(
+            fetched_keys,
+            vec![b"a", b"b", b"c", b"k", b"m", b"p", b"x", b"z"]
+        );
 
         let all = mt.iter();
         let fetched_all_keys: Vec<&[u8]> = all.iter().map(|(k, _, _, _)| k.as_ref()).collect();

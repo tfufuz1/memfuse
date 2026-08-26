@@ -14,10 +14,9 @@ pub async fn ingest_file(
     validate_collection_name(&collection_name)?;
     let db = {
         let db_guard = state.db.read();
-        db_guard
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| "No database is open. Please open or create a database first.".to_string())?
+        db_guard.as_ref().cloned().ok_or_else(|| {
+            "No database is open. Please open or create a database first.".to_string()
+        })?
     };
     let collection = db
         .collection(&collection_name)
@@ -43,10 +42,9 @@ pub async fn ingest_folder(
     validate_collection_name(&collection_name)?;
     let db = {
         let db_guard = state.db.read();
-        db_guard
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| "No database is open. Please open or create a database first.".to_string())?
+        db_guard.as_ref().cloned().ok_or_else(|| {
+            "No database is open. Please open or create a database first.".to_string()
+        })?
     };
     let collection = db
         .collection(&collection_name)

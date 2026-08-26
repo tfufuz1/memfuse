@@ -231,9 +231,7 @@ impl TextEmbedder {
             ));
         }
         if !path.join("model.onnx").exists() {
-            return Err(MemFuseError::InvalidInput(
-                "model.onnx not found".into(),
-            ));
+            return Err(MemFuseError::InvalidInput("model.onnx not found".into()));
         }
 
         let model_path = path.join("model.onnx");
@@ -279,13 +277,13 @@ impl TextEmbedder {
     /// Acquires a semaphore permit to limit concurrent inference operations,
     /// then offloads the blocking ONNX computation to Tokio's blocking thread pool.
     pub async fn embed_async(&self, text: &str) -> Result<Vec<f32>> {
-        let _permit = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            self.semaphore.acquire(),
-        )
-        .await
-        .map_err(|_| MemFuseError::Internal("ONNX session pool exhausted (timeout 30s)".into()))?
-        .map_err(|e| MemFuseError::Internal(format!("Semaphore closed: {e}")))?;
+        let _permit =
+            tokio::time::timeout(std::time::Duration::from_secs(30), self.semaphore.acquire())
+                .await
+                .map_err(|_| {
+                    MemFuseError::Internal("ONNX session pool exhausted (timeout 30s)".into())
+                })?
+                .map_err(|e| MemFuseError::Internal(format!("Semaphore closed: {e}")))?;
 
         let text = text.to_string();
         let pool = self.pool.clone();
@@ -553,7 +551,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_embed_batch_ordering_and_fallback() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn test_embed_batch_ordering_and_fallback(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         use async_trait::async_trait;
         use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
 
@@ -569,7 +568,10 @@ mod tests {
                         return Err(MemFuseError::InvalidInput(format!("Failed on {text}")));
                     }
                 }
-                Ok(vec![text.len() as f32, (text.chars().next().unwrap_or('a') as u32) as f32])
+                Ok(vec![
+                    text.len() as f32,
+                    (text.chars().next().unwrap_or('a') as u32) as f32,
+                ])
             }
         }
 
@@ -582,7 +584,9 @@ mod tests {
         assert_eq!(batch_res[2], vec![1.0, 'c' as u32 as f32]);
 
         // Error propagation test
-        let failing_engine = MockOrderedEngine { fail_on: Some("b".into()) };
+        let failing_engine = MockOrderedEngine {
+            fail_on: Some("b".into()),
+        };
         let err_res = failing_engine.embed_batch(&texts).await;
         assert!(err_res.is_err());
         let err_msg = err_res.err().unwrap().to_string();

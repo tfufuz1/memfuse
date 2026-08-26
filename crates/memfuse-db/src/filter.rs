@@ -82,13 +82,7 @@ impl MetadataFilter {
                                 true
                             }
                         }
-                        FilterOp::Exists => {
-                            if let Some(b) = value.as_bool() {
-                                b
-                            } else {
-                                true
-                            }
-                        }
+                        FilterOp::Exists => value.as_bool().unwrap_or(true),
                     }
                 } else {
                     // Field not present

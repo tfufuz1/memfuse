@@ -43,10 +43,7 @@ impl BM25 {
 impl Default for BM25 {
     /// Returns default `BM25` parameters (`k1 = 1.5`, `b = 0.75`), the Robertson-Walker recommended defaults.
     fn default() -> Self {
-        Self {
-            k1: 1.5,
-            b: 0.75,
-        }
+        Self { k1: 1.5, b: 0.75 }
     }
 }
 

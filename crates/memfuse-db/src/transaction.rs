@@ -88,7 +88,9 @@ impl<S: StorageEngine> DbTransaction<S> {
             guard.clone()
         };
 
-        let intent = CommitIntent::Pending { doc_ids: doc_ids.clone() };
+        let intent = CommitIntent::Pending {
+            doc_ids: doc_ids.clone(),
+        };
         let intent_bytes = serde_json::to_vec(&intent).map_err(|e| {
             MemFuseError::Transaction(format!("Failed to serialize commit intent: {}", e))
         })?;

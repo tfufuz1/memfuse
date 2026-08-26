@@ -295,7 +295,7 @@ mod tests {
     #[tokio::test]
     async fn test_mmap_open_async() -> memfuse_core::Result<()> {
         use crate::hnsw::{HnswConfig, HnswIndex};
-        use memfuse_core::{DocId, DistanceMetric, TxId, VectorIndex};
+        use memfuse_core::{DistanceMetric, DocId, TxId, VectorIndex};
 
         let temp_dir = tempfile::tempdir().map_err(|e| MemFuseError::Storage(e.to_string()))?;
         let path = temp_dir.path().join("test_async.hnsw");

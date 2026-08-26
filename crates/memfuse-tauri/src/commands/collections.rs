@@ -18,7 +18,9 @@ pub fn validate_collection_name(name: &str) -> Result<(), String> {
         return Err("Collection name exceeds maximum length of 256 characters".to_string());
     }
     if name.starts_with("__") {
-        return Err("Collection name cannot start with '__' (reserved for internal use)".to_string());
+        return Err(
+            "Collection name cannot start with '__' (reserved for internal use)".to_string(),
+        );
     }
     if !name
         .chars()
@@ -49,10 +51,9 @@ pub async fn open_database(state: State<'_, AppState>, path: String) -> Result<(
 pub async fn list_collections(state: State<'_, AppState>) -> Result<Vec<CollectionInfo>, String> {
     let db = {
         let db_guard = state.db.read();
-        db_guard
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| "No database is open. Please open or create a database first.".to_string())?
+        db_guard.as_ref().cloned().ok_or_else(|| {
+            "No database is open. Please open or create a database first.".to_string()
+        })?
     };
 
     let names = db.list_collections().await.map_err(|e| e.to_string())?;
@@ -73,10 +74,9 @@ pub async fn create_collection(state: State<'_, AppState>, name: String) -> Resu
     validate_collection_name(&name)?;
     let db = {
         let db_guard = state.db.read();
-        db_guard
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| "No database is open. Please open or create a database first.".to_string())?
+        db_guard.as_ref().cloned().ok_or_else(|| {
+            "No database is open. Please open or create a database first.".to_string()
+        })?
     };
     db.collection(&name).await.map_err(|e| e.to_string())?;
     Ok(())
@@ -87,10 +87,9 @@ pub async fn drop_collection(state: State<'_, AppState>, name: String) -> Result
     validate_collection_name(&name)?;
     let db = {
         let db_guard = state.db.read();
-        db_guard
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| "No database is open. Please open or create a database first.".to_string())?
+        db_guard.as_ref().cloned().ok_or_else(|| {
+            "No database is open. Please open or create a database first.".to_string()
+        })?
     };
     db.drop_collection(&name).await.map_err(|e| e.to_string())?;
     Ok(())
