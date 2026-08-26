@@ -12,6 +12,7 @@ sha2 = "0.10"
 hmac = "0.12"
 aes-gcm-siv = "0.11"
 hkdf = "0.12"
+subtle = "2.6"
 rand = { workspace = true }
 tracing = { workspace = true }
 zeroize = { version = "1.8.2", features = ["zeroize_derive"] }

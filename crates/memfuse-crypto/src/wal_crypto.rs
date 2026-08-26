@@ -101,8 +101,12 @@ impl IntegrityVerifier {
             mac.update(&entry.value);
         }
 
+        use subtle::ConstantTimeEq;
         let computed = mac.finalize();
-        if computed != entry.checksum || entry.prev_hmac != self.last_hmac {
+        let checksum_valid = computed.ct_eq(&entry.checksum);
+        let prev_hmac_valid = entry.prev_hmac.ct_eq(&self.last_hmac);
+
+        if bool::from(!checksum_valid) || bool::from(!prev_hmac_valid) {
             return Err(memfuse_core::MemFuseError::WalCorruption {
                 offset,
                 reason: format!("HMAC mismatch for seq {}", entry.seq_no),
@@ -228,6 +232,17 @@ mod tests {
             checksum,
             prev_hmac,
         }
+    }
+
+    #[test]
+    fn test_hmac_tamper_detection() {
+        let key = b"integrity-key-32-bytes-long-----";
+        let e1 = create_entry(key, [0u8; 32], 1, 0, b"key1", b"val1");
+        let mut tampered_e1 = e1.clone();
+        tampered_e1.value = b"tampered".to_vec();
+
+        let mut verifier = IntegrityVerifier::new(key);
+        assert!(verifier.verify_and_update(&tampered_e1, 10).is_err());
     }
 
     #[test]
