@@ -69,14 +69,23 @@ Pure-Rust USP preserved by keeping default features empty.
 
 ## 6. Session Protocol
 
-Every session MUST begin with:
-1. Read `WORKING_STATE.md`
-2. `grep -rn 'AI-TAG\[SMELL\]\[CRITICAL\]' crates/ --include='*.rs' | grep -v RESOLVED`
-3. Read last 3 ADRs in `DECISIONS.md`
+Jede Sitzung MUSS mit folgendem beginnen (Environment-Skript liefert dies
+bereits in der Setup-Ausgabe, siehe `[9/9] Session Context Digest`):
+1. Session-Digest aus Environment-Setup lesen (offene BLOCKER/CRITICAL Tags,
+   offene ANCHORs, letzte 3 ADRs, WORKING_STATE.md-Tail)
+2. Falls Digest nicht sichtbar (z.B. bei nachträglichem Reconnect):
+   manuell `just session-context` ausführen (siehe justfile)
 
-Every session MUST end with:
-1. Update `WORKING_STATE.md` with current status
-2. Mark resolved AI-TAGs as `RESOLVED (YYYY-MM-DD)`
+Jede Sitzung MUSS mit folgendem enden — VOR dem letzten Commit:
+1. `just sync-docs` ausführen (aktualisiert WORKING_STATE.md,
+   docs/ARCHITECTURE.md, docs/SOURCE_OF_TRUTH.md automatisch aus Inline-Tags)
+2. Diff der generierten Abschnitte prüfen — falls unerwartet groß oder
+   falsch: Tags im Code korrigieren, NICHT den generierten Text von Hand
+   überschreiben (sonst nächster Lauf überschreibt die Handkorrektur wieder)
+3. Neuen manuellen Freitext-Eintrag in `WORKING_STATE.md` NUR außerhalb der
+   `<!-- AUTO-GENERATED -->`-Marker ergänzen (z.B. Sprint-Zusammenfassung)
+4. `just sync-docs-check` als letzten Schritt — muss grün sein, sonst ist
+   der Commit nicht vollständig
 
 ## 7. Governance Documents (on-demand, not ambient)
 

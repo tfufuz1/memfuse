@@ -3,7 +3,10 @@
 
 # Gemini-Spezifische Regeln
 
-Dieses File importiert alle Regeln aus `@AGENTS.md`. Hier stehen NUR Gemini-spezifische Ergänzungen. Lesen Sie auch immer `WORKING_STATE.md` für den aktuellen Status.
+Dieses File importiert alle Regeln aus `@AGENTS.md`. Hier stehen NUR Gemini-spezifische Ergänzungen.
+
+## Session-Protokoll
+Siehe `AGENTS.md §6` — verbindlich für alle Agenten, modellunabhängig.
 
 ## Kontext-Gathering
 - Vor Dateianalyse: `g-overview` und gezielte Suche mit `rg`/`ast-grep` ausführen.
