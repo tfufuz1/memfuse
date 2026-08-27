@@ -282,9 +282,7 @@ impl<S: StorageEngine> Collection<S> {
                             }
 
                             if let Some(emb) = embedding {
-                                self.index
-                                    .insert(recovery_tx, doc_id, &emb)
-                                    .await?;
+                                self.index.insert(recovery_tx, doc_id, &emb).await?;
                                 repair_count += 1;
                                 recovered_any = true;
                             }
@@ -609,7 +607,10 @@ impl<S: StorageEngine> Collection<S> {
         for (id, embedding, metadata) in docs {
             if embedding.len() != self.dimension {
                 if let Err(rollback_err) = db_tx.rollback().await {
-                    tracing::error!("[INV-DB-3] Failed to rollback upsert_many on dimension mismatch: {}", rollback_err);
+                    tracing::error!(
+                        "[INV-DB-3] Failed to rollback upsert_many on dimension mismatch: {}",
+                        rollback_err
+                    );
                 }
                 return Err(memfuse_core::MemFuseError::invalid_input(format!(
                     "Dimension mismatch: expected {}, got {}",
