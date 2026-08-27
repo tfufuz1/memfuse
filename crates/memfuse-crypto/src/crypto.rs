@@ -273,12 +273,8 @@ mod tests {
         let km1 = KeyManager::try_new("secret", b"salt").expect("km1");
         let km2 = KeyManager::try_new("secret", b"salt").expect("km2");
         assert_eq!(
-            km1.derive_file_key(b"data.sst")
-                .expect("k1")
-                .inspect_key_bytes_for_test(),
-            km2.derive_file_key(b"data.sst")
-                .expect("k2")
-                .inspect_key_bytes_for_test(),
+            km1.derive_file_key(b"data.sst").expect("k1").inspect_key_bytes_for_test(),
+            km2.derive_file_key(b"data.sst").expect("k2").inspect_key_bytes_for_test(),
             "HKDF muss bei gleichem Passphrase, Salt und Pfad denselben Key liefern"
         );
     }

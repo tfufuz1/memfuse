@@ -111,7 +111,7 @@ mod tests {
     async fn test_embed_batch_empty() {
         // OllamaClient mit nicht-erreichbarer URL
         let client = OllamaClient::new("http://127.0.0.1:1"); // Closed port
-                                                              // embed_batch([]) soll sofort Ok(vec![]) zurückgeben ohne Netzwerk-Call
+        // embed_batch([]) soll sofort Ok(vec![]) zurückgeben ohne Netzwerk-Call
         let embedder = OllamaEmbedder {
             client,
             model: "test".into(),
