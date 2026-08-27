@@ -13,6 +13,7 @@ members = [
     "crates/memfuse-py",
     "crates/memfuse-tauri",
     "crates/memfuse-mcp",
+    "crates/memfuse-agent",
     "crates/memfuse-ollama",
 ]
 
