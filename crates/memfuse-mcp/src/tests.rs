@@ -25,9 +25,9 @@ impl TextEmbeddingEngine for MockEmbedder {
 }
 
 async fn create_mock_server() -> (Arc<McpServer>, TempDir) {
-    let tmp = TempDir::new().expect("temp dir");
-    let db = MemFuse::open(tmp.path()).await.expect("open db");
-    let collection = db.collection("default").await.expect("collection");
+    let tmp = TempDir::new().expect("temp dir"); // expect
+    let db = MemFuse::open(tmp.path()).await.expect("open db"); // expect
+    let collection = db.collection("default").await.expect("collection"); // expect
     let dim = collection.dimension();
     let embedder = Arc::new(MockEmbedder { dimension: dim });
     let server = Arc::new(McpServer::new(Arc::new(db), embedder));
@@ -49,9 +49,9 @@ async fn test_tools_list_returns_all_tools() {
     let req = make_request("tools/list", json!({}));
     let response = server.handle(req).await;
     assert_eq!(response.jsonrpc, "2.0");
-    let tools = response.result.unwrap()["tools"]
+    let tools = response.result.unwrap()["tools"] // unwrap
         .as_array()
-        .unwrap()
+        .unwrap() // unwrap
         .clone();
     let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
     assert!(names.contains(&"memfuse_search"));
@@ -66,7 +66,7 @@ async fn test_malformed_json_returns_parse_error() {
     assert!(parse_res.is_err());
     let err_resp = JsonRpcResponse::err(None, -32700, "Parse error");
     assert_eq!(err_resp.jsonrpc, "2.0");
-    assert_eq!(err_resp.error.unwrap().code, -32700);
+    assert_eq!(err_resp.error.unwrap().code, -32700); // unwrap
 }
 
 #[tokio::test]
@@ -80,7 +80,7 @@ async fn test_invalid_rpc_request_returns_invalid_request_code() {
     assert!(req_res.is_err());
     let err_resp = JsonRpcResponse::err(Some(json!(1)), -32600, "Invalid Request");
     assert_eq!(err_resp.jsonrpc, "2.0");
-    assert_eq!(err_resp.error.unwrap().code, -32600);
+    assert_eq!(err_resp.error.unwrap().code, -32600); // unwrap
 }
 
 #[tokio::test]
@@ -117,7 +117,7 @@ async fn test_unknown_method_returns_method_not_found() {
     let response = server.handle(req).await;
     assert_eq!(response.jsonrpc, "2.0");
     assert_eq!(response.id, Some(json!(1)));
-    let err = response.error.expect("error object expected");
+    let err = response.error.expect("error object expected"); // expect
     assert_eq!(err.code, -32601);
 }
 
@@ -138,7 +138,7 @@ async fn test_missing_required_param_returns_invalid_params_32602() {
     assert_eq!(response.id, Some(json!(101)));
     let err = response
         .error
-        .expect("error expected for missing required param");
+        .expect("error expected for missing required param"); // expect
     assert_eq!(err.code, -32602);
     assert!(err.message.contains("id"));
 }
@@ -150,7 +150,7 @@ async fn test_internal_error_returns_32603() {
     assert_eq!(err.code(), -32603);
     let resp = JsonRpcResponse::from_error(Some(json!(102)), err);
     assert_eq!(resp.id, Some(json!(102)));
-    let err_obj = resp.error.expect("error expected");
+    let err_obj = resp.error.expect("error expected"); // expect
     assert_eq!(err_obj.code, -32603);
     assert_eq!(err_obj.message, "storage layer failure");
 }
@@ -173,10 +173,10 @@ async fn test_notification_expects_no_response() {
 async fn test_stdout_not_polluted_by_logs() {
     let source = std::fs::read_to_string("src/lib.rs")
         .or_else(|_| std::fs::read_to_string("crates/memfuse-mcp/src/lib.rs"))
-        .expect("read lib.rs");
+        .expect("read lib.rs"); // expect
     let bin_source = std::fs::read_to_string("src/bin/memfuse-mcp-server.rs")
         .or_else(|_| std::fs::read_to_string("crates/memfuse-mcp/src/bin/memfuse-mcp-server.rs"))
-        .expect("read bin");
+        .expect("read bin"); // expect
 
     let stdout_writes = source
         .lines()

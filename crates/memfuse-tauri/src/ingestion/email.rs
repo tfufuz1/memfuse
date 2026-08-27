@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn test_extract_plain_email() {
         let eml = b"From: sender@example.com\nSubject: Test Email\nContent-Type: text/plain\n\nThis is plain text.";
-        let content = extract_email_bytes(eml).unwrap();
+        let content = extract_email_bytes(eml).unwrap(); // unwrap
         assert_eq!(content.subject, "Test Email");
         assert_eq!(content.from, "sender@example.com");
         assert_eq!(content.body, "This is plain text.");
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn test_extract_html_email() {
         let eml = b"From: sender@example.com\nSubject: HTML Email\nContent-Type: text/html\n\n<p>Hello <b>World</b>!</p>";
-        let content = extract_email_bytes(eml).unwrap();
+        let content = extract_email_bytes(eml).unwrap(); // unwrap
         assert_eq!(content.subject, "HTML Email");
         assert_eq!(content.from, "sender@example.com");
         assert_eq!(content.body, "Hello World!");
@@ -174,7 +174,7 @@ mod tests {
     #[test]
     fn test_extract_multipart_email_prefers_plain() {
         let eml = b"From: sender@example.com\nSubject: Multipart Email\nContent-Type: multipart/alternative; boundary=\"BOUNDARY\"\n\n--BOUNDARY\nContent-Type: text/html\n\n<p>HTML body</p>\n--BOUNDARY\nContent-Type: text/plain\n\nPlain text body\n--BOUNDARY--";
-        let content = extract_email_bytes(eml).unwrap();
+        let content = extract_email_bytes(eml).unwrap(); // unwrap
         assert_eq!(content.body, "Plain text body");
     }
 }

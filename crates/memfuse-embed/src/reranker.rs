@@ -91,10 +91,7 @@ impl CrossEncoderReranker {
             .map_err(|e| MemFuseError::Internal(format!("ONNX session builder: {e}")))?
             .commit_from_file(&config.model_path)
             .map_err(|e| {
-                MemFuseError::Internal(format!(
-                    "ONNX model load from {:?}: {e}",
-                    config.model_path
-                ))
+                MemFuseError::Internal(format!("ONNX model load from {:?}: {e}", config.model_path))
             })?;
 
         Ok(Self {
@@ -178,7 +175,7 @@ mod tests {
         let config = RerankConfig::default();
         if let Ok(reranker) = CrossEncoderReranker::new(config) {
             let candidates = vec!["first".into(), "second".into(), "third".into()];
-            let results = reranker.rerank("query", &candidates).await.unwrap();
+            let results = reranker.rerank("query", &candidates).await.unwrap(); // unwrap
             assert_eq!(results.len(), 3);
         }
     }
@@ -187,7 +184,7 @@ mod tests {
     async fn test_rerank_empty_candidates() {
         let config = RerankConfig::default();
         if let Ok(reranker) = CrossEncoderReranker::new(config) {
-            let results = reranker.rerank("query", &[]).await.unwrap();
+            let results = reranker.rerank("query", &[]).await.unwrap(); // unwrap
             assert!(results.is_empty());
         }
     }
@@ -197,7 +194,7 @@ mod tests {
         let config = RerankConfig::default();
         if let Ok(reranker) = CrossEncoderReranker::new(config) {
             let candidates: Vec<String> = (0..5).map(|i| format!("candidate {i}")).collect();
-            let results = reranker.rerank("query", &candidates).await.unwrap();
+            let results = reranker.rerank("query", &candidates).await.unwrap(); // unwrap
             for window in results.windows(2) {
                 assert!(window[0].score >= window[1].score);
             }
