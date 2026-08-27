@@ -833,7 +833,14 @@ impl StorageEngine for LsmStorage {
     }
 
     /// # ACID-Garantie
-    /// Verwirft uncommitted Operationen einer spezifischen Transaktion aus dem Buffer.
+    /// Verwirft uncommitted Operationen einer spezifischen Transaktion aus dem In-Memory TxBuffer.
+    ///
+    /// **WICHTIGER HINWEIS (ADR-023)**:
+    /// Diese Methode hat NUR Wirkung auf Operationen, die noch NICHT via `commit()` physisch
+    /// in den WAL geschrieben wurden. Nach einem erfolgreichen `commit()` ist `tx_buffer.drain()`
+    /// ausgeführt und der Eintrag im Buffer geleert. Ein Aufruf von `rollback()` NACH `commit()` ist
+    /// ein wirkungsloser No-Op. Ein Rückgängigmachen bereits committeter Daten erfordert eine
+    /// kompensierende Transaktion (Delete/Tombstone-Eintrag unter neuer TxId) oder `rollback_to_tx()`.
     ///
     /// # Fehler
     /// Gibt `Err` bei internen Puffer-Fehlern zurück.
