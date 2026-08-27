@@ -572,8 +572,8 @@ mod tests {
         let meta = store
             .create_checkpoint("cp1", "c1", 1, TxId::new(1), serde_json::json!({}))
             .await
-            .unwrap();
-        let loaded = store.load_checkpoint(1).await.unwrap().unwrap();
+            .unwrap(); // unwrap
+        let loaded = store.load_checkpoint(1).await.unwrap().unwrap(); // unwrap
         assert_eq!(loaded, meta);
     }
 
@@ -584,12 +584,12 @@ mod tests {
         store
             .create_checkpoint("same", "c1", 1, TxId::new(1), serde_json::json!({}))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         store
             .create_checkpoint("same", "c1", 2, TxId::new(2), serde_json::json!({}))
             .await
-            .unwrap();
-        let all = store.list_checkpoints().await.unwrap();
+            .unwrap(); // unwrap
+        let all = store.list_checkpoints().await.unwrap(); // unwrap
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].seq_no, 2);
         assert!(!storage.pinned.lock().contains(&1));
@@ -622,7 +622,7 @@ mod tests {
         store
             .create_checkpoint("my_cp", "c1", 1, TxId::new(1), serde_json::json!({}))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert!(storage.pinned.lock().contains(&1));
 
@@ -656,8 +656,8 @@ mod tests {
         let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
         {
-            let _guard = store.create_guard(TxId::new(42)).unwrap();
-            // guard drops here without commit
+            let _guard = store.create_guard(TxId::new(42)).unwrap(); // unwrap
+                                                                     // guard drops here without commit
         }
 
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -670,8 +670,8 @@ mod tests {
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
-        let guard = store.create_guard(TxId::new(100)).unwrap();
-        let cp = guard.commit().unwrap();
+        let guard = store.create_guard(TxId::new(100)).unwrap(); // unwrap
+        let cp = guard.commit().unwrap(); // unwrap
         assert_eq!(cp.tx_id, TxId::new(100));
 
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -694,7 +694,7 @@ mod tests {
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage, "test");
 
-        let list = store.list_named_checkpoints().await.unwrap();
+        let list = store.list_named_checkpoints().await.unwrap(); // unwrap
         assert!(list.is_empty());
     }
 
@@ -723,7 +723,7 @@ mod tests {
                     serde_json::json!({}),
                 )
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
             store1
                 .create_named_checkpoint(
                     "cp2",
@@ -733,11 +733,11 @@ mod tests {
                     serde_json::json!({}),
                 )
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
         }
 
         let store2 = PersistentCheckpointStore::new(storage.clone(), "test");
-        let list = store2.list_named_checkpoints().await.unwrap();
+        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
 
         assert_eq!(list.len(), 2);
         let names: Vec<_> = list.into_iter().map(|m| m.name).collect();
@@ -761,12 +761,12 @@ mod tests {
                     serde_json::json!({}),
                 )
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
         }
 
         // Drop and reload the store from same storage
         let store2 = PersistentCheckpointStore::new(storage.clone(), "test");
-        let list = store2.list_named_checkpoints().await.unwrap();
+        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
 
         assert_eq!(list.len(), 3);
         let names: Vec<_> = list.into_iter().map(|m| m.name).collect();
@@ -798,13 +798,13 @@ mod tests {
         }
         // All must succeed or fail without panicking
         while let Some(res) = tasks.join_next().await {
-            let res = res.unwrap();
+            let res = res.unwrap(); // unwrap
             if let Err(e) = res {
                 println!("Checkpoint creation failed (acceptable): {e}");
             }
         }
 
-        let all = store.list_named_checkpoints().await.unwrap();
+        let all = store.list_named_checkpoints().await.unwrap(); // unwrap
         assert_eq!(all.len(), 8);
     }
 
@@ -814,7 +814,7 @@ mod tests {
         let store = PersistentCheckpointStore::new(storage, "test");
 
         // Should not panic when dropped outside a tokio runtime context
-        let _guard = store.create_guard(TxId::new(999)).unwrap();
+        let _guard = store.create_guard(TxId::new(999)).unwrap(); // unwrap
     }
 
     #[tokio::test]
@@ -822,13 +822,13 @@ mod tests {
         let storage = Arc::new(MockStorage::new());
         let guard = CheckpointGuard::for_agent_step(storage.clone(), TxId::new(55))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
-        let cp = guard.checkpoint().unwrap();
+        let cp = guard.checkpoint().unwrap(); // unwrap
         assert_eq!(cp.tx_id, TxId::new(55));
         assert!(cp.timestamp_ms > 0);
 
-        let committed = guard.commit().unwrap();
+        let committed = guard.commit().unwrap(); // unwrap
         assert_eq!(committed.tx_id, TxId::new(55));
     }
 
@@ -840,18 +840,18 @@ mod tests {
         store
             .create_checkpoint("drop_me", "col1", 42, TxId::new(1), serde_json::json!({}))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert!(storage.pinned.lock().contains(&42));
-        assert!(store.get_checkpoint("drop_me").await.unwrap().is_some());
+        assert!(store.get_checkpoint("drop_me").await.unwrap().is_some()); // unwrap
 
-        store.drop_checkpoint("drop_me").await.unwrap();
+        store.drop_checkpoint("drop_me").await.unwrap(); // unwrap
 
         assert!(
             !storage.pinned.lock().contains(&42),
             "Checkpoint seq_no 42 should be unpinned after drop"
         );
-        assert!(store.get_checkpoint("drop_me").await.unwrap().is_none());
+        assert!(store.get_checkpoint("drop_me").await.unwrap().is_none()); // unwrap
     }
 
     #[test]

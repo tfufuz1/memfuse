@@ -1579,29 +1579,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_wal_crash_consistency_write_without_fsync() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("crash_sim.wal");
 
         // 1. Open WAL and append an entry
         {
-            let wal = Wal::open(&wal_path).await.expect("open wal");
+            let wal = Wal::open(&wal_path).await.expect("open wal"); // expect
             let op = WalOp::Put {
                 tx_id: TxId::new(100),
                 key: b"crash_k".to_vec(),
                 value: b"crash_v".to_vec(),
             };
-            let entry = wal.create_entry(op, 1).await.expect("create entry");
+            let entry = wal.create_entry(op, 1).await.expect("create entry"); // expect
 
             // Manually simulate a write + flush to OS buffer WITHOUT file.sync_all()
             let mut file = tokio::fs::OpenOptions::new()
                 .append(true)
                 .open(&wal_path)
                 .await
-                .expect("open for append");
-            let bytes = entry.to_bytes().expect("to_bytes");
-            file.write_all(&bytes).await.expect("write_all");
-            file.flush().await.expect("flush");
-            // File dropped without calling sync_all() (simulating crash before fsync)
+                .expect("open for append"); // expect
+            let bytes = entry.to_bytes().expect("to_bytes"); // expect
+            file.write_all(&bytes).await.expect("write_all"); // expect
+            file.flush().await.expect("flush"); // expect
+                                                // File dropped without calling sync_all() (simulating crash before fsync)
             drop(file);
             drop(wal);
         }
@@ -1609,7 +1609,7 @@ mod tests {
         // 2. Re-open WAL and replay
         let wal_reopen = Wal::open(&wal_path).await;
         assert!(wal_reopen.is_ok(), "WAL open after crash should succeed");
-        let wal = wal_reopen.unwrap();
+        let wal = wal_reopen.unwrap(); // unwrap
 
         let replay_result = wal.replay().await;
         match replay_result {
@@ -1628,10 +1628,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_append_batch_partial_write_atomicity() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("partial_batch.wal");
 
-        let wal = Wal::open(&wal_path).await.expect("open wal");
+        let wal = Wal::open(&wal_path).await.expect("open wal"); // expect
         let ops = vec![
             (
                 WalOp::Put {
@@ -1659,13 +1659,13 @@ mod tests {
             ),
         ];
 
-        let entries = wal.prepare_batch(ops).await.expect("prepare_batch");
+        let entries = wal.prepare_batch(ops).await.expect("prepare_batch"); // expect
         assert_eq!(entries.len(), 3);
 
         // Serialize all 3 entries into a single bytes payload
         let mut batch_bytes = Vec::new();
         for e in &entries {
-            batch_bytes.extend_from_slice(&e.to_bytes().expect("to_bytes"));
+            batch_bytes.extend_from_slice(&e.to_bytes().expect("to_bytes")); // expect
         }
 
         // Truncate the batch in the middle of entry 2 (partial write during crash)
@@ -1680,17 +1680,17 @@ mod tests {
                 .append(true)
                 .open(&wal_path)
                 .await
-                .expect("open for append");
-            file.write_all(truncated_bytes).await.expect("write_all");
-            file.flush().await.expect("flush");
+                .expect("open for append"); // expect
+            file.write_all(truncated_bytes).await.expect("write_all"); // expect
+            file.flush().await.expect("flush"); // expect
         }
 
         // Reopen and replay
-        let wal2 = Wal::open(&wal_path).await.expect("reopen");
+        let wal2 = Wal::open(&wal_path).await.expect("reopen"); // expect
         let replay_entries = wal2
             .replay()
             .await
-            .expect("replay must succeed without panic");
+            .expect("replay must succeed without panic"); // expect
 
         // Replay must recover entry 1 (which was fully written) and cleanly discard the truncated tail
         assert_eq!(replay_entries.len(), 1, "Only entry 1 should be recovered");
@@ -1699,16 +1699,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_encryption_single_nonce_layout() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("single_nonce_test.wal");
 
         let km = Arc::new(
             KeyManager::try_new("test_passphrase", b"salt123456789012345678901234567890")
-                .expect("km"),
+                .expect("km"), // expect
         );
         let wal = Wal::open_with_key_manager(&wal_path, Some(km))
             .await
-            .expect("open wal");
+            .expect("open wal"); // expect
 
         let ops = vec![
             (
@@ -1737,12 +1737,12 @@ mod tests {
             ),
         ];
 
-        let batch = wal.prepare_batch(ops).await.expect("prepare batch");
+        let batch = wal.prepare_batch(ops).await.expect("prepare batch"); // expect
         assert_eq!(batch.len(), 3);
 
-        wal.append_batch(&batch).await.expect("append batch");
+        wal.append_batch(&batch).await.expect("append batch"); // expect
 
-        let file_bytes = fs::read(&wal_path).await.expect("read wal file");
+        let file_bytes = fs::read(&wal_path).await.expect("read wal file"); // expect
 
         // Layout:
         // Offset 0..4: WAL_V2_HEADER (b"MFW2")
@@ -1760,16 +1760,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_encrypted_wal_roundtrip() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("roundtrip_test.wal");
 
         let km = Arc::new(
             KeyManager::try_new("passphrase123", b"salt123456789012345678901234567890")
-                .expect("km"),
+                .expect("km"), // expect
         );
         let wal = Wal::open_with_key_manager(&wal_path, Some(km.clone()))
             .await
-            .expect("open wal");
+            .expect("open wal"); // expect
 
         let ops = vec![
             (
@@ -1797,13 +1797,13 @@ mod tests {
             ),
         ];
 
-        let batch = wal.prepare_batch(ops).await.expect("prepare_batch");
-        wal.append_batch(&batch).await.expect("append_batch");
+        let batch = wal.prepare_batch(ops).await.expect("prepare_batch"); // expect
+        wal.append_batch(&batch).await.expect("append_batch"); // expect
 
         let wal_reopen = Wal::open_with_key_manager(&wal_path, Some(km))
             .await
-            .expect("reopen wal");
-        let replayed = wal_reopen.replay().await.expect("replay");
+            .expect("reopen wal"); // expect
+        let replayed = wal_reopen.replay().await.expect("replay"); // expect
 
         assert_eq!(replayed.len(), 3);
         assert_eq!(replayed[0].1.seq_no, 1);
@@ -1828,31 +1828,31 @@ mod tests {
 
     #[tokio::test]
     async fn test_old_v1_format_backward_compatibility() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("v1_legacy_format.wal");
 
         let km = Arc::new(
             KeyManager::try_new("legacy_passphrase", b"salt123456789012345678901234567890")
-                .expect("km"),
+                .expect("km"), // expect
         );
 
         // Derive sub-key for file ID (same derivation Wal::open_with_key_manager does)
-        let uuid_bytes = Wal::load_or_create_wal_uuid(&wal_path).await.expect("uuid");
-        let sub_km = km.derive_file_key(&uuid_bytes).expect("derive file key");
+        let uuid_bytes = Wal::load_or_create_wal_uuid(&wal_path).await.expect("uuid"); // expect
+        let sub_km = km.derive_file_key(&uuid_bytes).expect("derive file key"); // expect
 
         // Manually construct an old V1 encrypted WAL file (no MFW2 header, each entry encrypted separately)
-        let integrity_key = sub_km.integrity_key().expect("integrity key");
+        let integrity_key = sub_km.integrity_key().expect("integrity key"); // expect
 
         let op1 = WalOp::Put {
             tx_id: TxId::new(10),
             key: b"legacy_k1".to_vec(),
             value: b"legacy_v1".to_vec(),
         };
-        let entry1 = WalEntry::try_new(op1, 100, &integrity_key, [0u8; 32]).expect("entry1");
-        let bytes1 = entry1.to_bytes().expect("bytes1");
+        let entry1 = WalEntry::try_new(op1, 100, &integrity_key, [0u8; 32]).expect("entry1"); // expect
+        let bytes1 = entry1.to_bytes().expect("bytes1"); // expect
 
         let payload1 = &bytes1[4..];
-        let (encrypted1, nonce1) = sub_km.encrypt_auto_nonce(payload1).expect("enc1");
+        let (encrypted1, nonce1) = sub_km.encrypt_auto_nonce(payload1).expect("enc1"); // expect
 
         let mut v1_file_data = Vec::new();
         let chunk_len1 = (12 + encrypted1.len()) as u32;
@@ -1865,11 +1865,11 @@ mod tests {
             key: b"legacy_k2".to_vec(),
             value: b"legacy_v2".to_vec(),
         };
-        let entry2 = WalEntry::try_new(op2, 101, &integrity_key, entry1.checksum).expect("entry2");
-        let bytes2 = entry2.to_bytes().expect("bytes2");
+        let entry2 = WalEntry::try_new(op2, 101, &integrity_key, entry1.checksum).expect("entry2"); // expect
+        let bytes2 = entry2.to_bytes().expect("bytes2"); // expect
 
         let payload2 = &bytes2[4..];
-        let (encrypted2, nonce2) = sub_km.encrypt_auto_nonce(payload2).expect("enc2");
+        let (encrypted2, nonce2) = sub_km.encrypt_auto_nonce(payload2).expect("enc2"); // expect
 
         let chunk_len2 = (12 + encrypted2.len()) as u32;
         v1_file_data.extend_from_slice(&chunk_len2.to_le_bytes());
@@ -1878,13 +1878,13 @@ mod tests {
 
         fs::write(&wal_path, &v1_file_data)
             .await
-            .expect("write v1 wal");
+            .expect("write v1 wal"); // expect
 
         // Reopen via standard Wal::open_with_key_manager and replay
         let wal = Wal::open_with_key_manager(&wal_path, Some(km))
             .await
-            .expect("open v1 wal");
-        let replayed = wal.replay().await.expect("replay v1 wal");
+            .expect("open v1 wal"); // expect
+        let replayed = wal.replay().await.expect("replay v1 wal"); // expect
 
         assert_eq!(
             replayed.len(),
@@ -1898,18 +1898,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_encrypted_wal_truncation_crash_consistency() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("batch_truncation.wal");
 
         let km = Arc::new(
             KeyManager::try_new("passphrase123", b"salt123456789012345678901234567890")
-                .expect("km"),
+                .expect("km"), // expect
         );
 
         {
             let wal = Wal::open_with_key_manager(&wal_path, Some(km.clone()))
                 .await
-                .expect("open wal");
+                .expect("open wal"); // expect
 
             // Batch 1: 2 entries
             let ops1 = vec![
@@ -1930,8 +1930,8 @@ mod tests {
                     2,
                 ),
             ];
-            let batch1 = wal.prepare_batch(ops1).await.expect("prepare 1");
-            wal.append_batch(&batch1).await.expect("append 1");
+            let batch1 = wal.prepare_batch(ops1).await.expect("prepare 1"); // expect
+            wal.append_batch(&batch1).await.expect("append 1"); // expect
 
             // Batch 2: 2 entries
             let ops2 = vec![
@@ -1952,26 +1952,26 @@ mod tests {
                     4,
                 ),
             ];
-            let batch2 = wal.prepare_batch(ops2).await.expect("prepare 2");
-            wal.append_batch(&batch2).await.expect("append 2");
+            let batch2 = wal.prepare_batch(ops2).await.expect("prepare 2"); // expect
+            wal.append_batch(&batch2).await.expect("append 2"); // expect
         }
 
         // Truncate the file mid-ciphertext of Batch 2
-        let mut data = fs::read(&wal_path).await.expect("read wal");
+        let mut data = fs::read(&wal_path).await.expect("read wal"); // expect
         let truncated_len = data.len() - 15; // chop off 15 bytes from Batch 2's ciphertext
         data.truncate(truncated_len);
         fs::write(&wal_path, &data)
             .await
-            .expect("write truncated wal");
+            .expect("write truncated wal"); // expect
 
         // Reopen and replay
         let wal2 = Wal::open_with_key_manager(&wal_path, Some(km))
             .await
-            .expect("reopen wal");
+            .expect("reopen wal"); // expect
         let replayed = wal2
             .replay()
             .await
-            .expect("replay must succeed by recovering Batch 1");
+            .expect("replay must succeed by recovering Batch 1"); // expect
 
         assert_eq!(
             replayed.len(),

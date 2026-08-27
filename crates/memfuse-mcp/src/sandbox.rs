@@ -235,9 +235,9 @@ mod tests {
         let sandbox = McpSandbox::new(SandboxPolicy::default());
         let data = b"Top secret volatile tool result data";
 
-        sandbox.store_volatile("res1", data).expect("store");
+        sandbox.store_volatile("res1", data).expect("store"); // expect
 
-        let retrieved = sandbox.get_volatile("res1").expect("get").expect("exists");
+        let retrieved = sandbox.get_volatile("res1").expect("get").expect("exists"); // expect
         assert_eq!(retrieved, data);
     }
 }

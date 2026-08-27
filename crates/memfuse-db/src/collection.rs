@@ -1565,7 +1565,7 @@ mod tests {
         // Verify: compile-time proof that the method signature is async and
         // accepts Arc<dyn TextEmbeddingEngine>.
         let embedder: Arc<dyn TextEmbeddingEngine> = Arc::new(FakeEmbedder);
-        let result = embedder.embed("hello").await.unwrap();
+        let result = embedder.embed("hello").await.unwrap(); // unwrap
         assert_eq!(result.len(), 4);
     }
 
@@ -1578,17 +1578,17 @@ mod tests {
         use std::sync::Arc;
         use tempfile::tempdir;
 
-        let dir = tempdir().unwrap();
+        let dir = tempdir().unwrap(); // unwrap
         let lsm_config = memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         };
-        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
         let hnsw_config = memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
         };
-        let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap());
+        let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap()); // unwrap
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(1));
 
@@ -1606,14 +1606,14 @@ mod tests {
         let res_zero = col
             .hybrid_search("test", &[0.1, 0.2, 0.3, 0.4], 0, None)
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         assert!(res_zero.is_empty(), "k=0 must return empty result list");
 
         // 2. k = usize::MAX boundary check (must clamp to MAX_SEARCH_K without panic/overflow)
         let res_max = col
             .hybrid_search("test", &[0.0, 0.0, 0.0, 0.0], usize::MAX, None)
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         assert!(
             res_max.is_empty(),
             "k=usize::MAX on empty DB must return empty without overflow panic"
@@ -1630,18 +1630,18 @@ mod tests {
         use std::sync::Arc;
         use tempfile::tempdir;
 
-        let dir = tempdir().unwrap();
+        let dir = tempdir().unwrap(); // unwrap
         let lsm_config = memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         };
-        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
         let index = Arc::new(
             HnswIndex::try_new(memfuse_index::HnswConfig {
                 dimension: 4,
                 ..Default::default()
             })
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(1));
@@ -1659,10 +1659,10 @@ mod tests {
         // 1. Insert first document normally
         let id1 = "key_alpha";
         let emb1 = vec![1.0, 0.0, 0.0, 0.0];
-        col.insert(id1, &emb1, None).await.unwrap();
+        col.insert(id1, &emb1, None).await.unwrap(); // unwrap
 
         // Verify key_alpha exists
-        let doc1 = col.get(id1).await.unwrap();
+        let doc1 = col.get(id1).await.unwrap(); // unwrap
         assert!(doc1.is_some());
 
         // 2. Synthetically inject a mapping for a fixed DocId (e.g. DocId::new(42)) pointing to "key_existing"
@@ -1673,9 +1673,9 @@ mod tests {
             id: "key_existing".to_string(),
             metadata: None,
         };
-        let meta_bytes = serde_json::to_vec(&existing_meta).unwrap();
-        col.storage.put(tx, &doc_key, &meta_bytes).await.unwrap();
-        col.storage.commit(tx).await.unwrap();
+        let meta_bytes = serde_json::to_vec(&existing_meta).unwrap(); // unwrap
+        col.storage.put(tx, &doc_key, &meta_bytes).await.unwrap(); // unwrap
+        col.storage.commit(tx).await.unwrap(); // unwrap
 
         // 3. Directly test check_doc_id_collision with a different string key (e.g., "key_new")
         let collision_res = col
@@ -1709,18 +1709,18 @@ mod tests {
         use std::sync::Arc;
         use tempfile::tempdir;
 
-        let dir = tempdir().unwrap();
+        let dir = tempdir().unwrap(); // unwrap
         let lsm_config = memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         };
-        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
         let index = Arc::new(
             HnswIndex::try_new(memfuse_index::HnswConfig {
                 dimension: 4,
                 ..Default::default()
             })
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(1));
@@ -1753,18 +1753,18 @@ mod tests {
         use std::sync::Arc;
         use tempfile::tempdir;
 
-        let dir = tempdir().unwrap();
+        let dir = tempdir().unwrap(); // unwrap
         let lsm_config = memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         };
-        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
         let index = Arc::new(
             HnswIndex::try_new(memfuse_index::HnswConfig {
                 dimension: 4,
                 ..Default::default()
             })
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(100));
@@ -1797,18 +1797,18 @@ mod tests {
         use std::sync::Arc;
         use tempfile::tempdir;
 
-        let dir = tempdir().unwrap();
+        let dir = tempdir().unwrap(); // unwrap
         let lsm_config = memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         };
-        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
         let index = Arc::new(
             HnswIndex::try_new(memfuse_index::HnswConfig {
                 dimension: 4,
                 ..Default::default()
             })
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(1));
@@ -1831,7 +1831,7 @@ mod tests {
             handles.push(tokio::spawn(async move {
                 for i in 0..10 {
                     let id = format!("single_doc_{i}");
-                    c.insert(&id, &[1.0, 0.0, 0.0, 0.0], None).await.unwrap();
+                    c.insert(&id, &[1.0, 0.0, 0.0, 0.0], None).await.unwrap(); // unwrap
                 }
             }));
         }
@@ -1843,7 +1843,7 @@ mod tests {
                 let docs: Vec<_> = (0..5)
                     .map(|i| (format!("batch_doc_{i}"), vec![0.0, 1.0, 0.0, 0.0], None))
                     .collect();
-                c.insert_many(&docs).await.unwrap();
+                c.insert_many(&docs).await.unwrap(); // unwrap
             }));
         }
 
@@ -1853,8 +1853,8 @@ mod tests {
             handles.push(tokio::spawn(async move {
                 for i in 0..5 {
                     let id = format!("upsert_doc_{i}");
-                    c.upsert(&id, &[0.0, 0.0, 1.0, 0.0], None).await.unwrap();
-                    c.update(&id, &[0.0, 0.0, 1.0, 1.0], None).await.unwrap();
+                    c.upsert(&id, &[0.0, 0.0, 1.0, 0.0], None).await.unwrap(); // unwrap
+                    c.update(&id, &[0.0, 0.0, 1.0, 1.0], None).await.unwrap(); // unwrap
                 }
             }));
         }
@@ -1866,12 +1866,12 @@ mod tests {
                 let docs: Vec<_> = (0..5)
                     .map(|i| (format!("upsert_batch_{i}"), vec![0.5, 0.5, 0.0, 0.0], None))
                     .collect();
-                c.upsert_many(&docs).await.unwrap();
+                c.upsert_many(&docs).await.unwrap(); // unwrap
             }));
         }
 
         for h in handles {
-            h.await.unwrap();
+            h.await.unwrap(); // unwrap
         }
 
         assert!(col.len().await > 0);
@@ -1887,21 +1887,21 @@ mod tests {
         use std::sync::Arc;
         use tempfile::tempdir;
 
-        let dir = tempdir().unwrap();
+        let dir = tempdir().unwrap(); // unwrap
         let storage = Arc::new(
             LsmStorage::new(memfuse_store::LsmConfig {
                 path: dir.path().to_path_buf(),
                 ..Default::default()
             })
             .await
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let index = Arc::new(
             HnswIndex::try_new(memfuse_index::HnswConfig {
                 dimension: 4,
                 ..Default::default()
             })
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let col = super::Collection::new(
             "default".to_string(),
@@ -1919,10 +1919,10 @@ mod tests {
             Some(json!({"ttl_ms": 10})),
         )
         .await
-        .unwrap();
-        let reaped = col.trigger_reaper().await.unwrap();
+        .unwrap(); // unwrap
+        let reaped = col.trigger_reaper().await.unwrap(); // unwrap
         assert_eq!(reaped, 0);
-        assert!(col.get("doc_no_created_at").await.unwrap().is_some());
+        assert!(col.get("doc_no_created_at").await.unwrap().is_some()); // unwrap
     }
 
     #[tokio::test]
@@ -1935,21 +1935,21 @@ mod tests {
         use std::sync::Arc;
         use tempfile::tempdir;
 
-        let dir = tempdir().unwrap();
+        let dir = tempdir().unwrap(); // unwrap
         let storage = Arc::new(
             LsmStorage::new(memfuse_store::LsmConfig {
                 path: dir.path().to_path_buf(),
                 ..Default::default()
             })
             .await
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let index = Arc::new(
             HnswIndex::try_new(memfuse_index::HnswConfig {
                 dimension: 4,
                 ..Default::default()
             })
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let col = super::Collection::new(
             "default".to_string(),
@@ -1967,10 +1967,10 @@ mod tests {
             Some(json!({"created_at_ms": 100, "ttl_ms": 0})),
         )
         .await
-        .unwrap();
-        let reaped = col.trigger_reaper().await.unwrap();
+        .unwrap(); // unwrap
+        let reaped = col.trigger_reaper().await.unwrap(); // unwrap
         assert_eq!(reaped, 0);
-        assert!(col.get("doc_zero_ttl").await.unwrap().is_some());
+        assert!(col.get("doc_zero_ttl").await.unwrap().is_some()); // unwrap
     }
 
     #[tokio::test]
@@ -1984,7 +1984,7 @@ mod tests {
 
         let extracted = super::extract_text(&meta);
         assert!(extracted.is_some());
-        let text = extracted.unwrap();
+        let text = extracted.unwrap(); // unwrap
         assert!(text.contains("Dokumenten-Kontext-Präfix"));
         assert!(text.contains("Chunk Haupttext"));
         assert_eq!(text, "Dokumenten-Kontext-Präfix\n\nChunk Haupttext");
@@ -2000,21 +2000,21 @@ mod tests {
         use std::sync::Arc;
         use tempfile::tempdir;
 
-        let dir = tempdir().unwrap();
+        let dir = tempdir().unwrap(); // unwrap
         let storage = Arc::new(
             LsmStorage::new(memfuse_store::LsmConfig {
                 path: dir.path().to_path_buf(),
                 ..Default::default()
             })
             .await
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let index = Arc::new(
             HnswIndex::try_new(memfuse_index::HnswConfig {
                 dimension: 4,
                 ..Default::default()
             })
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let col = super::Collection::new(
             "default".to_string(),
@@ -2032,10 +2032,10 @@ mod tests {
             Some(json!({"created_at_ms": u64::MAX - 10, "ttl_ms": 100})),
         )
         .await
-        .unwrap();
-        let reaped = col.trigger_reaper().await.unwrap();
+        .unwrap(); // unwrap
+        let reaped = col.trigger_reaper().await.unwrap(); // unwrap
         assert_eq!(reaped, 0);
-        assert!(col.get("doc_overflow").await.unwrap().is_some());
+        assert!(col.get("doc_overflow").await.unwrap().is_some()); // unwrap
     }
 
     #[tokio::test]
@@ -2123,21 +2123,21 @@ mod tests {
         use std::sync::Arc;
         use tempfile::tempdir;
 
-        let dir = tempdir().unwrap();
+        let dir = tempdir().unwrap(); // unwrap
         let storage = Arc::new(
             LsmStorage::new(memfuse_store::LsmConfig {
                 path: dir.path().to_path_buf(),
                 ..Default::default()
             })
             .await
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let index = Arc::new(
             HnswIndex::try_new(memfuse_index::HnswConfig {
                 dimension: 4,
                 ..Default::default()
             })
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let col = super::Collection::new(
             "default".to_string(),
@@ -2155,19 +2155,19 @@ mod tests {
             Some(serde_json::json!({"text": "rust language"})),
         )
         .await
-        .unwrap();
+        .unwrap(); // unwrap
         col.insert(
             "d2",
             &[0.9, 0.1, 0.0, 0.0],
             Some(serde_json::json!({"text": "python language"})),
         )
         .await
-        .unwrap();
+        .unwrap(); // unwrap
 
         let res = col
             .hybrid_search_reranked("rust", &[1.0, 0.0, 0.0, 0.0], 1, None, None)
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].id, "d1");

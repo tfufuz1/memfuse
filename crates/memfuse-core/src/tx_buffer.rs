@@ -362,7 +362,7 @@ mod tests {
 
         let mut txs = Vec::new();
         for h in handles {
-            let tx = h.await.expect("task failed");
+            let tx = h.await.expect("task failed"); // expect
             txs.push(tx);
         }
 
@@ -464,7 +464,7 @@ mod tests {
             // 2. Verify each TX only has its own data
             for &id in &tx_ids {
                 let tx = TxId::new(id);
-                let ops = buffer.get_ops(tx).unwrap();
+                let ops = buffer.get_ops(tx).unwrap(); // unwrap
                 for op in ops {
                     match op {
                         IndexOp::Insert { doc_id, data } => {
@@ -594,7 +594,7 @@ mod tests {
                     prop_assert!(buffer.get_ops(tx).is_none());
                 } else {
                     prop_assert!(buffer.has_tx(tx));
-                    let ops = buffer.get_ops(tx).unwrap();
+                    let ops = buffer.get_ops(tx).unwrap(); // unwrap
                     prop_assert_eq!(ops.len(), 1);
                     match &ops[0] {
                         IndexOp::Insert { doc_id, data } => {
