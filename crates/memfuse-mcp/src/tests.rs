@@ -30,7 +30,7 @@ async fn create_mock_server() -> (Arc<McpServer>, TempDir) {
     let collection = db.collection("default").await.expect("collection"); // expect
     let dim = collection.dimension();
     let embedder = Arc::new(MockEmbedder { dimension: dim });
-    let server = Arc::new(McpServer::new(Arc::new(db), embedder));
+    let server = Arc::new(McpServer::new(Arc::new(db), embedder).expect("server new"));
     (server, tmp)
 }
 
