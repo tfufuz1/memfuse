@@ -100,8 +100,8 @@ impl ContextChunk {
     /// Returns only the raw content (no contextual prefix).
     ///
     /// # Deprecated
-    /// Use [`combined_text_owned()`] for Contextual BM25 indexing
-    /// (prefix + content). Use [`content`] for raw content access.
+    /// Use [`Self::combined_text_owned()`] for Contextual BM25 indexing
+    /// (prefix + content). Use [`Self::content`] for raw content access.
     /// This method will be removed in the next breaking release.
     #[deprecated(
         since = "0.1.0",
