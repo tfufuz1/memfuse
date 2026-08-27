@@ -97,8 +97,17 @@ pub struct ContextChunk {
 }
 
 impl ContextChunk {
-    /// Liefert den kombinierten Text für BM25-Indizierung und Embedding.
-    /// Kombiniert contextual_prefix + content, falls prefix gesetzt.
+    /// Returns only the raw content (no contextual prefix).
+    ///
+    /// # Deprecated
+    /// Use [`combined_text_owned()`] for Contextual BM25 indexing
+    /// (prefix + content). Use [`content`] for raw content access.
+    /// This method will be removed in the next breaking release.
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use combined_text_owned() for BM25 indexing with contextual prefix, \
+                or access .content directly for raw content"
+    )]
     pub fn combined_text_for_indexing(&self) -> &str {
         &self.content
     }

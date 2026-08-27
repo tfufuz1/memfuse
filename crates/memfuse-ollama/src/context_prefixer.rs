@@ -127,15 +127,12 @@ impl ContextPrefixEngine {
 }
 
 pub fn truncate_chars(s: &str, max_chars: usize) -> String {
-    if s.len() <= max_chars {
+    // Count Unicode scalar values (chars), not bytes.
+    // For ASCII: identical. For UTF-8 multibyte (Ü, ä, ß, 中): chars < bytes.
+    if s.chars().count() <= max_chars {
         return s.to_string();
     }
-    // Truncate at char boundary, not byte boundary
-    s.char_indices()
-        .take_while(|(i, _)| *i < max_chars)
-        .last()
-        .map(|(i, c)| s[..i + c.len_utf8()].to_string())
-        .unwrap_or_default()
+    s.chars().take(max_chars).collect()
 }
 
 #[cfg(test)]
@@ -165,6 +162,25 @@ mod tests {
         let s = "Über die Welt";
         let truncated = truncate_chars(s, 3);
         assert!(s.is_char_boundary(truncated.len()));
+    }
+
+    #[test]
+    fn test_truncate_chars_unicode_no_premature_truncation() {
+        // "Über" = 4 chars (Ü=2bytes, b=1, e=1, r=1) = 5 bytes
+        // With max_chars=4: should return "Über" (fits exactly)
+        let s = "Über";
+        assert_eq!(s.chars().count(), 4);
+        assert_eq!(s.len(), 5); // bytes
+        assert_eq!(truncate_chars(s, 4), "Über", "4-char string must fit in max_chars=4");
+        assert_eq!(truncate_chars(s, 3), "Übe", "truncation at char=3 must work");
+    }
+
+    #[test]
+    fn test_truncate_chars_german_umlauts() {
+        let s = "Größe und Stärke"; // 16 chars, >16 bytes
+        let truncated = truncate_chars(s, 6);
+        assert_eq!(truncated.chars().count(), 6);
+        assert!(s.is_char_boundary(truncated.len()), "truncation must be at char boundary");
     }
 
     #[tokio::test]
