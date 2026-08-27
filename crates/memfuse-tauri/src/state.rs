@@ -81,7 +81,9 @@ mod tests {
                 permit.is_ok(),
                 "Permit allocation should succeed within limit"
             );
-            permits.push(permit.unwrap());
+            if let Ok(p) = permit {
+                permits.push(p);
+            }
         }
 
         assert_eq!(state.regex_semaphore.available_permits(), 0);
