@@ -57,7 +57,7 @@ async fn test_transaction_atomicity_under_load() -> Result<()> {
         handles.push(tokio::spawn(async move {
             b.wait().await;
             for _ in 0..(iterations * 2) {
-                let results = col.search(&vec![0.0; 128], 1000).await.unwrap();
+                let results = col.scan_prefix("doc_").await.unwrap();
                 let count = results.len();
 
                 if count % batch_size != 0 {
