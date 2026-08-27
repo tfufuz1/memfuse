@@ -12,3 +12,19 @@ CLAUDE.local.md
 *.dylib
 *.dll
 *.pyd
+
+# --- memfuse cleanup: added by 05-harden-gitignore.sh ---
+# Lokale Umgebungs-/Cache-Verzeichnisse (nie versionieren)
+.cache/
+.local/
+.config/
+.nix-defexpr/
+.nix-profile
+
+# Build-/Lint-Logs
+*.log
+clippy*.log
+*_output.txt
+
+# Kompilierte Ad-hoc-Binaries ohne Cargo-Build-System
+/fix_unsafe
