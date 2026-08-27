@@ -206,6 +206,9 @@ impl OllamaClient {
 
     /// Creates a new `OllamaClient` with custom configuration parameters.
     pub fn with_config(config: OllamaConfig) -> Self {
+        if let Err(e) = validate_model_name(&config.model) {
+            tracing::warn!(model = %config.model, error = %e, "OllamaConfig contains invalid model name");
+        }
         let client = match reqwest::Client::builder()
             .timeout(config.request_timeout)
             .connect_timeout(config.connect_timeout)
@@ -382,6 +385,17 @@ impl OllamaClient {
             ))
         })?;
 
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<body unreadable>".into());
+            return Err(MemFuseError::Storage(format!(
+                "Ollama list_models HTTP {status}: {body}"
+            )));
+        }
+
         #[derive(Deserialize)]
         struct TagsResponse {
             models: Vec<ModelTagInfo>,
@@ -432,6 +446,42 @@ impl OllamaClient {
     /// - `MemFuseError::Storage` / `MemFuseError::Io` bei HTTP-Fehlern
     /// - `MemFuseError::InvalidInput` für leere/invalide Inputs
     pub async fn generate_text(&self, model: &str, prompt: &str) -> Result<String> {
+        validate_model_name(model)?;
+        let mut last_err = None;
+        let max_retries = self.config.max_retries;
+
+        for attempt in 0..max_retries {
+            match self.try_generate_text(model, prompt).await {
+                Ok(res) => return Ok(res),
+                Err(e) if is_transient_error(&e) => {
+                    last_err = Some(e);
+                    if attempt + 1 < max_retries {
+                        let base_delay = Duration::from_millis(100 * 2u64.pow(attempt));
+                        let jitter = Duration::from_millis(rand::random::<u64>() % 100);
+                        let delay = (base_delay + jitter).min(Duration::from_secs(5));
+                        tracing::warn!(
+                            attempt = attempt + 1,
+                            max = max_retries,
+                            delay_ms = delay.as_millis(),
+                            "Ollama generate_text transient error, retrying"
+                        );
+                        tokio::time::sleep(delay).await;
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        match last_err {
+            Some(e) => Err(e),
+            None => Err(MemFuseError::Storage(
+                "generate_text retries exhausted with no error captured".into(),
+            )),
+        }
+    }
+
+    /// Single generate_text attempt via POST /api/chat.
+    pub async fn try_generate_text(&self, model: &str, prompt: &str) -> Result<String> {
         validate_model_name(model)?;
         let sanitized = sanitize_prompt_input(prompt);
         if sanitized.trim().is_empty() {
@@ -498,6 +548,42 @@ impl OllamaClient {
 
     /// Generates non-streaming text completion via POST /api/generate.
     pub async fn generate(&self, model: &str, prompt: &str) -> Result<String> {
+        validate_model_name(model)?;
+        let mut last_err = None;
+        let max_retries = self.config.max_retries;
+
+        for attempt in 0..max_retries {
+            match self.try_generate(model, prompt).await {
+                Ok(res) => return Ok(res),
+                Err(e) if is_transient_error(&e) => {
+                    last_err = Some(e);
+                    if attempt + 1 < max_retries {
+                        let base_delay = Duration::from_millis(100 * 2u64.pow(attempt));
+                        let jitter = Duration::from_millis(rand::random::<u64>() % 100);
+                        let delay = (base_delay + jitter).min(Duration::from_secs(5));
+                        tracing::warn!(
+                            attempt = attempt + 1,
+                            max = max_retries,
+                            delay_ms = delay.as_millis(),
+                            "Ollama generate transient error, retrying"
+                        );
+                        tokio::time::sleep(delay).await;
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        match last_err {
+            Some(e) => Err(e),
+            None => Err(MemFuseError::Storage(
+                "generate retries exhausted with no error captured".into(),
+            )),
+        }
+    }
+
+    /// Single generate attempt via POST /api/generate (no retry).
+    pub async fn try_generate(&self, model: &str, prompt: &str) -> Result<String> {
         validate_model_name(model)?;
         let sanitized_prompt = sanitize_prompt_input(prompt);
         let url = format!("{}/api/generate", self.base_url());
@@ -593,13 +679,14 @@ impl OllamaClient {
                         let base_delay = Duration::from_millis(100 * 2u64.pow(attempt));
                         let jitter = Duration::from_millis(rand::random::<u64>() % 100);
                         let delay = (base_delay + jitter).min(Duration::from_secs(5));
-                        tracing::warn!(
-                            attempt = attempt + 1,
-                            max = max_retries,
-                            delay_ms = delay.as_millis(),
-                            "Ollama embed transient network error, retrying: {}",
-                            last_err.as_ref().unwrap() // unwrap allowed
-                        );
+                        if let Some(err) = last_err.as_ref() {
+                            tracing::warn!(
+                                attempt = attempt + 1,
+                                max = max_retries,
+                                delay_ms = delay.as_millis(),
+                                "Ollama embed transient network error, retrying: {err}"
+                            );
+                        }
                         tokio::time::sleep(delay).await;
                     }
                 }

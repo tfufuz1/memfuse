@@ -6,6 +6,7 @@
 //! Empirisch: 49% weniger Retrieval-Fehler vs. naïves Chunking.
 //! Mit Cross-Encoder Reranking: 67% Reduktion.
 
+use crate::client::sanitize_prompt_input;
 use crate::OllamaClient;
 use memfuse_core::MemFuseError;
 
@@ -82,14 +83,18 @@ impl ContextPrefixEngine {
             ));
         }
 
+        // Sanitization gegen Prompt Injection
+        let sanitized_doc = sanitize_prompt_input(full_document);
+        let sanitized_chunk = sanitize_prompt_input(chunk_content);
+
         // Dokument kürzen um LLM-Kontextfenster nicht zu sprengen
-        let doc_excerpt = truncate_chars(full_document, self.config.max_document_chars);
+        let doc_excerpt = truncate_chars(&sanitized_doc, self.config.max_document_chars);
         let max_p = self.config.max_prefix_tokens * 4; // Chars-Approximation
 
         let prompt = format!(
             "Hier ist ein Dokument:\n<document>\n{doc_excerpt}\n</document>\n\n\
              Hier ist ein spezifischer Abschnitt aus diesem Dokument:\n\
-             <chunk>\n{chunk_content}\n</chunk>\n\n\
+             <chunk>\n{sanitized_chunk}\n</chunk>\n\n\
              Schreibe 1-2 Sätze, die diesen Abschnitt im Kontext des \
              Gesamtdokuments beschreiben. Maximal {max_p} Zeichen. \
              Nur der beschreibende Text, keine Einleitung."
