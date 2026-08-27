@@ -445,8 +445,11 @@ mod tests {
 
         let res = CrossEncoderReranker::new(cfg);
         assert!(res.is_err());
-        let err = res.err().unwrap();
-        assert!(matches!(err, MemFuseError::InvalidInput(_)));
+        if let Err(err) = res {
+            assert!(matches!(err, MemFuseError::InvalidInput(_)));
+        } else {
+            panic!("Expected error for missing model/tokenizer paths");
+        }
         Ok(())
     }
 }
