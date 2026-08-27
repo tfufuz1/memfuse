@@ -1,4 +1,4 @@
-use memfuse_saos_agent::{NodeType, StateGraph};
+use memfuse_agent::{NodeType, StateGraph};
 
 #[test]
 fn test_stategraph_complex_workflow() {

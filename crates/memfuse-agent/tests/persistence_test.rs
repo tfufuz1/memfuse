@@ -1,9 +1,9 @@
+use memfuse_agent::context::{AgentContext, AgentStatus};
+use memfuse_agent::engine::OrchestratorEngine;
+use memfuse_agent::graph::{NodeType, StateGraph};
+use memfuse_agent::step::{AgentTool, StepResult};
 use memfuse_core::TokenBudget;
 use memfuse_db::{MemFuse, MemFuseConfig};
-use memfuse_saos_agent::context::{AgentContext, AgentStatus};
-use memfuse_saos_agent::engine::OrchestratorEngine;
-use memfuse_saos_agent::graph::{NodeType, StateGraph};
-use memfuse_saos_agent::step::{AgentTool, StepResult};
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -41,7 +41,7 @@ async fn test_agent_persistence_and_recovery() {
     };
 
     let db = Arc::new(MemFuse::open_with_config(db_path, config).await.unwrap());
-    let state_collection = Arc::new(db.collection("agent_state").await.unwrap());
+    let state_collection = db.collection("agent_state").await.unwrap();
 
     let mut graph = StateGraph::new();
     graph.add_node("start", "Start Node", NodeType::Start, None);
@@ -93,7 +93,7 @@ async fn test_agent_persistence_and_recovery() {
         .await
         .unwrap(),
     );
-    let state_collection2 = Arc::new(db2.collection("agent_state").await.unwrap());
+    let state_collection2 = db2.collection("agent_state").await.unwrap();
 
     let mut ctx2 = AgentContext::new(
         "test_task_123",

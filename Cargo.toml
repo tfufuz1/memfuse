@@ -73,6 +73,7 @@ memfuse-embed = { path = "crates/memfuse-embed" }
 memfuse-py    = { path = "crates/memfuse-py" }
 memfuse-tauri = { path = "crates/memfuse-tauri" }
 memfuse-mcp   = { path = "crates/memfuse-mcp" }
+memfuse-agent = { path = "crates/memfuse-agent" }
 memfuse-ollama = { path = "crates/memfuse-ollama" }
 
 # ── Archived Zone ──────────────────────────────────────────────────────────────

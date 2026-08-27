@@ -3,11 +3,16 @@ name = "memfuse-mcp"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+agent-workflows = ["memfuse-agent"]
+
 [dependencies]
 memfuse-db = { workspace = true }
 memfuse-core = { workspace = true }
 memfuse-crypto = { workspace = true }
 memfuse-ollama = { workspace = true }
+memfuse-agent = { workspace = true, optional = true }
 zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 rand = { workspace = true }
 parking_lot = { workspace = true }

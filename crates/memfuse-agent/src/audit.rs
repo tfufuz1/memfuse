@@ -41,25 +41,25 @@ impl AuditLog {
             .await
     }
 
-    /// Replays all audit entries for a given task by sequentially probing keys.
-    ///
-    /// Since `Collection` has no prefix-scan API, we probe
-    /// `audit:{task_id}:step:0`, `audit:{task_id}:step:1`, … until a gap is found.
+    /// Replays all audit entries for a given task via scan_prefix.
     pub async fn replay_task(&self, task_id: &str) -> Result<Vec<AuditEntry>> {
-        let mut entries = Vec::new();
-        for step in 0u64.. {
-            let key = format!("audit:{}:step:{}", task_id, step);
-            match self.collection.get(&key).await? {
-                Some(doc) => {
-                    if let Some(meta) = doc.metadata {
-                        let entry: AuditEntry = serde_json::from_value(meta)
-                            .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
-                        entries.push(entry);
-                    }
-                }
-                None => break,
-            }
-        }
+        let prefix = format!("audit:{}:step:", task_id);
+        let raw = self.collection.scan_prefix(&prefix).await?;
+
+        let mut entries: Vec<AuditEntry> = raw
+            .into_iter()
+            .filter_map(|(_key, meta)| {
+                let entry_val = meta.get("metadata").cloned().unwrap_or(meta);
+                serde_json::from_value::<AuditEntry>(entry_val)
+                    .map_err(|e| {
+                        tracing::warn!("AuditLog: Deserialisierungsfehler: {e}");
+                    })
+                    .ok()
+            })
+            .collect();
+
+        // Sortiere nach step_count für deterministisches Replay
+        entries.sort_by_key(|e| e.step_count);
         Ok(entries)
     }
 }
