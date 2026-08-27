@@ -2,7 +2,7 @@
 //! # Hierarchical Navigable Small World (HNSW) Index
 //!
 //! This module implements the HNSW algorithm for efficient approximate nearest neighbor (ANN) search.
-// TODO: Module documentation added
+// AI-TAG[DOC-DRIFT][MINOR][AGT-INDEX-003][RESOLVED] Module documentation added
 // INVARIANT: Hierarchical Navigable Small World Index.
 // IMPLEMENTS: VectorIndex Trait (memfuse-core/traits.rs)
 // CONSTRUCT: Greedyensuche + Heuristik für Diversitätsauswahl der Nachbarn.
