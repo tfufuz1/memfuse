@@ -36,6 +36,9 @@ pub struct MultiStepResult {
     pub sub_queries: Vec<String>,
 }
 
+// ANCHOR:MULTISTEP:QUERY_REWRITER — External QueryRewriter trait contract and error isolation.
+// TRACKING-ISSUE: #142 (Ollama / LLM-based QueryRewriter implementation in memfuse-ollama crate)
+
 /// Multi-Step Retrieval Engine.
 ///
 /// Implementiert iteratives Query-Rewriting für komplexe Agenten-Abfragen.
@@ -79,6 +82,7 @@ impl<S: StorageEngine> MultiStepEngine<S> {
     ) -> Result<MultiStepResult> {
         use crate::fusion::reciprocal_rank_fusion;
 
+        let k = k.min(memfuse_core::MAX_SEARCH_K);
         let mut all_result_sets: Vec<Vec<SearchResult>> = Vec::new();
         let mut sub_queries: Vec<String> = Vec::new();
         let mut rounds_executed = 0;
@@ -117,22 +121,44 @@ impl<S: StorageEngine> MultiStepEngine<S> {
         let mut current_results = round1;
 
         for _round in 2..=self.config.max_rounds {
-            let sub_qs = rewriter.rewrite(original_query, &current_results).await?;
+            let sub_qs = match rewriter.rewrite(original_query, &current_results).await {
+                Ok(qs) => qs,
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "QueryRewriter.rewrite() failed in round; stopping expansion gracefully"
+                    );
+                    break;
+                }
+            };
+
             if sub_qs.is_empty() {
                 break;
             }
 
+            let mut executed_sub_query = false;
             for sub_q in &sub_qs {
-                let sub_results = self
-                    .collection
-                    .hybrid_search(sub_q, vector, k, None)
-                    .await?;
-                all_result_sets.push(sub_results.clone());
-                current_results = sub_results;
-                sub_queries.push(sub_q.clone());
+                match self.collection.hybrid_search(sub_q, vector, k, None).await {
+                    Ok(sub_results) => {
+                        all_result_sets.push(sub_results.clone());
+                        current_results = sub_results;
+                        sub_queries.push(sub_q.clone());
+                        executed_sub_query = true;
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            sub_query = %sub_q,
+                            error = %e,
+                            "Sub-query search failed in multi-step execution; skipping sub-query"
+                        );
+                    }
+                }
             }
 
-            rounds_executed += 1;
+            if executed_sub_query {
+                rounds_executed += 1;
+            }
+
             if self.quality_sufficient(&current_results) {
                 break;
             }
