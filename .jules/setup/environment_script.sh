@@ -107,6 +107,14 @@ else
     echo "  ✅ ADR-010: axum not in memfuse-mcp (stdio-only MCP)"
 fi
 
+echo ""
+echo "[8b] Checking documentation drift (informational)..."
+if cargo run -p xtask -- sync-docs --check 2>&1 | tail -10; then
+    echo "  ✅ Docs currently in sync with code"
+else
+    echo "  ⚠️  Docs drifted — run 'just sync-docs' before finishing this session"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "============================================================"

@@ -69,16 +69,14 @@ jobs:
           fi
           echo "✅ Alle Tags haben gültige Zeitstempel"
 
-      - name: "Gate 5: WORKING_STATE.md existiert und ist aktuell"
+      - name: "Gate 5: Dokumentation ist synchron mit Inline-Tags (kein Drift)"
         run: |
-          if [ ! -f "WORKING_STATE.md" ]; then
-            echo "❌ WORKING_STATE.md fehlt — Session-Handoff nicht möglich"
+          cargo run -p xtask -- sync-docs
+          if ! git diff --quiet -- WORKING_STATE.md docs/ARCHITECTURE.md docs/SOURCE_OF_TRUTH.md; then
+            echo "❌ Generierte Doku-Abschnitte sind veraltet. Lokal ausführen:"
+            echo "    just sync-docs"
+            echo "und den Diff committen."
+            git --no-pager diff -- WORKING_STATE.md docs/ARCHITECTURE.md docs/SOURCE_OF_TRUTH.md
             exit 1
           fi
-          DAYS_OLD=$(( ($(date +%s) - $(date -r WORKING_STATE.md +%s)) / 86400 ))
-          LAST_COMMIT_TOUCHED_WORKING_STATE=$(git log -1 --name-only --format="" | grep -c "^WORKING_STATE.md$" || true)
-          if [ "$DAYS_OLD" -gt 3 ] && [ "$LAST_COMMIT_TOUCHED_WORKING_STATE" -eq 0 ]; then
-            echo "❌ WORKING_STATE.md ist $DAYS_OLD Tage alt (> 3 Tage) UND der letzte Commit verändert WORKING_STATE.md nicht."
-            exit 1
-          fi
-          echo "✅ WORKING_STATE.md vorhanden und aktuell"
+          echo "✅ Dokumentation synchron mit Code"
