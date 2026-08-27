@@ -151,10 +151,10 @@ async fn run_regex_transformation(
     }
 
     // ── 2. Pattern kompilieren ───────────────────────────────────────────────
-    // `RegexBuilder` setzt ein `size_limit` (10 KiB) gegen übergroße /
+    // `RegexBuilder` setzt ein `size_limit` (100 KiB) gegen übergroße /
     // katastrophale Regex-Kompilierungen und ReDoS-Muster.
     let re = RegexBuilder::new(pattern)
-        .size_limit(10 * 1024)
+        .size_limit(100 * 1024)
         .build()
         .map_err(|e| format!("Ungültiges Regex-Pattern: {e}"))?;
 
@@ -314,7 +314,7 @@ pub fn validate_regex_pattern(pattern: String) -> RegexValidationResult {
         MAX_REGEX_INPUT_BYTES
     };
 
-    match RegexBuilder::new(&pattern).size_limit(10 * 1024).build() {
+    match RegexBuilder::new(&pattern).size_limit(100 * 1024).build() {
         Ok(_) => RegexValidationResult {
             is_valid: true,
             error: String::new(),

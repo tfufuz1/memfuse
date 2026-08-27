@@ -42,11 +42,14 @@ pub fn extract_docx_bytes(bytes: &[u8]) -> Result<String> {
 pub async fn extract_docx_text(path: &Path) -> Result<String> {
     let path_buf = path.to_path_buf();
     tokio::task::spawn_blocking(move || {
-        let bytes = std::fs::read(&path_buf).map_err(|e| {
-            MemFuseError::Internal(format!("Failed to read DOCX file {:?}: {e}", path_buf))
-        })?;
-        extract_docx_bytes(&bytes)
+        std::panic::catch_unwind(|| {
+            let bytes = std::fs::read(&path_buf).map_err(|e| {
+                MemFuseError::Internal(format!("Failed to read DOCX file {:?}: {e}", path_buf))
+            })?;
+            extract_docx_bytes(&bytes)
+        })
     })
     .await
     .map_err(|e| MemFuseError::Internal(format!("DOCX extraction task panicked: {e:?}")))?
+    .map_err(|_| MemFuseError::Internal("DOCX extraction panicked on malformed file".into()))?
 }

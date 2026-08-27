@@ -15,11 +15,14 @@ pub fn extract_pdf_bytes(bytes: &[u8]) -> Result<String> {
 pub async fn extract_pdf_text(path: &Path) -> Result<String> {
     let path_buf = path.to_path_buf();
     tokio::task::spawn_blocking(move || {
-        let bytes = std::fs::read(&path_buf).map_err(|e| {
-            MemFuseError::Internal(format!("Failed to read PDF file {:?}: {e}", path_buf))
-        })?;
-        extract_pdf_bytes(&bytes)
+        std::panic::catch_unwind(|| {
+            let bytes = std::fs::read(&path_buf).map_err(|e| {
+                MemFuseError::Internal(format!("Failed to read PDF file {:?}: {e}", path_buf))
+            })?;
+            extract_pdf_bytes(&bytes)
+        })
     })
     .await
     .map_err(|e| MemFuseError::Internal(format!("PDF extraction task panicked: {e:?}")))?
+    .map_err(|_| MemFuseError::Internal("PDF extraction panicked on malformed file".into()))?
 }

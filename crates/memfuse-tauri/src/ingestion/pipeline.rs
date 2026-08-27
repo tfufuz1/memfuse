@@ -99,23 +99,47 @@ impl IngestionPipeline {
             )));
         }
 
-        let bytes = std::fs::read(path).map_err(|e| {
-            MemFuseError::Internal(format!("Datei lesen fehlgeschlagen für {:?}: {e}", path))
-        })?;
-
+        let path_buf = path.to_path_buf();
         let extension = path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_lowercase();
 
-        let raw_text = match extract_text_from_bytes(&bytes, &extension) {
-            Ok(text) => text,
-            Err(e) => {
+        let extract_res = tokio::task::spawn_blocking(move || {
+            std::panic::catch_unwind(|| {
+                let bytes = std::fs::read(&path_buf).map_err(|e| {
+                    MemFuseError::Internal(format!(
+                        "Datei lesen fehlgeschlagen für {:?}: {e}",
+                        path_buf
+                    ))
+                })?;
+                extract_text_from_bytes(&bytes, &extension)
+            })
+        })
+        .await;
+
+        let raw_text = match extract_res {
+            Ok(Ok(Ok(text))) => text,
+            Ok(Ok(Err(e))) => {
                 return Ok(IngestReport {
                     file_path: path.display().to_string(),
                     chunks_created: 0,
                     errors: vec![e.to_string()],
+                });
+            }
+            Ok(Err(_panic_payload)) => {
+                return Ok(IngestReport {
+                    file_path: path.display().to_string(),
+                    chunks_created: 0,
+                    errors: vec!["Extraction panicked on malformed file".to_string()],
+                });
+            }
+            Err(join_err) => {
+                return Ok(IngestReport {
+                    file_path: path.display().to_string(),
+                    chunks_created: 0,
+                    errors: vec![format!("Extraction task failed: {join_err:?}")],
                 });
             }
         };
@@ -383,5 +407,62 @@ mod tests {
             err_msg.contains("File size exceeds maximum allowed size of 100 MB"),
             "Error message was: {err_msg}"
         );
+    }
+
+    struct MockEmbedder {
+        fail_on_even: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl TextEmbeddingEngine for MockEmbedder {
+        async fn embed(&self, text: &str) -> Result<Vec<f32>> {
+            if self.fail_on_even && text.contains("Even") {
+                Err(MemFuseError::Internal("Mock embedder failure".into()))
+            } else {
+                Ok(vec![0.1; 768])
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ingest_panic_recovery() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("malformed.pdf");
+        std::fs::write(&file_path, b"not a real pdf content").unwrap();
+
+        let embedder = Arc::new(MockEmbedder { fail_on_even: false });
+        let pipeline = IngestionPipeline::new(embedder);
+
+        // Standard MemFuse DB setup in memory or temp dir
+        let db = memfuse_db::MemFuse::open(temp_dir.path()).await.unwrap();
+        let collection = db.collection("test_col").await.unwrap();
+
+        let report = pipeline.ingest_file(&file_path, &collection).await.unwrap();
+        assert_eq!(report.chunks_created, 0);
+        assert!(!report.errors.is_empty());
+        assert!(report.errors[0].contains("PDF extraction failed") || report.errors[0].contains("panicked"));
+    }
+
+    #[tokio::test]
+    async fn test_partial_failure_error_aggregation() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("test_partial.md");
+        // Create 3 long sections with distinct headings so MarkdownChunker creates 3 separate chunks (>50 tokens each)
+        let chunk1 = format!("# Section 1\n{}\nChunk Odd 1\n\n", "word ".repeat(60));
+        let chunk2 = format!("# Section 2\n{}\nChunk Even 2\n\n", "word ".repeat(60));
+        let chunk3 = format!("# Section 3\n{}\nChunk Odd 3\n\n", "word ".repeat(60));
+        let content = format!("{chunk1}{chunk2}{chunk3}");
+        std::fs::write(&file_path, content).unwrap();
+
+        let embedder = Arc::new(MockEmbedder { fail_on_even: true });
+        let pipeline = IngestionPipeline::new(embedder);
+
+        let db = memfuse_db::MemFuse::open(temp_dir.path()).await.unwrap();
+        let collection = db.collection("test_col").await.unwrap();
+
+        let report = pipeline.ingest_file(&file_path, &collection).await.unwrap();
+        assert_eq!(report.chunks_created, 2);
+        assert_eq!(report.errors.len(), 1);
+        assert!(report.errors[0].contains("Embedding fehlgeschlagen"));
     }
 }
