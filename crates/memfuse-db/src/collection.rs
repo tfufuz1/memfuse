@@ -282,9 +282,7 @@ impl<S: StorageEngine> Collection<S> {
                             }
 
                             if let Some(emb) = embedding {
-                                self.index
-                                    .insert(recovery_tx, doc_id, &emb)
-                                    .await?;
+                                self.index.insert(recovery_tx, doc_id, &emb).await?;
                                 repair_count += 1;
                                 recovered_any = true;
                             }

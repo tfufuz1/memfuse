@@ -95,7 +95,10 @@ fn extract_body_from_parsed_mail(parsed: &mailparse::ParsedMail) -> String {
         collect_parts(parsed, &mut plain_text, &mut html_text);
 
         if let Some(plain) = plain_text {
-            plain.trim_end_matches('\n').trim_end_matches("\r\n").to_string()
+            plain
+                .trim_end_matches('\n')
+                .trim_end_matches("\r\n")
+                .to_string()
         } else if let Some(html) = html_text {
             html
         } else {
@@ -103,7 +106,9 @@ fn extract_body_from_parsed_mail(parsed: &mailparse::ParsedMail) -> String {
             if parsed.ctype.mimetype == "text/html" {
                 strip_html(&body)
             } else {
-                body.trim_end_matches('\n').trim_end_matches("\r\n").to_string()
+                body.trim_end_matches('\n')
+                    .trim_end_matches("\r\n")
+                    .to_string()
             }
         }
     }

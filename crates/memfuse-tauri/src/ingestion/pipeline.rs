@@ -430,7 +430,9 @@ mod tests {
         let file_path = temp_dir.path().join("malformed.pdf");
         std::fs::write(&file_path, b"not a real pdf content").unwrap();
 
-        let embedder = Arc::new(MockEmbedder { fail_on_even: false });
+        let embedder = Arc::new(MockEmbedder {
+            fail_on_even: false,
+        });
         let pipeline = IngestionPipeline::new(embedder);
 
         // Standard MemFuse DB setup in memory or temp dir
@@ -440,7 +442,10 @@ mod tests {
         let report = pipeline.ingest_file(&file_path, &collection).await.unwrap();
         assert_eq!(report.chunks_created, 0);
         assert!(!report.errors.is_empty());
-        assert!(report.errors[0].contains("PDF extraction failed") || report.errors[0].contains("panicked"));
+        assert!(
+            report.errors[0].contains("PDF extraction failed")
+                || report.errors[0].contains("panicked")
+        );
     }
 
     #[tokio::test]
