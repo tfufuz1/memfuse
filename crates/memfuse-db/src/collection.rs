@@ -1,5 +1,6 @@
 //! Logically isolated Collections inside the MemFuse database.
 // FILE-CONTEXT
+// STAND: 2026-08-27T14:32:00Z
 // ZWECK: Collection-API — zentraler Einstiegspunkt für Insert/Search/Delete
 // INVARIANTEN: TxId monoton steigend (AtomicU64, SeqCst); kein direkter DB-Zugriff ohne TxId
 // NICHT-OFFENSICHTLICH: SystemTime als TxId-Fallback ist unsicher bei EMBED_CONCURRENCY>1
@@ -634,7 +635,7 @@ impl<S: StorageEngine> Collection<S> {
         db_tx.commit().await
     }
 
-    // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: snapshot_seq() now propagates storage errors
+    // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-001 — snapshot_seq() now propagates storage errors (TS:2026-08-25T00:00:00Z)
     // instead of silently mapping them to u64::MAX (ID: AGT-DB-001).
     // Consistent with every other error-propagation path in this file.
     async fn snapshot_seq(&self) -> Result<u64> {
@@ -1424,7 +1425,7 @@ impl<S: StorageEngine> Collection<S> {
     /// Rebuilds the HNSW index from storage.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn load_index(&self) -> Result<()> {
-        // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: load_index now scans user_keys (key_type=0)
+        // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-002 — load_index now scans user_keys (key_type=0) (TS:2026-08-25T00:00:00Z)
         // because doc_keys (key_type=1) no longer contain embeddings (ID: AGT-DB-002).
         let scan_prefix = if self.name == "default" {
             b"".to_vec()

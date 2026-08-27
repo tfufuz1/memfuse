@@ -1,4 +1,4 @@
-// AI-TAG[DOC-DRIFT][MINOR][AGT-INDEX-001][RESOLVED] Module documentation added
+// AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-001 — Module documentation added (TS:2026-08-25T00:00:00Z)
 // SAFETY: Dokumentierte unsafe-Blöcke in SIMD-Zone
 // GEFUNDEN: 81 unsafe-Blöcke. Aktueller Zustand: 147 SAFETY:-Kommentare.
 // ERWARTET: Jeder unsafe-Block braucht SAFETY: Kommentar mit:
@@ -36,7 +36,7 @@
 //! scalar counterparts within a tolerance of `±1e-6` (§4 Determinismus-Gesetz).
 //! Accumulation order is maintained where possible to minimize divergence.
 
-// ANCHOR:REFACTOR:WP-0.0-STABLESIMD — Remove nightly portable_simd
+// ANCHOR[REFACTOR:WP-0.0-STABLESIMD] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Remove nightly portable_simd
 // TEST: cargo +stable check -p memfuse-index
 // DONE: #![feature(portable_simd)] ist entfernt und distance.rs nutzt stabiles Rust.
 
@@ -51,7 +51,7 @@ use std::arch::x86_64::*;
 
 /// Computes distance between two vectors using the specified metric.
 #[inline]
-// AI-TAG[SIMD-SAFETY][MINOR][AGT-INDEX-002][OPEN] Stable SIMD Migration when std::simd stabilizes
+// AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-25T00:00:00Z)
 // Standardize SIMD distance metrics on Stable Rust, preventing panic in hardware fallbacks.
 // Fallbacks MUST be verified to prevent Zero-Panic violations.
 pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse_core::Result<f32> {
@@ -362,7 +362,7 @@ unsafe fn dot_product_neon(a: &[f32], b: &[f32]) -> f32 {
     sum
 }
 
-// ANCHOR:REFACTOR:WP-0.0-STABLESIMD — Removed std_simd functions
+// ANCHOR[REFACTOR:WP-0.0-STABLESIMD-2] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Removed std_simd functions
 
 // -----------------------------------------------------------------------------
 // AVX2 Implementations

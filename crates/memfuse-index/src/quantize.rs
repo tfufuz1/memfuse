@@ -95,7 +95,7 @@ impl ScalarQuantizer {
         }
     }
 
-    /// Calculates quantization drift as the fraction of dimensions falling outside [mins[i], maxes[i]].
+    /// Calculates quantization drift as the fraction of dimensions falling outside \[mins\[i\], maxes\[i\]\].
     pub fn check_drift(&self, vector: &[f32]) -> f32 {
         if self.dimension == 0 || vector.is_empty() {
             return 0.0;

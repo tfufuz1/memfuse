@@ -57,13 +57,17 @@ graph TD
 ## 3. Das AI-TAG Härtungs-Protokoll (Anti-Drift)
 Kann ein identifiziertes Risiko oder ein Architektur-Drift nicht sofort behoben werden, MUSS ein Inline-Tag hinterlassen werden:
 ```rust
-// AI-TAG[KATEGORIE][SEVERITY] Kurzbeschreibung des Problems
+// AI-TAG[KATEGORIE][SEVERITY] Kurzbeschreibung des Problems (ID: AGT-NNNN) (TS: YYYY-MM-DDTHH:MM:SSZ)
 // BEFUND: Detaillierte Analyse des Ist-Zustands im Code.
 // RISIKO: Was passiert bei Last, Ausfall oder Edge Cases?
 // EMPFEHLUNG: Konkreter Vorschlag für die Behebung.
 // TODO[STABILIZE]: Priorität, Modul/Crate, Ziel-Strang.
-// ID: AGT-<Zahl>
 ```
+Beim Abschluss:
+```rust
+// RESOLVED: AGT-XXXX — <fix> (TS: YYYY-MM-DDTHH:MM:SSZ)
+```
+*   **Zeitstempel-Pflicht**: Das `TS:YYYY-MM-DDTHH:MM:SSZ`-Feld ist verpflichtend (ISO-8601 UTC). Fehlt das `TS:`-Feld, gilt dies als Grammatikverstoß.
 *   **Kategorien**: `HALLUCINATION` | `DUPLICATION` | `TEST-MIRRORING` | `DEPENDENCY` | `SPEC-DRIFT` | `CONTEXT-GAP` | `BOUNDARY-MISSING` | `CONVENTION-DRIFT` | `CONCURRENCY` | `PANIC-SAFETY` | `SMELL`.
 *   **Severities**: `BLOCKER` | `CRITICAL` | `MAJOR` | `MINOR`.
 

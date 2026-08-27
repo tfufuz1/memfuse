@@ -1,5 +1,5 @@
 //! End-to-End integration tests for the full MemFuse stack.
-// ANCHOR:INTEGRATION:E2E-001 STATUS:DONE AGENT:12 DATE:2026-05-18
+// ANCHOR[INTEGRATION:E2E-001] STATUS:DONE (TS:2026-05-18T00:00:00Z)
 
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;

@@ -100,7 +100,7 @@ impl ContextCompactor {
                         // Chunk wird verworfen
                     }
                     CompactionStrategy::Summarize => {
-                        // AI-TAG[FEATURE-ROADMAP][MINOR][AGT-DB-004][OPEN] Async LLM-Summarization for context compaction
+                        // AI-TAG[SMELL][MINOR] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-25T00:00:00Z)
                         // Fallback: Status-Token
                         let summary = Self::generate_status_token(&chunk);
                         status_tokens.push(StatusToken {

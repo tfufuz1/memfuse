@@ -2,7 +2,7 @@
 //! # Hierarchical Navigable Small World (HNSW) Index
 //!
 //! This module implements the HNSW algorithm for efficient approximate nearest neighbor (ANN) search.
-// AI-TAG[DOC-DRIFT][MINOR][AGT-INDEX-003][RESOLVED] Module documentation added
+// AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-003 — Module documentation added (TS:2026-08-25T00:00:00Z)
 // INVARIANT: Hierarchical Navigable Small World Index.
 // IMPLEMENTS: VectorIndex Trait (memfuse-core/traits.rs)
 // CONSTRUCT: Greedyensuche + Heuristik für Diversitätsauswahl der Nachbarn.
@@ -95,8 +95,8 @@ impl Default for HnswConfig {
 impl HnswConfig {
     /// Validates that the configuration parameters are within acceptable bounds.
     pub fn validate(&self) -> Result<()> {
-        // ANCHOR:ALG-FIX:D2-003 — ef_construction < M Guard fehlt
-        // ANCHOR:ALG-FIX:D2-003 — ef_construction < M Guard fehlt
+        // ANCHOR[ALG-FIX:D2-003] STATUS:DONE (TS:2026-06-01T00:00:00Z) — ef_construction < M Guard fehlt
+        // ANCHOR[ALG-FIX:D2-003] STATUS:DONE (TS:2026-06-01T00:00:00Z) — ef_construction < M Guard fehlt
         // INVARIANTE: ef_construction >= M (INV-HNSW-1)
         if self.ef_construction < self.m {
             return Err(MemFuseError::invalid_input(format!(
@@ -215,8 +215,8 @@ impl PartialOrd for Candidate {
 
 impl Ord for Candidate {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // ANCHOR:ALG-FIX:D2-005 — total_cmp statt unwrap_or(Equal) für NaN-Safety
-        // ANCHOR:ALG-FIX:D2-005 — total_cmp statt unwrap_or(Equal) für NaN-Safety
+        // ANCHOR[ALG-FIX:D2-005] STATUS:DONE (TS:2026-06-01T00:00:00Z) — total_cmp statt unwrap_or(Equal) für NaN-Safety
+        // ANCHOR[ALG-FIX:D2-005] STATUS:DONE (TS:2026-06-01T00:00:00Z) — total_cmp statt unwrap_or(Equal) für NaN-Safety
         // total_cmp gibt eine deterministische Ordnung für alle f32 inkl. NaN.
         self.distance.total_cmp(&other.distance)
     }
@@ -363,7 +363,7 @@ impl HnswIndex {
     }
 
     /// Persists the index to a flat file.
-    // ANCHOR:REFACTOR:WP-0.0-ASYNCIO — Fix blocking I/O in HnswIndex::save
+    // ANCHOR[REFACTOR:WP-0.0-ASYNCIO] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Fix blocking I/O in HnswIndex::save
     // TEST: grep "std::fs" crates/memfuse-index/src/hnsw.rs
     // DONE: Alle std::fs Aufrufe in save() sind in spawn_blocking gekapselt oder durch tokio::fs ersetzt.
     pub async fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
@@ -645,8 +645,8 @@ impl HnswIndexCore {
 
     fn random_layer(&self) -> usize {
         let mut rng = rand::thread_rng();
-        // ANCHOR:ALG-FIX:D2-002 — Guard gegen ln(0) = -∞ (INV-HNSW-2)
-        // ANCHOR:ALG-FIX:D2-002 — Guard gegen ln(0) = -∞ (INV-HNSW-2)
+        // ANCHOR[ALG-FIX:D2-002] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Guard gegen ln(0) = -∞ (INV-HNSW-2)
+        // ANCHOR[ALG-FIX:D2-002] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Guard gegen ln(0) = -∞ (INV-HNSW-2)
         // rng.gen() gibt [0, 1) — bei r=0.0: ln(0)=-∞ → usize::MAX → OOM.
         // max(f64::EPSILON) verhindert diesen Grenzfall.
         let r: f32 = rng.gen::<f32>();
@@ -725,8 +725,8 @@ impl HnswIndexCore {
                     })?
                     .symmetric_dist(a, b, self.config.distance_metric)
             }
-            // ANCHOR:ALG-FIX:PANIC-001 — Mixed VectorData Guard (Zero-Panic Policy)
-            // ANCHOR:ALG-FIX:PANIC-001 — Mixed VectorData Guard (Zero-Panic Policy)
+            // ANCHOR[ALG-FIX:PANIC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Mixed VectorData Guard (Zero-Panic Policy)
+            // ANCHOR[ALG-FIX:PANIC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Mixed VectorData Guard (Zero-Panic Policy)
             // FUNDORT: memfuse-index/src/hnsw.rs
             _ => Err(MemFuseError::Index(
                 "Mixed vector representations (F32/U8) are not supported".into(),
@@ -989,8 +989,8 @@ impl HnswIndexCore {
             )));
         }
 
-        // ANCHOR:ALG-FIX:D2-004 — NaN/Inf-Validierung bei Insert (Distanzfunktion)
-        // ANCHOR:ALG-FIX:D2-004 — NaN/Inf-Validierung bei Insert (Distanzfunktion)
+        // ANCHOR[ALG-FIX:D2-004] STATUS:DONE (TS:2026-06-01T00:00:00Z) — NaN/Inf-Validierung bei Insert (Distanzfunktion)
+        // ANCHOR[ALG-FIX:D2-004] STATUS:DONE (TS:2026-06-01T00:00:00Z) — NaN/Inf-Validierung bei Insert (Distanzfunktion)
         // NaN-Vektoren würden in BinaryHeap stille Korrumpierung verursachen.
         // Validierung an der Grenze (insert) statt in distance.rs — distance bleibt rein.
         if vector.iter().any(|x| x.is_nan() || x.is_infinite()) {
@@ -1215,8 +1215,8 @@ impl HnswIndexCore {
             self.deleted_nodes.write().insert(idx as u64);
             self.deleted_count.fetch_add(1, Ordering::SeqCst);
 
-            // ANCHOR:ALG-FIX:D2-001 — Entry-Point-Aktualisierung nach Delete (INV-HNSW-4)
-            // ANCHOR:ALG-FIX:D2-001 — Entry-Point-Aktualisierung nach Delete (INV-HNSW-4)
+            // ANCHOR[ALG-FIX:D2-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Entry-Point-Aktualisierung nach Delete (INV-HNSW-4)
+            // ANCHOR[ALG-FIX:D2-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Entry-Point-Aktualisierung nach Delete (INV-HNSW-4)
             // Wenn der gelöschte Knoten der Entry-Point war, muss ein neuer
             // Entry-Point gefunden werden. Strategie: Nachbar auf höchstem Layer.
             let mut ep = self.entry_point.write();
@@ -1802,7 +1802,7 @@ impl VectorIndex for HnswIndex {
         let ops = self.tx_buffer.drain(tx);
         let mut deleted_any = false;
 
-        // ANCHOR:SPEC:WP-2.2-SQ8TRAIN-001 — Lazy Training logic (Stabilized)
+        // ANCHOR[SPEC:WP-2.2-SQ8TRAIN-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Lazy Training logic (Stabilized)
         if self.config.quantize && self.quantizer.read().is_none() {
             let mut train_data = Vec::with_capacity(256.min(ops.len()));
             for op in &ops {
@@ -1854,7 +1854,7 @@ impl VectorIndex for HnswIndex {
                     self.do_delete(doc_id)?;
                     deleted_any = true;
                 }
-                // AI-TAG[PANIC-SAFETY][CRITICAL] [RESOLVED] — IndexOp ist #[non_exhaustive]; neue Varianten
+                // AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-INDEX-004 — IndexOp ist #[non_exhaustive]; neue Varianten (TS:2026-08-25T00:00:00Z)
                 // müssen hier explizit behandelt werden, bevor sie in den HNSW-Commit-Pfad gelangen.
                 // ANWEISUNG: Neue IndexOp-Variante → Arm hier hinzufügen oder UpdateNotSupported zurückgeben.
                 // ID: FIX-03-INDEXOP

@@ -16,7 +16,7 @@
 //! 4. **Token budget limit**: Enforces token budget consumption on each step.
 //!
 //! ADR-020: Re-integration from archived `memfuse-saos-agent` (Commit ddc4c77).
-// AI-TAG[DOC-DRIFT][MINOR][AGT-AGENT-001][RESOLVED 2026-08-27] Re-extracted workflow engine crate requires integration verification.
+// AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-AGENT-001 — Re-extracted workflow engine crate requires integration verification. (TS:2026-08-27T00:00:00Z)
 
 #![forbid(unsafe_code)]
 #![allow(async_fn_in_trait)]

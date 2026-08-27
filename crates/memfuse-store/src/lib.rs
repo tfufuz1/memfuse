@@ -6,7 +6,7 @@
 // INVARIANT: LSM-Tree Storage Engine (Triebwerk — Layer 1).
 // DATEN-PFAD: Client → TxBuffer → WAL → MemTable → SSTable → Compaction
 // INVARIANTE: tokio::fs für Metadaten/Lifecycle, std::fs::File ausschließlich innerhalb spawn_blocking für Block-Level Random-Access.
-// ANCHOR:INTEGRATION STATUS:RESOLVED AGENT:04 DATE:2026-08-24
+// ANCHOR[INTEGRATION:STO-001] STATUS:RESOLVED (TS:2026-08-24T00:00:00Z)
 // MODUL-HIERARCHIE: lsm.rs orchestriert, memtable/wal/sstable sind Bausteine.
 
 // INTENT: strictly forbid unsafe_code

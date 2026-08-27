@@ -1,5 +1,6 @@
 //! DiskANN Out-of-Core Vector Search (WP-4.3).
 // FILE-CONTEXT
+// STAND: 2026-08-27T14:32:00Z
 // ZWECK: DiskANN-Graphindex für Approximate Nearest Neighbor Search
 // INVARIANTEN: unsafe nur hier erlaubt (ADR-017); Graph-Invarianten nach jedem Insert prüfen
 // NICHT-OFFENSICHTLICH: SAFETY-Kommentar VOR jedem unsafe-Block Pflicht (llm_comment_system.md §LEVEL-6)
