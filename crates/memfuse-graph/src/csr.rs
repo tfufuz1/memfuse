@@ -1866,6 +1866,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_csr_graph_traverse_at_returns_adr024_policy_violation() {
+        let graph = CsrGraph::new();
+        let res = graph.traverse_at(EntityId::new(1), 2, 42).await;
+        match res {
+            Err(MemFuseError::PolicyViolation(msg)) => {
+                assert!(
+                    msg.contains("ADR-024"),
+                    "Expected ADR-024 in PolicyViolation error message, got: {}",
+                    msg
+                );
+            }
+            other => panic!("Expected PolicyViolation referencing ADR-024, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
     async fn test_last_tx_id_tracking() {
         let graph = CsrGraph::new();
         assert_eq!(graph.last_tx_id().await.unwrap(), 0); // unwrap

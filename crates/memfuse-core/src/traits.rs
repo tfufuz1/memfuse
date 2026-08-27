@@ -228,7 +228,7 @@ pub trait VectorIndex: Send + Sync + 'static {
         _seq_no: u64,
     ) -> Result<Vec<ScoredDocument>> {
         Err(crate::error::MemFuseError::PolicyViolation(
-            "search_at must be explicitly implemented to guarantee snapshot isolation".into(),
+            "Snapshot isolation for vector/graph search is not yet implemented — tracked in ADR-024".into(),
         ))
     }
 
@@ -476,7 +476,7 @@ pub trait GraphIndex: Send + Sync + 'static {
         _seq_no: u64,
     ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
         Err(crate::error::MemFuseError::PolicyViolation(
-            "traverse_at must be explicitly implemented to guarantee snapshot isolation".into(),
+            "Snapshot isolation for vector/graph search is not yet implemented — tracked in ADR-024".into(),
         ))
     }
 
@@ -724,10 +724,12 @@ mod tests {
 
         // Test search_at default error
         let res2 = index.search_at(&[1.0], 1, 42).await;
-        assert!(matches!(
-            res2,
-            Err(crate::error::MemFuseError::PolicyViolation(_))
-        ));
+        match res2 {
+            Err(crate::error::MemFuseError::PolicyViolation(msg)) => {
+                assert!(msg.contains("ADR-024"), "Unexpected message: {msg}");
+            }
+            _ => panic!("Expected PolicyViolation with ADR-024"),
+        }
     }
 
     #[tokio::test]
@@ -830,9 +832,11 @@ mod tests {
         let res = index
             .traverse_at(crate::types::EntityId::new(1), 2, 42)
             .await;
-        assert!(matches!(
-            res,
-            Err(crate::error::MemFuseError::PolicyViolation(_))
-        ));
+        match res {
+            Err(crate::error::MemFuseError::PolicyViolation(msg)) => {
+                assert!(msg.contains("ADR-024"), "Unexpected message: {msg}");
+            }
+            _ => panic!("Expected PolicyViolation with ADR-024"),
+        }
     }
 }

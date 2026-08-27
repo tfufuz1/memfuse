@@ -57,6 +57,7 @@ MemFuse implementiert eine gestaffelte, mehrstufige Retrieval- und Ingestion-Pip
 | **Graph-Persistenz** | ✅ Erfüllt | Persistierung im LSM-Tree unter den Präfixen `__graph:entity:` und `__graph:edge:`. |
 | **DAG Integrity** | ✅ Erfüllt | Unidirektionale Schichten-Abhängigkeiten von Layer 0 bis Layer 4. |
 | **Disk-I/O Isolation** | ✅ Erfüllt | tokio::fs für Metadaten/Lifecycle, std::fs::File ausschließlich innerhalb spawn_blocking für Block-Level Random-Access (ADR-012). |
+| **Snapshot Isolation** | 🟡 Teilweise | Für Storage (LSM) & Text (BM25) vollständig implementiert. Vektor & Graph-Suche operieren auf dem aktuellen In-Memory-Zustand (ADR-024). |
 
 ## Sicherheit & Privacy
 - **HKDF Key Derivation**: Kryptographischer Kontext pro Datei.
