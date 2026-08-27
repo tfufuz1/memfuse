@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let db = Arc::new(MemFuse::open(&db_path).await?);
     let embedder = Arc::new(OllamaEmbedder::new(&ollama_url, &embed_model));
-    let server = Arc::new(McpServer::new(db, embedder));
+    let server = Arc::new(McpServer::new(db, embedder)?);
 
     tracing::info!(db_path, "MemFuse MCP-Server gestartet (stdio transport)");
     server.run_stdio().await?;

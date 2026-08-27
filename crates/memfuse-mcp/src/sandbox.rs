@@ -86,20 +86,22 @@ pub struct McpSandbox {
 
 impl McpSandbox {
     /// Erstellt eine neue Sandbox-Instanz mit frischem Sitzungsschlüssel.
-    pub fn new(policy: SandboxPolicy) -> Self {
+    pub fn new(policy: SandboxPolicy) -> Result<Self> {
         use rand::RngCore;
         let mut salt = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut salt);
         let mut passphrase = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut passphrase);
-        let key = memfuse_crypto::CryptoKey::try_new(&hex::encode(passphrase), &salt)
-            .expect("CryptoKey initialization failed in McpSandbox"); // expect
+        let key =
+            memfuse_crypto::CryptoKey::try_new(&hex::encode(passphrase), &salt).map_err(|e| {
+                MemFuseError::Internal(format!("McpSandbox: CryptoKey initialization failed: {e}"))
+            })?;
 
-        Self {
+        Ok(Self {
             policy,
             volatile_results: Mutex::new(HashMap::new()),
             session_key: key,
-        }
+        })
     }
 
     /// Gibt die aktuell konfigurierte SandboxPolicy zurück.
@@ -205,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_sandbox_default_policy() {
-        let sandbox = McpSandbox::new(SandboxPolicy::default());
+        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
 
         assert!(sandbox
             .validate_tool_call("memfuse_search", &Value::Null)
@@ -236,7 +238,7 @@ mod tests {
             allow_code_execution: true,
             max_execution_ms: 5_000,
         };
-        let sandbox = McpSandbox::new(policy);
+        let sandbox = McpSandbox::new(policy).unwrap();
 
         assert!(sandbox
             .validate_tool_call("memfuse_search", &Value::Null)
@@ -251,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_volatile_result_encryption_roundtrip() {
-        let sandbox = McpSandbox::new(SandboxPolicy::default());
+        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
         let data = b"Top secret volatile tool result data";
 
         sandbox.store_volatile("res1", data).expect("store"); // expect
@@ -279,7 +281,7 @@ mod tests {
             allow_code_execution: true,
             max_execution_ms: 50,
         };
-        let sandbox = McpSandbox::new(policy);
+        let sandbox = McpSandbox::new(policy).unwrap();
 
         let slow_fut = async {
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;

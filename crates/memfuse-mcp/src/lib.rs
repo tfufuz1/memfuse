@@ -3,7 +3,7 @@ pub mod sandbox;
 #[cfg(test)]
 mod tests;
 
-use memfuse_core::{DocId, TextEmbeddingEngine, MAX_SEARCH_K};
+use memfuse_core::{DocId, MemFuseError, TextEmbeddingEngine, MAX_SEARCH_K};
 use memfuse_db::chunker::{ChunkerConfig, MarkdownChunker};
 use memfuse_db::MemFuse;
 use protocol::{JsonRpcRequest, JsonRpcResponse, McpError};
@@ -37,14 +37,19 @@ pub struct McpServer {
 }
 
 impl McpServer {
-    pub fn new(db: Arc<MemFuse>, embedder: Arc<dyn TextEmbeddingEngine>) -> Self {
+    pub fn new(
+        db: Arc<MemFuse>,
+        embedder: Arc<dyn TextEmbeddingEngine>,
+    ) -> Result<Self, MemFuseError> {
         let policy = SandboxPolicy {
             allow_db_reads: true,
             allow_db_writes: true,
             allow_code_execution: false,
             max_execution_ms: 5_000,
         };
-        Self::with_sandbox(db, embedder, Arc::new(McpSandbox::new(policy)))
+        let sandbox = McpSandbox::new(policy)
+            .map_err(|e| MemFuseError::Internal(format!("Sandbox init: {e}")))?;
+        Ok(Self::with_sandbox(db, embedder, Arc::new(sandbox)))
     }
 
     pub fn with_sandbox(

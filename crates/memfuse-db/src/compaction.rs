@@ -80,7 +80,7 @@ impl ContextCompactor {
         });
 
         for chunk in sorted {
-            let chunk_tokens = chunk.token_count;
+            let chunk_tokens = chunk.combined_token_count();
 
             if tokens_used + chunk_tokens <= max_tokens {
                 tokens_used += chunk_tokens;
@@ -228,5 +228,30 @@ mod tests {
             result.status_tokens[0].replaced_doc_ids,
             vec![DocId::new(2)]
         );
+    }
+
+    #[test]
+    fn test_compact_with_contextual_prefix_respects_budget() {
+        use memfuse_core::{ContextChunk, DocId, TokenBudget};
+
+        let budget = TokenBudget::new(20, 0); // 20 tokens available
+        let compactor = ContextCompactor::new(budget, CompactionStrategy::Truncate);
+
+        // Chunk: token_count=10, prefix adds ~5 tokens → combined=15
+        let chunk = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "content".to_string(),
+            relevance: 1.0,
+            token_count: 10,
+            metadata: None,
+            contextual_prefix: Some("1234567890123456789012".to_string()), // 22 chars → +5 tokens
+        };
+
+        // Without prefix: chunk fits (10 <= 20)
+        // With prefix: chunk fits (15 <= 20)
+        let result = compactor.compact(vec![chunk]);
+        // combined_token_count=15 <= budget=20 → retained
+        assert_eq!(result.retained_chunks.len(), 1);
+        assert_eq!(result.tokens_used, 15); // combined_token_count, not raw token_count
     }
 }
