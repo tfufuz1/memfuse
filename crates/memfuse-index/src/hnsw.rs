@@ -1828,7 +1828,7 @@ impl VectorIndex for HnswIndex {
                     self.do_delete(doc_id)?;
                     deleted_any = true;
                 }
-                // AI-TAG[PANIC-SAFETY][CRITICAL] — IndexOp ist #[non_exhaustive]; neue Varianten
+                // AI-TAG[PANIC-SAFETY][CRITICAL][RESOLVED] — IndexOp ist #[non_exhaustive]; neue Varianten
                 // müssen hier explizit behandelt werden, bevor sie in den HNSW-Commit-Pfad gelangen.
                 // ANWEISUNG: Neue IndexOp-Variante → Arm hier hinzufügen oder UpdateNotSupported zurückgeben.
                 // ID: FIX-03-INDEXOP
