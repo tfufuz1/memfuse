@@ -80,3 +80,8 @@ jobs:
             exit 1
           fi
           echo "✅ Dokumentation synchron mit Code"
+
+      - name: "Gate 8: Konsistenzprüfung der Dokumentation"
+        run: |
+          cargo run -p xtask -- check-consistency
+          echo "✅ Konsistenzprüfung erfolgreich"
