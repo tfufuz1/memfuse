@@ -151,8 +151,6 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
----
-
 ## ADR-014: Regex-Engine-Wahl & ReDoS-Härtung für `run_regex_transformation`
 *   **Datum**: 2026-08-24
 *   **Status**: ✅ Final
@@ -170,7 +168,6 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
     - `AppState` enthält `regex_semaphore: Arc<Semaphore>`.
     - Drei Tauri-Commands: `run_regex_transform`, `run_bulk_regex_transform`, `validate_regex_pattern`.
     - Timeout-Ereignisse werden via `tracing::warn!` geloggt (Monitoring-Pflicht gemäß Auftrag §5).
-
 
 ---
 
@@ -249,6 +246,71 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
     - **Option A**: Erstellung eines separaten `ContextualDocumentChunk`-Typs außerhalb von `ContextChunk`. Verworfen, um Typ-Explosion und Inkonsistenzen in bestehenden Pipeline-Ketten zu vermeiden.
     - **Option B**: Festes Mutieren von `content` mit vorangestelltem Präfix. Verworfen, da Nutzer beim Retrieval den unveränderten Originaltext zurückerhalten sollen.
 *   **Begründung**: Die Erweiterung von `ContextChunk` wahrt die Abwärtskompatibilität (Serde `#[serde(default)]`) und trennt die Speicherung des Originalinhalts von den indexierten Signalrepräsentationen.
+
+---
+
+## ADR-020: Cognitive Operating System als Produktvision
+
+*   **Datum**: 2026-08-27
+*   **Status**: ✅ Final
+*   **Kontext**: Der strategische Forschungsbericht 2026-08-26 zeigt:
+    Der Wettbewerb (Mem0 ECAI-2025, Zep/Graphiti, MemOS) hat sich zu
+    kognitiven Gedächtnisarchitekturen entwickelt. MemFuse als reiner
+    "4-Signal RAG-Engine" ist 2026/2027 nicht SOTA.
+*   **Entscheidung**: MemFuse positioniert sich als **Cognitive Operating
+    System für LLM-Agenten**. Das bedeutet:
+    - Explizite Differenzierung von Gedächtnistypen (Episodic/Semantic/
+      Procedural/Working) als Roadmap-Ziel ab Phase 2
+    - Temporale Wissensgraphen (bi-temporal) als Phase-2-Feature
+    - Memory Consolidation als Phase-3-Feature
+    Die 4-Signal-Architektur bleibt erhalten und ist die korrekte Basis.
+    Der neue Begriff "Cognitive OS" beschreibt das Ziel-Endprodukt.
+*   **Alternativen**:
+    - Beibehaltung "4-Signal Memory Engine" — zu eng, kein Alleinstellungsmerkmal
+    - Pivot auf Cloud-Service — widerspricht Sovereign-Core-Doktrin (ADR-004)
+*   **Begründung**: Die Forschungslandschaft 2025/2026 (Generative Agents,
+    Mem0, MIRIX, A-MEM, Trajectory-Informed Memory) zeigt: passive
+    Speichersysteme verlieren gegen aktiv selbstorganisierende Gedächtnis-
+    Architekturen. Der strategische Hebel ist Qualität und Kognitivität
+    der Memory-Layer, nicht mehr nur Retrieval-Geschwindigkeit.
+*   **Konsequenzen**:
+    - README, SOURCE_OF_TRUTH, ARCHITECTURE werden auf "Cognitive OS"
+      umformuliert (nicht nur "Memory Engine")
+    - docs/memfuse_strategic_roadmap.md wird auf 4-Phasen-Plan aktualisiert
+    - Phase-2-Features (Gedächtnistypen, temporaler Graph) als ADR-geplant
+
+---
+
+## ADR-021: Multi-Signal RAG-Pipeline (Contextual → RRF → Reranking)
+
+*   **Datum**: 2026-08-27
+*   **Status**: ✅ Final
+*   **Kontext**: Die RAG-Sprints (RAG-01 bis RAG-05) haben die Ingestion-
+    und Retrieval-Pipeline mit mehreren Schichten erweitert. Diese
+    Entscheidung kodifiziert die Gesamtarchitektur.
+*   **Entscheidung**: MemFuse implementiert eine mehrstufige RAG-Pipeline:
+    1. **Contextual Ingestion**: ContextPrefixEngine (memfuse-ollama)
+       generiert 50–100 Token LLM-Präfixe vor BM25/HNSW-Indexierung
+    2. **4-Signal Indexierung**: HNSW + Contextual-BM25 + CSR-Graph +
+       Metadaten parallel indexiert
+    3. **Hybrid Retrieval via RRF**: Alle Signale über reciprocal_rank_fusion()
+       fusioniert (memfuse-db/fusion.rs)
+    4. **Multi-Step Expansion**: MultiStepEngine (memfuse-db/multistep.rs)
+       führt bis zu 3 iterative Retrieval-Schleifen aus
+    5. **Cross-Encoder Reranking**: CrossEncoderReranker (memfuse-embed,
+       --features onnx) reordnet Top-K Kandidaten (optionaler Schritt)
+    6. **Context Compaction**: ContextCompactor (memfuse-db/compaction.rs)
+       ersetzt alte Tool-Outputs durch StatusToken
+*   **Alternativen**: Jeder Schritt einzeln opt-in — zu komplex für Nutzer
+*   **Begründung**: Empirisch (Anthropic, 2024): Contextual Embeddings →
+    35% weniger Fehler; + Contextual BM25 → 49%; + Cross-Encoder → 67%.
+    Die gestaffelte Pipeline ist additiv und gracefully degradierend
+    (jede Stufe funktioniert ohne die nächste).
+*   **Konsequenzen**:
+    - BUG-03 (Audit 2026-08-27): combined_token_count() statt token_count()
+      in ContextCompactor — Fix-Prompt existiert in docs/Audit-Reports/
+    - BUG-02: parking_lot::Mutex statt std::sync::Mutex im Reranker
+    - Alle Pipeline-Stufen sind optional und rückwärtskompatibel
 
 ---
 

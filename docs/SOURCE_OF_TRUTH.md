@@ -4,37 +4,40 @@
 
 ---
 
-## Aktueller Projektstatus (Stand: MemFuse Brain & 4-Signal Fusion)
+## Aktueller Projektstatus (Stand: MemFuse Brain & Cognitive OS)
 
-**Produkt**: MemFuse Brain — lokale, air-gapped RAG-Desktop-App & 4-Signal Memory Engine für lokale AI-Agenten
+**Produkt**: MemFuse Brain — Cognitive Operating System für lokale KI-Agenten. Air-gapped RAG-Desktop-App, 4-Signal Memory Engine, Contextual Retrieval, Cross-Encoder Reranking, MCP Sandbox — souverän, Pure-Rust, kein Docker.
 **Kern-USP**: Echtes 4-Signal-Hybrid-RAG (Vektor + BM25 + Wissensgraph + Metadaten-Filter), persistiert,
 in `hybrid_search()` fusioniert — verifizierter Code-Zustand.
 
 ### Aktive Workspace Crates (12 Kern-Crates + 1 optionales Crate)
-- `memfuse-core` (Layer 0) — Typen, Primitiven, Fehler, Shared Traits (`TextEmbeddingEngine`)
-- `memfuse-store` (Layer 1) — LSM-Tree, WAL, SSTables, Crypt-at-Rest
-- `memfuse-index` (Layer 1) — HNSW-Vektorindex, SIMD-Distanzen, SQ8-Quantisierung
-- `memfuse-text` (Layer 1) — BM25 Inverted Index, Deutsche Morphologie
-- `memfuse-crypto` (Layer 1) — AES-256-GCM, HMAC-Chaining
-- `memfuse-graph` (Layer 1) — CSR-Graph, persistent im LSM-Tree (`__graph:entity:` & `__graph:edge:`)
-- `memfuse-checkpoint` (Layer 1) — Async Checkpointing & State Snapshot Management
-- `memfuse-db` (Layer 2) — Collections Orchestrator, 4-Signal-Fusion, RRF, Transaktionalität
-- `memfuse-py` (Layer 3) — PyO3 Python-Bindings, CRUD & Hybrid-Suche
-- `memfuse-ollama` (Layer 3) — Ollama HTTP Client & `OllamaEmbedder` für Vektor-Embeddings
-- `memfuse-mcp` (Layer 4) — Standalone MCP-Server (stdio JSON-RPC 2.0, ADR-010) mit Ollama-Embedding-Integration (`memfuse_search`, `memfuse_insert`, `memfuse_get`, `memfuse_collections`)
-- `memfuse-embed` (Layer 3, **optional**) — ONNX-Embeddings, Feature-gated (`default = []`). Bewusste Randstellung — Pure-Rust-USP durch `default=[]` gewahrt. Wird bei Bedarf mit `--features onnx` aktiviert.
-- `memfuse-tauri` (Layer 4) — MemFuse Brain Desktop-App (Tauri IPC, Ingestion-Pipeline, Chat-UI, Ollama-Diagnose)
+- `memfuse-core` (Layer 0) — Typen, Primitiven, Fehler, Shared Traits (`TextEmbeddingEngine`). Neu: `ContextChunk.contextual_prefix` + `combined_text_owned()` + `combined_token_count()` (ADR-019).
+- `memfuse-store` (Layer 1) — LSM-Tree, WAL, SSTables, Crypt-at-Rest.
+- `memfuse-index` (Layer 1) — HNSW-Vektorindex, SIMD-Distanzen, SQ8-Quantisierung.
+- `memfuse-text` (Layer 1) — BM25 Inverted Index, Deutsche Morphologie.
+- `memfuse-crypto` (Layer 1) — AES-256-GCM, HMAC-Chaining.
+- `memfuse-graph` (Layer 1) — CSR-Graph, persistent im LSM-Tree (`__graph:entity:` & `__graph:edge:`). Neu: `SessionBranchTree` (Agent-DAG), `AgentStateNode`, Native Pure-Rust.
+- `memfuse-checkpoint` (Layer 1) — Async Checkpointing & State Snapshot Management.
+- `memfuse-db` (Layer 2) — Collections Orchestrator, 4-Signal-Fusion, RRF, Transaktionalität. Neu: `MultiStepEngine` (max 3 Runden), `ContextCompactor` (`StatusToken`), Post-RRF CrossEncoder Integration.
+- `memfuse-py` (Layer 3) — PyO3 Python-Bindings, CRUD & Hybrid-Suche.
+- `memfuse-ollama` (Layer 3) — Ollama HTTP Client & `OllamaEmbedder` für Vektor-Embeddings. Neu: `generate_text()` non-streaming, `ContextPrefixEngine` (Anthropic Contextual Retrieval Pattern).
+- `memfuse-mcp` (Layer 4) — Standalone MCP-Server (stdio JSON-RPC 2.0, ADR-010). Neu: `McpSandbox` (`SandboxPolicy`, Whitelist), `VolatileToolResult` (AES-256-GCM-SIV + Zeroize).
+- `memfuse-embed` (Layer 3, **optional**) — ONNX-Embeddings, Feature-gated (`default = []`). Neu: `CrossEncoderReranker` (`bge-reranker-base` ONNX), Passthrough-Fallback ohne ONNX.
+- `memfuse-tauri` (Layer 4) — MemFuse Brain Desktop-App (Tauri IPC, Ingestion-Pipeline, Chat-UI, Ollama-Diagnose).
 
 ### System-Setup & Status
 - **Embedding-Backend**: Ollama via `memfuse-ollama` ist primäres Backend (ADR-008). `memfuse-embed` (ONNX) ist optional verfügbar.
 - **Graph-Persistenz**: CSR-Graph wird über LSM-Store unter den Präfixen `__graph:entity:` und `__graph:edge:` vollständig persistiert.
 - **MCP-Server**: stdio JSON-RPC 2.0 Transport (ADR-010). Unterstützt Volltext-, Hybrid-Suche, Dokumenten-Retrieval und automatisches Embedding beim Einfügen über `memfuse-ollama`.
+- **Contextual Retrieval**: `ContextPrefixEngine` via `memfuse-ollama`. Erfordert laufende Ollama-Instanz für Präfix-Generierung. Aktivierung: `contextual_prefix` in `ContextChunk` setzen.
+- **Reranking**: `CrossEncoderReranker` in `memfuse-embed` (`--features onnx`). Erfordert `bge-reranker-base.onnx` + `tokenizer.json` in `models/`. Passthrough ohne ONNX (keine Verschlechterung, nur kein Reranking).
+- **MCP-Sandbox**: `McpSandbox` automatisch aktiv in `memfuse-mcp`. `SandboxPolicy`: DB-Reads erlaubt, DB-Writes und Code-Execution opt-in. Tool-Outputs AES-256-GCM-SIV verschlüsselt, Zeroize bei Drop.
 
 ---
 
 ## 1. Produktstrategie & Mission
 
-**MemFuse** ist die **eingebettete 4-in-1 Memory Engine & RAG-Desktop-App für Lokale AI-Agenten** — kombiniert Vektorsuche (semantisch), BM25-Volltextsuche (lexikalisch), Entity-Relation Graph Traversal (assoziativ) und Metadaten-Filterung in einer in-process Bibliothek und Desktop-Anwendung.
+**MemFuse** ist das **Cognitive Operating System für lokale KI-Agenten** — kombiniert Vektorsuche (semantisch), BM25-Volltextsuche (lexikalisch), Entity-Relation Graph Traversal (assoziativ) und Metadaten-Filterung in einer in-process Bibliothek und Desktop-Anwendung.
 
 ### 🎯 Kern-USP (Der 4-in-1 Vorteil)
 * **Keine Ops-Last**: Air-gapped Desktop App & In-Process Library, zero Server, zero Docker.
@@ -52,13 +55,13 @@ Layer 1:  memfuse-store       — LSM-Tree, WAL, SSTables, Crypt-at-Rest
           memfuse-index       — HNSW, SIMD-Distanzen, SQ8-Quantisierung
           memfuse-text        — BM25, Inverted Index, Deutsche Morphologie
           memfuse-crypto      — AES-256-GCM, HMAC-Chaining
-          memfuse-graph       — CSR-Graph, Entity-Relation Traversal (LSM-Persistenz)
+          memfuse-graph       — CSR-Graph, Entity-Relation Traversal (LSM-Persistenz), Session DAG
           memfuse-checkpoint  — Async Checkpointing & State Snapshot Management
-Layer 2:  memfuse-db          — Collections, 4-Signal-Fusion, RRF, transaktionales 2PC
+Layer 2:  memfuse-db          — Collections, 4-Signal-Fusion, RRF, Multi-Step Engine, Context Compactor
 Layer 3:  memfuse-py          — PyO3 Python FFI-Bindings
-          memfuse-ollama      — Ollama Client & Embedder Provider
-Layer 3:  memfuse-embed       — ONNX Embeddings (optional, Feature-gated, default=[])
-Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.0 Server (ADR-010)
+          memfuse-ollama      — Ollama Client & Embedder Provider, ContextPrefixEngine
+Layer 3:  memfuse-embed       — ONNX Embeddings & CrossEncoderReranker (optional, Feature-gated, default=[])
+Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.0 Server, McpSandbox (ADR-010)
           memfuse-tauri       — Desktop Application Shell ("MemFuse Brain")
 ```
 
@@ -68,19 +71,19 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | ~1.150 | 🟢 Clean | Shared Kernel, Typen, Fehler und TextEmbeddingEngine Trait. |
-| `memfuse-store` | 1 | ~4.130 | 🟢 Upgraded | LSM-Tree-Storage, WAL, SSTables. |
-| `memfuse-index` | 1 | ~3.520 | 🟢 Upgraded | HNSW-Vektorindex mit SIMD-Beschleunigung. |
-| `memfuse-text` | 1 | ~960 | 🟢 Clean | BM25 Inverted Index & Deutsche Morphologie. |
-| `memfuse-crypto`| 1 | ~310 | 🟢 Clean | Cryptographic Primitives, AES-256-GCM. |
-| `memfuse-graph` | 1 | ~520 | 🟢 Active | CSR Graph mit LSM-Persistenz (`__graph:`). |
-| `memfuse-checkpoint`| 1 | ~600 | 🟢 Clean | Async Checkpointing & Snapshot Management. |
-| `memfuse-db` | 2 | ~2.500 | 🟢 Active | Collections Orchestrator, 4-Signal-Fusion. |
-| `memfuse-py` | 3 | ~1.000 | 🟢 Active | PyO3-Fassade für Python. |
-| `memfuse-ollama` | 3 | ~400 | 🟢 Active | Ollama HTTP Embedding Client & Model Info. |
-| `memfuse-mcp` | 4 | ~350 | 🟢 Active | MCP Server (stdio JSON-RPC 2.0, ADR-010) für Tool Calls. |
-| `memfuse-tauri` | 4 | ~2.100 | 🟢 Active | Tauri Desktop App Shell ("MemFuse Brain"), Ingestion Pipeline. |
-| `memfuse-embed` | 3 | ~400 | 🧊 Optional | ONNX-Embeddings, Feature-gated (`default=[]`). Pure-Rust-USP gewahrt. |
+| `memfuse-core` | 0 | 5.115 | 🟢 Clean | Shared Kernel, Typen, Fehler, TextEmbeddingEngine Trait. Neu: `ContextChunk.contextual_prefix` + `combined_text_owned()` + `combined_token_count()` (ADR-019) |
+| `memfuse-store` | 1 | 8.019 | 🟢 Upgraded | LSM-Tree-Storage, WAL, SSTables. |
+| `memfuse-index` | 1 | 6.494 | 🟢 Upgraded | HNSW-Vektorindex mit SIMD-Beschleunigung. |
+| `memfuse-text` | 1 | 2.882 | 🟢 Clean | BM25 Inverted Index & Deutsche Morphologie. |
+| `memfuse-crypto`| 1 | 895 | 🟢 Clean | Cryptographic Primitives, AES-256-GCM. |
+| `memfuse-graph` | 1 | 2.396 | 🟢 Active | CSR Graph mit LSM-Persistenz (`__graph:`). Neu: `SessionBranchTree` (Agent-DAG), `AgentStateNode`, Native Pure-Rust |
+| `memfuse-checkpoint`| 1 | 873 | 🟢 Clean | Async Checkpointing & Snapshot Management. |
+| `memfuse-db` | 2 | 6.375 | 🟢 Active | Collections Orchestrator, 4-Signal-Fusion. Neu: `MultiStepEngine` (max 3 Runden), `ContextCompactor` (`StatusToken`), Post-RRF CrossEncoder Integration |
+| `memfuse-py` | 3 | 899 | 🟢 Active | PyO3-Fassade für Python. |
+| `memfuse-ollama` | 3 | 2.107 | 🟢 Active | Ollama HTTP Embedding Client & Model Info. Neu: `generate_text()` non-streaming, `ContextPrefixEngine` (Anthropic Contextual Retrieval Pattern) |
+| `memfuse-mcp` | 4 | 1.200 | 🟢 Active | MCP Server (stdio JSON-RPC 2.0, ADR-010). Neu: `McpSandbox` (`SandboxPolicy`, Whitelist), `VolatileToolResult` (AES-256-GCM-SIV + Zeroize) |
+| `memfuse-tauri` | 4 | 2.060 | 🟢 Active | Tauri Desktop App Shell ("MemFuse Brain"), Ingestion Pipeline. |
+| `memfuse-embed` | 3 | 915 | 🧊 Optional | ONNX-Embeddings, Feature-gated (`default=[]`). Neu: `CrossEncoderReranker` (`bge-reranker-base` ONNX), Passthrough-Fallback ohne ONNX |
 
 ---
 
@@ -96,3 +99,27 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.
   - **Zero-Panic**: 🟡 In Arbeit — offene `.expect()`-Stellen: `SessionPool::pop()`/`push()` in memfuse-embed (3 Stellen), `snapshot.rs` in memfuse-core (2 Stellen). Status wird auf 🟢 gesetzt wenn: `grep -rn '.expect(' crates/*/src/ --include='*.rs'` null ergibt (exkl. `#[cfg(test)]`).
 
 * **CI-Verifikations-Prinzip**: Statusindikatoren (🟢/🟡/🔴) werden AUSSCHLIESSLICH durch CI-Ergebnisse gesetzt, niemals manuell durch Agenten-Einschätzung.
+
+---
+
+## Aktive Sprint-Roadmap
+
+### Phase 1 — RAG-Fundament (✅ Abgeschlossen, HEAD 4162ebb)
+Sprint RAG-01: Contextual Retrieval (ADR-019) ✅
+Sprint RAG-02: Cross-Encoder Reranking ✅
+Sprint RAG-03: Multi-Step Query Engine ✅
+Sprint RAG-04: Context Compaction ✅
+Sprint RAG-05: Session DAG + MCP Sandbox ✅
+
+### Phase 2 — Cognitive Memory (📋 Geplant, Q4 2026)
+- Kognitive Gedächtnistypen (Episodic / Semantic / Procedural / Working)
+- Temporaler Wissensgraph (bi-temporal: Validitätszeit + Transaktionszeit)
+- Memory Importance Scoring (LLM-bewertet)
+
+### Phase 3 — Selbstorganisierung (📋 Geplant, Q1 2027)
+- Memory Consolidation & Reflection
+- Personalized PageRank (PPR) für Multi-Hop-Retrieval
+- Community Detection & GraphRAG
+
+### Phase 4 — Enterprise (📋 Geplant, Q2 2027)
+- OAuth 2.0, RBAC, Multi-Tenant, Audit-Trail

@@ -10,21 +10,31 @@ Layer 1:  memfuse-store       — LSM-Tree, WAL, SSTables, Crypt-at-Rest
           memfuse-index       — HNSW, SIMD-Distanz, SQ8-Quantisierung (DiskANN experimental via Feature)
           memfuse-text        — BM25, Inverted Index, Deutsche Morphologie
           memfuse-crypto      — AES-256-GCM, HMAC-Chaining
-          memfuse-graph       — CSR-Graph, Entity-Relation Traversal (LSM-Persistierung unter __graph:)
+          memfuse-graph       — CSR-Graph, Entity-Relation Traversal, Session DAG (SessionBranchTree)
           memfuse-checkpoint  — Async Checkpointing & State Snapshot Management
-Layer 2:  memfuse-db          — Collections, 4-Signal Fusion (Vektor + BM25 + Graph + Metadaten), RRF, 2PC
+Layer 2:  memfuse-db          — Collections, 4-Signal Fusion, RRF, Multi-Step Engine, Context Compactor
 Layer 3:  memfuse-py          — PyO3-Fassade (Python-Bindings)
-          memfuse-ollama      — Ollama HTTP Client & OllamaEmbedder Provider
-          memfuse-embed       — ONNX-Embeddings (optional, Feature-gated, default=[])
-Layer 4:  memfuse-mcp         — Standalone MCP-Server (stdio JSON-RPC 2.0, ADR-010)
+          memfuse-ollama      — Ollama HTTP Client, OllamaEmbedder, ContextPrefixEngine
+          memfuse-embed       — ONNX-Embeddings & CrossEncoderReranker (optional, Feature-gated, default=[])
+Layer 4:  memfuse-mcp         — Standalone MCP-Server (stdio JSON-RPC 2.0, ADR-010), McpSandbox
           memfuse-tauri       — Desktop-Shell ("MemFuse Brain"), IPC-Commands, Ingestion-Pipeline
 ```
 
 **Aktiver Workspace-Build**: 13 Crates (`memfuse-core`, `memfuse-store`, `memfuse-index`, `memfuse-text`, `memfuse-crypto`, `memfuse-graph`, `memfuse-checkpoint`, `memfuse-db`, `memfuse-py`, `memfuse-ollama`, `memfuse-mcp`, `memfuse-tauri`, `memfuse-embed` [optional]).
 
 ## Kern-Philosophie
-MemFuse ist die **eingebettete 4-Signal-Memory-Engine & RAG-Desktop-App für lokale AI-Agenten** —
-air-gapped, zero-panic (angestrebt), 100% Pure-Rust Sovereign Core (mit Ollama als lokalem LLM/Embedding Backend).
+MemFuse ist das **Cognitive Operating System für LLM-Agenten — 4-Signal-RAG-Engine mit Contextual Retrieval, Cross-Encoder Reranking, Multi-Step Query, Session DAG und MCP Sandbox** — air-gapped, zero-panic (angestrebt), 100% Pure-Rust Sovereign Core (mit Ollama als lokalem LLM/Embedding Backend).
+
+## RAG-Pipeline (Phase 1, abgeschlossen)
+
+MemFuse implementiert eine gestaffelte, mehrstufige Retrieval- und Ingestion-Pipeline (ADR-021):
+
+1. **Contextual Ingestion**: `ContextPrefixEngine` (`memfuse-ollama`) generiert 50–100 Token Kontext-Präfixe vor der BM25- und Embedding-Indexierung.
+2. **4-Signal Hybrid-Indexierung**: Parallele Indexierung von HNSW-Vektoren, BM25-Volltext (mit Kontext-Präfix), CSR-Wissensgraph und Metadaten-Filtern.
+3. **Hybrid Retrieval via RRF**: Fusion aller Signale über `reciprocal_rank_fusion()` in `memfuse-db`.
+4. **Multi-Step Query Expansion**: Iteratives Abfrage-Rewriting via `MultiStepEngine` (`memfuse-db`) für komplexe Abfragen (bis zu 3 Runden).
+5. **Cross-Encoder Reranking**: Post-RRF Neuordnung der Top-K Treffer via `CrossEncoderReranker` in `memfuse-embed` (optional via `--features onnx`, Passthrough-Fallback ohne ONNX).
+6. **Context Compaction**: Komprimierung langer Agenten-Historien via `ContextCompactor` (`memfuse-db`) durch Ersetzung veralteter Tool-Outputs mit `StatusToken`.
 
 ## Produktstrategie
 - **Hauptausrichtung**: Lokale eingebettete Agent-Memory-Library & Desktop-App "MemFuse Brain".
@@ -49,6 +59,7 @@ air-gapped, zero-panic (angestrebt), 100% Pure-Rust Sovereign Core (mit Ollama a
 - **HKDF Key Derivation**: Kryptographischer Kontext pro Datei.
 - **HMAC Chaining**: WAL-Integrität gegen Manipulation geschützt.
 - **Namespace Isolation**: Vollständige Trennung von Collections auf Storage-Ebene.
+- **MCP Sandbox Containment**: Tool-Outputs in `memfuse-mcp` via AES-256-GCM-SIV verschlüsselt und Zeroize beim Verwerfen.
 
 ## Planungsdokument-Blueprint-Korrekturen
 Standard-Korrekturen für Architektur- und Planungs-Blueprints:
@@ -56,7 +67,3 @@ Standard-Korrekturen für Architektur- und Planungs-Blueprints:
 2. **Keine `petgraph`-Abhängigkeit**: `memfuse-graph` nutzt eine native Pure-Rust CSR-Graph-Implementierung (`SessionBranchTree`, `CsrGraph`) ohne `petgraph`-Workspace-Abhängigkeit gemäß ADR-004 (Pure Rust Sovereign Core Policy).
 3. **`CheckpointGuard` RAII & Snapshot-Referenzen**: `CheckpointGuard` besitzt RAII-Semantik (Auto-Rollback bei Drop) und ist bewusst nicht klonbar. Zustands-Referenzen werden als `snapshot_tx_id: Option<TxId>` gespeichert.
 4. **RRF-Nutzung**: `memfuse-db::fusion` stellt `reciprocal_rank_fusion()` und `weighted_reciprocal_rank_fusion()` bereit. Spezifikationen und Blueprints nutzen bestehende Funktionen anstelle redundanter `execute_rrf()` Neuimplementierungen.
-===
-docs/SOURCE_OF_TRUTH.md:3:> **Dieses Dokument ist das einzige Living State Document für Architektur-Status, Crate-Inventar, offene Findings und die aktive Roadmap. Es wird synchron mit dem Code aktualisiert — niemals im Voraus.**
-README.md:106:## Roadmap
-DECISIONS.md:59:*   **Begründung**: LLM-Agenten können `DECISIONS.md` gezielt laden, ohne den gesamten SOT-Ballast (Backlog, Roadmap, Crate-Inventar) in den Kontext aufnehmen zu müssen. Reduziert Tokenverbrauch und erhöht Treffsicherheit. `CONSTITUTION.md` wurde entsprechend aktualisiert.
