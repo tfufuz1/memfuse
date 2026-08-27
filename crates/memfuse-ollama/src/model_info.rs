@@ -54,6 +54,25 @@ impl OllamaClient {
             .await
             .map_err(|e| MemFuseError::Internal(format!("Ollama /api/show request failed: {e}")))?;
 
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<body unreadable>".into());
+            let lower = body.to_lowercase();
+            if lower.contains("model") && lower.contains("not found")
+                || status == reqwest::StatusCode::NOT_FOUND
+            {
+                return Err(MemFuseError::NotFound(format!(
+                    "Ollama model '{model}' not found. Run: ollama pull {model}"
+                )));
+            }
+            return Err(MemFuseError::Storage(format!(
+                "Ollama show_model HTTP {status}: {body}"
+            )));
+        }
+
         let parsed: ShowResponse = response
             .json()
             .await
