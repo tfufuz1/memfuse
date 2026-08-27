@@ -1609,6 +1609,13 @@ impl VectorIndex for HnswIndex {
             if deleted.contains(c.index as u64) {
                 continue;
             }
+            if c.index >= mmap_node_count {
+                if let Some(node) = nodes.get(c.index - mmap_node_count) {
+                    if node.committed_tx == 0 {
+                        continue;
+                    }
+                }
+            }
             let doc_id = self.resolve_doc_id(c.index, &ctx)?;
 
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
@@ -1722,6 +1729,9 @@ impl VectorIndex for HnswIndex {
             let node = nodes.get(c.index).ok_or_else(|| {
                 MemFuseError::Index(format!("HNSW candidate node missing at index {}", c.index))
             })?;
+            if node.committed_tx == 0 {
+                continue;
+            }
             let doc_id = node.doc_id;
             if let Some(f) = filter {
                 if !f(doc_id) {
@@ -1832,25 +1842,13 @@ impl VectorIndex for HnswIndex {
             }
         }
 
+        let mut inserted_doc_ids = Vec::new();
+
         for op in ops {
             match op {
                 IndexOp::Insert { doc_id, data } => {
                     self.do_insert(doc_id, &data)?;
-                    let mmap_count = self
-                        .mmap_index
-                        .read()
-                        .as_ref()
-                        .map(|m| m.header.node_count as usize)
-                        .unwrap_or(0);
-                    if let Some(&global_idx) = self.doc_to_node.read().get(&doc_id.inner()) {
-                        if global_idx >= mmap_count {
-                            let ram_idx = global_idx - mmap_count;
-                            let mut nodes = self.nodes.write();
-                            if let Some(node) = nodes.get_mut(ram_idx) {
-                                node.committed_tx = tx.inner();
-                            }
-                        }
-                    }
+                    inserted_doc_ids.push(doc_id);
                 }
                 IndexOp::Delete { doc_id, .. } => {
                     self.do_delete(doc_id)?;
@@ -1866,6 +1864,29 @@ impl VectorIndex for HnswIndex {
                          Add a handler arm before enabling this operation.",
                         std::mem::discriminant(&other)
                     )));
+                }
+            }
+        }
+
+        // Atomisch committed_tx für alle neu eingefügten Nodes dieser Transaktion setzen
+        if !inserted_doc_ids.is_empty() {
+            let mmap_count = self
+                .mmap_index
+                .read()
+                .as_ref()
+                .map(|m| m.header.node_count as usize)
+                .unwrap_or(0);
+            let doc_map = self.doc_to_node.read();
+            let mut nodes = self.nodes.write();
+
+            for doc_id in inserted_doc_ids {
+                if let Some(&global_idx) = doc_map.get(&doc_id.inner()) {
+                    if global_idx >= mmap_count {
+                        let ram_idx = global_idx - mmap_count;
+                        if let Some(node) = nodes.get_mut(ram_idx) {
+                            node.committed_tx = tx.inner();
+                        }
+                    }
                 }
             }
         }

@@ -14,20 +14,25 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .manage(AppState::new())
         .setup(|app| {
-            let _handle = app.handle().clone();
+            let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let bridge = crate::ollama::OllamaBridge::localhost();
-                match bridge.list_models().await {
+                let status_msg = match bridge.list_models().await {
                     Ok(models) if !models.is_empty() => {
                         tracing::info!(count = models.len(), "Ollama erreichbar beim Start");
+                        format!("Ollama ready: {} models", models.len())
                     }
                     Ok(_) => {
                         tracing::warn!("Ollama erreichbar, aber keine Modelle installiert");
+                        "Ollama ready: no models installed".to_string()
                     }
                     Err(e) => {
                         tracing::warn!(error = %e, "Ollama beim Start nicht erreichbar");
+                        format!("Ollama unreachable: {e}")
                     }
-                }
+                };
+                use tauri::Emitter;
+                let _ = handle.emit("ollama-status", status_msg);
             });
             Ok(())
         })

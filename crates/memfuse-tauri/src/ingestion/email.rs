@@ -20,6 +20,15 @@ pub fn strip_html(html: &str) -> String {
         Err(_) => html.to_string(),
     };
 
+    // Insert newlines for block-level closing tags so heading and paragraph lines are separated
+    let block_regex = regex::RegexBuilder::new(r"(?i)</(h[1-6]|p|div|li|tr|table|blockquote)>")
+        .size_limit(10 * 1024)
+        .build();
+    let text = match block_regex {
+        Ok(re) => re.replace_all(&text, "$0\n").to_string(),
+        Err(_) => text,
+    };
+
     let tag_regex = regex::RegexBuilder::new(r"<[^>]*>")
         .size_limit(10 * 1024)
         .build();
@@ -87,6 +96,9 @@ fn extract_body_from_parsed_mail(parsed: &mailparse::ParsedMail) -> String {
 
         if let Some(plain) = plain_text {
             plain
+                .trim_end_matches('\n')
+                .trim_end_matches("\r\n")
+                .to_string()
         } else if let Some(html) = html_text {
             html
         } else {
@@ -94,7 +106,9 @@ fn extract_body_from_parsed_mail(parsed: &mailparse::ParsedMail) -> String {
             if parsed.ctype.mimetype == "text/html" {
                 strip_html(&body)
             } else {
-                body
+                body.trim_end_matches('\n')
+                    .trim_end_matches("\r\n")
+                    .to_string()
             }
         }
     }
