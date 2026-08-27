@@ -245,10 +245,7 @@ impl SessionBranchTree {
     }
 
     /// Loads and reconstructs a `SessionBranchTree` from storage for the specified namespace.
-    pub async fn load<S: StorageEngine + ?Sized>(
-        storage: &S,
-        namespace: &str,
-    ) -> Result<Self> {
+    pub async fn load<S: StorageEngine + ?Sized>(storage: &S, namespace: &str) -> Result<Self> {
         let prefix_str = format!("__session_dag:{namespace}:");
         let prefix_bytes = prefix_str.as_bytes();
 
@@ -269,16 +266,19 @@ impl SessionBranchTree {
                 .map_err(|e| MemFuseError::Internal(format!("session dag key UTF-8: {e}")))?;
 
             if key_str.ends_with("edges") {
-                edges = bincode::deserialize(&raw_val)
-                    .map_err(|e| MemFuseError::Serialization(format!("session dag edges deserialize: {e}")))?;
+                edges = bincode::deserialize(&raw_val).map_err(|e| {
+                    MemFuseError::Serialization(format!("session dag edges deserialize: {e}"))
+                })?;
             } else if key_str.ends_with("meta") {
-                let (h, n): (NodeIdx, u64) = bincode::deserialize(&raw_val)
-                    .map_err(|e| MemFuseError::Serialization(format!("session dag meta deserialize: {e}")))?;
+                let (h, n): (NodeIdx, u64) = bincode::deserialize(&raw_val).map_err(|e| {
+                    MemFuseError::Serialization(format!("session dag meta deserialize: {e}"))
+                })?;
                 active_head = h;
                 next_id = n;
             } else if key_str.contains(":node:") {
-                let node: AgentStateNode = bincode::deserialize(&raw_val)
-                    .map_err(|e| MemFuseError::Serialization(format!("session dag node deserialize: {e}")))?;
+                let node: AgentStateNode = bincode::deserialize(&raw_val).map_err(|e| {
+                    MemFuseError::Serialization(format!("session dag node deserialize: {e}"))
+                })?;
                 nodes.insert(node.step_id, node);
             }
         }

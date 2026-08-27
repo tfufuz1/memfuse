@@ -455,7 +455,10 @@ impl CsrGraph {
         let self_clone = self.clone();
         tokio::task::spawn_blocking(move || {
             let mut inner = self_clone.inner.write();
-            if inner.is_dirty || !inner.pending_edges.is_empty() || !inner.tombstoned_edges.is_empty() {
+            if inner.is_dirty
+                || !inner.pending_edges.is_empty()
+                || !inner.tombstoned_edges.is_empty()
+            {
                 inner.compact();
             }
         })
@@ -1853,11 +1856,12 @@ mod tests {
         storage.flush().await.unwrap(); // unwrap allowed
         drop(graph);
 
-        let graph2 = CsrGraph::load_from_storage(storage.as_ref())
-            .await
-            .unwrap(); // unwrap allowed
+        let graph2 = CsrGraph::load_from_storage(storage.as_ref()).await.unwrap(); // unwrap allowed
         let neighbors = graph2.traverse(id_a, 1).await.unwrap(); // unwrap allowed
-        assert!(!neighbors.is_empty(), "Kante muss storage-roundtrip überleben");
+        assert!(
+            !neighbors.is_empty(),
+            "Kante muss storage-roundtrip überleben"
+        );
         assert!(neighbors.iter().any(|(id, _)| *id == id_b));
     }
 
