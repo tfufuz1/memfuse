@@ -5,7 +5,9 @@
 use crate::context::AgentContext;
 use crate::graph::{AgentNode, NodeType, StateGraph};
 use crate::step::{AgentTool, StepResult};
-use memfuse_checkpoint::{CheckpointGuard, CheckpointMeta, CheckpointRegistry, PersistentCheckpointStore};
+use memfuse_checkpoint::{
+    CheckpointGuard, CheckpointMeta, CheckpointRegistry, PersistentCheckpointStore,
+};
 use memfuse_core::traits::StorageEngine;
 use memfuse_core::{MemFuseError, Result};
 use memfuse_store::LsmStorage;
@@ -50,11 +52,8 @@ impl OrchestratorEngine {
                 NodeType::Start | NodeType::Task => {
                     // 1. Checkpoint BEFORE execution (AC-1) with RAII CheckpointGuard
                     let tx_id = ctx.db.inner_storage().last_tx_id().await?;
-                    let guard = CheckpointGuard::for_agent_step(
-                        ctx.db.inner_storage(),
-                        tx_id,
-                    )
-                    .await?;
+                    let guard =
+                        CheckpointGuard::for_agent_step(ctx.db.inner_storage(), tx_id).await?;
                     self.checkpoint(ctx).await?;
 
                     // 2. Resolve handler (Optional for Start nodes)

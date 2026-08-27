@@ -171,8 +171,16 @@ mod tests {
         let s = "Über";
         assert_eq!(s.chars().count(), 4);
         assert_eq!(s.len(), 5); // bytes
-        assert_eq!(truncate_chars(s, 4), "Über", "4-char string must fit in max_chars=4");
-        assert_eq!(truncate_chars(s, 3), "Übe", "truncation at char=3 must work");
+        assert_eq!(
+            truncate_chars(s, 4),
+            "Über",
+            "4-char string must fit in max_chars=4"
+        );
+        assert_eq!(
+            truncate_chars(s, 3),
+            "Übe",
+            "truncation at char=3 must work"
+        );
     }
 
     #[test]
@@ -180,7 +188,10 @@ mod tests {
         let s = "Größe und Stärke"; // 16 chars, >16 bytes
         let truncated = truncate_chars(s, 6);
         assert_eq!(truncated.chars().count(), 6);
-        assert!(s.is_char_boundary(truncated.len()), "truncation must be at char boundary");
+        assert!(
+            s.is_char_boundary(truncated.len()),
+            "truncation must be at char boundary"
+        );
     }
 
     #[tokio::test]

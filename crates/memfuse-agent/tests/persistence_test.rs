@@ -116,7 +116,10 @@ async fn test_agent_persistence_and_recovery() {
     let engine2 = OrchestratorEngine::new(db2.inner_storage());
     let mut engine2 = engine2;
     engine2.register_tool(Box::new(IncrementTool));
-    engine2.run(&mut ctx2, &graph).await.expect("Resume run failed");
+    engine2
+        .run(&mut ctx2, &graph)
+        .await
+        .expect("Resume run failed");
 
     assert_eq!(ctx2.status, AgentStatus::Completed);
     assert_eq!(ctx2.current_node, "end");
@@ -124,7 +127,10 @@ async fn test_agent_persistence_and_recovery() {
 
     // Audit trail verification on recovered DB
     let audit_log = memfuse_agent::audit::AuditLog::new(state_collection2);
-    let audit_entries = audit_log.replay_task("test_task_123").await.expect("audit replay");
+    let audit_entries = audit_log
+        .replay_task("test_task_123")
+        .await
+        .expect("audit replay");
     assert!(!audit_entries.is_empty());
     for entry in &audit_entries {
         assert_eq!(entry.task_id, "test_task_123");
