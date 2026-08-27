@@ -187,7 +187,10 @@ async fn test_agent_audit_log_immutable() {
 
     // Verify audit log content and immutability via AuditLog replay
     let audit_log_instance = memfuse_agent::audit::AuditLog::new(state_col);
-    let audit_entries = audit_log_instance.replay_task("t1").await.expect("replay failed");
+    let audit_entries = audit_log_instance
+        .replay_task("t1")
+        .await
+        .expect("replay failed");
     assert_eq!(audit_entries.len(), 1);
     assert_eq!(audit_entries[0].task_id, "t1");
     assert_eq!(audit_entries[0].step_count, 0);
