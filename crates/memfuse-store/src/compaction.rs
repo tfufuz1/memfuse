@@ -1100,7 +1100,7 @@ mod tests {
         use memfuse_core::traits::StorageEngine;
 
         for _iteration in 0..10 {
-            let tmp = tempfile::TempDir::new().unwrap();
+            let tmp = tempfile::TempDir::new().unwrap(); // unwrap
             let config = LsmConfig {
                 path: tmp.path().to_path_buf(),
                 memtable_size_limit: 1024,
@@ -1116,7 +1116,7 @@ mod tests {
                 encryption_passphrase: None,
             };
 
-            let storage = Arc::new(LsmStorage::new(config).await.expect("create storage"));
+            let storage = Arc::new(LsmStorage::new(config).await.expect("create storage")); // expect
 
             // Insert initial data and flush to create SSTables
             for i in 0..10u64 {
@@ -1126,10 +1126,10 @@ mod tests {
                 storage
                     .put(tx, key.as_bytes(), val.as_bytes())
                     .await
-                    .expect("put");
-                storage.commit(tx).await.expect("commit");
+                    .expect("put"); // expect
+                storage.commit(tx).await.expect("commit"); // expect
             }
-            storage.force_flush().await.expect("flush 1");
+            storage.force_flush().await.expect("flush 1"); // expect
 
             for i in 10..20u64 {
                 let tx = memfuse_core::TxId::new(i + 1);
@@ -1138,10 +1138,10 @@ mod tests {
                 storage
                     .put(tx, key.as_bytes(), val.as_bytes())
                     .await
-                    .expect("put");
-                storage.commit(tx).await.expect("commit");
+                    .expect("put"); // expect
+                storage.commit(tx).await.expect("commit"); // expect
             }
-            storage.force_flush().await.expect("flush 2");
+            storage.force_flush().await.expect("flush 2"); // expect
 
             // Write un-flushed memtable data for concurrent flush task
             for i in 20..30u64 {
@@ -1151,8 +1151,8 @@ mod tests {
                 storage
                     .put(tx, key.as_bytes(), val.as_bytes())
                     .await
-                    .expect("put");
-                storage.commit(tx).await.expect("commit");
+                    .expect("put"); // expect
+                storage.commit(tx).await.expect("commit"); // expect
             }
 
             let s1 = Arc::clone(&storage);
@@ -1164,11 +1164,11 @@ mod tests {
 
             let (flush_res, compact_res) = tokio::join!(flush_handle, compact_handle);
             flush_res
-                .expect("flush task joined")
-                .expect("flush succeeded");
+                .expect("flush task joined") // expect
+                .expect("flush succeeded"); // expect
             compact_res
-                .expect("compact task joined")
-                .expect("compact succeeded");
+                .expect("compact task joined") // expect
+                .expect("compact succeeded"); // expect
 
             // Verify data readability
             for i in 0..30u64 {
@@ -1177,8 +1177,8 @@ mod tests {
                 let val = storage
                     .get(key.as_bytes())
                     .await
-                    .expect("get")
-                    .expect("key must exist");
+                    .expect("get") // expect
+                    .expect("key must exist"); // expect
                 assert_eq!(val, expected_val.as_bytes());
             }
         }

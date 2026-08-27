@@ -1750,7 +1750,7 @@ mod tests {
         // Offset 8..20: single 12-byte nonce
         // Offset 20..: AES-GCM-SIV ciphertext
         assert_eq!(&file_bytes[0..4], &WAL_V2_HEADER);
-        let chunk_len = u32::from_le_bytes(file_bytes[4..8].try_into().unwrap()) as usize;
+        let chunk_len = u32::from_le_bytes(file_bytes[4..8].try_into().unwrap()) as usize; // unwrap
         assert_eq!(file_bytes.len(), 4 + 4 + chunk_len);
 
         // Verify there is exactly one batch chunk header (12-byte nonce) in the file for N=3 entries
