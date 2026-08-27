@@ -1,5 +1,6 @@
 //! Write-Ahead Log (WAL) for durability and crash recovery with HMAC chaining.
 // FILE-CONTEXT
+// STAND: 2026-08-27T14:32:00Z
 // ZWECK: Write-Ahead-Log mit HMAC-Chaining für crash-sichere WAL-Operationen
 // INVARIANTEN: fsync NACH jedem Schreibvorgang (ADR-002); WAL VOR MemTable schreiben
 // NICHT-OFFENSICHTLICH: sync_all() auf dem Verzeichnis-FD nötig, nicht nur auf der Datei
@@ -50,7 +51,7 @@ enum WalVersion {
 /// 2. It is NEVER used for new write or append operations (all new WAL writes derive an integrity key via `KeyManager`).
 /// 3. After successful replay and LSM compaction into SSTables, old WAL files using `LEGACY_INTEGRITY_KEY` are superseded and truncated/removed.
 ///
-/// ANCHOR: MIGRATION-WAL-HMAC-001
+/// ANCHOR[MIGRATION:WAL-HMAC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z)
 pub const LEGACY_INTEGRITY_KEY: [u8; 32] = *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0";
 
 /// A single entry in the Write-Ahead Log.

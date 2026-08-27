@@ -36,7 +36,7 @@ pub struct MultiStepResult {
     pub sub_queries: Vec<String>,
 }
 
-// ANCHOR:MULTISTEP:QUERY_REWRITER — External QueryRewriter trait contract and error isolation.
+// ANCHOR[MULTISTEP:QUERY-REWRITER] STATUS:DONE (TS:2026-06-01T00:00:00Z) — External QueryRewriter trait contract and error isolation.
 // TRACKING-ISSUE: #142 (Ollama / LLM-based QueryRewriter implementation in memfuse-ollama crate)
 
 /// Multi-Step Retrieval Engine.
@@ -147,7 +147,7 @@ impl<S: StorageEngine> MultiStepEngine<S> {
                 // 1. Sub-queries are textual reformulations, not semantic shifts
                 // 2. Generating sub-query embeddings requires an embedder dependency
                 // 3. The original vector contributes via Round-1 results in RRF fusion
-                // ANCHOR:MULTISTEP:SUBQUERY_EMBEDDING — See TRACKING-ISSUE #143 for
+                // ANCHOR[MULTISTEP:SUBQUERY-EMBEDDING] STATUS:DONE (TS:2026-06-01T00:00:00Z) — See TRACKING-ISSUE #143 for
                 // future improvement: inject TextEmbeddingEngine for sub-query vectors.
                 match self.collection.hybrid_search(sub_q, &[], k, None).await {
                     Ok(sub_results) => {

@@ -303,7 +303,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
             // Read the *current* forward index to know which terms are live.
             // DECISION-REF: Consistent with load_stats() (L92) — bincode errors must propagate,
             // not be silently swallowed. Silent failure would cause phantom BM25 term deletion.
-            // AI-TAG[SPEC-DRIFT][MAJOR] RESOLVED: replaced unwrap_or_default() with map_err (ID: AGT-TXT-001)
+            // AI-TAG[SPEC-DRIFT][MAJOR] RESOLVED: AGT-TXT-001 — replaced unwrap_or_default() with map_err (TS:2026-08-25T00:00:00Z)
             let fw_key = self.key_with_id("fw:", doc_id.inner());
             let is_live = if let Some(fw_bytes) = self.storage.get(&fw_key).await? {
                 let live_terms: Vec<String> = bincode::deserialize::<Vec<String>>(&fw_bytes)
