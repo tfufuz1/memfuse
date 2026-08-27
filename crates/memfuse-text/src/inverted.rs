@@ -1418,11 +1418,7 @@ mod tests {
         // Search for "rust" when N=2, df=2
         let search_before = index.search_bm25("rust", 10, None).await?;
         assert_eq!(search_before.len(), 2);
-        let score_before_d2 = search_before
-            .iter()
-            .find(|(id, _)| *id == d2)
-            .map(|(_, score)| *score)
-            .ok_or_else(|| MemFuseError::NotFound("d2 not found".into()))?;
+        let score_before_d2 = search_before.iter().find(|(id, _)| *id == d2).unwrap().1; // unwrap
 
         // Delete doc1
         let tx3 = TxId::new(3);
@@ -1465,11 +1461,7 @@ mod tests {
 
         // Score for "rare" in d2 when N=10, df=2
         let search_before = index.search_bm25("rare", 10, None).await?;
-        let score_before = search_before
-            .iter()
-            .find(|(id, _)| *id == d2)
-            .map(|(_, score)| *score)
-            .ok_or_else(|| MemFuseError::NotFound("d2 not found before delete".into()))?;
+        let score_before = search_before.iter().find(|(id, _)| *id == d2).unwrap().1; // unwrap
 
         // Delete d1 -> N=9, df=1 for "rare"
         let tx_del = TxId::new(2);
@@ -1478,11 +1470,7 @@ mod tests {
 
         // Score for "rare" in d2 when N=9, df=1
         let search_after = index.search_bm25("rare", 10, None).await?;
-        let score_after = search_after
-            .iter()
-            .find(|(id, _)| *id == d2)
-            .map(|(_, score)| *score)
-            .ok_or_else(|| MemFuseError::NotFound("d2 not found after delete".into()))?;
+        let score_after = search_after.iter().find(|(id, _)| *id == d2).unwrap().1; // unwrap
 
         // With N=10, df=2: idf_arg = (10 - 2 + 0.5)/(2 + 0.5) = 8.5 / 2.5 = 3.4 -> ln(3.4) ~= 1.2237
         // With N=9, df=1: idf_arg = (9 - 1 + 0.5)/(1 + 0.5) = 8.5 / 1.5 = 5.6667 -> ln(5.6667) ~= 1.7346

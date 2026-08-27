@@ -97,8 +97,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_model_available() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -150,7 +150,7 @@ mod tests {
     #[test]
     fn model_info_deserializes_correctly() {
         let json = r#"{"modelfile":"FROM nomic-embed-text","parameter_size":"137M","quantization_level":"Q4_0"}"#;
-        let info: ModelInfo = serde_json::from_str(json).unwrap();
+        let info: ModelInfo = serde_json::from_str(json).unwrap(); // unwrap
         assert_eq!(info.modelfile.as_deref(), Some("FROM nomic-embed-text"));
         assert_eq!(info.parameter_size.as_deref(), Some("137M"));
         assert_eq!(info.quantization_level.as_deref(), Some("Q4_0"));

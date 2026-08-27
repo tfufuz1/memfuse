@@ -190,7 +190,7 @@ mod tests {
     #[test]
     fn test_wal_hmac_basic() {
         let key = b"test-key-32-bytes-long-----------";
-        let mut hmac = WalHmac::new(key).unwrap();
+        let mut hmac = WalHmac::new(key).unwrap(); // unwrap
         hmac.update(b"data");
         let result = hmac.finalize();
         assert_ne!(result, [0u8; 32]);
@@ -202,7 +202,7 @@ mod tests {
         let mut verifier = IntegrityVerifier::new(key);
 
         // entry 1
-        let mut hmac1 = WalHmac::new(key).unwrap();
+        let mut hmac1 = WalHmac::new(key).unwrap(); // unwrap
         hmac1.update(&[0u8; 32]); // prev_hmac
         hmac1.update(&100u64.to_le_bytes()); // seq
         hmac1.update(&[0u8]); // op_type Put
@@ -219,10 +219,10 @@ mod tests {
             prev_hmac: [0u8; 32],
         };
 
-        verifier.verify_and_update(&e1, 100).expect("e1 valid");
+        verifier.verify_and_update(&e1, 100).expect("e1 valid"); // expect
 
         // entry 2
-        let mut hmac2 = WalHmac::new(key).unwrap();
+        let mut hmac2 = WalHmac::new(key).unwrap(); // unwrap
         hmac2.update(&checksum1); // prev_hmac is checksum1
         hmac2.update(&101u64.to_le_bytes());
         hmac2.update(&[1u8]); // op_type Delete
@@ -238,7 +238,7 @@ mod tests {
             prev_hmac: checksum1,
         };
 
-        verifier.verify_and_update(&e2, 200).expect("e2 valid");
+        verifier.verify_and_update(&e2, 200).expect("e2 valid"); // expect
 
         // entry 3 (corrupt)
         let e3 = WalEntrySnapshot {
@@ -308,7 +308,7 @@ mod tests {
         k: &[u8],
         v: &[u8],
     ) -> WalEntrySnapshot {
-        let mut hmac = WalHmac::new(key).expect("hmac init");
+        let mut hmac = WalHmac::new(key).expect("hmac init"); // expect
         hmac.update(&prev_hmac);
         hmac.update(&seq_no.to_le_bytes());
         hmac.update(&[op_type]);
@@ -370,7 +370,7 @@ mod tests {
         let e3 = create_entry(key, e2.checksum, 3, 0, b"key3", b"val3");
 
         let mut verifier = IntegrityVerifier::new(key);
-        verifier.verify_and_update(&e1, 10).expect("e1 valid");
+        verifier.verify_and_update(&e1, 10).expect("e1 valid"); // expect
 
         // Verification of tampered entry 2 must fail
         assert!(verifier.verify_and_update(&tampered_e2, 20).is_err());
@@ -387,7 +387,7 @@ mod tests {
         let e3 = create_entry(key, e2.checksum, 3, 0, b"key3", b"val3");
 
         let mut verifier = IntegrityVerifier::new(key);
-        verifier.verify_and_update(&e1, 10).expect("e1 valid");
+        verifier.verify_and_update(&e1, 10).expect("e1 valid"); // expect
 
         // Skip entry 2 (removed entry) and attempt to verify entry 3 directly
         let err = verifier.verify_and_update(&e3, 30).unwrap_err();

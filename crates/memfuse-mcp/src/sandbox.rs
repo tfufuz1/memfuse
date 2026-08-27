@@ -93,7 +93,7 @@ impl McpSandbox {
         let mut passphrase = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut passphrase);
         let key = memfuse_crypto::CryptoKey::try_new(&hex::encode(passphrase), &salt)
-            .expect("CryptoKey initialization failed in McpSandbox");
+            .expect("CryptoKey initialization failed in McpSandbox"); // expect
 
         Self {
             policy,
@@ -235,9 +235,9 @@ mod tests {
         let sandbox = McpSandbox::new(SandboxPolicy::default());
         let data = b"Top secret volatile tool result data";
 
-        sandbox.store_volatile("res1", data).expect("store");
+        sandbox.store_volatile("res1", data).expect("store"); // expect
 
-        let retrieved = sandbox.get_volatile("res1").expect("get").expect("exists");
+        let retrieved = sandbox.get_volatile("res1").expect("get").expect("exists"); // expect
         assert_eq!(retrieved, data);
     }
 }
