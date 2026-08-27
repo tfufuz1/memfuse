@@ -46,6 +46,5 @@ pub fn run() {
             commands::validate_regex_pattern,
         ])
         .run(tauri::generate_context!())
-        // SAFETY-approved expect for main application loop
         .expect("error while running memfuse-brain application");
 }
