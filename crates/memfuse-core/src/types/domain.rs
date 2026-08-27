@@ -507,8 +507,8 @@ mod tests {
     #[test]
     fn test_doc_id_determinism() {
         let key = "consistent_key";
-        let id1 = DocId::from_key(key).unwrap();
-        let id2 = DocId::from_key(key).unwrap();
+        let id1 = DocId::from_key(key).unwrap(); // unwrap
+        let id2 = DocId::from_key(key).unwrap(); // unwrap
         assert_eq!(id1, id2);
     }
 
@@ -524,20 +524,20 @@ mod tests {
     fn test_serialization_roundtrips() {
         // DocId
         let doc = DocId::new(42);
-        let ser = serde_json::to_string(&doc).unwrap();
-        let deser: DocId = serde_json::from_str(&ser).unwrap();
+        let ser = serde_json::to_string(&doc).unwrap(); // unwrap
+        let deser: DocId = serde_json::from_str(&ser).unwrap(); // unwrap
         assert_eq!(doc, deser);
 
         // TxId
         let tx = TxId::new(TxId::INTERNAL_BASE + 5);
-        let ser = serde_json::to_string(&tx).unwrap();
-        let deser: TxId = serde_json::from_str(&ser).unwrap();
+        let ser = serde_json::to_string(&tx).unwrap(); // unwrap
+        let deser: TxId = serde_json::from_str(&ser).unwrap(); // unwrap
         assert_eq!(tx, deser);
 
         // EntityId
         let ent = EntityId::new(999);
-        let ser = serde_json::to_string(&ent).unwrap();
-        let deser: EntityId = serde_json::from_str(&ser).unwrap();
+        let ser = serde_json::to_string(&ent).unwrap(); // unwrap
+        let deser: EntityId = serde_json::from_str(&ser).unwrap(); // unwrap
         assert_eq!(ent, deser);
     }
 
@@ -562,14 +562,14 @@ mod tests {
         let a = [1.0, 0.0];
         let b = [0.0, 1.0];
         // Cosine: 1 - (0 / 1) = 1.0
-        assert_eq!(DistanceMetric::Cosine.compute(&a, &b).unwrap(), 1.0);
-        // Euclidean: sqrt(1^2 + 1^2) = sqrt(2)
+        assert_eq!(DistanceMetric::Cosine.compute(&a, &b).unwrap(), 1.0); // unwrap
+                                                                          // Euclidean: sqrt(1^2 + 1^2) = sqrt(2)
         assert_eq!(
-            DistanceMetric::Euclidean.compute(&a, &b).unwrap(),
+            DistanceMetric::Euclidean.compute(&a, &b).unwrap(), // unwrap
             2.0f32.sqrt()
         );
         // DotProduct: -(0) = 0.0
-        assert_eq!(DistanceMetric::DotProduct.compute(&a, &b).unwrap(), 0.0);
+        assert_eq!(DistanceMetric::DotProduct.compute(&a, &b).unwrap(), 0.0); // unwrap
     }
 
     #[test]
@@ -577,18 +577,18 @@ mod tests {
         let a = [10, 20];
         let b = [20, 30];
         // Euclidean: (10-20)^2 + (20-30)^2 = 100 + 100 = 200
-        assert_eq!(DistanceMetric::Euclidean.compute_u8(&a, &b).unwrap(), 200);
-        // DotProduct: 10*20 + 20*30 = 200 + 600 = 800
-        assert_eq!(DistanceMetric::DotProduct.compute_u8(&a, &b).unwrap(), 800);
-        // Cosine: orthogonal vectors → distance 1.0 → 1_000_000
+        assert_eq!(DistanceMetric::Euclidean.compute_u8(&a, &b).unwrap(), 200); // unwrap
+                                                                                // DotProduct: 10*20 + 20*30 = 200 + 600 = 800
+        assert_eq!(DistanceMetric::DotProduct.compute_u8(&a, &b).unwrap(), 800); // unwrap
+                                                                                 // Cosine: orthogonal vectors → distance 1.0 → 1_000_000
         let orth_a: [u8; 2] = [255, 0];
         let orth_b: [u8; 2] = [0, 255];
         assert_eq!(
-            DistanceMetric::Cosine.compute_u8(&orth_a, &orth_b).unwrap(),
+            DistanceMetric::Cosine.compute_u8(&orth_a, &orth_b).unwrap(), // unwrap
             1_000_000
         );
         // Cosine: identical vectors → distance 0.0 → 0
-        assert_eq!(DistanceMetric::Cosine.compute_u8(&a, &a).unwrap(), 0);
+        assert_eq!(DistanceMetric::Cosine.compute_u8(&a, &a).unwrap(), 0); // unwrap
     }
 
     /// Regressionstest für AGT-CORE-001: Beweist, dass compute_u8() bei Vektoren der Länge
@@ -608,7 +608,7 @@ mod tests {
         // Euclidean: identische Vektoren → Distanz 0
         let eucl_same = DistanceMetric::Euclidean
             .compute_u8(&max_vec, &same_vec)
-            .unwrap();
+            .unwrap(); // unwrap
         assert_eq!(
             eucl_same, 0,
             "Euclidean distance of identical vectors must be 0"
@@ -617,7 +617,7 @@ mod tests {
         // DotProduct: 255*255*100_000 = 6_502_500_000 > u32::MAX → muss auf u32::MAX sättigen
         let dot_same = DistanceMetric::DotProduct
             .compute_u8(&max_vec, &same_vec)
-            .unwrap();
+            .unwrap(); // unwrap
         assert_eq!(
             dot_same,
             u32::MAX,
@@ -627,7 +627,7 @@ mod tests {
         // Cosine: identische Vektoren → Distanz 0 (cos_dist = 1 - 1 = 0)
         let cos_same = DistanceMetric::Cosine
             .compute_u8(&max_vec, &same_vec)
-            .unwrap();
+            .unwrap(); // unwrap
         assert_eq!(
             cos_same, 0,
             "Cosine distance of identical vectors must be 0"
@@ -638,7 +638,7 @@ mod tests {
         let zero_vec: Vec<u8> = vec![0u8; 100_000];
         let eucl_max = DistanceMetric::Euclidean
             .compute_u8(&max_vec, &zero_vec)
-            .unwrap();
+            .unwrap(); // unwrap
         assert_eq!(
             eucl_max,
             u32::MAX,
@@ -648,7 +648,7 @@ mod tests {
         // Cosine: senkrechte Vektoren (255..255 vs. 0..0) → Sonderfall: Nullvektor → Distanz 1.0
         let cos_zero = DistanceMetric::Cosine
             .compute_u8(&max_vec, &zero_vec)
-            .unwrap();
+            .unwrap(); // unwrap
         assert_eq!(
             cos_zero, 1_000_000,
             "Cosine distance against zero vector must be 1.0 (scaled: 1_000_000)"
@@ -664,9 +664,9 @@ mod tests {
 
         let dist_close = DistanceMetric::Cosine
             .compute_u8(&query, &close_vec)
-            .unwrap();
-        let dist_far = DistanceMetric::Cosine.compute_u8(&query, &far_vec).unwrap();
-        // Close vector should have smaller cosine distance
+            .unwrap(); // unwrap
+        let dist_far = DistanceMetric::Cosine.compute_u8(&query, &far_vec).unwrap(); // unwrap
+                                                                                     // Close vector should have smaller cosine distance
         assert!(
             dist_close < dist_far,
             "Ranking mismatch: close={} far={}",
@@ -678,14 +678,14 @@ mod tests {
         let q_f32: Vec<f32> = query.iter().map(|&x| x as f32).collect();
         let c_f32: Vec<f32> = close_vec.iter().map(|&x| x as f32).collect();
         let f_f32: Vec<f32> = far_vec.iter().map(|&x| x as f32).collect();
-        let f32_close = DistanceMetric::Cosine.compute(&q_f32, &c_f32).unwrap();
-        let f32_far = DistanceMetric::Cosine.compute(&q_f32, &f_f32).unwrap();
+        let f32_close = DistanceMetric::Cosine.compute(&q_f32, &c_f32).unwrap(); // unwrap
+        let f32_far = DistanceMetric::Cosine.compute(&q_f32, &f_f32).unwrap(); // unwrap
         assert!(f32_close < f32_far, "f32 ranking mismatch");
     }
 
     #[test]
     fn doc_id_valid_key_is_ok() {
-        let id = DocId::from_key("valid-key-123").unwrap();
+        let id = DocId::from_key("valid-key-123").unwrap(); // unwrap
         assert!(id.inner() > 0);
     }
 
@@ -736,14 +736,14 @@ mod tests {
     proptest::proptest! {
         fn prop_docid_serialization(id in proptest::num::u64::ANY) {
             let doc = DocId::new(id);
-            let ser = serde_json::to_string(&doc).unwrap();
-            let deser: DocId = serde_json::from_str(&ser).unwrap();
+            let ser = serde_json::to_string(&doc).unwrap(); // unwrap
+            let deser: DocId = serde_json::from_str(&ser).unwrap(); // unwrap
             prop_assert_eq!(doc, deser);
         }
 
         fn doc_id_from_key_deterministic(s in "[a-zA-Z0-9_\\-]{1,256}") {
-            let id1 = DocId::from_key(&s).unwrap();
-            let id2 = DocId::from_key(&s).unwrap();
+            let id1 = DocId::from_key(&s).unwrap(); // unwrap
+            let id2 = DocId::from_key(&s).unwrap(); // unwrap
             prop_assert_eq!(id1, id2);
         }
 
@@ -757,15 +757,15 @@ mod tests {
 
         fn prop_txid_serialization(id in proptest::num::u64::ANY) {
             let tx = TxId::new(id);
-            let ser = serde_json::to_string(&tx).unwrap();
-            let deser: TxId = serde_json::from_str(&ser).unwrap();
+            let ser = serde_json::to_string(&tx).unwrap(); // unwrap
+            let deser: TxId = serde_json::from_str(&ser).unwrap(); // unwrap
             prop_assert_eq!(tx, deser);
         }
 
         fn prop_entityid_serialization(id in proptest::num::u64::ANY) {
             let ent = EntityId::new(id);
-            let ser = serde_json::to_string(&ent).unwrap();
-            let deser: EntityId = serde_json::from_str(&ser).unwrap();
+            let ser = serde_json::to_string(&ent).unwrap(); // unwrap
+            let deser: EntityId = serde_json::from_str(&ser).unwrap(); // unwrap
             prop_assert_eq!(ent, deser);
         }
     }

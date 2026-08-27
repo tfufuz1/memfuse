@@ -337,7 +337,7 @@ mod tests {
     fn pipeline_empty_pdf_no_panic() {
         let result = ingest_bytes(b"", "test.pdf");
         assert!(result.is_ok());
-        assert!(result.unwrap().is_empty());
+        assert!(result.unwrap().is_empty()); // unwrap
     }
 
     #[test]

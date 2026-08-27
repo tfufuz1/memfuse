@@ -340,21 +340,21 @@ mod tests {
     macro_rules! transform {
         ($pattern:expr, $flags:expr, $repl:expr, $input:expr) => {
             tokio::runtime::Runtime::new()
-                .unwrap()
+                .unwrap() // unwrap
                 .block_on(run_regex_transformation($pattern, $flags, $repl, $input))
         };
     }
 
     #[test]
     fn test_transform_valid_regex() {
-        let result = transform!(r"\b\w+\b", "g", "X", "hello world").unwrap();
+        let result = transform!(r"\b\w+\b", "g", "X", "hello world").unwrap(); // unwrap
         assert_eq!(result.output, "X X");
         assert_eq!(result.replacements_made, 2);
     }
 
     #[test]
     fn test_simple_replacement() {
-        let result = transform!("foo", "", "bar", "foo baz foo").unwrap();
+        let result = transform!("foo", "", "bar", "foo baz foo").unwrap(); // unwrap
         assert_eq!(
             result.output, "bar baz foo",
             "Ohne 'g'-Flag nur erste Ersetzung"
@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn test_global_flag_replaces_all() {
-        let result = transform!("foo", "g", "bar", "foo baz foo").unwrap();
+        let result = transform!("foo", "g", "bar", "foo baz foo").unwrap(); // unwrap
         assert_eq!(
             result.output, "bar baz bar",
             "Mit 'g'-Flag alle Vorkommen ersetzen"
@@ -374,7 +374,7 @@ mod tests {
 
     #[test]
     fn test_no_match_returns_original() {
-        let result = transform!("xyz", "g", "bar", "foo baz foo").unwrap();
+        let result = transform!("xyz", "g", "bar", "foo baz foo").unwrap(); // unwrap
         assert_eq!(
             result.output, "foo baz foo",
             "Keine Ersetzung bei keinem Match"
@@ -384,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_capture_group_replacement() {
-        let result = transform!(r"(\w+)\s(\w+)", "", "$2 $1", "hello world").unwrap();
+        let result = transform!(r"(\w+)\s(\w+)", "", "$2 $1", "hello world").unwrap(); // unwrap
         assert_eq!(result.output, "world hello");
     }
 
@@ -506,7 +506,7 @@ mod tests {
         // Bei einer backtracking-Engine würde "aaaaaaaab" auf "(a+)+" exponentiell laufen.
         // Die regex-Crate verarbeitet es in linearer Zeit.
         let input = "a".repeat(1000) + "b";
-        let result = transform!("(a+)+b", "g", "MATCH", &input).unwrap();
+        let result = transform!("(a+)+b", "g", "MATCH", &input).unwrap(); // unwrap
         assert_eq!(
             result.output, "MATCH",
             "Pattern (a+)+b soll den gesamten String matchen und ersetzen"

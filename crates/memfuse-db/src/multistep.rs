@@ -182,7 +182,7 @@ mod tests {
             _original_query: &str,
             _current_results: &[SearchResult],
         ) -> Result<Vec<String>> {
-            let mut guard = self.responses.lock().unwrap();
+            let mut guard = self.responses.lock().unwrap(); // unwrap
             if !guard.is_empty() {
                 Ok(guard.remove(0))
             } else {
@@ -192,17 +192,17 @@ mod tests {
     }
 
     async fn create_test_collection() -> Arc<Collection<LsmStorage>> {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let lsm_config = LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         };
-        let storage = Arc::new(LsmStorage::new(lsm_config).await.expect("lsm storage"));
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.expect("lsm storage")); // expect
         let hnsw_config = HnswConfig {
             dimension: 4,
             ..Default::default()
         };
-        let index = Arc::new(HnswIndex::try_new(hnsw_config).expect("hnsw index"));
+        let index = Arc::new(HnswIndex::try_new(hnsw_config).expect("hnsw index")); // expect
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(1));
 
@@ -228,14 +228,14 @@ mod tests {
             Some(serde_json::json!({"text": "rust programming"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
         col.insert(
             "doc2",
             &[0.9, 0.1, 0.0, 0.0],
             Some(serde_json::json!({"text": "rust language"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
 
         let config = MultiStepConfig {
             max_rounds: 3,
@@ -251,7 +251,7 @@ mod tests {
         let result = engine
             .search("rust", &[1.0, 0.0, 0.0, 0.0], 5, Some(&rewriter))
             .await
-            .expect("search");
+            .expect("search"); // expect
 
         assert_eq!(result.rounds_executed, 1);
         assert!(result.sub_queries.is_empty());
@@ -267,7 +267,7 @@ mod tests {
             Some(serde_json::json!({"text": "rust programming"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
 
         let config = MultiStepConfig {
             max_rounds: 3,
@@ -286,7 +286,7 @@ mod tests {
         let result = engine
             .search("rust", &[1.0, 0.0, 0.0, 0.0], 5, Some(&rewriter))
             .await
-            .expect("search");
+            .expect("search"); // expect
 
         assert_eq!(result.rounds_executed, 2);
         assert_eq!(result.sub_queries, vec!["rust programming"]);
@@ -302,7 +302,7 @@ mod tests {
         let result = engine
             .search("query", &[1.0, 0.0, 0.0, 0.0], 5, None)
             .await
-            .expect("search");
+            .expect("search"); // expect
 
         assert_eq!(result.rounds_executed, 1);
         assert!(result.sub_queries.is_empty());
