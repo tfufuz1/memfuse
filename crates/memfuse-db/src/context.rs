@@ -30,12 +30,16 @@ impl Default for ContextManager {
     }
 }
 
-impl From<crate::SearchResult> for ContextChunk {
-    fn from(r: crate::SearchResult) -> Self {
-        let doc_id = DocId::from_key(&r.id).unwrap_or_else(|e| {
-            tracing::error!("Failed to convert SearchResult id to DocId: {}", e);
-            DocId::MIN
-        });
+impl TryFrom<crate::SearchResult> for ContextChunk {
+    type Error = memfuse_core::MemFuseError;
+
+    fn try_from(r: crate::SearchResult) -> std::result::Result<Self, Self::Error> {
+        let doc_id = DocId::from_key(&r.id).map_err(|e| {
+            memfuse_core::MemFuseError::InvalidInput(format!(
+                "SearchResult-ID '{}' ungültig: {e}",
+                r.id
+            ))
+        })?;
         let content = r
             .metadata
             .as_ref()
@@ -44,14 +48,14 @@ impl From<crate::SearchResult> for ContextChunk {
             .unwrap_or("")
             .to_string();
         let token_count = ContextManager::estimate_tokens(&content);
-        ContextChunk {
+        Ok(ContextChunk {
             doc_id,
             content,
             relevance: r.score,
             token_count,
             metadata: r.metadata,
             contextual_prefix: None,
-        }
+        })
     }
 }
 
@@ -267,6 +271,35 @@ mod tests {
     use memfuse_core::DocId;
 
     #[test]
+    fn context_manager_respects_token_budget() {
+        let budget = TokenBudget::new(100, 0); // 100 max, 0 reserved => 100 available
+        let manager = ContextManager::new(budget);
+
+        let chunks = vec![
+            ContextChunk {
+                doc_id: DocId::new(1),
+                content: "First long content chunk".into(),
+                relevance: 0.9,
+                token_count: 60,
+                metadata: None,
+                contextual_prefix: None,
+            },
+            ContextChunk {
+                doc_id: DocId::new(2),
+                content: "Second long content chunk".into(),
+                relevance: 0.8,
+                token_count: 60,
+                metadata: None,
+                contextual_prefix: None,
+            },
+        ];
+
+        let window = manager.prepare_context(chunks).expect("prepare_context");
+        assert!(window.truncated);
+        assert!(window.total_tokens <= 100);
+    }
+
+    #[test]
     fn test_context_manager_budget_truncation() {
         let budget = TokenBudget::new(100, 20);
         let mgr = ContextManager::new(budget);
@@ -298,8 +331,8 @@ mod tests {
             },
         ];
 
-        let window = mgr.prepare_context(chunks).expect("valid test value");
-        // Budget: 100 - 20 = 80 available. Should fit 50 (chunk1) but not 50+50=100.
+        let window = mgr.prepare_context(chunks).expect("valid test value"); // expect
+                                                                             // Budget: 100 - 20 = 80 available. Should fit 50 (chunk1) but not 50+50=100.
         assert_eq!(window.chunks.len(), 1);
         assert!(window.truncated);
         assert_eq!(window.total_tokens, 50);
@@ -329,7 +362,7 @@ mod tests {
             contextual_prefix: None,
         }];
 
-        let window = mgr.prepare_context(chunks).expect("valid test value");
+        let window = mgr.prepare_context(chunks).expect("valid test value"); // expect
         assert_eq!(window.chunks.len(), 1);
         assert!(window.truncated);
         assert!(window.total_tokens <= 10);

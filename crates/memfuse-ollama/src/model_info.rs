@@ -54,6 +54,25 @@ impl OllamaClient {
             .await
             .map_err(|e| MemFuseError::Internal(format!("Ollama /api/show request failed: {e}")))?;
 
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<body unreadable>".into());
+            let lower = body.to_lowercase();
+            if lower.contains("model") && lower.contains("not found")
+                || status == reqwest::StatusCode::NOT_FOUND
+            {
+                return Err(MemFuseError::NotFound(format!(
+                    "Ollama model '{model}' not found. Run: ollama pull {model}"
+                )));
+            }
+            return Err(MemFuseError::Storage(format!(
+                "Ollama show_model HTTP {status}: {body}"
+            )));
+        }
+
         let parsed: ShowResponse = response
             .json()
             .await
@@ -97,8 +116,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_model_available() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -150,7 +169,7 @@ mod tests {
     #[test]
     fn model_info_deserializes_correctly() {
         let json = r#"{"modelfile":"FROM nomic-embed-text","parameter_size":"137M","quantization_level":"Q4_0"}"#;
-        let info: ModelInfo = serde_json::from_str(json).unwrap();
+        let info: ModelInfo = serde_json::from_str(json).unwrap(); // unwrap
         assert_eq!(info.modelfile.as_deref(), Some("FROM nomic-embed-text"));
         assert_eq!(info.parameter_size.as_deref(), Some("137M"));
         assert_eq!(info.quantization_level.as_deref(), Some("Q4_0"));

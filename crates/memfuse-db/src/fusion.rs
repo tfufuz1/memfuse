@@ -342,10 +342,10 @@ mod tests {
         assert_eq!(doc.id, "doc1");
 
         // Verify metadata merging (earlier signal key is retained, missing keys supplemented)
-        let meta = doc.metadata.as_ref().unwrap().as_object().unwrap();
-        assert_eq!(meta.get("vec_key").unwrap(), "val1");
-        assert_eq!(meta.get("graph_key").unwrap(), "val2");
-        assert_eq!(meta.get("shared_key").unwrap(), "from_vector");
+        let meta = doc.metadata.as_ref().unwrap().as_object().unwrap(); // unwrap
+        assert_eq!(meta.get("vec_key").unwrap(), "val1"); // unwrap
+        assert_eq!(meta.get("graph_key").unwrap(), "val2"); // unwrap
+        assert_eq!(meta.get("shared_key").unwrap(), "from_vector"); // unwrap
 
         // Verify matched signals tracking
         assert_eq!(doc.matched_signals, vec!["vector", "graph"]);

@@ -1305,18 +1305,18 @@ mod tests {
 
         // Dot product
         let dot_scalar = dot_product_scalar(&a, &b);
-        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test");
+        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test"); // expect
         let dot_simd = -d;
         assert!((dot_scalar - dot_simd).abs() < 1e-3);
 
         // Euclidean
         let euc_scalar = euclidean_distance_scalar(&a, &b);
-        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test");
+        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test"); // expect
         assert!((euc_scalar - euc_simd).abs() < 1e-3);
 
         // Cosine
         let cos_scalar = cosine_distance_scalar(&a, &b);
-        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test");
+        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test"); // expect
         assert!((cos_scalar - cos_simd).abs() < 1e-3);
     }
 
@@ -1450,7 +1450,7 @@ mod tests {
                     ),
                 };
 
-                let simd = compute_distance(&a, &b, metric).unwrap();
+                let simd = compute_distance(&a, &b, metric).unwrap(); // unwrap
 
                 // DotProduct in compute_distance returns -dot, so we adjust
                 let simd_val = if metric == DistanceMetric::DotProduct {
@@ -1494,14 +1494,14 @@ mod tests {
     #[test]
     fn cosine_distance_self_is_zero() {
         let v = vec![1.0f32, 2.0, 3.0, 4.0];
-        let d = compute_distance(&v, &v, DistanceMetric::Cosine).unwrap();
+        let d = compute_distance(&v, &v, DistanceMetric::Cosine).unwrap(); // unwrap
         assert!(d.abs() < 1e-6, "cos_distance(v, v) must be ~0, got {d}");
     }
 
     #[test]
     fn euclidean_distance_self_is_zero() {
         let v = vec![1.0f32, 0.5, -1.0, 2.0];
-        let d = compute_distance(&v, &v, DistanceMetric::Euclidean).unwrap();
+        let d = compute_distance(&v, &v, DistanceMetric::Euclidean).unwrap(); // unwrap
         assert!(d.abs() < 1e-6, "euclidean(v, v) must be ~0, got {d}");
     }
 
@@ -1585,14 +1585,14 @@ mod tests {
             }
 
             // General SIMD dispatch vs Scalar check
-            let cos_simd = compute_distance(a, b, DistanceMetric::Cosine).unwrap();
+            let cos_simd = compute_distance(a, b, DistanceMetric::Cosine).unwrap(); // unwrap
             let cos_scalar = cosine_distance_scalar(a, b);
             proptest::prop_assert!(
                 (cos_simd - cos_scalar).abs() < 1e-4,
                 "Cosine dispatch mismatch: simd={}, scalar={}", cos_simd, cos_scalar
             );
 
-            let euc_simd = compute_distance(a, b, DistanceMetric::Euclidean).unwrap();
+            let euc_simd = compute_distance(a, b, DistanceMetric::Euclidean).unwrap(); // unwrap
             let euc_scalar = euclidean_distance_scalar(a, b);
             proptest::prop_assert!(
                 (euc_simd - euc_scalar).abs() < 1e-4,

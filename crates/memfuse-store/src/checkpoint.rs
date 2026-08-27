@@ -141,6 +141,7 @@ mod tests {
         storage.commit(tx3).await.unwrap(); // unwrap
         assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec()));
         // unwrap
+        // unwrap
     }
 
     #[tokio::test]
@@ -165,6 +166,7 @@ mod tests {
             storage.put(tx2, b"key2", b"val2").await.unwrap(); // unwrap
             storage.commit(tx2).await.unwrap(); // unwrap
             assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec()));
+            // unwrap
             // unwrap
             // guard drops here, triggering auto-rollback
         }
