@@ -290,7 +290,9 @@ impl<S: StorageEngine> Collection<S> {
                     }
                 }
                 // Cleanup recovered intent
-                let _ = self.storage.delete(recovery_tx, &intent_key).await;
+                if let Err(e) = self.storage.delete(recovery_tx, &intent_key).await {
+                    tracing::warn!(key = ?intent_key, "Konnte wiederhergestellte TxIntent nicht löschen: {e}");
+                }
             }
         }
         if recovered_any {
@@ -604,7 +606,12 @@ impl<S: StorageEngine> Collection<S> {
         let db_tx = self.begin_transaction();
         for (id, embedding, metadata) in docs {
             if embedding.len() != self.dimension {
-                let _ = db_tx.rollback().await;
+                if let Err(rollback_err) = db_tx.rollback().await {
+                    tracing::error!(
+                        "[INV-DB-3] Failed to rollback upsert_many on dimension mismatch: {}",
+                        rollback_err
+                    );
+                }
                 return Err(memfuse_core::MemFuseError::invalid_input(format!(
                     "Dimension mismatch: expected {}, got {}",
                     self.dimension,
@@ -725,11 +732,11 @@ impl<S: StorageEngine> Collection<S> {
         }
 
         // Re-insert into HNSW
+        // Recovery-Pfad ist HNSW-Rebuild (>20% deleted nodes) der mit LSM re-synct.
         if let Err(e) = self.index.delete(tx, doc_id).await {
             tracing::warn!(
-                "[COL-HNSW-DELETE] Failed to delete doc {:?} from HNSW index: {}",
-                doc_id,
-                e
+                doc_id = ?doc_id,
+                "HNSW soft-delete fehlgeschlagen: {e}. Doc wird nach HNSW-Rebuild nicht mehr in Vektorsuchen erscheinen."
             );
         }
         self.index.insert(tx, doc_id, embedding).await?;
@@ -774,11 +781,11 @@ impl<S: StorageEngine> Collection<S> {
 
         db_tx.record_keys(user_key, doc_key, doc_id);
 
+        // Recovery-Pfad ist HNSW-Rebuild (>20% deleted nodes) der mit LSM re-synct.
         if let Err(e) = self.index.delete(tx, doc_id).await {
             tracing::warn!(
-                "[COL-HNSW-DELETE] Failed to delete doc {:?} from HNSW index: {}",
-                doc_id,
-                e
+                doc_id = ?doc_id,
+                "HNSW soft-delete fehlgeschlagen: {e}. Doc wird nach HNSW-Rebuild nicht mehr in Vektorsuchen erscheinen."
             );
         }
 
@@ -786,10 +793,15 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Creates a directional relationship between two documents in the collection.
+    // LIMITATION: Cross-engine 2-Phase Commit between LSM Storage and CSR Graph uses single TxId with compensating rollback on failure.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
         let _guard = self.insert_lock.lock().await;
         let tx = self.allocate_tx();
+
+        let from_id = memfuse_core::EntityId::from_key(from)?;
+        let to_id = memfuse_core::EntityId::from_key(to)?;
+
         let key_str = format!("{}:{}:{}", from, label, to);
         let key = self.namespaced_key(key_str.as_bytes(), 2);
         let val = serde_json::json!({
@@ -799,24 +811,48 @@ impl<S: StorageEngine> Collection<S> {
         });
         let bytes = serde_json::to_vec(&val)?;
 
-        self.storage.put(tx, &key, &bytes).await?;
-        self.storage.commit(tx).await?;
-
-        let from_id = memfuse_core::EntityId::from_key(from)?;
-        let to_id = memfuse_core::EntityId::from_key(to)?;
-
-        let graph_tx = self.allocate_tx();
+        if let Err(e) = self.storage.put(tx, &key, &bytes).await {
+            self.rollback_relate(tx).await;
+            return Err(e);
+        }
 
         let from_entity = memfuse_core::Entity::new(from_id, from, "Node");
         let to_entity = memfuse_core::Entity::new(to_id, to, "Node");
-        self.graph_index.add_entity(graph_tx, from_entity).await?;
-        self.graph_index.add_entity(graph_tx, to_entity).await?;
+        if let Err(e) = self.graph_index.add_entity(tx, from_entity).await {
+            self.rollback_relate(tx).await;
+            return Err(e);
+        }
+        if let Err(e) = self.graph_index.add_entity(tx, to_entity).await {
+            self.rollback_relate(tx).await;
+            return Err(e);
+        }
 
         let edge = memfuse_core::Edge::new(from_id, to_id, label);
-        self.graph_index.add_edge(graph_tx, edge).await?;
-        self.graph_index.commit(graph_tx).await?;
+        if let Err(e) = self.graph_index.add_edge(tx, edge).await {
+            self.rollback_relate(tx).await;
+            return Err(e);
+        }
+
+        if let Err(e) = self.storage.commit(tx).await {
+            self.rollback_relate(tx).await;
+            return Err(e);
+        }
+
+        if let Err(e) = self.graph_index.commit(tx).await {
+            self.rollback_relate(tx).await;
+            return Err(e);
+        }
 
         Ok(())
+    }
+
+    async fn rollback_relate(&self, tx: TxId) {
+        if let Err(e) = self.storage.rollback(tx).await {
+            tracing::error!(tx_id = ?tx, "Failed to rollback storage during relate: {e}");
+        }
+        if let Err(e) = self.graph_index.rollback(tx).await {
+            tracing::error!(tx_id = ?tx, "Failed to rollback graph index during relate: {e}");
+        }
     }
 
     /// Creates a bidirectional relationship atomically.
@@ -872,6 +908,7 @@ impl<S: StorageEngine> Collection<S> {
         query_embedding: &[f32],
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
+        let k = k.min(memfuse_core::MAX_SEARCH_K);
         self.search_with_filter(query_embedding, k, None).await
     }
 
@@ -883,6 +920,7 @@ impl<S: StorageEngine> Collection<S> {
         k: usize,
         filter: Option<MetadataFilter>,
     ) -> Result<Vec<crate::SearchResult>> {
+        let k = k.min(memfuse_core::MAX_SEARCH_K);
         // 🛡️ SICHERUNG: Snapshot-Isolation (FIND-DB-003)
         // Wir pinnen den Snapshot für die gesamte Dauer der gefilterten Suche,
         // um Konsistenz zwischen Vektor-Index, Metadaten-Filter und Re-Hydrierung zu garantieren.
@@ -954,7 +992,12 @@ impl<S: StorageEngine> Collection<S> {
         }
         .await;
 
-        let _ = self.storage.unpin_checkpoint(seq).await;
+        if let Err(e) = self.storage.unpin_checkpoint(seq).await {
+            tracing::error!(
+                seq_no = seq,
+                "Checkpoint seq={seq} konnte nicht unpinnt werden: {e}. SSTable-GC wird blockiert. Manuelles Eingreifen eventuell nötig."
+            );
+        }
         res
     }
 
@@ -965,6 +1008,7 @@ impl<S: StorageEngine> Collection<S> {
         query_text: &str,
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
+        let k = k.min(memfuse_core::MAX_SEARCH_K);
         let embedding = {
             let embedder = {
                 let guard = self.embedder.read();
@@ -1024,6 +1068,7 @@ impl<S: StorageEngine> Collection<S> {
         k: usize,
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<crate::SearchResult>> {
+        let k = k.min(memfuse_core::MAX_SEARCH_K);
         let seq = self.snapshot_seq().await?;
         self.search_filtered_at(query, k, filter, seq).await
     }
@@ -1035,6 +1080,7 @@ impl<S: StorageEngine> Collection<S> {
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
         seq: u64,
     ) -> Result<Vec<crate::SearchResult>> {
+        let k = k.min(memfuse_core::MAX_SEARCH_K);
         let scored_docs = self.index.search_filtered(query, k, filter).await?;
         self.hydrate_from_scored_at(scored_docs, seq).await
     }
@@ -1129,6 +1175,7 @@ impl<S: StorageEngine> Collection<S> {
         reranker: Option<&memfuse_embed::CrossEncoderReranker>,
         anchor_entities: Option<&[memfuse_core::EntityId]>,
     ) -> Result<Vec<crate::SearchResult>> {
+        let k = k.min(memfuse_core::MAX_SEARCH_K);
         // Schritt 1: Standard-Hybrid-Suche mit erhöhtem k (Reranking braucht mehr Kandidaten)
         let pre_rerank_k = if reranker.is_some() { k * 3 } else { k };
         let mut results = self
@@ -1567,6 +1614,52 @@ mod tests {
         let embedder: Arc<dyn TextEmbeddingEngine> = Arc::new(FakeEmbedder);
         let result = embedder.embed("hello").await.unwrap(); // unwrap
         assert_eq!(result.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn hybrid_search_caps_k_at_max_search_k() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let lsm_config = memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let hnsw_config = memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap());
+        let graph = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(AtomicU64::new(1));
+
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            graph,
+            next_tx,
+            4,
+            memfuse_text::Language::English,
+        );
+
+        let res = col
+            .hybrid_search("test", &[0.1, 0.2, 0.3, 0.4], 100_000, None)
+            .await
+            .unwrap();
+
+        assert!(
+            res.len() <= memfuse_core::MAX_SEARCH_K,
+            "Results length {} should be <= MAX_SEARCH_K ({})",
+            res.len(),
+            memfuse_core::MAX_SEARCH_K
+        );
     }
 
     #[tokio::test]
