@@ -137,7 +137,11 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Commits a transaction — makes writes visible.
     async fn commit(&self, tx_id: TxId) -> Result<()>;
 
-    /// Rolls back a transaction — discards stagged writes for the given ID.
+    /// Rolls back a transaction — discards staged uncommitted writes for the given ID.
+    ///
+    /// **Note**: `rollback()` only discards entries currently in the staging buffer.
+    /// Once `commit()` has completed, `rollback()` on that `tx_id` is a no-op.
+    /// Undoing a physically committed transaction requires a compensating transaction or `rollback_to_tx()`.
     async fn rollback(&self, tx_id: TxId) -> Result<()>;
 
     /// Rolls back the entire storage state to a specific transaction ID.

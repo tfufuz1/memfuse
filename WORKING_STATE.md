@@ -1,11 +1,17 @@
 # MemFuse — Working State
-*Zuletzt aktualisiert: 2026-08-27 von Jules*
+*Zuletzt aktualisiert: 2026-08-28 von Jules*
 
 ## Letzte Änderungen
+- 2026-08-28: F-01 / AGT-DB-005 behoben: `Collection::relate()` führt bei Fehlschlag von `graph_index.commit(tx)` nach erfolgreichem `storage.commit(tx)` eine kompensierende Transaktion (Delete-Tombstone im LSM-Storage) aus (ADR-023).
+- 2026-08-28: Doc-Kommentare in `LsmStorage::rollback` und `StorageEngine::rollback` präzisiert (ADR-023).
 - 2026-08-27: Intra-Doc-Links in `crates/memfuse-index/src/quantize.rs` für `check_drift` korrigiert (Klammern `\[mins\[i\], maxes\[i\]\]` maskiert), behebt doc warnings in `memfuse-index`.
 - 2026-08-27: Intra-Doc-Links in `crates/memfuse-core/src/types/saos.rs` für `ContextChunk::combined_text_for_indexing` korrigiert (`Self::combined_text_owned()`, `Self::content`), behebt doc warnings in `memfuse-core`.
 
 ## Sprint-Status (Aktuelle Session)
+
+- Root-Cause F-01 verifiziert durch Regressionstest `test_relate_rollback_semantics_on_graph_commit_failure`.
+- ADR-023 dokumentiert in `DECISIONS.md`.
+- Kompensierender Rollback-Pfad in `Collection::relate` implementiert und durch Unit/Integrationstests abgesichert.
 
 Abgeschlossene Sprints und Historie siehe [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 
@@ -28,4 +34,4 @@ Keine ungenehmigten `.expect()` Aufrufe in `crates/*/src/` mehr vorhanden.
 
 ## Letzter ADR
 
-Neuester ADR: ADR-020 (2026-08-27) — Wiederherstellung von `memfuse-agent` aus dem Archiv
+Neuester ADR: ADR-023 (2026-08-28) — Kompensierende Transaktion für Multi-Store relate() Operations (F-01 / AGT-DB-005)

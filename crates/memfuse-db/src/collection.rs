@@ -793,6 +793,7 @@ impl<S: StorageEngine> Collection<S> {
         Ok(())
     }
 
+    // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-DB-005 — relate() rollback race behoben, siehe ADR-023 (TS:2026-08-28T00:00:00Z)
     /// Creates a directional relationship between two documents in the collection.
     // LIMITATION: Cross-engine 2-Phase Commit between LSM Storage and CSR Graph uses single TxId with compensating rollback on failure.
     #[tracing::instrument(level = "trace", skip(self))]
@@ -813,44 +814,62 @@ impl<S: StorageEngine> Collection<S> {
         let bytes = serde_json::to_vec(&val)?;
 
         if let Err(e) = self.storage.put(tx, &key, &bytes).await {
-            self.rollback_relate(tx).await;
+            self.rollback_relate(tx, false, &key).await;
             return Err(e);
         }
 
         let from_entity = memfuse_core::Entity::new(from_id, from, "Node");
         let to_entity = memfuse_core::Entity::new(to_id, to, "Node");
         if let Err(e) = self.graph_index.add_entity(tx, from_entity).await {
-            self.rollback_relate(tx).await;
+            self.rollback_relate(tx, false, &key).await;
             return Err(e);
         }
         if let Err(e) = self.graph_index.add_entity(tx, to_entity).await {
-            self.rollback_relate(tx).await;
+            self.rollback_relate(tx, false, &key).await;
             return Err(e);
         }
 
         let edge = memfuse_core::Edge::new(from_id, to_id, label);
         if let Err(e) = self.graph_index.add_edge(tx, edge).await {
-            self.rollback_relate(tx).await;
+            self.rollback_relate(tx, false, &key).await;
             return Err(e);
         }
 
         if let Err(e) = self.storage.commit(tx).await {
-            self.rollback_relate(tx).await;
+            self.rollback_relate(tx, false, &key).await;
             return Err(e);
         }
 
         if let Err(e) = self.graph_index.commit(tx).await {
-            self.rollback_relate(tx).await;
+            self.rollback_relate(tx, true, &key).await;
             return Err(e);
         }
 
         Ok(())
     }
 
-    async fn rollback_relate(&self, tx: TxId) {
-        if let Err(e) = self.storage.rollback(tx).await {
+    async fn rollback_relate(&self, tx: TxId, storage_committed: bool, key: &[u8]) {
+        if storage_committed {
+            // Option A (ADR-023): Storage was committed physically.
+            // Discarding TxBuffer is a no-op. Execute a compensating delete transaction.
+            let rollback_tx = self.allocate_tx();
+            if let Err(e) = self.storage.delete(rollback_tx, key).await {
+                tracing::error!(
+                    tx_id = ?tx,
+                    rollback_tx_id = ?rollback_tx,
+                    "[INV-DB-3] Failed to stage compensating delete during relate rollback: {e}"
+                );
+            } else if let Err(e) = self.storage.commit(rollback_tx).await {
+                tracing::error!(
+                    tx_id = ?tx,
+                    rollback_tx_id = ?rollback_tx,
+                    "[INV-DB-3] Failed to commit compensating delete during relate rollback: {e}"
+                );
+            }
+        } else if let Err(e) = self.storage.rollback(tx).await {
             tracing::error!(tx_id = ?tx, "Failed to rollback storage during relate: {e}");
         }
+
         if let Err(e) = self.graph_index.rollback(tx).await {
             tracing::error!(tx_id = ?tx, "Failed to rollback graph index during relate: {e}");
         }
@@ -1595,6 +1614,285 @@ impl<S: StorageEngine> Collection<S> {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn test_relate_success_visible_in_storage_and_graph() {
+        use memfuse_core::EntityId;
+        use memfuse_graph::csr::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::{LsmConfig, LsmStorage};
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let graph = Arc::new(CsrGraph::new());
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage.clone(),
+            index,
+            graph.clone(),
+            Arc::new(AtomicU64::new(1)),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        col.relate("doc1", "doc2", "references").await.unwrap();
+
+        // 1. Storage check
+        let rels = col.scan_prefix("__rel:").await.unwrap();
+        assert_eq!(rels.len(), 1);
+        assert!(rels[0].0.contains("doc1:references:doc2"));
+
+        // 2. Graph check
+        let id1 = EntityId::from_key("doc1").unwrap();
+        let id2 = EntityId::from_key("doc2").unwrap();
+        let neighbors = graph.neighbors(id1).await.unwrap();
+        assert!(neighbors.contains(&id2));
+    }
+
+    #[tokio::test]
+    async fn test_relate_rollback_semantics_on_storage_commit_failure() {
+        use async_trait::async_trait;
+        use memfuse_core::{Result, StorageEngine, StorageStats, TxId};
+        use memfuse_graph::csr::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+
+        struct FailOnStorageCommit;
+
+        #[async_trait]
+        impl StorageEngine for FailOnStorageCommit {
+            async fn get(&self, _: &[u8]) -> Result<Option<Vec<u8>>> {
+                Ok(None)
+            }
+            async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> {
+                Ok(None)
+            }
+            async fn put(&self, _: TxId, _: &[u8], _: &[u8]) -> Result<()> {
+                Ok(())
+            }
+            async fn delete(&self, _: TxId, _: &[u8]) -> Result<()> {
+                Ok(())
+            }
+            async fn commit(&self, _: TxId) -> Result<()> {
+                Err(memfuse_core::MemFuseError::Storage(
+                    "Simulated Storage Commit Failure".into(),
+                ))
+            }
+            async fn rollback(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn flush(&self) -> Result<()> {
+                Ok(())
+            }
+            async fn stats(&self) -> Result<StorageStats> {
+                Ok(StorageStats {
+                    num_segments: 0,
+                    total_size_bytes: 0,
+                    memtable_size_bytes: 0,
+                })
+            }
+            async fn last_seq_no(&self) -> Result<u64> {
+                Ok(0)
+            }
+            async fn last_tx_id(&self) -> Result<TxId> {
+                Ok(TxId(0))
+            }
+            async fn pin_checkpoint(&self, _: u64) -> Result<()> {
+                Ok(())
+            }
+            async fn unpin_checkpoint(&self, _: u64) -> Result<()> {
+                Ok(())
+            }
+            async fn scan_prefix(&self, _: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+                Ok(vec![])
+            }
+            async fn scan(
+                &self,
+                _: std::ops::Bound<&[u8]>,
+                _: std::ops::Bound<&[u8]>,
+            ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+                Ok(vec![])
+            }
+        }
+
+        let storage = Arc::new(FailOnStorageCommit);
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let graph = Arc::new(CsrGraph::new());
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            graph.clone(),
+            Arc::new(AtomicU64::new(1)),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        let res = col.relate("node_x", "node_y", "links").await;
+        assert!(
+            res.is_err(),
+            "relate() must fail when storage.commit() fails"
+        );
+
+        // Graph index should remain empty since relate failed before graph commit
+        assert_eq!(graph.entity_count(), 0);
+    }
+
+    // REGRESSION TEST für F-01: beweist gebrochene Rollback-Semantik in relate()
+    #[tokio::test]
+    async fn test_relate_rollback_semantics_on_graph_commit_failure() {
+        use async_trait::async_trait;
+        use memfuse_core::{Result, StorageEngine, StorageStats, TxId};
+        use memfuse_graph::csr::{CsrGraph, CsrGraphConfig};
+        use memfuse_index::HnswIndex;
+        use memfuse_store::{LsmConfig, LsmStorage};
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        struct FailOnPutStorage {
+            should_fail: AtomicBool,
+        }
+
+        #[async_trait]
+        impl StorageEngine for FailOnPutStorage {
+            async fn get(&self, _: &[u8]) -> Result<Option<Vec<u8>>> {
+                Ok(None)
+            }
+            async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> {
+                Ok(None)
+            }
+            async fn put(&self, _: TxId, _: &[u8], _: &[u8]) -> Result<()> {
+                if self.should_fail.load(Ordering::SeqCst) {
+                    Err(memfuse_core::MemFuseError::Storage(
+                        "Simulated Graph Storage Commit Failure".into(),
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+            async fn delete(&self, _: TxId, _: &[u8]) -> Result<()> {
+                Ok(())
+            }
+            async fn commit(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn flush(&self) -> Result<()> {
+                Ok(())
+            }
+            async fn stats(&self) -> Result<StorageStats> {
+                Ok(StorageStats {
+                    num_segments: 0,
+                    total_size_bytes: 0,
+                    memtable_size_bytes: 0,
+                })
+            }
+            async fn last_seq_no(&self) -> Result<u64> {
+                Ok(0)
+            }
+            async fn last_tx_id(&self) -> Result<TxId> {
+                Ok(TxId(0))
+            }
+            async fn pin_checkpoint(&self, _: u64) -> Result<()> {
+                Ok(())
+            }
+            async fn unpin_checkpoint(&self, _: u64) -> Result<()> {
+                Ok(())
+            }
+            async fn scan_prefix(&self, _: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+                Ok(vec![])
+            }
+            async fn scan(
+                &self,
+                _: std::ops::Bound<&[u8]>,
+                _: std::ops::Bound<&[u8]>,
+            ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+                Ok(vec![])
+            }
+        }
+
+        let dir = tempdir().unwrap();
+        let lsm_config = LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+
+        let fail_storage = Arc::new(FailOnPutStorage {
+            should_fail: AtomicBool::new(true),
+        });
+        let graph = Arc::new(CsrGraph::with_config_and_storage(
+            CsrGraphConfig::default(),
+            fail_storage,
+        ));
+        let next_tx = Arc::new(AtomicU64::new(1));
+
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage.clone(),
+            index,
+            graph,
+            next_tx,
+            4,
+            memfuse_text::Language::English,
+        );
+
+        // relate() should fail when graph_index.commit() fails
+        let res = col.relate("entity_a", "entity_b", "connects").await;
+        assert!(
+            res.is_err(),
+            "relate() must return Err when graph commit fails"
+        );
+
+        // Verification: storage MUST NOT contain the relation key after failed relate()
+        let rel_prefix = col.namespaced_key(b"", 2);
+        let remaining_rels = storage.scan_prefix(&rel_prefix).await.unwrap();
+        assert!(
+            remaining_rels.is_empty(),
+            "Storage layer MUST NOT contain relation keys after relate() failure! Found: {:?}",
+            remaining_rels
+        );
+    }
+
     #[tokio::test]
     async fn test_collection_embedder_async_embed() {
         use async_trait::async_trait;
