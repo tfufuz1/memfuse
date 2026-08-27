@@ -56,3 +56,7 @@ Standard-Korrekturen für Architektur- und Planungs-Blueprints:
 2. **Keine `petgraph`-Abhängigkeit**: `memfuse-graph` nutzt eine native Pure-Rust CSR-Graph-Implementierung (`SessionBranchTree`, `CsrGraph`) ohne `petgraph`-Workspace-Abhängigkeit gemäß ADR-004 (Pure Rust Sovereign Core Policy).
 3. **`CheckpointGuard` RAII & Snapshot-Referenzen**: `CheckpointGuard` besitzt RAII-Semantik (Auto-Rollback bei Drop) und ist bewusst nicht klonbar. Zustands-Referenzen werden als `snapshot_tx_id: Option<TxId>` gespeichert.
 4. **RRF-Nutzung**: `memfuse-db::fusion` stellt `reciprocal_rank_fusion()` und `weighted_reciprocal_rank_fusion()` bereit. Spezifikationen und Blueprints nutzen bestehende Funktionen anstelle redundanter `execute_rrf()` Neuimplementierungen.
+===
+docs/SOURCE_OF_TRUTH.md:3:> **Dieses Dokument ist das einzige Living State Document für Architektur-Status, Crate-Inventar, offene Findings und die aktive Roadmap. Es wird synchron mit dem Code aktualisiert — niemals im Voraus.**
+README.md:106:## Roadmap
+DECISIONS.md:59:*   **Begründung**: LLM-Agenten können `DECISIONS.md` gezielt laden, ohne den gesamten SOT-Ballast (Backlog, Roadmap, Crate-Inventar) in den Kontext aufnehmen zu müssen. Reduziert Tokenverbrauch und erhöht Treffsicherheit. `CONSTITUTION.md` wurde entsprechend aktualisiert.
