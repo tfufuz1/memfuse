@@ -15,6 +15,5 @@ Extended Thinking aktivieren. Ohne Thinking kein ADR schreiben.
 - `Bash` für Verifikation: `cargo check`, `grep`, `find`
 - Kein Schreiben ohne vorherigen `cargo check`-Lauf
 
-### Kontext-Fenster
-Wenn Kontext > 80% voll: `WORKING_STATE.md` aktualisieren,
-dann neue Session mit `cat WORKING_STATE.md` starten.
+### Session-Protokoll
+Siehe `AGENTS.md §6` — verbindlich für alle Agenten, modellunabhängig.

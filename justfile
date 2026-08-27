@@ -38,6 +38,18 @@ check-text:
 sync-docs:
     nix develop -c cargo xtask sync-docs || cargo xtask sync-docs
 
+# Verifies if documentation is in sync with code without making changes
+sync-docs-check:
+    nix develop -c cargo xtask sync-docs --check || cargo xtask sync-docs --check
+
+# Zeigt den Session-Kontext-Digest manuell an (Fallback, falls Environment-Setup nicht griff)
+session-context:
+    #!/usr/bin/env bash
+    echo "OFFENE KRITISCHE TAGS:"
+    grep -rn "AI-TAG\[.*\]\[BLOCKER\]\|AI-TAG\[.*\]\[CRITICAL\]" crates/ --include='*.rs' | grep -v RESOLVED || echo "  (keine)"
+    echo ""
+    echo "OFFENE ANCHORS:"
+    grep -rn "ANCHOR\[.*\] STATUS:IN-PROGRESS" crates/ --include='*.rs' || echo "  (keine)"
 
 # Modular check for memfuse-py
 check-py:
