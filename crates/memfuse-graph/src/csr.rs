@@ -72,21 +72,21 @@ impl Default for CsrGraphConfig {
 type InternalIndex = usize;
 
 /// Inner state of the CsrGraph to manage contiguous storage.
-struct GraphInner {
+pub(crate) struct GraphInner {
     /// Mapping from public EntityId to internal contiguous index.
-    id_map: HashMap<EntityId, InternalIndex>,
+    pub(crate) id_map: HashMap<EntityId, InternalIndex>,
     /// Mapping from internal index back to EntityId.
-    reverse_map: Vec<EntityId>,
+    pub(crate) reverse_map: Vec<EntityId>,
     /// Entity metadata stored contiguously.
-    entities: Vec<Option<Entity>>,
+    pub(crate) entities: Vec<Option<Entity>>,
 
     /// CSR offsets array: offsets[i] is the start index in `targets` for node `i`.
     /// Length is nodes + 1.
-    offsets: Vec<usize>,
+    pub(crate) offsets: Vec<usize>,
     /// CSR targets array: contiguous list of neighbor internal indices.
-    targets: Vec<InternalIndex>,
+    pub(crate) targets: Vec<InternalIndex>,
     /// CSR weights array: contiguous list of edge weights.
-    weights: Vec<f32>,
+    pub(crate) weights: Vec<f32>,
 
     /// Staging for entities not yet committed, grouped by TxId.
     staged_entities: HashMap<TxId, HashMap<EntityId, Entity>>,
@@ -680,6 +680,16 @@ impl GraphIndex for CsrGraph {
             .or_default()
             .push((to_idx, edge.weight));
         Ok(())
+    }
+
+    async fn personalized_page_rank(
+        &self,
+        seed_nodes: &[EntityId],
+        config: &memfuse_core::PprConfig,
+    ) -> Result<Vec<(EntityId, f32)>> {
+        self.compact();
+        let inner = self.inner.read();
+        Ok(crate::ppr::compute_ppr(&inner, seed_nodes, config))
     }
 
     async fn traverse(&self, start: EntityId, max_hops: usize) -> Result<Vec<(EntityId, f32)>> {

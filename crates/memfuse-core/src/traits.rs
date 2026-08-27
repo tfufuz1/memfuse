@@ -480,6 +480,18 @@ pub trait GraphIndex: Send + Sync + 'static {
         ))
     }
 
+    /// Calculates Personalized PageRank (PPR) starting from seed nodes.
+    /// Default fail-safe implementation returns PolicyViolation error.
+    async fn personalized_page_rank(
+        &self,
+        _seed_nodes: &[crate::types::EntityId],
+        _config: &crate::types::PprConfig,
+    ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
+        Err(crate::error::MemFuseError::PolicyViolation(
+            "Personalized PageRank is not supported by this GraphIndex implementation".into(),
+        ))
+    }
+
     /// Inserts or updates a node entity.
     async fn add_entity(
         &self,
