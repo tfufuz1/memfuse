@@ -1,4 +1,4 @@
-// TODO: Module documentation added
+// AI-TAG[DOC-DRIFT][MINOR][AGT-INDEX-001][RESOLVED] Module documentation added
 // SAFETY: Dokumentierte unsafe-Blöcke in SIMD-Zone
 // GEFUNDEN: 81 unsafe-Blöcke. Aktueller Zustand: 147 SAFETY:-Kommentare.
 // ERWARTET: Jeder unsafe-Block braucht SAFETY: Kommentar mit:
@@ -51,7 +51,7 @@ use std::arch::x86_64::*;
 
 /// Computes distance between two vectors using the specified metric.
 #[inline]
-// TODO(WP-8.1): Stable SIMD Migration
+// AI-TAG[SIMD-SAFETY][MINOR][AGT-INDEX-002][OPEN] Stable SIMD Migration when std::simd stabilizes
 // Standardize SIMD distance metrics on Stable Rust, preventing panic in hardware fallbacks.
 // Fallbacks MUST be verified to prevent Zero-Panic violations.
 pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse_core::Result<f32> {

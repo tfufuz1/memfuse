@@ -48,15 +48,26 @@ jobs:
           fi
           echo "✅ memfuse-mcp korrekt: kein axum"
 
+      - name: "Gate 6: Keine TODOs ohne AI-TAG Grammatik"
+        run: |
+          TODO_WITHOUT_TAG=$(grep -rn "TODO" crates/ --include="*.rs" | grep -v "AI-TAG" || true)
+          if [ -n "$TODO_WITHOUT_TAG" ]; then
+            echo "❌ TODO ohne AI-TAG Grammatik in Rust-Dateien gefunden:"
+            echo "$TODO_WITHOUT_TAG"
+            exit 1
+          fi
+          echo "✅ Alle TODOs nutzen AI-TAG Syntax"
+
       - name: "Gate 5: WORKING_STATE.md existiert und ist aktuell"
         run: |
           if [ ! -f "WORKING_STATE.md" ]; then
             echo "❌ WORKING_STATE.md fehlt — Session-Handoff nicht möglich"
             exit 1
           fi
-          # Datum-Check: nicht älter als 7 Tage bei aktiver Entwicklung
           DAYS_OLD=$(( ($(date +%s) - $(date -r WORKING_STATE.md +%s)) / 86400 ))
-          if [ "$DAYS_OLD" -gt 7 ]; then
-            echo "⚠️ WORKING_STATE.md ist $DAYS_OLD Tage alt — bitte aktualisieren"
+          LAST_COMMIT_TOUCHED_WORKING_STATE=$(git log -1 --name-only --format="" | grep -c "^WORKING_STATE.md$" || true)
+          if [ "$DAYS_OLD" -gt 3 ] && [ "$LAST_COMMIT_TOUCHED_WORKING_STATE" -eq 0 ]; then
+            echo "❌ WORKING_STATE.md ist $DAYS_OLD Tage alt (> 3 Tage) UND der letzte Commit verändert WORKING_STATE.md nicht."
+            exit 1
           fi
-          echo "✅ WORKING_STATE.md vorhanden"
+          echo "✅ WORKING_STATE.md vorhanden und aktuell"

@@ -7,3 +7,8 @@ Cargo.lock
 __pycache__/
 *.pyc
 CLAUDE.local.md
+.venv/
+*.so
+*.dylib
+*.dll
+*.pyd

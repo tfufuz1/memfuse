@@ -9,6 +9,7 @@
 //! Audit-Log über LSM-persistierte Keys.
 //!
 //! ADR-020: Wiederherstellung aus gelöschtem `memfuse-saos-agent` (Commit ddc4c77).
+// AI-TAG[DOC-DRIFT][MINOR][AGT-AGENT-001][OPEN] Re-extracted workflow engine crate requires integration verification.
 
 #![forbid(unsafe_code)]
 #![allow(async_fn_in_trait)]

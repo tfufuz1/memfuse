@@ -19,16 +19,16 @@ All errors propagate via `MemFuseError` + `?` — zero silent failures.
 | DAG enforcement | `just dag-check` | Layer dependency validation |
 | Debt scan | `just debt-audit` | Scans unwrap/expect/std::fs |
 
-## 3. Workspace Inventory (13 Crates)
+## 3. Workspace Inventory (14 Crates)
 
-12 active kernel crates + 1 optional crate in a 5-layer DAG:
+13 active kernel crates + 1 optional crate in a 5-layer DAG:
 
 | Layer | Crates |
 |---|---|
 | 0 | `memfuse-core` — shared kernel, no I/O, no async |
 | 1 | `memfuse-store` (LSM), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-crypto` (AES-256-GCM), `memfuse-graph` (CSR), `memfuse-checkpoint` (snapshot) |
 | 2 | `memfuse-db` — orchestrator, 4-signal fusion |
-| 3 | `memfuse-py` (PyO3), `memfuse-ollama` (Ollama HTTP embeddings) |
+| 3 | `memfuse-py` (PyO3), `memfuse-ollama` (Ollama HTTP embeddings), `memfuse-agent` (persistent agent workflow engine) |
 | 4 | `memfuse-mcp` (**stdio JSON-RPC 2.0 only** — ADR-010, no HTTP), `memfuse-tauri` (desktop app) |
 
 **Optional**: `memfuse-embed` — ONNX embeddings, feature-gated (`default = []`), Layer 3.
@@ -43,6 +43,7 @@ Pure-Rust USP preserved by keeping default features empty.
 - **Document chunking**: ALWAYS use `MarkdownChunker` — NEVER embed entire text as 1 vector
 - **MCP transport**: stdio JSON-RPC 2.0 ONLY — axum was removed (ADR-010)
 - **WAL HMAC key**: ALWAYS via `load_or_create_integrity_key()` — NEVER hardcoded
+- **AI-TAG & ID Nummernkreise**: Jedes `AI-TAG` verwendet das Schema `AGT-<CRATE>-<NNN>` (z.B. `AGT-CORE-001`, `AGT-STORE-001`, `AGT-INDEX-001`, `AGT-TEXT-001`, `AGT-CRYPTO-001`, `AGT-GRAPH-001`, `AGT-CKPT-001`, `AGT-DB-001`, `AGT-EMBED-001`, `AGT-OLLAMA-001`, `AGT-PY-001`, `AGT-TAURI-001`, `AGT-MCP-001`, `AGT-AGENT-001`).
 
 ## 5. Judgment Boundaries
 
