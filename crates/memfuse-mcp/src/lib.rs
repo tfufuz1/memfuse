@@ -407,7 +407,14 @@ impl McpServer {
                 }
 
                 // AUTO-CHUNKING: Text in semantische Einheiten aufteilen mit MarkdownChunker (~512 Tokens)
-                let text = text_opt.unwrap();
+                let text = match text_opt {
+                    Some(t) => t,
+                    None => {
+                        return Err(McpError::invalid_params(
+                            "text/vector fehlt: missing required field 'text'",
+                        ));
+                    }
+                };
                 let chunker = MarkdownChunker::new(ChunkerConfig::default());
                 let doc_id = DocId::from_key(id).map_err(|e| {
                     McpError::invalid_params(format!("Invalid document ID '{}': {}", id, e))
