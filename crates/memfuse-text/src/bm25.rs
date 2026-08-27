@@ -3,7 +3,7 @@
 use memfuse_core::{MemFuseError, Result};
 
 /// Default k1 parameter for BM25 term frequency saturation scaling.
-pub const BM25_K1: f32 = 1.2;
+pub const BM25_K1: f32 = 1.5;
 /// Default b parameter for BM25 document length normalization penalty tuning.
 pub const BM25_B: f32 = 0.75;
 
@@ -41,9 +41,12 @@ impl BM25 {
 }
 
 impl Default for BM25 {
-    /// Returns default `BM25` parameters (`k1 = 1.5`, `b = 0.75`), the Robertson-Walker recommended defaults.
+    /// Returns default `BM25` parameters (`k1 = 1.5`, `b = 0.75`), matching `BM25_K1` and `BM25_B`.
     fn default() -> Self {
-        Self { k1: 1.5, b: 0.75 }
+        Self {
+            k1: BM25_K1,
+            b: BM25_B,
+        }
     }
 }
 

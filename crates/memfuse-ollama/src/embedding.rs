@@ -1,4 +1,5 @@
 use crate::client::{OllamaClient, OllamaConfig, DEFAULT_BASE_URL, DEFAULT_EMBED_MODEL};
+use crate::model_info::known_dimension;
 use async_trait::async_trait;
 use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
 
@@ -20,21 +21,23 @@ impl OllamaEmbedder {
             model: model_str.clone(),
             ..Default::default()
         };
+        let expected_dimension = known_dimension(&model_str);
         Self {
             client: OllamaClient::with_config(config),
             model: model_str,
             concurrency: 8,
-            expected_dimension: None,
+            expected_dimension,
         }
     }
 
     pub fn with_config(config: OllamaConfig) -> Self {
         let model = config.model.clone();
+        let expected_dimension = known_dimension(&model);
         Self {
             client: OllamaClient::with_config(config),
             model,
             concurrency: 8,
-            expected_dimension: None,
+            expected_dimension,
         }
     }
 
@@ -124,8 +127,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_dimension_validation_mismatch_returns_index_error() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {

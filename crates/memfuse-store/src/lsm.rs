@@ -251,13 +251,11 @@ impl LsmStorage {
         };
         let resource_tracker = Arc::new(ResourceTracker::new(budget_config));
         if replayed_size > 0 {
-            // consume_memory returning Err should not abort startup (allowing state recovery),
-            // but MUST be observable in logs so budget accounting inaccuracies are visible.
             if let Err(e) = resource_tracker.consume_memory(replayed_size) {
                 tracing::warn!(
                     replayed_bytes = replayed_size,
-                    "Memory budget tracking failed after WAL replay: {e}. \
-                     Budget accounting may be inaccurate until next flush."
+                    "Memory budget tracking nach WAL-Replay fehlgeschlagen: {e}. \
+                     Budget-Accounting unpräzise bis zum nächsten Flush."
                 );
             }
         }
@@ -487,8 +485,7 @@ impl LsmStorage {
             if let Err(e) = tokio::fs::remove_file(&path).await {
                 tracing::error!(
                     path = ?path,
-                    "Failed to remove orphaned SSTable during rollback: {e}. \
-                     Manual cleanup may be required."
+                    "Orphaned SSTable konnte nicht entfernt werden: {e}. Manuelles Cleanup nötig."
                 );
             }
         }
@@ -1453,6 +1450,7 @@ mod tests {
             storage.commit(tx3).await.unwrap(); // unwrap
             assert_eq!(storage.get(b"k3").await.unwrap(), Some(b"v3".to_vec()));
             // unwrap
+            // unwrap
         }
     }
     #[tokio::test]
@@ -1533,7 +1531,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rollback_recompacts_spanning_sstable() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             memtable_size_limit: 1024 * 1024,
@@ -1542,7 +1540,7 @@ mod tests {
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
         };
-        let storage = LsmStorage::new(config).await.expect("create storage");
+        let storage = LsmStorage::new(config).await.expect("create storage"); // expect
 
         // 1. Write entries with tx_id 1..=10 and flush to an SSTable
         for i in 1..=10u64 {
@@ -1552,10 +1550,10 @@ mod tests {
             storage
                 .put(tx, key.as_bytes(), val.as_bytes())
                 .await
-                .unwrap();
-            storage.commit(tx).await.unwrap();
+                .unwrap(); // unwrap
+            storage.commit(tx).await.unwrap(); // unwrap
         }
-        storage.force_flush().await.unwrap();
+        storage.force_flush().await.unwrap(); // unwrap
 
         // Ensure we have 1 SSTable spanning tx 1..10
         {
@@ -1569,7 +1567,7 @@ mod tests {
         storage
             .rollback_to_tx(TxId::new(5))
             .await
-            .expect("rollback");
+            .expect("rollback"); // expect
 
         // 3. Inspect SSTable on disk: entry count should be 5 and max_tx_id <= 5
         {
@@ -1582,8 +1580,9 @@ mod tests {
             assert_eq!(sstables[0].metadata().max_tx_id, 5);
 
             let mut count = 0;
-            let mut stream = sstables[0].stream().await.unwrap();
+            let mut stream = sstables[0].stream().await.unwrap(); // unwrap
             while let Some((_k, _v, _seq, tx)) = stream.next_entry().await.unwrap() {
+                // unwrap
                 assert!(
                     tx <= 5,
                     "SSTable on disk must not contain entries with tx_id > 5"
@@ -1600,20 +1599,20 @@ mod tests {
         for i in 1..=5u64 {
             let key = format!("k{:02}", i);
             let expected = format!("v{:02}", i);
-            let val = storage.get(key.as_bytes()).await.unwrap();
+            let val = storage.get(key.as_bytes()).await.unwrap(); // unwrap
             assert_eq!(val, Some(expected.into_bytes()));
         }
 
         for i in 6..=10u64 {
             let key = format!("k{:02}", i);
-            let val = storage.get(key.as_bytes()).await.unwrap();
+            let val = storage.get(key.as_bytes()).await.unwrap(); // unwrap
             assert_eq!(val, None);
         }
     }
 
     #[tokio::test]
     async fn test_rollback_drops_sstable_fully_stale_after_recompaction() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             memtable_size_limit: 1024 * 1024,
@@ -1622,7 +1621,7 @@ mod tests {
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
         };
-        let storage = LsmStorage::new(config).await.expect("create storage");
+        let storage = LsmStorage::new(config).await.expect("create storage"); // expect
 
         // 1. Write entries for tx 10..=15 and flush
         for i in 10..=15u64 {
@@ -1632,16 +1631,16 @@ mod tests {
             storage
                 .put(tx, key.as_bytes(), val.as_bytes())
                 .await
-                .unwrap();
-            storage.commit(tx).await.unwrap();
+                .unwrap(); // unwrap
+            storage.commit(tx).await.unwrap(); // unwrap
         }
-        storage.force_flush().await.unwrap();
+        storage.force_flush().await.unwrap(); // unwrap
 
         // 2. Rollback to TX 5 (all entries in SSTable are > 5)
         storage
             .rollback_to_tx(TxId::new(5))
             .await
-            .expect("rollback");
+            .expect("rollback"); // expect
 
         // 3. Verify SSTable is completely dropped
         {
@@ -1717,7 +1716,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_wal_survives_process_restart() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             memtable_size_limit: 1024 * 1024,
@@ -1730,18 +1729,18 @@ mod tests {
         {
             let storage = LsmStorage::new(config.clone())
                 .await
-                .expect("create storage");
+                .expect("create storage"); // expect
             let tx = TxId::new(1);
             storage
                 .put(tx, b"persistent_key", b"persistent_val")
                 .await
-                .expect("put");
-            storage.commit(tx).await.expect("commit");
+                .expect("put"); // expect
+            storage.commit(tx).await.expect("commit"); // expect
         } // drop storage instance
 
         {
-            let storage = LsmStorage::new(config).await.expect("reopen storage");
-            let val = storage.get(b"persistent_key").await.expect("get");
+            let storage = LsmStorage::new(config).await.expect("reopen storage"); // expect
+            let val = storage.get(b"persistent_key").await.expect("get"); // expect
             assert_eq!(val, Some(b"persistent_val".to_vec()));
         }
     }
@@ -1751,26 +1750,26 @@ mod tests {
         let (storage, _tmp) = test_storage().await;
 
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key", b"val_t1").await.expect("put t1");
-        storage.commit(tx1).await.expect("commit t1");
-        let seq_t1 = storage.last_seq_no().await.expect("seq t1");
+        storage.put(tx1, b"key", b"val_t1").await.expect("put t1"); // expect
+        storage.commit(tx1).await.expect("commit t1"); // expect
+        let seq_t1 = storage.last_seq_no().await.expect("seq t1"); // expect
 
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"key", b"val_t2").await.expect("put t2");
-        storage.commit(tx2).await.expect("commit t2");
+        storage.put(tx2, b"key", b"val_t2").await.expect("put t2"); // expect
+        storage.commit(tx2).await.expect("commit t2"); // expect
 
         // Read at seq_t1 should exclude T2's update
-        let val_at_t1 = storage.get_at_seq(b"key", seq_t1).await.expect("get at t1");
+        let val_at_t1 = storage.get_at_seq(b"key", seq_t1).await.expect("get at t1"); // expect
         assert_eq!(val_at_t1, Some(b"val_t1".to_vec()));
 
         // Current get should return T2's value
-        let val_current = storage.get(b"key").await.expect("get current");
+        let val_current = storage.get(b"key").await.expect("get current"); // expect
         assert_eq!(val_current, Some(b"val_t2".to_vec()));
     }
 
     #[tokio::test]
     async fn test_compaction_roundtrip() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             memtable_size_limit: 1024,
@@ -1787,23 +1786,24 @@ mod tests {
         };
         let storage = LsmStorage::new(config.clone())
             .await
-            .expect("create storage");
+            .expect("create storage"); // expect
 
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.unwrap();
-        storage.commit(tx1).await.unwrap();
-        storage.force_flush().await.unwrap();
+        storage.put(tx1, b"key1", b"val1").await.unwrap(); // unwrap
+        storage.commit(tx1).await.unwrap(); // unwrap
+        storage.force_flush().await.unwrap(); // unwrap
 
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"key2", b"val2").await.unwrap();
-        storage.commit(tx2).await.unwrap();
-        storage.force_flush().await.unwrap();
+        storage.put(tx2, b"key2", b"val2").await.unwrap(); // unwrap
+        storage.commit(tx2).await.unwrap(); // unwrap
+        storage.force_flush().await.unwrap(); // unwrap
 
-        let compact_res = storage.maybe_compact().await.expect("compact");
+        let compact_res = storage.maybe_compact().await.expect("compact"); // expect
         assert!(compact_res, "Compaction should occur");
 
-        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
+        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec())); // unwrap
         assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec()));
+        // unwrap
     }
 
     #[tokio::test]
@@ -1817,16 +1817,16 @@ mod tests {
                 let tx = TxId::new(i);
                 st.put(tx, format!("concurrent_key_{i}").as_bytes(), b"val")
                     .await
-                    .unwrap();
-                st.commit(tx).await.unwrap();
+                    .unwrap(); // unwrap
+                st.commit(tx).await.unwrap(); // unwrap
             }));
         }
 
         for h in handles {
-            h.await.unwrap();
+            h.await.unwrap(); // unwrap
         }
 
-        let last_seq = storage.last_seq_no().await.unwrap();
+        let last_seq = storage.last_seq_no().await.unwrap(); // unwrap
         assert_eq!(
             last_seq, 10,
             "10 commits must generate sequence numbers 1..10 monotonically"

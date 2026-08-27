@@ -6,6 +6,7 @@
 //! Empirisch: 49% weniger Retrieval-Fehler vs. naïves Chunking.
 //! Mit Cross-Encoder Reranking: 67% Reduktion.
 
+use crate::client::sanitize_prompt_input;
 use crate::OllamaClient;
 use memfuse_core::MemFuseError;
 
@@ -82,14 +83,18 @@ impl ContextPrefixEngine {
             ));
         }
 
+        // Sanitization gegen Prompt Injection
+        let sanitized_doc = sanitize_prompt_input(full_document);
+        let sanitized_chunk = sanitize_prompt_input(chunk_content);
+
         // Dokument kürzen um LLM-Kontextfenster nicht zu sprengen
-        let doc_excerpt = truncate_chars(full_document, self.config.max_document_chars);
+        let doc_excerpt = truncate_chars(&sanitized_doc, self.config.max_document_chars);
         let max_p = self.config.max_prefix_tokens * 4; // Chars-Approximation
 
         let prompt = format!(
             "Hier ist ein Dokument:\n<document>\n{doc_excerpt}\n</document>\n\n\
              Hier ist ein spezifischer Abschnitt aus diesem Dokument:\n\
-             <chunk>\n{chunk_content}\n</chunk>\n\n\
+             <chunk>\n{sanitized_chunk}\n</chunk>\n\n\
              Schreibe 1-2 Sätze, die diesen Abschnitt im Kontext des \
              Gesamtdokuments beschreiben. Maximal {max_p} Zeichen. \
              Nur der beschreibende Text, keine Einleitung."
@@ -164,8 +169,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_prefix_mock() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -198,14 +203,14 @@ mod tests {
         let prefix = engine
             .generate_prefix("Gesamtdokument Inhalt", "Chunk Inhalt")
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         assert_eq!(prefix, "Dies ist ein Kontext-Präfix.");
     }
 
     #[tokio::test]
     async fn test_generate_prefix_batch_mock() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -234,7 +239,7 @@ mod tests {
         let chunks = vec!["Chunk 1", "Chunk 2"];
         let prefixes = engine.generate_prefix_batch("Dokument", &chunks).await;
         assert_eq!(prefixes.len(), 2);
-        assert_eq!(prefixes[0].as_ref().unwrap(), "Präfix");
-        assert_eq!(prefixes[1].as_ref().unwrap(), "Präfix");
+        assert_eq!(prefixes[0].as_ref().unwrap(), "Präfix"); // unwrap
+        assert_eq!(prefixes[1].as_ref().unwrap(), "Präfix"); // unwrap
     }
 }

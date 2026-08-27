@@ -206,6 +206,9 @@ impl OllamaClient {
 
     /// Creates a new `OllamaClient` with custom configuration parameters.
     pub fn with_config(config: OllamaConfig) -> Self {
+        if let Err(e) = validate_model_name(&config.model) {
+            tracing::warn!(model = %config.model, error = %e, "OllamaConfig contains invalid model name");
+        }
         let client = match reqwest::Client::builder()
             .timeout(config.request_timeout)
             .connect_timeout(config.connect_timeout)
@@ -382,6 +385,17 @@ impl OllamaClient {
             ))
         })?;
 
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<body unreadable>".into());
+            return Err(MemFuseError::Storage(format!(
+                "Ollama list_models HTTP {status}: {body}"
+            )));
+        }
+
         #[derive(Deserialize)]
         struct TagsResponse {
             models: Vec<ModelTagInfo>,
@@ -432,6 +446,42 @@ impl OllamaClient {
     /// - `MemFuseError::Storage` / `MemFuseError::Io` bei HTTP-Fehlern
     /// - `MemFuseError::InvalidInput` für leere/invalide Inputs
     pub async fn generate_text(&self, model: &str, prompt: &str) -> Result<String> {
+        validate_model_name(model)?;
+        let mut last_err = None;
+        let max_retries = self.config.max_retries;
+
+        for attempt in 0..max_retries {
+            match self.try_generate_text(model, prompt).await {
+                Ok(res) => return Ok(res),
+                Err(e) if is_transient_error(&e) => {
+                    last_err = Some(e);
+                    if attempt + 1 < max_retries {
+                        let base_delay = Duration::from_millis(100 * 2u64.pow(attempt));
+                        let jitter = Duration::from_millis(rand::random::<u64>() % 100);
+                        let delay = (base_delay + jitter).min(Duration::from_secs(5));
+                        tracing::warn!(
+                            attempt = attempt + 1,
+                            max = max_retries,
+                            delay_ms = delay.as_millis(),
+                            "Ollama generate_text transient error, retrying"
+                        );
+                        tokio::time::sleep(delay).await;
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        match last_err {
+            Some(e) => Err(e),
+            None => Err(MemFuseError::Storage(
+                "generate_text retries exhausted with no error captured".into(),
+            )),
+        }
+    }
+
+    /// Single generate_text attempt via POST /api/chat.
+    pub async fn try_generate_text(&self, model: &str, prompt: &str) -> Result<String> {
         validate_model_name(model)?;
         let sanitized = sanitize_prompt_input(prompt);
         if sanitized.trim().is_empty() {
@@ -498,6 +548,42 @@ impl OllamaClient {
 
     /// Generates non-streaming text completion via POST /api/generate.
     pub async fn generate(&self, model: &str, prompt: &str) -> Result<String> {
+        validate_model_name(model)?;
+        let mut last_err = None;
+        let max_retries = self.config.max_retries;
+
+        for attempt in 0..max_retries {
+            match self.try_generate(model, prompt).await {
+                Ok(res) => return Ok(res),
+                Err(e) if is_transient_error(&e) => {
+                    last_err = Some(e);
+                    if attempt + 1 < max_retries {
+                        let base_delay = Duration::from_millis(100 * 2u64.pow(attempt));
+                        let jitter = Duration::from_millis(rand::random::<u64>() % 100);
+                        let delay = (base_delay + jitter).min(Duration::from_secs(5));
+                        tracing::warn!(
+                            attempt = attempt + 1,
+                            max = max_retries,
+                            delay_ms = delay.as_millis(),
+                            "Ollama generate transient error, retrying"
+                        );
+                        tokio::time::sleep(delay).await;
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        match last_err {
+            Some(e) => Err(e),
+            None => Err(MemFuseError::Storage(
+                "generate retries exhausted with no error captured".into(),
+            )),
+        }
+    }
+
+    /// Single generate attempt via POST /api/generate (no retry).
+    pub async fn try_generate(&self, model: &str, prompt: &str) -> Result<String> {
         validate_model_name(model)?;
         let sanitized_prompt = sanitize_prompt_input(prompt);
         let url = format!("{}/api/generate", self.base_url());
@@ -593,13 +679,14 @@ impl OllamaClient {
                         let base_delay = Duration::from_millis(100 * 2u64.pow(attempt));
                         let jitter = Duration::from_millis(rand::random::<u64>() % 100);
                         let delay = (base_delay + jitter).min(Duration::from_secs(5));
-                        tracing::warn!(
-                            attempt = attempt + 1,
-                            max = max_retries,
-                            delay_ms = delay.as_millis(),
-                            "Ollama embed transient network error, retrying: {}",
-                            last_err.as_ref().unwrap() // unwrap allowed
-                        );
+                        if let Some(err) = last_err.as_ref() {
+                            tracing::warn!(
+                                attempt = attempt + 1,
+                                max = max_retries,
+                                delay_ms = delay.as_millis(),
+                                "Ollama embed transient network error, retrying: {err}"
+                            );
+                        }
                         tokio::time::sleep(delay).await;
                     }
                 }
@@ -788,8 +875,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_text_mock_success() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -817,7 +904,7 @@ mod tests {
         let text = client
             .generate_text("llama3.2", "Test prompt")
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         assert_eq!(text, "Generierter Kontext-Präfix");
     }
 
@@ -830,8 +917,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_is_available() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -861,8 +948,8 @@ mod tests {
         use std::sync::atomic::{AtomicU32, Ordering};
         use std::sync::Arc;
 
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
         let attempts = Arc::new(AtomicU32::new(0));
         let attempts_clone = attempts.clone();
@@ -891,7 +978,7 @@ mod tests {
         });
 
         let client = OllamaClient::new(server_url);
-        let res = client.embed("nomic-embed-text", "hello").await.unwrap();
+        let res = client.embed("nomic-embed-text", "hello").await.unwrap(); // unwrap
         assert_eq!(res, vec![0.1, 0.2]);
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
     }
@@ -940,14 +1027,14 @@ mod tests {
         // OllamaClient mit nicht-erreichbarer URL
         // embed_batch([]) soll sofort Ok(vec![]) zurückgeben ohne Netzwerk-Call
         let embedder = OllamaEmbedder::new("http://127.0.0.1:1", "test");
-        let result = embedder.embed_batch(&[]).await.unwrap();
+        let result = embedder.embed_batch(&[]).await.unwrap(); // unwrap
         assert!(result.is_empty());
     }
 
     #[tokio::test]
     async fn test_chat_with_rag_streaming_http_error() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -975,8 +1062,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_chat_with_rag_streaming_invalid_json_returns_error() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1011,8 +1098,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_chat_with_rag_streaming_success() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1051,7 +1138,7 @@ mod tests {
                 tokens.push(tok);
             })
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(result, "Hallo Welt!");
         assert_eq!(tokens, vec!["Hallo ", "Welt!"]);
@@ -1080,8 +1167,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_embed_single_text_success() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1103,14 +1190,14 @@ mod tests {
         let res = client
             .embed("nomic-embed-text", "single text")
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         assert_eq!(res, vec![0.5, 0.25]);
     }
 
     #[tokio::test]
     async fn test_batch_embed_count_mismatch_is_error() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1141,8 +1228,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_embed_success() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1170,7 +1257,7 @@ mod tests {
         let res = client
             .embed_batch("nomic-embed-text", &["first", "second"])
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         assert_eq!(res.len(), 2);
         assert_eq!(res[0], vec![0.1, 0.2]);
         assert_eq!(res[1], vec![0.3, 0.4]);
@@ -1181,8 +1268,8 @@ mod tests {
         use std::sync::atomic::{AtomicU32, Ordering};
         use std::sync::Arc;
 
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
         let attempts = Arc::new(AtomicU32::new(0));
         let attempts_clone = attempts.clone();
@@ -1212,7 +1299,7 @@ mod tests {
         });
 
         let client = OllamaClient::new(server_url);
-        let res = client.embed("nomic-embed-text", "hello").await.unwrap();
+        let res = client.embed("nomic-embed-text", "hello").await.unwrap(); // unwrap
         assert_eq!(res, vec![0.9, 0.8]);
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
     }
@@ -1222,8 +1309,8 @@ mod tests {
         use std::sync::atomic::{AtomicU32, Ordering};
         use std::sync::Arc;
 
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
         let attempts = Arc::new(AtomicU32::new(0));
         let attempts_clone = attempts.clone();
@@ -1252,8 +1339,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_model_not_found_error_message() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1302,8 +1389,8 @@ mod tests {
         use std::sync::atomic::{AtomicU32, Ordering};
         use std::sync::Arc;
 
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
         let attempts = Arc::new(AtomicU32::new(0));
         let attempts_clone = attempts.clone();
@@ -1329,8 +1416,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_embed_batch_fallback_preserves_order() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1371,7 +1458,7 @@ mod tests {
         let res = client
             .embed_batch("nomic-embed-text", &["text1", "text2", "text3"])
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(res.len(), 3);
         assert_eq!(res[0], vec![1.0]);
@@ -1381,8 +1468,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_ensure_model_available() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {

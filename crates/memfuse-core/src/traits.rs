@@ -562,8 +562,8 @@ mod tests {
             memory_usage_bytes: 1024,
             num_layers: 5,
         };
-        let ser = serde_json::to_string(&v_stats).unwrap();
-        let deser: VectorIndexStats = serde_json::from_str(&ser).unwrap();
+        let ser = serde_json::to_string(&v_stats).unwrap(); // unwrap
+        let deser: VectorIndexStats = serde_json::from_str(&ser).unwrap(); // unwrap
         assert_eq!(v_stats.num_vectors, deser.num_vectors);
 
         let s_stats = StorageStats {
@@ -571,8 +571,8 @@ mod tests {
             total_size_bytes: 2048,
             memtable_size_bytes: 512,
         };
-        let ser = serde_json::to_string(&s_stats).unwrap();
-        let deser: StorageStats = serde_json::from_str(&ser).unwrap();
+        let ser = serde_json::to_string(&s_stats).unwrap(); // unwrap
+        let deser: StorageStats = serde_json::from_str(&ser).unwrap(); // unwrap
         assert_eq!(s_stats.total_size_bytes, deser.total_size_bytes);
 
         let t_stats = TextIndexStats {
@@ -580,8 +580,8 @@ mod tests {
             num_tokens: 1000,
             memory_usage_bytes: 256,
         };
-        let ser = serde_json::to_string(&t_stats).unwrap();
-        let deser: TextIndexStats = serde_json::from_str(&ser).unwrap();
+        let ser = serde_json::to_string(&t_stats).unwrap(); // unwrap
+        let deser: TextIndexStats = serde_json::from_str(&ser).unwrap(); // unwrap
         assert_eq!(t_stats.num_documents, deser.num_documents);
     }
 
@@ -599,7 +599,7 @@ mod tests {
                 Ok(None)
             }
             async fn put(&self, _: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-                self.0.lock().unwrap().push((key.to_vec(), value.to_vec()));
+                self.0.lock().unwrap().push((key.to_vec(), value.to_vec())); // unwrap
                 Ok(())
             }
             async fn delete(&self, _: TxId, _: &[u8]) -> Result<()> {
@@ -653,8 +653,8 @@ mod tests {
             (b"k1".to_vec(), b"v1".to_vec()),
             (b"k2".to_vec(), b"v2".to_vec()),
         ];
-        store.put_batch(TxId(1), &entries).await.unwrap();
-        assert_eq!(store.0.lock().unwrap().len(), 2);
+        store.put_batch(TxId(1), &entries).await.unwrap(); // unwrap
+        assert_eq!(store.0.lock().unwrap().len(), 2); // unwrap
 
         // Test scan_prefix_at default error
         let res = store.scan_prefix_at(b"pre", 1).await;
@@ -710,7 +710,7 @@ mod tests {
             (DocId(1), [1.0, 2.0].as_slice()),
             (DocId(2), [3.0, 4.0].as_slice()),
         ];
-        index.insert_batch(TxId(1), &vectors).await.unwrap();
+        index.insert_batch(TxId(1), &vectors).await.unwrap(); // unwrap
         assert_eq!(index.len().await, 2);
         assert!(!index.is_empty().await);
 

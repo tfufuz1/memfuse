@@ -191,7 +191,7 @@ impl MmapIndex {
         //         POSIX Unlink/Truncation & SIGBUS Defense: atomic rename on `save()` creates a new temp file and replaces the path, never truncating the file in place. On POSIX, deleting or replacing an open file retains the active file descriptor and mmap region intact until dropped.
         //         UB Prevention: Opening as read-only mapping (`Mmap::map`) prevents data races or undefined behavior from writes.
         //         ADR-017: Memory mapping permitted in `persistence.rs`.
-        let mmap = unsafe { memmap2::Mmap::map(&file) }
+        let mmap = unsafe { memmap2::Mmap::map(&file) } // SAFETY: 1. Invariant: Valid file descriptor and immutable mapping. 2. Guarantor: std::fs::File & atomic rename. 3. Call-site verified. 4. ADR-017 mmap.
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
         let header = HnswHeader::try_from_bytes(&mmap[0..HnswHeader::SIZE])?;

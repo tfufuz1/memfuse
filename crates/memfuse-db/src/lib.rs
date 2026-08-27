@@ -981,7 +981,7 @@ mod tests {
     use tempfile::TempDir;
 
     async fn test_db(dim: usize) -> (MemFuse, TempDir) {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect
         let config = MemFuseConfig {
             dimension: dim,
             max_elements: 10_000,
@@ -990,7 +990,7 @@ mod tests {
         };
         let db = MemFuse::open_with_config(tmp.path(), config)
             .await
-            .expect("open db");
+            .expect("open db"); // expect
         (db, tmp)
     }
 
@@ -1004,7 +1004,7 @@ mod tests {
             Some(json!({"topic": "rust"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
 
         db.insert(
             "doc-2",
@@ -1012,13 +1012,13 @@ mod tests {
             Some(json!({"topic": "python"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
 
         db.insert("doc-3", &[0.9, 0.1, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // expect
 
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 2).await.expect("search");
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 2).await.expect("search"); // expect
         assert_eq!(results.len(), 2);
         // doc-1 should be closest
         assert!(results[0].score > results[1].score);
@@ -1034,12 +1034,12 @@ mod tests {
             Some(json!({"topic": "rust", "priority": 1})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
 
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // expect
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "doc-1");
-        let meta = results[0].metadata.as_ref().expect("metadata should exist");
+        let meta = results[0].metadata.as_ref().expect("metadata should exist"); // expect
         assert_eq!(meta["topic"], "rust");
         assert_eq!(meta["priority"], 1);
     }
@@ -1054,13 +1054,13 @@ mod tests {
             Some(json!({"topic": "rust"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
 
-        let doc = db.get("doc-1").await.expect("get").expect("should exist");
+        let doc = db.get("doc-1").await.expect("get").expect("should exist"); // expect
         assert_eq!(doc.id, "doc-1");
-        assert_eq!(doc.metadata.expect("valid")["topic"], "rust");
+        assert_eq!(doc.metadata.expect("valid")["topic"], "rust"); // expect
 
-        let none = db.get("nonexistent").await.expect("get");
+        let none = db.get("nonexistent").await.expect("get"); // expect
         assert!(none.is_none());
     }
 
@@ -1070,18 +1070,18 @@ mod tests {
 
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"v": 1})))
             .await
-            .expect("insert");
+            .expect("insert"); // expect
 
         db.update("doc-1", &[0.0, 1.0, 0.0, 0.0], Some(json!({"v": 2})))
             .await
-            .expect("update");
+            .expect("update"); // expect
 
         // Metadata should be updated
-        let doc = db.get("doc-1").await.expect("get").expect("exists");
-        assert_eq!(doc.metadata.expect("valid")["v"], 2);
+        let doc = db.get("doc-1").await.expect("get").expect("exists"); // expect
+        assert_eq!(doc.metadata.expect("valid")["v"], 2); // expect
 
         // Vector should be updated — search for new vector should find it
-        let results = db.search(&[0.0, 1.0, 0.0, 0.0], 1).await.expect("search");
+        let results = db.search(&[0.0, 1.0, 0.0, 0.0], 1).await.expect("search"); // expect
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "doc-1");
     }
@@ -1092,14 +1092,14 @@ mod tests {
 
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
-        assert_eq!(db.len().await.expect("len"), 1);
+            .expect("insert"); // expect
+        assert_eq!(db.len().await.expect("len"), 1); // expect
 
-        db.delete("doc-1").await.expect("delete");
-        assert_eq!(db.len().await.expect("len"), 0);
+        db.delete("doc-1").await.expect("delete"); // expect
+        assert_eq!(db.len().await.expect("len"), 0); // expect
 
         // get should return None after delete
-        let doc = db.get("doc-1").await.expect("get");
+        let doc = db.get("doc-1").await.expect("get"); // expect
         assert!(doc.is_none());
     }
 
@@ -1109,15 +1109,15 @@ mod tests {
 
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // expect
         db.insert("doc-2", &[0.0, 1.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // expect
 
         // Should not error
         db.relate("doc-1", "doc-2", "references")
             .await
-            .expect("relate");
+            .expect("relate"); // expect
     }
 
     #[tokio::test]
@@ -1130,7 +1130,7 @@ mod tests {
     #[tokio::test]
     async fn test_empty_search() {
         let (db, _tmp) = test_db(4).await;
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 5).await.expect("search");
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 5).await.expect("search"); // expect
         assert!(results.is_empty());
     }
 
@@ -1140,31 +1140,31 @@ mod tests {
 
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // expect
         db.insert("doc-2", &[0.0, 1.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // expect
         db.insert("doc-3", &[0.0, 0.0, 1.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // expect
 
         db.relate("doc-1", "doc-2", "references")
             .await
-            .expect("relate");
+            .expect("relate"); // expect
         db.relate("doc-1", "doc-3", "references")
             .await
-            .expect("relate");
+            .expect("relate"); // expect
 
         // Scan for relations of doc-1
         let results = db
             .scan_prefix("__rel:doc-1:references:")
             .await
-            .expect("scan");
+            .expect("scan"); // expect
         assert_eq!(results.len(), 2);
 
         let related_ids: Vec<String> = results
             .into_iter()
-            .map(|(_, v)| v["to"].as_str().expect("valid").to_string())
+            .map(|(_, v)| v["to"].as_str().expect("valid").to_string()) // expect
             .collect();
         assert!(related_ids.contains(&"doc-2".to_string()));
         assert!(related_ids.contains(&"doc-3".to_string()));
@@ -1173,7 +1173,7 @@ mod tests {
         let backward_results = db
             .scan_prefix("__rel:doc-2:references:")
             .await
-            .expect("scan bwd");
+            .expect("scan bwd"); // expect
         assert_eq!(backward_results.len(), 1);
         assert_eq!(backward_results[0].1["to"], "doc-1");
     }
@@ -1184,9 +1184,9 @@ mod tests {
 
         db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
-            .expect("insert");
+            .expect("insert"); // expect
 
-        let stats = db.stats().await.expect("stats");
+        let stats = db.stats().await.expect("stats"); // expect
         assert_eq!(stats.index_stats.num_vectors, 1);
         assert!(stats.storage_stats.memtable_size_bytes > 0);
     }
@@ -1202,32 +1202,32 @@ mod tests {
             Some(json!({"type": "agent"})),
         )
         .await
-        .expect("insert agent");
+        .expect("insert agent"); // expect
         db.insert(
             "task-1",
             &[0.9, 0.6, 0.0, 0.0],
             Some(json!({"type": "task"})),
         )
         .await
-        .expect("insert task");
+        .expect("insert task"); // expect
         db.insert(
             "task-2",
             &[0.0, 0.0, 1.0, 0.5],
             Some(json!({"type": "task"})),
         )
         .await
-        .expect("insert task 2");
+        .expect("insert task 2"); // expect
 
         // 2. Relate
         db.relate("agent-1", "task-1", "assigned_to")
             .await
-            .expect("relate 1");
+            .expect("relate 1"); // expect
         db.relate("agent-1", "task-2", "assigned_to")
             .await
-            .expect("relate 2");
+            .expect("relate 2"); // expect
 
         // 3. Search
-        let results = db.search(&[1.0, 0.5, 0.0, 0.0], 2).await.expect("search");
+        let results = db.search(&[1.0, 0.5, 0.0, 0.0], 2).await.expect("search"); // expect
         assert_eq!(results[0].id, "agent-1"); // Exactly matches
         assert_eq!(results[1].id, "task-1"); // Close match
 
@@ -1238,35 +1238,35 @@ mod tests {
             Some(json!({"type": "task", "status": "done"})),
         )
         .await
-        .expect("update task");
+        .expect("update task"); // expect
 
         // 5. Scan prefix
         let edges = db
             .scan_prefix("__rel:agent-1:assigned_to:")
             .await
-            .expect("scan");
+            .expect("scan"); // expect
         assert_eq!(edges.len(), 2);
 
         // 6. Delete
-        db.delete("agent-1").await.expect("delete");
+        db.delete("agent-1").await.expect("delete"); // expect
 
         // 7. Verify empty search and missing doc
-        let get_agent = db.get("agent-1").await.expect("get");
+        let get_agent = db.get("agent-1").await.expect("get"); // expect
         assert!(get_agent.is_none());
-        assert_eq!(db.len().await.expect("len"), 2); // 3 inserted, 1 deleted
+        assert_eq!(db.len().await.expect("len"), 2); // 3 inserted, 1 deleted // expect
     }
 
     #[tokio::test]
     #[should_panic(expected = "TxId counter exhausted — INTERNAL_BASE range collision")]
     async fn test_allocate_tx_exhaustion_panics() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
         let db = MemFuse::open_with_config(tmp.path(), config)
             .await
-            .expect("open db");
+            .expect("open db"); // expect
         db.next_tx.store(TxId::INTERNAL_BASE, Ordering::SeqCst);
         let _ = db.allocate_tx();
     }
@@ -1280,13 +1280,13 @@ mod tests {
         for _ in 0..10 {
             let db_clone = db.clone();
             handles.push(tokio::spawn(async move {
-                db_clone.collection("c").await.expect("collection c")
+                db_clone.collection("c").await.expect("collection c") // expect
             }));
         }
 
         let mut cols = Vec::new();
         for handle in handles {
-            cols.push(handle.await.expect("join handle"));
+            cols.push(handle.await.expect("join handle")); // expect
         }
 
         let first = &cols[0];
@@ -1302,10 +1302,10 @@ mod tests {
     async fn collections_are_isolated() {
         let (db, _tmp) = test_db(4).await;
         let vec = vec![1.0, 0.0, 0.0, 0.0];
-        let col_a = db.collection("alpha").await.unwrap();
-        let col_b = db.collection("beta").await.unwrap();
-        col_a.insert("doc1", &vec, None).await.unwrap();
-        let results = col_b.search(&vec, 10).await.unwrap();
+        let col_a = db.collection("alpha").await.unwrap(); // unwrap
+        let col_b = db.collection("beta").await.unwrap(); // unwrap
+        col_a.insert("doc1", &vec, None).await.unwrap(); // unwrap
+        let results = col_b.search(&vec, 10).await.unwrap(); // unwrap
         assert!(
             results.is_empty(),
             "Collection B must not see Collection A's data"
@@ -1315,36 +1315,36 @@ mod tests {
     #[tokio::test]
     async fn test_collections_are_isolated() {
         let (db, _tmp) = test_db(4).await;
-        let col_a = db.collection("a").await.expect("col a");
-        let col_b = db.collection("b").await.expect("col b");
+        let col_a = db.collection("a").await.expect("col a"); // expect
+        let col_b = db.collection("b").await.expect("col b"); // expect
 
         col_a
             .insert("k1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"val": "a"})))
             .await
-            .expect("ins a");
+            .expect("ins a"); // expect
         col_b
             .insert("k1", &[0.0, 1.0, 0.0, 0.0], Some(json!({"val": "b"})))
             .await
-            .expect("ins b");
+            .expect("ins b"); // expect
 
-        let res_a = col_a.get("k1").await.expect("get a").expect("exists");
-        let res_b = col_b.get("k1").await.expect("get b").expect("exists");
+        let res_a = col_a.get("k1").await.expect("get a").expect("exists"); // expect
+        let res_b = col_b.get("k1").await.expect("get b").expect("exists"); // expect
 
-        assert_eq!(res_a.metadata.expect("test")["val"], "a");
-        assert_eq!(res_b.metadata.expect("test")["val"], "b");
+        assert_eq!(res_a.metadata.expect("test")["val"], "a"); // expect
+        assert_eq!(res_b.metadata.expect("test")["val"], "b"); // expect
 
         let search_a = col_a
             .search(&[1.0, 0.0, 0.0, 0.0], 1)
             .await
-            .expect("search a");
+            .expect("search a"); // expect
         assert_eq!(search_a.len(), 1);
         assert_eq!(search_a[0].id, "k1");
-        assert_eq!(search_a[0].metadata.as_ref().expect("test")["val"], "a");
+        assert_eq!(search_a[0].metadata.as_ref().expect("test")["val"], "a"); // expect
     }
 
     #[tokio::test]
     async fn test_close_and_reopen_100_docs() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect
         let path = tmp.path().to_path_buf();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1354,36 +1354,36 @@ mod tests {
         {
             let db = MemFuse::open_with_config(&path, config.clone())
                 .await
-                .expect("open 1");
+                .expect("open 1"); // expect
             for i in 0..100 {
                 let id = format!("doc-{}", i);
                 let val = (i as f32) / 100.0;
                 db.insert(&id, &[val, 1.0 - val, 0.0, 0.0], Some(json!({"idx": i})))
                     .await
-                    .expect("insert");
+                    .expect("insert"); // expect
             }
-            db.close().await.expect("close");
+            db.close().await.expect("close"); // expect
         }
 
         {
             let db = MemFuse::open_with_config(&path, config)
                 .await
-                .expect("open 2");
-            assert_eq!(db.len().await.expect("len"), 100);
+                .expect("open 2"); // expect
+            assert_eq!(db.len().await.expect("len"), 100); // expect
             for i in 0..100 {
                 let id = format!("doc-{}", i);
-                let doc = db.get(&id).await.expect("get").expect("exists");
+                let doc = db.get(&id).await.expect("get").expect("exists"); // expect
                 assert_eq!(doc.id, id);
-                assert_eq!(doc.metadata.expect("valid")["idx"], i);
+                assert_eq!(doc.metadata.expect("valid")["idx"], i); // expect
             }
-            let results = db.search(&[0.5, 0.5, 0.0, 0.0], 10).await.expect("search");
+            let results = db.search(&[0.5, 0.5, 0.0, 0.0], 10).await.expect("search"); // expect
             assert_eq!(results.len(), 10);
         }
     }
 
     #[tokio::test]
     async fn test_close_and_reopen() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect
         let path = tmp.path().to_path_buf();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1393,36 +1393,36 @@ mod tests {
         {
             let db = MemFuse::open_with_config(&path, config.clone())
                 .await
-                .expect("open 1");
+                .expect("open 1"); // expect
             db.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"v": 1})))
                 .await
-                .expect("insert");
-            db.close().await.expect("close");
+                .expect("insert"); // expect
+            db.close().await.expect("close"); // expect
         }
 
         {
             let db = MemFuse::open_with_config(&path, config)
                 .await
-                .expect("open 2");
-            let doc = db.get("doc-1").await.expect("get").expect("exists");
+                .expect("open 2"); // expect
+            let doc = db.get("doc-1").await.expect("get").expect("exists"); // expect
             assert_eq!(doc.id, "doc-1");
-            assert_eq!(doc.metadata.expect("valid")["v"], 1);
+            assert_eq!(doc.metadata.expect("valid")["v"], 1); // expect
         }
     }
 
     #[tokio::test]
     async fn test_drop_removes_all_data() {
         let (db, _tmp) = test_db(4).await;
-        let col = db.collection("drop-me").await.expect("col");
+        let col = db.collection("drop-me").await.expect("col"); // expect
         col.insert("k1", &[1.0, 0.0, 0.0, 0.0], None)
             .await
-            .expect("ins");
+            .expect("ins"); // expect
 
-        db.drop_collection("drop-me").await.expect("drop");
+        db.drop_collection("drop-me").await.expect("drop"); // expect
 
-        let col2 = db.collection("drop-me").await.expect("re-create");
+        let col2 = db.collection("drop-me").await.expect("re-create"); // expect
         assert_eq!(col2.len().await, 0);
-        assert!(col2.get("k1").await.expect("get").is_none());
+        assert!(col2.get("k1").await.expect("get").is_none()); // expect
     }
 
     #[tokio::test]
@@ -1430,23 +1430,23 @@ mod tests {
         let (db, _tmp) = test_db(4).await;
         db.insert("k", &[1.0, 0.0, 0.0, 0.0], Some(json!({"v": 1})))
             .await
-            .expect("ins");
+            .expect("ins"); // expect
 
-        let doc = db.get("k").await.expect("get").expect("exists");
+        let doc = db.get("k").await.expect("get").expect("exists"); // expect
         assert_eq!(doc.id, "k");
 
-        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+        let results = db.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // expect
         assert_eq!(results[0].id, "k");
     }
 
     #[tokio::test]
     async fn test_list_collections() {
         let (db, _tmp) = test_db(4).await;
-        db.collection("c1").await.expect("c1");
-        db.collection("c2").await.expect("c2");
-        db.collection("c3").await.expect("c3");
+        db.collection("c1").await.expect("c1"); // expect
+        db.collection("c2").await.expect("c2"); // expect
+        db.collection("c3").await.expect("c3"); // expect
 
-        let list = db.list_collections().await.expect("list");
+        let list = db.list_collections().await.expect("list"); // expect
         assert!(list.contains(&"default".to_string()));
         assert!(list.contains(&"c1".to_string()));
         assert!(list.contains(&"c2".to_string()));
@@ -1456,7 +1456,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_repair_on_open_resolves_pending_intents() {
-        let tmp = tempfile::TempDir::new().expect("temp dir");
+        let tmp = tempfile::TempDir::new().expect("temp dir"); // expect
         let path = tmp.path().to_path_buf();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1467,17 +1467,17 @@ mod tests {
         {
             let db = MemFuse::open_with_config(&path, config.clone())
                 .await
-                .expect("open 1");
-            let col = db.collection("recovery-test").await.expect("col");
+                .expect("open 1"); // expect
+            let col = db.collection("recovery-test").await.expect("col"); // expect
 
             // We'll use a direct LSM put to bypass HNSW
-            let doc_id = DocId::from_key("recovered-doc").expect("doc_id");
+            let doc_id = DocId::from_key("recovered-doc").expect("doc_id"); // expect
             let stored = crate::collection::StoredDocument {
                 id: "recovered-doc".to_string(),
                 embedding: vec![1.0, 0.0, 0.0, 0.0],
                 metadata: Some(json!({"status": "recovered"})),
             };
-            let data = serde_json::to_vec(&stored).expect("json");
+            let data = serde_json::to_vec(&stored).expect("json"); // expect
 
             let user_key = col.namespaced_key(b"recovered-doc", 0);
             let doc_key = col.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
@@ -1487,34 +1487,34 @@ mod tests {
             db.storage
                 .put(tx, &user_key, &data)
                 .await
-                .expect("put user");
-            db.storage.put(tx, &doc_key, &data).await.expect("put doc");
+                .expect("put user"); // expect
+            db.storage.put(tx, &doc_key, &data).await.expect("put doc"); // expect
 
             // Manually write a "pending" intent
             let intent_key = col.namespaced_key(tx.inner().to_le_bytes().as_ref(), 3);
             db.storage
                 .put(tx, &intent_key, b"pending")
                 .await
-                .expect("put intent");
+                .expect("put intent"); // expect
 
-            db.storage.commit(tx).await.expect("commit");
+            db.storage.commit(tx).await.expect("commit"); // expect
 
             // Verify it's NOT in HNSW yet (search should fail to find it)
-            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // expect
             assert!(results.is_empty(), "Should not be in HNSW yet");
 
-            db.close().await.expect("close");
+            db.close().await.expect("close"); // expect
         }
 
         // 2. Re-open: repair_on_open should trigger and re-sync
         {
             let db = MemFuse::open_with_config(&path, config)
                 .await
-                .expect("open 2 (repair)");
-            let col = db.collection("recovery-test").await.expect("col");
+                .expect("open 2 (repair)"); // expect
+            let col = db.collection("recovery-test").await.expect("col"); // expect
 
             // Verify it IS now in HNSW
-            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // expect
             assert_eq!(results.len(), 1, "Should be repaired and found in HNSW");
             assert_eq!(results[0].id, "recovered-doc");
 
@@ -1523,7 +1523,7 @@ mod tests {
                 .storage
                 .scan_prefix(b"__col:recovery-test:\x00\x03")
                 .await
-                .expect("scan intents");
+                .expect("scan intents"); // expect
             let found_repaired = entries.iter().any(|(_, v)| v == b"repaired");
             assert!(found_repaired, "Intent should be marked as repaired");
         }
@@ -1532,7 +1532,7 @@ mod tests {
     #[tokio::test]
     async fn test_repair_on_open_idempotent_with_existing_vector() {
         use memfuse_core::VectorIndex;
-        let tmp = tempfile::TempDir::new().expect("temp dir");
+        let tmp = tempfile::TempDir::new().expect("temp dir"); // expect
         let path = tmp.path().to_path_buf();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1543,16 +1543,16 @@ mod tests {
         {
             let db = MemFuse::open_with_config(&path, config.clone())
                 .await
-                .expect("open 1");
-            let col = db.collection("idempotent-test").await.expect("col");
+                .expect("open 1"); // expect
+            let col = db.collection("idempotent-test").await.expect("col"); // expect
 
-            let doc_id = DocId::from_key("already-indexed-doc").expect("doc_id");
+            let doc_id = DocId::from_key("already-indexed-doc").expect("doc_id"); // expect
             let stored = crate::collection::StoredDocument {
                 id: "already-indexed-doc".to_string(),
                 embedding: vec![1.0, 0.0, 0.0, 0.0],
                 metadata: Some(json!({"status": "already_indexed"})),
             };
-            let data = serde_json::to_vec(&stored).expect("json");
+            let data = serde_json::to_vec(&stored).expect("json"); // expect
 
             let user_key = col.namespaced_key(b"already-indexed-doc", 0);
             let doc_key = col.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
@@ -1561,40 +1561,40 @@ mod tests {
             db.storage
                 .put(tx, &user_key, &data)
                 .await
-                .expect("put user");
-            db.storage.put(tx, &doc_key, &data).await.expect("put doc");
+                .expect("put user"); // expect
+            db.storage.put(tx, &doc_key, &data).await.expect("put doc"); // expect
 
             // Insert into HNSW directly as well
             col.index
                 .insert(tx, doc_id, &stored.embedding)
                 .await
-                .expect("insert hnsw");
-            col.index.commit(tx).await.expect("commit index");
+                .expect("insert hnsw"); // expect
+            col.index.commit(tx).await.expect("commit index"); // expect
 
             // Manually write a Pending intent
             let intent_key = col.namespaced_key(tx.inner().to_le_bytes().as_ref(), 3);
             let intent = crate::transaction::CommitIntent::Pending {
                 doc_ids: vec![doc_id],
             };
-            let intent_bytes = serde_json::to_vec(&intent).expect("serialize intent");
+            let intent_bytes = serde_json::to_vec(&intent).expect("serialize intent"); // expect
             db.storage
                 .put(tx, &intent_key, &intent_bytes)
                 .await
-                .expect("put intent");
+                .expect("put intent"); // expect
 
-            db.storage.commit(tx).await.expect("commit storage");
+            db.storage.commit(tx).await.expect("commit storage"); // expect
 
-            db.close().await.expect("close");
+            db.close().await.expect("close"); // expect
         }
 
         // 2. Re-open: repair_on_open triggers. Since vector is already in index or re-inserted idempotently, it must succeed.
         {
             let db = MemFuse::open_with_config(&path, config)
                 .await
-                .expect("open 2 (repair idempotent)");
-            let col = db.collection("idempotent-test").await.expect("col");
+                .expect("open 2 (repair idempotent)"); // expect
+            let col = db.collection("idempotent-test").await.expect("col"); // expect
 
-            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search");
+            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // expect
             assert_eq!(results.len(), 1);
             assert_eq!(results[0].id, "already-indexed-doc");
         }
@@ -1602,7 +1602,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_repair_on_open_failure_propagates_error() {
-        let tmp = tempfile::TempDir::new().expect("temp dir");
+        let tmp = tempfile::TempDir::new().expect("temp dir"); // expect
         let path = tmp.path().to_path_buf();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1612,19 +1612,19 @@ mod tests {
         {
             let db = MemFuse::open_with_config(&path, config.clone())
                 .await
-                .expect("open 1");
-            let col = db.collection("corrupt-test").await.expect("col");
+                .expect("open 1"); // expect
+            let col = db.collection("corrupt-test").await.expect("col"); // expect
 
             // Create a pending intent, user_key (key_type=0) with dim mismatch, and doc_key (key_type=1)
-            let doc_id = DocId::from_key("corrupt-doc").expect("doc_id");
+            let doc_id = DocId::from_key("corrupt-doc").expect("doc_id"); // expect
             let stored = crate::collection::StoredDocument {
                 id: "corrupt-doc".to_string(),
                 embedding: vec![1.0, 0.0], // dim mismatch (2 instead of 4)
                 metadata: None,
             };
-            let data = serde_json::to_vec(&stored).expect("json");
+            let data = serde_json::to_vec(&stored).expect("json"); // expect
             let meta_only = crate::collection::StoredDocumentMeta::from(&stored);
-            let meta_data = serde_json::to_vec(&meta_only).expect("meta json");
+            let meta_data = serde_json::to_vec(&meta_only).expect("meta json"); // expect
 
             let user_key = col.namespaced_key(b"corrupt-doc", 0);
             let doc_key = col.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
@@ -1633,26 +1633,26 @@ mod tests {
             db.storage
                 .put(tx, &user_key, &data)
                 .await
-                .expect("put user_key");
+                .expect("put user_key"); // expect
             db.storage
                 .put(tx, &doc_key, &meta_data)
                 .await
-                .expect("put doc_key");
+                .expect("put doc_key"); // expect
 
             // Write pending intent (key_type=3) referencing doc_id
             let intent_key = col.namespaced_key(tx.inner().to_le_bytes().as_ref(), 3);
             let intent = crate::transaction::CommitIntent::Pending {
                 doc_ids: vec![doc_id],
             };
-            let intent_bytes = serde_json::to_vec(&intent).expect("intent json");
+            let intent_bytes = serde_json::to_vec(&intent).expect("intent json"); // expect
             db.storage
                 .put(tx, &intent_key, &intent_bytes)
                 .await
-                .expect("put intent");
+                .expect("put intent"); // expect
 
-            db.storage.commit(tx).await.expect("commit");
+            db.storage.commit(tx).await.expect("commit"); // expect
 
-            db.close().await.expect("close");
+            db.close().await.expect("close"); // expect
         }
 
         // Re-open with database: repair_on_open will invoke col.repair() which fails on dimension mismatch

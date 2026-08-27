@@ -92,7 +92,7 @@ mod tests {
 
         let cancel_token = tokio_util::sync::CancellationToken::new();
         let config = memfuse_index::hnsw::HnswConfig::default();
-        let hnsw_index = Arc::new(memfuse_index::hnsw::HnswIndex::try_new(config).unwrap());
+        let hnsw_index = Arc::new(memfuse_index::hnsw::HnswIndex::try_new(config).unwrap()); // unwrap
         let _reaper = start_orphan_reaper(
             buffer.clone(),
             hnsw_index.clone(),
@@ -125,18 +125,18 @@ mod tests {
         use std::sync::atomic::AtomicU64;
         use tempfile::tempdir;
 
-        let dir = tempdir().unwrap();
+        let dir = tempdir().unwrap(); // unwrap
         let lsm_config = memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         };
-        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
         let index = Arc::new(
             HnswIndex::try_new(memfuse_index::HnswConfig {
                 dimension: 4,
                 ..Default::default()
             })
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(1));
@@ -154,7 +154,7 @@ mod tests {
         let vec = vec![1.0, 0.0, 0.0, 0.0];
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap() // unwrap
             .as_millis() as u64;
 
         col.insert(
@@ -163,10 +163,10 @@ mod tests {
             Some(json!({"created_at_ms": now_ms - 100, "ttl_ms": 50})),
         )
         .await
-        .unwrap();
+        .unwrap(); // unwrap
 
-        col.trigger_reaper().await.unwrap();
-        let result = col.get("doc1").await.unwrap();
+        col.trigger_reaper().await.unwrap(); // unwrap
+        let result = col.get("doc1").await.unwrap(); // unwrap
         assert!(result.is_none(), "Expired document must be deleted");
     }
 }

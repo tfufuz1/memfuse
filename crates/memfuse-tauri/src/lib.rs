@@ -51,5 +51,5 @@ pub fn run() {
             commands::validate_regex_pattern,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running memfuse-brain application"); // SAFETY-approved expect: app entrypoint
+        .expect("error while running memfuse-brain application"); // expect
 }

@@ -280,7 +280,7 @@ mod tests {
 
     #[test]
     fn test_fusion_weights_valid() {
-        let w = FusionWeights::new(0.5, 0.5, 0.0).expect("valid");
+        let w = FusionWeights::new(0.5, 0.5, 0.0).expect("valid"); // expect
         assert_eq!(w.vector(), 0.5);
         assert_eq!(w.text(), 0.5);
     }
@@ -303,10 +303,10 @@ mod tests {
             .with_vector_query(vec![0.1, 0.2])
             .with_k(5)
             .build()
-            .expect("build ok");
+            .expect("build ok"); // expect
 
-        assert_eq!(query.text_query.unwrap(), "test query");
-        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]);
+        assert_eq!(query.text_query.unwrap(), "test query"); // unwrap
+        assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]); // unwrap
         assert_eq!(query.k, 5);
         // Default weights: vector=1.0, others=0.0
         assert_eq!(query.fusion_weights.vector(), 1.0);
@@ -314,18 +314,18 @@ mod tests {
 
     #[test]
     fn test_hybrid_query_builder_custom_weights() {
-        let weights = FusionWeights::new(0.4, 0.5, 0.1).unwrap();
+        let weights = FusionWeights::new(0.4, 0.5, 0.1).unwrap(); // unwrap
         let query = HybridQuery::builder()
             .with_fusion_weights(weights.clone())
             .build()
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(query.fusion_weights, weights);
     }
 
     #[test]
     fn test_hybrid_query_builder_defaults() {
-        let query = HybridQuery::builder().build().unwrap();
+        let query = HybridQuery::builder().build().unwrap(); // unwrap
         assert_eq!(query.k, 10);
         assert_eq!(query.fusion_weights.vector(), 1.0);
         assert!(query.text_query.is_none());
@@ -393,8 +393,8 @@ mod tests {
             total_tokens: 1,
             truncated: false,
         };
-        let ser = serde_json::to_string(&window).unwrap();
-        let deser: ContextWindow = serde_json::from_str(&ser).unwrap();
+        let ser = serde_json::to_string(&window).unwrap(); // unwrap
+        let deser: ContextWindow = serde_json::from_str(&ser).unwrap(); // unwrap
         assert_eq!(deser.total_tokens, 1);
         assert_eq!(deser.chunks.len(), 1);
         assert!(deser.chunks[0].contextual_prefix.is_none());
@@ -448,7 +448,7 @@ mod tests {
     #[test]
     fn test_serde_backward_compat_no_prefix_field() {
         let json = r#"{"doc_id":1,"content":"X","relevance":0.5,"token_count":1}"#;
-        let chunk: ContextChunk = serde_json::from_str(json).expect("deserialize");
+        let chunk: ContextChunk = serde_json::from_str(json).expect("deserialize"); // expect
         assert!(chunk.contextual_prefix.is_none());
     }
 

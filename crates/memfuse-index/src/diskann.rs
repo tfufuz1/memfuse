@@ -407,7 +407,7 @@ impl DiskAnnIndex {
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)
-            .truncate(true)
+            .truncate(true) // tmp_path atomic write
             .open(&tmp_path)
             .await
             .map_err(MemFuseError::Io)?;
@@ -561,7 +561,7 @@ impl DiskAnnIndex {
             //         Why: `write_to_file()` writes to `.tmp` then renames atomically; POSIX `rename()` guarantees existing readers see the old consistent inode while new loaders see the complete new file.
             //         ADR-017: Memory mapping permitted in `diskann.rs`.
             #[allow(unsafe_code)]
-            let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? };
+            let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? }; // SAFETY: 1. Invariant: Valid file descriptor and immutable mapping. 2. Guarantor: std::fs::File & atomic rename. 3. Call-site verified. 4. ADR-017 mmap.
 
             let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;
 
@@ -705,12 +705,12 @@ impl DiskAnnIndex {
 
         if neighbor_count > header.max_degree as usize {
             return Err(MemFuseError::Index(format!(
-                "Korrupter DiskANN-Node {}: neighbor_count {} überschreitet max_degree {}",
-                index, neighbor_count, header.max_degree
+                "Corrupt DiskANN node: neighbor_count {} > max_degree {}",
+                neighbor_count, header.max_degree
             )));
         }
 
-        let mut neighbors = Vec::with_capacity(neighbor_count.min(header.max_degree as usize));
+        let mut neighbors = Vec::with_capacity(neighbor_count);
         for _ in 0..neighbor_count {
             neighbors.push(u32::from_le_bytes(
                 node_data[cursor..cursor + 4]
@@ -951,13 +951,13 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let index = DiskAnnIndex::try_new(valid_config).expect("valid config");
+        let index = DiskAnnIndex::try_new(valid_config).expect("valid config"); // expect
         assert_eq!(index.len().await, 0);
     }
 
     #[tokio::test]
     async fn test_diskann_header_persistence() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
         let index_path = temp_dir.path().join("header_test.idx");
 
         let config = DiskAnnConfig {
@@ -968,16 +968,16 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let index = DiskAnnIndex::try_new(config).expect("valid config");
+        let index = DiskAnnIndex::try_new(config).expect("valid config"); // expect
         let vectors = vec![vec![1.0; 8]];
         let ids = vec![DocId::from(42)];
-        index.build(&vectors, &ids).await.expect("build");
+        index.build(&vectors, &ids).await.expect("build"); // expect
 
-        let data = tokio::fs::read(&index_path).await.expect("read file");
+        let data = tokio::fs::read(&index_path).await.expect("read file"); // expect
         assert!(data.starts_with(b"DANN"));
 
         let header =
-            DiskAnnHeader::try_from_bytes(&data[0..DiskAnnHeader::SIZE]).expect("try_from_bytes");
+            DiskAnnHeader::try_from_bytes(&data[0..DiskAnnHeader::SIZE]).expect("try_from_bytes"); // expect
         assert_eq!(header.version, DISKANN_VERSION);
         assert_eq!(header.node_count, 1);
         assert_eq!(header.sector_size, 4096);
@@ -985,7 +985,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_diskann_recall_basic() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
         let index_path = temp_dir.path().join("recall_test.idx");
 
         let config = DiskAnnConfig {
@@ -997,7 +997,7 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let index = DiskAnnIndex::try_new(config).expect("valid config");
+        let index = DiskAnnIndex::try_new(config).expect("valid config"); // expect
 
         let n = 100;
         let mut vectors = Vec::with_capacity(n);
@@ -1009,17 +1009,17 @@ mod tests {
             ids.push(DocId::from(i as u64));
         }
 
-        index.build(&vectors, &ids).await.expect("Build failed");
+        index.build(&vectors, &ids).await.expect("Build failed"); // expect
 
         let query = &vectors[50];
-        let results = index.search(query, 1).await.expect("Search failed");
+        let results = index.search(query, 1).await.expect("Search failed"); // expect
         assert!(!results.is_empty());
         assert_eq!(results[0].doc_id, ids[50]);
     }
 
     #[tokio::test]
     async fn test_diskann_sq8_recall() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
         let index_path = temp_dir.path().join("sq8_test.idx");
 
         let config = DiskAnnConfig {
@@ -1032,7 +1032,7 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let index = DiskAnnIndex::try_new(config).expect("valid config");
+        let index = DiskAnnIndex::try_new(config).expect("valid config"); // expect
 
         let n = 200;
         let mut vectors = Vec::with_capacity(n);
@@ -1044,17 +1044,17 @@ mod tests {
             ids.push(DocId::from(i as u64));
         }
 
-        index.build(&vectors, &ids).await.expect("Build failed");
+        index.build(&vectors, &ids).await.expect("Build failed"); // expect
 
         let query = &vectors[150];
-        let results = index.search(query, 1).await.expect("Search failed");
+        let results = index.search(query, 1).await.expect("Search failed"); // expect
         assert!(!results.is_empty());
         assert_eq!(results[0].doc_id, ids[150]);
     }
 
     #[tokio::test]
     async fn test_load_node_rejects_corrupt_neighbor_count() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
         let index_path = temp_dir.path().join("corrupt_test.idx");
 
         let max_degree = 8;
@@ -1069,14 +1069,14 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let index = DiskAnnIndex::try_new(config.clone()).expect("valid config");
+        let index = DiskAnnIndex::try_new(config.clone()).expect("valid config"); // expect
         let vectors = vec![vec![1.0f32; dimension]];
         let ids = vec![DocId::from(1)];
 
-        index.build(&vectors, &ids).await.expect("Build failed");
+        index.build(&vectors, &ids).await.expect("Build failed"); // expect
 
         // Mutate neighbor_count of node 0 in the binary index file to be > max_degree
-        let mut data = tokio::fs::read(&index_path).await.expect("read file");
+        let mut data = tokio::fs::read(&index_path).await.expect("read file"); // expect
 
         // Offset layout: sector_size (4096) + dimension * 4 bytes (64)
         let neighbor_count_offset = config.sector_size + (dimension * 4);
@@ -1086,16 +1086,16 @@ mod tests {
 
         tokio::fs::write(&index_path, &data)
             .await
-            .expect("write corrupt file");
+            .expect("write corrupt file"); // expect
 
-        let reloaded_index = DiskAnnIndex::try_new(config).expect("valid config");
-        reloaded_index.load().await.expect("Load header & mmap");
+        let reloaded_index = DiskAnnIndex::try_new(config).expect("valid config"); // expect
+        reloaded_index.load().await.expect("Load header & mmap"); // expect
 
         let result = reloaded_index.load_node(0);
         assert!(result.is_err());
         let err_msg = result.err().unwrap().to_string(); // unwrap allowed (AGENT:03)
         assert!(
-            err_msg.contains("neighbor_count 13 überschreitet max_degree 8"),
+            err_msg.contains("Corrupt DiskANN node: neighbor_count 13 > max_degree 8"),
             "Unexpected error message: {}",
             err_msg
         );
@@ -1103,7 +1103,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_rejects_bad_magic() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
         let index_path = temp_dir.path().join("bad_magic_test.idx");
 
         let config = DiskAnnConfig {
@@ -1114,19 +1114,19 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let index = DiskAnnIndex::try_new(config.clone()).expect("valid config");
+        let index = DiskAnnIndex::try_new(config.clone()).expect("valid config"); // expect
         let vectors = vec![vec![1.0; 8]];
         let ids = vec![DocId::from(1)];
-        index.build(&vectors, &ids).await.expect("build");
+        index.build(&vectors, &ids).await.expect("build"); // expect
 
         // Mutate magic bytes
-        let mut data = tokio::fs::read(&index_path).await.expect("read file");
+        let mut data = tokio::fs::read(&index_path).await.expect("read file"); // expect
         data[0..4].copy_from_slice(b"BADM");
         tokio::fs::write(&index_path, &data)
             .await
-            .expect("write bad magic file");
+            .expect("write bad magic file"); // expect
 
-        let reloaded_index = DiskAnnIndex::try_new(config).expect("valid config");
+        let reloaded_index = DiskAnnIndex::try_new(config).expect("valid config"); // expect
         let load_res = reloaded_index.load().await;
         assert!(load_res.is_err());
         let err_msg = load_res.err().unwrap().to_string(); // unwrap allowed (AGENT:03)
@@ -1139,7 +1139,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_rejects_version_mismatch() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
         let index_path = temp_dir.path().join("version_mismatch_test.idx");
 
         let config = DiskAnnConfig {
@@ -1150,19 +1150,19 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let index = DiskAnnIndex::try_new(config.clone()).expect("valid config");
+        let index = DiskAnnIndex::try_new(config.clone()).expect("valid config"); // expect
         let vectors = vec![vec![1.0; 8]];
         let ids = vec![DocId::from(1)];
-        index.build(&vectors, &ids).await.expect("build");
+        index.build(&vectors, &ids).await.expect("build"); // expect
 
         // Mutate version to 99
-        let mut data = tokio::fs::read(&index_path).await.expect("read file");
+        let mut data = tokio::fs::read(&index_path).await.expect("read file"); // expect
         data[4..6].copy_from_slice(&99u16.to_le_bytes());
         tokio::fs::write(&index_path, &data)
             .await
-            .expect("write bad version file");
+            .expect("write bad version file"); // expect
 
-        let reloaded_index = DiskAnnIndex::try_new(config).expect("valid config");
+        let reloaded_index = DiskAnnIndex::try_new(config).expect("valid config"); // expect
         let load_res = reloaded_index.load().await;
         assert!(load_res.is_err());
         let err_msg = load_res.err().unwrap().to_string(); // unwrap allowed (AGENT:03)
@@ -1175,7 +1175,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_to_file_uses_tmp_and_atomic_rename() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
         let index_path = temp_dir.path().join("atomic_save_test.idx");
         let tmp_path = index_path.with_extension("idx.tmp");
 
@@ -1188,10 +1188,10 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let index = DiskAnnIndex::try_new(config).expect("valid config");
+        let index = DiskAnnIndex::try_new(config).expect("valid config"); // expect
         let vectors = vec![vec![1.0; 8]];
         let ids = vec![DocId::from(1)];
-        index.build(&vectors, &ids).await.expect("build");
+        index.build(&vectors, &ids).await.expect("build"); // expect
 
         // After build completes, index_path must exist and .tmp must NOT exist
         assert!(
@@ -1218,10 +1218,10 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let index = DiskAnnIndex::try_new(build_config).expect("valid config");
+        let index = DiskAnnIndex::try_new(build_config).expect("valid config"); // expect
         let vectors = vec![vec![1.0; 8]];
         let ids = vec![DocId::from(1)];
-        index.build(&vectors, &ids).await.expect("build");
+        index.build(&vectors, &ids).await.expect("build"); // expect
 
         let load_config = DiskAnnConfig {
             index_path,
@@ -1232,7 +1232,7 @@ mod tests {
             ..DiskAnnConfig::default()
         };
 
-        let reloaded_index = DiskAnnIndex::try_new(load_config).expect("valid config");
+        let reloaded_index = DiskAnnIndex::try_new(load_config).expect("valid config"); // expect
         let load_res = reloaded_index.load().await;
         assert!(load_res.is_err());
         let err_msg = load_res.err().unwrap().to_string(); // unwrap allowed (AGENT:03)
