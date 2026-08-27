@@ -2,6 +2,7 @@
 *Zuletzt aktualisiert: 2026-08-28 von Jules*
 
 ## Letzte Änderungen
+- 2026-08-28: Bi-temporale Zeitachsen (valid_from / valid_to) in `Edge` (`memfuse-core`) und `CsrGraph` (`memfuse-graph`) implementiert mit `traverse_at_time` und Grenzwert-Tests (ADR-025/ADR-023).
 - 2026-08-28: Personalized PageRank (PPR) implementiert in `crates/memfuse-graph/src/ppr.rs` auf CSR-Format (power iteration, uniform seed restart distribution, dangling node rank mass conservation, deterministisches tie-breaking via EntityId). `GraphIndex` Trait, `PprConfig`, `GraphTraversalStrategy` in `memfuse-core` und `Collection::hybrid_search_with_strategy` in `memfuse-db` ergänzt (ADR-026).
 - 2026-08-28: F-01 / AGT-DB-005 behoben: `Collection::relate()` führt bei Fehlschlag von `graph_index.commit(tx)` nach erfolgreichem `storage.commit(tx)` eine kompensierende Transaktion (Delete-Tombstone im LSM-Storage) aus (ADR-023).
 - 2026-08-28: Doc-Kommentare in `LsmStorage::rollback` und `StorageEngine::rollback` präzisiert (ADR-023).

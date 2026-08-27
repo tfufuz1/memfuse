@@ -465,6 +465,12 @@ pub struct Edge {
     pub label: String,
     /// Numeric relationship weight (default 1.0).
     pub weight: f32,
+    /// Start of business validity; None = valid from the beginning of time.
+    #[serde(default)]
+    pub valid_from: Option<TxId>,
+    /// End of business validity; None = currently valid.
+    #[serde(default)]
+    pub valid_to: Option<TxId>,
 }
 
 impl Edge {
@@ -475,12 +481,21 @@ impl Edge {
             to,
             label: label.into(),
             weight: 1.0,
+            valid_from: None,
+            valid_to: None,
         }
     }
 
     /// Sets a custom weight on the edge.
     pub fn with_weight(mut self, weight: f32) -> Self {
         self.weight = weight;
+        self
+    }
+
+    /// Sets business validity window on the edge.
+    pub fn with_validity(mut self, from: Option<TxId>, to: Option<TxId>) -> Self {
+        self.valid_from = from;
+        self.valid_to = to;
         self
     }
 }
@@ -748,10 +763,20 @@ mod tests {
         assert_eq!(entity.id.inner(), 1);
         assert_eq!(entity.name, "node1");
 
-        let edge = Edge::new(EntityId::new(1), EntityId::new(2), "rel").with_weight(0.5);
+        let edge = Edge::new(EntityId::new(1), EntityId::new(2), "rel")
+            .with_weight(0.5)
+            .with_validity(Some(TxId::new(10)), Some(TxId::new(20)));
         assert_eq!(edge.from.inner(), 1);
         assert_eq!(edge.to.inner(), 2);
         assert_eq!(edge.weight, 0.5);
+        assert_eq!(edge.valid_from, Some(TxId::new(10)));
+        assert_eq!(edge.valid_to, Some(TxId::new(20)));
+
+        // Test serde backward compatibility with missing valid_from/valid_to
+        let json_old = r#"{"from":1,"to":2,"label":"rel","weight":0.5}"#;
+        let deser_edge: Edge = serde_json::from_str(json_old).unwrap(); // unwrap
+        assert_eq!(deser_edge.valid_from, None);
+        assert_eq!(deser_edge.valid_to, None);
     }
 
     proptest::proptest! {

@@ -850,5 +850,15 @@ mod tests {
             }
             _ => panic!("Expected PolicyViolation with ADR-024"),
         }
+
+        let res_time = index
+            .traverse_at_time(crate::types::EntityId::new(1), 2, crate::types::TxId::new(10))
+            .await;
+        match res_time {
+            Err(crate::error::MemFuseError::PolicyViolation(msg)) => {
+                assert!(msg.contains("traverse_at_time muss explizit implementiert werden"), "Unexpected message: {msg}");
+            }
+            _ => panic!("Expected PolicyViolation for traverse_at_time"),
+        }
     }
 }
