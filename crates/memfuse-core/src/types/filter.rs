@@ -58,8 +58,8 @@ mod tests {
             }),
         );
 
-        let ser = serde_json::to_string(&filter).unwrap();
-        let deser: FilterExpr = serde_json::from_str(&ser).unwrap();
+        let ser = serde_json::to_string(&filter).unwrap(); // unwrap
+        let deser: FilterExpr = serde_json::from_str(&ser).unwrap(); // unwrap
         assert_eq!(filter, deser);
     }
 
