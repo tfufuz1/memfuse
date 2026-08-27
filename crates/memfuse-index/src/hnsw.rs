@@ -329,17 +329,37 @@ impl HnswIndex {
     }
 
     /// Triggers an async rebuild if the deletion threshold is exceeded.
-    pub fn trigger_rebuild_async(&self) -> Option<tokio::task::JoinHandle<()>> {
+    pub fn trigger_rebuild_async(&self) -> Option<tokio::task::JoinHandle<Result<()>>> {
         if self.is_rebuild_required() {
             let inner = std::sync::Arc::clone(&self.inner);
             Some(tokio::spawn(async move {
-                if let Err(e) = inner.rebuild().await {
+                let res = inner.rebuild().await;
+                if let Err(ref e) = res {
                     tracing::error!("Failed to rebuild HNSW index: {}", e);
                 }
+                res
             }))
         } else {
             None
         }
+    }
+
+    /// Liefert den aktuellen Rebuild-Status des Index.
+    pub fn rebuild_status(&self) -> RebuildStatus {
+        self.inner.rebuild_status()
+    }
+
+    /// Wartet bis ein laufender Rebuild abgeschlossen ist.
+    /// Nutzt standardmäßig ein Timeout von 60 Sekunden.
+    /// Gibt `true` zurück wenn Rebuild abgeschlossen, `false` bei Timeout.
+    pub async fn wait_for_rebuild(&self) -> bool {
+        self.inner.wait_for_rebuild().await
+    }
+
+    /// Wartet bis ein laufender Rebuild abgeschlossen ist.
+    /// Gibt `true` zurück wenn Rebuild abgeschlossen, `false` bei Timeout.
+    pub async fn wait_for_rebuild_with_timeout(&self, timeout: std::time::Duration) -> bool {
+        self.inner.wait_for_rebuild_with_timeout(timeout).await
     }
 
     /// Persists the index to a flat file.
@@ -421,7 +441,7 @@ impl HnswIndex {
             let mut current_pos = vectors_offset;
             for (i, node) in nodes.iter().enumerate() {
                 node_records[i].doc_id = node.doc_id.inner();
-                node_records[i].max_layer = node.connections.len().saturating_sub(1) as u8;
+                node_records[i].max_layer = node.max_layer as u8;
                 node_records[i].vector_offset = current_pos;
 
                 match &node.vector {
@@ -600,6 +620,14 @@ impl HnswIndexCore {
         } else {
             RebuildStatus::Idle
         }
+    }
+
+    /// Wartet bis ein laufender Rebuild abgeschlossen ist.
+    /// Nutzt standardmäßig ein Timeout von 60 Sekunden.
+    /// Gibt `true` zurück wenn Rebuild abgeschlossen, `false` bei Timeout.
+    pub async fn wait_for_rebuild(&self) -> bool {
+        self.wait_for_rebuild_with_timeout(std::time::Duration::from_secs(60))
+            .await
     }
 
     /// Wartet bis ein laufender Rebuild abgeschlossen ist.
@@ -1828,7 +1856,7 @@ impl VectorIndex for HnswIndex {
                     self.do_delete(doc_id)?;
                     deleted_any = true;
                 }
-                // AI-TAG[PANIC-SAFETY][CRITICAL][RESOLVED] — IndexOp ist #[non_exhaustive]; neue Varianten
+                // AI-TAG[PANIC-SAFETY][CRITICAL] [RESOLVED] — IndexOp ist #[non_exhaustive]; neue Varianten
                 // müssen hier explizit behandelt werden, bevor sie in den HNSW-Commit-Pfad gelangen.
                 // ANWEISUNG: Neue IndexOp-Variante → Arm hier hinzufügen oder UpdateNotSupported zurückgeben.
                 // ID: FIX-03-INDEXOP
@@ -2057,7 +2085,7 @@ mod tests {
             result.is_err(),
             "try_new must fail immediately on invalid config"
         );
-        let err_msg = format!("{}", result.err().unwrap());
+        let err_msg = format!("{}", result.err().unwrap()); // unwrap
         assert!(
             err_msg.contains("ef_construction (1) must be >= m (100)"),
             "Unexpected error message: {}",
@@ -2084,75 +2112,75 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_and_search() {
-        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
         let tx = TxId::new(1);
 
         // Insert 3 vectors
         index
             .insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
             .await
-            .expect("insert 1");
+            .expect("insert 1"); // expect
         index
             .insert(tx, DocId::new(2), &[0.0, 1.0, 0.0, 0.0])
             .await
-            .expect("insert 2");
+            .expect("insert 2"); // expect
         index
             .insert(tx, DocId::new(3), &[0.9, 0.1, 0.0, 0.0])
             .await
-            .expect("insert 3");
-        index.commit(tx).await.expect("commit");
+            .expect("insert 3"); // expect
+        index.commit(tx).await.expect("commit"); // expect
 
         // Search for vector closest to [1, 0, 0, 0]
         let results = index
             .search(&[1.0, 0.0, 0.0, 0.0], 2)
             .await
-            .expect("search");
+            .expect("search"); // expect
         assert!(!results.is_empty());
         assert_eq!(results[0].doc_id, DocId::new(1));
     }
 
     #[tokio::test]
     async fn test_delete() {
-        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
 
         let tx1 = TxId::new(1);
         index
             .insert(tx1, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
             .await
-            .expect("insert");
-        index.commit(tx1).await.expect("commit");
+            .expect("insert"); // expect
+        index.commit(tx1).await.expect("commit"); // expect
 
         assert_eq!(index.len().await, 1);
 
         let tx2 = TxId::new(2);
-        index.delete(tx2, DocId::new(1)).await.expect("delete");
-        index.commit(tx2).await.expect("commit");
+        index.delete(tx2, DocId::new(1)).await.expect("delete"); // expect
+        index.commit(tx2).await.expect("commit"); // expect
 
         assert_eq!(index.len().await, 0);
     }
 
     #[tokio::test]
     async fn test_entry_point_deletion_search() {
-        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
         let tx1 = TxId::new(1);
 
         // Insert 5 nodes. First node (DocId(0)) will be the initial entry point.
         for i in 0u64..5 {
             let v = vec![i as f32, 0.0, 0.0, 0.0];
-            index.insert(tx1, DocId::new(i), &v).await.expect("insert");
+            index.insert(tx1, DocId::new(i), &v).await.expect("insert"); // expect
         }
-        index.commit(tx1).await.expect("commit");
+        index.commit(tx1).await.expect("commit"); // expect
 
         // Delete node 0 (the entry point)
         let tx2 = TxId::new(2);
-        index.delete(tx2, DocId::new(0)).await.expect("delete");
-        index.commit(tx2).await.expect("commit");
+        index.delete(tx2, DocId::new(0)).await.expect("delete"); // expect
+        index.commit(tx2).await.expect("commit"); // expect
 
         // Search must successfully return results from remaining nodes without panicking
         let results = index
             .search(&[1.0, 0.0, 0.0, 0.0], 3)
             .await
-            .expect("search should succeed after entry point deletion");
+            .expect("search should succeed after entry point deletion"); // expect
 
         assert_eq!(results.len(), 3);
         for res in &results {
@@ -2166,31 +2194,31 @@ mod tests {
 
     #[tokio::test]
     async fn test_rollback() {
-        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
 
         let tx = TxId::new(1);
         index
             .insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
             .await
-            .expect("insert");
-        index.rollback(tx).await.expect("rollback");
+            .expect("insert"); // expect
+        index.rollback(tx).await.expect("rollback"); // expect
 
         assert_eq!(index.len().await, 0);
     }
 
     #[tokio::test]
     async fn test_empty_search() {
-        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
         let results = index
             .search(&[1.0, 0.0, 0.0, 0.0], 5)
             .await
-            .expect("search");
+            .expect("search"); // expect
         assert!(results.is_empty());
     }
 
     #[tokio::test]
     async fn test_dimension_mismatch() {
-        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
         let tx = TxId::new(1);
         let result = index.insert(tx, DocId::new(1), &[1.0, 0.0]).await;
         assert!(result.is_err());
@@ -2198,22 +2226,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_filtered_search() {
-        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
         let tx = TxId::new(1);
 
         index
             .insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
             .await
-            .expect("test");
+            .expect("test"); // expect
         index
             .insert(tx, DocId::new(2), &[0.9, 0.1, 0.0, 0.0])
             .await
-            .expect("test");
+            .expect("test"); // expect
         index
             .insert(tx, DocId::new(3), &[0.8, 0.2, 0.0, 0.0])
             .await
-            .expect("test");
-        index.commit(tx).await.expect("test");
+            .expect("test"); // expect
+        index.commit(tx).await.expect("test"); // expect
 
         // Filtered: exclude DocId 1
         let filter_fn = |doc: DocId| doc.inner() != 1;
@@ -2221,7 +2249,7 @@ mod tests {
         let filtered = index
             .search_filtered(&[1.0, 0.0, 0.0, 0.0], 2, Some(filter_ref))
             .await
-            .expect("test");
+            .expect("test"); // expect
         assert_eq!(filtered.len(), 2);
         assert!(filtered.iter().all(|r| r.doc_id != DocId::new(1)));
     }
@@ -2234,16 +2262,16 @@ mod tests {
             distance_metric: DistanceMetric::Euclidean,
             ..test_config(2)
         })
-        .unwrap();
+        .unwrap(); // unwrap
         let tx = TxId::new(1);
 
         for i in 1..=5u64 {
             index
                 .insert(tx, DocId::new(i), &[i as f32, 0.0])
                 .await
-                .expect("test");
+                .expect("test"); // expect
         }
-        index.commit(tx).await.expect("test");
+        index.commit(tx).await.expect("test"); // expect
 
         assert_eq!(index.len().await, 5);
         assert!((index.connectivity_score() - 1.0).abs() < f64::EPSILON);
@@ -2251,29 +2279,29 @@ mod tests {
 
         // Delete 2 nodes → 40% deleted, connectivity = 0.6
         let tx2 = TxId::new(2);
-        index.delete(tx2, DocId::new(2)).await.expect("test");
-        index.delete(tx2, DocId::new(4)).await.expect("test");
-        index.commit(tx2).await.expect("test");
+        index.delete(tx2, DocId::new(2)).await.expect("test"); // expect
+        index.delete(tx2, DocId::new(4)).await.expect("test"); // expect
+        index.commit(tx2).await.expect("test"); // expect
 
         assert_eq!(index.len().await, 3);
         assert!(index.connectivity_score() < 0.8);
         assert!(index.is_rebuild_required());
 
-        let stats_pre = index.stats().await.expect("test");
+        let stats_pre = index.stats().await.expect("test"); // expect
         assert_eq!(stats_pre.num_vectors, 3);
 
         // Rebuild
-        index.rebuild().await.expect("test");
+        index.rebuild().await.expect("test"); // expect
 
         assert_eq!(index.len().await, 3);
         assert!((index.connectivity_score() - 1.0).abs() < f64::EPSILON);
         assert!(!index.is_rebuild_required());
 
-        let stats_post = index.stats().await.expect("test");
+        let stats_post = index.stats().await.expect("test"); // expect
         assert_eq!(stats_post.num_vectors, 3);
 
         // Ensure rebuilt index still works
-        let results = index.search(&[1.0, 0.0], 1).await.expect("test");
+        let results = index.search(&[1.0, 0.0], 1).await.expect("test"); // expect
         assert_eq!(results[0].doc_id, DocId::new(1));
     }
 
@@ -2286,15 +2314,15 @@ mod tests {
             distance_metric: DistanceMetric::Euclidean,
             ..test_config(4)
         })
-        .unwrap();
+        .unwrap(); // unwrap
         let tx = TxId::new(1);
 
         // Insert enough vectors to train quantizer (>= 50)
         for i in 1..=60u64 {
             let v = [i as f32, i as f32 * 0.1, 0.0, 0.0];
-            index.insert(tx, DocId::new(i), &v).await.expect("test");
+            index.insert(tx, DocId::new(i), &v).await.expect("test"); // expect
         }
-        index.commit(tx).await.expect("test");
+        index.commit(tx).await.expect("test"); // expect
 
         assert_eq!(index.len().await, 60);
         // Verify quantizer is trained
@@ -2303,14 +2331,14 @@ mod tests {
         // Delete some to lower connectivity and allow rebuild
         let tx2 = TxId::new(2);
         for i in 1..=10u64 {
-            index.delete(tx2, DocId::new(i)).await.expect("test");
+            index.delete(tx2, DocId::new(i)).await.expect("test"); // expect
         }
-        index.commit(tx2).await.expect("test");
+        index.commit(tx2).await.expect("test"); // expect
 
         assert_eq!(index.len().await, 50);
 
         // Rebuild
-        index.rebuild().await.expect("rebuild");
+        index.rebuild().await.expect("rebuild"); // expect
 
         // Verify state after rebuild
         assert_eq!(index.len().await, 50);
@@ -2323,7 +2351,7 @@ mod tests {
         let results = index
             .search(&[60.0, 6.0, 0.0, 0.0], 1)
             .await
-            .expect("search");
+            .expect("search"); // expect
         assert_eq!(results[0].doc_id, DocId::new(60));
     }
 
@@ -2338,7 +2366,7 @@ mod tests {
             v.extend(suffix);
 
             let config = test_config(v.len());
-            let index = HnswIndex::try_new(config).unwrap();
+            let index = HnswIndex::try_new(config).unwrap(); // unwrap
             let result = index.do_insert(DocId::new(1), &v);
 
             proptest::prop_assert!(result.is_err(), "Inserting vector containing NaN must return error");
@@ -2347,7 +2375,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_persistence_lifecycle() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
         let index_path = temp_dir.path().join("test.hnsw");
 
         let config = HnswConfig {
@@ -2357,22 +2385,22 @@ mod tests {
             quantize: false,
             ..test_config(4)
         };
-        let index = HnswIndex::try_new(config.clone()).unwrap();
+        let index = HnswIndex::try_new(config.clone()).unwrap(); // unwrap
         let tx1 = TxId::new(1);
 
         // 1. Initial Insert (RAM)
         for i in 1..=50u64 {
             let v = [i as f32, i as f32 * 0.1, 0.0, 0.0];
-            index.insert(tx1, DocId::new(i), &v).await.expect("test");
+            index.insert(tx1, DocId::new(i), &v).await.expect("test"); // expect
         }
-        index.commit(tx1).await.expect("test");
+        index.commit(tx1).await.expect("test"); // expect
 
         // 2. Save to disk
-        index.save(&index_path).await.expect("save");
+        index.save(&index_path).await.expect("save"); // expect
 
         // 3. Clear RAM and load via Mmap
-        let index_mmap = HnswIndex::try_new(config.clone()).unwrap();
-        index_mmap.load_mmap(&index_path).await.expect("load mmap");
+        let index_mmap = HnswIndex::try_new(config.clone()).unwrap(); // unwrap
+        index_mmap.load_mmap(&index_path).await.expect("load mmap"); // expect
 
         assert_eq!(index_mmap.len().await, 50);
 
@@ -2380,7 +2408,7 @@ mod tests {
         let results = index_mmap
             .search(&[25.0, 2.5, 0.0, 0.0], 1)
             .await
-            .expect("search");
+            .expect("search"); // expect
         assert_eq!(results[0].doc_id, DocId::new(25));
 
         // 5. Insert new nodes on top of Mmap (Hybrid)
@@ -2390,9 +2418,9 @@ mod tests {
             index_mmap
                 .insert(tx2, DocId::new(i), &v)
                 .await
-                .expect("test");
+                .expect("test"); // expect
         }
-        index_mmap.commit(tx2).await.expect("test");
+        index_mmap.commit(tx2).await.expect("test"); // expect
 
         assert_eq!(index_mmap.len().await, 60);
 
@@ -2400,14 +2428,14 @@ mod tests {
         let results_hybrid = index_mmap
             .search(&[58.0, 5.8, 0.0, 0.0], 1)
             .await
-            .expect("search");
+            .expect("search"); // expect
         assert_eq!(results_hybrid[0].doc_id, DocId::new(58));
 
         // 7. Verify Hybrid Search (finding an Mmap node)
         let results_mmap = index_mmap
             .search(&[5.0, 0.5, 0.0, 0.0], 1)
             .await
-            .expect("search");
+            .expect("search"); // expect
         assert_eq!(results_mmap[0].doc_id, DocId::new(5));
     }
 
@@ -2430,7 +2458,7 @@ mod tests {
             quantize: true,
             ..test_config(16)
         };
-        let index = HnswIndex::try_new(config).unwrap();
+        let index = HnswIndex::try_new(config).unwrap(); // unwrap
         let tx = TxId::new(1);
 
         // 1. Train quantizer with some data
@@ -2445,16 +2473,16 @@ mod tests {
             index
                 .insert(tx, DocId::new(i as u64), v)
                 .await
-                .expect("insert");
+                .expect("insert"); // expect
         }
-        index.commit(tx).await.expect("commit");
+        index.commit(tx).await.expect("commit"); // expect
 
         // 2. Perform searches and calculate recall
         let mut hits = 0;
         let test_queries = 20;
         for i in 0..test_queries {
             let query = &data[i * 5];
-            let results = index.search(query, 1).await.expect("search");
+            let results = index.search(query, 1).await.expect("search"); // expect
             if !results.is_empty() && results[0].doc_id == DocId::new((i * 5) as u64) {
                 hits += 1;
             }
@@ -2467,18 +2495,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_all_doc_ids() {
-        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
         let tx = TxId::new(1);
 
         for i in 1..=10u64 {
             index
                 .insert(tx, DocId::new(i), &[i as f32, 0.0, 0.0, 0.0])
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
         }
-        index.commit(tx).await.unwrap();
+        index.commit(tx).await.unwrap(); // unwrap
 
-        let ids = index.all_doc_ids().await.unwrap();
+        let ids = index.all_doc_ids().await.unwrap(); // unwrap
         assert_eq!(ids.len(), 10);
         for i in 1..=10u64 {
             assert!(ids.contains(&DocId::new(i)));
@@ -2486,11 +2514,11 @@ mod tests {
 
         // Delete some
         let tx2 = TxId::new(2);
-        index.delete(tx2, DocId::new(5)).await.unwrap();
-        index.delete(tx2, DocId::new(8)).await.unwrap();
-        index.commit(tx2).await.unwrap();
+        index.delete(tx2, DocId::new(5)).await.unwrap(); // unwrap
+        index.delete(tx2, DocId::new(8)).await.unwrap(); // unwrap
+        index.commit(tx2).await.unwrap(); // unwrap
 
-        let ids2 = index.all_doc_ids().await.unwrap();
+        let ids2 = index.all_doc_ids().await.unwrap(); // unwrap
         assert_eq!(ids2.len(), 8);
         assert!(!ids2.contains(&DocId::new(5)));
         assert!(!ids2.contains(&DocId::new(8)));
@@ -2503,20 +2531,20 @@ mod tests {
             rebuild_threshold: 0.8, // trigger when >20% deleted
             ..test_config(4)
         };
-        let index = HnswIndex::try_new(config).unwrap();
+        let index = HnswIndex::try_new(config).unwrap(); // unwrap
         let tx = TxId::new(1);
 
         for i in 0u64..5 {
             let v = vec![i as f32, 0.0, 0.0, 0.0];
-            index.insert(tx, DocId::new(i), &v).await.unwrap();
+            index.insert(tx, DocId::new(i), &v).await.unwrap(); // unwrap
         }
-        index.commit(tx).await.unwrap();
+        index.commit(tx).await.unwrap(); // unwrap
 
         // Delete 2 out of 5 → 40% deleted → score = 0.6 < threshold 0.8
         let tx2 = TxId::new(2);
-        index.delete(tx2, DocId::new(0)).await.unwrap(); // #[test]
-        index.delete(tx2, DocId::new(1)).await.unwrap();
-        index.commit(tx2).await.unwrap();
+        index.delete(tx2, DocId::new(0)).await.unwrap(); // #[test] // unwrap
+        index.delete(tx2, DocId::new(1)).await.unwrap(); // unwrap
+        index.commit(tx2).await.unwrap(); // unwrap
 
         let result = index.check_connectivity();
         assert!(
@@ -2540,8 +2568,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_connectivity_ok_when_healthy() {
-        let index = HnswIndex::try_new(test_config(4)).unwrap();
-        // Empty index — connectivity_score returns 1.0, always healthy
+        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
+                                                                 // Empty index — connectivity_score returns 1.0, always healthy
         assert!(index.check_connectivity().is_ok());
     }
 
@@ -2553,29 +2581,29 @@ mod tests {
             dimension: 4,
             ..Default::default()
         };
-        let idx = HnswIndex::try_new(config).unwrap();
+        let idx = HnswIndex::try_new(config).unwrap(); // unwrap
         let tx = TxId::new(1);
 
         // Insert 100 vectors
         for i in 0u64..100 {
             let v = vec![i as f32, 1.0, 0.0, 0.0];
-            idx.insert(tx, DocId::new(i), &v).await.unwrap();
+            idx.insert(tx, DocId::new(i), &v).await.unwrap(); // unwrap
         }
-        idx.commit(tx).await.unwrap();
+        idx.commit(tx).await.unwrap(); // unwrap
 
         // Delete 51 vectors -> >50% deleted, crossing 0.5 threshold
         let tx2 = TxId::new(2);
         for i in 0u64..51 {
-            idx.delete(tx2, DocId::new(i)).await.unwrap();
+            idx.delete(tx2, DocId::new(i)).await.unwrap(); // unwrap
         }
-        idx.commit(tx2).await.unwrap();
+        idx.commit(tx2).await.unwrap(); // unwrap
 
         // Wait briefly for background rebuild task to complete
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         // Verify search() still works and returns non-deleted nodes
         let query = vec![75.0, 1.0, 0.0, 0.0];
-        let results = idx.search(&query, 5).await.unwrap();
+        let results = idx.search(&query, 5).await.unwrap(); // unwrap
         assert!(
             !results.is_empty(),
             "Search after rebuild should return results"
@@ -2586,6 +2614,77 @@ mod tests {
                 "Deleted doc_id {} was found in search results",
                 doc.doc_id.inner()
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rebuild_status_and_wait() {
+        let config = HnswConfig {
+            rebuild_threshold: 0.5,
+            dimension: 4,
+            ..test_config(4)
+        };
+        let index = HnswIndex::try_new(config).unwrap();
+        assert_eq!(index.rebuild_status(), RebuildStatus::Idle);
+        assert!(
+            index
+                .wait_for_rebuild_with_timeout(std::time::Duration::from_millis(50))
+                .await
+        );
+        assert!(index.wait_for_rebuild().await);
+
+        let tx = TxId::new(1);
+        for i in 0u64..10 {
+            index
+                .insert(tx, DocId::new(i), &[i as f32, 0.0, 0.0, 0.0])
+                .await
+                .unwrap();
+        }
+        index.commit(tx).await.unwrap();
+
+        let tx2 = TxId::new(2);
+        for i in 0u64..6 {
+            index.delete(tx2, DocId::new(i)).await.unwrap();
+        }
+
+        // Commit triggers trigger_rebuild_async
+        index.commit(tx2).await.unwrap();
+        assert!(
+            index
+                .wait_for_rebuild_with_timeout(std::time::Duration::from_secs(5))
+                .await
+        );
+        assert_eq!(index.rebuild_status(), RebuildStatus::Idle);
+    }
+
+    #[tokio::test]
+    async fn test_trigger_rebuild_async_join_handle() {
+        let config = HnswConfig {
+            rebuild_threshold: 0.5,
+            dimension: 4,
+            ..test_config(4)
+        };
+        let index = HnswIndex::try_new(config).unwrap();
+        let tx = TxId::new(1);
+        for i in 0u64..10 {
+            index
+                .insert(tx, DocId::new(i), &[i as f32, 0.0, 0.0, 0.0])
+                .await
+                .unwrap();
+        }
+        index.commit(tx).await.unwrap();
+
+        assert!(index.trigger_rebuild_async().is_none());
+
+        let tx2 = TxId::new(2);
+        for i in 0u64..6 {
+            index.delete(tx2, DocId::new(i)).await.unwrap();
+        }
+        index.commit(tx2).await.unwrap();
+
+        if let Some(handle) = index.trigger_rebuild_async() {
+            let res = handle.await.unwrap();
+            assert!(res.is_ok());
         }
     }
 }
