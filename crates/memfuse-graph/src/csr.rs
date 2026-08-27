@@ -1887,7 +1887,10 @@ mod tests {
                     msg
                 );
             }
-            other => panic!("Expected PolicyViolation referencing ADR-024, got: {:?}", other),
+            other => panic!(
+                "Expected PolicyViolation referencing ADR-024, got: {:?}",
+                other
+            ),
         }
     }
 
