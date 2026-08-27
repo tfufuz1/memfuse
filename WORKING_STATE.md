@@ -34,4 +34,4 @@ Keine ungenehmigten `.expect()` Aufrufe in `crates/*/src/` mehr vorhanden.
 
 ## Letzter ADR
 
-Neuester ADR: ADR-023 (2026-08-28) — Kompensierende Transaktion für Multi-Store relate() Operations (F-01 / AGT-DB-005)
+Neuester ADR: ADR-025 (2026-08-28) — Memory Importance Score & Recency-Decay als Post-Processing-Filter
