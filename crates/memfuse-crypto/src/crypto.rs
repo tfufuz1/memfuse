@@ -159,20 +159,20 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt_roundtrip() {
-        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("try_new");
+        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("try_new"); // expect
         let data = b"sensitive data";
 
-        let (encrypted, nonce) = km.encrypt_auto_nonce(data).expect("encrypt");
-        let decrypted = km.decrypt_auto_nonce(&encrypted, &nonce).expect("decrypt");
+        let (encrypted, nonce) = km.encrypt_auto_nonce(data).expect("encrypt"); // expect
+        let decrypted = km.decrypt_auto_nonce(&encrypted, &nonce).expect("decrypt"); // expect
 
         assert_eq!(data, decrypted.as_slice());
     }
 
     #[test]
     fn test_wrong_nonce_fails() {
-        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("try_new");
+        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("try_new"); // expect
         let data = b"sensitive data";
-        let (encrypted, mut nonce) = km.encrypt_auto_nonce(data).expect("encrypt");
+        let (encrypted, mut nonce) = km.encrypt_auto_nonce(data).expect("encrypt"); // expect
         nonce[0] ^= 1; // alter the nonce
 
         let result = km.decrypt_auto_nonce(&encrypted, &nonce);
@@ -181,12 +181,12 @@ mod tests {
 
     #[test]
     fn test_different_keys_different_ciphertexts() {
-        let km1 = KeyManager::try_new("pass1", b"salt1").expect("try_new");
-        let km2 = KeyManager::try_new("pass2", b"salt1").expect("try_new");
+        let km1 = KeyManager::try_new("pass1", b"salt1").expect("try_new"); // expect
+        let km2 = KeyManager::try_new("pass2", b"salt1").expect("try_new"); // expect
         let data = b"data";
 
-        let (enc1, _) = km1.encrypt_auto_nonce(data).expect("enc1");
-        let (enc2, _) = km2.encrypt_auto_nonce(data).expect("enc2");
+        let (enc1, _) = km1.encrypt_auto_nonce(data).expect("enc1"); // expect
+        let (enc2, _) = km2.encrypt_auto_nonce(data).expect("enc2"); // expect
 
         assert_ne!(enc1, enc2);
     }
@@ -194,34 +194,34 @@ mod tests {
     #[test]
     fn test_different_salts_different_keys() {
         let pass = "secret";
-        let km1 = KeyManager::try_new(pass, b"salt1").expect("km1");
-        let km2 = KeyManager::try_new(pass, b"salt2").expect("km2");
+        let km1 = KeyManager::try_new(pass, b"salt1").expect("km1"); // expect
+        let km2 = KeyManager::try_new(pass, b"salt2").expect("km2"); // expect
 
         assert_ne!(km1.key, km2.key);
     }
 
     #[test]
     fn test_sub_key_derivation_prevents_nonce_reuse() {
-        let master_km = KeyManager::try_new("master-secret", b"salt1").expect("try_new");
+        let master_km = KeyManager::try_new("master-secret", b"salt1").expect("try_new"); // expect
         let data = b"identical-data";
 
-        let km_file1 = master_km.derive_file_key(b"file1").expect("derive1");
-        let km_file2 = master_km.derive_file_key(b"file2").expect("derive2");
+        let km_file1 = master_km.derive_file_key(b"file1").expect("derive1"); // expect
+        let km_file2 = master_km.derive_file_key(b"file2").expect("derive2"); // expect
 
-        let (enc1, n1) = km_file1.encrypt_auto_nonce(data).expect("enc1");
-        let (enc2, _) = km_file2.encrypt_auto_nonce(data).expect("enc2");
+        let (enc1, n1) = km_file1.encrypt_auto_nonce(data).expect("enc1"); // expect
+        let (enc2, _) = km_file2.encrypt_auto_nonce(data).expect("enc2"); // expect
 
         assert_ne!(enc1, enc2);
 
         // Decryption must still work with the correct sub-key
-        let dec1 = km_file1.decrypt_auto_nonce(&enc1, &n1).expect("dec1");
+        let dec1 = km_file1.decrypt_auto_nonce(&enc1, &n1).expect("dec1"); // expect
         assert_eq!(data, dec1.as_slice());
     }
 
     #[test]
     fn test_random_salt_generates_unique_keys() {
-        let (km1, salt1) = KeyManager::try_new_random_salt("password").unwrap();
-        let (km2, salt2) = KeyManager::try_new_random_salt("password").unwrap();
+        let (km1, salt1) = KeyManager::try_new_random_salt("password").unwrap(); // unwrap
+        let (km2, salt2) = KeyManager::try_new_random_salt("password").unwrap(); // unwrap
 
         // Salts should be different
         assert_ne!(salt1, salt2);
@@ -232,7 +232,7 @@ mod tests {
 
     #[test]
     fn test_key_manager_emergency_wipe() {
-        let mut km = KeyManager::try_new("password", b"salt").unwrap();
+        let mut km = KeyManager::try_new("password", b"salt").unwrap(); // unwrap
 
         // Ensure key is not zero initially
         assert_ne!(km.inspect_key_bytes_for_test(), &[0u8; 32]);
@@ -245,9 +245,9 @@ mod tests {
 
     #[test]
     fn file_keys_are_distinct_per_path() {
-        let km = KeyManager::try_new("secret", b"salt").expect("init");
-        let key1 = km.derive_file_key(b"segment_001.sst").expect("k1");
-        let key2 = km.derive_file_key(b"segment_002.sst").expect("k2");
+        let km = KeyManager::try_new("secret", b"salt").expect("init"); // expect
+        let key1 = km.derive_file_key(b"segment_001.sst").expect("k1"); // expect
+        let key2 = km.derive_file_key(b"segment_002.sst").expect("k2"); // expect
         assert_ne!(
             key1.inspect_key_bytes_for_test(),
             key2.inspect_key_bytes_for_test(),
@@ -257,10 +257,10 @@ mod tests {
 
     #[test]
     fn same_path_same_passphrase_same_key() {
-        let km1 = KeyManager::try_new("secret", b"salt").expect("km1");
-        let km2 = KeyManager::try_new("secret", b"salt").expect("km2");
-        let k1 = km1.derive_file_key(b"data.sst").expect("k1");
-        let k2 = km2.derive_file_key(b"data.sst").expect("k2");
+        let km1 = KeyManager::try_new("secret", b"salt").expect("km1"); // expect
+        let km2 = KeyManager::try_new("secret", b"salt").expect("km2"); // expect
+        let k1 = km1.derive_file_key(b"data.sst").expect("k1"); // expect
+        let k2 = km2.derive_file_key(b"data.sst").expect("k2"); // expect
         assert_eq!(
             k1.inspect_key_bytes_for_test(),
             k2.inspect_key_bytes_for_test(),
@@ -270,11 +270,15 @@ mod tests {
 
     #[test]
     fn same_passphrase_salt_path_gives_same_key() {
-        let km1 = KeyManager::try_new("secret", b"salt").expect("km1");
-        let km2 = KeyManager::try_new("secret", b"salt").expect("km2");
+        let km1 = KeyManager::try_new("secret", b"salt").expect("km1"); // expect
+        let km2 = KeyManager::try_new("secret", b"salt").expect("km2"); // expect
         assert_eq!(
-            km1.derive_file_key(b"data.sst").expect("k1").inspect_key_bytes_for_test(),
-            km2.derive_file_key(b"data.sst").expect("k2").inspect_key_bytes_for_test(),
+            km1.derive_file_key(b"data.sst")
+                .expect("k1") // expect
+                .inspect_key_bytes_for_test(),
+            km2.derive_file_key(b"data.sst")
+                .expect("k2") // expect
+                .inspect_key_bytes_for_test(),
             "HKDF muss bei gleichem Passphrase, Salt und Pfad denselben Key liefern"
         );
     }
@@ -289,7 +293,7 @@ mod tests {
 
     #[test]
     fn key_manager_debug_redacts_key() {
-        let (km, _) = KeyManager::try_new_random_salt("test-passphrase").unwrap();
+        let (km, _) = KeyManager::try_new_random_salt("test-passphrase").unwrap(); // unwrap
         let debug_str = format!("{km:?}");
         assert!(!debug_str.contains("test-passphrase"));
         assert!(debug_str.contains("REDACTED"));
@@ -297,32 +301,32 @@ mod tests {
 
     #[test]
     fn test_nonce_uniqueness() {
-        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("try_new");
+        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("try_new"); // expect
         let data = b"sample payload";
         let mut nonces = std::collections::HashSet::new();
         for _ in 0..1000 {
-            let (_, nonce) = km.encrypt_auto_nonce(data).expect("encrypt");
+            let (_, nonce) = km.encrypt_auto_nonce(data).expect("encrypt"); // expect
             assert!(nonces.insert(nonce), "Nonce reuse detected!");
         }
     }
 
     #[test]
     fn test_wrong_key_fails_decrypt() {
-        let km1 = KeyManager::try_new("pass1", b"salt1").expect("try_new");
-        let km2 = KeyManager::try_new("pass2", b"salt1").expect("try_new");
+        let km1 = KeyManager::try_new("pass1", b"salt1").expect("try_new"); // expect
+        let km2 = KeyManager::try_new("pass2", b"salt1").expect("try_new"); // expect
         let data = b"top secret data";
 
-        let (encrypted, nonce) = km1.encrypt_auto_nonce(data).expect("encrypt");
+        let (encrypted, nonce) = km1.encrypt_auto_nonce(data).expect("encrypt"); // expect
         let result = km2.decrypt_auto_nonce(&encrypted, &nonce);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_hkdf_derive_file_key_deterministic() {
-        let km1 = KeyManager::try_new("secret", b"salt").expect("km1");
-        let km2 = KeyManager::try_new("secret", b"salt").expect("km2");
-        let sub1 = km1.derive_file_key(b"file_123").expect("sub1");
-        let sub2 = km2.derive_file_key(b"file_123").expect("sub2");
+        let km1 = KeyManager::try_new("secret", b"salt").expect("km1"); // expect
+        let km2 = KeyManager::try_new("secret", b"salt").expect("km2"); // expect
+        let sub1 = km1.derive_file_key(b"file_123").expect("sub1"); // expect
+        let sub2 = km2.derive_file_key(b"file_123").expect("sub2"); // expect
         assert_eq!(
             sub1.inspect_key_bytes_for_test(),
             sub2.inspect_key_bytes_for_test(),
@@ -332,9 +336,9 @@ mod tests {
 
     #[test]
     fn test_hkdf_derive_file_key_different_per_file() {
-        let km = KeyManager::try_new("secret", b"salt").expect("km");
-        let sub1 = km.derive_file_key(b"file_A").expect("sub1");
-        let sub2 = km.derive_file_key(b"file_B").expect("sub2");
+        let km = KeyManager::try_new("secret", b"salt").expect("km"); // expect
+        let sub1 = km.derive_file_key(b"file_A").expect("sub1"); // expect
+        let sub2 = km.derive_file_key(b"file_B").expect("sub2"); // expect
         assert_ne!(
             sub1.inspect_key_bytes_for_test(),
             sub2.inspect_key_bytes_for_test(),

@@ -2018,7 +2018,7 @@ mod tests {
 
         // Create a 1-block cache directly (capacity = 1 block)
         let cache = Arc::new(RwLock::new(LruCache::new(
-            NonZeroUsize::new(1).expect("non-zero"),
+            NonZeroUsize::new(1).expect("non-zero"), // expect
         ))); // expect #[cfg(test)]
 
         // Build an SSTable with 3 distinct blocks by inserting large values (>3000 bytes)

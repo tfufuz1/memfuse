@@ -331,8 +331,8 @@ mod tests {
             },
         ];
 
-        let window = mgr.prepare_context(chunks).expect("valid test value");
-        // Budget: 100 - 20 = 80 available. Should fit 50 (chunk1) but not 50+50=100.
+        let window = mgr.prepare_context(chunks).expect("valid test value"); // expect
+                                                                             // Budget: 100 - 20 = 80 available. Should fit 50 (chunk1) but not 50+50=100.
         assert_eq!(window.chunks.len(), 1);
         assert!(window.truncated);
         assert_eq!(window.total_tokens, 50);
@@ -362,7 +362,7 @@ mod tests {
             contextual_prefix: None,
         }];
 
-        let window = mgr.prepare_context(chunks).expect("valid test value");
+        let window = mgr.prepare_context(chunks).expect("valid test value"); // expect
         assert_eq!(window.chunks.len(), 1);
         assert!(window.truncated);
         assert!(window.total_tokens <= 10);
