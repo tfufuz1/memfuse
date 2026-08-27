@@ -440,6 +440,31 @@ impl CsrGraph {
         }
     }
 
+    /// Asynchronously compacts the graph delta buffer, offloading heavy CPU rebuild work to `spawn_blocking` if necessary.
+    pub async fn compact_async(self: &Arc<Self>) -> Result<()> {
+        let is_needed = {
+            let inner_read = self.inner.read();
+            inner_read.is_dirty
+                || !inner_read.pending_edges.is_empty()
+                || !inner_read.tombstoned_edges.is_empty()
+        };
+        if !is_needed {
+            return Ok(());
+        }
+
+        let self_clone = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut inner = self_clone.inner.write();
+            if inner.is_dirty || !inner.pending_edges.is_empty() || !inner.tombstoned_edges.is_empty() {
+                inner.compact();
+            }
+        })
+        .await
+        .map_err(|e| MemFuseError::Internal(format!("Graph compact panicked: {e}")))?;
+
+        Ok(())
+    }
+
     /// Returns direct 1-hop outgoing neighbors of `start`.
     pub async fn neighbors(&self, start: EntityId) -> Result<Vec<EntityId>> {
         let inner = self.inner.read();
@@ -823,6 +848,7 @@ impl GraphIndex for CsrGraph {
                     inner.entities.resize(idx + 1, None);
                 }
                 inner.entities[idx] = Some(entity);
+                inner.is_dirty = true;
             }
         }
 
@@ -1791,6 +1817,48 @@ mod tests {
             n_after.contains(&id_2),
             "Committed edge must be visible to readers"
         );
+    }
+
+    #[tokio::test]
+    async fn graph_edges_survive_storage_roundtrip() {
+        use memfuse_store::{LsmConfig, LsmStorage};
+
+        let dir = tempfile::tempdir().unwrap(); // unwrap allowed
+        let storage = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(), // unwrap allowed
+        );
+        let graph = CsrGraph::with_config_and_storage(CsrGraphConfig::default(), storage.clone());
+        let tx = TxId::new(1);
+        let id_a = EntityId::from_key("alice").unwrap(); // unwrap allowed
+        let id_b = EntityId::from_key("bob").unwrap(); // unwrap allowed
+        graph
+            .add_entity(tx, Entity::new(id_a, "alice", "Person"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_entity(tx, Entity::new(id_b, "bob", "Person"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_edge(tx, Edge::new(id_a, id_b, "knows"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph.commit(tx).await.unwrap(); // unwrap allowed
+        storage.commit(tx).await.unwrap(); // unwrap allowed
+        storage.flush().await.unwrap(); // unwrap allowed
+        drop(graph);
+
+        let graph2 = CsrGraph::load_from_storage(storage.as_ref())
+            .await
+            .unwrap(); // unwrap allowed
+        let neighbors = graph2.traverse(id_a, 1).await.unwrap(); // unwrap allowed
+        assert!(!neighbors.is_empty(), "Kante muss storage-roundtrip überleben");
+        assert!(neighbors.iter().any(|(id, _)| *id == id_b));
     }
 
     #[tokio::test]

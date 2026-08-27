@@ -3,7 +3,7 @@
 //! Native DAG implementation based on standard library maps and RwLock,
 //! keeping memfuse-graph pure-Rust and zero-external-graph-dependency (ADR-004).
 
-use memfuse_core::{MemFuseError, Result, TxId};
+use memfuse_core::{MemFuseError, Result, StorageEngine, TxId};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -197,6 +197,99 @@ impl SessionBranchTree {
     pub fn get_node(&self, node_idx: NodeIdx) -> Option<AgentStateNode> {
         self.nodes.read().get(&node_idx).cloned()
     }
+
+    /// Persists all nodes, edges, active head, and next_id of the Session-DAG to the storage engine under the given namespace prefix.
+    pub async fn save<S: StorageEngine + ?Sized>(
+        &self,
+        storage: &S,
+        namespace: &str,
+        tx: TxId,
+    ) -> Result<()> {
+        let prefix = format!("__session_dag:{namespace}:");
+
+        let serialized_nodes: Vec<(Vec<u8>, Vec<u8>)> = {
+            let nodes = self.nodes.read();
+            let mut items = Vec::with_capacity(nodes.len());
+            for (node_id, node) in nodes.iter() {
+                let key = format!("{prefix}node:{node_id}").into_bytes();
+                let val = bincode::serialize(node).map_err(|e| {
+                    MemFuseError::Serialization(format!("session dag node serialize: {e}"))
+                })?;
+                items.push((key, val));
+            }
+            items
+        };
+
+        for (key, val) in serialized_nodes {
+            storage.put(tx, &key, &val).await?;
+        }
+
+        let edges_val = {
+            let edges = self.edges.read();
+            bincode::serialize(&*edges).map_err(|e| {
+                MemFuseError::Serialization(format!("session dag edges serialize: {e}"))
+            })?
+        };
+        let edges_key = format!("{prefix}edges").into_bytes();
+        storage.put(tx, &edges_key, &edges_val).await?;
+
+        let head = *self.active_head.read();
+        let next_id = self.next_id.load(std::sync::atomic::Ordering::SeqCst);
+        let meta = (head, next_id);
+        let meta_key = format!("{prefix}meta").into_bytes();
+        let meta_val = bincode::serialize(&meta)
+            .map_err(|e| MemFuseError::Serialization(format!("session dag meta serialize: {e}")))?;
+        storage.put(tx, &meta_key, &meta_val).await?;
+
+        Ok(())
+    }
+
+    /// Loads and reconstructs a `SessionBranchTree` from storage for the specified namespace.
+    pub async fn load<S: StorageEngine + ?Sized>(
+        storage: &S,
+        namespace: &str,
+    ) -> Result<Self> {
+        let prefix_str = format!("__session_dag:{namespace}:");
+        let prefix_bytes = prefix_str.as_bytes();
+
+        let entries = storage.scan_prefix(prefix_bytes).await?;
+        if entries.is_empty() {
+            return Err(MemFuseError::NotFound(format!(
+                "SessionDAG: namespace '{namespace}' nicht im Storage gefunden"
+            )));
+        }
+
+        let mut nodes = HashMap::new();
+        let mut edges = Vec::new();
+        let mut active_head = 0;
+        let mut next_id = 1;
+
+        for (raw_key, raw_val) in entries {
+            let key_str = std::str::from_utf8(&raw_key)
+                .map_err(|e| MemFuseError::Internal(format!("session dag key UTF-8: {e}")))?;
+
+            if key_str.ends_with("edges") {
+                edges = bincode::deserialize(&raw_val)
+                    .map_err(|e| MemFuseError::Serialization(format!("session dag edges deserialize: {e}")))?;
+            } else if key_str.ends_with("meta") {
+                let (h, n): (NodeIdx, u64) = bincode::deserialize(&raw_val)
+                    .map_err(|e| MemFuseError::Serialization(format!("session dag meta deserialize: {e}")))?;
+                active_head = h;
+                next_id = n;
+            } else if key_str.contains(":node:") {
+                let node: AgentStateNode = bincode::deserialize(&raw_val)
+                    .map_err(|e| MemFuseError::Serialization(format!("session dag node deserialize: {e}")))?;
+                nodes.insert(node.step_id, node);
+            }
+        }
+
+        Ok(Self {
+            nodes: RwLock::new(nodes),
+            edges: RwLock::new(edges),
+            active_head: RwLock::new(active_head),
+            next_id: Arc::new(std::sync::atomic::AtomicU64::new(next_id)),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -317,5 +410,67 @@ mod tests {
 
         // Setting to non-existent node fails
         assert!(dag.set_active_head(999).is_err());
+    }
+
+    #[tokio::test]
+    async fn session_dag_survives_restart() {
+        use memfuse_store::{LsmConfig, LsmStorage};
+
+        let dir = tempfile::tempdir().unwrap(); // unwrap allowed
+        let storage = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(), // unwrap allowed
+        );
+
+        let dag = SessionBranchTree::new("Root Prompt".into(), "Root Resp".into());
+        let step1 = dag
+            .append_step(
+                "Step 1 Prompt".into(),
+                "Step 1 Resp".into(),
+                Some(TxId::new(5)),
+                vec!["tool_out".into()],
+                "main",
+            )
+            .unwrap(); // unwrap allowed
+
+        let branch1 = dag
+            .branch_from(
+                step1,
+                "Branch Prompt".into(),
+                "Branch Resp".into(),
+                None,
+                vec![],
+                "explore",
+            )
+            .unwrap(); // unwrap allowed
+
+        let tx = TxId::new(1);
+        dag.save(storage.as_ref(), "agent_session_1", tx)
+            .await
+            .unwrap(); // unwrap allowed
+        storage.commit(tx).await.unwrap(); // unwrap allowed
+        storage.flush().await.unwrap(); // unwrap allowed
+
+        let loaded_dag = SessionBranchTree::load(storage.as_ref(), "agent_session_1")
+            .await
+            .unwrap(); // unwrap allowed
+
+        assert_eq!(loaded_dag.node_count(), 3);
+        assert_eq!(loaded_dag.active_head(), branch1);
+
+        let path = loaded_dag.path_to_head();
+        assert_eq!(path.len(), 3);
+        assert_eq!(path[0].step_id, 0);
+        assert_eq!(path[1].step_id, 1);
+        assert_eq!(path[1].snapshot_tx_id, Some(TxId::new(5)));
+        assert_eq!(path[2].step_id, branch1);
+        assert_eq!(path[2].prompt, "Branch Prompt");
+
+        let children = loaded_dag.children_of(step1);
+        assert_eq!(children, vec![branch1]);
     }
 }
