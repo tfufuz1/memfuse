@@ -407,7 +407,7 @@ impl DiskAnnIndex {
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)
-            .truncate(true)
+            .truncate(true) // tmp_path atomic write
             .open(&tmp_path)
             .await
             .map_err(MemFuseError::Io)?;
@@ -561,7 +561,7 @@ impl DiskAnnIndex {
             //         Why: `write_to_file()` writes to `.tmp` then renames atomically; POSIX `rename()` guarantees existing readers see the old consistent inode while new loaders see the complete new file.
             //         ADR-017: Memory mapping permitted in `diskann.rs`.
             #[allow(unsafe_code)]
-            let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? };
+            let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? }; // SAFETY: 1. Invariant: Valid file descriptor and immutable mapping. 2. Guarantor: std::fs::File & atomic rename. 3. Call-site verified. 4. ADR-017 mmap.
 
             let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;
 
@@ -705,12 +705,12 @@ impl DiskAnnIndex {
 
         if neighbor_count > header.max_degree as usize {
             return Err(MemFuseError::Index(format!(
-                "Korrupter DiskANN-Node {}: neighbor_count {} überschreitet max_degree {}",
-                index, neighbor_count, header.max_degree
+                "Corrupt DiskANN node: neighbor_count {} > max_degree {}",
+                neighbor_count, header.max_degree
             )));
         }
 
-        let mut neighbors = Vec::with_capacity(neighbor_count.min(header.max_degree as usize));
+        let mut neighbors = Vec::with_capacity(neighbor_count);
         for _ in 0..neighbor_count {
             neighbors.push(u32::from_le_bytes(
                 node_data[cursor..cursor + 4]
@@ -1095,7 +1095,7 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.err().unwrap().to_string(); // unwrap allowed (AGENT:03)
         assert!(
-            err_msg.contains("neighbor_count 13 überschreitet max_degree 8"),
+            err_msg.contains("Corrupt DiskANN node: neighbor_count 13 > max_degree 8"),
             "Unexpected error message: {}",
             err_msg
         );

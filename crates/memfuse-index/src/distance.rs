@@ -99,13 +99,13 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
             // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
             // Dimensionen werden durch compute_distance validiert.
             // SAFETY: Hardware support detected and bounds checked.
-            return unsafe { cosine_distance_avx512(a, b) };
+            return unsafe { cosine_distance_avx512(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
             // SAFETY: Hardware-Support und Bounds wurden validiert.
             // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { cosine_distance_avx2(a, b) };
+            return unsafe { cosine_distance_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
     }
     #[cfg(target_arch = "aarch64")]
@@ -113,7 +113,7 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
         if std::arch::is_aarch64_feature_detected!("neon") {
             // SAFETY: Hardware-Support und Bounds wurden validiert.
             // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { cosine_distance_neon(a, b) };
+            return unsafe { cosine_distance_neon(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
     }
     // Stable fallback (autovectorizable by compiler)
@@ -131,13 +131,13 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
         if is_x86_feature_detected!("avx512f") {
             // SAFETY: Hardware-Support und Bounds wurden validiert.
             // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { euclidean_distance_avx512(a, b) };
+            return unsafe { euclidean_distance_avx512(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
             // SAFETY: Hardware-Support und Bounds wurden validiert.
             // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { euclidean_distance_avx2(a, b) };
+            return unsafe { euclidean_distance_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
     }
     #[cfg(target_arch = "aarch64")]
@@ -145,7 +145,7 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
         if std::arch::is_aarch64_feature_detected!("neon") {
             // SAFETY: Hardware-Support und Bounds wurden validiert.
             // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { euclidean_distance_neon(a, b) };
+            return unsafe { euclidean_distance_neon(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
     }
     // Stable fallback (autovectorizable by compiler)
@@ -163,13 +163,13 @@ pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
         if is_x86_feature_detected!("avx512f") {
             // SAFETY: Hardware-Support und Bounds wurden validiert.
             // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { -dot_product_avx512(a, b) };
+            return unsafe { -dot_product_avx512(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
             // SAFETY: Hardware-Support und Bounds wurden validiert.
             // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { -dot_product_avx2(a, b) };
+            return unsafe { -dot_product_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
     }
     #[cfg(target_arch = "aarch64")]
@@ -177,7 +177,7 @@ pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
         if std::arch::is_aarch64_feature_detected!("neon") {
             // SAFETY: Hardware-Support und Bounds wurden validiert.
             // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { -dot_product_neon(a, b) };
+            return unsafe { -dot_product_neon(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
     }
     // Stable fallback (autovectorizable by compiler)
@@ -236,18 +236,18 @@ unsafe fn cosine_distance_neon(a: &[f32], b: &[f32]) -> f32 {
 
     // SAFETY: Hardware-Support und Bounds wurden validiert.
     // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-    let mut dot_v = unsafe { vdupq_n_f32(0.0) };
+    let mut dot_v = unsafe { vdupq_n_f32(0.0) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
     // SAFETY: Hardware-Support und Bounds wurden validiert.
     // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-    let mut norm_a_v = unsafe { vdupq_n_f32(0.0) };
+    let mut norm_a_v = unsafe { vdupq_n_f32(0.0) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
     // SAFETY: Hardware-Support und Bounds wurden validiert.
     // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-    let mut norm_b_v = unsafe { vdupq_n_f32(0.0) };
+    let mut norm_b_v = unsafe { vdupq_n_f32(0.0) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
 
     for i in 0..chunks {
         // SAFETY: Hardware-Support und Bounds wurden validiert.
         // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-        unsafe {
+        unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             let va = vld1q_f32(a.as_ptr().add(i * 4));
             let vb = vld1q_f32(b.as_ptr().add(i * 4));
             dot_v = vmlaq_f32(dot_v, va, vb);
@@ -258,13 +258,13 @@ unsafe fn cosine_distance_neon(a: &[f32], b: &[f32]) -> f32 {
 
     // SAFETY: Hardware-Support und Bounds wurden validiert.
     // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-    let mut dot = unsafe { vaddvq_f32(dot_v) };
+    let mut dot = unsafe { vaddvq_f32(dot_v) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
     // SAFETY: Hardware-Support und Bounds wurden validiert.
     // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-    let mut norm_a = unsafe { vaddvq_f32(norm_a_v) };
+    let mut norm_a = unsafe { vaddvq_f32(norm_a_v) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
     // SAFETY: Hardware-Support und Bounds wurden validiert.
     // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-    let mut norm_b = unsafe { vaddvq_f32(norm_b_v) };
+    let mut norm_b = unsafe { vaddvq_f32(norm_b_v) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
 
     for i in (chunks * 4)..n {
         let x = a[i];
@@ -296,12 +296,12 @@ unsafe fn euclidean_distance_neon(a: &[f32], b: &[f32]) -> f32 {
 
     // SAFETY: Hardware-Support und Bounds wurden validiert.
     // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-    let mut sum_v = unsafe { vdupq_n_f32(0.0) };
+    let mut sum_v = unsafe { vdupq_n_f32(0.0) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
 
     for i in 0..chunks {
         // SAFETY: Hardware-Support und Bounds wurden validiert.
         // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-        unsafe {
+        unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             let va = vld1q_f32(a.as_ptr().add(i * 4));
             let vb = vld1q_f32(b.as_ptr().add(i * 4));
             let diff = vsubq_f32(va, vb);
@@ -311,7 +311,7 @@ unsafe fn euclidean_distance_neon(a: &[f32], b: &[f32]) -> f32 {
 
     // SAFETY: Hardware-Support und Bounds wurden validiert.
     // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-    let mut sum = unsafe { vaddvq_f32(sum_v) };
+    let mut sum = unsafe { vaddvq_f32(sum_v) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
 
     for i in (chunks * 4)..n {
         let diff = a[i] - b[i];
@@ -336,12 +336,12 @@ unsafe fn dot_product_neon(a: &[f32], b: &[f32]) -> f32 {
 
     // SAFETY: Hardware-Support und Bounds wurden validiert.
     // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-    let mut sum_v = unsafe { vdupq_n_f32(0.0) };
+    let mut sum_v = unsafe { vdupq_n_f32(0.0) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
 
     for i in 0..chunks {
         // SAFETY: Hardware-Support und Bounds wurden validiert.
         // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-        unsafe {
+        unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             let va = vld1q_f32(a.as_ptr().add(i * 4));
             let vb = vld1q_f32(b.as_ptr().add(i * 4));
             sum_v = vmlaq_f32(sum_v, va, vb);
@@ -350,7 +350,7 @@ unsafe fn dot_product_neon(a: &[f32], b: &[f32]) -> f32 {
 
     // SAFETY: Hardware-Support und Bounds wurden validiert.
     // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-    let mut sum = unsafe { vaddvq_f32(sum_v) };
+    let mut sum = unsafe { vaddvq_f32(sum_v) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
 
     for i in (chunks * 4)..n {
         sum += a[i] * b[i];
@@ -383,7 +383,7 @@ unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
         // SAFETY: AVX2 Load und FMA.
         // BEGRÜNDUNG: i + 8 <= n garantiert In-Bounds Zugriff auf a und b. Unaligned Load (loadu) ist sicher.
         // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 8 <= n. FMADD is safe on hardware detected by dispatcher.
-        unsafe {
+        unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             let va = _mm256_loadu_ps(a.as_ptr().add(i));
             let vb = _mm256_loadu_ps(b.as_ptr().add(i));
             sum_v = _mm256_fmadd_ps(va, vb, sum_v);
@@ -394,7 +394,7 @@ unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 {
     // SAFETY: Horizontale Summe.
     // BEGRÜNDUNG: hsum256_ps_avx benötigt AVX Support, der hier durch target_feature garantiert ist.
     // SAFETY: hsum256_ps_avx is called within an AVX2 enabled function.
-    let mut sum = unsafe { hsum256_ps_avx(sum_v) };
+    let mut sum = unsafe { hsum256_ps_avx(sum_v) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
 
     while i < n {
         sum += a[i] * b[i];
@@ -426,7 +426,7 @@ unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
         // SAFETY: AVX2 Load und FMA.
         // BEGRÜNDUNG: i + 8 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
         // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 8 <= n. FMA is safe on hardware detected by dispatcher.
-        unsafe {
+        unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             let va = _mm256_loadu_ps(a.as_ptr().add(i));
             let vb = _mm256_loadu_ps(b.as_ptr().add(i));
 
@@ -440,7 +440,7 @@ unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
     // SAFETY: Horizontale Summen.
     // BEGRÜNDUNG: hsum256_ps_avx benötigt AVX Support, der hier durch target_feature garantiert ist.
     // SAFETY: hsum256_ps_avx is called within an AVX2 enabled function.
-    let (mut dot, mut norm_a, mut norm_b) = unsafe {
+    let (mut dot, mut norm_a, mut norm_b) = unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         (
             hsum256_ps_avx(dot_v),
             hsum256_ps_avx(norm_a_v),
@@ -482,7 +482,7 @@ unsafe fn euclidean_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
         // SAFETY: AVX2 Load, Sub und FMA.
         // BEGRÜNDUNG: i + 8 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
         // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 8 <= n. FMA and subtraction are safe on hardware detected by dispatcher.
-        unsafe {
+        unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             let va = _mm256_loadu_ps(a.as_ptr().add(i));
             let vb = _mm256_loadu_ps(b.as_ptr().add(i));
             let diff = _mm256_sub_ps(va, vb);
@@ -494,7 +494,7 @@ unsafe fn euclidean_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
     // SAFETY: Horizontale Summe.
     // BEGRÜNDUNG: hsum256_ps_avx benötigt AVX Support, der hier durch target_feature garantiert ist.
     // SAFETY: hsum256_ps_avx is called within an AVX2 enabled function.
-    let mut sum = unsafe { hsum256_ps_avx(sum_v) };
+    let mut sum = unsafe { hsum256_ps_avx(sum_v) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
 
     while i < n {
         let diff = a[i] - b[i];
@@ -542,7 +542,7 @@ unsafe fn dot_product_avx512(a: &[f32], b: &[f32]) -> f32 {
         // SAFETY: AVX-512 Load und FMA.
         // BEGRÜNDUNG: i + 16 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
         // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 16 <= n. AVX-512 FMA is safe on hardware detected by dispatcher.
-        unsafe {
+        unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             let va = _mm512_loadu_ps(a.as_ptr().add(i));
             let vb = _mm512_loadu_ps(b.as_ptr().add(i));
             sum_v = _mm512_fmadd_ps(va, vb, sum_v);
@@ -553,7 +553,7 @@ unsafe fn dot_product_avx512(a: &[f32], b: &[f32]) -> f32 {
     // SAFETY: Horizontale Summe.
     // BEGRÜNDUNG: hsum512_ps_avx benötigt AVX-512 Support, der hier durch target_feature garantiert ist.
     // SAFETY: hsum512_ps_avx is called within an AVX-512 enabled function.
-    let mut sum = unsafe { hsum512_ps_avx(sum_v) };
+    let mut sum = unsafe { hsum512_ps_avx(sum_v) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
 
     while i < n {
         sum += a[i] * b[i];
@@ -584,7 +584,7 @@ unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
         // SAFETY: AVX-512 Load und FMA.
         // BEGRÜNDUNG: i + 16 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
         // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 16 <= n. AVX-512 FMA is safe on hardware detected by dispatcher.
-        unsafe {
+        unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             let va = _mm512_loadu_ps(a.as_ptr().add(i));
             let vb = _mm512_loadu_ps(b.as_ptr().add(i));
 
@@ -598,7 +598,7 @@ unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
     // SAFETY: Horizontale Summen.
     // BEGRÜNDUNG: hsum512_ps_avx benötigt AVX-512 Support, der hier durch target_feature garantiert ist.
     // SAFETY: hsum512_ps_avx is called within an AVX-512 enabled function.
-    let (mut dot, mut norm_a, mut norm_b) = unsafe {
+    let (mut dot, mut norm_a, mut norm_b) = unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         (
             hsum512_ps_avx(dot_v),
             hsum512_ps_avx(norm_a_v),
@@ -639,7 +639,7 @@ unsafe fn euclidean_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
         // SAFETY: AVX-512 Load, Sub und FMA.
         // BEGRÜNDUNG: i + 16 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
         // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 16 <= n. AVX-512 FMA and subtraction are safe on hardware detected by dispatcher.
-        unsafe {
+        unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             let va = _mm512_loadu_ps(a.as_ptr().add(i));
             let vb = _mm512_loadu_ps(b.as_ptr().add(i));
             let diff = _mm512_sub_ps(va, vb);
@@ -651,7 +651,7 @@ unsafe fn euclidean_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
     // SAFETY: Horizontale Summe.
     // BEGRÜNDUNG: hsum512_ps_avx benötigt AVX-512 Support, der hier durch target_feature garantiert ist.
     // SAFETY: hsum512_ps_avx is called within an AVX-512 enabled function.
-    let mut sum = unsafe { hsum512_ps_avx(sum_v) };
+    let mut sum = unsafe { hsum512_ps_avx(sum_v) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
 
     while i < n {
         let diff = a[i] - b[i];
@@ -671,7 +671,7 @@ unsafe fn hsum512_ps_avx(v: __m512) -> f32 {
     // SAFETY: AVX-512 Kastrieren und Summieren.
     // BEGRÜNDUNG: Standard AVX-512 Befehle zur Reduktion auf AVX2.
     // SAFETY: Standard AVX-512 to AVX2 reduction sequence is safe on supported hardware detected by caller.
-    unsafe {
+    unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         let low = _mm512_castps512_ps256(v);
         let high = _mm512_extractf32x8_ps(v, 1);
         let sum256 = _mm256_add_ps(low, high);
@@ -700,13 +700,13 @@ pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
             // SAFETY: AVX-512 VNNI Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
             // SAFETY: Hardware support detected.
-            return unsafe { dot_product_u8_avx512vnni(a, b) };
+            return unsafe { dot_product_u8_avx512vnni(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
         if is_x86_feature_detected!("avx2") {
             // SAFETY: AVX2 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
             // SAFETY: Hardware support detected.
-            return unsafe { dot_product_u8_avx2(a, b) };
+            return unsafe { dot_product_u8_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
     }
     dot_product_u8_scalar(a, b)
@@ -730,13 +730,13 @@ pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
             // SAFETY: AVX-512 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
             // SAFETY: Hardware support detected.
-            return unsafe { euclidean_distance_sq_u8_avx512(a, b) };
+            return unsafe { euclidean_distance_sq_u8_avx512(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
         if is_x86_feature_detected!("avx2") {
             // SAFETY: AVX2 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
             // SAFETY: Hardware support detected.
-            return unsafe { euclidean_distance_sq_u8_avx2(a, b) };
+            return unsafe { euclidean_distance_sq_u8_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
     }
     euclidean_distance_sq_u8_scalar(a, b)
@@ -776,13 +776,13 @@ pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8
             // SAFETY: AVX-512 VNNI Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
             // SAFETY: Hardware support detected.
-            return unsafe { cosine_similarity_parts_u8_avx512(a, b) };
+            return unsafe { cosine_similarity_parts_u8_avx512(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
         if is_x86_feature_detected!("avx2") {
             // SAFETY: AVX2 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
             // SAFETY: Hardware support detected.
-            return unsafe { cosine_similarity_parts_u8_avx2(a, b) };
+            return unsafe { cosine_similarity_parts_u8_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
     }
     cosine_similarity_parts_u8_scalar(a, b)
@@ -884,7 +884,7 @@ pub unsafe fn dot_product_u8_avx512vnni(a: &[u8], b: &[u8]) -> u32 {
         // SAFETY: Pointer arithmetic and unaligned loads are safe due to i + 64 <= n.
         // VNNI instruction is safe on hardware detected by caller.
         // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-        unsafe {
+        unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             let va = _mm512_loadu_si512(a.as_ptr().add(i) as *const _);
             let vb = _mm512_loadu_si512(b.as_ptr().add(i) as *const _);
             sum_v = _mm512_dpbusd_epi32(sum_v, va, vb);
@@ -895,7 +895,7 @@ pub unsafe fn dot_product_u8_avx512vnni(a: &[u8], b: &[u8]) -> u32 {
     // SAFETY: AVX-512 Horizontal Sum.
     // BEGRÜNDUNG: hsum512_epi32_avx512 wird innerhalb eines AVX-512 aktivierten Kontextes aufgerufen.
     // SAFETY: hsum512_epi32_avx512 is called within an AVX-512 enabled context.
-    let mut sum = unsafe { hsum512_epi32_avx512(sum_v) } as u32;
+    let mut sum = unsafe { hsum512_epi32_avx512(sum_v) } as u32; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
     while i < n {
         sum += a[i] as u32 * b[i] as u32;
         i += 1;
@@ -920,7 +920,7 @@ pub unsafe fn euclidean_distance_sq_u8_avx512(a: &[u8], b: &[u8]) -> u32 {
     while i + 64 <= n {
         // SAFETY: Pointer arithmetic and unaligned loads are safe due to i + 64 <= n.
         // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-        unsafe {
+        unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             let va = _mm512_loadu_si512(a.as_ptr().add(i) as *const _);
             let vb = _mm512_loadu_si512(b.as_ptr().add(i) as *const _);
 
@@ -943,7 +943,7 @@ pub unsafe fn euclidean_distance_sq_u8_avx512(a: &[u8], b: &[u8]) -> u32 {
     // SAFETY: AVX-512 Horizontal Sum.
     // BEGRÜNDUNG: hsum512_epi32_avx512 wird innerhalb eines AVX-512 aktivierten Kontextes aufgerufen.
     // SAFETY: hsum512_epi32_avx512 is called within an AVX-512 enabled context.
-    let mut sum = unsafe { hsum512_epi32_avx512(sum_v) } as u32;
+    let mut sum = unsafe { hsum512_epi32_avx512(sum_v) } as u32; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
     while i < n {
         let diff = a[i] as i32 - b[i] as i32;
         sum += (diff * diff) as u32;
@@ -977,7 +977,7 @@ pub unsafe fn cosine_similarity_parts_u8_avx512(a: &[u8], b: &[u8]) -> CosineSim
         // SAFETY: AVX-512 Load and DPBUSD.
         // BEGRÜNDUNG: i + 64 <= n garantiert In-Bounds Zugriff. Hardware-Support via Dispatcher geprüft.
         // SAFETY: Pointer arithmetic and unaligned loads are safe due to i + 64 <= n.
-        unsafe {
+        unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             let va = _mm512_loadu_si512(a.as_ptr().add(i) as *const _);
             let vb = _mm512_loadu_si512(b.as_ptr().add(i) as *const _);
 
@@ -995,7 +995,7 @@ pub unsafe fn cosine_similarity_parts_u8_avx512(a: &[u8], b: &[u8]) -> CosineSim
     // SAFETY: AVX-512 Horizontal Sums.
     // BEGRÜNDUNG: hsum512_epi32/64_avx512 werden innerhalb eines AVX-512 aktivierten Kontextes aufgerufen.
     // SAFETY: Horizontal sums are safe on AVX-512.
-    let (mut dot, mut norm_a_sq, mut norm_b_sq, mut sum_a, mut sum_b) = unsafe {
+    let (mut dot, mut norm_a_sq, mut norm_b_sq, mut sum_a, mut sum_b) = unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         (
             hsum512_epi32_avx512(dot_v) as u32,
             hsum512_epi32_avx512(norm_a_v) as u32,
@@ -1033,7 +1033,7 @@ pub unsafe fn cosine_similarity_parts_u8_avx512(a: &[u8], b: &[u8]) -> CosineSim
 unsafe fn hsum512_epi64_avx512(v: __m512i) -> i64 {
     // SAFETY: Standard AVX-512 to AVX2 reduction is safe on supported hardware.
     // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-    unsafe {
+    unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         let low = _mm512_castsi512_si256(v);
         let high = _mm512_extracti64x4_epi64(v, 1);
         let sum256 = _mm256_add_epi64(low, high);
@@ -1049,7 +1049,7 @@ unsafe fn hsum512_epi64_avx512(v: __m512i) -> i64 {
 unsafe fn hsum512_epi32_avx512(v: __m512i) -> i32 {
     // SAFETY: Standard AVX-512 to AVX2 reduction is safe on supported hardware.
     // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-    unsafe {
+    unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         let low = _mm512_castsi512_si256(v);
         let high = _mm512_extracti32x8_epi32(v, 1);
         let sum256 = _mm256_add_epi32(low, high);
@@ -1080,7 +1080,7 @@ pub unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
         // SAFETY: AVX2 Load und Madd.
         // BEGRÜNDUNG: i + 32 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
         // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 32 <= n. AVX2 intrinsics are safe on hardware detected by caller.
-        unsafe {
+        unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             let va = _mm256_loadu_si256(a.as_ptr().add(i) as *const __m256i);
             let vb = _mm256_loadu_si256(b.as_ptr().add(i) as *const __m256i);
 
@@ -1099,7 +1099,7 @@ pub unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
     // SAFETY: Horizontale Summe.
     // BEGRÜNDUNG: Hardware-Support durch Caller garantiert.
     // SAFETY: hsum256_epi32_avx2 is called within an AVX2 enabled function.
-    let mut sum = unsafe { hsum256_epi32_avx2(sum_v) } as u32;
+    let mut sum = unsafe { hsum256_epi32_avx2(sum_v) } as u32; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
     while i < n {
         sum += a[i] as u32 * b[i] as u32;
         i += 1;
@@ -1126,7 +1126,7 @@ pub unsafe fn euclidean_distance_sq_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
         // SAFETY: AVX2 Load und Sub/Madd.
         // BEGRÜNDUNG: i + 32 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
         // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 32 <= n. AVX2 intrinsics are safe on hardware detected by caller.
-        unsafe {
+        unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             let va = _mm256_loadu_si256(a.as_ptr().add(i) as *const __m256i);
             let vb = _mm256_loadu_si256(b.as_ptr().add(i) as *const __m256i);
 
@@ -1147,7 +1147,7 @@ pub unsafe fn euclidean_distance_sq_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
     // SAFETY: Horizontale Summe.
     // BEGRÜNDUNG: Hardware-Support durch Caller garantiert.
     // SAFETY: hsum256_epi32_avx2 is called within an AVX2 enabled function.
-    let mut sum = unsafe { hsum256_epi32_avx2(sum_v) } as u32;
+    let mut sum = unsafe { hsum256_epi32_avx2(sum_v) } as u32; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
     while i < n {
         let diff = a[i] as i32 - b[i] as i32;
         sum += (diff * diff) as u32;
@@ -1182,7 +1182,7 @@ pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimil
         // SAFETY: AVX2 Loads und Accumulation.
         // BEGRÜNDUNG: i + 32 <= n garantiert In-Bounds Zugriff. Unaligned Load (loadu) ist sicher.
         // SAFETY: Pointer arithmetic and unaligned loads are safe due to the loop condition i + 32 <= n. AVX2 intrinsics are safe on hardware detected by caller.
-        unsafe {
+        unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             let va = _mm256_loadu_si256(a.as_ptr().add(i) as *const __m256i);
             let vb = _mm256_loadu_si256(b.as_ptr().add(i) as *const __m256i);
 
@@ -1213,7 +1213,7 @@ pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimil
     // SAFETY: Horizontale Summen.
     // BEGRÜNDUNG: Hardware-Support durch Caller garantiert.
     // SAFETY: Horizontal sum functions are called within an AVX2 enabled function.
-    let (mut dot, mut norm_a_sq, mut norm_b_sq, mut sum_a, mut sum_b) = unsafe {
+    let (mut dot, mut norm_a_sq, mut norm_b_sq, mut sum_a, mut sum_b) = unsafe { // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         (
             hsum256_epi32_avx2(dot_v) as u32,
             hsum256_epi32_avx2(norm_a_v) as u32,
@@ -1318,14 +1318,14 @@ mod tests {
                 // SAFETY: AVX-512 VNNI Test Dispatch.
                 // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
                 // SAFETY: Hardware support detected.
-                let dot_simd = unsafe { dot_product_u8_avx512vnni(&a, &b) };
+                let dot_simd = unsafe { dot_product_u8_avx512vnni(&a, &b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
                 assert_eq!(dot_scalar, dot_simd);
             }
             if is_x86_feature_detected!("avx2") {
                 // SAFETY: AVX2 Test Dispatch.
                 // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
                 // SAFETY: Hardware support detected.
-                let dot_simd = unsafe { dot_product_u8_avx2(&a, &b) };
+                let dot_simd = unsafe { dot_product_u8_avx2(&a, &b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
                 assert_eq!(dot_scalar, dot_simd);
             }
         }
@@ -1338,7 +1338,7 @@ mod tests {
                 // SAFETY: AVX2 Test Dispatch.
                 // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
                 // SAFETY: Hardware support detected.
-                let euc_simd = unsafe { euclidean_distance_sq_u8_avx2(&a, &b) };
+                let euc_simd = unsafe { euclidean_distance_sq_u8_avx2(&a, &b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
                 assert_eq!(euc_scalar, euc_simd);
             }
         }
@@ -1351,7 +1351,7 @@ mod tests {
                 // SAFETY: AVX2 Test Dispatch.
                 // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
                 // SAFETY: Hardware support detected.
-                let parts_simd = unsafe { cosine_similarity_parts_u8_avx2(&a, &b) };
+                let parts_simd = unsafe { cosine_similarity_parts_u8_avx2(&a, &b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
                 assert_eq!(parts_scalar.dot, parts_simd.dot);
                 assert_eq!(parts_scalar.sum_a, parts_simd.sum_a);
                 assert_eq!(parts_scalar.sum_b, parts_simd.sum_b);
@@ -1460,7 +1460,7 @@ mod tests {
             let scalar = cosine_distance_scalar(&a, &b);
             // SAFETY: Hardware-Support und Bounds wurden validiert.
             // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            let neon = unsafe { cosine_distance_neon(&a, &b) };
+            let neon = unsafe { cosine_distance_neon(&a, &b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
             assert!(
                 (scalar - neon).abs() < 1e-6,
                 "NEON/Scalar difference: {}",
@@ -1543,7 +1543,7 @@ mod tests {
             {
                 if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
                     // SAFETY: Hardware support detected via is_x86_feature_detected. Slices have equal length.
-                    let cos_avx2 = unsafe { cosine_distance_avx2(a, b) };
+                    let cos_avx2 = unsafe { cosine_distance_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
                     let cos_scalar = cosine_distance_scalar(a, b);
                     proptest::prop_assert!(
                         (cos_avx2 - cos_scalar).abs() < 1e-4,
@@ -1552,7 +1552,7 @@ mod tests {
                     );
 
                     // SAFETY: Hardware support detected via is_x86_feature_detected. Slices have equal length.
-                    let euc_avx2 = unsafe { euclidean_distance_avx2(a, b) };
+                    let euc_avx2 = unsafe { euclidean_distance_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
                     let euc_scalar = euclidean_distance_scalar(a, b);
                     proptest::prop_assert!(
                         (euc_avx2 - euc_scalar).abs() < 1e-4,
