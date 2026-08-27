@@ -349,14 +349,14 @@ mod tests {
         // Empty directory — missing tokenizer.json check first
         let res = TextEmbedder::load(dir.path());
         assert!(res.is_err());
-        let err = res.err().unwrap();
+        let err = res.err().unwrap(); // unwrap
         assert!(matches!(err, MemFuseError::InvalidInput(_)));
 
         // Create tokenizer but still missing model.onnx
         File::create(dir.path().join("tokenizer.json"))?;
         let res = TextEmbedder::load(dir.path());
         assert!(res.is_err());
-        let err = res.err().unwrap();
+        let err = res.err().unwrap(); // unwrap
         assert!(matches!(err, MemFuseError::InvalidInput(_)));
         Ok(())
     }
@@ -457,7 +457,7 @@ mod tests {
         };
         let err_res = failing_engine.embed_batch(&texts).await;
         assert!(err_res.is_err());
-        let err_msg = err_res.err().unwrap().to_string();
+        let err_msg = err_res.err().unwrap().to_string(); // unwrap
         assert!(err_msg.contains("Failed on b"));
 
         Ok(())

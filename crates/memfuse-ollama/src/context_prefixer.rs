@@ -169,8 +169,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_prefix_mock() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -203,14 +203,14 @@ mod tests {
         let prefix = engine
             .generate_prefix("Gesamtdokument Inhalt", "Chunk Inhalt")
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         assert_eq!(prefix, "Dies ist ein Kontext-Präfix.");
     }
 
     #[tokio::test]
     async fn test_generate_prefix_batch_mock() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -239,7 +239,7 @@ mod tests {
         let chunks = vec!["Chunk 1", "Chunk 2"];
         let prefixes = engine.generate_prefix_batch("Dokument", &chunks).await;
         assert_eq!(prefixes.len(), 2);
-        assert_eq!(prefixes[0].as_ref().unwrap(), "Präfix");
-        assert_eq!(prefixes[1].as_ref().unwrap(), "Präfix");
+        assert_eq!(prefixes[0].as_ref().unwrap(), "Präfix"); // unwrap
+        assert_eq!(prefixes[1].as_ref().unwrap(), "Präfix"); // unwrap
     }
 }

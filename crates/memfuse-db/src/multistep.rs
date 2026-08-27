@@ -36,6 +36,9 @@ pub struct MultiStepResult {
     pub sub_queries: Vec<String>,
 }
 
+// ANCHOR:MULTISTEP:QUERY_REWRITER — External QueryRewriter trait contract and error isolation.
+// TRACKING-ISSUE: #142 (Ollama / LLM-based QueryRewriter implementation in memfuse-ollama crate)
+
 /// Multi-Step Retrieval Engine.
 ///
 /// Implementiert iteratives Query-Rewriting für komplexe Agenten-Abfragen.
@@ -79,6 +82,7 @@ impl<S: StorageEngine> MultiStepEngine<S> {
     ) -> Result<MultiStepResult> {
         use crate::fusion::reciprocal_rank_fusion;
 
+        let k = k.min(memfuse_core::MAX_SEARCH_K);
         let mut all_result_sets: Vec<Vec<SearchResult>> = Vec::new();
         let mut sub_queries: Vec<String> = Vec::new();
         let mut rounds_executed = 0;
@@ -117,22 +121,44 @@ impl<S: StorageEngine> MultiStepEngine<S> {
         let mut current_results = round1;
 
         for _round in 2..=self.config.max_rounds {
-            let sub_qs = rewriter.rewrite(original_query, &current_results).await?;
+            let sub_qs = match rewriter.rewrite(original_query, &current_results).await {
+                Ok(qs) => qs,
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "QueryRewriter.rewrite() failed in round; stopping expansion gracefully"
+                    );
+                    break;
+                }
+            };
+
             if sub_qs.is_empty() {
                 break;
             }
 
+            let mut executed_sub_query = false;
             for sub_q in &sub_qs {
-                let sub_results = self
-                    .collection
-                    .hybrid_search(sub_q, vector, k, None)
-                    .await?;
-                all_result_sets.push(sub_results.clone());
-                current_results = sub_results;
-                sub_queries.push(sub_q.clone());
+                match self.collection.hybrid_search(sub_q, vector, k, None).await {
+                    Ok(sub_results) => {
+                        all_result_sets.push(sub_results.clone());
+                        current_results = sub_results;
+                        sub_queries.push(sub_q.clone());
+                        executed_sub_query = true;
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            sub_query = %sub_q,
+                            error = %e,
+                            "Sub-query search failed in multi-step execution; skipping sub-query"
+                        );
+                    }
+                }
             }
 
-            rounds_executed += 1;
+            if executed_sub_query {
+                rounds_executed += 1;
+            }
+
             if self.quality_sufficient(&current_results) {
                 break;
             }
@@ -182,7 +208,7 @@ mod tests {
             _original_query: &str,
             _current_results: &[SearchResult],
         ) -> Result<Vec<String>> {
-            let mut guard = self.responses.lock().unwrap();
+            let mut guard = self.responses.lock().unwrap(); // unwrap
             if !guard.is_empty() {
                 Ok(guard.remove(0))
             } else {
@@ -192,17 +218,17 @@ mod tests {
     }
 
     async fn create_test_collection() -> Arc<Collection<LsmStorage>> {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let lsm_config = LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         };
-        let storage = Arc::new(LsmStorage::new(lsm_config).await.expect("lsm storage"));
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.expect("lsm storage")); // expect
         let hnsw_config = HnswConfig {
             dimension: 4,
             ..Default::default()
         };
-        let index = Arc::new(HnswIndex::try_new(hnsw_config).expect("hnsw index"));
+        let index = Arc::new(HnswIndex::try_new(hnsw_config).expect("hnsw index")); // expect
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(1));
 
@@ -228,14 +254,14 @@ mod tests {
             Some(serde_json::json!({"text": "rust programming"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
         col.insert(
             "doc2",
             &[0.9, 0.1, 0.0, 0.0],
             Some(serde_json::json!({"text": "rust language"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
 
         let config = MultiStepConfig {
             max_rounds: 3,
@@ -251,7 +277,7 @@ mod tests {
         let result = engine
             .search("rust", &[1.0, 0.0, 0.0, 0.0], 5, Some(&rewriter))
             .await
-            .expect("search");
+            .expect("search"); // expect
 
         assert_eq!(result.rounds_executed, 1);
         assert!(result.sub_queries.is_empty());
@@ -267,7 +293,7 @@ mod tests {
             Some(serde_json::json!({"text": "rust programming"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
 
         let config = MultiStepConfig {
             max_rounds: 3,
@@ -286,7 +312,7 @@ mod tests {
         let result = engine
             .search("rust", &[1.0, 0.0, 0.0, 0.0], 5, Some(&rewriter))
             .await
-            .expect("search");
+            .expect("search"); // expect
 
         assert_eq!(result.rounds_executed, 2);
         assert_eq!(result.sub_queries, vec!["rust programming"]);
@@ -302,7 +328,7 @@ mod tests {
         let result = engine
             .search("query", &[1.0, 0.0, 0.0, 0.0], 5, None)
             .await
-            .expect("search");
+            .expect("search"); // expect
 
         assert_eq!(result.rounds_executed, 1);
         assert!(result.sub_queries.is_empty());

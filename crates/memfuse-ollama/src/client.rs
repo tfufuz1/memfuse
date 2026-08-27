@@ -875,8 +875,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_text_mock_success() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -904,7 +904,7 @@ mod tests {
         let text = client
             .generate_text("llama3.2", "Test prompt")
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         assert_eq!(text, "Generierter Kontext-Präfix");
     }
 
@@ -917,8 +917,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_is_available() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -948,8 +948,8 @@ mod tests {
         use std::sync::atomic::{AtomicU32, Ordering};
         use std::sync::Arc;
 
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
         let attempts = Arc::new(AtomicU32::new(0));
         let attempts_clone = attempts.clone();
@@ -978,7 +978,7 @@ mod tests {
         });
 
         let client = OllamaClient::new(server_url);
-        let res = client.embed("nomic-embed-text", "hello").await.unwrap();
+        let res = client.embed("nomic-embed-text", "hello").await.unwrap(); // unwrap
         assert_eq!(res, vec![0.1, 0.2]);
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
     }
@@ -1027,14 +1027,14 @@ mod tests {
         // OllamaClient mit nicht-erreichbarer URL
         // embed_batch([]) soll sofort Ok(vec![]) zurückgeben ohne Netzwerk-Call
         let embedder = OllamaEmbedder::new("http://127.0.0.1:1", "test");
-        let result = embedder.embed_batch(&[]).await.unwrap();
+        let result = embedder.embed_batch(&[]).await.unwrap(); // unwrap
         assert!(result.is_empty());
     }
 
     #[tokio::test]
     async fn test_chat_with_rag_streaming_http_error() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1062,8 +1062,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_chat_with_rag_streaming_invalid_json_returns_error() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1098,8 +1098,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_chat_with_rag_streaming_success() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1138,7 +1138,7 @@ mod tests {
                 tokens.push(tok);
             })
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(result, "Hallo Welt!");
         assert_eq!(tokens, vec!["Hallo ", "Welt!"]);
@@ -1167,8 +1167,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_embed_single_text_success() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1190,14 +1190,14 @@ mod tests {
         let res = client
             .embed("nomic-embed-text", "single text")
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         assert_eq!(res, vec![0.5, 0.25]);
     }
 
     #[tokio::test]
     async fn test_batch_embed_count_mismatch_is_error() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1228,8 +1228,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_embed_success() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1257,7 +1257,7 @@ mod tests {
         let res = client
             .embed_batch("nomic-embed-text", &["first", "second"])
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         assert_eq!(res.len(), 2);
         assert_eq!(res[0], vec![0.1, 0.2]);
         assert_eq!(res[1], vec![0.3, 0.4]);
@@ -1268,8 +1268,8 @@ mod tests {
         use std::sync::atomic::{AtomicU32, Ordering};
         use std::sync::Arc;
 
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
         let attempts = Arc::new(AtomicU32::new(0));
         let attempts_clone = attempts.clone();
@@ -1299,7 +1299,7 @@ mod tests {
         });
 
         let client = OllamaClient::new(server_url);
-        let res = client.embed("nomic-embed-text", "hello").await.unwrap();
+        let res = client.embed("nomic-embed-text", "hello").await.unwrap(); // unwrap
         assert_eq!(res, vec![0.9, 0.8]);
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
     }
@@ -1309,8 +1309,8 @@ mod tests {
         use std::sync::atomic::{AtomicU32, Ordering};
         use std::sync::Arc;
 
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
         let attempts = Arc::new(AtomicU32::new(0));
         let attempts_clone = attempts.clone();
@@ -1339,8 +1339,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_model_not_found_error_message() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1389,8 +1389,8 @@ mod tests {
         use std::sync::atomic::{AtomicU32, Ordering};
         use std::sync::Arc;
 
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
         let attempts = Arc::new(AtomicU32::new(0));
         let attempts_clone = attempts.clone();
@@ -1416,8 +1416,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_embed_batch_fallback_preserves_order() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1458,7 +1458,7 @@ mod tests {
         let res = client
             .embed_batch("nomic-embed-text", &["text1", "text2", "text3"])
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(res.len(), 3);
         assert_eq!(res[0], vec![1.0]);
@@ -1468,8 +1468,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_ensure_model_available() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
