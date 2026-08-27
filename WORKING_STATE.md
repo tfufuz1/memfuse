@@ -18,7 +18,7 @@
 | 3 | EntityId::from_key fallibel (FIX-01) | ✅ Erledigt 2026-08-25 | crates/memfuse-core, memfuse-db, memfuse-graph |
 | 4 | Session-DAG & Branching (`memfuse-graph` + `memfuse-checkpoint`) | ✅ Erledigt 2026-08-25 | Native pure Rust SessionBranchTree + CheckpointGuard::for_agent_step |
 | RAG-01 | Contextual Retrieval (Anthropic Pattern) | ✅ Erledigt 2026-08-26 | Extended ContextChunk, OllamaClient::generate_text(), ContextPrefixEngine & BM25 prefix integration |
-| — | Integration `memfuse-agent` | ✅ Erledigt 2026-08-27 | Agent Crate reaktiviert, API auf scan_prefix & CheckpointRegistry angepasst, ADR-020 dokumentiert |
+| — | Integration `memfuse-agent` | ✅ Erledigt 2026-08-27 | Agent Crate Erstaudit abgeschlossen (2026-08-27), CheckpointGuard RAII-Loop integriert, Verträge & Persistenz-Tests verschärft, README.md erstellt |
 | — | Grundwahrheit-Wiederherstellung (Sprint) | ✅ Erledigt 2026-08-27 | Crate-Inventar (14 Crates), DAG-CI-Checks für alle Crates, CI-Redundanz konsolidiert, AI-TAG Grammatik durchgesetzt |
 | — | Governance-Overhaul (AGENTS.md v5) | ✅ Erledigt 2026-08-24 | Factual errors corrected, session protocol added |
 | — | Audit Consolidate & Clean | ✅ Erledigt 2026-08-25 | Konsoliderter Master-Bericht erstellt, 5 alte Dokumente entfernt |
