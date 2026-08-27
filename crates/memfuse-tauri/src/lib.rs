@@ -46,5 +46,5 @@ pub fn run() {
             commands::validate_regex_pattern,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running memfuse-brain application");
+        .unwrap_or_else(|e| panic!("error while running memfuse-brain application: {e}"));
 }
