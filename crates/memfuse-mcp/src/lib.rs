@@ -199,7 +199,11 @@ impl McpServer {
                 };
                 let args = req.params.get("arguments").cloned().unwrap_or_default();
 
-                match self.call_tool(tool_name, &args).await {
+                match self
+                    .sandbox
+                    .execute_with_timeout(tool_name, self.call_tool(tool_name, &args))
+                    .await
+                {
                     Ok(content) => JsonRpcResponse::ok(
                         id,
                         json!({
@@ -217,7 +221,12 @@ impl McpServer {
             }
 
             "memfuse_search" | "memfuse_insert" | "memfuse_get" | "memfuse_collections" => {
-                match self.call_tool(req.method.as_str(), &req.params).await {
+                let tool_name = req.method.as_str();
+                match self
+                    .sandbox
+                    .execute_with_timeout(tool_name, self.call_tool(tool_name, &req.params))
+                    .await
+                {
                     Ok(res) => JsonRpcResponse::ok(id, res),
                     Err(e) => JsonRpcResponse::from_error(id, e),
                 }

@@ -145,6 +145,23 @@ impl McpSandbox {
         }
     }
 
+    /// Führt eine Asynchrone Tool-Future mit Timeout gemäß SandboxPolicy aus.
+    pub async fn execute_with_timeout<F, T, E>(&self, tool_name: &str, fut: F) -> std::result::Result<T, E>
+    where
+        F: std::future::Future<Output = std::result::Result<T, E>>,
+        E: From<MemFuseError>,
+    {
+        let duration = std::time::Duration::from_millis(self.policy.max_execution_ms);
+        tokio::time::timeout(duration, fut)
+            .await
+            .map_err(|_| {
+                E::from(MemFuseError::Internal(format!(
+                    "Tool '{}' überschritt Timeout {}ms",
+                    tool_name, self.policy.max_execution_ms
+                )))
+            })?
+    }
+
     /// Speichert einen Tool-Output verschlüsselt in der Session.
     pub fn store_volatile(&self, key: &str, output: &[u8]) -> Result<()> {
         let volatile_res = VolatileToolResult::encrypt(output, &self.session_key)?;
@@ -239,5 +256,37 @@ mod tests {
 
         let retrieved = sandbox.get_volatile("res1").expect("get").expect("exists");
         assert_eq!(retrieved, data);
+    }
+
+    #[test]
+    fn volatile_tool_result_roundtrip() {
+        let key = memfuse_crypto::CryptoKey::try_new("0123456789abcdef0123456789abcdef", b"salt1234")
+            .unwrap();
+        let plaintext = b"tool output data";
+        let result = VolatileToolResult::encrypt(plaintext, &key).unwrap();
+        let decrypted = result.decrypt(&key).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[tokio::test]
+    async fn test_sandbox_execution_timeout() {
+        let policy = SandboxPolicy {
+            allow_db_reads: true,
+            allow_db_writes: true,
+            allow_code_execution: true,
+            max_execution_ms: 50,
+        };
+        let sandbox = McpSandbox::new(policy);
+
+        let slow_fut = async {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            Ok::<(), MemFuseError>(())
+        };
+
+        let res = sandbox.execute_with_timeout("slow_tool", slow_fut).await;
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("slow_tool"));
+        assert!(err_msg.contains("überschritt Timeout 50ms"));
     }
 }
