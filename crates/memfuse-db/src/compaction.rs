@@ -134,7 +134,7 @@ impl ContextCompactor {
         }
     }
 
-    // AI-TAG[SMELL][MINOR][RESOLVED] Async LLM-Summarization for context compaction (ID: AGT-DB-004)
+    // AI-TAG[SMELL][MINOR][RESOLVED] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-25T00:00:00Z)
     /// Consolidates multiple context chunks into a single summarized chunk using an external LLM via Ollama.
     ///
     /// Preserves strict provenance tracking in `source_doc_ids`. If the LLM call fails, the error is
