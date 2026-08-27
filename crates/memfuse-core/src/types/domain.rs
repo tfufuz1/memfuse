@@ -500,6 +500,27 @@ impl Edge {
     }
 }
 
+/// Configuration parameters for Personalized PageRank (PPR).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PprConfig {
+    /// Damping factor (probability of continuing random walk vs restarting). Default: 0.85.
+    pub damping_factor: f32,
+    /// Maximum power-iteration steps before terminating. Default: 100.
+    pub max_iterations: u32,
+    /// L1 norm threshold for early termination convergence check. Default: 1e-6.
+    pub convergence_epsilon: f32,
+}
+
+impl Default for PprConfig {
+    fn default() -> Self {
+        Self {
+            damping_factor: 0.85,
+            max_iterations: 100,
+            convergence_epsilon: 1e-6,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

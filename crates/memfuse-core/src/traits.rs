@@ -480,15 +480,15 @@ pub trait GraphIndex: Send + Sync + 'static {
         ))
     }
 
-    /// Traverses the entity graph at a specific point in business validity time (`as_of`).
-    async fn traverse_at_time(
+    /// Calculates Personalized PageRank (PPR) starting from seed nodes.
+    /// Default fail-safe implementation returns PolicyViolation error.
+    async fn personalized_page_rank(
         &self,
-        _start_node: crate::types::EntityId,
-        _max_hops: usize,
-        _as_of: crate::types::TxId,
+        _seed_nodes: &[crate::types::EntityId],
+        _config: &crate::types::PprConfig,
     ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
         Err(crate::error::MemFuseError::PolicyViolation(
-            "traverse_at_time muss explizit implementiert werden".into(),
+            "Personalized PageRank is not supported by this GraphIndex implementation".into(),
         ))
     }
 

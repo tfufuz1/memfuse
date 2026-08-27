@@ -15,6 +15,7 @@
 #![forbid(unsafe_code)]
 
 pub mod csr;
+pub mod ppr;
 pub mod session_dag;
 
 pub use csr::CsrGraph;
