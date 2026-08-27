@@ -1021,7 +1021,7 @@ mod tests {
                     Entity::new(EntityId::new(id), format!("P{}", id), "Person"),
                 )
                 .await
-                .expect("valid setup");
+                .expect("valid setup"); // expect allowed
         }
 
         graph
@@ -1030,37 +1030,37 @@ mod tests {
                 Edge::new(EntityId::new(1), EntityId::new(2), "knows").with_weight(1.0),
             )
             .await
-            .expect("valid edge");
+            .expect("valid edge"); // expect allowed
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(2), EntityId::new(3), "knows").with_weight(0.8),
             )
             .await
-            .expect("valid edge");
+            .expect("valid edge"); // expect allowed
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(3), EntityId::new(4), "knows").with_weight(0.6),
             )
             .await
-            .expect("valid edge");
+            .expect("valid edge"); // expect allowed
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(4), EntityId::new(5), "knows").with_weight(0.5),
             )
             .await
-            .expect("valid edge");
+            .expect("valid edge"); // expect allowed
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(2), EntityId::new(5), "knows").with_weight(0.4),
             )
             .await
-            .expect("valid edge");
+            .expect("valid edge"); // expect allowed
 
-        graph.commit(tx).await.expect("commit");
+        graph.commit(tx).await.expect("commit"); // expect allowed
         graph.compact();
         graph
     }
@@ -1073,17 +1073,17 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(EntityId::new(1), "A", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_entity(tx, Entity::new(EntityId::new(2), "B", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "E"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
-        graph.commit(tx).await.unwrap();
+        graph.commit(tx).await.unwrap(); // unwrap allowed
 
         {
             let inner = graph.inner.read();
@@ -1116,15 +1116,15 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(EntityId::new(1), "A", "Node"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_entity(tx, Entity::new(EntityId::new(2), "B", "Node"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_entity(tx, Entity::new(EntityId::new(3), "C", "Node"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
         graph
             .add_edge(
@@ -1132,8 +1132,8 @@ mod tests {
                 Edge::new(EntityId::new(1), EntityId::new(2), "knows").with_weight(1.0),
             )
             .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
+            .unwrap(); // unwrap allowed
+        graph.commit(tx).await.unwrap(); // unwrap allowed
 
         // Edge 1->2 is committed in pending_edges (uncompacted)
         {
@@ -1144,7 +1144,7 @@ mod tests {
         }
 
         // Traversal MUST find Entity 2 directly from pending_edges delta buffer
-        let results = graph.traverse(EntityId::new(1), 1).await.unwrap();
+        let results = graph.traverse(EntityId::new(1), 1).await.unwrap(); // unwrap allowed
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, EntityId::new(2));
 
@@ -1156,11 +1156,11 @@ mod tests {
                 Edge::new(EntityId::new(2), EntityId::new(3), "knows").with_weight(0.8),
             )
             .await
-            .unwrap();
-        graph.commit(tx2).await.unwrap();
+            .unwrap(); // unwrap allowed
+        graph.commit(tx2).await.unwrap(); // unwrap allowed
 
         // Traversal from 1 (max 2 hops) MUST find both 2 and 3 through delta buffer
-        let results_2hop = graph.traverse(EntityId::new(1), 2).await.unwrap();
+        let results_2hop = graph.traverse(EntityId::new(1), 2).await.unwrap(); // unwrap allowed
         assert_eq!(results_2hop.len(), 2);
         let ids: Vec<_> = results_2hop.iter().map(|(id, _)| id.inner()).collect();
         assert!(ids.contains(&2));
@@ -1176,28 +1176,28 @@ mod tests {
         graph
             .add_entity(tx1, Entity::new(EntityId::new(1), "A", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_entity(tx1, Entity::new(EntityId::new(2), "B", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_edge(
                 tx1,
                 Edge::new(EntityId::new(1), EntityId::new(2), "E").with_weight(1.0),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
         // 2. Traverse (ohne Tx) darf Edge NICHT sehen
-        let results = graph.traverse(EntityId::new(1), 1).await.unwrap();
+        let results = graph.traverse(EntityId::new(1), 1).await.unwrap(); // unwrap allowed
         assert_eq!(results.len(), 0, "Uncommitted edge should not be visible");
 
         // 3. Tx1 committet
-        graph.commit(tx1).await.unwrap();
+        graph.commit(tx1).await.unwrap(); // unwrap allowed
 
         // 4. Traverse MUSS Edge sehen
-        let results = graph.traverse(EntityId::new(1), 1).await.unwrap();
+        let results = graph.traverse(EntityId::new(1), 1).await.unwrap(); // unwrap allowed
         assert_eq!(results.len(), 1, "Committed edge should be visible");
         assert_eq!(results[0].0, EntityId::new(2));
     }
@@ -1212,49 +1212,49 @@ mod tests {
         graph
             .add_entity(tx1, Entity::new(EntityId::new(1), "A", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_entity(tx1, Entity::new(EntityId::new(2), "B", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_edge(
                 tx1,
                 Edge::new(EntityId::new(1), EntityId::new(2), "E1").with_weight(1.0),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
         graph
             .add_entity(tx2, Entity::new(EntityId::new(1), "A", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_entity(tx2, Entity::new(EntityId::new(3), "C", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_edge(
                 tx2,
                 Edge::new(EntityId::new(1), EntityId::new(3), "E2").with_weight(1.0),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
         // 2. Tx1 rollt back
-        graph.rollback(tx1).await.unwrap();
+        graph.rollback(tx1).await.unwrap(); // unwrap allowed
 
         // 3. Tx2 committet
-        graph.commit(tx2).await.unwrap();
+        graph.commit(tx2).await.unwrap(); // unwrap allowed
 
         // 4. Nur Edges von Tx2 dürfen existieren
-        let results = graph.traverse(EntityId::new(1), 1).await.unwrap();
+        let results = graph.traverse(EntityId::new(1), 1).await.unwrap(); // unwrap allowed
         assert_eq!(results.len(), 1, "Only Tx2 edge should be visible");
         assert_eq!(results[0].0, EntityId::new(3));
 
-        let stats = graph.stats().await.unwrap();
-        // Wenn Isolation für Entities funktioniert, sollten es 2 sein (1 und 3).
-        // Aktuell ist es aber wahrscheinlich 3 (1, 2 und 3).
+        let stats = graph.stats().await.unwrap(); // unwrap allowed
+                                                  // Wenn Isolation für Entities funktioniert, sollten es 2 sein (1 und 3).
+                                                  // Aktuell ist es aber wahrscheinlich 3 (1, 2 und 3).
         assert_eq!(
             stats.num_entities, 2,
             "Only entities from Tx2 and common ones should exist"
@@ -1264,16 +1264,16 @@ mod tests {
     #[tokio::test]
     async fn test_csr_graph_bfs_score_decay() {
         let graph = setup_test_graph().await;
-        let results = graph.traverse(EntityId::new(1), 3).await.expect("traverse");
+        let results = graph.traverse(EntityId::new(1), 3).await.expect("traverse"); // expect allowed
 
         assert_eq!(results.len(), 4);
 
         let score_map: std::collections::HashMap<_, _> = results.into_iter().collect();
 
-        let s2 = *score_map.get(&EntityId::new(2)).expect("node 2 missing");
-        let s3 = *score_map.get(&EntityId::new(3)).expect("node 3 missing");
-        let s4 = *score_map.get(&EntityId::new(4)).expect("node 4 missing");
-        let s5 = *score_map.get(&EntityId::new(5)).expect("node 5 missing");
+        let s2 = *score_map.get(&EntityId::new(2)).expect("node 2 missing"); // expect allowed
+        let s3 = *score_map.get(&EntityId::new(3)).expect("node 3 missing"); // expect allowed
+        let s4 = *score_map.get(&EntityId::new(4)).expect("node 4 missing"); // expect allowed
+        let s5 = *score_map.get(&EntityId::new(5)).expect("node 5 missing"); // expect allowed
 
         assert!((s2 - 0.7).abs() < f32::EPSILON);
         assert!((s3 - 0.392).abs() < f32::EPSILON);
@@ -1288,23 +1288,23 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(EntityId::new(1), "A", "N"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_entity(tx, Entity::new(EntityId::new(2), "B", "N"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "E"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(1), "E"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
-        graph.commit(tx).await.unwrap();
+        graph.commit(tx).await.unwrap(); // unwrap allowed
 
-        let results = graph.traverse(EntityId::new(1), 5).await.expect("traverse");
+        let results = graph.traverse(EntityId::new(1), 5).await.expect("traverse"); // expect allowed
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, EntityId::new(2));
     }
@@ -1317,7 +1317,7 @@ mod tests {
         let results_hop1 = graph
             .traverse(EntityId::new(1), 1)
             .await
-            .expect("traverse 1 hop");
+            .expect("traverse 1 hop"); // expect allowed
         assert_eq!(results_hop1.len(), 1);
         assert_eq!(results_hop1[0].0, EntityId::new(2));
 
@@ -1325,7 +1325,7 @@ mod tests {
         let results_hop1_n3 = graph
             .traverse(EntityId::new(3), 1)
             .await
-            .expect("traverse 1 hop");
+            .expect("traverse 1 hop"); // expect allowed
         assert_eq!(results_hop1_n3.len(), 1);
         assert_eq!(results_hop1_n3[0].0, EntityId::new(4));
     }
@@ -1333,7 +1333,7 @@ mod tests {
     #[tokio::test]
     async fn test_csr_graph_stats_accuracy() {
         let graph = setup_test_graph().await;
-        let stats = graph.stats().await.expect("valid stats");
+        let stats = graph.stats().await.expect("valid stats"); // expect allowed
 
         assert_eq!(stats.num_entities, 5);
         assert_eq!(stats.num_edges, 5);
@@ -1361,7 +1361,7 @@ mod tests {
             weight: 0.5,
             label: String::new(),
         };
-        graph.add_edge(tx_uncommitted, edge1).await.unwrap();
+        graph.add_edge(tx_uncommitted, edge1).await.unwrap(); // unwrap allowed
 
         // 2. Add committed edges
         let tx_committed = TxId::new(100);
@@ -1371,14 +1371,14 @@ mod tests {
             weight: 0.9,
             label: String::new(),
         };
-        graph.add_edge(tx_committed, edge2).await.unwrap();
-        graph.commit(tx_committed).await.unwrap();
+        graph.add_edge(tx_committed, edge2).await.unwrap(); // unwrap allowed
+        graph.commit(tx_committed).await.unwrap(); // unwrap allowed
 
         // 3. Compact
         graph.compact();
 
         // 4. Verify traversal
-        let results = graph.traverse(EntityId::new(1), 1).await.unwrap();
+        let results = graph.traverse(EntityId::new(1), 1).await.unwrap(); // unwrap allowed
         let targets: Vec<_> = results.iter().map(|(id, _)| id.inner()).collect();
 
         // Should find committed edge (2) but NOT uncommitted edge (5)
@@ -1404,7 +1404,7 @@ mod tests {
                 Entity::new(EntityId::new(10), "EntityFromA", "TypeA"),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
         // Staging unter gleicher TxId ueberschreibt staged entity fuer EntityId(10) in der staged HashMap
         graph
@@ -1413,14 +1413,14 @@ mod tests {
                 Entity::new(EntityId::new(10), "EntityFromB", "TypeB"),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
-        graph.commit(tx_source_a).await.unwrap();
+        graph.commit(tx_source_a).await.unwrap(); // unwrap allowed
 
         // Nach Commit ist der Zustand deterministisch (letzte staged Entity gewinnt)
         let inner = graph.inner.read();
-        let idx = inner.id_map.get(&EntityId::new(10)).unwrap();
-        let entity = inner.entities[*idx].as_ref().unwrap();
+        let idx = inner.id_map.get(&EntityId::new(10)).unwrap(); // unwrap allowed
+        let entity = inner.entities[*idx].as_ref().unwrap(); // unwrap allowed
         assert_eq!(entity.name, "EntityFromB");
     }
 
@@ -1439,7 +1439,7 @@ mod tests {
                 Entity::new(EntityId::new(100), "WallClockEntity", "Type"),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
         graph
             .add_edge(
@@ -1447,9 +1447,9 @@ mod tests {
                 Edge::new(EntityId::new(100), EntityId::new(101), "rel"),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
-        graph.commit(wallclock_tx).await.unwrap();
+        graph.commit(wallclock_tx).await.unwrap(); // unwrap allowed
 
         assert_eq!(graph.entity_count(), 1);
     }
@@ -1467,7 +1467,7 @@ mod tests {
         // Aus Wall-Clock-Nanosekunden abgeleiteter TxId-Wert (astronomisch groß, aber unter INTERNAL_BASE)
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
+            .expect("Time went backwards") // expect allowed
             .as_nanos() as u64;
         let wallclock_tx = TxId::new(nanos);
 
@@ -1482,7 +1482,7 @@ mod tests {
                 Entity::new(EntityId::new(200), "WallClockEntity", "Type"),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
         graph
             .add_edge(
@@ -1490,9 +1490,9 @@ mod tests {
                 Edge::new(EntityId::new(200), EntityId::new(201), "rel"),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
-        graph.commit(wallclock_tx).await.unwrap();
+        graph.commit(wallclock_tx).await.unwrap(); // unwrap allowed
 
         // Warnung MUSS gefeuert haben (add_entity, add_edge, commit)
         assert!(
@@ -1512,26 +1512,26 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(id_a, "A", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_entity(tx, Entity::new(id_b, "B", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_entity(tx, Entity::new(id_c, "C", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_edge(tx, Edge::new(id_a, id_b, "rel"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_edge(tx, Edge::new(id_a, id_c, "rel"))
             .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
+            .unwrap(); // unwrap allowed
+        graph.commit(tx).await.unwrap(); // unwrap allowed
 
-        let n = graph.neighbors(id_a).await.unwrap();
+        let n = graph.neighbors(id_a).await.unwrap(); // unwrap allowed
         assert_eq!(n.len(), 2);
         assert!(n.contains(&id_b));
         assert!(n.contains(&id_c));
@@ -1547,33 +1547,33 @@ mod tests {
         graph
             .add_entity(tx1, Entity::new(id_a, "A", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_entity(tx1, Entity::new(id_b, "B", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_edge(tx1, Edge::new(id_a, id_b, "rel"))
             .await
-            .unwrap();
-        graph.commit(tx1).await.unwrap();
+            .unwrap(); // unwrap allowed
+        graph.commit(tx1).await.unwrap(); // unwrap allowed
 
-        assert!(graph.neighbors(id_a).await.unwrap().contains(&id_b));
+        assert!(graph.neighbors(id_a).await.unwrap().contains(&id_b)); // unwrap allowed
 
         // Remove edge in tx2
         let tx2 = TxId::new(2);
-        graph.remove_edge(tx2, id_a, id_b).await.unwrap();
-        graph.commit(tx2).await.unwrap();
+        graph.remove_edge(tx2, id_a, id_b).await.unwrap(); // unwrap allowed
+        graph.commit(tx2).await.unwrap(); // unwrap allowed
 
         assert!(
-            !graph.neighbors(id_a).await.unwrap().contains(&id_b),
+            !graph.neighbors(id_a).await.unwrap().contains(&id_b), // unwrap allowed
             "Edge A->B should not exist after remove_edge commit"
         );
 
         // Compact graph and verify edge remains removed
         graph.compact();
         assert!(
-            !graph.neighbors(id_a).await.unwrap().contains(&id_b),
+            !graph.neighbors(id_a).await.unwrap().contains(&id_b), // unwrap allowed
             "Edge A->B should remain removed after compact"
         );
     }
@@ -1588,19 +1588,19 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(id_a, "A", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_entity(tx, Entity::new(id_b, "B", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_bidirectional(tx, id_a, id_b, "knows")
             .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
+            .unwrap(); // unwrap allowed
+        graph.commit(tx).await.unwrap(); // unwrap allowed
 
-        let n_a = graph.neighbors(id_a).await.unwrap();
-        let n_b = graph.neighbors(id_b).await.unwrap();
+        let n_a = graph.neighbors(id_a).await.unwrap(); // unwrap allowed
+        let n_b = graph.neighbors(id_b).await.unwrap(); // unwrap allowed
 
         assert!(n_a.contains(&id_b), "neighbors(A) must contain B");
         assert!(n_b.contains(&id_a), "neighbors(B) must contain A");
@@ -1615,19 +1615,19 @@ mod tests {
             graph
                 .add_entity(tx, Entity::new(EntityId::new(i), format!("N{i}"), "Type"))
                 .await
-                .unwrap();
+                .unwrap(); // unwrap allowed
         }
 
         // 1 -> 2 -> 3
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "edge"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(3), "edge"))
             .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
+            .unwrap(); // unwrap allowed
+        graph.commit(tx).await.unwrap(); // unwrap allowed
 
         let ranks = graph.pagerank(0.85, 100, 1e-6);
         assert_eq!(ranks.len(), 3);
@@ -1651,31 +1651,31 @@ mod tests {
     async fn traverse_handles_cycles_without_infinite_loop() {
         let graph = CsrGraph::new();
         let tx = TxId::new(1);
-        let id_a = EntityId::from_key("node_a").expect("test: non-empty key must succeed");
-        let id_b = EntityId::from_key("node_b").expect("test: non-empty key must succeed");
+        let id_a = EntityId::from_key("node_a").expect("test: non-empty key must succeed"); // expect allowed
+        let id_b = EntityId::from_key("node_b").expect("test: non-empty key must succeed"); // expect allowed
 
         graph
             .add_entity(tx, Entity::new(id_a, "Node A", "Type"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_entity(tx, Entity::new(id_b, "Node B", "Type"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
         // A -> B and B -> A cycle
         graph
             .add_edge(tx, Edge::new(id_a, id_b, "relates"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_edge(tx, Edge::new(id_b, id_a, "relates"))
             .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
+            .unwrap(); // unwrap allowed
+        graph.commit(tx).await.unwrap(); // unwrap allowed
 
         // traverse with max_hops=10 (capped by MAX_TRAVERSAL_HOPS internal logic)
-        let results = graph.traverse(id_a, 10).await.unwrap();
+        let results = graph.traverse(id_a, 10).await.unwrap(); // unwrap allowed
 
         // Must return finite results without duplicates
         let ids: Vec<_> = results.iter().map(|(id, _)| *id).collect();
@@ -1693,40 +1693,40 @@ mod tests {
     async fn multi_traverse_keeps_highest_score_per_entity() {
         let graph = CsrGraph::new();
         let tx = TxId::new(1);
-        let id_a = EntityId::from_key("node_a").expect("test: non-empty key must succeed");
-        let id_b = EntityId::from_key("node_b").expect("test: non-empty key must succeed");
-        let id_c = EntityId::from_key("node_c").expect("test: non-empty key must succeed");
+        let id_a = EntityId::from_key("node_a").expect("test: non-empty key must succeed"); // expect allowed
+        let id_b = EntityId::from_key("node_b").expect("test: non-empty key must succeed"); // expect allowed
+        let id_c = EntityId::from_key("node_c").expect("test: non-empty key must succeed"); // expect allowed
 
         graph
             .add_entity(tx, Entity::new(id_a, "Node A", "Type"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_entity(tx, Entity::new(id_b, "Node B", "Type"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_entity(tx, Entity::new(id_c, "Node C", "Type"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
         // A -> C (weight 1.0) => hop score = 1.0 * 0.7 = 0.7
         graph
             .add_edge(tx, Edge::new(id_a, id_c, "relates").with_weight(1.0))
             .await
-            .unwrap();
-        // B -> C (weight 0.7) => hop score = 1.0 * 0.7 * 0.7 = 0.49
+            .unwrap(); // unwrap allowed
+                       // B -> C (weight 0.7) => hop score = 1.0 * 0.7 * 0.7 = 0.49
         graph
             .add_edge(tx, Edge::new(id_b, id_c, "relates").with_weight(0.7))
             .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
+            .unwrap(); // unwrap allowed
+        graph.commit(tx).await.unwrap(); // unwrap allowed
 
-        let results = graph.multi_traverse(&[id_a, id_b], 1).await.unwrap();
+        let results = graph.multi_traverse(&[id_a, id_b], 1).await.unwrap(); // unwrap allowed
         let c_score = results.iter().find(|(id, _)| *id == id_c).map(|(_, s)| *s);
 
         assert!(c_score.is_some(), "Node C must be in traversal results");
-        let score = c_score.unwrap();
+        let score = c_score.unwrap(); // unwrap allowed
         assert!(
             (score - 0.7).abs() < 1e-4,
             "Multi-traverse must keep max score 0.7, got {score}"
@@ -1743,7 +1743,7 @@ mod tests {
         graph
             .add_entity(tx0, Entity::new(center_id, "Center", "Type"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
         for i in 1..=20 {
             graph
@@ -1752,9 +1752,9 @@ mod tests {
                     Entity::new(EntityId::new(i), format!("Node{i}"), "Type"),
                 )
                 .await
-                .unwrap();
+                .unwrap(); // unwrap allowed
         }
-        graph.commit(tx0).await.unwrap();
+        graph.commit(tx0).await.unwrap(); // unwrap allowed
 
         let mut handles = Vec::new();
 
@@ -1765,17 +1765,17 @@ mod tests {
                 let target = EntityId::new(i);
                 g.add_edge(tx, Edge::new(center_id, target, "connect"))
                     .await
-                    .unwrap();
-                g.commit(tx).await.unwrap();
+                    .unwrap(); // unwrap allowed
+                g.commit(tx).await.unwrap(); // unwrap allowed
             });
             handles.push(handle);
         }
 
         for h in handles {
-            h.await.unwrap();
+            h.await.unwrap(); // unwrap allowed
         }
 
-        let neighbors = graph.neighbors(center_id).await.unwrap();
+        let neighbors = graph.neighbors(center_id).await.unwrap(); // unwrap allowed
         assert_eq!(
             neighbors.len(),
             20,
@@ -1794,28 +1794,28 @@ mod tests {
         graph
             .add_entity(tx_a, Entity::new(id_1, "Node 1", "Type"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_entity(tx_a, Entity::new(id_2, "Node 2", "Type"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         graph
             .add_edge(tx_a, Edge::new(id_1, id_2, "staged_edge"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
         // Concurrent read (no TxId context): neighbors(1) must NOT include node 2
-        let n_before = graph.neighbors(id_1).await.unwrap();
+        let n_before = graph.neighbors(id_1).await.unwrap(); // unwrap allowed
         assert!(
             !n_before.contains(&id_2),
             "Uncommitted staged edge must not be visible to readers"
         );
 
         // Tx A commits
-        graph.commit(tx_a).await.unwrap();
+        graph.commit(tx_a).await.unwrap(); // unwrap allowed
 
         // Second read: neighbors(1) MUST include node 2
-        let n_after = graph.neighbors(id_1).await.unwrap();
+        let n_after = graph.neighbors(id_1).await.unwrap(); // unwrap allowed
         assert!(
             n_after.contains(&id_2),
             "Committed edge must be visible to readers"
@@ -1868,17 +1868,17 @@ mod tests {
     #[tokio::test]
     async fn test_last_tx_id_tracking() {
         let graph = CsrGraph::new();
-        assert_eq!(graph.last_tx_id().await.unwrap(), 0);
+        assert_eq!(graph.last_tx_id().await.unwrap(), 0); // unwrap allowed
 
         let tx1 = TxId::new(5);
         graph
             .add_entity(tx1, Entity::new(EntityId::new(1), "E1", "T"))
             .await
-            .unwrap();
-        graph.commit(tx1).await.unwrap();
+            .unwrap(); // unwrap allowed
+        graph.commit(tx1).await.unwrap(); // unwrap allowed
 
         assert_eq!(
-            graph.last_tx_id().await.unwrap(),
+            graph.last_tx_id().await.unwrap(), // unwrap allowed
             5,
             "last_tx_id should be updated to 5 after committing Tx 5"
         );
@@ -1887,11 +1887,11 @@ mod tests {
         graph
             .add_entity(tx2, Entity::new(EntityId::new(2), "E2", "T"))
             .await
-            .unwrap();
-        graph.commit(tx2).await.unwrap();
+            .unwrap(); // unwrap allowed
+        graph.commit(tx2).await.unwrap(); // unwrap allowed
 
         assert_eq!(
-            graph.last_tx_id().await.unwrap(),
+            graph.last_tx_id().await.unwrap(), // unwrap allowed
             12,
             "last_tx_id should be updated to 12 after committing Tx 12"
         );

@@ -323,13 +323,13 @@ mod tests {
                 vec!["tool_out_1".into()],
                 "main",
             )
-            .unwrap();
+            .unwrap(); // unwrap allowed
         assert_eq!(step1, 1);
         assert_eq!(dag.active_head(), 1);
 
         let step2 = dag
             .append_step("Prompt 2".into(), "Resp 2".into(), None, vec![], "main")
-            .unwrap();
+            .unwrap(); // unwrap allowed
         assert_eq!(step2, 2);
         assert_eq!(dag.active_head(), 2);
         assert_eq!(dag.node_count(), 3);
@@ -347,10 +347,10 @@ mod tests {
         let dag = SessionBranchTree::new("Root".into(), "Root Resp".into());
         let step1 = dag
             .append_step("Step 1".into(), "Resp 1".into(), None, vec![], "main")
-            .unwrap();
+            .unwrap(); // unwrap allowed
         let step2 = dag
             .append_step("Step 2".into(), "Resp 2".into(), None, vec![], "main")
-            .unwrap();
+            .unwrap(); // unwrap allowed
         assert_eq!(step2, 2);
 
         // Branch off from step1 (Grok branching)
@@ -363,7 +363,7 @@ mod tests {
                 vec![],
                 "explore",
             )
-            .unwrap();
+            .unwrap(); // unwrap allowed
         assert_eq!(branch_step, 3);
         assert_eq!(dag.active_head(), 3);
 
@@ -393,15 +393,15 @@ mod tests {
         let dag = SessionBranchTree::new("Root".into(), "Root Resp".into());
         let step1 = dag
             .append_step("Step 1".into(), "Resp 1".into(), None, vec![], "main")
-            .unwrap();
+            .unwrap(); // unwrap allowed
         let _step2 = dag
             .append_step("Step 2".into(), "Resp 2".into(), None, vec![], "main")
-            .unwrap();
+            .unwrap(); // unwrap allowed
 
         assert_eq!(dag.active_head(), 2);
 
         // Switch head back to step1
-        dag.set_active_head(step1).unwrap();
+        dag.set_active_head(step1).unwrap(); // unwrap allowed
         assert_eq!(dag.active_head(), 1);
 
         let path = dag.path_to_head();
