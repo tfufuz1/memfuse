@@ -42,6 +42,10 @@ sync-docs:
 sync-docs-check:
     nix develop -c cargo xtask sync-docs --check || cargo xtask sync-docs --check
 
+# Verifies internal documentation consistency (e.g. crate counts)
+check-consistency:
+    nix develop -c cargo xtask check-consistency || cargo xtask check-consistency
+
 # Zeigt den Session-Kontext-Digest manuell an (Fallback, falls Environment-Setup nicht griff)
 session-context:
     #!/usr/bin/env bash

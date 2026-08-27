@@ -21,18 +21,9 @@ All errors propagate via `MemFuseError` + `?` — zero silent failures.
 
 ## 3. Workspace Inventory (14 Crates)
 
-13 active kernel crates + 1 optional crate in a 5-layer DAG:
+MemFuse besteht aus 14 Workspace-Crates (13 Kern-Crates + 1 optionales Crate `memfuse-embed`) in einer 5-Schichten-Architektur (Layer 0–4).
 
-| Layer | Crates |
-|---|---|
-| 0 | `memfuse-core` — shared kernel, no I/O, no async |
-| 1 | `memfuse-store` (LSM), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-crypto` (AES-256-GCM), `memfuse-graph` (CSR), `memfuse-checkpoint` (snapshot) |
-| 2 | `memfuse-db` — orchestrator, 4-signal fusion |
-| 3 | `memfuse-py` (PyO3), `memfuse-ollama` (Ollama HTTP embeddings), `memfuse-agent` (persistent agent workflow engine) |
-| 4 | `memfuse-mcp` (**stdio JSON-RPC 2.0 only** — ADR-010, no HTTP), `memfuse-tauri` (desktop app) |
-
-**Optional**: `memfuse-embed` — ONNX embeddings, feature-gated (`default = []`), Layer 3.
-Pure-Rust USP preserved by keeping default features empty.
+Die vollständige, automatisch aktuell gehaltene Crate-Tabelle und DAG-Topologie ist in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) dokumentiert.
 
 ## 4. Non-Obvious Decisions (would cause wrong code without this knowledge)
 

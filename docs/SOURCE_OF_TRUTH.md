@@ -1,6 +1,19 @@
 # MemFuse — Source of Truth (SOT)
 
-> **Dieses Dokument ist das einzige Living State Document für Architektur-Status, Crate-Inventar, offene Findings und die aktive Roadmap. Es wird synchron mit dem Code aktualisiert — niemals im Voraus.**
+> **Dieses Dokument ist das einzige Living State Document für Produktstrategie, Roadmap und Entscheidungskontext. Es wird synchron mit dem Code aktualisiert — niemals im Voraus.**
+
+---
+
+## Dokumenten-Landkarte
+
+| Datei | Zuständigkeit | Quelle |
+|---|---|---|
+| `AGENTS.md` | Verbindliche Verhaltensregeln für Agenten (was tun/nicht tun) | Manuell, stabil, selten geändert |
+| `docs/ARCHITECTURE.md` | Technische Ist-Architektur: DAG, Layer, Crate-Zweck | **Automatisch generiert** aus Cargo.toml + Tags |
+| `docs/SOURCE_OF_TRUTH.md` | Produktstrategie, Roadmap, Entscheidungskontext (WARUM) | Manuell (Strategie) + automatischer Inventar-Abschnitt |
+| `WORKING_STATE.md` | Nur Session-zu-Session-Handoff: was ist gerade offen | **Automatisch generiert** aus Tags, minimal manueller Zusatz |
+| `DECISIONS.md` | ADR-Log, chronologisch, append-only | Manuell |
+| `rules/*.md` | Domänenspezifische Detailregeln (SIMD, Crypto, Testing) | Manuell |
 
 ---
 
@@ -10,20 +23,8 @@
 **Kern-USP**: Echtes 4-Signal-Hybrid-RAG (Vektor + BM25 + Wissensgraph + Metadaten-Filter), persistiert,
 in `hybrid_search()` fusioniert — verifizierter Code-Zustand.
 
-### Aktive Workspace Crates (12 Kern-Crates + 1 optionales Crate)
-- `memfuse-core` (Layer 0) — Typen, Primitiven, Fehler, Shared Traits (`TextEmbeddingEngine`). Neu: `ContextChunk.contextual_prefix` + `combined_text_owned()` + `combined_token_count()` (ADR-019).
-- `memfuse-store` (Layer 1) — LSM-Tree, WAL, SSTables, Crypt-at-Rest.
-- `memfuse-index` (Layer 1) — HNSW-Vektorindex, SIMD-Distanzen, SQ8-Quantisierung.
-- `memfuse-text` (Layer 1) — BM25 Inverted Index, Deutsche Morphologie.
-- `memfuse-crypto` (Layer 1) — AES-256-GCM, HMAC-Chaining.
-- `memfuse-graph` (Layer 1) — CSR-Graph, persistent im LSM-Tree (`__graph:entity:` & `__graph:edge:`). Neu: `SessionBranchTree` (Agent-DAG), `AgentStateNode`, Native Pure-Rust.
-- `memfuse-checkpoint` (Layer 1) — Async Checkpointing & State Snapshot Management.
-- `memfuse-db` (Layer 2) — Collections Orchestrator, 4-Signal-Fusion, RRF, Transaktionalität. Neu: `MultiStepEngine` (max 3 Runden), `ContextCompactor` (`StatusToken`), Post-RRF CrossEncoder Integration.
-- `memfuse-py` (Layer 3) — PyO3 Python-Bindings, CRUD & Hybrid-Suche.
-- `memfuse-ollama` (Layer 3) — Ollama HTTP Client & `OllamaEmbedder` für Vektor-Embeddings. Neu: `generate_text()` non-streaming, `ContextPrefixEngine` (Anthropic Contextual Retrieval Pattern).
-- `memfuse-mcp` (Layer 4) — Standalone MCP-Server (stdio JSON-RPC 2.0, ADR-010). Neu: `McpSandbox` (`SandboxPolicy`, Whitelist), `VolatileToolResult` (AES-256-GCM-SIV + Zeroize).
-- `memfuse-embed` (Layer 3, **optional**) — ONNX-Embeddings, Feature-gated (`default = []`). Neu: `CrossEncoderReranker` (`bge-reranker-base` ONNX), Passthrough-Fallback ohne ONNX.
-- `memfuse-tauri` (Layer 4) — MemFuse Brain Desktop-App (Tauri IPC, Ingestion-Pipeline, Chat-UI, Ollama-Diagnose).
+### Workspace Topology & Inventar
+Die technische Ist-Architektur, DAG-Topologie sowie Layer-Aufteilung der Workspace-Crates sind in [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) definiert und werden dort via `xtask sync-docs` automatisch generiert.
 
 ### System-Setup & Status
 - **Embedding-Backend**: Ollama via `memfuse-ollama` ist primäres Backend (ADR-008). `memfuse-embed` (ONNX) ist optional verfügbar.
