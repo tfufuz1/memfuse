@@ -84,7 +84,9 @@ use tracing::warn;
 pub struct CrossEncoderReranker {
     config: RerankConfig,
     tokenizer: std::sync::Arc<Tokenizer>,
-    session: std::sync::Arc<std::sync::Mutex<ort::session::Session>>,
+    // parking_lot::Mutex ist panic-safe (kein PoisonError), da es keinen
+    // Poison-Mechanismus hat. Kein .unwrap()/.map_err() nötig.
+    session: std::sync::Arc<parking_lot::Mutex<ort::session::Session>>,
 }
 
 #[cfg(feature = "onnx")]
@@ -120,7 +122,7 @@ impl CrossEncoderReranker {
         Ok(Self {
             config,
             tokenizer: std::sync::Arc::new(tokenizer),
-            session: std::sync::Arc::new(std::sync::Mutex::new(session)),
+            session: std::sync::Arc::new(parking_lot::Mutex::new(session)),
         })
     }
 
@@ -172,7 +174,7 @@ impl CrossEncoderReranker {
     }
 
     fn score_pairs_blocking(
-        session: &std::sync::Arc<std::sync::Mutex<ort::session::Session>>,
+        session: &std::sync::Arc<parking_lot::Mutex<ort::session::Session>>,
         tokenizer: &Tokenizer,
         pairs: &[(String, String)],
         max_length: usize,
@@ -194,7 +196,7 @@ impl CrossEncoderReranker {
     }
 
     fn score_batch(
-        session: &std::sync::Arc<std::sync::Mutex<ort::session::Session>>,
+        session: &std::sync::Arc<parking_lot::Mutex<ort::session::Session>>,
         tokenizer: &Tokenizer,
         chunk: &[(String, String)],
         max_length: usize,
@@ -252,9 +254,10 @@ impl CrossEncoderReranker {
         let attention_mask_tensor = Value::from_array(([b_size, max_seq_len], attention_mask_flat))
             .map_err(|e| format!("Failed to create attention_mask tensor: {e}"))?;
 
-        let mut guard = session
-            .lock()
-            .map_err(|e| format!("Session-Mutex poisoned: {e}"))?;
+        // SAFETY: parking_lot::Mutex ist nicht vergiftbar. Guard hält die
+        // Mutex für die Dauer des ONNX-Inference-Calls. spawn_blocking
+        // garantiert dass dies einen blocking thread nutzt (kein async starvation).
+        let mut guard = session.lock();
 
         let has_token_type_ids = guard
             .inputs()
@@ -296,7 +299,6 @@ impl CrossEncoderReranker {
             }
         };
 
-        drop(guard);
         result
     }
 
