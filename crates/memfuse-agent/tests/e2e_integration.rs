@@ -1,11 +1,11 @@
-//! E2E integration tests for memfuse-saos-agent.
+//! E2E integration tests for memfuse-agent.
 //!
 //! Validates the full stack: MemFuse DB → Collection → OrchestratorEngine → Graph walk.
 
+use memfuse_agent::step::StepResult;
+use memfuse_agent::{AgentContext, NodeType, OrchestratorEngine, StateGraph};
 use memfuse_core::TokenBudget;
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
-use memfuse_saos_agent::step::StepResult;
-use memfuse_saos_agent::{AgentContext, NodeType, OrchestratorEngine, StateGraph};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -14,7 +14,7 @@ use tempfile::TempDir;
 struct EchoTool;
 
 #[async_trait::async_trait]
-impl memfuse_saos_agent::AgentTool for EchoTool {
+impl memfuse_agent::AgentTool for EchoTool {
     fn name(&self) -> &str {
         "echo_tool"
     }
@@ -73,7 +73,7 @@ async fn test_e2e_agent_workflow() {
     graph.add_edge("start", "process", None, 1);
     graph.add_edge("process", "done", None, 1);
 
-    let state_col = Arc::new(db.collection("agent-state").await.expect("collection"));
+    let state_col = db.collection("agent-state").await.expect("collection");
     let budget = TokenBudget::new(100, 0);
     let mut ctx = AgentContext::new("test-task-1", "start", db.clone(), state_col, budget);
 

@@ -1,4 +1,4 @@
-use memfuse_saos_agent::{NodeType, StateGraph};
+use memfuse_agent::{NodeType, StateGraph};
 
 #[tokio::test]
 async fn test_stategraph_construction() {

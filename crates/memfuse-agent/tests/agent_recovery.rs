@@ -1,8 +1,8 @@
-use memfuse_core::TokenBudget;
-use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
-use memfuse_saos_agent::{
+use memfuse_agent::{
     AgentContext, AgentTool, NodeType, OrchestratorEngine, StateGraph, StepResult,
 };
+use memfuse_core::TokenBudget;
+use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -67,7 +67,7 @@ async fn setup_env() -> (Arc<MemFuse>, TempDir) {
 #[tokio::test]
 async fn test_agent_auto_checkpoint_before_step() {
     let (db, _tmp) = setup_env().await;
-    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed"));
+    let state_col = db.collection("agent_state").await.expect("col failed");
     let mut ctx = AgentContext::new(
         "t1",
         "start",
@@ -100,7 +100,7 @@ async fn test_agent_auto_checkpoint_before_step() {
 #[tokio::test]
 async fn test_agent_replay_from_checkpoint() {
     let (db, _tmp) = setup_env().await;
-    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed"));
+    let state_col = db.collection("agent_state").await.expect("col failed");
     let mut ctx = AgentContext::new(
         "t1",
         "start",
@@ -137,7 +137,7 @@ async fn test_agent_replay_from_checkpoint() {
 #[tokio::test]
 async fn test_agent_error_handling() {
     let (db, _tmp) = setup_env().await;
-    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed"));
+    let state_col = db.collection("agent_state").await.expect("col failed");
     let mut ctx = AgentContext::new(
         "t1",
         "start",
@@ -165,7 +165,7 @@ async fn test_agent_error_handling() {
 #[tokio::test]
 async fn test_agent_audit_log_immutable() {
     let (db, _tmp) = setup_env().await;
-    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed"));
+    let state_col = db.collection("agent_state").await.expect("col failed");
     let mut ctx = AgentContext::new(
         "t1",
         "start",
@@ -200,7 +200,7 @@ async fn test_agent_audit_log_immutable() {
 #[tokio::test]
 async fn test_loop_rollback_integrity() {
     let (db, _tmp) = setup_env().await;
-    let state_col = Arc::new(db.collection("agent_state").await.expect("col failed"));
+    let state_col = db.collection("agent_state").await.expect("col failed");
     let mut ctx = AgentContext::new(
         "loop-task",
         "A",

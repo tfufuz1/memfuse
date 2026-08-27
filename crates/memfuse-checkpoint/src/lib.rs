@@ -115,7 +115,7 @@ impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
 
 /// Trait für die Checkpoint-Verwaltung.
 #[async_trait]
-pub trait CheckpointRegistry: Send + Sync {
+pub trait CheckpointRegistry: memfuse_core::traits::Checkpoint + Send + Sync {
     async fn save_checkpoint(&self, meta: CheckpointMeta) -> Result<()>;
     async fn load_checkpoint(&self, seq_no: u64) -> Result<Option<CheckpointMeta>>;
     async fn list_checkpoints(&self) -> Result<Vec<CheckpointMeta>>;

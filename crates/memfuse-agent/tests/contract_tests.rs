@@ -5,12 +5,12 @@
 //! AC-3: Immutable audit log
 //! Bonus: Token budget exhaustion
 
+use memfuse_agent::audit::AuditLog;
+use memfuse_agent::step::StepResult;
+use memfuse_agent::{AgentContext, AgentTool, NodeType, OrchestratorEngine, StateGraph};
 use memfuse_core::traits::StorageEngine;
 use memfuse_core::TokenBudget;
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
-use memfuse_saos_agent::audit::AuditLog;
-use memfuse_saos_agent::step::StepResult;
-use memfuse_saos_agent::{AgentContext, AgentTool, NodeType, OrchestratorEngine, StateGraph};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -70,7 +70,7 @@ async fn setup(budget: TokenBudget) -> (OrchestratorEngine, Arc<MemFuse>, AgentC
             .expect("open db"),
     );
 
-    let state_col = Arc::new(db.collection("agent-state").await.expect("collection"));
+    let state_col = db.collection("agent-state").await.expect("collection");
     let ctx = AgentContext::new("test-task", "start", db.clone(), state_col, budget);
 
     let storage = db.inner_storage();
@@ -105,33 +105,27 @@ async fn test_agent_auto_checkpoint_before_step() {
     engine.run(&mut ctx, &graph).await.expect("run");
 
     // Verify checkpoints were created before each step via the checkpoint_store
-    let cp_start = engine
+    let checkpoints = engine
         .checkpoint_store
-        .get_checkpoint("task:test-task:step:0:node:start")
+        .list_checkpoints()
         .await
-        .expect("get");
-    assert!(cp_start.is_some(), "Checkpoint before 'start' must exist");
+        .expect("list");
 
-    let cp_a = engine
-        .checkpoint_store
-        .get_checkpoint("task:test-task:step:1:node:step_a")
-        .await
-        .expect("get");
-    assert!(cp_a.is_some(), "Checkpoint before 'step_a' must exist");
+    let has_cp = |name_part: &str| checkpoints.iter().any(|c| c.name.contains(name_part));
 
-    let cp_b = engine
-        .checkpoint_store
-        .get_checkpoint("task:test-task:step:2:node:step_b")
-        .await
-        .expect("get");
-    assert!(cp_b.is_some(), "Checkpoint before 'step_b' must exist");
-
-    let cp_end = engine
-        .checkpoint_store
-        .get_checkpoint("task:test-task:step:3:node:end")
-        .await
-        .expect("get");
-    assert!(cp_end.is_some(), "Checkpoint at 'end' must exist");
+    assert!(
+        has_cp(":step:0:node:start"),
+        "Checkpoint before 'start' must exist"
+    );
+    assert!(
+        has_cp(":step:1:node:step_a"),
+        "Checkpoint before 'step_a' must exist"
+    );
+    assert!(
+        has_cp(":step:2:node:step_b"),
+        "Checkpoint before 'step_b' must exist"
+    );
+    assert!(has_cp(":step:3:node:end"), "Checkpoint at 'end' must exist");
 }
 
 // ─── AC-2: Replay from checkpoint ─────────────────────────────────────

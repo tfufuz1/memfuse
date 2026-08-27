@@ -5,8 +5,8 @@
 use crate::context::AgentContext;
 use crate::graph::{AgentNode, NodeType, StateGraph};
 use crate::step::{AgentTool, StepResult};
-use memfuse_checkpoint::PersistentCheckpointStore;
-use memfuse_core::traits::{Checkpoint, StorageEngine};
+use memfuse_checkpoint::{CheckpointMeta, CheckpointRegistry, PersistentCheckpointStore};
+use memfuse_core::traits::StorageEngine;
 use memfuse_core::{MemFuseError, Result};
 use memfuse_store::LsmStorage;
 use std::collections::HashMap;
@@ -15,7 +15,7 @@ use std::sync::Arc;
 /// Async executor engine applying nodes in Sequence.
 pub struct OrchestratorEngine {
     pub tools: HashMap<String, Box<dyn AgentTool>>,
-    pub checkpoint_store: Arc<PersistentCheckpointStore<LsmStorage>>,
+    pub checkpoint_store: Arc<dyn CheckpointRegistry>,
 }
 
 impl OrchestratorEngine {
@@ -113,42 +113,38 @@ impl OrchestratorEngine {
     pub async fn replay_from(&self, ctx: &mut AgentContext, identifier: &str) -> Result<()> {
         let checkpoints = self.checkpoint_store.list_checkpoints().await?;
 
-        // Find the checkpoint:
-        // 1. Exact match for name (deprecated but for compatibility)
-        // 2. Exact match for step_count
-        // 3. Latest match for node_id
         let checkpoint = checkpoints
             .iter()
             .rfind(|c| {
                 if !c.name.starts_with(&format!("task:{}:", ctx.task_id)) {
                     return false;
                 }
-                // Check if identifier is step_count
                 if let Ok(step) = identifier.parse::<u64>() {
                     c.name.contains(&format!(":step:{}:", step))
                 } else {
-                    // Check if identifier is node_id
                     c.name.ends_with(&format!(":node:{}", identifier))
                 }
             })
             .ok_or_else(|| {
-                MemFuseError::Internal(format!("Checkpoint for {} not found", identifier))
+                MemFuseError::Internal(format!(
+                    "Checkpoint '{}' für Task '{}' nicht gefunden",
+                    identifier, ctx.task_id
+                ))
             })?;
 
-        // Restore state from checkpoint metadata
-        if let Some(current_node) = checkpoint
+        if let Some(node) = checkpoint
             .metadata
             .get("current_node")
             .and_then(|v| v.as_str())
         {
-            ctx.current_node = current_node.to_string();
+            ctx.current_node = node.to_string();
         }
-        if let Some(step_count) = checkpoint
+        if let Some(step) = checkpoint
             .metadata
             .get("step_count")
             .and_then(|v| v.as_u64())
         {
-            ctx.step_count = step_count;
+            ctx.step_count = step;
         }
         if let Some(memory) = checkpoint
             .metadata
@@ -158,12 +154,9 @@ impl OrchestratorEngine {
             ctx.memory = memory.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         }
 
-        // Restore storage state to the checkpoint's TxId
         self.checkpoint_store
             .restore(&checkpoint.into_workflow_state())
-            .await?;
-
-        Ok(())
+            .await
     }
 
     pub async fn checkpoint(&self, ctx: &AgentContext) -> Result<()> {
@@ -173,23 +166,27 @@ impl OrchestratorEngine {
         );
         let metadata = serde_json::json!({
             "current_node": ctx.current_node,
-            "step_count": ctx.step_count,
-            "memory": ctx.memory,
+            "step_count":   ctx.step_count,
+            "memory":       ctx.memory,
             "budget_available": ctx.budget.available()
         });
 
         let seq_no = ctx.db.last_committed_seq().await?;
         let tx_id = ctx.db.inner_storage().last_tx_id().await?;
-        self.checkpoint_store
-            .create_checkpoint(
-                &checkpoint_name,
-                ctx.state_collection.name(),
-                seq_no,
-                tx_id,
-                metadata,
-            )
-            .await?;
-        Ok(())
+
+        let meta = CheckpointMeta {
+            name: checkpoint_name,
+            collection_id: ctx.state_collection.name().to_string(),
+            seq_no,
+            tx_id,
+            metadata,
+            created_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
+        };
+
+        self.checkpoint_store.save_checkpoint(meta).await
     }
 
     async fn commit_step(&self, ctx: &AgentContext, result: &StepResult) -> Result<()> {

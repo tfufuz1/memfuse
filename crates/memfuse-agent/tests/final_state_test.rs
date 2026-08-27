@@ -1,8 +1,8 @@
+use memfuse_agent::context::{AgentContext, AgentStatus};
+use memfuse_agent::engine::OrchestratorEngine;
+use memfuse_agent::graph::{NodeType, StateGraph};
 use memfuse_core::TokenBudget;
 use memfuse_db::MemFuse;
-use memfuse_saos_agent::context::{AgentContext, AgentStatus};
-use memfuse_saos_agent::engine::OrchestratorEngine;
-use memfuse_saos_agent::graph::{NodeType, StateGraph};
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -16,7 +16,7 @@ async fn test_atomic_final_state_checkpoint() -> memfuse_core::Result<()> {
     let db = Arc::new(MemFuse::open_with_config(tmp.path(), config).await?);
 
     // Create or get a state collection
-    let collection = Arc::new(db.collection("state").await?);
+    let collection = db.collection("state").await?;
 
     let storage = db.inner_storage();
     let engine = OrchestratorEngine::new(storage);
