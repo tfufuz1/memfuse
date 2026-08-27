@@ -1625,17 +1625,17 @@ mod tests {
         use std::sync::Arc;
         use tempfile::tempdir;
 
-        let dir = tempdir().unwrap();
+        let dir = tempdir().unwrap(); // unwrap
         let lsm_config = memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         };
-        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
         let hnsw_config = memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
         };
-        let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap());
+        let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap()); // unwrap
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(1));
 
@@ -1652,7 +1652,7 @@ mod tests {
         let res = col
             .hybrid_search("test", &[0.1, 0.2, 0.3, 0.4], 100_000, None)
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert!(
             res.len() <= memfuse_core::MAX_SEARCH_K,
