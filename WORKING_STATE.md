@@ -1,6 +1,9 @@
 # MemFuse — Working State
 *Zuletzt aktualisiert: 2026-08-27 von Jules*
 
+## Letzte Änderungen
+- 2026-08-27: Intra-Doc-Links in `crates/memfuse-core/src/types/saos.rs` für `ContextChunk::combined_text_for_indexing` korrigiert (`Self::combined_text_owned()`, `Self::content`), behebt doc warnings in `memfuse-core`.
+
 ## Sprint-Status
 
 | Sprint | Task | Status | Notizen |
