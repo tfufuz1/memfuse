@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-echo "⚠️  brave ist in dieser Agent-Shell deaktiviert. Starte Chromium..."
-exec "/home/freddy/Arbeitsplatz/DEV/memfuse/.local/bin/chromium" "$@"
