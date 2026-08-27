@@ -73,6 +73,11 @@ impl<S: StorageEngine> MultiStepEngine<S> {
     /// Runde 1: Standard-Hybrid-Suche mit `original_query`.
     /// Runde 2–N: Falls Qualität unzureichend, QueryRewriter generiert Sub-Queries.
     /// Ergebnisse werden via RRF über alle Runden fusioniert.
+    ///
+    /// # Note on Sub-Query Embeddings
+    /// Sub-queries (Rounds 2-N) use BM25-only search (empty vector).
+    /// The original query's vector search results contribute via RRF from Round 1.
+    /// For full semantic sub-query search, see TRACKING-ISSUE #143.
     pub async fn search(
         &self,
         original_query: &str,
@@ -138,7 +143,13 @@ impl<S: StorageEngine> MultiStepEngine<S> {
 
             let mut executed_sub_query = false;
             for sub_q in &sub_qs {
-                match self.collection.hybrid_search(sub_q, vector, k, None).await {
+                // Sub-queries use BM25-only (empty vector slice) because:
+                // 1. Sub-queries are textual reformulations, not semantic shifts
+                // 2. Generating sub-query embeddings requires an embedder dependency
+                // 3. The original vector contributes via Round-1 results in RRF fusion
+                // ANCHOR:MULTISTEP:SUBQUERY_EMBEDDING — See TRACKING-ISSUE #143 for
+                // future improvement: inject TextEmbeddingEngine for sub-query vectors.
+                match self.collection.hybrid_search(sub_q, &[], k, None).await {
                     Ok(sub_results) => {
                         all_result_sets.push(sub_results.clone());
                         current_results = sub_results;
@@ -332,5 +343,37 @@ mod tests {
 
         assert_eq!(result.rounds_executed, 1);
         assert!(result.sub_queries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_multistep_subquery_uses_bm25_only() {
+        let col = create_test_collection().await;
+        col.insert(
+            "doc1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(serde_json::json!({"text": "rust programming language"})),
+        )
+        .await
+        .expect("insert"); // expect
+
+        let config = MultiStepConfig {
+            max_rounds: 2,
+            quality_threshold: 0.99,
+            min_quality_hits: 2,
+        };
+        let engine = MultiStepEngine::new(col, config);
+
+        let rewriter = DummyRewriter {
+            responses: std::sync::Mutex::new(vec![vec!["rust programming".to_string()]]),
+        };
+
+        let result = engine
+            .search("original", &[0.1, 0.2, 0.3, 0.4], 5, Some(&rewriter))
+            .await
+            .expect("search"); // expect
+
+        assert_eq!(result.rounds_executed, 2);
+        assert_eq!(result.sub_queries, vec!["rust programming"]);
+        assert!(!result.results.is_empty());
     }
 }

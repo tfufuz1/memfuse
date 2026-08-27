@@ -82,14 +82,17 @@ impl SessionBranchTree {
         label: &str,
     ) -> Result<NodeIdx> {
         let parent = *self.active_head.read();
-        self.branch_from(
+        let new_id = self.branch_from(
             parent,
             prompt,
             response,
             snapshot_tx_id,
             tool_outputs,
             label,
-        )
+        )?;
+        // Update head for linear append (intended sequential behavior)
+        *self.active_head.write() = new_id;
+        Ok(new_id)
     }
 
     /// Branches from an arbitrary prior node (Grok Branching).
@@ -131,7 +134,9 @@ impl SessionBranchTree {
             child: new_id,
             label: label.to_string(),
         });
-        *self.active_head.write() = new_id;
+        // active_head is updated ONLY via set_active_head() or append_step().
+        // branch_from() creates the new node but leaves head management to the caller.
+        // This allows parallel branch exploration without fighting over active_head.
 
         Ok(new_id)
     }
@@ -365,15 +370,28 @@ mod tests {
             )
             .unwrap(); // unwrap
         assert_eq!(branch_step, 3);
-        assert_eq!(dag.active_head(), 3);
+        // branch_from() no longer updates active_head
+        assert_eq!(dag.active_head(), 2);
 
-        // Path to head should be: Root -> Step 1 -> Alternative Step 2
+        // Path to head (when head is step2): Root -> Step 1 -> Step 2
         let path = dag.path_to_head();
         assert_eq!(path.len(), 3);
         assert_eq!(path[0].step_id, 0);
         assert_eq!(path[1].step_id, 1);
-        assert_eq!(path[2].step_id, 3);
-        assert_eq!(path[2].prompt, "Alternative Step 2");
+        assert_eq!(path[2].step_id, 2);
+        assert_eq!(path[2].prompt, "Step 2");
+
+        // Set active head explicitly to branch_step
+        dag.set_active_head(branch_step).unwrap();
+        assert_eq!(dag.active_head(), 3);
+
+        // Path to head after set_active_head: Root -> Step 1 -> Alternative Step 2
+        let path_branch = dag.path_to_head();
+        assert_eq!(path_branch.len(), 3);
+        assert_eq!(path_branch[0].step_id, 0);
+        assert_eq!(path_branch[1].step_id, 1);
+        assert_eq!(path_branch[2].step_id, 3);
+        assert_eq!(path_branch[2].prompt, "Alternative Step 2");
 
         // Step 1 should have two children: Step 2 and Step 3
         let children = dag.children_of(step1);
@@ -447,6 +465,12 @@ mod tests {
                 "explore",
             )
             .unwrap(); // unwrap allowed
+
+        // branch_from leaves active_head unchanged (step1)
+        assert_eq!(dag.active_head(), step1);
+
+        // Set active_head explicitly to branch1 before saving
+        dag.set_active_head(branch1).unwrap(); // unwrap allowed
 
         let tx = TxId::new(1);
         dag.save(storage.as_ref(), "agent_session_1", tx)
