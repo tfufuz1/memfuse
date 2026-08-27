@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::task::JoinHandle;
 
-// ANCHOR:INTEGRATION:CHECKPOINT-STRESS STATUS:DONE AGENT:12 DATE:2026-06-20
+// ANCHOR[INTEGRATION:CHECKPOINT-STRESS] STATUS:DONE (TS:2026-06-20T00:00:00Z)
 // Stress test for concurrent checkpoint creation and deletion during active writes.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_checkpoint_concurrency_stress() {

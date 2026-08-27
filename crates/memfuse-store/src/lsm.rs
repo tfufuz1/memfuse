@@ -1,5 +1,6 @@
 //! LSM-Tree (Log-Structured Merge-Tree) storage engine.
 // FILE-CONTEXT
+// STAND: 2026-08-27T14:32:00Z
 // ZWECK: LSM-Tree-Implementierung (MemTable + SSTable + Compaction)
 // INVARIANTEN: Compaction darf keine Daten verlieren; WAL-Replay vor MemTable-Aufbau
 // NICHT-OFFENSICHTLICH: Compaction-Lock muss VOR MemTable-Lock genommen werden (Deadlock-Gefahr)
@@ -724,8 +725,8 @@ impl StorageEngine for LsmStorage {
             return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
         }
 
-        // ANCHOR:ALG-FIX:D6-001 — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
-        // ANCHOR:ALG-FIX:D6-001 — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
+        // ANCHOR[ALG-FIX:D6-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
+        // ANCHOR[ALG-FIX:D6-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
         // FIX: Commit-Mutex serialisiert fetch_add + memtable.put.
         // Ohne Mutex könnte seq=11 vor seq=10 fertig sein → Reader seq=11 sieht Lücke bei 10.
         let _commit_lock = self.commit_mutex.lock().await;
@@ -889,8 +890,8 @@ impl StorageEngine for LsmStorage {
         let old_wal = std::mem::replace(&mut state.wal, new_wal);
         state.immutable_memtables.push(old_memtable.clone());
 
-        // ANCHOR:ALG-FIX:D1-011 — Stale WAL-Dateien löschen nach Flush
-        // ANCHOR:ALG-FIX:D1-011 — Stale WAL-Dateien löschen nach Flush
+        // ANCHOR[ALG-FIX:D1-011] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Stale WAL-Dateien löschen nach Flush
+        // ANCHOR[ALG-FIX:D1-011] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Stale WAL-Dateien löschen nach Flush
         // Ohne Cleanup wächst die Disk-Usage unbegrenzt (eine WAL pro Flush).
         let old_wal_path = old_wal.path().to_path_buf();
         drop(old_wal);

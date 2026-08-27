@@ -44,6 +44,7 @@ Pure-Rust USP preserved by keeping default features empty.
 - **MCP transport**: stdio JSON-RPC 2.0 ONLY — axum was removed (ADR-010)
 - **WAL HMAC key**: ALWAYS via `load_or_create_integrity_key()` — NEVER hardcoded
 - **AI-TAG & ID Nummernkreise**: Jedes `AI-TAG` verwendet das Schema `AGT-<CRATE>-<NNN>` (z.B. `AGT-CORE-001`, `AGT-STORE-001`, `AGT-INDEX-001`, `AGT-TEXT-001`, `AGT-CRYPTO-001`, `AGT-GRAPH-001`, `AGT-CKPT-001`, `AGT-DB-001`, `AGT-EMBED-001`, `AGT-OLLAMA-001`, `AGT-PY-001`, `AGT-TAURI-001`, `AGT-MCP-001`, `AGT-AGENT-001`).
+- **Tag-Zeitstempel-Pflicht**: Alle `AI-TAG` und `ANCHOR` Kommentare tragen zwingend einen ISO-8601-UTC-Zeitstempel im Format `(TS: YYYY-MM-DDTHH:MM:SSZ)` (siehe `rules/tag_taxonomy.md`).
 
 ## 5. Judgment Boundaries
 

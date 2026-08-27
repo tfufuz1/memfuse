@@ -20,6 +20,7 @@
 | RAG-01 | Contextual Retrieval (Anthropic Pattern) | ✅ Erledigt 2026-08-26 | Extended ContextChunk, OllamaClient::generate_text(), ContextPrefixEngine & BM25 prefix integration |
 | — | Integration `memfuse-agent` | ✅ Erledigt 2026-08-27 | Agent Crate Erstaudit abgeschlossen (2026-08-27), CheckpointGuard RAII-Loop integriert, Verträge & Persistenz-Tests verschärft, README.md erstellt |
 | — | Grundwahrheit-Wiederherstellung (Sprint) | ✅ Erledigt 2026-08-27 | Crate-Inventar (14 Crates), DAG-CI-Checks für alle Crates, CI-Redundanz konsolidiert, AI-TAG Grammatik durchgesetzt |
+| — | Zeitstempel-Erweiterung der Tag-Grammatik | ✅ Erledigt 2026-08-27 | TS:<ISO-8601-UTC> Pflichtfeld für AI-TAG, ANCHOR & STAND: für FILE-CONTEXT in Regeln, AGENTS.md, CI-Gate 7 und Code-Bestand integriert |
 | — | Governance-Overhaul (AGENTS.md v5) | ✅ Erledigt 2026-08-24 | Factual errors corrected, session protocol added |
 | — | Audit Consolidate & Clean | ✅ Erledigt 2026-08-25 | Konsoliderter Master-Bericht erstellt, 5 alte Dokumente entfernt |
 | — | Blueprint-Korrekturen (SessionPool, petgraph, CheckpointGuard, RRF) | ✅ Erledigt 2026-08-25 | Korrekturen in docs/ARCHITECTURE.md dokumentiert |
