@@ -15,6 +15,7 @@ members = [
     "crates/memfuse-mcp",
     "crates/memfuse-agent",
     "crates/memfuse-ollama",
+    "xtask",
 ]
 
 [workspace.package]

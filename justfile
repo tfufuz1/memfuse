@@ -34,6 +34,10 @@ check-db:
 check-text:
     nix develop -c cargo check -p memfuse-text
 
+# Sync documentation from inline tags and cargo topology
+sync-docs:
+    nix develop -c cargo xtask sync-docs || cargo xtask sync-docs
+
 
 # Modular check for memfuse-py
 check-py:
