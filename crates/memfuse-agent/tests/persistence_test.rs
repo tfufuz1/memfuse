@@ -108,6 +108,25 @@ async fn test_agent_persistence_and_recovery() {
         .await
         .expect("Replay failed");
 
-    // After replay, current_node should be "task_1" and memory should be restored (empty before task_1 executes)
+    // Deep assertions post-recovery
     assert_eq!(ctx2.current_node, "task_1");
+    assert_eq!(ctx2.step_count, 1);
+
+    // Continue execution post-recovery to completion
+    let engine2 = OrchestratorEngine::new(db2.inner_storage());
+    let mut engine2 = engine2;
+    engine2.register_tool(Box::new(IncrementTool));
+    engine2.run(&mut ctx2, &graph).await.expect("Resume run failed");
+
+    assert_eq!(ctx2.status, AgentStatus::Completed);
+    assert_eq!(ctx2.current_node, "end");
+    assert_eq!(ctx2.memory.get("last_output").unwrap().as_u64().unwrap(), 1);
+
+    // Audit trail verification on recovered DB
+    let audit_log = memfuse_agent::audit::AuditLog::new(state_collection2);
+    let audit_entries = audit_log.replay_task("test_task_123").await.expect("audit replay");
+    assert!(!audit_entries.is_empty());
+    for entry in &audit_entries {
+        assert_eq!(entry.task_id, "test_task_123");
+    }
 }

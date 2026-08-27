@@ -1,15 +1,22 @@
-//! MemFuse Agent — Persistenter Workflow-Engine für Multi-Step Agenten-Ausführung.
+//! MemFuse Agent — Persistent workflow engine for multi-step agent execution.
 //!
-//! Implementiert den deterministischen `checkpoint → execute → commit → audit`-Loop.
-//! Souveräne Alternative zu LangGraph/AutoGen: pure Rust, keine externen Abhängigkeiten.
+//! Implements the deterministic `checkpoint → execute → commit → audit` loop.
+//! Sovereign alternative to LangGraph/AutoGen: pure Rust, zero external dependencies.
 //!
-//! # Architektur-Rolle (Cockpit — Layer 3)
-//! Aufgesetzt auf `memfuse-db` (Collections), `memfuse-checkpoint` (MVCC-Snapshots)
-//! und `memfuse-graph` (Session-DAG). Verwaltet Workflow-State, Token-Budget und
-//! Audit-Log über LSM-persistierte Keys.
+//! # Architecture Role (Layer 3)
+//! Built upon `memfuse-db` (Collections), `memfuse-checkpoint` (Snapshots & RAII CheckpointGuard),
+//! `memfuse-graph` (Declarative StateGraph), and `memfuse-store` (LSM Storage). Manages workflow
+//! state, token budget enforcement, and immutable audit logging over LSM-persisted keys.
 //!
-//! ADR-020: Wiederherstellung aus gelöschtem `memfuse-saos-agent` (Commit ddc4c77).
-// AI-TAG[DOC-DRIFT][MINOR][AGT-AGENT-001][OPEN] Re-extracted workflow engine crate requires integration verification.
+//! # Invariants
+//! 1. **Auto-checkpoint before step**: Creates a checkpoint before executing each node handler,
+//!    backed by RAII `CheckpointGuard` for automatic transaction rollback upon failure.
+//! 2. **Deterministic replay & rollback**: Restores `AgentContext` to any prior checkpoint step.
+//! 3. **Immutable audit trail**: Appends step records to state collection under `audit:{task_id}:step:{n}`.
+//! 4. **Token budget limit**: Enforces token budget consumption on each step.
+//!
+//! ADR-020: Re-integration from archived `memfuse-saos-agent` (Commit ddc4c77).
+// AI-TAG[DOC-DRIFT][MINOR][AGT-AGENT-001][RESOLVED 2026-08-27] Re-extracted workflow engine crate requires integration verification.
 
 #![forbid(unsafe_code)]
 #![allow(async_fn_in_trait)]
