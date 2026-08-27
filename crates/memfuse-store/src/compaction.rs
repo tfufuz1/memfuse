@@ -1158,17 +1158,17 @@ mod tests {
             let s1 = Arc::clone(&storage);
             let s2 = Arc::clone(&storage);
 
-            let flush_handle = tokio::spawn(async move {
-                s1.force_flush().await
-            });
+            let flush_handle = tokio::spawn(async move { s1.force_flush().await });
 
-            let compact_handle = tokio::spawn(async move {
-                s2.maybe_compact().await
-            });
+            let compact_handle = tokio::spawn(async move { s2.maybe_compact().await });
 
             let (flush_res, compact_res) = tokio::join!(flush_handle, compact_handle);
-            flush_res.expect("flush task joined").expect("flush succeeded");
-            compact_res.expect("compact task joined").expect("compact succeeded");
+            flush_res
+                .expect("flush task joined")
+                .expect("flush succeeded");
+            compact_res
+                .expect("compact task joined")
+                .expect("compact succeeded");
 
             // Verify data readability
             for i in 0..30u64 {
