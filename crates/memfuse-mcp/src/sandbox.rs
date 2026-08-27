@@ -93,7 +93,7 @@ impl McpSandbox {
         let mut passphrase = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut passphrase);
         let key = memfuse_crypto::CryptoKey::try_new(&hex::encode(passphrase), &salt)
-            .expect("CryptoKey initialization failed in McpSandbox");
+            .expect("CryptoKey initialization failed in McpSandbox"); // SAFETY-approved expect
 
         Self {
             policy,
