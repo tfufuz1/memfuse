@@ -145,7 +145,7 @@ impl CompactionEngine {
 
         // 5. Atomic swap under write-lock — identity-based (Arc::ptr_eq), not index-based.
         // DECISION-REF: Replaces stale-index swap that was documented as
-        // TODO[STABILIZE][CRITICAL][CONCURRENCY-BUG]. Indices computed before the lock was
+        // AI-TAG[STABILIZE][CRITICAL][CONCURRENCY-BUG][RESOLVED]. Indices computed before the lock was
         // dropped could become invalid if a concurrent flush or rollback modifies the SSTable
         // list. Arc::ptr_eq is immune to such reordering.
         let old_paths: Vec<PathBuf> = {

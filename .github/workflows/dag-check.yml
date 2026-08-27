@@ -68,6 +68,49 @@ jobs:
           set -e
           echo "Verifying memfuse-py..."
 
+      - name: Check L3/L4 Services & Workflows Isolation (agent, embed, ollama, mcp, tauri)
+        run: |
+          set -e
+          echo "Verifying memfuse-embed..."
+          if cargo tree -p memfuse-embed --edges no-dev | grep -E -v "memfuse-embed|memfuse-core" | grep -q "memfuse-"; then
+            echo "ERROR: memfuse-embed violates DAG."
+            cargo tree -p memfuse-embed --edges no-dev | grep "memfuse-"
+            exit 1
+          fi
+          echo "Verifying memfuse-ollama..."
+          if cargo tree -p memfuse-ollama --edges no-dev | grep -E -v "memfuse-ollama|memfuse-core" | grep -q "memfuse-"; then
+            echo "ERROR: memfuse-ollama violates DAG."
+            cargo tree -p memfuse-ollama --edges no-dev | grep "memfuse-"
+            exit 1
+          fi
+          echo "Verifying memfuse-agent..."
+          if cargo tree -p memfuse-agent --edges no-dev | grep -E -v "memfuse-agent|memfuse-core|memfuse-db|memfuse-graph|memfuse-checkpoint|memfuse-store|memfuse-crypto|memfuse-index|memfuse-text" | grep -q "memfuse-"; then
+            echo "ERROR: memfuse-agent violates DAG."
+            cargo tree -p memfuse-agent --edges no-dev | grep "memfuse-"
+            exit 1
+          fi
+          echo "Verifying memfuse-mcp..."
+          if cargo tree -p memfuse-mcp --edges no-dev | grep -E -v "memfuse-mcp|memfuse-core|memfuse-db|memfuse-crypto|memfuse-ollama|memfuse-agent|memfuse-graph|memfuse-checkpoint|memfuse-store|memfuse-index|memfuse-text" | grep -q "memfuse-"; then
+            echo "ERROR: memfuse-mcp violates DAG."
+            cargo tree -p memfuse-mcp --edges no-dev | grep "memfuse-"
+            exit 1
+          fi
+          echo "Verifying memfuse-tauri..."
+          if cargo tree -p memfuse-tauri --edges no-dev | grep -E -v "memfuse-tauri|memfuse-core|memfuse-db|memfuse-graph|memfuse-ollama|memfuse-checkpoint|memfuse-store|memfuse-crypto|memfuse-index|memfuse-text" | grep -q "memfuse-"; then
+            echo "ERROR: memfuse-tauri violates DAG."
+            cargo tree -p memfuse-tauri --edges no-dev | grep "memfuse-"
+            exit 1
+          fi
+
+      - name: Check all workspace members covered in dag-check workflow
+        run: |
+          set -e
+          MEMBERS=$(grep -oP '"crates/\K[^"]+' Cargo.toml)
+          for m in $MEMBERS; do
+            grep -q "$m" .github/workflows/dag-check.yml || { echo "FEHLT in dag-check.yml: $m"; exit 1; }
+          done
+          echo "✅ Alle Workspace Member sind im dag-check.yml abgedeckt."
+
       - name: Check known DAG violations (tracking)
         run: |
           set -e

@@ -41,8 +41,9 @@ memfuse-core
     └── memfuse-db (→ alle Layer-1 Crates)
         ├── memfuse-py (→ db, core)  [DAG-003: erlaubte Ausnahme]
         ├── memfuse-ollama (→ core)
-        └── memfuse-embed (→ core)   [optional, feature=onnx]
-            ├── memfuse-mcp (→ db, ollama)
+        ├── memfuse-embed (→ core)   [optional, feature=onnx]
+        └── memfuse-agent (→ db, graph, checkpoint, store, core)
+            ├── memfuse-mcp (→ db, ollama, optional agent)
             └── memfuse-tauri (→ db, graph, ollama)
 ```
  
@@ -56,6 +57,9 @@ memfuse-core
 | **ADR-016** | TxId-Domänen: Collection [1,10^12] vs INTERNAL [INTERNAL_BASE, u64::MAX] | Niemals SystemTime als TxId |
 | **ADR-017** | unsafe ONLY in distance.rs, diskann.rs, persistence.rs (Index-Crate) | Jedes unsafe braucht `// SAFETY:` Beweis |
 | **ADR-018** | Doppelstrategie: PyPI (memfuse-py) + Desktop (memfuse-tauri) | Beide Pfade gleichwertig |
+| **ADR-019** | Contextual Retrieval via `combined_text_owned()` | Präfix nicht im Originalinhalt überschreiben, Serde #[serde(default)] |
+| **ADR-020** | Cognitive Operating System als Produktvision / Wiederherstellung `memfuse-agent` | Gedächtnistypen & temporale Graphen als Zielvision; agent-Restore |
+| **ADR-021** | Multi-Signal RAG-Pipeline (Contextual → RRF → Reranking) | Gestaffelte additiv-degradierende RAG-Pipeline |
  
 ---
  
@@ -192,7 +196,7 @@ IMMER in Jules-Sessions:
 ## 🔢 Zahlen & Metriken (Stand 2026-08-25)
  
 ```
-Crates total:    13 (12 Kern + 1 optional)
+Crates total:    14 (13 Kern + 1 optional)
 Rust-Dateien:    ~130
 Sprint-Status:   Sprint 3 abgeschlossen (WORKING_STATE.md)
 Offene AI-TAGs:  0 (alle RESOLVED 2026-08-25)
