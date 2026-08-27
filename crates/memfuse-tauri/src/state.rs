@@ -81,7 +81,7 @@ mod tests {
                 permit.is_ok(),
                 "Permit allocation should succeed within limit"
             );
-            permits.push(permit.unwrap());
+            permits.push(permit.expect("permit acquisition should succeed")); // expect
         }
 
         assert_eq!(state.regex_semaphore.available_permits(), 0);
