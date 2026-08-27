@@ -153,3 +153,44 @@ async fn test_create_snapshot_equals_last_committed_seq() {
         seq
     );
 }
+
+/// Verifies that calling `VectorIndex::search_at` or `GraphIndex::traverse_at`
+/// explicitly returns the ADR-024 PolicyViolation error, documenting that
+/// vector and graph snapshot isolation are tracked for future implementation.
+#[tokio::test]
+async fn test_vector_and_graph_search_at_returns_adr024_policy_violation() {
+    use memfuse_core::{GraphIndex, VectorIndex};
+
+    let (db, _tmp) = test_db(4).await;
+    let col = db.collection("isolation_policy").await.expect("col");
+
+    let mock_vec_index = memfuse_index::HnswIndex::try_new(memfuse_index::HnswConfig {
+        dimension: 4,
+        ..Default::default()
+    })
+    .unwrap();
+    let res_vec = mock_vec_index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 1).await;
+    match res_vec {
+        Err(memfuse_core::MemFuseError::PolicyViolation(msg)) => {
+            assert!(
+                msg.contains("ADR-024"),
+                "VectorIndex::search_at must reference ADR-024, got: {}",
+                msg
+            );
+        }
+        other => panic!("Expected PolicyViolation with ADR-024 for search_at, got: {:?}", other),
+    }
+
+    let graph_idx = col.graph_index();
+    let res_graph = graph_idx.traverse_at(memfuse_core::EntityId::new(1), 2, 1).await;
+    match res_graph {
+        Err(memfuse_core::MemFuseError::PolicyViolation(msg)) => {
+            assert!(
+                msg.contains("ADR-024"),
+                "GraphIndex::traverse_at must reference ADR-024, got: {}",
+                msg
+            );
+        }
+        other => panic!("Expected PolicyViolation with ADR-024 for traverse_at, got: {:?}", other),
+    }
+}
