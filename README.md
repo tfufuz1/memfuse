@@ -1,9 +1,9 @@
 # MemFuse Brain
 
-**Ihr lokaler, air-gapped Unternehmensassistent & 4-Signal Memory Engine.**
+**Das Cognitive Operating System für lokale KI-Agenten. Air-gapped, souverän, Pure-Rust.**
 
-MemFuse Brain ist eine Desktop-Applikation und eingebettete Memory-Engine,
-die Ihre Firmendokumente (PDF, Word, Markdown, E-Mails) durchsuchbar macht und
+MemFuse Brain ist eine Desktop-Applikation und ein eingebettetes kognitives Betriebssystem,
+das Ihre Firmendokumente (PDF, Word, Markdown, E-Mails) durchsuchbar macht und
 über ein lokal laufendes Sprachmodell (via Ollama) Fragen dazu beantwortet —
 komplett offline, ohne dass ein einziges Byte Ihrer Daten das Gerät verlässt.
 
@@ -17,6 +17,16 @@ komplett offline, ohne dass ein einziges Byte Ihrer Daten das Gerät verlässt.
 - **Zero-IT-Setup** — ein Installer, fertig. Kein Docker, kein Server, kein Admin
 - **4-Signal-Hybridsuche** — Vektorsuche (HNSW) + Volltextsuche (BM25) +
   Wissensgraph (CSR) + Metadaten-Filter, fusioniert via Reciprocal Rank Fusion (RRF)
+- **Contextual Retrieval** — Chunks erhalten vor BM25/Embedding ein
+  LLM-generiertes Kontext-Präfix (Anthropic Pattern, 49% weniger Retrieval-Fehler)
+- **Cross-Encoder Reranking** — Post-RRF Neuordnung via lokalem ONNX Cross-Encoder
+  (optionales Feature, 67% weniger Fehler kombiniert)
+- **Multi-Step Query Engine** — Iteratives Query-Rewriting für komplexe
+  Agenten-Abfragen (OpenAI o-series Pattern, bis zu 3 Runden)
+- **MCP Sandbox** — Sichere Tool-Isolation, Zeroize-Encryption für volatile Tool-Outputs
+  (Anthropic Containment Pattern)
+- **Session DAG** — Grok-Pattern: Konversationsverzweigung als persistierter,
+  azyklischer Graph (Native Pure-Rust)
 - **Deutsche Morphologie** — versteht "Urlaubsantragsprozess" auch als
   "Urlaub", "Antrag", "Prozess" für bessere Trefferqualität
 - **Verschlüsselt** — AES-256-GCM auf Disk, HMAC-Anti-Tamper im WAL
@@ -47,6 +57,9 @@ cargo run -p memfuse-mcp --bin memfuse-mcp-server -- --db-path ./firma_daten
 
 ## Architektur
 
+MemFuse implementiert eine mehrstufige RAG-Pipeline:
+Contextual Ingestion → 4-Signal Hybrid Index → Multi-Step Retrieval → Cross-Encoder Reranking → Context Compaction
+
 ```
 ┌───────────────────────────────────────────────────────────┐
 │  MemFuse Brain (Tauri Desktop App / Layer 4)              │
@@ -68,11 +81,11 @@ cargo run -p memfuse-mcp --bin memfuse-mcp-server -- --db-path ./firma_daten
 
 ## Workspace Crates (13 Active Crates)
 
-- **Layer 0**: `memfuse-core` (Typen, Traits, Error)
-- **Layer 1**: `memfuse-store` (LSM-Tree), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-crypto` (AES-GCM), `memfuse-graph` (CSR Graph), `memfuse-checkpoint` (Snapshotting)
-- **Layer 2**: `memfuse-db` (Collections & 4-Signal Fusion)
-- **Layer 3**: `memfuse-py` (Python PyO3 Bindings), `memfuse-ollama` (Ollama Client & Embeddings), `memfuse-embed` (ONNX-Embeddings, **optional**, Feature-gated, `default=[]`)
-- **Layer 4**: `memfuse-mcp` (MCP Server), `memfuse-tauri` (Desktop App Shell)
+- **Layer 0**: `memfuse-core` (Typen, Traits, Error + ContextChunk mit Contextual Prefix)
+- **Layer 1**: `memfuse-store` (LSM-Tree), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-crypto` (AES-GCM), `memfuse-graph` (CSR Graph, + SessionBranchTree DAG), `memfuse-checkpoint` (Snapshotting)
+- **Layer 2**: `memfuse-db` (Collections & 4-Signal Fusion, + MultiStepEngine, ContextCompactor)
+- **Layer 3**: `memfuse-py` (Python PyO3 Bindings), `memfuse-ollama` (Ollama Client & Embeddings, + ContextPrefixEngine, generate_text()), `memfuse-embed` (ONNX-Embeddings, **optional**, Feature-gated, `default=[]`, + CrossEncoderReranker)
+- **Layer 4**: `memfuse-mcp` (MCP Server, + McpSandbox, VolatileToolResult), `memfuse-tauri` (Desktop App Shell)
 
 ## Für Entwickler: Rust-Crates
 
@@ -103,17 +116,54 @@ Der `memfuse-mcp`-Server stellt MCP-Tools über stdio JSON-RPC 2.0 bereit (ADR-0
 cargo run -p memfuse-mcp --bin memfuse-mcp-server -- --db-path ./firma_daten
 ```
 
-## Roadmap
+## Roadmap — Cognitive Operating System
 
+### ✅ Phase 1: RAG-Fundament (abgeschlossen)
 - [x] LSM-Tree-Storage mit MVCC, WAL, Crash-Recovery
 - [x] HNSW-Vektorindex mit SIMD-Beschleunigung
 - [x] BM25-Volltextsuche mit deutscher Morphologie
-- [x] CSR-Wissensgraph mit LSM-Persistenz (`__graph:`)
-- [x] 4-Signal-Fusion (Vektor + BM25 + Wissensgraph + Metadaten) — persistiert & integriert
-- [x] Dokumenten-Ingestion (PDF, DOCX, Markdown, E-Mail)
-- [x] Tauri-Desktop-App (`memfuse-tauri`) & Ingestion-Pipeline
-- [x] Ollama-Integration (`memfuse-ollama`) & Diagnostic Checks
-- [x] Standalone MCP-Server (`memfuse-mcp`) mit stdio JSON-RPC 2.0 (ADR-010)
+- [x] CSR-Wissensgraph mit LSM-Persistenz
+- [x] 4-Signal-Fusion (Vektor + BM25 + Wissensgraph + Metadaten)
+- [x] Contextual Retrieval (Anthropic Pattern)
+- [x] Cross-Encoder Reranking (ONNX, optional)
+- [x] Multi-Step Query Engine (OpenAI o-series Pattern)
+- [x] Context Compaction (Grok Pattern)
+- [x] Session DAG Branching (Grok Pattern)
+- [x] MCP Sandbox Isolation (Anthropic Containment)
+- [x] Desktop-App (memfuse-tauri), MCP-Server, Python-Bindings
+
+### 🔄 Phase 2: Cognitive Memory (Q4 2026)
+- [ ] Kognitive Gedächtnistypen: Episodic / Semantic / Procedural / Working Memory als explizite Collection-Typen
+- [ ] Temporaler Wissensgraph: bi-temporale Zeitachsen (Validitätszeit + Transaktionszeit)
+- [ ] Memory Importance Score (LLM-bewertet, wie Generative Agents)
+- [ ] Recency-Decay-Funktion für episodische Relevanz
+
+### 📋 Phase 3: Selbstorganisierung (Q1 2027)
+- [ ] Memory Consolidation: automatische Zusammenfassung veralteter Chunks
+- [ ] Personalized PageRank (PPR) für Multi-Hop Graph-Retrieval
+- [ ] Community Detection für semantische Cluster
+- [ ] A-MEM Zettelkasten-Pattern: Memories mit expliziten Querverweisen
+
+### 📋 Phase 4: Enterprise (Q2 2027)
+- [ ] OAuth 2.0 für MCP-Server
+- [ ] RBAC und Multi-Tenant-Isolation
+- [ ] Audit-Trail mit unveränderlichen Logs
+- [ ] Benchmark-Suite vs. Mem0, Zep/Graphiti, MemOS
+
+## Positionierung
+
+MemFuse ist kein Ersatz für Cloud-Vektordatenbanken (Qdrant, Pinecone).
+MemFuse ist eine neue Kategorie: **Das lokale Cognitive Operating System für LLM-Agenten** — in-process, air-gapped, Pure-Rust.
+
+| Kriterium | MemFuse | Mem0 | Zep/Graphiti | Chroma+ES+Neo4j |
+|-----------|---------|------|--------------|-----------------|
+| Air-gapped | ✅ | ❌ | ❌ | ✅ |
+| 4-Signal Fusion | ✅ | ❌ | Teilweise | Extern |
+| Pure Rust | ✅ | ❌ | ❌ | ❌ |
+| MCP-nativ | ✅ | ❌ | ❌ | ❌ |
+| Contextual Retrieval | ✅ | ❌ | ❌ | ❌ |
+| Session DAG | ✅ | ❌ | ❌ | ❌ |
+| Kein Docker | ✅ | ❌ | ❌ | ❌ |
 
 ## Lizenz
 
