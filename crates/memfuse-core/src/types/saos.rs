@@ -1,4 +1,4 @@
-use super::domain::{DocId, EntityId};
+use super::domain::{DocId, EntityId, PprConfig};
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};

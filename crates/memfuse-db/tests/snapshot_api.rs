@@ -178,16 +178,11 @@ async fn test_vector_and_graph_search_at_returns_adr024_policy_violation() {
                 msg
             );
         }
-        other => panic!(
-            "Expected PolicyViolation with ADR-024 for search_at, got: {:?}",
-            other
-        ),
+        other => panic!("Expected PolicyViolation with ADR-024 for search_at, got: {:?}", other),
     }
 
     let graph_idx = col.graph_index();
-    let res_graph = graph_idx
-        .traverse_at(memfuse_core::EntityId::new(1), 2, 1)
-        .await;
+    let res_graph = graph_idx.traverse_at(memfuse_core::EntityId::new(1), 2, 1).await;
     match res_graph {
         Err(memfuse_core::MemFuseError::PolicyViolation(msg)) => {
             assert!(
@@ -196,9 +191,6 @@ async fn test_vector_and_graph_search_at_returns_adr024_policy_violation() {
                 msg
             );
         }
-        other => panic!(
-            "Expected PolicyViolation with ADR-024 for traverse_at, got: {:?}",
-            other
-        ),
+        other => panic!("Expected PolicyViolation with ADR-024 for traverse_at, got: {:?}", other),
     }
 }

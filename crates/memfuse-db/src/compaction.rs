@@ -100,7 +100,7 @@ impl ContextCompactor {
                         // Chunk wird verworfen
                     }
                     CompactionStrategy::Summarize => {
-                        // AI-TAG[SMELL][MINOR][RESOLVED] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-25T00:00:00Z)
+                        // AI-TAG[SMELL][MINOR] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-25T00:00:00Z)
                         // Fallback: Status-Token
                         let summary = Self::generate_status_token(&chunk);
                         status_tokens.push(StatusToken {
@@ -117,7 +117,82 @@ impl ContextCompactor {
             retained_chunks: retained,
             status_tokens,
             tokens_used,
+            source_doc_ids,
         }
+    }
+
+    // AI-TAG[SMELL][MINOR][RESOLVED] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-28T00:00:00Z)
+    /// Consolidates multiple context chunks into a single summarized chunk using an external LLM via Ollama.
+    ///
+    /// Preserves strict provenance tracking in `source_doc_ids`. If the LLM call fails, the error is
+    /// returned directly to the caller (no silent fallback to `StatusToken`).
+    pub async fn consolidate_via_llm(
+        &self,
+        chunks: &[ContextChunk],
+        ollama: &OllamaClient,
+    ) -> Result<CompactedContext> {
+        if chunks.is_empty() {
+            return Ok(CompactedContext {
+                retained_chunks: Vec::new(),
+                status_tokens: Vec::new(),
+                tokens_used: 0,
+                source_doc_ids: Vec::new(),
+            });
+        }
+
+        let mut source_doc_ids = Vec::with_capacity(chunks.len());
+        let mut prompt_content = String::new();
+
+        for chunk in chunks {
+            source_doc_ids.push(chunk.doc_id);
+            prompt_content.push_str(&format!(
+                "- Chunk [DocId: {}]: {}\n",
+                chunk.doc_id.0, chunk.content
+            ));
+        }
+
+        let prompt = format!(
+            "Fasse die folgenden Kontext-Informationen faktentreu zu einem prägnanten Überblick zusammen.\n\
+             Erhalte wichtige Details und wahre den Bezug zu den ursprünglichen Dokumenten.\n\n\
+             Kontext-Chunks:\n{}\n\nZusammenfassung:",
+            prompt_content
+        );
+
+        let model = &ollama.config().model;
+        let summary_text = ollama.generate_text(model, &prompt).await?;
+
+        let estimated_tokens = summary_text.len(); // Simple token estimation based on length
+
+        // Combine metadata if present
+        let mut combined_metadata = serde_json::Map::new();
+        combined_metadata.insert("llm_summarized".to_string(), serde_json::Value::Bool(true));
+        combined_metadata.insert(
+            "source_doc_count".to_string(),
+            serde_json::Value::Number(chunks.len().into()),
+        );
+
+        // Generate a new DocId deterministically or using base doc_id of first chunk
+        let synthesized_doc_id = chunks[0].doc_id;
+
+        let max_relevance = chunks.iter().fold(0.0f32, |max, c| max.max(c.relevance));
+
+        let consolidated_chunk = ContextChunk {
+            doc_id: synthesized_doc_id,
+            content: summary_text,
+            relevance: max_relevance,
+            token_count: estimated_tokens,
+            metadata: Some(serde_json::Value::Object(combined_metadata)),
+            contextual_prefix: None,
+        };
+
+        let tokens_used = consolidated_chunk.combined_token_count();
+
+        Ok(CompactedContext {
+            retained_chunks: vec![consolidated_chunk],
+            status_tokens: Vec::new(),
+            tokens_used,
+            source_doc_ids,
+        })
     }
 
     fn is_tool_output(chunk: &ContextChunk) -> bool {

@@ -705,6 +705,23 @@ impl MemFuse {
             .await
     }
 
+    /// Performs hybrid search with custom signal fusion weights and graph traversal strategy.
+    #[tracing::instrument(level = "trace", skip(self, anchor_entities, weights, strategy))]
+    pub async fn hybrid_search_with_strategy(
+        &self,
+        text: &str,
+        vector: &[f32],
+        k: usize,
+        anchor_entities: Option<&[memfuse_core::EntityId]>,
+        weights: Option<&memfuse_core::FusionWeights>,
+        strategy: Option<&memfuse_core::GraphTraversalStrategy>,
+    ) -> Result<Vec<SearchResult>> {
+        self.default_col()
+            .await?
+            .hybrid_search_with_strategy(text, vector, k, anchor_entities, weights, strategy, None)
+            .await
+    }
+
     /// Deletes a document by its string ID.
     pub async fn delete(&self, id: &str) -> Result<()> {
         self.default_col().await?.delete(id).await

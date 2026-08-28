@@ -392,6 +392,26 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 ## ADR-027: Label Propagation für Community Detection & GraphRAG
 
 *   **Datum**: 2026-08-27
+## ADR-026: Personalized PageRank (PPR) Graph Retrieval
+*   **Datum**: 2026-08-28
+*   **Status**: ✅ Final
+*   **Entscheidung**:
+    1. Implementierung von Personalized PageRank (PPR) als eigenständige, deterministische Power-Iterations-Methode auf der bestehenden CSR-Struktur (`CsrGraph`) in `crates/memfuse-graph/src/ppr.rs` ohne externe Bibliotheken (wie `petgraph`).
+    2. Ergänzung von `PprConfig` und des Trait-Methoden-Contracts `personalized_page_rank` an `GraphIndex` in `memfuse-core`.
+    3. Integration von PPR in `HybridQuery` (`memfuse-core`) und `Collection::hybrid_search_with_strategy` (`memfuse-db`) über die additiv wählbare `GraphTraversalStrategy` (`Hops` vs `PersonalizedPageRank`). Standardverhalten bleibt unverändert `GraphTraversalStrategy::Hops` (3 Hops BFS decay).
+*   **Alternativen**:
+    - **Option A (In-Tree `petgraph` Dependency)**: Verwendung von `petgraph` für PageRank. Verworfen, da `petgraph` eine Konvertierung/Kopie des CSR-Graphen erzwingen würde (Speicher- & Latenz-Overhead) und unkontrollierte Nicht-Determinismen einbringen könnte.
+    - **Option B (`traverse` überschreiben)**: Ersetzung von BFS-Traversierung in `traverse()`. Verworfen, da BFS-Hop-Traversierung und PPR grundlegend unterschiedliche Retrieval-Semantiken besitzen (Hop-Distanz vs. Stationärverteilung eines Random-Walk-mit-Restart).
+*   **Begründung**:
+    - **Deterministische Konvergenz**: Die Power-Iteration auf dem CSR-Format verwendet eine explizite L1-Norm-Abbruchbedingung (`convergence_epsilon: 1e-6`) und eine harte Obergrenze (`max_iterations: 100`). Rank-Masse an Sackgassen-Knoten (Sackgassen / out-degree 0) wird gleichmäßig auf die Restart-Menge redistribuiert, um die stochastische Matrix-Eigenschaft zu wahren. Tie-Breaking über sekundäre Sortierung nach `EntityId` garantiert bitidentische Ergebnisse über mehrere Läufe.
+    - **Zero-Panic / Zero-Hang**: Harte Abbruchschranken verhindern Endlosschleifen selbst auf pathologischen Graphen.
+    - **Ruckfreie 4-Signal-Integration**: PPR ist als `GraphTraversalStrategy::PersonalizedPageRank` in `HybridQuery` und `Collection` nahtlos nutzbar und speist seine Ränge direkt in die Reciprocal Rank Fusion (RRF) ein.
+
+---
+
+## ADR-025: Bi-temporale Zeitachsen (Validitätszeit + Transaktionszeit) im Wissensgraphen (Phase 2 Roadmap)
+
+*   **Datum**: 2026-08-28
 *   **Status**: ✅ Final
 *   **Kontext**: Für Phase 3 ("Community Detection & GraphRAG") wird eine Methode zur semantischen Clusterbildung von Wissensgraph-Knoten benötigt. Das Ergebnis (Community-Zuordnung pro EntityId) soll asynchron als Batch-Prozess berechnet, im Storage unter `__graph:community:<entity_id>` abgelegt und beim Retrieval gelesen werden.
 *   **Entscheidung**:
@@ -408,6 +428,46 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
     - Neue Datei `crates/memfuse-graph/src/community.rs`.
     - Neuer Subcommand `run-community-detection` in `xtask`.
     - Erweiterung von `HybridQuery` und `Collection::hybrid_search_ext`.
+
+---
+
+## ADR-027: Label Propagation für Community Detection & GraphRAG
+
+*   **Datum**: 2026-08-27
+*   **Status**: ✅ Final
+*   **Kontext**: Für Phase 3 ("Community Detection & GraphRAG") wird eine Methode zur semantischen Clusterbildung von Wissensgraph-Knoten benötigt. Das Ergebnis (Community-Zuordnung pro EntityId) soll asynchron als Batch-Prozess berechnet, im Storage unter `__graph:community:<entity_id>` abgelegt und beim Retrieval gelesen werden.
+*   **Entscheidung**:
+    - Wahl des **Label-Propagation-Algorithmus (LPA)** anstelle von Louvain.
+    - Vollständig deterministische Ausführung durch fixierten RNG-Seed für Knoten-Shuffling und ein striktes Tie-Breaking: Bei relativer oder absoluter Gleichheit von Label-Gewichten gewinnt das kleinstmögliche `EntityId` (numerischer `u64`-Wert).
+    - Implementierung direkt auf der bestehenden `CsrGraph`-Struktur in `memfuse-graph::community` ohne zusätzliche externe Abhängigkeiten.
+    - Persolidierung im LSM-Storage über `Collection::run_community_detection()` mit strenger TxId-Allokation (`self.allocate_tx()`).
+    - Anbindung an das Retrieval über `HybridQuery::same_community_as`, welches Kandidaten derselben Community vor der RRF-Fusion filtert bzw. verstärkt.
+*   **Alternativen**:
+    - **Louvain-Algorithmus**: Louvain ist bei paralleler Ausführung ohne schwere Synchronisation nicht-deterministisch und erfordert komplexe Graph-Hierarchie-Strukturen.
+    - **Echtzeit-Clustering bei jeder Query**: Zu hohe Latenz und Token-Kosten, widerspricht den Zero-Latency- und Sovereign-Core-Prinzipien.
+*   **Begründung**: Label Propagation ist hochgradig speichereffizient, lässt sich nahtlos auf CSR-Arrays ausführen, ist ohne externe C/Rust-Dependencies umsetzbar und garantiert bei striktem Tie-Breaking 100%ige Reproduzierbarkeit und Zero-Panic-Sicherheit.
+*   **Konsequenzen**:
+    - Neue Datei `crates/memfuse-graph/src/community.rs`.
+    - Neuer Subcommand `run-community-detection` in `xtask`.
+    - Erweiterung von `HybridQuery` und `Collection::hybrid_search_ext`.
+
+---
+
+## ADR-025: Memory Importance Score & Recency-Decay als Post-Processing-Filter (Erweiterung ADR-021 & ADR-024)
+
+*   **Datum**: 2026-08-28
+*   **Status**: ✅ Final
+*   **Kontext**: Roadmap Phase 2 fordert ein LLM-bewertetes Memory Importance Scoring (`ImportanceScore`) und eine Recency-Decay-Funktion (`DecayFunction`) für episodische Relevanz. Es stellte sich die Frage, wie der berechnete `effective_score(now_tx)` in die RAG-Pipeline (ADR-021) integriert wird.
+*   **Entscheidung**:
+    - Der `effective_score(now_tx)` wird als Nachbearbeitungsschritt **NACH** RRF (Reciprocal Rank Fusion) und **NACH** Cross-Encoder Reranking in der RAG-Pipeline ausgeführt (`Collection::filter_by_importance`).
+    - Kandidaten mit `effective_score` unterhalb eines konfigurierbaren Schwellwerts werden aus den finalen Suchergebnissen entfernt.
+    - Es findet **KEINE** Neubewertung / Re-Ranking durch Multiplikation des RRF- / Cross-Encoder-Scores mit dem `effective_score` statt.
+*   **Alternativen**:
+    - Multiplikation des `effective_score` direkt in die RRF-Rankings: Verworfen, da dies die mathematischen RRF-Skalierungsunabhängigkeiten und die empirisch validierte RRF/Reranking-Reihenfolge aus ADR-021 zerstören würde.
+*   **Begründung**: Filterung statt Re-Ranking schützt die empirisch nachgewiesenen Trefferquoten des Hybrid-Retrievals (Anthropic Pattern, ADR-021), während irrelevante oder veraltete Erinnerungen (Low Importance / High Decay) zuverlässig ausgeschieden werden.
+*   **Konsequenzen**:
+    - `filter_by_importance()` in `Collection` filtert nach RRF/Reranker ohne Umsortierung.
+    - Zero-Panic Invariante in `ImportanceScore`, `DecayFunction` und `MemoryImportance`.
 
 ---
 

@@ -87,6 +87,10 @@ pub(crate) struct GraphInner {
     pub(crate) targets: Vec<InternalIndex>,
     /// CSR weights array: contiguous list of edge weights.
     pub(crate) weights: Vec<f32>,
+    /// CSR valid_froms array: validity start TxId per edge.
+    pub(crate) valid_froms: Vec<Option<TxId>>,
+    /// CSR valid_tos array: validity end TxId per edge.
+    pub(crate) valid_tos: Vec<Option<TxId>>,
 
     /// Staging for entities not yet committed, grouped by TxId.
     staged_entities: HashMap<TxId, HashMap<EntityId, Entity>>,
@@ -684,6 +688,132 @@ impl GraphIndex for CsrGraph {
             .or_default()
             .push((to_idx, edge.weight));
         Ok(())
+    }
+
+    async fn personalized_page_rank(
+        &self,
+        seed_nodes: &[EntityId],
+        config: &memfuse_core::PprConfig,
+    ) -> Result<Vec<(EntityId, f32)>> {
+        self.compact();
+        let inner = self.inner.read();
+        Ok(crate::ppr::compute_ppr(&inner, seed_nodes, config))
+    }
+
+    async fn traverse_at_time(
+        &self,
+        start: EntityId,
+        max_hops: usize,
+        as_of: TxId,
+    ) -> Result<Vec<(EntityId, f32)>> {
+        let inner = self.inner.read();
+        let start_idx = match inner.id_map.get(&start) {
+            Some(&idx) => idx,
+            None => return Ok(Vec::new()),
+        };
+
+        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
+            return Ok(Vec::new());
+        }
+
+        let effective_max = (max_hops as u8).min(MAX_TRAVERSAL_HOPS);
+
+        let mut visited: HashMap<InternalIndex, f32> = HashMap::new();
+        let mut queue: VecDeque<(InternalIndex, u8, f32)> = VecDeque::new();
+
+        queue.push_back((start_idx, 0, 1.0));
+
+        while let Some((node_idx, hop, current_score)) = queue.pop_front() {
+            if hop > effective_max {
+                continue;
+            }
+
+            let existing = visited.entry(node_idx).or_insert(0.0);
+            if current_score > *existing {
+                *existing = current_score;
+            }
+
+            if hop < effective_max {
+                // 1. CSR traversal (compacted edges)
+                if node_idx < inner.offsets.len() - 1 {
+                    let start_edge = inner.offsets[node_idx];
+                    let end_edge = inner.offsets[node_idx + 1];
+
+                    for edge_idx in start_edge..end_edge {
+                        let neighbor_idx = inner.targets[edge_idx];
+                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
+                            continue;
+                        }
+                        if let Some(vf) = inner.valid_froms.get(edge_idx).copied().flatten() {
+                            if as_of < vf {
+                                continue;
+                            }
+                        }
+                        if let Some(vt) = inner.valid_tos.get(edge_idx).copied().flatten() {
+                            if as_of >= vt {
+                                continue;
+                            }
+                        }
+                        let weight = inner.weights[edge_idx];
+                        let next_score = current_score * SCORE_DECAY * weight;
+
+                        if !visited.contains_key(&neighbor_idx)
+                            || visited[&neighbor_idx] < next_score
+                        {
+                            if inner
+                                .entities
+                                .get(neighbor_idx)
+                                .is_some_and(|e| e.is_some())
+                            {
+                                queue.push_back((neighbor_idx, hop + 1, next_score));
+                            }
+                        }
+                    }
+                }
+
+                // 2. Delta buffer traversal (uncompacted committed edges)
+                if let Some(pending) = inner.pending_edges.get(&node_idx) {
+                    for edge in pending {
+                        let neighbor_idx = edge.target;
+                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
+                            continue;
+                        }
+                        if let Some(vf) = edge.valid_from {
+                            if as_of < vf {
+                                continue;
+                            }
+                        }
+                        if let Some(vt) = edge.valid_to {
+                            if as_of >= vt {
+                                continue;
+                            }
+                        }
+                        let next_score = current_score * SCORE_DECAY * edge.weight;
+
+                        if (!visited.contains_key(&neighbor_idx)
+                            || visited[&neighbor_idx] < next_score)
+                            && inner
+                                .entities
+                                .get(neighbor_idx)
+                                .is_some_and(|e| e.is_some())
+                        {
+                            queue.push_back((neighbor_idx, hop + 1, next_score));
+                        }
+                    }
+                }
+            }
+        }
+
+        visited.remove(&start_idx);
+
+        let mut results: Vec<(EntityId, f32)> = visited
+            .into_iter()
+            .filter_map(|(idx, score)| inner.reverse_map.get(idx).map(|&id| (id, score)))
+            .collect();
+
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        Ok(results)
     }
 
     async fn traverse(&self, start: EntityId, max_hops: usize) -> Result<Vec<(EntityId, f32)>> {
@@ -1881,10 +2011,7 @@ mod tests {
                     msg
                 );
             }
-            other => panic!(
-                "Expected PolicyViolation referencing ADR-024, got: {:?}",
-                other
-            ),
+            other => panic!("Expected PolicyViolation referencing ADR-024, got: {:?}", other),
         }
     }
 
