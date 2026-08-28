@@ -13,6 +13,21 @@ Jeder `unsafe`-Block in `memfuse-index/src/distance.rs` braucht:
 unsafe fn dot_product_avx2(a: &[f32], b: &[f32]) -> f32 { ... }
 ```
 
+### Inhalts-Unikats-Pflicht (Schutz vor Copy-Paste-SAFETY-Blocks)
+
+SAFETY-Kommentare dürfen NICHT wortgleich aus anderen Funktionen kopiert werden.
+Jeder SAFETY-Kommentar MUSS die **KONKRETE Invariante DIESER spezifischen Funktion** benennen:
+- Welcher konkrete Aufrufer garantiert welche Vorbedingung?
+- Warum ist genau diese Zeigerarithmetik oder dieser Mmap-Zugriff für diese spezifische Datenstruktur sicher?
+- Welche konkreten Ausrichtungs- (Alignment) oder Längen-Garantien liegen vor?
+
+Ein SAFETY-Kommentar, der wortgleich in mehr als einer Funktion vorkommt, gilt als Qualitätsverstoß und muss individualisiert werden.
+
+**Informativer CI-Grep-Hinweis (Redundanz-Scan)**:
+```bash
+grep -rn "// SAFETY:" crates/ | sort | uniq -c | grep -v " 1 "
+```
+
 ## Pflicht-Fallback
 
 Für jede SIMD-Funktion existiert ein skalarer Fallback mit **identischem numerischen Ergebnis** (Epsilon ≤ 1e-4 relativ, §4 Determinismus-Gesetz).
