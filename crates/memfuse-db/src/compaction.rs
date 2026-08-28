@@ -62,7 +62,7 @@ impl ContextCompactor {
     /// Priorisiert nach Relevanz-Score. Tool-Output-Chunks (erkennbar an Metadata-Key "tool_output")
     /// werden zuerst kompaktiert.
     pub fn compact(&self, chunks: Vec<ContextChunk>) -> CompactedContext {
-        let source_doc_ids: Vec<DocId> = chunks.iter().map(|c| c.doc_id).collect();
+        let _source_doc_ids: Vec<DocId> = chunks.iter().map(|c| c.doc_id).collect();
         let max_tokens = self.budget.available();
         let mut tokens_used = 0;
         let mut retained = Vec::new();

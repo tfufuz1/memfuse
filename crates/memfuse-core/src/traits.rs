@@ -626,16 +626,36 @@ mod capability_coverage {
         struct VectorIndexPlaceholder;
         #[async_trait]
         impl VectorIndex for VectorIndexPlaceholder {
-            async fn insert(&self, _: TxId, _: DocId, _: &[f32]) -> Result<()> { Ok(()) }
-            async fn search(&self, _: &[f32], _: usize) -> Result<Vec<ScoredDocument>> { Ok(vec![]) }
-            async fn delete(&self, _: TxId, _: DocId) -> Result<()> { Ok(()) }
-            async fn commit(&self, _: TxId) -> Result<()> { Ok(()) }
-            async fn rollback(&self, _: TxId) -> Result<()> { Ok(()) }
-            async fn rollback_to_tx(&self, _: TxId) -> Result<()> { Ok(()) }
-            async fn last_tx_id(&self) -> Result<u64> { Ok(0) }
-            async fn len(&self) -> usize { 0 }
+            async fn insert(&self, _: TxId, _: DocId, _: &[f32]) -> Result<()> {
+                Ok(())
+            }
+            async fn search(&self, _: &[f32], _: usize) -> Result<Vec<ScoredDocument>> {
+                Ok(vec![])
+            }
+            async fn delete(&self, _: TxId, _: DocId) -> Result<()> {
+                Ok(())
+            }
+            async fn commit(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn last_tx_id(&self) -> Result<u64> {
+                Ok(0)
+            }
+            async fn len(&self) -> usize {
+                0
+            }
             async fn stats(&self) -> Result<VectorIndexStats> {
-                Ok(VectorIndexStats { num_vectors: 0, memory_usage_bytes: 0, num_layers: 0 })
+                Ok(VectorIndexStats {
+                    num_vectors: 0,
+                    memory_usage_bytes: 0,
+                    num_layers: 0,
+                })
             }
         }
         let index = VectorIndexPlaceholder;
@@ -655,34 +675,67 @@ mod capability_coverage {
         struct GraphIndexPlaceholder;
         #[async_trait]
         impl GraphIndex for GraphIndexPlaceholder {
-            async fn traverse(&self, _: EntityId, _: usize) -> Result<Vec<(EntityId, f32)>> { Ok(vec![]) }
-            async fn add_entity(&self, _: TxId, _: Entity) -> Result<()> { Ok(()) }
-            async fn add_edge(&self, _: TxId, _: Edge) -> Result<()> { Ok(()) }
-            async fn commit(&self, _: TxId) -> Result<()> { Ok(()) }
-            async fn rollback(&self, _: TxId) -> Result<()> { Ok(()) }
-            async fn rollback_to_tx(&self, _: TxId) -> Result<()> { Ok(()) }
-            async fn last_tx_id(&self) -> Result<u64> { Ok(0) }
-            async fn len(&self) -> usize { 0 }
+            async fn traverse(&self, _: EntityId, _: usize) -> Result<Vec<(EntityId, f32)>> {
+                Ok(vec![])
+            }
+            async fn add_entity(&self, _: TxId, _: Entity) -> Result<()> {
+                Ok(())
+            }
+            async fn add_edge(&self, _: TxId, _: Edge) -> Result<()> {
+                Ok(())
+            }
+            async fn commit(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn last_tx_id(&self) -> Result<u64> {
+                Ok(0)
+            }
+            async fn len(&self) -> usize {
+                0
+            }
             async fn stats(&self) -> Result<GraphIndexStats> {
-                Ok(GraphIndexStats { num_entities: 0, num_edges: 0, memory_usage_bytes: 0 })
+                Ok(GraphIndexStats {
+                    num_entities: 0,
+                    num_edges: 0,
+                    memory_usage_bytes: 0,
+                })
             }
         }
         let graph = GraphIndexPlaceholder;
         let res_traverse_at = graph.traverse_at(EntityId::new(1), 2, 1).await;
         assert!(
-            !matches!(res_traverse_at, Err(crate::MemFuseError::CapabilityUnsupported { .. })),
+            !matches!(
+                res_traverse_at,
+                Err(crate::MemFuseError::CapabilityUnsupported { .. })
+            ),
             "traverse_at returned CapabilityUnsupported"
         );
 
-        let res_traverse_at_time = graph.traverse_at_time(EntityId::new(1), 2, TxId::new(1)).await;
+        let res_traverse_at_time = graph
+            .traverse_at_time(EntityId::new(1), 2, TxId::new(1))
+            .await;
         assert!(
-            !matches!(res_traverse_at_time, Err(crate::MemFuseError::CapabilityUnsupported { .. })),
+            !matches!(
+                res_traverse_at_time,
+                Err(crate::MemFuseError::CapabilityUnsupported { .. })
+            ),
             "traverse_at_time returned CapabilityUnsupported"
         );
 
-        let res_ppr = graph.personalized_page_rank(&[EntityId::new(1)], &PprConfig::default()).await;
+        let res_ppr = graph
+            .personalized_page_rank(&[EntityId::new(1)], &PprConfig::default())
+            .await;
         assert!(
-            !matches!(res_ppr, Err(crate::MemFuseError::CapabilityUnsupported { .. })),
+            !matches!(
+                res_ppr,
+                Err(crate::MemFuseError::CapabilityUnsupported { .. })
+            ),
             "personalized_page_rank returned CapabilityUnsupported"
         );
     }
@@ -695,16 +748,36 @@ mod capability_coverage {
         struct TextIndexPlaceholder;
         #[async_trait]
         impl TextIndex for TextIndexPlaceholder {
-            async fn search(&self, _: &str, _: usize) -> Result<Vec<ScoredDocument>> { Ok(vec![]) }
-            async fn insert(&self, _: TxId, _: DocId, _: &str) -> Result<()> { Ok(()) }
-            async fn delete(&self, _: TxId, _: DocId) -> Result<()> { Ok(()) }
-            async fn commit(&self, _: TxId) -> Result<()> { Ok(()) }
-            async fn rollback(&self, _: TxId) -> Result<()> { Ok(()) }
-            async fn rollback_to_tx(&self, _: TxId) -> Result<()> { Ok(()) }
-            async fn last_tx_id(&self) -> Result<u64> { Ok(0) }
-            async fn len(&self) -> usize { 0 }
+            async fn search(&self, _: &str, _: usize) -> Result<Vec<ScoredDocument>> {
+                Ok(vec![])
+            }
+            async fn insert(&self, _: TxId, _: DocId, _: &str) -> Result<()> {
+                Ok(())
+            }
+            async fn delete(&self, _: TxId, _: DocId) -> Result<()> {
+                Ok(())
+            }
+            async fn commit(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn last_tx_id(&self) -> Result<u64> {
+                Ok(0)
+            }
+            async fn len(&self) -> usize {
+                0
+            }
             async fn stats(&self) -> Result<TextIndexStats> {
-                Ok(TextIndexStats { num_documents: 0, num_tokens: 0, memory_usage_bytes: 0 })
+                Ok(TextIndexStats {
+                    num_documents: 0,
+                    num_tokens: 0,
+                    memory_usage_bytes: 0,
+                })
             }
         }
         let text_index = TextIndexPlaceholder;

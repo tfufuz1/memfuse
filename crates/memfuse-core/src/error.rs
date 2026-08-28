@@ -177,7 +177,10 @@ pub enum MemFuseError {
 
 impl MemFuseError {
     /// Creates a `CapabilityUnsupported` error.
-    pub fn capability_unsupported(capability: impl Into<String>, reason: impl Into<String>) -> Self {
+    pub fn capability_unsupported(
+        capability: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
         Self::CapabilityUnsupported {
             capability: capability.into(),
             reason: reason.into(),

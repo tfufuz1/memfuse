@@ -279,8 +279,14 @@ mod tests {
         assert_eq!(DEFAULT_MAX_OPS_PER_TX, 100_000);
 
         let ops = vec![
-            IndexOp::Insert { doc_id: DocId::new(1), data: "op1".to_string() },
-            IndexOp::Insert { doc_id: DocId::new(2), data: "op2".to_string() },
+            IndexOp::Insert {
+                doc_id: DocId::new(1),
+                data: "op1".to_string(),
+            },
+            IndexOp::Insert {
+                doc_id: DocId::new(2),
+                data: "op2".to_string(),
+            },
         ];
 
         buffer.stage_many(tx, ops);

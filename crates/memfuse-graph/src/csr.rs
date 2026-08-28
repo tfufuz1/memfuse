@@ -990,7 +990,6 @@ impl GraphIndex for CsrGraph {
         Ok(results)
     }
 
-
     async fn commit(&self, tx: TxId) -> Result<()> {
         // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
         if is_suspicious_tx_id(tx) {

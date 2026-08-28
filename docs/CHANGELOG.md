@@ -2,23 +2,15 @@
 
 > Automatisch generierter Read-Only Bericht aus allen Inline-Tags im Repo.
 
-## Breaking Changes
-
-### MemFuseError::CapabilityUnsupported Integration
-- **`memfuse-core`**: Added new error variant `MemFuseError::CapabilityUnsupported { capability: String, reason: String }` and helper constructor `MemFuseError::capability_unsupported(capability, reason)`.
-- **Trait Default Changes**: Default implementations for `VectorIndex::search_at`, `VectorIndex::search_filtered`, `TextIndex::search_at`, `GraphIndex::traverse_at`, `GraphIndex::traverse_at_time`, and `GraphIndex::personalized_page_rank` now return `MemFuseError::CapabilityUnsupported` with standardized capability names (`snapshot_read_at`, `vector_filtered_search`, `graph_traverse_at`, `graph_traverse_at_time`, `graph_ppr`) instead of returning unstructured `PolicyViolation` or `Index` errors.
-- **Consumer Impact**: Downstream consumers matching on concrete error variants when invoking these six methods must update their error handling patterns from `MemFuseError::PolicyViolation` / `MemFuseError::Index` to `MemFuseError::CapabilityUnsupported`.
-
----
-
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
 | `2026-08-29T11:00:00Z` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `AGT-CORE-a3f29c1d` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3) |
 | `2026-08-29T10:00:00Z` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `AGT-CORE-a3f29c1d` | `b8e4f1a2` | `PASS` | `1` | // REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2) |
 | `2026-08-29T09:14:07Z (SESSION: a3f29c1d)` | `crates/memfuse-core/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Core types, traits, and error handling for MemFuse. |
-| `2026-08-29T09:14:07Z` | `crates/memfuse-core/src/lib.rs` | `ANCHOR` | `AGT-CORE-a3f29c1d` | `a3f29c1d` | `DONE` | `2` | // ANCHOR[DEBT:CORE-INLINE-001] STATUS:DONE (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-29T09:14:07Z) (SESSION: a3f29c1d) |
+| `2026-08-29T09:14:07Z` | `crates/memfuse-core/src/lib.rs` | `ANCHOR` | `AGT-CORE-a3f29c1d` | `a3f29c1d` | `DONE` | `2` | // ANCHOR[DEBT:CORE-INLINE-001] STATUS:DONE (ID: AGT-CORE-a3f29c1d) (TS:2026-08-29T09:14:07Z) (SESSION: a3f29c1d) |
 | `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/compaction.rs` | `AI-TAG` | `AGT-DB-004` | `-` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR][RESOLVED] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-28T00:00:00Z) |
 | `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/collection.rs` | `AI-TAG` | `AGT-DB-005` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-DB-005 — relate() rollback race behoben, siehe ADR-023 (TS:2026-08-28T00:00:00Z) |
+| `2026-08-28T00:00:00Z` | `crates/memfuse-core/src/tx_buffer.rs` | `AI-TAG` | `AGT-CORE-001` | `-` | `OPEN` | `0` | // AI-TAG[SMELL][MINOR] Bounded staging capacity (ID: AGT-CORE-001) (TS:2026-08-28T00:00:00Z) |
 | `2026-08-28T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-002` | `-` | `OPEN` | `0` | // AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-28T00:00:00Z) |
 | `2026-08-27T14:32:00Z` | `crates/memfuse-store/src/wal.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Write-Ahead-Log mit HMAC-Chaining für crash-sichere WAL-Operationen |
 | `2026-08-27T14:32:00Z` | `crates/memfuse-store/src/lsm.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | LSM-Tree-Implementierung (MemTable + SSTable + Compaction) |
