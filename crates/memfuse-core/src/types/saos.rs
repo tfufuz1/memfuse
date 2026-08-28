@@ -1,7 +1,25 @@
-use super::domain::DocId;
+use super::domain::{DocId, PprConfig};
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
+
+/// Strategy used for graph retrieval in hybrid search queries.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum GraphTraversalStrategy {
+    /// Multi-hop BFS traversal with hop score decay (default max_hops = 3).
+    Hops {
+        /// Maximum traversal hop depth.
+        max_hops: usize,
+    },
+    /// Personalized PageRank power iteration starting from seed nodes.
+    PersonalizedPageRank(PprConfig),
+}
+
+impl Default for GraphTraversalStrategy {
+    fn default() -> Self {
+        Self::Hops { max_hops: 3 }
+    }
+}
 
 /// Normalized fusion weights for hybrid search.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -190,10 +208,15 @@ pub struct HybridQuery {
     pub vector_query: Option<Vec<f32>>,
     /// Optional starting node ID for graph traversal search.
     pub graph_start_node: Option<String>,
+    /// Graph traversal strategy (Hops or PersonalizedPageRank).
+    #[serde(default)]
+    pub graph_strategy: GraphTraversalStrategy,
     /// Fusion weights across vector, text, and graph signals.
     pub fusion_weights: FusionWeights,
     /// Optional metadata expression filter.
     pub filter: Option<FilterExpr>,
+    /// Optional entity ID to filter/boost results in the same community.
+    pub same_community_as: Option<EntityId>,
     /// Maximum number of search results to return.
     pub k: usize,
 }
@@ -211,8 +234,10 @@ pub struct HybridQueryBuilder {
     text_query: Option<String>,
     vector_query: Option<Vec<f32>>,
     graph_start_node: Option<String>,
+    graph_strategy: Option<GraphTraversalStrategy>,
     fusion_weights: Option<FusionWeights>,
     filter: Option<FilterExpr>,
+    same_community_as: Option<EntityId>,
     k: Option<usize>,
 }
 
@@ -240,6 +265,12 @@ impl HybridQueryBuilder {
         self
     }
 
+    /// Sets the graph traversal strategy (Hops or PersonalizedPageRank).
+    pub fn with_graph_strategy(mut self, strategy: GraphTraversalStrategy) -> Self {
+        self.graph_strategy = Some(strategy);
+        self
+    }
+
     /// Sets custom signal fusion weights.
     pub fn with_fusion_weights(mut self, weights: FusionWeights) -> Self {
         self.fusion_weights = Some(weights);
@@ -249,6 +280,12 @@ impl HybridQueryBuilder {
     /// Sets a metadata expression filter on the query.
     pub fn with_filter(mut self, filter: FilterExpr) -> Self {
         self.filter = Some(filter);
+        self
+    }
+
+    /// Sets the community context entity filter/boost.
+    pub fn with_same_community_as(mut self, entity_id: EntityId) -> Self {
+        self.same_community_as = Some(entity_id);
         self
     }
 
@@ -267,6 +304,7 @@ impl HybridQueryBuilder {
             text_query: self.text_query,
             vector_query: self.vector_query,
             graph_start_node: self.graph_start_node,
+            graph_strategy: self.graph_strategy.unwrap_or_default(),
             fusion_weights: self.fusion_weights.unwrap_or(
                 // Use a known-safe default to avoid unwrap()
                 FusionWeights {
@@ -277,6 +315,7 @@ impl HybridQueryBuilder {
                 },
             ),
             filter: self.filter,
+            same_community_as: self.same_community_as,
             k: self.k.unwrap_or(10),
         })
     }

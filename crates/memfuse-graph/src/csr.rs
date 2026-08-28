@@ -10,9 +10,20 @@ use memfuse_core::{
     Edge, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result, StorageEngine, TxId,
 };
 use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+
+/// Persisted edge payload format for storage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistedEdgePayload {
+    pub weight: f32,
+    #[serde(default)]
+    pub valid_from: Option<TxId>,
+    #[serde(default)]
+    pub valid_to: Option<TxId>,
+}
 
 /// Score decay factor per hop (0.7^hop).
 const SCORE_DECAY: f32 = 0.7;
@@ -71,33 +82,42 @@ impl Default for CsrGraphConfig {
 /// Internal contiguous index for CSR arrays.
 type InternalIndex = usize;
 
+/// Internal representation of an edge payload.
+#[derive(Debug, Clone, PartialEq)]
+struct EdgePayload {
+    target: InternalIndex,
+    weight: f32,
+    valid_from: Option<TxId>,
+    valid_to: Option<TxId>,
+}
+
 /// Inner state of the CsrGraph to manage contiguous storage.
-struct GraphInner {
+pub(crate) struct GraphInner {
     /// Mapping from public EntityId to internal contiguous index.
-    id_map: HashMap<EntityId, InternalIndex>,
+    pub(crate) id_map: HashMap<EntityId, InternalIndex>,
     /// Mapping from internal index back to EntityId.
-    reverse_map: Vec<EntityId>,
+    pub(crate) reverse_map: Vec<EntityId>,
     /// Entity metadata stored contiguously.
-    entities: Vec<Option<Entity>>,
+    pub(crate) entities: Vec<Option<Entity>>,
 
     /// CSR offsets array: offsets[i] is the start index in `targets` for node `i`.
     /// Length is nodes + 1.
-    offsets: Vec<usize>,
+    pub(crate) offsets: Vec<usize>,
     /// CSR targets array: contiguous list of neighbor internal indices.
-    targets: Vec<InternalIndex>,
+    pub(crate) targets: Vec<InternalIndex>,
     /// CSR weights array: contiguous list of edge weights.
-    weights: Vec<f32>,
+    pub(crate) weights: Vec<f32>,
 
     /// Staging for entities not yet committed, grouped by TxId.
     staged_entities: HashMap<TxId, HashMap<EntityId, Entity>>,
     /// Staging for edges not yet committed, grouped by TxId.
-    staged_edges: HashMap<TxId, HashMap<InternalIndex, Vec<(InternalIndex, f32)>>>,
+    staged_edges: HashMap<TxId, HashMap<InternalIndex, Vec<EdgePayload>>>,
     /// Staging for edge removals not yet committed, grouped by TxId.
     staged_removals: HashMap<TxId, Vec<(InternalIndex, InternalIndex)>>,
     /// Edges that have been committed but not yet compacted into CSR arrays (delta buffer).
-    pending_edges: HashMap<InternalIndex, Vec<(InternalIndex, f32)>>,
+    pending_edges: HashMap<InternalIndex, Vec<EdgePayload>>,
     /// Tombstoned edges that have been removed and should be excluded during compaction and traversal.
-    tombstoned_edges: HashSet<(InternalIndex, InternalIndex)>,
+    pub(crate) tombstoned_edges: HashSet<(InternalIndex, InternalIndex)>,
     /// Total number of uncompacted edges currently in `pending_edges`.
     pending_edge_count: usize,
     /// Flag indicating if there are uncompacted pending edges or modifications.
@@ -113,6 +133,8 @@ impl GraphInner {
             offsets: vec![0],
             targets: Vec::new(),
             weights: Vec::new(),
+            valid_froms: Vec::new(),
+            valid_tos: Vec::new(),
             staged_entities: HashMap::new(),
             staged_edges: HashMap::new(),
             staged_removals: HashMap::new(),
@@ -149,6 +171,8 @@ impl GraphInner {
         let mut new_offsets = Vec::with_capacity(num_nodes + 1);
         let mut new_targets = Vec::with_capacity(self.targets.len() + self.pending_edge_count);
         let mut new_weights = Vec::with_capacity(self.weights.len() + self.pending_edge_count);
+        let mut new_valid_froms = Vec::with_capacity(self.valid_froms.len() + self.pending_edge_count);
+        let mut new_valid_tos = Vec::with_capacity(self.valid_tos.len() + self.pending_edge_count);
 
         let mut current_offset = 0;
         new_offsets.push(current_offset);
@@ -171,25 +195,32 @@ impl GraphInner {
             for j in old_start..old_end {
                 let target = self.targets[j];
                 if !self.tombstoned_edges.contains(&(i, target)) {
-                    node_edges.push((target, self.weights[j]));
+                    node_edges.push(EdgePayload {
+                        target,
+                        weight: self.weights[j],
+                        valid_from: self.valid_froms.get(j).copied().flatten(),
+                        valid_to: self.valid_tos.get(j).copied().flatten(),
+                    });
                 }
             }
 
             // 2. Get neighbors from pending_edges (FIND-GRA-001)
             if let Some(staged) = self.pending_edges.get(&i) {
-                for &(target, weight) in staged {
-                    if !self.tombstoned_edges.contains(&(i, target)) {
-                        node_edges.push((target, weight));
+                for edge in staged {
+                    if !self.tombstoned_edges.contains(&(i, edge.target)) {
+                        node_edges.push(edge.clone());
                     }
                 }
             }
 
             // Stable sort target indices for deterministic CSR layout
-            node_edges.sort_by_key(|&(target, _)| target);
+            node_edges.sort_by_key(|e| e.target);
 
-            for (target, weight) in node_edges {
-                new_targets.push(target);
-                new_weights.push(weight);
+            for edge in node_edges {
+                new_targets.push(edge.target);
+                new_weights.push(edge.weight);
+                new_valid_froms.push(edge.valid_from);
+                new_valid_tos.push(edge.valid_to);
                 current_offset += 1;
             }
 
@@ -199,6 +230,8 @@ impl GraphInner {
         self.offsets = new_offsets;
         self.targets = new_targets;
         self.weights = new_weights;
+        self.valid_froms = new_valid_froms;
+        self.valid_tos = new_valid_tos;
         self.pending_edges.clear();
         self.tombstoned_edges.clear();
         self.pending_edge_count = 0;
@@ -251,6 +284,10 @@ impl CsrGraph {
         }
     }
 
+    pub(crate) fn inner_read(&self) -> parking_lot::RwLockReadGuard<'_, GraphInner> {
+        self.inner.read()
+    }
+
     /// Sets or replaces the persistent storage handle.
     pub fn set_storage(&mut self, storage: Arc<dyn StorageEngine>) {
         self.storage = Some(storage);
@@ -269,6 +306,18 @@ impl CsrGraph {
 
     /// Directly inserts an edge into the CSR graph without staging.
     pub fn insert_edge_direct(&self, from: EntityId, to: EntityId, weight: f32) -> Result<()> {
+        self.insert_edge_direct_with_validity(from, to, weight, None, None)
+    }
+
+    /// Directly inserts an edge with validity into the CSR graph without staging.
+    pub fn insert_edge_direct_with_validity(
+        &self,
+        from: EntityId,
+        to: EntityId,
+        weight: f32,
+        valid_from: Option<TxId>,
+        valid_to: Option<TxId>,
+    ) -> Result<()> {
         let mut inner = self.inner.write();
         let from_idx = inner.get_or_create_index(from);
         let to_idx = inner.get_or_create_index(to);
@@ -276,7 +325,12 @@ impl CsrGraph {
             .pending_edges
             .entry(from_idx)
             .or_default()
-            .push((to_idx, weight));
+            .push(EdgePayload {
+                target: to_idx,
+                weight,
+                valid_from,
+                valid_to,
+            });
         inner.pending_edge_count += 1;
         inner.is_dirty = true;
         if inner.pending_edge_count >= self.config.rebuild_threshold {
@@ -298,7 +352,14 @@ impl CsrGraph {
 
     /// Fügt eine Edge direkt in committed_staged / pending_edges ein (für load_from_storage).
     /// Umgeht das TX-Staging, da beim Laden alle Daten bereits committed sind.
-    fn load_edge_direct(&self, from: EntityId, to: EntityId, weight: f32) -> Result<()> {
+    fn load_edge_direct(
+        &self,
+        from: EntityId,
+        to: EntityId,
+        weight: f32,
+        valid_from: Option<TxId>,
+        valid_to: Option<TxId>,
+    ) -> Result<()> {
         let mut inner = self.inner.write();
         let from_idx = inner.get_or_create_index(from);
         let to_idx = inner.get_or_create_index(to);
@@ -306,7 +367,12 @@ impl CsrGraph {
             .pending_edges
             .entry(from_idx)
             .or_default()
-            .push((to_idx, weight));
+            .push(EdgePayload {
+                target: to_idx,
+                weight,
+                valid_from,
+                valid_to,
+            });
         inner.pending_edge_count += 1;
         inner.is_dirty = true;
         Ok(())
@@ -332,7 +398,7 @@ impl CsrGraph {
         tx: TxId,
         from: &EntityId,
         to: &EntityId,
-        weight: f32,
+        payload: &PersistedEdgePayload,
     ) -> Result<()> {
         let key = [
             GRAPH_EDGE_PREFIX,
@@ -341,7 +407,7 @@ impl CsrGraph {
             to.as_bytes().as_slice(),
         ]
         .concat();
-        let value = bincode::serialize(&weight)
+        let value = bincode::serialize(payload)
             .map_err(|e| MemFuseError::Internal(format!("graph edge serialize: {e}")))?;
         storage.put(tx, &key, &value).await
     }
@@ -382,9 +448,16 @@ impl CsrGraph {
         let edge_entries = storage.scan_prefix(GRAPH_EDGE_PREFIX).await?;
         let mut edge_count = 0usize;
         for (raw_key, raw_value) in edge_entries {
-            let weight: f32 = bincode::deserialize(&raw_value).map_err(|e| {
-                MemFuseError::Internal(format!("graph edge weight deserialize: {e}"))
-            })?;
+            let (weight, valid_from, valid_to) = match bincode::deserialize::<PersistedEdgePayload>(&raw_value) {
+                Ok(p) => (p.weight, p.valid_from, p.valid_to),
+                Err(_) => {
+                    // Backward compatibility fallback for legacy serialized f32 weight values
+                    let w: f32 = bincode::deserialize(&raw_value).map_err(|e| {
+                        MemFuseError::Internal(format!("graph edge deserialize: {e}"))
+                    })?;
+                    (w, None, None)
+                }
+            };
 
             // Key-Format: "__graph:edge:{from_id}:{to_id}"
             let key_payload = raw_key
@@ -397,7 +470,7 @@ impl CsrGraph {
             if let Some((from_str, to_str)) = key_str.split_once(':') {
                 let from_id = EntityId::from(from_str);
                 let to_id = EntityId::from(to_str);
-                graph.load_edge_direct(from_id, to_id, weight)?;
+                graph.load_edge_direct(from_id, to_id, weight, valid_from, valid_to)?;
                 edge_count += 1;
             } else {
                 tracing::warn!(key = key_str, "Ungültiger graph edge key, übersprungen");
@@ -505,7 +578,8 @@ impl CsrGraph {
 
         // 2. Pending edges
         if let Some(pending) = inner.pending_edges.get(&start_idx) {
-            for &(neighbor_idx, _) in pending {
+            for edge in pending {
+                let neighbor_idx = edge.target;
                 if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
                     && inner
                         .entities
@@ -678,8 +752,23 @@ impl GraphIndex for CsrGraph {
             .or_default()
             .entry(from_idx)
             .or_default()
-            .push((to_idx, edge.weight));
+            .push(EdgePayload {
+                target: to_idx,
+                weight: edge.weight,
+                valid_from: edge.valid_from,
+                valid_to: edge.valid_to,
+            });
         Ok(())
+    }
+
+    async fn personalized_page_rank(
+        &self,
+        seed_nodes: &[EntityId],
+        config: &memfuse_core::PprConfig,
+    ) -> Result<Vec<(EntityId, f32)>> {
+        self.compact();
+        let inner = self.inner.read();
+        Ok(crate::ppr::compute_ppr(&inner, seed_nodes, config))
     }
 
     async fn traverse(&self, start: EntityId, max_hops: usize) -> Result<Vec<(EntityId, f32)>> {
@@ -746,11 +835,12 @@ impl GraphIndex for CsrGraph {
 
                 // 2. Delta buffer traversal (uncompacted committed edges)
                 if let Some(pending) = inner.pending_edges.get(&node_idx) {
-                    for &(neighbor_idx, weight) in pending {
+                    for edge in pending {
+                        let neighbor_idx = edge.target;
                         if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
                             continue;
                         }
-                        let next_score = current_score * SCORE_DECAY * weight;
+                        let next_score = current_score * SCORE_DECAY * edge.weight;
 
                         if (!visited.contains_key(&neighbor_idx)
                             || visited[&neighbor_idx] < next_score)
@@ -798,9 +888,17 @@ impl GraphIndex for CsrGraph {
                 let mut list = Vec::new();
                 for (&from_idx, to_list) in tx_edges {
                     if let Some(&from_id) = inner.reverse_map.get(from_idx) {
-                        for &(to_idx, weight) in to_list {
-                            if let Some(&to_id) = inner.reverse_map.get(to_idx) {
-                                list.push((from_id, to_id, weight));
+                        for edge in to_list {
+                            if let Some(&to_id) = inner.reverse_map.get(edge.target) {
+                                list.push((
+                                    from_id,
+                                    to_id,
+                                    PersistedEdgePayload {
+                                        weight: edge.weight,
+                                        valid_from: edge.valid_from,
+                                        valid_to: edge.valid_to,
+                                    },
+                                ));
                             }
                         }
                     }
@@ -828,8 +926,8 @@ impl GraphIndex for CsrGraph {
                 }
             }
             if let Some(ref edges) = edges_to_commit {
-                for (from_id, to_id, weight) in edges {
-                    self.persist_edge(storage.as_ref(), tx, from_id, to_id, *weight)
+                for (from_id, to_id, payload) in edges {
+                    self.persist_edge(storage.as_ref(), tx, from_id, to_id, payload)
                         .await?;
                 }
             }
@@ -873,7 +971,7 @@ impl GraphIndex for CsrGraph {
         if let Some(tx_removals) = inner.staged_removals.remove(&tx) {
             for (f_idx, t_idx) in tx_removals {
                 if let Some(pending) = inner.pending_edges.get_mut(&f_idx) {
-                    pending.retain(|&(target, _)| target != t_idx);
+                    pending.retain(|edge| edge.target != t_idx);
                 }
                 inner.tombstoned_edges.insert((f_idx, t_idx));
                 inner.is_dirty = true;
@@ -1355,22 +1453,12 @@ mod tests {
 
         // 1. Add uncommitted edges
         let tx_uncommitted = TxId::new(999);
-        let edge1 = Edge {
-            from: EntityId::new(1),
-            to: EntityId::new(5),
-            weight: 0.5,
-            label: String::new(),
-        };
+        let edge1 = Edge::new(EntityId::new(1), EntityId::new(5), "").with_weight(0.5);
         graph.add_edge(tx_uncommitted, edge1).await.unwrap(); // unwrap
 
         // 2. Add committed edges
         let tx_committed = TxId::new(100);
-        let edge2 = Edge {
-            from: EntityId::new(1),
-            to: EntityId::new(2), // Use existing entity 2 to avoid 'entry missing' errors
-            weight: 0.9,
-            label: String::new(),
-        };
+        let edge2 = Edge::new(EntityId::new(1), EntityId::new(2), "").with_weight(0.9);
         graph.add_edge(tx_committed, edge2).await.unwrap(); // unwrap
         graph.commit(tx_committed).await.unwrap(); // unwrap
 
@@ -1877,7 +1965,10 @@ mod tests {
                     msg
                 );
             }
-            other => panic!("Expected PolicyViolation referencing ADR-024, got: {:?}", other),
+            other => panic!(
+                "Expected PolicyViolation referencing ADR-024, got: {:?}",
+                other
+            ),
         }
     }
 
@@ -1911,5 +2002,112 @@ mod tests {
             12,
             "last_tx_id should be updated to 12 after committing Tx 12"
         );
+    }
+
+    #[tokio::test]
+    async fn test_traverse_at_time_exact_boundary_off_by_one() {
+        let graph = CsrGraph::new();
+        let tx_setup = TxId::new(1);
+        let id1 = EntityId::new(1);
+        let id2 = EntityId::new(2);
+
+        graph
+            .add_entity(tx_setup, Entity::new(id1, "Node1", "Type"))
+            .await
+            .unwrap(); // unwrap
+        graph
+            .add_entity(tx_setup, Entity::new(id2, "Node2", "Type"))
+            .await
+            .unwrap(); // unwrap
+
+        let valid_until = TxId::new(100);
+        let edge = Edge::new(id1, id2, "valid_rel")
+            .with_validity(Some(TxId::new(10)), Some(valid_until));
+
+        graph.add_edge(tx_setup, edge).await.unwrap(); // unwrap
+        graph.commit(tx_setup).await.unwrap(); // unwrap
+
+        // 1. Before valid_from (< 10) -> Should NOT return edge
+        let res_before = graph
+            .traverse_at_time(id1, 1, TxId::new(9))
+            .await
+            .unwrap(); // unwrap
+        assert!(res_before.is_empty(), "Edge must not be valid before valid_from (9 < 10)");
+
+        // 2. Exactly at valid_from (10) -> MUST return edge
+        let res_from = graph
+            .traverse_at_time(id1, 1, TxId::new(10))
+            .await
+            .unwrap(); // unwrap
+        assert_eq!(res_from.len(), 1, "Edge must be valid at valid_from (10)");
+
+        // 3. One step before valid_to (valid_until - 1 = 99) -> MUST return edge
+        let res_before_to = graph
+            .traverse_at_time(id1, 1, TxId::new(99))
+            .await
+            .unwrap(); // unwrap
+        assert_eq!(res_before_to.len(), 1, "Edge must be valid at valid_to - 1 (99)");
+
+        // 4. Exactly at valid_to (valid_until = 100) -> MUST NOT return edge
+        let res_at_to = graph
+            .traverse_at_time(id1, 1, valid_until)
+            .await
+            .unwrap(); // unwrap
+        assert!(
+            res_at_to.is_empty(),
+            "Edge must NOT be valid at exact valid_to boundary (100)"
+        );
+
+        // 5. After valid_to (101) -> MUST NOT return edge
+        let res_after_to = graph
+            .traverse_at_time(id1, 1, TxId::new(101))
+            .await
+            .unwrap(); // unwrap
+        assert!(res_after_to.is_empty(), "Edge must NOT be valid after valid_to (101)");
+
+        // 6. Test compacted CSR path boundary behavior
+        graph.compact();
+
+        let res_compact_valid = graph
+            .traverse_at_time(id1, 1, TxId::new(99))
+            .await
+            .unwrap(); // unwrap
+        assert_eq!(res_compact_valid.len(), 1, "Compacted edge must be valid at 99");
+
+        let res_compact_invalid = graph
+            .traverse_at_time(id1, 1, valid_until)
+            .await
+            .unwrap(); // unwrap
+        assert!(
+            res_compact_invalid.is_empty(),
+            "Compacted edge must NOT be valid at 100"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_traverse_at_time_unbounded_validity() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+        let id1 = EntityId::new(1);
+        let id2 = EntityId::new(2);
+
+        graph
+            .add_entity(tx, Entity::new(id1, "N1", "T"))
+            .await
+            .unwrap(); // unwrap
+        graph
+            .add_entity(tx, Entity::new(id2, "N2", "T"))
+            .await
+            .unwrap(); // unwrap
+
+        let edge = Edge::new(id1, id2, "always_valid");
+        graph.add_edge(tx, edge).await.unwrap(); // unwrap
+        graph.commit(tx).await.unwrap(); // unwrap
+
+        let res = graph
+            .traverse_at_time(id1, 1, TxId::new(500))
+            .await
+            .unwrap(); // unwrap
+        assert_eq!(res.len(), 1, "Unbounded edge must be valid at any point in time");
     }
 }

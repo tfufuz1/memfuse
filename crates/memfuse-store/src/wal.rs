@@ -418,8 +418,13 @@ impl Wal {
             parent.join(".wal_integrity_key")
         };
 
-        if key_path.exists() {
-            let bytes = tokio::fs::read(&key_path).await.map_err(|e| {
+        // AI-TAG[SECURITY][CRITICAL] Atomic WAL integrity key creation with 0o600 mode (AGT-STORE-003) (TS:2026-08-25T00:00:00Z)
+        // INVARIANT: Key file MUST never exist with permissions other than 0o600 on Unix.
+        // TOCTOU mitigation: create_new(true) + mode(0o600) ensures atomic creation without permission window.
+        // Non-Unix fallback: Windows/non-Unix OS permission hardening is not natively enforced via mode(0o600).
+        // MemFuse Desktop targets Linux/macOS primary deployment; non-Unix permission isolation relies on OS profile defaults.
+        async fn read_key_file(path: &Path) -> Result<[u8; 32]> {
+            let bytes = tokio::fs::read(path).await.map_err(|e| {
                 MemFuseError::Storage(format!("Failed to read WAL integrity key: {}", e))
             })?;
             if bytes.len() != 32 {
@@ -431,28 +436,46 @@ impl Wal {
             let mut arr = [0u8; 32];
             arr.copy_from_slice(&bytes);
             Ok(arr)
+        }
+
+        if key_path.exists() {
+            read_key_file(&key_path).await
         } else {
             use rand::RngCore;
+            use tokio::io::AsyncWriteExt;
+
             let mut key = [0u8; 32];
             rand::thread_rng().fill_bytes(&mut key);
 
-            tokio::fs::write(&key_path, &key).await.map_err(|e| {
-                MemFuseError::Storage(format!("Failed to write WAL integrity key: {}", e))
-            })?;
-
+            let mut options = tokio::fs::OpenOptions::new();
+            options.write(true).create_new(true);
             #[cfg(unix)]
             {
-                use std::os::unix::fs::PermissionsExt;
-                if let Err(e) =
-                    tokio::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600))
-                        .await
-                {
-                    tracing::warn!(
-                        "Failed to set restrictive permissions (0600) on WAL integrity key: {}",
-                        e
-                    );
-                }
+                options.mode(0o600);
             }
+
+            let file_res = options.open(&key_path).await;
+            let mut file = match file_res {
+                Ok(f) => f,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    // Race condition handling: Another process created the key file between .exists() check and open()
+                    return read_key_file(&key_path).await;
+                }
+                Err(e) => {
+                    return Err(MemFuseError::Storage(format!(
+                        "Failed to create WAL integrity key file atomically at {}: {}",
+                        key_path.display(),
+                        e
+                    )));
+                }
+            };
+
+            file.write_all(&key).await.map_err(|e| {
+                MemFuseError::Storage(format!("Failed to write WAL integrity key: {}", e))
+            })?;
+            file.sync_all().await.map_err(|e| {
+                MemFuseError::Storage(format!("Failed to sync WAL integrity key file: {}", e))
+            })?;
 
             // FSync parent directory to persist directory entry
             let parent = key_path.parent().unwrap_or_else(|| Path::new(""));
@@ -1981,5 +2004,55 @@ mod tests {
         );
         assert_eq!(replayed[0].1.seq_no, 1);
         assert_eq!(replayed[1].1.seq_no, 2);
+    }
+
+    #[tokio::test]
+    async fn test_integrity_key_atomic_permissions_and_race_condition() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let wal_path = temp.path().join("test.wal");
+
+        // Test 1: Created key file has 0o600 permissions on Unix
+        let key1 = Wal::load_or_create_integrity_key(&wal_path)
+            .await
+            .expect("create key");
+
+        let key_path = temp.path().join(".wal_integrity_key");
+        assert!(key_path.exists(), "Key file must exist");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let metadata = std::fs::metadata(&key_path).expect("metadata");
+            let mode = metadata.permissions().mode() & 0o777;
+            assert_eq!(
+                mode, 0o600,
+                "WAL integrity key file must have permissions 0o600 on Unix, got 0o{:o}",
+                mode
+            );
+        }
+
+        // Test 2: Race condition simulation with multiple concurrent callers
+        let wal_path_race = temp.path().join("race.wal");
+        let mut handles = Vec::new();
+        for _ in 0..10 {
+            let path = wal_path_race.clone();
+            handles.push(tokio::spawn(async move {
+                Wal::load_or_create_integrity_key(&path).await
+            }));
+        }
+
+        let mut keys = Vec::new();
+        for h in handles {
+            let res = h.await.expect("join handle").expect("load key");
+            keys.push(res);
+        }
+
+        for k in &keys {
+            assert_eq!(
+                k, &keys[0],
+                "All concurrent tasks must receive the identical key"
+            );
+        }
+        assert_eq!(key1.len(), 32);
     }
 }
