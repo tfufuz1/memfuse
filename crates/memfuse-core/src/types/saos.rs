@@ -31,6 +31,10 @@ pub struct FusionWeights {
     metadata: f32,
 }
 
+// ANCHOR[REFACTOR:CORE-FUSION-001] STATUS:DONE (TS:2026-08-28T16:49:00Z) (SESSION: a3f29c1d)
+// AUFGABE : Remove FusionWeights::new_with_metadata from public API (metadata fusion signal not implemented)
+// GATE    : cargo test -p memfuse-core
+
 impl FusionWeights {
     /// Creates 3-signal fusion weights (vector, text, graph) summing to 1.0.
     pub fn new(vector: f32, text: f32, graph: f32) -> Result<Self> {
@@ -107,21 +111,6 @@ pub struct ContextChunk {
 }
 
 impl ContextChunk {
-    /// Returns only the raw content (no contextual prefix).
-    ///
-    /// # Deprecated
-    /// Use [`Self::combined_text_owned()`] for Contextual BM25 indexing
-    /// (prefix + content). Use [`Self::content`] for raw content access.
-    /// This method will be removed in the next breaking release.
-    #[deprecated(
-        since = "0.1.0",
-        note = "Use combined_text_owned() for BM25 indexing with contextual prefix, \
-                or access .content directly for raw content"
-    )]
-    pub fn combined_text_for_indexing(&self) -> &str {
-        &self.content
-    }
-
     /// Kombinierten Text für BM25-Indizierung und Embedding.
     /// Entspricht Anthropic Contextual BM25: prefix + "\n\n" + content.
     ///

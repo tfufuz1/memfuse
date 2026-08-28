@@ -73,12 +73,10 @@ pub async fn chat_with_rag(
         })
         .collect();
 
-    let mut chunks = Vec::with_capacity(search_results.len());
-    for r in search_results {
-        let chunk = memfuse_core::ContextChunk::try_from(r)
-            .map_err(|e| MemFuseErrorDto::from(&e))?;
-        chunks.push(chunk);
-    }
+    let chunks: Vec<memfuse_core::ContextChunk> = search_results
+        .into_iter()
+        .filter_map(|r| memfuse_core::ContextChunk::try_from(r).ok())
+        .collect();
 
     // Nutzt den bestehenden ContextManager aus memfuse-db
     let context_manager = memfuse_db::context::ContextManager::default();
