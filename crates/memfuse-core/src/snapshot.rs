@@ -209,6 +209,14 @@ mod tests {
     }
 
     #[test]
+    fn test_unpin_unknown_seq_no_does_not_panic() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        // Unpinning a sequence number that was never pinned or registered must not panic
+        registry.unpin(999);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
     fn test_double_registration_and_sequential_drop() {
         let registry = Arc::new(SnapshotRegistry::new());
         let g1 = registry.register(42);

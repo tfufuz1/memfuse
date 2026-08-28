@@ -174,7 +174,6 @@ async fn test_hybrid_search_with_ppr_strategy() {
             Some(&[anchor_eid]),
             None,
             Some(&ppr_strategy),
-            None,
         )
         .await
         .expect("hybrid_search_with_strategy");
