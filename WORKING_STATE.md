@@ -2,6 +2,7 @@
 *Zuletzt aktualisiert: 2026-08-28 von Jules*
 
 ## Letzte Änderungen
+- 2026-08-28: Phase 3 Community Detection & GraphRAG umgesetzt: Label-Propagation-Algorithmus in `memfuse-graph::community`, Persistierung via `Collection::run_community_detection()` unter TxId-Allokation (`__graph:community:`), Retrieval-Integration via `HybridQuery::same_community_as` (ADR-027).
 - 2026-08-28: Bi-temporale Zeitachsen (valid_from / valid_to) in `Edge` (`memfuse-core`) und `CsrGraph` (`memfuse-graph`) implementiert mit `traverse_at_time` und Grenzwert-Tests (ADR-025/ADR-023).
 - 2026-08-28: Personalized PageRank (PPR) implementiert in `crates/memfuse-graph/src/ppr.rs` auf CSR-Format (power iteration, uniform seed restart distribution, dangling node rank mass conservation, deterministisches tie-breaking via EntityId). `GraphIndex` Trait, `PprConfig`, `GraphTraversalStrategy` in `memfuse-core` und `Collection::hybrid_search_with_strategy` in `memfuse-db` ergänzt (ADR-026).
 - 2026-08-28: F-01 / AGT-DB-005 behoben: `Collection::relate()` führt bei Fehlschlag von `graph_index.commit(tx)` nach erfolgreichem `storage.commit(tx)` eine kompensierende Transaktion (Delete-Tombstone im LSM-Storage) aus (ADR-023).
@@ -36,5 +37,6 @@ Keine ungenehmigten `.expect()` Aufrufe in `crates/*/src/` mehr vorhanden.
 
 ## Letzter ADR
 
+Neuester ADR: ADR-027 (2026-08-27) — Label Propagation für Community Detection & GraphRAG
 Neuester ADR: ADR-026 (2026-08-28) — Personalized PageRank (PPR) Graph Retrieval
 Neuester ADR: ADR-025 (2026-08-28) — Memory Importance Score & Recency-Decay als Post-Processing-Filter

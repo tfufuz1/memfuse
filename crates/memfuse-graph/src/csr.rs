@@ -117,7 +117,7 @@ pub(crate) struct GraphInner {
     /// Edges that have been committed but not yet compacted into CSR arrays (delta buffer).
     pending_edges: HashMap<InternalIndex, Vec<EdgePayload>>,
     /// Tombstoned edges that have been removed and should be excluded during compaction and traversal.
-    tombstoned_edges: HashSet<(InternalIndex, InternalIndex)>,
+    pub(crate) tombstoned_edges: HashSet<(InternalIndex, InternalIndex)>,
     /// Total number of uncompacted edges currently in `pending_edges`.
     pending_edge_count: usize,
     /// Flag indicating if there are uncompacted pending edges or modifications.
@@ -282,6 +282,10 @@ impl CsrGraph {
             storage: Some(storage),
             last_tx_id: AtomicU64::new(0),
         }
+    }
+
+    pub(crate) fn inner_read(&self) -> parking_lot::RwLockReadGuard<'_, GraphInner> {
+        self.inner.read()
     }
 
     /// Sets or replaces the persistent storage handle.
