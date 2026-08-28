@@ -28,7 +28,8 @@ document.getElementById('open-db-btn').addEventListener('click', async () => {
         await refreshCollections();
         await refreshModels();
     } catch (e) {
-        dbStatusEl.textContent = `❌ Fehler: ${e}`;
+        const errMsg = typeof e === 'object' && e !== null && e.message ? `[${e.kind}] ${e.message}` : e;
+        dbStatusEl.textContent = `❌ Fehler: ${errMsg}`;
     }
 });
 
@@ -91,7 +92,8 @@ document.getElementById('create-collection-btn').addEventListener('click', async
         await refreshCollections();
         selectCollection(name);
     } catch (e) {
-        alert(`Collection konnte nicht erstellt werden: ${e}`);
+        const errMsg = typeof e === 'object' && e !== null && e.message ? `[${e.kind}] ${e.message}` : e;
+        alert(`Collection konnte nicht erstellt werden: ${errMsg}`);
     }
 });
 
@@ -211,7 +213,8 @@ async function runImport(importFn, filePaths, isFolder = false) {
 
         await refreshCollections();  // Dokumentenzähler aktualisieren
     } catch (e) {
-        statusEl.textContent = `❌ Import fehlgeschlagen: ${e}`;
+        const errMsg = typeof e === 'object' && e !== null && e.message ? `[${e.kind}] ${e.message}` : e;
+        statusEl.textContent = `❌ Import fehlgeschlagen: ${errMsg}`;
     }
 }
 
@@ -319,7 +322,8 @@ async function sendMessage() {
             }
         }
     } catch (e) {
-        currentResponseEl.textContent += `\n⚠️ Fehler: ${e}`;
+        const errMsg = typeof e === 'object' && e !== null && e.message ? `[${e.kind}] ${e.message}` : e;
+        currentResponseEl.textContent += `\n⚠️ Fehler: ${errMsg}`;
     }
 }
 
@@ -369,8 +373,9 @@ async function runDirectSearch() {
         chatLog.appendChild(resultsEl);
         chatLog.scrollTop = chatLog.scrollHeight;
     } catch (e) {
+        const errMsg = typeof e === 'object' && e !== null && e.message ? `[${e.kind}] ${e.message}` : e;
         const errorMsgEl = document.createElement('p');
-        errorMsgEl.textContent = `⚠️ Fehler: ${e}`;
+        errorMsgEl.textContent = `⚠️ Fehler: ${errMsg}`;
         chatLog.appendChild(errorMsgEl);
     }
 }
@@ -426,7 +431,8 @@ document.getElementById('onboarding-choose-folder').addEventListener('click', as
         document.getElementById('onboarding-step-1').style.display = 'none';
         document.getElementById('onboarding-step-2').style.display = 'block';
     } catch (e) {
-        alert(`Fehler beim Öffnen der Datenbank: ${e}`);
+        const errMsg = typeof e === 'object' && e !== null && e.message ? `[${e.kind}] ${e.message}` : e;
+        alert(`Fehler beim Öffnen der Datenbank: ${errMsg}`);
     }
 });
 
@@ -446,7 +452,8 @@ document.getElementById('onboarding-create-collection').addEventListener('click'
         await refreshCollections();
         selectCollection(name);
     } catch (e) {
-        alert(`Collection konnte nicht erstellt werden: ${e}`);
+        const errMsg = typeof e === 'object' && e !== null && e.message ? `[${e.kind}] ${e.message}` : e;
+        alert(`Collection konnte nicht erstellt werden: ${errMsg}`);
     }
 });
 

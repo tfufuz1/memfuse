@@ -2,6 +2,7 @@ use crate::commands::collections::validate_collection_name;
 use crate::ingestion::pipeline::{IngestReport, IngestionPipeline};
 use crate::ollama::OllamaBridge;
 use crate::state::AppState;
+use memfuse_core::MemFuseErrorDto;
 use std::sync::Arc;
 use tauri::State;
 
@@ -10,18 +11,21 @@ pub async fn ingest_file(
     state: State<'_, AppState>,
     file_path: String,
     collection_name: String,
-) -> Result<IngestReport, String> {
+) -> Result<IngestReport, MemFuseErrorDto> {
     validate_collection_name(&collection_name)?;
     let db = {
         let db_guard = state.db.read();
         db_guard.as_ref().cloned().ok_or_else(|| {
-            "No database is open. Please open or create a database first.".to_string()
+            MemFuseErrorDto::new(
+                "NotFound",
+                "No database is open. Please open or create a database first.",
+            )
         })?
     };
     let collection = db
         .collection(&collection_name)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| MemFuseErrorDto::from(&e))?;
 
     let embedder = Arc::new(OllamaBridge::localhost());
     let pipeline = IngestionPipeline::new(embedder);
@@ -29,7 +33,7 @@ pub async fn ingest_file(
     pipeline
         .ingest_file(std::path::Path::new(&file_path), &collection)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| MemFuseErrorDto::from(&e))
 }
 
 #[tauri::command]
@@ -38,18 +42,21 @@ pub async fn ingest_folder(
     state: State<'_, AppState>,
     folder_path: String,
     collection_name: String,
-) -> Result<Vec<IngestReport>, String> {
+) -> Result<Vec<IngestReport>, MemFuseErrorDto> {
     validate_collection_name(&collection_name)?;
     let db = {
         let db_guard = state.db.read();
         db_guard.as_ref().cloned().ok_or_else(|| {
-            "No database is open. Please open or create a database first.".to_string()
+            MemFuseErrorDto::new(
+                "NotFound",
+                "No database is open. Please open or create a database first.",
+            )
         })?
     };
     let collection = db
         .collection(&collection_name)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| MemFuseErrorDto::from(&e))?;
 
     let embedder = Arc::new(OllamaBridge::localhost());
     let pipeline = IngestionPipeline::new(embedder);
@@ -73,7 +80,7 @@ pub async fn ingest_folder(
             let report = pipeline
                 .ingest_file(entry.path(), &collection)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| MemFuseErrorDto::from(&e))?;
             use tauri::Emitter;
             let _ = app.emit("ingest-progress", &report);
             reports.push(report);

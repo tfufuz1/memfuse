@@ -1,7 +1,7 @@
 use crate::commands::collections::validate_collection_name;
 use crate::ollama::OllamaBridge;
 use crate::state::AppState;
-use memfuse_core::TextEmbeddingEngine;
+use memfuse_core::{MemFuseErrorDto, TextEmbeddingEngine};
 use tauri::{Emitter, State};
 
 #[derive(serde::Serialize)]
@@ -21,29 +21,35 @@ pub async fn chat_with_rag(
     message: String,
     collection_name: String,
     model: String,
-) -> Result<ChatResponse, String> {
+) -> Result<ChatResponse, MemFuseErrorDto> {
     if message.len() > MAX_QUERY_LEN {
-        return Err("Query too long".to_string());
+        return Err(MemFuseErrorDto::new("InvalidInput", "Query too long"));
     }
     validate_collection_name(&collection_name)?;
     let db = {
         let db_guard = state.db.read();
         db_guard.as_ref().cloned().ok_or_else(|| {
-            "No database is open. Please open or create a database first.".to_string()
+            MemFuseErrorDto::new(
+                "NotFound",
+                "No database is open. Please open or create a database first.",
+            )
         })?
     };
     let collection = db
         .collection(&collection_name)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| MemFuseErrorDto::from(&e))?;
 
     let embedder = OllamaBridge::localhost();
-    let query_vector = embedder.embed(&message).await.map_err(|e| e.to_string())?;
+    let query_vector = embedder
+        .embed(&message)
+        .await
+        .map_err(|e| MemFuseErrorDto::from(&e))?;
 
     let search_results = collection
         .hybrid_search(&message, &query_vector, 5, None)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| MemFuseErrorDto::from(&e))?;
 
     let sources: Vec<crate::commands::search::SearchResultDto> = search_results
         .iter()
@@ -67,14 +73,18 @@ pub async fn chat_with_rag(
         })
         .collect();
 
-    let chunks: Vec<memfuse_core::ContextChunk> =
-        search_results.into_iter().map(Into::into).collect();
+    let mut chunks = Vec::with_capacity(search_results.len());
+    for r in search_results {
+        let chunk = memfuse_core::ContextChunk::try_from(r)
+            .map_err(|e| MemFuseErrorDto::from(&e))?;
+        chunks.push(chunk);
+    }
 
     // Nutzt den bestehenden ContextManager aus memfuse-db
     let context_manager = memfuse_db::context::ContextManager::default();
     let context = context_manager
         .prepare_context(chunks)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| MemFuseErrorDto::from(&e))?;
 
     let bridge = OllamaBridge::localhost();
     let app_clone = app.clone();
@@ -85,7 +95,7 @@ pub async fn chat_with_rag(
             }
         })
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| MemFuseErrorDto::from(&e))?;
 
     Ok(ChatResponse {
         answer: full_response,
@@ -94,7 +104,10 @@ pub async fn chat_with_rag(
 }
 
 #[tauri::command]
-pub async fn list_ollama_models() -> Result<Vec<String>, String> {
+pub async fn list_ollama_models() -> Result<Vec<String>, MemFuseErrorDto> {
     let bridge = OllamaBridge::localhost();
-    bridge.list_models().await.map_err(|e| e.to_string())
+    bridge
+        .list_models()
+        .await
+        .map_err(|e| MemFuseErrorDto::from(&e))
 }
