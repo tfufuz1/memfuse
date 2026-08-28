@@ -1257,12 +1257,13 @@ impl<S: StorageEngine> Collection<S> {
         anchor_entities: Option<&[memfuse_core::EntityId]>,
         weights: Option<&memfuse_core::FusionWeights>,
     ) -> Result<Vec<crate::SearchResult>> {
-        self.hybrid_search_with_strategy(text, vector, k, anchor_entities, weights, None)
+        self.hybrid_search_with_strategy(text, vector, k, anchor_entities, weights, None, None)
             .await
     }
 
     /// Performs hybrid search with custom signal fusion weights and graph traversal strategy.
     #[tracing::instrument(level = "trace", skip(self, text, vector, strategy))]
+    #[allow(clippy::too_many_arguments)]
     pub async fn hybrid_search_with_strategy(
         &self,
         text: &str,
@@ -1271,6 +1272,7 @@ impl<S: StorageEngine> Collection<S> {
         anchor_entities: Option<&[memfuse_core::EntityId]>,
         weights: Option<&memfuse_core::FusionWeights>,
         strategy: Option<&memfuse_core::GraphTraversalStrategy>,
+        same_community_as: Option<EntityId>,
     ) -> Result<Vec<crate::SearchResult>> {
         if k == 0 {
             return Ok(Vec::new());
@@ -1308,7 +1310,8 @@ impl<S: StorageEngine> Collection<S> {
 
         // 3. Graph Signal
         let implicit_anchors: Vec<memfuse_core::EntityId>;
-        let anchors_ref: Option<&[memfuse_core::EntityId]> = if let Some(anchors) = anchor_entities {
+        let anchors_ref: Option<&[memfuse_core::EntityId]> = if let Some(anchors) = anchor_entities
+        {
             if anchors.is_empty() {
                 None
             } else {
@@ -1330,7 +1333,9 @@ impl<S: StorageEngine> Collection<S> {
                     self.graph_index.multi_traverse(anchors, *max_hops).await?
                 }
                 memfuse_core::GraphTraversalStrategy::PersonalizedPageRank(ppr_config) => {
-                    self.graph_index.personalized_page_rank(anchors, ppr_config).await?
+                    self.graph_index
+                        .personalized_page_rank(anchors, ppr_config)
+                        .await?
                 }
             };
             let doc_tuples = tuples
