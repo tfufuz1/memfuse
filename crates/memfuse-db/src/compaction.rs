@@ -6,8 +6,7 @@
 //! Replaces stale tool outputs and long conversation histories with compact status tokens
 //! to preserve the LLM context window.
 
-use memfuse_core::{ContextChunk, DocId, Result, TokenBudget};
-use memfuse_ollama::OllamaClient;
+use memfuse_core::{ContextChunk, DocId, TokenBudget};
 
 /// Strategie für Context Compaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,11 +17,6 @@ pub enum CompactionStrategy {
     Summarize,
     /// Ersetze Tool-Outputs durch kompakte Status-Token.
     StatusToken,
-    /// LLM-Zusammenfassung veralteter Chunks mit konfigurierbarem Batch-Limit.
-    LlmSummarize {
-        /// Maximale Anzahl von Chunks, die pro LLM-Aufruf zusammengefasst werden.
-        max_input_chunks: usize,
-    },
 }
 
 /// Kompaktierter Kontext für LLM-Übergabe.
@@ -34,8 +28,6 @@ pub struct CompactedContext {
     pub status_tokens: Vec<StatusToken>,
     /// Verbrauchte Tokens.
     pub tokens_used: usize,
-    /// Quell-DocIds aller ersetzten oder zusammengefassten Chunks für Provenienz.
-    pub source_doc_ids: Vec<DocId>,
 }
 
 /// Kompakter Stellvertreter für einen oder mehrere kompaktierte Chunks.
@@ -107,9 +99,9 @@ impl ContextCompactor {
                     CompactionStrategy::Truncate => {
                         // Chunk wird verworfen
                     }
-                    CompactionStrategy::Summarize | CompactionStrategy::LlmSummarize { .. } => {
-                        // Synchronous fallback in compact(): Status-Token.
-                        // For full async LLM summarization, call consolidate_via_llm().
+                    CompactionStrategy::Summarize => {
+                        // AI-TAG[SMELL][MINOR][RESOLVED] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-25T00:00:00Z)
+                        // Fallback: Status-Token
                         let summary = Self::generate_status_token(&chunk);
                         status_tokens.push(StatusToken {
                             summary,
@@ -121,93 +113,11 @@ impl ContextCompactor {
             }
         }
 
-        let mut source_doc_ids = Vec::new();
-        for st in &status_tokens {
-            source_doc_ids.extend(st.replaced_doc_ids.iter().cloned());
-        }
-
         CompactedContext {
             retained_chunks: retained,
             status_tokens,
             tokens_used,
-            source_doc_ids,
         }
-    }
-
-    // AI-TAG[SMELL][MINOR][RESOLVED] Async LLM-Summarization for context compaction (ID: AGT-DB-004)
-    /// Consolidates multiple context chunks into a single summarized chunk using an external LLM via Ollama.
-    ///
-    /// Preserves strict provenance tracking in `source_doc_ids`. If the LLM call fails, the error is
-    /// returned directly to the caller (no silent fallback to `StatusToken`).
-    pub async fn consolidate_via_llm(
-        &self,
-        chunks: &[ContextChunk],
-        ollama: &OllamaClient,
-    ) -> Result<CompactedContext> {
-        if chunks.is_empty() {
-            return Ok(CompactedContext {
-                retained_chunks: Vec::new(),
-                status_tokens: Vec::new(),
-                tokens_used: 0,
-                source_doc_ids: Vec::new(),
-            });
-        }
-
-        let mut source_doc_ids = Vec::with_capacity(chunks.len());
-        let mut prompt_content = String::new();
-
-        for chunk in chunks {
-            source_doc_ids.push(chunk.doc_id);
-            prompt_content.push_str(&format!(
-                "- Chunk [DocId: {}]: {}\n",
-                chunk.doc_id.0, chunk.content
-            ));
-        }
-
-        let prompt = format!(
-            "Fasse die folgenden Kontext-Informationen faktentreu zu einem prägnanten Überblick zusammen.\n\
-             Erhalte wichtige Details und wahre den Bezug zu den ursprünglichen Dokumenten.\n\n\
-             Kontext-Chunks:\n{}\n\nZusammenfassung:",
-            prompt_content
-        );
-
-        let model = &ollama.config().model;
-        let summary_text = ollama.generate_text(model, &prompt).await?;
-
-        let estimated_tokens = summary_text.len(); // Simple token estimation based on length
-
-        // Combine metadata if present
-        let mut combined_metadata = serde_json::Map::new();
-        combined_metadata.insert("llm_summarized".to_string(), serde_json::Value::Bool(true));
-        combined_metadata.insert(
-            "source_doc_count".to_string(),
-            serde_json::Value::Number(chunks.len().into()),
-        );
-
-        // Generate a new DocId deterministically or using base doc_id of first chunk
-        let synthesized_doc_id = chunks[0].doc_id;
-
-        let max_relevance = chunks
-            .iter()
-            .fold(0.0f32, |max, c| max.max(c.relevance));
-
-        let consolidated_chunk = ContextChunk {
-            doc_id: synthesized_doc_id,
-            content: summary_text,
-            relevance: max_relevance,
-            token_count: estimated_tokens,
-            metadata: Some(serde_json::Value::Object(combined_metadata)),
-            contextual_prefix: None,
-        };
-
-        let tokens_used = consolidated_chunk.combined_token_count();
-
-        Ok(CompactedContext {
-            retained_chunks: vec![consolidated_chunk],
-            status_tokens: Vec::new(),
-            tokens_used,
-            source_doc_ids,
-        })
     }
 
     fn is_tool_output(chunk: &ContextChunk) -> bool {
@@ -343,42 +253,5 @@ mod tests {
         // combined_token_count=15 <= budget=20 → retained
         assert_eq!(result.retained_chunks.len(), 1);
         assert_eq!(result.tokens_used, 15); // combined_token_count, not raw token_count
-    }
-
-    #[tokio::test]
-    async fn test_consolidate_via_llm_error_propagation_on_unreachable_client() {
-        let budget = TokenBudget::new(100, 0);
-        let compactor = ContextCompactor::new(
-            budget,
-            CompactionStrategy::LlmSummarize {
-                max_input_chunks: 5,
-            },
-        );
-
-        // Client pointing to an unreachable / closed port
-        let dead_client = OllamaClient::new("http://127.0.0.1:1");
-
-        let chunks = vec![
-            make_chunk(101, "First chunk content", 0.9, false),
-            make_chunk(102, "Second chunk content", 0.8, false),
-        ];
-
-        let res = compactor.consolidate_via_llm(&chunks, &dead_client).await;
-        // Must return an Error and NOT fall back silently to StatusToken inside compaction.rs
-        assert!(res.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_consolidate_via_llm_provenance_and_empty() {
-        let budget = TokenBudget::new(100, 0);
-        let compactor = ContextCompactor::new(budget, CompactionStrategy::Summarize);
-        let dead_client = OllamaClient::new("http://127.0.0.1:1");
-
-        // Empty chunks slice test
-        let empty_res = compactor.consolidate_via_llm(&[], &dead_client).await;
-        assert!(empty_res.is_ok());
-        let empty_ctx = empty_res.unwrap(); // unwrap allowed (in test)
-        assert!(empty_ctx.retained_chunks.is_empty());
-        assert!(empty_ctx.source_doc_ids.is_empty());
     }
 }

@@ -1,25 +1,7 @@
-use super::domain::{DocId, PprConfig};
+use super::domain::{DocId, EntityId};
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
-
-/// Strategy used for graph retrieval in hybrid search queries.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum GraphTraversalStrategy {
-    /// Multi-hop BFS traversal with hop score decay (default max_hops = 3).
-    Hops {
-        /// Maximum traversal hop depth.
-        max_hops: usize,
-    },
-    /// Personalized PageRank power iteration starting from seed nodes.
-    PersonalizedPageRank(PprConfig),
-}
-
-impl Default for GraphTraversalStrategy {
-    fn default() -> Self {
-        Self::Hops { max_hops: 3 }
-    }
-}
 
 /// Normalized fusion weights for hybrid search.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -208,9 +190,6 @@ pub struct HybridQuery {
     pub vector_query: Option<Vec<f32>>,
     /// Optional starting node ID for graph traversal search.
     pub graph_start_node: Option<String>,
-    /// Graph traversal strategy (Hops or PersonalizedPageRank).
-    #[serde(default)]
-    pub graph_strategy: GraphTraversalStrategy,
     /// Fusion weights across vector, text, and graph signals.
     pub fusion_weights: FusionWeights,
     /// Optional metadata expression filter.
@@ -234,7 +213,6 @@ pub struct HybridQueryBuilder {
     text_query: Option<String>,
     vector_query: Option<Vec<f32>>,
     graph_start_node: Option<String>,
-    graph_strategy: Option<GraphTraversalStrategy>,
     fusion_weights: Option<FusionWeights>,
     filter: Option<FilterExpr>,
     same_community_as: Option<EntityId>,
@@ -262,12 +240,6 @@ impl HybridQueryBuilder {
     /// Sets the graph start node for graph traversal search.
     pub fn with_graph_start_node(mut self, start: impl Into<String>) -> Self {
         self.graph_start_node = Some(start.into());
-        self
-    }
-
-    /// Sets the graph traversal strategy (Hops or PersonalizedPageRank).
-    pub fn with_graph_strategy(mut self, strategy: GraphTraversalStrategy) -> Self {
-        self.graph_strategy = Some(strategy);
         self
     }
 
@@ -304,7 +276,6 @@ impl HybridQueryBuilder {
             text_query: self.text_query,
             vector_query: self.vector_query,
             graph_start_node: self.graph_start_node,
-            graph_strategy: self.graph_strategy.unwrap_or_default(),
             fusion_weights: self.fusion_weights.unwrap_or(
                 // Use a known-safe default to avoid unwrap()
                 FusionWeights {

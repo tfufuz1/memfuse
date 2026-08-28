@@ -655,6 +655,7 @@ impl DiskAnnIndex {
             .as_ref()
             .ok_or_else(|| MemFuseError::Index("Header missing".into()))?;
 
+        use std::sync::atomic::Ordering;
         let sector_size = header.sector_size as usize;
         let node_size = self.inner.node_size_bytes.load(Ordering::SeqCst) as usize;
         let read_size = node_size;
