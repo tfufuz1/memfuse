@@ -93,11 +93,7 @@ impl SnapshotRegistry {
                 active.remove(&seq_no);
             }
         } else {
-            debug_assert!(
-                false,
-                "SnapshotRegistry::release called for unknown seq_no: {}",
-                seq_no
-            );
+            // Unpinning or releasing an un-tracked sequence number is a no-op (§2 Zero-Panic).
         }
         self.update_min(&active);
     }

@@ -164,9 +164,28 @@ pub enum MemFuseError {
     /// Bincode serialization or deserialization error wrapper.
     #[error("Bincode error: {0}")]
     Bincode(#[from] bincode::Error),
+
+    /// Capability requested is not supported by this engine or implementation.
+    #[error("Capability unsupported: {capability} - {reason}")]
+    CapabilityUnsupported {
+        /// Unique capability identifier.
+        capability: String,
+        /// Detail text describing why capability is unsupported.
+        reason: String,
+    },
 }
 
 impl MemFuseError {
+    /// Creates a `CapabilityUnsupported` error.
+    pub fn capability_unsupported(
+        capability: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::CapabilityUnsupported {
+            capability: capability.into(),
+            reason: reason.into(),
+        }
+    }
     /// Creates an `InvalidInput` error from any displayable value.
     pub fn invalid_input(msg: impl Into<String>) -> Self {
         Self::InvalidInput(msg.into())
@@ -251,6 +270,22 @@ mod tests {
         match err {
             MemFuseError::InvalidInput(msg) => assert_eq!(msg, "bad param"),
             _ => panic!("Expected InvalidInput, got {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_capability_unsupported_helper() {
+        let err = MemFuseError::capability_unsupported("snapshot_read_at", "ADR-024");
+        assert_eq!(
+            err.to_string(),
+            "Capability unsupported: snapshot_read_at - ADR-024"
+        );
+        match err {
+            MemFuseError::CapabilityUnsupported { capability, reason } => {
+                assert_eq!(capability, "snapshot_read_at");
+                assert_eq!(reason, "ADR-024");
+            }
+            _ => panic!("Expected CapabilityUnsupported, got {:?}", err),
         }
     }
 

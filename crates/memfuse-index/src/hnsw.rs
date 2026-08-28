@@ -2679,19 +2679,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_hnsw_search_at_returns_adr024_policy_violation() {
+    async fn test_hnsw_search_at_returns_adr024_capability_unsupported() {
         let index = HnswIndex::try_new(test_config(4)).unwrap();
         let res = index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 42).await;
         match res {
-            Err(memfuse_core::MemFuseError::PolicyViolation(msg)) => {
+            Err(memfuse_core::MemFuseError::CapabilityUnsupported { capability, reason }) => {
+                assert_eq!(capability, "snapshot_read_at");
                 assert!(
-                    msg.contains("ADR-024"),
-                    "Expected ADR-024 in PolicyViolation error message, got: {}",
-                    msg
+                    reason.contains("ADR-024"),
+                    "Expected ADR-024 in CapabilityUnsupported reason message, got: {}",
+                    reason
                 );
             }
             other => panic!(
-                "Expected PolicyViolation referencing ADR-024, got: {:?}",
+                "Expected CapabilityUnsupported referencing ADR-024, got: {:?}",
                 other
             ),
         }

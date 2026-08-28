@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 pub const DEFAULT_SHARD_COUNT: usize = 64;
 
 /// Recommended maximum operations per single transaction to guard against memory exhaustion DoS.
-// AI-TAG[SMELL][MINOR] Bounded staging capacity (ID: AGT-CORE-001) (TS: 2026-08-28T00:00:00Z)
+// AI-TAG[SMELL][MINOR] Bounded staging capacity (ID: AGT-CORE-001) (TS:2026-08-28T00:00:00Z)
 // KONTEXT: TxBuffer::stage/stage_many appends to Vec without hard capacity limit
 // ANWEISUNG: Downstream callers (e.g. memfuse-db) should cap max_ops per transaction
 pub const DEFAULT_MAX_OPS_PER_TX: usize = 100_000;
@@ -279,8 +279,14 @@ mod tests {
         assert_eq!(DEFAULT_MAX_OPS_PER_TX, 100_000);
 
         let ops = vec![
-            IndexOp::Insert { doc_id: DocId::new(1), data: "op1".to_string() },
-            IndexOp::Insert { doc_id: DocId::new(2), data: "op2".to_string() },
+            IndexOp::Insert {
+                doc_id: DocId::new(1),
+                data: "op1".to_string(),
+            },
+            IndexOp::Insert {
+                doc_id: DocId::new(2),
+                data: "op2".to_string(),
+            },
         ];
 
         buffer.stage_many(tx, ops);
