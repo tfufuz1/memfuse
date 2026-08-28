@@ -27,7 +27,7 @@ pub struct FusionWeights {
     vector: f32,
     text: f32,
     graph: f32,
-    /// Reserved for future metadata-signal fusion; currently always 0.0. Do not expose a public constructor parameter for this until the fusion logic is implemented.
+    /// Reserved for future metadata-signal fusion; currently always 0.0. Do not expose a public constructor parameter for this until the fusion logic is implemented (see TRACKING-ISSUE #144).
     metadata: f32,
 }
 
@@ -85,7 +85,7 @@ impl FusionWeights {
     }
 
     /// Returns the metadata signal weight component.
-    /// Reserved for future metadata-signal fusion; currently always 0.0. Do not expose a public constructor parameter for this until the fusion logic is implemented.
+    /// Reserved for future metadata-signal fusion; currently always 0.0. Do not expose a public constructor parameter for this until the fusion logic is implemented (see TRACKING-ISSUE #144).
     pub fn metadata(&self) -> f32 {
         self.metadata
     }
@@ -409,7 +409,7 @@ mod tests {
         ) {
             let res = FusionWeights::new(v, t, g);
             if v.is_nan() || t.is_nan() || g.is_nan() {
-                let err = res.expect_err("NaN inputs must return an error");
+                let err = res.expect_err("NaN inputs must return an error"); // expect allowed
                 if let MemFuseError::InvalidInput(msg) = err {
                     proptest::prop_assert_eq!(msg, "Fusion weights must not be NaN");
                 } else {

@@ -2,6 +2,13 @@
 //!
 //! Provides persistent key-value storage with WAL, MemTable,
 //! SSTable, and background compaction.
+//!
+//! # Checkpoint-Architektur
+//! `memfuse-store` enthält ein lokales, crate-internes Checkpointing (`pub(crate) mod checkpoint`).
+//! Dieses dient ausschließlich als internes MVCC-Snapshot-Pinning (gekoppelt an `SnapshotRegistry`)
+//! und darf niemals von außerhalb dieses Crates verwendet werden.
+//! Die öffentliche, benannte Checkpoint-API gemäß ADR-011 ("Consolidated Checkpoint Subsystem Architecture")
+//! befindet sich im Crate `memfuse-checkpoint`.
 
 // INVARIANT: LSM-Tree Storage Engine (Triebwerk — Layer 1).
 // DATEN-PFAD: Client → TxBuffer → WAL → MemTable → SSTable → Compaction
@@ -13,7 +20,7 @@
 // BEGRÜNDUNG: Sovereign Core Doctrine mandates zero unsafe outside `memfuse-index`
 #![forbid(unsafe_code)]
 
-pub mod checkpoint;
+pub(crate) mod checkpoint;
 pub mod compaction;
 pub mod lsm;
 pub mod memtable;

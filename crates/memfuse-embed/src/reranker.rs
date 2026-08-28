@@ -42,37 +42,17 @@ impl Default for RerankConfig {
     }
 }
 
-// ── Without ONNX feature: Fallback (Passthrough) ──────────────────────────
-#[cfg(not(feature = "onnx"))]
-pub struct CrossEncoderReranker {
-    _config: RerankConfig,
+/// Interne Backend-Varianten für den CrossEncoderReranker.
+enum RerankerBackend {
+    /// Passthrough-Backend, falls das `onnx`-Feature deaktiviert ist.
+    #[allow(dead_code)]
+    Passthrough,
+    /// Echtes Inferenz-Backend über ONNX Runtime.
+    #[cfg(feature = "onnx")]
+    Onnx(OnnxReranker),
 }
 
-#[cfg(not(feature = "onnx"))]
-impl CrossEncoderReranker {
-    pub fn new(config: RerankConfig) -> Result<Self, MemFuseError> {
-        Ok(Self { _config: config })
-    }
-
-    /// Passthrough: ohne ONNX-Feature wird nicht rerankt.
-    /// Kandidaten werden in Originalreihenfolge zurückgegeben.
-    pub async fn rerank(
-        &self,
-        _query: &str,
-        candidates: &[String],
-    ) -> Result<Vec<RerankResult>, MemFuseError> {
-        Ok(candidates
-            .iter()
-            .enumerate()
-            .map(|(i, _)| RerankResult {
-                original_index: i,
-                score: 1.0 - (i as f32 * 0.01),
-            })
-            .collect())
-    }
-}
-
-// ── With ONNX feature: Real Reranker ─────────────────────────────────────
+// ── With ONNX feature: Real Reranker Implementation ───────────────────────
 #[cfg(feature = "onnx")]
 use ort::value::Value;
 #[cfg(feature = "onnx")]
@@ -81,7 +61,7 @@ use tokenizers::Tokenizer;
 use tracing::warn;
 
 #[cfg(feature = "onnx")]
-pub struct CrossEncoderReranker {
+struct OnnxReranker {
     config: RerankConfig,
     tokenizer: std::sync::Arc<Tokenizer>,
     // parking_lot::Mutex ist panic-safe (kein PoisonError), da es keinen
@@ -90,11 +70,9 @@ pub struct CrossEncoderReranker {
 }
 
 #[cfg(feature = "onnx")]
-impl CrossEncoderReranker {
-    /// Erstellt einen neuen CrossEncoderReranker.
-    ///
-    /// Prüft die Existenz von Modell- und Tokenizer-Dateien und lädt diese synchron.
-    pub fn new(config: RerankConfig) -> Result<Self, MemFuseError> {
+impl OnnxReranker {
+    /// Erstellt eine neue `OnnxReranker`-Instanz.
+    fn new(config: RerankConfig) -> Result<Self, MemFuseError> {
         if !config.model_path.exists() {
             return Err(MemFuseError::InvalidInput(format!(
                 "ONNX model file not found at {:?}",
@@ -127,10 +105,7 @@ impl CrossEncoderReranker {
     }
 
     /// Rerankt Kandidaten für eine Abfrage.
-    ///
-    /// Verwendet `spawn_blocking` um den ONNX-Call vom Async-Thread zu isolieren.
-    /// Gibt Ergebnisse sortiert nach Score (absteigend) zurück.
-    pub async fn rerank(
+    async fn rerank(
         &self,
         query: &str,
         candidates: &[String],
@@ -363,6 +338,53 @@ impl CrossEncoderReranker {
     }
 }
 
+/// Unified public `CrossEncoderReranker` struct independent of active feature flags.
+pub struct CrossEncoderReranker {
+    _config: RerankConfig,
+    backend: RerankerBackend,
+}
+
+impl CrossEncoderReranker {
+    /// Erstellt einen neuen CrossEncoderReranker.
+    pub fn new(config: RerankConfig) -> Result<Self, MemFuseError> {
+        #[cfg(feature = "onnx")]
+        {
+            let onnx = OnnxReranker::new(config.clone())?;
+            Ok(Self {
+                _config: config,
+                backend: RerankerBackend::Onnx(onnx),
+            })
+        }
+        #[cfg(not(feature = "onnx"))]
+        {
+            Ok(Self {
+                _config: config,
+                backend: RerankerBackend::Passthrough,
+            })
+        }
+    }
+
+    /// Rerankt Kandidaten für eine Abfrage.
+    pub async fn rerank(
+        &self,
+        _query: &str,
+        candidates: &[String],
+    ) -> Result<Vec<RerankResult>, MemFuseError> {
+        match &self.backend {
+            RerankerBackend::Passthrough => Ok(candidates
+                .iter()
+                .enumerate()
+                .map(|(i, _)| RerankResult {
+                    original_index: i,
+                    score: 1.0 - (i as f32 * 0.01),
+                })
+                .collect()),
+            #[cfg(feature = "onnx")]
+            RerankerBackend::Onnx(onnx) => onnx.rerank(_query, candidates).await,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -404,7 +426,7 @@ mod tests {
         // 1D tensor [batch_size = 2]
         let shape = vec![2];
         let data = vec![0.0f32, 2.0f32];
-        let scores = CrossEncoderReranker::extract_scores_from_tensor(&shape, &data, 2)?;
+        let scores = OnnxReranker::extract_scores_from_tensor(&shape, &data, 2)?;
         assert_eq!(scores.len(), 2);
         assert!((scores[0] - 0.5).abs() < 1e-4);
         assert!(scores[1] > 0.8);
@@ -412,7 +434,7 @@ mod tests {
         // 2D tensor [batch_size = 2, cols = 1]
         let shape = vec![2, 1];
         let data = vec![0.0f32, -2.0f32];
-        let scores = CrossEncoderReranker::extract_scores_from_tensor(&shape, &data, 2)?;
+        let scores = OnnxReranker::extract_scores_from_tensor(&shape, &data, 2)?;
         assert_eq!(scores.len(), 2);
         assert!((scores[0] - 0.5).abs() < 1e-4);
         assert!(scores[1] < 0.2);
@@ -420,7 +442,7 @@ mod tests {
         // 2D tensor [batch_size = 2, cols = 2] (binary classification logits)
         let shape = vec![2, 2];
         let data = vec![1.0f32, 3.0f32, 2.0f32, 0.0f32]; // diff: +2.0, -2.0
-        let scores = CrossEncoderReranker::extract_scores_from_tensor(&shape, &data, 2)?;
+        let scores = OnnxReranker::extract_scores_from_tensor(&shape, &data, 2)?;
         assert_eq!(scores.len(), 2);
         assert!(scores[0] > 0.8);
         assert!(scores[1] < 0.2);

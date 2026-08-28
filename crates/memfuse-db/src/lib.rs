@@ -58,21 +58,11 @@ pub mod context;
 pub use compaction::{CompactedContext, CompactionStrategy, ContextCompactor, StatusToken};
 
 #[cfg(feature = "sandbox")]
+#[async_trait::async_trait]
 pub trait SandboxBridge: Send + Sync {
-    fn db_search(
-        &self,
-        query: &[u8],
-        k: usize,
-    ) -> impl std::future::Future<Output = Result<Vec<u8>>> + Send;
-    fn db_insert(
-        &self,
-        key: &[u8],
-        value: &[u8],
-    ) -> impl std::future::Future<Output = Result<()>> + Send;
-    fn db_get(
-        &self,
-        key: &[u8],
-    ) -> impl std::future::Future<Output = Result<Option<Vec<u8>>>> + Send;
+    async fn db_search(&self, query: &[u8], k: usize) -> Result<Vec<u8>>;
+    async fn db_insert(&self, key: &[u8], value: &[u8]) -> Result<()>;
+    async fn db_get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
 }
 
 // mod Collection is used via pub mod collection
@@ -962,6 +952,7 @@ impl MemFuse {
 }
 
 #[cfg(feature = "sandbox")]
+#[async_trait::async_trait]
 impl SandboxBridge for MemFuse {
     async fn db_search(&self, query: &[u8], k: usize) -> Result<Vec<u8>> {
         // Assume query is a binary f32 array (little endian)
@@ -1732,5 +1723,17 @@ mod tests {
             Ok(_) => panic!("expected error"),
         };
         assert!(err_msg.contains("Dimension mismatch"));
+    }
+}
+
+#[cfg(all(test, feature = "sandbox"))]
+mod dyn_safety {
+    use super::*;
+
+    fn _assert_dyn_sandbox_bridge(_: Option<&dyn SandboxBridge>) {}
+
+    #[test]
+    fn test_sandbox_bridge_dyn_safety() {
+        _assert_dyn_sandbox_bridge(None);
     }
 }
