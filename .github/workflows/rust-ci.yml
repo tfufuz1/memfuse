@@ -30,6 +30,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-targets --workspace --exclude memfuse-tauri -- -D warnings
 
+  feature-matrix:
+    name: Feature Matrix Checks (memfuse-embed)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check memfuse-embed --no-default-features
+        run: cargo check -p memfuse-embed --no-default-features
+      - name: Check memfuse-embed --all-features
+        run: cargo check -p memfuse-embed --all-features
+
   test:
     name: Test Suite (Triple-Run Flaky-Detection)
     runs-on: ubuntu-latest
