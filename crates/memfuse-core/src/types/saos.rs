@@ -31,6 +31,10 @@ pub struct FusionWeights {
     metadata: f32,
 }
 
+// ANCHOR[REFACTOR:CORE-FUSION-001] STATUS:DONE (TS:2026-08-28T16:49:00Z) (SESSION: a3f29c1d)
+// AUFGABE : Remove FusionWeights::new_with_metadata from public API (metadata fusion signal not implemented)
+// GATE    : cargo test -p memfuse-core
+
 impl FusionWeights {
     /// Creates 3-signal fusion weights (vector, text, graph) summing to 1.0.
     pub fn new(vector: f32, text: f32, graph: f32) -> Result<Self> {
