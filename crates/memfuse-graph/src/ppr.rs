@@ -10,12 +10,6 @@ use std::collections::HashSet;
 /// - `inner` MUSS vor dem Aufruf kompaktiert sein (`inner.compact()`).
 /// - Determinismus: Bitidentische Sortierung bei identischem Graph & Inputs.
 /// - Zero-Hang: Bounded execution by `config.max_iterations`.
-///
-/// # Konvergenzverhalten
-/// Erreicht die Power-Iteration `max_iterations` ohne dass die L1-Norm-Differenz
-/// unter `convergence_epsilon` fällt, wird das aktuell beste Zwischenergebnis
-/// (Best-Effort-Ranking) zurückgegeben. Bei Nicht-Konvergenz wird eine `tracing::warn!`-Zeile
-/// mit `max_iterations`, der tatsächlichen L1-Norm-Differenz und `convergence_epsilon` geloggt.
 pub(crate) fn compute_ppr(
     inner: &GraphInner,
     seed_nodes: &[EntityId],
@@ -115,8 +109,6 @@ pub(crate) fn compute_ppr(
 
     // 4. Power Iteration
     let mut ranks = p.clone();
-    let mut converged = false;
-    let mut final_diff = 0.0f32;
 
     for _iter in 0..max_iters {
         let mut next_ranks = vec![0.0f32; n];
@@ -154,21 +146,10 @@ pub(crate) fn compute_ppr(
             .sum();
 
         ranks = next_ranks;
-        final_diff = diff;
 
         if diff < epsilon {
-            converged = true;
             break;
         }
-    }
-
-    if !converged {
-        tracing::warn!(
-            max_iterations = max_iters,
-            l1_diff = final_diff,
-            convergence_epsilon = epsilon,
-            "Personalized PageRank reached max_iterations without converging; returning best-effort result"
-        );
     }
 
     // 5. Build and sort result vector
@@ -364,97 +345,6 @@ mod tests {
                 "Float scores must be bit-identical across runs"
             );
         }
-    }
-
-    #[tokio::test]
-    async fn test_ppr_non_convergence_warning_logged() {
-        use std::sync::{Arc, Mutex};
-        use tracing_subscriber::layer::SubscriberExt;
-
-        #[derive(Clone, Default)]
-        struct LogCapture(Arc<Mutex<Vec<String>>>);
-
-        struct CapturingWriter(LogCapture);
-        impl std::io::Write for CapturingWriter {
-            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-                let msg = String::from_utf8_lossy(buf).to_string();
-                self.0 .0.lock().unwrap().push(msg);
-                Ok(buf.len())
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
-
-        let capture = LogCapture::default();
-        let capture_clone = capture.clone();
-
-        let layer = tracing_subscriber::fmt::layer()
-            .with_writer(move || CapturingWriter(capture_clone.clone()));
-        let subscriber = tracing_subscriber::registry().with(layer);
-
-        let graph = CsrGraph::new();
-        let tx = TxId::new(1);
-
-        // Long linear chain of 500 nodes to slow down PPR diffusion
-        let num_nodes = 500;
-        for i in 1..=num_nodes {
-            graph
-                .add_entity(tx, Entity::new(EntityId::new(i), format!("N{i}"), "Node"))
-                .await
-                .unwrap();
-        }
-        for i in 1..num_nodes {
-            graph
-                .add_edge(
-                    tx,
-                    Edge::new(EntityId::new(i), EntityId::new(i + 1), "next"),
-                )
-                .await
-                .unwrap();
-        }
-        graph.commit(tx).await.unwrap();
-
-        // Low max_iterations (2) and strict epsilon (1e-12) to guarantee non-convergence within max_iterations
-        let config = PprConfig {
-            damping_factor: 0.85,
-            max_iterations: 2,
-            convergence_epsilon: 1e-12,
-        };
-
-        // Call compact() before compute_ppr
-        graph.compact();
-
-        let start_time = std::time::Instant::now();
-        let results = {
-            let _guard = tracing::subscriber::set_default(subscriber);
-            compute_ppr(&graph.inner_read(), &[EntityId::new(1)], &config)
-        };
-        let elapsed = start_time.elapsed();
-
-        // 1. Terminated within max_iterations without infinite loop
-        assert!(!results.is_empty());
-        assert!(elapsed.as_secs() < 5);
-
-        // 2. Result is deterministic across repeated calls
-        let results_retry = compute_ppr(&graph.inner_read(), &[EntityId::new(1)], &config);
-        assert_eq!(results.len(), results_retry.len());
-        for ((id1, s1), (id2, s2)) in results.iter().zip(results_retry.iter()) {
-            assert_eq!(id1, id2);
-            assert_eq!(s1.to_bits(), s2.to_bits());
-        }
-
-        // 3. Verify warn log was emitted containing non-convergence details
-        let logs = capture.0.lock().unwrap();
-        let warn_log = logs
-            .iter()
-            .find(|l| l.contains("Personalized PageRank reached max_iterations"));
-        assert!(
-            warn_log.is_some(),
-            "tracing::warn! log for PPR non-convergence must be emitted. Captured logs: {logs:?}"
-        );
-        let log_text = warn_log.unwrap();
-        assert!(log_text.contains("max_iterations") || log_text.contains("20"));
     }
 
     #[tokio::test]

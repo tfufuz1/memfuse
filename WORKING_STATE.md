@@ -12,9 +12,8 @@ Ergebnis: **4 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
-| `crates/memfuse-store/src/wal.rs` | 421 | `AGT-STORE-003` | `SECURITY` | `CRITICAL` | `2026-08-25T00:00:00Z` | // AI-TAG[SECURITY][CRITICAL] Atomic WAL integrity key creation with 0o600 mode (AGT-STORE-003) (TS:2026-08-25T00:00:00Z) |
 | `crates/memfuse-core/src/tx_buffer.rs` | 25 | `AGT-CORE-001` | `SMELL` | `MINOR` | `2026-08-28T00:00:00Z` | // AI-TAG[SMELL][MINOR] Bounded staging capacity (ID: AGT-CORE-001) (TS:2026-08-28T00:00:00Z) |
-| `crates/memfuse-index/src/distance.rs` | 54 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `2026-08-25T00:00:00Z` | // AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-25T00:00:00Z) |
+| `crates/memfuse-index/src/distance.rs` | 54 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `2026-08-28T00:00:00Z` | // AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-28T00:00:00Z) |
 | `crates/memfuse-index/src/distance.rs` | 89 | `AGT-INDEX-005` | `SECURITY` | `CRITICAL` | `2026-08-25T00:00:00Z` | // AI-TAG[SECURITY][CRITICAL] Precondition assertions for SIMD distance functions (AGT-INDEX-005) (TS:2026-08-25T00:00:00Z) |
 | `crates/memfuse-store/src/wal.rs` | 421 | `AGT-STORE-003` | `SECURITY` | `CRITICAL` | `2026-08-25T00:00:00Z` | // AI-TAG[SECURITY][CRITICAL] Atomic WAL integrity key creation with 0o600 mode (AGT-STORE-003) (TS:2026-08-25T00:00:00Z) |
 
@@ -23,14 +22,14 @@ Ergebnis: **4 offene Tags**
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 6.347 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-core` | 0 | 6.354 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-checkpoint` | 1 | 1.051 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 1.110 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-graph` | 1 | 4.041 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-index` | 1 | 7.098 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-graph` | 1 | 3.822 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-index` | 1 | 7.123 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | 1 | 9.340 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 3.531 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | 2 | 9.861 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-db` | 2 | 9.863 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 1.648 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | 3 | 986 | 🧊 Optional |  |
 | `memfuse-ollama` | 3 | 2.287 | 🟢 Clean |  |

@@ -3,7 +3,7 @@
 //! Provides append-only logging of every step an agent takes.
 //! Entries are stored via [`Collection`] and keyed `audit:{task_id}:step:{n}`.
 
-use memfuse_core::{Result, StorageEngine};
+use memfuse_core::{StorageEngine, Result};
 use memfuse_db::Collection;
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};

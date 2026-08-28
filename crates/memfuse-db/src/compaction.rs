@@ -184,7 +184,9 @@ impl ContextCompactor {
         // Generate a new DocId deterministically or using base doc_id of first chunk
         let synthesized_doc_id = chunks[0].doc_id;
 
-        let max_relevance = chunks.iter().fold(0.0f32, |max, c| max.max(c.relevance));
+        let max_relevance = chunks
+            .iter()
+            .fold(0.0f32, |max, c| max.max(c.relevance));
 
         let consolidated_chunk = ContextChunk {
             doc_id: synthesized_doc_id,
