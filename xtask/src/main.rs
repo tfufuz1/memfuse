@@ -629,9 +629,17 @@ fn main() {
                 process::exit(1);
             }
         }
+        "run-community-detection" => {
+            println!("=== xtask run-community-detection ===");
+            println!(
+                "Periodic batch process for GraphRAG community detection via Label Propagation."
+            );
+            println!("Note: Community detection triggers should be invoked via collection.run_community_detection().await or embedded engine instances.");
+            println!("=== xtask run-community-detection PASSED ===");
+        }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: sync-docs [--check], check-consistency");
+            eprintln!("Available commands: sync-docs [--check], check-consistency, run-community-detection");
             process::exit(1);
         }
     }

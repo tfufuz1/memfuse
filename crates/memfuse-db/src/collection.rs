@@ -11,8 +11,10 @@
 
 use crate::filter::MetadataFilter;
 use memfuse_core::TextEmbeddingEngine;
-use memfuse_core::{DocId, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex};
-use memfuse_graph::CsrGraph;
+use memfuse_core::{
+    DocId, EntityId, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex,
+};
+use memfuse_graph::{detect_communities, CommunityAssignment, CommunityDetectionConfig, CsrGraph};
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;
 use memfuse_text::inverted::InvertedIndex;
@@ -269,7 +271,7 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Internal helper to generate namespaced keys.
-    /// key_type: 0 = user key, 1 = docid mapping, 2 = relationship, 3 = tx intent
+    /// key_type: 0 = user key, 1 = docid mapping, 2 = relationship, 3 = tx intent, 4 = system/community
     pub(crate) fn namespaced_key(&self, key: &[u8], key_type: u8) -> Vec<u8> {
         if self.name == "default" {
             match key_type {
@@ -291,6 +293,7 @@ impl<S: StorageEngine> Collection<S> {
                     k.extend_from_slice(key);
                     k
                 }
+                4 => key.to_vec(),
                 _ => key.to_vec(),
             }
         } else {
@@ -1331,7 +1334,8 @@ impl<S: StorageEngine> Collection<S> {
         Ok(results)
     }
 
-    /// Performs hybrid search with custom fusion weights for vector, text, and graph signals.
+    /// Performs hybrid search with custom fusion weights for vector, text, and graph signals,
+    /// and optional community filtering/boosting.
     #[tracing::instrument(level = "trace", skip(self, text, vector))]
     pub async fn hybrid_search_with_weights(
         &self,
@@ -1340,6 +1344,21 @@ impl<S: StorageEngine> Collection<S> {
         k: usize,
         anchor_entities: Option<&[memfuse_core::EntityId]>,
         weights: Option<&memfuse_core::FusionWeights>,
+    ) -> Result<Vec<crate::SearchResult>> {
+        self.hybrid_search_with_strategy(text, vector, k, anchor_entities, weights, None)
+            .await
+    }
+
+    /// Performs hybrid search with custom signal fusion weights and graph traversal strategy.
+    #[tracing::instrument(level = "trace", skip(self, text, vector, strategy))]
+    pub async fn hybrid_search_with_strategy(
+        &self,
+        text: &str,
+        vector: &[f32],
+        k: usize,
+        anchor_entities: Option<&[memfuse_core::EntityId]>,
+        weights: Option<&memfuse_core::FusionWeights>,
+        strategy: Option<&memfuse_core::GraphTraversalStrategy>,
     ) -> Result<Vec<crate::SearchResult>> {
         if k == 0 {
             return Ok(Vec::new());
@@ -1350,7 +1369,8 @@ impl<S: StorageEngine> Collection<S> {
         let is_vector_zero = vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
 
-        const MAX_TRAVERSAL_HOPS: usize = 3;
+        let default_strategy = memfuse_core::GraphTraversalStrategy::default();
+        let graph_strat = strategy.unwrap_or(&default_strategy);
 
         // 1. Vector Signal
         let vector_results = if is_vector_zero {
@@ -1375,29 +1395,32 @@ impl<S: StorageEngine> Collection<S> {
         };
 
         // 3. Graph Signal
-        let graph_results = if let Some(anchors) = anchor_entities {
+        let implicit_anchors: Vec<memfuse_core::EntityId>;
+        let anchors_ref: Option<&[memfuse_core::EntityId]> = if let Some(anchors) = anchor_entities {
             if anchors.is_empty() {
-                Vec::new()
+                None
             } else {
-                let tuples = self
-                    .graph_index
-                    .multi_traverse(anchors, MAX_TRAVERSAL_HOPS)
-                    .await?;
-                let doc_tuples = tuples
-                    .into_iter()
-                    .map(|(eid, score)| (memfuse_core::DocId::new(eid.inner()), score))
-                    .collect();
-                self.hydrate_from_tuples_at(doc_tuples, seq).await?
+                Some(anchors)
             }
         } else if !text_results.is_empty() {
-            let implicit_anchors: Vec<memfuse_core::EntityId> = text_results
+            implicit_anchors = text_results
                 .iter()
                 .map(|r| memfuse_core::EntityId::from_key(r.id.as_str()))
                 .collect::<Result<Vec<_>>>()?;
-            let tuples = self
-                .graph_index
-                .multi_traverse(&implicit_anchors, MAX_TRAVERSAL_HOPS)
-                .await?;
+            Some(&implicit_anchors)
+        } else {
+            None
+        };
+
+        let graph_results = if let Some(anchors) = anchors_ref {
+            let tuples = match graph_strat {
+                memfuse_core::GraphTraversalStrategy::Hops { max_hops } => {
+                    self.graph_index.multi_traverse(anchors, *max_hops).await?
+                }
+                memfuse_core::GraphTraversalStrategy::PersonalizedPageRank(ppr_config) => {
+                    self.graph_index.personalized_page_rank(anchors, ppr_config).await?
+                }
+            };
             let doc_tuples = tuples
                 .into_iter()
                 .map(|(eid, score)| (memfuse_core::DocId::new(eid.inner()), score))
@@ -1412,6 +1435,37 @@ impl<S: StorageEngine> Collection<S> {
         }
 
         let (vw, tw, gw) = crate::fusion::weights_to_signal_factors(weights);
+
+        // Community filtering / boosting VOR RRF
+        let target_community_id = if let Some(target_eid) = same_community_as {
+            self.get_community(target_eid).await?
+        } else {
+            None
+        };
+
+        let filter_or_boost = |list: Vec<crate::SearchResult>| async {
+            if let Some(target_comm) = target_community_id {
+                let mut filtered = Vec::new();
+                for mut res in list {
+                    if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
+                        if let Ok(Some(comm)) = self.get_community(eid).await {
+                            if comm == target_comm {
+                                // Candidate is in the same community: boost score
+                                res.score *= 1.2;
+                                filtered.push(res);
+                            }
+                        }
+                    }
+                }
+                filtered
+            } else {
+                list
+            }
+        };
+
+        let vector_results = filter_or_boost(vector_results).await;
+        let text_results = filter_or_boost(text_results).await;
+        let graph_results = filter_or_boost(graph_results).await;
 
         let mut signal_sets = Vec::new();
         if !vector_results.is_empty() {
@@ -1690,6 +1744,58 @@ impl<S: StorageEngine> Collection<S> {
         }
 
         Ok(count)
+    }
+
+    /// Runs Label Propagation Community Detection on the collection's graph index
+    /// and persists the resulting assignments in storage using TxId allocation.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn run_community_detection(&self) -> Result<Vec<CommunityAssignment>> {
+        self.run_community_detection_with_config(&CommunityDetectionConfig::default())
+            .await
+    }
+
+    /// Runs Label Propagation Community Detection with custom configuration
+    /// and persists the resulting assignments in storage using TxId allocation.
+    #[tracing::instrument(level = "trace", skip(self, config))]
+    pub async fn run_community_detection_with_config(
+        &self,
+        config: &CommunityDetectionConfig,
+    ) -> Result<Vec<CommunityAssignment>> {
+        let assignments = detect_communities(&self.graph_index, config).await?;
+        if assignments.is_empty() {
+            return Ok(assignments);
+        }
+
+        let tx = self.allocate_tx();
+
+        for assignment in &assignments {
+            let key = self.namespaced_key(
+                format!("__graph:community:{}", assignment.entity_id.inner()).as_bytes(),
+                4,
+            );
+            let val = serde_json::to_vec(&assignment.community_id)?;
+            self.storage.put(tx, &key, &val).await?;
+        }
+
+        self.storage.commit(tx).await?;
+        Ok(assignments)
+    }
+
+    /// Retrieves the persisted community ID for a given entity.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn get_community(&self, entity_id: EntityId) -> Result<Option<u64>> {
+        let key = self.namespaced_key(
+            format!("__graph:community:{}", entity_id.inner()).as_bytes(),
+            4,
+        );
+        if let Some(bytes) = self.storage.get(&key).await? {
+            let comm_id: u64 = serde_json::from_slice(&bytes).map_err(|e| {
+                memfuse_core::MemFuseError::Internal(format!("community deserialize: {e}"))
+            })?;
+            Ok(Some(comm_id))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Removes all data belonging to this collection from storage.
