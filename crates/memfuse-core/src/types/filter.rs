@@ -171,12 +171,8 @@ impl FilterExpr {
                 let is_present = metadata.get(field).is_some();
                 is_present == *exists
             }
-            FilterExpr::And(left, right) => {
-                left.evaluate(metadata) && right.evaluate(metadata)
-            }
-            FilterExpr::Or(left, right) => {
-                left.evaluate(metadata) || right.evaluate(metadata)
-            }
+            FilterExpr::And(left, right) => left.evaluate(metadata) && right.evaluate(metadata),
+            FilterExpr::Or(left, right) => left.evaluate(metadata) || right.evaluate(metadata),
             FilterExpr::Not(expr) => !expr.evaluate(metadata),
         }
     }

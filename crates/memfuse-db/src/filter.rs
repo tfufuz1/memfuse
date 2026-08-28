@@ -125,9 +125,7 @@ impl TryFrom<MetadataFilter> for FilterExpr {
                     }
                     Ok(acc)
                 } else {
-                    Err(memfuse_core::MemFuseError::invalid_input(
-                        "Empty Or filter",
-                    ))
+                    Err(memfuse_core::MemFuseError::invalid_input("Empty Or filter"))
                 }
             }
             MetadataFilter::Not(filter) => {
@@ -143,6 +141,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    #[allow(deprecated)]
     fn test_filter_in_nin_exists_operators() {
         let meta = json!({
             "category": "electronics",
@@ -197,6 +196,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_filter_type_mismatch_safety() {
         let meta = json!({
             "count": 42
