@@ -5,6 +5,13 @@
 
 > Automatisch generierter Read-Only Bericht aus allen Inline-Tags im Repo.
 
+## Breaking Changes
+
+### `memfuse-core`
+- **`ContextChunk::combined_text_for_indexing()` wurde entfernt.**
+  - **Grund**: Die als `#[deprecated]` markierte Methode lieferte lediglich `&self.content` ohne das LLM-Kontextpräfix (`contextual_prefix`), was zu schlechterer Qualität bei der BM25-Volltextsuche führen konnte.
+  - **Migrationsanleitung**: Ersetze Aufrufe von `.combined_text_for_indexing()` durch `.combined_text_owned()`. Beachte den Signaturunterschied (`&str` vs. `String`) — `.combined_text_owned()` gibt ein `String`-Objekt inkl. Kontextpräfix (`prefix + "\n\n" + content`) zurück. Falls nur auf den rohen Inhalt ohne Präfix zugegriffen werden soll, nutze direkt das Feld `.content`.
+
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
 | `2026-08-29T11:00:00Z` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `AGT-CORE-a3f29c1d` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3) |
