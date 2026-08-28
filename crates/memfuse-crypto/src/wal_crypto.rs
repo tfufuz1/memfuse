@@ -4,7 +4,7 @@
 
 #![forbid(unsafe_code)]
 
-use memfuse_core::Result;
+use memfuse_core::{Result, TxId};
 
 use crate::crypto::KeyManager;
 
@@ -114,6 +114,7 @@ impl WalHmac {
 /// Passed to `IntegrityVerifier::verify_and_update()` during WAL replay or recovery.
 #[derive(Debug, Clone)]
 pub struct WalEntrySnapshot {
+    pub tx_id: TxId,
     pub seq_no: u64,
     pub op_type: u8, // 0: Put, 1: Delete
     pub key: Vec<u8>,
@@ -153,8 +154,46 @@ impl IntegrityVerifier {
         }
     }
 
-    /// Verifies an entry and updates the chain state.
-    pub fn verify_and_update(&mut self, entry: &WalEntrySnapshot, offset: u64) -> Result<()> {
+    /// Verifies a V3 entry (with tx_id and length prefixes) and updates the chain state.
+    pub fn verify_and_update_v3(&mut self, entry: &WalEntrySnapshot, offset: u64) -> Result<()> {
+        let mut mac = WalHmac::new(&self.integrity_key)?;
+        mac.update(&self.last_hmac);
+        mac.update(&entry.seq_no.to_le_bytes());
+
+        let tx_id_bytes = entry.tx_id.inner().to_le_bytes();
+        mac.update(&tx_id_bytes);
+
+        if entry.op_type == 0 {
+            // Put
+            mac.update(&[0u8]);
+            mac.update(&(entry.key.len() as u32).to_le_bytes());
+            mac.update(&entry.key);
+            mac.update(&(entry.value.len() as u32).to_le_bytes());
+            mac.update(&entry.value);
+        } else {
+            // Delete
+            mac.update(&[1u8]);
+            mac.update(&(entry.key.len() as u32).to_le_bytes());
+            mac.update(&entry.key);
+        }
+
+        use subtle::ConstantTimeEq;
+        let computed = mac.finalize();
+        if computed.ct_eq(&entry.checksum).unwrap_u8() == 0
+            || entry.prev_hmac.ct_eq(&self.last_hmac).unwrap_u8() == 0
+        {
+            return Err(memfuse_core::MemFuseError::wal_corruption(
+                offset,
+                format!("HMAC mismatch for seq {}", entry.seq_no),
+            ));
+        }
+
+        self.last_hmac = computed;
+        Ok(())
+    }
+
+    /// Verifies a V2 entry (legacy without tx_id and without length prefixes) and updates the chain state.
+    pub fn verify_and_update_v2(&mut self, entry: &WalEntrySnapshot, offset: u64) -> Result<()> {
         let mut mac = WalHmac::new(&self.integrity_key)?;
         mac.update(&self.last_hmac);
         mac.update(&entry.seq_no.to_le_bytes());
@@ -180,6 +219,16 @@ impl IntegrityVerifier {
         self.last_hmac = computed;
         Ok(())
     }
+
+    /// Updates the chain state for legacy V1 entries without HMAC verification.
+    pub fn skip_hmac_verify_legacy(&mut self, entry: &WalEntrySnapshot) {
+        self.last_hmac = entry.checksum;
+    }
+
+    /// Default verification delegating to V3 verification.
+    pub fn verify_and_update(&mut self, entry: &WalEntrySnapshot, offset: u64) -> Result<()> {
+        self.verify_and_update_v3(entry, offset)
+    }
 }
 
 #[cfg(test)]
@@ -202,46 +251,20 @@ mod tests {
         let mut verifier = IntegrityVerifier::new(key);
 
         // entry 1
-        let mut hmac1 = WalHmac::new(key).unwrap(); // unwrap
-        hmac1.update(&[0u8; 32]); // prev_hmac
-        hmac1.update(&100u64.to_le_bytes()); // seq
-        hmac1.update(&[0u8]); // op_type Put
-        hmac1.update(b"k1");
-        hmac1.update(b"v1");
-        let checksum1 = hmac1.finalize();
-
-        let e1 = WalEntrySnapshot {
-            seq_no: 100,
-            op_type: 0,
-            key: b"k1".to_vec(),
-            value: b"v1".to_vec(),
-            checksum: checksum1,
-            prev_hmac: [0u8; 32],
-        };
+        let e1 = create_entry(key, [0u8; 32], 100, 0, b"k1", b"v1");
+        let checksum1 = e1.checksum;
 
         verifier.verify_and_update(&e1, 100).expect("e1 valid"); // expect
 
         // entry 2
-        let mut hmac2 = WalHmac::new(key).unwrap(); // unwrap
-        hmac2.update(&checksum1); // prev_hmac is checksum1
-        hmac2.update(&101u64.to_le_bytes());
-        hmac2.update(&[1u8]); // op_type Delete
-        hmac2.update(b"k1");
-        let checksum2 = hmac2.finalize();
-
-        let e2 = WalEntrySnapshot {
-            seq_no: 101,
-            op_type: 1,
-            key: b"k1".to_vec(),
-            value: Vec::new(),
-            checksum: checksum2,
-            prev_hmac: checksum1,
-        };
+        let e2 = create_entry(key, checksum1, 101, 1, b"k1", b"");
+        let checksum2 = e2.checksum;
 
         verifier.verify_and_update(&e2, 200).expect("e2 valid"); // expect
 
         // entry 3 (corrupt)
         let e3 = WalEntrySnapshot {
+            tx_id: TxId::new(3),
             seq_no: 102,
             op_type: 1,
             key: b"k1".to_vec(),
@@ -308,16 +331,25 @@ mod tests {
         k: &[u8],
         v: &[u8],
     ) -> WalEntrySnapshot {
+        let tx_id = TxId::new(seq_no);
         let mut hmac = WalHmac::new(key).expect("hmac init"); // expect
         hmac.update(&prev_hmac);
         hmac.update(&seq_no.to_le_bytes());
-        hmac.update(&[op_type]);
-        hmac.update(k);
+        hmac.update(&tx_id.inner().to_le_bytes());
         if op_type == 0 {
+            hmac.update(&[0u8]);
+            hmac.update(&(k.len() as u32).to_le_bytes());
+            hmac.update(k);
+            hmac.update(&(v.len() as u32).to_le_bytes());
             hmac.update(v);
+        } else {
+            hmac.update(&[1u8]);
+            hmac.update(&(k.len() as u32).to_le_bytes());
+            hmac.update(k);
         }
         let checksum = hmac.finalize();
         WalEntrySnapshot {
+            tx_id,
             seq_no,
             op_type,
             key: k.to_vec(),

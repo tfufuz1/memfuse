@@ -38,10 +38,14 @@ impl WalOp {
 /// Magic header for V2 batch-encrypted WAL files (`b"MFW2"`).
 pub const WAL_V2_HEADER: [u8; 4] = *b"MFW2";
 
+/// Magic header for V3 WAL files (`b"MFW3"`).
+pub const WAL_V3_HEADER: [u8; 4] = *b"MFW3";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WalVersion {
-    V1,
-    V2,
+pub enum WalVersion {
+    V1,   // Legacy: kein HMAC
+    V2,   // Current: HMAC ohne tx_id
+    V3,   // New: HMAC mit tx_id
 }
 
 /// Legacy static HMAC integrity key used strictly for backward-compatibility fallback during WAL replay of legacy databases.
@@ -81,7 +85,7 @@ impl WalEntry {
         integrity_key: &[u8],
         prev_hmac: [u8; 32],
     ) -> Result<Self> {
-        let checksum = Self::compute_checksum(&op, seq_no, integrity_key, prev_hmac)?;
+        let checksum = Self::compute_checksum_v3(&op, seq_no, integrity_key, prev_hmac)?;
         Ok(Self {
             op,
             seq_no,
@@ -90,7 +94,8 @@ impl WalEntry {
         })
     }
 
-    pub fn compute_checksum(
+    /// Computes V3 checksum (includes tx_id and length prefixes for key/value).
+    pub fn compute_checksum_v3(
         op: &WalOp,
         seq_no: u64,
         integrity_key: &[u8],
@@ -100,20 +105,61 @@ impl WalEntry {
 
         // Hash Chaining: binding to the previous entry
         mac.update(&prev_hmac);
-
         mac.update(&seq_no.to_le_bytes());
+
+        // tx_id MUST come before op_type
+        let tx_id_bytes = op.tx_id().inner().to_le_bytes();
+        mac.update(&tx_id_bytes);
+
         match op {
             WalOp::Put { key, value, .. } => {
                 mac.update(&[0u8]); // op type
+                mac.update(&(key.len() as u32).to_le_bytes());
                 mac.update(key);
+                mac.update(&(value.len() as u32).to_le_bytes());
                 mac.update(value);
             }
             WalOp::Delete { key, .. } => {
                 mac.update(&[1u8]); // op type
+                mac.update(&(key.len() as u32).to_le_bytes());
                 mac.update(key);
             }
         }
         Ok(mac.finalize())
+    }
+
+    /// Legacy V2 checksum calculation (without tx_id and length-prefixes in HMAC).
+    pub fn compute_checksum_v2(
+        op: &WalOp,
+        seq_no: u64,
+        integrity_key: &[u8],
+        prev_hmac: [u8; 32],
+    ) -> Result<[u8; 32]> {
+        let mut mac = WalHmac::new(integrity_key)?;
+
+        mac.update(&prev_hmac);
+        mac.update(&seq_no.to_le_bytes());
+        match op {
+            WalOp::Put { key, value, .. } => {
+                mac.update(&[0u8]);
+                mac.update(key);
+                mac.update(value);
+            }
+            WalOp::Delete { key, .. } => {
+                mac.update(&[1u8]);
+                mac.update(key);
+            }
+        }
+        Ok(mac.finalize())
+    }
+
+    pub fn compute_checksum(
+        op: &WalOp,
+        seq_no: u64,
+        integrity_key: &[u8],
+        prev_hmac: [u8; 32],
+    ) -> Result<[u8; 32]> {
+        Self::compute_checksum_v3(op, seq_no, integrity_key, prev_hmac)
     }
 
     /// Serializes the entry to bytes.
@@ -398,8 +444,15 @@ impl Wal {
 
         // If file is not empty, find the last valid HMAC to continue the chain
         if metadata.len() > 0 {
-            let entries = wal.replay_with_size(metadata.len()).await?;
-            if let Some((_, last_entry, _)) = entries.last() {
+            let (entries, version) = wal.replay_with_size_and_version(metadata.len()).await?;
+            if version != WalVersion::V3 {
+                tracing::info!(
+                    "WAL {:?} format detected at {:?}. Will be rewritten as V3 after successful replay.",
+                    version,
+                    wal.path
+                );
+                wal.rewrite_as_v3(&entries).await?;
+            } else if let Some((_, last_entry, _)) = entries.last() {
                 let mut guard = wal.last_hmac.lock().await;
                 *guard = last_entry.checksum;
             }
@@ -576,9 +629,9 @@ impl Wal {
         let mut total_bytes = Vec::new();
         let current_size = self.size();
 
-        // Write V2 header if file is currently empty (size == 0)
+        // Write V3 header if file is currently empty (size == 0)
         if current_size == 0 {
-            total_bytes.extend_from_slice(&WAL_V2_HEADER);
+            total_bytes.extend_from_slice(&WAL_V3_HEADER);
         }
 
         let mut last_hmac_val = [0u8; 32];
@@ -694,6 +747,14 @@ impl Wal {
     }
 
     async fn replay_with_size(&self, file_size: u64) -> Result<Vec<(u64, WalEntry, u64)>> {
+        let (entries, _) = self.replay_with_size_and_version(file_size).await?;
+        Ok(entries)
+    }
+
+    async fn replay_with_size_and_version(
+        &self,
+        file_size: u64,
+    ) -> Result<(Vec<(u64, WalEntry, u64)>, WalVersion)> {
         let mut file = self.file.lock().await;
         use tokio::io::AsyncSeekExt;
         file.seek(std::io::SeekFrom::Start(0))
@@ -705,8 +766,9 @@ impl Wal {
         let mut entries = Vec::new();
         let mut pos = 0u64;
 
+        let mut version = WalVersion::V1;
         if file_size == 0 {
-            return Ok(entries);
+            return Ok((entries, version));
         }
 
         let integrity_key = self.get_integrity_key()?;
@@ -714,16 +776,18 @@ impl Wal {
         let mut using_legacy_key = false;
 
         // Detect version from header
-        let mut version = WalVersion::V1;
         if file_size >= 4 {
             let mut header_bytes = [0u8; 4];
             match reader.read_exact(&mut header_bytes).await {
                 Ok(_) => {
-                    if header_bytes == WAL_V2_HEADER {
+                    if header_bytes == WAL_V3_HEADER {
+                        version = WalVersion::V3;
+                        pos = 4;
+                    } else if header_bytes == WAL_V2_HEADER {
                         version = WalVersion::V2;
                         pos = 4;
                     } else {
-                        // Rewind to 0 if not V2 header
+                        // Rewind to 0 if not V3 or V2 header
                         reader
                             .seek(std::io::SeekFrom::Start(0))
                             .await
@@ -732,7 +796,7 @@ impl Wal {
                             })?;
                     }
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(entries),
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok((entries, version)),
                 Err(e) => return Err(MemFuseError::Storage(format!("WAL read failed: {}", e))),
             }
         }
@@ -795,7 +859,8 @@ impl Wal {
             let chunk_start_pos = pos;
             pos += (4 + len) as u64;
 
-            if let (WalVersion::V2, Some(km)) = (version, &self.key_manager) {
+            if matches!(version, WalVersion::V2 | WalVersion::V3) && self.key_manager.is_some() {
+                let km = self.key_manager.as_ref().unwrap();
                 if entry_data_raw.len() < 12 {
                     if pos >= file_size {
                         tracing::warn!("WAL truncated during read at offset {}", chunk_start_pos);
@@ -897,6 +962,7 @@ impl Wal {
                     };
 
                     let snapshot = WalEntrySnapshot {
+                        tx_id: entry.tx_id(),
                         seq_no: entry.seq_no,
                         op_type,
                         key,
@@ -905,13 +971,27 @@ impl Wal {
                         prev_hmac: entry.prev_hmac,
                     };
 
-                    if let Err(e) = verifier.verify_and_update(&snapshot, chunk_start_pos) {
+                    let verify_res = match version {
+                        WalVersion::V3 => verifier.verify_and_update_v3(&snapshot, chunk_start_pos),
+                        WalVersion::V2 => verifier.verify_and_update_v2(&snapshot, chunk_start_pos),
+                        WalVersion::V1 => {
+                            verifier.skip_hmac_verify_legacy(&snapshot);
+                            Ok(())
+                        }
+                    };
+
+                    if let Err(e) = verify_res {
                         if !using_legacy_key {
                             let mut legacy_verifier = IntegrityVerifier::new(&LEGACY_INTEGRITY_KEY);
-                            if legacy_verifier
-                                .verify_and_update(&snapshot, chunk_start_pos)
-                                .is_ok()
-                            {
+                            let legacy_res = match version {
+                                WalVersion::V3 => legacy_verifier.verify_and_update_v3(&snapshot, chunk_start_pos),
+                                WalVersion::V2 => legacy_verifier.verify_and_update_v2(&snapshot, chunk_start_pos),
+                                WalVersion::V1 => {
+                                    legacy_verifier.skip_hmac_verify_legacy(&snapshot);
+                                    Ok(())
+                                }
+                            };
+                            if legacy_res.is_ok() {
                                 tracing::warn!(
                                     "WAL nutzt veralteten Integritätsschlüssel — Datenbank sollte neu initialisiert werden"
                                 );
@@ -990,6 +1070,7 @@ impl Wal {
                 };
 
                 let snapshot = WalEntrySnapshot {
+                    tx_id: entry.tx_id(),
                     seq_no: entry.seq_no,
                     op_type,
                     key,
@@ -998,13 +1079,27 @@ impl Wal {
                     prev_hmac: entry.prev_hmac,
                 };
 
-                if let Err(e) = verifier.verify_and_update(&snapshot, chunk_start_pos) {
+                let verify_res = match version {
+                    WalVersion::V3 => verifier.verify_and_update_v3(&snapshot, chunk_start_pos),
+                    WalVersion::V2 => verifier.verify_and_update_v2(&snapshot, chunk_start_pos),
+                    WalVersion::V1 => {
+                        verifier.skip_hmac_verify_legacy(&snapshot);
+                        Ok(())
+                    }
+                };
+
+                if let Err(e) = verify_res {
                     if !using_legacy_key {
                         let mut legacy_verifier = IntegrityVerifier::new(&LEGACY_INTEGRITY_KEY);
-                        if legacy_verifier
-                            .verify_and_update(&snapshot, chunk_start_pos)
-                            .is_ok()
-                        {
+                        let legacy_res = match version {
+                            WalVersion::V3 => legacy_verifier.verify_and_update_v3(&snapshot, chunk_start_pos),
+                            WalVersion::V2 => legacy_verifier.verify_and_update_v2(&snapshot, chunk_start_pos),
+                            WalVersion::V1 => {
+                                legacy_verifier.skip_hmac_verify_legacy(&snapshot);
+                                Ok(())
+                            }
+                        };
+                        if legacy_res.is_ok() {
                             tracing::warn!(
                                 "WAL nutzt veralteten Integritätsschlüssel — Datenbank sollte neu initialisiert werden"
                             );
@@ -1022,7 +1117,71 @@ impl Wal {
             }
         }
 
-        Ok(entries)
+        Ok((entries, version))
+    }
+
+    /// Rewrites legacy V1 or V2 WAL files as V3.
+    async fn rewrite_as_v3(&self, replayed_entries: &[(u64, WalEntry, u64)]) -> Result<()> {
+        let integrity_key = self.get_integrity_key()?;
+        let mut v3_entries = Vec::with_capacity(replayed_entries.len());
+        let mut prev_hmac = [0u8; 32];
+
+        for (_, entry, _) in replayed_entries {
+            let v3_entry = WalEntry::try_new(entry.op.clone(), entry.seq_no, &integrity_key, prev_hmac)?;
+            prev_hmac = v3_entry.checksum;
+            v3_entries.push(v3_entry);
+        }
+
+        let mut file = self.file.lock().await;
+        use tokio::io::AsyncSeekExt;
+        file.seek(std::io::SeekFrom::Start(0))
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("WAL seek failed during migration: {}", e)))?;
+        file.set_len(0)
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("WAL truncate failed during migration: {}", e)))?;
+
+        let mut total_bytes = Vec::new();
+        total_bytes.extend_from_slice(&WAL_V3_HEADER);
+
+        let mut last_hmac_val = [0u8; 32];
+        if let Some(km) = &self.key_manager {
+            let mut batch_plaintext = Vec::new();
+            for entry in &v3_entries {
+                let bytes = entry.to_bytes()?;
+                batch_plaintext.extend_from_slice(&bytes);
+                last_hmac_val = entry.checksum;
+            }
+
+            let (encrypted, nonce) = km.encrypt_auto_nonce(&batch_plaintext)?;
+            let chunk_len = (12 + encrypted.len()) as u32;
+
+            total_bytes.extend_from_slice(&chunk_len.to_le_bytes());
+            total_bytes.extend_from_slice(&nonce);
+            total_bytes.extend_from_slice(&encrypted);
+        } else {
+            for entry in &v3_entries {
+                let bytes = entry.to_bytes()?;
+                total_bytes.extend_from_slice(&bytes);
+                last_hmac_val = entry.checksum;
+            }
+        }
+
+        file.write_all(&total_bytes).await.map_err(|e| {
+            MemFuseError::Storage(format!("WAL migration write failed: {}", e))
+        })?;
+        file.flush().await.map_err(|e| {
+            MemFuseError::Storage(format!("WAL migration flush failed: {}", e))
+        })?;
+        file.sync_all().await.map_err(|e| {
+            MemFuseError::Storage(format!("WAL migration fsync failed: {}", e))
+        })?;
+
+        self.size.store(total_bytes.len() as u64, std::sync::atomic::Ordering::SeqCst);
+        let mut last_hmac = self.last_hmac.lock().await;
+        *last_hmac = last_hmac_val;
+
+        Ok(())
     }
 
     pub fn size(&self) -> u64 {
@@ -1769,11 +1928,11 @@ mod tests {
         let file_bytes = fs::read(&wal_path).await.expect("read wal file"); // expect
 
         // Layout:
-        // Offset 0..4: WAL_V2_HEADER (b"MFW2")
+        // Offset 0..4: WAL_V3_HEADER (b"MFW3")
         // Offset 4..8: batch chunk_len (u32 LE)
         // Offset 8..20: single 12-byte nonce
         // Offset 20..: AES-GCM-SIV ciphertext
-        assert_eq!(&file_bytes[0..4], &WAL_V2_HEADER);
+        assert_eq!(&file_bytes[0..4], &WAL_V3_HEADER);
         let chunk_len = u32::from_le_bytes(file_bytes[4..8].try_into().unwrap()) as usize; // unwrap
         assert_eq!(file_bytes.len(), 4 + 4 + chunk_len);
 
