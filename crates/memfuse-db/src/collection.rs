@@ -1345,7 +1345,7 @@ impl<S: StorageEngine> Collection<S> {
         anchor_entities: Option<&[memfuse_core::EntityId]>,
         weights: Option<&memfuse_core::FusionWeights>,
     ) -> Result<Vec<crate::SearchResult>> {
-        self.hybrid_search_with_strategy(text, vector, k, anchor_entities, weights, None)
+        self.hybrid_search_with_strategy(text, vector, k, anchor_entities, weights, None, None)
             .await
     }
 
@@ -1359,6 +1359,7 @@ impl<S: StorageEngine> Collection<S> {
         anchor_entities: Option<&[memfuse_core::EntityId]>,
         weights: Option<&memfuse_core::FusionWeights>,
         strategy: Option<&memfuse_core::GraphTraversalStrategy>,
+        same_community_as: Option<EntityId>,
     ) -> Result<Vec<crate::SearchResult>> {
         if k == 0 {
             return Ok(Vec::new());
