@@ -1,16 +1,6 @@
 # MemFuse — Chronologischer Tag- & Review-Bericht
 
-## Breaking Changes
-- `FusionWeights::new_with_metadata` wurde aus der öffentlichen API entfernt (`memfuse-core`), da es keine funktionale Wirkung hatte (metadata musste 0.0 sein) und stille Fehlkonfigurationen bei Aufrufern verursachte. Aufrufer nutzen stattdessen `FusionWeights::new(vector, text, graph)`.
-
 > Automatisch generierter Read-Only Bericht aus allen Inline-Tags im Repo.
-
-## Breaking Changes
-
-### `memfuse-core`
-- **`ContextChunk::combined_text_for_indexing()` wurde entfernt.**
-  - **Grund**: Die als `#[deprecated]` markierte Methode lieferte lediglich `&self.content` ohne das LLM-Kontextpräfix (`contextual_prefix`), was zu schlechterer Qualität bei der BM25-Volltextsuche führen konnte.
-  - **Migrationsanleitung**: Ersetze Aufrufe von `.combined_text_for_indexing()` durch `.combined_text_owned()`. Beachte den Signaturunterschied (`&str` vs. `String`) — `.combined_text_owned()` gibt ein `String`-Objekt inkl. Kontextpräfix (`prefix + "\n\n" + content`) zurück. Falls nur auf den rohen Inhalt ohne Präfix zugegriffen werden soll, nutze direkt das Feld `.content`.
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
@@ -31,7 +21,6 @@
 | `2026-08-25T00:00:00Z` | `crates/memfuse-store/src/compaction.rs` | `AI-TAG` | `AGT-STORE-002` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-STORE-002 — Indices computed before the lock was taken. (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-store/src/wal.rs` | `AI-TAG` | `AGT-STORE-003` | `-` | `OPEN` | `0` | // AI-TAG[SECURITY][CRITICAL] Atomic WAL integrity key creation with 0o600 mode (AGT-STORE-003) (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-text/src/inverted.rs` | `AI-TAG` | `AGT-TXT-001` | `-` | `RESOLVED` | `0` | // AI-TAG[SPEC-DRIFT][MAJOR] RESOLVED: AGT-TXT-001 — replaced unwrap_or_default() with map_err (TS:2026-08-25T00:00:00Z) |
-| `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/compaction.rs` | `AI-TAG` | `AGT-DB-004` | `-` | `OPEN` | `0` | // AI-TAG[SMELL][MINOR] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection.rs` | `AI-TAG` | `AGT-DB-001` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-001 — snapshot_seq() now propagates storage errors (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection.rs` | `AI-TAG` | `AGT-DB-002` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-002 — load_index now scans user_keys (key_type=0) (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-001` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-001 — Module documentation added (TS:2026-08-25T00:00:00Z) |
