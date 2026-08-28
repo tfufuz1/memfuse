@@ -1,7 +1,13 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use memfuse_core::FilterExpr;
+
 /// Operators for metadata filtering.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use memfuse_core::FilterExpr directly; conversion via TryFrom<MetadataFilter> for FilterExpr"
+)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum FilterOp {
     /// Equal to
@@ -25,11 +31,16 @@ pub enum FilterOp {
 }
 
 /// Advanced metadata filter for document retrieval and search.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use memfuse_core::FilterExpr directly; conversion via TryFrom<MetadataFilter> for FilterExpr"
+)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum MetadataFilter {
     /// A single condition on a metadata field.
     Condition {
         field: String,
+        #[allow(deprecated)]
         op: FilterOp,
         value: Value,
     },
@@ -41,82 +52,88 @@ pub enum MetadataFilter {
     Not(Box<MetadataFilter>),
 }
 
+#[allow(deprecated)]
 impl MetadataFilter {
     /// Evaluates the filter against a metadata object.
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use memfuse_core::FilterExpr directly; conversion via TryFrom<MetadataFilter> for FilterExpr"
+    )]
     pub fn matches(&self, metadata: &Value) -> bool {
-        match self {
-            MetadataFilter::Condition { field, op, value } => {
-                if let Some(actual_value) = metadata.get(field) {
-                    match op {
-                        FilterOp::Eq => actual_value == value,
-                        FilterOp::Ne => actual_value != value,
-                        FilterOp::Gt => {
-                            compare_values(actual_value, value) == Some(std::cmp::Ordering::Greater)
-                        }
-                        FilterOp::Gte => matches!(
-                            compare_values(actual_value, value),
-                            Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)
-                        ),
-                        FilterOp::Lt => {
-                            compare_values(actual_value, value) == Some(std::cmp::Ordering::Less)
-                        }
-                        FilterOp::Lte => matches!(
-                            compare_values(actual_value, value),
-                            Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
-                        ),
-                        FilterOp::In => {
-                            if let Some(arr) = actual_value.as_array() {
-                                arr.contains(value)
-                            } else if let Some(arr) = value.as_array() {
-                                arr.contains(actual_value)
-                            } else {
-                                false
-                            }
-                        }
-                        FilterOp::NotIn => {
-                            if let Some(arr) = value.as_array() {
-                                !arr.contains(actual_value)
-                            } else if let Some(arr) = actual_value.as_array() {
-                                !arr.contains(value)
-                            } else {
-                                true
-                            }
-                        }
-                        FilterOp::Exists => value.as_bool().unwrap_or(true),
-                    }
-                } else {
-                    // Field not present
-                    match op {
-                        FilterOp::Ne | FilterOp::NotIn => true,
-                        FilterOp::Exists => {
-                            if let Some(b) = value.as_bool() {
-                                !b
-                            } else {
-                                false
-                            }
-                        }
-                        _ => false,
-                    }
-                }
-            }
-            MetadataFilter::And(filters) => filters.iter().all(|f| f.matches(metadata)),
-            MetadataFilter::Or(filters) => filters.iter().any(|f| f.matches(metadata)),
-            MetadataFilter::Not(filter) => !filter.matches(metadata),
+        if let Ok(expr) = FilterExpr::try_from(self.clone()) {
+            expr.evaluate(metadata)
+        } else {
+            false
         }
     }
 }
 
-fn compare_values(a: &Value, b: &Value) -> Option<std::cmp::Ordering> {
-    match (a, b) {
-        (Value::Number(an), Value::Number(bn)) => {
-            if let (Some(af), Some(bf)) = (an.as_f64(), bn.as_f64()) {
-                af.partial_cmp(&bf)
-            } else {
-                None
+#[allow(deprecated)]
+impl TryFrom<MetadataFilter> for FilterExpr {
+    type Error = memfuse_core::MemFuseError;
+
+    fn try_from(filter: MetadataFilter) -> Result<Self, Self::Error> {
+        match filter {
+            MetadataFilter::Condition { field, op, value } => match op {
+                FilterOp::Eq => Ok(FilterExpr::Eq { field, value }),
+                FilterOp::Ne => Ok(FilterExpr::Ne { field, value }),
+                FilterOp::Gt => Ok(FilterExpr::Gt { field, value }),
+                FilterOp::Gte => Ok(FilterExpr::Gte { field, value }),
+                FilterOp::Lt => Ok(FilterExpr::Lt { field, value }),
+                FilterOp::Lte => Ok(FilterExpr::Lte { field, value }),
+                FilterOp::In => {
+                    let values = if let Some(arr) = value.as_array() {
+                        arr.clone()
+                    } else {
+                        vec![value]
+                    };
+                    Ok(FilterExpr::In { field, values })
+                }
+                FilterOp::NotIn => {
+                    let values = if let Some(arr) = value.as_array() {
+                        arr.clone()
+                    } else {
+                        vec![value]
+                    };
+                    Ok(FilterExpr::NotIn { field, values })
+                }
+                FilterOp::Exists => {
+                    let exists = value.as_bool().unwrap_or(true);
+                    Ok(FilterExpr::Exists { field, exists })
+                }
+            },
+            MetadataFilter::And(filters) => {
+                let mut iter = filters.into_iter();
+                if let Some(first) = iter.next() {
+                    let mut acc = FilterExpr::try_from(first)?;
+                    for item in iter {
+                        acc = FilterExpr::And(Box::new(acc), Box::new(FilterExpr::try_from(item)?));
+                    }
+                    Ok(acc)
+                } else {
+                    Err(memfuse_core::MemFuseError::invalid_input(
+                        "Empty And filter",
+                    ))
+                }
+            }
+            MetadataFilter::Or(filters) => {
+                let mut iter = filters.into_iter();
+                if let Some(first) = iter.next() {
+                    let mut acc = FilterExpr::try_from(first)?;
+                    for item in iter {
+                        acc = FilterExpr::Or(Box::new(acc), Box::new(FilterExpr::try_from(item)?));
+                    }
+                    Ok(acc)
+                } else {
+                    Err(memfuse_core::MemFuseError::invalid_input(
+                        "Empty Or filter",
+                    ))
+                }
+            }
+            MetadataFilter::Not(filter) => {
+                Ok(FilterExpr::Not(Box::new(FilterExpr::try_from(*filter)?)))
             }
         }
-        (Value::String(as_str), Value::String(bs_str)) => as_str.partial_cmp(bs_str),
-        _ => None,
     }
 }
 
