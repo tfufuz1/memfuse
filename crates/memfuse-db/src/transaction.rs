@@ -410,10 +410,7 @@ impl<S: StorageEngine> DbTransaction<S> {
             }
         }
         if let Err(e) = self.collection.index.commit(comp_tx).await {
-            tracing::error!(
-                "[INV-DB-3] Compensating HNSW commit failed: {}",
-                e
-            );
+            tracing::error!("[INV-DB-3] Compensating HNSW commit failed: {}", e);
         }
     }
 
@@ -438,10 +435,7 @@ impl<S: StorageEngine> DbTransaction<S> {
             }
         }
         if let Err(e) = self.collection.text_index.commit(comp_tx).await {
-            tracing::error!(
-                "[INV-DB-3] Compensating text commit failed: {}",
-                e
-            );
+            tracing::error!("[INV-DB-3] Compensating text commit failed: {}", e);
         }
     }
 

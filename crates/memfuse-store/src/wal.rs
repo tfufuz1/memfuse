@@ -43,9 +43,9 @@ pub const WAL_V3_HEADER: [u8; 4] = *b"MFW3";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WalVersion {
-    V1,   // Legacy: kein HMAC
-    V2,   // Current: HMAC ohne tx_id
-    V3,   // New: HMAC mit tx_id
+    V1, // Legacy: kein HMAC
+    V2, // Current: HMAC ohne tx_id
+    V3, // New: HMAC mit tx_id
 }
 
 /// Legacy static HMAC integrity key used strictly for backward-compatibility fallback during WAL replay of legacy databases.
@@ -796,7 +796,9 @@ impl Wal {
                             })?;
                     }
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok((entries, version)),
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    return Ok((entries, version))
+                }
                 Err(e) => return Err(MemFuseError::Storage(format!("WAL read failed: {}", e))),
             }
         }
@@ -983,14 +985,17 @@ impl Wal {
                     if let Err(e) = verify_res {
                         if !using_legacy_key {
                             let mut legacy_verifier = IntegrityVerifier::new(&LEGACY_INTEGRITY_KEY);
-                            let legacy_res = match version {
-                                WalVersion::V3 => legacy_verifier.verify_and_update_v3(&snapshot, chunk_start_pos),
-                                WalVersion::V2 => legacy_verifier.verify_and_update_v2(&snapshot, chunk_start_pos),
-                                WalVersion::V1 => {
-                                    legacy_verifier.skip_hmac_verify_legacy(&snapshot);
-                                    Ok(())
-                                }
-                            };
+                            let legacy_res =
+                                match version {
+                                    WalVersion::V3 => legacy_verifier
+                                        .verify_and_update_v3(&snapshot, chunk_start_pos),
+                                    WalVersion::V2 => legacy_verifier
+                                        .verify_and_update_v2(&snapshot, chunk_start_pos),
+                                    WalVersion::V1 => {
+                                        legacy_verifier.skip_hmac_verify_legacy(&snapshot);
+                                        Ok(())
+                                    }
+                                };
                             if legacy_res.is_ok() {
                                 tracing::warn!(
                                     "WAL nutzt veralteten Integritätsschlüssel — Datenbank sollte neu initialisiert werden"
@@ -1092,8 +1097,12 @@ impl Wal {
                     if !using_legacy_key {
                         let mut legacy_verifier = IntegrityVerifier::new(&LEGACY_INTEGRITY_KEY);
                         let legacy_res = match version {
-                            WalVersion::V3 => legacy_verifier.verify_and_update_v3(&snapshot, chunk_start_pos),
-                            WalVersion::V2 => legacy_verifier.verify_and_update_v2(&snapshot, chunk_start_pos),
+                            WalVersion::V3 => {
+                                legacy_verifier.verify_and_update_v3(&snapshot, chunk_start_pos)
+                            }
+                            WalVersion::V2 => {
+                                legacy_verifier.verify_and_update_v2(&snapshot, chunk_start_pos)
+                            }
                             WalVersion::V1 => {
                                 legacy_verifier.skip_hmac_verify_legacy(&snapshot);
                                 Ok(())
@@ -1127,19 +1136,20 @@ impl Wal {
         let mut prev_hmac = [0u8; 32];
 
         for (_, entry, _) in replayed_entries {
-            let v3_entry = WalEntry::try_new(entry.op.clone(), entry.seq_no, &integrity_key, prev_hmac)?;
+            let v3_entry =
+                WalEntry::try_new(entry.op.clone(), entry.seq_no, &integrity_key, prev_hmac)?;
             prev_hmac = v3_entry.checksum;
             v3_entries.push(v3_entry);
         }
 
         let mut file = self.file.lock().await;
         use tokio::io::AsyncSeekExt;
-        file.seek(std::io::SeekFrom::Start(0))
-            .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL seek failed during migration: {}", e)))?;
-        file.set_len(0)
-            .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL truncate failed during migration: {}", e)))?;
+        file.seek(std::io::SeekFrom::Start(0)).await.map_err(|e| {
+            MemFuseError::Storage(format!("WAL seek failed during migration: {}", e))
+        })?;
+        file.set_len(0).await.map_err(|e| {
+            MemFuseError::Storage(format!("WAL truncate failed during migration: {}", e))
+        })?;
 
         let mut total_bytes = Vec::new();
         total_bytes.extend_from_slice(&WAL_V3_HEADER);
@@ -1167,17 +1177,20 @@ impl Wal {
             }
         }
 
-        file.write_all(&total_bytes).await.map_err(|e| {
-            MemFuseError::Storage(format!("WAL migration write failed: {}", e))
-        })?;
-        file.flush().await.map_err(|e| {
-            MemFuseError::Storage(format!("WAL migration flush failed: {}", e))
-        })?;
-        file.sync_all().await.map_err(|e| {
-            MemFuseError::Storage(format!("WAL migration fsync failed: {}", e))
-        })?;
+        file.write_all(&total_bytes)
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("WAL migration write failed: {}", e)))?;
+        file.flush()
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("WAL migration flush failed: {}", e)))?;
+        file.sync_all()
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("WAL migration fsync failed: {}", e)))?;
 
-        self.size.store(total_bytes.len() as u64, std::sync::atomic::Ordering::SeqCst);
+        self.size.store(
+            total_bytes.len() as u64,
+            std::sync::atomic::Ordering::SeqCst,
+        );
         let mut last_hmac = self.last_hmac.lock().await;
         *last_hmac = last_hmac_val;
 

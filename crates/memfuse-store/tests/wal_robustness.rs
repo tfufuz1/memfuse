@@ -111,7 +111,10 @@ async fn test_v3_hmac_includes_txid() -> Result<()> {
         },
     };
 
-    assert!(is_corrupt, "Manipulating tx_id in WAL V3 entry MUST invalidate HMAC chain during replay");
+    assert!(
+        is_corrupt,
+        "Manipulating tx_id in WAL V3 entry MUST invalidate HMAC chain during replay"
+    );
     Ok(())
 }
 
@@ -131,7 +134,8 @@ async fn test_v2_to_v3_migration() -> Result<()> {
             key: b"key1".to_vec(),
             value: b"val1".to_vec(),
         };
-        let checksum1 = memfuse_store::wal::WalEntry::compute_checksum_v2(&op1, 1, &integrity_key, [0u8; 32])?;
+        let checksum1 =
+            memfuse_store::wal::WalEntry::compute_checksum_v2(&op1, 1, &integrity_key, [0u8; 32])?;
         let entry1 = memfuse_store::wal::WalEntry {
             op: op1,
             seq_no: 1,
@@ -144,7 +148,8 @@ async fn test_v2_to_v3_migration() -> Result<()> {
             key: b"key2".to_vec(),
             value: b"val2".to_vec(),
         };
-        let checksum2 = memfuse_store::wal::WalEntry::compute_checksum_v2(&op2, 2, &integrity_key, checksum1)?;
+        let checksum2 =
+            memfuse_store::wal::WalEntry::compute_checksum_v2(&op2, 2, &integrity_key, checksum1)?;
         let entry2 = memfuse_store::wal::WalEntry {
             op: op2,
             seq_no: 2,
@@ -170,7 +175,11 @@ async fn test_v2_to_v3_migration() -> Result<()> {
 
     // Inspect file on disk to confirm rewrite to MFW3 header
     let file_bytes = std::fs::read(&wal_path).unwrap();
-    assert_eq!(&file_bytes[0..4], b"MFW3", "Migrated WAL file must have MFW3 header on disk");
+    assert_eq!(
+        &file_bytes[0..4],
+        b"MFW3",
+        "Migrated WAL file must have MFW3 header on disk"
+    );
 
     Ok(())
 }
@@ -191,8 +200,10 @@ async fn test_length_extension_resistance() -> Result<()> {
         value: b"".to_vec(),
     };
 
-    let checksum1 = memfuse_store::wal::WalEntry::compute_checksum_v3(&op1, 1, dummy_key, [0u8; 32])?;
-    let checksum2 = memfuse_store::wal::WalEntry::compute_checksum_v3(&op2, 1, dummy_key, [0u8; 32])?;
+    let checksum1 =
+        memfuse_store::wal::WalEntry::compute_checksum_v3(&op1, 1, dummy_key, [0u8; 32])?;
+    let checksum2 =
+        memfuse_store::wal::WalEntry::compute_checksum_v3(&op2, 1, dummy_key, [0u8; 32])?;
 
     assert_ne!(
         checksum1, checksum2,
@@ -208,8 +219,10 @@ async fn test_length_extension_resistance() -> Result<()> {
         tx_id: TxId::new(1),
         key: b"key12".to_vec(),
     };
-    let del_cs1 = memfuse_store::wal::WalEntry::compute_checksum_v3(&del1, 1, dummy_key, [0u8; 32])?;
-    let del_cs2 = memfuse_store::wal::WalEntry::compute_checksum_v3(&del2, 1, dummy_key, [0u8; 32])?;
+    let del_cs1 =
+        memfuse_store::wal::WalEntry::compute_checksum_v3(&del1, 1, dummy_key, [0u8; 32])?;
+    let del_cs2 =
+        memfuse_store::wal::WalEntry::compute_checksum_v3(&del2, 1, dummy_key, [0u8; 32])?;
 
     assert_ne!(del_cs1, del_cs2);
 
