@@ -299,7 +299,7 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
        führt bis zu 3 iterative Retrieval-Schleifen aus
     5. **Cross-Encoder Reranking**: CrossEncoderReranker (memfuse-embed,
        --features onnx) reordnet Top-K Kandidaten (optionaler Schritt)
-    6. **Context Compaction**: ContextCompactor (memfuse-db/compaction.rs)
+    6. **Context Compaction**: ContextCompactor (memfuse-db/context_compaction.rs)
        ersetzt alte Tool-Outputs durch StatusToken
 *   **Alternativen**: Jeder Schritt einzeln opt-in — zu komplex für Nutzer
 *   **Begründung**: Empirisch (Anthropic, 2024): Contextual Embeddings →

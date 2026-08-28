@@ -87,7 +87,7 @@ memfuse-ollama/src/client.rs           ❌ generate_text() non-streaming (Sprint
 memfuse-ollama/src/context_prefixer.rs ❌ Neue Datei: ContextPrefixEngine (Sprint 1)
 memfuse-embed/src/reranker.rs          ❌ Cross-Encoder ONNX (Sprint 2)
 memfuse-db/src/multistep.rs            ❌ Multi-Step Query Loop (Sprint 3)
-memfuse-db/src/compaction.rs           ❌ Context Compaction (Sprint 4)
+memfuse-db/src/context_compaction.rs   ❌ Context Compaction (Sprint 4)
 memfuse-graph/src/session_dag.rs       ❌ Session DAG (Sprint 7, Zukunft)
 ```
  
