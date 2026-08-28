@@ -2832,7 +2832,7 @@ mod tests {
         );
         meta1.as_mut().unwrap().as_object_mut().unwrap().insert(
             "importance".to_string(),
-            serde_json::to_value(&imp1).unwrap(),
+            serde_json::to_value(imp1).unwrap(),
         );
 
         // Effective score at now_tx (2 half-lives elapsed) -> 0.9 * 0.25 = 0.225
@@ -2844,7 +2844,7 @@ mod tests {
             MemoryImportance::new(ImportanceScore::new(1.0), DecayFunction::None, created_tx);
         meta2.as_mut().unwrap().as_object_mut().unwrap().insert(
             "importance".to_string(),
-            serde_json::to_value(&imp2).unwrap(),
+            serde_json::to_value(imp2).unwrap(),
         );
 
         let results = vec![
