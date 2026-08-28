@@ -521,18 +521,6 @@ pub trait GraphIndex: Send + Sync + 'static {
         ))
     }
 
-    /// Traverses the entity graph filtering edges by bi-temporal valid range.
-    async fn traverse_at_time(
-        &self,
-        _start_node: crate::types::EntityId,
-        _max_hops: usize,
-        _as_of: crate::types::TxId,
-    ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
-        Err(crate::error::MemFuseError::PolicyViolation(
-            "traverse_at_time muss explizit implementiert werden".into(),
-        ))
-    }
-
     /// Calculates Personalized PageRank (PPR) starting from seed nodes.
     ///
     /// # Errors

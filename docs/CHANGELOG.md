@@ -1,8 +1,5 @@
 # MemFuse — Chronologischer Tag- & Review-Bericht
 
-## Breaking Changes
-- `FusionWeights::new_with_metadata` wurde aus der öffentlichen API entfernt (`memfuse-core`), da es keine funktionale Wirkung hatte (metadata musste 0.0 sein) und stille Fehlkonfigurationen bei Aufrufern verursachte. Aufrufer nutzen stattdessen `FusionWeights::new(vector, text, graph)`.
-
 > Automatisch generierter Read-Only Bericht aus allen Inline-Tags im Repo.
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
@@ -14,7 +11,6 @@
 | `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/compaction.rs` | `AI-TAG` | `AGT-DB-004` | `-` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR][RESOLVED] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-28T00:00:00Z) |
 | `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/collection.rs` | `AI-TAG` | `AGT-DB-005` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-DB-005 — relate() rollback race behoben, siehe ADR-023 (TS:2026-08-28T00:00:00Z) |
 | `2026-08-28T00:00:00Z` | `crates/memfuse-core/src/tx_buffer.rs` | `AI-TAG` | `AGT-CORE-001` | `-` | `OPEN` | `0` | // AI-TAG[SMELL][MINOR] Bounded staging capacity (ID: AGT-CORE-001) (TS:2026-08-28T00:00:00Z) |
-| `2026-08-28T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-002` | `-` | `OPEN` | `0` | // AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-28T00:00:00Z) |
 | `2026-08-27T14:32:00Z` | `crates/memfuse-store/src/wal.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Write-Ahead-Log mit HMAC-Chaining für crash-sichere WAL-Operationen |
 | `2026-08-27T14:32:00Z` | `crates/memfuse-store/src/lsm.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | LSM-Tree-Implementierung (MemTable + SSTable + Compaction) |
 | `2026-08-27T14:32:00Z` | `crates/memfuse-db/src/collection.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Collection-API — zentraler Einstiegspunkt für Insert/Search/Delete |
@@ -23,10 +19,10 @@
 | `2026-08-25T00:00:00Z` | `crates/memfuse-store/src/compaction.rs` | `AI-TAG` | `AGT-STORE-002` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-STORE-002 — Indices computed before the lock was taken. (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-store/src/wal.rs` | `AI-TAG` | `AGT-STORE-003` | `-` | `OPEN` | `0` | // AI-TAG[SECURITY][CRITICAL] Atomic WAL integrity key creation with 0o600 mode (AGT-STORE-003) (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-text/src/inverted.rs` | `AI-TAG` | `AGT-TXT-001` | `-` | `RESOLVED` | `0` | // AI-TAG[SPEC-DRIFT][MAJOR] RESOLVED: AGT-TXT-001 — replaced unwrap_or_default() with map_err (TS:2026-08-25T00:00:00Z) |
-| `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/compaction.rs` | `AI-TAG` | `AGT-DB-004` | `-` | `OPEN` | `0` | // AI-TAG[SMELL][MINOR] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection.rs` | `AI-TAG` | `AGT-DB-001` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-001 — snapshot_seq() now propagates storage errors (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection.rs` | `AI-TAG` | `AGT-DB-002` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-002 — load_index now scans user_keys (key_type=0) (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-001` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-001 — Module documentation added (TS:2026-08-25T00:00:00Z) |
+| `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-002` | `-` | `OPEN` | `0` | // AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-005` | `-` | `OPEN` | `0` | // AI-TAG[SECURITY][CRITICAL] Precondition assertions for SIMD distance functions (AGT-INDEX-005) (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-003` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-003 — Module documentation added (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-004` | `-` | `RESOLVED` | `0` | // AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-INDEX-004 — IndexOp ist #[non_exhaustive]; neue Varianten (TS:2026-08-25T00:00:00Z) |
