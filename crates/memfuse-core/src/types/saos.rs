@@ -31,7 +31,7 @@ pub struct FusionWeights {
     metadata: f32,
 }
 
-// ANCHOR[REFACTOR:CORE-FUSION-001] STATUS:DONE (TS: 2026-08-28T16:49:00Z) (SESSION: a3f29c1d)
+// ANCHOR[REFACTOR:CORE-FUSION-001] STATUS:DONE (TS:2026-08-28T16:49:00Z) (SESSION: a3f29c1d)
 // AUFGABE : Remove FusionWeights::new_with_metadata from public API (metadata fusion signal not implemented)
 // GATE    : cargo test -p memfuse-core
 
