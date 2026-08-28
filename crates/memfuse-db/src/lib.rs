@@ -718,7 +718,7 @@ impl MemFuse {
     ) -> Result<Vec<SearchResult>> {
         self.default_col()
             .await?
-            .hybrid_search_with_strategy(text, vector, k, anchor_entities, weights, strategy, None)
+            .hybrid_search_with_strategy(text, vector, k, anchor_entities, weights, strategy)
             .await
     }
 

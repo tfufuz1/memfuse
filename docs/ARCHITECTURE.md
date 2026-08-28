@@ -51,7 +51,7 @@ MemFuse implementiert eine gestaffelte, mehrstufige Retrieval- und Ingestion-Pip
 | Invariante | Status | Befund |
 |---|---|---|
 | **Souveränität** (Zero-C-Deps im Core) | ✅ Erfüllt | Core-Schichten laufen in Pure Rust. Ollama übernimmt LLM/Embeddings via HTTP. |
-| **Zero-Panic** | 🟢 Erfüllt | Keine `.expect()`/`.unwrap()`-Aufrufe im Produktionscode. CI-Verifikation via `just debt-audit`. |
+| **Zero-Panic** | 🟡 In Arbeit | Offene `.expect()`-Stellen: `SessionPool::pop()/push()` (memfuse-embed), `snapshot.rs` (memfuse-core). Status → 🟢 wenn `grep -rn '.expect(' crates/*/src/` null ergibt (exkl. tests). |
 | **Determinismus** (SIMD) | ✅ Erfüllt | Cross-Check SIMD vs. Skalar via Proptest. |
 | **WAL-Crash-Consistency** | ✅ Erfüllt | Fault-Injection im WAL, HMAC-Chaining. |
 | **Graph-Persistenz** | ✅ Erfüllt | Persistierung im LSM-Tree unter den Präfixen `__graph:entity:` und `__graph:edge:`. |
