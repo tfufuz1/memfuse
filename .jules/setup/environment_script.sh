@@ -73,6 +73,12 @@ else
     echo "  ✅ cargo-audit already available"
 fi
 
+# ── 5b. Git Pre-Commit Hook Configuration ───────────────────────────────────
+echo ""
+echo "[5b/9] Configuring git pre-commit hook..."
+git config core.hooksPath .githooks
+echo "  ✅ Git core.hooksPath set to .githooks"
+
 # ── 6. Pre-warm Cargo Dependency Cache ──────────────────────────────────────
 echo ""
 echo "[6/9] Pre-compiling workspace dependencies..."

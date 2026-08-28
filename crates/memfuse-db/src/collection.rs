@@ -395,7 +395,8 @@ impl<S: StorageEngine> Collection<S> {
 
                             if has_graph {
                                 if let Ok(eid) = EntityId::from_key(&stored.id) {
-                                    let entity = memfuse_core::Entity::new(eid, &stored.id, "Document");
+                                    let entity =
+                                        memfuse_core::Entity::new(eid, &stored.id, "Document");
                                     let _ = self.graph_index.add_entity(recovery_tx, entity).await;
                                     recovered_graph = true;
                                 }

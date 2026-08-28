@@ -17,7 +17,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --all -- --check
+      - name: Run rustfmt check
+        run: cargo fmt --all -- --check || (echo "❌ Format Check fehlgeschlagen! Lokal beheben mit: cargo fmt --all && git commit --amend --no-edit" && exit 1)
 
   clippy:
     name: Clippy (-D warnings)

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "→ cargo fmt --all (auto-fix vor Commit)"
+cargo fmt --all
+if ! git diff --quiet; then
+    echo "  ℹ️  rustfmt hat Dateien verändert — automatisch zum Commit hinzugefügt."
+    git add -u
+fi

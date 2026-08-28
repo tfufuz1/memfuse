@@ -72,6 +72,7 @@ bereits in der Setup-Ausgabe, siehe `[9/9] Session Context Digest` und `[10/10] 
    manuell `just session-context` ausführen (siehe justfile)
 
 Jede Sitzung MUSS mit folgendem enden — VOR dem letzten Commit:
+0. `cargo fmt --all` ausführen (nicht nur `--check`) — der Pre-Commit-Hook tut dies automatisch, aber bei Hook-Bypass (`git commit --no-verify`) MUSS dieser Schritt manuell nachgeholt werden, bevor der PR geöffnet wird.
 1. `just sync-docs` ausführen (`WORKING_STATE.md`, `docs/CHANGELOG.md`, `docs/ARCHITECTURE.md`, `docs/SOURCE_OF_TRUTH.md` werden vollständig aus Inline-Tags & Cargo-Topologie generiert).
 2. `WORKING_STATE.md` enthält NULL manuell editierten Text mehr. Bei Git-Merge-Konflikten in `WORKING_STATE.md`: stets durch `just sync-docs` auflösen.
 3. Falls diese Sitzung eine REINE REVIEW-Sitzung war (kein eigener Code-Beitrag, nur Prüfung fremder Arbeit): mindestens einen `REVIEW-PASS`-Eintrag mit `PRÜFER-KONTEXT: FRESH` hinterlassen, bevor `just sync-docs` läuft.

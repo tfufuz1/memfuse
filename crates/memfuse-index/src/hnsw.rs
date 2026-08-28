@@ -1471,8 +1471,10 @@ impl HnswIndexCore {
             *doc_to_node = new_doc_to_node;
             *entry_point = new_entry_point;
             *ram_entry_point = new_ram_entry_point;
-            self.max_layer
-                .store(new_index.inner.max_layer.load(Ordering::SeqCst), Ordering::SeqCst);
+            self.max_layer.store(
+                new_index.inner.max_layer.load(Ordering::SeqCst),
+                Ordering::SeqCst,
+            );
 
             // Preserve mmap deletions, clear RAM deletions (since they are now in doc_to_node/nodes)
             let mmap_count = self
@@ -1583,7 +1585,8 @@ impl VectorIndex for HnswIndex {
         for layer in (1..=max_layer).rev() {
             let layer_ef = 1;
             let best =
-                self.inner.search_layer(query, query_quantized.as_deref(), &ep, layer_ef, layer)?;
+                self.inner
+                    .search_layer(query, query_quantized.as_deref(), &ep, layer_ef, layer)?;
             if let Some(closest) = best.first() {
                 ep = vec![closest.index];
             }
@@ -1602,7 +1605,9 @@ impl VectorIndex for HnswIndex {
         } else {
             self.inner.config.ef_search.max(k)
         };
-        let candidates = self.inner.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
+        let candidates = self
+            .inner
+            .search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
 
         let score = self.inner.connectivity_score();
         if score < self.inner.config.rebuild_threshold {
@@ -1687,7 +1692,11 @@ impl VectorIndex for HnswIndex {
         }
 
         let query_quantized = if self.inner.config.quantize {
-            self.inner.quantizer.read().as_ref().map(|q| q.quantize(query))
+            self.inner
+                .quantizer
+                .read()
+                .as_ref()
+                .map(|q| q.quantize(query))
         } else {
             None
         };
@@ -1709,7 +1718,9 @@ impl VectorIndex for HnswIndex {
         let max_layer = self.inner.max_layer.load(Ordering::SeqCst) as usize;
 
         for layer in (1..=max_layer).rev() {
-            let best = self.inner.search_layer(query, query_quantized.as_deref(), &ep, 1, layer)?;
+            let best = self
+                .inner
+                .search_layer(query, query_quantized.as_deref(), &ep, 1, layer)?;
             if let Some(closest) = best.first() {
                 ep = vec![closest.index];
             }
@@ -1725,7 +1736,9 @@ impl VectorIndex for HnswIndex {
         // Over-fetch to compensate for filtered-out results and reranking
         let factor = if self.inner.config.quantize { 4 } else { 2 };
         let ef = self.inner.config.ef_search.max(k) * factor;
-        let candidates = self.inner.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
+        let candidates = self
+            .inner
+            .search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
 
         let score = self.inner.connectivity_score();
         if score < self.inner.config.rebuild_threshold {
@@ -1850,8 +1863,10 @@ impl VectorIndex for HnswIndex {
 
             if train_data.len() >= 50 {
                 let training_refs: Vec<&[f32]> = train_data.iter().map(|v| v.as_slice()).collect();
-                let q =
-                    crate::quantize::ScalarQuantizer::train(&training_refs, self.inner.config.dimension);
+                let q = crate::quantize::ScalarQuantizer::train(
+                    &training_refs,
+                    self.inner.config.dimension,
+                );
                 *self.inner.quantizer.write() = Some(q.clone());
 
                 let mut nodes = self.inner.nodes.write();
@@ -1989,7 +2004,8 @@ impl VectorIndex for HnswIndex {
             for &idx in &indices_to_remove {
                 deleted.insert((mmap_count + idx) as u64);
             }
-            self.inner.deleted_count
+            self.inner
+                .deleted_count
                 .fetch_add(indices_to_remove.len() as u64, Ordering::SeqCst);
         }
 

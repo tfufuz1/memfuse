@@ -40,7 +40,11 @@ pub fn scan_tags<P: AsRef<Path>>(root: P) -> Vec<TagItem> {
     let stand_re = Regex::new(r"//\s*STAND:\s*(.+)").unwrap();
     let zweck_re = Regex::new(r"//\s*ZWECK:\s*(.+)").unwrap();
 
-    for entry in WalkDir::new(root).sort_by_file_name().into_iter().filter_map(|e| e.ok()) {
+    for entry in WalkDir::new(root)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         let path = entry.path();
         if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("rs") {
             let rel_path = path.to_string_lossy().to_string();
