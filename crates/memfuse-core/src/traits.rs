@@ -199,6 +199,12 @@ pub trait StorageEngine: Send + Sync + 'static {
 ///
 /// # Dyn-Kompatibilität
 /// Durch `#[async_trait]` vtable-kompatibel.
+///
+/// # TxId Origin Note (AGT-GRAPH-001)
+/// Unlike `GraphIndex`, vector indices store staged uncommitted operations in discrete
+/// staging maps (`HashMap<TxId, ...>`) keyed by exact `TxId` equality rather than
+/// range queries or bi-temporal filtering (`valid_from`/`valid_to`). Therefore, the
+/// `debug_assert!(tx.is_valid_origin())` check is strictly enforced in `GraphIndex` (CSR graph).
 #[async_trait]
 pub trait VectorIndex: Send + Sync + 'static {
     /// Inserts a vector with an associated document ID.
@@ -325,6 +331,12 @@ pub struct TextIndexStats {
 ///
 /// # Dyn-Kompatibilität
 /// Durch `#[async_trait]` vtable-kompatibel.
+///
+/// # TxId Origin Note (AGT-GRAPH-001)
+/// Similar to `VectorIndex`, inverted text indices utilize exact key equality
+/// (`HashMap<TxId, ...>`) for staging uncommitted writes without range-based time-travel filtering.
+/// AGT-GRAPH-001 origin assertion remains graph-specific where bi-temporal traversal
+/// (`traverse_at_time`) relies on relative `TxId` ordering.
 #[async_trait]
 pub trait TextIndex: Send + Sync + 'static {
     /// Searches for documents matching the query.
@@ -518,18 +530,6 @@ pub trait GraphIndex: Send + Sync + 'static {
         Err(crate::error::MemFuseError::capability_unsupported(
             "graph_traverse_at_time",
             "Bi-temporal graph traversal (traverse_at_time) is not supported by default",
-        ))
-    }
-
-    /// Traverses the entity graph filtering edges by bi-temporal valid range.
-    async fn traverse_at_time(
-        &self,
-        _start_node: crate::types::EntityId,
-        _max_hops: usize,
-        _as_of: crate::types::TxId,
-    ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
-        Err(crate::error::MemFuseError::PolicyViolation(
-            "traverse_at_time muss explizit implementiert werden".into(),
         ))
     }
 
