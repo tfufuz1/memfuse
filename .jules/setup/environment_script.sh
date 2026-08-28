@@ -134,8 +134,15 @@ tail -20 WORKING_STATE.md
 echo "------------------------------------------------------------"
 echo "  ✅ Session-Digest bereit — siehe Ausgabe oben vor Arbeitsbeginn lesen"
 
+# ── 10. Session-Identität ────────────────────────────────────────────────
+SESSION_HASH=$(head -c 16 /dev/urandom | sha256sum | cut -c1-8)
+echo ""
+echo "[10/10] Session identity for this run: SESSION:${SESSION_HASH}"
+echo "  → Verwende dieses Token in JEDEM AI-TAG/ANCHOR/REVIEW-PASS dieser Sitzung."
+echo "  → Zeitstempel via: date -u +%Y-%m-%dT%H:%M:%SZ"
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "============================================================"
-echo "  ✅ MemFuse Jules Environment Ready"
+echo "  ✅ MemFuse Jules Environment Ready (SESSION:${SESSION_HASH})"
 echo "============================================================"

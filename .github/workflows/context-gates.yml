@@ -81,7 +81,12 @@ jobs:
           fi
           echo "✅ Dokumentation synchron mit Code"
 
-      - name: "Gate 8: Konsistenzprüfung der Dokumentation"
+      - name: "Gate 8: Mehrfach-Session-Review vor DONE erzwungen"
+        run: |
+          cargo run -p xtask -- check-review-coverage
+          echo "✅ Mehrfach-Session-Review-Abdeckung verifiziert"
+
+      - name: "Gate 9: Konsistenzprüfung der Dokumentation"
         run: |
           cargo run -p xtask -- check-consistency
           echo "✅ Konsistenzprüfung erfolgreich"

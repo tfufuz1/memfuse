@@ -85,8 +85,10 @@ pub mod transaction;
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
 
 pub use collection::Collection;
+#[allow(deprecated)]
 pub use filter::MetadataFilter;
 pub use memfuse_checkpoint;
+use memfuse_core::FilterExpr;
 pub use memfuse_text::Language;
 
 /// User-facing search result containing the ID, score, and optional metadata.
@@ -596,6 +598,11 @@ impl MemFuse {
     }
 
     /// Performs semantic search with an advanced metadata filter.
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use search_with_filter_expr with memfuse_core::FilterExpr directly"
+    )]
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn search_with_filter(
         &self,
@@ -606,6 +613,20 @@ impl MemFuse {
         self.default_col()
             .await?
             .search_with_filter(query, k, filter)
+            .await
+    }
+
+    /// Performs semantic search with an advanced metadata filter expression (`FilterExpr`).
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn search_with_filter_expr(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: Option<FilterExpr>,
+    ) -> Result<Vec<SearchResult>> {
+        self.default_col()
+            .await?
+            .search_with_filter_expr(query, k, filter)
             .await
     }
 

@@ -34,7 +34,7 @@ pub struct CompactedContext {
     pub status_tokens: Vec<StatusToken>,
     /// Verbrauchte Tokens.
     pub tokens_used: usize,
-    /// Quell-DocIds aller ersetzten oder zusammengefassten Chunks für Provenienz.
+    /// Ursprüngliche Quell-Dokument-IDs.
     pub source_doc_ids: Vec<DocId>,
 }
 
@@ -67,6 +67,7 @@ impl ContextCompactor {
     /// Priorisiert nach Relevanz-Score. Tool-Output-Chunks (erkennbar an Metadata-Key "tool_output")
     /// werden zuerst kompaktiert.
     pub fn compact(&self, chunks: Vec<ContextChunk>) -> CompactedContext {
+        let _source_doc_ids: Vec<DocId> = chunks.iter().map(|c| c.doc_id).collect();
         let max_tokens = self.budget.available();
         let mut tokens_used = 0;
         let mut retained = Vec::new();
@@ -121,11 +122,7 @@ impl ContextCompactor {
             }
         }
 
-        let mut source_doc_ids = Vec::new();
-        for st in &status_tokens {
-            source_doc_ids.extend(st.replaced_doc_ids.iter().cloned());
-        }
-
+        let source_doc_ids = retained.iter().map(|c| c.doc_id).collect();
         CompactedContext {
             retained_chunks: retained,
             status_tokens,
@@ -322,8 +319,6 @@ mod tests {
 
     #[test]
     fn test_compact_with_contextual_prefix_respects_budget() {
-        use memfuse_core::{ContextChunk, DocId, TokenBudget};
-
         let budget = TokenBudget::new(20, 0); // 20 tokens available
         let compactor = ContextCompactor::new(budget, CompactionStrategy::Truncate);
 

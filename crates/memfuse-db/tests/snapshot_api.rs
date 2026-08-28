@@ -155,10 +155,10 @@ async fn test_create_snapshot_equals_last_committed_seq() {
 }
 
 /// Verifies that calling `VectorIndex::search_at` or `GraphIndex::traverse_at`
-/// explicitly returns the ADR-024 PolicyViolation error, documenting that
+/// explicitly returns the ADR-024 CapabilityUnsupported error, documenting that
 /// vector and graph snapshot isolation are tracked for future implementation.
 #[tokio::test]
-async fn test_vector_and_graph_search_at_returns_adr024_policy_violation() {
+async fn test_vector_and_graph_search_at_returns_adr024_capability_unsupported() {
     use memfuse_core::{GraphIndex, VectorIndex};
 
     let (db, _tmp) = test_db(4).await;
@@ -171,15 +171,16 @@ async fn test_vector_and_graph_search_at_returns_adr024_policy_violation() {
     .unwrap();
     let res_vec = mock_vec_index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 1).await;
     match res_vec {
-        Err(memfuse_core::MemFuseError::PolicyViolation(msg)) => {
+        Err(memfuse_core::MemFuseError::CapabilityUnsupported { capability, reason }) => {
+            assert_eq!(capability, "snapshot_read_at");
             assert!(
-                msg.contains("ADR-024"),
+                reason.contains("ADR-024"),
                 "VectorIndex::search_at must reference ADR-024, got: {}",
-                msg
+                reason
             );
         }
         other => panic!(
-            "Expected PolicyViolation with ADR-024 for search_at, got: {:?}",
+            "Expected CapabilityUnsupported with ADR-024 for search_at, got: {:?}",
             other
         ),
     }
@@ -189,15 +190,16 @@ async fn test_vector_and_graph_search_at_returns_adr024_policy_violation() {
         .traverse_at(memfuse_core::EntityId::new(1), 2, 1)
         .await;
     match res_graph {
-        Err(memfuse_core::MemFuseError::PolicyViolation(msg)) => {
+        Err(memfuse_core::MemFuseError::CapabilityUnsupported { capability, reason }) => {
+            assert_eq!(capability, "graph_traverse_at");
             assert!(
-                msg.contains("ADR-024"),
+                reason.contains("ADR-024"),
                 "GraphIndex::traverse_at must reference ADR-024, got: {}",
-                msg
+                reason
             );
         }
         other => panic!(
-            "Expected PolicyViolation with ADR-024 for traverse_at, got: {:?}",
+            "Expected CapabilityUnsupported with ADR-024 for traverse_at, got: {:?}",
             other
         ),
     }

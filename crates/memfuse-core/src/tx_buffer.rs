@@ -21,6 +21,12 @@ use std::time::{Duration, Instant};
 /// Default number of shards for the transaction buffer.
 pub const DEFAULT_SHARD_COUNT: usize = 64;
 
+/// Recommended maximum operations per single transaction to guard against memory exhaustion DoS.
+// AI-TAG[SMELL][MINOR] Bounded staging capacity (ID: AGT-CORE-001) (TS:2026-08-28T00:00:00Z)
+// KONTEXT: TxBuffer::stage/stage_many appends to Vec without hard capacity limit
+// ANWEISUNG: Downstream callers (e.g. memfuse-db) should cap max_ops per transaction
+pub const DEFAULT_MAX_OPS_PER_TX: usize = 100_000;
+
 /// Operation to be executed in an index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -265,6 +271,30 @@ mod tests {
     use super::*;
     use proptest::{prop_assert, prop_assert_eq};
     use std::sync::Arc;
+
+    #[test]
+    fn test_tx_buffer_stage_many_and_max_ops_constant() {
+        let buffer = TxBuffer::<String>::new();
+        let tx = TxId::new(42);
+        assert_eq!(DEFAULT_MAX_OPS_PER_TX, 100_000);
+
+        let ops = vec![
+            IndexOp::Insert {
+                doc_id: DocId::new(1),
+                data: "op1".to_string(),
+            },
+            IndexOp::Insert {
+                doc_id: DocId::new(2),
+                data: "op2".to_string(),
+            },
+        ];
+
+        buffer.stage_many(tx, ops);
+        assert!(buffer.has_tx(tx));
+        let drained = buffer.drain(tx);
+        assert_eq!(drained.len(), 2);
+        assert!(buffer.is_empty());
+    }
 
     #[test]
     fn test_tx_buffer_discard() {

@@ -42,6 +42,10 @@ sync-docs:
 sync-docs-check:
     nix develop -c cargo xtask sync-docs --check || cargo xtask sync-docs --check
 
+# Verifies multi-session review coverage for completed anchors
+check-review-coverage:
+    nix develop -c cargo xtask check-review-coverage || cargo xtask check-review-coverage
+
 # Verifies internal documentation consistency (e.g. crate counts)
 check-consistency:
     nix develop -c cargo xtask check-consistency || cargo xtask check-consistency

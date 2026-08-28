@@ -9,7 +9,7 @@
 - [ ] Keine bestehenden Tests gebrochen
 - [ ] `just triple-test` lokal erfolgreich
 - [ ] `just check` (fmt + clippy) grün
-- [ ] `just sync-docs` lokal ausgeführt und Diff committed (falls Tags/Crates geändert wurden)
+- [ ] `just sync-docs` lokal ausgeführt und Diff committed (bei Merge-Konflikten in `WORKING_STATE.md` stets durch erneutes `just sync-docs` auflösen)
 
 ## ANCHOR-Status
 - **Geschlossen:** <!-- Liste der ANKERs die STATUS:DONE gesetzt wurden -->

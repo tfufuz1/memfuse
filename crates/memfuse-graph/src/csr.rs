@@ -107,9 +107,9 @@ pub(crate) struct GraphInner {
     pub(crate) targets: Vec<InternalIndex>,
     /// CSR weights array: contiguous list of edge weights.
     pub(crate) weights: Vec<f32>,
-    /// CSR valid_froms array: validity start TxId per edge.
+    /// CSR valid_from array: contiguous list of bi-temporal valid_from TxIds.
     pub(crate) valid_froms: Vec<Option<TxId>>,
-    /// CSR valid_tos array: validity end TxId per edge.
+    /// CSR valid_to array: contiguous list of bi-temporal valid_to TxIds.
     pub(crate) valid_tos: Vec<Option<TxId>>,
 
     /// Staging for entities not yet committed, grouped by TxId.
@@ -175,7 +175,8 @@ impl GraphInner {
         let mut new_offsets = Vec::with_capacity(num_nodes + 1);
         let mut new_targets = Vec::with_capacity(self.targets.len() + self.pending_edge_count);
         let mut new_weights = Vec::with_capacity(self.weights.len() + self.pending_edge_count);
-        let mut new_valid_froms = Vec::with_capacity(self.valid_froms.len() + self.pending_edge_count);
+        let mut new_valid_froms =
+            Vec::with_capacity(self.valid_froms.len() + self.pending_edge_count);
         let mut new_valid_tos = Vec::with_capacity(self.valid_tos.len() + self.pending_edge_count);
 
         let mut current_offset = 0;
@@ -452,16 +453,17 @@ impl CsrGraph {
         let edge_entries = storage.scan_prefix(GRAPH_EDGE_PREFIX).await?;
         let mut edge_count = 0usize;
         for (raw_key, raw_value) in edge_entries {
-            let (weight, valid_from, valid_to) = match bincode::deserialize::<PersistedEdgePayload>(&raw_value) {
-                Ok(p) => (p.weight, p.valid_from, p.valid_to),
-                Err(_) => {
-                    // Backward compatibility fallback for legacy serialized f32 weight values
-                    let w: f32 = bincode::deserialize(&raw_value).map_err(|e| {
-                        MemFuseError::Internal(format!("graph edge deserialize: {e}"))
-                    })?;
-                    (w, None, None)
-                }
-            };
+            let (weight, valid_from, valid_to) =
+                match bincode::deserialize::<PersistedEdgePayload>(&raw_value) {
+                    Ok(p) => (p.weight, p.valid_from, p.valid_to),
+                    Err(_) => {
+                        // Backward compatibility fallback for legacy serialized f32 weight values
+                        let w: f32 = bincode::deserialize(&raw_value).map_err(|e| {
+                            MemFuseError::Internal(format!("graph edge deserialize: {e}"))
+                        })?;
+                        (w, None, None)
+                    }
+                };
 
             // Key-Format: "__graph:edge:{from_id}:{to_id}"
             let key_payload = raw_key
@@ -832,16 +834,14 @@ impl GraphIndex for CsrGraph {
                         let weight = inner.weights[edge_idx];
                         let next_score = current_score * SCORE_DECAY * weight;
 
-                        if !visited.contains_key(&neighbor_idx)
-                            || visited[&neighbor_idx] < next_score
-                        {
-                            if inner
+                        if (!visited.contains_key(&neighbor_idx)
+                            || visited[&neighbor_idx] < next_score)
+                            && inner
                                 .entities
                                 .get(neighbor_idx)
                                 .is_some_and(|e| e.is_some())
-                            {
-                                queue.push_back((neighbor_idx, hop + 1, next_score));
-                            }
+                        {
+                            queue.push_back((neighbor_idx, hop + 1, next_score));
                         }
                     }
                 }
@@ -2074,19 +2074,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_csr_graph_traverse_at_returns_adr024_policy_violation() {
+    async fn test_csr_graph_traverse_at_returns_adr024_capability_unsupported() {
         let graph = CsrGraph::new();
         let res = graph.traverse_at(EntityId::new(1), 2, 42).await;
         match res {
-            Err(MemFuseError::PolicyViolation(msg)) => {
+            Err(MemFuseError::CapabilityUnsupported { capability, reason }) => {
+                assert_eq!(capability, "graph_traverse_at");
                 assert!(
-                    msg.contains("ADR-024"),
-                    "Expected ADR-024 in PolicyViolation error message, got: {}",
-                    msg
+                    reason.contains("ADR-024"),
+                    "Expected ADR-024 in CapabilityUnsupported reason message, got: {}",
+                    reason
                 );
             }
             other => panic!(
-                "Expected PolicyViolation referencing ADR-024, got: {:?}",
+                "Expected CapabilityUnsupported referencing ADR-024, got: {:?}",
                 other
             ),
         }
@@ -2141,38 +2142,33 @@ mod tests {
             .unwrap(); // unwrap
 
         let valid_until = TxId::new(100);
-        let edge = Edge::new(id1, id2, "valid_rel")
-            .with_validity(Some(TxId::new(10)), Some(valid_until));
+        let edge =
+            Edge::new(id1, id2, "valid_rel").with_validity(Some(TxId::new(10)), Some(valid_until));
 
         graph.add_edge(tx_setup, edge).await.unwrap(); // unwrap
         graph.commit(tx_setup).await.unwrap(); // unwrap
 
         // 1. Before valid_from (< 10) -> Should NOT return edge
-        let res_before = graph
-            .traverse_at_time(id1, 1, TxId::new(9))
-            .await
-            .unwrap(); // unwrap
-        assert!(res_before.is_empty(), "Edge must not be valid before valid_from (9 < 10)");
+        let res_before = graph.traverse_at_time(id1, 1, TxId::new(9)).await.unwrap(); // unwrap
+        assert!(
+            res_before.is_empty(),
+            "Edge must not be valid before valid_from (9 < 10)"
+        );
 
         // 2. Exactly at valid_from (10) -> MUST return edge
-        let res_from = graph
-            .traverse_at_time(id1, 1, TxId::new(10))
-            .await
-            .unwrap(); // unwrap
+        let res_from = graph.traverse_at_time(id1, 1, TxId::new(10)).await.unwrap(); // unwrap
         assert_eq!(res_from.len(), 1, "Edge must be valid at valid_from (10)");
 
         // 3. One step before valid_to (valid_until - 1 = 99) -> MUST return edge
-        let res_before_to = graph
-            .traverse_at_time(id1, 1, TxId::new(99))
-            .await
-            .unwrap(); // unwrap
-        assert_eq!(res_before_to.len(), 1, "Edge must be valid at valid_to - 1 (99)");
+        let res_before_to = graph.traverse_at_time(id1, 1, TxId::new(99)).await.unwrap(); // unwrap
+        assert_eq!(
+            res_before_to.len(),
+            1,
+            "Edge must be valid at valid_to - 1 (99)"
+        );
 
         // 4. Exactly at valid_to (valid_until = 100) -> MUST NOT return edge
-        let res_at_to = graph
-            .traverse_at_time(id1, 1, valid_until)
-            .await
-            .unwrap(); // unwrap
+        let res_at_to = graph.traverse_at_time(id1, 1, valid_until).await.unwrap(); // unwrap
         assert!(
             res_at_to.is_empty(),
             "Edge must NOT be valid at exact valid_to boundary (100)"
@@ -2183,21 +2179,22 @@ mod tests {
             .traverse_at_time(id1, 1, TxId::new(101))
             .await
             .unwrap(); // unwrap
-        assert!(res_after_to.is_empty(), "Edge must NOT be valid after valid_to (101)");
+        assert!(
+            res_after_to.is_empty(),
+            "Edge must NOT be valid after valid_to (101)"
+        );
 
         // 6. Test compacted CSR path boundary behavior
         graph.compact();
 
-        let res_compact_valid = graph
-            .traverse_at_time(id1, 1, TxId::new(99))
-            .await
-            .unwrap(); // unwrap
-        assert_eq!(res_compact_valid.len(), 1, "Compacted edge must be valid at 99");
+        let res_compact_valid = graph.traverse_at_time(id1, 1, TxId::new(99)).await.unwrap(); // unwrap
+        assert_eq!(
+            res_compact_valid.len(),
+            1,
+            "Compacted edge must be valid at 99"
+        );
 
-        let res_compact_invalid = graph
-            .traverse_at_time(id1, 1, valid_until)
-            .await
-            .unwrap(); // unwrap
+        let res_compact_invalid = graph.traverse_at_time(id1, 1, valid_until).await.unwrap(); // unwrap
         assert!(
             res_compact_invalid.is_empty(),
             "Compacted edge must NOT be valid at 100"
@@ -2228,6 +2225,10 @@ mod tests {
             .traverse_at_time(id1, 1, TxId::new(500))
             .await
             .unwrap(); // unwrap
-        assert_eq!(res.len(), 1, "Unbounded edge must be valid at any point in time");
+        assert_eq!(
+            res.len(),
+            1,
+            "Unbounded edge must be valid at any point in time"
+        );
     }
 }

@@ -95,7 +95,7 @@ fn bench_snapshot_overhead(c: &mut Criterion) {
     c.bench_function("snapshot_search_overhead", |b| {
         b.to_async(&rt).iter(|| async {
             let _ = db
-                .search_with_filter(&vec![0.1; 1536], 5, None)
+                .search_with_filter_expr(&vec![0.1; 1536], 5, None)
                 .await
                 .unwrap();
         })

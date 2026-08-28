@@ -93,11 +93,7 @@ impl SnapshotRegistry {
                 active.remove(&seq_no);
             }
         } else {
-            debug_assert!(
-                false,
-                "SnapshotRegistry::release called for unknown seq_no: {}",
-                seq_no
-            );
+            // Unpinning or releasing an un-tracked sequence number is a no-op (§2 Zero-Panic).
         }
         self.update_min(&active);
     }
@@ -205,6 +201,14 @@ mod tests {
         assert_eq!(registry.min_active_seqno(), 100);
 
         drop(g2);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
+    fn test_unpin_unknown_seq_no_does_not_panic() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        // Unpinning a sequence number that was never pinned or registered must not panic
+        registry.unpin(999);
         assert_eq!(registry.min_active_seqno(), u64::MAX);
     }
 

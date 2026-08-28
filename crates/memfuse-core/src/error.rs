@@ -9,7 +9,15 @@ use thiserror::Error;
 /// Convenience alias for `Result<T, MemFuseError>`.
 pub type Result<T> = std::result::Result<T, MemFuseError>;
 
-/// Unified error type for all MemFuse operations.
+/// Unified error type for all MemFuse operations across the entire workspace.
+///
+/// # Non-Exhaustive Variant Guarantee
+/// This enum is marked [`#[non_exhaustive]`][non_exhaustive] to allow appending new error variants
+/// in future minor releases without breaking downstream `match` statements across crate boundaries
+/// (such as `memfuse-py` and `memfuse-mcp`).
+///
+/// Downstream callers matching on `MemFuseError` must include a wildcard arm (`_ => ...`).
+/// New variants are appended strictly to the bottom of the enum to preserve binary and FFI compatibility.
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum MemFuseError {
@@ -156,9 +164,28 @@ pub enum MemFuseError {
     /// Bincode serialization or deserialization error wrapper.
     #[error("Bincode error: {0}")]
     Bincode(#[from] bincode::Error),
+
+    /// Capability requested is not supported by this engine or implementation.
+    #[error("Capability unsupported: {capability} - {reason}")]
+    CapabilityUnsupported {
+        /// Unique capability identifier.
+        capability: String,
+        /// Detail text describing why capability is unsupported.
+        reason: String,
+    },
 }
 
 impl MemFuseError {
+    /// Creates a `CapabilityUnsupported` error.
+    pub fn capability_unsupported(
+        capability: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::CapabilityUnsupported {
+            capability: capability.into(),
+            reason: reason.into(),
+        }
+    }
     /// Creates an `InvalidInput` error from any displayable value.
     pub fn invalid_input(msg: impl Into<String>) -> Self {
         Self::InvalidInput(msg.into())
@@ -243,6 +270,22 @@ mod tests {
         match err {
             MemFuseError::InvalidInput(msg) => assert_eq!(msg, "bad param"),
             _ => panic!("Expected InvalidInput, got {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_capability_unsupported_helper() {
+        let err = MemFuseError::capability_unsupported("snapshot_read_at", "ADR-024");
+        assert_eq!(
+            err.to_string(),
+            "Capability unsupported: snapshot_read_at - ADR-024"
+        );
+        match err {
+            MemFuseError::CapabilityUnsupported { capability, reason } => {
+                assert_eq!(capability, "snapshot_read_at");
+                assert_eq!(reason, "ADR-024");
+            }
+            _ => panic!("Expected CapabilityUnsupported, got {:?}", err),
         }
     }
 
