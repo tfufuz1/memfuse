@@ -48,6 +48,86 @@ impl From<&StoredDocument> for StoredDocumentMeta {
     }
 }
 
+/// Computes a non-LLM heuristic baseline importance score based on text length and character entropy.
+pub fn compute_default_importance(text_opt: Option<&str>) -> memfuse_core::ImportanceScore {
+    let text = match text_opt {
+        Some(t) if !t.is_empty() => t,
+        _ => return memfuse_core::ImportanceScore::new(0.5),
+    };
+    let char_count = text.chars().count();
+    if char_count == 0 {
+        return memfuse_core::ImportanceScore::new(0.5);
+    }
+    let unique_chars = text.chars().collect::<std::collections::HashSet<_>>().len() as f32;
+    let entropy_ratio = unique_chars / char_count as f32;
+    let len_factor = (char_count as f32 / 500.0).clamp(0.1, 0.8);
+    let raw = (len_factor * 0.5) + (entropy_ratio * 0.5);
+    memfuse_core::ImportanceScore::new(raw)
+}
+
+/// Ensures document metadata contains a valid `MemoryImportance` JSON payload.
+pub fn ensure_importance_metadata(
+    metadata: &mut Option<serde_json::Value>,
+    tx: TxId,
+    text_opt: Option<&str>,
+) {
+    let meta_obj = match metadata {
+        Some(serde_json::Value::Object(ref mut map)) => map,
+        _ => {
+            *metadata = Some(serde_json::json!({}));
+            if let Some(serde_json::Value::Object(ref mut map)) = metadata {
+                map
+            } else {
+                return;
+            }
+        }
+    };
+
+    if let Some(imp_val) = meta_obj.get("importance").cloned() {
+        if serde_json::from_value::<memfuse_core::MemoryImportance>(imp_val.clone()).is_ok() {
+            return;
+        } else if let Some(raw_f64) = imp_val.as_f64() {
+            let imp = memfuse_core::MemoryImportance::new(
+                memfuse_core::ImportanceScore::new(raw_f64 as f32),
+                memfuse_core::DecayFunction::None,
+                tx,
+            );
+            if let Ok(val) = serde_json::to_value(imp) {
+                meta_obj.insert("importance".to_string(), val);
+            }
+            return;
+        }
+    }
+
+    let base_score = compute_default_importance(text_opt);
+    let imp =
+        memfuse_core::MemoryImportance::new(base_score, memfuse_core::DecayFunction::None, tx);
+    if let Ok(val) = serde_json::to_value(imp) {
+        meta_obj.insert("importance".to_string(), val);
+    }
+}
+
+/// Extracts the effective importance score of a document at a given transaction ID.
+pub fn extract_effective_importance(metadata: &Option<serde_json::Value>, now_tx: TxId) -> f32 {
+    let Some(meta) = metadata else {
+        return 1.0;
+    };
+    let Some(obj) = meta.as_object() else {
+        return 1.0;
+    };
+    let Some(imp_val) = obj.get("importance") else {
+        return 1.0;
+    };
+
+    if let Ok(imp) = serde_json::from_value::<memfuse_core::MemoryImportance>(imp_val.clone()) {
+        imp.effective_score(now_tx)
+    } else if let Some(raw_f64) = imp_val.as_f64() {
+        memfuse_core::ImportanceScore::new(raw_f64 as f32).value()
+    } else {
+        1.0
+    }
+}
+
 /// Helper to unify how we extract text from metadata.
 fn extract_text(metadata: &Option<serde_json::Value>) -> Option<String> {
     let mut document_text = String::new();
@@ -512,6 +592,10 @@ impl<S: StorageEngine> Collection<S> {
 
         self.check_doc_id_collision(doc_id, id).await?;
 
+        let mut metadata = metadata;
+        let text_opt = extract_text(&metadata);
+        ensure_importance_metadata(&mut metadata, tx, text_opt.as_deref());
+
         let stored = StoredDocument {
             id: id.to_string(),
             embedding: embedding.to_vec(),
@@ -711,6 +795,10 @@ impl<S: StorageEngine> Collection<S> {
 
         // Remove from old text index
         self.text_index.delete_document(tx, doc_id).await?;
+
+        let mut metadata = metadata;
+        let text_opt = extract_text(&metadata);
+        ensure_importance_metadata(&mut metadata, tx, text_opt.as_deref());
 
         let stored = StoredDocument {
             id: id.to_string(),
@@ -1257,20 +1345,20 @@ impl<S: StorageEngine> Collection<S> {
         anchor_entities: Option<&[memfuse_core::EntityId]>,
         weights: Option<&memfuse_core::FusionWeights>,
     ) -> Result<Vec<crate::SearchResult>> {
-        self.hybrid_search_ext(text, vector, k, anchor_entities, weights, None)
+        self.hybrid_search_with_strategy(text, vector, k, anchor_entities, weights, None)
             .await
     }
 
-    /// Performs hybrid search with custom parameters including optional `same_community_as` filter.
-    #[tracing::instrument(level = "trace", skip(self, text, vector))]
-    pub async fn hybrid_search_ext(
+    /// Performs hybrid search with custom signal fusion weights and graph traversal strategy.
+    #[tracing::instrument(level = "trace", skip(self, text, vector, strategy))]
+    pub async fn hybrid_search_with_strategy(
         &self,
         text: &str,
         vector: &[f32],
         k: usize,
         anchor_entities: Option<&[memfuse_core::EntityId]>,
         weights: Option<&memfuse_core::FusionWeights>,
-        same_community_as: Option<memfuse_core::EntityId>,
+        strategy: Option<&memfuse_core::GraphTraversalStrategy>,
     ) -> Result<Vec<crate::SearchResult>> {
         if k == 0 {
             return Ok(Vec::new());
@@ -1281,7 +1369,8 @@ impl<S: StorageEngine> Collection<S> {
         let is_vector_zero = vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
 
-        const MAX_TRAVERSAL_HOPS: usize = 3;
+        let default_strategy = memfuse_core::GraphTraversalStrategy::default();
+        let graph_strat = strategy.unwrap_or(&default_strategy);
 
         // 1. Vector Signal
         let vector_results = if is_vector_zero {
@@ -1306,29 +1395,32 @@ impl<S: StorageEngine> Collection<S> {
         };
 
         // 3. Graph Signal
-        let graph_results = if let Some(anchors) = anchor_entities {
+        let implicit_anchors: Vec<memfuse_core::EntityId>;
+        let anchors_ref: Option<&[memfuse_core::EntityId]> = if let Some(anchors) = anchor_entities {
             if anchors.is_empty() {
-                Vec::new()
+                None
             } else {
-                let tuples = self
-                    .graph_index
-                    .multi_traverse(anchors, MAX_TRAVERSAL_HOPS)
-                    .await?;
-                let doc_tuples = tuples
-                    .into_iter()
-                    .map(|(eid, score)| (memfuse_core::DocId::new(eid.inner()), score))
-                    .collect();
-                self.hydrate_from_tuples_at(doc_tuples, seq).await?
+                Some(anchors)
             }
         } else if !text_results.is_empty() {
-            let implicit_anchors: Vec<memfuse_core::EntityId> = text_results
+            implicit_anchors = text_results
                 .iter()
                 .map(|r| memfuse_core::EntityId::from_key(r.id.as_str()))
                 .collect::<Result<Vec<_>>>()?;
-            let tuples = self
-                .graph_index
-                .multi_traverse(&implicit_anchors, MAX_TRAVERSAL_HOPS)
-                .await?;
+            Some(&implicit_anchors)
+        } else {
+            None
+        };
+
+        let graph_results = if let Some(anchors) = anchors_ref {
+            let tuples = match graph_strat {
+                memfuse_core::GraphTraversalStrategy::Hops { max_hops } => {
+                    self.graph_index.multi_traverse(anchors, *max_hops).await?
+                }
+                memfuse_core::GraphTraversalStrategy::PersonalizedPageRank(ppr_config) => {
+                    self.graph_index.personalized_page_rank(anchors, ppr_config).await?
+                }
+            };
             let doc_tuples = tuples
                 .into_iter()
                 .map(|(eid, score)| (memfuse_core::DocId::new(eid.inner()), score))
@@ -1390,6 +1482,24 @@ impl<S: StorageEngine> Collection<S> {
             signal_sets,
             k,
         ))
+    }
+
+    /// Filters a candidate list of search results by effective importance score threshold.
+    ///
+    /// Candidate results with `effective_score(now_tx) < min_threshold` are removed from the result list.
+    /// Does NOT reorder remaining items, keeping RRF & Reranking order intact (ADR-024).
+    pub fn filter_by_importance(
+        results: Vec<crate::SearchResult>,
+        min_threshold: f32,
+        now_tx: TxId,
+    ) -> Vec<crate::SearchResult> {
+        results
+            .into_iter()
+            .filter(|r| {
+                let eff = extract_effective_importance(&r.metadata, now_tx);
+                eff >= min_threshold
+            })
+            .collect()
     }
 
     /// Returns the name of the collection.
@@ -2665,5 +2775,77 @@ mod tests {
 
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].id, "d1");
+    }
+
+    #[test]
+    fn test_compute_default_importance_entropy_and_clamping() {
+        let score_empty = super::compute_default_importance(None);
+        assert_eq!(score_empty.value(), 0.5);
+
+        let score_simple = super::compute_default_importance(Some("aaaaa"));
+        assert!(score_simple.value() >= 0.0 && score_simple.value() <= 1.0);
+
+        let score_rich = super::compute_default_importance(Some(
+            "The quick brown fox jumps over the lazy dog with high entropy and long text.",
+        ));
+        assert!(score_rich.value() > score_simple.value());
+    }
+
+    #[test]
+    fn test_importance_metadata_integration_and_filtering() {
+        use memfuse_core::{DecayFunction, ImportanceScore, MemoryImportance, TxId};
+        use serde_json::json;
+
+        let created_tx = TxId::new(10);
+        let now_tx = TxId::new(30);
+
+        let mut meta1 = Some(json!({"text": "Important factual doc"}));
+        super::ensure_importance_metadata(&mut meta1, created_tx, Some("Important factual doc"));
+
+        // Override with explicit exponential decay
+        let imp1 = MemoryImportance::new(
+            ImportanceScore::new(0.9),
+            DecayFunction::Exponential { half_life_tx: 10 },
+            created_tx,
+        );
+        meta1.as_mut().unwrap().as_object_mut().unwrap().insert(
+            "importance".to_string(),
+            serde_json::to_value(&imp1).unwrap(),
+        );
+
+        // Effective score at now_tx (2 half-lives elapsed) -> 0.9 * 0.25 = 0.225
+        let eff1 = super::extract_effective_importance(&meta1, now_tx);
+        assert!((eff1 - 0.225).abs() < 1e-4);
+
+        let mut meta2 = Some(json!({"text": "Critical doc"}));
+        let imp2 =
+            MemoryImportance::new(ImportanceScore::new(1.0), DecayFunction::None, created_tx);
+        meta2.as_mut().unwrap().as_object_mut().unwrap().insert(
+            "importance".to_string(),
+            serde_json::to_value(&imp2).unwrap(),
+        );
+
+        let results = vec![
+            crate::SearchResult {
+                id: "doc1".to_string(),
+                score: 0.95,
+                metadata: meta1,
+                matched_signals: vec!["vector".to_string()],
+            },
+            crate::SearchResult {
+                id: "doc2".to_string(),
+                score: 0.85,
+                metadata: meta2,
+                matched_signals: vec!["vector".to_string()],
+            },
+        ];
+
+        // Filter out results with effective importance < 0.5
+        let filtered = super::Collection::<memfuse_store::LsmStorage>::filter_by_importance(
+            results, 0.5, now_tx,
+        );
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, "doc2");
+        assert_eq!(filtered[0].score, 0.85); // Order and original RRF/CE score preserved
     }
 }
