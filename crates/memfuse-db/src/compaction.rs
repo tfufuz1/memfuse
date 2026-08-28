@@ -117,6 +117,7 @@ impl ContextCompactor {
             }
         }
 
+        let source_doc_ids = retained.iter().map(|c| c.doc_id).collect();
         CompactedContext {
             retained_chunks: retained,
             status_tokens,

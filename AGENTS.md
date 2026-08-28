@@ -34,8 +34,8 @@ Die vollständige, automatisch aktuell gehaltene Crate-Tabelle und DAG-Topologie
 - **Document chunking**: ALWAYS use `MarkdownChunker` — NEVER embed entire text as 1 vector
 - **MCP transport**: stdio JSON-RPC 2.0 ONLY — axum was removed (ADR-010)
 - **WAL HMAC key**: ALWAYS via `load_or_create_integrity_key()` — NEVER hardcoded
-- **AI-TAG & ID Nummernkreise**: Jedes `AI-TAG` verwendet das Schema `AGT-<CRATE>-<NNN>` (z.B. `AGT-CORE-001`, `AGT-STORE-001`, `AGT-INDEX-001`, `AGT-TEXT-001`, `AGT-CRYPTO-001`, `AGT-GRAPH-001`, `AGT-CKPT-001`, `AGT-DB-001`, `AGT-EMBED-001`, `AGT-OLLAMA-001`, `AGT-PY-001`, `AGT-TAURI-001`, `AGT-MCP-001`, `AGT-AGENT-001`).
-- **Tag-Zeitstempel-Pflicht**: Alle `AI-TAG` und `ANCHOR` Kommentare tragen zwingend einen ISO-8601-UTC-Zeitstempel im Format `(TS: YYYY-MM-DDTHH:MM:SSZ)` (siehe `rules/tag_taxonomy.md`).
+- **AI-TAG & ID Schema**: Alle neuen Tags verwenden das hash-basierte Schema `AGT-<CRATE>-<8-hex-hash>` (z.B. `AGT-STORE-a3f29c1d`). Bestehende `AGT-<CRATE>-NNN` IDs haben Bestandsschutz.
+- **Tag-Zeitstempel- & Session-Pflicht**: Alle `AI-TAG`, `ANCHOR` und `REVIEW-PASS` Kommentare tragen zwingend sekundengenaue ISO-8601-UTC-Zeitstempel im Format `(TS: YYYY-MM-DDTHH:MM:SSZ)` und das `(SESSION: <8-hex-hash>)` Token (siehe `rules/tag_taxonomy.md`).
 
 ## 5. Judgment Boundaries
 
@@ -61,20 +61,17 @@ Die vollständige, automatisch aktuell gehaltene Crate-Tabelle und DAG-Topologie
 ## 6. Session Protocol
 
 Jede Sitzung MUSS mit folgendem beginnen (Environment-Skript liefert dies
-bereits in der Setup-Ausgabe, siehe `[9/9] Session Context Digest`):
+bereits in der Setup-Ausgabe, siehe `[9/9] Session Context Digest` und `[10/10] Session identity`):
+0. SESSION-Hash aus Environment-Setup (`SESSION:<hash>`) übernehmen und für alle Tags dieser Sitzung konsistent verwenden.
 1. Session-Digest aus Environment-Setup lesen (offene BLOCKER/CRITICAL Tags,
    offene ANCHORs, letzte 3 ADRs, WORKING_STATE.md-Tail)
 2. Falls Digest nicht sichtbar (z.B. bei nachträglichem Reconnect):
    manuell `just session-context` ausführen (siehe justfile)
 
 Jede Sitzung MUSS mit folgendem enden — VOR dem letzten Commit:
-1. `just sync-docs` ausführen (aktualisiert WORKING_STATE.md,
-   docs/ARCHITECTURE.md, docs/SOURCE_OF_TRUTH.md automatisch aus Inline-Tags)
-2. Diff der generierten Abschnitte prüfen — falls unerwartet groß oder
-   falsch: Tags im Code korrigieren, NICHT den generierten Text von Hand
-   überschreiben (sonst nächster Lauf überschreibt die Handkorrektur wieder)
-3. Neuen manuellen Freitext-Eintrag in `WORKING_STATE.md` NUR außerhalb der
-   `<!-- AUTO-GENERATED -->`-Marker ergänzen (z.B. Sprint-Zusammenfassung)
+1. `just sync-docs` ausführen (`WORKING_STATE.md`, `docs/CHANGELOG.md`, `docs/ARCHITECTURE.md`, `docs/SOURCE_OF_TRUTH.md` werden vollständig aus Inline-Tags & Cargo-Topologie generiert).
+2. `WORKING_STATE.md` enthält NULL manuell editierten Text mehr. Bei Git-Merge-Konflikten in `WORKING_STATE.md`: stets durch `just sync-docs` auflösen.
+3. Falls diese Sitzung eine REINE REVIEW-Sitzung war (kein eigener Code-Beitrag, nur Prüfung fremder Arbeit): mindestens einen `REVIEW-PASS`-Eintrag mit `PRÜFER-KONTEXT: FRESH` hinterlassen, bevor `just sync-docs` läuft.
 4. `just sync-docs-check` als letzten Schritt — muss grün sein, sonst ist
    der Commit nicht vollständig
 

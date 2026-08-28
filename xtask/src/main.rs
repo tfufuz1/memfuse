@@ -10,12 +10,13 @@ use walkdir::WalkDir;
 pub struct TagItem {
     pub file_path: String,
     pub line_num: usize,
-    pub tag_type: String, // "AI-TAG", "ANCHOR", "FILE-CONTEXT"
+    pub tag_type: String, // "AI-TAG", "ANCHOR", "FILE-CONTEXT", "REVIEW-PASS"
     pub raw: String,
     pub timestamp: String,
     pub category: Option<String>,
     pub severity: Option<String>,
     pub id: Option<String>,
+    pub session: Option<String>,
     pub status: Option<String>,
     pub description: String,
     pub is_resolved: bool,
@@ -50,7 +51,67 @@ pub fn scan_tags<P: AsRef<Path>>(root: P) -> Vec<TagItem> {
                     let line_num = idx + 1;
                     let trimmed = line.trim();
 
-                    if trimmed.contains("AI-TAG") {
+                    let session = if let Some(s_idx) = trimmed.find("(SESSION:") {
+                        let rest = &trimmed[s_idx + 9..];
+                        if let Some(end) = rest.find(')') {
+                            Some(rest[..end].trim().to_string())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    if trimmed.contains("REVIEW-PASS") {
+                        let status = if let Some(s_idx) = trimmed.find("STATUS:") {
+                            let rest = &trimmed[s_idx + 7..];
+                            let end = rest
+                                .find(|c: char| c.is_whitespace() || c == '(')
+                                .unwrap_or(rest.len());
+                            Some(rest[..end].to_string())
+                        } else {
+                            None
+                        };
+
+                        let ts = if let Some(ts_idx) = trimmed.find("(TS:") {
+                            let rest = &trimmed[ts_idx + 4..];
+                            if let Some(end) = rest.find(')') {
+                                rest[..end].trim().to_string()
+                            } else {
+                                "".to_string()
+                            }
+                        } else {
+                            "".to_string()
+                        };
+
+                        let id = if let Some(id_idx) = trimmed.find("(ID:") {
+                            let rest = &trimmed[id_idx + 4..];
+                            rest.find(')').map(|end| rest[..end].trim().to_string())
+                        } else if let Some(id_idx) = trimmed.find("AGT-") {
+                            let rest = &trimmed[id_idx..];
+                            let end = rest
+                                .find(|c: char| !c.is_alphanumeric() && c != '-')
+                                .unwrap_or(rest.len());
+                            Some(rest[..end].to_string())
+                        } else {
+                            None
+                        };
+
+                        tags.push(TagItem {
+                            file_path: rel_path.clone(),
+                            line_num,
+                            tag_type: "REVIEW-PASS".to_string(),
+                            raw: trimmed.to_string(),
+                            timestamp: ts,
+                            category: None,
+                            severity: None,
+                            id,
+                            session,
+                            status,
+                            description: trimmed.to_string(),
+                            is_resolved: false,
+                        });
+                    } else if trimmed.contains("AI-TAG") {
                         let is_resolved = trimmed.contains("RESOLVED")
                             || trimmed.contains("STATUS:DONE")
                             || trimmed.contains("STATUS:RESOLVED");
@@ -109,6 +170,7 @@ pub fn scan_tags<P: AsRef<Path>>(root: P) -> Vec<TagItem> {
                             category,
                             severity,
                             id,
+                            session,
                             status: if is_resolved {
                                 Some("RESOLVED".to_string())
                             } else {
@@ -143,7 +205,10 @@ pub fn scan_tags<P: AsRef<Path>>(root: P) -> Vec<TagItem> {
                             "".to_string()
                         };
 
-                        let id = if let Some(start) = trimmed.find("ANCHOR[") {
+                        let id = if let Some(id_idx) = trimmed.find("(ID:") {
+                            let rest = &trimmed[id_idx + 4..];
+                            rest.find(')').map(|end| rest[..end].trim().to_string())
+                        } else if let Some(start) = trimmed.find("ANCHOR[") {
                             let rest = &trimmed[start + 7..];
                             rest.find(']').map(|end| rest[..end].to_string())
                         } else {
@@ -159,6 +224,7 @@ pub fn scan_tags<P: AsRef<Path>>(root: P) -> Vec<TagItem> {
                             category: None,
                             severity: None,
                             id,
+                            session,
                             status: status.clone(),
                             description: trimmed.to_string(),
                             is_resolved: is_resolved
@@ -185,6 +251,7 @@ pub fn scan_tags<P: AsRef<Path>>(root: P) -> Vec<TagItem> {
                             category: None,
                             severity: None,
                             id: None,
+                            session,
                             status: None,
                             description: zweck,
                             is_resolved: false,
@@ -338,6 +405,70 @@ pub fn update_markdown_section(
     Ok(())
 }
 
+fn generate_full_working_state(tags: &[TagItem], crates: &[CrateInfo]) -> String {
+    let mut out = String::new();
+    out.push_str("<!-- AUTOGENERATED:START:FULL -->\n");
+    out.push_str("# MemFuse — Working State\n");
+    out.push_str(&format!("*Automatisch generierte Projektion des Code-Zustands — Stand: {}*\n\n", chrono_or_today()));
+    out.push_str("> **Hinweis**: Diese Datei ist zu 100 % autogeneriert durch `cargo xtask sync-docs` aus Inline-Code-Tags. Keinen Text manuell editieren. Bei Git-Merge-Konflikten stets `just sync-docs` ausführen.\n\n");
+
+    out.push_str("## Offene AI-TAGs & ANCHORs\n\n");
+    out.push_str(&generate_ai_tags_section(tags));
+    out.push_str("\n\n");
+
+    out.push_str("## Crate-Inventar & Status\n\n");
+    out.push_str(&generate_crate_inventory_section(crates));
+    out.push_str("\n\n");
+
+    out.push_str("## DAG-Topologie\n\n");
+    out.push_str(&generate_dag_topology_section(crates));
+    out.push_str("\n<!-- AUTOGENERATED:END:FULL -->\n");
+
+    out
+}
+
+fn generate_changelog(tags: &[TagItem]) -> String {
+    let mut out = String::new();
+    out.push_str("# MemFuse — Chronologischer Tag- & Review-Bericht\n\n");
+    out.push_str("> Automatisch generierter Read-Only Bericht aus allen Inline-Tags im Repo.\n\n");
+    out.push_str("| Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |\n");
+    out.push_str("|---|---|---|---|---|---|---|---|\n");
+
+    let mut sorted_tags: Vec<&TagItem> = tags.iter().collect();
+    sorted_tags.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+    for t in sorted_tags {
+        let passes = if let Some(id) = &t.id {
+            let matches: Vec<&TagItem> = tags.iter().filter(|r| r.tag_type == "REVIEW-PASS" && r.status.as_deref() == Some("PASS") && r.id.as_deref() == Some(id.as_str())).collect();
+            let mut sess_set = std::collections::HashSet::new();
+            for m in matches {
+                if let Some(s) = &m.session {
+                    if t.session.as_ref() != Some(s) {
+                        sess_set.insert(s.clone());
+                    }
+                }
+            }
+            sess_set.len().to_string()
+        } else {
+            "-".to_string()
+        };
+
+        out.push_str(&format!(
+            "| `{}` | `{}` | `{}` | `{}` | `{}` | `{}` | `{}` | {} |\n",
+            t.timestamp,
+            t.file_path,
+            t.tag_type,
+            t.id.as_deref().unwrap_or("-"),
+            t.session.as_deref().unwrap_or("-"),
+            t.status.as_deref().unwrap_or("-"),
+            passes,
+            t.description.replace('|', "\\|")
+        ));
+    }
+
+    out
+}
+
 fn generate_ai_tags_section(tags: &[TagItem]) -> String {
     let open_tags: Vec<&TagItem> = tags
         .iter()
@@ -459,15 +590,32 @@ fn run_sync_docs(check_only: bool) -> bool {
     let crates = get_workspace_crates();
     println!("Parsed {} workspace crates.", crates.len());
 
-    let ai_tags_content = generate_ai_tags_section(&tags);
     let dag_topology_content = generate_dag_topology_section(&crates);
     let crate_inventory_content = generate_crate_inventory_section(&crates);
+
+    let full_working_state = generate_full_working_state(&tags, &crates);
+    let changelog_content = generate_changelog(&tags);
 
     if check_only {
         let mut drift = false;
 
+        let actual_ws = fs::read_to_string("WORKING_STATE.md").unwrap_or_default();
+        if actual_ws.trim() != full_working_state.trim() {
+            eprintln!("❌ WORKING_STATE.md is out of sync!");
+            drift = true;
+        } else {
+            println!("✅ WORKING_STATE.md is in sync.");
+        }
+
+        let actual_cl = fs::read_to_string("docs/CHANGELOG.md").unwrap_or_default();
+        if actual_cl.trim() != changelog_content.trim() {
+            eprintln!("❌ docs/CHANGELOG.md is out of sync!");
+            drift = true;
+        } else {
+            println!("✅ docs/CHANGELOG.md is in sync.");
+        }
+
         let check_files = [
-            ("WORKING_STATE.md", "AI_TAGS", ai_tags_content),
             ("docs/ARCHITECTURE.md", "DAG_TOPOLOGY", dag_topology_content),
             (
                 "docs/SOURCE_OF_TRUTH.md",
@@ -502,10 +650,16 @@ fn run_sync_docs(check_only: bool) -> bool {
             true
         }
     } else {
-        if let Err(e) = update_markdown_section("WORKING_STATE.md", "AI_TAGS", &ai_tags_content) {
-            eprintln!("Warning: Failed to update WORKING_STATE.md: {}", e);
+        if let Err(e) = fs::write("WORKING_STATE.md", &full_working_state) {
+            eprintln!("Warning: Failed to write WORKING_STATE.md: {}", e);
         } else {
-            println!("Successfully updated WORKING_STATE.md (AI_TAGS section).");
+            println!("Successfully regenerated WORKING_STATE.md.");
+        }
+
+        if let Err(e) = fs::write("docs/CHANGELOG.md", &changelog_content) {
+            eprintln!("Warning: Failed to write docs/CHANGELOG.md: {}", e);
+        } else {
+            println!("Successfully regenerated docs/CHANGELOG.md.");
         }
 
         if let Err(e) = update_markdown_section(
@@ -611,6 +765,223 @@ fn run_check_consistency() -> bool {
     }
 }
 
+pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
+    println!("=== Running xtask check-review-coverage ===");
+    let done_anchors: Vec<&TagItem> = tags
+        .iter()
+        .filter(|t| t.tag_type == "ANCHOR" && t.status.as_deref() == Some("DONE"))
+        .collect();
+
+    let mut failed = false;
+
+    for anchor in &done_anchors {
+        let is_new_tag = anchor.session.is_some()
+            || (anchor.timestamp.as_str() >= "2026-08-29" && anchor.timestamp.as_str() != "2026-08-29T00:00:00Z");
+
+        if !is_new_tag {
+            // Legacy anchor from before Prompt 06 cutoff - exempt from multi-session review gate
+            continue;
+        }
+
+        let anchor_id = match &anchor.id {
+            Some(id) => id,
+            None => {
+                eprintln!(
+                    "❌ ANCHOR at {}:{} marked DONE without an ID!",
+                    anchor.file_path, anchor.line_num
+                );
+                failed = true;
+                continue;
+            }
+        };
+
+        // Determine required review pass count N (2 default, 3 for ASK / security / unsafe / crypto / wal)
+        let is_sensitive = anchor.file_path.contains("crypto")
+            || anchor.file_path.contains("wal")
+            || anchor.file_path.contains("distance.rs")
+            || anchor.file_path.contains("diskann.rs")
+            || anchor.file_path.contains("persistence.rs")
+            || anchor.raw.contains("SECURITY")
+            || anchor.raw.contains("unsafe");
+
+        let required_passes = if is_sensitive { 3 } else { 2 };
+
+        let matching_passes: Vec<&TagItem> = tags
+            .iter()
+            .filter(|t| {
+                t.tag_type == "REVIEW-PASS"
+                    && t.status.as_deref() == Some("PASS")
+                    && t.id.as_deref() == Some(anchor_id.as_str())
+            })
+            .collect();
+
+        let mut distinct_sessions = std::collections::HashSet::new();
+        for pass in matching_passes {
+            if let Some(sess) = &pass.session {
+                // Ensure review pass is from a fresh session (different from creator's session if set)
+                if anchor.session.as_ref() != Some(sess) {
+                    distinct_sessions.insert(sess.clone());
+                }
+            }
+        }
+
+        if distinct_sessions.len() < required_passes {
+            eprintln!(
+                "❌ ANCHOR '{}' in {}:{} has {}/{} required independent REVIEW-PASS entries (sessions: {:?})",
+                anchor_id,
+                anchor.file_path,
+                anchor.line_num,
+                distinct_sessions.len(),
+                required_passes,
+                distinct_sessions
+            );
+            failed = true;
+        } else {
+            println!(
+                "✅ ANCHOR '{}' in {}:{} passed review coverage ({}/{} independent sessions)",
+                anchor_id,
+                anchor.file_path,
+                anchor.line_num,
+                distinct_sessions.len(),
+                required_passes
+            );
+        }
+    }
+
+    if failed {
+        eprintln!("=== xtask check-review-coverage FAILED ===");
+        false
+    } else {
+        println!("=== xtask check-review-coverage PASSED ===");
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_working_state_single_marker_block() {
+        let tags = vec![];
+        let crates = vec![];
+        let ws = generate_full_working_state(&tags, &crates);
+        assert!(ws.starts_with("<!-- AUTOGENERATED:START:FULL -->"));
+        assert!(ws.trim().ends_with("<!-- AUTOGENERATED:END:FULL -->"));
+    }
+
+    #[test]
+    fn test_hash_id_collision_freedom() {
+        let crate_name = "memfuse-store";
+        let file_path = "crates/memfuse-store/src/lsm.rs";
+        let line_num = 42;
+        let ts = "2026-08-29T09:14:07Z";
+
+        let session1 = "a3f29c1d";
+        let session2 = "b8e4f1a2";
+
+        let input1 = format!("{}:{}:{}:{}:{}", crate_name, file_path, line_num, ts, session1);
+        let input2 = format!("{}:{}:{}:{}:{}", crate_name, file_path, line_num, ts, session2);
+
+        let hash1 = format!("AGT-STORE-{:.8}", format!("{:x}", md5_or_simple_hash(&input1)));
+        let hash2 = format!("AGT-STORE-{:.8}", format!("{:x}", md5_or_simple_hash(&input2)));
+
+        assert_ne!(hash1, hash2, "Identical timestamps across different sessions must produce distinct hash IDs");
+    }
+
+    fn md5_or_simple_hash(input: &str) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        input.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    #[test]
+    fn test_check_review_coverage_fixtures() {
+        // Fixture 1: 0 passes (should fail)
+        let tags_0_passes = vec![TagItem {
+            file_path: "crates/memfuse-store/src/lsm.rs".to_string(),
+            line_num: 10,
+            tag_type: "ANCHOR".to_string(),
+            raw: "// ANCHOR[DEBT:STO-001] STATUS:DONE (ID: AGT-STORE-a3f29c1d) (TS:2026-08-29T09:14:07Z) (SESSION:a3f29c1d)".to_string(),
+            timestamp: "2026-08-29T09:14:07Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some("AGT-STORE-a3f29c1d".to_string()),
+            session: Some("a3f29c1d".to_string()),
+            status: Some("DONE".to_string()),
+            description: "Task".to_string(),
+            is_resolved: true,
+        }];
+        assert!(!run_check_review_coverage(&tags_0_passes));
+
+        // Fixture 2: 2 passes from SAME session (should fail due to independence rule)
+        let mut tags_same_session = tags_0_passes.clone();
+        tags_same_session.push(TagItem {
+            file_path: "crates/memfuse-store/src/lsm.rs".to_string(),
+            line_num: 15,
+            tag_type: "REVIEW-PASS".to_string(),
+            raw: "// REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-STORE-a3f29c1d) (TS:2026-08-29T09:15:00Z) (SESSION:a3f29c1d)".to_string(),
+            timestamp: "2026-08-29T09:15:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some("AGT-STORE-a3f29c1d".to_string()),
+            session: Some("a3f29c1d".to_string()), // SAME session as anchor!
+            status: Some("PASS".to_string()),
+            description: "Review 1".to_string(),
+            is_resolved: false,
+        });
+        tags_same_session.push(TagItem {
+            file_path: "crates/memfuse-store/src/lsm.rs".to_string(),
+            line_num: 16,
+            tag_type: "REVIEW-PASS".to_string(),
+            raw: "// REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-STORE-a3f29c1d) (TS:2026-08-29T09:16:00Z) (SESSION:a3f29c1d)".to_string(),
+            timestamp: "2026-08-29T09:16:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some("AGT-STORE-a3f29c1d".to_string()),
+            session: Some("a3f29c1d".to_string()), // SAME session as anchor!
+            status: Some("PASS".to_string()),
+            description: "Review 2".to_string(),
+            is_resolved: false,
+        });
+        assert!(!run_check_review_coverage(&tags_same_session));
+
+        // Fixture 3: 2 passes from DIFFERENT independent sessions (should pass)
+        let mut tags_diff_sessions = tags_0_passes.clone();
+        tags_diff_sessions.push(TagItem {
+            file_path: "crates/memfuse-store/src/lsm.rs".to_string(),
+            line_num: 15,
+            tag_type: "REVIEW-PASS".to_string(),
+            raw: "// REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-STORE-a3f29c1d) (TS:2026-08-29T10:00:00Z) (SESSION:b8e4f1a2)".to_string(),
+            timestamp: "2026-08-29T10:00:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some("AGT-STORE-a3f29c1d".to_string()),
+            session: Some("b8e4f1a2".to_string()), // Independent session 1
+            status: Some("PASS".to_string()),
+            description: "Review 1".to_string(),
+            is_resolved: false,
+        });
+        tags_diff_sessions.push(TagItem {
+            file_path: "crates/memfuse-store/src/lsm.rs".to_string(),
+            line_num: 16,
+            tag_type: "REVIEW-PASS".to_string(),
+            raw: "// REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-STORE-a3f29c1d) (TS:2026-08-29T11:00:00Z) (SESSION:c9f5e2b3)".to_string(),
+            timestamp: "2026-08-29T11:00:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some("AGT-STORE-a3f29c1d".to_string()),
+            session: Some("c9f5e2b3".to_string()), // Independent session 2
+            status: Some("PASS".to_string()),
+            description: "Review 2".to_string(),
+            is_resolved: false,
+        });
+        assert!(run_check_review_coverage(&tags_diff_sessions));
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let subcommand = args.get(1).map(|s| s.as_str()).unwrap_or("sync-docs");
@@ -619,6 +990,13 @@ fn main() {
         "sync-docs" => {
             let check_only = args.iter().any(|arg| arg == "--check");
             let success = run_sync_docs(check_only);
+            if !success {
+                process::exit(1);
+            }
+        }
+        "check-review-coverage" => {
+            let tags = scan_tags("crates");
+            let success = run_check_review_coverage(&tags);
             if !success {
                 process::exit(1);
             }
