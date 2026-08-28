@@ -1,6 +1,8 @@
 # MemFuse — Jules Agent Context
 > Version: 1.0 | Stand: 2026-08-26 | Permanent Ambient Context für Jules Sessions
 >
+> ⚠️ **WICHTIGE FRISCHEGARANTIE**: Diese Datei kann veraltet sein (statischer Snapshot). Vor Nutzung IMMER gegen `WORKING_STATE.md` (autogeneriert, aktueller) und den tatsächlichen Code gegenprüfen. Bei Widerspruch gilt `WORKING_STATE.md` + Code, nicht diese Datei.
+>
 > Diese Datei wird ZUSÄTZLICH zu AGENTS.md gelesen. Sie enthält jules-spezifische
 > Kontext-Informationen, die den allgemeinen AGENTS.md-Regeln übergeordnet sind.
  

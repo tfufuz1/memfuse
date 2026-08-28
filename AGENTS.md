@@ -36,6 +36,9 @@ Die vollständige, automatisch aktuell gehaltene Crate-Tabelle und DAG-Topologie
 - **WAL HMAC key**: ALWAYS via `load_or_create_integrity_key()` — NEVER hardcoded
 - **AI-TAG & ID Schema**: Alle neuen Tags verwenden das hash-basierte Schema `AGT-<CRATE>-<8-hex-hash>` (z.B. `AGT-STORE-a3f29c1d`). Bestehende `AGT-<CRATE>-NNN` IDs haben Bestandsschutz.
 - **Tag-Zeitstempel- & Session-Pflicht**: Alle `AI-TAG`, `ANCHOR` und `REVIEW-PASS` Kommentare tragen zwingend sekundengenaue ISO-8601-UTC-Zeitstempel im Format `(TS: YYYY-MM-DDTHH:MM:SSZ)` und das `(SESSION: <8-hex-hash>)` Token (siehe `rules/tag_taxonomy.md`).
+- **Trait-Default-Pflichttest**: Für jedes `pub trait` mit einer Default-Methode-Implementierung MUSS im selben PR, der einen neuen Implementor dieses Traits hinzufügt, ein Integrationstest existieren, der beweist, dass die Default-Implementierung NICHT still greift (entweder weil sie explizit überschrieben wurde, oder weil ein Test explizit den Default-Fehlerpfad als erwartetes, dokumentiertes Verhalten prüft). Referenz im Code: `capability_coverage` in `crates/memfuse-core/src/traits.rs` (prüft z.B. `VectorIndex::search_at` & `GraphIndex::traverse_at`).
+- **Typ-Dopplungs-Prävention**: Vor Anlegen eines neuen Typs oder Traits: `docs/TYPE_REGISTRY.md` nach ähnlichem Namen/Zweck durchsuchen. Bei Kollision: bestehenden Typ erweitern statt Duplikat anlegen, oder Kollision explizit per ADR begründen.
+- **Audit-Finding-Verifikation**: Jeder Finding aus einem extern zugelieferten Audit-Dokument oder Prompt MUSS vor Implementierung am AKTUELLEN Quellcode gegengelesen werden (siehe `.jules/AUDIT_INTAKE_PROTOCOL.md`). Falls der Finding nicht mehr zutrifft (Code bereits geändert, Test existiert bereits, Fix bereits gemerged): Finding im PR-Kommentar/Log explizit als "entkräftet" markieren mit Begründung — NICHT stillschweigend ignorieren und NICHT blind implementieren.
 
 ## 5. Judgment Boundaries
 
@@ -83,4 +86,6 @@ Jede Sitzung MUSS mit folgendem enden — VOR dem letzten Commit:
 | `docs/SOURCE_OF_TRUTH.md` | Checking crate status, inventory, architecture topology |
 | `docs/ARCHITECTURE.md` | Understanding layer boundaries, invariant status |
 | `DECISIONS.md` | Before any architectural change |
+| `docs/TYPE_REGISTRY.md` | Register central domain types & traits before creating new ones |
+| `.jules/AUDIT_INTAKE_PROTOCOL.md` | Verifying incoming external audit findings before implementation |
 | `rules/*.md` | Domain-specific rules (SIMD safety, WAL crypto, testing, etc.) |

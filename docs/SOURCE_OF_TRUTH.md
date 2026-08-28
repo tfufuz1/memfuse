@@ -13,6 +13,8 @@
 | `docs/SOURCE_OF_TRUTH.md` | Produktstrategie, Roadmap, Entscheidungskontext (WARUM) | Manuell (Strategie) + automatischer Inventar-Abschnitt |
 | `WORKING_STATE.md` | Nur Session-zu-Session-Handoff: was ist gerade offen | **Automatisch generiert** aus Tags, minimal manueller Zusatz |
 | `DECISIONS.md` | ADR-Log, chronologisch, append-only | Manuell |
+| `docs/TYPE_REGISTRY.md` | Zentrales Typ- und Trait-Register (Kollisionsschutz) | Manuell + xtask-referenziert |
+| `.jules/AUDIT_INTAKE_PROTOCOL.md` | Protokoll zur Verifikation externer Audit-Befunde | Manuell |
 | `rules/*.md` | Domänenspezifische Detailregeln (SIMD, Crypto, Testing) | Manuell |
 
 ---

@@ -96,8 +96,21 @@ else
     exit 1
 fi
 
-OPEN_TAGS=$(grep -rn 'AI-TAG\[SMELL\]\[CRITICAL\]' crates/ --include='*.rs' 2>/dev/null | grep -v RESOLVED | wc -l || echo "0")
+OPEN_TAGS=$(grep -rn 'AI-TAG\[SMELL\]\[CRITICAL\]' crates/ --include='*.rs' 2>/dev/null | grep -v RESOLVED | wc -l | tr -d ' ')
 echo "  ✅ Open AI-TAG[SMELL][CRITICAL]: $OPEN_TAGS (target: 0)"
+
+OPEN_BLOCKERS=$(grep -rn "AI-TAG\[.*\]\[BLOCKER\]\|ANCHOR\[.*\] STATUS:BLOCKER" crates/ --include='*.rs' 2>/dev/null | grep -v RESOLVED | wc -l | tr -d ' ')
+if [ "$OPEN_BLOCKERS" -gt 0 ]; then
+    echo "  ⚠️ HARD GATE: $OPEN_BLOCKERS open BLOCKER tags found in codebase!"
+    if [ "${ALLOW_OPEN_BLOCKERS:-0}" = "1" ] || [ "${JULES_FIX_BLOCKER:-0}" = "1" ]; then
+        echo "  ⚠️ Bypassing BLOCKER gate (ALLOW_OPEN_BLOCKERS=1 or JULES_FIX_BLOCKER=1 set)."
+    else
+        echo "  ❌ HARD GATE FAILURE: Active BLOCKER tags exist. Set ALLOW_OPEN_BLOCKERS=1 or JULES_FIX_BLOCKER=1 if this session is explicitly targeting blocker fixes."
+        exit 1
+    fi
+else
+    echo "  ✅ Open BLOCKER tags: 0"
+fi
 
 if grep -q "axum" crates/memfuse-mcp/Cargo.toml 2>/dev/null; then
     echo "  ❌ CRITICAL: axum found in memfuse-mcp! Violates ADR-010"
