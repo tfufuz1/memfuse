@@ -1,4 +1,14 @@
-//! Checkpoint-Registry für Time-Travel und MVCC-basiertes Snapshotting.
+//! Checkpoint-Registry für Time-Travel und MVCC-basiertes Snapshotting (gemäß ADR-011).
+//!
+//! # Öffentliche Checkpoint-Subsystem Architecture (ADR-011)
+//! `memfuse-checkpoint` ist der **einzige öffentlich sichtbare Einstiegspunkt** für das Checkpoint-Konzept.
+//! Es stellt den Trait [`memfuse_core::traits::CheckpointCoordinator`], die Registrie [`PersistentCheckpointStore`]
+//! sowie den RAII-Guard [`CheckpointGuard`] für automatisches Rollback bei Fehlern bereit.
+//!
+//! **Hinweis zur Abgrenzung:**
+//! Das Crate `memfuse-store` besitzt ein lokales, crate-internes Checkpoint-Modul (`pub(crate)`). Dieses ist ein reines
+//! Implementierungsdetail für MVCC-Snapshot-Pinning (gekoppelt an `SnapshotRegistry`) und darf NIEMALS direkt von außerhalb
+//! des Store-Crates verwendet werden.
 //!
 //! # Architektur
 //! `PersistentCheckpointStore` delegiert Persistenz an ein [`memfuse_core::StorageEngine`]-Objekt

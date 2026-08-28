@@ -1,7 +1,14 @@
-//! Native State Checkpointing (Time-Travel Debugging).
+//! Native State Checkpointing (Crate-internal MVCC Snapshot-Pinning).
 //!
-//! AUDIT:2026-05-23 STATUS:IMPLEMENTED (P0 Remediation)
-//! Enables exact state reconstruction of an SAOS database at any given transaction ID.
+//! # Architektur & Sichtbarkeit
+//! Dieser Modul ist strikt crate-intern (`pub(crate)`). Er bietet LSM-spezifisches Snapshot-Pinning
+//! und TxId-skopierte Transactional Rollbacks für MVCC.
+//!
+//! WARNUNG: Dieser Typ darf NIEMALS außerhalb von `memfuse-store` exportiert oder direkt verwendet werden.
+//! Für die öffentliche Checkpoint-API (benannte Checkpoints, Trait-basierter `CheckpointCoordinator`, RAII `CheckpointGuard`)
+//! ist gemäß ADR-011 ausschließlich `memfuse-checkpoint` zu verwenden.
+
+#![allow(dead_code)]
 
 // DECISION-REF: ADR-011 — Consolidated Checkpoint Subsystem Architecture
 // DECISION-REF: ADR-015 — Integration von RAII CheckpointGuard in memfuse-checkpoint (AGT-CKPT-001 / AGT-STORE-002)
@@ -13,33 +20,33 @@ use std::sync::Arc;
 
 /// Represents a Point-in-Time snapshot of the agent's memory state.
 #[derive(Debug, Clone)]
-pub struct StateCheckpoint {
-    pub tx_id: TxId,
-    pub timestamp_ms: u64,
+pub(crate) struct StateCheckpoint {
+    pub(crate) tx_id: TxId,
+    pub(crate) timestamp_ms: u64,
 }
 
 /// RAII Guard that rolls back a checkpoint if not explicitly committed.
 /// Prevents transaction leaks if the process panics or drops early.
-pub struct CheckpointGuard {
+pub(crate) struct CheckpointGuard {
     checkpoint: Option<StateCheckpoint>,
     storage: Arc<LsmStorage>,
 }
 
 impl CheckpointGuard {
-    pub fn new(checkpoint: StateCheckpoint, storage: Arc<LsmStorage>) -> Self {
+    pub(crate) fn new(checkpoint: StateCheckpoint, storage: Arc<LsmStorage>) -> Self {
         Self {
             checkpoint: Some(checkpoint),
             storage,
         }
     }
 
-    pub fn checkpoint(&self) -> Result<&StateCheckpoint> {
+    pub(crate) fn checkpoint(&self) -> Result<&StateCheckpoint> {
         self.checkpoint
             .as_ref()
             .ok_or_else(|| MemFuseError::Internal("Checkpoint already consumed".into()))
     }
 
-    pub fn commit(mut self) -> Result<StateCheckpoint> {
+    pub(crate) fn commit(mut self) -> Result<StateCheckpoint> {
         self.checkpoint
             .take()
             .ok_or_else(|| MemFuseError::Internal("Checkpoint already consumed".into()))
@@ -64,20 +71,20 @@ impl Drop for CheckpointGuard {
 }
 
 /// The Checkpointer manages WAL replay bounds for deterministic time-travel.
-pub struct Checkpointer {
+pub(crate) struct Checkpointer {
     storage: Arc<LsmStorage>,
 }
 
 impl Checkpointer {
     /// Creates a new Checkpointer.
-    pub fn new(storage: Arc<LsmStorage>) -> Self {
+    pub(crate) fn new(storage: Arc<LsmStorage>) -> Self {
         Self { storage }
     }
 
     /// Records a new checkpoint at the current transaction ID marking an agent step.
     /// Returns a RAII guard that will rollback the state if dropped without commit.
     // DECISION-REF: AGT-STORE-001 resolved — SystemTime error propagated via Result instead of unwrap_or_default()
-    pub fn create_checkpoint(&self, tx_id: TxId) -> Result<CheckpointGuard> {
+    pub(crate) fn create_checkpoint(&self, tx_id: TxId) -> Result<CheckpointGuard> {
         let timestamp_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| MemFuseError::Storage(format!("System clock error: {}", e)))?
@@ -91,7 +98,7 @@ impl Checkpointer {
 
     /// Rolls the database state back to a specific checkpoint.
     /// This is the foundation for Time-Travel Debugging in SAOS.
-    pub async fn rollback_to(&self, checkpoint: &StateCheckpoint) -> Result<()> {
+    pub(crate) async fn rollback_to(&self, checkpoint: &StateCheckpoint) -> Result<()> {
         tracing::info!(
             "Initiating Time-Travel Rollback to TX: {}",
             checkpoint.tx_id
