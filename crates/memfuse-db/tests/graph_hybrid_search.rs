@@ -151,12 +151,34 @@ async fn test_hybrid_search_with_ppr_strategy() {
     let col = db.collection("ppr-hybrid-test").await.expect("col");
 
     // Insert chain of documents: doc_a -> doc_b -> doc_c
-    col.insert("doc_a", &[1.0, 0.0, 0.0, 0.0], Some(json!({"text": "document A"}))).await.expect("insert doc_a");
-    col.insert("doc_b", &[0.0, 0.0, 0.0, 1.0], Some(json!({"text": "unrelated content B"}))).await.expect("insert doc_b");
-    col.insert("doc_c", &[0.0, 0.0, 1.0, 0.0], Some(json!({"text": "unrelated content C"}))).await.expect("insert doc_c");
+    col.insert(
+        "doc_a",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(json!({"text": "document A"})),
+    )
+    .await
+    .expect("insert doc_a");
+    col.insert(
+        "doc_b",
+        &[0.0, 0.0, 0.0, 1.0],
+        Some(json!({"text": "unrelated content B"})),
+    )
+    .await
+    .expect("insert doc_b");
+    col.insert(
+        "doc_c",
+        &[0.0, 0.0, 1.0, 0.0],
+        Some(json!({"text": "unrelated content C"})),
+    )
+    .await
+    .expect("insert doc_c");
 
-    col.relate("doc_a", "doc_b", "rel").await.expect("relate a->b");
-    col.relate("doc_b", "doc_c", "rel").await.expect("relate b->c");
+    col.relate("doc_a", "doc_b", "rel")
+        .await
+        .expect("relate a->b");
+    col.relate("doc_b", "doc_c", "rel")
+        .await
+        .expect("relate b->c");
 
     let anchor_eid = EntityId::from_key("doc_a").expect("anchor doc_a");
 
@@ -174,10 +196,17 @@ async fn test_hybrid_search_with_ppr_strategy() {
             Some(&[anchor_eid]),
             None,
             Some(&ppr_strategy),
+            None,
         )
         .await
         .expect("hybrid_search_with_strategy");
 
-    assert!(results.iter().any(|r| r.id == "doc_b"), "doc_b should be retrieved via PPR graph signal");
-    assert!(results.iter().any(|r| r.id == "doc_c"), "doc_c should be retrieved via PPR multi-hop graph signal");
+    assert!(
+        results.iter().any(|r| r.id == "doc_b"),
+        "doc_b should be retrieved via PPR graph signal"
+    );
+    assert!(
+        results.iter().any(|r| r.id == "doc_c"),
+        "doc_c should be retrieved via PPR multi-hop graph signal"
+    );
 }

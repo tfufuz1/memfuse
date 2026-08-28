@@ -91,7 +91,10 @@ pub(crate) fn compute_ppr(
     }
 
     // Validate config parameters defensively
-    let damping = if config.damping_factor.is_nan() || config.damping_factor <= 0.0 || config.damping_factor >= 1.0 {
+    let damping = if config.damping_factor.is_nan()
+        || config.damping_factor <= 0.0
+        || config.damping_factor >= 1.0
+    {
         0.85
     } else {
         config.damping_factor
@@ -188,11 +191,26 @@ mod tests {
         }
 
         // 1 -> 2 -> 3 -> 4 -> 5 -> 1
-        graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "next")).await.unwrap(); // unwrap allowed
-        graph.add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(3), "next")).await.unwrap(); // unwrap allowed
-        graph.add_edge(tx, Edge::new(EntityId::new(3), EntityId::new(4), "next")).await.unwrap(); // unwrap allowed
-        graph.add_edge(tx, Edge::new(EntityId::new(4), EntityId::new(5), "next")).await.unwrap(); // unwrap allowed
-        graph.add_edge(tx, Edge::new(EntityId::new(5), EntityId::new(1), "next")).await.unwrap(); // unwrap allowed
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "next"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(3), "next"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(3), EntityId::new(4), "next"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(4), EntityId::new(5), "next"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(5), EntityId::new(1), "next"))
+            .await
+            .unwrap(); // unwrap allowed
         graph.commit(tx).await.unwrap(); // unwrap allowed
 
         let config = PprConfig {
@@ -202,7 +220,10 @@ mod tests {
         };
 
         let seed = EntityId::new(1);
-        let results = graph.personalized_page_rank(&[seed], &config).await.unwrap(); // unwrap allowed
+        let results = graph
+            .personalized_page_rank(&[seed], &config)
+            .await
+            .unwrap(); // unwrap allowed
 
         assert_eq!(results.len(), 5);
 
@@ -211,7 +232,7 @@ mod tests {
         let d = 0.85f32;
         let denom = 1.0 - d.powi(5);
         let expected_r1 = (1.0 - d) * 1.0 / denom; // ~0.26964
-        let expected_r2 = (1.0 - d) * d / denom;   // ~0.22920
+        let expected_r2 = (1.0 - d) * d / denom; // ~0.22920
         let expected_r3 = (1.0 - d) * d.powi(2) / denom; // ~0.19482
         let expected_r4 = (1.0 - d) * d.powi(3) / denom; // ~0.16559
         let expected_r5 = (1.0 - d) * d.powi(4) / denom; // ~0.14075
@@ -244,15 +265,27 @@ mod tests {
         }
 
         // 1 -> 2 -> 3 (Node 3 has out-degree 0, dead-end/dangling)
-        graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "edge")).await.unwrap(); // unwrap allowed
-        graph.add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(3), "edge")).await.unwrap(); // unwrap allowed
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "edge"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(3), "edge"))
+            .await
+            .unwrap(); // unwrap allowed
         graph.commit(tx).await.unwrap(); // unwrap allowed
 
         let config = PprConfig::default();
-        let results = graph.personalized_page_rank(&[EntityId::new(1)], &config).await.unwrap(); // unwrap allowed
+        let results = graph
+            .personalized_page_rank(&[EntityId::new(1)], &config)
+            .await
+            .unwrap(); // unwrap allowed
 
         let sum: f32 = results.iter().map(|(_, score)| score).sum();
-        assert!((sum - 1.0).abs() < 1e-4, "PPR rank mass must conserve to 1.0 despite dangling nodes, got {sum}");
+        assert!(
+            (sum - 1.0).abs() < 1e-4,
+            "PPR rank mass must conserve to 1.0 despite dangling nodes, got {sum}"
+        );
     }
 
     #[tokio::test]
@@ -267,22 +300,50 @@ mod tests {
                 .unwrap(); // unwrap allowed
         }
 
-        graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "rel")).await.unwrap(); // unwrap allowed
-        graph.add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(3), "rel")).await.unwrap(); // unwrap allowed
-        graph.add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(4), "rel")).await.unwrap(); // unwrap allowed
-        graph.add_edge(tx, Edge::new(EntityId::new(3), EntityId::new(4), "rel")).await.unwrap(); // unwrap allowed
-        graph.add_edge(tx, Edge::new(EntityId::new(4), EntityId::new(5), "rel")).await.unwrap(); // unwrap allowed
-        graph.add_edge(tx, Edge::new(EntityId::new(5), EntityId::new(6), "rel")).await.unwrap(); // unwrap allowed
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "rel"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(3), "rel"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(4), "rel"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(3), EntityId::new(4), "rel"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(4), EntityId::new(5), "rel"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(5), EntityId::new(6), "rel"))
+            .await
+            .unwrap(); // unwrap allowed
         graph.commit(tx).await.unwrap(); // unwrap allowed
 
         let config = PprConfig::default();
-        let run1 = graph.personalized_page_rank(&[EntityId::new(1)], &config).await.unwrap(); // unwrap allowed
-        let run2 = graph.personalized_page_rank(&[EntityId::new(1)], &config).await.unwrap(); // unwrap allowed
+        let run1 = graph
+            .personalized_page_rank(&[EntityId::new(1)], &config)
+            .await
+            .unwrap(); // unwrap allowed
+        let run2 = graph
+            .personalized_page_rank(&[EntityId::new(1)], &config)
+            .await
+            .unwrap(); // unwrap allowed
 
         assert_eq!(run1.len(), run2.len());
         for (a, b) in run1.iter().zip(run2.iter()) {
             assert_eq!(a.0, b.0);
-            assert_eq!(a.1.to_bits(), b.1.to_bits(), "Float scores must be bit-identical across runs");
+            assert_eq!(
+                a.1.to_bits(),
+                b.1.to_bits(),
+                "Float scores must be bit-identical across runs"
+            );
         }
     }
 
@@ -299,22 +360,37 @@ mod tests {
         }
 
         // Cycle 1 <-> 2 <-> 3 <-> 4
-        graph.add_bidirectional(tx, EntityId::new(1), EntityId::new(2), "edge").await.unwrap(); // unwrap allowed
-        graph.add_bidirectional(tx, EntityId::new(2), EntityId::new(3), "edge").await.unwrap(); // unwrap allowed
-        graph.add_bidirectional(tx, EntityId::new(3), EntityId::new(4), "edge").await.unwrap(); // unwrap allowed
+        graph
+            .add_bidirectional(tx, EntityId::new(1), EntityId::new(2), "edge")
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_bidirectional(tx, EntityId::new(2), EntityId::new(3), "edge")
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_bidirectional(tx, EntityId::new(3), EntityId::new(4), "edge")
+            .await
+            .unwrap(); // unwrap allowed
         graph.commit(tx).await.unwrap(); // unwrap allowed
 
         let config = PprConfig {
             damping_factor: 0.85,
-            max_iterations: 5, // Capped to 5 iterations
+            max_iterations: 5,          // Capped to 5 iterations
             convergence_epsilon: 1e-15, // Unreachable tolerance forces iter cap
         };
 
         let start_time = std::time::Instant::now();
-        let results = graph.personalized_page_rank(&[EntityId::new(1)], &config).await.unwrap(); // unwrap allowed
+        let results = graph
+            .personalized_page_rank(&[EntityId::new(1)], &config)
+            .await
+            .unwrap(); // unwrap allowed
         let elapsed = start_time.elapsed();
 
         assert!(!results.is_empty());
-        assert!(elapsed.as_millis() < 500, "Max iterations ceiling must terminate execution promptly without hanging");
+        assert!(
+            elapsed.as_millis() < 500,
+            "Max iterations ceiling must terminate execution promptly without hanging"
+        );
     }
 }

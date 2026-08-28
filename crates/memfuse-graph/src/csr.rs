@@ -107,6 +107,10 @@ pub(crate) struct GraphInner {
     pub(crate) targets: Vec<InternalIndex>,
     /// CSR weights array: contiguous list of edge weights.
     pub(crate) weights: Vec<f32>,
+    /// CSR valid_froms array: validity start TxId per edge.
+    pub(crate) valid_froms: Vec<Option<TxId>>,
+    /// CSR valid_tos array: validity end TxId per edge.
+    pub(crate) valid_tos: Vec<Option<TxId>>,
 
     /// Staging for entities not yet committed, grouped by TxId.
     staged_entities: HashMap<TxId, HashMap<EntityId, Entity>>,
@@ -171,7 +175,8 @@ impl GraphInner {
         let mut new_offsets = Vec::with_capacity(num_nodes + 1);
         let mut new_targets = Vec::with_capacity(self.targets.len() + self.pending_edge_count);
         let mut new_weights = Vec::with_capacity(self.weights.len() + self.pending_edge_count);
-        let mut new_valid_froms = Vec::with_capacity(self.valid_froms.len() + self.pending_edge_count);
+        let mut new_valid_froms =
+            Vec::with_capacity(self.valid_froms.len() + self.pending_edge_count);
         let mut new_valid_tos = Vec::with_capacity(self.valid_tos.len() + self.pending_edge_count);
 
         let mut current_offset = 0;
@@ -448,16 +453,17 @@ impl CsrGraph {
         let edge_entries = storage.scan_prefix(GRAPH_EDGE_PREFIX).await?;
         let mut edge_count = 0usize;
         for (raw_key, raw_value) in edge_entries {
-            let (weight, valid_from, valid_to) = match bincode::deserialize::<PersistedEdgePayload>(&raw_value) {
-                Ok(p) => (p.weight, p.valid_from, p.valid_to),
-                Err(_) => {
-                    // Backward compatibility fallback for legacy serialized f32 weight values
-                    let w: f32 = bincode::deserialize(&raw_value).map_err(|e| {
-                        MemFuseError::Internal(format!("graph edge deserialize: {e}"))
-                    })?;
-                    (w, None, None)
-                }
-            };
+            let (weight, valid_from, valid_to) =
+                match bincode::deserialize::<PersistedEdgePayload>(&raw_value) {
+                    Ok(p) => (p.weight, p.valid_from, p.valid_to),
+                    Err(_) => {
+                        // Backward compatibility fallback for legacy serialized f32 weight values
+                        let w: f32 = bincode::deserialize(&raw_value).map_err(|e| {
+                            MemFuseError::Internal(format!("graph edge deserialize: {e}"))
+                        })?;
+                        (w, None, None)
+                    }
+                };
 
             // Key-Format: "__graph:edge:{from_id}:{to_id}"
             let key_payload = raw_key
@@ -769,6 +775,120 @@ impl GraphIndex for CsrGraph {
         self.compact();
         let inner = self.inner.read();
         Ok(crate::ppr::compute_ppr(&inner, seed_nodes, config))
+    }
+
+    async fn traverse_at_time(
+        &self,
+        start: EntityId,
+        max_hops: usize,
+        as_of: TxId,
+    ) -> Result<Vec<(EntityId, f32)>> {
+        let inner = self.inner.read();
+        let start_idx = match inner.id_map.get(&start) {
+            Some(&idx) => idx,
+            None => return Ok(Vec::new()),
+        };
+
+        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
+            return Ok(Vec::new());
+        }
+
+        let effective_max = (max_hops as u8).min(MAX_TRAVERSAL_HOPS);
+
+        let mut visited: HashMap<InternalIndex, f32> = HashMap::new();
+        let mut queue: VecDeque<(InternalIndex, u8, f32)> = VecDeque::new();
+
+        queue.push_back((start_idx, 0, 1.0));
+
+        while let Some((node_idx, hop, current_score)) = queue.pop_front() {
+            if hop > effective_max {
+                continue;
+            }
+
+            let existing = visited.entry(node_idx).or_insert(0.0);
+            if current_score > *existing {
+                *existing = current_score;
+            }
+
+            if hop < effective_max {
+                // 1. CSR traversal (compacted edges)
+                if node_idx < inner.offsets.len() - 1 {
+                    let start_edge = inner.offsets[node_idx];
+                    let end_edge = inner.offsets[node_idx + 1];
+
+                    for edge_idx in start_edge..end_edge {
+                        let neighbor_idx = inner.targets[edge_idx];
+                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
+                            continue;
+                        }
+                        if let Some(vf) = inner.valid_froms.get(edge_idx).copied().flatten() {
+                            if as_of < vf {
+                                continue;
+                            }
+                        }
+                        if let Some(vt) = inner.valid_tos.get(edge_idx).copied().flatten() {
+                            if as_of >= vt {
+                                continue;
+                            }
+                        }
+                        let weight = inner.weights[edge_idx];
+                        let next_score = current_score * SCORE_DECAY * weight;
+
+                        if (!visited.contains_key(&neighbor_idx)
+                            || visited[&neighbor_idx] < next_score)
+                            && inner
+                                .entities
+                                .get(neighbor_idx)
+                                .is_some_and(|e| e.is_some())
+                        {
+                            queue.push_back((neighbor_idx, hop + 1, next_score));
+                        }
+                    }
+                }
+
+                // 2. Delta buffer traversal (uncompacted committed edges)
+                if let Some(pending) = inner.pending_edges.get(&node_idx) {
+                    for edge in pending {
+                        let neighbor_idx = edge.target;
+                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
+                            continue;
+                        }
+                        if let Some(vf) = edge.valid_from {
+                            if as_of < vf {
+                                continue;
+                            }
+                        }
+                        if let Some(vt) = edge.valid_to {
+                            if as_of >= vt {
+                                continue;
+                            }
+                        }
+                        let next_score = current_score * SCORE_DECAY * edge.weight;
+
+                        if (!visited.contains_key(&neighbor_idx)
+                            || visited[&neighbor_idx] < next_score)
+                            && inner
+                                .entities
+                                .get(neighbor_idx)
+                                .is_some_and(|e| e.is_some())
+                        {
+                            queue.push_back((neighbor_idx, hop + 1, next_score));
+                        }
+                    }
+                }
+            }
+        }
+
+        visited.remove(&start_idx);
+
+        let mut results: Vec<(EntityId, f32)> = visited
+            .into_iter()
+            .filter_map(|(idx, score)| inner.reverse_map.get(idx).map(|&id| (id, score)))
+            .collect();
+
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        Ok(results)
     }
 
     async fn traverse(&self, start: EntityId, max_hops: usize) -> Result<Vec<(EntityId, f32)>> {
@@ -1965,7 +2085,10 @@ mod tests {
                     msg
                 );
             }
-            other => panic!("Expected PolicyViolation referencing ADR-024, got: {:?}", other),
+            other => panic!(
+                "Expected PolicyViolation referencing ADR-024, got: {:?}",
+                other
+            ),
         }
     }
 
@@ -2018,38 +2141,33 @@ mod tests {
             .unwrap(); // unwrap
 
         let valid_until = TxId::new(100);
-        let edge = Edge::new(id1, id2, "valid_rel")
-            .with_validity(Some(TxId::new(10)), Some(valid_until));
+        let edge =
+            Edge::new(id1, id2, "valid_rel").with_validity(Some(TxId::new(10)), Some(valid_until));
 
         graph.add_edge(tx_setup, edge).await.unwrap(); // unwrap
         graph.commit(tx_setup).await.unwrap(); // unwrap
 
         // 1. Before valid_from (< 10) -> Should NOT return edge
-        let res_before = graph
-            .traverse_at_time(id1, 1, TxId::new(9))
-            .await
-            .unwrap(); // unwrap
-        assert!(res_before.is_empty(), "Edge must not be valid before valid_from (9 < 10)");
+        let res_before = graph.traverse_at_time(id1, 1, TxId::new(9)).await.unwrap(); // unwrap
+        assert!(
+            res_before.is_empty(),
+            "Edge must not be valid before valid_from (9 < 10)"
+        );
 
         // 2. Exactly at valid_from (10) -> MUST return edge
-        let res_from = graph
-            .traverse_at_time(id1, 1, TxId::new(10))
-            .await
-            .unwrap(); // unwrap
+        let res_from = graph.traverse_at_time(id1, 1, TxId::new(10)).await.unwrap(); // unwrap
         assert_eq!(res_from.len(), 1, "Edge must be valid at valid_from (10)");
 
         // 3. One step before valid_to (valid_until - 1 = 99) -> MUST return edge
-        let res_before_to = graph
-            .traverse_at_time(id1, 1, TxId::new(99))
-            .await
-            .unwrap(); // unwrap
-        assert_eq!(res_before_to.len(), 1, "Edge must be valid at valid_to - 1 (99)");
+        let res_before_to = graph.traverse_at_time(id1, 1, TxId::new(99)).await.unwrap(); // unwrap
+        assert_eq!(
+            res_before_to.len(),
+            1,
+            "Edge must be valid at valid_to - 1 (99)"
+        );
 
         // 4. Exactly at valid_to (valid_until = 100) -> MUST NOT return edge
-        let res_at_to = graph
-            .traverse_at_time(id1, 1, valid_until)
-            .await
-            .unwrap(); // unwrap
+        let res_at_to = graph.traverse_at_time(id1, 1, valid_until).await.unwrap(); // unwrap
         assert!(
             res_at_to.is_empty(),
             "Edge must NOT be valid at exact valid_to boundary (100)"
@@ -2060,21 +2178,22 @@ mod tests {
             .traverse_at_time(id1, 1, TxId::new(101))
             .await
             .unwrap(); // unwrap
-        assert!(res_after_to.is_empty(), "Edge must NOT be valid after valid_to (101)");
+        assert!(
+            res_after_to.is_empty(),
+            "Edge must NOT be valid after valid_to (101)"
+        );
 
         // 6. Test compacted CSR path boundary behavior
         graph.compact();
 
-        let res_compact_valid = graph
-            .traverse_at_time(id1, 1, TxId::new(99))
-            .await
-            .unwrap(); // unwrap
-        assert_eq!(res_compact_valid.len(), 1, "Compacted edge must be valid at 99");
+        let res_compact_valid = graph.traverse_at_time(id1, 1, TxId::new(99)).await.unwrap(); // unwrap
+        assert_eq!(
+            res_compact_valid.len(),
+            1,
+            "Compacted edge must be valid at 99"
+        );
 
-        let res_compact_invalid = graph
-            .traverse_at_time(id1, 1, valid_until)
-            .await
-            .unwrap(); // unwrap
+        let res_compact_invalid = graph.traverse_at_time(id1, 1, valid_until).await.unwrap(); // unwrap
         assert!(
             res_compact_invalid.is_empty(),
             "Compacted edge must NOT be valid at 100"
@@ -2105,6 +2224,10 @@ mod tests {
             .traverse_at_time(id1, 1, TxId::new(500))
             .await
             .unwrap(); // unwrap
-        assert_eq!(res.len(), 1, "Unbounded edge must be valid at any point in time");
+        assert_eq!(
+            res.len(),
+            1,
+            "Unbounded edge must be valid at any point in time"
+        );
     }
 }
