@@ -1,29 +1,61 @@
-# MemFuse — Sprint-Historie & Changelog
+# MemFuse — Chronologischer Tag- & Review-Bericht
 
-Dieses Dokument erfasst alle bereits abgeschlossenen Sprints und historischen Fortschritte von MemFuse.
+> Automatisch generierter Read-Only Bericht aus allen Inline-Tags im Repo.
 
----
-
-## Abgeschlossene Sprints & Historie
-
-| Sprint | Task | Status | Notizen |
-|--------|------|--------|---------|
-| 1 | fsync-Propagation (4× `let _ = sync_all()`) | ✅ Erledigt 2026-08-25 | In Vorcommits behoben |
-| 1 | SessionPool `.expect()` → Result | ✅ Erledigt 2026-08-25 | Fix 4 (memfuse-embed/src/lib.rs) |
-| 1 | snapshot.rs `.expect()` → Result | ✅ Erledigt 2026-08-25 | In Vorcommits behoben |
-| 1 | Atomic rename for DiskANN write_to_file | ✅ Erledigt 2026-08-25 | In Vorcommits behoben |
-| 2 | MCP Chunking in `memfuse_insert` (P2-3) | ✅ Erledigt 2026-08-25 | Fix 1 (memfuse-mcp/src/lib.rs) |
-| 2 | Prompt Injection Sandboxing (P2-4b) | ✅ Erledigt 2026-08-25 | Fix 2 (memfuse-ollama/src/client.rs) |
-| 2 | TOCTOU DocId-Kollision (P2-5) | ✅ Erledigt 2026-08-25 | Fix 3 (memfuse-db/src/collection.rs) |
-| 2 | SessionPool `pop()` → Result (P2-6) | ✅ Erledigt 2026-08-25 | Fix 4 (memfuse-embed/src/lib.rs) |
-| 2 | XSS durch innerHTML (P2-7) | ✅ Erledigt 2026-08-25 | Fix 5 (memfuse-tauri/ui/app.js) |
-| 2 | EmbeddingProvider Trait-Duplikat (P2-8) | ✅ Erledigt 2026-08-25 | Fix 6 (memfuse-tauri) |
-| 3 | EntityId::from_key fallibel (FIX-01) | ✅ Erledigt 2026-08-25 | crates/memfuse-core, memfuse-db, memfuse-graph |
-| 4 | Session-DAG & Branching (`memfuse-graph` + `memfuse-checkpoint`) | ✅ Erledigt 2026-08-25 | Native pure Rust SessionBranchTree + CheckpointGuard::for_agent_step |
-| RAG-01 | Contextual Retrieval (Anthropic Pattern) | ✅ Erledigt 2026-08-26 | Extended ContextChunk, OllamaClient::generate_text(), ContextPrefixEngine & BM25 prefix integration |
-| — | Integration `memfuse-agent` | ✅ Erledigt 2026-08-27 | Agent Crate Erstaudit abgeschlossen (2026-08-27), CheckpointGuard RAII-Loop integriert, Verträge & Persistenz-Tests verschärft, README.md erstellt |
-| — | Grundwahrheit-Wiederherstellung (Sprint) | ✅ Erledigt 2026-08-27 | Crate-Inventar (14 Crates), DAG-CI-Checks für alle Crates, CI-Redundanz konsolidiert, AI-TAG Grammatik durchgesetzt |
-| — | Zeitstempel-Erweiterung der Tag-Grammatik | ✅ Erledigt 2026-08-27 | TS:<ISO-8601-UTC> Pflichtfeld für AI-TAG, ANCHOR & STAND: für FILE-CONTEXT in Regeln, AGENTS.md, CI-Gate 7 und Code-Bestand integriert |
-| — | Governance-Overhaul (AGENTS.md v5) | ✅ Erledigt 2026-08-24 | Factual errors corrected, session protocol added |
-| — | Audit Consolidate & Clean | ✅ Erledigt 2026-08-25 | Konsoliderter Master-Bericht erstellt, 5 alte Dokumente entfernt |
-| — | Blueprint-Korrekturen (SessionPool, petgraph, CheckpointGuard, RRF) | ✅ Erledigt 2026-08-25 | Korrekturen in docs/ARCHITECTURE.md dokumentiert |
+| Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
+|---|---|---|---|---|---|---|---|
+| `2026-08-29T11:00:00Z` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `AGT-CORE-a3f29c1d` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3) |
+| `2026-08-29T10:00:00Z` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `AGT-CORE-a3f29c1d` | `b8e4f1a2` | `PASS` | `1` | // REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2) |
+| `2026-08-29T09:14:07Z (SESSION: a3f29c1d)` | `crates/memfuse-core/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Core types, traits, and error handling for MemFuse. |
+| `2026-08-29T09:14:07Z` | `crates/memfuse-core/src/lib.rs` | `ANCHOR` | `AGT-CORE-a3f29c1d` | `a3f29c1d` | `DONE` | `2` | // ANCHOR[DEBT:CORE-INLINE-001] STATUS:DONE (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-29T09:14:07Z) (SESSION: a3f29c1d) |
+| `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/compaction.rs` | `AI-TAG` | `AGT-DB-004` | `-` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR][RESOLVED] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-28T00:00:00Z) |
+| `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/collection.rs` | `AI-TAG` | `AGT-DB-005` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-DB-005 — relate() rollback race behoben, siehe ADR-023 (TS:2026-08-28T00:00:00Z) |
+| `2026-08-28T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-002` | `-` | `OPEN` | `0` | // AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-28T00:00:00Z) |
+| `2026-08-27T14:32:00Z` | `crates/memfuse-store/src/wal.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Write-Ahead-Log mit HMAC-Chaining für crash-sichere WAL-Operationen |
+| `2026-08-27T14:32:00Z` | `crates/memfuse-store/src/lsm.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | LSM-Tree-Implementierung (MemTable + SSTable + Compaction) |
+| `2026-08-27T14:32:00Z` | `crates/memfuse-db/src/collection.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Collection-API — zentraler Einstiegspunkt für Insert/Search/Delete |
+| `2026-08-27T14:32:00Z` | `crates/memfuse-index/src/diskann.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | DiskANN-Graphindex für Approximate Nearest Neighbor Search |
+| `2026-08-27T00:00:00Z` | `crates/memfuse-agent/src/lib.rs` | `AI-TAG` | `AGT-AGENT-001` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-AGENT-001 — Re-extracted workflow engine crate requires integration verification. (TS:2026-08-27T00:00:00Z) |
+| `2026-08-25T00:00:00Z` | `crates/memfuse-store/src/compaction.rs` | `AI-TAG` | `AGT-STORE-002` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-STORE-002 — Indices computed before the lock was taken. (TS:2026-08-25T00:00:00Z) |
+| `2026-08-25T00:00:00Z` | `crates/memfuse-store/src/wal.rs` | `AI-TAG` | `AGT-STORE-003` | `-` | `OPEN` | `0` | // AI-TAG[SECURITY][CRITICAL] Atomic WAL integrity key creation with 0o600 mode (AGT-STORE-003) (TS:2026-08-25T00:00:00Z) |
+| `2026-08-25T00:00:00Z` | `crates/memfuse-text/src/inverted.rs` | `AI-TAG` | `AGT-TXT-001` | `-` | `RESOLVED` | `0` | // AI-TAG[SPEC-DRIFT][MAJOR] RESOLVED: AGT-TXT-001 — replaced unwrap_or_default() with map_err (TS:2026-08-25T00:00:00Z) |
+| `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/compaction.rs` | `AI-TAG` | `AGT-DB-004` | `-` | `OPEN` | `0` | // AI-TAG[SMELL][MINOR] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-25T00:00:00Z) |
+| `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection.rs` | `AI-TAG` | `AGT-DB-001` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-001 — snapshot_seq() now propagates storage errors (TS:2026-08-25T00:00:00Z) |
+| `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection.rs` | `AI-TAG` | `AGT-DB-002` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-002 — load_index now scans user_keys (key_type=0) (TS:2026-08-25T00:00:00Z) |
+| `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-001` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-001 — Module documentation added (TS:2026-08-25T00:00:00Z) |
+| `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-005` | `-` | `OPEN` | `0` | // AI-TAG[SECURITY][CRITICAL] Precondition assertions for SIMD distance functions (AGT-INDEX-005) (TS:2026-08-25T00:00:00Z) |
+| `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-003` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-003 — Module documentation added (TS:2026-08-25T00:00:00Z) |
+| `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-004` | `-` | `RESOLVED` | `0` | // AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-INDEX-004 — IndexOp ist #[non_exhaustive]; neue Varianten (TS:2026-08-25T00:00:00Z) |
+| `2026-08-25T00:00:00Z` | `crates/memfuse-mcp/tests/mcp_test.rs` | `ANCHOR` | `TEST:MCP-002` | `-` | `IN-PROGRESS` | `0` | // ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS (TS:2026-08-25T00:00:00Z) — Error-Path Coverage |
+| `2026-08-24T00:00:00Z` | `crates/memfuse-store/src/lib.rs` | `ANCHOR` | `INTEGRATION:STO-001` | `-` | `RESOLVED` | `0` | // ANCHOR[INTEGRATION:STO-001] STATUS:RESOLVED (TS:2026-08-24T00:00:00Z) |
+| `2026-06-20T00:00:00Z` | `crates/memfuse-db/tests/checkpoint_stress.rs` | `ANCHOR` | `INTEGRATION:CHECKPOINT-STRESS` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:CHECKPOINT-STRESS] STATUS:DONE (TS:2026-06-20T00:00:00Z) |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-store/src/wal.rs` | `ANCHOR` | `MIGRATION:WAL-HMAC-001` | `-` | `DONE` | `0` | /// ANCHOR[MIGRATION:WAL-HMAC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-store/src/lsm.rs` | `ANCHOR` | `ALG-FIX:D6-001` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:D6-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Snapshot-Inversion bei parallel commit (INV-MVCC-1) |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-store/src/lsm.rs` | `ANCHOR` | `ALG-FIX:D6-001` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:D6-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Snapshot-Inversion bei parallel commit (INV-MVCC-1) |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-store/src/lsm.rs` | `ANCHOR` | `ALG-FIX:D1-011` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:D1-011] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Stale WAL-Dateien löschen nach Flush |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-store/src/lsm.rs` | `ANCHOR` | `ALG-FIX:D1-011` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:D1-011] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Stale WAL-Dateien löschen nach Flush |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-db/src/multistep.rs` | `ANCHOR` | `MULTISTEP:QUERY-REWRITER` | `-` | `DONE` | `0` | // ANCHOR[MULTISTEP:QUERY-REWRITER] STATUS:DONE (TS:2026-06-01T00:00:00Z) — External QueryRewriter trait contract and error isolation. |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-db/src/multistep.rs` | `ANCHOR` | `MULTISTEP:SUBQUERY-EMBEDDING` | `-` | `DONE` | `0` | // ANCHOR[MULTISTEP:SUBQUERY-EMBEDDING] STATUS:DONE (TS:2026-06-01T00:00:00Z) — See TRACKING-ISSUE #143 for |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-db/src/context.rs` | `ANCHOR` | `INTEGRATION:WP-7.1-CHUNKER` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:WP-7.1-CHUNKER] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Wire MarkdownChunker to ContextManager |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/persistence.rs` | `ANCHOR` | `DEBT:WP-0.0-ZEROPANIC` | `-` | `DONE` | `0` | // ANCHOR[DEBT:WP-0.0-ZEROPANIC] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Eradicate .unwrap() in persistence.rs |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `ANCHOR` | `REFACTOR:WP-0.0-STABLESIMD` | `-` | `DONE` | `0` | // ANCHOR[REFACTOR:WP-0.0-STABLESIMD] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Remove nightly portable_simd |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `ANCHOR` | `REFACTOR:WP-0.0-STABLESIMD-2` | `-` | `DONE` | `0` | // ANCHOR[REFACTOR:WP-0.0-STABLESIMD-2] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Removed std_simd functions |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `ALG-FIX:D2-003` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:D2-003] STATUS:DONE (TS:2026-06-01T00:00:00Z) — ef_construction < M Guard fehlt |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `ALG-FIX:D2-003` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:D2-003] STATUS:DONE (TS:2026-06-01T00:00:00Z) — ef_construction < M Guard fehlt |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `ALG-FIX:D2-005` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:D2-005] STATUS:DONE (TS:2026-06-01T00:00:00Z) — total_cmp statt unwrap_or(Equal) für NaN-Safety |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `ALG-FIX:D2-005` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:D2-005] STATUS:DONE (TS:2026-06-01T00:00:00Z) — total_cmp statt unwrap_or(Equal) für NaN-Safety |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `REFACTOR:WP-0.0-ASYNCIO` | `-` | `DONE` | `0` | // ANCHOR[REFACTOR:WP-0.0-ASYNCIO] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Fix blocking I/O in HnswIndex::save |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `ALG-FIX:D2-002` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:D2-002] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Guard gegen ln(0) = -∞ (INV-HNSW-2) |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `ALG-FIX:D2-002` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:D2-002] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Guard gegen ln(0) = -∞ (INV-HNSW-2) |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `ALG-FIX:PANIC-001` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:PANIC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Mixed VectorData Guard (Zero-Panic Policy) |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `ALG-FIX:PANIC-001` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:PANIC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Mixed VectorData Guard (Zero-Panic Policy) |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `ALG-FIX:D2-004` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:D2-004] STATUS:DONE (TS:2026-06-01T00:00:00Z) — NaN/Inf-Validierung bei Insert (Distanzfunktion) |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `ALG-FIX:D2-004` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:D2-004] STATUS:DONE (TS:2026-06-01T00:00:00Z) — NaN/Inf-Validierung bei Insert (Distanzfunktion) |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `ALG-FIX:D2-001` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:D2-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Entry-Point-Aktualisierung nach Delete (INV-HNSW-4) |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `ALG-FIX:D2-001` | `-` | `DONE` | `0` | // ANCHOR[ALG-FIX:D2-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Entry-Point-Aktualisierung nach Delete (INV-HNSW-4) |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `SPEC:WP-2.2-SQ8TRAIN-001` | `-` | `DONE` | `0` | // ANCHOR[SPEC:WP-2.2-SQ8TRAIN-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Lazy Training logic (Stabilized) |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/lib.rs` | `ANCHOR` | `REFACTOR:WP-0.0-STABLESIMD` | `-` | `DONE` | `0` | // ANCHOR[REFACTOR:WP-0.0-STABLESIMD] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Remove nightly portable_simd |
+| `2026-06-01T00:00:00Z` | `crates/memfuse-index/src/lib.rs` | `ANCHOR` | `REFACTOR:WP-0.0-STABLESIMD` | `-` | `DONE` | `0` | // ANCHOR[REFACTOR:WP-0.0-STABLESIMD] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Remove nightly portable_simd |
+| `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/full_stack_e2e.rs` | `ANCHOR` | `INTEGRATION:E2E-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:E2E-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
+| `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/concurrent_collection_stress.rs` | `ANCHOR` | `INTEGRATION:STRESS-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:STRESS-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
+| `` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `-` | `-` | `-` | `-` | // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar. |

@@ -6,7 +6,8 @@
 //! Replaces stale tool outputs and long conversation histories with compact status tokens
 //! to preserve the LLM context window.
 
-use memfuse_core::{ContextChunk, DocId, TokenBudget};
+use memfuse_core::{ContextChunk, DocId, Result, TokenBudget};
+use memfuse_ollama::OllamaClient;
 
 /// Strategie für Context Compaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +29,8 @@ pub struct CompactedContext {
     pub status_tokens: Vec<StatusToken>,
     /// Verbrauchte Tokens.
     pub tokens_used: usize,
+    /// Quell-Dokument-IDs.
+    pub source_doc_ids: Vec<DocId>,
 }
 
 /// Kompakter Stellvertreter für einen oder mehrere kompaktierte Chunks.
@@ -113,6 +116,7 @@ impl ContextCompactor {
             }
         }
 
+        let source_doc_ids = retained.iter().map(|c| c.doc_id).collect();
         CompactedContext {
             retained_chunks: retained,
             status_tokens,

@@ -15,12 +15,13 @@ graph TD
     D --> E[Schleife 5: Periodischer Drift-Audit]
     E --> F[Schleife 6: ADR-Pflicht]
     F --> G[Schleife 7: Rollentrennung Planer/Implementierer]
-    G --> H[Erfolgreicher Commit/Done]
+    G --> H[Schleife 8: Mehrfach-Review]
+    H --> I[Erfolgreicher Commit/Done]
 ```
 
 ---
 
-## 2. Die sieben Schleifen im Detail
+## 2. Die acht Schleifen im Detail
 
 ### Schleife 1: Prä-Generierungs-Verifikation (Read-Before-Write)
 *   **API-Halluzinations-Schutz**: Bevor eine Methode, ein Struct, eine Funktion oder ein Crate-Export verwendet wird, muss der Pfad der API geöffnet und die exakte Signatur gelesen werden.
@@ -51,6 +52,16 @@ graph TD
     1.  **Planer**: Dokumentiert nicht-triviale Entscheidungen in `DECISIONS.md` (ADR) und wartet auf Genehmigung.
     2.  **Implementierer**: Arbeitet den priorisierten Backlog aus `docs/SOURCE_OF_TRUTH.md` ab.
     3.  **Verifizierer**: Führt `just triple-test` aus und aktualisiert den Status in `docs/SOURCE_OF_TRUTH.md`.
+
+### Schleife 8: Mehrfach-Review (Unabhängige Session-Prüfdurchläufe)
+*   **Mehrfach-Session-Pflicht**: Jede nicht-triviale Implementierung (mehr als 1 Datei, Public API, `unsafe`, Crypto, WAL oder Concurrency) erfordert MINDESTENS 2 (Standard) bzw. 3 (für `AGENTS.md §5 ASK`-sicherheitskritische Bereiche) `REVIEW-PASS`-Einträge mit `STATUS:PASS` von unterschiedlichen `SESSION:`-Hashes, bevor ein `ANCHOR` auf `STATUS:DONE` gesetzt werden darf.
+*   **Unabhängigkeitsgebot**: Jeder `REVIEW-PASS` MUSS aus einer frischen Jules-Sitzung stammen (`PRÜFER-KONTEXT: FRESH`). Kein Agent darf eigene Änderungen selbst abzeichnen.
+*   **Grammatik**:
+    ```rust
+    // REVIEW-PASS[N/M] STATUS:PASS|FAIL|CONDITIONAL (ID: AGT-<CRATE>-<hash>) (TS: YYYY-MM-DDTHH:MM:SSZ) (SESSION: <hash>)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: Detaillierte Prüfungsergebnisse.
+    ```
 
 ---
 
