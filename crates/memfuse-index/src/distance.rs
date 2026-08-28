@@ -51,7 +51,7 @@ use std::arch::x86_64::*;
 
 /// Computes distance between two vectors using the specified metric.
 #[inline]
-// AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-25T00:00:00Z)
+// AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-28T00:00:00Z)
 // Standardize SIMD distance metrics on Stable Rust, preventing panic in hardware fallbacks.
 // Fallbacks MUST be verified to prevent Zero-Panic violations.
 pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse_core::Result<f32> {
