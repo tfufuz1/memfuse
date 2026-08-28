@@ -72,21 +72,21 @@ impl Default for CsrGraphConfig {
 type InternalIndex = usize;
 
 /// Inner state of the CsrGraph to manage contiguous storage.
-struct GraphInner {
+pub(crate) struct GraphInner {
     /// Mapping from public EntityId to internal contiguous index.
     id_map: HashMap<EntityId, InternalIndex>,
     /// Mapping from internal index back to EntityId.
-    reverse_map: Vec<EntityId>,
+    pub(crate) reverse_map: Vec<EntityId>,
     /// Entity metadata stored contiguously.
-    entities: Vec<Option<Entity>>,
+    pub(crate) entities: Vec<Option<Entity>>,
 
     /// CSR offsets array: offsets[i] is the start index in `targets` for node `i`.
     /// Length is nodes + 1.
-    offsets: Vec<usize>,
+    pub(crate) offsets: Vec<usize>,
     /// CSR targets array: contiguous list of neighbor internal indices.
-    targets: Vec<InternalIndex>,
+    pub(crate) targets: Vec<InternalIndex>,
     /// CSR weights array: contiguous list of edge weights.
-    weights: Vec<f32>,
+    pub(crate) weights: Vec<f32>,
 
     /// Staging for entities not yet committed, grouped by TxId.
     staged_entities: HashMap<TxId, HashMap<EntityId, Entity>>,
@@ -97,7 +97,7 @@ struct GraphInner {
     /// Edges that have been committed but not yet compacted into CSR arrays (delta buffer).
     pending_edges: HashMap<InternalIndex, Vec<(InternalIndex, f32)>>,
     /// Tombstoned edges that have been removed and should be excluded during compaction and traversal.
-    tombstoned_edges: HashSet<(InternalIndex, InternalIndex)>,
+    pub(crate) tombstoned_edges: HashSet<(InternalIndex, InternalIndex)>,
     /// Total number of uncompacted edges currently in `pending_edges`.
     pending_edge_count: usize,
     /// Flag indicating if there are uncompacted pending edges or modifications.
@@ -249,6 +249,10 @@ impl CsrGraph {
             storage: Some(storage),
             last_tx_id: AtomicU64::new(0),
         }
+    }
+
+    pub(crate) fn inner_read(&self) -> parking_lot::RwLockReadGuard<'_, GraphInner> {
+        self.inner.read()
     }
 
     /// Sets or replaces the persistent storage handle.
@@ -1877,7 +1881,10 @@ mod tests {
                     msg
                 );
             }
-            other => panic!("Expected PolicyViolation referencing ADR-024, got: {:?}", other),
+            other => panic!(
+                "Expected PolicyViolation referencing ADR-024, got: {:?}",
+                other
+            ),
         }
     }
 

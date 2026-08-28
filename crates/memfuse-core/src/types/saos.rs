@@ -1,4 +1,4 @@
-use super::domain::DocId;
+use super::domain::{DocId, EntityId};
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
@@ -194,6 +194,8 @@ pub struct HybridQuery {
     pub fusion_weights: FusionWeights,
     /// Optional metadata expression filter.
     pub filter: Option<FilterExpr>,
+    /// Optional entity ID to filter/boost results in the same community.
+    pub same_community_as: Option<EntityId>,
     /// Maximum number of search results to return.
     pub k: usize,
 }
@@ -213,6 +215,7 @@ pub struct HybridQueryBuilder {
     graph_start_node: Option<String>,
     fusion_weights: Option<FusionWeights>,
     filter: Option<FilterExpr>,
+    same_community_as: Option<EntityId>,
     k: Option<usize>,
 }
 
@@ -252,6 +255,12 @@ impl HybridQueryBuilder {
         self
     }
 
+    /// Sets the community context entity filter/boost.
+    pub fn with_same_community_as(mut self, entity_id: EntityId) -> Self {
+        self.same_community_as = Some(entity_id);
+        self
+    }
+
     /// Sets the top-K limit for the query.
     pub fn with_k(mut self, k: usize) -> Self {
         self.k = Some(k);
@@ -277,6 +286,7 @@ impl HybridQueryBuilder {
                 },
             ),
             filter: self.filter,
+            same_community_as: self.same_community_as,
             k: self.k.unwrap_or(10),
         })
     }

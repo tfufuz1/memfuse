@@ -14,8 +14,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod community;
 pub mod csr;
 pub mod session_dag;
 
+pub use community::{detect_communities, CommunityAssignment, CommunityDetectionConfig};
 pub use csr::CsrGraph;
 pub use session_dag::{AgentStateNode, DagEdge, NodeIdx, SessionBranchTree};
