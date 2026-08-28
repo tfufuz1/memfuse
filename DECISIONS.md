@@ -388,25 +388,10 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
     - Hinzufügen expliziter Integrationstests, die das dokumentierte Verhalten absichern.
 
 ---
----
 
-## ADR-026: Personalized PageRank (PPR) Graph Retrieval
-*   **Datum**: 2026-08-28
-*   **Status**: ✅ Final
-*   **Entscheidung**:
-    1. Implementierung von Personalized PageRank (PPR) als eigenständige, deterministische Power-Iterations-Methode auf der bestehenden CSR-Struktur (`CsrGraph`) in `crates/memfuse-graph/src/ppr.rs` ohne externe Bibliotheken (wie `petgraph`).
-    2. Ergänzung von `PprConfig` und des Trait-Methoden-Contracts `personalized_page_rank` an `GraphIndex` in `memfuse-core`.
-    3. Integration von PPR in `HybridQuery` (`memfuse-core`) und `Collection::hybrid_search_with_strategy` (`memfuse-db`) über die additiv wählbare `GraphTraversalStrategy` (`Hops` vs `PersonalizedPageRank`). Standardverhalten bleibt unverändert `GraphTraversalStrategy::Hops` (3 Hops BFS decay).
-*   **Alternativen**:
-    - **Option A (In-Tree `petgraph` Dependency)**: Verwendung von `petgraph` für PageRank. Verworfen, da `petgraph` eine Konvertierung/Kopie des CSR-Graphen erzwingen würde (Speicher- & Latenz-Overhead) und unkontrollierte Nicht-Determinismen einbringen könnte.
-    - **Option B (`traverse` überschreiben)**: Ersetzung von BFS-Traversierung in `traverse()`. Verworfen, da BFS-Hop-Traversierung und PPR grundlegend unterschiedliche Retrieval-Semantiken besitzen (Hop-Distanz vs. Stationärverteilung eines Random-Walk-mit-Restart).
-*   **Begründung**:
-    - **Deterministische Konvergenz**: Die Power-Iteration auf dem CSR-Format verwendet eine explizite L1-Norm-Abbruchbedingung (`convergence_epsilon: 1e-6`) und eine harte Obergrenze (`max_iterations: 100`). Rank-Masse an Sackgassen-Knoten (Sackgassen / out-degree 0) wird gleichmäßig auf die Restart-Menge redistribuiert, um die stochastische Matrix-Eigenschaft zu wahren. Tie-Breaking über sekundäre Sortierung nach `EntityId` garantiert bitidentische Ergebnisse über mehrere Läufe.
-    - **Zero-Panic / Zero-Hang**: Harte Abbruchschranken verhindern Endlosschleifen selbst auf pathologischen Graphen.
-    - **Ruckfreie 4-Signal-Integration**: PPR ist als `GraphTraversalStrategy::PersonalizedPageRank` in `HybridQuery` und `Collection` nahtlos nutzbar und speist seine Ränge direkt in die Reciprocal Rank Fusion (RRF) ein.
+## ADR-027: Label Propagation für Community Detection & GraphRAG
 
----
-
+*   **Datum**: 2026-08-27
 ## ADR-026: Personalized PageRank (PPR) Graph Retrieval
 *   **Datum**: 2026-08-28
 *   **Status**: ✅ Final
@@ -428,36 +413,21 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 *   **Datum**: 2026-08-28
 *   **Status**: ✅ Final
+*   **Kontext**: Für Phase 3 ("Community Detection & GraphRAG") wird eine Methode zur semantischen Clusterbildung von Wissensgraph-Knoten benötigt. Das Ergebnis (Community-Zuordnung pro EntityId) soll asynchron als Batch-Prozess berechnet, im Storage unter `__graph:community:<entity_id>` abgelegt und beim Retrieval gelesen werden.
 *   **Entscheidung**:
-    - Der öffentliche Edge-Typ in `memfuse-core` (`pub struct Edge`) wird additiv um `valid_from: Option<TxId>` und `valid_to: Option<TxId>` mit `#[serde(default)]` erweitert.
-    - `valid_from = None` signalisiert "seit jeher gültig", `valid_to = None` signalisiert "weiterhin gültig".
-    - `TxId` wird ausnahmslos als Träger der fachlichen Zeitachsen verwendet (Einhaltung des `SystemTime`-Verbots gemäß AGENTS.md Abschnitt 4).
-    - Der `GraphIndex`-Trait erhält die Methode `traverse_at_time(&self, start: EntityId, max_hops: usize, as_of: TxId) -> Result<Vec<(EntityId, f32)>>` mit Fail-Safe Default-Implementierung `Err(MemFuseError::PolicyViolation(...))`.
-    - `CsrGraph` implementiert `traverse_at_time` konkret: Traversierung filtert Kanten heraus, für die `as_of < valid_from` oder `valid_to.is_some_and(|t| as_of >= t)` gilt.
+    - Wahl des **Label-Propagation-Algorithmus (LPA)** anstelle von Louvain.
+    - Vollständig deterministische Ausführung durch fixierten RNG-Seed für Knoten-Shuffling und ein striktes Tie-Breaking: Bei relativer oder absoluter Gleichheit von Label-Gewichten gewinnt das kleinstmögliche `EntityId` (numerischer `u64`-Wert).
+    - Implementierung direkt auf der bestehenden `CsrGraph`-Struktur in `memfuse-graph::community` ohne zusätzliche externe Abhängigkeiten.
+    - Persolidierung im LSM-Storage über `Collection::run_community_detection()` mit strenger TxId-Allokation (`self.allocate_tx()`).
+    - Anbindung an das Retrieval über `HybridQuery::same_community_as`, welches Kandidaten derselben Community vor der RRF-Fusion filtert bzw. verstärkt.
 *   **Alternativen**:
-    - Verwendung von Wall-Clock timestamps (`SystemTime` / Unix Nanos). Verworfen, da `SystemTime` im gesamten Workspace für Sequenzierung strikt verboten ist (AGENTS.md).
-    - Anlegen eines separaten `TemporalEdge`-Typs. Verworfen, um Typ-Explosion zu vermeiden und abwärtskompatible Deserialisierung Altdaten über `#[serde(default)]` zu sichern.
-*   **Begründung**:
-    - Ermöglicht präzise historische Wissensgraph-Abfragen ("was galt zum Zeitpunkt TxId X") ohne Breaking Changes bei bestehenden SSTable-Daten.
+    - **Louvain-Algorithmus**: Louvain ist bei paralleler Ausführung ohne schwere Synchronisation nicht-deterministisch und erfordert komplexe Graph-Hierarchie-Strukturen.
+    - **Echtzeit-Clustering bei jeder Query**: Zu hohe Latenz und Token-Kosten, widerspricht den Zero-Latency- und Sovereign-Core-Prinzipien.
+*   **Begründung**: Label Propagation ist hochgradig speichereffizient, lässt sich nahtlos auf CSR-Arrays ausführen, ist ohne externe C/Rust-Dependencies umsetzbar und garantiert bei striktem Tie-Breaking 100%ige Reproduzierbarkeit und Zero-Panic-Sicherheit.
 *   **Konsequenzen**:
-    - `Edge`-Initialisierungen und Deserialisierung bleiben abwärtskompatibel.
-    - CSR-Graph speichert und persistiert Validitätsbereiche.
-
----
-
-## ADR-025: Runtime-Precondition Assertions in öffentlichen Low-Level-Distanzfunktionen (`memfuse-index`)
-
-*   **Datum**: 2026-08-28
-*   **Status**: ✅ Final
-*   **Kontext**: Behebung von Befund F-08 (`AGT-INDEX-005`). Die low-level Distanzfunktionen `cosine_distance`, `euclidean_distance` und `dot_product_distance` in `memfuse-index/src/distance.rs` sind `pub` exportiert. Bisher schützten sie Slice-Längengleichheiten nur via `debug_assert_eq!`, was in Release-Builds (`opt-level = 3`, LTO) entfernt wurde. Bei fehlerhaften Aufrufen mit ungleichen Slice-Längen drohte in den nachfolgenden `unsafe`-SIMD-Blöcken (AVX2/AVX512/NEON) ein stummer Out-of-Bounds Buffer-Overread (Undefined Behavior).
-*   **Entscheidung**:
-    - Ersetzung von `debug_assert_eq!(a.len(), b.len())` durch eine release-aktive Laufzeitprüfung `assert_eq!(a.len(), b.len(), "Vector lengths must match")` in allen drei öffentlichen Distanzfunktionen.
-    - Dokumentation der Vorbedingung und des Panic-Vertrags in einer expliziten Rustdoc `/// # Panics` Sektion an jeder Funktion.
-    - Autorisierung dieser Panic-Prüfung als explizit dokumentierte Ausnahme von der "No Panics in libraries"-Doktrin (CONSTITUTION.md), da es sich um die Durchsetzung von Verträgen bei low-level SIMD-Funktionen handelt, deren Signatur (`-> f32`) für Hot-Path-Performance erhalten bleiben muss.
-*   **Alternativen**:
-    - **Option A (Signaturänderung zu `-> Result<f32, ...>`)**: Verworfen, da dies signifikanten Overhead auf dem Hot-Path erzeugen und alle Aufrufer sowie Benchmarks brechen würde.
-    - **Option B (Sichtbarkeit auf `pub(crate)` reduzieren)**: Verworfen/abgewogen gegen Option 1, da `cosine_distance`, `euclidean_distance` und `dot_product_distance` als public Utility-API des `memfuse-index`-Crates etabliert sind und in Benchmarks/Tests genutzt werden.
-*   **Begründung**: Der O(1) Längen-Check ist gegenüber der O(n) SIMD-Berechnung vernachlässigbar. Die explizite Panic bei Vorbedingungsverletzung schützt zu 100% vor Undefined Behavior und Memory-Safety-Verstößen an den `unsafe` SIMD-Grenzen.
+    - Neue Datei `crates/memfuse-graph/src/community.rs`.
+    - Neuer Subcommand `run-community-detection` in `xtask`.
+    - Erweiterung von `HybridQuery` und `Collection::hybrid_search_ext`.
 
 ---
 

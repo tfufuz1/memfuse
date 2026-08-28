@@ -2,6 +2,7 @@
 *Zuletzt aktualisiert: 2026-08-28 von Jules*
 
 ## Letzte Änderungen
+- 2026-08-28: Phase 3 Community Detection & GraphRAG umgesetzt: Label-Propagation-Algorithmus in `memfuse-graph::community`, Persistierung via `Collection::run_community_detection()` unter TxId-Allokation (`__graph:community:`), Retrieval-Integration via `HybridQuery::same_community_as` (ADR-027).
 - 2026-08-28: Migration AGT-INDEX-002 in `crates/memfuse-index/src/distance.rs` geprüft: `std::simd` (`core::simd`) ist auf dem gepinnten Compiler (`rustc 1.98.0` stable) weiterhin ein unbegründetes/unsolidiertes Nightly-Feature (`portable_simd`, Issue #86656). Migration gemäß Vorgabe abgebrochen und Zeitstempel des AI-TAGs auf `2026-08-28T00:00:00Z` aktualisiert.
 - 2026-08-28: Phase 3 Community Detection & GraphRAG umgesetzt: Label-Propagation-Algorithmus in `memfuse-graph::community`, Persistierung via `Collection::run_community_detection()` unter TxId-Allokation (`__graph:community:`), Retrieval-Integration via `HybridQuery::same_community_as` (ADR-027).
 - 2026-08-28: Bi-temporale Zeitachsen (valid_from / valid_to) in `Edge` (`memfuse-core`) und `CsrGraph` (`memfuse-graph`) implementiert mit `traverse_at_time` und Grenzwert-Tests (ADR-025/ADR-023).

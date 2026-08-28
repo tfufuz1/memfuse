@@ -16,7 +16,6 @@
 
 pub mod community;
 pub mod csr;
-pub mod ppr;
 pub mod session_dag;
 
 pub use community::{detect_communities, CommunityAssignment, CommunityDetectionConfig};
