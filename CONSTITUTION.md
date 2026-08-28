@@ -75,6 +75,8 @@ A code change is complete when:
 | `DECISIONS.md` | Architecture Decision Records | Before each architectural change |
 | `docs/SOURCE_OF_TRUTH.md` | Living state: crate inventory, status | Same PR as code changes |
 | `docs/ARCHITECTURE.md` | Structural DAG reference | On topology changes |
+| `docs/TYPE_REGISTRY.md` | Central domain type & trait index | On adding/modifying core types |
+| `.jules/AUDIT_INTAKE_PROTOCOL.md` | External audit finding verification protocol | On audit ingestion rule changes |
 
 Each piece of information lives in exactly ONE location. No duplication.
 
