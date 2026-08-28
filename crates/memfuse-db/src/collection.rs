@@ -328,48 +328,77 @@ impl<S: StorageEngine> Collection<S> {
         let intents = self.storage.scan_prefix(&intent_prefix).await?;
         let recovery_tx = self.next_tx();
         let mut recovered_any = false;
+        let mut recovered_text = false;
+        let mut recovered_graph = false;
 
         for (intent_key, intent_val) in intents {
             use crate::transaction::CommitIntent;
-            if let Ok(CommitIntent::Pending { doc_ids }) =
-                serde_json::from_slice::<CommitIntent>(&intent_val)
-            {
+            if let Ok(intent_variant) = serde_json::from_slice::<CommitIntent>(&intent_val) {
+                let (doc_ids, has_text, has_graph) = match intent_variant {
+                    CommitIntent::Pending {
+                        doc_ids,
+                        has_text,
+                        has_graph,
+                    } => (doc_ids, has_text, has_graph),
+                    _ => continue,
+                };
+
                 tracing::info!(
-                    "Found pending transaction intent, recovering {} documents",
-                    doc_ids.len()
+                    "Found pending transaction intent, recovering {} documents (has_text={}, has_graph={})",
+                    doc_ids.len(),
+                    has_text,
+                    has_graph
                 );
+
                 for doc_id in doc_ids {
-                    if !indexed_ids.contains(&doc_id) {
-                        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-                        if let Some(val) = self.storage.get(&doc_key).await? {
-                            let meta_id = serde_json::from_slice::<StoredDocumentMeta>(&val)
-                                .map(|m| m.id)
-                                .ok();
+                    let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+                    if let Some(val) = self.storage.get(&doc_key).await? {
+                        let meta_id = serde_json::from_slice::<StoredDocumentMeta>(&val)
+                            .map(|m| m.id)
+                            .ok();
 
-                            let mut embedding = None;
-                            if let Some(ref id_str) = meta_id {
-                                let user_key = self.namespaced_key(id_str.as_bytes(), 0);
-                                if let Some(user_val) = self.storage.get(&user_key).await? {
-                                    if let Ok(stored) =
-                                        serde_json::from_slice::<StoredDocument>(&user_val)
-                                    {
-                                        embedding = Some(stored.embedding);
-                                    }
+                        let mut stored_doc = None;
+                        if let Some(ref id_str) = meta_id {
+                            let user_key = self.namespaced_key(id_str.as_bytes(), 0);
+                            if let Some(user_val) = self.storage.get(&user_key).await? {
+                                if let Ok(stored) =
+                                    serde_json::from_slice::<StoredDocument>(&user_val)
+                                {
+                                    stored_doc = Some(stored);
                                 }
                             }
+                        }
 
-                            // Fallback for legacy format where embedding was stored directly in doc_key
-                            // (or cases where user_key is not present)
-                            if embedding.is_none() {
-                                if let Ok(full) = serde_json::from_slice::<StoredDocument>(&val) {
-                                    embedding = Some(full.embedding);
-                                }
+                        if stored_doc.is_none() {
+                            if let Ok(full) = serde_json::from_slice::<StoredDocument>(&val) {
+                                stored_doc = Some(full);
                             }
+                        }
 
-                            if let Some(emb) = embedding {
-                                self.index.insert(recovery_tx, doc_id, &emb).await?;
+                        if let Some(stored) = stored_doc {
+                            if !indexed_ids.contains(&doc_id) {
+                                self.index
+                                    .insert(recovery_tx, doc_id, &stored.embedding)
+                                    .await?;
                                 repair_count += 1;
                                 recovered_any = true;
+                            }
+
+                            if has_text {
+                                if let Some(text) = extract_text(&stored.metadata) {
+                                    self.text_index
+                                        .upsert_document(recovery_tx, doc_id, &text)
+                                        .await?;
+                                    recovered_text = true;
+                                }
+                            }
+
+                            if has_graph {
+                                if let Ok(eid) = EntityId::from_key(&stored.id) {
+                                    let entity = memfuse_core::Entity::new(eid, &stored.id, "Document");
+                                    let _ = self.graph_index.add_entity(recovery_tx, entity).await;
+                                    recovered_graph = true;
+                                }
                             }
                         }
                     }
@@ -383,10 +412,17 @@ impl<S: StorageEngine> Collection<S> {
         if recovered_any {
             self.index.commit(recovery_tx).await?;
         }
+        if recovered_text {
+            self.text_index.commit(recovery_tx).await?;
+        }
+        if recovered_graph {
+            self.graph_index.commit(recovery_tx).await?;
+        }
 
         // 2. Fallback: Full scan for documents missing from index (FIND-DB-004: Parallel Batching)
         let fallback_tx = self.next_tx();
         let mut fallback_any = false;
+        let mut fallback_text = false;
 
         for (namespaced_key, value) in docs {
             // Only process user data (key_type 0)
@@ -418,10 +454,25 @@ impl<S: StorageEngine> Collection<S> {
                 repair_count += 1;
                 fallback_any = true;
             }
+
+            // Ensure text index coverage
+            if let Some(text) = extract_text(&stored.metadata) {
+                if let Ok(bm25_res) = self.text_index.search_bm25(&text, 1, None).await {
+                    if !bm25_res.iter().any(|(id, _)| *id == doc_id) {
+                        self.text_index
+                            .upsert_document(fallback_tx, doc_id, &text)
+                            .await?;
+                        fallback_text = true;
+                    }
+                }
+            }
         }
 
         if fallback_any {
             self.index.commit(fallback_tx).await?;
+        }
+        if fallback_text {
+            self.text_index.commit(fallback_tx).await?;
         }
 
         if repair_count > 0 {
@@ -621,9 +672,15 @@ impl<S: StorageEngine> Collection<S> {
 
         self.index.insert(tx, doc_id, embedding).await?;
 
-        // Index text if present
+        // Stage text if present
         if let Some(text) = extract_text(&metadata) {
-            self.text_index.upsert_document(tx, doc_id, &text).await?;
+            db_tx.stage_text_insert(doc_id, text);
+        }
+
+        // Stage graph entity
+        if let Ok(eid) = EntityId::from_key(id) {
+            let entity = memfuse_core::Entity::new(eid, id, "Document");
+            db_tx.stage_graph_entity(entity);
         }
 
         Ok(())
@@ -794,8 +851,8 @@ impl<S: StorageEngine> Collection<S> {
 
         let user_key = self.namespaced_key(id.as_bytes(), 0);
 
-        // Remove from old text index
-        self.text_index.delete_document(tx, doc_id).await?;
+        // Stage removal from old text index
+        db_tx.stage_text_delete(doc_id);
 
         let mut metadata = metadata;
         let text_opt = extract_text(&metadata);
@@ -817,11 +874,15 @@ impl<S: StorageEngine> Collection<S> {
 
         db_tx.record_keys(user_key, doc_key, doc_id);
 
-        // Re-insert into text index if new text present
+        // Stage re-insertion into text index if new text present
         if let Some(new_text) = extract_text(&metadata) {
-            self.text_index
-                .upsert_document(tx, doc_id, &new_text)
-                .await?;
+            db_tx.stage_text_insert(doc_id, new_text);
+        }
+
+        // Stage graph entity update
+        if let Ok(eid) = EntityId::from_key(id) {
+            let entity = memfuse_core::Entity::new(eid, id, "Document");
+            db_tx.stage_graph_entity(entity);
         }
 
         // Re-insert into HNSW
@@ -864,8 +925,8 @@ impl<S: StorageEngine> Collection<S> {
 
         let user_key = self.namespaced_key(id.as_bytes(), 0);
 
-        // Remove from old text index
-        self.text_index.delete_document(tx, doc_id).await?;
+        // Stage removal from old text index
+        db_tx.stage_text_delete(doc_id);
 
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
 
@@ -887,11 +948,10 @@ impl<S: StorageEngine> Collection<S> {
 
     // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-DB-005 — relate() rollback race behoben, siehe ADR-023 (TS:2026-08-28T00:00:00Z)
     /// Creates a directional relationship between two documents in the collection.
-    // LIMITATION: Cross-engine 2-Phase Commit between LSM Storage and CSR Graph uses single TxId with compensating rollback on failure.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
         let _guard = self.insert_lock.lock().await;
-        let tx = self.allocate_tx();
+        let db_tx = self.begin_transaction();
 
         let from_id = memfuse_core::EntityId::from_key(from)?;
         let to_id = memfuse_core::EntityId::from_key(to)?;
@@ -905,65 +965,25 @@ impl<S: StorageEngine> Collection<S> {
         });
         let bytes = serde_json::to_vec(&val)?;
 
-        if let Err(e) = self.storage.put(tx, &key, &bytes).await {
-            self.rollback_relate(tx, false, &key).await;
+        if let Err(e) = self.storage.put(db_tx.tx_id, &key, &bytes).await {
+            let _ = db_tx.rollback().await;
             return Err(e);
         }
+
+        let dummy_doc_id = DocId::from_key(from)?;
+        db_tx.record_keys(key.clone(), vec![], dummy_doc_id);
 
         let from_entity = memfuse_core::Entity::new(from_id, from, "Node");
         let to_entity = memfuse_core::Entity::new(to_id, to, "Node");
-        if let Err(e) = self.graph_index.add_entity(tx, from_entity).await {
-            self.rollback_relate(tx, false, &key).await;
-            return Err(e);
-        }
-        if let Err(e) = self.graph_index.add_entity(tx, to_entity).await {
-            self.rollback_relate(tx, false, &key).await;
-            return Err(e);
-        }
+        db_tx.stage_graph_entity(from_entity);
+        db_tx.stage_graph_entity(to_entity);
 
         let edge = memfuse_core::Edge::new(from_id, to_id, label);
-        if let Err(e) = self.graph_index.add_edge(tx, edge).await {
-            self.rollback_relate(tx, false, &key).await;
-            return Err(e);
-        }
+        db_tx.stage_graph_edge(edge);
 
-        if let Err(e) = self.storage.commit(tx).await {
-            self.rollback_relate(tx, false, &key).await;
-            return Err(e);
-        }
-
-        if let Err(e) = self.graph_index.commit(tx).await {
-            self.rollback_relate(tx, true, &key).await;
-            return Err(e);
-        }
-
-        Ok(())
-    }
-
-    async fn rollback_relate(&self, tx: TxId, storage_committed: bool, key: &[u8]) {
-        if storage_committed {
-            // Option A (ADR-023): Storage was committed physically.
-            // Discarding TxBuffer is a no-op. Execute a compensating delete transaction.
-            let rollback_tx = self.allocate_tx();
-            if let Err(e) = self.storage.delete(rollback_tx, key).await {
-                tracing::error!(
-                    tx_id = ?tx,
-                    rollback_tx_id = ?rollback_tx,
-                    "[INV-DB-3] Failed to stage compensating delete during relate rollback: {e}"
-                );
-            } else if let Err(e) = self.storage.commit(rollback_tx).await {
-                tracing::error!(
-                    tx_id = ?tx,
-                    rollback_tx_id = ?rollback_tx,
-                    "[INV-DB-3] Failed to commit compensating delete during relate rollback: {e}"
-                );
-            }
-        } else if let Err(e) = self.storage.rollback(tx).await {
-            tracing::error!(tx_id = ?tx, "Failed to rollback storage during relate: {e}");
-        }
-
-        if let Err(e) = self.graph_index.rollback(tx).await {
-            tracing::error!(tx_id = ?tx, "Failed to rollback graph index during relate: {e}");
+        match db_tx.commit().await {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e),
         }
     }
 

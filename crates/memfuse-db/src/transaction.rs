@@ -1,8 +1,9 @@
 //! # Database Transactions
 //!
 //! This module provides `DbTransaction`, an orchestrator for atomic multi-index commits
-//! between the LSM-Tree storage engine (`memfuse-store`) and the HNSW vector index (`memfuse-index`).
-//! It implements a 2-phase commit protocol and provides compensating transactions for rollbacks.
+//! between LSM-Tree storage engine (`memfuse-store`), HNSW vector index (`memfuse-index`),
+//! BM25 inverted text index (`memfuse-text`), and CSR graph index (`memfuse-graph`).
+//! It implements a 4-index 2-phase commit protocol and provides compensating transactions for rollbacks.
 //!
 //! # Safety & Reliability Invariants
 //! - **[INV-DB-3] Strict Error Visibility in Rollbacks**: Compensating transactions during
@@ -10,7 +11,10 @@
 //!   any rollback failure must log explicitly to `tracing::error!` mapping out a potential Split-Brain.
 
 use crate::Collection;
-use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, TxId, VectorIndex};
+use memfuse_core::{
+    DocId, Edge, Entity, EntityId, GraphIndex, MemFuseError, Result, StorageEngine, TextIndex,
+    TxId, VectorIndex,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
@@ -18,20 +22,32 @@ use std::sync::Mutex;
 #[derive(Debug, Serialize, Deserialize)]
 pub enum CommitIntent {
     /// Transaction is in the "Prepared" state. Stored DocIds assist recovery.
-    Pending { doc_ids: Vec<DocId> },
+    Pending {
+        doc_ids: Vec<DocId>,
+        #[serde(default)]
+        has_text: bool,
+        #[serde(default)]
+        has_graph: bool,
+    },
     /// Transaction is committed across all indices.
     Committed,
     /// Transaction was aborted and compensated.
     Aborted,
 }
 
-/// A transaction wrapper that ensures atomic multi-index commits across LSM-Store and HNSW-Index.
+/// A transaction wrapper that ensures atomic multi-index commits across LSM-Store, HNSW-Index, Text-Index, and Graph-Index.
 pub struct DbTransaction<S: StorageEngine> {
     pub tx_id: TxId,
     collection: Collection<S>,
     staged_forward_keys: Mutex<Vec<Vec<u8>>>,
     staged_reverse_keys: Mutex<Vec<Vec<u8>>>,
     staged_doc_ids: Mutex<Vec<DocId>>,
+    staged_text_ops: Mutex<Vec<(DocId, String)>>,
+    staged_text_deletes: Mutex<Vec<DocId>>,
+    staged_graph_entities: Mutex<Vec<Entity>>,
+    staged_graph_edges: Mutex<Vec<Edge>>,
+    staged_graph_entity_deletes: Mutex<Vec<EntityId>>,
+    staged_graph_edge_deletes: Mutex<Vec<(EntityId, EntityId)>>,
 }
 
 impl<S: StorageEngine> DbTransaction<S> {
@@ -42,6 +58,12 @@ impl<S: StorageEngine> DbTransaction<S> {
             staged_forward_keys: Mutex::new(Vec::with_capacity(16)),
             staged_reverse_keys: Mutex::new(Vec::with_capacity(16)),
             staged_doc_ids: Mutex::new(Vec::with_capacity(16)),
+            staged_text_ops: Mutex::new(Vec::with_capacity(16)),
+            staged_text_deletes: Mutex::new(Vec::with_capacity(16)),
+            staged_graph_entities: Mutex::new(Vec::with_capacity(16)),
+            staged_graph_edges: Mutex::new(Vec::with_capacity(16)),
+            staged_graph_entity_deletes: Mutex::new(Vec::with_capacity(16)),
+            staged_graph_edge_deletes: Mutex::new(Vec::with_capacity(16)),
         }
     }
 
@@ -66,20 +88,154 @@ impl<S: StorageEngine> DbTransaction<S> {
         ids.push(doc_id);
     }
 
-    /// Commits the transaction atomically across both LSM and HNSW.
+    pub fn stage_text_insert(&self, doc_id: DocId, text: String) {
+        let mut guard = match self.staged_text_ops.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        guard.push((doc_id, text));
+    }
+
+    pub fn stage_text_delete(&self, doc_id: DocId) {
+        let mut guard = match self.staged_text_deletes.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        guard.push(doc_id);
+    }
+
+    pub fn stage_graph_entity(&self, entity: Entity) {
+        let mut guard = match self.staged_graph_entities.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        guard.push(entity);
+    }
+
+    pub fn stage_graph_edge(&self, edge: Edge) {
+        let mut guard = match self.staged_graph_edges.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        guard.push(edge);
+    }
+
+    pub fn stage_graph_entity_delete(&self, entity_id: EntityId) {
+        let mut guard = match self.staged_graph_entity_deletes.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        guard.push(entity_id);
+    }
+
+    pub fn stage_graph_edge_delete(&self, from: EntityId, to: EntityId) {
+        let mut guard = match self.staged_graph_edge_deletes.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        guard.push((from, to));
+    }
+
+    async fn commit_text_staged(&self) -> Result<()> {
+        let text_deletes = {
+            let mut guard = match self.staged_text_deletes.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            std::mem::take(&mut *guard)
+        };
+        let text_ops = {
+            let mut guard = match self.staged_text_ops.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            std::mem::take(&mut *guard)
+        };
+
+        for doc_id in text_deletes {
+            self.collection
+                .text_index
+                .delete_document(self.tx_id, doc_id)
+                .await?;
+        }
+
+        for (doc_id, text) in text_ops {
+            self.collection
+                .text_index
+                .upsert_document(self.tx_id, doc_id, &text)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn commit_graph_staged(&self) -> Result<()> {
+        let entities = {
+            let mut guard = match self.staged_graph_entities.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            std::mem::take(&mut *guard)
+        };
+        let edges = {
+            let mut guard = match self.staged_graph_edges.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            std::mem::take(&mut *guard)
+        };
+
+        for entity in entities {
+            self.collection
+                .graph_index
+                .add_entity(self.tx_id, entity)
+                .await?;
+        }
+
+        for edge in edges {
+            self.collection
+                .graph_index
+                .add_edge(self.tx_id, edge)
+                .await?;
+        }
+
+        let edge_deletes = {
+            let mut guard = match self.staged_graph_edge_deletes.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            std::mem::take(&mut *guard)
+        };
+
+        for (from, to) in edge_deletes {
+            self.collection
+                .graph_index
+                .remove_edge(self.tx_id, from, to)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Commits the transaction atomically across all 4 indices (LSM, HNSW, BM25, CSR).
     ///
-    /// Follows a 3-step sequence:
-    /// 1. Write Intent WAL entry to LSM.
-    /// 2. Commit Storage (LSM).
-    /// 3. Commit Index (HNSW).
+    /// Sequence:
+    /// PHASE 1 - PREPARE:
+    ///   a) Write CommitIntent (Pending) mit allen staged_doc_ids, has_text, has_graph → LSM
     ///
-    /// If 3 fails, it performs a compensating transaction on the LSM store.
+    /// PHASE 2 - COMMIT (reihenfolge ist kritisch!):
+    ///   b) storage.commit(tx_id)                     ← LSM (WAL + MemTable)
+    ///   c) index.commit(tx_id)                       ← HNSW
+    ///   d) text_index.commit(tx_id)                  ← BM25
+    ///   e) graph_index.commit(tx_id)                 ← CSR
+    ///
+    /// PHASE 3 - CLEANUP:
+    ///   f) CommitIntent (Committed) löschen / schreiben → LSM
     pub async fn commit(self) -> Result<()> {
         let intent_key = self
             .collection
             .namespaced_key(&self.tx_id.inner().to_le_bytes(), 3);
 
-        // 1. Prepare phase: Write intent marker with staged IDs (FIND-DB-005)
         let doc_ids = {
             let guard = match self.staged_doc_ids.lock() {
                 Ok(g) => g,
@@ -88,8 +244,50 @@ impl<S: StorageEngine> DbTransaction<S> {
             guard.clone()
         };
 
+        let has_text = {
+            let ops = match self.staged_text_ops.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            let dels = match self.staged_text_deletes.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            !ops.is_empty() || !dels.is_empty()
+        };
+
+        let has_graph = {
+            let ents = match self.staged_graph_entities.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            let edgs = match self.staged_graph_edges.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            let e_dels = match self.staged_graph_edge_deletes.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            !ents.is_empty() || !edgs.is_empty() || !e_dels.is_empty()
+        };
+
+        // Execute staged text and graph staging before prepare/commit
+        if let Err(e) = self.commit_text_staged().await {
+            let _ = self.rollback_internal().await;
+            return Err(e);
+        }
+
+        if let Err(e) = self.commit_graph_staged().await {
+            let _ = self.rollback_internal().await;
+            return Err(e);
+        }
+
+        // 1. Prepare phase: Write intent marker with staged IDs
         let intent = CommitIntent::Pending {
             doc_ids: doc_ids.clone(),
+            has_text,
+            has_graph,
         };
         let intent_bytes = serde_json::to_vec(&intent).map_err(|e| {
             MemFuseError::Transaction(format!("Failed to serialize commit intent: {}", e))
@@ -102,125 +300,77 @@ impl<S: StorageEngine> DbTransaction<S> {
 
         // 2. Commit Storage (LSM)
         if let Err(storage_err) = self.collection.storage.commit(self.tx_id).await {
-            // Roll back the index since storage failed
-            if let Err(e) = self.collection.index.rollback(self.tx_id).await {
-                tracing::error!(
-                    "[INV-DB-3] CRITICAL: Failed to rollback index during transaction abort. \
-                     Index DB split-brain possible! Error: {}",
-                    e
-                );
-            }
-            // Also explicitly rollback storage in-memory state
-            if let Err(e) = self.collection.storage.rollback(self.tx_id).await {
-                tracing::error!(
-                    "[INV-DB-3] CRITICAL: Failed to rollback storage in-memory state after commit failure. \
-                     Error: {}",
-                    e
-                );
-            }
+            let _ = self.rollback_internal().await;
             return Err(MemFuseError::Transaction(storage_err.to_string()));
         }
 
         // 3. Commit Index (HNSW)
         if let Err(index_err) = self.collection.index.commit(self.tx_id).await {
-            // Compensating transaction to rollback the LSM Storage since it's already committed
-            // Implemented Durable Retry to prevent Split-Brain (HARD-004)
-            let f_keys = {
-                let mut guard = match self.staged_forward_keys.lock() {
-                    Ok(g) => g,
-                    Err(p) => p.into_inner(),
-                };
-                std::mem::take(&mut *guard)
-            };
-            let r_keys = {
-                let mut guard = match self.staged_reverse_keys.lock() {
-                    Ok(g) => g,
-                    Err(p) => p.into_inner(),
-                };
-                std::mem::take(&mut *guard)
-            };
-
-            let mut success = false;
-            let mut attempts = 0;
-            let max_attempts = 3;
-
-            while attempts < max_attempts && !success {
-                attempts += 1;
-                let rollback_tx = TxId::new(
-                    self.collection
-                        .next_tx
-                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
-                );
-
-                let mut comp_failed = false;
-
-                for f_key in &f_keys {
-                    if let Err(e) = self.collection.storage.delete(rollback_tx, f_key).await {
-                        tracing::error!("[INV-DB-3] Compensating delete failed (forward): {}", e);
-                        comp_failed = true;
-                    }
-                }
-
-                for r_key in &r_keys {
-                    if let Err(e) = self.collection.storage.delete(rollback_tx, r_key).await {
-                        tracing::error!("[INV-DB-3] Compensating delete failed (reverse): {}", e);
-                        comp_failed = true;
-                    }
-                }
-
-                let abort_bytes = serde_json::to_vec(&CommitIntent::Aborted).unwrap_or_default();
-                if let Err(e) = self
-                    .collection
-                    .storage
-                    .put(rollback_tx, &intent_key, &abort_bytes)
-                    .await
-                {
-                    tracing::error!("[INV-DB-3] Failed to write aborted intent marker: {}", e);
-                    comp_failed = true;
-                }
-
-                if let Err(e) = self.collection.storage.commit(rollback_tx).await {
-                    tracing::error!("[INV-DB-3] Compensating commit failed: {}", e);
-                    comp_failed = true;
-                }
-
-                if !comp_failed {
-                    success = true;
-                    tracing::info!(
-                        "[INV-DB-3] Compensating transaction succeeded on attempt {}",
-                        attempts
-                    );
-                } else if attempts < max_attempts {
-                    tracing::warn!("[INV-DB-3] Compensating transaction attempt {} failed. Retrying in 100ms...", attempts);
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                }
-            }
-
-            if !success {
+            if let Err(e) = self.collection.graph_index.rollback(self.tx_id).await {
                 tracing::error!(
-                    target: "memfuse.invariant",
-                    event = "split_brain",
-                    doc_ids = ?doc_ids,
-                    "[INV-DB-3] FATAL: Compensating transaction failed after {} attempts. \
-                     Index DB potential split-brain detected! Repair-on-Open required.",
-                    max_attempts
+                    "[INV-DB-3] CRITICAL: Failed to rollback graph_index after HNSW commit failure: {}",
+                    e
                 );
             }
-
+            if let Err(e) = self.collection.text_index.rollback(self.tx_id).await {
+                tracing::error!(
+                    "[INV-DB-3] CRITICAL: Failed to rollback text_index after HNSW commit failure: {}",
+                    e
+                );
+            }
+            self.compensate_lsm(&intent_key, &doc_ids).await;
             return Err(MemFuseError::Transaction(format!(
-                "Index commit failed, storage rolled back via compensating tx. Error: {}",
+                "HNSW index commit failed, storage rolled back via compensating tx. Error: {}",
                 index_err
             )));
         }
 
-        // 4. Finalize / Cleanup
+        // 4. Commit Text Index (BM25)
+        if let Err(text_err) = self.collection.text_index.commit(self.tx_id).await {
+            if let Err(e) = self.collection.graph_index.rollback(self.tx_id).await {
+                tracing::error!(
+                    "[INV-DB-3] CRITICAL: Failed to rollback graph_index after text commit failure: {}",
+                    e
+                );
+            }
+            if let Err(e) = self.collection.text_index.rollback(self.tx_id).await {
+                tracing::error!(
+                    "[INV-DB-3] CRITICAL: Failed to rollback text_index after text commit failure: {}",
+                    e
+                );
+            }
+            // HNSW is already committed -> compensate HNSW vector deletions
+            self.compensate_hnsw(&doc_ids).await;
+            self.compensate_lsm(&intent_key, &doc_ids).await;
+            return Err(MemFuseError::Transaction(format!(
+                "Text index commit failed, storage & HNSW rolled back via compensating tx. Error: {}",
+                text_err
+            )));
+        }
+
+        // 5. Commit Graph Index (CSR)
+        if let Err(graph_err) = self.collection.graph_index.commit(self.tx_id).await {
+            if let Err(e) = self.collection.graph_index.rollback(self.tx_id).await {
+                tracing::error!(
+                    "[INV-DB-3] CRITICAL: Failed to rollback graph_index after graph commit failure: {}",
+                    e
+                );
+            }
+            self.compensate_text(&doc_ids).await;
+            self.compensate_hnsw(&doc_ids).await;
+            self.compensate_lsm(&intent_key, &doc_ids).await;
+            return Err(MemFuseError::Transaction(format!(
+                "Graph index commit failed, storage, HNSW & text index rolled back via compensating tx. Error: {}",
+                graph_err
+            )));
+        }
+
+        // 6. Finalize / Cleanup
         let cleanup_tx = TxId::new(
             self.collection
                 .next_tx
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
         );
-        // AI-NOTE: unwrap_or_default() on serde_json was a NEVER violation (AGENTS.md §3).
-        // CommitIntent::Committed is a simple unit-like variant — serialization must not fail.
         let commit_bytes = match serde_json::to_vec(&CommitIntent::Committed) {
             Ok(b) => b,
             Err(e) => {
@@ -244,20 +394,183 @@ impl<S: StorageEngine> DbTransaction<S> {
         Ok(())
     }
 
-    /// Rolls back any changes applied to the sub-systems in-memory.
-    pub async fn rollback(self) -> Result<()> {
-        let storage_res = self.collection.storage.rollback(self.tx_id).await;
-        let index_res = self.collection.index.rollback(self.tx_id).await;
+    async fn compensate_hnsw(&self, doc_ids: &[DocId]) {
+        let comp_tx = TxId::new(
+            self.collection
+                .next_tx
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+        );
+        for &doc_id in doc_ids {
+            if let Err(e) = self.collection.index.delete(comp_tx, doc_id).await {
+                tracing::error!(
+                    "[INV-DB-3] Compensating HNSW delete failed for doc_id {:?}: {}",
+                    doc_id,
+                    e
+                );
+            }
+        }
+        if let Err(e) = self.collection.index.commit(comp_tx).await {
+            tracing::error!(
+                "[INV-DB-3] Compensating HNSW commit failed: {}",
+                e
+            );
+        }
+    }
 
+    async fn compensate_text(&self, doc_ids: &[DocId]) {
+        let comp_tx = TxId::new(
+            self.collection
+                .next_tx
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+        );
+        for &doc_id in doc_ids {
+            if let Err(e) = self
+                .collection
+                .text_index
+                .delete_document(comp_tx, doc_id)
+                .await
+            {
+                tracing::error!(
+                    "[INV-DB-3] Compensating text delete failed for doc_id {:?}: {}",
+                    doc_id,
+                    e
+                );
+            }
+        }
+        if let Err(e) = self.collection.text_index.commit(comp_tx).await {
+            tracing::error!(
+                "[INV-DB-3] Compensating text commit failed: {}",
+                e
+            );
+        }
+    }
+
+    async fn compensate_lsm(&self, intent_key: &[u8], doc_ids: &[DocId]) {
+        let f_keys = {
+            let mut guard = match self.staged_forward_keys.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            std::mem::take(&mut *guard)
+        };
+        let r_keys = {
+            let mut guard = match self.staged_reverse_keys.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            std::mem::take(&mut *guard)
+        };
+
+        let mut success = false;
+        let mut attempts = 0;
+        let max_attempts = 3;
+
+        while attempts < max_attempts && !success {
+            attempts += 1;
+            let rollback_tx = TxId::new(
+                self.collection
+                    .next_tx
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+            );
+
+            let mut comp_failed = false;
+
+            for f_key in &f_keys {
+                if let Err(e) = self.collection.storage.delete(rollback_tx, f_key).await {
+                    tracing::error!("[INV-DB-3] Compensating delete failed (forward): {}", e);
+                    comp_failed = true;
+                }
+            }
+
+            for r_key in &r_keys {
+                if let Err(e) = self.collection.storage.delete(rollback_tx, r_key).await {
+                    tracing::error!("[INV-DB-3] Compensating delete failed (reverse): {}", e);
+                    comp_failed = true;
+                }
+            }
+
+            let abort_bytes = serde_json::to_vec(&CommitIntent::Aborted).unwrap_or_default();
+            if let Err(e) = self
+                .collection
+                .storage
+                .put(rollback_tx, intent_key, &abort_bytes)
+                .await
+            {
+                tracing::error!("[INV-DB-3] Failed to write aborted intent marker: {}", e);
+                comp_failed = true;
+            }
+
+            if let Err(e) = self.collection.storage.commit(rollback_tx).await {
+                tracing::error!("[INV-DB-3] Compensating commit failed: {}", e);
+                comp_failed = true;
+            }
+
+            if !comp_failed {
+                success = true;
+                tracing::info!(
+                    "[INV-DB-3] Compensating transaction succeeded on attempt {}",
+                    attempts
+                );
+            } else if attempts < max_attempts {
+                tracing::warn!(
+                    "[INV-DB-3] Compensating transaction attempt {} failed. Retrying in 100ms...",
+                    attempts
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }
+
+        if !success {
+            tracing::error!(
+                target: "memfuse.invariant",
+                event = "split_brain",
+                doc_ids = ?doc_ids,
+                "[INV-DB-3] FATAL: Compensating transaction failed after {} attempts. \
+                 Index DB potential split-brain detected! Repair-on-Open required.",
+                max_attempts
+            );
+        }
+    }
+
+    async fn rollback_internal(&self) {
+        if let Err(e) = self.collection.graph_index.rollback(self.tx_id).await {
+            tracing::error!("[INV-DB-3] Graph index rollback failed: {}", e);
+        }
+        if let Err(e) = self.collection.text_index.rollback(self.tx_id).await {
+            tracing::error!("[INV-DB-3] Text index rollback failed: {}", e);
+        }
+        if let Err(e) = self.collection.index.rollback(self.tx_id).await {
+            tracing::error!("[INV-DB-3] Vector index rollback failed: {}", e);
+        }
+        if let Err(e) = self.collection.storage.rollback(self.tx_id).await {
+            tracing::error!("[INV-DB-3] Storage rollback failed: {}", e);
+        }
+    }
+
+    /// Rolls back any uncommitted changes applied to all 4 sub-systems in reverse commit order.
+    pub async fn rollback(self) -> Result<()> {
+        let graph_res = self.collection.graph_index.rollback(self.tx_id).await;
+        let text_res = self.collection.text_index.rollback(self.tx_id).await;
+        let index_res = self.collection.index.rollback(self.tx_id).await;
+        let storage_res = self.collection.storage.rollback(self.tx_id).await;
+
+        if let Err(ref e) = graph_res {
+            tracing::error!("[INV-DB-3] Graph index rollback failed: {}", e);
+        }
+        if let Err(ref e) = text_res {
+            tracing::error!("[INV-DB-3] Text index rollback failed: {}", e);
+        }
+        if let Err(ref e) = index_res {
+            tracing::error!("[INV-DB-3] Vector index rollback failed: {}", e);
+        }
         if let Err(ref e) = storage_res {
             tracing::error!("[INV-DB-3] Storage rollback failed: {}", e);
         }
-        if let Err(ref e) = index_res {
-            tracing::error!("[INV-DB-3] Index rollback failed: {}", e);
-        }
 
-        storage_res?;
+        graph_res?;
+        text_res?;
         index_res?;
+        storage_res?;
         Ok(())
     }
 }
