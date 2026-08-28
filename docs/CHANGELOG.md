@@ -1,5 +1,8 @@
 # MemFuse — Chronologischer Tag- & Review-Bericht
 
+## Breaking Changes
+- `FusionWeights::new_with_metadata` wurde aus der öffentlichen API entfernt (`memfuse-core`), da es keine funktionale Wirkung hatte (metadata musste 0.0 sein) und stille Fehlkonfigurationen bei Aufrufern verursachte. Aufrufer nutzen stattdessen `FusionWeights::new(vector, text, graph)`.
+
 > Automatisch generierter Read-Only Bericht aus allen Inline-Tags im Repo.
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |

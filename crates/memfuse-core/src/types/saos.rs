@@ -27,39 +27,30 @@ pub struct FusionWeights {
     vector: f32,
     text: f32,
     graph: f32,
+    /// Reserved for future metadata-signal fusion; currently always 0.0. Do not expose a public constructor parameter for this until the fusion logic is implemented (see TRACKING-ISSUE #144).
     metadata: f32,
 }
 
 impl FusionWeights {
     /// Creates 3-signal fusion weights (vector, text, graph) summing to 1.0.
     pub fn new(vector: f32, text: f32, graph: f32) -> Result<Self> {
-        Self::new_with_metadata(vector, text, graph, 0.0)
-    }
-
-    /// Creates 4-signal fusion weights. Currently, metadata must be 0.0 until metadata signal ranking is implemented.
-    pub fn new_with_metadata(vector: f32, text: f32, graph: f32, metadata: f32) -> Result<Self> {
-        if vector.is_nan() || text.is_nan() || graph.is_nan() || metadata.is_nan() {
+        if vector.is_nan() || text.is_nan() || graph.is_nan() {
             return Err(MemFuseError::InvalidInput(
                 "Fusion weights must not be NaN".into(),
             ));
         }
-        if !vector.is_finite() || !text.is_finite() || !graph.is_finite() || !metadata.is_finite() {
+        if !vector.is_finite() || !text.is_finite() || !graph.is_finite() {
             return Err(MemFuseError::InvalidInput(
                 "Fusion weights must be finite numbers".into(),
             ));
         }
         // FIND-COR-004: Guard against negative weights
-        if vector < 0.0 || text < 0.0 || graph < 0.0 || metadata < 0.0 {
+        if vector < 0.0 || text < 0.0 || graph < 0.0 {
             return Err(MemFuseError::InvalidInput(
                 "Fusion weights must be non-negative".into(),
             ));
         }
-        if metadata > 0.0 {
-            return Err(MemFuseError::InvalidInput(
-                "Metadata signal is not yet implemented; metadata weight must be 0.0".into(),
-            ));
-        }
-        let sum = vector + text + graph + metadata;
+        let sum = vector + text + graph;
         if (sum - 1.0).abs() > 1e-6 {
             return Err(MemFuseError::InvalidInput(format!(
                 "Fusion weights must sum exactly to 1.0, got {}",
@@ -70,7 +61,7 @@ impl FusionWeights {
             vector,
             text,
             graph,
-            metadata,
+            metadata: 0.0,
         })
     }
 
@@ -90,6 +81,7 @@ impl FusionWeights {
     }
 
     /// Returns the metadata signal weight component.
+    /// Reserved for future metadata-signal fusion; currently always 0.0. Do not expose a public constructor parameter for this until the fusion logic is implemented (see TRACKING-ISSUE #144).
     pub fn metadata(&self) -> f32 {
         self.metadata
     }
@@ -395,7 +387,7 @@ mod tests {
 
     #[test]
     fn test_fusion_weights_nan() {
-        let res = FusionWeights::new_with_metadata(f32::NAN, 0.5, 0.5, 0.0);
+        let res = FusionWeights::new(f32::NAN, 0.5, 0.5);
         assert!(res.is_err());
         if let Err(MemFuseError::InvalidInput(msg)) = res {
             assert_eq!(msg, "Fusion weights must not be NaN");
@@ -410,17 +402,16 @@ mod tests {
             v in proptest::num::f32::ANY,
             t in proptest::num::f32::ANY,
             g in proptest::num::f32::ANY,
-            m in proptest::num::f32::ANY,
         ) {
-            let res = FusionWeights::new_with_metadata(v, t, g, m);
-            if v.is_nan() || t.is_nan() || g.is_nan() || m.is_nan() {
-                let err = res.expect_err("NaN inputs must return an error");
+            let res = FusionWeights::new(v, t, g);
+            if v.is_nan() || t.is_nan() || g.is_nan() {
+                let err = res.expect_err("NaN inputs must return an error"); // expect allowed
                 if let MemFuseError::InvalidInput(msg) = err {
                     proptest::prop_assert_eq!(msg, "Fusion weights must not be NaN");
                 } else {
                     proptest::prop_assert!(false, "Expected InvalidInput for NaN");
                 }
-            } else if !v.is_finite() || !t.is_finite() || !g.is_finite() || !m.is_finite() {
+            } else if !v.is_finite() || !t.is_finite() || !g.is_finite() {
                 proptest::prop_assert!(res.is_err());
             }
         }
