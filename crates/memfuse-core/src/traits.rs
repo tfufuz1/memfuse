@@ -480,7 +480,7 @@ pub trait GraphIndex: Send + Sync + 'static {
         ))
     }
 
-    /// Traverses the entity graph filtering edges by bi-temporal valid range.
+    /// Traverses the entity graph using BFS at a specific point in time (bi-temporal edge filtering).
     async fn traverse_at_time(
         &self,
         _start_node: crate::types::EntityId,

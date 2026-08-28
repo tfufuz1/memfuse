@@ -521,7 +521,6 @@ impl Default for PprConfig {
     }
 }
 
-/// Configuration parameters for Personalized PageRank (PPR).
 #[cfg(test)]
 mod tests {
     use super::*;
