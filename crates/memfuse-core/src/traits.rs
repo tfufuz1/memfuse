@@ -535,6 +535,10 @@ pub trait GraphIndex: Send + Sync + 'static {
 
     /// Calculates Personalized PageRank (PPR) starting from seed nodes.
     ///
+    /// # Convergence Behavior
+    /// Returns the best-effort rank vector if `max_iterations` is reached prior to achieving
+    /// `convergence_epsilon`. Non-convergence does not return an `Err` but logs a warning signal.
+    ///
     /// # Errors
     /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
     /// with capability `"graph_ppr"` if Personalized PageRank is not supported by this implementation.
