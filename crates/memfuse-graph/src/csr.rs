@@ -990,122 +990,6 @@ impl GraphIndex for CsrGraph {
         Ok(results)
     }
 
-    async fn traverse_at_time(
-        &self,
-        start: EntityId,
-        max_hops: usize,
-        as_of: TxId,
-    ) -> Result<Vec<(EntityId, f32)>> {
-        let inner = self.inner.read();
-        let start_idx = match inner.id_map.get(&start) {
-            Some(&idx) => idx,
-            None => return Ok(Vec::new()),
-        };
-
-        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
-            return Ok(Vec::new());
-        }
-
-        let effective_max = (max_hops as u8).min(MAX_TRAVERSAL_HOPS);
-        let mut visited: HashMap<InternalIndex, f32> = HashMap::new();
-        let mut queue: VecDeque<(InternalIndex, u8, f32)> = VecDeque::new();
-
-        queue.push_back((start_idx, 0, 1.0));
-
-        while let Some((node_idx, hop, current_score)) = queue.pop_front() {
-            if hop > effective_max {
-                continue;
-            }
-
-            let existing = visited.entry(node_idx).or_insert(0.0);
-            if current_score > *existing {
-                *existing = current_score;
-            }
-
-            if hop < effective_max {
-                // 1. CSR traversal with bi-temporal edge filtering
-                if node_idx < inner.offsets.len() - 1 {
-                    let start_edge = inner.offsets[node_idx];
-                    let end_edge = inner.offsets[node_idx + 1];
-
-                    for edge_idx in start_edge..end_edge {
-                        let neighbor_idx = inner.targets[edge_idx];
-                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
-                            continue;
-                        }
-                        if let Some(valid_from) = inner.valid_froms.get(edge_idx).copied().flatten() {
-                            if as_of < valid_from {
-                                continue;
-                            }
-                        }
-                        if let Some(valid_to) = inner.valid_tos.get(edge_idx).copied().flatten() {
-                            if as_of >= valid_to {
-                                continue;
-                            }
-                        }
-
-                        let weight = inner.weights[edge_idx];
-                        let next_score = current_score * SCORE_DECAY * weight;
-
-                        if !visited.contains_key(&neighbor_idx)
-                            || visited[&neighbor_idx] < next_score
-                        {
-                            if inner
-                                .entities
-                                .get(neighbor_idx)
-                                .is_some_and(|e| e.is_some())
-                            {
-                                queue.push_back((neighbor_idx, hop + 1, next_score));
-                            }
-                        }
-                    }
-                }
-
-                // 2. Delta buffer traversal with bi-temporal edge filtering
-                if let Some(pending) = inner.pending_edges.get(&node_idx) {
-                    for edge in pending {
-                        let neighbor_idx = edge.target;
-                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
-                            continue;
-                        }
-                        if let Some(valid_from) = edge.valid_from {
-                            if as_of < valid_from {
-                                continue;
-                            }
-                        }
-                        if let Some(valid_to) = edge.valid_to {
-                            if as_of >= valid_to {
-                                continue;
-                            }
-                        }
-
-                        let next_score = current_score * SCORE_DECAY * edge.weight;
-
-                        if (!visited.contains_key(&neighbor_idx)
-                            || visited[&neighbor_idx] < next_score)
-                            && inner
-                                .entities
-                                .get(neighbor_idx)
-                                .is_some_and(|e| e.is_some())
-                        {
-                            queue.push_back((neighbor_idx, hop + 1, next_score));
-                        }
-                    }
-                }
-            }
-        }
-
-        visited.remove(&start_idx);
-
-        let mut results: Vec<(EntityId, f32)> = visited
-            .into_iter()
-            .filter_map(|(idx, score)| inner.reverse_map.get(idx).map(|&id| (id, score)))
-            .collect();
-
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        Ok(results)
-    }
 
     async fn commit(&self, tx: TxId) -> Result<()> {
         // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
@@ -2191,19 +2075,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_csr_graph_traverse_at_returns_adr024_policy_violation() {
+    async fn test_csr_graph_traverse_at_returns_adr024_capability_unsupported() {
         let graph = CsrGraph::new();
         let res = graph.traverse_at(EntityId::new(1), 2, 42).await;
         match res {
-            Err(MemFuseError::PolicyViolation(msg)) => {
+            Err(MemFuseError::CapabilityUnsupported { capability, reason }) => {
+                assert_eq!(capability, "graph_traverse_at");
                 assert!(
-                    msg.contains("ADR-024"),
-                    "Expected ADR-024 in PolicyViolation error message, got: {}",
-                    msg
+                    reason.contains("ADR-024"),
+                    "Expected ADR-024 in CapabilityUnsupported reason message, got: {}",
+                    reason
                 );
             }
             other => panic!(
-                "Expected PolicyViolation referencing ADR-024, got: {:?}",
+                "Expected CapabilityUnsupported referencing ADR-024, got: {:?}",
                 other
             ),
         }

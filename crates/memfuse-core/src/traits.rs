@@ -221,14 +221,20 @@ pub trait VectorIndex: Send + Sync + 'static {
     async fn search(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>>;
 
     /// Searches for the k nearest neighbors to a query vector at a specific sequence number.
+    ///
+    /// # Errors
+    /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
+    /// with capability `"snapshot_read_at"` if snapshot-isolated vector search is not implemented.
+    /// Tested via `capability_coverage` test module.
     async fn search_at(
         &self,
         _query: &[f32],
         _k: usize,
         _seq_no: u64,
     ) -> Result<Vec<ScoredDocument>> {
-        Err(crate::error::MemFuseError::PolicyViolation(
-            "Snapshot isolation for vector/graph search is not yet implemented — tracked in ADR-024".into(),
+        Err(crate::error::MemFuseError::capability_unsupported(
+            "snapshot_read_at",
+            "Vector search snapshot isolation (search_at) is not supported by default — tracked in ADR-024",
         ))
     }
 
@@ -238,9 +244,13 @@ pub trait VectorIndex: Send + Sync + 'static {
     /// Returns an error if a filter is provided. Implementors **MUST** override
     /// this method if filtered search is supported by their vector engine.
     ///
+    /// # Errors
+    /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
+    /// with capability `"vector_filtered_search"` if a filter predicate is passed to an engine without filter support.
+    /// Tested via `capability_coverage` test module.
+    ///
     /// # Note
-    /// This default exists solely for backward compatibility. Relying on it
-    /// at runtime (with `filter.is_some()`) will always produce an `Index` error.
+    /// This default exists solely for backward compatibility.
     async fn search_filtered(
         &self,
         query: &[f32],
@@ -248,8 +258,9 @@ pub trait VectorIndex: Send + Sync + 'static {
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<ScoredDocument>> {
         if filter.is_some() {
-            return Err(crate::error::MemFuseError::Index(
-                "Filter support not implemented for this vector engine".into(),
+            return Err(crate::error::MemFuseError::capability_unsupported(
+                "vector_filtered_search",
+                "Filtered vector search is not supported by default for this vector engine",
             ));
         }
         self.search(query, k).await
@@ -320,14 +331,20 @@ pub trait TextIndex: Send + Sync + 'static {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>>;
 
     /// Searches for documents matching the query at a specific sequence number.
+    ///
+    /// # Errors
+    /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
+    /// with capability `"snapshot_read_at"` if snapshot-isolated text search is not implemented.
+    /// Tested via `capability_coverage` test module.
     async fn search_at(
         &self,
         _query: &str,
         _k: usize,
         _seq_no: u64,
     ) -> Result<Vec<ScoredDocument>> {
-        Err(crate::error::MemFuseError::PolicyViolation(
-            "search_at must be explicitly implemented to guarantee snapshot isolation".into(),
+        Err(crate::error::MemFuseError::capability_unsupported(
+            "snapshot_read_at",
+            "Text search snapshot isolation (search_at) is not supported by default — tracked in ADR-024",
         ))
     }
 
@@ -469,38 +486,55 @@ pub trait GraphIndex: Send + Sync + 'static {
     }
 
     /// Traverses the entity graph using BFS up to a maximum number of hops at a specific sequence number.
+    ///
+    /// # Errors
+    /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
+    /// with capability `"graph_traverse_at"` if snapshot-isolated graph traversal is not implemented.
+    /// Tested via `capability_coverage` test module.
     async fn traverse_at(
         &self,
         _start_node: crate::types::EntityId,
         _max_hops: usize,
         _seq_no: u64,
     ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
-        Err(crate::error::MemFuseError::PolicyViolation(
-            "Snapshot isolation for vector/graph search is not yet implemented — tracked in ADR-024".into(),
+        Err(crate::error::MemFuseError::capability_unsupported(
+            "graph_traverse_at",
+            "Graph traversal snapshot isolation (traverse_at) is not supported by default — tracked in ADR-024",
         ))
     }
 
     /// Traverses the entity graph using BFS at a specific point in time (bi-temporal edge filtering).
+    ///
+    /// # Errors
+    /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
+    /// with capability `"graph_traverse_at_time"` if bi-temporal graph traversal is not implemented.
+    /// Tested via `capability_coverage` test module.
     async fn traverse_at_time(
         &self,
         _start_node: crate::types::EntityId,
         _max_hops: usize,
         _as_of: crate::types::TxId,
     ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
-        Err(crate::error::MemFuseError::PolicyViolation(
-            "traverse_at_time muss explizit implementiert werden".into(),
+        Err(crate::error::MemFuseError::capability_unsupported(
+            "graph_traverse_at_time",
+            "Bi-temporal graph traversal (traverse_at_time) is not supported by default",
         ))
     }
 
     /// Calculates Personalized PageRank (PPR) starting from seed nodes.
-    /// Default fail-safe implementation returns PolicyViolation error.
+    ///
+    /// # Errors
+    /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
+    /// with capability `"graph_ppr"` if Personalized PageRank is not supported by this implementation.
+    /// Tested via `capability_coverage` test module.
     async fn personalized_page_rank(
         &self,
         _seed_nodes: &[crate::types::EntityId],
         _config: &crate::types::PprConfig,
     ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
-        Err(crate::error::MemFuseError::PolicyViolation(
-            "Personalized PageRank is not supported by this GraphIndex implementation".into(),
+        Err(crate::error::MemFuseError::capability_unsupported(
+            "graph_ppr",
+            "Personalized PageRank (personalized_page_rank) is not supported by default for this GraphIndex implementation",
         ))
     }
 
@@ -576,6 +610,109 @@ mod dyn_safety {
         _assert_dyn_text(None);
         _assert_dyn_graph(None);
         _assert_dyn_embedding(None);
+    }
+}
+
+#[cfg(test)]
+mod capability_coverage {
+    use super::*;
+
+    /// Verifies that calling search_at on a productive VectorIndex instance
+    /// does NOT return CapabilityUnsupported.
+    /// Erwartet rot bis WP 14 (Snapshot-_at-Familie real implementieren) abgeschlossen ist.
+    #[tokio::test]
+    #[ignore = "tracked in WP14"]
+    async fn test_hnsw_search_at_capability() {
+        struct VectorIndexPlaceholder;
+        #[async_trait]
+        impl VectorIndex for VectorIndexPlaceholder {
+            async fn insert(&self, _: TxId, _: DocId, _: &[f32]) -> Result<()> { Ok(()) }
+            async fn search(&self, _: &[f32], _: usize) -> Result<Vec<ScoredDocument>> { Ok(vec![]) }
+            async fn delete(&self, _: TxId, _: DocId) -> Result<()> { Ok(()) }
+            async fn commit(&self, _: TxId) -> Result<()> { Ok(()) }
+            async fn rollback(&self, _: TxId) -> Result<()> { Ok(()) }
+            async fn rollback_to_tx(&self, _: TxId) -> Result<()> { Ok(()) }
+            async fn last_tx_id(&self) -> Result<u64> { Ok(0) }
+            async fn len(&self) -> usize { 0 }
+            async fn stats(&self) -> Result<VectorIndexStats> {
+                Ok(VectorIndexStats { num_vectors: 0, memory_usage_bytes: 0, num_layers: 0 })
+            }
+        }
+        let index = VectorIndexPlaceholder;
+        let res = index.search_at(&[1.0, 0.0], 5, 1).await;
+        assert!(
+            !matches!(res, Err(crate::MemFuseError::CapabilityUnsupported { .. })),
+            "search_at returned CapabilityUnsupported"
+        );
+    }
+
+    /// Verifies that calling traverse_at, traverse_at_time, and personalized_page_rank
+    /// on a GraphIndex implementation does NOT return CapabilityUnsupported.
+    /// Erwartet rot bis WP 14 (Snapshot-_at-Familie real implementieren) abgeschlossen ist.
+    #[tokio::test]
+    #[ignore = "tracked in WP14"]
+    async fn test_csr_graph_capability() {
+        struct GraphIndexPlaceholder;
+        #[async_trait]
+        impl GraphIndex for GraphIndexPlaceholder {
+            async fn traverse(&self, _: EntityId, _: usize) -> Result<Vec<(EntityId, f32)>> { Ok(vec![]) }
+            async fn add_entity(&self, _: TxId, _: Entity) -> Result<()> { Ok(()) }
+            async fn add_edge(&self, _: TxId, _: Edge) -> Result<()> { Ok(()) }
+            async fn commit(&self, _: TxId) -> Result<()> { Ok(()) }
+            async fn rollback(&self, _: TxId) -> Result<()> { Ok(()) }
+            async fn rollback_to_tx(&self, _: TxId) -> Result<()> { Ok(()) }
+            async fn last_tx_id(&self) -> Result<u64> { Ok(0) }
+            async fn len(&self) -> usize { 0 }
+            async fn stats(&self) -> Result<GraphIndexStats> {
+                Ok(GraphIndexStats { num_entities: 0, num_edges: 0, memory_usage_bytes: 0 })
+            }
+        }
+        let graph = GraphIndexPlaceholder;
+        let res_traverse_at = graph.traverse_at(EntityId::new(1), 2, 1).await;
+        assert!(
+            !matches!(res_traverse_at, Err(crate::MemFuseError::CapabilityUnsupported { .. })),
+            "traverse_at returned CapabilityUnsupported"
+        );
+
+        let res_traverse_at_time = graph.traverse_at_time(EntityId::new(1), 2, TxId::new(1)).await;
+        assert!(
+            !matches!(res_traverse_at_time, Err(crate::MemFuseError::CapabilityUnsupported { .. })),
+            "traverse_at_time returned CapabilityUnsupported"
+        );
+
+        let res_ppr = graph.personalized_page_rank(&[EntityId::new(1)], &PprConfig::default()).await;
+        assert!(
+            !matches!(res_ppr, Err(crate::MemFuseError::CapabilityUnsupported { .. })),
+            "personalized_page_rank returned CapabilityUnsupported"
+        );
+    }
+
+    /// Verifies that calling search_at on a TextIndex implementation does NOT return CapabilityUnsupported.
+    /// Erwartet rot bis WP 14 (Snapshot-_at-Familie real implementieren) abgeschlossen ist.
+    #[tokio::test]
+    #[ignore = "tracked in WP14"]
+    async fn test_text_index_search_at_capability() {
+        struct TextIndexPlaceholder;
+        #[async_trait]
+        impl TextIndex for TextIndexPlaceholder {
+            async fn search(&self, _: &str, _: usize) -> Result<Vec<ScoredDocument>> { Ok(vec![]) }
+            async fn insert(&self, _: TxId, _: DocId, _: &str) -> Result<()> { Ok(()) }
+            async fn delete(&self, _: TxId, _: DocId) -> Result<()> { Ok(()) }
+            async fn commit(&self, _: TxId) -> Result<()> { Ok(()) }
+            async fn rollback(&self, _: TxId) -> Result<()> { Ok(()) }
+            async fn rollback_to_tx(&self, _: TxId) -> Result<()> { Ok(()) }
+            async fn last_tx_id(&self) -> Result<u64> { Ok(0) }
+            async fn len(&self) -> usize { 0 }
+            async fn stats(&self) -> Result<TextIndexStats> {
+                Ok(TextIndexStats { num_documents: 0, num_tokens: 0, memory_usage_bytes: 0 })
+            }
+        }
+        let text_index = TextIndexPlaceholder;
+        let res = text_index.search_at("test", 5, 1).await;
+        assert!(
+            !matches!(res, Err(crate::MemFuseError::CapabilityUnsupported { .. })),
+            "search_at returned CapabilityUnsupported"
+        );
     }
 }
 
@@ -744,15 +881,21 @@ mod tests {
 
         // Test search_filtered default error
         let res = index.search_filtered(&[1.0], 1, Some(&|_| true)).await;
-        assert!(res.is_err());
+        match res {
+            Err(crate::error::MemFuseError::CapabilityUnsupported { capability, .. }) => {
+                assert_eq!(capability, "vector_filtered_search");
+            }
+            _ => panic!("Expected CapabilityUnsupported for search_filtered"),
+        }
 
         // Test search_at default error
         let res2 = index.search_at(&[1.0], 1, 42).await;
         match res2 {
-            Err(crate::error::MemFuseError::PolicyViolation(msg)) => {
-                assert!(msg.contains("ADR-024"), "Unexpected message: {msg}");
+            Err(crate::error::MemFuseError::CapabilityUnsupported { capability, reason }) => {
+                assert_eq!(capability, "snapshot_read_at");
+                assert!(reason.contains("ADR-024"), "Unexpected reason: {reason}");
             }
-            _ => panic!("Expected PolicyViolation with ADR-024"),
+            _ => panic!("Expected CapabilityUnsupported with ADR-024 for search_at"),
         }
     }
 
@@ -796,10 +939,13 @@ mod tests {
 
         let index = MockTextIndex;
         let res = index.search_at("query", 10, 42).await;
-        assert!(matches!(
-            res,
-            Err(crate::error::MemFuseError::PolicyViolation(_))
-        ));
+        match res {
+            Err(crate::error::MemFuseError::CapabilityUnsupported { capability, reason }) => {
+                assert_eq!(capability, "snapshot_read_at");
+                assert!(reason.contains("ADR-024"), "Unexpected reason: {reason}");
+            }
+            _ => panic!("Expected CapabilityUnsupported for search_at"),
+        }
     }
 
     #[tokio::test]
@@ -857,10 +1003,11 @@ mod tests {
             .traverse_at(crate::types::EntityId::new(1), 2, 42)
             .await;
         match res {
-            Err(crate::error::MemFuseError::PolicyViolation(msg)) => {
-                assert!(msg.contains("ADR-024"), "Unexpected message: {msg}");
+            Err(crate::error::MemFuseError::CapabilityUnsupported { capability, reason }) => {
+                assert_eq!(capability, "graph_traverse_at");
+                assert!(reason.contains("ADR-024"), "Unexpected reason: {reason}");
             }
-            _ => panic!("Expected PolicyViolation with ADR-024"),
+            _ => panic!("Expected CapabilityUnsupported with ADR-024"),
         }
 
         let res_time = index
@@ -871,13 +1018,23 @@ mod tests {
             )
             .await;
         match res_time {
-            Err(crate::error::MemFuseError::PolicyViolation(msg)) => {
-                assert!(
-                    msg.contains("traverse_at_time muss explizit implementiert werden"),
-                    "Unexpected message: {msg}"
-                );
+            Err(crate::error::MemFuseError::CapabilityUnsupported { capability, .. }) => {
+                assert_eq!(capability, "graph_traverse_at_time");
             }
-            _ => panic!("Expected PolicyViolation for traverse_at_time"),
+            _ => panic!("Expected CapabilityUnsupported for traverse_at_time"),
+        }
+
+        let res_ppr = index
+            .personalized_page_rank(
+                &[crate::types::EntityId::new(1)],
+                &crate::types::PprConfig::default(),
+            )
+            .await;
+        match res_ppr {
+            Err(crate::error::MemFuseError::CapabilityUnsupported { capability, .. }) => {
+                assert_eq!(capability, "graph_ppr");
+            }
+            _ => panic!("Expected CapabilityUnsupported for personalized_page_rank"),
         }
     }
 }

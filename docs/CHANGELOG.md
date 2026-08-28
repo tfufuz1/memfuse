@@ -2,6 +2,15 @@
 
 > Automatisch generierter Read-Only Bericht aus allen Inline-Tags im Repo.
 
+## Breaking Changes
+
+### MemFuseError::CapabilityUnsupported Integration
+- **`memfuse-core`**: Added new error variant `MemFuseError::CapabilityUnsupported { capability: String, reason: String }` and helper constructor `MemFuseError::capability_unsupported(capability, reason)`.
+- **Trait Default Changes**: Default implementations for `VectorIndex::search_at`, `VectorIndex::search_filtered`, `TextIndex::search_at`, `GraphIndex::traverse_at`, `GraphIndex::traverse_at_time`, and `GraphIndex::personalized_page_rank` now return `MemFuseError::CapabilityUnsupported` with standardized capability names (`snapshot_read_at`, `vector_filtered_search`, `graph_traverse_at`, `graph_traverse_at_time`, `graph_ppr`) instead of returning unstructured `PolicyViolation` or `Index` errors.
+- **Consumer Impact**: Downstream consumers matching on concrete error variants when invoking these six methods must update their error handling patterns from `MemFuseError::PolicyViolation` / `MemFuseError::Index` to `MemFuseError::CapabilityUnsupported`.
+
+---
+
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
 | `2026-08-29T11:00:00Z` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `AGT-CORE-a3f29c1d` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3) |
