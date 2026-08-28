@@ -267,9 +267,11 @@ pub async fn run_bulk_regex_transform(
     let mut results = Vec::with_capacity(inputs.len());
 
     for input in inputs {
-        let _permit = state.regex_semaphore.acquire().await.map_err(|e| {
-            MemFuseErrorDto::new("Internal", format!("Semaphore error: {e}"))
-        })?;
+        let _permit = state
+            .regex_semaphore
+            .acquire()
+            .await
+            .map_err(|e| MemFuseErrorDto::new("Internal", format!("Semaphore error: {e}")))?;
 
         let result = run_regex_transformation(&pattern, &flags, &replacement, &input).await;
         results.push(result);

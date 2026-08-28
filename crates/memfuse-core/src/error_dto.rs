@@ -255,7 +255,10 @@ mod tests {
             (MemFuseError::Internal("test".into()), "Internal"),
             (MemFuseError::InvalidInput("test".into()), "InvalidInput"),
             (MemFuseError::NotFound("test".into()), "NotFound"),
-            (MemFuseError::PolicyViolation("test".into()), "PolicyViolation"),
+            (
+                MemFuseError::PolicyViolation("test".into()),
+                "PolicyViolation",
+            ),
             (
                 MemFuseError::NamespaceViolation("test".into()),
                 "NamespaceViolation",
@@ -313,12 +316,13 @@ mod tests {
                 MemFuseError::MemoryLimitExceeded("test".into()),
                 "MemoryLimitExceeded",
             ),
-            (MemFuseError::SandboxTimeout("test".into()), "SandboxTimeout"),
+            (
+                MemFuseError::SandboxTimeout("test".into()),
+                "SandboxTimeout",
+            ),
             (MemFuseError::Serialization("test".into()), "Serialization"),
             (
-                MemFuseError::Json(
-                    serde_json::from_str::<serde_json::Value>("{bad}").unwrap_err(),
-                ),
+                MemFuseError::Json(serde_json::from_str::<serde_json::Value>("{bad}").unwrap_err()),
                 "Json",
             ),
             (MemFuseError::Crypto("test".into()), "Crypto"),

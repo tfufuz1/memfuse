@@ -139,9 +139,7 @@ fn memfuse_err(e: memfuse_core::MemFuseError) -> PyErr {
             "Storage" | "Io" | "WalCorruption" | "ChecksumMismatch" => {
                 MemFuseIOError::new_err(dto.message.clone())
             }
-            "Index" | "HnswConnectivityDegraded" => {
-                MemFuseIndexError::new_err(dto.message.clone())
-            }
+            "Index" | "HnswConnectivityDegraded" => MemFuseIndexError::new_err(dto.message.clone()),
             "InvalidInput" | "Serialization" | "Json" | "ParseError" | "Bincode" => {
                 MemFuseValueError::new_err(dto.message.clone())
             }
