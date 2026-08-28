@@ -9,10 +9,11 @@
 // INVARIANT: Logische Isolation (Namespaces).
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 
+#[allow(deprecated)]
 use crate::filter::MetadataFilter;
 use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{
-    DocId, EntityId, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex,
+    DocId, EntityId, FilterExpr, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex,
 };
 use memfuse_graph::{detect_communities, CommunityAssignment, CommunityDetectionConfig, CsrGraph};
 use memfuse_index::HnswIndex;
@@ -932,16 +933,36 @@ impl<S: StorageEngine> Collection<S> {
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
         let k = k.min(memfuse_core::MAX_SEARCH_K);
-        self.search_with_filter(query_embedding, k, None).await
+        self.search_with_filter_expr(query_embedding, k, None).await
     }
 
     /// Performs semantic search with an advanced metadata filter.
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use search_with_filter_expr with memfuse_core::FilterExpr directly"
+    )]
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, query, filter))]
     pub async fn search_with_filter(
         &self,
         query: &[f32],
         k: usize,
         filter: Option<MetadataFilter>,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let expr = match filter {
+            Some(f) => Some(FilterExpr::try_from(f)?),
+            None => None,
+        };
+        self.search_with_filter_expr(query, k, expr).await
+    }
+
+    /// Performs semantic search with an advanced metadata filter expression (`FilterExpr`).
+    #[tracing::instrument(level = "trace", skip(self, query, filter))]
+    pub async fn search_with_filter_expr(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: Option<FilterExpr>,
     ) -> Result<Vec<crate::SearchResult>> {
         let k = k.min(memfuse_core::MAX_SEARCH_K);
         // 🛡️ SICHERUNG: Snapshot-Isolation (FIND-DB-003)
@@ -997,7 +1018,7 @@ impl<S: StorageEngine> Collection<S> {
                             continue;
                         };
                         let meta_ref = doc_metadata.as_ref().unwrap_or(&serde_json::Value::Null);
-                        if filter.matches(meta_ref) {
+                        if filter.evaluate(meta_ref) {
                             results.push(crate::SearchResult {
                                 id,
                                 score: sd.score,
@@ -1051,7 +1072,7 @@ impl<S: StorageEngine> Collection<S> {
 
     async fn get_matching_doc_ids_at(
         &self,
-        filter: &MetadataFilter,
+        filter: &FilterExpr,
         seq: u64,
     ) -> Result<std::collections::HashSet<DocId>> {
         let prefix = if self.name == "default" {
@@ -1075,7 +1096,7 @@ impl<S: StorageEngine> Collection<S> {
                     continue;
                 };
             let metadata = doc_metadata.as_ref().unwrap_or(&serde_json::Value::Null);
-            if filter.matches(metadata) {
+            if filter.evaluate(metadata) {
                 matched.insert(DocId::from_key(&id)?);
             }
         }

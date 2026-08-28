@@ -1,3 +1,4 @@
+#[allow(deprecated)]
 use memfuse_db::{filter::FilterOp, MemFuse, MemFuseConfig, MetadataFilter};
 use serde_json::json;
 use tempfile::TempDir;
@@ -14,6 +15,7 @@ async fn setup_db(dim: usize) -> (MemFuse, TempDir) {
     (db, tmp)
 }
 
+#[allow(deprecated)]
 #[tokio::test]
 async fn test_post_filter_returns_only_matching() {
     let (db, _tmp) = setup_db(4).await;
@@ -46,6 +48,7 @@ async fn test_post_filter_returns_only_matching() {
     }
 }
 
+#[allow(deprecated)]
 #[tokio::test]
 async fn test_pre_filter_with_low_selectivity() {
     let (db, _tmp) = setup_db(4).await;
@@ -80,6 +83,7 @@ async fn test_pre_filter_with_low_selectivity() {
         .all(|r| r.metadata.as_ref().unwrap()["topic"] == "special"));
 }
 
+#[allow(deprecated)]
 #[tokio::test]
 async fn test_complex_logical_filter() {
     let (db, _tmp) = setup_db(4).await;
