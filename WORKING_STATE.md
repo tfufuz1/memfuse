@@ -14,7 +14,7 @@ Ergebnis: **4 offene Tags**
 |---|---|---|---|---|---|---|
 | `crates/memfuse-store/src/wal.rs` | 421 | `AGT-STORE-003` | `SECURITY` | `CRITICAL` | `2026-08-25T00:00:00Z` | // AI-TAG[SECURITY][CRITICAL] Atomic WAL integrity key creation with 0o600 mode (AGT-STORE-003) (TS:2026-08-25T00:00:00Z) |
 | `crates/memfuse-core/src/tx_buffer.rs` | 25 | `AGT-CORE-001` | `SMELL` | `MINOR` | `2026-08-28T00:00:00Z` | // AI-TAG[SMELL][MINOR] Bounded staging capacity (ID: AGT-CORE-001) (TS:2026-08-28T00:00:00Z) |
-| `crates/memfuse-index/src/distance.rs` | 54 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `2026-08-25T00:00:00Z` | // AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-25T00:00:00Z) |
+| `crates/memfuse-index/src/distance.rs` | 54 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `2026-08-28T00:00:00Z` | // AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-28T00:00:00Z) |
 | `crates/memfuse-index/src/distance.rs` | 89 | `AGT-INDEX-005` | `SECURITY` | `CRITICAL` | `2026-08-25T00:00:00Z` | // AI-TAG[SECURITY][CRITICAL] Precondition assertions for SIMD distance functions (AGT-INDEX-005) (TS:2026-08-25T00:00:00Z) |
 
 
