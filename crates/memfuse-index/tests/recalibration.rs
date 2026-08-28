@@ -33,7 +33,7 @@ async fn test_quantizer_recalibration() {
 
     // Verify initial quantizer state
     let q_before = {
-        let guard = index.quantizer.read();
+        let guard = index.quantizer().read();
         guard.as_ref().unwrap().clone()
     };
     for &m in &q_before.maxes {
@@ -53,7 +53,7 @@ async fn test_quantizer_recalibration() {
 
     // Verify new quantizer state
     let q_after = {
-        let guard = index.quantizer.read();
+        let guard = index.quantizer().read();
         guard.as_ref().unwrap().clone()
     };
     // The new quantizer maxes should adapt to include 150.0
