@@ -227,13 +227,6 @@ pub struct HnswIndex {
     inner: std::sync::Arc<HnswIndexCore>,
 }
 
-impl std::ops::Deref for HnswIndex {
-    type Target = HnswIndexCore;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
 /// The core implementation of the HNSW index.
 pub struct HnswIndexCore {
     config: HnswConfig,
@@ -312,6 +305,32 @@ impl HnswIndex {
         }
     }
 
+    /// Returns a reference to the quantizer RwLock.
+    pub fn quantizer(&self) -> &RwLock<Option<crate::quantize::ScalarQuantizer>> {
+        &self.inner.quantizer
+    }
+
+    /// Graph connectivity score (1.0 = perfect, 0.0 = fully fragmented).
+    pub fn connectivity_score(&self) -> f64 {
+        self.inner.connectivity_score()
+    }
+
+    /// Returns Ok(()) if the index is healthy, or
+    /// Err(MemFuseError::HnswConnectivityDegraded { deleted_ratio }) if degraded.
+    pub fn check_connectivity(&self) -> memfuse_core::Result<()> {
+        self.inner.check_connectivity()
+    }
+
+    /// Checks if a rebuild is required based on the deletion ratio.
+    pub fn is_rebuild_required(&self) -> bool {
+        self.inner.is_rebuild_required()
+    }
+
+    /// Rebuilds the HNSW index from scratch, removing all deleted nodes.
+    pub async fn rebuild(&self) -> Result<()> {
+        self.inner.rebuild().await
+    }
+
     /// Returns all active (non-deleted) DocIds by reading the `doc_to_node` map directly.
     ///
     /// This is O(M) where M = number of mapped doc IDs, compared to `all_doc_ids()` which
@@ -320,8 +339,8 @@ impl HnswIndex {
     ///
     /// # FIND-DB-004: HNSW Repair Acceleration
     pub fn all_doc_ids_from_map(&self) -> Vec<DocId> {
-        let map = self.doc_to_node.read();
-        let deleted = self.deleted_nodes.read();
+        let map = self.inner.doc_to_node.read();
+        let deleted = self.inner.deleted_nodes.read();
         map.iter()
             .filter(|(&_doc_id_raw, &node_idx)| !deleted.contains(node_idx as u64))
             .map(|(&doc_id_raw, _)| DocId::new(doc_id_raw))
@@ -367,7 +386,7 @@ impl HnswIndex {
     // TEST: grep "std::fs" crates/memfuse-index/src/hnsw.rs
     // DONE: Alle std::fs Aufrufe in save() sind in spawn_blocking gekapselt oder durch tokio::fs ersetzt.
     pub async fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
-        let _lock = self.write_mutex.lock().await;
+        let _lock = self.inner.write_mutex.lock().await;
         let inner = std::sync::Arc::clone(&self.inner);
         let path_buf = path.as_ref().to_path_buf();
 
@@ -557,14 +576,14 @@ impl HnswIndex {
         };
 
         {
-            let mut ep_guard = self.entry_point.write();
+            let mut ep_guard = self.inner.entry_point.write();
             *ep_guard = ep;
-            *self.ram_entry_point.write() = None;
-            self.max_layer.store(max_layer, Ordering::SeqCst);
+            *self.inner.ram_entry_point.write() = None;
+            self.inner.max_layer.store(max_layer, Ordering::SeqCst);
         }
 
         if mmap_index.header.quantized != 0 {
-            let dim = self.config.dimension;
+            let dim = self.inner.config.dimension;
             let q_min = mmap_index.header.q_min;
             let q_max = mmap_index.header.q_max;
             let range = if (q_max - q_min).abs() < f32::EPSILON {
@@ -574,7 +593,7 @@ impl HnswIndex {
             };
             let scale = 255.0 / range;
             let inv_scale = range / 255.0;
-            let mut q_guard = self.quantizer.write();
+            let mut q_guard = self.inner.quantizer.write();
             *q_guard = Some(crate::quantize::ScalarQuantizer {
                 mins: vec![q_min; dim],
                 maxes: vec![q_max; dim],
@@ -586,8 +605,9 @@ impl HnswIndex {
             });
         }
 
-        let mut guard = self.mmap_index.write();
-        self.last_tx_id
+        let mut guard = self.inner.mmap_index.write();
+        self.inner
+            .last_tx_id
             .store(mmap_index.header.last_tx_id, Ordering::SeqCst);
         *guard = Some(mmap_index);
         Ok(())
@@ -1395,16 +1415,16 @@ impl HnswIndexCore {
                 let training_refs: Vec<&[f32]> = train_data.iter().map(|v| v.as_slice()).collect();
                 let new_q =
                     crate::quantize::ScalarQuantizer::train(&training_refs, self.config.dimension);
-                *new_index.quantizer.write() = Some(new_q);
+                *new_index.inner.quantizer.write() = Some(new_q);
             } else {
-                *new_index.quantizer.write() = Some(old_q.clone());
+                *new_index.inner.quantizer.write() = Some(old_q.clone());
             }
         }
 
         for (doc_id, vector, committed_tx) in active_nodes {
             match vector {
                 VectorData::F32(v) => {
-                    new_index.do_insert(doc_id, &v)?;
+                    new_index.inner.do_insert(doc_id, &v)?;
                 }
                 VectorData::U8(v) => {
                     let dequantized = {
@@ -1413,19 +1433,20 @@ impl HnswIndexCore {
                         })?;
                         q.dequantize(&v)
                     };
-                    new_index.do_insert(doc_id, &dequantized)?;
+                    new_index.inner.do_insert(doc_id, &dequantized)?;
                 }
             }
             let mmap_count = new_index
+                .inner
                 .mmap_index
                 .read()
                 .as_ref()
                 .map(|m| m.header.node_count as usize)
                 .unwrap_or(0);
-            if let Some(&global_idx) = new_index.doc_to_node.read().get(&doc_id.inner()) {
+            if let Some(&global_idx) = new_index.inner.doc_to_node.read().get(&doc_id.inner()) {
                 if global_idx >= mmap_count {
                     let ram_idx = global_idx - mmap_count;
-                    let mut nodes = new_index.nodes.write();
+                    let mut nodes = new_index.inner.nodes.write();
                     if let Some(node) = nodes.get_mut(ram_idx) {
                         node.committed_tx = committed_tx;
                     }
@@ -1441,17 +1462,17 @@ impl HnswIndexCore {
             let mut ram_entry_point = self.ram_entry_point.write();
             let mut deleted_nodes = self.deleted_nodes.write();
 
-            let new_nodes = std::mem::take(&mut *new_index.nodes.write());
-            let new_doc_to_node = std::mem::take(&mut *new_index.doc_to_node.write());
-            let new_entry_point = *new_index.entry_point.read();
-            let new_ram_entry_point = *new_index.ram_entry_point.read();
+            let new_nodes = std::mem::take(&mut *new_index.inner.nodes.write());
+            let new_doc_to_node = std::mem::take(&mut *new_index.inner.doc_to_node.write());
+            let new_entry_point = *new_index.inner.entry_point.read();
+            let new_ram_entry_point = *new_index.inner.ram_entry_point.read();
 
             *nodes = new_nodes;
             *doc_to_node = new_doc_to_node;
             *entry_point = new_entry_point;
             *ram_entry_point = new_ram_entry_point;
             self.max_layer
-                .store(new_index.max_layer.load(Ordering::SeqCst), Ordering::SeqCst);
+                .store(new_index.inner.max_layer.load(Ordering::SeqCst), Ordering::SeqCst);
 
             // Preserve mmap deletions, clear RAM deletions (since they are now in doc_to_node/nodes)
             let mmap_count = self
@@ -1482,16 +1503,16 @@ impl HnswIndexCore {
 #[async_trait::async_trait]
 impl VectorIndex for HnswIndex {
     async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()> {
-        if let Some(ref err) = self.validation_error {
+        if let Some(ref err) = self.inner.validation_error {
             return Err(MemFuseError::invalid_input(format!(
                 "Invalid index configuration: {}",
                 err
             )));
         }
-        if embedding.len() != self.config.dimension {
+        if embedding.len() != self.inner.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
                 "Expected dimension {}, got {}",
-                self.config.dimension,
+                self.inner.config.dimension,
                 embedding.len()
             )));
         }
@@ -1505,7 +1526,7 @@ impl VectorIndex for HnswIndex {
             }
         }
 
-        self.tx_buffer.stage(
+        self.inner.tx_buffer.stage(
             tx,
             IndexOp::Insert {
                 doc_id: id,
@@ -1521,33 +1542,33 @@ impl VectorIndex for HnswIndex {
     // BOTTLENECK: CPU / Cache Misses / ef_search Heuristik
     // FIX: Dynamische Anpassung von ef_search basierend auf Layer-Hierarchie.
     async fn search(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>> {
-        if let Some(ref err) = self.validation_error {
+        if let Some(ref err) = self.inner.validation_error {
             return Err(MemFuseError::invalid_input(format!(
                 "Invalid index configuration: {}",
                 err
             )));
         }
-        if query.len() != self.config.dimension {
+        if query.len() != self.inner.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
                 "Expected dimension {}, got {}",
-                self.config.dimension,
+                self.inner.config.dimension,
                 query.len()
             )));
         }
 
         let query_quantized: Option<Vec<u8>> = None;
 
-        let mmap_guard = self.mmap_index.read();
+        let mmap_guard = self.inner.mmap_index.read();
         let mmap_node_count = mmap_guard
             .as_ref()
             .map(|m| m.header.node_count as usize)
             .unwrap_or(0);
 
         let mut ep = Vec::new();
-        if let Some(global_ep) = *self.entry_point.read() {
+        if let Some(global_ep) = *self.inner.entry_point.read() {
             ep.push(global_ep);
         }
-        if let Some(ram_ep) = *self.ram_entry_point.read() {
+        if let Some(ram_ep) = *self.inner.ram_entry_point.read() {
             if !ep.contains(&ram_ep) {
                 ep.push(ram_ep);
             }
@@ -1557,46 +1578,46 @@ impl VectorIndex for HnswIndex {
             return Ok(Vec::new());
         }
 
-        let max_layer = self.max_layer.load(Ordering::SeqCst) as usize;
+        let max_layer = self.inner.max_layer.load(Ordering::SeqCst) as usize;
 
         for layer in (1..=max_layer).rev() {
             let layer_ef = 1;
             let best =
-                self.search_layer(query, query_quantized.as_deref(), &ep, layer_ef, layer)?;
+                self.inner.search_layer(query, query_quantized.as_deref(), &ep, layer_ef, layer)?;
             if let Some(closest) = best.first() {
                 ep = vec![closest.index];
             }
         }
 
         // Add RAM entry point back for the final layer search to ensure hybrid recall
-        if let Some(ram_ep) = *self.ram_entry_point.read() {
+        if let Some(ram_ep) = *self.inner.ram_entry_point.read() {
             if !ep.contains(&ram_ep) {
                 ep.push(ram_ep);
             }
         }
 
         // Higher candidate list for reranking if quantized
-        let ef = if self.config.quantize {
-            self.config.ef_search.max(k) * 4
+        let ef = if self.inner.config.quantize {
+            self.inner.config.ef_search.max(k) * 4
         } else {
-            self.config.ef_search.max(k)
+            self.inner.config.ef_search.max(k)
         };
-        let candidates = self.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
+        let candidates = self.inner.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
 
-        let score = self.connectivity_score();
-        if score < self.config.rebuild_threshold {
+        let score = self.inner.connectivity_score();
+        if score < self.inner.config.rebuild_threshold {
             let deleted_ratio = (1.0 - score) * 100.0;
             let err = memfuse_core::MemFuseError::HnswConnectivityDegraded { deleted_ratio };
             tracing::warn!(
                 error = %err,
                 connectivity_score = score,
-                rebuild_threshold = self.config.rebuild_threshold,
+                rebuild_threshold = self.inner.config.rebuild_threshold,
                 "HNSW index degraded — consider calling rebuild()"
             );
         }
 
-        let nodes = self.nodes.read();
-        let deleted = self.deleted_nodes.read();
+        let nodes = self.inner.nodes.read();
+        let deleted = self.inner.deleted_nodes.read();
         let mut results = Vec::with_capacity(k);
 
         let ctx = SearchContext {
@@ -1616,16 +1637,16 @@ impl VectorIndex for HnswIndex {
                     }
                 }
             }
-            let doc_id = self.resolve_doc_id(c.index, &ctx)?;
+            let doc_id = self.inner.resolve_doc_id(c.index, &ctx)?;
 
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
-            let final_dist = if self.config.quantize {
-                self.resolve_dist(c.index, query, None, &ctx)?
+            let final_dist = if self.inner.config.quantize {
+                self.inner.resolve_dist(c.index, query, None, &ctx)?
             } else {
                 c.distance
             };
 
-            let score = match self.config.distance_metric {
+            let score = match self.inner.config.distance_metric {
                 DistanceMetric::Cosine => 1.0 - final_dist,
                 DistanceMetric::Euclidean => 1.0 / (1.0 + final_dist),
                 DistanceMetric::DotProduct => -final_dist,
@@ -1651,31 +1672,31 @@ impl VectorIndex for HnswIndex {
         k: usize,
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<ScoredDocument>> {
-        if let Some(ref err) = self.validation_error {
+        if let Some(ref err) = self.inner.validation_error {
             return Err(MemFuseError::invalid_input(format!(
                 "Invalid index configuration: {}",
                 err
             )));
         }
-        if query.len() != self.config.dimension {
+        if query.len() != self.inner.config.dimension {
             return Err(MemFuseError::invalid_input(format!(
                 "Expected dimension {}, got {}",
-                self.config.dimension,
+                self.inner.config.dimension,
                 query.len()
             )));
         }
 
-        let query_quantized = if self.config.quantize {
-            self.quantizer.read().as_ref().map(|q| q.quantize(query))
+        let query_quantized = if self.inner.config.quantize {
+            self.inner.quantizer.read().as_ref().map(|q| q.quantize(query))
         } else {
             None
         };
 
         let mut ep = Vec::new();
-        if let Some(global_ep) = *self.entry_point.read() {
+        if let Some(global_ep) = *self.inner.entry_point.read() {
             ep.push(global_ep);
         }
-        if let Some(ram_ep) = *self.ram_entry_point.read() {
+        if let Some(ram_ep) = *self.inner.ram_entry_point.read() {
             if !ep.contains(&ram_ep) {
                 ep.push(ram_ep);
             }
@@ -1685,41 +1706,41 @@ impl VectorIndex for HnswIndex {
             return Ok(Vec::new());
         }
 
-        let max_layer = self.max_layer.load(Ordering::SeqCst) as usize;
+        let max_layer = self.inner.max_layer.load(Ordering::SeqCst) as usize;
 
         for layer in (1..=max_layer).rev() {
-            let best = self.search_layer(query, query_quantized.as_deref(), &ep, 1, layer)?;
+            let best = self.inner.search_layer(query, query_quantized.as_deref(), &ep, 1, layer)?;
             if let Some(closest) = best.first() {
                 ep = vec![closest.index];
             }
         }
 
         // Add RAM entry point back for the final layer search to ensure hybrid recall
-        if let Some(ram_ep) = *self.ram_entry_point.read() {
+        if let Some(ram_ep) = *self.inner.ram_entry_point.read() {
             if !ep.contains(&ram_ep) {
                 ep.push(ram_ep);
             }
         }
 
         // Over-fetch to compensate for filtered-out results and reranking
-        let factor = if self.config.quantize { 4 } else { 2 };
-        let ef = self.config.ef_search.max(k) * factor;
-        let candidates = self.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
+        let factor = if self.inner.config.quantize { 4 } else { 2 };
+        let ef = self.inner.config.ef_search.max(k) * factor;
+        let candidates = self.inner.search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
 
-        let score = self.connectivity_score();
-        if score < self.config.rebuild_threshold {
+        let score = self.inner.connectivity_score();
+        if score < self.inner.config.rebuild_threshold {
             let deleted_ratio = (1.0 - score) * 100.0;
             let err = memfuse_core::MemFuseError::HnswConnectivityDegraded { deleted_ratio };
             tracing::warn!(
                 error = %err,
                 connectivity_score = score,
-                rebuild_threshold = self.config.rebuild_threshold,
+                rebuild_threshold = self.inner.config.rebuild_threshold,
                 "HNSW index degraded — consider calling rebuild()"
             );
         }
 
-        let nodes = self.nodes.read();
-        let deleted = self.deleted_nodes.read();
+        let nodes = self.inner.nodes.read();
+        let deleted = self.inner.deleted_nodes.read();
         let mut results = Vec::with_capacity(k);
 
         for c in candidates.iter() {
@@ -1740,13 +1761,13 @@ impl VectorIndex for HnswIndex {
             }
 
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
-            let final_dist = if self.config.quantize {
+            let final_dist = if self.inner.config.quantize {
                 if let VectorData::U8(v) = &node.vector {
-                    let guard = self.quantizer.read();
+                    let guard = self.inner.quantizer.read();
                     let q = guard.as_ref().ok_or_else(|| {
                         memfuse_core::MemFuseError::Index("Quantizer not trained".into())
                     })?;
-                    q.asymmetric_dist(query, v, self.config.distance_metric)?
+                    q.asymmetric_dist(query, v, self.inner.config.distance_metric)?
                 } else {
                     c.distance
                 }
@@ -1754,7 +1775,7 @@ impl VectorIndex for HnswIndex {
                 c.distance
             };
 
-            let score = match self.config.distance_metric {
+            let score = match self.inner.config.distance_metric {
                 DistanceMetric::Cosine => 1.0 - final_dist,
                 DistanceMetric::Euclidean => 1.0 / (1.0 + final_dist),
                 DistanceMetric::DotProduct => -final_dist,
@@ -1775,13 +1796,13 @@ impl VectorIndex for HnswIndex {
     }
 
     async fn delete(&self, tx: TxId, id: DocId) -> Result<()> {
-        if let Some(ref err) = self.validation_error {
+        if let Some(ref err) = self.inner.validation_error {
             return Err(MemFuseError::invalid_input(format!(
                 "Invalid index configuration: {}",
                 err
             )));
         }
-        self.tx_buffer.stage(
+        self.inner.tx_buffer.stage(
             tx,
             IndexOp::Delete {
                 doc_id: id,
@@ -1792,18 +1813,18 @@ impl VectorIndex for HnswIndex {
     }
 
     async fn commit(&self, tx: TxId) -> Result<()> {
-        if let Some(ref err) = self.validation_error {
+        if let Some(ref err) = self.inner.validation_error {
             return Err(MemFuseError::invalid_input(format!(
                 "Invalid index configuration: {}",
                 err
             )));
         }
-        let _lock = self.write_mutex.lock().await;
-        let ops = self.tx_buffer.drain(tx);
+        let _lock = self.inner.write_mutex.lock().await;
+        let ops = self.inner.tx_buffer.drain(tx);
         let mut deleted_any = false;
 
         // ANCHOR[SPEC:WP-2.2-SQ8TRAIN-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Lazy Training logic (Stabilized)
-        if self.config.quantize && self.quantizer.read().is_none() {
+        if self.inner.config.quantize && self.inner.quantizer.read().is_none() {
             let mut train_data = Vec::with_capacity(256.min(ops.len()));
             for op in &ops {
                 if let IndexOp::Insert { data, .. } = op {
@@ -1816,7 +1837,7 @@ impl VectorIndex for HnswIndex {
 
             // If we don't have enough in this batch, check existing nodes
             if train_data.len() < 256 {
-                let nodes = self.nodes.read();
+                let nodes = self.inner.nodes.read();
                 for node in nodes.iter() {
                     if let VectorData::F32(v) = &node.vector {
                         train_data.push(v.clone());
@@ -1830,10 +1851,10 @@ impl VectorIndex for HnswIndex {
             if train_data.len() >= 50 {
                 let training_refs: Vec<&[f32]> = train_data.iter().map(|v| v.as_slice()).collect();
                 let q =
-                    crate::quantize::ScalarQuantizer::train(&training_refs, self.config.dimension);
-                *self.quantizer.write() = Some(q.clone());
+                    crate::quantize::ScalarQuantizer::train(&training_refs, self.inner.config.dimension);
+                *self.inner.quantizer.write() = Some(q.clone());
 
-                let mut nodes = self.nodes.write();
+                let mut nodes = self.inner.nodes.write();
                 for node in nodes.iter_mut() {
                     if let VectorData::F32(v) = &node.vector {
                         node.vector = VectorData::U8(q.quantize(v));
@@ -1847,11 +1868,11 @@ impl VectorIndex for HnswIndex {
         for op in ops {
             match op {
                 IndexOp::Insert { doc_id, data } => {
-                    self.do_insert(doc_id, &data)?;
+                    self.inner.do_insert(doc_id, &data)?;
                     inserted_doc_ids.push(doc_id);
                 }
                 IndexOp::Delete { doc_id, .. } => {
-                    self.do_delete(doc_id)?;
+                    self.inner.do_delete(doc_id)?;
                     deleted_any = true;
                 }
                 // AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-INDEX-004 — IndexOp ist #[non_exhaustive]; neue Varianten (TS:2026-08-25T00:00:00Z)
@@ -1871,13 +1892,14 @@ impl VectorIndex for HnswIndex {
         // Atomisch committed_tx für alle neu eingefügten Nodes dieser Transaktion setzen
         if !inserted_doc_ids.is_empty() {
             let mmap_count = self
+                .inner
                 .mmap_index
                 .read()
                 .as_ref()
                 .map(|m| m.header.node_count as usize)
                 .unwrap_or(0);
-            let doc_map = self.doc_to_node.read();
-            let mut nodes = self.nodes.write();
+            let doc_map = self.inner.doc_to_node.read();
+            let mut nodes = self.inner.nodes.write();
 
             for doc_id in inserted_doc_ids {
                 if let Some(&global_idx) = doc_map.get(&doc_id.inner()) {
@@ -1891,31 +1913,31 @@ impl VectorIndex for HnswIndex {
             }
         }
 
-        if deleted_any && self.is_rebuild_required() {
+        if deleted_any && self.inner.is_rebuild_required() {
             tracing::warn!(
                 "HNSW index rebuild threshold reached (threshold: {:.2})",
-                self.config.rebuild_threshold
+                self.inner.config.rebuild_threshold
             );
             self.trigger_rebuild_async();
         }
 
-        self.last_tx_id.store(tx.inner(), Ordering::SeqCst);
+        self.inner.last_tx_id.store(tx.inner(), Ordering::SeqCst);
         Ok(())
     }
 
     async fn rollback(&self, tx: TxId) -> Result<()> {
-        if let Some(ref err) = self.validation_error {
+        if let Some(ref err) = self.inner.validation_error {
             return Err(MemFuseError::invalid_input(format!(
                 "Invalid index configuration: {}",
                 err
             )));
         }
-        self.tx_buffer.discard(tx);
+        self.inner.tx_buffer.discard(tx);
         Ok(())
     }
 
     async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
-        if let Some(ref err) = self.validation_error {
+        if let Some(ref err) = self.inner.validation_error {
             return Err(MemFuseError::invalid_input(format!(
                 "Invalid index configuration: {}",
                 err
@@ -1925,11 +1947,11 @@ impl VectorIndex for HnswIndex {
         let target = tx_id.inner();
 
         // Unter write_mutex um Konkurrenz mit laufenden Inserts zu verhindern
-        let _guard = self.write_mutex.lock().await;
+        let _guard = self.inner.write_mutex.lock().await;
 
         // 1. Sammle alle Nodes mit committed_tx > target_tx_id
         let indices_to_remove: Vec<usize> = {
-            let nodes = self.nodes.read();
+            let nodes = self.inner.nodes.read();
             nodes
                 .iter()
                 .enumerate()
@@ -1939,14 +1961,14 @@ impl VectorIndex for HnswIndex {
         };
 
         if indices_to_remove.is_empty() {
-            self.last_tx_id.store(target, Ordering::SeqCst);
+            self.inner.last_tx_id.store(target, Ordering::SeqCst);
             return Ok(());
         }
 
         // 2. Aus doc_to_node-Map entfernen
         {
-            let nodes = self.nodes.read();
-            let mut map = self.doc_to_node.write();
+            let nodes = self.inner.nodes.read();
+            let mut map = self.inner.doc_to_node.write();
             for &idx in &indices_to_remove {
                 if let Some(node) = nodes.get(idx) {
                     map.remove(&node.doc_id.inner());
@@ -1957,24 +1979,25 @@ impl VectorIndex for HnswIndex {
         // 3. Als deleted markieren (Soft-Delete — kein Rebuild nötig)
         {
             let mmap_count = self
+                .inner
                 .mmap_index
                 .read()
                 .as_ref()
                 .map(|m| m.header.node_count as usize)
                 .unwrap_or(0);
-            let mut deleted = self.deleted_nodes.write();
+            let mut deleted = self.inner.deleted_nodes.write();
             for &idx in &indices_to_remove {
                 deleted.insert((mmap_count + idx) as u64);
             }
-            self.deleted_count
+            self.inner.deleted_count
                 .fetch_add(indices_to_remove.len() as u64, Ordering::SeqCst);
         }
 
         // 4. TxBuffer bereinigen
-        self.tx_buffer.discard(tx_id);
+        self.inner.tx_buffer.discard(tx_id);
 
         // 5. last_tx_id zurücksetzen
-        self.last_tx_id.store(target, Ordering::SeqCst);
+        self.inner.last_tx_id.store(target, Ordering::SeqCst);
 
         tracing::info!(
             removed = indices_to_remove.len(),
@@ -1986,20 +2009,20 @@ impl VectorIndex for HnswIndex {
     }
 
     async fn last_tx_id(&self) -> Result<u64> {
-        Ok(self.last_tx_id.load(Ordering::SeqCst))
+        Ok(self.inner.last_tx_id.load(Ordering::SeqCst))
     }
 
     async fn all_doc_ids(&self) -> Result<Vec<DocId>> {
-        if self.validation_error.is_some() {
+        if self.inner.validation_error.is_some() {
             return Ok(Vec::new());
         }
-        let nodes = self.nodes.read();
-        let mmap_guard = self.mmap_index.read();
+        let nodes = self.inner.nodes.read();
+        let mmap_guard = self.inner.mmap_index.read();
         let mmap_node_count = mmap_guard
             .as_ref()
             .map(|m| m.header.node_count as usize)
             .unwrap_or(0);
-        let deleted = self.deleted_nodes.read();
+        let deleted = self.inner.deleted_nodes.read();
 
         let ctx = SearchContext {
             nodes: &nodes,
@@ -2012,35 +2035,37 @@ impl VectorIndex for HnswIndex {
 
         for i in 0..total_nodes {
             if !deleted.contains(i as u64) {
-                ids.push(self.resolve_doc_id(i, &ctx)?);
+                ids.push(self.inner.resolve_doc_id(i, &ctx)?);
             }
         }
         Ok(ids)
     }
 
     async fn len(&self) -> usize {
-        if self.validation_error.is_some() {
+        if self.inner.validation_error.is_some() {
             return 0;
         }
         let mmap_count = self
+            .inner
             .mmap_index
             .read()
             .as_ref()
             .map(|m| m.header.node_count as usize)
             .unwrap_or(0);
-        let total = mmap_count + self.nodes.read().len();
-        let deleted = self.deleted_count.load(Ordering::SeqCst) as usize;
+        let total = mmap_count + self.inner.nodes.read().len();
+        let deleted = self.inner.deleted_count.load(Ordering::SeqCst) as usize;
         total.saturating_sub(deleted)
     }
+
     async fn stats(&self) -> Result<VectorIndexStats> {
-        let nodes = self.nodes.read();
-        let mmap_guard = self.mmap_index.read();
+        let nodes = self.inner.nodes.read();
+        let mmap_guard = self.inner.mmap_index.read();
         let mmap_count = mmap_guard
             .as_ref()
             .map(|m| m.header.node_count as usize)
             .unwrap_or(0);
 
-        let deleted_count = self.deleted_count.load(Ordering::SeqCst) as usize;
+        let deleted_count = self.inner.deleted_count.load(Ordering::SeqCst) as usize;
         let num_vectors = (mmap_count + nodes.len()).saturating_sub(deleted_count);
 
         let mut vector_memory: usize = nodes
@@ -2070,7 +2095,7 @@ impl VectorIndex for HnswIndex {
             memory_usage_bytes: vector_memory
                 + connection_memory
                 + (nodes.len() * std::mem::size_of::<HnswNode>()),
-            num_layers: self.max_layer.load(Ordering::SeqCst) as usize + 1,
+            num_layers: self.inner.max_layer.load(Ordering::SeqCst) as usize + 1,
         })
     }
 }
@@ -2347,7 +2372,7 @@ mod tests {
 
         assert_eq!(index.len().await, 60);
         // Verify quantizer is trained
-        assert!(index.quantizer.read().is_some());
+        assert!(index.quantizer().read().is_some());
 
         // Delete some to lower connectivity and allow rebuild
         let tx2 = TxId::new(2);
@@ -2364,7 +2389,7 @@ mod tests {
         // Verify state after rebuild
         assert_eq!(index.len().await, 50);
         assert!(
-            index.quantizer.read().is_some(),
+            index.quantizer().read().is_some(),
             "Quantizer must be preserved"
         );
 
@@ -2388,7 +2413,7 @@ mod tests {
 
             let config = test_config(v.len());
             let index = HnswIndex::try_new(config).unwrap(); // unwrap
-            let result = index.do_insert(DocId::new(1), &v);
+            let result = index.inner.do_insert(DocId::new(1), &v);
 
             proptest::prop_assert!(result.is_err(), "Inserting vector containing NaN must return error");
         }

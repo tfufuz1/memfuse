@@ -35,6 +35,7 @@
 #![warn(missing_docs)]
 
 pub mod error;
+pub mod error_dto;
 pub mod ipc;
 pub mod snapshot;
 pub mod traits;
@@ -42,6 +43,7 @@ pub mod tx_buffer;
 pub mod types;
 
 pub use error::{MemFuseError, Result};
+pub use error_dto::MemFuseErrorDto;
 pub use snapshot::{SnapshotGuard, SnapshotRegistry};
 pub use traits::*;
 pub use tx_buffer::{IndexOp, TxBuffer};

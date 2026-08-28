@@ -131,19 +131,35 @@ fn results_to_py(
     Ok(py_res)
 }
 
-/// Maps any error implementing Display to a PyRuntimeError.
+/// Maps a MemFuseError into a structured Python PyErr with `kind`, `message`, and `details` attributes.
 fn memfuse_err(e: memfuse_core::MemFuseError) -> PyErr {
-    use memfuse_core::MemFuseError::*;
-    match e {
-        Storage(msg) => MemFuseIOError::new_err(msg),
-        Index(msg) => MemFuseIndexError::new_err(msg),
-        InvalidInput(msg) => MemFuseValueError::new_err(msg),
-        Crypto(msg) => MemFuseCryptoError::new_err(msg),
-        Sandbox(msg) => pyo3::exceptions::PyPermissionError::new_err(msg),
-        Internal(msg) => MemFuseInternalError::new_err(msg),
-        Serialization(msg) => MemFuseValueError::new_err(msg),
-        _ => MemFuseError::new_err(e.to_string()),
-    }
+    let dto = memfuse_core::MemFuseErrorDto::from(&e);
+    Python::with_gil(|py| {
+        let py_err = match dto.kind.as_str() {
+            "Storage" | "Io" | "WalCorruption" | "ChecksumMismatch" => {
+                MemFuseIOError::new_err(dto.message.clone())
+            }
+            "Index" | "HnswConnectivityDegraded" => MemFuseIndexError::new_err(dto.message.clone()),
+            "InvalidInput" | "Serialization" | "Json" | "ParseError" | "Bincode" => {
+                MemFuseValueError::new_err(dto.message.clone())
+            }
+            "Crypto" => MemFuseCryptoError::new_err(dto.message.clone()),
+            "Sandbox" | "MemoryLimitExceeded" | "SandboxTimeout" | "PolicyViolation" => {
+                pyo3::exceptions::PyPermissionError::new_err(dto.message.clone())
+            }
+            "Internal" => MemFuseInternalError::new_err(dto.message.clone()),
+            _ => MemFuseError::new_err(dto.message.clone()),
+        };
+        let value = py_err.value(py);
+        let _ = value.setattr("kind", dto.kind);
+        let _ = value.setattr("message", dto.message);
+        if let Some(ref details) = dto.details {
+            if let Ok(details_py) = json_to_py(py, details) {
+                let _ = value.setattr("details", details_py);
+            }
+        }
+        py_err
+    })
 }
 
 // ─── Python Types ───────────────────────────────────────────────────────────

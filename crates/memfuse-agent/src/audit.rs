@@ -3,7 +3,7 @@
 //! Provides append-only logging of every step an agent takes.
 //! Entries are stored via [`Collection`] and keyed `audit:{task_id}:step:{n}`.
 
-use memfuse_core::Result;
+use memfuse_core::{Result, StorageEngine};
 use memfuse_db::Collection;
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
@@ -20,12 +20,12 @@ pub struct AuditEntry {
 }
 
 /// Append-only audit log backed by a MemFuse collection.
-pub struct AuditLog {
-    collection: Arc<Collection<LsmStorage>>,
+pub struct AuditLog<S: StorageEngine = LsmStorage> {
+    collection: Arc<Collection<S>>,
 }
 
-impl AuditLog {
-    pub fn new(collection: Arc<Collection<LsmStorage>>) -> Self {
+impl<S: StorageEngine> AuditLog<S> {
+    pub fn new(collection: Arc<Collection<S>>) -> Self {
         Self { collection }
     }
 
@@ -60,6 +60,178 @@ impl AuditLog {
 
         // Sortiere nach step_count für deterministisches Replay
         entries.sort_by_key(|e| e.step_count);
+        Ok(entries)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::{HnswConfig, HnswIndex};
+
+    #[tokio::test]
+    async fn test_audit_log_in_memory_storage() {
+        let storage = Arc::new(InMemoryStorageEngine::new());
+        let index = Arc::new(HnswIndex::try_new(HnswConfig::default()).unwrap()); // unwrap allowed
+        let graph_index = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(std::sync::atomic::AtomicU64::new(1));
+
+        let collection = Arc::new(Collection::new(
+            "test_audit".to_string(),
+            storage,
+            index,
+            graph_index,
+            next_tx,
+            1536,
+            memfuse_text::Language::English,
+        ));
+
+        let audit_log = AuditLog::new(collection);
+
+        let entry1 = AuditEntry {
+            task_id: "task-123".to_string(),
+            step_count: 1,
+            node_id: "node-start".to_string(),
+            tokens_consumed: 50,
+            payload: serde_json::json!({"action": "init"}),
+        };
+
+        let entry2 = AuditEntry {
+            task_id: "task-123".to_string(),
+            step_count: 2,
+            node_id: "node-process".to_string(),
+            tokens_consumed: 120,
+            payload: serde_json::json!({"action": "compute"}),
+        };
+
+        audit_log.append(&entry1).await.unwrap(); // unwrap allowed
+        audit_log.append(&entry2).await.unwrap(); // unwrap allowed
+
+        let replayed = audit_log.replay_task("task-123").await.unwrap(); // unwrap allowed
+        assert_eq!(replayed.len(), 2);
+        assert_eq!(replayed[0].step_count, 1);
+        assert_eq!(replayed[0].node_id, "node-start");
+        assert_eq!(replayed[1].step_count, 2);
+        assert_eq!(replayed[1].node_id, "node-process");
+    }
+}
+
+/// Minimal in-memory implementation of [`StorageEngine`] backed by a thread-safe map.
+/// Useful for testing and fast mock storage.
+#[cfg(any(test, feature = "test-utils"))]
+#[derive(Debug, Default)]
+pub struct InMemoryStorageEngine {
+    data: std::sync::Mutex<std::collections::HashMap<Vec<u8>, Vec<u8>>>,
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+impl InMemoryStorageEngine {
+    pub fn new() -> Self {
+        Self {
+            data: std::sync::Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+#[async_trait::async_trait]
+impl StorageEngine for InMemoryStorageEngine {
+    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let guard = self.data.lock().unwrap(); // unwrap allowed
+        Ok(guard.get(key).cloned())
+    }
+
+    async fn get_at_seq(&self, key: &[u8], _seq: u64) -> Result<Option<Vec<u8>>> {
+        self.get(key).await
+    }
+
+    async fn put(&self, _tx_id: memfuse_core::TxId, key: &[u8], value: &[u8]) -> Result<()> {
+        let mut guard = self.data.lock().unwrap(); // unwrap allowed
+        guard.insert(key.to_vec(), value.to_vec());
+        Ok(())
+    }
+
+    async fn delete(&self, _tx_id: memfuse_core::TxId, key: &[u8]) -> Result<()> {
+        let mut guard = self.data.lock().unwrap(); // unwrap allowed
+        guard.remove(key);
+        Ok(())
+    }
+
+    async fn commit(&self, _tx_id: memfuse_core::TxId) -> Result<()> {
+        Ok(())
+    }
+
+    async fn rollback(&self, _tx_id: memfuse_core::TxId) -> Result<()> {
+        Ok(())
+    }
+
+    async fn rollback_to_tx(&self, _tx_id: memfuse_core::TxId) -> Result<()> {
+        Ok(())
+    }
+
+    async fn flush(&self) -> Result<()> {
+        Ok(())
+    }
+
+    async fn stats(&self) -> Result<memfuse_core::StorageStats> {
+        Ok(memfuse_core::StorageStats {
+            num_segments: 0,
+            total_size_bytes: 0,
+            memtable_size_bytes: 0,
+        })
+    }
+
+    async fn last_seq_no(&self) -> Result<u64> {
+        Ok(0)
+    }
+
+    async fn last_tx_id(&self) -> Result<memfuse_core::TxId> {
+        Ok(memfuse_core::TxId::new(0))
+    }
+
+    async fn pin_checkpoint(&self, _seq_no: u64) -> Result<()> {
+        Ok(())
+    }
+
+    async fn unpin_checkpoint(&self, _seq_no: u64) -> Result<()> {
+        Ok(())
+    }
+
+    async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        let guard = self.data.lock().unwrap(); // unwrap allowed
+        let entries = guard
+            .iter()
+            .filter(|(k, _)| k.starts_with(prefix))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        Ok(entries)
+    }
+
+    async fn scan(
+        &self,
+        start: std::ops::Bound<&[u8]>,
+        end: std::ops::Bound<&[u8]>,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        let guard = self.data.lock().unwrap(); // unwrap allowed
+        let mut entries: Vec<(Vec<u8>, Vec<u8>)> = guard
+            .iter()
+            .filter(|(k, _)| {
+                let s_ok = match start {
+                    std::ops::Bound::Included(s) => k.as_slice() >= s,
+                    std::ops::Bound::Excluded(s) => k.as_slice() > s,
+                    std::ops::Bound::Unbounded => true,
+                };
+                let e_ok = match end {
+                    std::ops::Bound::Included(e) => k.as_slice() <= e,
+                    std::ops::Bound::Excluded(e) => k.as_slice() < e,
+                    std::ops::Bound::Unbounded => true,
+                };
+                s_ok && e_ok
+            })
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(entries)
     }
 }

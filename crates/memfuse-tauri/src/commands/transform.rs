@@ -36,6 +36,7 @@
 //! gleichzeitig aktiv sein — auch wenn ein hypothetischer Hang auftritt.
 
 use crate::state::AppState;
+use memfuse_core::MemFuseErrorDto;
 use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -126,10 +127,8 @@ async fn run_regex_transformation(
     flags: &str,
     replacement: &str,
     input: &str,
-) -> Result<RegexTransformResult, String> {
+) -> Result<RegexTransformResult, MemFuseErrorDto> {
     // ── 1. Adaptive Eingabelängenbegrenzung ──────────────────────────────────
-    // Auch wenn die regex-Crate kein ReDoS erzeugen kann, begrenzen wir den
-    // Input, damit lineares Matching innerhalb des Timeouts bleibt.
     let is_complex = is_structurally_complex(pattern);
     let effective_limit = if is_complex {
         MAX_REGEX_INPUT_BYTES_COMPLEX
@@ -138,35 +137,30 @@ async fn run_regex_transformation(
     };
 
     if input.len() > effective_limit {
-        return Err(format!(
-            "Eingabe zu groß: {} Bytes (Limit: {} Bytes{})",
-            input.len(),
-            effective_limit,
-            if is_complex {
-                " — Pattern als strukturell komplex eingestuft, reduziertes Limit aktiv"
-            } else {
-                ""
-            }
+        return Err(MemFuseErrorDto::new(
+            "MemoryLimitExceeded",
+            format!(
+                "Eingabe zu groß: {} Bytes (Limit: {} Bytes{})",
+                input.len(),
+                effective_limit,
+                if is_complex {
+                    " — Pattern als strukturell komplex eingestuft, reduziertes Limit aktiv"
+                } else {
+                    ""
+                }
+            ),
         ));
     }
 
     // ── 2. Pattern kompilieren ───────────────────────────────────────────────
-    // `RegexBuilder` setzt ein `size_limit` (100 KiB) gegen übergroße /
-    // katastrophale Regex-Kompilierungen und ReDoS-Muster.
     let re = RegexBuilder::new(pattern)
         .size_limit(100 * 1024)
         .build()
-        .map_err(|e| format!("Ungültiges Regex-Pattern: {e}"))?;
+        .map_err(|e| {
+            MemFuseErrorDto::new("InvalidInput", format!("Ungültiges Regex-Pattern: {e}"))
+        })?;
 
     // ── 3. Matching in spawn_blocking mit Timeout ────────────────────────────
-    //
-    // AI-NOTE[CONCURRENCY][MINOR]: `tokio::time::timeout` bricht den
-    // spawn_blocking-Thread NICHT ab — er läuft weiter, bis er fertig ist.
-    // Da die regex-Crate lineare Laufzeit garantiert, ist ein echter
-    // "läuft ewig"-Fall nicht möglich. Der Timeout ist primär ein
-    // Sicherheitsnetz gegen Bugs, nicht gegen ReDoS.
-    // ID: AGT-TRANSFORM-001
-    // DECISION-REF: ADR-014
     let input_owned = input.to_owned();
     let replacement_owned = replacement.to_owned();
     let flags_owned = flags.to_owned();
@@ -183,8 +177,6 @@ async fn run_regex_transformation(
                 re.replacen(&input_owned, 1, replacement_owned.as_str())
                     .into_owned()
             };
-            // Anzahl der Ersetzungen approximieren: Zähle Unterschiede.
-            // Hinweis: Das ist eine Näherung; exaktes Zählen würde zwei Durchläufe erfordern.
             let replacements_made = if is_global {
                 re.find_iter(&original).count()
             } else if re.is_match(&original) {
@@ -203,36 +195,31 @@ async fn run_regex_transformation(
             replacements_made,
         }),
         Ok(Err(join_err)) => {
-            // spawn_blocking-Thread ist in Panik geraten (sollte nie passieren,
-            // da kein unwrap() im Blocking-Code).
             tracing::error!(
                 error = %join_err,
                 pattern_len = pattern.len(),
                 input_len = input.len(),
                 "Regex-spawn_blocking-Thread ist abgestürzt — interner Fehler"
             );
-            Err(format!("Interner Fehler beim Regex-Matching: {join_err}"))
+            Err(MemFuseErrorDto::new(
+                "Internal",
+                format!("Interner Fehler beim Regex-Matching: {join_err}"),
+            ))
         }
         Err(_elapsed) => {
-            // AI-NOTE[CONCURRENCY]: Dieser Timeout-Fall sollte in der Praxis
-            // NIE auftreten (Laufzeit-Garantie der regex-Crate + konservative
-            // Input-Größenbegrenzung). Ein Auftreten signalisiert einen Bug.
-            // DECISION-REF: ADR-014
             tracing::warn!(
                 pattern_len = pattern.len(),
                 input_len = input.len(),
                 is_complex,
                 timeout_secs = REGEX_TIMEOUT.as_secs(),
-                // Monitoring-Schritt (Auftrag §5): Dieses Log macht sichtbar,
-                // ob Timeouts in der Praxis vorkommen. Pattern selbst wird
-                // absichtlich nicht geloggt (kann sensible Nutzerdaten enthalten).
-                "Regex-Timeout aufgetreten — sollte bei dieser Engine nicht vorkommen; \
-                 bitte Pattern und Input-Größe untersuchen"
+                "Regex-Timeout aufgetreten — sollte bei dieser Engine nicht vorkommen; bitte Pattern und Input-Größe untersuchen"
             );
-            Err(format!(
-                "Regex-Timeout nach {}s — die regex-Crate garantiert lineare Laufzeit, \
-                 daher ist dies ein unerwarteter Fehler. Bitte Pattern und Input-Größe prüfen.",
-                REGEX_TIMEOUT.as_secs()
+            Err(MemFuseErrorDto::new(
+                "SandboxTimeout",
+                format!(
+                    "Regex-Timeout nach {}s — die regex-Crate garantiert lineare Laufzeit, daher ist dies ein unerwarteter Fehler. Bitte Pattern und Input-Größe prüfen.",
+                    REGEX_TIMEOUT.as_secs()
+                ),
             ))
         }
     }
@@ -251,12 +238,13 @@ async fn run_regex_transformation(
 pub async fn run_regex_transform(
     state: State<'_, AppState>,
     request: RegexTransformRequest,
-) -> Result<RegexTransformResult, String> {
-    // Semaphore-Permit erwerben — gibt sofort Fehler zurück wenn erschöpft
-    let _permit = state
-        .regex_semaphore
-        .try_acquire()
-        .map_err(|_| "Too many concurrent regex operations - please wait".to_string())?;
+) -> Result<RegexTransformResult, MemFuseErrorDto> {
+    let _permit = state.regex_semaphore.try_acquire().map_err(|_| {
+        MemFuseErrorDto::new(
+            "Sandbox",
+            "Too many concurrent regex operations - please wait",
+        )
+    })?;
 
     run_regex_transformation(
         &request.pattern,
@@ -268,10 +256,6 @@ pub async fn run_regex_transform(
 }
 
 /// Wendet eine Regex-Transformation auf mehrere Text-Snippets an (Bulk-Transform).
-///
-/// Verarbeitet Snippets sequenziell mit einer gemeinsamen Semaphore. Dies verhindert,
-/// dass ein einzelner Bulk-Aufruf den gesamten Blocking-Thread-Pool belegt.
-/// DECISION-REF: ADR-014
 #[tauri::command]
 pub async fn run_bulk_regex_transform(
     state: State<'_, AppState>,
@@ -279,21 +263,18 @@ pub async fn run_bulk_regex_transform(
     flags: String,
     replacement: String,
     inputs: Vec<String>,
-) -> Result<Vec<Result<RegexTransformResult, String>>, String> {
+) -> Result<Vec<Result<RegexTransformResult, MemFuseErrorDto>>, MemFuseErrorDto> {
     let mut results = Vec::with_capacity(inputs.len());
 
     for input in inputs {
-        // Semaphore für jeden Snippet einzeln erwerben (sequenzielle Verarbeitung).
-        // Gibt bei Erschöpfung keinen Fehler zurück, sondern wartet bis ein Permit frei wird.
         let _permit = state
             .regex_semaphore
             .acquire()
             .await
-            .map_err(|e| format!("Semaphore error: {e}"))?;
+            .map_err(|e| MemFuseErrorDto::new("Internal", format!("Semaphore error: {e}")))?;
 
         let result = run_regex_transformation(&pattern, &flags, &replacement, &input).await;
         results.push(result);
-        // _permit wird hier gedroppt → Permit für nächste Iteration freigegeben
     }
 
     Ok(results)
@@ -391,20 +372,22 @@ mod tests {
     #[test]
     fn test_invalid_pattern_returns_error_not_panic() {
         let err = transform!("[invalid", "", "", "input").unwrap_err();
+        assert_eq!(err.kind, "InvalidInput");
         assert!(
-            err.contains("Ungültiges Regex-Pattern"),
-            "Sollte klare Fehlermeldung zurückgeben: {err}"
+            err.message.contains("Ungültiges Regex-Pattern"),
+            "Sollte klare Fehlermeldung zurückgeben: {}",
+            err.message
         );
     }
 
     #[test]
     fn test_backreference_rejected_at_compile_time() {
-        // Die regex-Crate lehnt Backreferences beim Kompilieren ab.
-        // Dies beweist, dass kein ReDoS via Backreferences möglich ist.
         let err = transform!(r"(a)\1", "", "", "aa").unwrap_err();
+        assert_eq!(err.kind, "InvalidInput");
         assert!(
-            err.contains("Ungültiges Regex-Pattern"),
-            "Backreference muss als Compile-Fehler abgelehnt werden: {err}"
+            err.message.contains("Ungültiges Regex-Pattern"),
+            "Backreference muss als Compile-Fehler abgelehnt werden: {}",
+            err.message
         );
     }
 
@@ -412,29 +395,33 @@ mod tests {
     fn test_input_too_large_normal_pattern() {
         let large_input = "a".repeat(MAX_REGEX_INPUT_BYTES + 1);
         let err = transform!("a", "g", "b", &large_input).unwrap_err();
+        assert_eq!(err.kind, "MemoryLimitExceeded");
         assert!(
-            err.contains("Eingabe zu groß"),
-            "Limit-Fehler erwartet: {err}"
+            err.message.contains("Eingabe zu groß"),
+            "Limit-Fehler erwartet: {}",
+            err.message
         );
         assert!(
-            !err.contains("strukturell komplex"),
+            !err.message.contains("strukturell komplex"),
             "Einfaches Pattern sollte kein 'komplex'-Label erhalten"
         );
     }
 
     #[test]
     fn test_input_too_large_complex_pattern() {
-        // Ein komplexes Pattern (viele Gruppen) triggert das niedrigere Limit.
         let complex_pattern = "(a)(b)(c)(d)(e)(f)(g)(h)(i)";
         let large_input = "a".repeat(MAX_REGEX_INPUT_BYTES_COMPLEX + 1);
         let err = transform!(complex_pattern, "g", "x", &large_input).unwrap_err();
+        assert_eq!(err.kind, "MemoryLimitExceeded");
         assert!(
-            err.contains("Eingabe zu groß"),
-            "Limit-Fehler erwartet: {err}"
+            err.message.contains("Eingabe zu groß"),
+            "Limit-Fehler erwartet: {}",
+            err.message
         );
         assert!(
-            err.contains("strukturell komplex"),
-            "Komplexes Pattern sollte 'komplex'-Label enthalten: {err}"
+            err.message.contains("strukturell komplex"),
+            "Komplexes Pattern sollte 'komplex'-Label enthalten: {}",
+            err.message
         );
     }
 
@@ -517,23 +504,24 @@ mod tests {
     /// Stellt sicher, dass die Engine-Grenze korrekt greift.
     #[test]
     fn test_lookahead_rejected() {
-        // Lookahead (?=...) wird von der regex-Crate nicht unterstützt.
         let err = transform!(r"foo(?=bar)", "", "baz", "foobar").unwrap_err();
+        assert_eq!(err.kind, "InvalidInput");
         assert!(
-            err.contains("Ungültiges Regex-Pattern"),
-            "Lookahead muss abgelehnt werden: {err}"
+            err.message.contains("Ungültiges Regex-Pattern"),
+            "Lookahead muss abgelehnt werden: {}",
+            err.message
         );
     }
 
     #[test]
     fn test_size_limit_rejection() {
-        // Test, dass ein Pattern, das das size_limit (10 KiB) überschreitet,
-        // als Fehler zurückgegeben und nicht gecrasht wird.
         let oversized_pattern = r"[a-z]".repeat(20_000);
         let err = transform!(&oversized_pattern, "", "", "input").unwrap_err();
+        assert_eq!(err.kind, "InvalidInput");
         assert!(
-            err.contains("Ungültiges Regex-Pattern"),
-            "Oversized pattern size_limit violation should be returned as error: {err}"
+            err.message.contains("Ungültiges Regex-Pattern"),
+            "Oversized pattern size_limit violation should be returned as error: {}",
+            err.message
         );
     }
 }

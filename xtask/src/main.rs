@@ -40,7 +40,7 @@ pub fn scan_tags<P: AsRef<Path>>(root: P) -> Vec<TagItem> {
     let stand_re = Regex::new(r"//\s*STAND:\s*(.+)").unwrap();
     let zweck_re = Regex::new(r"//\s*ZWECK:\s*(.+)").unwrap();
 
-    for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
+    for entry in WalkDir::new(root).sort_by_file_name().into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
         if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("rs") {
             let rel_path = path.to_string_lossy().to_string();
@@ -434,7 +434,12 @@ fn generate_changelog(tags: &[TagItem]) -> String {
     out.push_str("|---|---|---|---|---|---|---|---|\n");
 
     let mut sorted_tags: Vec<&TagItem> = tags.iter().collect();
-    sorted_tags.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    sorted_tags.sort_by(|a, b| {
+        b.timestamp
+            .cmp(&a.timestamp)
+            .then_with(|| a.file_path.cmp(&b.file_path))
+            .then_with(|| a.line_num.cmp(&b.line_num))
+    });
 
     for t in sorted_tags {
         let passes = if let Some(id) = &t.id {
@@ -476,10 +481,16 @@ fn generate_changelog(tags: &[TagItem]) -> String {
 }
 
 fn generate_ai_tags_section(tags: &[TagItem]) -> String {
-    let open_tags: Vec<&TagItem> = tags
+    let mut open_tags: Vec<&TagItem> = tags
         .iter()
         .filter(|t| t.tag_type == "AI-TAG" && !t.is_resolved)
         .collect();
+
+    open_tags.sort_by(|a, b| {
+        a.file_path
+            .cmp(&b.file_path)
+            .then_with(|| a.line_num.cmp(&b.line_num))
+    });
 
     let mut out = String::new();
     out.push_str(&format!("Stand letzter Prüfung: {}\n", chrono_or_today()));

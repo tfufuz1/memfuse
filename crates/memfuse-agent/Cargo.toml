@@ -6,6 +6,10 @@ license.workspace = true
 rust-version.workspace = true
 description = "Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop"
 
+[features]
+default = []
+test-utils = []
+
 [dependencies]
 memfuse-core       = { workspace = true }
 memfuse-db         = { workspace = true }
@@ -21,3 +25,5 @@ async-trait        = { workspace = true }
 [dev-dependencies]
 tempfile           = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+memfuse-index      = { workspace = true }
+memfuse-text       = { workspace = true }
