@@ -556,6 +556,22 @@ impl MemFuse {
             .await
     }
 
+    /// Speichert ein Dokument mit expliziter kognitiver Gedächtnisklassifikation.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn insert_typed(
+        &self,
+        collection_name: &str,
+        id: &str,
+        embedding: &[f32],
+        memory_type: memfuse_core::MemoryType,
+        metadata: Option<Value>,
+    ) -> Result<()> {
+        self.collection(collection_name)
+            .await?
+            .insert_typed(id, embedding, memory_type, metadata)
+            .await
+    }
+
     /// Upserts a document (inserts if missing, updates if exists) atomically.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn upsert(&self, id: &str, embedding: &[f32], metadata: Option<Value>) -> Result<()> {
