@@ -17,10 +17,12 @@ echo "============================================================"
 echo ""
 echo "[1/9] Verifying Rust toolchain..."
 
-# Vorheriges Stable entfernen, um OverlayFS-Rename-Fehler zu umgehen
-rustup toolchain uninstall stable || true
-rustup toolchain install stable
-rustup default stable
+if command -v rustc &>/dev/null; then
+    rustup default stable &>/dev/null || true
+else
+    rustup toolchain install stable
+    rustup default stable
+fi
 
 RUST_VERSION=$(rustc --version)
 echo "  ✅ $RUST_VERSION"
@@ -102,10 +104,10 @@ else
     exit 1
 fi
 
-OPEN_TAGS=$(grep -rn 'AI-TAG\[SMELL\]\[CRITICAL\]' crates/ --include='*.rs' 2>/dev/null | grep -v RESOLVED | wc -l | tr -d ' ')
+OPEN_TAGS=$( (grep -rn 'AI-TAG\[SMELL\]\[CRITICAL\]' crates/ --include='*.rs' 2>/dev/null || true) | (grep -v RESOLVED || true) | wc -l | tr -d ' ')
 echo "  ✅ Open AI-TAG[SMELL][CRITICAL]: $OPEN_TAGS (target: 0)"
 
-OPEN_BLOCKERS=$(grep -rn "AI-TAG\[.*\]\[BLOCKER\]\|ANCHOR\[.*\] STATUS:BLOCKER" crates/ --include='*.rs' 2>/dev/null | grep -v RESOLVED | wc -l | tr -d ' ')
+OPEN_BLOCKERS=$( (grep -rn "AI-TAG\[.*\]\[BLOCKER\]\|ANCHOR\[.*\] STATUS:BLOCKER" crates/ --include='*.rs' 2>/dev/null || true) | (grep -v RESOLVED || true) | wc -l | tr -d ' ')
 if [ "$OPEN_BLOCKERS" -gt 0 ]; then
     echo "  ⚠️ HARD GATE: $OPEN_BLOCKERS open BLOCKER tags found in codebase!"
     if [ "${ALLOW_OPEN_BLOCKERS:-0}" = "1" ] || [ "${JULES_FIX_BLOCKER:-0}" = "1" ]; then
@@ -139,11 +141,10 @@ echo ""
 echo "[9/9] Generating session context digest..."
 echo "------------------------------------------------------------"
 echo "OFFENE KRITISCHE TAGS (BLOCKER/CRITICAL):"
-grep -rn "AI-TAG\[.*\]\[BLOCKER\]\|AI-TAG\[.*\]\[CRITICAL\]" crates/ \
-    --include='*.rs' | grep -v RESOLVED || echo "  (keine)"
+(grep -rn "AI-TAG\[.*\]\[BLOCKER\]\|AI-TAG\[.*\]\[CRITICAL\]" crates/ --include='*.rs' 2>/dev/null || true) | (grep -v RESOLVED || true) | { grep . || echo "  (keine)"; }
 echo ""
 echo "OFFENE ANCHORS (IN-PROGRESS):"
-grep -rn "ANCHOR\[.*\] STATUS:IN-PROGRESS" crates/ --include='*.rs' || echo "  (keine)"
+(grep -rn "ANCHOR\[.*\] STATUS:IN-PROGRESS" crates/ --include='*.rs' 2>/dev/null || true) | { grep . || echo "  (keine)"; }
 echo ""
 echo "LETZTE 3 ADRs:"
 grep -A2 "^## ADR-" DECISIONS.md | tail -30 || true
