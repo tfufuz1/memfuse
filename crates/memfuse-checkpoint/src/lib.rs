@@ -16,6 +16,13 @@
 
 #![forbid(unsafe_code)]
 
+// FILE-CONTEXT
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// ZWECK:       RAII CheckpointGuard + persistente Snapshot-Verwaltung
+// INVARIANTEN: CheckpointGuard darf NICHT mit PersistentCheckpointStore verwechselt werden; GC safety by pinning before store writes
+// HOTSPOTS:    CheckpointGuard::for_agent_step(), PersistentCheckpointStore::create_checkpoint()
+// SIEHE AUCH:  ADR-011
+
 use async_trait::async_trait;
 use memfuse_core::{MemFuseError, Result, TxId, WorkflowState};
 use parking_lot::RwLock;
@@ -55,7 +62,7 @@ fn monotonic_timestamp_ms() -> u64 {
         .max(wall_ms)
 }
 
-/// AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z)
+/// AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z) (SESSION: a3f29c1d)
 /// (SESSION:14348074) — Fault-Injection-Tests in
 /// tests/manifest_fault_injection.rs beweisen atomare Schreib-Semantik
 /// und Tamper-Erkennung via Blake3-Checksum.

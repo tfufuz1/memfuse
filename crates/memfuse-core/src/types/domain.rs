@@ -7,6 +7,13 @@
 //! # Invarianten
 //! - `DocId` und `TxId` sind Wrapper um primitive Typen mit deterministischer Hash-Generierung.
 
+// FILE-CONTEXT
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// ZWECK:       Domain-Types (TxId, DocId, CollectionId) — Newtype-Wrapper für Typ-Sicherheit
+// INVARIANTEN: TxId ist u64-Newtype, NIEMALS direkt aus SystemTime erzeugen (AGENTS.md §4)
+// HOTSPOTS:    TxId, DocId, CollectionId, TOMBSTONE_BIT
+// SIEHE AUCH:  AGENTS.md §4
+
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 

@@ -53,6 +53,13 @@
 
 #![forbid(unsafe_code)]
 
+// FILE-CONTEXT
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// ZWECK:       Orchestrator-Facade (Layer 2) — öffentliche API der Collection
+// INVARIANTEN: Unified transaction semantics across HNSW, LSM, Graph and Text indexes; thread-safe concurrent collection access
+// HOTSPOTS:    hybrid_search(), insert(), relate()
+// SIEHE AUCH:  crates/memfuse-db/AGENTS.md
+
 pub use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{DocId, Result, StorageEngine, TxId};
 use memfuse_index::{HnswConfig, HnswIndex};

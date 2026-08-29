@@ -12,6 +12,13 @@
 
 #![forbid(unsafe_code)]
 
+// FILE-CONTEXT
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// ZWECK:       PyO3 FFI-Grenzschicht — Rust-Fehler müssen in Python-Exceptions konvertiert werden
+// INVARIANTEN: Alle MemFuseError -> PyErr Konvertierung vollständig; kein Panic darf FFI-Grenze überschreiten
+// HOTSPOTS:    PyMemFuse, PyCollection methods, error conversion
+// SIEHE AUCH:  crates/memfuse-db/AGENTS.md
+
 use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
 use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;

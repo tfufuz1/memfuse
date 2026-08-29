@@ -6,6 +6,13 @@
 // INVARIANT: Trait-Contracts sind das API-Rückgrat des Workspace.
 // REGEL: Neue Methoden MÜSSEN Default-Impl haben (backward compat).
 
+// FILE-CONTEXT
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// ZWECK:       Zentrale Trait-Definitionen (VectorIndex, GraphIndex, TextIndex, etc.)
+// INVARIANTEN: Trait default implementations required for new trait methods (backward compatibility)
+// HOTSPOTS:    VectorIndex::search_at, GraphIndex::traverse_at Default-Impls
+// SIEHE AUCH:  docs/TYPE_REGISTRY.md, ADR-035
+
 use crate::types::*;
 use crate::Result;
 use async_trait::async_trait;

@@ -15,6 +15,13 @@
 //! - **Async I/O**: All disk operations use `tokio::fs` or `memmap2` with `spawn_blocking`.
 //! - **Zero Panic**: Production code paths avoid `unwrap()` and `expect()`, favoring explicit error handling.
 
+// FILE-CONTEXT
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// ZWECK:       Persistente, immutable SSTable-Dateien (Sorted String Table)
+// INVARIANTEN: Immutability post-creation, sorted key order, async spawn_blocking I/O, zero panic
+// HOTSPOTS:    SSTableIterator, Bloom-Filter-Lookup, merge_sorted_iters()
+// SIEHE AUCH:  crates/memfuse-store/AGENTS.md
+
 use bytes::{BufMut, Bytes, BytesMut};
 use lru::LruCache;
 use memfuse_core::{MemFuseError, Result};

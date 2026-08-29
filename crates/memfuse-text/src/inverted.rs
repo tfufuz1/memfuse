@@ -6,6 +6,13 @@
 // BOTTLENECK: Heap-Allokationen (format!, Vec::new)
 // OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
 
+// FILE-CONTEXT
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// ZWECK:       BM25-Invertierter Index mit Tombstone-Update-Semantik
+// INVARIANTEN: Tombstone update semantics preserve doc counts without eager deletion; tokenization symmetric across index/search
+// HOTSPOTS:    insert(), delete() (Tombstone-Logik), query()
+// SIEHE AUCH:  crates/memfuse-text/AGENTS.md
+
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use async_trait::async_trait;
 use memfuse_core::{

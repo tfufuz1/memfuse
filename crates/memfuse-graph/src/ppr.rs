@@ -1,5 +1,12 @@
 //! Personalized PageRank (PPR) power iteration implementation for `CsrGraph`.
 
+// FILE-CONTEXT
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// ZWECK:       Personalized PageRank für GraphRAG Community Detection
+// INVARIANTEN: CsrGraph inner state must be compacted before compute_ppr(), deterministic power iteration termination
+// HOTSPOTS:    compute_ppr(), power iteration loop
+// SIEHE AUCH:  ADR-031
+
 use crate::csr::GraphInner;
 use memfuse_core::{EntityId, PprConfig};
 use std::collections::HashSet;
