@@ -73,9 +73,15 @@ impl BloomFilter {
         let n = expected_elements.max(1);
         let p = fpr.clamp(0.0001, 0.1);
 
+        // Safety limit: clamp expected elements to 100 million to prevent float/usize overflow
+        let n = n.min(100_000_000);
+
         // m = bits needed
         let m = (-(n as f64) * p.ln() / (2.0f64.ln().powi(2))).ceil() as usize;
-        let num_bits = m.next_multiple_of(64).max(64);
+
+        // Hard upper bound on bloom filter bits (128 MB = 1_073_741_824 bits)
+        const MAX_BITS: usize = 128 * 1024 * 1024 * 8;
+        let num_bits = m.next_multiple_of(64).clamp(64, MAX_BITS);
         let num_hashes = ((num_bits as f64 / n as f64) * 2.0f64.ln()).round() as usize;
         let num_hashes = num_hashes.clamp(1, 16);
 
@@ -161,7 +167,8 @@ impl BloomFilter {
             )));
         }
 
-        let mut bits = Vec::with_capacity(num_bits / 64);
+        let capacity_cap = (num_bits / 64).min((data.len() - 16) / 8);
+        let mut bits = Vec::with_capacity(capacity_cap);
         let mut offset = 16;
         while offset + 8 <= data.len() {
             bits.push(u64::from_le_bytes(
@@ -192,7 +199,7 @@ impl BlockBuilder {
         Self {
             data: BytesMut::new(),
             offsets: Vec::new(),
-            block_size,
+            block_size: block_size.max(1024),
             bloom: 0,
         }
     }
@@ -2106,5 +2113,32 @@ mod tests {
             (Bytes::from_static(b"k"), Bytes::from_static(b"val2"), 2, 20)
         );
         assert!(e_end.is_none());
+    }
+
+    #[test]
+    fn test_bloom_filter_boundary_clamping() {
+        // Test extreme elements input
+        let bf = BloomFilter::new(usize::MAX, 0.01);
+        assert!(bf.num_bits <= 128 * 1024 * 1024 * 8);
+
+        // Test corrupted bytes input
+        let mut corrupted_data = vec![0u8; 16];
+        // Set num_bits to huge value
+        corrupted_data[8..16].copy_from_slice(&(u64::MAX).to_le_bytes());
+        let res = BloomFilter::from_bytes(&corrupted_data);
+        assert!(res.is_err());
+
+        // Test capacity cap on from_bytes
+        let mut valid_header = vec![0u8; 24];
+        valid_header[0..8].copy_from_slice(&1u64.to_le_bytes()); // num_hashes
+        valid_header[8..16].copy_from_slice(&1000u64.to_le_bytes()); // num_bits
+        let bf_res = BloomFilter::from_bytes(&valid_header);
+        assert!(bf_res.is_ok());
+    }
+
+    #[test]
+    fn test_block_builder_min_size() {
+        let builder = BlockBuilder::new(10);
+        assert_eq!(builder.block_size, 1024);
     }
 }
