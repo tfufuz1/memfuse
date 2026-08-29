@@ -7,7 +7,7 @@
 | Field | Value |
 |-------|-------|
 | SESSION | `unknown` |
-| LAST_SYNC | `2026-08-29T17:34:50Z` |
+| LAST_SYNC | `2026-08-29T17:22:30Z` |
 
 ## Critical Blockers (MUST FIX THIS SESSION)
 *(No critical blockers)*
@@ -22,12 +22,12 @@
 |-------|-------|-----|--------|-------------|
 | `memfuse-core` | L0 | 7157 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-checkpoint` | L1 | 1166 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-crypto` | L1 | 1144 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
+| `memfuse-crypto` | L1 | 1186 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | L1 | 4506 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | L1 | 7305 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | L1 | 10298 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | L1 | 10313 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | L1 | 3562 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | L2 | 11962 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-db` | L2 | 12137 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | L3 | 2280 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | L3 | 1022 | 🧊 Optional |  |
 | `memfuse-ollama` | L3 | 2369 | 🟢 Clean |  |

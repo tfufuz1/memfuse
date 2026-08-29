@@ -1,4 +1,4 @@
-use super::Collection;
+use super::{crud::validate_doc_id, Collection};
 use memfuse_core::{DocId, Result, StorageEngine, VectorIndex};
 
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
@@ -6,6 +6,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Creates a directional relationship between two documents in the collection.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
+        validate_doc_id(from)?;
+        validate_doc_id(to)?;
         let _guard = self.insert_lock.lock().await;
         let db_tx = self.begin_transaction()?;
 

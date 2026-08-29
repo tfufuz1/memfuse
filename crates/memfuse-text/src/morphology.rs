@@ -240,7 +240,8 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             token
         );
 
-        if token.len() <= self.min_component_len {
+        // Guard against oversized single tokens (e.g., > 128 bytes) to avoid O(n^2) DP overhead
+        if token.len() <= self.min_component_len || token.len() > 128 {
             return vec![token];
         }
 
@@ -878,5 +879,13 @@ mod tests {
             passed,
             total_cases
         );
+    }
+
+    #[test]
+    fn test_decompose_oversized_token_early_exit() {
+        let splitter = GermanCompoundSplitter::new();
+        let oversized_token = "a".repeat(200);
+        let result = splitter.decompose(&oversized_token);
+        assert_eq!(result, vec![oversized_token.as_str()]);
     }
 }
