@@ -1,4 +1,5 @@
 use crate::commands::collections::validate_collection_name;
+use crate::commands::validate_path_within_base;
 use crate::ingestion::pipeline::{IngestReport, IngestionPipeline};
 use crate::ollama::OllamaBridge;
 use crate::state::AppState;
@@ -22,6 +23,17 @@ pub async fn ingest_file(
             )
         })?
     };
+
+    let base_path = {
+        let db_path_guard = state.db_path.read();
+        db_path_guard.as_ref().cloned().ok_or_else(|| {
+            MemFuseErrorDto::new(
+                "NotFound",
+                "No database path set. Please open a database first.",
+            )
+        })?
+    };
+
     let collection = db
         .collection(&collection_name)
         .await
@@ -31,12 +43,8 @@ pub async fn ingest_file(
     let pipeline = IngestionPipeline::new(embedder);
 
     let path = std::path::Path::new(&file_path);
-    let canonical_path = std::fs::canonicalize(path).map_err(|e| {
-        MemFuseErrorDto::new(
-            "InvalidInput",
-            format!("Invalid file path or file does not exist ({file_path}): {e}"),
-        )
-    })?;
+    let canonical_path = validate_path_within_base(path, &base_path)
+        .map_err(|e| MemFuseErrorDto::from(&e))?;
 
     if !canonical_path.is_file() {
         return Err(MemFuseErrorDto::new(
@@ -68,6 +76,17 @@ pub async fn ingest_folder(
             )
         })?
     };
+
+    let base_path = {
+        let db_path_guard = state.db_path.read();
+        db_path_guard.as_ref().cloned().ok_or_else(|| {
+            MemFuseErrorDto::new(
+                "NotFound",
+                "No database path set. Please open a database first.",
+            )
+        })?
+    };
+
     let collection = db
         .collection(&collection_name)
         .await
@@ -77,12 +96,8 @@ pub async fn ingest_folder(
     let pipeline = IngestionPipeline::new(embedder);
 
     let folder = std::path::Path::new(&folder_path);
-    let canonical_folder = std::fs::canonicalize(folder).map_err(|e| {
-        MemFuseErrorDto::new(
-            "InvalidInput",
-            format!("Invalid folder path or directory does not exist ({folder_path}): {e}"),
-        )
-    })?;
+    let canonical_folder = validate_path_within_base(folder, &base_path)
+        .map_err(|e| MemFuseErrorDto::from(&e))?;
 
     if !canonical_folder.is_dir() {
         return Err(MemFuseErrorDto::new(
