@@ -142,7 +142,10 @@ impl InMemoryStorageEngine {
 #[async_trait::async_trait]
 impl StorageEngine for InMemoryStorageEngine {
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let guard = self.data.lock().unwrap(); // unwrap allowed
+        let guard = self
+            .data
+            .lock()
+            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
         Ok(guard.get(key).cloned())
     }
 
@@ -151,13 +154,19 @@ impl StorageEngine for InMemoryStorageEngine {
     }
 
     async fn put(&self, _tx_id: memfuse_core::TxId, key: &[u8], value: &[u8]) -> Result<()> {
-        let mut guard = self.data.lock().unwrap(); // unwrap allowed
+        let mut guard = self
+            .data
+            .lock()
+            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
         guard.insert(key.to_vec(), value.to_vec());
         Ok(())
     }
 
     async fn delete(&self, _tx_id: memfuse_core::TxId, key: &[u8]) -> Result<()> {
-        let mut guard = self.data.lock().unwrap(); // unwrap allowed
+        let mut guard = self
+            .data
+            .lock()
+            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
         guard.remove(key);
         Ok(())
     }
@@ -203,7 +212,10 @@ impl StorageEngine for InMemoryStorageEngine {
     }
 
     async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        let guard = self.data.lock().unwrap(); // unwrap allowed
+        let guard = self
+            .data
+            .lock()
+            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
         let entries = guard
             .iter()
             .filter(|(k, _)| k.starts_with(prefix))
@@ -217,7 +229,10 @@ impl StorageEngine for InMemoryStorageEngine {
         start: std::ops::Bound<&[u8]>,
         end: std::ops::Bound<&[u8]>,
     ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        let guard = self.data.lock().unwrap(); // unwrap allowed
+        let guard = self
+            .data
+            .lock()
+            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
         let mut entries: Vec<(Vec<u8>, Vec<u8>)> = guard
             .iter()
             .filter(|(k, _)| {

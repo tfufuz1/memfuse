@@ -19,16 +19,33 @@ pub struct BackgroundEvent {
 }
 
 impl BackgroundEvent {
+    /// Constructs a `BackgroundEvent` with input validation on the source identifier.
+    // AI-TAG[HARDENING][CRITICAL]: Validates non-empty event source to prevent silent telemetry attribution loss. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045)
+    pub fn try_new(
+        payload: serde_json::Value,
+        source: impl Into<String>,
+        observed_at_seq: u64,
+    ) -> Result<Self> {
+        let source_str = source.into();
+        if source_str.trim().is_empty() {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "BackgroundEvent source must not be empty".to_string(),
+            ));
+        }
+        Ok(Self {
+            payload,
+            source: source_str,
+            observed_at_seq,
+        })
+    }
+
     pub fn new(
         payload: serde_json::Value,
         source: impl Into<String>,
         observed_at_seq: u64,
     ) -> Self {
-        Self {
-            payload,
-            source: source.into(),
-            observed_at_seq,
-        }
+        Self::try_new(payload, source, observed_at_seq)
+            .unwrap_or_else(|e| panic!("Failed to construct BackgroundEvent: {e}"))
     }
 }
 
@@ -46,6 +63,9 @@ pub trait EventSource: Send + Sync {
     }
 }
 
+/// Maximum capacity for pending background telemetry events queue before dropping or rejecting.
+pub const MAX_PENDING_EVENTS_CAPACITY: usize = 10_000;
+
 /// Concrete `EventSource` that periodically polls `Collection` storage sequence numbers,
 /// using `scan_prefix_at` for snapshot delta calculation to emit document changes.
 pub struct PollingDocumentEventSource<S: StorageEngine> {
@@ -53,15 +73,27 @@ pub struct PollingDocumentEventSource<S: StorageEngine> {
     last_seen_seq: u64,
     poll_interval: Duration,
     pending_events: VecDeque<BackgroundEvent>,
+    max_pending_capacity: usize,
 }
 
 impl<S: StorageEngine> PollingDocumentEventSource<S> {
     pub fn new(collection: Arc<Collection<S>>, poll_interval: Duration) -> Self {
+        Self::with_capacity(collection, poll_interval, MAX_PENDING_EVENTS_CAPACITY)
+    }
+
+    /// Creates a new `PollingDocumentEventSource` with specified maximum queue capacity bound.
+    // AI-TAG[HARDENING][CRITICAL]: Enforces bounded event queue capacity to guard against unbounded memory growth. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045)
+    pub fn with_capacity(
+        collection: Arc<Collection<S>>,
+        poll_interval: Duration,
+        max_pending_capacity: usize,
+    ) -> Self {
         Self {
             collection,
             last_seen_seq: 0,
             poll_interval,
             pending_events: VecDeque::new(),
+            max_pending_capacity,
         }
     }
 
@@ -105,6 +137,14 @@ impl<S: StorageEngine> EventSource for PollingDocumentEventSource<S> {
 
             for (key, val) in current_entries {
                 if previous_entries.get(&key) != Some(&val) {
+                    if self.pending_events.len() >= self.max_pending_capacity {
+                        tracing::warn!(
+                            "PollingDocumentEventSource: Pending events queue at capacity ({}), dropping event for key {}",
+                            self.max_pending_capacity,
+                            String::from_utf8_lossy(&key)
+                        );
+                        break;
+                    }
                     let payload = serde_json::from_slice(&val).unwrap_or_else(|_| {
                         serde_json::json!({
                             "raw": String::from_utf8_lossy(&val),
