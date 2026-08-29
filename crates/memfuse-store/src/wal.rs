@@ -1,9 +1,4 @@
 //! Write-Ahead Log (WAL) for durability and crash recovery with HMAC chaining.
-//!
-//! ## Lock Hierarchy & Concurrency Control
-//! Internal locks within `Wal` must be acquired in the following order:
-//! 1. `file` (`tokio::sync::Mutex<tokio::fs::File>`) - Acquired for physical disk appends, sync, and truncations.
-//! 2. `last_hmac` (`tokio::sync::Mutex<[u8; 32]>`) - Acquired for HMAC state updates and snapshots.
 // FILE-CONTEXT
 // STAND: 2026-08-27T14:32:00Z
 // ZWECK: Write-Ahead-Log mit HMAC-Chaining für crash-sichere WAL-Operationen
@@ -919,7 +914,7 @@ impl Wal {
             if matches!(version, WalVersion::V2 | WalVersion::V3)
                 && self.key_manager.is_some()
             {
-                // SAFETY: Guarded by self.key_manager.is_some() above.
+                // SAFETY: Checked self.key_manager.is_some() in the if condition above
                 let km = self.key_manager.as_ref().unwrap();
                 if entry_data_raw.len() < 12 {
                     if pos >= file_size {

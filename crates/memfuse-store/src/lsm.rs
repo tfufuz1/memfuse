@@ -57,7 +57,7 @@
 //! 1. `commit_mutex` (`tokio::sync::Mutex<()>`) - Acquired during commit, rollback_to_tx, and state mutations.
 //! 2. `state` write lock (`tokio::sync::RwLock<LsmState>`) - Protects active/immutable memtable pointers & WAL.
 //! 3. `sstables` write lock (`tokio::sync::RwLock<Vec<Arc<SstableReader>>>`) - Protects SSTable set.
-//! Read locks on `state` and `sstables` may be acquired concurrently without holding `commit_mutex`.
+//!    Read locks on `state` and `sstables` may be acquired concurrently without holding `commit_mutex`.
 
 use crate::compaction::{CompactionConfig, CompactionEngine};
 use crate::memtable::MemTable;
