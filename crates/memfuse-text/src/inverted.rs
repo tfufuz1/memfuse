@@ -1354,6 +1354,7 @@ mod tests {
             contextual_prefix: Some(
                 "Diese Passage beschreibt die Bundeshauptstadt Berlin.".to_string(),
             ),
+            links: Vec::new(),
         };
 
         let tx = TxId::new(1);

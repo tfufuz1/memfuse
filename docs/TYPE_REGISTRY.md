@@ -21,6 +21,8 @@
 | `StoredDocument` | `memfuse-db` | `crates/memfuse-db/src/collection.rs:85` | In-Storage Repräsentation eines Dokuments inklusive Embeddings |
 | `StoredDocumentMeta` | `memfuse-db` | `crates/memfuse-db/src/collection.rs:110` | In-Storage Repräsentation für schnelle Result-Hydration (ohne Vektoren) |
 | `MemoryType` | `memfuse-core` | `crates/memfuse-core/src/types/domain.rs:535` | Klassifikation kognitiver Gedächtnistypen (Episodic, Semantic, Procedural, Working) |
+| `LinkRelation` | `memfuse-core` | `crates/memfuse-core/src/types/saos.rs:331` | Semantische Relationen zwischen ContextChunks (Elaborates, Contradicts, Supersedes, References) |
+| `MemoryLink` | `memfuse-core` | `crates/memfuse-core/src/types/saos.rs:347` | Expliziter Zettelkasten-Querverweis (A-MEM) von Chunk zu Chunk |
 
 ---
 

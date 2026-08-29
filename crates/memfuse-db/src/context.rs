@@ -48,6 +48,12 @@ impl TryFrom<crate::SearchResult> for ContextChunk {
             .unwrap_or("")
             .to_string();
         let token_count = ContextManager::estimate_tokens(&content);
+        let links = r
+            .metadata
+            .as_ref()
+            .and_then(|m| m.get("links"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
         Ok(ContextChunk {
             doc_id,
             content,
@@ -55,6 +61,7 @@ impl TryFrom<crate::SearchResult> for ContextChunk {
             token_count,
             metadata: r.metadata,
             contextual_prefix: None,
+            links,
         })
     }
 }
@@ -283,6 +290,7 @@ mod tests {
                 token_count: 60,
                 metadata: None,
                 contextual_prefix: None,
+                links: Vec::new(),
             },
             ContextChunk {
                 doc_id: DocId::new(2),
@@ -291,6 +299,7 @@ mod tests {
                 token_count: 60,
                 metadata: None,
                 contextual_prefix: None,
+                links: Vec::new(),
             },
         ];
 
@@ -312,6 +321,7 @@ mod tests {
                 token_count: 50,
                 metadata: None,
                 contextual_prefix: None,
+                links: Vec::new(),
             },
             ContextChunk {
                 doc_id: DocId::new(2),
@@ -320,6 +330,7 @@ mod tests {
                 token_count: 50,
                 metadata: None,
                 contextual_prefix: None,
+                links: Vec::new(),
             },
             ContextChunk {
                 doc_id: DocId::new(3),
@@ -328,6 +339,7 @@ mod tests {
                 token_count: 50,
                 metadata: None,
                 contextual_prefix: None,
+                links: Vec::new(),
             },
         ];
 
@@ -360,6 +372,7 @@ mod tests {
             token_count,
             metadata: None,
             contextual_prefix: None,
+            links: Vec::new(),
         }];
 
         let window = mgr.prepare_context(chunks).expect("valid test value"); // expect

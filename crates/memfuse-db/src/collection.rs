@@ -13,8 +13,8 @@
 use crate::filter::MetadataFilter;
 use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{
-    DocId, EntityId, FilterExpr, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex,
-    EXPIRY_METADATA_KEY,
+    DocId, EntityId, FilterExpr, GraphIndex, LinkRelation, MemoryLink, Result, StorageEngine,
+    TextIndex, TxId, VectorIndex, EXPIRY_METADATA_KEY,
 };
 use memfuse_graph::{detect_communities, CommunityAssignment, CommunityDetectionConfig, CsrGraph};
 use memfuse_index::HnswIndex;
@@ -127,6 +127,15 @@ pub fn ensure_importance_metadata(
     if let Ok(val) = serde_json::to_value(imp) {
         meta_obj.insert("importance".to_string(), val);
     }
+}
+
+/// Extracts memory links from document metadata if present.
+pub fn extract_links(metadata: &Option<serde_json::Value>) -> Vec<MemoryLink> {
+    metadata
+        .as_ref()
+        .and_then(|m| m.get("links"))
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default()
 }
 
 /// Extracts the effective importance score of a document at a given transaction ID.
@@ -1039,6 +1048,154 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-DB-005 — relate() rollback race behoben, siehe ADR-023 (TS:2026-08-28T00:00:00Z)
+    /// Traversiert Querverweise (MemoryLinks) ausgehend von einem Start-Chunk (BFS).
+    ///
+    /// # Invarianten
+    /// - Zyklen-sicher durch `HashSet<DocId>` Visited-Tracking.
+    /// - Iterativer BFS-Ansatz mit `VecDeque` (KEINE Rekursion, verhindert Stack Overflow bei Zyklen).
+    /// - `max_depth == 0` gibt sofort `Ok(vec![])` zurück.
+    /// - Ergebnisliste ist durch `memfuse_core::MAX_SEARCH_K` gedeckelt.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn traverse_links(
+        &self,
+        start: DocId,
+        max_depth: usize,
+        relations: Option<&[LinkRelation]>,
+    ) -> Result<Vec<DocId>> {
+        if max_depth == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut visited = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        let mut results = Vec::new();
+
+        visited.insert(start);
+        queue.push_back((start, 0usize));
+
+        while let Some((curr_doc_id, depth)) = queue.pop_front() {
+            if depth >= max_depth {
+                continue;
+            }
+
+            let doc_key = self.namespaced_key(&curr_doc_id.inner().to_le_bytes(), 1);
+            let Some(meta_bytes) = self.storage.get(&doc_key).await? else {
+                continue;
+            };
+
+            let metadata =
+                if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&meta_bytes) {
+                    meta.metadata
+                } else if let Ok(full) = serde_json::from_slice::<StoredDocument>(&meta_bytes) {
+                    full.metadata
+                } else {
+                    None
+                };
+
+            let links = extract_links(&metadata);
+
+            for link in links {
+                if let Some(rel_filter) = relations {
+                    if !rel_filter.contains(&link.relation) {
+                        continue;
+                    }
+                }
+
+                if visited.insert(link.target) {
+                    results.push(link.target);
+                    if results.len() >= memfuse_core::MAX_SEARCH_K {
+                        return Ok(results);
+                    }
+                    queue.push_back((link.target, depth + 1));
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Verlinkt ein Quell-Dokument mit einem Ziel-Dokument (Zettelkasten-Pattern A-MEM).
+    ///
+    /// # Invarianten & Idempotenz
+    /// - `TxId` wird intern atomar via `self.allocate_tx()` erzeugt (kein tx-Parameter).
+    /// - Wenn bereits ein `MemoryLink` mit `(target, relation)` in `links` existiert,
+    ///   ist der Aufruf ein idempotenter No-Op (`Ok(())`).
+    /// - Propagiert Fehler als `Err(MemFuseError::...)`.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn link_memories(
+        &self,
+        source: DocId,
+        target: DocId,
+        relation: LinkRelation,
+    ) -> Result<()> {
+        let doc_key = self.namespaced_key(&source.inner().to_le_bytes(), 1);
+        let Some(meta_bytes) = self.storage.get(&doc_key).await? else {
+            return Err(memfuse_core::MemFuseError::NotFound(format!(
+                "Source document not found: {source}"
+            )));
+        };
+
+        let meta_id = serde_json::from_slice::<StoredDocumentMeta>(&meta_bytes)
+            .map(|m| m.id)
+            .map_err(|e| memfuse_core::MemFuseError::Serialization(e.to_string()))?;
+
+        let user_key = self.namespaced_key(meta_id.as_bytes(), 0);
+        let Some(user_val) = self.storage.get(&user_key).await? else {
+            return Err(memfuse_core::MemFuseError::NotFound(format!(
+                "Source document data not found for id: {meta_id}"
+            )));
+        };
+
+        let mut stored: StoredDocument = serde_json::from_slice(&user_val)
+            .map_err(|e| memfuse_core::MemFuseError::Serialization(e.to_string()))?;
+
+        let mut links = extract_links(&stored.metadata);
+
+        // Idempotenz: Wenn bereits ein MemoryLink mit (target, relation) existiert, No-Op
+        if links
+            .iter()
+            .any(|l| l.target == target && l.relation == relation)
+        {
+            return Ok(());
+        }
+
+        let tx = self.allocate_tx()?;
+        links.push(MemoryLink {
+            target,
+            relation,
+            created_at_tx: tx,
+        });
+
+        let meta_obj = match stored.metadata {
+            Some(serde_json::Value::Object(ref mut map)) => map,
+            _ => {
+                stored.metadata = Some(serde_json::json!({}));
+                if let Some(serde_json::Value::Object(ref mut map)) = stored.metadata {
+                    map
+                } else {
+                    unreachable!()
+                }
+            }
+        };
+
+        meta_obj.insert(
+            "links".to_string(),
+            serde_json::to_value(&links)
+                .map_err(|e| memfuse_core::MemFuseError::Serialization(e.to_string()))?,
+        );
+
+        let meta_only = StoredDocumentMeta::from(&stored);
+        let user_bytes = serde_json::to_vec(&stored)?;
+        let doc_bytes = serde_json::to_vec(&meta_only)?;
+
+        let _guard = self.insert_lock.lock().await;
+        self.storage.put(tx, &user_key, &user_bytes).await?;
+        self.storage.put(tx, &doc_key, &doc_bytes).await?;
+        self.storage.commit(tx).await?;
+
+        Ok(())
+    }
+
     /// Creates a directional relationship between two documents in the collection.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
@@ -1480,6 +1637,66 @@ impl<S: StorageEngine> Collection<S> {
     ) -> Result<Vec<crate::SearchResult>> {
         self.hybrid_search_with_strategy(text, vector, k, anchor_entities, weights, None, None)
             .await
+    }
+
+    /// Performs hybrid 4-signal search using a `HybridQuery` specification,
+    /// with RRF signal fusion, community boosting/filtering, and Supersedes displacement logic.
+    #[tracing::instrument(level = "trace", skip(self, query))]
+    pub async fn hybrid_search_with_query(
+        &self,
+        query: &memfuse_core::HybridQuery,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let text = query.text_query.as_deref().unwrap_or("");
+        let vector = query.vector_query.as_deref().unwrap_or(&[]);
+        let anchor_entity = query
+            .graph_start_node
+            .as_deref()
+            .and_then(|s| EntityId::from_key(s).ok());
+        let anchors = anchor_entity.as_ref().map(std::slice::from_ref);
+
+        let mut results = self
+            .hybrid_search_with_strategy(
+                text,
+                vector,
+                query.k,
+                anchors,
+                Some(&query.fusion_weights),
+                Some(&query.graph_strategy),
+                query.same_community_as,
+            )
+            .await?;
+
+        if let Some(ref filter_expr) = query.filter {
+            results.retain(|r| {
+                let meta_ref = r.metadata.as_ref().unwrap_or(&serde_json::Value::Null);
+                filter_expr.evaluate(meta_ref)
+            });
+        }
+
+        // Post-RRF & Post-Processing Supersedes Displacement Logic
+        if !query.include_superseded && !results.is_empty() {
+            let mut superseded_targets = std::collections::HashSet::new();
+            for res in &results {
+                let links = extract_links(&res.metadata);
+                for link in links {
+                    if link.relation == LinkRelation::Supersedes {
+                        superseded_targets.insert(link.target);
+                    }
+                }
+            }
+
+            if !superseded_targets.is_empty() {
+                results.retain(|r| {
+                    if let Ok(doc_id) = DocId::from_key(&r.id) {
+                        !superseded_targets.contains(&doc_id)
+                    } else {
+                        true
+                    }
+                });
+            }
+        }
+
+        Ok(results)
     }
 
     /// Performs hybrid search with custom signal fusion weights and graph traversal strategy.
@@ -1929,9 +2146,9 @@ impl<S: StorageEngine> Collection<S> {
                 // 2. TxId-basierter Decay-Sweep (nur wenn decay != None)
                 if !marked_for_deletion {
                     if let Some(imp_val) = obj.get("importance") {
-                        if let Ok(imp) =
-                            serde_json::from_value::<memfuse_core::MemoryImportance>(imp_val.clone())
-                        {
+                        if let Ok(imp) = serde_json::from_value::<memfuse_core::MemoryImportance>(
+                            imp_val.clone(),
+                        ) {
                             if imp.decay != memfuse_core::DecayFunction::None {
                                 let effective = imp.effective_score(TxId::new(now_tx));
                                 if effective < Self::DECAY_DELETION_THRESHOLD {
@@ -1998,10 +2215,9 @@ impl<S: StorageEngine> Collection<S> {
         );
 
         let model = &ollama.config().model;
-        let response = ollama
-            .generate_text(model, &prompt)
-            .await
-            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("LLM importance evaluation failed: {e}")))?;
+        let response = ollama.generate_text(model, &prompt).await.map_err(|e| {
+            memfuse_core::MemFuseError::Internal(format!("LLM importance evaluation failed: {e}"))
+        })?;
 
         let score = parse_importance_score(&response);
         let importance_score = memfuse_core::ImportanceScore::new(score);
@@ -3210,9 +3426,14 @@ mod tests {
 
         let dead_ollama = memfuse_ollama::OllamaClient::new("http://127.0.0.1:1");
 
-        let res = col.evaluate_importance_with_llm("doc_test", &dead_ollama).await;
+        let res = col
+            .evaluate_importance_with_llm("doc_test", &dead_ollama)
+            .await;
         assert!(res.is_err());
-        assert!(matches!(res.unwrap_err(), memfuse_core::MemFuseError::Internal(_)));
+        assert!(matches!(
+            res.unwrap_err(),
+            memfuse_core::MemFuseError::Internal(_)
+        ));
 
         // Verify document's score was NOT overwritten or corrupted
         let doc = col.get("doc_test").await.unwrap().unwrap();
@@ -3363,7 +3584,10 @@ mod tests {
         next_tx.store(100_000, Ordering::SeqCst);
 
         let count = col.trigger_reaper().await.unwrap();
-        assert_eq!(count, 0, "Semantic document with DecayFunction::None must never be deleted");
+        assert_eq!(
+            count, 0,
+            "Semantic document with DecayFunction::None must never be deleted"
+        );
         assert!(col.get("doc_semantic").await.unwrap().is_some());
     }
 
@@ -3528,6 +3752,257 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_link_memories_idempotency() {
+        use memfuse_core::{DocId, LinkRelation};
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::{LsmConfig, LsmStorage};
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            Arc::new(CsrGraph::new()),
+            Arc::new(AtomicU64::new(1)),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        let vec = vec![1.0, 0.0, 0.0, 0.0];
+        col.insert("docA", &vec, None).await.unwrap();
+        col.insert("docB", &vec, None).await.unwrap();
+
+        let doc_a = DocId::from_key("docA").unwrap();
+        let doc_b = DocId::from_key("docB").unwrap();
+
+        col.link_memories(doc_a, doc_b, LinkRelation::Elaborates)
+            .await
+            .unwrap();
+        col.link_memories(doc_a, doc_b, LinkRelation::Elaborates)
+            .await
+            .unwrap();
+
+        let doc = col.get("docA").await.unwrap().unwrap();
+        let links = super::extract_links(&doc.metadata);
+        assert_eq!(
+            links.len(),
+            1,
+            "link_memories must be idempotent and keep exactly 1 link"
+        );
+        assert_eq!(links[0].target, doc_b);
+        assert_eq!(links[0].relation, LinkRelation::Elaborates);
+    }
+
+    #[tokio::test]
+    async fn test_traverse_links_cycle_safety() {
+        use memfuse_core::{DocId, LinkRelation};
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::{LsmConfig, LsmStorage};
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            Arc::new(CsrGraph::new()),
+            Arc::new(AtomicU64::new(1)),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        let vec = vec![1.0, 0.0, 0.0, 0.0];
+        col.insert("docA", &vec, None).await.unwrap();
+        col.insert("docB", &vec, None).await.unwrap();
+
+        let doc_a = DocId::from_key("docA").unwrap();
+        let doc_b = DocId::from_key("docB").unwrap();
+
+        col.link_memories(doc_a, doc_b, LinkRelation::References)
+            .await
+            .unwrap();
+        col.link_memories(doc_b, doc_a, LinkRelation::References)
+            .await
+            .unwrap();
+
+        let traversed = col.traverse_links(doc_a, 10, None).await.unwrap();
+        assert_eq!(traversed.len(), 1);
+        assert_eq!(traversed[0], doc_b);
+    }
+
+    #[tokio::test]
+    async fn test_traverse_links_max_depth_zero() {
+        use memfuse_core::DocId;
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::{LsmConfig, LsmStorage};
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            Arc::new(CsrGraph::new()),
+            Arc::new(AtomicU64::new(1)),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        let doc_a = DocId::from_key("docA").unwrap();
+        let traversed = col.traverse_links(doc_a, 0, None).await.unwrap();
+        assert!(traversed.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_hybrid_search_supersedes_displacement() {
+        use memfuse_core::{DocId, HybridQuery, LinkRelation};
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::{LsmConfig, LsmStorage};
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            Arc::new(CsrGraph::new()),
+            Arc::new(AtomicU64::new(1)),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        let vec_a = vec![1.0, 0.0, 0.0, 0.0];
+        let vec_b = vec![0.95, 0.05, 0.0, 0.0];
+
+        col.insert(
+            "docA",
+            &vec_a,
+            Some(serde_json::json!({"text": "Alte Version der Information"})),
+        )
+        .await
+        .unwrap();
+
+        col.insert(
+            "docB",
+            &vec_b,
+            Some(serde_json::json!({"text": "Neue Version der Information"})),
+        )
+        .await
+        .unwrap();
+
+        let doc_a = DocId::from_key("docA").unwrap();
+        let doc_b = DocId::from_key("docB").unwrap();
+
+        col.link_memories(doc_b, doc_a, LinkRelation::Supersedes)
+            .await
+            .unwrap();
+
+        let query_default = HybridQuery::builder()
+            .with_text_query("Version der Information")
+            .with_vector_query(vec_a.clone())
+            .with_k(10)
+            .build()
+            .unwrap();
+
+        let res = col.hybrid_search_with_query(&query_default).await.unwrap();
+        assert!(
+            !res.iter().any(|r| r.id == "docA"),
+            "docA must be displaced by docB"
+        );
+        assert!(
+            res.iter().any(|r| r.id == "docB"),
+            "docB must be included in results"
+        );
+
+        let query_with_superseded = HybridQuery::builder()
+            .with_text_query("Version der Information")
+            .with_vector_query(vec_a)
+            .with_include_superseded(true)
+            .with_k(10)
+            .build()
+            .unwrap();
+
+        let res_all = col
+            .hybrid_search_with_query(&query_with_superseded)
+            .await
+            .unwrap();
+        assert!(
+            res_all.iter().any(|r| r.id == "docA"),
+            "docA must be included when include_superseded = true"
+        );
+        assert!(res_all.iter().any(|r| r.id == "docB"));
+    }
+
+    #[tokio::test]
     async fn test_insert_backward_compatible_has_semantic_default() {
         use memfuse_graph::CsrGraph;
         use memfuse_index::HnswIndex;
@@ -3563,9 +4038,13 @@ mod tests {
             memfuse_text::Language::German,
         );
 
-        col.insert("plain1", &[1.0, 0.0, 0.0, 0.0], Some(serde_json::json!({"text": "hello"})))
-            .await
-            .unwrap();
+        col.insert(
+            "plain1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(serde_json::json!({"text": "hello"})),
+        )
+        .await
+        .unwrap();
 
         let doc = col.get("plain1").await.unwrap().unwrap();
         assert_eq!(

@@ -1,4 +1,4 @@
-use super::domain::{DocId, EntityId, PprConfig};
+use super::domain::{DocId, EntityId, PprConfig, TxId};
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
@@ -104,6 +104,10 @@ pub struct ContextChunk {
     /// None = kein Contextual Retrieval für diesen Chunk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contextual_prefix: Option<String>,
+    /// Explizite Querverweise zu anderen ContextChunks (Zettelkasten-Pattern).
+    /// Leer für Chunks vor Einführung dieses Features (Altdaten-Kompatibilität).
+    #[serde(default)]
+    pub links: Vec<MemoryLink>,
 }
 
 impl ContextChunk {
@@ -209,6 +213,9 @@ pub struct HybridQuery {
     pub filter: Option<FilterExpr>,
     /// Optional entity ID to filter/boost results in the same community.
     pub same_community_as: Option<EntityId>,
+    /// Ob verdrängte (superseded) Chunks in den Ergebnissen enthalten bleiben sollen (Default: false).
+    #[serde(default)]
+    pub include_superseded: bool,
     /// Maximum number of search results to return.
     pub k: usize,
 }
@@ -230,6 +237,7 @@ pub struct HybridQueryBuilder {
     fusion_weights: Option<FusionWeights>,
     filter: Option<FilterExpr>,
     same_community_as: Option<EntityId>,
+    include_superseded: Option<bool>,
     k: Option<usize>,
 }
 
@@ -281,6 +289,12 @@ impl HybridQueryBuilder {
         self
     }
 
+    /// Steuert, ob verdrängte (superseded) Dokumente in den Suchergebnissen verbleiben sollen.
+    pub fn with_include_superseded(mut self, include: bool) -> Self {
+        self.include_superseded = Some(include);
+        self
+    }
+
     /// Sets the top-K limit for the query.
     pub fn with_k(mut self, k: usize) -> Self {
         self.k = Some(k);
@@ -308,9 +322,37 @@ impl HybridQueryBuilder {
             ),
             filter: self.filter,
             same_community_as: self.same_community_as,
+            include_superseded: self.include_superseded.unwrap_or(false),
             k: self.k.unwrap_or(10),
         })
     }
+}
+
+/// Art der Beziehung zwischen zwei `ContextChunk`s (Zettelkasten-Pattern A-MEM).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum LinkRelation {
+    /// Dieser Chunk elaboriert/vertieft den Ziel-Chunk.
+    Elaborates,
+    /// Dieser Chunk widerspricht dem Ziel-Chunk.
+    Contradicts,
+    /// Dieser Chunk ersetzt den Ziel-Chunk (ältere Version).
+    /// Semantik: Beim Retrieval wird der Ziel-Chunk aus den Ergebnissen
+    /// verdrängt, sofern include_superseded = false (Default).
+    Supersedes,
+    /// Allgemeiner Verweis ohne Wertung.
+    References,
+}
+
+/// Expliziter Querverweis von einem ContextChunk zu einem anderen (Zettelkasten-Pattern).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MemoryLink {
+    /// Ziel-Dokument-ID des verlinkten Chunks.
+    pub target: DocId,
+    /// Semantische Beziehung zum Ziel-Chunk.
+    pub relation: LinkRelation,
+    /// Transaktions-ID, zu der dieser Link angelegt wurde.
+    pub created_at_tx: TxId,
 }
 
 #[cfg(test)]
@@ -426,6 +468,7 @@ mod tests {
             token_count: 1,
             metadata: None,
             contextual_prefix: None,
+            links: Vec::new(),
         };
         let window = ContextWindow {
             chunks: vec![chunk],
@@ -448,6 +491,7 @@ mod tests {
             token_count: 2,
             metadata: None,
             contextual_prefix: Some("Dokument Kontext".to_string()),
+            links: Vec::new(),
         };
         assert_eq!(
             chunk.combined_text_owned(),
@@ -465,6 +509,7 @@ mod tests {
             token_count: 2,
             metadata: None,
             contextual_prefix: None,
+            links: Vec::new(),
         };
         assert_eq!(chunk.combined_text_owned(), "Raw content");
         assert!(!chunk.has_context_prefix());
@@ -479,6 +524,7 @@ mod tests {
             token_count: 2,
             metadata: None,
             contextual_prefix: Some("".to_string()),
+            links: Vec::new(),
         };
         assert_eq!(chunk.combined_text_owned(), "Raw content");
         assert!(!chunk.has_context_prefix());
@@ -500,6 +546,7 @@ mod tests {
             token_count: 10,
             metadata: None,
             contextual_prefix: None,
+            links: Vec::new(),
         };
         assert_eq!(chunk_no_prefix.combined_token_count(), 10);
 
@@ -510,6 +557,7 @@ mod tests {
             token_count: 10,
             metadata: None,
             contextual_prefix: Some("1234567812345678".to_string()), // 16 chars -> +4 tokens
+            links: Vec::new(),
         };
         assert_eq!(chunk_with_prefix.combined_token_count(), 14);
         assert!(chunk_with_prefix.combined_token_count() > chunk_with_prefix.token_count);
