@@ -19,7 +19,7 @@ async fn test_allocate_tx_concurrent_monotonicity() {
         let handle = tokio::spawn(async move {
             let mut allocated = Vec::with_capacity(allocations_per_task);
             for _ in 0..allocations_per_task {
-                allocated.push(col_clone.allocate_tx().inner());
+                allocated.push(col_clone.allocate_tx().unwrap().inner());
             }
             allocated
         });

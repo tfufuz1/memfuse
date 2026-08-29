@@ -173,9 +173,17 @@ pub enum MemFuseError {
         /// Detail text describing why capability is unsupported.
         reason: String,
     },
+
+    /// System resource or ID counter exhausted.
+    #[error("Resource exhausted: {0}")]
+    ResourceExhausted(String),
 }
 
 impl MemFuseError {
+    /// Creates a `ResourceExhausted` error.
+    pub fn resource_exhausted(msg: impl Into<String>) -> Self {
+        Self::ResourceExhausted(msg.into())
+    }
     /// Creates a `CapabilityUnsupported` error.
     pub fn capability_unsupported(
         capability: impl Into<String>,

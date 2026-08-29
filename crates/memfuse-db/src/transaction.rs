@@ -16,7 +16,20 @@ use memfuse_core::{
     TxId, VectorIndex,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+
+/// Allokiert atomar die nächste TxId und verifiziert, dass diese unter `TxId::INTERNAL_BASE` liegt.
+pub(crate) fn allocate_next_tx_id(counter: &AtomicU64) -> Result<TxId> {
+    let id = counter.fetch_add(1, Ordering::SeqCst);
+    if id >= TxId::INTERNAL_BASE {
+        Err(MemFuseError::ResourceExhausted(
+            "TxId counter exhausted — INTERNAL_BASE range collision".to_string(),
+        ))
+    } else {
+        Ok(TxId::new(id))
+    }
+}
 
 /// Status of a multi-index transaction during the 2-phase commit.
 #[derive(Debug, Serialize, Deserialize)]

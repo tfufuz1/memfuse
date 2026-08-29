@@ -241,6 +241,11 @@ impl From<&MemFuseError> for MemFuseErrorDto {
                     "reason": reason,
                 })),
             },
+            MemFuseError::ResourceExhausted(msg) => Self {
+                kind: "ResourceExhausted".to_string(),
+                message: msg.clone(),
+                details: None,
+            },
         }
     }
 }

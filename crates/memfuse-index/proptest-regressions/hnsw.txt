@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc d8d3e636792fcb74d1516d643537ce2b3d522f40f7ea267e90f05ee28b22f50d # shrinks to ops = [Insert(1), Insert(1), Insert(1), Insert(1), Insert(1), Insert(1), Insert(1), Insert(1), Insert(1), Delete(2)]
+cc 63158f67fcf43a4140a6d3bc2fa3838831e46b47609ec8b38a0e27e73cde5c58 # shrinks to ops = [Insert(7), Delete(7), Insert(8), Insert(8), Insert(1), Insert(1), Insert(8), Insert(8), Insert(8), Insert(8)]
