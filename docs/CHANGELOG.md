@@ -4,8 +4,8 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
-| `2026-08-29T12:00:00Z` | `crates/memfuse-core/build.rs` | `AI-TAG` | `-` | `a3f29c1d` | `RESOLVED` | `-` | // AI-TAG[SPEC-DRIFT][MINOR] RESOLVED: flatc binary missing in environment, falling back to pre-generated ipc/memfuse_generated.rs (TS: 2026-08-29T12:00:00Z) (SESSION: a3f29c1d) |
-| `2026-08-29T12:00:00Z` | `crates/memfuse-core/src/tx_buffer.rs` | `AI-TAG` | `AGT-CORE-001` | `a3f29c1d` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR] RESOLVED: AGT-CORE-001 — Bounded staging capacity enforced (TS: 2026-08-29T12:00:00Z) (SESSION: a3f29c1d) |
+| `2026-08-29T12:00:00Z` | `crates/memfuse-core/build.rs` | `AI-TAG` | `-` | `a3f29c1d` | `RESOLVED` | `-` | // AI-TAG[SPEC-DRIFT][MINOR] RESOLVED: flatc binary missing in environment, falling back to pre-generated ipc/memfuse_generated.rs (TS:2026-08-29T12:00:00Z) (SESSION: a3f29c1d) |
+| `2026-08-29T12:00:00Z` | `crates/memfuse-core/src/tx_buffer.rs` | `AI-TAG` | `AGT-CORE-001` | `a3f29c1d` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR] RESOLVED: AGT-CORE-001 — Bounded staging capacity enforced (TS:2026-08-29T12:00:00Z) (SESSION: a3f29c1d) |
 | `2026-08-29T11:00:00Z` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `AGT-CORE-a3f29c1d` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3) |
 | `2026-08-29T10:00:00Z` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `AGT-CORE-a3f29c1d` | `b8e4f1a2` | `PASS` | `1` | // REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2) |
 | `2026-08-29T09:14:07Z (SESSION: a3f29c1d)` | `crates/memfuse-core/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Core types, traits, and error handling for MemFuse. |
