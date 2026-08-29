@@ -2135,6 +2135,14 @@ impl VectorIndex for HnswIndex {
         total.saturating_sub(deleted)
     }
 
+    fn is_rebuild_required(&self) -> bool {
+        self.is_rebuild_required()
+    }
+
+    fn trigger_rebuild_async(&self) {
+        let _ = self.trigger_rebuild_async();
+    }
+
     async fn stats(&self) -> Result<VectorIndexStats> {
         let nodes = self.inner.nodes.read();
         let mmap_guard = self.inner.mmap_index.read();

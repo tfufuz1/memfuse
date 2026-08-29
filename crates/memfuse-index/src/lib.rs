@@ -19,6 +19,8 @@ pub mod hnsw;
 pub mod persistence;
 pub mod quantize;
 
+#[cfg(feature = "experimental-diskann")]
+pub use diskann::{DiskAnnConfig, DiskAnnIndex};
 pub use hnsw::{HnswConfig, HnswIndex, RebuildStatus};
 #[cfg(feature = "graph")]
 pub use memfuse_graph::CsrGraph;

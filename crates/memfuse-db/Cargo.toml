@@ -28,12 +28,14 @@ tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile = { workspace = true }
 criterion = { version = "0.5", features = ["async_tokio"] }
 proptest = "1.4"
+memfuse-index = { workspace = true, features = ["experimental-diskann"] }
 
 [features]
 default = []
 bench = []
 sandbox = []
 cluster = []
+experimental-diskann = ["memfuse-index/experimental-diskann"]
 reranking = ["memfuse-embed/onnx"]
 
 [[bench]]

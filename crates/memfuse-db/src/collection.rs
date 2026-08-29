@@ -180,12 +180,12 @@ fn extract_text(metadata: &Option<serde_json::Value>) -> Option<String> {
 
 /// A logically isolated collection of documents (namespace).
 ///
-/// Each collection provides its own HNSW vector index and inverted text index,
+/// Each collection provides its own vector index and inverted text index,
 /// while sharing the underlying LSM-Tree storage with other collections.
-pub struct Collection<S: StorageEngine = LsmStorage> {
+pub struct Collection<S: StorageEngine = LsmStorage, V: VectorIndex = HnswIndex> {
     pub(crate) name: String,
     pub(crate) prefix: Vec<u8>,
-    pub(crate) index: Arc<HnswIndex>,
+    pub(crate) index: Arc<V>,
     pub(crate) text_index: InvertedIndex<S>,
     pub(crate) graph_index: Arc<CsrGraph>,
     pub(crate) storage: Arc<S>,
@@ -195,7 +195,7 @@ pub struct Collection<S: StorageEngine = LsmStorage> {
     pub(crate) insert_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
-impl<S: StorageEngine> Clone for Collection<S> {
+impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
     fn clone(&self) -> Self {
         Self {
             name: self.name.clone(),
@@ -212,7 +212,30 @@ impl<S: StorageEngine> Clone for Collection<S> {
     }
 }
 
-impl<S: StorageEngine> Collection<S> {
+impl<S: StorageEngine> Collection<S, HnswIndex> {
+    /// Convenience constructor for creating a `Collection` with `HnswIndex`.
+    pub fn with_hnsw(
+        name: String,
+        storage: Arc<S>,
+        index: Arc<HnswIndex>,
+        graph_index: Arc<CsrGraph>,
+        next_tx: Arc<AtomicU64>,
+        dimension: usize,
+        language: Language,
+    ) -> Self {
+        Self::new(
+            name,
+            storage,
+            index,
+            graph_index,
+            next_tx,
+            dimension,
+            language,
+        )
+    }
+}
+
+impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Threshold: Dokumente mit effective_score < DECAY_DELETION_THRESHOLD
     /// werden als "vergessen" markiert und gelöscht.
     pub const DECAY_DELETION_THRESHOLD: f32 = 0.05;
@@ -225,7 +248,7 @@ impl<S: StorageEngine> Collection<S> {
     pub fn new(
         name: String,
         storage: Arc<S>,
-        index: Arc<HnswIndex>,
+        index: Arc<V>,
         graph_index: Arc<CsrGraph>,
         next_tx: Arc<AtomicU64>,
         dimension: usize,
@@ -347,7 +370,7 @@ impl<S: StorageEngine> Collection<S> {
         // FIND-DB-004: Use doc_to_node map directly for O(1) lookup per DocId,
         // instead of iterating all nodes via all_doc_ids() which is O(N).
         let indexed_ids: std::collections::HashSet<DocId> =
-            self.index.all_doc_ids_from_map().into_iter().collect();
+            self.index.all_doc_ids().await?.into_iter().collect();
 
         tracing::info!("Starting integrity repair for collection '{}'", self.name);
         let start_time = std::time::Instant::now();
@@ -525,7 +548,7 @@ impl<S: StorageEngine> Collection<S> {
 
     /// Begins a new atomic transaction for this collection.
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn begin_transaction(&self) -> Result<crate::transaction::DbTransaction<S>> {
+    pub fn begin_transaction(&self) -> Result<crate::transaction::DbTransaction<S, V>> {
         let tx = self.next_tx()?;
         Ok(crate::transaction::DbTransaction::new(self.clone(), tx))
     }
@@ -726,7 +749,7 @@ impl<S: StorageEngine> Collection<S> {
 
     pub async fn insert_op(
         &self,
-        db_tx: &crate::transaction::DbTransaction<S>,
+        db_tx: &crate::transaction::DbTransaction<S, V>,
         id: &str,
         embedding: &[f32],
         metadata: Option<serde_json::Value>,
@@ -931,7 +954,7 @@ impl<S: StorageEngine> Collection<S> {
 
     pub async fn update_op(
         &self,
-        db_tx: &crate::transaction::DbTransaction<S>,
+        db_tx: &crate::transaction::DbTransaction<S, V>,
         id: &str,
         embedding: &[f32],
         metadata: Option<serde_json::Value>,
@@ -1009,7 +1032,7 @@ impl<S: StorageEngine> Collection<S> {
 
     pub async fn delete_op(
         &self,
-        db_tx: &mut crate::transaction::DbTransaction<S>,
+        db_tx: &mut crate::transaction::DbTransaction<S, V>,
         id: &str,
     ) -> Result<()> {
         let tx = db_tx.tx_id;
@@ -1604,6 +1627,156 @@ impl<S: StorageEngine> Collection<S> {
         let vector_results = filter_or_boost(vector_results).await;
         let text_results = filter_or_boost(text_results).await;
         let graph_results = filter_or_boost(graph_results).await;
+
+        let mut signal_sets = Vec::new();
+        if !vector_results.is_empty() {
+            signal_sets.push(("vector".to_string(), vector_results, vw));
+        }
+        if !text_results.is_empty() {
+            signal_sets.push(("text".to_string(), text_results, tw));
+        }
+        if !graph_results.is_empty() {
+            signal_sets.push(("graph".to_string(), graph_results, gw));
+        }
+
+        Ok(crate::fusion::weighted_reciprocal_rank_fusion(
+            signal_sets,
+            k,
+        ))
+    }
+
+    /// Performs hybrid search combining BM25, vector, and graph signals configured via `HybridQuery`.
+    ///
+    /// Applies `memory_type_filter` and metadata `FilterExpr` as Pre-RRF filters to preserve
+    /// Reciprocal Rank Fusion properties (ADR-024).
+    #[tracing::instrument(level = "trace", skip(self, query))]
+    pub async fn hybrid_search_with_query(
+        &self,
+        query: &memfuse_core::HybridQuery,
+    ) -> Result<Vec<crate::SearchResult>> {
+        if query.k == 0 {
+            return Ok(Vec::new());
+        }
+        let k = query.k.min(memfuse_core::MAX_SEARCH_K);
+
+        let text = query.text_query.as_deref().unwrap_or("");
+        let vector = query.vector_query.as_deref().unwrap_or(&[]);
+
+        let seq = self.snapshot_seq().await?;
+        let is_vector_zero = vector.is_empty() || vector.iter().all(|&v| v == 0.0);
+        let is_text_empty = text.trim().is_empty();
+
+        // 1. Vector Signal
+        let vector_results = if is_vector_zero {
+            Vec::new()
+        } else {
+            self.search_filtered_at(vector, k, None, seq).await?
+        };
+
+        // 2. Text Signal
+        let text_results = if is_text_empty {
+            Vec::new()
+        } else {
+            let bm25_results = self.text_index.search_at(text, k, seq).await?;
+            self.hydrate_from_tuples_at(
+                bm25_results
+                    .into_iter()
+                    .map(|sd| (sd.doc_id, sd.score))
+                    .collect(),
+                seq,
+            )
+            .await?
+        };
+
+        // 3. Graph Signal
+        let implicit_anchors: Vec<memfuse_core::EntityId>;
+        let anchors_ref: Option<&[memfuse_core::EntityId]> =
+            if let Some(ref start_node) = query.graph_start_node {
+                if let Ok(eid) = memfuse_core::EntityId::from_key(start_node) {
+                    implicit_anchors = vec![eid];
+                    Some(&implicit_anchors)
+                } else {
+                    None
+                }
+            } else if !text_results.is_empty() {
+                implicit_anchors = text_results
+                    .iter()
+                    .map(|r| memfuse_core::EntityId::from_key(r.id.as_str()))
+                    .collect::<Result<Vec<_>>>()?;
+                Some(&implicit_anchors)
+            } else {
+                None
+            };
+
+        let graph_results = if let Some(anchors) = anchors_ref {
+            let tuples = match &query.graph_strategy {
+                memfuse_core::GraphTraversalStrategy::Hops { max_hops } => {
+                    self.graph_index.multi_traverse(anchors, *max_hops).await?
+                }
+                memfuse_core::GraphTraversalStrategy::PersonalizedPageRank(ppr_config) => {
+                    self.graph_index
+                        .personalized_page_rank(anchors, ppr_config)
+                        .await?
+                }
+            };
+            let doc_tuples = tuples
+                .into_iter()
+                .map(|(eid, score)| (memfuse_core::DocId::new(eid.inner()), score))
+                .collect();
+            self.hydrate_from_tuples_at(doc_tuples, seq).await?
+        } else {
+            Vec::new()
+        };
+
+        if vector_results.is_empty() && text_results.is_empty() && graph_results.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let (vw, tw, gw) = crate::fusion::weights_to_signal_factors(Some(&query.fusion_weights));
+
+        // Target community for boosting/filtering
+        let target_community_id: Option<u64> =
+            if let Some(same_comm_entity) = query.same_community_as {
+                self.get_community(same_comm_entity).await.ok().flatten()
+            } else {
+                None
+            };
+
+        let filter_and_boost = |list: Vec<crate::SearchResult>| async {
+            let mut filtered = Vec::with_capacity(list.len());
+            for mut res in list {
+                if let Some(ref filter_expr) = query.filter {
+                    let meta_ref = res.metadata.as_ref().unwrap_or(&serde_json::Value::Null);
+                    if !filter_expr.evaluate(meta_ref) {
+                        continue;
+                    }
+                }
+
+                if let Some(ref type_filter) = query.memory_type_filter {
+                    let memory_type = crate::filter::extract_memory_type(&res.metadata);
+                    if !type_filter.contains(&memory_type) {
+                        continue;
+                    }
+                }
+
+                if let Some(target_comm) = target_community_id {
+                    if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
+                        if let Ok(Some(comm)) = self.get_community(eid).await {
+                            if comm == target_comm {
+                                res.score *= 1.2;
+                            }
+                        }
+                    }
+                }
+
+                filtered.push(res);
+            }
+            filtered
+        };
+
+        let vector_results = filter_and_boost(vector_results).await;
+        let text_results = filter_and_boost(text_results).await;
+        let graph_results = filter_and_boost(graph_results).await;
 
         let mut signal_sets = Vec::new();
         if !vector_results.is_empty() {
@@ -3535,6 +3708,129 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "experimental-diskann")]
+    async fn test_collection_with_diskann_index_hybrid_search() {
+        use memfuse_core::DocId;
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::{DiskAnnConfig, DiskAnnIndex};
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let lsm_path = dir.path().join("lsm");
+        let diskann_path = dir.path().join("diskann.idx");
+
+        let storage = Arc::new(
+            LsmStorage::new(memfuse_store::LsmConfig {
+                path: lsm_path,
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+
+        let diskann_config = DiskAnnConfig {
+            index_path: diskann_path,
+            dimension: 4,
+            max_degree: 8,
+            beam_width: 8,
+            sector_size: 4096,
+            ..DiskAnnConfig::default()
+        };
+
+        let diskann = Arc::new(DiskAnnIndex::try_new(diskann_config).unwrap());
+
+        let doc1_id = DocId::from_key("doc1").unwrap();
+        let doc2_id = DocId::from_key("doc2").unwrap();
+
+        let vectors = vec![vec![1.0, 0.0, 0.0, 0.0], vec![0.0, 1.0, 0.0, 0.0]];
+        let ids = vec![doc1_id, doc2_id];
+
+        diskann.build(&vectors, &ids).await.unwrap();
+
+        let graph = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(AtomicU64::new(1));
+
+        let col = super::Collection::<LsmStorage, DiskAnnIndex>::new(
+            "diskann_test".to_string(),
+            storage.clone(),
+            diskann,
+            graph,
+            next_tx,
+            4,
+            Language::English,
+        );
+
+        let tx = col.allocate_tx().unwrap();
+
+        let doc1_user_key = col.namespaced_key(b"doc1", 0);
+        let doc1_meta_key = col.namespaced_key(&doc1_id.inner().to_le_bytes(), 1);
+
+        let doc2_user_key = col.namespaced_key(b"doc2", 0);
+        let doc2_meta_key = col.namespaced_key(&doc2_id.inner().to_le_bytes(), 1);
+
+        let doc1_data = StoredDocument {
+            id: "doc1".to_string(),
+            embedding: vec![1.0, 0.0, 0.0, 0.0],
+            metadata: Some(serde_json::json!({ "text": "rust database systems" })),
+        };
+        let doc1_meta = StoredDocumentMeta::from(&doc1_data);
+
+        let doc2_data = StoredDocument {
+            id: "doc2".to_string(),
+            embedding: vec![0.0, 1.0, 0.0, 0.0],
+            metadata: Some(serde_json::json!({ "text": "python scripting language" })),
+        };
+        let doc2_meta = StoredDocumentMeta::from(&doc2_data);
+
+        storage
+            .put(tx, &doc1_user_key, &serde_json::to_vec(&doc1_data).unwrap())
+            .await
+            .unwrap();
+        storage
+            .put(tx, &doc1_meta_key, &serde_json::to_vec(&doc1_meta).unwrap())
+            .await
+            .unwrap();
+
+        storage
+            .put(tx, &doc2_user_key, &serde_json::to_vec(&doc2_data).unwrap())
+            .await
+            .unwrap();
+        storage
+            .put(tx, &doc2_meta_key, &serde_json::to_vec(&doc2_meta).unwrap())
+            .await
+            .unwrap();
+
+        col.text_index
+            .upsert_document(tx, doc1_id, "rust database systems")
+            .await
+            .unwrap();
+        col.text_index
+            .upsert_document(tx, doc2_id, "python scripting language")
+            .await
+            .unwrap();
+
+        storage.commit(tx).await.unwrap();
+        col.text_index.commit(tx).await.unwrap();
+
+        let query_vector = vec![1.0, 0.0, 0.0, 0.0];
+        let results = col
+            .hybrid_search("rust", &query_vector, 5, None)
+            .await
+            .unwrap();
+
+        assert!(
+            !results.is_empty(),
+            "Hybrid search with DiskANN should return results"
+        );
+        assert_eq!(
+            results[0].id, "doc1",
+            "Doc1 should be top result for rust & vector [1,0,0,0]"
+        );
+    }
+
+    #[tokio::test]
     async fn test_insert_backward_compatible_has_semantic_default() {
         use memfuse_graph::CsrGraph;
         use memfuse_index::HnswIndex;
@@ -3583,5 +3879,124 @@ mod tests {
             crate::filter::extract_memory_type(&doc.metadata),
             memfuse_core::MemoryType::Semantic
         );
+    }
+
+    #[tokio::test]
+    async fn test_hybrid_search_with_query_memory_type_filter() {
+        use memfuse_core::{HybridQuery, MemoryType};
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::{LsmConfig, LsmStorage};
+        use serde_json::json;
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let col = super::Collection::new(
+            "test_filter".to_string(),
+            storage,
+            index,
+            Arc::new(CsrGraph::new()),
+            Arc::new(AtomicU64::new(1)),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        col.insert_typed(
+            "ep1",
+            &[1.0, 0.0, 0.0, 0.0],
+            MemoryType::Episodic,
+            Some(json!({"text": "episode meeting alpha"})),
+        )
+        .await
+        .unwrap();
+
+        col.insert_typed(
+            "ep2",
+            &[0.9, 0.1, 0.0, 0.0],
+            MemoryType::Episodic,
+            Some(json!({"text": "episode meeting beta"})),
+        )
+        .await
+        .unwrap();
+
+        col.insert_typed(
+            "sem1",
+            &[0.95, 0.05, 0.0, 0.0],
+            MemoryType::Semantic,
+            Some(json!({"text": "episode definition gamma"})),
+        )
+        .await
+        .unwrap();
+
+        col.insert_typed(
+            "sem2",
+            &[0.85, 0.15, 0.0, 0.0],
+            MemoryType::Semantic,
+            Some(json!({"text": "episode theory delta"})),
+        )
+        .await
+        .unwrap();
+
+        // Query with memory_type_filter = Episodic
+        let query_ep = HybridQuery::builder()
+            .with_text_query("episode")
+            .with_vector_query(vec![1.0, 0.0, 0.0, 0.0])
+            .with_memory_type_filter(vec![MemoryType::Episodic])
+            .with_k(10)
+            .build()
+            .unwrap();
+
+        let results_ep = col.hybrid_search_with_query(&query_ep).await.unwrap();
+        assert_eq!(
+            results_ep.len(),
+            2,
+            "Must return exactly 2 episodic results"
+        );
+        for res in &results_ep {
+            assert!(
+                res.id == "ep1" || res.id == "ep2",
+                "Returned result {} is not Episodic!",
+                res.id
+            );
+        }
+
+        // Query with memory_type_filter = Semantic
+        let query_sem = HybridQuery::builder()
+            .with_text_query("episode")
+            .with_vector_query(vec![1.0, 0.0, 0.0, 0.0])
+            .with_memory_type_filter(vec![MemoryType::Semantic])
+            .with_k(10)
+            .build()
+            .unwrap();
+
+        let results_sem = col.hybrid_search_with_query(&query_sem).await.unwrap();
+        assert_eq!(
+            results_sem.len(),
+            2,
+            "Must return exactly 2 semantic results"
+        );
+        for res in &results_sem {
+            assert!(
+                res.id == "sem1" || res.id == "sem2",
+                "Returned result {} is not Semantic!",
+                res.id
+            );
+        }
     }
 }
