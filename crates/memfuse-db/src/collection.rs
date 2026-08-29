@@ -1545,6 +1545,16 @@ impl<S: StorageEngine> Collection<S> {
             .collect()
     }
 
+    /// Returns a reference to the underlying storage engine.
+    pub fn storage(&self) -> &Arc<S> {
+        &self.storage
+    }
+
+    /// Returns the namespaced prefix for user document keys in this collection.
+    pub fn user_key_prefix(&self) -> Vec<u8> {
+        self.namespaced_key(b"", 0)
+    }
+
     /// Returns the name of the collection.
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn name(&self) -> &str {
