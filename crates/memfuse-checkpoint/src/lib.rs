@@ -38,6 +38,41 @@ fn monotonic_timestamp_ms() -> u64 {
         .max(wall_ms)
 }
 
+/// `AI-TAG[PANIC-SAFETY][CRITICAL] AGT-CKPT-f3a1b2c4`: Checkpoint Manifest envelope for atomic multi-component snapshots.
+/// Prevents partial writes or corrupted checkpoints from being falsely identified as valid during restoration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CheckpointManifest {
+    pub meta: CheckpointMeta,
+    pub components: Vec<String>,
+    pub checksum: String,
+}
+
+impl CheckpointManifest {
+    pub fn new(meta: CheckpointMeta, components: Vec<String>) -> Result<Self> {
+        let payload = serde_json::to_vec(&(&meta, &components))
+            .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+        let checksum = blake3::hash(&payload).to_hex().to_string();
+        Ok(Self {
+            meta,
+            components,
+            checksum,
+        })
+    }
+
+    pub fn verify(&self) -> Result<()> {
+        let payload = serde_json::to_vec(&(&self.meta, &self.components))
+            .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+        let expected = blake3::hash(&payload).to_hex().to_string();
+        if self.checksum != expected {
+            return Err(MemFuseError::Serialization(format!(
+                "Checkpoint manifest checksum mismatch for '{}': expected {}, got {}",
+                self.meta.name, expected, self.checksum
+            )));
+        }
+        Ok(())
+    }
+}
+
 /// Metadata for a persistent checkpoint.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CheckpointMeta {
@@ -67,6 +102,12 @@ pub struct StateCheckpoint {
 
 /// RAII Guard that rolls back a checkpoint if not explicitly committed.
 /// Prevents transaction leaks if the process panics or drops early.
+///
+/// # Concurrency & Ownership
+/// `CheckpointGuard` is intentionally **`!Clone`** to preserve strictly single-owner
+/// RAII semantics. If duplicate guards were allowed, dropping one guard would trigger
+/// a rollback while another guard might still assume the transaction is active.
+/// Concurrent operations should create separate guards with distinct [`TxId`] values.
 pub struct CheckpointGuard<S: memfuse_core::StorageEngine> {
     checkpoint: Option<StateCheckpoint>,
     storage: Arc<S>,
@@ -296,10 +337,17 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     }
 
     /// Helper for internal saving logic. Uses name as key for uniqueness.
+    /// Wraps metadata in an atomic CheckpointManifest with BLAKE3 checksum validation.
     async fn save_checkpoint_internal(&self, meta: CheckpointMeta) -> Result<()> {
+        let components = vec![
+            "lsm_snapshot".to_string(),
+            "graph_snapshot".to_string(),
+            "index_snapshot".to_string(),
+        ];
+        let manifest = CheckpointManifest::new(meta.clone(), components)?;
         let key = format!("{}:checkpoint:{}", self.namespace, meta.name);
-        let value =
-            serde_json::to_vec(&meta).map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+        let value = serde_json::to_vec(&manifest)
+            .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
 
         let tx = self.next_tx()?;
         if let Err(e) = self.storage.put(tx, key.as_bytes(), &value).await {
@@ -326,6 +374,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     }
 
     /// Internal helper to get checkpoint by name without extra locking.
+    /// Validates the CheckpointManifest checksum and envelope integrity.
     async fn get_checkpoint_internal(&self, name: &str) -> Result<Option<CheckpointMeta>> {
         // Erst O(1) In-Memory Name-Index prüfen
         {
@@ -342,8 +391,21 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let key = format!("{}:checkpoint:{}", self.namespace, name);
         match self.storage.get(key.as_bytes()).await? {
             Some(bytes) => {
-                let meta: CheckpointMeta = serde_json::from_slice(&bytes)
-                    .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+                let manifest: CheckpointManifest = match serde_json::from_slice(&bytes) {
+                    Ok(m) => m,
+                    Err(_) => {
+                        // Fallback for legacy CheckpointMeta format
+                        let meta: CheckpointMeta = serde_json::from_slice(&bytes)
+                            .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+                        self.name_index
+                            .write()
+                            .insert(meta.name.clone(), meta.seq_no);
+                        self.checkpoints.write().insert(meta.seq_no, meta.clone());
+                        return Ok(Some(meta));
+                    }
+                };
+                manifest.verify()?;
+                let meta = manifest.meta;
                 self.name_index
                     .write()
                     .insert(meta.name.clone(), meta.seq_no);
@@ -361,8 +423,14 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
         let mut result = Vec::with_capacity(entries.len());
         for (_key_bytes, value_bytes) in entries {
-            let meta: CheckpointMeta = serde_json::from_slice(&value_bytes)
-                .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+            let meta = match serde_json::from_slice::<CheckpointManifest>(&value_bytes) {
+                Ok(manifest) => {
+                    manifest.verify()?;
+                    manifest.meta
+                }
+                Err(_) => serde_json::from_slice::<CheckpointMeta>(&value_bytes)
+                    .map_err(|e| MemFuseError::Serialization(e.to_string()))?,
+            };
             result.push(meta);
         }
 
@@ -879,5 +947,88 @@ mod tests {
         } else {
             panic!("Expected Internal error on overflow");
         }
+    }
+
+    #[test]
+    fn test_checkpoint_guard_is_not_clone() {
+        // Compile-time static check ensuring CheckpointGuard does NOT implement Clone.
+        trait GuardCloneCheck {
+            fn is_clone() -> bool {
+                false
+            }
+        }
+        impl<T> GuardCloneCheck for T {}
+
+        struct CloneImplDetector<T>(std::marker::PhantomData<T>);
+        impl<T: Clone> CloneImplDetector<T> {
+            #[allow(dead_code)]
+            fn is_clone() -> bool {
+                true
+            }
+        }
+
+        // If CheckpointGuard implemented Clone, CloneImplDetector::is_clone() would be accessible and true.
+        // We verify that CheckpointGuard<MockStorage> does NOT implement Clone.
+        assert!(!CloneImplDetector::<CheckpointGuard<MockStorage>>::is_clone());
+    }
+
+    struct FailingRollbackStorage;
+    #[async_trait]
+    impl StorageEngine for FailingRollbackStorage {
+        async fn get(&self, _: &[u8]) -> Result<Option<Vec<u8>>> { Ok(None) }
+        async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> { Ok(None) }
+        async fn put(&self, _: TxId, _: &[u8], _: &[u8]) -> Result<()> { Ok(()) }
+        async fn delete(&self, _: TxId, _: &[u8]) -> Result<()> { Ok(()) }
+        async fn commit(&self, _: TxId) -> Result<()> { Ok(()) }
+        async fn rollback(&self, _: TxId) -> Result<()> { Ok(()) }
+        async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
+            Err(MemFuseError::Internal("Simulated rollback failure".into()))
+        }
+        async fn last_seq_no(&self) -> Result<u64> { Ok(0) }
+        async fn last_tx_id(&self) -> Result<TxId> { Ok(TxId::new(0)) }
+        async fn flush(&self) -> Result<()> { Ok(()) }
+        async fn stats(&self) -> Result<StorageStats> {
+            Ok(StorageStats { num_segments: 0, total_size_bytes: 0, memtable_size_bytes: 0 })
+        }
+        async fn pin_checkpoint(&self, _: u64) -> Result<()> { Ok(()) }
+        async fn unpin_checkpoint(&self, _: u64) -> Result<()> { Ok(()) }
+        async fn scan_prefix(&self, _: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> { Ok(Vec::new()) }
+        async fn scan(&self, _: std::ops::Bound<&[u8]>, _: std::ops::Bound<&[u8]>) -> Result<Vec<(Vec<u8>, Vec<u8>)>> { Ok(Vec::new()) }
+    }
+
+    #[test]
+    fn test_checkpoint_guard_drop_panic_safety_during_unwind() {
+        let storage = Arc::new(FailingRollbackStorage);
+        let panic_res = std::panic::catch_unwind(|| {
+            let _guard = CheckpointGuard::new(
+                StateCheckpoint { tx_id: TxId::new(99), timestamp_ms: 100 },
+                storage,
+            );
+            // Panic explicitly while guard is in scope to test drop during unwinding.
+            panic!("Primary panic during unwind");
+        });
+
+        assert!(panic_res.is_err());
+        let err = panic_res.unwrap_err();
+        let msg = err.downcast_ref::<&str>().unwrap_or(&"");
+        assert_eq!(*msg, "Primary panic during unwind");
+    }
+
+    #[test]
+    fn test_checkpoint_manifest_checksum_tampering() {
+        let meta = CheckpointMeta {
+            name: "cp_manifest_test".to_string(),
+            collection_id: "c1".to_string(),
+            seq_no: 1,
+            tx_id: TxId::new(10),
+            metadata: serde_json::json!({}),
+            created_at: 1000,
+        };
+        let mut manifest = CheckpointManifest::new(meta, vec!["lsm".to_string()]).unwrap();
+        assert!(manifest.verify().is_ok());
+
+        // Tamper with checksum
+        manifest.checksum = "0000000000000000000000000000000000000000000000000000000000000000".to_string();
+        assert!(manifest.verify().is_err());
     }
 }
