@@ -213,6 +213,15 @@ mod tests {
     }
 
     #[test]
+    fn test_snapshot_panic_free_safety() {
+        let registry = Arc::new(SnapshotRegistry::new());
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+        registry.release(12345);
+        registry.unpin(12345);
+        assert_eq!(registry.min_active_seqno(), u64::MAX);
+    }
+
+    #[test]
     fn test_double_registration_and_sequential_drop() {
         let registry = Arc::new(SnapshotRegistry::new());
         let g1 = registry.register(42);
