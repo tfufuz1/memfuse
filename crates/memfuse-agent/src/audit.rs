@@ -17,6 +17,8 @@ pub struct AuditEntry {
     pub node_id: String,
     pub tokens_consumed: usize,
     pub payload: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// Append-only audit log backed by a MemFuse collection.
@@ -95,6 +97,7 @@ mod tests {
             node_id: "node-start".to_string(),
             tokens_consumed: 50,
             payload: serde_json::json!({"action": "init"}),
+            error: None,
         };
 
         let entry2 = AuditEntry {
@@ -103,6 +106,7 @@ mod tests {
             node_id: "node-process".to_string(),
             tokens_consumed: 120,
             payload: serde_json::json!({"action": "compute"}),
+            error: None,
         };
 
         audit_log.append(&entry1).await.unwrap(); // unwrap allowed

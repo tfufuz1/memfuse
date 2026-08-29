@@ -161,6 +161,16 @@ async fn test_agent_error_handling() {
         .unwrap_err()
         .to_string()
         .contains("Simulated failure"));
+    assert_eq!(ctx.status, memfuse_agent::context::AgentStatus::Failed);
+
+    // Verify failure logged in audit trail
+    let audit_log = memfuse_agent::audit::AuditLog::new(state_col);
+    let audit_entries = audit_log.replay_task("t1").await.unwrap();
+    assert_eq!(audit_entries.len(), 1);
+    assert_eq!(
+        audit_entries[0].error.as_deref(),
+        Some("Internal error: Simulated failure")
+    );
 }
 
 #[tokio::test]
@@ -196,6 +206,50 @@ async fn test_agent_audit_log_immutable() {
     assert_eq!(audit_entries[0].step_count, 0);
     assert_eq!(audit_entries[0].node_id, "start");
     assert_eq!(audit_entries[0].tokens_consumed, 1);
+}
+
+#[tokio::test]
+async fn test_crash_during_execute_recovery() {
+    let (db, _tmp) = setup_env().await;
+    let state_col = db.collection("agent_state").await.expect("col failed");
+    let mut ctx = AgentContext::new(
+        "crash-task",
+        "start",
+        db.clone(),
+        state_col.clone(),
+        TokenBudget::new(100, 0),
+    );
+
+    let mut graph = StateGraph::new();
+    graph.add_node("start", "Start", NodeType::Start, Some("failing_tool"));
+    graph.add_node("end", "End", NodeType::End, None);
+    graph.add_edge("start", "end", None, 1);
+
+    let mut engine = OrchestratorEngine::new(db.inner_storage());
+    engine.register_tool(Box::new(FailingTool));
+
+    // Execution fails during execute()
+    let res = engine.run(&mut ctx, &graph).await;
+    assert!(res.is_err());
+    assert_eq!(ctx.status, memfuse_agent::context::AgentStatus::Failed);
+
+    // Checkpoint prior to execute() was created and is recoverable
+    let checkpoints = engine
+        .checkpoint_store
+        .list_checkpoints()
+        .await
+        .expect("list checkpoints failed");
+    assert!(checkpoints
+        .iter()
+        .any(|c| c.name == "task:crash-task:step:0:node:start"));
+
+    // Recovery/Replay restores context to start node
+    engine
+        .replay_from(&mut ctx, "start")
+        .await
+        .expect("replay failed");
+    assert_eq!(ctx.current_node, "start");
+    assert_eq!(ctx.step_count, 0);
 }
 
 #[tokio::test]
