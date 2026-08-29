@@ -105,7 +105,7 @@ pub fn ensure_importance_metadata(
         }
     };
 
-    if let Some(imp_val) = meta_obj.get("importance").cloned() {
+    if let Some(imp_val) = meta_obj.get("importance") {
         if serde_json::from_value::<memfuse_core::MemoryImportance>(imp_val.clone()).is_ok() {
             return;
         } else if let Some(raw_f64) = imp_val.as_f64() {
@@ -763,12 +763,15 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let text_opt = extract_text(&metadata);
         ensure_importance_metadata(&mut metadata, tx, text_opt.as_deref());
 
+        let meta_only = StoredDocumentMeta {
+            id: id.to_string(),
+            metadata: metadata.clone(),
+        };
         let stored = StoredDocument {
             id: id.to_string(),
             embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
-        let meta_only = StoredDocumentMeta::from(&stored);
 
         // user_key (key_type=0): Vollständiges Dokument (für get() und repair())
         // Document serialization is unencrypted before being sent to storage.
@@ -973,12 +976,15 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let text_opt = extract_text(&metadata);
         ensure_importance_metadata(&mut metadata, tx, text_opt.as_deref());
 
+        let meta_only = StoredDocumentMeta {
+            id: id.to_string(),
+            metadata: metadata.clone(),
+        };
         let stored = StoredDocument {
             id: id.to_string(),
             embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
-        let meta_only = StoredDocumentMeta::from(&stored);
         let data = serde_json::to_vec(&stored)?;
 
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
@@ -1086,7 +1092,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         }
 
         let dummy_doc_id = DocId::from_key(from)?;
-        db_tx.record_keys(key.clone(), vec![], dummy_doc_id);
+        db_tx.record_keys(key, vec![], dummy_doc_id);
 
         let from_entity = memfuse_core::Entity::new(from_id, from, "Node");
         let to_entity = memfuse_core::Entity::new(to_id, to, "Node");
@@ -1298,13 +1304,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         filter: &FilterExpr,
         seq: u64,
     ) -> Result<std::collections::HashSet<DocId>> {
-        let prefix = if self.name == "default" {
-            b"__docid:".to_vec()
-        } else {
-            let mut p = self.prefix.clone();
-            p.push(1); // docid mapping type
-            p
-        };
+        let prefix = self.namespaced_key(&[], 1);
 
         let entries = self.storage.scan_prefix_at(&prefix, seq).await?;
         let mut matched = std::collections::HashSet::new();
@@ -1863,9 +1863,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 if self.name == "default" {
                     Bound::Unbounded
                 } else {
-                    let mut b = self.prefix.clone();
-                    b.push(0);
-                    Bound::Included(b)
+                    Bound::Included(self.namespaced_key(&[], 0))
                 }
             }
         };
@@ -1927,13 +1925,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     pub async fn load_index(&self) -> Result<()> {
         // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-002 — load_index now scans user_keys (key_type=0) (TS:2026-08-25T00:00:00Z)
         // because doc_keys (key_type=1) no longer contain embeddings (ID: AGT-DB-002).
-        let scan_prefix = if self.name == "default" {
-            b"".to_vec()
-        } else {
-            let mut p = self.prefix.clone();
-            p.push(0); // key_type=0
-            p
-        };
+        let scan_prefix = self.namespaced_key(&[], 0);
 
         let entries = self.storage.scan_prefix(&scan_prefix).await?;
         let tx = self.next_tx()?;
@@ -1959,13 +1951,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Safe to call multiple times (idempotent).
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn migrate_doc_keys_v1(&self) -> Result<u64> {
-        let prefix = if self.name == "default" {
-            b"__docid:".to_vec()
-        } else {
-            let mut p = self.prefix.clone();
-            p.push(1); // docid mapping type
-            p
-        };
+        let prefix = self.namespaced_key(&[], 1);
 
         let entries = self.storage.scan_prefix(&prefix).await?;
         let mut migrated_count = 0;
@@ -2287,18 +2273,16 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn drop_collection(&self) -> Result<()> {
         let _guard = self.insert_lock.lock().await;
-        let prefix = if self.name == "default" {
+        if self.name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(
                 "Cannot drop default collection",
             ));
-        } else {
-            self.prefix.clone()
-        };
+        }
 
         let tx = self.next_tx()?;
 
         // 1. Clean collection data (user keys, docs, rels, intents)
-        self.storage.delete_prefix(tx, &prefix).await?;
+        self.storage.delete_prefix(tx, &self.prefix).await?;
 
         // 2. Clean text index namespace (FIND-DB-002)
         let txt_prefix = format!("__txt:{}:", self.name).into_bytes();
