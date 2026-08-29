@@ -1,0 +1,25 @@
+[package]
+name = "memfuse-router"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+ollama = ["dep:memfuse-ollama"]
+
+[dependencies]
+memfuse-core = { workspace = true }
+memfuse-store = { workspace = true }
+memfuse-db = { workspace = true }
+memfuse-mcp = { workspace = true }
+memfuse-ollama = { workspace = true, optional = true }
+tokio = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+[dev-dependencies]
+tempfile = "3"
