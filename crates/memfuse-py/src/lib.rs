@@ -92,6 +92,31 @@ fn opt_dict_to_json(
     }
 }
 
+/// Validates that a string ID is non-empty.
+fn validate_id(id: &str) -> PyResult<()> {
+    if id.is_empty() {
+        return Err(MemFuseValueError::new_err("Document ID cannot be empty"));
+    }
+    Ok(())
+}
+
+/// Validates that a vector slice contains no NaN or infinite values.
+fn validate_vector(vector: &[f32]) -> PyResult<()> {
+    if vector.iter().any(|x| x.is_nan() || x.is_infinite()) {
+        return Err(MemFuseValueError::new_err(
+            "Vector contains NaN or infinite float values",
+        ));
+    }
+    Ok(())
+}
+
+/// Validates both document ID and vector slice.
+fn validate_id_and_vector(id: &str, vector: &[f32]) -> PyResult<()> {
+    validate_id(id)?;
+    validate_vector(vector)?;
+    Ok(())
+}
+
 /// Converts a serde_json::Value to a Python object.
 fn json_to_py(py: Python<'_>, val: &serde_json::Value) -> PyResult<PyObject> {
     pythonize(py, val)
@@ -139,15 +164,24 @@ fn memfuse_err(e: memfuse_core::MemFuseError) -> PyErr {
             "Storage" | "Io" | "WalCorruption" | "ChecksumMismatch" => {
                 MemFuseIOError::new_err(dto.message.clone())
             }
-            "Index" | "HnswConnectivityDegraded" => MemFuseIndexError::new_err(dto.message.clone()),
-            "InvalidInput" | "Serialization" | "Json" | "ParseError" | "Bincode" => {
-                MemFuseValueError::new_err(dto.message.clone())
+            "Index" | "HnswConnectivityDegraded" | "Text" => {
+                MemFuseIndexError::new_err(dto.message.clone())
             }
+            "InvalidInput" | "Serialization" | "Json" | "ParseError" | "Bincode" | "NotFound"
+            | "Transaction" | "TransactionTimeout" | "Conflict" | "InvalidSequenceNumber"
+            | "CheckpointNotFound" => MemFuseValueError::new_err(dto.message.clone()),
             "Crypto" => MemFuseCryptoError::new_err(dto.message.clone()),
-            "Sandbox" | "MemoryLimitExceeded" | "SandboxTimeout" | "PolicyViolation" => {
+            "Sandbox" | "MemoryLimitExceeded" | "SandboxTimeout" | "PolicyViolation"
+            | "NamespaceViolation" => {
                 pyo3::exceptions::PyPermissionError::new_err(dto.message.clone())
             }
-            "Internal" => MemFuseInternalError::new_err(dto.message.clone()),
+            "MemoryBudgetExceeded" => {
+                pyo3::exceptions::PyMemoryError::new_err(dto.message.clone())
+            }
+            "CapabilityUnsupported" => {
+                pyo3::exceptions::PyNotImplementedError::new_err(dto.message.clone())
+            }
+            "Internal" | "Cluster" => MemFuseInternalError::new_err(dto.message.clone()),
             _ => MemFuseError::new_err(dto.message.clone()),
         };
         let value = py_err.value(py);
@@ -286,6 +320,7 @@ macro_rules! memfuse_crud_methods {
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
+                validate_id_and_vector(id, v)?;
                 let m = opt_dict_to_json(metadata.as_ref())?;
                 py.allow_threads(|| rt.block_on(self.inner.insert(id, v, m)))
                     .map_err(memfuse_err)
@@ -293,6 +328,7 @@ macro_rules! memfuse_crud_methods {
 
             /// Retrieves a document by its user-provided string ID.
             pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
+                validate_id(id)?;
                 let rt = get_runtime()?;
                 let doc = py
                     .allow_threads(|| rt.block_on(self.inner.get(id)))
@@ -316,6 +352,7 @@ macro_rules! memfuse_crud_methods {
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
+                validate_id_and_vector(id, v)?;
                 let m = opt_dict_to_json(metadata.as_ref())?;
                 py.allow_threads(|| rt.block_on(self.inner.update(id, v, m)))
                     .map_err(memfuse_err)
@@ -334,6 +371,7 @@ macro_rules! memfuse_crud_methods {
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
+                validate_id_and_vector(id, v)?;
                 let m = opt_dict_to_json(metadata.as_ref())?;
                 py.allow_threads(|| rt.block_on(self.inner.upsert(id, v, m)))
                     .map_err(memfuse_err)
@@ -341,6 +379,7 @@ macro_rules! memfuse_crud_methods {
 
             /// Deletes a document by its ID.
             pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
+                validate_id(id)?;
                 let rt = get_runtime()?;
                 py.allow_threads(|| rt.block_on(self.inner.delete(id)))
                     .map_err(memfuse_err)
@@ -364,6 +403,7 @@ macro_rules! memfuse_crud_methods {
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
+                validate_vector(v)?;
                 let results = py
                     .allow_threads(|| rt.block_on(self.inner.search(v, k)))
                     .map_err(memfuse_err)?;
@@ -388,6 +428,7 @@ macro_rules! memfuse_crud_methods {
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
+                validate_vector(v)?;
                 let results = py
                     .allow_threads(|| rt.block_on(self.inner.search(v, k)))
                     .map_err(memfuse_err)?;
@@ -460,6 +501,7 @@ macro_rules! memfuse_crud_methods {
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
+                validate_vector(v)?;
                 let results = py
                     .allow_threads(|| rt.block_on(self.inner.hybrid_search_with_weights(text, v, k, None, weights.as_ref())))
                     .map_err(memfuse_err)?;
@@ -546,6 +588,13 @@ macro_rules! memfuse_crud_methods {
                 to: &str,
                 label: &str,
             ) -> PyResult<()> {
+                validate_id(from)?;
+                validate_id(to)?;
+                if label.is_empty() {
+                    return Err(MemFuseValueError::new_err(
+                        "Relationship label cannot be empty",
+                    ));
+                }
                 let rt = get_runtime()?;
                 py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
                     .map_err(memfuse_err)
@@ -640,10 +689,10 @@ macro_rules! memfuse_batch_methods {
                                 "Invalid vector: {}",
                                 e
                             ))
-                        })?
-                        .to_vec();
+                        })?;
+                    validate_id_and_vector(id, v)?;
                     let m = opt_dict_to_json(metadata.as_ref())?;
-                    batch.push((id.clone(), v, m));
+                    batch.push((id.clone(), v.to_vec(), m));
                 }
                 py.allow_threads(|| rt.block_on(self.inner.insert_many(&batch)))
                     .map_err(memfuse_err)
@@ -672,10 +721,10 @@ macro_rules! memfuse_batch_methods {
                                 "Invalid vector: {}",
                                 e
                             ))
-                        })?
-                        .to_vec();
+                        })?;
+                    validate_id_and_vector(id, v)?;
                     let m = opt_dict_to_json(metadata.as_ref())?;
-                    batch.push((id.clone(), v, m));
+                    batch.push((id.clone(), v.to_vec(), m));
                 }
                 py.allow_threads(|| rt.block_on(self.inner.upsert_many(&batch)))
                     .map_err(memfuse_err)

@@ -20,7 +20,7 @@ Ergebnis: **2 offene Tags**
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 6.989 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-core` | 0 | 6.999 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-checkpoint` | 1 | 1.166 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 1.142 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | 1 | 4.421 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
@@ -29,12 +29,12 @@ Ergebnis: **2 offene Tags**
 | `memfuse-text` | 1 | 3.562 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-db` | 2 | 10.955 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 2.278 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-embed` | 3 | 1.022 | 🧊 Optional |  |
-| `memfuse-ollama` | 3 | 2.369 | 🟢 Clean |  |
-| `memfuse-py` | 3 | 915 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
-| `memfuse-mcp` | 4 | 1.758 | 🟢 Clean |  |
-| `memfuse-router` | 4 | 510 | 🟢 Clean |  |
-| `memfuse-tauri` | 4 | 2.441 | 🟢 Clean |  |
+| `memfuse-embed` | 3 | 1.068 | 🧊 Optional |  |
+| `memfuse-ollama` | 3 | 2.440 | 🟢 Clean |  |
+| `memfuse-py` | 3 | 964 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
+| `memfuse-router` | 3 | 510 | 🟢 Clean |  |
+| `memfuse-mcp` | 4 | 2.093 | 🟢 Clean |  |
+| `memfuse-tauri` | 4 | 2.495 | 🟢 Clean |  |
 
 
 ## DAG-Topologie
@@ -52,6 +52,7 @@ Layer 3:  memfuse-agent — Persistent agent workflow engine for MemFuse — che
           memfuse-embed —  (deps: memfuse-core)
           memfuse-ollama —  (deps: memfuse-core)
           memfuse-py — Python bindings for MemFuse using PyO3 (deps: memfuse-core, memfuse-db)
+          memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-mcp, memfuse-ollama, memfuse-store)
 Layer 4:  memfuse-mcp —  (deps: memfuse-agent, memfuse-core, memfuse-crypto, memfuse-db, memfuse-ollama)
           memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-mcp, memfuse-ollama, memfuse-store)
           memfuse-tauri —  (deps: memfuse-core, memfuse-db, memfuse-graph, memfuse-ollama)

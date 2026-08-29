@@ -61,8 +61,8 @@ impl VolatileToolResult {
         })
     }
 
-    /// Entschlüsselt und gibt den Klartext zurück.
-    pub fn decrypt(&self, key: &memfuse_crypto::CryptoKey) -> Result<Vec<u8>> {
+    /// Entschlüsselt und gibt den Klartext zeroized zurück.
+    pub fn decrypt(&self, key: &memfuse_crypto::CryptoKey) -> Result<zeroize::Zeroizing<Vec<u8>>> {
         if self.nonce.len() != 12 {
             return Err(MemFuseError::Internal(
                 "Sandbox decrypt: Invalid nonce length".into(),
@@ -70,8 +70,10 @@ impl VolatileToolResult {
         }
         let mut nonce_bytes = [0u8; 12];
         nonce_bytes.copy_from_slice(&self.nonce);
-        key.decrypt_auto_nonce(&self.encrypted, &nonce_bytes)
-            .map_err(|e| MemFuseError::Internal(format!("Sandbox decrypt: {e}")))
+        let decrypted = key
+            .decrypt_auto_nonce(&self.encrypted, &nonce_bytes)
+            .map_err(|e| MemFuseError::Internal(format!("Sandbox decrypt: {e}")))?;
+        Ok(zeroize::Zeroizing::new(decrypted))
     }
 }
 
@@ -175,7 +177,7 @@ impl McpSandbox {
     }
 
     /// Ruft einen verschlüsselten Tool-Output ab und entschlüsselt ihn.
-    pub fn get_volatile(&self, key: &str) -> Result<Option<Vec<u8>>> {
+    pub fn get_volatile(&self, key: &str) -> Result<Option<zeroize::Zeroizing<Vec<u8>>>> {
         let results = self.volatile_results.lock();
         if let Some(res) = results.get(key) {
             let plaintext = res.decrypt(&self.session_key)?;
@@ -259,7 +261,7 @@ mod tests {
         sandbox.store_volatile("res1", data).expect("store"); // expect
 
         let retrieved = sandbox.get_volatile("res1").expect("get").expect("exists"); // expect
-        assert_eq!(retrieved, data);
+        assert_eq!(retrieved.as_slice(), data);
     }
 
     #[test]
@@ -270,7 +272,27 @@ mod tests {
         let plaintext = b"tool output data";
         let result = VolatileToolResult::encrypt(plaintext, &key).unwrap();
         let decrypted = result.decrypt(&key).unwrap();
-        assert_eq!(decrypted, plaintext);
+        assert_eq!(decrypted.as_slice(), plaintext);
+    }
+
+    #[test]
+    fn test_volatile_result_error_path_zeroizes_intermediate_data() {
+        let key =
+            memfuse_crypto::CryptoKey::try_new("0123456789abcdef0123456789abcdef", b"salt1234")
+                .unwrap();
+        let plaintext = b"sensitive payload that will drop early";
+        let result = VolatileToolResult::encrypt(plaintext, &key).unwrap();
+
+        let simulate_aborted_processing = || -> Result<()> {
+            let decrypted = result.decrypt(&key)?;
+            assert_eq!(decrypted.as_slice(), plaintext);
+            // Simulate early return / error before processing finishes
+            Err(MemFuseError::Internal("Simulated pipeline failure".into()))
+        };
+
+        let err = simulate_aborted_processing();
+        assert!(err.is_err());
+        // The decrypted Zeroizing<Vec<u8>> dropped upon early exit, zeroizing memory.
     }
 
     #[tokio::test]

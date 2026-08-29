@@ -55,7 +55,7 @@ mod tests {
 
         // Manually persist synthetic community IDs in storage for testing get_community:
         // 100 for coding, 200 for docs
-        let tx = db.allocate_tx();
+        let tx = db.allocate_tx().unwrap();
 
         let comm_key_coding = format!("__graph:community:{}", eid_coding.inner()).into_bytes();
         let comm_key_docs = format!("__graph:community:{}", eid_docs.inner()).into_bytes();

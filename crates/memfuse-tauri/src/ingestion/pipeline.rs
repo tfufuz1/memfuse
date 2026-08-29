@@ -344,7 +344,14 @@ impl IngestionPipeline {
                 .unwrap_or("")
                 .to_lowercase();
             if supported.contains(&ext.as_str()) {
-                let report = self.ingest_file(entry.path(), collection).await?;
+                let report = match self.ingest_file(entry.path(), collection).await {
+                    Ok(rep) => rep,
+                    Err(e) => IngestReport {
+                        file_path: entry.path().display().to_string(),
+                        chunks_created: 0,
+                        errors: vec![e.to_string()],
+                    },
+                };
                 reports.push(report);
             }
         }

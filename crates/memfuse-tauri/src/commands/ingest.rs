@@ -30,8 +30,23 @@ pub async fn ingest_file(
     let embedder = Arc::new(OllamaBridge::localhost());
     let pipeline = IngestionPipeline::new(embedder);
 
+    let path = std::path::Path::new(&file_path);
+    let canonical_path = std::fs::canonicalize(path).map_err(|e| {
+        MemFuseErrorDto::new(
+            "InvalidInput",
+            format!("Invalid file path or file does not exist ({file_path}): {e}"),
+        )
+    })?;
+
+    if !canonical_path.is_file() {
+        return Err(MemFuseErrorDto::new(
+            "InvalidInput",
+            format!("Path is not a regular file: {file_path}"),
+        ));
+    }
+
     pipeline
-        .ingest_file(std::path::Path::new(&file_path), &collection)
+        .ingest_file(&canonical_path, &collection)
         .await
         .map_err(|e| MemFuseErrorDto::from(&e))
 }
@@ -62,10 +77,24 @@ pub async fn ingest_folder(
     let pipeline = IngestionPipeline::new(embedder);
 
     let folder = std::path::Path::new(&folder_path);
+    let canonical_folder = std::fs::canonicalize(folder).map_err(|e| {
+        MemFuseErrorDto::new(
+            "InvalidInput",
+            format!("Invalid folder path or directory does not exist ({folder_path}): {e}"),
+        )
+    })?;
+
+    if !canonical_folder.is_dir() {
+        return Err(MemFuseErrorDto::new(
+            "InvalidInput",
+            format!("Path is not a directory: {folder_path}"),
+        ));
+    }
+
     let mut reports = Vec::new();
     let supported = ["pdf", "docx", "md", "markdown", "txt", "eml"];
 
-    for entry in walkdir::WalkDir::new(folder)
+    for entry in walkdir::WalkDir::new(&canonical_folder)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
@@ -77,10 +106,14 @@ pub async fn ingest_folder(
             .unwrap_or("")
             .to_lowercase();
         if supported.contains(&ext.as_str()) {
-            let report = pipeline
-                .ingest_file(entry.path(), &collection)
-                .await
-                .map_err(|e| MemFuseErrorDto::from(&e))?;
+            let report = match pipeline.ingest_file(entry.path(), &collection).await {
+                Ok(rep) => rep,
+                Err(e) => IngestReport {
+                    file_path: entry.path().display().to_string(),
+                    chunks_created: 0,
+                    errors: vec![e.to_string()],
+                },
+            };
             use tauri::Emitter;
             let _ = app.emit("ingest-progress", &report);
             reports.push(report);
@@ -88,4 +121,14 @@ pub async fn ingest_folder(
     }
 
     Ok(reports)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_path_traversal_non_existent_path_fails() {
+        let path = "../../etc/passwd_non_existent";
+        let res = std::fs::canonicalize(path);
+        assert!(res.is_err());
+    }
 }
