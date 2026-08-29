@@ -7,6 +7,13 @@
 // INVARIANT: Orchestrator Facade (Getriebe — Layer 2).
 //! # MemFuse — Embedded Hybrid-Search for AI Agents
 //!
+//! ## Concurrency & Lock Hierarchy
+//! When acquiring multiple locks in `MemFuse`, the following order must be respected to avoid deadlocks:
+//! 1. `MemFuse::collections` (`tokio::sync::RwLock`)
+//! 2. `MemFuse::embedder` (`parking_lot::RwLock`)
+//! 3. `Collection::insert_lock` (`tokio::sync::Mutex`) / `Collection::embedder` (`parking_lot::RwLock`)
+//!
+//!
 //! MemFuse is a zero-boilerplate embedded database for AI agent memory.
 //! It combines vector search (HNSW), persistent storage (LSM-Tree),
 //! and relationship tracking in a single library.

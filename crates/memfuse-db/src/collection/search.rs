@@ -50,10 +50,12 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         k: usize,
         filter: Option<FilterExpr>,
     ) -> Result<Vec<crate::SearchResult>> {
-        if k == 0 {
-            return Err(memfuse_core::MemFuseError::invalid_input(
-                "k must be > 0",
-            ));
+        if query.len() != self.dimension {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Dimension mismatch: expected {}, got {}",
+                self.dimension,
+                query.len()
+            )));
         }
         let k = k.min(memfuse_core::MAX_SEARCH_K);
         // 🛡️ SICHERUNG: Snapshot-Isolation (FIND-DB-003)
@@ -215,6 +217,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
         seq: u64,
     ) -> Result<Vec<crate::SearchResult>> {
+        if query.len() != self.dimension {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Dimension mismatch: expected {}, got {}",
+                self.dimension,
+                query.len()
+            )));
+        }
         let k = k.min(memfuse_core::MAX_SEARCH_K);
         let scored_docs = self.index.search_filtered(query, k, filter).await?;
         self.hydrate_from_scored_at(scored_docs, seq).await
@@ -388,6 +397,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     ) -> Result<Vec<crate::SearchResult>> {
         if k == 0 {
             return Ok(Vec::new());
+        }
+        if !vector.is_empty() && vector.len() != self.dimension {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Dimension mismatch: expected {}, got {}",
+                self.dimension,
+                vector.len()
+            )));
         }
         let k = k.min(memfuse_core::MAX_SEARCH_K);
 

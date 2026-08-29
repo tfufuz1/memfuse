@@ -34,16 +34,33 @@ pub struct AgentContext {
 }
 
 impl AgentContext {
-    pub fn new(
+    /// Tries to construct a new [`AgentContext`], performing input validation on task ID and start node.
+    // AI-TAG[HARDENING][CRITICAL]: Validates non-empty input parameters for agent workflow context initialization. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045)
+    pub fn try_new(
         task_id: impl Into<String>,
         start_node: impl Into<String>,
         db: Arc<MemFuse>,
         state_collection: Arc<Collection<LsmStorage>>,
         budget: TokenBudget,
-    ) -> Self {
-        Self {
-            task_id: task_id.into(),
-            current_node: start_node.into(),
+    ) -> memfuse_core::Result<Self> {
+        let task_id_str = task_id.into();
+        let start_node_str = start_node.into();
+
+        if task_id_str.trim().is_empty() {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "AgentContext task_id must not be empty".to_string(),
+            ));
+        }
+
+        if start_node_str.trim().is_empty() {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "AgentContext start_node must not be empty".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            task_id: task_id_str,
+            current_node: start_node_str,
             step_count: 0,
             db,
             state_collection,
@@ -51,7 +68,18 @@ impl AgentContext {
             status: AgentStatus::Idle,
             memory: HashMap::new(),
             events: Vec::new(),
-        }
+        })
+    }
+
+    pub fn new(
+        task_id: impl Into<String>,
+        start_node: impl Into<String>,
+        db: Arc<MemFuse>,
+        state_collection: Arc<Collection<LsmStorage>>,
+        budget: TokenBudget,
+    ) -> Self {
+        Self::try_new(task_id, start_node, db, state_collection, budget)
+            .unwrap_or_else(|e| panic!("Failed to initialize AgentContext: {e}"))
     }
 
     /// Integrates a background telemetry event into the agent context memory and history.

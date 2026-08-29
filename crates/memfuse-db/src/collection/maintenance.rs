@@ -6,7 +6,7 @@
 
 use super::{extract_text, parse_importance_score, Collection, StoredDocument, StoredDocumentMeta};
 use memfuse_core::{
-    DocId, EntityId, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex,
+    DocId, EntityId, GraphIndex, MemFuseError, Result, StorageEngine, TextIndex, TxId, VectorIndex,
     EXPIRY_METADATA_KEY,
 };
 use memfuse_graph::{detect_communities, CommunityAssignment, CommunityDetectionConfig};
@@ -402,10 +402,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             Some(serde_json::Value::Object(ref mut map)) => map,
             _ => {
                 stored.metadata = Some(serde_json::json!({}));
-                if let Some(serde_json::Value::Object(ref mut map)) = stored.metadata {
-                    map
-                } else {
-                    unreachable!()
+                match stored.metadata {
+                    Some(serde_json::Value::Object(ref mut map)) => map,
+                    _ => {
+                        return Err(MemFuseError::Serialization(
+                            "Failed to initialize document metadata map".to_string(),
+                        ))
+                    }
                 }
             }
         };

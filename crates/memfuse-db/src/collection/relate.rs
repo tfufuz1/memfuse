@@ -1,10 +1,4 @@
-// FILE-CONTEXT
-// ZWECK: Herstellen von gerichteten und bidirektionalen Beziehungen zwischen Dokumenten.
-// INVARIANTEN: relate() schreibt sowohl Beziehungs-Metadaten in LSM als auch Kanten in den Graph-Index.
-// NICHT-OFFENSICHTLICH: Fehler bei storage.put führen zu explizitem Transaction-Rollback mit Tracing-Logging.
-// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
-
-use super::Collection;
+use super::{crud::validate_doc_id, Collection};
 use memfuse_core::{DocId, Result, StorageEngine, VectorIndex};
 
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
@@ -12,6 +6,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Creates a directional relationship between two documents in the collection.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
+        validate_doc_id(from)?;
+        validate_doc_id(to)?;
         let _guard = self.insert_lock.lock().await;
         let db_tx = self.begin_transaction()?;
 

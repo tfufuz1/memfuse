@@ -150,24 +150,7 @@ impl LsmStorage {
             .map_err(|e| MemFuseError::Storage(format!("Failed to create dir: {}", e)))?;
 
         // 🛡️ SICHERUNG: Directory FSync (FIND-STO-004)
-        if let Some(parent) = config.path.parent() {
-            // fsync propagiert korrekt (behoben 2026-08-24)
-            let parent = if parent.as_os_str().is_empty() {
-                std::path::Path::new(".")
-            } else {
-                parent
-            };
-            let dir = tokio::fs::File::open(parent).await.map_err(|e| {
-                MemFuseError::Storage(format!(
-                    "Verzeichnis für fsync konnte nicht geöffnet werden: {e}"
-                ))
-            })?;
-            dir.sync_all().await.map_err(|e| {
-                MemFuseError::Storage(format!(
-                    "Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}"
-                ))
-            })?;
-        }
+        crate::util::fsync_parent_dir(&config.path).await?;
 
         // Persistent Salt Management (FIND-CRY-001)
         let salt_path = config.path.join("SALT");
@@ -459,7 +442,7 @@ impl LsmStorage {
                 let new_sst_path =
                     self.config
                         .path
-                        .join(format!("sst-{:020}-{:06}.sst", seq, count % 1000000));
+                        .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000));
 
                 let mut builder = SstableBuilder::create_with_key_manager(
                     &new_sst_path,
@@ -956,7 +939,7 @@ impl StorageEngine for LsmStorage {
             let seq = self.next_seq_no.load(Ordering::Relaxed);
             self.config
                 .path
-                .join(format!("sst-{:020}-{:06}.sst", seq, count % 1000000))
+                .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000))
         };
         let mut builder =
             SstableBuilder::create_with_key_manager(&sst_path, self.key_manager.clone()).await?;

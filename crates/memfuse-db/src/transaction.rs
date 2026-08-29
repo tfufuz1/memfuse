@@ -15,6 +15,12 @@
 //! - **[INV-DB-3] Strict Error Visibility in Rollbacks**: Compensating transactions during
 //!   rollback must never silently drop errors. Discovered during Forensic Audit (HARD-004),
 //!   any rollback failure must log explicitly to `tracing::error!` mapping out a potential Split-Brain.
+//!
+//! # Lock Hierarchy & Poison Recovery
+//! `DbTransaction` uses fine-grained `std::sync::Mutex` instances for staging index changes.
+//! Lock ordering between staged locks is not strict because staged fields are modified sequentially per operation.
+//! All Mutex lock acquisitions explicitly handle `PoisonError` via `match` with `p.into_inner()`
+//! to ensure fail-safe operation without panics.
 
 use crate::Collection;
 use memfuse_core::{
