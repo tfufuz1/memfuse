@@ -24,10 +24,12 @@
 pub mod audit;
 pub mod context;
 pub mod engine;
+pub mod event_source;
 pub mod graph;
 pub mod step;
 
 pub use context::{AgentContext, AgentStatus};
-pub use engine::OrchestratorEngine;
+pub use engine::{EventLoopExitReason, OrchestratorEngine};
+pub use event_source::{BackgroundEvent, EventSource, PollingDocumentEventSource, VecEventSource};
 pub use graph::{AgentNode, NodeType, StateGraph, WorkflowEdge};
 pub use step::{AgentTool, StepResult};
