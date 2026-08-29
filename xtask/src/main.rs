@@ -725,7 +725,10 @@ pub fn generate_full_working_state(tags: &[TagItem], crates: &[CrateInfo]) -> St
 }
 
 pub fn run_sync_docs(check_only: bool) -> bool {
-    println!("=== Running xtask sync-docs (check_only={}) ===", check_only);
+    println!(
+        "=== Running xtask sync-docs (check_only={}) ===",
+        check_only
+    );
     let tags = scan_tags("crates");
     println!("Found {} code tags across crates/.", tags.len());
 
@@ -911,9 +914,7 @@ pub fn run_context_digest(crate_filter: Option<String>, format: &str) -> Result<
     let blockers: Vec<_> = filtered_tags
         .iter()
         .filter(|t| {
-            !t.is_resolved
-                && severity_weight(t.severity.as_deref()) >= 3
-                && t.tag_type == "AI-TAG"
+            !t.is_resolved && severity_weight(t.severity.as_deref()) >= 3 && t.tag_type == "AI-TAG"
         })
         .cloned()
         .collect();
@@ -996,16 +997,12 @@ pub fn run_context_tags(filter: TagFilter, format: &str) -> Result<(), String> {
                 }
             }
             if let Some(ref s) = filter.severity {
-                if t.severity.as_deref().map(|sev| sev.to_uppercase())
-                    != Some(s.to_uppercase())
-                {
+                if t.severity.as_deref().map(|sev| sev.to_uppercase()) != Some(s.to_uppercase()) {
                     return false;
                 }
             }
             if let Some(ref st) = filter.status {
-                if t.status.as_deref().map(|stat| stat.to_uppercase())
-                    != Some(st.to_uppercase())
-                {
+                if t.status.as_deref().map(|stat| stat.to_uppercase()) != Some(st.to_uppercase()) {
                     return false;
                 }
             }
@@ -1036,8 +1033,8 @@ pub fn run_context_tags(filter: TagFilter, format: &str) -> Result<(), String> {
         }
         "ndjson" => {
             for m in matches {
-                let line = serde_json::to_string(&m)
-                    .map_err(|e| format!("Serialization error: {}", e))?;
+                let line =
+                    serde_json::to_string(&m).map_err(|e| format!("Serialization error: {}", e))?;
                 println!("{}", line);
             }
         }
@@ -1194,7 +1191,14 @@ pub fn run_context_crate(crate_name: &str, format: &str) -> Result<(), String> {
             println!("Path:         {}", result.path);
             println!("Total LOC:    {}", result.total_loc);
             println!("Dependencies: {:?}", result.dependencies);
-            println!("AGENTS.md:    {}", if result.agents_md.is_some() { "Present" } else { "None" });
+            println!(
+                "AGENTS.md:    {}",
+                if result.agents_md.is_some() {
+                    "Present"
+                } else {
+                    "None"
+                }
+            );
             println!("\n--- OPEN ISSUES ({}) ---", result.open_issues.len());
             for issue in &result.open_issues {
                 println!(
@@ -1236,14 +1240,40 @@ pub fn run_audit_verify(
 
     let (status, message) = if let Some(ref tag) = related_tag {
         if tag.is_resolved {
-            ("ALREADY_FIXED".to_string(), format!("Finding {} has been resolved in tag {}", finding_id, tag.id.as_deref().unwrap_or("N/A")))
+            (
+                "ALREADY_FIXED".to_string(),
+                format!(
+                    "Finding {} has been resolved in tag {}",
+                    finding_id,
+                    tag.id.as_deref().unwrap_or("N/A")
+                ),
+            )
         } else {
-            ("VALID".to_string(), format!("Finding {} is tracked as open tag {}", finding_id, tag.id.as_deref().unwrap_or("N/A")))
+            (
+                "VALID".to_string(),
+                format!(
+                    "Finding {} is tracked as open tag {}",
+                    finding_id,
+                    tag.id.as_deref().unwrap_or("N/A")
+                ),
+            )
         }
     } else if file_exists {
-        ("VALID".to_string(), format!("Finding {} affects existing file {:?}; no resolution tag found.", finding_id, file_path))
+        (
+            "VALID".to_string(),
+            format!(
+                "Finding {} affects existing file {:?}; no resolution tag found.",
+                finding_id, file_path
+            ),
+        )
     } else {
-        ("SUPERSEDED".to_string(), format!("Target file {:?} does not exist; finding may be superseded or invalid.", file_path))
+        (
+            "SUPERSEDED".to_string(),
+            format!(
+                "Target file {:?} does not exist; finding may be superseded or invalid.",
+                file_path
+            ),
+        )
     };
 
     let res = AuditVerifyResult {
@@ -1257,17 +1287,14 @@ pub fn run_audit_verify(
         message,
     };
 
-    let json = serde_json::to_string_pretty(&res).map_err(|e| format!("Serialization error: {}", e))?;
+    let json =
+        serde_json::to_string_pretty(&res).map_err(|e| format!("Serialization error: {}", e))?;
     println!("{}", json);
 
     Ok(())
 }
 
-pub fn run_audit_review(
-    finding_id: &str,
-    status: &str,
-    note: Option<&str>,
-) -> Result<(), String> {
+pub fn run_audit_review(finding_id: &str, status: &str, note: Option<&str>) -> Result<(), String> {
     let session = env::var("JULIUS_SESSION_ID").unwrap_or_else(|_| "unknown".to_string());
     let record = AuditReviewRecord {
         finding_id: finding_id.to_string(),
@@ -1277,7 +1304,8 @@ pub fn run_audit_review(
         session,
     };
 
-    let json = serde_json::to_string_pretty(&record).map_err(|e| format!("Serialization error: {}", e))?;
+    let json =
+        serde_json::to_string_pretty(&record).map_err(|e| format!("Serialization error: {}", e))?;
     println!("=== AUDIT REVIEW RECORDED ===");
     println!("{}", json);
 
