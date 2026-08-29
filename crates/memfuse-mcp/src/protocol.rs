@@ -10,15 +10,30 @@ use memfuse_core::MemFuseErrorDto;
 #[derive(Debug, Error)]
 pub enum McpError {
     #[error("{message}")]
-    ParseError { message: String, data: Option<Value> },
+    ParseError {
+        message: String,
+        data: Option<Value>,
+    },
     #[error("{message}")]
-    InvalidRequest { message: String, data: Option<Value> },
+    InvalidRequest {
+        message: String,
+        data: Option<Value>,
+    },
     #[error("{message}")]
-    MethodNotFound { message: String, data: Option<Value> },
+    MethodNotFound {
+        message: String,
+        data: Option<Value>,
+    },
     #[error("{message}")]
-    InvalidParams { message: String, data: Option<Value> },
+    InvalidParams {
+        message: String,
+        data: Option<Value>,
+    },
     #[error("{message}")]
-    InternalError { message: String, data: Option<Value> },
+    InternalError {
+        message: String,
+        data: Option<Value>,
+    },
 }
 
 impl McpError {
@@ -184,7 +199,12 @@ impl JsonRpcResponse {
     }
 
     /// Fehlerantwort mit data Payload gemäß JSON-RPC 2.0.
-    pub fn err_with_data(id: Option<Value>, code: i32, message: impl Into<String>, data: Option<Value>) -> Self {
+    pub fn err_with_data(
+        id: Option<Value>,
+        code: i32,
+        message: impl Into<String>,
+        data: Option<Value>,
+    ) -> Self {
         Self {
             jsonrpc: "2.0".into(),
             id,
