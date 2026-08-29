@@ -167,17 +167,26 @@ fn memfuse_err(e: memfuse_core::MemFuseError) -> PyErr {
             "Index" | "HnswConnectivityDegraded" | "Text" => {
                 MemFuseIndexError::new_err(dto.message.clone())
             }
-            "InvalidInput" | "Serialization" | "Json" | "ParseError" | "Bincode" | "NotFound"
-            | "Transaction" | "TransactionTimeout" | "Conflict" | "InvalidSequenceNumber"
+            "InvalidInput"
+            | "Serialization"
+            | "Json"
+            | "ParseError"
+            | "Bincode"
+            | "NotFound"
+            | "Transaction"
+            | "TransactionTimeout"
+            | "Conflict"
+            | "InvalidSequenceNumber"
             | "CheckpointNotFound" => MemFuseValueError::new_err(dto.message.clone()),
             "Crypto" => MemFuseCryptoError::new_err(dto.message.clone()),
-            "Sandbox" | "MemoryLimitExceeded" | "SandboxTimeout" | "PolicyViolation"
+            "Sandbox"
+            | "MemoryLimitExceeded"
+            | "SandboxTimeout"
+            | "PolicyViolation"
             | "NamespaceViolation" => {
                 pyo3::exceptions::PyPermissionError::new_err(dto.message.clone())
             }
-            "MemoryBudgetExceeded" => {
-                pyo3::exceptions::PyMemoryError::new_err(dto.message.clone())
-            }
+            "MemoryBudgetExceeded" => pyo3::exceptions::PyMemoryError::new_err(dto.message.clone()),
             "CapabilityUnsupported" => {
                 pyo3::exceptions::PyNotImplementedError::new_err(dto.message.clone())
             }
@@ -682,14 +691,9 @@ macro_rules! memfuse_batch_methods {
                 let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
                     Vec::with_capacity(docs.len());
                 for (id, vector, metadata) in &docs {
-                    let v = vector
-                        .as_slice()
-                        .map_err(|e| {
-                            pyo3::exceptions::PyValueError::new_err(format!(
-                                "Invalid vector: {}",
-                                e
-                            ))
-                        })?;
+                    let v = vector.as_slice().map_err(|e| {
+                        pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
+                    })?;
                     validate_id_and_vector(id, v)?;
                     let m = opt_dict_to_json(metadata.as_ref())?;
                     batch.push((id.clone(), v.to_vec(), m));
@@ -714,14 +718,9 @@ macro_rules! memfuse_batch_methods {
                 let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
                     Vec::with_capacity(docs.len());
                 for (id, vector, metadata) in &docs {
-                    let v = vector
-                        .as_slice()
-                        .map_err(|e| {
-                            pyo3::exceptions::PyValueError::new_err(format!(
-                                "Invalid vector: {}",
-                                e
-                            ))
-                        })?;
+                    let v = vector.as_slice().map_err(|e| {
+                        pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
+                    })?;
                     validate_id_and_vector(id, v)?;
                     let m = opt_dict_to_json(metadata.as_ref())?;
                     batch.push((id.clone(), v.to_vec(), m));

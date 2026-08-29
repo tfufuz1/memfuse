@@ -85,7 +85,7 @@ pub(crate) fn is_edge_visible(
     valid_to: Option<TxId>,
     as_of: TxId,
 ) -> bool {
-    valid_from.map_or(true, |vf| vf <= as_of) && valid_to.map_or(true, |vt| as_of < vt)
+    valid_from.is_none_or(|vf| vf <= as_of) && valid_to.is_none_or(|vt| as_of < vt)
 }
 
 /// Configuration parameters for [`CsrGraph`].

@@ -195,9 +195,11 @@ impl McpServer {
                                     }
                                     self.handle(req).await
                                 }
-                                Err(e) => {
-                                    JsonRpcResponse::err(req_id, -32600, format!("Invalid Request: {e}"))
-                                }
+                                Err(e) => JsonRpcResponse::err(
+                                    req_id,
+                                    -32600,
+                                    format!("Invalid Request: {e}"),
+                                ),
                             }
                         }
                         Err(e) => JsonRpcResponse::err(None, -32700, format!("Parse error: {e}")),

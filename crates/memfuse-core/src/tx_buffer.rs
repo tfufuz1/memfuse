@@ -120,8 +120,10 @@ impl<T: Clone> TxBuffer<T> {
     /// If `shard_count` is 0, it defaults to 1 to prevent division-by-zero
     /// in `shard_idx()` (§2 Zero-Panic-Gesetz).
     pub fn new_with_config(shard_count: usize, tx_timeout: Duration) -> Self {
-        let mut config = TxBufferConfig::default();
-        config.tx_timeout = tx_timeout;
+        let config = TxBufferConfig {
+            tx_timeout,
+            ..Default::default()
+        };
         Self::new_with_config_ext(shard_count, tx_timeout, config)
     }
 

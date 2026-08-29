@@ -652,10 +652,7 @@ pub trait MemoryLifecycleManager: Send + Sync {
 
     /// Plans consolidation of similar entries (Mem0 ADD/UPDATE/NOOP pattern).
     /// Returns an action plan without performing automatic execution.
-    async fn plan_consolidation(
-        &self,
-        candidates: &[DocId],
-    ) -> Result<Vec<ConsolidationAction>>;
+    async fn plan_consolidation(&self, candidates: &[DocId]) -> Result<Vec<ConsolidationAction>>;
 }
 
 #[cfg(test)]
