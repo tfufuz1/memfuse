@@ -35,12 +35,25 @@ impl OrchestratorEngine {
         }
     }
 
+    /// Helper constructor creating OrchestratorEngine directly from MemFuse DB handle.
+    pub fn from_db(db: &memfuse_db::MemFuse) -> Self {
+        Self::new(db.inner_storage())
+    }
+
     pub fn register_tool(&mut self, tool: Box<dyn AgentTool>) {
         self.tools.insert(tool.name().to_string(), tool);
     }
 
     pub async fn run(&self, ctx: &mut AgentContext, graph: &StateGraph) -> Result<()> {
         ctx.status = crate::context::AgentStatus::Running;
+        let res = self.run_internal(ctx, graph).await;
+        if res.is_err() {
+            ctx.status = crate::context::AgentStatus::Failed;
+        }
+        res
+    }
+
+    async fn run_internal(&self, ctx: &mut AgentContext, graph: &StateGraph) -> Result<()> {
         loop {
             tokio::task::yield_now().await;
             let node = graph.get_node(&ctx.current_node).ok_or_else(|| {
@@ -64,37 +77,44 @@ impl OrchestratorEngine {
                     self.checkpoint(ctx).await?;
 
                     // 2. Resolve handler (Optional for Start nodes)
-                    let result = if let Some(handler_name) = &node.handler {
-                        let tool = self.tools.get(handler_name).ok_or_else(|| {
-                            MemFuseError::Internal(format!("Tool {} not registered", handler_name))
-                        })?;
+                    let result_res = if let Some(handler_name) = &node.handler {
+                        if let Some(tool) = self.tools.get(handler_name) {
+                            let input = ctx
+                                .memory
+                                .get("last_output")
+                                .cloned()
+                                .unwrap_or(serde_json::Value::Null);
 
-                        let input = ctx
-                            .memory
-                            .get("last_output")
-                            .cloned()
-                            .unwrap_or(serde_json::Value::Null);
-
-                        let res = tool.execute(ctx, input).await?;
-
-                        // Append to context memory
-                        ctx.memory
-                            .insert("last_output".to_string(), res.output.clone());
-
-                        res
+                            tool.execute(ctx, input).await
+                        } else {
+                            Err(MemFuseError::Internal(format!("Tool {} not registered", handler_name)))
+                        }
                     } else if node.node_type == NodeType::Start {
                         // Pass-through result for start nodes without handlers
-                        StepResult {
+                        Ok(StepResult {
                             node_id: node.id.clone(),
                             output: serde_json::Value::Null,
                             tokens_consumed: 0,
                             next_edge: None,
-                        }
+                        })
                     } else {
-                        return Err(MemFuseError::Internal(format!(
+                        Err(MemFuseError::Internal(format!(
                             "Task Node {} lacks handler",
                             node.id
-                        )));
+                        )))
+                    };
+
+                    let result = match result_res {
+                        Ok(res) => {
+                            ctx.memory
+                                .insert("last_output".to_string(), res.output.clone());
+                            res
+                        }
+                        Err(err) => {
+                            // Log failure in audit trail before returning error
+                            self.audit_log_failure(ctx, &err.to_string()).await?;
+                            return Err(err);
+                        }
                     };
 
                     // 3. Atomic commit to LSM
@@ -106,18 +126,33 @@ impl OrchestratorEngine {
                     // 5. Consume tokens and check budget
                     ctx.budget.consume(result.tokens_consumed);
                     if ctx.budget.available() == 0 && node.node_type != NodeType::Start {
-                        return Err(MemFuseError::Internal("Token budget exhausted".to_string()));
+                        let err_msg = "Token budget exhausted".to_string();
+                        self.audit_log_failure(ctx, &err_msg).await?;
+                        return Err(MemFuseError::Internal(err_msg));
                     }
 
                     // 6. Resolve next edge
-                    ctx.current_node = self.resolve_next_node(graph, &ctx.current_node, &result)?;
+                    let next_node = match self.resolve_next_node(graph, &ctx.current_node, &result) {
+                        Ok(next) => next,
+                        Err(err) => {
+                            self.audit_log_failure(ctx, &err.to_string()).await?;
+                            return Err(err);
+                        }
+                    };
+                    ctx.current_node = next_node;
                     ctx.step_count += 1;
 
                     // 7. Step completed successfully: commit CheckpointGuard RAII guard
                     guard.commit()?;
                 }
                 NodeType::Decision => {
-                    let next = self.evaluate_decision(graph, node, ctx)?;
+                    let next = match self.evaluate_decision(graph, node, ctx) {
+                        Ok(next) => next,
+                        Err(err) => {
+                            self.audit_log_failure(ctx, &err.to_string()).await?;
+                            return Err(err);
+                        }
+                    };
                     ctx.current_node = next;
                 }
             }
@@ -164,9 +199,9 @@ impl OrchestratorEngine {
         if let Some(memory) = checkpoint
             .metadata
             .get("memory")
-            .and_then(|v| v.as_object())
+            .and_then(|v| serde_json::from_value::<HashMap<String, serde_json::Value>>(v.clone()).ok())
         {
-            ctx.memory = memory.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            ctx.memory = memory;
         }
 
         self.checkpoint_store
@@ -272,9 +307,24 @@ impl OrchestratorEngine {
             node_id: ctx.current_node.clone(),
             tokens_consumed: result.tokens_consumed,
             payload: result.output.clone(),
+            error: None,
         };
 
-        let audit_log = crate::audit::AuditLog::new(ctx.state_collection.clone());
+        let audit_log = crate::audit::AuditLog::new(Arc::clone(&ctx.state_collection));
+        audit_log.append(&entry).await
+    }
+
+    async fn audit_log_failure(&self, ctx: &AgentContext, error_message: &str) -> Result<()> {
+        let entry = crate::audit::AuditEntry {
+            task_id: ctx.task_id.clone(),
+            step_count: ctx.step_count,
+            node_id: ctx.current_node.clone(),
+            tokens_consumed: 0,
+            payload: serde_json::Value::Null,
+            error: Some(error_message.to_string()),
+        };
+
+        let audit_log = crate::audit::AuditLog::new(Arc::clone(&ctx.state_collection));
         audit_log.append(&entry).await
     }
 
