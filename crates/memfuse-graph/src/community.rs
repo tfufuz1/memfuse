@@ -386,7 +386,7 @@ mod tests {
     impl tracing::field::Visit for StringVisitor {
         fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
             use std::fmt::Write;
-            let _ = write!(self.0, "{}={:?} ", field.name(), value);
+            write!(self.0, "{}={:?} ", field.name(), value).ok();
         }
     }
 
