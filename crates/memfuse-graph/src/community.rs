@@ -77,14 +77,8 @@ impl SimpleRng {
 
 /// Detects semantic communities in the given CSR graph using deterministic Label Propagation.
 ///
-/// # Determinism and Reproducibility Guarantees
-/// - Node traversal order per iteration is randomized using a deterministic `SimpleRng`
-///   seeded by `config.seed.wrapping_add(iter)`.
-/// - Initial node sequence is sorted by `EntityId` ascending.
-/// - Tie-breaking rule when multiple community labels have equal aggregate weight:
-///   The label with the smallest `u64` numerical value (smallest `EntityId`) wins.
-/// - Re-running community detection over the identical graph structure with identical `config.seed`
-///   guarantees bit-identical `CommunityAssignment` results across sessions and restarts.
+/// Tie-breaking rule when multiple community labels have equal aggregate weight:
+/// The label with the smallest `u64` numerical value (smallest EntityId) wins.
 pub async fn detect_communities(
     graph: &CsrGraph,
     config: &CommunityDetectionConfig,

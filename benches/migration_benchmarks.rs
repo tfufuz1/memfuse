@@ -18,7 +18,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
     rt.block_on(async {
         db.insert(
             "doc-1",
-            &vec![0.1; 768],
+            &vec![0.1; 1536],
             Some(serde_json::json!({"text": "The quick brown fox jumps over the lazy dog"})),
         )
         .await
@@ -28,7 +28,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
     c.bench_function("hybrid_search_latency", |b| {
         b.to_async(&rt).iter(|| async {
             let _ = db
-                .hybrid_search("quick fox", &vec![0.1; 768], 5, None)
+                .hybrid_search("quick fox", &vec![0.1; 1536], 5, None)
                 .await
                 .unwrap();
         })
@@ -61,7 +61,7 @@ fn bench_rerun_cost(c: &mut Criterion) {
     rt.block_on(async {
         db.insert(
             "doc-1",
-            &vec![0.1; 768],
+            &vec![0.1; 1536],
             Some(serde_json::json!({"text": "The quick brown fox jumps over the lazy dog"})),
         )
         .await
@@ -84,7 +84,7 @@ fn bench_snapshot_overhead(c: &mut Criterion) {
         for i in 0..100 {
             db.insert(
                 &format!("doc-{}", i),
-                &vec![0.1; 768],
+                &vec![0.1; 1536],
                 Some(serde_json::json!({"text": "The quick brown fox jumps over the lazy dog"})),
             )
             .await
@@ -95,7 +95,7 @@ fn bench_snapshot_overhead(c: &mut Criterion) {
     c.bench_function("snapshot_search_overhead", |b| {
         b.to_async(&rt).iter(|| async {
             let _ = db
-                .search_with_filter_expr(&vec![0.1; 768], 5, None)
+                .search_with_filter_expr(&vec![0.1; 1536], 5, None)
                 .await
                 .unwrap();
         })
@@ -111,78 +111,11 @@ fn bench_staged_stats_commit(c: &mut Criterion) {
         b.to_async(&rt).iter(|| async {
             db.insert(
                 "bench-doc",
-                &vec![0.5; 768],
+                &vec![0.5; 1536],
                 Some(serde_json::json!({"text": "Test benchmark stats overhead"})),
             )
             .await
             .unwrap();
-        })
-    });
-}
-
-fn bench_csr_compact_strategy(c: &mut Criterion) {
-    use memfuse_core::{Edge, Entity, EntityId, GraphIndex};
-    use memfuse_graph::csr::{CsrGraph, CsrGraphConfig};
-
-    let rt = Runtime::new().unwrap();
-
-    c.bench_function("csr_compact_delta_buffered_commits", |b| {
-        b.to_async(&rt).iter(|| async {
-            let graph = CsrGraph::with_config(CsrGraphConfig {
-                rebuild_threshold: 1000,
-            });
-            let setup_tx = TxId::new(1);
-            for i in 1..=500 {
-                let _ = graph
-                    .add_entity(
-                        setup_tx,
-                        Entity::new(EntityId::new(i), format!("Node_{i}"), "Entity"),
-                    )
-                    .await;
-            }
-            let _ = graph.commit(setup_tx).await;
-            graph.compact();
-
-            for commit_idx in 1..=20 {
-                let tx = TxId::new(100 + commit_idx as u64);
-                let _ = graph
-                    .add_edge(
-                        tx,
-                        Edge::new(EntityId::new(commit_idx as u64), EntityId::new(commit_idx as u64 + 100), "link"),
-                    )
-                    .await;
-                let _ = graph.commit(tx).await;
-            }
-        })
-    });
-
-    c.bench_function("csr_compact_forced_rebuild_commits", |b| {
-        b.to_async(&rt).iter(|| async {
-            let graph = CsrGraph::with_config(CsrGraphConfig {
-                rebuild_threshold: 0,
-            });
-            let setup_tx = TxId::new(1);
-            for i in 1..=500 {
-                let _ = graph
-                    .add_entity(
-                        setup_tx,
-                        Entity::new(EntityId::new(i), format!("Node_{i}"), "Entity"),
-                    )
-                    .await;
-            }
-            let _ = graph.commit(setup_tx).await;
-            graph.compact();
-
-            for commit_idx in 1..=20 {
-                let tx = TxId::new(100 + commit_idx as u64);
-                let _ = graph
-                    .add_edge(
-                        tx,
-                        Edge::new(EntityId::new(commit_idx as u64), EntityId::new(commit_idx as u64 + 100), "link"),
-                    )
-                    .await;
-                let _ = graph.commit(tx).await;
-            }
         })
     });
 }
@@ -193,7 +126,6 @@ criterion_group!(
     bench_agent_state_checkpoint,
     bench_rerun_cost,
     bench_snapshot_overhead,
-    bench_staged_stats_commit,
-    bench_csr_compact_strategy
+    bench_staged_stats_commit
 );
 criterion_main!(benches);

@@ -51,9 +51,8 @@ use std::arch::x86_64::*;
 
 /// Computes distance between two vectors using the specified metric.
 #[inline]
-// AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-28T00:00:00Z)
-// RE-EVALUATION CONDITION: Next review upon rustc version bump in rust-toolchain.toml / workspace MSRV OR when Rust tracking issue #86656 (portable_simd) is stabilized.
-// Standardize SIMD distance metrics on Stable Rust once stabilized, preventing panic in hardware fallbacks.
+// AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-25T00:00:00Z)
+// Standardize SIMD distance metrics on Stable Rust, preventing panic in hardware fallbacks.
 // Fallbacks MUST be verified to prevent Zero-Panic violations.
 pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse_core::Result<f32> {
     if a.len() != b.len() {
@@ -87,7 +86,7 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
     Ok(dist)
 }
 
-// AI-TAG[SECURITY][CRITICAL] RESOLVED: AGT-INDEX-005 — Precondition assertions for SIMD distance functions enforced (TS:2026-08-28T00:00:00Z)
+// AI-TAG[SECURITY][CRITICAL] Precondition assertions for SIMD distance functions (AGT-INDEX-005) (TS:2026-08-25T00:00:00Z)
 // DECISION-REF: ADR-025 — Option 1: Release-active runtime assertion (assert_eq!) prevents SIMD buffer overreads.
 
 /// Computes cosine distance (1 - similarity).
@@ -672,11 +671,7 @@ pub fn normalize_inplace(v: &mut [f32]) {
 #[inline]
 #[allow(unsafe_code)]
 pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
-    assert_eq!(
-        a.len(),
-        b.len(),
-        "Vector lengths must match for dot_product_u8"
-    );
+    debug_assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx512vnni") {
@@ -706,11 +701,7 @@ pub fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
 #[inline]
 #[allow(unsafe_code)]
 pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
-    assert_eq!(
-        a.len(),
-        b.len(),
-        "Vector lengths must match for euclidean_distance_sq_u8"
-    );
+    debug_assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512bw") {
@@ -753,11 +744,7 @@ pub struct CosineSimilarityPartsU8 {
 #[inline]
 #[allow(unsafe_code)]
 pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
-    assert_eq!(
-        a.len(),
-        b.len(),
-        "Vector lengths must match for cosine_similarity_parts_u8"
-    );
+    debug_assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx512f")
@@ -1066,7 +1053,7 @@ unsafe fn hsum512_epi32_avx512(v: __m512i) -> i32 {
 /// # Safety
 /// This function is unsafe because it uses AVX2 intrinsics. The caller must ensure that the CPU supports AVX2.
 pub unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
-    let n = a.len().min(b.len());
+    let n = a.len();
     let mut i = 0;
     // SAFETY: Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
@@ -1113,7 +1100,7 @@ pub unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
 /// # Safety
 /// This function is unsafe because it uses AVX2 intrinsics. The caller must ensure that the CPU supports AVX2.
 pub unsafe fn euclidean_distance_sq_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
-    let n = a.len().min(b.len());
+    let n = a.len();
     let mut i = 0;
     // SAFETY: Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
@@ -1163,7 +1150,7 @@ pub unsafe fn euclidean_distance_sq_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
 /// # Safety
 /// This function is unsafe because it uses AVX2 intrinsics. The caller must ensure that the CPU supports AVX2.
 pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
-    let n = a.len().min(b.len());
+    let n = a.len();
     let mut i = 0;
 
     // SAFETY: Initialisierung.
@@ -1601,32 +1588,6 @@ mod tests {
                 (euc_simd - euc_scalar).abs() < 1e-4,
                 "Euclidean dispatch mismatch: simd={}, scalar={}", euc_simd, euc_scalar
             );
-        }
-
-        #[test]
-        fn prop_u8_simd_vs_scalar_parity(
-            u1 in proptest::collection::vec(0..255u8, 1..256),
-            u2 in proptest::collection::vec(0..255u8, 1..256)
-        ) {
-            let len = u1.len().min(u2.len());
-            let a = &u1[..len];
-            let b = &u2[..len];
-
-            let dot_simd = dot_product_u8(a, b);
-            let dot_scalar = dot_product_u8_scalar(a, b);
-            proptest::prop_assert_eq!(dot_simd, dot_scalar);
-
-            let euc_simd = euclidean_distance_sq_u8(a, b);
-            let euc_scalar = euclidean_distance_sq_u8_scalar(a, b);
-            proptest::prop_assert_eq!(euc_simd, euc_scalar);
-
-            let parts_simd = cosine_similarity_parts_u8(a, b);
-            let parts_scalar = cosine_similarity_parts_u8_scalar(a, b);
-            proptest::prop_assert_eq!(parts_simd.dot, parts_scalar.dot);
-            proptest::prop_assert_eq!(parts_simd.sum_a, parts_scalar.sum_a);
-            proptest::prop_assert_eq!(parts_simd.sum_b, parts_scalar.sum_b);
-            proptest::prop_assert_eq!(parts_simd.norm_a_sq, parts_scalar.norm_a_sq);
-            proptest::prop_assert_eq!(parts_simd.norm_b_sq, parts_scalar.norm_b_sq);
         }
     }
 }

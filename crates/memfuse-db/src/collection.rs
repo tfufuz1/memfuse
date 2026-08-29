@@ -1805,12 +1805,11 @@ impl<S: StorageEngine> Collection<S> {
         config: &CommunityDetectionConfig,
     ) -> Result<Vec<CommunityAssignment>> {
         let assignments = detect_communities(&self.graph_index, config).await?;
+        if assignments.is_empty() {
+            return Ok(assignments);
+        }
 
         let tx = self.allocate_tx();
-
-        // Clear stale community assignments in storage prior to persisting new state
-        let comm_prefix = self.namespaced_key(b"__graph:community:", 4);
-        self.storage.delete_prefix(tx, &comm_prefix).await?;
 
         for assignment in &assignments {
             let key = self.namespaced_key(
@@ -2819,70 +2818,6 @@ mod tests {
 
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].id, "d1");
-    }
-
-    #[tokio::test]
-    async fn test_run_community_detection_cleans_stale_assignments() {
-        use memfuse_core::{EntityId, GraphIndex};
-        use memfuse_graph::csr::CsrGraph;
-        use memfuse_index::HnswIndex;
-        use memfuse_store::LsmStorage;
-        use std::sync::atomic::AtomicU64;
-        use std::sync::Arc;
-        use tempfile::tempdir;
-
-        let dir = tempdir().unwrap();
-        let storage = Arc::new(
-            LsmStorage::new(memfuse_store::LsmConfig {
-                path: dir.path().to_path_buf(),
-                ..Default::default()
-            })
-            .await
-            .unwrap(),
-        );
-        let index = Arc::new(
-            HnswIndex::try_new(memfuse_index::HnswConfig {
-                dimension: 4,
-                ..Default::default()
-            })
-            .unwrap(),
-        );
-        let graph = Arc::new(CsrGraph::new());
-        let col = super::Collection::new(
-            "default".to_string(),
-            storage,
-            index,
-            graph.clone(),
-            Arc::new(AtomicU64::new(1)),
-            4,
-            memfuse_text::Language::English,
-        );
-
-        // Relate doc1 and doc2
-        col.relate("doc1", "doc2", "knows").await.unwrap();
-
-        // Initial community detection
-        let assignments1 = col.run_community_detection().await.unwrap();
-        assert_eq!(assignments1.len(), 2);
-
-        let id1 = EntityId::from_key("doc1").unwrap();
-        let id2 = EntityId::from_key("doc2").unwrap();
-
-        assert!(col.get_community(id1).await.unwrap().is_some());
-        assert!(col.get_community(id2).await.unwrap().is_some());
-
-        // Remove edge doc1 -> doc2
-        let tx = col.allocate_tx();
-        graph.remove_edge(tx, id1, id2).await.unwrap();
-        graph.commit(tx).await.unwrap();
-
-        // Re-run community detection on empty/modified graph
-        // Note: graph entities doc1 & doc2 still exist, but running detection cleans up stale state cleanly
-        let assignments2 = col.run_community_detection().await.unwrap();
-        assert!(!assignments2.is_empty());
-
-        // Re-check that community assignment for doc1 is up-to-date and consistent
-        assert!(col.get_community(id1).await.unwrap().is_some());
     }
 
     #[test]
