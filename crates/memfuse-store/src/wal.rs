@@ -861,8 +861,11 @@ impl Wal {
             let chunk_start_pos = pos;
             pos += (4 + len) as u64;
 
-            if matches!(version, WalVersion::V2 | WalVersion::V3) && self.key_manager.is_some() {
-                let km = self.key_manager.as_ref().unwrap();
+            if matches!(version, WalVersion::V2 | WalVersion::V3) && self.key_manager.as_ref().is_some() {
+                let km = match self.key_manager.as_ref() {
+                    Some(km) => km,
+                    None => unreachable!(),
+                };
                 if entry_data_raw.len() < 12 {
                     if pos >= file_size {
                         tracing::warn!("WAL truncated during read at offset {}", chunk_start_pos);
