@@ -36,11 +36,41 @@ def test_invalid_distance_metric(tmp_path):
     with pytest.raises((memfuse.MemFuseValueError, ValueError)):
         memfuse.open(path, dimension=4, distance_metric="invalid_metric")
 
-def test_not_found_error(db):
-    # This might trigger a NotFound error in Rust which should map to MemFuseError (default) or something specific
-    # But currently delete doesn't fail if ID is missing in LSM.
-    # We can try to update a non-existent document.
+def test_empty_id_validation(db):
     v = np.zeros(4, dtype=np.float32)
-    # update currently doesn't strictly check existence in some impls, let's see.
-    # Actually memfuse-db update usually checks.
-    pass
+    with pytest.raises(memfuse.MemFuseValueError) as excinfo:
+        db.insert("", v)
+    assert "Document ID cannot be empty" in str(excinfo.value)
+
+    with pytest.raises(memfuse.MemFuseValueError) as excinfo:
+        db.get("")
+    assert "Document ID cannot be empty" in str(excinfo.value)
+
+    with pytest.raises(memfuse.MemFuseValueError) as excinfo:
+        db.delete("")
+    assert "Document ID cannot be empty" in str(excinfo.value)
+
+def test_nan_vector_validation(db):
+    v_nan = np.array([1.0, float('nan'), 0.0, 0.0], dtype=np.float32)
+    with pytest.raises(memfuse.MemFuseValueError) as excinfo:
+        db.insert("doc_nan", v_nan)
+    assert "NaN or infinite" in str(excinfo.value)
+
+    with pytest.raises(memfuse.MemFuseValueError) as excinfo:
+        db.search(v_nan, k=5)
+    assert "NaN or infinite" in str(excinfo.value)
+
+def test_inf_vector_validation(db):
+    v_inf = np.array([1.0, float('inf'), 0.0, 0.0], dtype=np.float32)
+    with pytest.raises(memfuse.MemFuseValueError) as excinfo:
+        db.insert("doc_inf", v_inf)
+    assert "NaN or infinite" in str(excinfo.value)
+
+def test_relate_validation(db):
+    with pytest.raises(memfuse.MemFuseValueError) as excinfo:
+        db.relate("", "doc2", "knows")
+    assert "Document ID cannot be empty" in str(excinfo.value)
+
+    with pytest.raises(memfuse.MemFuseValueError) as excinfo:
+        db.relate("doc1", "doc2", "")
+    assert "label cannot be empty" in str(excinfo.value)
