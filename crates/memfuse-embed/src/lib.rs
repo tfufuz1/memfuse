@@ -6,6 +6,9 @@
 //!
 //! All ONNX-related functionality is gated behind the `onnx` feature flag.
 
+// `deny(unsafe_code)` is consciously chosen over `forbid(unsafe_code)` to allow
+// low-level C-FFI / ONNX Runtime interactions when `onnx` feature is enabled.
+// In default (non-onnx) builds, zero unsafe code exists in production.
 #![deny(unsafe_code)]
 
 #[cfg(feature = "onnx")]

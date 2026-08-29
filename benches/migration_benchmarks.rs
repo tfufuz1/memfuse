@@ -16,7 +16,9 @@ fn bench_hybrid_search(c: &mut Criterion) {
         dimension: 1536,
         ..Default::default()
     };
-    let db = rt.block_on(MemFuse::open_with_config(tmp.path(), config)).unwrap(); // unwrap allowed
+    let db = rt
+        .block_on(MemFuse::open_with_config(tmp.path(), config))
+        .unwrap(); // unwrap allowed
 
     // Prepare data
     rt.block_on(async {
@@ -63,7 +65,9 @@ fn bench_rerun_cost(c: &mut Criterion) {
         dimension: 1536,
         ..Default::default()
     };
-    let db = rt.block_on(MemFuse::open_with_config(tmp.path(), config)).unwrap(); // unwrap allowed
+    let db = rt
+        .block_on(MemFuse::open_with_config(tmp.path(), config))
+        .unwrap(); // unwrap allowed
 
     // Prepare data
     rt.block_on(async {
@@ -90,7 +94,9 @@ fn bench_snapshot_overhead(c: &mut Criterion) {
         dimension: 1536,
         ..Default::default()
     };
-    let db = rt.block_on(MemFuse::open_with_config(tmp.path(), config)).unwrap(); // unwrap allowed
+    let db = rt
+        .block_on(MemFuse::open_with_config(tmp.path(), config))
+        .unwrap(); // unwrap allowed
 
     rt.block_on(async {
         for i in 0..100 {
@@ -121,7 +127,9 @@ fn bench_staged_stats_commit(c: &mut Criterion) {
         dimension: 1536,
         ..Default::default()
     };
-    let db = rt.block_on(MemFuse::open_with_config(tmp.path(), config)).unwrap(); // unwrap allowed
+    let db = rt
+        .block_on(MemFuse::open_with_config(tmp.path(), config))
+        .unwrap(); // unwrap allowed
 
     c.bench_function("staged_stats_commit_overhead", |b| {
         b.to_async(&rt).iter(|| async {
