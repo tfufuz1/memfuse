@@ -513,7 +513,7 @@ impl Wal {
             }
         }
 
-        // AI-TAG[SECURITY][CRITICAL] RESOLVED: Atomic WAL integrity key creation (TS:2026-08-29T05:13:45Z)
+        // AI-TAG[SECURITY][CRITICAL] RESOLVED: Atomic WAL integrity key creation (TS:2026-08-29T08:06:29Z)
         // AGT-STORE-003 (SESSION:14348074)
         // Tests: tests/wal_key_lifecycle.rs — fault-injection, race, restart-persistence
         if key_path.exists() {

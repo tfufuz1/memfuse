@@ -28,13 +28,13 @@ Ergebnis: **2 offene Tags**
 | `memfuse-store` | 1 | 9.997 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 3.562 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-db` | 2 | 10.955 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-agent` | 3 | 2.129 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-agent` | 3 | 2.278 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | 3 | 1.068 | 🧊 Optional |  |
 | `memfuse-ollama` | 3 | 2.440 | 🟢 Clean |  |
-| `memfuse-py` | 3 | 915 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
+| `memfuse-py` | 3 | 964 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
+| `memfuse-router` | 3 | 510 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 2.093 | 🟢 Clean |  |
-| `memfuse-tauri` | 4 | 2.441 | 🟢 Clean |  |
-| `memfuse-router` | 99 | 510 | 🟢 Clean |  |
+| `memfuse-tauri` | 4 | 2.495 | 🟢 Clean |  |
 
 
 ## DAG-Topologie
@@ -52,9 +52,9 @@ Layer 3:  memfuse-agent — Persistent agent workflow engine for MemFuse — che
           memfuse-embed —  (deps: memfuse-core)
           memfuse-ollama —  (deps: memfuse-core)
           memfuse-py — Python bindings for MemFuse using PyO3 (deps: memfuse-core, memfuse-db)
+          memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-mcp, memfuse-ollama, memfuse-store)
 Layer 4:  memfuse-mcp —  (deps: memfuse-agent, memfuse-core, memfuse-crypto, memfuse-db, memfuse-ollama)
           memfuse-tauri —  (deps: memfuse-core, memfuse-db, memfuse-graph, memfuse-ollama)
-Layer 99:  memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-mcp, memfuse-ollama, memfuse-store)
 ```
 
 **Aktiver Workspace-Build**: 15 Workspace Crates (14 Kern-Crates + 1 optionales Crate `memfuse-embed`).

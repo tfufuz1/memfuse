@@ -79,7 +79,7 @@ Contextual Ingestion → 4-Signal Hybrid Index → Multi-Step Retrieval → Cros
             Alles lokal. Nichts verlässt den Rechner.
 ```
 
-## Workspace Crates (14 Active Crates)
+## Workspace Crates (15 Active Crates)
 
 - **Layer 0**: `memfuse-core` (Typen, Traits, Error + ContextChunk mit Contextual Prefix)
 - **Layer 1**: `memfuse-store` (LSM-Tree), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-crypto` (AES-GCM), `memfuse-graph` (CSR Graph, + SessionBranchTree DAG), `memfuse-checkpoint` (Snapshotting)
