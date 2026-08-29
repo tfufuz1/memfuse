@@ -29,6 +29,7 @@ in `hybrid_search()` fusioniert — verifizierter Code-Zustand.
 Die technische Ist-Architektur, DAG-Topologie sowie Layer-Aufteilung der Workspace-Crates sind in [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) definiert und werden dort via `xtask sync-docs` automatisch generiert.
 
 ### System-Setup & Status
+- **Snapshot Isolation**: 🟢 Vollständig (Storage Engine via `scan_prefix_at`, Text Engine via BM25 `search_at`, Vektor Engine via HNSW `search_at` & `SequenceLog`).
 - **Embedding-Backend**: Ollama via `memfuse-ollama` ist primäres Backend (ADR-008). `memfuse-embed` (ONNX) ist optional verfügbar.
 - **Graph-Persistenz**: CSR-Graph wird über LSM-Store unter den Präfixen `__graph:entity:` und `__graph:edge:` vollständig persistiert.
 - **MCP-Server**: stdio JSON-RPC 2.0 Transport (ADR-010). Unterstützt Volltext-, Hybrid-Suche, Dokumenten-Retrieval und automatisches Embedding beim Einfügen über `memfuse-ollama`.

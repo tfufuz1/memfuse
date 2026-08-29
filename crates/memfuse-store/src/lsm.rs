@@ -1978,6 +1978,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_scan_prefix_at_snapshot_isolation() {
+        let (storage, _tmp) = test_storage().await;
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"col:doc1", b"v1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+        let seq_after_tx1 = storage.last_seq_no().await.unwrap();
+
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"col:doc2", b"v2").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+
+        // Scan at seq_after_tx1: must ONLY see doc1, NOT doc2
+        let results = storage.scan_prefix_at(b"col:", seq_after_tx1).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, b"col:doc1");
+    }
+
+    #[tokio::test]
     async fn test_scan_prefix_at_mvcc_sequence_filtering() {
         let (storage, _tmp) = test_storage().await;
 

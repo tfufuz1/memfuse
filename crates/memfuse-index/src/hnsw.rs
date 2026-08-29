@@ -1720,6 +1720,36 @@ impl VectorIndex for HnswIndex {
             }
         }
 
+        if let Some(f) = filter {
+            let nodes = self.inner.nodes.read();
+            let mmap_guard = self.inner.mmap_index.read();
+            let mmap_node_count = mmap_guard
+                .as_ref()
+                .map(|m| m.header.node_count as usize)
+                .unwrap_or(0);
+            let ctx = SearchContext {
+                nodes: &nodes,
+                mmap: mmap_guard.as_ref(),
+                mmap_node_count,
+            };
+
+            let total_nodes = mmap_node_count + nodes.len();
+            let mut added = 0;
+            for i in (0..total_nodes).rev() {
+                if !ep.contains(&i) {
+                    if let Ok(doc_id) = self.inner.resolve_doc_id(i, &ctx) {
+                        if f(doc_id) {
+                            ep.push(i);
+                            added += 1;
+                            if added >= 16 {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if ep.is_empty() {
             return Ok(Vec::new());
         }
