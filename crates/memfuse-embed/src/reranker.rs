@@ -60,6 +60,12 @@ use tokenizers::Tokenizer;
 #[cfg(feature = "onnx")]
 use tracing::warn;
 
+// ARCHITECTURAL NOTE (SessionPool Separation):
+// `OnnxReranker` uses an independent `Arc<Mutex<Session>>` session management scheme
+// separate from `TextEmbedder`'s `Semaphore`-based pool. This intentional separation
+// accounts for fundamental differences in model signatures and execution profiles:
+// Cross-Encoder reranking operates on `(query, document)` sequence pairs requiring
+// custom dynamic batching, whereas `TextEmbedder` executes single-text embeddings.
 #[cfg(feature = "onnx")]
 struct OnnxReranker {
     config: RerankConfig,
@@ -417,6 +423,33 @@ mod tests {
             for window in results.windows(2) {
                 assert!(window[0].score >= window[1].score);
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_rerank_load_no_panic() {
+        use std::sync::Arc;
+
+        let config = RerankConfig::default();
+        let reranker = Arc::new(CrossEncoderReranker::new(config).unwrap()); // unwrap
+
+        let candidates: Vec<String> = (0..10).map(|i| format!("doc {i}")).collect();
+        let mut handles = Vec::new();
+
+        // Simulate 20 concurrent requests (exceeding pool/session limits)
+        for i in 0..20 {
+            let reranker_cloned = reranker.clone();
+            let candidates_cloned = candidates.clone();
+            handles.push(tokio::spawn(async move {
+                let query = format!("query {i}");
+                reranker_cloned.rerank(&query, &candidates_cloned).await
+            }));
+        }
+
+        for handle in handles {
+            let res = handle.await.unwrap(); // unwrap
+            assert!(res.is_ok());
+            assert_eq!(res.unwrap().len(), 10); // unwrap
         }
     }
 

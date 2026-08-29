@@ -6,6 +6,11 @@
 //!
 //! All ONNX-related functionality is gated behind the `onnx` feature flag.
 
+// `deny(unsafe_code)` is consciously chosen over `forbid(unsafe_code)` to allow
+// low-level C-FFI / ONNX Runtime C-library bindings (`ort-sys`) when the `onnx`
+// feature flag is enabled. `forbid(unsafe_code)` would prevent macros or unsafe FFI blocks
+// inside ONNX runtime bindings from compiling under `#[cfg(feature = "onnx")]`.
+// In default (non-onnx) builds, zero unsafe code blocks exist in production.
 #![deny(unsafe_code)]
 
 #[cfg(feature = "onnx")]
@@ -415,6 +420,50 @@ mod tests {
         let engine = MockEngine;
         let res = engine.embed("memfuse").await?;
         assert_eq!(res, vec![7.0]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_embed_load_no_panic() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        use async_trait::async_trait;
+        use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
+        use std::sync::Arc;
+
+        struct MockConcurrentEngine {
+            semaphore: Arc<tokio::sync::Semaphore>,
+        }
+
+        #[async_trait]
+        impl TextEmbeddingEngine for MockConcurrentEngine {
+            async fn embed(&self, text: &str) -> Result<Vec<f32>> {
+                let _permit = self
+                    .semaphore
+                    .acquire()
+                    .await
+                    .map_err(|_| MemFuseError::Internal("Semaphore closed".into()))?;
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                Ok(vec![text.len() as f32])
+            }
+        }
+
+        // Simulate pool_size = 2 with 20 concurrent requests (> pool size)
+        let engine = Arc::new(MockConcurrentEngine {
+            semaphore: Arc::new(tokio::sync::Semaphore::new(2)),
+        });
+
+        let mut handles = Vec::new();
+        for i in 0..20 {
+            let engine_cloned = engine.clone();
+            handles.push(tokio::spawn(async move {
+                let text = format!("sample text {i}");
+                engine_cloned.embed(&text).await
+            }));
+        }
+
+        for handle in handles {
+            let res = handle.await?;
+            assert!(res.is_ok());
+        }
         Ok(())
     }
 

@@ -1543,7 +1543,7 @@ impl VectorIndex for HnswIndex {
                 doc_id: id,
                 data: embedding.to_vec(),
             },
-        );
+        )?;
         Ok(())
     }
 
@@ -1830,7 +1830,7 @@ impl VectorIndex for HnswIndex {
                 doc_id: id,
                 data: None,
             },
-        );
+        )?;
         Ok(())
     }
 

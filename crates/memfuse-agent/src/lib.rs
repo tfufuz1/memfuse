@@ -8,6 +8,47 @@
 //! `memfuse-graph` (Declarative StateGraph), and `memfuse-store` (LSM Storage). Manages workflow
 //! state, token budget enforcement, and immutable audit logging over LSM-persisted keys.
 //!
+//! # State Machine Diagram & Invariants
+//! ```text
+//!              +--------+
+//!              |  Idle  |
+//!              +---+----+
+//!                  | run()
+//!                  v
+//!            +-----+------+
+//!            |  Running   | <---+ (Loop: Checkpoint -> Execute -> Commit -> Audit)
+//!            +--+------+--+     |
+//!               |      |        |
+//!        (NodeEnd)    (Error/  ---+
+//!               |     Panic)
+//!               v      v
+//!         +-----+--+ +-+------+
+//!         |Completed| | Failed |
+//!         +--------+ +--------+
+//! ```
+//!
+//! ### Enforced State Transitions:
+//! - **Idle -> Running**: Initiated at entry of `OrchestratorEngine::run()`.
+//! - **Running -> Running**: Step execution loop enforced via `CheckpointGuard::for_agent_step` before node handler execution.
+//!   Execution cannot proceed without completing the preceding checkpoint.
+//! - **Running -> Completed**: Triggered on `NodeType::End` node arrival after flushing LSM storage.
+//! - **Running -> Failed**: Triggered on any step error (tool execution error, budget exhaustion, unresolved edge, missing handler).
+//!
+//! ### Crash Recovery Behavior during `execute()`:
+//! If a crash or panic occurs after a checkpoint is written but before step execution finishes:
+//! 1. The active `CheckpointGuard` is dropped, triggering automatic transaction rollback via `rollback_to_tx`.
+//! 2. On application restart, `OrchestratorEngine::replay_from()` restores `AgentContext` state to the last valid checkpoint step.
+//!
+//! ### Cross-Layer Coupling Analysis:
+//! - `memfuse-agent` depends on `memfuse-db` for `Collection` and high-level operations.
+//! - Direct calls to `memfuse-store` (`inner_storage()`) are strictly isolated to `PersistentCheckpointStore` and `CheckpointGuard` for transaction ID allocation and checkpoint snapshot manipulation, which `memfuse-db` intentionally does not expose.
+//! - Production code (`src/`) contains **zero** direct calls to `memfuse-graph`; graph state operations pass exclusively through `StateGraph` struct and `memfuse-db`.
+//!
+//! ### Audit Trail Integrity:
+//! - Immutable append-only audit entries are stored under `audit:{task_id}:step:{n}` via `Collection::insert`.
+//! - Entries pass directly through LSM storage and are protected by the same WAL-HMAC integrity chain (`memfuse-crypto`) as all standard storage operations.
+//! - Failed executions log an `AuditEntry` with `error` details before transitioning context to `AgentStatus::Failed`.
+//!
 //! # Invariants
 //! 1. **Auto-checkpoint before step**: Creates a checkpoint before executing each node handler,
 //!    backed by RAII `CheckpointGuard` for automatic transaction rollback upon failure.

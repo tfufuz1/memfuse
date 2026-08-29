@@ -1,3 +1,5 @@
+use crate::collection::Collection;
+use memfuse_core::traits::StorageEngine;
 use memfuse_core::tx_buffer::TxBuffer;
 use std::sync::Arc;
 use std::time::Duration;
@@ -5,6 +7,57 @@ use std::time::Duration;
 /// Maximum number of orphan transactions processed in a single reaper tick
 /// to avoid starving foreground operations.
 pub const MAX_ORPHANS_PER_TICK: usize = 100;
+
+/// Maximum number of expired documents processed in a single expiry reaper tick.
+pub const MAX_EXPIRED_PER_TICK: usize = 100;
+
+/// Starts a background task to periodically clean up expired documents with TTL.
+pub fn start_expiry_reaper<S: StorageEngine>(
+    collection: Arc<Collection<S>>,
+    interval: Duration,
+    cancel_token: tokio_util::sync::CancellationToken,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(interval);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        tracing::info!(
+            collection = %collection.name(),
+            interval = ?interval,
+            "Expiry reaper task started"
+        );
+        loop {
+            tokio::select! {
+                _ = ticker.tick() => {
+                    match collection.reap_expired_documents(MAX_EXPIRED_PER_TICK).await {
+                        Ok(reaped) if reaped > 0 => {
+                            tracing::info!(
+                                collection = %collection.name(),
+                                reaped = reaped,
+                                "Expiry reaper cleaned up expired documents"
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(err) => {
+                            tracing::error!(
+                                collection = %collection.name(),
+                                error = %err,
+                                "Error during expiry reaper execution"
+                            );
+                        }
+                    }
+                }
+                _ = cancel_token.cancelled() => {
+                    tracing::info!(
+                        collection = %collection.name(),
+                        "Expiry reaper task shutting down via token"
+                    );
+                    break;
+                }
+            }
+        }
+    })
+}
 
 /// Starts a background task to periodically clean up orphan transactions.
 ///
@@ -74,6 +127,68 @@ mod tests {
     use tokio::time::sleep;
 
     #[tokio::test]
+    async fn test_expiry_reaper_task_cleans_documents() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use std::sync::atomic::AtomicU64;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(memfuse_store::LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let col = Arc::new(crate::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            Arc::new(CsrGraph::new()),
+            Arc::new(AtomicU64::new(1)),
+            4,
+            memfuse_text::Language::English,
+        ));
+
+        let vec = vec![1.0, 0.0, 0.0, 0.0];
+        col.insert_with_ttl("doc_task_ttl", &vec, None, 2)
+            .await
+            .unwrap();
+
+        // Perform 2 dummy commits
+        col.insert("d1", &vec, None).await.unwrap();
+        col.insert("d2", &vec, None).await.unwrap();
+
+        let cancel_token = tokio_util::sync::CancellationToken::new();
+        let handle =
+            start_expiry_reaper(col.clone(), Duration::from_millis(10), cancel_token.clone());
+
+        let mut cleaned = false;
+        for _ in 0..50 {
+            sleep(Duration::from_millis(10)).await;
+            if col.get("doc_task_ttl").await.unwrap().is_none() {
+                cleaned = true;
+                break;
+            }
+        }
+
+        cancel_token.cancel();
+        let _ = handle.await;
+
+        assert!(cleaned, "Expiry reaper task should delete expired document");
+    }
+
+    #[tokio::test]
     async fn test_orphan_reaper_removes_expired() {
         let buffer = Arc::new(TxBuffer::<String>::new_with_config(
             64,
@@ -82,7 +197,7 @@ mod tests {
         let tx1 = TxId::new(1);
 
         buffer.begin(tx1);
-        buffer.stage(
+        let _ = buffer.stage(
             tx1,
             IndexOp::Insert {
                 doc_id: DocId::new(1),
