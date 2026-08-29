@@ -18,7 +18,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
     rt.block_on(async {
         db.insert(
             "doc-1",
-            &vec![0.1; 1536],
+            &vec![0.1; 768],
             Some(serde_json::json!({"text": "The quick brown fox jumps over the lazy dog"})),
         )
         .await
@@ -28,7 +28,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
     c.bench_function("hybrid_search_latency", |b| {
         b.to_async(&rt).iter(|| async {
             let _ = db
-                .hybrid_search("quick fox", &vec![0.1; 1536], 5, None)
+                .hybrid_search("quick fox", &vec![0.1; 768], 5, None)
                 .await
                 .unwrap(); // unwrap allowed
         })
@@ -61,7 +61,7 @@ fn bench_rerun_cost(c: &mut Criterion) {
     rt.block_on(async {
         db.insert(
             "doc-1",
-            &vec![0.1; 1536],
+            &vec![0.1; 768],
             Some(serde_json::json!({"text": "The quick brown fox jumps over the lazy dog"})),
         )
         .await
@@ -84,7 +84,7 @@ fn bench_snapshot_overhead(c: &mut Criterion) {
         for i in 0..100 {
             db.insert(
                 &format!("doc-{}", i),
-                &vec![0.1; 1536],
+                &vec![0.1; 768],
                 Some(serde_json::json!({"text": "The quick brown fox jumps over the lazy dog"})),
             )
             .await
@@ -95,7 +95,7 @@ fn bench_snapshot_overhead(c: &mut Criterion) {
     c.bench_function("snapshot_search_overhead", |b| {
         b.to_async(&rt).iter(|| async {
             let _ = db
-                .search_with_filter_expr(&vec![0.1; 1536], 5, None)
+                .search_with_filter_expr(&vec![0.1; 768], 5, None)
                 .await
                 .unwrap(); // unwrap allowed
         })
@@ -111,7 +111,7 @@ fn bench_staged_stats_commit(c: &mut Criterion) {
         b.to_async(&rt).iter(|| async {
             db.insert(
                 "bench-doc",
-                &vec![0.5; 1536],
+                &vec![0.5; 768],
                 Some(serde_json::json!({"text": "Test benchmark stats overhead"})),
             )
             .await
