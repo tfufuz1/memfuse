@@ -3,6 +3,25 @@ use super::{
 };
 use memfuse_core::{DocId, EntityId, Result, StorageEngine, VectorIndex, EXPIRY_METADATA_KEY};
 
+pub(super) fn validate_doc_id(id: &str) -> Result<()> {
+    if id.is_empty() {
+        return Err(memfuse_core::MemFuseError::invalid_input(
+            "Document ID cannot be empty",
+        ));
+    }
+    if id.len() > 256 {
+        return Err(memfuse_core::MemFuseError::invalid_input(
+            "Document ID exceeds maximum length of 256 bytes",
+        ));
+    }
+    if id.contains('\0') {
+        return Err(memfuse_core::MemFuseError::invalid_input(
+            "Document ID cannot contain null bytes",
+        ));
+    }
+    Ok(())
+}
+
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Inserts a text document, automatically generating its embedding.
     #[tracing::instrument(level = "trace", skip(self, text, metadata))]
@@ -205,6 +224,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         embedding: &[f32],
         metadata: Option<serde_json::Value>,
     ) -> Result<()> {
+        validate_doc_id(id)?;
         let tx = db_tx.tx_id;
         let doc_id = DocId::from_key(id)?;
 
@@ -362,6 +382,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Retrieves a document at a specific snapshot point.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get_at_snapshot(&self, id: &str, seq_no: u64) -> Result<Option<crate::Document>> {
+        validate_doc_id(id)?;
         let key = self.namespaced_key(id.as_bytes(), 0);
         if let Some(data) = self.storage.get_at_seq(&key, seq_no).await? {
             let stored: StoredDocument = serde_json::from_slice(&data)?;
@@ -410,6 +431,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         embedding: &[f32],
         metadata: Option<serde_json::Value>,
     ) -> Result<()> {
+        validate_doc_id(id)?;
         let tx = db_tx.tx_id;
         let doc_id = DocId::from_key(id)?;
 
@@ -486,6 +508,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         db_tx: &mut crate::transaction::DbTransaction<S, V>,
         id: &str,
     ) -> Result<()> {
+        validate_doc_id(id)?;
         let tx = db_tx.tx_id;
         let doc_id = DocId::from_key(id)?;
 
