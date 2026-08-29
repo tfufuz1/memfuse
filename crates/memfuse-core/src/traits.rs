@@ -682,10 +682,20 @@ mod capability_coverage {
             async fn traverse(&self, _: EntityId, _: usize) -> Result<Vec<(EntityId, f32)>> {
                 Ok(vec![])
             }
-            async fn traverse_at(&self, _: EntityId, _: usize, _: u64) -> Result<Vec<(EntityId, f32)>> {
+            async fn traverse_at(
+                &self,
+                _: EntityId,
+                _: usize,
+                _: u64,
+            ) -> Result<Vec<(EntityId, f32)>> {
                 Ok(vec![])
             }
-            async fn traverse_at_time(&self, _: EntityId, _: usize, _: TxId) -> Result<Vec<(EntityId, f32)>> {
+            async fn traverse_at_time(
+                &self,
+                _: EntityId,
+                _: usize,
+                _: TxId,
+            ) -> Result<Vec<(EntityId, f32)>> {
                 Ok(vec![])
             }
             async fn add_entity(&self, _: TxId, _: Entity) -> Result<()> {

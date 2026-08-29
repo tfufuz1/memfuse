@@ -170,7 +170,10 @@ async fn test_vector_and_graph_search_at_returns_adr024_capability_unsupported()
     .unwrap();
     let res_vec = mock_vec_index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 1).await;
     assert!(
-        !matches!(res_vec, Err(memfuse_core::MemFuseError::CapabilityUnsupported { .. })),
+        !matches!(
+            res_vec,
+            Err(memfuse_core::MemFuseError::CapabilityUnsupported { .. })
+        ),
         "VectorIndex::search_at should be supported, got: {:?}",
         res_vec
     );
@@ -180,7 +183,10 @@ async fn test_vector_and_graph_search_at_returns_adr024_capability_unsupported()
         .traverse_at(memfuse_core::EntityId::new(1), 2, 1)
         .await;
     assert!(
-        !matches!(res_graph, Err(memfuse_core::MemFuseError::CapabilityUnsupported { .. })),
+        !matches!(
+            res_graph,
+            Err(memfuse_core::MemFuseError::CapabilityUnsupported { .. })
+        ),
         "GraphIndex::traverse_at should be supported, got: {:?}",
         res_graph
     );

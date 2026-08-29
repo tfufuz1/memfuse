@@ -86,29 +86,13 @@ Format für nicht-triviale `.rs` Dateien (> 50 Zeilen, mit bekannten Fallstricke
 // NICHT-OFFENSICHTLICH: <Entscheidungen, die ohne dieses Wissen zu falschem Code führen>
 // SIEHE AUCH: <Pfade zu ADRs/rules/*.md>
 // AGENT-NOTIZ: <Optional, max. 1 Satz. Was ein Agent dem NÄCHSTEN Agenten mitteilen will>
-
-Status-Werte:
-- `OPEN` — nicht begonnen
-- `IN-PROGRESS AGENT:N` — aktuell in Bearbeitung
-- `DONE` — abgeschlossen
-- `BLOCKED REASON:<...>` — blockiert
-
-Bei jedem Status-Wechsel (`IN-PROGRESS`, `DONE`, `BLOCKED`, `RESOLVED`) MUSS ein neuer, aktueller `TS:`-Wert gesetzt werden — der Zeitstempel spiegelt immer den Zeitpunkt des LETZTEN Status-Wechsels wider, nicht der Erstellung.
-
-## FILE-CONTEXT Header
-
-Format für nicht-triviale `.rs` Dateien (> 50 Zeilen, mit bekannten Fallstricken):
-
-```rust
-// FILE-CONTEXT
-// STAND: 2026-08-27T14:32:00Z
-// ZWECK: <Ein Satz — was diese Datei tut>
-// INVARIANTEN: <Was bei jeder Änderung gelten MUSS>
-// NICHT-OFFENSICHTLICH: <Entscheidungen, die ohne dieses Wissen zu falschem Code führen>
-// SIEHE AUCH: <Pfade zu ADRs/rules/*.md>
 ```
 
 Maximale Länge: 8 Zeilen. Kein Ersatz für Rustdoc.
+
+> **Bestandsschutz**: Bestehende FILE-CONTEXT-Header ohne SESSION:-Token
+> (angelegt vor 2026-08-29) behalten Gültigkeit. SESSION: ist nur für
+> NEU angelegte oder aktualisierte FILE-CONTEXT-Header verpflichtend.
 
 ## AGENT-Register (WORKING_STATE.md führen)
 
