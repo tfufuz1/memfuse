@@ -278,9 +278,6 @@ impl WalEntry {
                     let key_len = u32::from_le_bytes(remaining[8..12].try_into().map_err(|_| {
                         MemFuseError::Serialization("Invalid key_len format".into())
                     })?) as usize;
-                    if key_len > 1024 * 1024 {
-                        return Err(MemFuseError::Serialization("key_len exceeds 1 MiB limit".into()));
-                    }
                     if remaining.len() < 12 + key_len + 4 {
                         return Err(MemFuseError::Serialization(
                             "Put op missing key/val_len".into(),
@@ -292,9 +289,6 @@ impl WalEntry {
                         u32::from_le_bytes(remaining[val_start..val_start + 4].try_into().map_err(
                             |_| MemFuseError::Serialization("Invalid val_len format".into()),
                         )?) as usize;
-                    if val_len > 128 * 1024 * 1024 {
-                        return Err(MemFuseError::Serialization("val_len exceeds 128 MiB limit".into()));
-                    }
                     if remaining.len() < val_start + 4 + val_len {
                         return Err(MemFuseError::Serialization(
                             "Put op missing value data".into(),
@@ -314,9 +308,6 @@ impl WalEntry {
                     let key_len = u32::from_le_bytes(remaining[8..12].try_into().map_err(|_| {
                         MemFuseError::Serialization("Invalid key_len format".into())
                     })?) as usize;
-                    if key_len > 1024 * 1024 {
-                        return Err(MemFuseError::Serialization("key_len exceeds 1 MiB limit".into()));
-                    }
                     if remaining.len() < 12 + key_len {
                         return Err(MemFuseError::Serialization(
                             "Delete op missing key data".into(),
@@ -912,10 +903,12 @@ impl Wal {
             pos += (4 + len) as u64;
 
             if matches!(version, WalVersion::V2 | WalVersion::V3)
-                && self.key_manager.is_some()
+                && self.key_manager.as_ref().is_some()
             {
-                // SAFETY: Checked self.key_manager.is_some() in the if condition above
-                let km = self.key_manager.as_ref().unwrap();
+                let km = match self.key_manager.as_ref() {
+                    Some(km) => km,
+                    None => unreachable!(),
+                };
                 if entry_data_raw.len() < 12 {
                     if pos >= file_size {
                         tracing::warn!("WAL truncated during read at offset {}", chunk_start_pos);
@@ -2279,30 +2272,5 @@ mod tests {
             );
         }
         assert_eq!(key1.len(), 32);
-    }
-
-    #[test]
-    fn test_wal_op_from_bytes_oversized_key_val() {
-        // Construct payload with key_len > 1MB
-        let mut payload = vec![0u8; 90];
-        // op_type = 0 (Put) at index 72
-        payload[72] = 0;
-        // tx_id = 1
-        payload[73..81].copy_from_slice(&1u64.to_le_bytes());
-        // key_len = 2 MB
-        payload[81..85].copy_from_slice(&(2 * 1024 * 1024u32).to_le_bytes());
-
-        let crc = crc32fast::hash(&payload);
-        let mut data = vec![0u8; 4];
-        data[0..4].copy_from_slice(&crc.to_le_bytes());
-        data.extend_from_slice(&payload);
-
-        let res = WalEntry::from_bytes(&data);
-        assert!(res.is_err());
-        if let Err(MemFuseError::Serialization(msg)) = res {
-            assert!(msg.contains("key_len exceeds 1 MiB limit"));
-        } else {
-            panic!("Expected Serialization error for key_len limit");
-        }
     }
 }

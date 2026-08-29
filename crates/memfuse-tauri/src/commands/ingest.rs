@@ -43,8 +43,8 @@ pub async fn ingest_file(
     let pipeline = IngestionPipeline::new(embedder);
 
     let path = std::path::Path::new(&file_path);
-    let canonical_path = validate_path_within_base(path, &base_path)
-        .map_err(|e| MemFuseErrorDto::from(&e))?;
+    let canonical_path =
+        validate_path_within_base(path, &base_path).map_err(|e| MemFuseErrorDto::from(&e))?;
 
     if !canonical_path.is_file() {
         return Err(MemFuseErrorDto::new(
@@ -96,8 +96,8 @@ pub async fn ingest_folder(
     let pipeline = IngestionPipeline::new(embedder);
 
     let folder = std::path::Path::new(&folder_path);
-    let canonical_folder = validate_path_within_base(folder, &base_path)
-        .map_err(|e| MemFuseErrorDto::from(&e))?;
+    let canonical_folder =
+        validate_path_within_base(folder, &base_path).map_err(|e| MemFuseErrorDto::from(&e))?;
 
     if !canonical_folder.is_dir() {
         return Err(MemFuseErrorDto::new(
