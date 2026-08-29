@@ -30,8 +30,8 @@ use tokio::io::AsyncWriteExt;
 pub type BlockCache = RwLock<LruCache<(u64, u64), Bytes>>;
 
 /// Magic bytes for SSTable file trailer.
-pub const SSTABLE_MAGIC_MFSX: u32 = 0x5853464D; // "MFSX" in hex
-pub const SSTABLE_MAGIC_LEGACY: u32 = 0x4D465354; // "MFST" in hex
+pub const SSTABLE_MAGIC_MFSX: u32 = 0x5853_464D; // "MFSX" in hex
+pub const SSTABLE_MAGIC_LEGACY: u32 = 0x4D46_5354; // "MFST" in hex
 
 /// Creates a new block cache instance. Capacity is in MB (assuming 4KB blocks).
 pub fn create_block_cache(capacity_mb: usize) -> Arc<BlockCache> {

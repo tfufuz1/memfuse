@@ -395,6 +395,32 @@ pub const MAX_WAL_SIZE: u64 = 128 * 1024 * 1024;
 pub const MAX_WAL_ENTRY_SIZE: u32 = 64 * 1024 * 1024;
 
 impl Wal {
+    fn handle_wal_entry_parse_error(
+        e: MemFuseError,
+        chunk_start_pos: u64,
+        pos: u64,
+        file_size: u64,
+    ) -> Option<MemFuseError> {
+        let err_msg = format!("{}", e);
+        let is_crc_error = err_msg.contains("CRC mismatch");
+
+        if pos >= file_size && !is_crc_error {
+            tracing::warn!(
+                "WAL truncation at tail (offset {}), partial entry: {}",
+                chunk_start_pos,
+                e
+            );
+            None
+        } else {
+            let reason = if is_crc_error {
+                format!("CRC validation failed: {}", e)
+            } else {
+                format!("Deserialization failed: {}", e)
+            };
+            Some(MemFuseError::wal_corruption(chunk_start_pos, reason))
+        }
+    }
+
     /// Opens or creates a WAL file.
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
         Self::open_with_key_manager(path, None).await
@@ -975,12 +1001,11 @@ impl Wal {
                                 e
                             );
                             break;
-                        } else {
-                            return Err(MemFuseError::wal_corruption(
-                                chunk_start_pos,
-                                format!("Decryption failed: {}", e),
-                            ));
                         }
+                        return Err(MemFuseError::wal_corruption(
+                            chunk_start_pos,
+                            format!("Decryption failed: {}", e),
+                        ));
                     }
                 };
 
@@ -1028,24 +1053,10 @@ impl Wal {
                     let entry = match WalEntry::from_bytes(inner_entry_bytes) {
                         Ok(e) => e,
                         Err(e) => {
-                            let err_msg = format!("{}", e);
-                            let is_crc_error = err_msg.contains("CRC mismatch");
-
-                            if pos >= file_size && !is_crc_error {
-                                tracing::warn!(
-                                    "WAL truncation at tail (offset {}), partial entry: {}",
-                                    chunk_start_pos,
-                                    e
-                                );
-                                break;
-                            } else {
-                                let reason = if is_crc_error {
-                                    format!("CRC validation failed: {}", e)
-                                } else {
-                                    format!("Deserialization failed: {}", e)
-                                };
-                                return Err(MemFuseError::wal_corruption(chunk_start_pos, reason));
+                            if let Some(err) = Self::handle_wal_entry_parse_error(e, chunk_start_pos, pos, file_size) {
+                                return Err(err);
                             }
+                            break;
                         }
                     };
 
@@ -1123,12 +1134,11 @@ impl Wal {
                                     e
                                 );
                                 break;
-                            } else {
-                                return Err(MemFuseError::wal_corruption(
-                                    chunk_start_pos,
-                                    format!("Decryption failed: {}", e),
-                                ));
                             }
+                            return Err(MemFuseError::wal_corruption(
+                                chunk_start_pos,
+                                format!("Decryption failed: {}", e),
+                            ));
                         }
                     };
                     &decrypted_data
@@ -1139,24 +1149,10 @@ impl Wal {
                 let entry = match WalEntry::from_bytes(entry_data) {
                     Ok(e) => e,
                     Err(e) => {
-                        let err_msg = format!("{}", e);
-                        let is_crc_error = err_msg.contains("CRC mismatch");
-
-                        if pos >= file_size && !is_crc_error {
-                            tracing::warn!(
-                                "WAL truncation at tail (offset {}), partial entry: {}",
-                                chunk_start_pos,
-                                e
-                            );
-                            break;
-                        } else {
-                            let reason = if is_crc_error {
-                                format!("CRC validation failed: {}", e)
-                            } else {
-                                format!("Deserialization failed: {}", e)
-                            };
-                            return Err(MemFuseError::wal_corruption(chunk_start_pos, reason));
+                        if let Some(err) = Self::handle_wal_entry_parse_error(e, chunk_start_pos, pos, file_size) {
+                            return Err(err);
                         }
+                        break;
                     }
                 };
 
