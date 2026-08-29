@@ -38,7 +38,7 @@ fn monotonic_timestamp_ms() -> u64 {
         .max(wall_ms)
 }
 
-/// `AI-TAG[PANIC-SAFETY][CRITICAL] AGT-CKPT-f3a1b2c4`: Checkpoint Manifest envelope for atomic multi-component snapshots. (TS:2026-08-29T00:00:00Z)
+/// `AI-TAG[PANIC-SAFETY][CRITICAL] (TS:2026-08-29T00:00:00Z) AGT-CKPT-f3a1b2c4`: Checkpoint Manifest envelope for atomic multi-component snapshots.
 /// Prevents partial writes or corrupted checkpoints from being falsely identified as valid during restoration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CheckpointManifest {

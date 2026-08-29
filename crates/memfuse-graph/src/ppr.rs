@@ -10,6 +10,12 @@ use std::collections::HashSet;
 /// - `inner` MUSS vor dem Aufruf kompaktiert sein (`inner.compact()`).
 /// - Determinismus: Bitidentische Sortierung bei identischem Graph & Inputs.
 /// - Zero-Hang: Bounded execution by `config.max_iterations`.
+///
+/// # Non-Convergence Behavior
+/// Power iteration terminates early if the L1 norm diff drops below `config.convergence_epsilon`.
+/// If `config.max_iterations` is reached without convergence, the intermediate best-effort rank
+/// vector is returned (without returning an error) and a `tracing::warn!` message is logged with
+/// `max_iterations`, `last_diff`, and `convergence_epsilon`.
 pub(crate) fn compute_ppr(
     inner: &GraphInner,
     seed_nodes: &[EntityId],
@@ -109,6 +115,8 @@ pub(crate) fn compute_ppr(
 
     // 4. Power Iteration
     let mut ranks = p.clone();
+    let mut last_diff = 0.0f32;
+    let mut converged = false;
 
     for _iter in 0..max_iters {
         let mut next_ranks = vec![0.0f32; n];
@@ -146,10 +154,21 @@ pub(crate) fn compute_ppr(
             .sum();
 
         ranks = next_ranks;
+        last_diff = diff;
 
         if diff < epsilon {
+            converged = true;
             break;
         }
+    }
+
+    if !converged {
+        tracing::warn!(
+            max_iterations = max_iters,
+            last_diff = last_diff,
+            convergence_epsilon = epsilon,
+            "Personalized PageRank power iteration reached maximum iterations without reaching convergence; returning best-effort rank allocation"
+        );
     }
 
     // 5. Build and sort result vector
@@ -592,6 +611,88 @@ mod tests {
             });
             res?;
         }
+    }
+
+    #[derive(Clone)]
+    struct LogCaptureLayer(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for LogCaptureLayer {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            let mut visitor = StringVisitor(String::new());
+            event.record(&mut visitor);
+            self.0.lock().unwrap().push(visitor.0); // unwrap allowed
+        }
+    }
+
+    struct StringVisitor(String);
+    impl tracing::field::Visit for StringVisitor {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            use std::fmt::Write;
+            write!(self.0, "{}={:?} ", field.name(), value).ok();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ppr_non_convergence_logs_warning_and_returns_best_effort() {
+        use tracing_subscriber::layer::SubscriberExt;
+
+        let logs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let capture_layer = LogCaptureLayer(logs.clone());
+        let subscriber = tracing_subscriber::registry().with(capture_layer);
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+
+        for i in 1..=5 {
+            graph
+                .add_entity(tx, Entity::new(EntityId::new(i), format!("N{i}"), "Node"))
+                .await
+                .unwrap(); // unwrap allowed
+        }
+
+        // Ring 1 -> 2 -> 3 -> 4 -> 5 -> 1
+        for i in 1..=5 {
+            let next = if i == 5 { 1 } else { i + 1 };
+            graph
+                .add_edge(tx, Edge::new(EntityId::new(i), EntityId::new(next), "next"))
+                .await
+                .unwrap(); // unwrap allowed
+        }
+        graph.commit(tx).await.unwrap(); // unwrap allowed
+
+        // Set max_iterations very low (2) and convergence_epsilon very small (1e-12)
+        // so that power iteration cannot reach convergence in 2 iterations
+        let config = PprConfig {
+            damping_factor: 0.85,
+            max_iterations: 2,
+            convergence_epsilon: 1e-12,
+        };
+
+        let seed = EntityId::new(1);
+        let results = graph
+            .personalized_page_rank(&[seed], &config)
+            .await
+            .unwrap(); // unwrap allowed
+
+        assert!(!results.is_empty(), "Best-effort results must be returned on non-convergence");
+
+        let captured = logs.lock().unwrap(); // unwrap allowed
+        let warning_found = captured.iter().any(|msg| {
+            msg.contains("Personalized PageRank power iteration reached maximum iterations without reaching convergence")
+                && msg.contains("max_iterations=2")
+                && msg.contains("convergence_epsilon=")
+        });
+
+        assert!(
+            warning_found,
+            "Expected structured warning log on PPR non-convergence, got logs: {:?}",
+            *captured
+        );
     }
 
     #[tokio::test]

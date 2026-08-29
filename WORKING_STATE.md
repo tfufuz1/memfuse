@@ -12,7 +12,7 @@ Ergebnis: **4 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
-| `crates/memfuse-checkpoint/src/lib.rs` | 41 | `AGT-CKPT-f3a1b2c4` | `PANIC-SAFETY` | `CRITICAL` | `2026-08-29T00:00:00Z` | /// `AI-TAG[PANIC-SAFETY][CRITICAL] AGT-CKPT-f3a1b2c4`: Checkpoint Manifest envelope for atomic multi-component snapshots. (TS:2026-08-29T00:00:00Z) |
+| `crates/memfuse-checkpoint/src/lib.rs` | 41 | `AGT-CKPT-f3a1b2c4` | `PANIC-SAFETY` | `CRITICAL` | `2026-08-29T00:00:00Z` | /// `AI-TAG[PANIC-SAFETY][CRITICAL] (TS:2026-08-29T00:00:00Z) AGT-CKPT-f3a1b2c4`: Checkpoint Manifest envelope for atomic multi-component snapshots. |
 | `crates/memfuse-core/src/tx_buffer.rs` | 25 | `AGT-CORE-001` | `SMELL` | `MINOR` | `2026-08-28T00:00:00Z` | // AI-TAG[SMELL][MINOR] Bounded staging capacity (ID: AGT-CORE-001) (TS:2026-08-28T00:00:00Z) |
 | `crates/memfuse-index/src/distance.rs` | 54 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `2026-08-28T00:00:00Z` | // AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-28T00:00:00Z) |
 | `crates/memfuse-store/src/wal.rs` | 474 | `AGT-STORE-003` | `SECURITY` | `CRITICAL` | `2026-08-25T00:00:00Z` | // AI-TAG[SECURITY][CRITICAL] Atomic WAL integrity key creation with 0o600 mode (AGT-STORE-003) (TS:2026-08-25T00:00:00Z) |
@@ -22,10 +22,10 @@ Ergebnis: **4 offene Tags**
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 6.725 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-core` | 0 | 6.760 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-checkpoint` | 1 | 1.342 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 1.142 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-graph` | 1 | 4.075 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-graph` | 1 | 4.006 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 7.178 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | 1 | 9.720 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 3.531 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |

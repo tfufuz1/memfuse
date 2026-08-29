@@ -85,6 +85,12 @@ impl SimpleRng {
 ///   The label with the smallest `u64` numerical value (smallest `EntityId`) wins.
 /// - Re-running community detection over the identical graph structure with identical `config.seed`
 ///   guarantees bit-identical `CommunityAssignment` results across sessions and restarts.
+///
+/// # Non-Convergence Behavior
+/// Stability is defined as 0 node label changes occurring during the last full iteration over all nodes.
+/// If `config.max_iterations` is reached without achieving a stable label assignment, the function returns
+/// the best-effort intermediate community assignments (no `Err`) and logs a `tracing::warn!` message containing
+/// `max_iterations` and `unstable_nodes` (the count of label changes in the final iteration).
 pub async fn detect_communities(
     graph: &CsrGraph,
     config: &CommunityDetectionConfig,
@@ -140,12 +146,15 @@ pub async fn detect_communities(
     }
 
     // Run Label Propagation iterations
+    let mut last_unstable_nodes = 0usize;
+    let mut converged = false;
+
     for iter in 0..config.max_iterations {
         let mut rng = SimpleRng::new(config.seed.wrapping_add(iter as u64));
         let mut order = node_indices.clone();
         rng.shuffle(&mut order);
 
-        let mut changed = false;
+        let mut changed_count = 0usize;
 
         for &u in &order {
             let neighbors = match adj.get(&u) {
@@ -186,14 +195,24 @@ pub async fn detect_communities(
             if let Some(&best_label) = candidate_labels.iter().min() {
                 if labels.get(&u) != Some(&best_label) {
                     labels.insert(u, best_label);
-                    changed = true;
+                    changed_count += 1;
                 }
             }
         }
 
-        if !changed {
+        last_unstable_nodes = changed_count;
+        if changed_count == 0 {
+            converged = true;
             break;
         }
+    }
+
+    if !converged {
+        tracing::warn!(
+            max_iterations = config.max_iterations,
+            unstable_nodes = last_unstable_nodes,
+            "Community detection reached maximum iterations without reaching stable label assignment; returning best-effort community assignments"
+        );
     }
 
     // Build final result list sorted by EntityId
@@ -345,6 +364,83 @@ mod tests {
         assert_ne!(
             c1_community, c2_community,
             "Disconnected clusters MUST be assigned to different communities"
+        );
+    }
+
+    #[derive(Clone)]
+    struct LogCaptureLayer(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for LogCaptureLayer {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            let mut visitor = StringVisitor(String::new());
+            event.record(&mut visitor);
+            self.0.lock().unwrap().push(visitor.0); // unwrap allowed
+        }
+    }
+
+    struct StringVisitor(String);
+    impl tracing::field::Visit for StringVisitor {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            use std::fmt::Write;
+            write!(self.0, "{}={:?} ", field.name(), value).ok();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_community_detection_non_convergence_logs_warning_and_returns_best_effort() {
+        use tracing_subscriber::layer::SubscriberExt;
+
+        let logs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let capture_layer = LogCaptureLayer(logs.clone());
+        let subscriber = tracing_subscriber::registry().with(capture_layer);
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+
+        for i in 1..=10 {
+            graph
+                .add_entity(tx, Entity::new(EntityId::new(i), format!("Node{i}"), "Node"))
+                .await
+                .unwrap();
+        }
+
+        // Bipartite graph 1..5 to 6..10
+        for i in 1..=5 {
+            for j in 6..=10 {
+                graph
+                    .add_edge(tx, Edge::new(EntityId::new(i), EntityId::new(j), "link"))
+                    .await
+                    .unwrap();
+            }
+        }
+        graph.commit(tx).await.unwrap();
+
+        // With max_iterations: 1, full convergence cannot occur if nodes change labels during iteration 1
+        let config = CommunityDetectionConfig {
+            max_iterations: 1,
+            seed: 42,
+        };
+
+        let assignments = detect_communities(&graph, &config).await.unwrap();
+
+        assert_eq!(assignments.len(), 10, "Best-effort assignments must be returned");
+
+        let captured = logs.lock().unwrap(); // unwrap allowed
+        let warning_found = captured.iter().any(|msg| {
+            msg.contains("Community detection reached maximum iterations without reaching stable label assignment")
+                && msg.contains("max_iterations=1")
+                && msg.contains("unstable_nodes=")
+        });
+
+        assert!(
+            warning_found,
+            "Expected structured warning log on community detection non-convergence, got logs: {:?}",
+            *captured
         );
     }
 }
