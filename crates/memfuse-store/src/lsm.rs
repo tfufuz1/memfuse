@@ -1976,4 +1976,180 @@ mod tests {
             assert_eq!(val, Some(b"close_val".to_vec()));
         }
     }
+
+    #[tokio::test]
+    async fn test_scan_prefix_at_mvcc_sequence_filtering() {
+        let (storage, _tmp) = test_storage().await;
+
+        // seq 1: put key1 = v1, key2 = v2
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"pfx:1", b"v1").await.unwrap();
+        storage.put(tx1, b"pfx:2", b"v2").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+        let seq1 = storage.last_seq_no().await.unwrap();
+
+        // seq 2: update key1 = v1_new, delete key2
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"pfx:1", b"v1_new").await.unwrap();
+        storage.delete(tx2, b"pfx:2").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+        let seq2 = storage.last_seq_no().await.unwrap();
+
+        // seq 3: put key3 = v3
+        let tx3 = TxId::new(3);
+        storage.put(tx3, b"pfx:3", b"v3").await.unwrap();
+        storage.commit(tx3).await.unwrap();
+
+        // scan_prefix_at at seq1: must see key1=v1, key2=v2, no key3
+        let res_seq1 = storage.scan_prefix_at(b"pfx:", seq1).await.unwrap();
+        assert_eq!(res_seq1.len(), 2);
+        let map1: std::collections::HashMap<_, _> = res_seq1.into_iter().collect();
+        assert_eq!(map1.get(&b"pfx:1"[..]), Some(&b"v1"[..].to_vec()));
+        assert_eq!(map1.get(&b"pfx:2"[..]), Some(&b"v2"[..].to_vec()));
+
+        // scan_prefix_at at seq2: must see key1=v1_new, key2 deleted, no key3
+        let res_seq2 = storage.scan_prefix_at(b"pfx:", seq2).await.unwrap();
+        assert_eq!(res_seq2.len(), 1);
+        assert_eq!(res_seq2[0].0, b"pfx:1");
+        assert_eq!(res_seq2[0].1, b"v1_new");
+    }
+
+    #[tokio::test]
+    async fn test_scan_prefix_at_tombstone_isolation() {
+        let (storage, _tmp) = test_storage().await;
+
+        // tx1: put pfx:a
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"pfx:a", b"val_a").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+        let seq1 = storage.last_seq_no().await.unwrap();
+
+        // Flush to SSTable so pfx:a is in SSTable
+        storage.force_flush().await.unwrap();
+
+        // tx2: delete pfx:a (tombstone in active memtable)
+        let tx2 = TxId::new(2);
+        storage.delete(tx2, b"pfx:a").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+        let seq2 = storage.last_seq_no().await.unwrap();
+
+        // scan_prefix_at at seq1: must return pfx:a despite tombstone added at seq2
+        let res_seq1 = storage.scan_prefix_at(b"pfx:", seq1).await.unwrap();
+        assert_eq!(res_seq1.len(), 1);
+        assert_eq!(res_seq1[0].0, b"pfx:a");
+        assert_eq!(res_seq1[0].1, b"val_a");
+
+        // scan_prefix_at at seq2: tombstone applies, returns empty
+        let res_seq2 = storage.scan_prefix_at(b"pfx:", seq2).await.unwrap();
+        assert!(res_seq2.is_empty());
+    }
+
+    #[test]
+    fn prop_lsm_scan_prefix_at_consistency() {
+        use proptest::prelude::*;
+
+        #[derive(Debug, Clone)]
+        enum Op {
+            Put(u8, Vec<u8>),
+            Delete(u8),
+        }
+
+        let op_strategy = proptest::collection::vec(
+            prop_oneof![
+                (1u8..10, proptest::collection::vec(any::<u8>(), 1..10))
+                    .prop_map(|(k, v)| Op::Put(k, v)),
+                (1u8..10).prop_map(Op::Delete),
+            ],
+            10..60,
+        );
+
+        proptest!(ProptestConfig::with_cases(20), |(ops in op_strategy)| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+
+            rt.block_on(async {
+                let tmp = tempfile::TempDir::new().unwrap();
+                let config = LsmConfig {
+                    path: tmp.path().to_path_buf(),
+                    memtable_size_limit: 1024 * 1024,
+                    max_ram_mb: 64,
+                    tx_timeout: Duration::from_secs(60),
+                    compaction: CompactionConfig::default(),
+                    encryption_passphrase: None,
+                };
+                let storage = LsmStorage::new(config).await.unwrap();
+
+                let mut current_tx = 1u64;
+                let mut tx_checkpoints = Vec::new();
+
+                for op in ops {
+                    let tx = TxId::new(current_tx);
+                    match op {
+                        Op::Put(key_id, val) => {
+                            let key = format!("pfx:{}", key_id);
+                            let _ = storage.put(tx, key.as_bytes(), &val).await;
+                        }
+                        Op::Delete(key_id) => {
+                            let key = format!("pfx:{}", key_id);
+                            let _ = storage.delete(tx, key.as_bytes()).await;
+                        }
+                    }
+                    if storage.commit(tx).await.is_ok() {
+                        let seq = storage.last_seq_no().await.unwrap();
+                        tx_checkpoints.push((current_tx, seq));
+                        current_tx += 1;
+                    }
+                }
+
+                // Verify scan_prefix_at at each target sequence against reference replay model
+                for &(_tx_num, target_seq) in &tx_checkpoints {
+                    let scanned = storage.scan_prefix_at(b"pfx:", target_seq).await.unwrap();
+                    let actual_map: std::collections::BTreeMap<_, _> = scanned.into_iter().collect();
+
+                    // Replay all committed ops up to target_seq to build expected state
+                    let mut ref_map = std::collections::BTreeMap::new();
+                    let state = storage.state.read().await;
+
+                    // Collect all entries from MemTable + SSTables with seq <= target_seq
+                    let mut all_entries = Vec::new();
+                    for (k, v, seq, _tx) in state.memtable.iter() {
+                        all_entries.push((k.to_vec(), v.to_vec(), seq));
+                    }
+                    for mt in &state.immutable_memtables {
+                        for (k, v, seq, _tx) in mt.iter() {
+                            all_entries.push((k.to_vec(), v.to_vec(), seq));
+                        }
+                    }
+                    drop(state);
+
+                    let sstables = storage.sstables.read().await;
+                    for sst in sstables.iter() {
+                        let sst_entries = sst.scan_prefix(b"pfx:").await.unwrap();
+                        for (k, v, seq, _tx) in sst_entries {
+                            all_entries.push((k.to_vec(), v.to_vec(), seq));
+                        }
+                    }
+                    drop(sstables);
+
+                    all_entries.sort_by_key(|e| e.2 & !TOMBSTONE_BIT);
+
+                    for (k, v, seq) in all_entries {
+                        let raw_seq = seq & !TOMBSTONE_BIT;
+                        if raw_seq <= target_seq && k.starts_with(b"pfx:") {
+                            if (seq & TOMBSTONE_BIT) != 0 {
+                                ref_map.remove(&k);
+                            } else {
+                                ref_map.insert(k, v);
+                            }
+                        }
+                    }
+
+                    prop_assert_eq!(actual_map, ref_map, "scan_prefix_at at seq {} must match reference model", target_seq);
+                }
+                Ok(())
+            }).unwrap();
+        });
+    }
 }

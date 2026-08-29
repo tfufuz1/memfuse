@@ -461,25 +461,35 @@ impl Wal {
         Ok(wal)
     }
 
+    /// Helper to expose integrity key for tests
+    pub fn integrity_key_for_test(&self) -> Result<[u8; 32]> {
+        self.get_integrity_key()
+    }
+
     /// Loads or generates a persistent, random 32-byte integrity key in `.wal_integrity_key`
     /// located in the same parent directory as the WAL file.
     async fn load_or_create_integrity_key(wal_path: &Path) -> Result<[u8; 32]> {
         let parent = wal_path.parent().unwrap_or_else(|| Path::new(""));
+        let dir_path = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
         let key_path = if parent.as_os_str().is_empty() {
             PathBuf::from(".wal_integrity_key")
         } else {
             parent.join(".wal_integrity_key")
         };
 
-        // AI-TAG[SECURITY][CRITICAL] Atomic WAL integrity key creation with 0o600 mode (AGT-STORE-003) (TS:2026-08-25T00:00:00Z)
-        // INVARIANT: Key file MUST never exist with permissions other than 0o600 on Unix.
-        // TOCTOU mitigation: create_new(true) + mode(0o600) ensures atomic creation without permission window.
-        // Non-Unix fallback: Windows/non-Unix OS permission hardening is not natively enforced via mode(0o600).
-        // MemFuse Desktop targets Linux/macOS primary deployment; non-Unix permission isolation relies on OS profile defaults.
         async fn read_key_file(path: &Path) -> Result<[u8; 32]> {
             let bytes = tokio::fs::read(path).await.map_err(|e| {
                 MemFuseError::Storage(format!("Failed to read WAL integrity key: {}", e))
             })?;
+            if bytes.is_empty() {
+                return Err(MemFuseError::Storage(
+                    "WAL integrity key file is empty — possible crash during creation. Delete and restart.".into(),
+                ));
+            }
             if bytes.len() != 32 {
                 return Err(MemFuseError::Storage(format!(
                     "WAL integrity key has unexpected length: {} (expected 32)",
@@ -491,6 +501,21 @@ impl Wal {
             Ok(arr)
         }
 
+        // Clean up any stale orphan .tmp files from previous crashed creation attempts
+        if let Ok(mut entries) = tokio::fs::read_dir(dir_path).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let name = entry.file_name();
+                if let Some(name_str) = name.to_str() {
+                    if name_str.starts_with(".wal_integrity_key.tmp.") {
+                        let _ = tokio::fs::remove_file(entry.path()).await;
+                    }
+                }
+            }
+        }
+
+        // AI-TAG[SECURITY][CRITICAL] Atomic WAL integrity key creation RESOLVED
+        // AGT-STORE-003 (TS:2026-08-29T05:13:45Z) (SESSION:14348074)
+        // Tests: tests/wal_key_lifecycle.rs — fault-injection, race, restart-persistence
         if key_path.exists() {
             read_key_file(&key_path).await
         } else {
@@ -500,6 +525,12 @@ impl Wal {
             let mut key = [0u8; 32];
             rand::thread_rng().fill_bytes(&mut key);
 
+            let tmp_path = dir_path.join(format!(
+                ".wal_integrity_key.tmp.{}.{}",
+                std::process::id(),
+                rand::thread_rng().next_u64()
+            ));
+
             let mut options = tokio::fs::OpenOptions::new();
             options.write(true).create_new(true);
             #[cfg(unix)]
@@ -507,52 +538,62 @@ impl Wal {
                 options.mode(0o600);
             }
 
-            let file_res = options.open(&key_path).await;
+            let file_res = options.open(&tmp_path).await;
             let mut file = match file_res {
                 Ok(f) => f,
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                    // Race condition handling: Another process created the key file between .exists() check and open()
-                    return read_key_file(&key_path).await;
-                }
                 Err(e) => {
                     return Err(MemFuseError::Storage(format!(
-                        "Failed to create WAL integrity key file atomically at {}: {}",
-                        key_path.display(),
+                        "Failed to create temporary WAL integrity key file at {}: {}",
+                        tmp_path.display(),
                         e
                     )));
                 }
             };
 
-            file.write_all(&key).await.map_err(|e| {
-                MemFuseError::Storage(format!("Failed to write WAL integrity key: {}", e))
-            })?;
-            file.sync_all().await.map_err(|e| {
-                MemFuseError::Storage(format!("Failed to sync WAL integrity key file: {}", e))
-            })?;
-
-            // FSync parent directory to persist directory entry
-            let parent = key_path.parent().unwrap_or_else(|| Path::new(""));
-            let dir_path = if parent.as_os_str().is_empty() {
-                Path::new(".")
-            } else {
-                parent
-            };
-            let dir = tokio::fs::File::open(dir_path).await.map_err(|e| {
-                MemFuseError::Storage(format!(
-                    "WAL integrity key dir open failed for {}: {}",
-                    dir_path.display(),
+            if let Err(e) = file.write_all(&key).await {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                return Err(MemFuseError::Storage(format!(
+                    "Failed to write WAL integrity key: {}",
                     e
-                ))
-            })?;
-            dir.sync_all().await.map_err(|e| {
-                MemFuseError::Storage(format!(
-                    "WAL integrity key dir fsync failed for {}: {}",
-                    dir_path.display(),
+                )));
+            }
+            if let Err(e) = file.sync_all().await {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                return Err(MemFuseError::Storage(format!(
+                    "Failed to sync WAL integrity key file: {}",
                     e
-                ))
-            })?;
+                )));
+            }
+            drop(file);
 
-            Ok(key)
+            // Atomically link tmp_path to key_path. Fails if key_path already exists (O_EXCL semantics).
+            let link_res = tokio::fs::hard_link(&tmp_path, &key_path).await;
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+
+            match link_res {
+                Ok(()) => {
+                    // FSync parent directory to persist directory entry
+                    let dir = tokio::fs::File::open(dir_path).await.map_err(|e| {
+                        MemFuseError::Storage(format!(
+                            "WAL integrity key dir open failed for {}: {}",
+                            dir_path.display(),
+                            e
+                        ))
+                    })?;
+                    dir.sync_all().await.map_err(|e| {
+                        MemFuseError::Storage(format!(
+                            "WAL integrity key dir fsync failed for {}: {}",
+                            dir_path.display(),
+                            e
+                        ))
+                    })?;
+                    Ok(key)
+                }
+                Err(_) => {
+                    // AlreadyExists or race condition: another task created key_path first
+                    read_key_file(&key_path).await
+                }
+            }
         }
     }
 
@@ -861,7 +902,9 @@ impl Wal {
             let chunk_start_pos = pos;
             pos += (4 + len) as u64;
 
-            if matches!(version, WalVersion::V2 | WalVersion::V3) && self.key_manager.as_ref().is_some() {
+            if matches!(version, WalVersion::V2 | WalVersion::V3)
+                && self.key_manager.as_ref().is_some()
+            {
                 let km = match self.key_manager.as_ref() {
                     Some(km) => km,
                     None => unreachable!(),

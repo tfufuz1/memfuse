@@ -379,7 +379,10 @@ mod tests {
         graph.commit(tx).await.unwrap();
 
         let config = PprConfig::default();
-        let results = graph.personalized_page_rank(&[seed], &config).await.unwrap();
+        let results = graph
+            .personalized_page_rank(&[seed], &config)
+            .await
+            .unwrap();
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, seed);
@@ -479,15 +482,24 @@ mod tests {
 
         // Add 3 duplicate edges 1 -> 2 with weights 1.0, 2.0, 3.0
         graph
-            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "edge1").with_weight(1.0))
+            .add_edge(
+                tx,
+                Edge::new(EntityId::new(1), EntityId::new(2), "edge1").with_weight(1.0),
+            )
             .await
             .unwrap();
         graph
-            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "edge2").with_weight(2.0))
+            .add_edge(
+                tx,
+                Edge::new(EntityId::new(1), EntityId::new(2), "edge2").with_weight(2.0),
+            )
             .await
             .unwrap();
         graph
-            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "edge3").with_weight(3.0))
+            .add_edge(
+                tx,
+                Edge::new(EntityId::new(1), EntityId::new(2), "edge3").with_weight(3.0),
+            )
             .await
             .unwrap();
         graph.commit(tx).await.unwrap();
@@ -530,11 +542,17 @@ mod tests {
 
         // 1 -> 10 and 1 -> 20 with identical weight 1.0
         graph
-            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(10), "link").with_weight(1.0))
+            .add_edge(
+                tx,
+                Edge::new(EntityId::new(1), EntityId::new(10), "link").with_weight(1.0),
+            )
             .await
             .unwrap();
         graph
-            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(20), "link").with_weight(1.0))
+            .add_edge(
+                tx,
+                Edge::new(EntityId::new(1), EntityId::new(20), "link").with_weight(1.0),
+            )
             .await
             .unwrap();
         graph.commit(tx).await.unwrap();
@@ -545,15 +563,35 @@ mod tests {
             .await
             .unwrap();
 
-        let rank_10 = results.iter().find(|(id, _)| *id == EntityId::new(10)).map(|(_, r)| *r).unwrap();
-        let rank_20 = results.iter().find(|(id, _)| *id == EntityId::new(20)).map(|(_, r)| *r).unwrap();
+        let rank_10 = results
+            .iter()
+            .find(|(id, _)| *id == EntityId::new(10))
+            .map(|(_, r)| *r)
+            .unwrap();
+        let rank_20 = results
+            .iter()
+            .find(|(id, _)| *id == EntityId::new(20))
+            .map(|(_, r)| *r)
+            .unwrap();
 
-        assert_eq!(rank_10, rank_20, "Symmetric nodes must have identical PPR scores");
+        assert_eq!(
+            rank_10, rank_20,
+            "Symmetric nodes must have identical PPR scores"
+        );
 
         // Results order must sort tie by EntityId ascending (10 before 20)
-        let idx_10 = results.iter().position(|(id, _)| *id == EntityId::new(10)).unwrap();
-        let idx_20 = results.iter().position(|(id, _)| *id == EntityId::new(20)).unwrap();
-        assert!(idx_10 < idx_20, "Tie-breaking must place EntityId(10) before EntityId(20)");
+        let idx_10 = results
+            .iter()
+            .position(|(id, _)| *id == EntityId::new(10))
+            .unwrap();
+        let idx_20 = results
+            .iter()
+            .position(|(id, _)| *id == EntityId::new(20))
+            .unwrap();
+        assert!(
+            idx_10 < idx_20,
+            "Tie-breaking must place EntityId(10) before EntityId(20)"
+        );
     }
 
     proptest::proptest! {
@@ -679,7 +717,10 @@ mod tests {
             .await
             .unwrap(); // unwrap allowed
 
-        assert!(!results.is_empty(), "Best-effort results must be returned on non-convergence");
+        assert!(
+            !results.is_empty(),
+            "Best-effort results must be returned on non-convergence"
+        );
 
         let captured = logs.lock().unwrap(); // unwrap allowed
         let warning_found = captured.iter().any(|msg| {

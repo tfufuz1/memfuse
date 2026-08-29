@@ -1,5 +1,16 @@
 //! Reciprocal Rank Fusion implementation.
 
+// FILE-CONTEXT
+// STAND: 2026-08-29T05:41:20Z (SESSION: f7999509)
+// ZWECK: Reciprocal Rank Fusion (RRF) — vereint HNSW, BM25 und Graph-Ränge
+// INVARIANTEN: k=60 Standard. Signale werden als Ränge fusioniert (NICHT rohe Scores).
+//              Keine Score-Normalisierung nötig (Hauptvorteil von RRF, ADR-003).
+// NICHT-OFFENSICHTLICH: Es existieren ZWEI öffentliche Funktionen:
+//   1. `reciprocal_rank_fusion()` — gleichgewichtet (1.0 pro Signal)
+//   2. `weighted_reciprocal_rank_fusion()` — mit Name + Gewicht pro Signal
+//   NIEMALS eine dritte `execute_rrf()`-Funktion anlegen — sie würde diese duplizieren.
+// SIEHE AUCH: DECISIONS.md ADR-003, crates/memfuse-db/AGENTS.md §4-Signal Fusion
+
 use crate::SearchResult;
 use std::collections::HashMap;
 

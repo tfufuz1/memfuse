@@ -15,6 +15,7 @@ members = [
     "crates/memfuse-mcp",
     "crates/memfuse-agent",
     "crates/memfuse-ollama",
+    "crates/memfuse-router",
     "xtask",
 ]
 
@@ -76,6 +77,7 @@ memfuse-tauri = { path = "crates/memfuse-tauri" }
 memfuse-mcp   = { path = "crates/memfuse-mcp" }
 memfuse-agent = { path = "crates/memfuse-agent" }
 memfuse-ollama = { path = "crates/memfuse-ollama" }
+memfuse-router = { path = "crates/memfuse-router" }
 
 # ── Archived Zone ──────────────────────────────────────────────────────────────
 # memfuse-cluster, memfuse-sandbox, memfuse-saos-agent wurden in Phase 0 ausgelagert.

@@ -1,5 +1,5 @@
 # AGENTS.md — MemFuse Operative Agent Rules
-> Version 5.0 · 2026-08-24 · Ambient context — always loaded
+> Version 6.0 · 2026-08-29 · Ambient context — always loaded
 
 ## 1. Mission
 
@@ -39,6 +39,9 @@ Die vollständige, automatisch aktuell gehaltene Crate-Tabelle und DAG-Topologie
 - **Trait-Default-Pflichttest**: Für jedes `pub trait` mit einer Default-Methode-Implementierung MUSS im selben PR, der einen neuen Implementor dieses Traits hinzufügt, ein Integrationstest existieren, der beweist, dass die Default-Implementierung NICHT still greift (entweder weil sie explizit überschrieben wurde, oder weil ein Test explizit den Default-Fehlerpfad als erwartetes, dokumentiertes Verhalten prüft). Referenz im Code: `capability_coverage` in `crates/memfuse-core/src/traits.rs` (prüft z.B. `VectorIndex::search_at` & `GraphIndex::traverse_at`).
 - **Typ-Dopplungs-Prävention**: Vor Anlegen eines neuen Typs oder Traits: `docs/TYPE_REGISTRY.md` nach ähnlichem Namen/Zweck durchsuchen. Bei Kollision: bestehenden Typ erweitern statt Duplikat anlegen, oder Kollision explizit per ADR begründen.
 - **Audit-Finding-Verifikation**: Jeder Finding aus einem extern zugelieferten Audit-Dokument oder Prompt MUSS vor Implementierung am AKTUELLEN Quellcode gegengelesen werden (siehe `.jules/AUDIT_INTAKE_PROTOCOL.md`). Falls der Finding nicht mehr zutrifft (Code bereits geändert, Test existiert bereits, Fix bereits gemerged): Finding im PR-Kommentar/Log explizit als "entkräftet" markieren mit Begründung — NICHT stillschweigend ignorieren und NICHT blind implementieren.
+- **Sync-Docs Nix-Fallback**: `just sync-docs` verwendet `nix develop -c` — bei fehlendem Nix direkt `cargo xtask sync-docs` aufrufen. Beide Pfade sind in der justfile mit `||`-Fallback abgesichert.
+- **Keine HTTP in memfuse-mcp**: Laut ADR-010 ausschließlich stdio JSON-RPC 2.0. Das GLOSSARY.md definierte dies fälschlicherweise als HTTP/JSON-RPC — die korrekte Definition gilt aus ADR-010 und AGENTS.md, nicht aus dem Glossar (wenn Konflikt).
+- **Typ-Existenz vor Anlage prüfen**: `find crates/ -name "*.rs" | xargs grep -l "<TYPNAME>"` und `grep "<TYPNAME>" docs/TYPE_REGISTRY.md` ausführen, bevor ein neuer Typ angelegt wird.
 
 ## 5. Judgment Boundaries
 
@@ -65,8 +68,11 @@ Die vollständige, automatisch aktuell gehaltene Crate-Tabelle und DAG-Topologie
 
 Jede Sitzung MUSS mit folgendem beginnen (Environment-Skript liefert dies
 bereits in der Setup-Ausgabe, siehe `[9/9] Session Context Digest` und `[10/10] Session identity`):
-0. SESSION-Hash aus Environment-Setup (`SESSION:<hash>`) übernehmen und für alle Tags dieser Sitzung konsistent verwenden.
-1. Session-Digest aus Environment-Setup lesen (offene BLOCKER/CRITICAL Tags,
+0. (Pre-Step) `.jules/SESSION_BOOTSTRAP.md` vollständig ausführen.
+   Bei fehlendem Environment-Setup-Skript: SESSION_HASH manuell generieren
+   via `date -u +%Y%m%d%H%M%S | sha256sum | head -c 8`.
+1. SESSION-Hash aus Environment-Setup (`SESSION:<hash>`) übernehmen und für alle Tags dieser Sitzung konsistent verwenden.
+2. Session-Digest aus Environment-Setup lesen (offene BLOCKER/CRITICAL Tags,
    offene ANCHORs, letzte 3 ADRs, WORKING_STATE.md-Tail)
 2. Falls Digest nicht sichtbar (z.B. bei nachträglichem Reconnect):
    manuell `just session-context` ausführen (siehe justfile)
@@ -89,4 +95,6 @@ Jede Sitzung MUSS mit folgendem enden — VOR dem letzten Commit:
 | `DECISIONS.md` | Before any architectural change |
 | `docs/TYPE_REGISTRY.md` | Register central domain types & traits before creating new ones |
 | `.jules/AUDIT_INTAKE_PROTOCOL.md` | Verifying incoming external audit findings before implementation |
+| `.jules/SESSION_BOOTSTRAP.md` | Maschinenausführbare Session-Checkliste | Immer zu Beginn |
+| `.jules/COMMON_LLM_ERRORS.md` | Häufige LLM-Fehler und Korrekturen | Bei Unsicherheit über Korrektheit |
 | `rules/*.md` | Domain-specific rules (SIMD safety, WAL crypto, testing, etc.) |

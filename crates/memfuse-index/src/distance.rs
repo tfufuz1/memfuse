@@ -36,6 +36,17 @@
 //! scalar counterparts within a tolerance of `±1e-6` (§4 Determinismus-Gesetz).
 //! Accumulation order is maintained where possible to minimize divergence.
 
+// FILE-CONTEXT
+// STAND: 2026-08-29T05:41:20Z (SESSION: f7999509)
+// ZWECK: SIMD-beschleunigte Distanzmetriken (Cosinus, L2) für HNSW-Index
+// INVARIANTEN: Caller MUSS Vektor-Dimensionen VOR Dispatch validieren.
+//              PRECEDENCE: AVX-512 > AVX2 > portable_simd > scalar.
+//              Jeder unsafe-Block erfordert individuellen // SAFETY: Beweis.
+// NICHT-OFFENSICHTLICH: 42 unsafe-Blöcke — KEIN Copy-Paste von SAFETY-Kommentaren
+//                       (jeder Kommentar muss die konkreten Invarianten DIESER Funktion nennen).
+//                       Scalar-Fallback muss numerisch identisch sein (ε ≤ 1e-4, §4 Determinismus-Gesetz).
+// SIEHE AUCH: rules/simd_safety.md, CONSTITUTION.md §12, ADR-017
+
 // ANCHOR[REFACTOR:WP-0.0-STABLESIMD] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Remove nightly portable_simd
 // TEST: cargo +stable check -p memfuse-index
 // DONE: #![feature(portable_simd)] ist entfernt und distance.rs nutzt stabiles Rust.
@@ -87,12 +98,12 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
 }
 
 // AI-TAG[SECURITY][CRITICAL] Precondition assertions for SIMD distance functions (AGT-INDEX-005) (TS:2026-08-25T00:00:00Z)
-// DECISION-REF: ADR-025 — Option 1: Release-active runtime assertion (assert_eq!) prevents SIMD buffer overreads.
+// DECISION-REF: ADR-034 — Option 1: Release-active runtime assertion (assert_eq!) prevents SIMD buffer overreads.
 
 /// Computes cosine distance (1 - similarity).
 ///
 /// # Panics
-/// Panics if `a.len() != b.len()` to prevent out-of-bounds access in low-level SIMD intrinsics (ADR-025).
+/// Panics if `a.len() != b.len()` to prevent out-of-bounds access in low-level SIMD intrinsics (ADR-034).
 #[inline]
 #[allow(unsafe_code)]
 pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
@@ -133,7 +144,7 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
 /// Computes Euclidean (L2) distance.
 ///
 /// # Panics
-/// Panics if `a.len() != b.len()` to prevent out-of-bounds access in low-level SIMD intrinsics (ADR-025).
+/// Panics if `a.len() != b.len()` to prevent out-of-bounds access in low-level SIMD intrinsics (ADR-034).
 #[inline]
 #[allow(unsafe_code)]
 pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
@@ -172,7 +183,7 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
 /// Computes negative dot product.
 ///
 /// # Panics
-/// Panics if `a.len() != b.len()` to prevent out-of-bounds access in low-level SIMD intrinsics (ADR-025).
+/// Panics if `a.len() != b.len()` to prevent out-of-bounds access in low-level SIMD intrinsics (ADR-034).
 #[inline]
 #[allow(unsafe_code)]
 pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {

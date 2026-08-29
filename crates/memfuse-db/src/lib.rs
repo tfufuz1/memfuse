@@ -124,6 +124,8 @@ pub struct MemFuseConfig {
     pub distance_metric: memfuse_core::DistanceMetric,
     /// Optional passphrase for encryption at rest.
     pub encryption_passphrase: Option<String>,
+    /// Interval for periodic expiry reaper background tasks.
+    pub expiry_reaper_interval: std::time::Duration,
 }
 
 impl Default for MemFuseConfig {
@@ -137,6 +139,7 @@ impl Default for MemFuseConfig {
             max_elements: 1_000_000,
             distance_metric: memfuse_core::DistanceMetric::Cosine,
             encryption_passphrase: None,
+            expiry_reaper_interval: std::time::Duration::from_secs(60),
         }
     }
 }
@@ -150,8 +153,11 @@ pub struct MemFuse {
     storage: Arc<LsmStorage>,
     next_tx: Arc<AtomicU64>,
     dimension: usize,
+    expiry_reaper_interval: std::time::Duration,
     collections:
         tokio::sync::RwLock<std::collections::HashMap<String, Arc<Collection<LsmStorage>>>>,
+    cancel_token: tokio_util::sync::CancellationToken,
+    task_tracker: tokio_util::task::TaskTracker,
     /// Optional Raft handle for cluster replication.
     #[cfg(feature = "cluster")]
     raft: tokio::sync::OnceCell<memfuse_cluster::node::MemFuseRaft>,
@@ -215,11 +221,17 @@ impl MemFuse {
             storage.commit(tx).await?;
         }
 
+        let cancel_token = tokio_util::sync::CancellationToken::new();
+        let task_tracker = tokio_util::task::TaskTracker::new();
+
         let db = Self {
             storage,
             next_tx,
             dimension: config.dimension,
+            expiry_reaper_interval: config.expiry_reaper_interval,
             collections: tokio::sync::RwLock::new(std::collections::HashMap::new()),
+            cancel_token,
+            task_tracker,
             #[cfg(feature = "cluster")]
             raft: tokio::sync::OnceCell::new(),
             embedder: parking_lot::RwLock::new(None),
@@ -435,6 +447,15 @@ impl MemFuse {
 
         let col_arc = Arc::new(col);
         write_guard.insert(name.to_string(), Arc::clone(&col_arc));
+
+        let reaper_handle = reaper::start_expiry_reaper(
+            Arc::clone(&col_arc),
+            self.expiry_reaper_interval,
+            self.cancel_token.clone(),
+        );
+        self.task_tracker.spawn(async move {
+            let _ = reaper_handle.await;
+        });
 
         Ok(col_arc)
     }
@@ -790,6 +811,18 @@ impl MemFuse {
         Ok(())
     }
 
+    /// Signals background tasks to shut down.
+    pub fn shutdown(&self) {
+        self.cancel_token.cancel();
+    }
+
+    /// Waits for all background tasks to shut down fully.
+    pub async fn wait_shutdown(&self) {
+        self.shutdown();
+        self.task_tracker.close();
+        self.task_tracker.wait().await;
+    }
+
     /// Gracefully closes the database, ensuring all data is persisted.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn close(self) -> Result<()> {
@@ -797,6 +830,8 @@ impl MemFuse {
         if let Some(raft) = self.raft.get() {
             let _ = raft.shutdown().await;
         }
+        self.wait_shutdown().await;
+        self.storage.close().await?;
         self.flush().await?;
         Ok(())
     }

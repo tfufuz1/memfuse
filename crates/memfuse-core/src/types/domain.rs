@@ -23,6 +23,9 @@ pub struct WorkflowState {
 /// Bit mask for identifying tombstones in sequence numbers.
 pub const TOMBSTONE_BIT: u64 = 1 << 63;
 
+/// Reserved metadata key for sequence-based document TTL expiration.
+pub const EXPIRY_METADATA_KEY: &str = "__expires_at_seq";
+
 /// Maximum number of search results that any hybrid/vector/text search may return.
 ///
 /// Callers in memfuse-mcp and memfuse-db both enforce this limit before forwarding k to HNSW/BM25.
@@ -541,6 +544,11 @@ impl Default for PprConfig {
 mod tests {
     use super::*;
     use proptest::{prop_assert, prop_assert_eq};
+
+    #[test]
+    fn test_expiry_metadata_key_constant() {
+        assert_eq!(EXPIRY_METADATA_KEY, "__expires_at_seq");
+    }
 
     #[test]
     fn test_doc_id_from_key_no_panic() {

@@ -14,6 +14,7 @@ use crate::filter::MetadataFilter;
 use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{
     DocId, EntityId, FilterExpr, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex,
+    EXPIRY_METADATA_KEY,
 };
 use memfuse_graph::{detect_communities, CommunityAssignment, CommunityDetectionConfig, CsrGraph};
 use memfuse_index::HnswIndex;
@@ -573,6 +574,33 @@ impl<S: StorageEngine> Collection<S> {
         }
 
         self.upsert(id, &embedding, metadata).await
+    }
+
+    /// Inserts a document with a Sequence-based Time-To-Live (TTL in committed ops).
+    #[tracing::instrument(level = "trace", skip(self, embedding, metadata))]
+    pub async fn insert_with_ttl(
+        &self,
+        id: &str,
+        embedding: &[f32],
+        metadata: Option<serde_json::Value>,
+        ttl_committed_ops: u64,
+    ) -> Result<()> {
+        let current_seq = self.snapshot_seq().await?;
+        let expiry_seq = current_seq.saturating_add(ttl_committed_ops);
+
+        let mut meta = metadata.unwrap_or_else(|| serde_json::json!({}));
+        if let Some(obj) = meta.as_object_mut() {
+            obj.insert(
+                EXPIRY_METADATA_KEY.to_string(),
+                serde_json::json!(expiry_seq),
+            );
+        } else {
+            meta = serde_json::json!({
+                EXPIRY_METADATA_KEY: expiry_seq
+            });
+        }
+
+        self.insert(id, embedding, Some(meta)).await
     }
 
     /// Inserts a document with an embedding and optional metadata.
@@ -1484,7 +1512,11 @@ impl<S: StorageEngine> Collection<S> {
         let (vw, tw, gw) = crate::fusion::weights_to_signal_factors(weights);
 
         // Community filtering / boosting VOR RRF
-        let target_community_id: Option<u64> = None;
+        let target_community_id: Option<u64> = if let Some(same_comm_entity) = same_community_as {
+            self.get_community(same_comm_entity).await.ok().flatten()
+        } else {
+            None
+        };
 
         let filter_or_boost = |list: Vec<crate::SearchResult>| async {
             if let Some(target_comm) = target_community_id {
@@ -1731,6 +1763,60 @@ impl<S: StorageEngine> Collection<S> {
         self.text_index.load_stats().await
     }
 
+    /// Scans the collection for documents with expired sequence-based TTLs and deletes them in batches.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn reap_expired_documents(&self, max_expired: usize) -> Result<usize> {
+        let current_seq = self.snapshot_seq().await?;
+        let docs = self.scan_prefix("").await?;
+        let mut expired_ids = Vec::new();
+
+        for (id, val) in docs {
+            if expired_ids.len() >= max_expired {
+                break;
+            }
+
+            if self.name == "default" && id.starts_with("__") {
+                continue;
+            }
+
+            let meta_obj = val
+                .get("metadata")
+                .and_then(|m| m.as_object())
+                .or_else(|| val.as_object());
+
+            if let Some(obj) = meta_obj {
+                if let Some(expiry_seq) = obj.get(EXPIRY_METADATA_KEY).and_then(|v| v.as_u64()) {
+                    if current_seq >= expiry_seq {
+                        expired_ids.push(id);
+                    }
+                }
+            }
+        }
+
+        let count = expired_ids.len();
+        for id in &expired_ids {
+            tracing::info!(collection = %self.name, id = %id, "Reaping expired document");
+            if let Err(e) = self.delete(id).await {
+                tracing::error!(
+                    collection = %self.name,
+                    id = %id,
+                    error = %e,
+                    "Expiry reaper failed to delete document"
+                );
+            }
+        }
+
+        if count > 0 && self.index.is_rebuild_required() {
+            tracing::info!(
+                collection = %self.name,
+                "HNSW tombstone threshold reached after expiry reaping; triggering async rebuild"
+            );
+            self.index.trigger_rebuild_async();
+        }
+
+        Ok(count)
+    }
+
     /// Scans the collection for documents with expired TTLs and deletes them.
     ///
     /// Reads `created_at_ms` (or `timestamp_ms`) and `ttl_ms` from document metadata.
@@ -1879,6 +1965,74 @@ impl<S: StorageEngine> Collection<S> {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn test_insert_with_ttl_and_reap_expired_documents() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(memfuse_store::LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            Arc::new(CsrGraph::new()),
+            Arc::new(AtomicU64::new(1)),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        let vec = vec![1.0, 0.0, 0.0, 0.0];
+
+        // Insert document with TTL = 5 committed ops
+        col.insert_with_ttl("temp_doc", &vec, None, 5)
+            .await
+            .unwrap();
+
+        // 1. Immediately after insert, document should be retrievable
+        let doc = col.get("temp_doc").await.unwrap();
+        assert!(doc.is_some(), "Document must exist before TTL expiration");
+
+        // 2. Perform 5 dummy commits (inserts)
+        for i in 0..5 {
+            col.insert(&format!("dummy_{i}"), &vec, None)
+                .await
+                .unwrap();
+        }
+
+        // 3. Trigger expiry reaper
+        let reaped = col.reap_expired_documents(100).await.unwrap();
+        assert_eq!(reaped, 1, "Expired document should be reaped");
+
+        // 4. Verify document is gone from storage and search
+        let doc_after = col.get("temp_doc").await.unwrap();
+        assert!(doc_after.is_none(), "Document must be deleted after TTL expiry");
+
+        let search_res = col.search(&vec, 10).await.unwrap();
+        assert!(
+            search_res.iter().all(|r| r.id != "temp_doc"),
+            "Expired document must not appear in search results"
+        );
+    }
+
     #[tokio::test]
     async fn test_relate_success_visible_in_storage_and_graph() {
         use memfuse_core::EntityId;

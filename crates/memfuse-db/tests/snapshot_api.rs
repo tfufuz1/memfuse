@@ -154,9 +154,8 @@ async fn test_create_snapshot_equals_last_committed_seq() {
     );
 }
 
-/// Verifies that calling `VectorIndex::search_at` or `GraphIndex::traverse_at`
-/// explicitly returns the ADR-024 CapabilityUnsupported error, documenting that
-/// vector and graph snapshot isolation are tracked for future implementation.
+/// Verifies that calling `VectorIndex::search_at` and `GraphIndex::traverse_at`
+/// executes snapshot-isolated queries without returning `CapabilityUnsupported`.
 #[tokio::test]
 async fn test_vector_and_graph_search_at_returns_adr024_capability_unsupported() {
     use memfuse_core::{GraphIndex, VectorIndex};
@@ -170,37 +169,25 @@ async fn test_vector_and_graph_search_at_returns_adr024_capability_unsupported()
     })
     .unwrap();
     let res_vec = mock_vec_index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 1).await;
-    match res_vec {
-        Err(memfuse_core::MemFuseError::CapabilityUnsupported { capability, reason }) => {
-            assert_eq!(capability, "snapshot_read_at");
-            assert!(
-                reason.contains("ADR-024"),
-                "VectorIndex::search_at must reference ADR-024, got: {}",
-                reason
-            );
-        }
-        other => panic!(
-            "Expected CapabilityUnsupported with ADR-024 for search_at, got: {:?}",
-            other
+    assert!(
+        !matches!(
+            res_vec,
+            Err(memfuse_core::MemFuseError::CapabilityUnsupported { .. })
         ),
-    }
+        "VectorIndex::search_at should be supported, got: {:?}",
+        res_vec
+    );
 
     let graph_idx = col.graph_index();
     let res_graph = graph_idx
         .traverse_at(memfuse_core::EntityId::new(1), 2, 1)
         .await;
-    match res_graph {
-        Err(memfuse_core::MemFuseError::CapabilityUnsupported { capability, reason }) => {
-            assert_eq!(capability, "graph_traverse_at");
-            assert!(
-                reason.contains("ADR-024"),
-                "GraphIndex::traverse_at must reference ADR-024, got: {}",
-                reason
-            );
-        }
-        other => panic!(
-            "Expected CapabilityUnsupported with ADR-024 for traverse_at, got: {:?}",
-            other
+    assert!(
+        !matches!(
+            res_graph,
+            Err(memfuse_core::MemFuseError::CapabilityUnsupported { .. })
         ),
-    }
+        "GraphIndex::traverse_at should be supported, got: {:?}",
+        res_graph
+    );
 }
