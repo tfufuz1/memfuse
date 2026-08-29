@@ -36,9 +36,9 @@ pub enum CommitIntent {
 }
 
 /// A transaction wrapper that ensures atomic multi-index commits across LSM-Store, HNSW-Index, Text-Index, and Graph-Index.
-pub struct DbTransaction<S: StorageEngine> {
+pub struct DbTransaction<S: StorageEngine, V: VectorIndex = memfuse_index::HnswIndex> {
     pub tx_id: TxId,
-    collection: Collection<S>,
+    collection: Collection<S, V>,
     staged_forward_keys: Mutex<Vec<Vec<u8>>>,
     staged_reverse_keys: Mutex<Vec<Vec<u8>>>,
     staged_doc_ids: Mutex<Vec<DocId>>,
@@ -50,8 +50,8 @@ pub struct DbTransaction<S: StorageEngine> {
     staged_graph_edge_deletes: Mutex<Vec<(EntityId, EntityId)>>,
 }
 
-impl<S: StorageEngine> DbTransaction<S> {
-    pub fn new(collection: Collection<S>, tx_id: TxId) -> Self {
+impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
+    pub fn new(collection: Collection<S, V>, tx_id: TxId) -> Self {
         Self {
             tx_id,
             collection,

@@ -60,16 +60,22 @@ async fn test_temporal_graph_time_travel() {
         .unwrap();
 
     // Kante A→B ab tx1 bis tx2
-    let edge_ab = Edge::new(EntityId::new(1), EntityId::new(2), "knows")
-        .with_validity(Some(tx1), Some(tx2));
+    let edge_ab =
+        Edge::new(EntityId::new(1), EntityId::new(2), "knows").with_validity(Some(tx1), Some(tx2));
     graph.add_edge(tx1, edge_ab).await.unwrap();
     graph.commit(tx1).await.unwrap();
 
     // Bei as_of=tx1: Kante sichtbar
-    let res1 = graph.traverse_at_time(EntityId::new(1), 1, tx1).await.unwrap();
+    let res1 = graph
+        .traverse_at_time(EntityId::new(1), 1, tx1)
+        .await
+        .unwrap();
     assert!(!res1.is_empty(), "Kante muss bei as_of=tx1 sichtbar sein");
 
     // Bei as_of=tx2: Kante NICHT sichtbar (valid_to=tx2 exklusiv)
-    let res2 = graph.traverse_at_time(EntityId::new(1), 1, tx2).await.unwrap();
+    let res2 = graph
+        .traverse_at_time(EntityId::new(1), 1, tx2)
+        .await
+        .unwrap();
     assert!(res2.is_empty(), "Kante muss bei as_of=tx2 abgelaufen sein");
 }

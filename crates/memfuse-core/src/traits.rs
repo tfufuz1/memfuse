@@ -291,6 +291,14 @@ pub trait VectorIndex: Send + Sync + 'static {
 
     /// Returns index statistics.
     async fn stats(&self) -> Result<VectorIndexStats>;
+
+    /// Returns true if the index requires a background rebuild (e.g. due to tombstone accumulation).
+    fn is_rebuild_required(&self) -> bool {
+        false
+    }
+
+    /// Triggers an asynchronous background rebuild of the index if supported.
+    fn trigger_rebuild_async(&self) {}
 }
 
 /// Text embedding engine trait.
@@ -652,10 +660,7 @@ pub trait MemoryLifecycleManager: Send + Sync {
 
     /// Plans consolidation of similar entries (Mem0 ADD/UPDATE/NOOP pattern).
     /// Returns an action plan without performing automatic execution.
-    async fn plan_consolidation(
-        &self,
-        candidates: &[DocId],
-    ) -> Result<Vec<ConsolidationAction>>;
+    async fn plan_consolidation(&self, candidates: &[DocId]) -> Result<Vec<ConsolidationAction>>;
 }
 
 #[cfg(test)]
@@ -732,6 +737,8 @@ mod capability_coverage {
             !matches!(res, Err(crate::MemFuseError::CapabilityUnsupported { .. })),
             "search_at returned CapabilityUnsupported"
         );
+        assert!(!index.is_rebuild_required());
+        index.trigger_rebuild_async();
     }
 
     /// Verifies that calling traverse_at and traverse_at_time

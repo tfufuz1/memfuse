@@ -1,4 +1,4 @@
-use super::domain::{DocId, EntityId, PprConfig};
+use super::domain::{DocId, EntityId, MemoryType, PprConfig};
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
@@ -209,6 +209,10 @@ pub struct HybridQuery {
     pub filter: Option<FilterExpr>,
     /// Optional entity ID to filter/boost results in the same community.
     pub same_community_as: Option<EntityId>,
+    /// Pre-RRF filter: only return results whose memory_type metadata field
+    /// matches one of these types. None = no filter (default behaviour unchanged).
+    #[serde(default)]
+    pub memory_type_filter: Option<Vec<MemoryType>>,
     /// Maximum number of search results to return.
     pub k: usize,
 }
@@ -230,6 +234,7 @@ pub struct HybridQueryBuilder {
     fusion_weights: Option<FusionWeights>,
     filter: Option<FilterExpr>,
     same_community_as: Option<EntityId>,
+    memory_type_filter: Option<Vec<MemoryType>>,
     k: Option<usize>,
 }
 
@@ -281,6 +286,12 @@ impl HybridQueryBuilder {
         self
     }
 
+    /// Sets the memory_type pre-RRF filter.
+    pub fn with_memory_type_filter(mut self, types: Vec<MemoryType>) -> Self {
+        self.memory_type_filter = Some(types);
+        self
+    }
+
     /// Sets the top-K limit for the query.
     pub fn with_k(mut self, k: usize) -> Self {
         self.k = Some(k);
@@ -308,6 +319,7 @@ impl HybridQueryBuilder {
             ),
             filter: self.filter,
             same_community_as: self.same_community_as,
+            memory_type_filter: self.memory_type_filter,
             k: self.k.unwrap_or(10),
         })
     }
