@@ -598,6 +598,66 @@ pub trait DistanceCalculator: Send + Sync {
     fn compute_u8(&self, a: &[u8], b: &[u8]) -> Result<u32>;
 }
 
+/// Report summarizing statistics of a memory lifecycle sweep operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LifecycleSweepReport {
+    /// Total number of entries evaluated during the sweep.
+    pub swept_count: u64,
+    /// Number of entries deleted due to time-to-live (TTL) expiration.
+    pub deleted_by_ttl: u64,
+    /// Number of entries deleted due to importance score recency decay.
+    pub deleted_by_decay: u64,
+    /// Number of entries skipped because they are pinned or exempt.
+    pub skipped_pinned: u64,
+}
+
+/// Actions planned during memory consolidation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum ConsolidationAction {
+    /// Keep document as is.
+    Keep {
+        /// ID of the document to keep.
+        doc_id: DocId,
+    },
+    /// Merge two or more documents into a new consolidated entry.
+    Merge {
+        /// Source document IDs to merge.
+        source_ids: Vec<DocId>,
+        /// Hint or context summary for the consolidated entry.
+        summary_hint: String,
+    },
+    /// Replace an old document with a new updated entry.
+    Supersede {
+        /// Old document ID to supersede.
+        old_id: DocId,
+        /// Replacement document ID.
+        new_id: DocId,
+    },
+    /// Drop a document due to obsolete or low-relevance memory state.
+    Drop {
+        /// ID of the document to drop.
+        doc_id: DocId,
+    },
+}
+
+/// Trait controlling active Memory Lifecycle management: Decay sweep and Consolidation planning.
+///
+/// Decouples decision planning (`plan_consolidation`) from execution (`sweep`) for auditability.
+#[async_trait]
+pub trait MemoryLifecycleManager: Send + Sync {
+    /// Performs a decay and TTL sweep.
+    /// Returns a report summarizing deleted, retained, and skipped entries.
+    async fn sweep(&self, now_tx: TxId) -> Result<LifecycleSweepReport>;
+
+    /// Plans consolidation of similar entries (Mem0 ADD/UPDATE/NOOP pattern).
+    /// Returns an action plan without performing automatic execution.
+    async fn plan_consolidation(
+        &self,
+        candidates: &[DocId],
+    ) -> Result<Vec<ConsolidationAction>>;
+}
+
 #[cfg(test)]
 mod dyn_safety {
     use super::*;
@@ -607,6 +667,7 @@ mod dyn_safety {
     fn _assert_dyn_text(_: Option<&dyn TextIndex>) {}
     fn _assert_dyn_graph(_: Option<&dyn GraphIndex>) {}
     fn _assert_dyn_embedding(_: Option<&dyn TextEmbeddingEngine>) {}
+    fn _assert_dyn_lifecycle(_: Option<&dyn MemoryLifecycleManager>) {}
 
     #[test]
     fn test_dyn_safety_compiles() {
@@ -615,6 +676,7 @@ mod dyn_safety {
         _assert_dyn_text(None);
         _assert_dyn_graph(None);
         _assert_dyn_embedding(None);
+        _assert_dyn_lifecycle(None);
     }
 }
 

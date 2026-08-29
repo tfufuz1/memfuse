@@ -50,6 +50,26 @@ impl From<&StoredDocument> for StoredDocumentMeta {
     }
 }
 
+/// Parses an LLM response string into an f32 importance score in `[0.0, 1.0]`.
+pub fn parse_importance_score(response: &str) -> f32 {
+    for token in response.split_whitespace() {
+        if let Ok(val) = token.parse::<f32>() {
+            if val.is_finite() {
+                return val.clamp(0.0, 1.0);
+            }
+        }
+        let trimmed = token.trim_matches(|c: char| !c.is_ascii_digit() && c != '.');
+        if !trimmed.is_empty() {
+            if let Ok(val) = trimmed.parse::<f32>() {
+                if val.is_finite() {
+                    return val.clamp(0.0, 1.0);
+                }
+            }
+        }
+    }
+    0.5
+}
+
 /// Computes a non-LLM heuristic baseline importance score based on text length and character entropy.
 pub fn compute_default_importance(text_opt: Option<&str>) -> memfuse_core::ImportanceScore {
     let text = match text_opt {
@@ -193,6 +213,10 @@ impl<S: StorageEngine> Clone for Collection<S> {
 }
 
 impl<S: StorageEngine> Collection<S> {
+    /// Threshold: Dokumente mit effective_score < DECAY_DELETION_THRESHOLD
+    /// werden als "vergessen" markiert und gelöscht.
+    pub const DECAY_DELETION_THRESHOLD: f32 = 0.05;
+
     /// Creates a new `Collection` instance with explicit language configuration.
     ///
     /// The `language` parameter controls the BM25 tokenizer. Use `Language::German`
@@ -1856,10 +1880,10 @@ impl<S: StorageEngine> Collection<S> {
         Ok(count)
     }
 
-    /// Scans the collection for documents with expired TTLs and deletes them.
+    /// Scans the collection for documents with expired TTLs or decayed importance scores and deletes them.
     ///
-    /// Reads `created_at_ms` (or `timestamp_ms`) and `ttl_ms` from document metadata.
-    /// Time calculations use UTC unix timestamp milliseconds.
+    /// Reads `created_at_ms` (or `timestamp_ms`) and `ttl_ms` from document metadata for wall-clock TTL,
+    /// and `importance` metadata for TxId-based decay sweep (`effective_score < DECAY_DELETION_THRESHOLD`).
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn trigger_reaper(&self) -> Result<usize> {
         let now_ms = std::time::SystemTime::now()
@@ -1867,47 +1891,67 @@ impl<S: StorageEngine> Collection<S> {
             .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?
             .as_millis() as u64;
 
+        let now_tx = self.next_tx.load(Ordering::SeqCst);
         let docs = self.scan_prefix("").await?;
         let mut expired_ids = Vec::new();
 
         for (id, val) in docs {
+            if self.name == "default" && id.starts_with("__") {
+                continue;
+            }
+
             let meta_obj = val
                 .get("metadata")
                 .and_then(|m| m.as_object())
                 .or_else(|| val.as_object());
 
+            let mut marked_for_deletion = false;
+
             if let Some(obj) = meta_obj {
-                let ttl_val = match obj.get("ttl_ms").and_then(|v| v.as_u64()) {
-                    Some(ttl) if ttl > 0 => ttl,
-                    _ => continue, // Missing or ttl_ms == 0 means non-expiring
-                };
+                // 1. Working-Memory wall-clock TTL check ZUERST
+                if let Some(ttl_val) = obj.get("ttl_ms").and_then(|v| v.as_u64()) {
+                    if ttl_val > 0 {
+                        if let Some(created_at) = obj
+                            .get("created_at_ms")
+                            .or_else(|| obj.get("timestamp_ms"))
+                            .and_then(|v| v.as_u64())
+                        {
+                            if let Some(expire_at) = created_at.checked_add(ttl_val) {
+                                if now_ms >= expire_at {
+                                    expired_ids.push(id.clone());
+                                    marked_for_deletion = true;
+                                }
+                            }
+                        }
+                    }
+                }
 
-                let created_at = match obj
-                    .get("created_at_ms")
-                    .or_else(|| obj.get("timestamp_ms"))
-                    .and_then(|v| v.as_u64())
-                {
-                    Some(c) => c,
-                    None => continue, // Missing created_at_ms means non-expiring
-                };
-
-                if let Some(expire_at) = created_at.checked_add(ttl_val) {
-                    if now_ms >= expire_at {
-                        expired_ids.push((id, expire_at));
+                // 2. TxId-basierter Decay-Sweep (nur wenn decay != None)
+                if !marked_for_deletion {
+                    if let Some(imp_val) = obj.get("importance") {
+                        if let Ok(imp) =
+                            serde_json::from_value::<memfuse_core::MemoryImportance>(imp_val.clone())
+                        {
+                            if imp.decay != memfuse_core::DecayFunction::None {
+                                let effective = imp.effective_score(TxId::new(now_tx));
+                                if effective < Self::DECAY_DELETION_THRESHOLD {
+                                    expired_ids.push(id);
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
         let count = expired_ids.len();
-        for (id, expire_at) in expired_ids {
+        for id in expired_ids {
             match self.delete(&id).await {
                 Ok(_) => {
                     tracing::debug!(
                         collection = %self.name,
                         doc_id = %id,
-                        expire_at = expire_at,
-                        "Reaped expired TTL document"
+                        "Reaped expired TTL / decayed document"
                     );
                 }
                 Err(e) => {
@@ -1922,6 +1966,97 @@ impl<S: StorageEngine> Collection<S> {
         }
 
         Ok(count)
+    }
+
+    /// Bewertet die Wichtigkeit eines Dokuments via LLM (Ollama) und
+    /// aktualisiert den Importance-Score in den Metadaten.
+    ///
+    /// # Fehlerverhalten
+    /// Bei LLM-Fehler wird der bestehende Score NICHT überschrieben.
+    /// Fehler werden als Err(MemFuseError::Internal) zurückgegeben.
+    pub async fn evaluate_importance_with_llm(
+        &self,
+        doc_id: &str,
+        ollama: &memfuse_ollama::OllamaClient,
+    ) -> Result<memfuse_core::ImportanceScore> {
+        let user_key = self.namespaced_key(doc_id.as_bytes(), 0);
+        let Some(data) = self.storage.get(&user_key).await? else {
+            return Err(memfuse_core::MemFuseError::NotFound(format!(
+                "Document not found: {doc_id}"
+            )));
+        };
+        let mut stored: StoredDocument = serde_json::from_slice(&data)?;
+
+        let text = extract_text(&stored.metadata).unwrap_or_else(|| stored.id.clone());
+
+        let prompt = format!(
+            "Bewerte die langfristige Wichtigkeit dieser Information für einen KI-Agenten \
+             auf einer Skala von 0.0 (unwichtig, vergänglich) bis 1.0 (sehr wichtig, dauerhaft).\n\
+             Antworte NUR mit einer Dezimalzahl zwischen 0.0 und 1.0, ohne Erklärung.\n\n\
+             Information: {}\n\nWichtigkeits-Score:",
+            text.chars().take(500).collect::<String>()
+        );
+
+        let model = &ollama.config().model;
+        let response = ollama
+            .generate_text(model, &prompt)
+            .await
+            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("LLM importance evaluation failed: {e}")))?;
+
+        let score = parse_importance_score(&response);
+        let importance_score = memfuse_core::ImportanceScore::new(score);
+
+        let tx = self.allocate_tx()?;
+        let doc_id_typed = DocId::from_key(doc_id)?;
+        let doc_key = self.namespaced_key(&doc_id_typed.inner().to_le_bytes(), 1);
+
+        let meta_obj = match stored.metadata {
+            Some(serde_json::Value::Object(ref mut map)) => map,
+            _ => {
+                stored.metadata = Some(serde_json::json!({}));
+                if let Some(serde_json::Value::Object(ref mut map)) = stored.metadata {
+                    map
+                } else {
+                    unreachable!()
+                }
+            }
+        };
+
+        let imp = if let Some(imp_val) = meta_obj.get("importance") {
+            if let Ok(mut existing_imp) =
+                serde_json::from_value::<memfuse_core::MemoryImportance>(imp_val.clone())
+            {
+                existing_imp.base_score = importance_score;
+                existing_imp
+            } else {
+                memfuse_core::MemoryImportance::new(
+                    importance_score,
+                    memfuse_core::DecayFunction::None,
+                    tx,
+                )
+            }
+        } else {
+            memfuse_core::MemoryImportance::new(
+                importance_score,
+                memfuse_core::DecayFunction::None,
+                tx,
+            )
+        };
+
+        if let Ok(val) = serde_json::to_value(imp) {
+            meta_obj.insert("importance".to_string(), val);
+        }
+
+        let meta_only = StoredDocumentMeta::from(&stored);
+        let user_bytes = serde_json::to_vec(&stored)?;
+        let doc_bytes = serde_json::to_vec(&meta_only)?;
+
+        let _guard = self.insert_lock.lock().await;
+        self.storage.put(tx, &user_key, &user_bytes).await?;
+        self.storage.put(tx, &doc_key, &doc_bytes).await?;
+        self.storage.commit(tx).await?;
+
+        Ok(importance_score)
     }
 
     /// Runs Label Propagation Community Detection on the collection's graph index
@@ -3025,6 +3160,66 @@ mod tests {
     }
 
     #[test]
+    fn test_importance_score_parser_robust() {
+        assert_eq!(super::parse_importance_score("0.8"), 0.8);
+        assert_eq!(super::parse_importance_score("0.8\n"), 0.8);
+        assert_eq!(super::parse_importance_score("Score: 0.8"), 0.8);
+        assert_eq!(super::parse_importance_score("0.8 (high importance)"), 0.8);
+        assert_eq!(super::parse_importance_score("1.5"), 1.0);
+        assert_eq!(super::parse_importance_score("-0.2"), 0.0);
+        assert_eq!(super::parse_importance_score("invalid text"), 0.5);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_importance_with_dead_client_returns_err() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(memfuse_store::LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            Arc::new(CsrGraph::new()),
+            Arc::new(AtomicU64::new(1)),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        let vec = vec![1.0, 0.0, 0.0, 0.0];
+        col.insert("doc_test", &vec, None).await.unwrap();
+
+        let dead_ollama = memfuse_ollama::OllamaClient::new("http://127.0.0.1:1");
+
+        let res = col.evaluate_importance_with_llm("doc_test", &dead_ollama).await;
+        assert!(res.is_err());
+        assert!(matches!(res.unwrap_err(), memfuse_core::MemFuseError::Internal(_)));
+
+        // Verify document's score was NOT overwritten or corrupted
+        let doc = col.get("doc_test").await.unwrap().unwrap();
+        assert!(doc.metadata.is_some());
+    }
+
+    #[test]
     fn test_compute_default_importance_entropy_and_clamping() {
         let score_empty = super::compute_default_importance(None);
         assert_eq!(score_empty.value(), 0.5);
@@ -3036,6 +3231,140 @@ mod tests {
             "The quick brown fox jumps over the lazy dog with high entropy and long text.",
         ));
         assert!(score_rich.value() > score_simple.value());
+    }
+
+    #[tokio::test]
+    async fn test_reaper_deletes_decayed_working_memory() {
+        use memfuse_core::{DecayFunction, ImportanceScore, MemoryImportance, TxId};
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use serde_json::json;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(memfuse_store::LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let next_tx = Arc::new(AtomicU64::new(1));
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            Arc::new(CsrGraph::new()),
+            next_tx.clone(),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        let created_tx = TxId::new(10);
+        let imp = MemoryImportance::new(
+            ImportanceScore::new(0.5),
+            DecayFunction::Exponential { half_life_tx: 5 },
+            created_tx,
+        );
+
+        let vec = vec![1.0, 0.0, 0.0, 0.0];
+        col.insert(
+            "doc_decayed",
+            &vec,
+            Some(json!({
+                "importance": imp
+            })),
+        )
+        .await
+        .unwrap();
+
+        // Advance TxId far enough so effective_score < 0.05
+        // At created_tx=10, half_life=5:
+        // Tx 10: 0.5 * 1.0 = 0.5
+        // Tx 15: 0.5 * 0.5 = 0.25
+        // Tx 20: 0.5 * 0.25 = 0.125
+        // Tx 25: 0.5 * 0.125 = 0.0625
+        // Tx 30: 0.5 * 0.0625 = 0.03125 (< 0.05)
+        next_tx.store(35, Ordering::SeqCst);
+
+        let count = col.trigger_reaper().await.unwrap();
+        assert_eq!(count, 1, "Decayed working memory document should be reaped");
+        assert!(col.get("doc_decayed").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_reaper_never_deletes_semantic_no_decay() {
+        use memfuse_core::{DecayFunction, ImportanceScore, MemoryImportance, TxId};
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use serde_json::json;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(memfuse_store::LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let next_tx = Arc::new(AtomicU64::new(1));
+        let col = super::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            Arc::new(CsrGraph::new()),
+            next_tx.clone(),
+            4,
+            memfuse_text::Language::English,
+        );
+
+        let created_tx = TxId::new(10);
+        let imp = MemoryImportance::new(
+            ImportanceScore::new(0.01), // even with base score < 0.05!
+            DecayFunction::None,
+            created_tx,
+        );
+
+        let vec = vec![1.0, 0.0, 0.0, 0.0];
+        col.insert(
+            "doc_semantic",
+            &vec,
+            Some(json!({
+                "importance": imp
+            })),
+        )
+        .await
+        .unwrap();
+
+        // Advance TxId very far
+        next_tx.store(100_000, Ordering::SeqCst);
+
+        let count = col.trigger_reaper().await.unwrap();
+        assert_eq!(count, 0, "Semantic document with DecayFunction::None must never be deleted");
+        assert!(col.get("doc_semantic").await.unwrap().is_some());
     }
 
     #[test]
