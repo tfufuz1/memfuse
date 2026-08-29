@@ -41,6 +41,11 @@ name = "migration_benchmarks"
 path = "../../benches/migration_benchmarks.rs"
 harness = false
 
+[[bench]]
+name = "scale_bench"
+path = "../../benches/scale_bench.rs"
+harness = false
+
 [[example]]
 name = "quickstart"
 

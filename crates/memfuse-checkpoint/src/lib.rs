@@ -38,7 +38,41 @@ fn monotonic_timestamp_ms() -> u64 {
         .max(wall_ms)
 }
 
-/// `AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-CKPT-f3a1b2c4` (TS:2026-08-29T00:00:00Z): Checkpoint Manifest envelope for atomic multi-component snapshots.
+/// `AI-TAG[PANIC-SAFETY][CRITICAL] (TS:2026-08-29T00:00:00Z) AGT-CKPT-f3a1b2c4`: Checkpoint Manifest envelope for atomic multi-component snapshots.
+/// Prevents partial writes or corrupted checkpoints from being falsely identified as valid during restoration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CheckpointManifest {
+    pub meta: CheckpointMeta,
+    pub components: Vec<String>,
+    pub checksum: String,
+}
+
+impl CheckpointManifest {
+    pub fn new(meta: CheckpointMeta, components: Vec<String>) -> Result<Self> {
+        let payload = serde_json::to_vec(&(&meta, &components))
+            .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+        let checksum = blake3::hash(&payload).to_hex().to_string();
+        Ok(Self {
+            meta,
+            components,
+            checksum,
+        })
+    }
+
+    pub fn verify(&self) -> Result<()> {
+        let payload = serde_json::to_vec(&(&self.meta, &self.components))
+            .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+        let expected = blake3::hash(&payload).to_hex().to_string();
+        if self.checksum != expected {
+            return Err(MemFuseError::Serialization(format!(
+                "Checkpoint manifest checksum mismatch for '{}': expected {}, got {}",
+                self.meta.name, expected, self.checksum
+            )));
+        }
+        Ok(())
+    }
+}
+
 /// Metadata for a persistent checkpoint.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CheckpointMeta {

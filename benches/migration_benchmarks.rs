@@ -1,6 +1,6 @@
-// ANCHOR[PERF:BENCH-001] STATUS:DONE (TS:2026-05-15T00:00:00Z) — Benchmark Suite für LangGraph Migration
-// ZIEL: Beweise wirtschaftliche Kohärenz durch Latenz-Metriken (MemFuse vs Redis / Chroma)
-// AGENT:09 DATE:2026-05-15 STATUS:DONE
+// ANCHOR[PERF:BENCH-001] STATUS:PARTIAL (TS:2026-08-29T00:00:00Z) — Benchmark Suite für LangGraph Migration
+// ZIEL: Latenz-Baseline für MemFuse-interne Operationen — KEIN Cross-System-Vergleich
+// AGENT:09 DATE:2026-05-15 STATUS:PARTIAL
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use memfuse_checkpoint::PersistentCheckpointStore;
@@ -10,9 +10,9 @@ use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
 fn bench_hybrid_search(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-    let tmp = TempDir::new().unwrap();
-    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap();
+    let rt = Runtime::new().unwrap(); // unwrap allowed
+    let tmp = TempDir::new().unwrap(); // unwrap allowed
+    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap(); // unwrap allowed
 
     // Prepare data
     rt.block_on(async {
@@ -22,7 +22,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
             Some(serde_json::json!({"text": "The quick brown fox jumps over the lazy dog"})),
         )
         .await
-        .unwrap();
+        .unwrap(); // unwrap allowed
     });
 
     c.bench_function("hybrid_search_latency", |b| {
@@ -30,15 +30,15 @@ fn bench_hybrid_search(c: &mut Criterion) {
             let _ = db
                 .hybrid_search("quick fox", &vec![0.1; 1536], 5, None)
                 .await
-                .unwrap();
+                .unwrap(); // unwrap allowed
         })
     });
 }
 
 fn bench_agent_state_checkpoint(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-    let tmp = TempDir::new().unwrap();
-    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap();
+    let rt = Runtime::new().unwrap(); // unwrap allowed
+    let tmp = TempDir::new().unwrap(); // unwrap allowed
+    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap(); // unwrap allowed
     let storage = db.inner_storage();
     let manager = PersistentCheckpointStore::new(storage, "test");
 
@@ -47,15 +47,15 @@ fn bench_agent_state_checkpoint(c: &mut Criterion) {
             let _ = manager
                 .create_checkpoint("test-cp", "default", 0, TxId::new(0), serde_json::json!({}))
                 .await
-                .unwrap();
+                .unwrap(); // unwrap allowed
         })
     });
 }
 
 fn bench_rerun_cost(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-    let tmp = TempDir::new().unwrap();
-    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap();
+    let rt = Runtime::new().unwrap(); // unwrap allowed
+    let tmp = TempDir::new().unwrap(); // unwrap allowed
+    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap(); // unwrap allowed
 
     // Prepare data
     rt.block_on(async {
@@ -65,20 +65,20 @@ fn bench_rerun_cost(c: &mut Criterion) {
             Some(serde_json::json!({"text": "The quick brown fox jumps over the lazy dog"})),
         )
         .await
-        .unwrap();
+        .unwrap(); // unwrap allowed
     });
 
     c.bench_function("rerun_cost_get_latency", |b| {
         b.to_async(&rt).iter(|| async {
-            let _ = db.get("doc-1").await.unwrap();
+            let _ = db.get("doc-1").await.unwrap(); // unwrap allowed
         })
     });
 }
 
 fn bench_snapshot_overhead(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-    let tmp = TempDir::new().unwrap();
-    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap();
+    let rt = Runtime::new().unwrap(); // unwrap allowed
+    let tmp = TempDir::new().unwrap(); // unwrap allowed
+    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap(); // unwrap allowed
 
     rt.block_on(async {
         for i in 0..100 {
@@ -88,7 +88,7 @@ fn bench_snapshot_overhead(c: &mut Criterion) {
                 Some(serde_json::json!({"text": "The quick brown fox jumps over the lazy dog"})),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         }
     });
 
@@ -97,15 +97,15 @@ fn bench_snapshot_overhead(c: &mut Criterion) {
             let _ = db
                 .search_with_filter_expr(&vec![0.1; 1536], 5, None)
                 .await
-                .unwrap();
+                .unwrap(); // unwrap allowed
         })
     });
 }
 
 fn bench_staged_stats_commit(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-    let tmp = TempDir::new().unwrap();
-    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap();
+    let rt = Runtime::new().unwrap(); // unwrap allowed
+    let tmp = TempDir::new().unwrap(); // unwrap allowed
+    let db = rt.block_on(MemFuse::open(tmp.path())).unwrap(); // unwrap allowed
 
     c.bench_function("staged_stats_commit_overhead", |b| {
         b.to_async(&rt).iter(|| async {
@@ -115,7 +115,7 @@ fn bench_staged_stats_commit(c: &mut Criterion) {
                 Some(serde_json::json!({"text": "Test benchmark stats overhead"})),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap allowed
         })
     });
 }

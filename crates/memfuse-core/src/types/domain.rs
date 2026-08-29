@@ -194,12 +194,18 @@ impl TxId {
     /// an explicit indicator of unassigned or invalid transaction context.
     pub const INVALID: Self = Self(0);
 
+    /// Upper bound of the Collection-sequenced transaction ID range (`10^12`).
+    ///
+    /// Transaction allocation sequences managed by `Collection::allocate_tx()` operate
+    /// in the range `[1, MAX_COLLECTION_SEQUENCE]`.
+    pub const MAX_COLLECTION_SEQUENCE: u64 = 1_000_000_000_000;
+
     /// Lower bound of the internal system transaction ID range.
     ///
     /// Exact numeric value: `u64::MAX - 1_000_000` (`18_446_744_073_708_551_615`).
     ///
     /// Dieser Grenzwert definiert die Trennlinie zwischen Collection-sequenzierten TxIds
-    /// (`[1, ~10^12]`, verwaltet von `Collection::allocate_tx()`) und system-internen TxIds
+    /// (`[1, MAX_COLLECTION_SEQUENCE]`, verwaltet von `Collection::allocate_tx()`) und system-internen TxIds
     /// (`[INTERNAL_BASE, u64::MAX]`, verwaltet von `INTERNAL_BASE + atomic counter`).
     ///
     /// Wall-clock-abgeleitete TxIds (Unix-Nanos `~1.7e18`) fallen in den Zwischenbereich
@@ -227,10 +233,20 @@ impl TxId {
     pub const fn internal() -> Self {
         Self(Self::INTERNAL_BASE)
     }
+
+    /// Checks if the transaction ID originates from a valid range per AGT-GRAPH-001.
+    ///
+    /// Returns `true` if `self.0 <= MAX_COLLECTION_SEQUENCE` (Collection sequence range)
+    /// OR `self.0 >= INTERNAL_BASE` (Internal system range).
+    /// Returns `false` for wall-clock derived TxIds (~1.7×10^18) in the unmanaged gap.
+    #[inline]
+    pub fn is_valid_origin(&self) -> bool {
+        self.0 <= Self::MAX_COLLECTION_SEQUENCE || self.0 >= Self::INTERNAL_BASE
+    }
 }
 
 const _: () = assert!(
-    TxId::INTERNAL_BASE > 1_000_000_000_000u64,
+    TxId::INTERNAL_BASE > TxId::MAX_COLLECTION_SEQUENCE,
     "INTERNAL_BASE must be above the collection-sequence range"
 );
 const _: () = assert!(TxId::INTERNAL_BASE < u64::MAX);
@@ -755,6 +771,25 @@ mod tests {
         assert_eq!(invalid.inner(), 0);
         assert!(invalid < tx);
         assert_eq!(invalid, TxId::new(0));
+    }
+
+    #[test]
+    fn test_tx_id_is_valid_origin() {
+        // Collection-sequenced range [0, 10^12]
+        assert!(TxId::new(0).is_valid_origin());
+        assert!(TxId::new(1).is_valid_origin());
+        assert!(TxId::new(1_000_000).is_valid_origin());
+        assert!(TxId::new(TxId::MAX_COLLECTION_SEQUENCE).is_valid_origin());
+
+        // Internal system range [INTERNAL_BASE, u64::MAX]
+        assert!(TxId::new(TxId::INTERNAL_BASE).is_valid_origin());
+        assert!(TxId::new(TxId::INTERNAL_BASE + 500).is_valid_origin());
+        assert!(TxId::new(u64::MAX).is_valid_origin());
+
+        // Wall-clock-derived or unmanaged gap range (10^12 < tx < INTERNAL_BASE)
+        assert!(!TxId::new(TxId::MAX_COLLECTION_SEQUENCE + 1).is_valid_origin());
+        assert!(!TxId::new(1_700_000_000_000_000_000).is_valid_origin());
+        assert!(!TxId::new(TxId::INTERNAL_BASE - 1).is_valid_origin());
     }
 
     #[test]
