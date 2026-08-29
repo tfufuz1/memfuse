@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// ZWECK: Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen.
+// INVARIANTEN: [INV-DB-3] Keine verschluckten Fehler bei Rollbacks; Kompensierende Transaktionen bei HNSW/BM25/Graph Ausfällen.
+// NICHT-OFFENSICHTLICH: Multi-Attempt LSM-Kompensation mit Split-Brain Tracing-Warnungen bei anhaltenden Fehlern.
+// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+
 //! # Database Transactions
 //!
 //! This module provides `DbTransaction`, an orchestrator for atomic multi-index commits
@@ -9,6 +15,12 @@
 //! - **[INV-DB-3] Strict Error Visibility in Rollbacks**: Compensating transactions during
 //!   rollback must never silently drop errors. Discovered during Forensic Audit (HARD-004),
 //!   any rollback failure must log explicitly to `tracing::error!` mapping out a potential Split-Brain.
+//!
+//! # Lock Hierarchy & Poison Recovery
+//! `DbTransaction` uses fine-grained `std::sync::Mutex` instances for staging index changes.
+//! Lock ordering between staged locks is not strict because staged fields are modified sequentially per operation.
+//! All Mutex lock acquisitions explicitly handle `PoisonError` via `match` with `p.into_inner()`
+//! to ensure fail-safe operation without panics.
 
 use crate::Collection;
 use memfuse_core::{
@@ -274,12 +286,12 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
 
         // Execute staged text and graph staging before prepare/commit
         if let Err(e) = self.commit_text_staged().await {
-            let _ = self.rollback_internal().await;
+            self.rollback_internal().await;
             return Err(e);
         }
 
         if let Err(e) = self.commit_graph_staged().await {
-            let _ = self.rollback_internal().await;
+            self.rollback_internal().await;
             return Err(e);
         }
 
@@ -300,7 +312,7 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
 
         // 2. Commit Storage (LSM)
         if let Err(storage_err) = self.collection.storage.commit(self.tx_id).await {
-            let _ = self.rollback_internal().await;
+            self.rollback_internal().await;
             return Err(MemFuseError::Transaction(storage_err.to_string()));
         }
 

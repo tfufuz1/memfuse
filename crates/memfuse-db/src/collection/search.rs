@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// ZWECK: Suchoperationen (Vector-, Text-, Graph- & Hybrid-Retrieval) für Collection.
+// INVARIANTEN: Snapshot-Pinning garantiert Isolation während gefilterter Suche; MAX_SEARCH_K Obergrenze.
+// NICHT-OFFENSICHTLICH: Multi-Signal RRF vereint Ergebnisse ohne inkompatible Score-Skalen.
+// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+
 use super::{extract_effective_importance, Collection, StoredDocument, StoredDocumentMeta};
 #[allow(deprecated)]
 use crate::filter::MetadataFilter;
@@ -44,6 +50,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         k: usize,
         filter: Option<FilterExpr>,
     ) -> Result<Vec<crate::SearchResult>> {
+        if query.len() != self.dimension {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Dimension mismatch: expected {}, got {}",
+                self.dimension,
+                query.len()
+            )));
+        }
         let k = k.min(memfuse_core::MAX_SEARCH_K);
         // 🛡️ SICHERUNG: Snapshot-Isolation (FIND-DB-003)
         // Wir pinnen den Snapshot für die gesamte Dauer der gefilterten Suche,
@@ -204,6 +217,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
         seq: u64,
     ) -> Result<Vec<crate::SearchResult>> {
+        if query.len() != self.dimension {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Dimension mismatch: expected {}, got {}",
+                self.dimension,
+                query.len()
+            )));
+        }
         let k = k.min(memfuse_core::MAX_SEARCH_K);
         let scored_docs = self.index.search_filtered(query, k, filter).await?;
         self.hydrate_from_scored_at(scored_docs, seq).await
@@ -377,6 +397,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     ) -> Result<Vec<crate::SearchResult>> {
         if k == 0 {
             return Ok(Vec::new());
+        }
+        if !vector.is_empty() && vector.len() != self.dimension {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Dimension mismatch: expected {}, got {}",
+                self.dimension,
+                vector.len()
+            )));
         }
         let k = k.min(memfuse_core::MAX_SEARCH_K);
 

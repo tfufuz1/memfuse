@@ -1,4 +1,4 @@
-//! Error types for MemFuse.
+//! Error types for `MemFuse`.
 
 // INVARIANT: Einzige Error-Enum für den gesamten Workspace.
 // Neue Varianten nur ANHÄNGEN (niemals umsortieren) → binäre Kompatibilität.
@@ -15,7 +15,7 @@ use thiserror::Error;
 /// Convenience alias for `Result<T, MemFuseError>`.
 pub type Result<T> = std::result::Result<T, MemFuseError>;
 
-/// Unified error type for all MemFuse operations across the entire workspace.
+/// Unified error type for all `MemFuse` operations across the entire workspace.
 ///
 /// # Non-Exhaustive Variant Guarantee
 /// This enum is marked [`#[non_exhaustive]`][non_exhaustive] to allow appending new error variants

@@ -205,8 +205,19 @@ impl<S: StorageEngine> InvertedIndex<S> {
         k
     }
 
+    /// Maximum allowed raw text size per document (10 MiB) to prevent resource exhaustion.
+    pub const MAX_TEXT_BYTES: usize = 10 * 1024 * 1024;
+
     #[tracing::instrument(skip(self, text))]
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
+        if text.len() > Self::MAX_TEXT_BYTES {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Text size {} bytes exceeds maximum allowed size of {} bytes",
+                text.len(),
+                Self::MAX_TEXT_BYTES
+            )));
+        }
+
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
 
@@ -1425,7 +1436,11 @@ mod tests {
         // Search for "rust" when N=2, df=2
         let search_before = index.search_bm25("rust", 10, None).await?;
         assert_eq!(search_before.len(), 2);
-        let score_before_d2 = search_before.iter().find(|(id, _)| *id == d2).unwrap().1; // unwrap
+        let score_before_d2 = search_before
+            .iter()
+            .find(|(id, _)| *id == d2)
+            .ok_or_else(|| MemFuseError::InvalidInput("d2 not found in search_before".into()))?
+            .1;
 
         // Delete doc1
         let tx3 = TxId::new(3);
@@ -1468,7 +1483,11 @@ mod tests {
 
         // Score for "rare" in d2 when N=10, df=2
         let search_before = index.search_bm25("rare", 10, None).await?;
-        let score_before = search_before.iter().find(|(id, _)| *id == d2).unwrap().1; // unwrap
+        let score_before = search_before
+            .iter()
+            .find(|(id, _)| *id == d2)
+            .ok_or_else(|| MemFuseError::InvalidInput("d2 not found in search_before".into()))?
+            .1;
 
         // Delete d1 -> N=9, df=1 for "rare"
         let tx_del = TxId::new(2);
@@ -1477,7 +1496,11 @@ mod tests {
 
         // Score for "rare" in d2 when N=9, df=1
         let search_after = index.search_bm25("rare", 10, None).await?;
-        let score_after = search_after.iter().find(|(id, _)| *id == d2).unwrap().1; // unwrap
+        let score_after = search_after
+            .iter()
+            .find(|(id, _)| *id == d2)
+            .ok_or_else(|| MemFuseError::InvalidInput("d2 not found in search_after".into()))?
+            .1;
 
         // With N=10, df=2: idf_arg = (10 - 2 + 0.5)/(2 + 0.5) = 8.5 / 2.5 = 3.4 -> ln(3.4) ~= 1.2237
         // With N=9, df=1: idf_arg = (9 - 1 + 0.5)/(1 + 0.5) = 8.5 / 1.5 = 5.6667 -> ln(5.6667) ~= 1.7346
@@ -1519,6 +1542,30 @@ mod tests {
         // search_at seq2: should return doc1 and doc2
         let res_seq2 = index.search_at("hello", 10, seq2).await?;
         assert_eq!(res_seq2.len(), 2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_upsert_document_oversized_text_returns_error() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "oversized_test");
+        let tx = TxId::new(1);
+        let doc_id = DocId::new(1);
+
+        // Construct oversized string (> 10 MiB)
+        let oversized = "a".repeat(InvertedIndex::<MockStorage>::MAX_TEXT_BYTES + 1);
+        let err = index
+            .upsert_document(tx, doc_id, &oversized)
+            .await
+            .unwrap_err();
+
+        match err {
+            MemFuseError::InvalidInput(msg) => {
+                assert!(msg.contains("exceeds maximum allowed size"));
+            }
+            _ => panic!("Expected MemFuseError::InvalidInput, got {:?}", err),
+        }
 
         Ok(())
     }

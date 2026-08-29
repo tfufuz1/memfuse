@@ -34,6 +34,23 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static CHECKPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca)
+/// Validates identifier strings (checkpoint name, collection ID) against empty/whitespace or size limits.
+fn validate_identifier(field_name: &str, value: &str) -> Result<()> {
+    if value.trim().is_empty() {
+        return Err(MemFuseError::InvalidInput(format!(
+            "{field_name} cannot be empty or whitespace-only"
+        )));
+    }
+    if value.len() > 256 {
+        return Err(MemFuseError::InvalidInput(format!(
+            "{field_name} exceeds maximum length of 256 characters (got {})",
+            value.len()
+        )));
+    }
+    Ok(())
+}
+
 fn monotonic_timestamp_ms() -> u64 {
     let wall_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -58,6 +75,15 @@ pub struct CheckpointManifest {
 
 impl CheckpointManifest {
     pub fn new(meta: CheckpointMeta, components: Vec<String>) -> Result<Self> {
+        validate_identifier("Checkpoint name", &meta.name)?;
+        validate_identifier("Collection ID", &meta.collection_id)?;
+        for comp in &components {
+            if comp.trim().is_empty() {
+                return Err(MemFuseError::InvalidInput(
+                    "Checkpoint component name cannot be empty".to_string(),
+                ));
+            }
+        }
         let payload = serde_json::to_vec(&(&meta, &components))
             .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
         let checksum = blake3::hash(&payload).to_hex().to_string();
@@ -241,6 +267,9 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         tx_id: TxId,
         metadata: serde_json::Value,
     ) -> Result<CheckpointMeta> {
+        validate_identifier("Checkpoint name", name)?;
+        validate_identifier("Collection ID", collection_id)?;
+
         let meta = CheckpointMeta {
             name: name.to_string(),
             collection_id: collection_id.to_string(),
@@ -300,6 +329,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
     /// Deletes a persistent checkpoint by name.
     pub async fn drop_checkpoint(&self, name: &str) -> Result<()> {
+        validate_identifier("Checkpoint name", name)?;
         let _guard = self.write_lock.lock().await;
 
         if let Some(checkpoint) = self.get_checkpoint_internal(name).await? {
@@ -310,17 +340,15 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             let unique_tx = self.next_tx()?;
 
             if let Err(e) = self.storage.delete(unique_tx, key.as_bytes()).await {
-                // Best-effort rollback auf Error-Pfad. Bereits im Begriff Err zurückzugeben.
-                // Rollback-Fehler hier würde den primären Fehler maskieren.
-                // Verwaiste Tx wird von TxBuffer-Orphan-Reaper garbage-collected.
-                let _ = self.storage.rollback(unique_tx).await;
+                if let Err(rb_err) = self.storage.rollback(unique_tx).await {
+                    tracing::warn!(tx = ?unique_tx, error = %rb_err, "Storage rollback failed during drop_checkpoint delete");
+                }
                 return Err(e);
             }
             if let Err(e) = self.storage.commit(unique_tx).await {
-                // Best-effort rollback auf Error-Pfad. Bereits im Begriff Err zurückzugeben.
-                // Rollback-Fehler hier würde den primären Fehler maskieren.
-                // Verwaiste Tx wird von TxBuffer-Orphan-Reaper garbage-collected.
-                let _ = self.storage.rollback(unique_tx).await;
+                if let Err(rb_err) = self.storage.rollback(unique_tx).await {
+                    tracing::warn!(tx = ?unique_tx, error = %rb_err, "Storage rollback failed during drop_checkpoint commit");
+                }
                 return Err(e);
             }
 
@@ -348,17 +376,15 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
         let tx = self.next_tx()?;
         if let Err(e) = self.storage.put(tx, key.as_bytes(), &value).await {
-            // Best-effort rollback auf Error-Pfad. Bereits im Begriff Err zurückzugeben.
-            // Rollback-Fehler hier würde den primären Fehler maskieren.
-            // Verwaiste Tx wird von TxBuffer-Orphan-Reaper garbage-collected.
-            let _ = self.storage.rollback(tx).await;
+            if let Err(rb_err) = self.storage.rollback(tx).await {
+                tracing::warn!(tx = ?tx, error = %rb_err, "Storage rollback failed during save_checkpoint_internal put");
+            }
             return Err(e);
         }
         if let Err(e) = self.storage.commit(tx).await {
-            // Best-effort rollback auf Error-Pfad. Bereits im Begriff Err zurückzugeben.
-            // Rollback-Fehler hier würde den primären Fehler maskieren.
-            // Verwaiste Tx wird von TxBuffer-Orphan-Reaper garbage-collected.
-            let _ = self.storage.rollback(tx).await;
+            if let Err(rb_err) = self.storage.rollback(tx).await {
+                tracing::warn!(tx = ?tx, error = %rb_err, "Storage rollback failed during save_checkpoint_internal commit");
+            }
             return Err(e);
         }
 
@@ -440,12 +466,14 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     }
 
     pub async fn get_checkpoint(&self, name: &str) -> Result<Option<CheckpointMeta>> {
+        validate_identifier("Checkpoint name", name)?;
         self.get_checkpoint_internal(name).await
     }
 
     /// Restores the system to a specific checkpoint by name.
     /// This will rollback the underlying storage to the transaction ID of the checkpoint.
     pub async fn restore_checkpoint(&self, name: &str) -> Result<CheckpointMeta> {
+        validate_identifier("Checkpoint name", name)?;
         let _guard = self.write_lock.lock().await;
 
         let meta = self
@@ -457,7 +485,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         self.storage.rollback_to_tx(meta.tx_id).await?;
 
         // 2. Synchronize cache
-        let _ = self.list_checkpoints().await?;
+        self.list_checkpoints().await?;
 
         Ok(meta)
     }
@@ -531,7 +559,7 @@ impl<S: memfuse_core::StorageEngine> memfuse_core::traits::Checkpoint
 
     async fn restore(&self, state: &WorkflowState) -> Result<()> {
         self.storage.rollback_to_tx(state.tx).await?;
-        let _ = self.list_checkpoints().await?;
+        self.list_checkpoints().await?;
         Ok(())
     }
 }
@@ -936,5 +964,59 @@ mod tests {
         } else {
             panic!("Expected Internal error on overflow");
         }
+    }
+
+    #[tokio::test]
+    async fn test_input_validation_empty_and_oversized_names() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage, "test");
+
+        // Empty name
+        let res = store
+            .create_checkpoint("", "col1", 1, TxId::new(1), serde_json::json!({}))
+            .await;
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+
+        // Whitespace name
+        let res = store
+            .create_checkpoint("   ", "col1", 1, TxId::new(1), serde_json::json!({}))
+            .await;
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+
+        // Empty collection ID
+        let res = store
+            .create_checkpoint("cp1", "", 1, TxId::new(1), serde_json::json!({}))
+            .await;
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+
+        // Oversized name (> 256 chars)
+        let long_name = "a".repeat(257);
+        let res = store
+            .create_checkpoint(&long_name, "col1", 1, TxId::new(1), serde_json::json!({}))
+            .await;
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+
+        // Drop with empty name
+        let res = store.drop_checkpoint("").await;
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+
+        // Get with empty name
+        let res = store.get_checkpoint("   ").await;
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn test_manifest_validation_blank_component() {
+        let meta = CheckpointMeta {
+            name: "cp1".to_string(),
+            collection_id: "col1".to_string(),
+            seq_no: 1,
+            tx_id: TxId::new(1),
+            metadata: serde_json::json!({}),
+            created_at: 100,
+        };
+
+        let res = CheckpointManifest::new(meta, vec!["   ".to_string()]);
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
     }
 }

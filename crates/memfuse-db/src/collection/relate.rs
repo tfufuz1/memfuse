@@ -1,4 +1,4 @@
-use super::Collection;
+use super::{crud::validate_doc_id, Collection};
 use memfuse_core::{DocId, Result, StorageEngine, VectorIndex};
 
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
@@ -6,6 +6,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Creates a directional relationship between two documents in the collection.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
+        validate_doc_id(from)?;
+        validate_doc_id(to)?;
         let _guard = self.insert_lock.lock().await;
         let db_tx = self.begin_transaction()?;
 
@@ -22,7 +24,14 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let bytes = serde_json::to_vec(&val)?;
 
         if let Err(e) = self.storage.put(db_tx.tx_id, &key, &bytes).await {
-            let _ = db_tx.rollback().await;
+            let tx_id = db_tx.tx_id;
+            if let Err(rollback_err) = db_tx.rollback().await {
+                tracing::warn!(
+                    tx_id = %tx_id,
+                    error = %rollback_err,
+                    "Konnte Transaktion nach storage.put Fehler in relate() nicht zurückrollen"
+                );
+            }
             return Err(e);
         }
 

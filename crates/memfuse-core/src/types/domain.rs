@@ -92,16 +92,7 @@ impl DocId {
                 "Key cannot be empty".to_string(),
             ));
         }
-        let hash = blake3::hash(key.as_bytes());
-        let bytes = hash
-            .as_bytes()
-            .get(..8)
-            .ok_or_else(|| MemFuseError::Internal("Blake3 hash too short".to_string()))?;
-
-        let buf: [u8; 8] = bytes.try_into().map_err(|_| {
-            MemFuseError::Internal("Failed to convert hash slice to array".to_string())
-        })?;
-        Ok(Self(u64::from_le_bytes(buf)))
+        Ok(Self(hash_key_u64(key)))
     }
 }
 
@@ -164,6 +155,14 @@ impl From<u64> for EntityId {
     }
 }
 
+#[inline]
+fn hash_key_u64(s: &str) -> u64 {
+    let hash = blake3::hash(s.as_bytes());
+    let mut buf = [0u8; 8];
+    buf.copy_from_slice(&hash.as_bytes()[..8]);
+    u64::from_le_bytes(buf)
+}
+
 impl From<&str> for EntityId {
     /// Infallible conversion: parses as `u64` first, then falls back to BLAKE3 hash.
     /// For consistent error handling at API boundaries, prefer `EntityId::from_key`.
@@ -171,10 +170,7 @@ impl From<&str> for EntityId {
         if let Ok(val) = s.parse::<u64>() {
             Self(val)
         } else {
-            let hash = blake3::hash(s.as_bytes());
-            let mut buf = [0u8; 8];
-            buf.copy_from_slice(&hash.as_bytes()[..8]);
-            Self(u64::from_le_bytes(buf))
+            Self(hash_key_u64(s))
         }
     }
 }
