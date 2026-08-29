@@ -20,7 +20,6 @@ Layer 3:  memfuse-agent — Persistent agent workflow engine for MemFuse — che
           memfuse-py — Python bindings for MemFuse using PyO3 (deps: memfuse-core, memfuse-db)
           memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-mcp, memfuse-ollama, memfuse-store)
 Layer 4:  memfuse-mcp —  (deps: memfuse-agent, memfuse-core, memfuse-crypto, memfuse-db, memfuse-ollama)
-          memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-mcp, memfuse-ollama, memfuse-store)
           memfuse-tauri —  (deps: memfuse-core, memfuse-db, memfuse-graph, memfuse-ollama)
 ```
 
@@ -59,7 +58,7 @@ MemFuse implementiert eine gestaffelte, mehrstufige Retrieval- und Ingestion-Pip
 | **Graph-Persistenz** | ✅ Erfüllt | Persistierung im LSM-Tree unter den Präfixen `__graph:entity:` und `__graph:edge:`. |
 | **DAG Integrity** | ✅ Erfüllt | Unidirektionale Schichten-Abhängigkeiten von Layer 0 bis Layer 4. |
 | **Disk-I/O Isolation** | ✅ Erfüllt | tokio::fs für Metadaten/Lifecycle, std::fs::File ausschließlich innerhalb spawn_blocking für Block-Level Random-Access (ADR-012). |
-| **Snapshot Isolation** | 🟡 Teilweise | Für Storage (LSM) & Text (BM25) vollständig implementiert. Vektor & Graph-Suche operieren auf dem aktuellen In-Memory-Zustand (ADR-024). |
+| **Snapshot Isolation** | 🟢 Vollständig | Für Storage (LSM), Text (BM25) & Vektor (HNSW) vollständig implementiert. Graph-Suche operiert auf dem aktuellen In-Memory-Zustand (ADR-024). |
 
 ## Sicherheit & Privacy
 - **HKDF Key Derivation**: Kryptographischer Kontext pro Datei.

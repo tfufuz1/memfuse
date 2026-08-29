@@ -29,6 +29,7 @@ in `hybrid_search()` fusioniert — verifizierter Code-Zustand.
 Die technische Ist-Architektur, DAG-Topologie sowie Layer-Aufteilung der Workspace-Crates sind in [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) definiert und werden dort via `xtask sync-docs` automatisch generiert.
 
 ### System-Setup & Status
+- **Snapshot Isolation**: 🟢 Vollständig (Storage Engine via `scan_prefix_at`, Text Engine via BM25 `search_at`, Vektor Engine via HNSW `search_at` & `SequenceLog`).
 - **Embedding-Backend**: Ollama via `memfuse-ollama` ist primäres Backend (ADR-008). `memfuse-embed` (ONNX) ist optional verfügbar.
 - **Graph-Persistenz**: CSR-Graph wird über LSM-Store unter den Präfixen `__graph:entity:` und `__graph:edge:` vollständig persistiert.
 - **MCP-Server**: stdio JSON-RPC 2.0 Transport (ADR-010). Unterstützt Volltext-, Hybrid-Suche, Dokumenten-Retrieval und automatisches Embedding beim Einfügen über `memfuse-ollama`.
@@ -79,13 +80,13 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.
 | `memfuse-checkpoint` | 1 | 1.166 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 1.142 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | 1 | 4.421 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-index` | 1 | 7.276 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | 1 | 9.997 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-index` | 1 | 7.306 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-store` | 1 | 10.015 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 3.562 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-db` | 2 | 10.955 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 2.278 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-embed` | 3 | 1.068 | 🧊 Optional |  |
-| `memfuse-ollama` | 3 | 2.440 | 🟢 Clean |  |
+| `memfuse-embed` | 3 | 1.022 | 🧊 Optional |  |
+| `memfuse-ollama` | 3 | 2.369 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 964 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 510 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 2.093 | 🟢 Clean |  |
