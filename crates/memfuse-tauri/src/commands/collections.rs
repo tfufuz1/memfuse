@@ -50,12 +50,29 @@ pub async fn open_database(
     path: String,
 ) -> Result<(), MemFuseErrorDto> {
     let path_buf = PathBuf::from(&path);
-    let db = MemFuse::open(&path_buf)
+    // Erstelle Verzeichnis falls es noch nicht existiert, um canonicalize zu ermöglichen
+    if !path_buf.exists() {
+        if let Err(e) = std::fs::create_dir_all(&path_buf) {
+            return Err(MemFuseErrorDto::new(
+                "InvalidInput",
+                format!("Failed to create database directory {:?}: {e}", path_buf),
+            ));
+        }
+    }
+
+    let canonical_path = std::fs::canonicalize(&path_buf).map_err(|e| {
+        MemFuseErrorDto::new(
+            "InvalidInput",
+            format!("Invalid database path ({path}): {e}"),
+        )
+    })?;
+
+    let db = MemFuse::open(&canonical_path)
         .await
         .map_err(|e| MemFuseErrorDto::from(&e))?;
 
     *state.db.write() = Some(std::sync::Arc::new(db));
-    *state.db_path.write() = Some(path_buf);
+    *state.db_path.write() = Some(canonical_path);
     Ok(())
 }
 
