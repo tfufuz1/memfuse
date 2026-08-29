@@ -170,11 +170,8 @@ mod tests {
         col.insert("d2", &vec, None).await.unwrap();
 
         let cancel_token = tokio_util::sync::CancellationToken::new();
-        let handle = start_expiry_reaper(
-            col.clone(),
-            Duration::from_millis(10),
-            cancel_token.clone(),
-        );
+        let handle =
+            start_expiry_reaper(col.clone(), Duration::from_millis(10), cancel_token.clone());
 
         let mut cleaned = false;
         for _ in 0..50 {
@@ -200,7 +197,7 @@ mod tests {
         let tx1 = TxId::new(1);
 
         buffer.begin(tx1);
-        buffer.stage(
+        let _ = buffer.stage(
             tx1,
             IndexOp::Insert {
                 doc_id: DocId::new(1),

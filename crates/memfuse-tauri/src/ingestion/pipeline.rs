@@ -223,7 +223,7 @@ impl IngestionPipeline {
 
                         if !extracted_entities.is_empty() {
                             let graph = collection.graph_index();
-                            let tx = collection.allocate_tx();
+                            let tx = collection.allocate_tx()?;
 
                             for entity_id in &extracted_entities {
                                 let entity =

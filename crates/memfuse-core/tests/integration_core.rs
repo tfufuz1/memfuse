@@ -16,7 +16,7 @@ fn test_integration_tx_buffer_and_snapshots() {
     // Transaction 1
     let tx1 = TxId::new(100);
     buffer.begin(tx1);
-    buffer.stage(
+    let _ = buffer.stage(
         tx1,
         IndexOp::Insert {
             doc_id: DocId::new(1),
@@ -30,7 +30,7 @@ fn test_integration_tx_buffer_and_snapshots() {
     // Transaction 2
     let tx2 = TxId::new(102);
     buffer.begin(tx2);
-    buffer.stage(
+    let _ = buffer.stage(
         tx2,
         IndexOp::Insert {
             doc_id: DocId::new(2),
