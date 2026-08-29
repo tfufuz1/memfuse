@@ -111,7 +111,7 @@ pub async fn ingest_folder(
                 Err(e) => IngestReport {
                     file_path: entry.path().display().to_string(),
                     chunks_created: 0,
-                    errors: vec![MemFuseErrorDto::from(&e).to_string()],
+                    errors: vec![e.to_string()],
                 },
             };
             use tauri::Emitter;
