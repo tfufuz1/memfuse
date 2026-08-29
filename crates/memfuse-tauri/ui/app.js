@@ -218,8 +218,22 @@ async function runImport(importFn, filePaths, isFolder = false) {
     }
 }
 
-// ── Ollama-Modelle laden ─────────────────────────────────────────────────
+// ── Ollama Status Listener & Modell-Verwaltung ──────────────────────────
+listen('ollama-status', (event) => {
+    const statusEl = document.getElementById('ollama-status');
+    if (!statusEl) return;
+    const msg = event.payload;
+    if (msg && msg.startsWith('Ollama ready')) {
+        statusEl.textContent = `🟢 ${msg}`;
+        statusEl.style.background = '#1f4e3d';
+    } else {
+        statusEl.textContent = `🔴 ${msg || 'Ollama nicht erreichbar'} — Bitte Ollama starten`;
+        statusEl.style.background = '#5c1d1d';
+    }
+});
+
 async function refreshModels() {
+    const statusEl = document.getElementById('ollama-status');
     try {
         const models = await invoke('list_ollama_models');
         modelSelect.textContent = '';
@@ -227,6 +241,10 @@ async function refreshModels() {
             const opt = document.createElement('option');
             opt.textContent = 'Kein Ollama-Modell gefunden';
             modelSelect.appendChild(opt);
+            if (statusEl) {
+                statusEl.textContent = '⚠️ Ollama bereit: Keine Modelle installiert';
+                statusEl.style.background = '#5c4a1d';
+            }
             return;
         }
         for (const m of models) {
@@ -235,11 +253,19 @@ async function refreshModels() {
             opt.textContent = m;
             modelSelect.appendChild(opt);
         }
+        if (statusEl) {
+            statusEl.textContent = `🟢 Ollama ready: ${models.length} Modelle`;
+            statusEl.style.background = '#1f4e3d';
+        }
     } catch (e) {
         modelSelect.textContent = '';
         const opt = document.createElement('option');
         opt.textContent = '⚠️ Ollama nicht erreichbar';
         modelSelect.appendChild(opt);
+        if (statusEl) {
+            statusEl.textContent = '🔴 Ollama nicht erreichbar — Bitte Ollama starten';
+            statusEl.style.background = '#5c1d1d';
+        }
     }
 }
 

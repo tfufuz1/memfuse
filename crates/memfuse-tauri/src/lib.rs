@@ -9,7 +9,7 @@ use state::AppState;
 pub fn run() {
     tracing_subscriber::fmt::init();
 
-    tauri::Builder::default()
+    let res = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(AppState::new())
@@ -50,6 +50,10 @@ pub fn run() {
             commands::run_bulk_regex_transform,
             commands::validate_regex_pattern,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running memfuse-brain application"); // expect
+        .run(tauri::generate_context!());
+
+    if let Err(e) = res {
+        tracing::error!(error = %e, "Fatal error while running memfuse-brain application");
+        eprintln!("[CRITICAL] MemFuse Brain Application Error: {e}");
+    }
 }
