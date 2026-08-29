@@ -2001,7 +2001,10 @@ mod tests {
         storage.commit(tx2).await.unwrap();
 
         // Scan at seq_after_tx1: must ONLY see doc1, NOT doc2
-        let results = storage.scan_prefix_at(b"col:", seq_after_tx1).await.unwrap();
+        let results = storage
+            .scan_prefix_at(b"col:", seq_after_tx1)
+            .await
+            .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, b"col:doc1");
     }

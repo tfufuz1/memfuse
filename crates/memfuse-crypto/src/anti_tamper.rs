@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), forbid(unsafe_code))]
+
 use zeroize::{Zeroize, Zeroizing};
 
 /// Defines a cryptographic key that is explicitly zeroed out when dropped

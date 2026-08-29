@@ -24,6 +24,11 @@ pub struct IngestionPipeline {
 /// Extrahiert reinen Text aus übergebenen Datei-Bytes basierend auf der Dateiendung.
 pub fn extract_text_from_bytes(bytes: &[u8], extension: &str) -> Result<String> {
     if bytes.len() as u64 > MAX_INGEST_FILE_SIZE_BYTES {
+        tracing::warn!(
+            file_size_bytes = bytes.len(),
+            max_size_bytes = MAX_INGEST_FILE_SIZE_BYTES,
+            "File size exceeds maximum allowed size during byte extraction"
+        );
         return Err(MemFuseError::InvalidInput(
             "File size exceeds maximum allowed size of 100 MB".to_string(),
         ));
@@ -93,6 +98,12 @@ impl IngestionPipeline {
         })?;
 
         if metadata.len() > MAX_INGEST_FILE_SIZE_BYTES {
+            tracing::warn!(
+                file_path = %path.display(),
+                file_size_bytes = metadata.len(),
+                max_size_bytes = MAX_INGEST_FILE_SIZE_BYTES,
+                "File size exceeds maximum allowed size of 100 MB"
+            );
             return Err(MemFuseError::InvalidInput(format!(
                 "File size ({:.2} MB) exceeds maximum allowed size of 100 MB",
                 metadata.len() as f64 / (1024.0 * 1024.0)

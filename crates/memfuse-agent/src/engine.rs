@@ -87,7 +87,10 @@ impl OrchestratorEngine {
 
                             tool.execute(ctx, input).await
                         } else {
-                            Err(MemFuseError::Internal(format!("Tool {} not registered", handler_name)))
+                            Err(MemFuseError::Internal(format!(
+                                "Tool {} not registered",
+                                handler_name
+                            )))
                         }
                     } else if node.node_type == NodeType::Start {
                         // Pass-through result for start nodes without handlers
@@ -132,7 +135,8 @@ impl OrchestratorEngine {
                     }
 
                     // 6. Resolve next edge
-                    let next_node = match self.resolve_next_node(graph, &ctx.current_node, &result) {
+                    let next_node = match self.resolve_next_node(graph, &ctx.current_node, &result)
+                    {
                         Ok(next) => next,
                         Err(err) => {
                             self.audit_log_failure(ctx, &err.to_string()).await?;
@@ -196,11 +200,9 @@ impl OrchestratorEngine {
         {
             ctx.step_count = step;
         }
-        if let Some(memory) = checkpoint
-            .metadata
-            .get("memory")
-            .and_then(|v| serde_json::from_value::<HashMap<String, serde_json::Value>>(v.clone()).ok())
-        {
+        if let Some(memory) = checkpoint.metadata.get("memory").and_then(|v| {
+            serde_json::from_value::<HashMap<String, serde_json::Value>>(v.clone()).ok()
+        }) {
             ctx.memory = memory;
         }
 

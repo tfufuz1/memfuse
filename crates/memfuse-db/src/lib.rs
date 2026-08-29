@@ -52,10 +52,10 @@ use std::sync::Arc;
 
 pub mod chunker;
 pub mod collection;
-pub mod compaction;
 pub mod context;
+pub mod context_compaction;
 
-pub use compaction::{CompactedContext, CompactionStrategy, ContextCompactor, StatusToken};
+pub use context_compaction::{CompactedContext, CompactionStrategy, ContextCompactor, StatusToken};
 
 #[cfg(feature = "sandbox")]
 #[async_trait::async_trait]
@@ -775,6 +775,18 @@ impl MemFuse {
         self.default_col()
             .await?
             .hybrid_search_with_strategy(text, vector, k, anchor_entities, weights, strategy, None)
+            .await
+    }
+
+    /// Performs hybrid search using a `HybridQuery` configuration object.
+    #[tracing::instrument(level = "trace", skip(self, query))]
+    pub async fn hybrid_search_with_query(
+        &self,
+        query: &memfuse_core::HybridQuery,
+    ) -> Result<Vec<SearchResult>> {
+        self.default_col()
+            .await?
+            .hybrid_search_with_query(query)
             .await
     }
 
