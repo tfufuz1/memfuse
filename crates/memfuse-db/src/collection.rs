@@ -21,6 +21,7 @@ use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;
 use memfuse_text::inverted::InvertedIndex;
 use memfuse_text::Language;
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -39,6 +40,12 @@ pub(crate) struct StoredDocument {
 pub(crate) struct StoredDocumentMeta {
     pub id: String,
     pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct StoredDocumentMetaRef<'a> {
+    pub id: &'a str,
+    pub metadata: Option<&'a serde_json::Value>,
 }
 
 impl From<&StoredDocument> for StoredDocumentMeta {
@@ -105,8 +112,8 @@ pub fn ensure_importance_metadata(
         }
     };
 
-    if let Some(imp_val) = meta_obj.get("importance").cloned() {
-        if serde_json::from_value::<memfuse_core::MemoryImportance>(imp_val.clone()).is_ok() {
+    if let Some(imp_val) = meta_obj.get("importance") {
+        if memfuse_core::MemoryImportance::deserialize(imp_val).is_ok() {
             return;
         } else if let Some(raw_f64) = imp_val.as_f64() {
             let imp = memfuse_core::MemoryImportance::new(
@@ -141,7 +148,7 @@ pub fn extract_effective_importance(metadata: &Option<serde_json::Value>, now_tx
         return 1.0;
     };
 
-    if let Ok(imp) = serde_json::from_value::<memfuse_core::MemoryImportance>(imp_val.clone()) {
+    if let Ok(imp) = memfuse_core::MemoryImportance::deserialize(imp_val) {
         imp.effective_score(now_tx)
     } else if let Some(raw_f64) = imp_val.as_f64() {
         memfuse_core::ImportanceScore::new(raw_f64 as f32).value()
@@ -183,8 +190,8 @@ fn extract_text(metadata: &Option<serde_json::Value>) -> Option<String> {
 /// Each collection provides its own vector index and inverted text index,
 /// while sharing the underlying LSM-Tree storage with other collections.
 pub struct Collection<S: StorageEngine = LsmStorage, V: VectorIndex = HnswIndex> {
-    pub(crate) name: String,
-    pub(crate) prefix: Vec<u8>,
+    pub(crate) name: Arc<str>,
+    pub(crate) prefix: Bytes,
     pub(crate) index: Arc<V>,
     pub(crate) text_index: InvertedIndex<S>,
     pub(crate) graph_index: Arc<CsrGraph>,
@@ -254,16 +261,17 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         dimension: usize,
         language: Language,
     ) -> Self {
-        let prefix = if name == "default" {
-            b"".to_vec()
+        let name_arc: Arc<str> = name.into();
+        let prefix = if name_arc.as_ref() == "default" {
+            Bytes::new()
         } else {
-            format!("__col:{}:\x00", name).into_bytes()
+            Bytes::from(format!("__col:{}:\x00", name_arc))
         };
 
-        let text_index = InvertedIndex::new_with_language(storage.clone(), &name, language);
+        let text_index = InvertedIndex::new_with_language(storage.clone(), &name_arc, language);
 
         Self {
-            name,
+            name: name_arc,
             prefix,
             index,
             text_index,
@@ -326,7 +334,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Internal helper to generate namespaced keys.
     /// key_type: 0 = user key, 1 = docid mapping, 2 = relationship, 3 = tx intent, 4 = system/community
     pub(crate) fn namespaced_key(&self, key: &[u8], key_type: u8) -> Vec<u8> {
-        if self.name == "default" {
+        if self.name.as_ref() == "default" {
             match key_type {
                 0 => key.to_vec(),
                 1 => {
@@ -342,7 +350,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     k
                 }
                 3 => {
-                    let mut k = b"__tx_intent:".to_vec();
+                    let mut k = Vec::with_capacity(12 + key.len());
+                    k.extend_from_slice(b"__tx_intent:");
                     k.extend_from_slice(key);
                     k
                 }
@@ -479,7 +488,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
         for (namespaced_key, value) in docs {
             // Only process user data (key_type 0)
-            if self.name != "default" {
+            if self.name.as_ref() != "default" {
                 if namespaced_key.get(self.prefix.len()) != Some(&0) {
                     continue;
                 }
@@ -766,9 +775,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let stored = StoredDocument {
             id: id.to_string(),
             embedding: embedding.to_vec(),
-            metadata: metadata.clone(),
+            metadata,
         };
-        let meta_only = StoredDocumentMeta::from(&stored);
 
         // user_key (key_type=0): Vollständiges Dokument (für get() und repair())
         // Document serialization is unencrypted before being sent to storage.
@@ -779,6 +787,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
         // doc_key (key_type=1): NUR Metadaten (für Hydration nach Vektorsuche)
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+        let meta_only = StoredDocumentMetaRef {
+            id: &stored.id,
+            metadata: stored.metadata.as_ref(),
+        };
         let meta_data = serde_json::to_vec(&meta_only)?;
         self.storage.put(tx, &doc_key, &meta_data).await?;
 
@@ -788,7 +800,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         self.index.insert(tx, doc_id, embedding).await?;
 
         // Stage text if present
-        if let Some(text) = extract_text(&metadata) {
+        if let Some(text) = text_opt {
             db_tx.stage_text_insert(doc_id, text);
         }
 
@@ -976,12 +988,15 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let stored = StoredDocument {
             id: id.to_string(),
             embedding: embedding.to_vec(),
-            metadata: metadata.clone(),
+            metadata,
         };
-        let meta_only = StoredDocumentMeta::from(&stored);
         let data = serde_json::to_vec(&stored)?;
 
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+        let meta_only = StoredDocumentMetaRef {
+            id: &stored.id,
+            metadata: stored.metadata.as_ref(),
+        };
         let meta_data = serde_json::to_vec(&meta_only)?;
 
         self.storage.put(tx, &user_key, &data).await?;
@@ -990,7 +1005,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         db_tx.record_keys(user_key, doc_key, doc_id);
 
         // Stage re-insertion into text index if new text present
-        if let Some(new_text) = extract_text(&metadata) {
+        if let Some(new_text) = text_opt {
             db_tx.stage_text_insert(doc_id, new_text);
         }
 
@@ -1129,7 +1144,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             let key_str = String::from_utf8_lossy(&k).to_string();
             // We should ideally strip the prefix to return the user-facing key
             // but for simplicity and compatibility with existing tests we keep it as is or strip carefully
-            let user_key = if self.name == "default" {
+            let user_key = if self.name.as_ref() == "default" {
                 key_str
             } else {
                 // Strip the internal prefix: self.prefix (variable) + 1 byte (key_type)
@@ -1298,13 +1313,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         filter: &FilterExpr,
         seq: u64,
     ) -> Result<std::collections::HashSet<DocId>> {
-        let prefix = if self.name == "default" {
-            b"__docid:".to_vec()
-        } else {
-            let mut p = self.prefix.clone();
-            p.push(1); // docid mapping type
-            p
-        };
+        let prefix = self.namespaced_key(&[], 1);
 
         let entries = self.storage.scan_prefix_at(&prefix, seq).await?;
         let mut matched = std::collections::HashSet::new();
@@ -1860,12 +1869,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             Bound::Included(b) => Bound::Included(self.namespaced_key(b, 0)),
             Bound::Excluded(b) => Bound::Excluded(self.namespaced_key(b, 0)),
             Bound::Unbounded => {
-                if self.name == "default" {
+                if self.name.as_ref() == "default" {
                     Bound::Unbounded
                 } else {
-                    let mut b = self.prefix.clone();
-                    b.push(0);
-                    Bound::Included(b)
+                    Bound::Included(self.namespaced_key(&[], 0))
                 }
             }
         };
@@ -1874,12 +1881,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             Bound::Included(b) => Bound::Included(self.namespaced_key(b, 0)),
             Bound::Excluded(b) => Bound::Excluded(self.namespaced_key(b, 0)),
             Bound::Unbounded => {
-                if self.name == "default" {
+                if self.name.as_ref() == "default" {
                     Bound::Unbounded
                 } else {
-                    let mut b = self.prefix.clone();
-                    b.push(1);
-                    Bound::Excluded(b)
+                    Bound::Excluded(self.namespaced_key(&[], 1))
                 }
             }
         };
@@ -1899,7 +1904,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let mut results = Vec::new();
         for (k, v) in kvs {
             let key_str = String::from_utf8_lossy(&k).to_string();
-            let user_key = if self.name == "default" {
+            let user_key = if self.name.as_ref() == "default" {
                 key_str
             } else {
                 let prefix_len = self.prefix.len() + 1;
@@ -1927,18 +1932,12 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     pub async fn load_index(&self) -> Result<()> {
         // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-002 — load_index now scans user_keys (key_type=0) (TS:2026-08-25T00:00:00Z)
         // because doc_keys (key_type=1) no longer contain embeddings (ID: AGT-DB-002).
-        let scan_prefix = if self.name == "default" {
-            b"".to_vec()
-        } else {
-            let mut p = self.prefix.clone();
-            p.push(0); // key_type=0
-            p
-        };
+        let scan_prefix = self.namespaced_key(&[], 0);
 
         let entries = self.storage.scan_prefix(&scan_prefix).await?;
         let tx = self.next_tx()?;
         for (k, v) in entries {
-            if self.name == "default" && k.starts_with(b"__") {
+            if self.name.as_ref() == "default" && k.starts_with(b"__") {
                 continue;
             }
 
@@ -1959,13 +1958,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Safe to call multiple times (idempotent).
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn migrate_doc_keys_v1(&self) -> Result<u64> {
-        let prefix = if self.name == "default" {
-            b"__docid:".to_vec()
-        } else {
-            let mut p = self.prefix.clone();
-            p.push(1); // docid mapping type
-            p
-        };
+        let prefix = self.namespaced_key(&[], 1);
 
         let entries = self.storage.scan_prefix(&prefix).await?;
         let mut migrated_count = 0;
@@ -2011,7 +2004,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 break;
             }
 
-            if self.name == "default" && id.starts_with("__") {
+            if self.name.as_ref() == "default" && id.starts_with("__") {
                 continue;
             }
 
@@ -2069,7 +2062,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let mut expired_ids = Vec::new();
 
         for (id, val) in docs {
-            if self.name == "default" && id.starts_with("__") {
+            if self.name.as_ref() == "default" && id.starts_with("__") {
                 continue;
             }
 
@@ -2287,7 +2280,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn drop_collection(&self) -> Result<()> {
         let _guard = self.insert_lock.lock().await;
-        let prefix = if self.name == "default" {
+        let prefix = if self.name.as_ref() == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(
                 "Cannot drop default collection",
             ));

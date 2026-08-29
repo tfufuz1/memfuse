@@ -7,6 +7,7 @@ rust-version.workspace = true
 description = "MemFuse — Embedded hybrid-search for AI agents"
 
 [dependencies]
+bytes = { workspace = true }
 memfuse-core = { workspace = true }
 memfuse-store = { workspace = true }
 memfuse-index = { workspace = true }
