@@ -33,7 +33,7 @@ Ergebnis: **1 offene Tags**
 | `memfuse-py` | 3 | 963 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 510 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 2.095 | 🟢 Clean |  |
-| `memfuse-tauri` | 4 | 2.495 | 🟢 Clean |  |
+| `memfuse-tauri` | 4 | 2.609 | 🟢 Clean |  |
 
 
 ## DAG-Topologie
