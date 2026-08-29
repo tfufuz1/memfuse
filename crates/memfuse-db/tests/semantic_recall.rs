@@ -19,26 +19,220 @@ struct ClusterTopic {
 
 fn get_cluster_topics() -> Vec<ClusterTopic> {
     vec![
-        ClusterTopic { id: 0, name: "Database Storage LSM", keywords: vec!["sstable", "memtable", "wal", "compaction", "write-ahead-log"] },
-        ClusterTopic { id: 1, name: "Vector Index HNSW", keywords: vec!["hnsw", "nearest-neighbor", "graph-index", "vector-search", "ef-search"] },
-        ClusterTopic { id: 2, name: "BM25 Text Search", keywords: vec!["bm25", "inverted-index", "tf-idf", "tokenizer", "term-frequency"] },
-        ClusterTopic { id: 3, name: "Graph CSR PPR", keywords: vec!["csr-graph", "pagerank", "personalized-pagerank", "entity-relation", "graph-traversal"] },
-        ClusterTopic { id: 4, name: "Agent Checkpoints", keywords: vec!["agent-state", "checkpoint", "transaction-rollback", "state-snapshot", "persisted-workflow"] },
-        ClusterTopic { id: 5, name: "Quantization SQ8", keywords: vec!["quantization", "sq8", "scalar-quantizer", "compression", "vector-codebook"] },
-        ClusterTopic { id: 6, name: "SIMD Acceleration", keywords: vec!["simd", "avx2", "neon", "distance-metric", "dot-product"] },
-        ClusterTopic { id: 7, name: "Ollama Embeddings", keywords: vec!["ollama", "embedding-model", "nomic-embed", "dense-vectors", "semantic-representation"] },
-        ClusterTopic { id: 8, name: "Python Bindings", keywords: vec!["pyo3", "python-ffi", "search-result-doc", "maturin", "gil-safety"] },
-        ClusterTopic { id: 9, name: "Tauri Desktop IPC", keywords: vec!["tauri", "error-dto", "ipc-command", "desktop-gui", "front-end-bridge"] },
-        ClusterTopic { id: 10, name: "Security Encryption", keywords: vec!["blake3", "encryption-at-rest", "aes-gcm", "key-derivation", "crypto-nonce"] },
-        ClusterTopic { id: 11, name: "ACID Concurrency", keywords: vec!["isolation-level", "2pc", "atomicity", "read-committed", "mvcc-snapshot"] },
-        ClusterTopic { id: 12, name: "Context Compaction", keywords: vec!["context-window", "summarization", "llm-compactor", "token-budget", "provenance"] },
-        ClusterTopic { id: 13, name: "FastAPI MCP Protocol", keywords: vec!["mcp-server", "model-context-protocol", "json-rpc", "tool-call", "agent-hub"] },
-        ClusterTopic { id: 14, name: "DiskANN Vamana Graph", keywords: vec!["diskann", "vamana", "disk-backed-index", "beam-search", "sector-aligned"] },
-        ClusterTopic { id: 15, name: "Distributed Raft Consensus", keywords: vec!["raft", "consensus", "log-replication", "leader-election", "quorum"] },
-        ClusterTopic { id: 16, name: "Onnx Model Runtime", keywords: vec!["onnxruntime", "local-embeddings", "tensor-computation", "batch-inference", "model-weights"] },
-        ClusterTopic { id: 17, name: "Garbage Collection Reaper", keywords: vec!["ttl-expiration", "reaper", "tombstone-cleanup", "vacuum", "expired-keys"] },
-        ClusterTopic { id: 18, name: "Hybrid Signal Fusion", keywords: vec!["rrf", "reciprocal-rank-fusion", "signal-weight", "score-normalization", "fusion-weight"] },
-        ClusterTopic { id: 19, name: "Performance Criterion Bench", keywords: vec!["criterion", "percentile-latency", "throughput", "microbenchmark", "performance-regression"] },
+        ClusterTopic {
+            id: 0,
+            name: "Database Storage LSM",
+            keywords: vec![
+                "sstable",
+                "memtable",
+                "wal",
+                "compaction",
+                "write-ahead-log",
+            ],
+        },
+        ClusterTopic {
+            id: 1,
+            name: "Vector Index HNSW",
+            keywords: vec![
+                "hnsw",
+                "nearest-neighbor",
+                "graph-index",
+                "vector-search",
+                "ef-search",
+            ],
+        },
+        ClusterTopic {
+            id: 2,
+            name: "BM25 Text Search",
+            keywords: vec![
+                "bm25",
+                "inverted-index",
+                "tf-idf",
+                "tokenizer",
+                "term-frequency",
+            ],
+        },
+        ClusterTopic {
+            id: 3,
+            name: "Graph CSR PPR",
+            keywords: vec![
+                "csr-graph",
+                "pagerank",
+                "personalized-pagerank",
+                "entity-relation",
+                "graph-traversal",
+            ],
+        },
+        ClusterTopic {
+            id: 4,
+            name: "Agent Checkpoints",
+            keywords: vec![
+                "agent-state",
+                "checkpoint",
+                "transaction-rollback",
+                "state-snapshot",
+                "persisted-workflow",
+            ],
+        },
+        ClusterTopic {
+            id: 5,
+            name: "Quantization SQ8",
+            keywords: vec![
+                "quantization",
+                "sq8",
+                "scalar-quantizer",
+                "compression",
+                "vector-codebook",
+            ],
+        },
+        ClusterTopic {
+            id: 6,
+            name: "SIMD Acceleration",
+            keywords: vec!["simd", "avx2", "neon", "distance-metric", "dot-product"],
+        },
+        ClusterTopic {
+            id: 7,
+            name: "Ollama Embeddings",
+            keywords: vec![
+                "ollama",
+                "embedding-model",
+                "nomic-embed",
+                "dense-vectors",
+                "semantic-representation",
+            ],
+        },
+        ClusterTopic {
+            id: 8,
+            name: "Python Bindings",
+            keywords: vec![
+                "pyo3",
+                "python-ffi",
+                "search-result-doc",
+                "maturin",
+                "gil-safety",
+            ],
+        },
+        ClusterTopic {
+            id: 9,
+            name: "Tauri Desktop IPC",
+            keywords: vec![
+                "tauri",
+                "error-dto",
+                "ipc-command",
+                "desktop-gui",
+                "front-end-bridge",
+            ],
+        },
+        ClusterTopic {
+            id: 10,
+            name: "Security Encryption",
+            keywords: vec![
+                "blake3",
+                "encryption-at-rest",
+                "aes-gcm",
+                "key-derivation",
+                "crypto-nonce",
+            ],
+        },
+        ClusterTopic {
+            id: 11,
+            name: "ACID Concurrency",
+            keywords: vec![
+                "isolation-level",
+                "2pc",
+                "atomicity",
+                "read-committed",
+                "mvcc-snapshot",
+            ],
+        },
+        ClusterTopic {
+            id: 12,
+            name: "Context Compaction",
+            keywords: vec![
+                "context-window",
+                "summarization",
+                "llm-compactor",
+                "token-budget",
+                "provenance",
+            ],
+        },
+        ClusterTopic {
+            id: 13,
+            name: "FastAPI MCP Protocol",
+            keywords: vec![
+                "mcp-server",
+                "model-context-protocol",
+                "json-rpc",
+                "tool-call",
+                "agent-hub",
+            ],
+        },
+        ClusterTopic {
+            id: 14,
+            name: "DiskANN Vamana Graph",
+            keywords: vec![
+                "diskann",
+                "vamana",
+                "disk-backed-index",
+                "beam-search",
+                "sector-aligned",
+            ],
+        },
+        ClusterTopic {
+            id: 15,
+            name: "Distributed Raft Consensus",
+            keywords: vec![
+                "raft",
+                "consensus",
+                "log-replication",
+                "leader-election",
+                "quorum",
+            ],
+        },
+        ClusterTopic {
+            id: 16,
+            name: "Onnx Model Runtime",
+            keywords: vec![
+                "onnxruntime",
+                "local-embeddings",
+                "tensor-computation",
+                "batch-inference",
+                "model-weights",
+            ],
+        },
+        ClusterTopic {
+            id: 17,
+            name: "Garbage Collection Reaper",
+            keywords: vec![
+                "ttl-expiration",
+                "reaper",
+                "tombstone-cleanup",
+                "vacuum",
+                "expired-keys",
+            ],
+        },
+        ClusterTopic {
+            id: 18,
+            name: "Hybrid Signal Fusion",
+            keywords: vec![
+                "rrf",
+                "reciprocal-rank-fusion",
+                "signal-weight",
+                "score-normalization",
+                "fusion-weight",
+            ],
+        },
+        ClusterTopic {
+            id: 19,
+            name: "Performance Criterion Bench",
+            keywords: vec![
+                "criterion",
+                "percentile-latency",
+                "throughput",
+                "microbenchmark",
+                "performance-regression",
+            ],
+        },
     ]
 }
 
@@ -144,11 +338,8 @@ async fn test_semantic_recall_evaluation() {
             total_queries += 1;
 
             let evaluate_recall_at_k = |k: usize| -> f64 {
-                let retrieved_at_k: HashSet<String> = results
-                    .iter()
-                    .take(k)
-                    .map(|r| r.id.clone())
-                    .collect();
+                let retrieved_at_k: HashSet<String> =
+                    results.iter().take(k).map(|r| r.id.clone()).collect();
                 let relevant_and_retrieved = retrieved_at_k.intersection(ground_truth).count();
                 // Recall@k = (relevant documents retrieved in top k) / min(k, total relevant documents)
                 let max_possible = k.min(ground_truth.len());

@@ -404,7 +404,10 @@ mod tests {
 
         for i in 1..=10 {
             graph
-                .add_entity(tx, Entity::new(EntityId::new(i), format!("Node{i}"), "Node"))
+                .add_entity(
+                    tx,
+                    Entity::new(EntityId::new(i), format!("Node{i}"), "Node"),
+                )
                 .await
                 .unwrap();
         }
@@ -428,7 +431,11 @@ mod tests {
 
         let assignments = detect_communities(&graph, &config).await.unwrap();
 
-        assert_eq!(assignments.len(), 10, "Best-effort assignments must be returned");
+        assert_eq!(
+            assignments.len(),
+            10,
+            "Best-effort assignments must be returned"
+        );
 
         let captured = logs.lock().unwrap(); // unwrap allowed
         let warning_found = captured.iter().any(|msg| {

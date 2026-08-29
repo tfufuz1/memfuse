@@ -3,7 +3,16 @@
 //! Implementiert [`memfuse_core::GraphIndex`] via Compressed Sparse Row (CSR)
 //! Datenstruktur für cache-effizienten Graph-Traversal.
 
-// INVARIANT: CSR-Graph for 4-Signal Fusion
+// FILE-CONTEXT
+// STAND: 2026-08-29T05:41:20Z (SESSION: f7999509)
+// ZWECK: CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion)
+// INVARIANTEN: Graph-Zustand wird in LSM-Store persistiert unter Präfixen
+//              `__graph:entity:` und `__graph:edge:`. Änderungen müssen
+//              BEIDE Strukturen konsistent halten (In-Memory CSR + LSM).
+// NICHT-OFFENSICHTLICH: KEINE petgraph-Abhängigkeit (Pure-Rust CSR, ADR-004).
+//                       `relate()` MUSS sowohl LSM-Write als auch graph_index.add_edge()
+//                       aufrufen — nur eines zu tun bricht Graph-Traversal (crates/memfuse-db/AGENTS.md).
+// SIEHE AUCH: DECISIONS.md ADR-004, crates/memfuse-db/AGENTS.md §relate()
 
 use async_trait::async_trait;
 use memfuse_core::{
@@ -800,7 +809,8 @@ impl GraphIndex for CsrGraph {
         max_hops: usize,
         seq_no: u64,
     ) -> Result<Vec<(EntityId, f32)>> {
-        self.traverse_at_time(start_node, max_hops, TxId::new(seq_no)).await
+        self.traverse_at_time(start_node, max_hops, TxId::new(seq_no))
+            .await
     }
 
     async fn traverse_at_time(
@@ -2024,22 +2034,40 @@ mod tests {
 
         // Tx 1: Add nodes 1, 2, 3 and edge 1->2
         let tx1 = TxId::new(1);
-        graph.add_entity(tx1, Entity::new(id1, "N1", "T")).await.unwrap();
-        graph.add_entity(tx1, Entity::new(id2, "N2", "T")).await.unwrap();
-        graph.add_entity(tx1, Entity::new(id3, "N3", "T")).await.unwrap();
-        graph.add_edge(tx1, Edge::new(id1, id2, "rel1")).await.unwrap();
+        graph
+            .add_entity(tx1, Entity::new(id1, "N1", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx1, Entity::new(id2, "N2", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx1, Entity::new(id3, "N3", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx1, Edge::new(id1, id2, "rel1"))
+            .await
+            .unwrap();
         graph.commit(tx1).await.unwrap();
 
         // Tx 2: Add edge 2->3
         let tx2 = TxId::new(2);
-        graph.add_edge(tx2, Edge::new(id2, id3, "rel2")).await.unwrap();
+        graph
+            .add_edge(tx2, Edge::new(id2, id3, "rel2"))
+            .await
+            .unwrap();
         graph.commit(tx2).await.unwrap();
 
         // traverse_at seq 1: 1->2 visible, but edge 2->3 (tx2) NOT visible
         let res_seq1 = graph.traverse_at(id1, 2, 1).await.unwrap();
         let ids_seq1: Vec<_> = res_seq1.iter().map(|(id, _)| id.inner()).collect();
         assert!(ids_seq1.contains(&2), "seq 1 traverse must include node 2");
-        assert!(!ids_seq1.contains(&3), "seq 1 traverse must NOT include node 3");
+        assert!(
+            !ids_seq1.contains(&3),
+            "seq 1 traverse must NOT include node 3"
+        );
 
         // traverse_at seq 2: both 1->2 and 2->3 visible
         let res_seq2 = graph.traverse_at(id1, 2, 2).await.unwrap();

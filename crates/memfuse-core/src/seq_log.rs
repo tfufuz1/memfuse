@@ -51,7 +51,11 @@ impl SequenceLog {
 
     /// Records a delete operation at the given sequence number `seq`.
     pub fn record_delete(&mut self, doc_id: DocId, seq: u64) {
-        if let Some(entry) = self.entries.iter_mut().rfind(|e| e.doc_id == doc_id && e.delete_seq.is_none()) {
+        if let Some(entry) = self
+            .entries
+            .iter_mut()
+            .rfind(|e| e.doc_id == doc_id && e.delete_seq.is_none())
+        {
             entry.delete_seq = Some(seq);
         }
     }

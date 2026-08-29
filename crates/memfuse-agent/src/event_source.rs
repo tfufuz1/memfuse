@@ -19,7 +19,11 @@ pub struct BackgroundEvent {
 }
 
 impl BackgroundEvent {
-    pub fn new(payload: serde_json::Value, source: impl Into<String>, observed_at_seq: u64) -> Self {
+    pub fn new(
+        payload: serde_json::Value,
+        source: impl Into<String>,
+        observed_at_seq: u64,
+    ) -> Self {
         Self {
             payload,
             source: source.into(),
@@ -82,7 +86,11 @@ impl<S: StorageEngine> EventSource for PollingDocumentEventSource<S> {
 
         if current_seq > self.last_seen_seq {
             let prefix = self.collection.user_key_prefix();
-            let current_entries = self.collection.storage().scan_prefix_at(&prefix, current_seq).await?;
+            let current_entries = self
+                .collection
+                .storage()
+                .scan_prefix_at(&prefix, current_seq)
+                .await?;
 
             let previous_entries: HashMap<Vec<u8>, Vec<u8>> = if self.last_seen_seq > 0 {
                 self.collection

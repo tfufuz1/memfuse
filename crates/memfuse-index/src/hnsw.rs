@@ -1968,9 +1968,7 @@ impl VectorIndex for HnswIndex {
     /// Searches for nearest neighbors at a specific snapshot sequence number.
     async fn search_at(&self, query: &[f32], k: usize, seq_no: u64) -> Result<Vec<ScoredDocument>> {
         let log = self.inner.seq_log.read().clone();
-        let filter_fn = move |doc_id: DocId| -> bool {
-            log.is_visible(doc_id, seq_no)
-        };
+        let filter_fn = move |doc_id: DocId| -> bool { log.is_visible(doc_id, seq_no) };
         self.search_filtered(query, k, Some(&filter_fn)).await
     }
 
@@ -2759,14 +2757,23 @@ mod tests {
 
         // seq 1: Insert doc 1 & 2
         let tx1 = TxId::new(1);
-        index.insert(tx1, DocId::new(1), &[1.0, 0.0, 0.0, 0.0]).await.unwrap();
-        index.insert(tx1, DocId::new(2), &[0.0, 1.0, 0.0, 0.0]).await.unwrap();
+        index
+            .insert(tx1, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
+            .await
+            .unwrap();
+        index
+            .insert(tx1, DocId::new(2), &[0.0, 1.0, 0.0, 0.0])
+            .await
+            .unwrap();
         index.commit(tx1).await.unwrap();
 
         // seq 2: Delete doc 1, insert doc 3
         let tx2 = TxId::new(2);
         index.delete(tx2, DocId::new(1)).await.unwrap();
-        index.insert(tx2, DocId::new(3), &[0.5, 0.5, 0.0, 0.0]).await.unwrap();
+        index
+            .insert(tx2, DocId::new(3), &[0.5, 0.5, 0.0, 0.0])
+            .await
+            .unwrap();
         index.commit(tx2).await.unwrap();
 
         // search_at seq 1: should see doc 1 & 2, but NOT doc 3

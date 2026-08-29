@@ -2056,7 +2056,8 @@ mod tests {
 
         let op_strategy = proptest::collection::vec(
             prop_oneof![
-                (1u8..10, proptest::collection::vec(any::<u8>(), 1..10)).prop_map(|(k, v)| Op::Put(k, v)),
+                (1u8..10, proptest::collection::vec(any::<u8>(), 1..10))
+                    .prop_map(|(k, v)| Op::Put(k, v)),
                 (1u8..10).prop_map(Op::Delete),
             ],
             10..60,
