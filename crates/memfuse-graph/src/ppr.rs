@@ -348,6 +348,253 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ppr_single_node_no_edges() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+        let seed = EntityId::new(42);
+
+        graph
+            .add_entity(tx, Entity::new(seed, "SoleNode", "Node"))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        let config = PprConfig::default();
+        let results = graph.personalized_page_rank(&[seed], &config).await.unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, seed);
+        assert!((results[0].1 - 1.0).abs() < 1e-4);
+    }
+
+    #[tokio::test]
+    async fn test_ppr_isolated_nodes_handling() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+
+        for i in 1..=4 {
+            graph
+                .add_entity(tx, Entity::new(EntityId::new(i), format!("N{i}"), "Node"))
+                .await
+                .unwrap();
+        }
+
+        // Only 1 -> 2 edge. 3 and 4 are completely isolated.
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "link"))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        let config = PprConfig::default();
+        let results = graph
+            .personalized_page_rank(&[EntityId::new(1)], &config)
+            .await
+            .unwrap();
+
+        assert!(!results.is_empty());
+        for (_, rank) in &results {
+            assert!(!rank.is_nan(), "Rank must not be NaN");
+            assert!(!rank.is_infinite(), "Rank must not be infinite");
+        }
+
+        let total_mass: f32 = results.iter().map(|(_, r)| r).sum();
+        assert!(
+            (total_mass - 1.0).abs() < 1e-4,
+            "Total rank mass must conserve to 1.0 even with isolated nodes, got {total_mass}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ppr_self_loop_handling() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(1), "N1", "Node"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(2), "N2", "Node"))
+            .await
+            .unwrap();
+
+        // 1 -> 1 (self-loop) and 1 -> 2
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(1), "self"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "link"))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        let config = PprConfig::default();
+        let results = graph
+            .personalized_page_rank(&[EntityId::new(1)], &config)
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 2);
+        for (_, rank) in &results {
+            assert!(!rank.is_nan());
+        }
+        let total_mass: f32 = results.iter().map(|(_, r)| r).sum();
+        assert!((total_mass - 1.0).abs() < 1e-4);
+    }
+
+    #[tokio::test]
+    async fn test_ppr_duplicate_multi_edges_deterministic() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(1), "N1", "Node"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(2), "N2", "Node"))
+            .await
+            .unwrap();
+
+        // Add 3 duplicate edges 1 -> 2 with weights 1.0, 2.0, 3.0
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "edge1").with_weight(1.0))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "edge2").with_weight(2.0))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "edge3").with_weight(3.0))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        let config = PprConfig::default();
+        let res1 = graph
+            .personalized_page_rank(&[EntityId::new(1)], &config)
+            .await
+            .unwrap();
+        let res2 = graph
+            .personalized_page_rank(&[EntityId::new(1)], &config)
+            .await
+            .unwrap();
+
+        assert_eq!(res1.len(), res2.len());
+        for (a, b) in res1.iter().zip(res2.iter()) {
+            assert_eq!(a.0, b.0);
+            assert_eq!(a.1.to_bits(), b.1.to_bits());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ppr_exact_score_tie_breaking_by_entity_id() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+
+        // Seed node 1, and symmetric nodes 10, 20 connected identically
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(1), "Center", "Node"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(20), "B", "Node"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(10), "A", "Node"))
+            .await
+            .unwrap();
+
+        // 1 -> 10 and 1 -> 20 with identical weight 1.0
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(10), "link").with_weight(1.0))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(20), "link").with_weight(1.0))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        let config = PprConfig::default();
+        let results = graph
+            .personalized_page_rank(&[EntityId::new(1)], &config)
+            .await
+            .unwrap();
+
+        let rank_10 = results.iter().find(|(id, _)| *id == EntityId::new(10)).map(|(_, r)| *r).unwrap();
+        let rank_20 = results.iter().find(|(id, _)| *id == EntityId::new(20)).map(|(_, r)| *r).unwrap();
+
+        assert_eq!(rank_10, rank_20, "Symmetric nodes must have identical PPR scores");
+
+        // Results order must sort tie by EntityId ascending (10 before 20)
+        let idx_10 = results.iter().position(|(id, _)| *id == EntityId::new(10)).unwrap();
+        let idx_20 = results.iter().position(|(id, _)| *id == EntityId::new(20)).unwrap();
+        assert!(idx_10 < idx_20, "Tie-breaking must place EntityId(10) before EntityId(20)");
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn prop_ppr_rank_mass_conservation(
+            node_count in 1..=20usize,
+            edge_specs in proptest::collection::vec((0..20usize, 0..20usize, 0.1f32..5.0f32), 0..40),
+            seed_idx in 0..20usize,
+            damping in 0.1f32..0.99f32,
+            max_iters in 1..=50u32,
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+            let res: Result<(), proptest::test_runner::TestCaseError> = rt.block_on(async {
+                let graph = CsrGraph::new();
+                let tx = TxId::new(1);
+
+                for i in 0..node_count {
+                    graph
+                        .add_entity(tx, Entity::new(EntityId::new(i as u64 + 1), format!("N{i}"), "Node"))
+                        .await
+                        .unwrap();
+                }
+
+                for (src, dst, w) in edge_specs {
+                    let src_id = EntityId::new((src % node_count) as u64 + 1);
+                    let dst_id = EntityId::new((dst % node_count) as u64 + 1);
+                    graph
+                        .add_edge(tx, Edge::new(src_id, dst_id, "link").with_weight(w))
+                        .await
+                        .unwrap();
+                }
+                graph.commit(tx).await.unwrap();
+
+                let actual_seed = EntityId::new((seed_idx % node_count) as u64 + 1);
+                let config = PprConfig {
+                    damping_factor: damping,
+                    max_iterations: max_iters,
+                    convergence_epsilon: 1e-7,
+                };
+
+                let results = graph
+                    .personalized_page_rank(&[actual_seed], &config)
+                    .await
+                    .unwrap();
+
+                let total_mass: f32 = results.iter().map(|(_, r)| r).sum();
+                proptest::prop_assert!(
+                    (total_mass - 1.0).abs() < 1e-4,
+                    "Rank mass conservation failed: total mass {} != 1.0 for node_count={}, seed={:?}",
+                    total_mass,
+                    node_count,
+                    actual_seed
+                );
+                Ok(())
+            });
+            res?;
+        }
+    }
+
+    #[tokio::test]
     async fn test_ppr_pathological_max_iterations_ceiling() {
         let graph = CsrGraph::new();
         let tx = TxId::new(1);
