@@ -327,7 +327,15 @@ impl OllamaClient {
             .send()
             .await
             .map_err(|e| {
-                if is_transient_network_error(&e) {
+                if e.is_connect() {
+                    MemFuseError::Io(std::io::Error::new(
+                        std::io::ErrorKind::ConnectionRefused,
+                        format!(
+                            "Ollama is not reachable at {}: {e}. Ensure Ollama is running (`ollama serve`).",
+                            self.base_url()
+                        ),
+                    ))
+                } else if is_transient_network_error(&e) {
                     MemFuseError::Io(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
                         format!("Batch embed request network error: {e}"),
@@ -504,7 +512,15 @@ impl OllamaClient {
             .send()
             .await
             .map_err(|e| {
-                if is_transient_network_error(&e) {
+                if e.is_connect() {
+                    MemFuseError::Io(std::io::Error::new(
+                        std::io::ErrorKind::ConnectionRefused,
+                        format!(
+                            "Ollama is not reachable at {}: {e}. Ensure Ollama is running (`ollama serve`).",
+                            self.base_url()
+                        ),
+                    ))
+                } else if is_transient_network_error(&e) {
                     MemFuseError::Io(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
                         format!("Ollama generate_text network error: {e}"),
@@ -600,7 +616,15 @@ impl OllamaClient {
             .send()
             .await
             .map_err(|e| {
-                if is_transient_network_error(&e) {
+                if e.is_connect() {
+                    MemFuseError::Io(std::io::Error::new(
+                        std::io::ErrorKind::ConnectionRefused,
+                        format!(
+                            "Ollama is not reachable at {}: {e}. Ensure Ollama is running (`ollama serve`).",
+                            self.base_url()
+                        ),
+                    ))
+                } else if is_transient_network_error(&e) {
                     MemFuseError::Io(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
                         format!(
@@ -719,7 +743,15 @@ impl OllamaClient {
             .send()
             .await
             .map_err(|e| {
-                if is_transient_network_error(&e) {
+                if e.is_connect() {
+                    MemFuseError::Io(std::io::Error::new(
+                        std::io::ErrorKind::ConnectionRefused,
+                        format!(
+                            "Ollama is not reachable at {}: {e}. Ensure Ollama is running (`ollama serve`).",
+                            self.base_url()
+                        ),
+                    ))
+                } else if is_transient_network_error(&e) {
                     MemFuseError::Io(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
                         format!(
@@ -1382,6 +1414,16 @@ mod tests {
             .await
             .unwrap_err();
         assert!(is_transient_network_error(&err));
+    }
+
+    #[tokio::test]
+    async fn test_offline_ollama_connection_refused_message() {
+        let client = OllamaClient::new("http://127.0.0.1:1");
+        let result = client.try_embed("nomic-embed-text", "test prompt").await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Ollama is not reachable at http://127.0.0.1:1"));
+        assert!(err_msg.contains("Ensure Ollama is running (`ollama serve`)"));
     }
 
     #[tokio::test]

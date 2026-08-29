@@ -188,7 +188,7 @@ mod tests {
                     response_body.len(),
                     response_body
                 );
-                let _ = socket.write_all(http_response.as_bytes()).await;
+                socket.write_all(http_response.as_bytes()).await.ok();
             }
         });
 
