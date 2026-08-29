@@ -2136,11 +2136,11 @@ impl VectorIndex for HnswIndex {
     }
 
     fn is_rebuild_required(&self) -> bool {
-        self.is_rebuild_required()
+        self.inner.is_rebuild_required()
     }
 
     fn trigger_rebuild_async(&self) {
-        let _ = self.trigger_rebuild_async();
+        let _ = HnswIndex::trigger_rebuild_async(self);
     }
 
     async fn stats(&self) -> Result<VectorIndexStats> {
