@@ -14,6 +14,13 @@ use memfuse_store::LsmStorage;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Reason for exiting `OrchestratorEngine::run_event_loop`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventLoopExitReason {
+    Shutdown,
+    SourceExhausted,
+}
+
 /// Async executor engine applying nodes in Sequence.
 pub struct OrchestratorEngine {
     pub tools: HashMap<String, Box<dyn AgentTool>>,
@@ -195,6 +202,48 @@ impl OrchestratorEngine {
         };
 
         self.checkpoint_store.save_checkpoint(meta).await
+    }
+
+    /// Continuous event loop reading telemetry events from an `EventSource`,
+    /// attaching each event to `AgentContext`, executing `run()`, and checkpointing state after each event.
+    pub async fn run_event_loop(
+        &self,
+        ctx: &mut AgentContext,
+        graph: &StateGraph,
+        source: &mut dyn crate::event_source::EventSource,
+        shutdown: tokio_util::sync::CancellationToken,
+    ) -> Result<EventLoopExitReason> {
+        loop {
+            if shutdown.is_cancelled() {
+                return Ok(EventLoopExitReason::Shutdown);
+            }
+
+            tokio::select! {
+                _ = shutdown.cancelled() => {
+                    return Ok(EventLoopExitReason::Shutdown);
+                }
+                event_res = source.next_event() => {
+                    match event_res? {
+                        Some(event) => {
+                            ctx.attach_event(event);
+                            self.run(ctx, graph).await?;
+                            self.checkpoint(ctx).await?;
+                        }
+                        None => {
+                            if source.is_exhausted() {
+                                return Ok(EventLoopExitReason::SourceExhausted);
+                            }
+                            tokio::select! {
+                                _ = shutdown.cancelled() => {
+                                    return Ok(EventLoopExitReason::Shutdown);
+                                }
+                                _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     async fn commit_step(&self, ctx: &AgentContext, result: &StepResult) -> Result<()> {

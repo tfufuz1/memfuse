@@ -29,6 +29,8 @@ pub struct AgentContext {
     pub status: AgentStatus,
     /// Accumulates results and state transfers between steps.
     pub memory: HashMap<String, serde_json::Value>,
+    /// History of attached background telemetry events.
+    pub events: Vec<crate::event_source::BackgroundEvent>,
 }
 
 impl AgentContext {
@@ -48,6 +50,15 @@ impl AgentContext {
             budget,
             status: AgentStatus::Idle,
             memory: HashMap::new(),
+            events: Vec::new(),
         }
+    }
+
+    /// Integrates a background telemetry event into the agent context memory and history.
+    pub fn attach_event(&mut self, event: crate::event_source::BackgroundEvent) {
+        if let Ok(val) = serde_json::to_value(&event) {
+            self.memory.insert("latest_event".to_string(), val);
+        }
+        self.events.push(event);
     }
 }

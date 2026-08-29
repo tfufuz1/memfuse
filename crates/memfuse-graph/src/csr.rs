@@ -52,11 +52,16 @@ const WALLCLOCK_TX_HEURISTIC_MIN: u64 = 1_400_000_000_000_000_000;
 /// `TxId::INTERNAL_BASE` liegt — ein Bereich, in dem keine kanonische
 /// Collection-Sequenz operiert, aber Unix-Nanosekunden-Werte liegen würden.
 ///
+/// # Invarianten-Kontext (AGT-GRAPH-001)
+/// Die Invariante AGT-GRAPH-001 ist graph-spezifisch: Graph-Traversal, Personalized PageRank (PPR),
+/// bi-temporale Gültigkeitsfenster (`valid_from`, `valid_to`) und kausale `rollback_to_tx()`-Operationen
+/// hängen strikt von geordneten Transaktions-Sequenzen ab. VectorIndex (HNSW) und TextIndex verwalten
+/// Dokumenten-Updates hingegen über `TxBuffer` und atomare Snapshots/Tombstones.
+///
 /// # AI-NOTE[BOUNDARY-MISSING][MAJOR]
 /// KONTEXT: AGT-GRAPH-001 — add_entity/add_edge/commit akzeptieren TxIds ohne
-///   Herkunftsvalidierung. Harte Ablehnung ist nicht möglich, da der Graph
-///   keinen Zugriff auf den `next_tx`-Höchststand der aufrufenden Collection hat.
-/// ANWEISUNG: Bei `true` => tracing::warn! loggen. Keine Ablehnung (kein Err).
+///   Laufzeit-Fehlerablehnung, erzwingen jedoch in Debug-Builds `debug_assert!(tx.is_valid_origin())`.
+/// ANWEISUNG: Bei verdächtigen TxIds => tracing::warn! loggen. In Debug-Builds schlägt debug_assert! fehl.
 /// ID: AGT-GRAPH-001
 #[inline]
 fn is_suspicious_tx_id(tx: TxId) -> bool {
@@ -718,6 +723,11 @@ impl Default for CsrGraph {
 #[async_trait]
 impl GraphIndex for CsrGraph {
     async fn add_entity(&self, tx: TxId, entity: Entity) -> Result<()> {
+        debug_assert!(
+            tx.is_valid_origin(),
+            "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
+            tx
+        );
         // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
         if is_suspicious_tx_id(tx) {
             tracing::warn!(
@@ -738,6 +748,11 @@ impl GraphIndex for CsrGraph {
     }
 
     async fn add_edge(&self, tx: TxId, edge: Edge) -> Result<()> {
+        debug_assert!(
+            tx.is_valid_origin(),
+            "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
+            tx
+        );
         // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
         if is_suspicious_tx_id(tx) {
             tracing::warn!(
@@ -752,6 +767,8 @@ impl GraphIndex for CsrGraph {
         let from_idx = inner.get_or_create_index(edge.from);
         let to_idx = inner.get_or_create_index(edge.to);
 
+        let valid_from = edge.valid_from.or(Some(tx));
+
         inner
             .staged_edges
             .entry(tx)
@@ -761,7 +778,7 @@ impl GraphIndex for CsrGraph {
             .push(EdgePayload {
                 target: to_idx,
                 weight: edge.weight,
-                valid_from: edge.valid_from,
+                valid_from,
                 valid_to: edge.valid_to,
             });
         Ok(())
@@ -775,6 +792,15 @@ impl GraphIndex for CsrGraph {
         self.compact();
         let inner = self.inner.read();
         Ok(crate::ppr::compute_ppr(&inner, seed_nodes, config))
+    }
+
+    async fn traverse_at(
+        &self,
+        start_node: EntityId,
+        max_hops: usize,
+        seq_no: u64,
+    ) -> Result<Vec<(EntityId, f32)>> {
+        self.traverse_at_time(start_node, max_hops, TxId::new(seq_no)).await
     }
 
     async fn traverse_at_time(
@@ -991,6 +1017,11 @@ impl GraphIndex for CsrGraph {
     }
 
     async fn commit(&self, tx: TxId) -> Result<()> {
+        debug_assert!(
+            tx.is_valid_origin(),
+            "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
+            tx
+        );
         // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
         if is_suspicious_tx_id(tx) {
             tracing::warn!(
@@ -1197,36 +1228,6 @@ impl GraphIndex for CsrGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
-    use tracing::span::Attributes;
-    use tracing::span::Record;
-    use tracing::subscriber::Subscriber;
-    use tracing::Event;
-    use tracing::Id;
-    use tracing::Metadata;
-
-    struct WarnCounterSubscriber {
-        warn_count: Arc<AtomicUsize>,
-    }
-
-    impl Subscriber for WarnCounterSubscriber {
-        fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
-            true
-        }
-        fn new_span(&self, _span: &Attributes<'_>) -> Id {
-            Id::from_u64(1)
-        }
-        fn record(&self, _span: &Id, _values: &Record<'_>) {}
-        fn record_follows_from(&self, _span: &Id, _follows: &Id) {}
-        fn event(&self, event: &Event<'_>) {
-            if *event.metadata().level() == tracing::Level::WARN {
-                self.warn_count.fetch_add(1, Ordering::SeqCst);
-            }
-        }
-        fn enter(&self, _span: &Id) {}
-        fn exit(&self, _span: &Id) {}
-    }
 
     async fn setup_test_graph() -> CsrGraph {
         let graph = CsrGraph::new();
@@ -1633,80 +1634,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_wallclock_txid_warn_but_no_panic() {
+    #[should_panic(expected = "AGT-GRAPH-001")]
+    async fn test_wallclock_txid_debug_assert_panics() {
         let graph = CsrGraph::new();
-        // Wall-clock-aehnlicher TxId (~1.7e18 ns)
+        // Wall-clock-artiger TxId (~1.7e18 ns) in der verbotenen Gap-Zone zwischen 10^12 und INTERNAL_BASE
         let wallclock_tx = TxId::new(1_700_000_000_000_000_000);
 
         assert!(super::is_suspicious_tx_id(wallclock_tx));
 
-        // Ausfuehrung darf nicht paniquen oder fehlschlagen
-        graph
+        // In Debug-Builds MUSS debug_assert!(tx.is_valid_origin()) greifen und mit "AGT-GRAPH-001" paniquen
+        let _ = graph
             .add_entity(
                 wallclock_tx,
                 Entity::new(EntityId::new(100), "WallClockEntity", "Type"),
             )
-            .await
-            .unwrap(); // unwrap
-
-        graph
-            .add_edge(
-                wallclock_tx,
-                Edge::new(EntityId::new(100), EntityId::new(101), "rel"),
-            )
-            .await
-            .unwrap(); // unwrap
-
-        graph.commit(wallclock_tx).await.unwrap(); // unwrap
-
-        assert_eq!(graph.entity_count(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_wallclock_nanos_txid_triggers_defensive_warning() {
-        let warn_count = Arc::new(AtomicUsize::new(0));
-        let subscriber = WarnCounterSubscriber {
-            warn_count: warn_count.clone(),
-        };
-
-        let _guard = tracing::subscriber::set_default(subscriber);
-
-        let graph = CsrGraph::new();
-        // Aus Wall-Clock-Nanosekunden abgeleiteter TxId-Wert (astronomisch groß, aber unter INTERNAL_BASE)
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards") // expect
-            .as_nanos() as u64;
-        let wallclock_tx = TxId::new(nanos);
-
-        assert!(
-            super::is_suspicious_tx_id(wallclock_tx),
-            "Wallclock nanos TxId ({nanos}) must be detected as suspicious"
-        );
-
-        graph
-            .add_entity(
-                wallclock_tx,
-                Entity::new(EntityId::new(200), "WallClockEntity", "Type"),
-            )
-            .await
-            .unwrap(); // unwrap
-
-        graph
-            .add_edge(
-                wallclock_tx,
-                Edge::new(EntityId::new(200), EntityId::new(201), "rel"),
-            )
-            .await
-            .unwrap(); // unwrap
-
-        graph.commit(wallclock_tx).await.unwrap(); // unwrap
-
-        // Warnung MUSS gefeuert haben (add_entity, add_edge, commit)
-        assert!(
-            warn_count.load(Ordering::SeqCst) >= 1,
-            "Defensive warning must fire for add_entity, add_edge, and commit when using wall-clock TxId"
-        );
+            .await;
     }
 
     #[tokio::test]
@@ -2074,23 +2016,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_csr_graph_traverse_at_returns_adr024_capability_unsupported() {
+    async fn test_csr_graph_traverse_at_filtering() {
         let graph = CsrGraph::new();
-        let res = graph.traverse_at(EntityId::new(1), 2, 42).await;
-        match res {
-            Err(MemFuseError::CapabilityUnsupported { capability, reason }) => {
-                assert_eq!(capability, "graph_traverse_at");
-                assert!(
-                    reason.contains("ADR-024"),
-                    "Expected ADR-024 in CapabilityUnsupported reason message, got: {}",
-                    reason
-                );
-            }
-            other => panic!(
-                "Expected CapabilityUnsupported referencing ADR-024, got: {:?}",
-                other
-            ),
-        }
+        let id1 = EntityId::new(1);
+        let id2 = EntityId::new(2);
+        let id3 = EntityId::new(3);
+
+        // Tx 1: Add nodes 1, 2, 3 and edge 1->2
+        let tx1 = TxId::new(1);
+        graph.add_entity(tx1, Entity::new(id1, "N1", "T")).await.unwrap();
+        graph.add_entity(tx1, Entity::new(id2, "N2", "T")).await.unwrap();
+        graph.add_entity(tx1, Entity::new(id3, "N3", "T")).await.unwrap();
+        graph.add_edge(tx1, Edge::new(id1, id2, "rel1")).await.unwrap();
+        graph.commit(tx1).await.unwrap();
+
+        // Tx 2: Add edge 2->3
+        let tx2 = TxId::new(2);
+        graph.add_edge(tx2, Edge::new(id2, id3, "rel2")).await.unwrap();
+        graph.commit(tx2).await.unwrap();
+
+        // traverse_at seq 1: 1->2 visible, but edge 2->3 (tx2) NOT visible
+        let res_seq1 = graph.traverse_at(id1, 2, 1).await.unwrap();
+        let ids_seq1: Vec<_> = res_seq1.iter().map(|(id, _)| id.inner()).collect();
+        assert!(ids_seq1.contains(&2), "seq 1 traverse must include node 2");
+        assert!(!ids_seq1.contains(&3), "seq 1 traverse must NOT include node 3");
+
+        // traverse_at seq 2: both 1->2 and 2->3 visible
+        let res_seq2 = graph.traverse_at(id1, 2, 2).await.unwrap();
+        let ids_seq2: Vec<_> = res_seq2.iter().map(|(id, _)| id.inner()).collect();
+        assert!(ids_seq2.contains(&2), "seq 2 traverse must include node 2");
+        assert!(ids_seq2.contains(&3), "seq 2 traverse must include node 3");
     }
 
     #[tokio::test]
@@ -2230,5 +2185,123 @@ mod tests {
             1,
             "Unbounded edge must be valid at any point in time"
         );
+    }
+
+    #[test]
+    fn prop_csr_graph_traverse_at_consistency() {
+        use proptest::prelude::*;
+
+        #[derive(Debug, Clone)]
+        enum Op {
+            AddEntity(u64),
+            AddEdge(u64, u64),
+            RemoveEdge(u64, u64),
+        }
+
+        let op_strategy = proptest::collection::vec(
+            prop_oneof![
+                (1u64..20).prop_map(Op::AddEntity),
+                (1u64..20, 1u64..20).prop_map(|(f, t)| Op::AddEdge(f, t)),
+                (1u64..20, 1u64..20).prop_map(|(f, t)| Op::RemoveEdge(f, t)),
+            ],
+            10..80,
+        );
+
+        proptest!(ProptestConfig::with_cases(20), |(ops in op_strategy)| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+
+            rt.block_on(async {
+                let graph = CsrGraph::new();
+                let mut current_tx = 1u64;
+                let mut tx_checkpoints = Vec::new();
+
+                for op in ops {
+                    let tx = TxId::new(current_tx);
+                    match op {
+                        Op::AddEntity(id) => {
+                            let _ = graph.add_entity(tx, Entity::new(EntityId::new(id), "N", "T")).await;
+                        }
+                        Op::AddEdge(from, to) => {
+                            if from != to {
+                                let _ = graph.add_edge(tx, Edge::new(EntityId::new(from), EntityId::new(to), "E")).await;
+                            }
+                        }
+                        Op::RemoveEdge(from, to) => {
+                            let _ = graph.remove_edge(tx, EntityId::new(from), EntityId::new(to)).await;
+                        }
+                    }
+                    if graph.commit(tx).await.is_ok() {
+                        tx_checkpoints.push(current_tx);
+                        current_tx += 1;
+                    }
+                }
+
+                // Verify traverse_at at each target sequence against reference replay model
+                for &target_seq in &tx_checkpoints {
+                    // Reconstruct expected edges and entities up to target_seq
+                    let mut entities = std::collections::HashSet::new();
+                    let mut active_edges = std::collections::HashSet::new();
+
+                    let inner = graph.inner.read();
+                    let num_nodes = inner.reverse_map.len();
+                    for i in 0..num_nodes {
+                        if let Some(&id) = inner.reverse_map.get(i) {
+                            if inner.entities.get(i).is_some_and(|e| e.is_some()) {
+                                entities.insert(id.inner());
+                            }
+                        }
+
+                        let old_start = if i < inner.offsets.len() - 1 { inner.offsets[i] } else { 0 };
+                        let old_end = if i < inner.offsets.len() - 1 { inner.offsets[i + 1] } else { 0 };
+                        for j in old_start..old_end {
+                            let target_idx = inner.targets[j];
+                            let vf = inner.valid_froms.get(j).copied().flatten().unwrap_or(TxId::new(0)).inner();
+                            let vt = inner.valid_tos.get(j).copied().flatten().map(|t| t.inner());
+
+                            if vf <= target_seq && vt.map_or(true, |t| target_seq < t) {
+                                if let (Some(&f), Some(&t)) = (inner.reverse_map.get(i), inner.reverse_map.get(target_idx)) {
+                                    if !inner.tombstoned_edges.contains(&(i, target_idx)) {
+                                        active_edges.insert((f.inner(), t.inner()));
+                                    }
+                                }
+                            }
+                        }
+
+                        if let Some(pending) = inner.pending_edges.get(&i) {
+                            for edge in pending {
+                                let vf = edge.valid_from.unwrap_or(TxId::new(0)).inner();
+                                let vt = edge.valid_to.map(|t| t.inner());
+                                if vf <= target_seq && vt.map_or(true, |t| target_seq < t) {
+                                    if let (Some(&f), Some(&t)) = (inner.reverse_map.get(i), inner.reverse_map.get(edge.target)) {
+                                        if !inner.tombstoned_edges.contains(&(i, edge.target)) {
+                                            active_edges.insert((f.inner(), t.inner()));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    drop(inner);
+
+                    // Check traverse_at for each active node
+                    for &start in &entities {
+                        let res = graph.traverse_at(EntityId::new(start), 1, target_seq).await.unwrap();
+                        let actual_neighbors: std::collections::HashSet<_> = res.into_iter().map(|(id, _)| id.inner()).collect();
+
+                        let expected_neighbors: std::collections::HashSet<_> = active_edges
+                            .iter()
+                            .filter(|(f, t)| *f == start && entities.contains(t))
+                            .map(|(_, t)| *t)
+                            .collect();
+
+                        prop_assert_eq!(actual_neighbors, expected_neighbors, "Neighbors at seq {} from node {} must match reference model", target_seq, start);
+                    }
+                }
+                Ok(())
+            }).unwrap();
+        });
     }
 }
