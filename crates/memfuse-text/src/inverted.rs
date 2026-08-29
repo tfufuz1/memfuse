@@ -1484,4 +1484,35 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_text_index_search_at_snapshot_isolation() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "text_search_at_test");
+
+        // tx1: insert doc 1 "hello world"
+        let tx1 = TxId::new(1);
+        let doc1 = DocId::new(1);
+        index.insert(tx1, doc1, "hello world").await?;
+        index.commit(tx1).await?;
+        let seq1 = storage.last_seq_no().await?;
+
+        // tx2: insert doc 2 "hello rust"
+        let tx2 = TxId::new(2);
+        let doc2 = DocId::new(2);
+        index.insert(tx2, doc2, "hello rust").await?;
+        index.commit(tx2).await?;
+        let seq2 = storage.last_seq_no().await?;
+
+        // search_at seq1: should return doc1, but NOT doc2
+        let res_seq1 = index.search_at("hello", 10, seq1).await?;
+        assert_eq!(res_seq1.len(), 1);
+        assert_eq!(res_seq1[0].doc_id, doc1);
+
+        // search_at seq2: should return doc1 and doc2
+        let res_seq2 = index.search_at("hello", 10, seq2).await?;
+        assert_eq!(res_seq2.len(), 2);
+
+        Ok(())
+    }
 }
