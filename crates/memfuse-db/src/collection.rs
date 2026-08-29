@@ -607,6 +607,41 @@ impl<S: StorageEngine> Collection<S> {
         self.insert(id, embedding, Some(meta)).await
     }
 
+    /// Speichert ein Dokument mit expliziter kognitiver Gedächtnisklassifikation.
+    ///
+    /// # Memory Type Integration
+    /// Der MemoryType wird als "memory_type"-Feld in die Metadaten eingebettet
+    /// und ist für Lifecycle-Operationen (Decay, TTL, Sweep) abrufbar.
+    pub async fn insert_typed(
+        &self,
+        id: &str,
+        embedding: &[f32],
+        memory_type: memfuse_core::MemoryType,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<()> {
+        let mut meta = metadata.unwrap_or_else(|| serde_json::json!({}));
+        if let Some(obj) = meta.as_object_mut() {
+            obj.insert(
+                "memory_type".to_string(),
+                serde_json::to_value(memory_type)
+                    .map_err(|e| memfuse_core::MemFuseError::Serialization(e.to_string()))?,
+            );
+            // Setze Standard-Decay falls nicht gesetzt
+            if !obj.contains_key("decay_function") {
+                if let Ok(decay_val) = serde_json::to_value(memory_type.default_decay()) {
+                    obj.insert("decay_function".to_string(), decay_val);
+                }
+            }
+            // Setze Standard-TTL falls nicht gesetzt (Working Memory)
+            if !obj.contains_key("ttl_tx") {
+                if let Some(ttl) = memory_type.default_ttl_tx() {
+                    obj.insert("ttl_tx".to_string(), serde_json::json!(ttl));
+                }
+            }
+        }
+        self.insert(id, embedding, Some(meta)).await
+    }
+
     /// Inserts a document with an embedding and optional metadata.
     #[tracing::instrument(level = "trace", skip(self, embedding, metadata))]
     pub async fn insert(
@@ -3059,5 +3094,154 @@ mod tests {
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].id, "doc2");
         assert_eq!(filtered[0].score, 0.85); // Order and original RRF/CE score preserved
+    }
+
+    #[tokio::test]
+    async fn test_insert_typed_episodic_has_decay_metadata() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::{LsmConfig, LsmStorage};
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let graph_index = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(AtomicU64::new(1));
+        let col = super::Collection::new(
+            "test".to_string(),
+            storage,
+            index,
+            graph_index,
+            next_tx,
+            4,
+            memfuse_text::Language::German,
+        );
+
+        col.insert_typed(
+            "ep1",
+            &[1.0, 0.0, 0.0, 0.0],
+            memfuse_core::MemoryType::Episodic,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let doc = col.get("ep1").await.unwrap().unwrap();
+        let meta = doc.metadata.unwrap();
+        assert_eq!(meta.get("memory_type").unwrap(), "Episodic");
+        assert!(meta.get("decay_function").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_insert_typed_working_has_ttl_metadata() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::{LsmConfig, LsmStorage};
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let graph_index = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(AtomicU64::new(1));
+        let col = super::Collection::new(
+            "test".to_string(),
+            storage,
+            index,
+            graph_index,
+            next_tx,
+            4,
+            memfuse_text::Language::German,
+        );
+
+        col.insert_typed(
+            "wk1",
+            &[1.0, 0.0, 0.0, 0.0],
+            memfuse_core::MemoryType::Working,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let doc = col.get("wk1").await.unwrap().unwrap();
+        let meta = doc.metadata.unwrap();
+        assert_eq!(meta.get("memory_type").unwrap(), "Working");
+        assert_eq!(meta.get("ttl_tx").unwrap(), 50_000);
+    }
+
+    #[tokio::test]
+    async fn test_insert_backward_compatible_has_semantic_default() {
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::{LsmConfig, LsmStorage};
+        use std::sync::atomic::AtomicU64;
+        use std::sync::Arc;
+
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let graph_index = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(AtomicU64::new(1));
+        let col = super::Collection::new(
+            "test".to_string(),
+            storage,
+            index,
+            graph_index,
+            next_tx,
+            4,
+            memfuse_text::Language::German,
+        );
+
+        col.insert("plain1", &[1.0, 0.0, 0.0, 0.0], Some(serde_json::json!({"text": "hello"})))
+            .await
+            .unwrap();
+
+        let doc = col.get("plain1").await.unwrap().unwrap();
+        assert_eq!(
+            crate::filter::extract_memory_type(&doc.metadata),
+            memfuse_core::MemoryType::Semantic
+        );
     }
 }

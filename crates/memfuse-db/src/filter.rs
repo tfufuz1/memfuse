@@ -1,7 +1,16 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use memfuse_core::FilterExpr;
+use memfuse_core::{FilterExpr, MemoryType};
+
+/// Extrahiert den MemoryType aus Dokument-Metadaten (Rückwärtskompatibel).
+pub fn extract_memory_type(metadata: &Option<Value>) -> MemoryType {
+    metadata
+        .as_ref()
+        .and_then(|m| m.get("memory_type"))
+        .and_then(|v| serde_json::from_value::<MemoryType>(v.clone()).ok())
+        .unwrap_or(MemoryType::Semantic) // Default für bestehende Dokumente
+}
 
 /// Operators for metadata filtering.
 #[deprecated(
@@ -209,5 +218,17 @@ mod tests {
         };
         // Should return false, not panic
         assert!(!filter_mismatch_in.matches(&meta));
+    }
+
+    #[test]
+    fn test_extract_memory_type_missing_key_returns_semantic() {
+        let meta = Some(json!({"text": "hello"}));
+        assert_eq!(extract_memory_type(&meta), MemoryType::Semantic);
+
+        let meta_none: Option<Value> = None;
+        assert_eq!(extract_memory_type(&meta_none), MemoryType::Semantic);
+
+        let meta_episodic = Some(json!({"memory_type": "Episodic"}));
+        assert_eq!(extract_memory_type(&meta_episodic), MemoryType::Episodic);
     }
 }
