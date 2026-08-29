@@ -97,7 +97,7 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
     Ok(dist)
 }
 
-// AI-TAG[SECURITY][CRITICAL] Precondition assertions for SIMD distance functions (AGT-INDEX-005) (TS:2026-08-25T00:00:00Z)
+// AI-TAG[SECURITY][CRITICAL] RESOLVED: AGT-INDEX-005 — assert_eq! preconditions in cosine_distance, euclidean_distance, dot_product_distance added (ADR-034). Testbeweis: test_cosine_distance_mismatch_panics etc. (TS: 2026-08-29T10:18:55Z) (SESSION: a3f29c1d)
 // DECISION-REF: ADR-034 — Option 1: Release-active runtime assertion (assert_eq!) prevents SIMD buffer overreads.
 
 /// Computes cosine distance (1 - similarity).
@@ -116,25 +116,20 @@ pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
     {
         // Try AVX-512 first for maximum performance
         if is_x86_feature_detected!("avx512f") {
-            // SAFETY: Hardware-Support-Check und Bounds-Validation.
-            // BEGRÜNDUNG: AVX-512 Support wurde via is_x86_feature_detected geprüft.
-            // Dimensionen werden durch compute_distance validiert.
-            // SAFETY: Hardware support detected and bounds checked.
-            return unsafe { cosine_distance_avx512(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+            // SAFETY: a.len() == b.len() was checked by assert_eq! in cosine_distance; AVX-512F CPU feature confirmed via is_x86_feature_detected!.
+            return unsafe { cosine_distance_avx512(a, b) };
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // SAFETY: Hardware-Support und Bounds wurden validiert.
-            // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { cosine_distance_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+            // SAFETY: a.len() == b.len() was checked by assert_eq! in cosine_distance; AVX2+FMA CPU features confirmed via is_x86_feature_detected!.
+            return unsafe { cosine_distance_avx2(a, b) };
         }
     }
     #[cfg(target_arch = "aarch64")]
     {
         if std::arch::is_aarch64_feature_detected!("neon") {
-            // SAFETY: Hardware-Support und Bounds wurden validiert.
-            // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { cosine_distance_neon(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+            // SAFETY: a.len() == b.len() was checked by assert_eq! in cosine_distance; NEON CPU feature confirmed via is_aarch64_feature_detected!.
+            return unsafe { cosine_distance_neon(a, b) };
         }
     }
     // Stable fallback (autovectorizable by compiler)
@@ -157,23 +152,20 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
     {
         // Try AVX-512
         if is_x86_feature_detected!("avx512f") {
-            // SAFETY: Hardware-Support und Bounds wurden validiert.
-            // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { euclidean_distance_avx512(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+            // SAFETY: a.len() == b.len() was checked by assert_eq! in euclidean_distance; AVX-512F CPU feature confirmed via is_x86_feature_detected!.
+            return unsafe { euclidean_distance_avx512(a, b) };
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // SAFETY: Hardware-Support und Bounds wurden validiert.
-            // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { euclidean_distance_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+            // SAFETY: a.len() == b.len() was checked by assert_eq! in euclidean_distance; AVX2+FMA CPU features confirmed via is_x86_feature_detected!.
+            return unsafe { euclidean_distance_avx2(a, b) };
         }
     }
     #[cfg(target_arch = "aarch64")]
     {
         if std::arch::is_aarch64_feature_detected!("neon") {
-            // SAFETY: Hardware-Support und Bounds wurden validiert.
-            // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { euclidean_distance_neon(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+            // SAFETY: a.len() == b.len() was checked by assert_eq! in euclidean_distance; NEON CPU feature confirmed via is_aarch64_feature_detected!.
+            return unsafe { euclidean_distance_neon(a, b) };
         }
     }
     // Stable fallback (autovectorizable by compiler)
@@ -196,23 +188,20 @@ pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
     {
         // Try AVX-512
         if is_x86_feature_detected!("avx512f") {
-            // SAFETY: Hardware-Support und Bounds wurden validiert.
-            // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { -dot_product_avx512(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+            // SAFETY: a.len() == b.len() was checked by assert_eq! in dot_product_distance; AVX-512F CPU feature confirmed via is_x86_feature_detected!.
+            return unsafe { -dot_product_avx512(a, b) };
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // SAFETY: Hardware-Support und Bounds wurden validiert.
-            // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { -dot_product_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+            // SAFETY: a.len() == b.len() was checked by assert_eq! in dot_product_distance; AVX2+FMA CPU features confirmed via is_x86_feature_detected!.
+            return unsafe { -dot_product_avx2(a, b) };
         }
     }
     #[cfg(target_arch = "aarch64")]
     {
         if std::arch::is_aarch64_feature_detected!("neon") {
-            // SAFETY: Hardware-Support und Bounds wurden validiert.
-            // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-            return unsafe { -dot_product_neon(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+            // SAFETY: a.len() == b.len() was checked by assert_eq! in dot_product_distance; NEON CPU feature confirmed via is_aarch64_feature_detected!.
+            return unsafe { -dot_product_neon(a, b) };
         }
     }
     // Stable fallback (autovectorizable by compiler)
