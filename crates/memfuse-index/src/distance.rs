@@ -97,7 +97,7 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
     Ok(dist)
 }
 
-// AI-TAG[SECURITY][CRITICAL] RESOLVED: AGT-INDEX-005 — assert_eq! preconditions in cosine_distance, euclidean_distance, dot_product_distance added (ADR-034). Testbeweis: test_cosine_distance_mismatch_panics etc. (TS: 2026-08-29T10:18:55Z) (SESSION: a3f29c1d)
+// AI-TAG[SECURITY][CRITICAL] RESOLVED: AGT-INDEX-005 — assert_eq! preconditions in cosine_distance, euclidean_distance, dot_product_distance added (ADR-034). Testbeweis: test_cosine_distance_mismatch_panics etc. (TS:2026-08-29T10:18:55Z) (SESSION: a3f29c1d)
 // DECISION-REF: ADR-034 — Option 1: Release-active runtime assertion (assert_eq!) prevents SIMD buffer overreads.
 
 /// Computes cosine distance (1 - similarity).
