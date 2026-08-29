@@ -38,8 +38,10 @@ fn monotonic_timestamp_ms() -> u64 {
         .max(wall_ms)
 }
 
-/// `AI-TAG[PANIC-SAFETY][CRITICAL] (TS:2026-08-29T00:00:00Z) AGT-CKPT-f3a1b2c4`: Checkpoint Manifest envelope for atomic multi-component snapshots.
-/// Prevents partial writes or corrupted checkpoints from being falsely identified as valid during restoration.
+/// AI-TAG[PANIC-SAFETY][CRITICAL] AGT-CKPT-f3a1b2c4 RESOLVED
+/// (TS:2026-08-29T05:13:45Z) (SESSION:14348074) — Fault-Injection-Tests in
+/// tests/manifest_fault_injection.rs beweisen atomare Schreib-Semantik
+/// und Tamper-Erkennung via Blake3-Checksum.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CheckpointManifest {
     pub meta: CheckpointMeta,
@@ -333,8 +335,9 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     /// Helper for internal saving logic. Uses name as key for uniqueness.
     async fn save_checkpoint_internal(&self, meta: CheckpointMeta) -> Result<()> {
         let key = format!("{}:checkpoint:{}", self.namespace, meta.name);
+        let manifest = CheckpointManifest::new(meta.clone(), vec!["storage".to_string()])?;
         let value =
-            serde_json::to_vec(&meta).map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+            serde_json::to_vec(&manifest).map_err(|e| MemFuseError::Serialization(e.to_string()))?;
 
         let tx = self.next_tx()?;
         if let Err(e) = self.storage.put(tx, key.as_bytes(), &value).await {
@@ -377,8 +380,13 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let key = format!("{}:checkpoint:{}", self.namespace, name);
         match self.storage.get(key.as_bytes()).await? {
             Some(bytes) => {
-                let meta: CheckpointMeta = serde_json::from_slice(&bytes)
-                    .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+                let meta = if let Ok(manifest) = serde_json::from_slice::<CheckpointManifest>(&bytes) {
+                    manifest.verify()?;
+                    manifest.meta
+                } else {
+                    serde_json::from_slice::<CheckpointMeta>(&bytes)
+                        .map_err(|e| MemFuseError::Serialization(e.to_string()))?
+                };
                 self.name_index
                     .write()
                     .insert(meta.name.clone(), meta.seq_no);
@@ -396,8 +404,13 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
         let mut result = Vec::with_capacity(entries.len());
         for (_key_bytes, value_bytes) in entries {
-            let meta: CheckpointMeta = serde_json::from_slice(&value_bytes)
-                .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+            let meta = if let Ok(manifest) = serde_json::from_slice::<CheckpointManifest>(&value_bytes) {
+                manifest.verify()?;
+                manifest.meta
+            } else {
+                serde_json::from_slice::<CheckpointMeta>(&value_bytes)
+                    .map_err(|e| MemFuseError::Serialization(e.to_string()))?
+            };
             result.push(meta);
         }
 
