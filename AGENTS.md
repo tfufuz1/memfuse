@@ -29,7 +29,7 @@ Die vollständige, automatisch aktuell gehaltene Crate-Tabelle und DAG-Topologie
 
 - **TxId generation**: ALWAYS `collection.allocate_tx()` — NEVER `SystemTime::as_nanos()`
 - **fsync errors**: ALWAYS propagate with `?` — NEVER `let _ = dir.sync_all()`
-- **unsafe scope**: ONLY in `memfuse-index/src/distance.rs` (SIMD), `memfuse-index/src/diskann.rs` (Mmap, ADR-017) and `memfuse-index/src/persistence.rs` (Mmap, ADR-017). Every `unsafe` block requires `// SAFETY:` proof.
+- **unsafe scope**: ONLY in `memfuse-index/src/distance.rs` (SIMD, ADR-017/ADR-034), `memfuse-index/src/diskann.rs` (Mmap, ADR-017) and `memfuse-index/src/persistence.rs` (Mmap, ADR-017). Exception: test-only unsafe in `memfuse-crypto/src/anti_tamper.rs` exclusively for Zeroize drop-semantics verification via raw pointer inspection. Production builds are unsafe-free via `#![cfg_attr(not(test), forbid(unsafe_code))]`.
 - **AI-TAG[SMELL][CRITICAL]**: ALWAYS fix immediately — never just comment
 - **Document chunking**: ALWAYS use `MarkdownChunker` — NEVER embed entire text as 1 vector
 - **MCP transport**: stdio JSON-RPC 2.0 ONLY — axum was removed (ADR-010)

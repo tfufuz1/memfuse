@@ -52,10 +52,10 @@ use std::sync::Arc;
 
 pub mod chunker;
 pub mod collection;
-pub mod compaction;
 pub mod context;
+pub mod context_compaction;
 
-pub use compaction::{CompactedContext, CompactionStrategy, ContextCompactor, StatusToken};
+pub use context_compaction::{CompactedContext, CompactionStrategy, ContextCompactor, StatusToken};
 
 #[cfg(feature = "sandbox")]
 #[async_trait::async_trait]
