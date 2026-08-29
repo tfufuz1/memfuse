@@ -3,7 +3,16 @@
 //! Implementiert [`memfuse_core::GraphIndex`] via Compressed Sparse Row (CSR)
 //! Datenstruktur für cache-effizienten Graph-Traversal.
 
-// INVARIANT: CSR-Graph for 4-Signal Fusion
+// FILE-CONTEXT
+// STAND: 2026-08-29T05:41:20Z (SESSION: f7999509)
+// ZWECK: CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion)
+// INVARIANTEN: Graph-Zustand wird in LSM-Store persistiert unter Präfixen
+//              `__graph:entity:` und `__graph:edge:`. Änderungen müssen
+//              BEIDE Strukturen konsistent halten (In-Memory CSR + LSM).
+// NICHT-OFFENSICHTLICH: KEINE petgraph-Abhängigkeit (Pure-Rust CSR, ADR-004).
+//                       `relate()` MUSS sowohl LSM-Write als auch graph_index.add_edge()
+//                       aufrufen — nur eines zu tun bricht Graph-Traversal (crates/memfuse-db/AGENTS.md).
+// SIEHE AUCH: DECISIONS.md ADR-004, crates/memfuse-db/AGENTS.md §relate()
 
 use async_trait::async_trait;
 use memfuse_core::{

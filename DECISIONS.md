@@ -422,7 +422,10 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 *   **Konsequenzen**:
     - `filter_by_importance()` in `Collection` filtert nach RRF/Reranker ohne Umsortierung.
     - Zero-Panic Invariante in `ImportanceScore`, `DecayFunction` und `MemoryImportance`.
-## ADR-025: Async LLM-Summarization & Provenance Tracking in ContextCompactor (ID: AGT-DB-004)
+
+---
+
+## ADR-032: Async LLM-Summarization & Provenance Tracking in ContextCompactor (ID: AGT-DB-004)
 
 *   **Datum**: 2026-08-28
 *   **Status**: ✅ Final
@@ -440,7 +443,7 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-025: Bi-temporale Zeitachsen (Validitätszeit + Transaktionszeit) im Wissensgraphen (Phase 2 Roadmap)
+## ADR-033: Bi-temporale Zeitachsen (Validitätszeit + Transaktionszeit) im Wissensgraphen (Phase 2 Roadmap)
 
 *   **Datum**: 2026-08-28
 *   **Status**: ✅ Final
@@ -461,7 +464,7 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-025: Runtime-Precondition Assertions in öffentlichen Low-Level-Distanzfunktionen (`memfuse-index`)
+## ADR-034: Runtime-Precondition Assertions in öffentlichen Low-Level-Distanzfunktionen (`memfuse-index`)
 
 *   **Datum**: 2026-08-28
 *   **Status**: ✅ Final
@@ -496,24 +499,6 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
     - Neue Datei `crates/memfuse-graph/src/community.rs`.
     - Neuer Subcommand `run-community-detection` in `xtask`.
     - Erweiterung von `HybridQuery` und `Collection::hybrid_search_ext`.
-
----
-
-## ADR-025: Memory Importance Score & Recency-Decay als Post-Processing-Filter (Erweiterung ADR-021 & ADR-024)
-
-*   **Datum**: 2026-08-28
-*   **Status**: ✅ Final
-*   **Kontext**: Roadmap Phase 2 fordert ein LLM-bewertetes Memory Importance Scoring (`ImportanceScore`) und eine Recency-Decay-Funktion (`DecayFunction`) für episodische Relevanz. Es stellte sich die Frage, wie der berechnete `effective_score(now_tx)` in die RAG-Pipeline (ADR-021) integriert wird.
-*   **Entscheidung**:
-    - Der `effective_score(now_tx)` wird als Nachbearbeitungsschritt **NACH** RRF (Reciprocal Rank Fusion) und **NACH** Cross-Encoder Reranking in der RAG-Pipeline ausgeführt (`Collection::filter_by_importance`).
-    - Kandidaten mit `effective_score` unterhalb eines konfigurierbaren Schwellwerts werden aus den finalen Suchergebnissen entfernt.
-    - Es findet **KEINE** Neubewertung / Re-Ranking durch Multiplikation des RRF- / Cross-Encoder-Scores mit dem `effective_score` statt.
-*   **Alternativen**:
-    - Multiplikation des `effective_score` direkt in die RRF-Rankings: Verworfen, da dies die mathematischen RRF-Skalierungsunabhängigkeiten und die empirisch validierte RRF/Reranking-Reihenfolge aus ADR-021 zerstören würde.
-*   **Begründung**: Filterung statt Re-Ranking schützt die empirisch nachgewiesenen Trefferquoten des Hybrid-Retrievals (Anthropic Pattern, ADR-021), während irrelevante oder veraltete Erinnerungen (Low Importance / High Decay) zuverlässig ausgeschieden werden.
-*   **Konsequenzen**:
-    - `filter_by_importance()` in `Collection` filtert nach RRF/Reranker ohne Umsortierung.
-    - Zero-Panic Invariante in `ImportanceScore`, `DecayFunction` und `MemoryImportance`.
 
 ---
 
@@ -559,7 +544,7 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 *   **Konsequenzen**:
     - Neue WAL-Dateien nutzen `MFW3`.
     - Vollständige Abwärtskompatibilität und automatische In-Place-Migration für Alt-WALs.
-## ADR-029: Governance-System-Härtung — Prozessregeln gegen wiederkehrende Trait-Default-, Typ-Dopplungs- und Stale-Finding-Fehler
+## ADR-035: Governance-System-Härtung — Prozessregeln gegen wiederkehrende Trait-Default-, Typ-Dopplungs- und Stale-Finding-Fehler
 
 *   **Datum**: 2026-08-28
 *   **Status**: ✅ Final

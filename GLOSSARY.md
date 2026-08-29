@@ -46,7 +46,7 @@ Dieses Glossar definiert die exakten Fachbegriffe der MemFuse-Domain. Abweichung
 | Begriff | Definition | Nicht verwenden |
 |---|---|---|
 | **OllamaEmbedder** | Local-First Embedding Provider in `memfuse-ollama`, der den `TextEmbeddingEngine`-Trait implementiert. | ONNX engine |
-| **MCP Server** | Model Context Protocol Server (`memfuse-mcp`) mit HTTP/JSON-RPC Endpunkten für LLM-Tools. | REST API |
+| **MCP Server** | Model Context Protocol Server (`memfuse-mcp`) mit **stdio JSON-RPC 2.0** Transport (ADR-010). Kein HTTP-Listener. Kommunikation ausschließlich über stdin/stdout. | REST API, HTTP, axum |
 | **MemFuse Brain** | Tauri-basierte Desktop-Applikation (`memfuse-tauri`) mit Ingestion-Pipeline und Chat-UI. | Electron app |
 
 ## Fehlerbehandlung & Kryptographie

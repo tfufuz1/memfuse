@@ -1516,7 +1516,11 @@ impl<S: StorageEngine> Collection<S> {
         let (vw, tw, gw) = crate::fusion::weights_to_signal_factors(weights);
 
         // Community filtering / boosting VOR RRF
-        let target_community_id: Option<u64> = None;
+        let target_community_id: Option<u64> = if let Some(same_comm_entity) = same_community_as {
+            self.get_community(same_comm_entity).await.ok().flatten()
+        } else {
+            None
+        };
 
         let filter_or_boost = |list: Vec<crate::SearchResult>| async {
             if let Some(target_comm) = target_community_id {
