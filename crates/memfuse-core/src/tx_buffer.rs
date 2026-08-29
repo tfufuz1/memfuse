@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 pub const DEFAULT_SHARD_COUNT: usize = 64;
 
 /// Recommended maximum operations per single transaction to guard against memory exhaustion DoS.
-// AI-TAG[SMELL][MINOR] RESOLVED: AGT-CORE-001 — Bounded staging capacity enforced (TS:2026-08-28T00:00:00Z)
+// AI-TAG[SMELL][MINOR] RESOLVED: AGT-CORE-001 — Bounded staging capacity enforced (TS:2026-08-29T12:00:00Z) (SESSION: a3f29c1d)
 pub const DEFAULT_MAX_OPS_PER_TX: usize = 10_000;
 
 /// Configuration options for `TxBuffer`.
