@@ -158,40 +158,27 @@ fn results_to_py(
 
 /// Maps a MemFuseError into a structured Python PyErr with `kind`, `message`, and `details` attributes.
 fn memfuse_err(e: memfuse_core::MemFuseError) -> PyErr {
+    use pyo3::exceptions::*;
     let dto = memfuse_core::MemFuseErrorDto::from(&e);
     Python::with_gil(|py| {
         let py_err = match dto.kind.as_str() {
+            "NotFound" => PyKeyError::new_err(dto.message.clone()),
+            "Conflict" | "Transaction" => PyRuntimeError::new_err(dto.message.clone()),
+            "PolicyViolation" | "NamespaceViolation" => {
+                PyPermissionError::new_err(dto.message.clone())
+            }
+            "InvalidInput" => PyValueError::new_err(dto.message.clone()),
             "Storage" | "Io" | "WalCorruption" | "ChecksumMismatch" => {
                 MemFuseIOError::new_err(dto.message.clone())
             }
             "Index" | "HnswConnectivityDegraded" | "Text" => {
                 MemFuseIndexError::new_err(dto.message.clone())
             }
-            "InvalidInput"
-            | "Serialization"
-            | "Json"
-            | "ParseError"
-            | "Bincode"
-            | "NotFound"
-            | "Transaction"
-            | "TransactionTimeout"
-            | "Conflict"
-            | "InvalidSequenceNumber"
-            | "CheckpointNotFound" => MemFuseValueError::new_err(dto.message.clone()),
             "Crypto" => MemFuseCryptoError::new_err(dto.message.clone()),
-            "Sandbox"
-            | "MemoryLimitExceeded"
-            | "SandboxTimeout"
-            | "PolicyViolation"
-            | "NamespaceViolation" => {
-                pyo3::exceptions::PyPermissionError::new_err(dto.message.clone())
-            }
-            "MemoryBudgetExceeded" => pyo3::exceptions::PyMemoryError::new_err(dto.message.clone()),
-            "CapabilityUnsupported" => {
-                pyo3::exceptions::PyNotImplementedError::new_err(dto.message.clone())
-            }
+            "MemoryBudgetExceeded" => PyMemoryError::new_err(dto.message.clone()),
+            "CapabilityUnsupported" => PyNotImplementedError::new_err(dto.message.clone()),
             "Internal" | "Cluster" => MemFuseInternalError::new_err(dto.message.clone()),
-            _ => MemFuseError::new_err(dto.message.clone()),
+            _ => PyException::new_err(format!("[{}] {}", dto.kind, dto.message)),
         };
         let value = py_err.value(py);
         let _ = value.setattr("kind", dto.kind);
@@ -934,6 +921,43 @@ fn open(
     Ok(PyMemFuse {
         inner: Arc::new(db),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use memfuse_core::MemFuseError;
+    use pyo3::exceptions::*;
+
+    #[test]
+    fn test_py_err_not_found_maps_to_key_error() {
+        pyo3::prepare_freethreaded_python();
+        let err = MemFuseError::NotFound("doc1".into());
+        let py_err: PyErr = memfuse_err(err);
+        Python::with_gil(|py| {
+            assert!(py_err.is_instance_of::<PyKeyError>(py));
+        });
+    }
+
+    #[test]
+    fn test_py_err_invalid_input_maps_to_value_error() {
+        pyo3::prepare_freethreaded_python();
+        let err = MemFuseError::InvalidInput("invalid key".into());
+        let py_err: PyErr = memfuse_err(err);
+        Python::with_gil(|py| {
+            assert!(py_err.is_instance_of::<PyValueError>(py));
+        });
+    }
+
+    #[test]
+    fn test_py_err_policy_violation_maps_to_permission_error() {
+        pyo3::prepare_freethreaded_python();
+        let err = MemFuseError::PolicyViolation("access denied".into());
+        let py_err: PyErr = memfuse_err(err);
+        Python::with_gil(|py| {
+            assert!(py_err.is_instance_of::<PyPermissionError>(py));
+        });
+    }
 }
 
 #[pymodule]
