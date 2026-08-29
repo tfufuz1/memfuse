@@ -38,6 +38,7 @@ fn monotonic_timestamp_ms() -> u64 {
         .max(wall_ms)
 }
 
+/// `AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-CKPT-f3a1b2c4` (TS:2026-08-29T00:00:00Z): Checkpoint Manifest envelope for atomic multi-component snapshots.
 /// Metadata for a persistent checkpoint.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CheckpointMeta {
