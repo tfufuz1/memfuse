@@ -2140,7 +2140,7 @@ impl VectorIndex for HnswIndex {
     }
 
     fn trigger_rebuild_async(&self) {
-        let _ = self.trigger_rebuild_async();
+        drop(self.trigger_rebuild_async());
     }
 
     async fn stats(&self) -> Result<VectorIndexStats> {
