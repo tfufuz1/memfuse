@@ -19,9 +19,9 @@ All errors propagate via `MemFuseError` + `?` — zero silent failures.
 | DAG enforcement | `just dag-check` | Layer dependency validation |
 | Debt scan | `just debt-audit` | Scans unwrap/expect/std::fs |
 
-## 3. Workspace Inventory (14 Crates)
+## 3. Workspace Inventory (15 Crates)
 
-MemFuse besteht aus 14 Workspace-Crates (13 Kern-Crates + 1 optionales Crate `memfuse-embed`) in einer 5-Schichten-Architektur (Layer 0–4).
+MemFuse besteht aus 15 Workspace-Crates (14 Kern-Crates + 1 optionales Crate `memfuse-embed`) in einer 5-Schichten-Architektur (Layer 0–4).
 
 Die vollständige, automatisch aktuell gehaltene Crate-Tabelle und DAG-Topologie ist in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) dokumentiert.
 

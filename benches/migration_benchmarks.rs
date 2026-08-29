@@ -13,7 +13,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
     let rt = Runtime::new().unwrap(); // unwrap allowed
     let tmp = TempDir::new().unwrap(); // unwrap allowed
     let config = MemFuseConfig {
-        dimension: 1536,
+        dimension: 768,
         ..Default::default()
     };
     let db = rt.block_on(MemFuse::open_with_config(tmp.path(), config)).unwrap(); // unwrap allowed
@@ -60,7 +60,7 @@ fn bench_rerun_cost(c: &mut Criterion) {
     let rt = Runtime::new().unwrap(); // unwrap allowed
     let tmp = TempDir::new().unwrap(); // unwrap allowed
     let config = MemFuseConfig {
-        dimension: 1536,
+        dimension: 768,
         ..Default::default()
     };
     let db = rt.block_on(MemFuse::open_with_config(tmp.path(), config)).unwrap(); // unwrap allowed
@@ -87,7 +87,7 @@ fn bench_snapshot_overhead(c: &mut Criterion) {
     let rt = Runtime::new().unwrap(); // unwrap allowed
     let tmp = TempDir::new().unwrap(); // unwrap allowed
     let config = MemFuseConfig {
-        dimension: 1536,
+        dimension: 768,
         ..Default::default()
     };
     let db = rt.block_on(MemFuse::open_with_config(tmp.path(), config)).unwrap(); // unwrap allowed
@@ -118,7 +118,7 @@ fn bench_staged_stats_commit(c: &mut Criterion) {
     let rt = Runtime::new().unwrap(); // unwrap allowed
     let tmp = TempDir::new().unwrap(); // unwrap allowed
     let config = MemFuseConfig {
-        dimension: 1536,
+        dimension: 768,
         ..Default::default()
     };
     let db = rt.block_on(MemFuse::open_with_config(tmp.path(), config)).unwrap(); // unwrap allowed
