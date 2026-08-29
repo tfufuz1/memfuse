@@ -30,8 +30,8 @@ use tokio::io::AsyncWriteExt;
 pub type BlockCache = RwLock<LruCache<(u64, u64), Bytes>>;
 
 /// Magic bytes for SSTable file trailer.
-pub const SSTABLE_MAGIC_MFSX: u32 = 0x5853464D; // "MFSX" in hex
-pub const SSTABLE_MAGIC_LEGACY: u32 = 0x4D465354; // "MFST" in hex
+pub const SSTABLE_MAGIC_MFSX: u32 = 0x5853_464D; // "MFSX" in hex
+pub const SSTABLE_MAGIC_LEGACY: u32 = 0x4D46_5354; // "MFST" in hex
 
 /// Creates a new block cache instance. Capacity is in MB (assuming 4KB blocks).
 pub fn create_block_cache(capacity_mb: usize) -> Arc<BlockCache> {
@@ -279,6 +279,7 @@ pub struct SstableMetadata {
 /// Note: Uses a whole-SSTable Bloom filter with a default FPR. The Bloom filter FPR should be
 /// treated as a tunable parameter and configured via [`crate::lsm::LsmConfig`].
 pub struct SstableBuilder {
+    path: PathBuf,
     file: File,
     block_builder: BlockBuilder,
     index: Vec<(Bytes, u64)>, // (last_key, offset)
@@ -320,6 +321,7 @@ impl SstableBuilder {
             .map_err(|e| MemFuseError::Storage(format!("Failed to create SSTable: {}", e)))?;
 
         Ok(Self {
+            path: path_ref.to_path_buf(),
             file,
             block_builder: BlockBuilder::new(BLOCK_SIZE),
             index: Vec::new(),
@@ -511,6 +513,8 @@ impl SstableBuilder {
             .sync_all()
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        crate::util::fsync_parent_dir(&self.path).await?;
 
         let file_size = self
             .file
@@ -1147,6 +1151,7 @@ impl SstableReader {
         &self.metadata
     }
 
+    #[allow(clippy::unused_async)]
     pub async fn stream(self: &Arc<Self>) -> Result<SstableStream> {
         Ok(SstableStream {
             reader: Arc::clone(self),
