@@ -336,8 +336,8 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     async fn save_checkpoint_internal(&self, meta: CheckpointMeta) -> Result<()> {
         let key = format!("{}:checkpoint:{}", self.namespace, meta.name);
         let manifest = CheckpointManifest::new(meta.clone(), vec!["storage".to_string()])?;
-        let value =
-            serde_json::to_vec(&manifest).map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+        let value = serde_json::to_vec(&manifest)
+            .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
 
         let tx = self.next_tx()?;
         if let Err(e) = self.storage.put(tx, key.as_bytes(), &value).await {
@@ -380,13 +380,14 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let key = format!("{}:checkpoint:{}", self.namespace, name);
         match self.storage.get(key.as_bytes()).await? {
             Some(bytes) => {
-                let meta = if let Ok(manifest) = serde_json::from_slice::<CheckpointManifest>(&bytes) {
-                    manifest.verify()?;
-                    manifest.meta
-                } else {
-                    serde_json::from_slice::<CheckpointMeta>(&bytes)
-                        .map_err(|e| MemFuseError::Serialization(e.to_string()))?
-                };
+                let meta =
+                    if let Ok(manifest) = serde_json::from_slice::<CheckpointManifest>(&bytes) {
+                        manifest.verify()?;
+                        manifest.meta
+                    } else {
+                        serde_json::from_slice::<CheckpointMeta>(&bytes)
+                            .map_err(|e| MemFuseError::Serialization(e.to_string()))?
+                    };
                 self.name_index
                     .write()
                     .insert(meta.name.clone(), meta.seq_no);
@@ -404,13 +405,14 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
         let mut result = Vec::with_capacity(entries.len());
         for (_key_bytes, value_bytes) in entries {
-            let meta = if let Ok(manifest) = serde_json::from_slice::<CheckpointManifest>(&value_bytes) {
-                manifest.verify()?;
-                manifest.meta
-            } else {
-                serde_json::from_slice::<CheckpointMeta>(&value_bytes)
-                    .map_err(|e| MemFuseError::Serialization(e.to_string()))?
-            };
+            let meta =
+                if let Ok(manifest) = serde_json::from_slice::<CheckpointManifest>(&value_bytes) {
+                    manifest.verify()?;
+                    manifest.meta
+                } else {
+                    serde_json::from_slice::<CheckpointMeta>(&value_bytes)
+                        .map_err(|e| MemFuseError::Serialization(e.to_string()))?
+                };
             result.push(meta);
         }
 

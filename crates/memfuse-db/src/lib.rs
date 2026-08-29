@@ -308,7 +308,13 @@ impl MemFuse {
         // 3. Mark pending intents as "repaired" ONLY if collection repair succeeded.
         if !pending_intents.is_empty() && repair_errors.is_empty() {
             for intent_key in &pending_intents {
-                let tx = self.allocate_tx();
+                let tx = match self.allocate_tx() {
+                    Ok(t) => t,
+                    Err(e) => {
+                        tracing::error!("repair_on_open: failed to allocate tx: {}", e);
+                        continue;
+                    }
+                };
                 if let Err(e) = self.storage.put(tx, intent_key, b"repaired").await {
                     tracing::error!("repair_on_open: failed to mark intent as repaired: {}", e);
                     continue;
@@ -435,7 +441,7 @@ impl MemFuse {
         // Register in storage if not default
         if name != "default" {
             let col_idx_key = [b"__col_idx:\x00", name.as_bytes()].concat();
-            let tx = self.allocate_tx();
+            let tx = self.allocate_tx()?;
             self.storage.put(tx, &col_idx_key, b"{}").await?;
             self.storage.commit(tx).await?;
         }
@@ -462,12 +468,14 @@ impl MemFuse {
 
     /// Allokiert eine eindeutige, atomar inkrementierte Transaction-ID.
     /// EINZIGE legale TxId-Quelle für externe Crates (verhindert Kollisionen).
-    pub fn allocate_tx(&self) -> TxId {
+    pub fn allocate_tx(&self) -> Result<TxId> {
         let id = self.next_tx.fetch_add(1, Ordering::SeqCst);
         if id >= TxId::INTERNAL_BASE {
-            panic!("TxId counter exhausted — INTERNAL_BASE range collision");
+            return Err(memfuse_core::MemFuseError::Transaction(
+                "TxId counter exhausted: INTERNAL_BASE range collision. Collection must be recreated.".into(),
+            ));
         }
-        TxId::new(id)
+        Ok(TxId::new(id))
     }
 
     /// Lists all existing collection names (including those persisted in storage).
@@ -506,7 +514,7 @@ impl MemFuse {
             ));
         }
 
-        let tx = self.allocate_tx();
+        let tx = self.allocate_tx()?;
 
         // 1. Delete all collection data keys (prefix-based)
         let col_data_prefix = format!("__col:{}:", name);
@@ -1321,8 +1329,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[should_panic(expected = "TxId counter exhausted — INTERNAL_BASE range collision")]
-    async fn test_allocate_tx_exhaustion_panics() {
+    async fn test_allocate_tx_exhaustion_returns_err() {
         let tmp = TempDir::new().expect("temp dir"); // expect
         let config = MemFuseConfig {
             dimension: 4,
@@ -1332,7 +1339,11 @@ mod tests {
             .await
             .expect("open db"); // expect
         db.next_tx.store(TxId::INTERNAL_BASE, Ordering::SeqCst);
-        let _ = db.allocate_tx();
+        let res = db.allocate_tx();
+        assert!(matches!(
+            res,
+            Err(memfuse_core::MemFuseError::Transaction(_))
+        ));
     }
 
     #[tokio::test]

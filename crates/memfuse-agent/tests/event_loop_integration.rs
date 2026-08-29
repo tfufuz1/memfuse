@@ -69,7 +69,12 @@ async fn test_event_loop_exhausted_source_exit_and_checkpointing() {
 
     let mut graph = StateGraph::new();
     graph.add_node("start", "Start node", NodeType::Start, None);
-    graph.add_node("task", "Process event", NodeType::Task, Some("telemetry_tool"));
+    graph.add_node(
+        "task",
+        "Process event",
+        NodeType::Task,
+        Some("telemetry_tool"),
+    );
     graph.add_node("end", "Finish step", NodeType::End, None);
 
     graph.add_edge("start", "task", None, 1);
@@ -161,7 +166,11 @@ async fn test_polling_document_event_source_delta_detection() {
 
     // Insert first document
     doc_col
-        .insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"text": "first"})))
+        .insert(
+            "doc-1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"text": "first"})),
+        )
         .await
         .expect("insert doc 1"); // unwrap allowed
 
@@ -180,7 +189,11 @@ async fn test_polling_document_event_source_delta_detection() {
 
     // Insert second document
     doc_col
-        .insert("doc-2", &[0.0, 1.0, 0.0, 0.0], Some(json!({"text": "second"})))
+        .insert(
+            "doc-2",
+            &[0.0, 1.0, 0.0, 0.0],
+            Some(json!({"text": "second"})),
+        )
         .await
         .expect("insert doc 2"); // unwrap allowed
 
@@ -231,7 +244,11 @@ async fn test_custom_event_source_extensibility() {
     let mut ctx = AgentContext::new("task-custom-1", "start", db.clone(), state_col, budget);
 
     let mut custom_source = CustomStreamSource {
-        stream: vec![BackgroundEvent::new(json!({"screen": "frame_001"}), "camera", 10)],
+        stream: vec![BackgroundEvent::new(
+            json!({"screen": "frame_001"}),
+            "camera",
+            10,
+        )],
         idx: 0,
     };
     let shutdown = CancellationToken::new();

@@ -902,7 +902,9 @@ impl Wal {
             let chunk_start_pos = pos;
             pos += (4 + len) as u64;
 
-            if matches!(version, WalVersion::V2 | WalVersion::V3) && self.key_manager.as_ref().is_some() {
+            if matches!(version, WalVersion::V2 | WalVersion::V3)
+                && self.key_manager.as_ref().is_some()
+            {
                 let km = match self.key_manager.as_ref() {
                     Some(km) => km,
                     None => unreachable!(),

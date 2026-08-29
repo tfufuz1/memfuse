@@ -22,10 +22,31 @@ use std::time::{Duration, Instant};
 pub const DEFAULT_SHARD_COUNT: usize = 64;
 
 /// Recommended maximum operations per single transaction to guard against memory exhaustion DoS.
-// AI-TAG[SMELL][MINOR] Bounded staging capacity (ID: AGT-CORE-001) (TS:2026-08-28T00:00:00Z)
-// KONTEXT: TxBuffer::stage/stage_many appends to Vec without hard capacity limit
-// ANWEISUNG: Downstream callers (e.g. memfuse-db) should cap max_ops per transaction
-pub const DEFAULT_MAX_OPS_PER_TX: usize = 100_000;
+// AI-TAG[SMELL][MINOR] RESOLVED: AGT-CORE-001 — Bounded staging capacity enforced (TS:2026-08-28T00:00:00Z)
+pub const DEFAULT_MAX_OPS_PER_TX: usize = 10_000;
+
+/// Configuration options for `TxBuffer`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TxBufferConfig {
+    /// Transaction timeout duration.
+    pub tx_timeout: Duration,
+    /// Maximum recommended active transactions.
+    pub max_active_tx: usize,
+    /// Maximale Anzahl von Staging-Operationen pro Transaktion.
+    /// Verhindert OOM durch einzelne unbegrenzte Transaktionen.
+    /// Default: 10_000 (großzügig, aber bounded).
+    pub max_ops_per_tx: usize,
+}
+
+impl Default for TxBufferConfig {
+    fn default() -> Self {
+        Self {
+            tx_timeout: Duration::from_secs(30),
+            max_active_tx: 64,
+            max_ops_per_tx: DEFAULT_MAX_OPS_PER_TX,
+        }
+    }
+}
 
 /// Operation to be executed in an index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +106,7 @@ impl<T: Clone> TxShard<T> {
 pub struct TxBuffer<T: Clone> {
     shards: Vec<RwLock<TxShard<T>>>,
     tx_timeout: Duration,
+    config: TxBufferConfig,
 }
 
 impl<T: Clone> TxBuffer<T> {
@@ -98,13 +120,27 @@ impl<T: Clone> TxBuffer<T> {
     /// If `shard_count` is 0, it defaults to 1 to prevent division-by-zero
     /// in `shard_idx()` (§2 Zero-Panic-Gesetz).
     pub fn new_with_config(shard_count: usize, tx_timeout: Duration) -> Self {
-        // §2: Zero-Panic — shard_count=0 would cause division-by-zero in shard_idx()
+        let mut config = TxBufferConfig::default();
+        config.tx_timeout = tx_timeout;
+        Self::new_with_config_ext(shard_count, tx_timeout, config)
+    }
+
+    /// Creates a new buffer with explicit `TxBufferConfig`.
+    pub fn new_with_config_ext(
+        shard_count: usize,
+        _tx_timeout: Duration,
+        config: TxBufferConfig,
+    ) -> Self {
         let shard_count = if shard_count == 0 { 1 } else { shard_count };
         let mut shards = Vec::with_capacity(shard_count);
         for _ in 0..shard_count {
             shards.push(RwLock::new(TxShard::new()));
         }
-        Self { shards, tx_timeout }
+        Self {
+            shards,
+            tx_timeout: config.tx_timeout,
+            config,
+        }
     }
 
     #[inline]
@@ -130,18 +166,32 @@ impl<T: Clone> TxBuffer<T> {
             .or_insert_with(|| (Vec::with_capacity(16), Instant::now()));
     }
 
-    /// Stages an operation for the given transaction.
+    /// Stages an operation for the given transaction, checking bounded capacity.
     ///
-    /// If the transaction has not been explicitly started with `begin`,
-    /// it will be implicitly created on the first `stage` call.
-    pub fn stage(&self, tx: TxId, op: IndexOp<T>) {
+    /// # BREAKING CHANGE
+    /// Returns `Result<(), MemFuseError>` to enforce bounded capacity limits.
+    pub fn stage(&self, tx: TxId, op: IndexOp<T>) -> Result<()> {
+        self.stage_bounded(tx, op)
+    }
+
+    /// Stages an operation for the given transaction, enforcing `max_ops_per_tx` limit.
+    pub fn stage_bounded(&self, tx: TxId, op: IndexOp<T>) -> Result<()> {
         let shard_idx = self.shard_idx(tx);
         let mut shard = self.shards[shard_idx].write();
         let entry = shard
             .ops
             .entry(tx)
             .or_insert_with(|| (Vec::with_capacity(16), Instant::now()));
+
+        if entry.0.len() >= self.config.max_ops_per_tx {
+            return Err(MemFuseError::Transaction(format!(
+                "Transaction {} exceeded max staging capacity ({} ops)",
+                tx, self.config.max_ops_per_tx
+            )));
+        }
+
         entry.0.push(op);
+        Ok(())
     }
 
     /// Stages multiple operations for a transaction in a single shard lock acquisition.
@@ -149,14 +199,24 @@ impl<T: Clone> TxBuffer<T> {
     /// All `ops` must belong to the same transaction. Since `shard_idx` is a pure
     /// function of `tx.inner()`, all operations for a given `TxId` always land in
     /// the same shard — a single write-lock acquisition covers the entire batch.
-    pub fn stage_many(&self, tx: TxId, ops: impl IntoIterator<Item = IndexOp<T>>) {
+    pub fn stage_many(&self, tx: TxId, ops: impl IntoIterator<Item = IndexOp<T>>) -> Result<()> {
         let shard_idx = self.shard_idx(tx);
         let mut shard = self.shards[shard_idx].write();
         let entry = shard
             .ops
             .entry(tx)
             .or_insert_with(|| (Vec::new(), Instant::now()));
-        entry.0.extend(ops);
+
+        let ops_vec: Vec<_> = ops.into_iter().collect();
+        if entry.0.len() + ops_vec.len() > self.config.max_ops_per_tx {
+            return Err(MemFuseError::Transaction(format!(
+                "Transaction {} exceeded max staging capacity ({} ops)",
+                tx, self.config.max_ops_per_tx
+            )));
+        }
+
+        entry.0.extend(ops_vec);
+        Ok(())
     }
 
     /// Validates that the transaction has pending operations.
@@ -273,10 +333,59 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
+    fn test_txbuffer_respects_max_ops_limit() {
+        let config = TxBufferConfig {
+            max_ops_per_tx: 3,
+            ..Default::default()
+        };
+        let buffer = TxBuffer::<String>::new_with_config_ext(64, Duration::from_secs(5), config);
+        let tx = TxId::new(1);
+        buffer.begin(tx);
+        // 3 operations succeed
+        for i in 0..3 {
+            let res = buffer.stage_bounded(
+                tx,
+                IndexOp::Insert {
+                    doc_id: DocId::new(i),
+                    data: format!("data_{i}"),
+                },
+            );
+            assert!(res.is_ok());
+        }
+        // 4th operation must fail
+        let result = buffer.stage_bounded(
+            tx,
+            IndexOp::Insert {
+                doc_id: DocId::new(99),
+                data: "overflow".to_string(),
+            },
+        );
+        assert!(matches!(result, Err(MemFuseError::Transaction(_))));
+    }
+
+    #[test]
+    fn test_txbuffer_default_config_allows_normal_workload() {
+        let buffer = TxBuffer::<String>::new();
+        let tx = TxId::new(42);
+        buffer.begin(tx);
+        for i in 0..500 {
+            let res = buffer.stage(
+                tx,
+                IndexOp::Insert {
+                    doc_id: DocId::new(i),
+                    data: format!("data_{i}"),
+                },
+            );
+            assert!(res.is_ok());
+        }
+        assert_eq!(buffer.get_ops(tx).map(|v| v.len()), Some(500));
+    }
+
+    #[test]
     fn test_tx_buffer_stage_many_and_max_ops_constant() {
         let buffer = TxBuffer::<String>::new();
         let tx = TxId::new(42);
-        assert_eq!(DEFAULT_MAX_OPS_PER_TX, 100_000);
+        assert_eq!(DEFAULT_MAX_OPS_PER_TX, 10_000);
 
         let ops = vec![
             IndexOp::Insert {
@@ -289,7 +398,7 @@ mod tests {
             },
         ];
 
-        buffer.stage_many(tx, ops);
+        assert!(buffer.stage_many(tx, ops).is_ok());
         assert!(buffer.has_tx(tx));
         let drained = buffer.drain(tx);
         assert_eq!(drained.len(), 2);
@@ -301,7 +410,7 @@ mod tests {
         let buffer = TxBuffer::<String>::new_with_config(64, Duration::from_secs(30));
         let tx = TxId::new(1);
 
-        buffer.stage(
+        let _ = buffer.stage(
             tx,
             IndexOp::Insert {
                 doc_id: DocId::new(1),
@@ -328,7 +437,7 @@ mod tests {
                 let tx = TxId::new(t as u64);
                 buffer.begin(tx);
                 for i in 0..ops_per_tx {
-                    buffer.stage(
+                    let _ = buffer.stage(
                         tx,
                         IndexOp::Insert {
                             doc_id: DocId::new(i as u64),
@@ -378,7 +487,7 @@ mod tests {
             let tx = TxId::new(i as u64 + 100);
             handles.push(tokio::spawn(async move {
                 buffer.begin(tx);
-                buffer.stage(
+                let _ = buffer.stage(
                     tx,
                     IndexOp::Insert {
                         doc_id: DocId::new(i as u64),
@@ -423,7 +532,7 @@ mod tests {
         assert!(buffer.validate_pending_ops(tx).is_err());
 
         // With ops
-        buffer.stage(
+        let _ = buffer.stage(
             tx,
             IndexOp::Insert {
                 doc_id: DocId::new(1),
@@ -465,7 +574,7 @@ mod tests {
         let buffer = TxBuffer::<u8>::new_with_config(0, Duration::from_secs(1));
         let tx = TxId::new(42);
         buffer.begin(tx);
-        buffer.stage(
+        let _ = buffer.stage(
             tx,
             IndexOp::Insert {
                 doc_id: DocId::new(1),
@@ -488,7 +597,7 @@ mod tests {
             // 1. Stage values for all unique TXs
             for &id in &tx_ids {
                 let tx = TxId::new(id);
-                buffer.stage(tx, IndexOp::Insert { doc_id: DocId::new(id), data: id });
+                let _ = buffer.stage(tx, IndexOp::Insert { doc_id: DocId::new(id), data: id });
             }
 
             // 2. Verify each TX only has its own data
@@ -544,7 +653,7 @@ mod tests {
 
             // 1. Stage first batch
             for &val in &first_ops {
-                buffer.stage(tx, IndexOp::Insert { doc_id: DocId::new(val), data: val });
+                let _ = buffer.stage(tx, IndexOp::Insert { doc_id: DocId::new(val), data: val });
             }
 
             // 2. Drain and verify matching first batch
@@ -566,7 +675,7 @@ mod tests {
 
             // 4. Stage second batch
             for &val in &second_ops {
-                buffer.stage(tx, IndexOp::Insert { doc_id: DocId::new(val), data: val });
+                let _ = buffer.stage(tx, IndexOp::Insert { doc_id: DocId::new(val), data: val });
             }
 
             // 5. Drain and verify matching second batch exactly (no ghost leakage)
@@ -601,7 +710,7 @@ mod tests {
 
             for &id in &unique_txs {
                 let tx = TxId::new(id);
-                buffer.stage(tx, IndexOp::Insert { doc_id: DocId::new(id), data: id });
+                let _ = buffer.stage(tx, IndexOp::Insert { doc_id: DocId::new(id), data: id });
             }
 
             // Determine which to discard

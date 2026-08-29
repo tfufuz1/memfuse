@@ -30,7 +30,7 @@ async fn test_transaction_atomicity_under_load() -> Result<()> {
         handles.push(tokio::spawn(async move {
             b.wait().await;
             for i in 0..iterations {
-                let tx = col.begin_transaction();
+                let tx = col.begin_transaction().unwrap(); // unwrap allowed
                 for j in 0..batch_size {
                     let id = format!("doc_{}_{}_{}", w, i, j);
                     let vec = vec![i as f32; 128];
@@ -41,9 +41,9 @@ async fn test_transaction_atomicity_under_load() -> Result<()> {
                         Some(serde_json::json!({"text": format!("data_{}_{}_{}", w, i, j)})),
                     )
                     .await
-                    .unwrap();
+                    .unwrap(); // unwrap allowed
                 }
-                tx.commit().await.unwrap();
+                tx.commit().await.unwrap(); // unwrap allowed
             }
         }));
     }

@@ -230,23 +230,27 @@ impl<S: StorageEngine> Collection<S> {
     }
 
     /// Generates and returns the next sequential transaction ID for this collection.
-    pub fn next_tx(&self) -> TxId {
+    pub fn next_tx(&self) -> Result<TxId> {
         let id = self.next_tx.fetch_add(1, Ordering::SeqCst);
         if id >= TxId::INTERNAL_BASE {
-            panic!("TxId counter exhausted — INTERNAL_BASE range collision");
+            return Err(memfuse_core::MemFuseError::Transaction(
+                "TxId counter exhausted: INTERNAL_BASE range collision. Collection must be recreated.".into(),
+            ));
         }
-        TxId::new(id)
+        Ok(TxId::new(id))
     }
 
     /// Allokiert eine eindeutige, atomar inkrementierte Transaction-ID.
     /// Externe Crates verwenden diese Methode statt eigener TxId-Generierung.
     /// Verhindert TxId-Kollisionen bei paralleler Ingestion (EMBED_CONCURRENCY > 1).
-    pub fn allocate_tx(&self) -> TxId {
+    pub fn allocate_tx(&self) -> Result<TxId> {
         let id = self.next_tx.fetch_add(1, Ordering::SeqCst);
         if id >= TxId::INTERNAL_BASE {
-            panic!("TxId counter exhausted — INTERNAL_BASE range collision");
+            return Err(memfuse_core::MemFuseError::Transaction(
+                "TxId counter exhausted: INTERNAL_BASE range collision. Collection must be recreated.".into(),
+            ));
         }
-        TxId::new(id)
+        Ok(TxId::new(id))
     }
 
     /// Returns the CSR graph index for this collection.
@@ -327,7 +331,7 @@ impl<S: StorageEngine> Collection<S> {
         // 1. Scan for pending transaction intents (2-Phase Commit Recovery — FIND-DB-005)
         let intent_prefix = self.namespaced_key(&[], 3);
         let intents = self.storage.scan_prefix(&intent_prefix).await?;
-        let recovery_tx = self.next_tx();
+        let recovery_tx = self.next_tx()?;
         let mut recovered_any = false;
         let mut recovered_text = false;
         let mut recovered_graph = false;
@@ -422,7 +426,7 @@ impl<S: StorageEngine> Collection<S> {
         }
 
         // 2. Fallback: Full scan for documents missing from index (FIND-DB-004: Parallel Batching)
-        let fallback_tx = self.next_tx();
+        let fallback_tx = self.next_tx()?;
         let mut fallback_any = false;
         let mut fallback_text = false;
 
@@ -497,9 +501,9 @@ impl<S: StorageEngine> Collection<S> {
 
     /// Begins a new atomic transaction for this collection.
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn begin_transaction(&self) -> crate::transaction::DbTransaction<S> {
-        let tx = self.next_tx();
-        crate::transaction::DbTransaction::new(self.clone(), tx)
+    pub fn begin_transaction(&self) -> Result<crate::transaction::DbTransaction<S>> {
+        let tx = self.next_tx()?;
+        Ok(crate::transaction::DbTransaction::new(self.clone(), tx))
     }
 
     /// Inserts a text document, automatically generating its embedding.
@@ -621,7 +625,7 @@ impl<S: StorageEngine> Collection<S> {
 
         let _guard = self.insert_lock.lock().await;
 
-        let db_tx = self.begin_transaction();
+        let db_tx = self.begin_transaction()?;
 
         match self.insert_op(&db_tx, id, embedding, metadata).await {
             Ok(_) => db_tx.commit().await,
@@ -722,7 +726,7 @@ impl<S: StorageEngine> Collection<S> {
         docs: &[(String, Vec<f32>, Option<serde_json::Value>)],
     ) -> Result<()> {
         let _guard = self.insert_lock.lock().await;
-        let db_tx = self.begin_transaction();
+        let db_tx = self.begin_transaction()?;
         for (id, embedding, metadata) in docs {
             if let Err(e) = self
                 .insert_op(&db_tx, id, embedding, metadata.clone())
@@ -757,7 +761,7 @@ impl<S: StorageEngine> Collection<S> {
         }
 
         let _guard = self.insert_lock.lock().await;
-        let db_tx = self.begin_transaction();
+        let db_tx = self.begin_transaction()?;
         let result = self.update_op(&db_tx, id, embedding, metadata).await;
 
         match result {
@@ -778,7 +782,7 @@ impl<S: StorageEngine> Collection<S> {
         docs: &[(String, Vec<f32>, Option<serde_json::Value>)],
     ) -> Result<()> {
         let _guard = self.insert_lock.lock().await;
-        let db_tx = self.begin_transaction();
+        let db_tx = self.begin_transaction()?;
         for (id, embedding, metadata) in docs {
             if embedding.len() != self.dimension {
                 if let Err(rollback_err) = db_tx.rollback().await {
@@ -853,7 +857,7 @@ impl<S: StorageEngine> Collection<S> {
         }
 
         let _guard = self.insert_lock.lock().await;
-        let db_tx = self.begin_transaction();
+        let db_tx = self.begin_transaction()?;
 
         match self.update_op(&db_tx, id, embedding, metadata).await {
             Ok(_) => db_tx.commit().await,
@@ -931,7 +935,7 @@ impl<S: StorageEngine> Collection<S> {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn delete(&self, id: &str) -> Result<()> {
         let _guard = self.insert_lock.lock().await;
-        let mut db_tx = self.begin_transaction();
+        let mut db_tx = self.begin_transaction()?;
 
         match self.delete_op(&mut db_tx, id).await {
             Ok(_) => db_tx.commit().await,
@@ -980,7 +984,7 @@ impl<S: StorageEngine> Collection<S> {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn relate(&self, from: &str, to: &str, label: &str) -> Result<()> {
         let _guard = self.insert_lock.lock().await;
-        let db_tx = self.begin_transaction();
+        let db_tx = self.begin_transaction()?;
 
         let from_id = memfuse_core::EntityId::from_key(from)?;
         let to_id = memfuse_core::EntityId::from_key(to)?;
@@ -1696,7 +1700,7 @@ impl<S: StorageEngine> Collection<S> {
         };
 
         let entries = self.storage.scan_prefix(&scan_prefix).await?;
-        let tx = self.next_tx();
+        let tx = self.next_tx()?;
         for (k, v) in entries {
             if self.name == "default" && k.starts_with(b"__") {
                 continue;
@@ -1729,7 +1733,7 @@ impl<S: StorageEngine> Collection<S> {
 
         let entries = self.storage.scan_prefix(&prefix).await?;
         let mut migrated_count = 0;
-        let tx = self.next_tx();
+        let tx = self.next_tx()?;
 
         for (k, v) in entries {
             // Try parsing as full document first (which indicates it needs migration)
@@ -1901,7 +1905,7 @@ impl<S: StorageEngine> Collection<S> {
             return Ok(assignments);
         }
 
-        let tx = self.allocate_tx();
+        let tx = self.allocate_tx()?;
 
         for assignment in &assignments {
             let key = self.namespaced_key(
@@ -1945,7 +1949,7 @@ impl<S: StorageEngine> Collection<S> {
             self.prefix.clone()
         };
 
-        let tx = self.next_tx();
+        let tx = self.next_tx()?;
 
         // 1. Clean collection data (user keys, docs, rels, intents)
         self.storage.delete_prefix(tx, &prefix).await?;
@@ -2009,9 +2013,7 @@ mod tests {
 
         // 2. Perform 5 dummy commits (inserts)
         for i in 0..5 {
-            col.insert(&format!("dummy_{i}"), &vec, None)
-                .await
-                .unwrap();
+            col.insert(&format!("dummy_{i}"), &vec, None).await.unwrap();
         }
 
         // 3. Trigger expiry reaper
@@ -2020,7 +2022,10 @@ mod tests {
 
         // 4. Verify document is gone from storage and search
         let doc_after = col.get("temp_doc").await.unwrap();
-        assert!(doc_after.is_none(), "Document must be deleted after TTL expiry");
+        assert!(
+            doc_after.is_none(),
+            "Document must be deleted after TTL expiry"
+        );
 
         let search_res = col.search(&vec, 10).await.unwrap();
         assert!(
@@ -2542,9 +2547,9 @@ mod tests {
             memfuse_text::Language::English,
         );
 
-        let tx1 = col.next_tx();
-        let tx2 = col.next_tx();
-        let tx3 = col.next_tx();
+        let tx1 = col.next_tx().unwrap(); // unwrap allowed
+        let tx2 = col.next_tx().unwrap(); // unwrap allowed
+        let tx3 = col.next_tx().unwrap(); // unwrap allowed
 
         assert_eq!(tx1.inner(), 1);
         assert_eq!(tx2.inner(), 2);
@@ -2586,9 +2591,9 @@ mod tests {
             memfuse_text::Language::English,
         );
 
-        let tx1 = col.allocate_tx();
-        let tx2 = col.allocate_tx();
-        let tx3 = col.allocate_tx();
+        let tx1 = col.allocate_tx().unwrap(); // unwrap allowed
+        let tx2 = col.allocate_tx().unwrap(); // unwrap allowed
+        let tx3 = col.allocate_tx().unwrap(); // unwrap allowed
 
         assert_eq!(tx1.inner(), 100);
         assert_eq!(tx2.inner(), 101);

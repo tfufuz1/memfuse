@@ -126,7 +126,7 @@ fn test_tx_buffer_orphan_reaper_concurrency() {
             for i in 0..iterations {
                 let tx = TxId::new((t * iterations + i) as u64);
                 b.begin(tx);
-                b.stage(
+                let _ = b.stage(
                     tx,
                     IndexOp::Insert {
                         doc_id: DocId::new(i as u64),
