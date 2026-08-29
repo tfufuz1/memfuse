@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// ZWECK: Suchoperationen (Vector-, Text-, Graph- & Hybrid-Retrieval) für Collection.
+// INVARIANTEN: Snapshot-Pinning garantiert Isolation während gefilterter Suche; MAX_SEARCH_K Obergrenze.
+// NICHT-OFFENSICHTLICH: Multi-Signal RRF vereint Ergebnisse ohne inkompatible Score-Skalen.
+// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+
 use super::{extract_effective_importance, Collection, StoredDocument, StoredDocumentMeta};
 #[allow(deprecated)]
 use crate::filter::MetadataFilter;
