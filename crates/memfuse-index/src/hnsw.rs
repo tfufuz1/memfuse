@@ -245,6 +245,8 @@ pub struct HnswIndexCore {
     pub quantizer: RwLock<Option<crate::quantize::ScalarQuantizer>>,
     mmap_index: RwLock<Option<crate::persistence::MmapIndex>>,
     last_tx_id: AtomicU64,
+    /// Sequence log tracking insertions and deletions for snapshot isolation (`search_at`).
+    seq_log: RwLock<memfuse_core::SequenceLog>,
 }
 
 impl HnswIndex {
@@ -271,6 +273,7 @@ impl HnswIndex {
                 quantizer: RwLock::new(None),
                 mmap_index: RwLock::new(None),
                 last_tx_id: AtomicU64::new(0),
+                seq_log: RwLock::new(memfuse_core::SequenceLog::new()),
             }),
         })
     }
@@ -301,6 +304,7 @@ impl HnswIndex {
                 quantizer: RwLock::new(None),
                 mmap_index: RwLock::new(None),
                 last_tx_id: AtomicU64::new(0),
+                seq_log: RwLock::new(memfuse_core::SequenceLog::new()),
             }),
         }
     }
@@ -329,6 +333,11 @@ impl HnswIndex {
     /// Rebuilds the HNSW index from scratch, removing all deleted nodes.
     pub async fn rebuild(&self) -> Result<()> {
         self.inner.rebuild().await
+    }
+
+    /// Prunes sequence log entries that are tombstoned and older than `min_active_seqno`.
+    pub fn compact_seq_log(&self, min_active_seqno: u64) {
+        self.inner.seq_log.write().compact(min_active_seqno);
     }
 
     /// Returns all active (non-deleted) DocIds by reading the `doc_to_node` map directly.
@@ -1757,9 +1766,6 @@ impl VectorIndex for HnswIndex {
         let mut results = Vec::with_capacity(k);
 
         for c in candidates.iter() {
-            if deleted.contains(c.index as u64) {
-                continue;
-            }
             let node = nodes.get(c.index).ok_or_else(|| {
                 MemFuseError::Index(format!("HNSW candidate node missing at index {}", c.index))
             })?;
@@ -1767,10 +1773,13 @@ impl VectorIndex for HnswIndex {
                 continue;
             }
             let doc_id = node.doc_id;
+
             if let Some(f) = filter {
                 if !f(doc_id) {
                     continue;
                 }
+            } else if deleted.contains(c.index as u64) {
+                continue;
             }
 
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
@@ -1880,14 +1889,14 @@ impl VectorIndex for HnswIndex {
 
         let mut inserted_doc_ids = Vec::new();
 
-        for op in ops {
+        for op in &ops {
             match op {
                 IndexOp::Insert { doc_id, data } => {
-                    self.inner.do_insert(doc_id, &data)?;
-                    inserted_doc_ids.push(doc_id);
+                    self.inner.do_insert(*doc_id, data)?;
+                    inserted_doc_ids.push(*doc_id);
                 }
                 IndexOp::Delete { doc_id, .. } => {
-                    self.inner.do_delete(doc_id)?;
+                    self.inner.do_delete(*doc_id)?;
                     deleted_any = true;
                 }
                 // AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-INDEX-004 — IndexOp ist #[non_exhaustive]; neue Varianten (TS:2026-08-25T00:00:00Z)
@@ -1898,11 +1907,27 @@ impl VectorIndex for HnswIndex {
                     return Err(MemFuseError::Index(format!(
                         "HNSW commit received unsupported IndexOp variant: {:?}. \
                          Add a handler arm before enabling this operation.",
-                        std::mem::discriminant(&other)
+                        std::mem::discriminant(other)
                     )));
                 }
             }
         }
+
+        // Record ops into seq_log for search_at snapshot isolation
+        let seq = tx.inner();
+        let mut seq_log = self.inner.seq_log.write();
+        for op in &ops {
+            match op {
+                IndexOp::Insert { doc_id, .. } => {
+                    seq_log.record_insert(*doc_id, seq);
+                }
+                IndexOp::Delete { doc_id, .. } => {
+                    seq_log.record_delete(*doc_id, seq);
+                }
+                _ => {}
+            }
+        }
+        drop(seq_log);
 
         // Atomisch committed_tx für alle neu eingefügten Nodes dieser Transaktion setzen
         if !inserted_doc_ids.is_empty() {
@@ -1938,6 +1963,15 @@ impl VectorIndex for HnswIndex {
 
         self.inner.last_tx_id.store(tx.inner(), Ordering::SeqCst);
         Ok(())
+    }
+
+    /// Searches for nearest neighbors at a specific snapshot sequence number.
+    async fn search_at(&self, query: &[f32], k: usize, seq_no: u64) -> Result<Vec<ScoredDocument>> {
+        let log = self.inner.seq_log.read().clone();
+        let filter_fn = move |doc_id: DocId| -> bool {
+            log.is_visible(doc_id, seq_no)
+        };
+        self.search_filtered(query, k, Some(&filter_fn)).await
     }
 
     async fn rollback(&self, tx: TxId) -> Result<()> {
@@ -2720,23 +2754,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_hnsw_search_at_returns_adr024_capability_unsupported() {
+    async fn test_hnsw_search_at_snapshot_isolation() {
         let index = HnswIndex::try_new(test_config(4)).unwrap();
-        let res = index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 42).await;
-        match res {
-            Err(memfuse_core::MemFuseError::CapabilityUnsupported { capability, reason }) => {
-                assert_eq!(capability, "snapshot_read_at");
-                assert!(
-                    reason.contains("ADR-024"),
-                    "Expected ADR-024 in CapabilityUnsupported reason message, got: {}",
-                    reason
-                );
-            }
-            other => panic!(
-                "Expected CapabilityUnsupported referencing ADR-024, got: {:?}",
-                other
-            ),
-        }
+
+        // seq 1: Insert doc 1 & 2
+        let tx1 = TxId::new(1);
+        index.insert(tx1, DocId::new(1), &[1.0, 0.0, 0.0, 0.0]).await.unwrap();
+        index.insert(tx1, DocId::new(2), &[0.0, 1.0, 0.0, 0.0]).await.unwrap();
+        index.commit(tx1).await.unwrap();
+
+        // seq 2: Delete doc 1, insert doc 3
+        let tx2 = TxId::new(2);
+        index.delete(tx2, DocId::new(1)).await.unwrap();
+        index.insert(tx2, DocId::new(3), &[0.5, 0.5, 0.0, 0.0]).await.unwrap();
+        index.commit(tx2).await.unwrap();
+
+        // search_at seq 1: should see doc 1 & 2, but NOT doc 3
+        let res_seq1 = index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 1).await.unwrap();
+        let docs_seq1: Vec<_> = res_seq1.iter().map(|d| d.doc_id.inner()).collect();
+        assert!(docs_seq1.contains(&1), "seq 1 must contain doc 1");
+        assert!(docs_seq1.contains(&2), "seq 1 must contain doc 2");
+        assert!(!docs_seq1.contains(&3), "seq 1 must not contain doc 3");
+
+        // search_at seq 2: should see doc 2 & 3, but NOT doc 1 (deleted)
+        let res_seq2 = index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 2).await.unwrap();
+        let docs_seq2: Vec<_> = res_seq2.iter().map(|d| d.doc_id.inner()).collect();
+        assert!(!docs_seq2.contains(&1), "seq 2 must not contain doc 1");
+        assert!(docs_seq2.contains(&2), "seq 2 must contain doc 2");
+        assert!(docs_seq2.contains(&3), "seq 2 must contain doc 3");
     }
 
     #[tokio::test]
@@ -2768,5 +2813,79 @@ mod tests {
             let res = handle.await.unwrap();
             assert!(res.is_ok());
         }
+    }
+
+    #[test]
+    fn prop_hnsw_search_at_consistency() {
+        use proptest::prelude::*;
+
+        #[derive(Debug, Clone)]
+        enum Op {
+            Insert(u64),
+            Delete(u64),
+        }
+
+        let op_strategy = proptest::collection::vec(
+            prop_oneof![
+                (1u64..30).prop_map(Op::Insert),
+                (1u64..30).prop_map(Op::Delete),
+            ],
+            10..100,
+        );
+
+        proptest!(ProptestConfig::with_cases(20), |(ops in op_strategy)| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+
+            rt.block_on(async {
+                let config = HnswConfig {
+                    dimension: 4,
+                    ..test_config(4)
+                };
+                let index = HnswIndex::try_new(config).unwrap();
+
+                let mut current_tx = 1u64;
+                let mut tx_checkpoints = Vec::new();
+
+                for op in ops {
+                    let tx = TxId::new(current_tx);
+                    match op {
+                        Op::Insert(id) => {
+                            let vec = [id as f32, 0.0, 0.0, 0.0];
+                            let _ = index.insert(tx, DocId::new(id), &vec).await;
+                        }
+                        Op::Delete(id) => {
+                            let _ = index.delete(tx, DocId::new(id)).await;
+                        }
+                    }
+                    if index.commit(tx).await.is_ok() {
+                        tx_checkpoints.push(current_tx);
+                        current_tx += 1;
+                    }
+                }
+
+                // Verify search_at at random target checkpoint against reference model
+                for &target_seq in &tx_checkpoints {
+                    // Reference model state at target_seq
+                    let mut active_docs = std::collections::HashSet::new();
+                    let log = index.inner.seq_log.read();
+                    for id in 1u64..30 {
+                        let doc_id = DocId::new(id);
+                        if log.is_visible(doc_id, target_seq) {
+                            active_docs.insert(doc_id);
+                        }
+                    }
+                    drop(log);
+
+                    let res = index.search_at(&[1.0, 0.0, 0.0, 0.0], 100, target_seq).await.unwrap();
+                    let found_docs: std::collections::HashSet<_> = res.into_iter().map(|d| d.doc_id).collect();
+
+                    prop_assert_eq!(found_docs, active_docs, "Search_at result at seq {} must equal reference model", target_seq);
+                }
+                Ok(())
+            }).unwrap();
+        });
     }
 }

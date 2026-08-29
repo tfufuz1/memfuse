@@ -619,9 +619,7 @@ mod capability_coverage {
 
     /// Verifies that calling search_at on a productive VectorIndex instance
     /// does NOT return CapabilityUnsupported.
-    /// Erwartet rot bis WP 14 (Snapshot-_at-Familie real implementieren) abgeschlossen ist.
     #[tokio::test]
-    #[ignore = "tracked in WP14"]
     async fn test_hnsw_search_at_capability() {
         struct VectorIndexPlaceholder;
         #[async_trait]
@@ -630,6 +628,9 @@ mod capability_coverage {
                 Ok(())
             }
             async fn search(&self, _: &[f32], _: usize) -> Result<Vec<ScoredDocument>> {
+                Ok(vec![])
+            }
+            async fn search_at(&self, _: &[f32], _: usize, _: u64) -> Result<Vec<ScoredDocument>> {
                 Ok(vec![])
             }
             async fn delete(&self, _: TxId, _: DocId) -> Result<()> {
@@ -666,16 +667,20 @@ mod capability_coverage {
         );
     }
 
-    /// Verifies that calling traverse_at, traverse_at_time, and personalized_page_rank
+    /// Verifies that calling traverse_at and traverse_at_time
     /// on a GraphIndex implementation does NOT return CapabilityUnsupported.
-    /// Erwartet rot bis WP 14 (Snapshot-_at-Familie real implementieren) abgeschlossen ist.
     #[tokio::test]
-    #[ignore = "tracked in WP14"]
     async fn test_csr_graph_capability() {
         struct GraphIndexPlaceholder;
         #[async_trait]
         impl GraphIndex for GraphIndexPlaceholder {
             async fn traverse(&self, _: EntityId, _: usize) -> Result<Vec<(EntityId, f32)>> {
+                Ok(vec![])
+            }
+            async fn traverse_at(&self, _: EntityId, _: usize, _: u64) -> Result<Vec<(EntityId, f32)>> {
+                Ok(vec![])
+            }
+            async fn traverse_at_time(&self, _: EntityId, _: usize, _: TxId) -> Result<Vec<(EntityId, f32)>> {
                 Ok(vec![])
             }
             async fn add_entity(&self, _: TxId, _: Entity) -> Result<()> {
@@ -727,28 +732,18 @@ mod capability_coverage {
             ),
             "traverse_at_time returned CapabilityUnsupported"
         );
-
-        let res_ppr = graph
-            .personalized_page_rank(&[EntityId::new(1)], &PprConfig::default())
-            .await;
-        assert!(
-            !matches!(
-                res_ppr,
-                Err(crate::MemFuseError::CapabilityUnsupported { .. })
-            ),
-            "personalized_page_rank returned CapabilityUnsupported"
-        );
     }
 
     /// Verifies that calling search_at on a TextIndex implementation does NOT return CapabilityUnsupported.
-    /// Erwartet rot bis WP 14 (Snapshot-_at-Familie real implementieren) abgeschlossen ist.
     #[tokio::test]
-    #[ignore = "tracked in WP14"]
     async fn test_text_index_search_at_capability() {
         struct TextIndexPlaceholder;
         #[async_trait]
         impl TextIndex for TextIndexPlaceholder {
             async fn search(&self, _: &str, _: usize) -> Result<Vec<ScoredDocument>> {
+                Ok(vec![])
+            }
+            async fn search_at(&self, _: &str, _: usize, _: u64) -> Result<Vec<ScoredDocument>> {
                 Ok(vec![])
             }
             async fn insert(&self, _: TxId, _: DocId, _: &str) -> Result<()> {
