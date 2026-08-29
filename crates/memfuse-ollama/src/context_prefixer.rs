@@ -180,6 +180,29 @@ mod tests {
     }
 
     #[test]
+    fn test_truncate_prefix_multibyte_utf8_hard_limit() {
+        // Test truncating text containing multi-byte UTF-8 characters under tight max_chars constraint
+        let text = "Überraschung für Kunden in München und Züricher Umgebung";
+        // 5 words: "Überraschung für Kunden in München"
+        let res = truncate_prefix(text, 5, 25);
+        assert!(res.chars().count() <= 25);
+        // Must end at a space/word boundary without cutting mid-character
+        assert_eq!(res, "Überraschung für Kunden");
+    }
+
+    #[test]
+    fn test_truncate_prefix_excessively_long_llm_response() {
+        // Simulate a hallucinating or excessively long LLM response
+        let long_response = "Das Dokument behandelt die finanziellen Jahresergebnisse ".repeat(20);
+        let max_tokens = 80;
+        let max_chars = max_tokens * 4; // 320 chars
+
+        let truncated = truncate_prefix(&long_response, max_tokens, max_chars);
+        assert!(truncated.split_whitespace().count() <= max_tokens);
+        assert!(truncated.chars().count() <= max_chars);
+    }
+
+    #[test]
     fn test_truncate_chars_short_string() {
         assert_eq!(truncate_chars("hello", 10), "hello");
     }
