@@ -340,7 +340,7 @@ pub fn get_workspace_crates() -> Vec<CrateInfo> {
             "memfuse-store" | "memfuse-index" | "memfuse-text" | "memfuse-crypto"
             | "memfuse-graph" | "memfuse-checkpoint" => 1,
             "memfuse-db" => 2,
-            "memfuse-py" | "memfuse-ollama" | "memfuse-embed" | "memfuse-agent" => 3,
+            "memfuse-py" | "memfuse-ollama" | "memfuse-embed" | "memfuse-agent" | "memfuse-router" => 3,
             "memfuse-mcp" | "memfuse-tauri" => 4,
             _ => 99,
         };
