@@ -55,5 +55,6 @@ pub fn run() {
     if let Err(e) = res {
         tracing::error!(error = %e, "Fatal error while running memfuse-brain application");
         eprintln!("[CRITICAL] MemFuse Brain Application Error: {e}");
+        std::process::exit(1);
     }
 }
