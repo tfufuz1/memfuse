@@ -16,7 +16,7 @@ impl OllamaClient {
     pub async fn validate_model_available(&self, model: &str) -> Result<()> {
         crate::client::validate_model_name(model)?;
         if !self.is_model_available(model).await {
-            return Err(MemFuseError::InvalidInput(format!(
+            return Err(MemFuseError::NotFound(format!(
                 "Ollama model '{}' not found. Run: ollama pull {}",
                 model, model
             )));
@@ -151,11 +151,11 @@ mod tests {
             .await
             .unwrap_err();
         match err {
-            MemFuseError::InvalidInput(msg) => {
+            MemFuseError::NotFound(msg) => {
                 assert!(msg.contains("Ollama model 'missing-model' not found"));
                 assert!(msg.contains("Run: ollama pull missing-model"));
             }
-            _ => panic!("Expected MemFuseError::InvalidInput, got {:?}", err),
+            _ => panic!("Expected MemFuseError::NotFound, got {:?}", err),
         }
     }
 

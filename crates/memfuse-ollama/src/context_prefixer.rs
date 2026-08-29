@@ -105,8 +105,8 @@ impl ContextPrefixEngine {
             .generate_text(&self.config.model, &prompt)
             .await?;
 
-        // Prefix auf konfigurierte Länge kürzen
-        Ok(truncate_chars(&raw, max_p))
+        // Prefix auf konfigurierte Token/Wort- und Zeichen-Grenze kürzen
+        Ok(truncate_prefix(&raw, self.config.max_prefix_tokens, max_p))
     }
 
     /// Generiert Präfixe für einen Batch von Chunks desselben Dokuments.
@@ -135,9 +135,49 @@ pub fn truncate_chars(s: &str, max_chars: usize) -> String {
     s.chars().take(max_chars).collect()
 }
 
+/// Truncates context prefix text while preserving word boundaries up to `max_tokens` (words)
+/// and hard character limit `max_chars`.
+pub fn truncate_prefix(s: &str, max_tokens: usize, max_chars: usize) -> String {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    // Step 1: Truncate by estimated token/word boundary
+    let words: Vec<&str> = trimmed.split_whitespace().collect();
+    let word_bounded = if words.len() > max_tokens {
+        words[..max_tokens].join(" ")
+    } else {
+        trimmed.to_string()
+    };
+
+    // Step 2: Enforce hard character boundary at word/space boundary if possible
+    if word_bounded.chars().count() <= max_chars {
+        word_bounded
+    } else {
+        let char_truncated = truncate_chars(&word_bounded, max_chars);
+        if let Some(last_space) = char_truncated.rfind(' ') {
+            char_truncated[..last_space].trim_end().to_string()
+        } else {
+            char_truncated
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_truncate_prefix_word_boundary() {
+        let text = "Dies ist ein sehr langes Dokument mit vielen Worten und Informationen";
+        let res = truncate_prefix(text, 5, 200);
+        assert_eq!(res, "Dies ist ein sehr langes");
+
+        let res2 = truncate_prefix(text, 10, 20);
+        assert_eq!(res2, "Dies ist ein sehr");
+        assert!(res2.chars().count() <= 20);
+    }
 
     #[test]
     fn test_truncate_chars_short_string() {
