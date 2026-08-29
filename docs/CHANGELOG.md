@@ -18,7 +18,7 @@
 | `2026-08-29T05:41:20Z (SESSION: f7999509)` | `crates/memfuse-index/src/distance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SIMD-beschleunigte Distanzmetriken (Cosinus, L2) für HNSW-Index |
 | `2026-08-29T00:00:00Z` | `crates/memfuse-db/tests/semantic_recall.rs` | `ANCHOR` | `PERF:EVAL-001` | `-` | `DONE` | `0` | // ANCHOR[PERF:EVAL-001] STATUS:DONE (TS:2026-08-29T00:00:00Z) — Semantic Retrieval Evaluation Framework |
 | `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/collection.rs` | `AI-TAG` | `AGT-DB-005` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-DB-005 — relate() rollback race behoben, siehe ADR-023 (TS:2026-08-28T00:00:00Z) |
-| `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/compaction.rs` | `AI-TAG` | `AGT-DB-004` | `-` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR][RESOLVED] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-28T00:00:00Z) |
+| `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/context_compaction.rs` | `AI-TAG` | `AGT-DB-004` | `-` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR][RESOLVED] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-28T00:00:00Z) |
 | `2026-08-27T14:32:00Z` | `crates/memfuse-db/src/collection.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Collection-API — zentraler Einstiegspunkt für Insert/Search/Delete |
 | `2026-08-27T14:32:00Z` | `crates/memfuse-index/src/diskann.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | DiskANN-Graphindex für Approximate Nearest Neighbor Search |
 | `2026-08-27T14:32:00Z` | `crates/memfuse-store/src/lsm.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | LSM-Tree-Implementierung (MemTable + SSTable + Compaction) |

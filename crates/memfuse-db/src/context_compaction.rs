@@ -1,4 +1,4 @@
-// memfuse-db/src/compaction.rs
+// memfuse-db/src/context_compaction.rs
 // Context Compaction Engine (Grok Pattern)
 
 //! Context Compaction Engine (Grok Pattern)

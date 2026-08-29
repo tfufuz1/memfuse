@@ -1929,9 +1929,9 @@ impl<S: StorageEngine> Collection<S> {
                 // 2. TxId-basierter Decay-Sweep (nur wenn decay != None)
                 if !marked_for_deletion {
                     if let Some(imp_val) = obj.get("importance") {
-                        if let Ok(imp) =
-                            serde_json::from_value::<memfuse_core::MemoryImportance>(imp_val.clone())
-                        {
+                        if let Ok(imp) = serde_json::from_value::<memfuse_core::MemoryImportance>(
+                            imp_val.clone(),
+                        ) {
                             if imp.decay != memfuse_core::DecayFunction::None {
                                 let effective = imp.effective_score(TxId::new(now_tx));
                                 if effective < Self::DECAY_DELETION_THRESHOLD {
@@ -1998,10 +1998,9 @@ impl<S: StorageEngine> Collection<S> {
         );
 
         let model = &ollama.config().model;
-        let response = ollama
-            .generate_text(model, &prompt)
-            .await
-            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("LLM importance evaluation failed: {e}")))?;
+        let response = ollama.generate_text(model, &prompt).await.map_err(|e| {
+            memfuse_core::MemFuseError::Internal(format!("LLM importance evaluation failed: {e}"))
+        })?;
 
         let score = parse_importance_score(&response);
         let importance_score = memfuse_core::ImportanceScore::new(score);
@@ -3210,9 +3209,14 @@ mod tests {
 
         let dead_ollama = memfuse_ollama::OllamaClient::new("http://127.0.0.1:1");
 
-        let res = col.evaluate_importance_with_llm("doc_test", &dead_ollama).await;
+        let res = col
+            .evaluate_importance_with_llm("doc_test", &dead_ollama)
+            .await;
         assert!(res.is_err());
-        assert!(matches!(res.unwrap_err(), memfuse_core::MemFuseError::Internal(_)));
+        assert!(matches!(
+            res.unwrap_err(),
+            memfuse_core::MemFuseError::Internal(_)
+        ));
 
         // Verify document's score was NOT overwritten or corrupted
         let doc = col.get("doc_test").await.unwrap().unwrap();
@@ -3363,7 +3367,10 @@ mod tests {
         next_tx.store(100_000, Ordering::SeqCst);
 
         let count = col.trigger_reaper().await.unwrap();
-        assert_eq!(count, 0, "Semantic document with DecayFunction::None must never be deleted");
+        assert_eq!(
+            count, 0,
+            "Semantic document with DecayFunction::None must never be deleted"
+        );
         assert!(col.get("doc_semantic").await.unwrap().is_some());
     }
 
@@ -3563,9 +3570,13 @@ mod tests {
             memfuse_text::Language::German,
         );
 
-        col.insert("plain1", &[1.0, 0.0, 0.0, 0.0], Some(serde_json::json!({"text": "hello"})))
-            .await
-            .unwrap();
+        col.insert(
+            "plain1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(serde_json::json!({"text": "hello"})),
+        )
+        .await
+        .unwrap();
 
         let doc = col.get("plain1").await.unwrap().unwrap();
         assert_eq!(
