@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// ZWECK: CRUD-Operationen (Insert, Upsert, Update, Delete, Get) für Collection.
+// INVARIANTEN: Atomare Multi-Index Commits via DbTransaction; Validierung aller Eingabegrenzen (ID-Länge, Batch-Größe).
+// NICHT-OFFENSICHTLICH: check_doc_id_collision wird strikt innerhalb des insert_lock ausgeführt.
+// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+
 use super::{
     ensure_importance_metadata, extract_text, Collection, StoredDocument, StoredDocumentMeta,
 };
@@ -148,6 +154,16 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         embedding: &[f32],
         metadata: Option<serde_json::Value>,
     ) -> Result<()> {
+        if id.is_empty() {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Document ID cannot be empty",
+            ));
+        }
+        if id.len() > 1024 {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Document ID length exceeds maximum allowed limit of 1024 bytes",
+            ));
+        }
         if embedding.len() != self.dimension {
             return Err(memfuse_core::MemFuseError::invalid_input(format!(
                 "Dimension mismatch: expected {}, got {}",
@@ -258,6 +274,17 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         &self,
         docs: &[(String, Vec<f32>, Option<serde_json::Value>)],
     ) -> Result<()> {
+        if docs.is_empty() {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "insert_many called with empty docs batch",
+            ));
+        }
+        if docs.len() > 10_000 {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "insert_many batch size {} exceeds maximum allowed limit of 10000",
+                docs.len()
+            )));
+        }
         let _guard = self.insert_lock.lock().await;
         let db_tx = self.begin_transaction()?;
         for (id, embedding, metadata) in docs {
@@ -285,6 +312,16 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         embedding: &[f32],
         metadata: Option<serde_json::Value>,
     ) -> Result<()> {
+        if id.is_empty() {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Document ID cannot be empty",
+            ));
+        }
+        if id.len() > 1024 {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Document ID length exceeds maximum allowed limit of 1024 bytes",
+            ));
+        }
         if embedding.len() != self.dimension {
             return Err(memfuse_core::MemFuseError::invalid_input(format!(
                 "Dimension mismatch: expected {}, got {}",
@@ -314,6 +351,17 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         &self,
         docs: &[(String, Vec<f32>, Option<serde_json::Value>)],
     ) -> Result<()> {
+        if docs.is_empty() {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "upsert_many called with empty docs batch",
+            ));
+        }
+        if docs.len() > 10_000 {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "upsert_many batch size {} exceeds maximum allowed limit of 10000",
+                docs.len()
+            )));
+        }
         let _guard = self.insert_lock.lock().await;
         let db_tx = self.begin_transaction()?;
         for (id, embedding, metadata) in docs {

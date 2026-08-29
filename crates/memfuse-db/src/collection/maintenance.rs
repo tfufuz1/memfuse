@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// ZWECK: Wartungs-, Reparatur- und Bereinigungsoperationen (Index repair, Expiry reaper, Community detection).
+// INVARIANTEN: repair() stellt LSM<->Index Synchronität nach Crash sicher; Reaping stützt sich auf Snapshot-Sequenzen.
+// NICHT-OFFENSICHTLICH: Pending TxIntents werden beim Start via Forward-Commit repariert und markiert.
+// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+
 use super::{extract_text, parse_importance_score, Collection, StoredDocument, StoredDocumentMeta};
 use memfuse_core::{
     DocId, EntityId, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex,
@@ -98,8 +104,15 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                                 if let Ok(eid) = EntityId::from_key(&stored.id) {
                                     let entity =
                                         memfuse_core::Entity::new(eid, &stored.id, "Document");
-                                    let _ = self.graph_index.add_entity(recovery_tx, entity).await;
-                                    recovered_graph = true;
+                                    if let Err(e) = self.graph_index.add_entity(recovery_tx, entity).await {
+                                        tracing::warn!(
+                                            doc_id = %stored.id,
+                                            error = %e,
+                                            "Konnte Entity bei Graph-Integritäts-Wiederherstellung nicht hinzufügen"
+                                        );
+                                    } else {
+                                        recovered_graph = true;
+                                    }
                                 }
                             }
                         }

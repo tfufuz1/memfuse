@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// ZWECK: Herstellen von gerichteten und bidirektionalen Beziehungen zwischen Dokumenten.
+// INVARIANTEN: relate() schreibt sowohl Beziehungs-Metadaten in LSM als auch Kanten in den Graph-Index.
+// NICHT-OFFENSICHTLICH: Fehler bei storage.put führen zu explizitem Transaction-Rollback mit Tracing-Logging.
+// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+
 use super::Collection;
 use memfuse_core::{DocId, Result, StorageEngine, VectorIndex};
 
@@ -22,7 +28,14 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let bytes = serde_json::to_vec(&val)?;
 
         if let Err(e) = self.storage.put(db_tx.tx_id, &key, &bytes).await {
-            let _ = db_tx.rollback().await;
+            let tx_id = db_tx.tx_id;
+            if let Err(rollback_err) = db_tx.rollback().await {
+                tracing::warn!(
+                    tx_id = %tx_id,
+                    error = %rollback_err,
+                    "Konnte Transaktion nach storage.put Fehler in relate() nicht zurückrollen"
+                );
+            }
             return Err(e);
         }
 
