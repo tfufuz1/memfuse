@@ -655,7 +655,7 @@ impl StorageEngine for LsmStorage {
                 doc_id,
                 data: (key.to_vec(), value.to_vec()),
             },
-        );
+        )?;
         Ok(())
     }
 
@@ -680,7 +680,7 @@ impl StorageEngine for LsmStorage {
             })
             .collect();
 
-        self.tx_buffer.stage_many(tx_id, ops);
+        self.tx_buffer.stage_many(tx_id, ops)?;
         Ok(count)
     }
 
@@ -706,7 +706,7 @@ impl StorageEngine for LsmStorage {
                 doc_id,
                 data: Some((key.to_vec(), Vec::new())),
             },
-        );
+        )?;
         Ok(())
     }
 
