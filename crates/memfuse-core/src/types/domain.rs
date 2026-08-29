@@ -519,6 +519,79 @@ impl Edge {
     }
 }
 
+/// Klassifiziert den kognitiven Gedächtnistyp einer gespeicherten Einheit.
+///
+/// # Persistence
+/// Wird als Teil der Dokument-Metadaten serialisiert (JSON-Feld "memory_type").
+/// Rückwärtskompatibel: Fehlendes Feld wird als MemoryType::Semantic deserialisiert
+/// (bisherige Dokumente ohne Klassifikation = faktisches Wissen).
+///
+/// # Non-Exhaustive
+/// #[non_exhaustive] erlaubt in zukünftigen Releases neue Varianten ohne
+/// Breaking Change bei downstream match-Ausdrücken (KEIN wildcard-arm zwingend
+/// für Library-Consumer bis zur nächsten Major-Version).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[non_exhaustive]
+pub enum MemoryType {
+    /// Episodisches Gedächtnis: Erlebnisse, Unterhaltungen, zeitlich verankerte Ereignisse.
+    /// Retrieval: Zeitliche Nähe und Relevanz zur aktuellen Session.
+    /// Decay: Hohe Recency-Decay-Rate (Informationen veralten schnell).
+    Episodic,
+
+    /// Semantisches Gedächtnis: Fakten, Konzepte, dauerhaftes Wissen.
+    /// Retrieval: Inhaltliche Ähnlichkeit (Vektor + BM25).
+    /// Decay: Keine automatische Decay (Fakten bleiben gültig bis Widerspruch).
+    #[default]
+    Semantic,
+
+    /// Prozedurales Gedächtnis: Abläufe, Tool-Nutzungsmuster, Workflows.
+    /// Retrieval: Task-Matching (zukünftig: Instruktionskodierung).
+    /// Decay: Aktivierungsbasiert (wird durch Nutzung gestärkt).
+    Procedural,
+
+    /// Operatives Arbeitsgedächtnis: Kurzzeit-Kontext der aktuellen Session.
+    /// Lebensdauer: Session-scoped, automatisch bei Session-Ende ablaufend.
+    /// Decay: Sehr hohe Decay-Rate (Session-TTL, z. B. 30 Minuten Inaktivität).
+    Working,
+}
+
+impl MemoryType {
+    /// Gibt den Standard-Decay-Typ für diesen Gedächtnistyp zurück.
+    pub fn default_decay(&self) -> crate::types::importance::DecayFunction {
+        match self {
+            MemoryType::Episodic => crate::types::importance::DecayFunction::Exponential {
+                half_life_tx: 10_000, // ca. 10.000 Transaktionen ≈ moderate Abnahme
+            },
+            MemoryType::Semantic => crate::types::importance::DecayFunction::None,
+            MemoryType::Procedural => crate::types::importance::DecayFunction::StepFloor {
+                access_count_floor: 50, // Verstärkt durch Nutzung
+            },
+            MemoryType::Working => crate::types::importance::DecayFunction::Exponential {
+                half_life_tx: 500, // Sehr schnelle Abnahme
+            },
+        }
+    }
+
+    /// Gibt die empfohlene TTL (in Transaktionen) für Session-scoped Working Memory zurück.
+    /// None bedeutet kein automatisches Ablaufen.
+    pub fn default_ttl_tx(&self) -> Option<u64> {
+        match self {
+            MemoryType::Working => Some(50_000), // ~50.000 TX ≈ 30 Minuten bei normalem Tempo
+            _ => None,
+        }
+    }
+
+    /// Gibt den kanonischen Metadaten-Key zurück (für JSON-Serialisierung).
+    pub fn as_metadata_key(&self) -> &'static str {
+        match self {
+            MemoryType::Episodic => "episodic",
+            MemoryType::Semantic => "semantic",
+            MemoryType::Procedural => "procedural",
+            MemoryType::Working => "working",
+        }
+    }
+}
+
 /// Configuration parameters for Personalized PageRank (PPR).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PprConfig {
@@ -820,6 +893,23 @@ mod tests {
         let deser_edge: Edge = serde_json::from_str(json_old).unwrap(); // unwrap
         assert_eq!(deser_edge.valid_from, None);
         assert_eq!(deser_edge.valid_to, None);
+    }
+
+    #[test]
+    fn test_memory_type_defaults_and_serde() {
+        assert_eq!(MemoryType::default(), MemoryType::Semantic);
+        assert_eq!(MemoryType::Episodic.as_metadata_key(), "episodic");
+        assert_eq!(MemoryType::Semantic.as_metadata_key(), "semantic");
+        assert_eq!(MemoryType::Procedural.as_metadata_key(), "procedural");
+        assert_eq!(MemoryType::Working.as_metadata_key(), "working");
+
+        assert_eq!(MemoryType::Working.default_ttl_tx(), Some(50_000));
+        assert_eq!(MemoryType::Episodic.default_ttl_tx(), None);
+
+        let ser = serde_json::to_string(&MemoryType::Episodic).unwrap();
+        assert_eq!(ser, r#""Episodic""#);
+        let deser: MemoryType = serde_json::from_str(&ser).unwrap();
+        assert_eq!(deser, MemoryType::Episodic);
     }
 
     proptest::proptest! {
