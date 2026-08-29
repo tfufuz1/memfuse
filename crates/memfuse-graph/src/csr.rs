@@ -78,6 +78,16 @@ fn is_suspicious_tx_id(tx: TxId) -> bool {
     (WALLCLOCK_TX_HEURISTIC_MIN..TxId::INTERNAL_BASE).contains(&v)
 }
 
+/// Prüft ob eine Kante zum Zeitpunkt `as_of` sichtbar ist (bi-temporale Filterung).
+#[inline]
+pub(crate) fn is_edge_visible(
+    valid_from: Option<TxId>,
+    valid_to: Option<TxId>,
+    as_of: TxId,
+) -> bool {
+    valid_from.map_or(true, |vf| vf <= as_of) && valid_to.map_or(true, |vt| as_of < vt)
+}
+
 /// Configuration parameters for [`CsrGraph`].
 #[derive(Debug, Clone)]
 pub struct CsrGraphConfig {
@@ -857,15 +867,10 @@ impl GraphIndex for CsrGraph {
                         if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
                             continue;
                         }
-                        if let Some(vf) = inner.valid_froms.get(edge_idx).copied().flatten() {
-                            if as_of < vf {
-                                continue;
-                            }
-                        }
-                        if let Some(vt) = inner.valid_tos.get(edge_idx).copied().flatten() {
-                            if as_of >= vt {
-                                continue;
-                            }
+                        let valid_from = inner.valid_froms.get(edge_idx).copied().flatten();
+                        let valid_to = inner.valid_tos.get(edge_idx).copied().flatten();
+                        if !is_edge_visible(valid_from, valid_to, as_of) {
+                            continue;
                         }
                         let weight = inner.weights[edge_idx];
                         let next_score = current_score * SCORE_DECAY * weight;
@@ -889,15 +894,8 @@ impl GraphIndex for CsrGraph {
                         if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
                             continue;
                         }
-                        if let Some(vf) = edge.valid_from {
-                            if as_of < vf {
-                                continue;
-                            }
-                        }
-                        if let Some(vt) = edge.valid_to {
-                            if as_of >= vt {
-                                continue;
-                            }
+                        if !is_edge_visible(edge.valid_from, edge.valid_to, as_of) {
+                            continue;
                         }
                         let next_score = current_score * SCORE_DECAY * edge.weight;
 
@@ -2213,6 +2211,56 @@ mod tests {
             1,
             "Unbounded edge must be valid at any point in time"
         );
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn prop_edge_visible_monotone(
+            vf in 0u64..100,
+            vt in 100u64..200,
+            as_of in 0u64..200,
+        ) {
+            let valid_from = Some(TxId::new(vf));
+            let valid_to = Some(TxId::new(vt));
+            let visible = is_edge_visible(valid_from, valid_to, TxId::new(as_of));
+            let expected = vf <= as_of && as_of < vt;
+            proptest::prop_assert_eq!(visible, expected);
+        }
+
+        #[test]
+        fn prop_traverse_at_time_never_panics(
+            node_count in 1..=15usize,
+            edge_specs in proptest::collection::vec((0..15usize, 0..15usize, 0u64..50u64, 50u64..100u64), 0..30),
+            start_idx in 0..15usize,
+            hops in 0usize..5,
+            as_of in 0u64..150u64,
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+            let res: std::result::Result<(), proptest::test_runner::TestCaseError> = rt.block_on(async {
+                let graph = CsrGraph::new();
+                let tx = TxId::new(1);
+
+                for i in 0..node_count {
+                    let _ = graph
+                        .add_entity(tx, Entity::new(EntityId::new(i as u64 + 1), format!("N{i}"), "Node"))
+                        .await;
+                }
+
+                for (src, dst, vf, vt) in edge_specs {
+                    let src_id = EntityId::new((src % node_count) as u64 + 1);
+                    let dst_id = EntityId::new((dst % node_count) as u64 + 1);
+                    let edge = Edge::new(src_id, dst_id, "link")
+                        .with_validity(Some(TxId::new(vf)), Some(TxId::new(vt)));
+                    let _ = graph.add_edge(tx, edge).await;
+                }
+                let _ = graph.commit(tx).await;
+
+                let start = EntityId::new((start_idx % node_count) as u64 + 1);
+                let _res = graph.traverse_at_time(start, hops, TxId::new(as_of)).await;
+                Ok(())
+            });
+            res?;
+        }
     }
 
     #[test]
