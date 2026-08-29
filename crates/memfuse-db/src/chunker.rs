@@ -58,7 +58,10 @@ impl MarkdownChunker {
 
     /// Chunks a Markdown document into semantically coherent pieces.
     pub fn chunk(&self, doc_id: DocId, markdown: &str) -> Vec<ContextChunk> {
-        let hard_limit = (self.config.max_tokens as f64 * 1.2) as usize;
+        if markdown.is_empty() {
+            return Vec::new();
+        }
+        let hard_limit = ((self.config.max_tokens as f64 * 1.2) as usize).max(1);
         let mut raw_sections = Vec::new();
         let mut current_lines = Vec::new();
         let mut current_breadcrumb = String::new();
@@ -415,5 +418,21 @@ mod tests {
                 limit
             );
         }
+    }
+
+    #[test]
+    fn test_chunk_text_zero_chunk_size() {
+        assert!(chunk_text("hello world", 0).is_empty());
+    }
+
+    #[test]
+    fn test_chunker_zero_max_tokens_handled_safely() {
+        let config = ChunkerConfig {
+            max_tokens: 0,
+            ..Default::default()
+        };
+        let chunker = MarkdownChunker::new(config);
+        let chunks = chunker.chunk(DocId::new(10), "Line 1\nLine 2");
+        assert!(!chunks.is_empty());
     }
 }

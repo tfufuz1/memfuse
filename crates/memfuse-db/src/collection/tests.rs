@@ -1684,3 +1684,99 @@ async fn test_hybrid_search_with_query_memory_type_filter() {
         );
     }
 }
+
+#[tokio::test]
+async fn test_invalid_doc_ids_rejected() {
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(),
+    );
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage,
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+    let vec = vec![1.0, 0.0, 0.0, 0.0];
+
+    // Empty ID
+    assert!(col.insert("", &vec, None).await.is_err());
+    assert!(col.get("").await.is_err());
+    assert!(col.delete("").await.is_err());
+
+    // Null byte in ID
+    assert!(col.insert("doc\0invalid", &vec, None).await.is_err());
+    assert!(col.get("doc\0invalid").await.is_err());
+
+    // Too long ID (>256 bytes)
+    let long_id = "a".repeat(257);
+    assert!(col.insert(&long_id, &vec, None).await.is_err());
+    assert!(col.get(&long_id).await.is_err());
+}
+
+#[tokio::test]
+async fn test_search_dimension_mismatch_rejected() {
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(),
+    );
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage,
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+    let wrong_dim_vec = vec![1.0, 0.0];
+
+    let search_res = col.search(&wrong_dim_vec, 10).await;
+    assert!(search_res.is_err());
+
+    let hybrid_res = col
+        .hybrid_search("query", &wrong_dim_vec, 10, None)
+        .await;
+    assert!(hybrid_res.is_err());
+}
