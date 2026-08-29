@@ -441,26 +441,7 @@ impl Wal {
                     e
                 ))
             })?;
-            let parent = path.parent().unwrap_or_else(|| Path::new(""));
-            let dir_path = if parent.as_os_str().is_empty() {
-                Path::new(".")
-            } else {
-                parent
-            };
-            let dir = tokio::fs::File::open(dir_path).await.map_err(|e| {
-                MemFuseError::Storage(format!(
-                    "WAL dir open failed for {}: {}",
-                    dir_path.display(),
-                    e
-                ))
-            })?;
-            dir.sync_all().await.map_err(|e| {
-                MemFuseError::Storage(format!(
-                    "WAL dir fsync failed for {}: {}",
-                    dir_path.display(),
-                    e
-                ))
-            })?;
+            crate::util::fsync_parent_dir(&path).await?;
         }
 
         let metadata = file
@@ -620,20 +601,7 @@ impl Wal {
             match link_res {
                 Ok(()) => {
                     // FSync parent directory to persist directory entry
-                    let dir = tokio::fs::File::open(dir_path).await.map_err(|e| {
-                        MemFuseError::Storage(format!(
-                            "WAL integrity key dir open failed for {}: {}",
-                            dir_path.display(),
-                            e
-                        ))
-                    })?;
-                    dir.sync_all().await.map_err(|e| {
-                        MemFuseError::Storage(format!(
-                            "WAL integrity key dir fsync failed for {}: {}",
-                            dir_path.display(),
-                            e
-                        ))
-                    })?;
+                    crate::util::fsync_parent_dir(&key_path).await?;
                     Ok(key)
                 }
                 Err(_) => {
@@ -678,26 +646,7 @@ impl Wal {
             })?;
 
             // FIND-STO-004: FSync parent directory to persist the new directory entry
-            let parent = uuid_path.parent().unwrap_or_else(|| Path::new(""));
-            let dir_path = if parent.as_os_str().is_empty() {
-                Path::new(".")
-            } else {
-                parent
-            };
-            let dir = tokio::fs::File::open(dir_path).await.map_err(|e| {
-                MemFuseError::Storage(format!(
-                    "WAL UUID dir open failed for {}: {}",
-                    dir_path.display(),
-                    e
-                ))
-            })?;
-            dir.sync_all().await.map_err(|e| {
-                MemFuseError::Storage(format!(
-                    "WAL UUID dir fsync failed for {}: {}",
-                    dir_path.display(),
-                    e
-                ))
-            })?;
+            crate::util::fsync_parent_dir(&uuid_path).await?;
 
             Ok(bytes)
         }
@@ -1298,19 +1247,25 @@ impl Wal {
 
     /// Physically truncates the WAL file to the specified offset.
     /// This also updates the in-memory size and the HMAC chain link.
+    ///
+    /// # Errors
+    /// Returns `MemFuseError::Storage` if setting file length or seeking fails.
     pub async fn truncate(&self, offset: u64, new_last_hmac: [u8; 32]) -> Result<()> {
+        use tokio::io::AsyncSeekExt;
+
         let mut file = self.file.lock().await;
 
         // 1. Physically truncate the file
         file.set_len(offset)
             .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL truncate failed: {}", e)))?;
+            .map_err(|e| MemFuseError::Storage(format!("WAL truncate failed: {e}")))?;
 
         // 2. Ensure we seek to the new end
-        use tokio::io::AsyncSeekExt;
         file.seek(std::io::SeekFrom::Start(offset))
             .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL seek after truncate failed: {}", e)))?;
+            .map_err(|e| MemFuseError::Storage(format!("WAL seek after truncate failed: {e}")))?;
+
+        drop(file);
 
         // 3. Update in-memory size
         self.size.store(offset, std::sync::atomic::Ordering::SeqCst);
@@ -1318,6 +1273,7 @@ impl Wal {
         // 4. Update last_hmac
         let mut last_hmac_guard = self.last_hmac.lock().await;
         *last_hmac_guard = new_last_hmac;
+        drop(last_hmac_guard);
 
         Ok(())
     }
@@ -1327,8 +1283,11 @@ impl Wal {
         *self.last_hmac.lock().await
     }
 
-    /// Finds the offset and the previous HMAC for the given TxId.
-    /// Returns the offset AFTER which the TxId's commits start (effectively the rollback point).
+    /// Finds the offset and the previous HMAC for the given `TxId`.
+    /// Returns the offset AFTER which the `TxId`'s commits start (effectively the rollback point).
+    ///
+    /// # Errors
+    /// Returns `MemFuseError::Storage` or `MemFuseError::WalCorruption` if reading or replaying the WAL fails.
     pub async fn find_tx_offset(&self, target_tx_id: TxId) -> Result<(u64, [u8; 32])> {
         let entries = self.replay().await?;
         let mut last_offset = 0;

@@ -7,10 +7,16 @@
 | Field | Value |
 |-------|-------|
 | SESSION | `unknown` |
-| LAST_SYNC | `2026-08-29T17:38:10Z` |
+| LAST_SYNC | `2026-08-29T17:22:30Z` |
 
 ## Critical Blockers (MUST FIX THIS SESSION)
-*(No critical blockers)*
+| ID | Category | Severity | File & Line | Befund |
+|----|----------|----------|-------------|--------|
+| `N/A` | HARDENING | `CRITICAL` | `crates/memfuse-agent/src/context.rs:38` | // AI-TAG[HARDENING][CRITICAL]: Validates non-empty input parameters for agent workflow context initialization. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045) |
+| `N/A` | HARDENING | `CRITICAL` | `crates/memfuse-agent/src/event_source.rs:23` | // AI-TAG[HARDENING][CRITICAL]: Validates non-empty event source to prevent silent telemetry attribution loss. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045) |
+| `N/A` | HARDENING | `CRITICAL` | `crates/memfuse-agent/src/event_source.rs:85` | // AI-TAG[HARDENING][CRITICAL]: Enforces bounded event queue capacity to guard against unbounded memory growth. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045) |
+| `N/A` | HARDENING | `CRITICAL` | `crates/memfuse-agent/src/graph.rs:51` | // AI-TAG[HARDENING][CRITICAL]: Validates non-empty Node ID and description for graph nodes. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045) |
+| `N/A` | HARDENING | `CRITICAL` | `crates/memfuse-agent/src/graph.rs:94` | // AI-TAG[HARDENING][CRITICAL]: Validates non-empty from/to endpoints for workflow edges. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045) |
 
 ## Open Anchors (IN-PROGRESS)
 | ID | Status | File & Line | Description |
@@ -22,7 +28,7 @@
 |-------|-------|-----|--------|-------------|
 | `memfuse-core` | L0 | 7157 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-checkpoint` | L1 | 1166 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-crypto` | L1 | 1144 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
+| `memfuse-crypto` | L1 | 1186 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | L1 | 4506 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | L1 | 7305 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | L1 | 10313 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
@@ -31,7 +37,7 @@
 | `memfuse-agent` | L3 | 2280 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | L3 | 1022 | 🧊 Optional |  |
 | `memfuse-ollama` | L3 | 2369 | 🟢 Clean |  |
-| `memfuse-py` | L3 | 1206 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
+| `memfuse-py` | L3 | 987 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | L3 | 510 | 🟢 Clean |  |
 | `memfuse-mcp` | L4 | 2198 | 🟢 Clean |  |
 | `memfuse-tauri` | L4 | 2610 | 🟢 Clean |  |
