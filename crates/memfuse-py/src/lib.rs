@@ -275,8 +275,7 @@ fn memfuse_err(e: memfuse_core::MemFuseError) -> PyErr {
             "Sandbox"
             | "MemoryLimitExceeded"
             | "SandboxTimeout"
-            | "PolicyViolation"
-            | "NamespaceViolation" => {
+            | "PolicyViolation" => {
                 pyo3::exceptions::PyPermissionError::new_err(dto.message.clone())
             }
             "MemoryBudgetExceeded" => pyo3::exceptions::PyMemoryError::new_err(dto.message.clone()),
