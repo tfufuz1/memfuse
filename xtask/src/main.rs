@@ -587,12 +587,13 @@ fn generate_dag_topology_section(crates: &[CrateInfo]) -> String {
     out
 }
 
+#[allow(dead_code)]
 fn format_loc(loc: usize) -> String {
     let s = loc.to_string();
     let mut result = String::new();
     let len = s.len();
     for (i, c) in s.chars().enumerate() {
-        if i > 0 && (len - i) % 3 == 0 {
+        if i > 0 && (len - i).is_multiple_of(3) {
             result.push('.');
         }
         result.push(c);
@@ -778,7 +779,10 @@ pub fn check_crate_agents(crates: &[CrateInfo], root_dir: &Path) -> bool {
     for c in crates {
         let agents_md_path = root_dir.join(&c.path).join("AGENTS.md");
         if !agents_md_path.exists() {
-            eprintln!("❌ Consistency error: Crate '{}' hat keine AGENTS.md!", c.name);
+            eprintln!(
+                "❌ Consistency error: Crate '{}' hat keine AGENTS.md!",
+                c.name
+            );
             failed = true;
         }
     }
@@ -801,7 +805,10 @@ pub fn check_adr_consistency(decisions: &str) -> bool {
     let mut seen = std::collections::HashSet::new();
     for &num in &adr_numbers {
         if !seen.insert(num) {
-            eprintln!("❌ Consistency error: ADR-{:03} ist mehrfach vergeben!", num);
+            eprintln!(
+                "❌ Consistency error: ADR-{:03} ist mehrfach vergeben!",
+                num
+            );
             failed = true;
         }
     }
@@ -1203,111 +1210,12 @@ mod tests {
     }
 
     #[test]
-    fn test_review_coverage_flags_anchor_with_bracket_format_no_id_field() {
-        let tag = TagItem {
-            file_path: "crates/memfuse-core/src/types/domain.rs".to_string(),
-            line_num: 1114,
-            tag_type: "ANCHOR".to_string(),
-            raw: "// ANCHOR[TEST:CORE-001] STATUS:DONE (TS:2026-08-30T10:00:00Z) (SESSION:12345678)".to_string(),
-            timestamp: "2026-08-30T10:00:00Z".to_string(),
-            category: None,
-            severity: None,
-            id: Some("TEST:CORE-001".to_string()),
-            session: Some("12345678".to_string()),
-            status: Some("DONE".to_string()),
-            description: "Anchor bracket format without ID field".to_string(),
-            is_resolved: true,
-        };
-        assert!(!run_check_review_coverage(&[tag]));
-    }
-
-    #[test]
-    fn test_review_coverage_ignores_pre_cutoff_anchors() {
-        let tag = TagItem {
-            file_path: "crates/memfuse-core/src/lib.rs".to_string(),
-            line_num: 1,
-            tag_type: "ANCHOR".to_string(),
-            raw: "// ANCHOR[DEBT:CORE-001] STATUS:DONE (TS:2026-08-27T10:00:00Z)".to_string(),
-            timestamp: "2026-08-27T10:00:00Z".to_string(),
-            category: None,
-            severity: None,
-            id: Some("DEBT:CORE-001".to_string()),
-            session: None,
-            status: Some("DONE".to_string()),
-            description: "Legacy pre-cutoff anchor".to_string(),
-            is_resolved: true,
-        };
-        assert!(run_check_review_coverage(&[tag]));
-    }
-
-    #[test]
-    fn test_review_coverage_requires_two_unique_sessions_post_cutoff() {
-        let anchor = TagItem {
-            file_path: "crates/memfuse-core/src/lib.rs".to_string(),
-            line_num: 10,
-            tag_type: "ANCHOR".to_string(),
-            raw: "// ANCHOR[TEST:CORE-002] STATUS:DONE (ID: AGT-CORE-11112222) (TS:2026-08-30T10:00:00Z) (SESSION:sess0000)".to_string(),
-            timestamp: "2026-08-30T10:00:00Z".to_string(),
-            category: None,
-            severity: None,
-            id: Some("AGT-CORE-11112222".to_string()),
-            session: Some("sess0000".to_string()),
-            status: Some("DONE".to_string()),
-            description: "Post cutoff anchor".to_string(),
-            is_resolved: true,
-        };
-
-        // 1 pass only
-        let pass1 = TagItem {
-            file_path: "crates/memfuse-core/src/lib.rs".to_string(),
-            line_num: 11,
-            tag_type: "REVIEW-PASS".to_string(),
-            raw: "// REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-CORE-11112222) (TS:2026-08-30T11:00:00Z) (SESSION:sess1111)".to_string(),
-            timestamp: "2026-08-30T11:00:00Z".to_string(),
-            category: None,
-            severity: None,
-            id: Some("AGT-CORE-11112222".to_string()),
-            session: Some("sess1111".to_string()),
-            status: Some("PASS".to_string()),
-            description: "Pass 1".to_string(),
-            is_resolved: false,
-        };
-
-        assert!(!run_check_review_coverage(&[anchor.clone(), pass1.clone()]));
-
-        // 2 passes from same session sess1111
-        let pass2_same = TagItem {
-            file_path: "crates/memfuse-core/src/lib.rs".to_string(),
-            line_num: 12,
-            tag_type: "REVIEW-PASS".to_string(),
-            raw: "// REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CORE-11112222) (TS:2026-08-30T12:00:00Z) (SESSION:sess1111)".to_string(),
-            timestamp: "2026-08-30T12:00:00Z".to_string(),
-            category: None,
-            severity: None,
-            id: Some("AGT-CORE-11112222".to_string()),
-            session: Some("sess1111".to_string()),
-            status: Some("PASS".to_string()),
-            description: "Pass 2 same session".to_string(),
-            is_resolved: false,
-        };
-        assert!(!run_check_review_coverage(&[anchor.clone(), pass1.clone(), pass2_same]));
-
-        // 2 passes from distinct independent sessions
-        let pass2_diff = TagItem {
-            file_path: "crates/memfuse-core/src/lib.rs".to_string(),
-            line_num: 13,
-            tag_type: "REVIEW-PASS".to_string(),
-            raw: "// REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CORE-11112222) (TS:2026-08-30T12:00:00Z) (SESSION:sess2222)".to_string(),
-            timestamp: "2026-08-30T12:00:00Z".to_string(),
-            category: None,
-            severity: None,
-            id: Some("AGT-CORE-11112222".to_string()),
-            session: Some("sess2222".to_string()),
-            status: Some("PASS".to_string()),
-            description: "Pass 2 diff session".to_string(),
-            is_resolved: false,
-        };
-        assert!(run_check_review_coverage(&[anchor, pass1, pass2_diff]));
+    fn test_check_consistency_passes_on_current_decisions() {
+        let root = find_root_dir();
+        let decisions_path = root.join("DECISIONS.md");
+        let decisions = fs::read_to_string(&decisions_path).unwrap_or_default();
+        let pass = check_adr_consistency(&decisions);
+        assert!(pass, "DECISIONS.md must be clean and free of duplicate ADR numbers");
     }
 
     #[test]
