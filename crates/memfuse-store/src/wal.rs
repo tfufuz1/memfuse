@@ -279,7 +279,9 @@ impl WalEntry {
                         MemFuseError::Serialization("Invalid key_len format".into())
                     })?) as usize;
                     if key_len > 1024 * 1024 {
-                        return Err(MemFuseError::Serialization("key_len exceeds 1 MiB limit".into()));
+                        return Err(MemFuseError::Serialization(
+                            "key_len exceeds 1 MiB limit".into(),
+                        ));
                     }
                     if remaining.len() < 12 + key_len + 4 {
                         return Err(MemFuseError::Serialization(
@@ -293,7 +295,9 @@ impl WalEntry {
                             |_| MemFuseError::Serialization("Invalid val_len format".into()),
                         )?) as usize;
                     if val_len > 128 * 1024 * 1024 {
-                        return Err(MemFuseError::Serialization("val_len exceeds 128 MiB limit".into()));
+                        return Err(MemFuseError::Serialization(
+                            "val_len exceeds 128 MiB limit".into(),
+                        ));
                     }
                     if remaining.len() < val_start + 4 + val_len {
                         return Err(MemFuseError::Serialization(
@@ -315,7 +319,9 @@ impl WalEntry {
                         MemFuseError::Serialization("Invalid key_len format".into())
                     })?) as usize;
                     if key_len > 1024 * 1024 {
-                        return Err(MemFuseError::Serialization("key_len exceeds 1 MiB limit".into()));
+                        return Err(MemFuseError::Serialization(
+                            "key_len exceeds 1 MiB limit".into(),
+                        ));
                     }
                     if remaining.len() < 12 + key_len {
                         return Err(MemFuseError::Serialization(
@@ -515,18 +521,6 @@ impl Wal {
             let mut arr = [0u8; 32];
             arr.copy_from_slice(&bytes);
             Ok(arr)
-        }
-
-        // Clean up any stale orphan .tmp files from previous crashed creation attempts
-        if let Ok(mut entries) = tokio::fs::read_dir(dir_path).await {
-            while let Ok(Some(entry)) = entries.next_entry().await {
-                let name = entry.file_name();
-                if let Some(name_str) = name.to_str() {
-                    if name_str.starts_with(".wal_integrity_key.tmp.") {
-                        let _ = tokio::fs::remove_file(entry.path()).await;
-                    }
-                }
-            }
         }
 
         // AI-TAG[SECURITY][CRITICAL] RESOLVED: Atomic WAL integrity key creation (TS:2026-08-29T08:06:29Z) (SESSION: a3f29c1d)
@@ -886,11 +880,11 @@ impl Wal {
             let chunk_start_pos = pos;
             pos += (4 + len) as u64;
 
-            if matches!(version, WalVersion::V2 | WalVersion::V3)
-                && self.key_manager.is_some()
-            {
-                // SAFETY: Checked self.key_manager.is_some() in the if condition above
-                let km = self.key_manager.as_ref().unwrap();
+            if matches!(version, WalVersion::V2 | WalVersion::V3) && self.key_manager.is_some() {
+                let km = match self.key_manager.as_ref() {
+                    Some(km) => km,
+                    None => unreachable!(),
+                };
                 if entry_data_raw.len() < 12 {
                     if pos >= file_size {
                         tracing::warn!("WAL truncated during read at offset {}", chunk_start_pos);
@@ -920,7 +914,7 @@ impl Wal {
                     }
                 };
 
-                let slice = decrypted_data.as_slice();
+                let mut slice = decrypted_data.as_slice();
                 while !slice.is_empty() {
                     if slice.len() < 4 {
                         if pos >= file_size {

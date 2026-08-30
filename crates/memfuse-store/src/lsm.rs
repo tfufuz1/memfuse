@@ -75,6 +75,40 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
+/// Maximum key size allowed for LSM operations (1MB).
+pub const MAX_KEY_SIZE: usize = 1_048_576;
+
+/// Maximum value size allowed for LSM operations (128MB).
+pub const MAX_VALUE_SIZE: usize = 134_217_728;
+
+/// Maximum batch size for `delete_many` operations (10,000 items).
+pub const MAX_BATCH_SIZE: usize = 10_000;
+
+fn validate_key(key: &[u8]) -> Result<()> {
+    if key.is_empty() {
+        return Err(MemFuseError::InvalidInput("Key cannot be empty".into()));
+    }
+    if key.len() > MAX_KEY_SIZE {
+        return Err(MemFuseError::InvalidInput(format!(
+            "Key length ({} bytes) exceeds limit of {} bytes",
+            key.len(),
+            MAX_KEY_SIZE
+        )));
+    }
+    Ok(())
+}
+
+fn validate_value(value: &[u8]) -> Result<()> {
+    if value.len() > MAX_VALUE_SIZE {
+        return Err(MemFuseError::InvalidInput(format!(
+            "Value length ({} bytes) exceeds limit of {} bytes",
+            value.len(),
+            MAX_VALUE_SIZE
+        )));
+    }
+    Ok(())
+}
+
 /// LSM storage configuration.
 // SEC-001 — Erweitere LsmConfig um `encryption_passphrase` und AES-256.
 // TEST: cargo test -p memfuse-store test_encrypted_db_unreadable_without_key
@@ -542,6 +576,7 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        validate_key(key)?;
         let current_max_seq = self.next_seq_no.load(Ordering::Acquire);
         let res = self.get_at_seq(key, current_max_seq).await?;
         tracing::debug!(
@@ -562,6 +597,7 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn get_at_seq(&self, key: &[u8], seq_no: u64) -> Result<Option<Vec<u8>>> {
+        validate_key(key)?;
         // Genau EINMAL laden — Snapshot-Konsistenz über die gesamte Methode (INVARIANT-2)
         let snapshot_tx = self.last_committed_tx.load(Ordering::Acquire);
         let state = self.state.read().await;
@@ -628,6 +664,8 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+        validate_key(key)?;
+        validate_value(value)?;
         self.apply_backpressure().await;
         if !self.budget.has_memory_capacity() {
             return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
@@ -650,6 +688,16 @@ impl StorageEngine for LsmStorage {
     }
 
     async fn delete_many(&self, tx_id: TxId, keys: Vec<Vec<u8>>) -> Result<u64> {
+        if keys.len() > MAX_BATCH_SIZE {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Batch size ({} items) exceeds limit of {} items",
+                keys.len(),
+                MAX_BATCH_SIZE
+            )));
+        }
+        for key in &keys {
+            validate_key(key)?;
+        }
         let count = keys.len() as u64;
         if count == 0 {
             return Ok(0);
@@ -692,6 +740,7 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
+        validate_key(key)?;
         let doc_id = {
             let hash = blake3::hash(key);
             let mut bytes = [0u8; 8];
@@ -2204,5 +2253,56 @@ mod tests {
                 Ok(())
             }).unwrap();
         });
+    }
+
+    #[tokio::test]
+    async fn test_input_boundary_guards() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = LsmStorage::new(config).await.expect("create storage");
+        let tx = TxId::new(1);
+
+        // 1. Empty key check
+        assert!(matches!(
+            storage.put(tx, b"", b"val").await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            storage.delete(tx, b"").await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            storage.get(b"").await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            storage.get_at_seq(b"", 10).await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+
+        // 2. Oversized key check (> 1MB)
+        let huge_key = vec![b'a'; MAX_KEY_SIZE + 1];
+        assert!(matches!(
+            storage.put(tx, &huge_key, b"val").await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            storage.delete(tx, &huge_key).await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            storage.get(&huge_key).await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+
+        // 3. Oversized delete_many batch (> 10,000 items)
+        let too_many_keys = vec![b"key".to_vec(); MAX_BATCH_SIZE + 1];
+        assert!(matches!(
+            storage.delete_many(tx, too_many_keys).await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
     }
 }

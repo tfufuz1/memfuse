@@ -206,7 +206,7 @@ impl BlockBuilder {
         Self {
             data: BytesMut::new(),
             offsets: Vec::new(),
-            block_size: block_size.max(1024),
+            block_size: block_size.clamp(512, 64 * 1024 * 1024),
             bloom: 0,
         }
     }
@@ -354,7 +354,13 @@ impl SstableBuilder {
 
         if !self.block_builder.add(key, value, seq_no, tx_id) {
             self.flush_block().await?;
-            let _ = self.block_builder.add(key, value, seq_no, tx_id);
+            if !self.block_builder.add(key, value, seq_no, tx_id) {
+                return Err(MemFuseError::Storage(format!(
+                    "Key-value entry too large for SSTable block (key: {} bytes, val: {} bytes)",
+                    key.len(),
+                    value.len()
+                )));
+            }
         }
 
         self.bloom_filter.insert(key);
@@ -2151,6 +2157,15 @@ mod tests {
     #[test]
     fn test_block_builder_min_size() {
         let builder = BlockBuilder::new(10);
-        assert_eq!(builder.block_size, 1024);
+        assert_eq!(builder.block_size, 512);
+    }
+
+    #[test]
+    fn test_block_builder_min_max_clamping() {
+        let bb_small = BlockBuilder::new(10);
+        assert_eq!(bb_small.block_size, 512);
+
+        let bb_huge = BlockBuilder::new(100 * 1024 * 1024);
+        assert_eq!(bb_huge.block_size, 64 * 1024 * 1024);
     }
 }
