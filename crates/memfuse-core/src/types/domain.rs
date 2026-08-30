@@ -1,9 +1,9 @@
 //! Domain types for MemFuse.
 
 // FILE-CONTEXT
-// STAND: 2026-08-30T18:51:56Z (SESSION: e459bd5f)
+// STAND: 2026-08-30T21:51:46Z (SESSION: a43b7682)
 // ZWECK: Kanonische Domain-Typen (DocId, EntityId, TxId, Embedding, DistanceMetric, Edge, Entity).
-// INVARIANTEN: TxId Base Ranges trennen System- (>= INTERNAL_BASE) von Collection-TxIds.
+// INVARIANTEN: TxId Base Ranges trennen System- (>= INTERNAL_BASE) von Collection-TxIds. TxId NIEMALS aus SystemTime erzeugen.
 // HOTSPOTS: 80-600
 // NICHT-OFFENSICHTLICH: DocId::from_key nutzt BLAKE3 8-Byte Präfix für deterministisches Slicing.
 // SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md (ADR-016, ADR-025, ADR-041)
@@ -14,13 +14,6 @@
 //!
 //! # Invarianten
 //! - `DocId` und `TxId` sind Wrapper um primitive Typen mit deterministischer Hash-Generierung.
-
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       Domain-Types (TxId, DocId, CollectionId) — Newtype-Wrapper für Typ-Sicherheit
-// INVARIANTEN: TxId ist u64-Newtype, NIEMALS direkt aus SystemTime erzeugen (AGENTS.md §4)
-// HOTSPOTS:    TxId, DocId, CollectionId, TOMBSTONE_BIT
-// SIEHE AUCH:  AGENTS.md §4
 
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
@@ -1116,5 +1109,26 @@ mod tests {
             let deser: EntityId = serde_json::from_str(&ser).unwrap(); // unwrap
             prop_assert_eq!(ent, deser);
         }
+    }
+
+    // ANCHOR[TEST:CORE-001] STATUS:DONE (TS:2026-08-30T21:51:46Z) (SESSION: a43b7682)
+    // Benchmark & Collision Test suite for DocId::from_key 64-bit BLAKE3 hash truncation
+    #[test]
+    fn test_doc_id_from_key_collisions_and_distribution() {
+        use std::collections::HashSet;
+
+        const KEY_COUNT: usize = 100_000;
+        let mut seen = HashSet::with_capacity(KEY_COUNT);
+
+        for i in 0..KEY_COUNT {
+            let key = format!("doc_key_test_sample_{i}");
+            let doc_id = DocId::from_key(&key).expect("DocId::from_key failed");
+            assert!(
+                seen.insert(doc_id.inner()),
+                "Collision detected for DocId at key {key} (index {i})"
+            );
+        }
+
+        assert_eq!(seen.len(), KEY_COUNT);
     }
 }
