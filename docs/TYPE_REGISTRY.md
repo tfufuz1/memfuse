@@ -20,7 +20,7 @@
 | `CompactionStrategy` | `memfuse-db` | `crates/memfuse-db/src/compaction.rs:18` | Kontext-Kompaktierungs-Strategien (DropOld, Summarize, LlmSummarize) |
 | `StoredDocument` | `memfuse-db` | `crates/memfuse-db/src/collection.rs:85` | In-Storage Repräsentation eines Dokuments inklusive Embeddings |
 | `StoredDocumentMeta` | `memfuse-db` | `crates/memfuse-db/src/collection.rs:110` | In-Storage Repräsentation für schnelle Result-Hydration (ohne Vektoren) |
-| `MemoryType` | `memfuse-core` | `crates/memfuse-core/src/types/domain.rs:535` | Klassifikation kognitiver Gedächtnistypen (Episodic, Semantic, Procedural, Working) |
+| `MemoryType` | `memfuse-core` | `crates/memfuse-core/src/types/domain.rs:535` | Klassifikation kognitiver Gedächtnistypen (Episodic, Semantic, Procedural, Working) (ADR-041) |
 
 ---
 
