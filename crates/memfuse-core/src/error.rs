@@ -1,9 +1,9 @@
 //! Error types for `MemFuse`.
 
 // FILE-CONTEXT
-// STAND: 2026-08-30T18:51:56Z (SESSION: e459bd5f)
+// STAND: 2026-08-30T21:51:46Z (SESSION: a43b7682)
 // ZWECK: Kanonische unified MemFuseError Enum für den gesamten Workspace.
-// INVARIANTEN: Zero-Panic via ? propagation; #[non_exhaustive] für binäre Abwärtskompatibilität.
+// INVARIANTEN: Zero-Panic via ? propagation; #[non_exhaustive] für binäre Abwärtskompatibilität. KEINE neue Error-Enum in anderen Crates anlegen.
 // HOTSPOTS: 20-180
 // NICHT-OFFENSICHTLICH: Neue Fehler-Varianten NUR unten anhängen; Downstream-Crates brauchen Wildcard-Match arm.
 // SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md
@@ -11,12 +11,6 @@
 // INVARIANT: Einzige Error-Enum für den gesamten Workspace.
 // Neue Varianten nur ANHÄNGEN (niemals umsortieren) → binäre Kompatibilität.
 // DOWNSTREAM: memfuse-store, memfuse-index, memfuse-db konvertieren via `?` und `From`.
-
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       Einzige Fehler-Enum (MemFuseError) — alle Crates propagieren hierher
-// INVARIANTEN: KEINE neue Error-Enum in anderen Crates anlegen; immer hier erweitern; non_exhaustive matching
-// HOTSPOTS:    MemFuseError enum variants, From conversions
 
 use thiserror::Error;
 

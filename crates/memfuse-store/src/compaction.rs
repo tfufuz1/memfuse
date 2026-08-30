@@ -20,7 +20,7 @@
 //! references them.
 
 // FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// STAND: 2026-08-30T21:49:55Z (SESSION: 283abf0f)
 // ZWECK:       STCS-Compaction-Engine (Size-Tiered Compaction Strategy)
 // INVARIANTEN: Compaction must not block concurrent reads, tombstone GC safe with active snapshot min_seqno, atomic SSTable swap
 // HOTSPOTS:    compact_sstables(), merge_sorted_iters()
@@ -387,24 +387,16 @@ impl CompactionEngine {
                 // FIND-STO-001: Tombstone-Retention
                 // Only GC tombstones during FULL compaction when no snapshot references them
                 // and no older SSTables outside this compaction round can contain older values.
-                if is_tombstone {
-                    if is_full_compaction && raw_seq < min_snapshot_seq {
-                        // Full-Compaction includes ALL SSTables of the collection →
-                        // Tombstone can safely be discarded without risking older values leaking.
-                        continue;
-                    } else {
-                        // Partial-Compaction: older SSTables outside this compaction
-                        // round could still contain the original value.
-                        // Tombstone MUST be preserved to prevent deleted keys from reappearing.
-                        builder
-                            .add(&item.key, &item.value, item.seq, item.tx)
-                            .await?;
-                    }
-                } else {
-                    builder
-                        .add(&item.key, &item.value, item.seq, item.tx)
-                        .await?;
+                if is_tombstone && is_full_compaction && raw_seq < min_snapshot_seq {
+                    // Full-Compaction includes ALL SSTables of the collection →
+                    // Tombstone can safely be discarded without risking older values leaking.
+                    continue;
                 }
+                // Partial-Compaction or non-GC-able tombstone / non-tombstone entry:
+                // Entry MUST be preserved in the compacted output SSTable.
+                builder
+                    .add(&item.key, &item.value, item.seq, item.tx)
+                    .await?;
             }
 
             // Immediately fetch the next item from the source stream

@@ -661,7 +661,7 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-042: Aktualisierung von `last_committed_tx` vor der Sichtbarmachung von SSTables in `LsmStorage::flush`
+## ADR-043: Aktualisierung von `last_committed_tx` vor der Sichtbarmachung von SSTables in `LsmStorage::flush`
 *   **Datum**: 2026-08-29
 *   **Status**: ✅ Final
 *   **Entscheidung**: In `LsmStorage::flush()` MUSS `last_committed_tx` aktualisiert werden, BEVOR die neu erstellte SSTable über den `sstables`-Vektor für Lesepfade (z. B. `get_at_seq`, `scan_prefix_at`) sichtbar gemacht wird (`last_committed_tx vor Datensichtbarkeit aktualisieren`).
@@ -669,6 +669,17 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
     - Beibehalten der bisherigen Reihenfolge (`sstables.push` vor `last_committed_tx` update): Verworfen, da hierbei ein Race-Fenster entsteht, in dem ein paralleler Reader die neue SSTable bereits im `sstables`-Vektor sieht, sein `snapshot_tx` aber noch vor der Erhöhung von `last_committed_tx` liest und dadurch Daten sieht, die jenseits seines Snapshots liegen.
     - Vollständige Umstellung auf exklusiven Schreib-Lock über den gesamten Reader-Öffnungs-Pfad: Verworfen, um I/O-Operationen (SSTable öffnen) nicht unter Lock zu halten.
 *   **Begründung**: MVCC-Snapshot-Isolation erfordert, dass transaktionale Sichtbarkeit atomar oder streng monoton vor der Datensichtbarkeit fortschreitet. Die Aktualisierung von `last_committed_tx` vor `sstables.push()` eliminiert das Race-Fenster für parallele Reader vollständig, ohne Lock-Kontention durch I/O zu erhöhen.
+
+---
+
+## ADR-044: MCP Write-Authorization & Sandbox Policy (Default Read-Only)
+*   **Datum**: 2026-08-30
+*   **Status**: ✅ Final
+*   **Entscheidung**: `memfuse-mcp` erzwingt eine strikte Sandbox-Policy für alle MCP Tool-Aufrufe. Datenbank-Schreibzugriffe (`DatabaseWrite` Tools wie `memfuse_insert`, `memfuse_delete`, `memfuse_upsert`, `memfuse_relate`, `memfuse_create_collection`, `memfuse_drop_collection`) sind standardmäßig GESPERRT (`allow_db_writes = false`). Schreibberechtigungen können ausschließlich explizit per Aufruf-Parameter/Server-Initialisierung (`McpServer::with_write_permission()`) bzw. Umgebungsvariable `MEMFUSE_MCP_ALLOW_WRITE=true` aktiviert werden. Vor jedem Tool-Dispatch prüft `call_tool` zentral `McpSandbox::validate_tool_call()`.
+*   **Alternativen**:
+    - Uneingeschränkter Schreibzugriff im Default: Verworfen aus Sicherheitsgründen (Zero-Trust/Least-Privilege Prinzipsschutz für LLM-MCP-Integrationen).
+    - Einzelne Tool-Gefahrenstufen ohne zentrale Sandbox-Validierung: Verworfen, da dezentrale Prüfungen fehleranfällig und schwer zu auditieren sind.
+*   **Begründung**: Schutz der lokalen Knowledge Base vor unbeabsichtigten oder böswilligen Schreib- und Löschoperationen durch extern gesteuerte MCP-Clients (R-01 Containment Protection).
 
 ---
 

@@ -3,7 +3,7 @@
 // INVARIANTEN: Dividieren durch 0 geschützt (EPSILON Padding); Keine Panics bei unpassenden Eingaben.
 // NICHT-OFFENSICHTLICH: try_train prüft Vektor-Dimensionen vor Rekalibrierung der Min/Max-Grenzen.
 // HOTSPOTS: quantize.rs (ScalarQuantizer::try_train, quantize, dequantize)
-// STAND: TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)
+// STAND: TS:2026-08-30T21:55:29Z (SESSION: 10569099)
 
 //! Scalar Quantization (SQ8) for HNSW Index.
 
@@ -63,10 +63,8 @@ impl ScalarQuantizer {
         for (idx, vec) in batch.iter().enumerate() {
             if vec.len() != dimension {
                 return Err(memfuse_core::MemFuseError::invalid_input(format!(
-                    "Vector at index {} has dimension {}, expected {}",
-                    idx,
-                    vec.len(),
-                    dimension
+                    "Vector at index {idx} has dimension {}, expected {dimension}",
+                    vec.len()
                 )));
             }
         }
@@ -222,7 +220,7 @@ impl ScalarQuantizer {
         vector
             .iter()
             .enumerate()
-            .map(|(i, &v)| (v as f32) * self.inv_scales[i] + self.mins[i])
+            .map(|(i, &v)| f32::from(v) * self.inv_scales[i] + self.mins[i])
             .collect()
     }
 
@@ -249,7 +247,7 @@ impl ScalarQuantizer {
 
                 for i in 0..self.dimension {
                     let qi = query[i];
-                    let di = (quantized[i] as f32) * self.inv_scales[i] + self.mins[i];
+                    let di = f32::from(quantized[i]) * self.inv_scales[i] + self.mins[i];
                     dot += qi * di;
                     norm_q_sq += qi * qi;
                     norm_d_sq += di * di;
@@ -271,7 +269,7 @@ impl ScalarQuantizer {
                 let mut dot = 0.0;
                 for i in 0..self.dimension {
                     let qi = query[i];
-                    let di = (quantized[i] as f32) * self.inv_scales[i] + self.mins[i];
+                    let di = f32::from(quantized[i]) * self.inv_scales[i] + self.mins[i];
                     dot += qi * di;
                 }
                 -dot
@@ -301,8 +299,8 @@ impl ScalarQuantizer {
         let mut dist_sq = 0.0_f32;
 
         for i in 0..self.dimension {
-            let v1 = (q1[i] as f32) * self.inv_scales[i] + self.mins[i];
-            let v2 = (q2[i] as f32) * self.inv_scales[i] + self.mins[i];
+            let v1 = f32::from(q1[i]) * self.inv_scales[i] + self.mins[i];
+            let v2 = f32::from(q2[i]) * self.inv_scales[i] + self.mins[i];
             dot += v1 * v2;
             norm_a_sq += v1 * v1;
             norm_b_sq += v2 * v2;
@@ -536,7 +534,7 @@ mod tests {
 
         let global_dequant: Vec<f32> = global_quant
             .iter()
-            .map(|&q| (q as f32) * global_inv_scale + global_min)
+            .map(|&q| f32::from(q) * global_inv_scale + global_min)
             .collect();
 
         let global_mse: f32 = probe
@@ -637,7 +635,7 @@ mod tests {
                 // Global error
                 let global_mse: f32 = probe.iter().map(|&v| {
                     let q = ((v.clamp(g_min, g_max) - g_min) * g_scale).round().clamp(0.0, 255.0) as u8;
-                    let r = (q as f32) * g_inv + g_min;
+                    let r = f32::from(q) * g_inv + g_min;
                     (v - r).powi(2)
                 }).sum::<f32>() / 2.0;
 
@@ -663,7 +661,10 @@ mod tests {
         // Zero dimension guard
         let res_zero = ScalarQuantizer::try_train(&[], 0);
         assert!(res_zero.is_err());
-        assert!(res_zero.unwrap_err().to_string().contains("dimension must be greater than 0"));
+        assert!(res_zero
+            .unwrap_err()
+            .to_string()
+            .contains("dimension must be greater than 0"));
 
         // Mismatched vector length guard
         let v1 = vec![1.0, 2.0, 3.0];

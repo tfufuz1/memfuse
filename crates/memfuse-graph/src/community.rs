@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Configuration for Label Propagation Community Detection.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CommunityDetectionConfig {
     /// Maximum number of propagation iterations.
     pub max_iterations: u32,
@@ -111,7 +111,7 @@ pub async fn detect_communities(
 
         let mut valid_nodes = Vec::new();
         for idx in 0..num_nodes {
-            if inner.entities.get(idx).is_some_and(|e| e.is_some()) {
+            if inner.entities.get(idx).is_some_and(Option::is_some) {
                 valid_nodes.push(idx);
             }
         }
@@ -129,7 +129,7 @@ pub async fn detect_communities(
                 for edge_idx in start..end {
                     let v = inner.targets[edge_idx];
                     if !inner.tombstoned_edges.contains(&(u, v))
-                        && inner.entities.get(v).is_some_and(|e| e.is_some())
+                        && inner.entities.get(v).is_some_and(Option::is_some)
                     {
                         let w = inner.weights[edge_idx];
                         adj.entry(u).or_default().push((v, w));
