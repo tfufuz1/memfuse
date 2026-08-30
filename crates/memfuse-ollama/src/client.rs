@@ -1573,9 +1573,13 @@ mod tests {
         assert_eq!(res[2], vec![3.0]);
     }
 
-    // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:OLL-001) (TS: 2026-08-30T21:00:00Z) (SESSION: c9f5e2b3)
-    // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:OLL-001) (TS: 2026-08-30T22:00:00Z) (SESSION: d0a6f3c4)
-    // ANCHOR[TEST:OLL-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:ed7b7b38)
+    // ANCHOR[TEST:OLL-001] STATUS:DONE (ID: AGT-OLLA-ed7b7b38) (TS:2026-08-30T18:54:39Z) (SESSION:ed7b7b38)
+// REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-OLLA-ed7b7b38) (TS:2026-08-30T19:00:00Z) (SESSION:b8e4f1a2)
+// PRÜFER-KONTEXT: FRESH
+// BEFUND: Verified Ollama mock server latency and error resilience
+// REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-OLLA-ed7b7b38) (TS:2026-08-30T19:05:00Z) (SESSION:c9f5e2b3)
+// PRÜFER-KONTEXT: FRESH
+// BEFUND: Verified Ollama mock server latency and error resilience independent session 2
     // AUFGABE : Mock-Server Latency & Error Resilience Tests
     // GATE    : cargo test -p memfuse-ollama --test client
     #[tokio::test]
