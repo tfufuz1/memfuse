@@ -1,11 +1,3 @@
-// FILE-CONTEXT
-// STAND: 2026-08-30T18:54:25Z (SESSION: f3a48824)
-// ZWECK: Tauri IPC command module definitions and shared path traversal validation logic.
-// INVARIANTEN: validate_path_within_base must reject any path outside allowed base directory.
-// NICHT-OFFENSICHTLICH: Shared path validation canonicalizes both base and target paths.
-// HOTSPOTS: validate_path_within_base (lines 20-45)
-// SIEHE AUCH: crates/memfuse-tauri/src/commands/ingest.rs
-
 mod chat;
 mod collections;
 mod ingest;
@@ -59,12 +51,11 @@ mod path_validation_tests {
 
     #[test]
     fn test_validate_path_within_base_valid() {
-        let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+        let temp_dir = tempfile::tempdir().unwrap();
         let base = temp_dir.path();
         let file_path = base.join("subfolder").join("file.txt");
-        let parent = file_path.parent().expect("File path should have parent");
-        std::fs::create_dir_all(parent).expect("Failed to create dir");
-        std::fs::write(&file_path, "data").expect("Failed to write file");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, "data").unwrap();
 
         let validated = validate_path_within_base(&file_path, base);
         assert!(validated.is_ok());
@@ -72,19 +63,19 @@ mod path_validation_tests {
 
     #[test]
     fn test_validate_path_within_base_traversal_rejected() {
-        let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+        let temp_dir = tempfile::tempdir().unwrap();
         let base = temp_dir.path().join("allowed_base");
-        std::fs::create_dir_all(&base).expect("Failed to create dir");
+        std::fs::create_dir_all(&base).unwrap();
 
         let outside_file = temp_dir.path().join("outside.txt");
-        std::fs::write(&outside_file, "secret").expect("Failed to write outside file");
+        std::fs::write(&outside_file, "secret").unwrap();
 
         // Path traversal using relative path components
         let traversal_path = base.join("../outside.txt");
 
         let res = validate_path_within_base(&traversal_path, &base);
         assert!(res.is_err());
-        let err = res.expect_err("Path traversal must return error");
+        let err = res.unwrap_err();
         assert!(matches!(err, MemFuseError::PolicyViolation(_)));
         assert!(err.to_string().contains("Path traversal detected"));
     }

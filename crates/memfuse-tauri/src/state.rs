@@ -1,21 +1,3 @@
-// FILE-CONTEXT
-// STAND: 2026-08-30T18:54:25Z (SESSION: f3a48824)
-// ZWECK: Holds global application state (database handles, path, semaphores).
-// INVARIANTEN: RwLock guards must be scoped and dropped before any .await point. Lock order: db -> db_path.
-// NICHT-OFFENSICHTLICH: Semaphore permits protect Tokio blocking pool from regex workload exhaustion.
-// HOTSPOTS: AppState (lines 35-50)
-// SIEHE AUCH: crates/memfuse-tauri/src/commands/transform.rs, rules/async-io.md
-
-//! AppState definition and concurrency invariants.
-//!
-//! # LOCK HIERARCHY & CONCURRENCY INVARIANTS
-//! 1. `state.db` (RwLock) and `state.db_path` (RwLock) are read-heavy, low-contention locks.
-//! 2. Locks must NEVER be held across `.await` suspension points. When accessing state in an async command:
-//!    - Open a scoped block `{ let db_guard = state.db.read(); ... }` to clone the `Arc<MemFuse>` reference.
-//!    - Drop the guard immediately before any `.await` call.
-//! 3. If both locks must be acquired, acquire `db` first, then `db_path`. Never acquire them in reverse order.
-//! 4. `regex_semaphore` regulates CPU/thread blocking concurrency for regex workloads without blocking async tasks.
-
 use memfuse_db::MemFuse;
 use parking_lot::RwLock;
 use std::path::PathBuf;
@@ -99,7 +81,7 @@ mod tests {
                 permit.is_ok(),
                 "Permit allocation should succeed within limit"
             );
-            permits.push(permit.expect("Permit acquisition failed within limit"));
+            permits.push(permit.unwrap()); // unwrap
         }
 
         assert_eq!(state.regex_semaphore.available_permits(), 0);

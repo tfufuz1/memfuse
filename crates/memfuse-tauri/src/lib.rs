@@ -1,11 +1,3 @@
-// FILE-CONTEXT
-// STAND: 2026-08-30T18:54:25Z (SESSION: f3a48824)
-// ZWECK: Tauri Desktop application entry point & plugin initialization.
-// INVARIANTEN: Desktop UI app must never crash from backend panics; commands return Result<T, MemFuseErrorDto>.
-// NICHT-OFFENSICHTLICH: Background async tasks must log/trace unhandled errors instead of swallowing silent failures.
-// HOTSPOTS: run (lines 15-55)
-// SIEHE AUCH: crates/memfuse-tauri/AGENTS.md, rules/async-io.md
-
 pub mod commands;
 pub mod ingestion;
 pub mod ollama;
@@ -40,9 +32,7 @@ pub fn run() {
                     }
                 };
                 use tauri::Emitter;
-                if let Err(e) = handle.emit("ollama-status", status_msg) {
-                    tracing::debug!(error = %e, "Failed to emit ollama-status event");
-                }
+                let _ = handle.emit("ollama-status", status_msg);
             });
             Ok(())
         })

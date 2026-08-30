@@ -1,15 +1,21 @@
-//! Error types for MemFuse.
+//! Error types for `MemFuse`.
 
 // INVARIANT: Einzige Error-Enum für den gesamten Workspace.
 // Neue Varianten nur ANHÄNGEN (niemals umsortieren) → binäre Kompatibilität.
 // DOWNSTREAM: memfuse-store, memfuse-index, memfuse-db konvertieren via `?` und `From`.
+
+// FILE-CONTEXT
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// ZWECK:       Einzige Fehler-Enum (MemFuseError) — alle Crates propagieren hierher
+// INVARIANTEN: KEINE neue Error-Enum in anderen Crates anlegen; immer hier erweitern; non_exhaustive matching
+// HOTSPOTS:    MemFuseError enum variants, From conversions
 
 use thiserror::Error;
 
 /// Convenience alias for `Result<T, MemFuseError>`.
 pub type Result<T> = std::result::Result<T, MemFuseError>;
 
-/// Unified error type for all MemFuse operations across the entire workspace.
+/// Unified error type for all `MemFuse` operations across the entire workspace.
 ///
 /// # Non-Exhaustive Variant Guarantee
 /// This enum is marked [`#[non_exhaustive]`][non_exhaustive] to allow appending new error variants
@@ -37,15 +43,6 @@ pub enum MemFuseError {
     /// Security or execution policy violation.
     #[error("Policy violation: {0}")]
     PolicyViolation(String),
-
-    /// Multi-tenant or collection namespace violation.
-    ///
-    /// Emitted by the collection orchestration layer (`collection.rs` / `memfuse-db`)
-    /// when cross-tenant or unauthorized collection key access is attempted.
-    /// API callers handling this error should return an HTTP 403 Forbidden
-    /// response rather than an HTTP 500 internal server error.
-    #[error("Namespace violation: {0}")]
-    NamespaceViolation(String),
 
     // ═══ Storage Engine ═══
     /// Storage layer failure.
@@ -226,7 +223,6 @@ mod tests {
             MemFuseError::NotFound("test".into()),
             MemFuseError::Storage("test".into()),
             MemFuseError::PolicyViolation("test".into()),
-            MemFuseError::NamespaceViolation("test".into()),
             MemFuseError::WalCorruption {
                 offset: 10,
                 reason: "test".into(),

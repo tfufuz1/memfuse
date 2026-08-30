@@ -31,21 +31,9 @@ impl BackgroundEvent {
         observed_at_seq: u64,
     ) -> Result<Self> {
         let source_str = source.into();
-        if source_str.is_empty() {
-            return Err(MemFuseError::InvalidInput(
-                "Event source cannot be empty".to_string(),
-            ));
-        }
-        if source_str.len() > MAX_ID_LEN {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Event source length {} exceeds maximum allowed length of {}",
-                source_str.len(),
-                MAX_ID_LEN
-            )));
-        }
-        if source_str.contains('\0') {
-            return Err(MemFuseError::InvalidInput(
-                "Event source cannot contain null bytes".to_string(),
+        if source_str.trim().is_empty() {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "BackgroundEvent source must not be empty".to_string(),
             ));
         }
         Ok(Self {
@@ -55,14 +43,13 @@ impl BackgroundEvent {
         })
     }
 
-    /// Constructs a `BackgroundEvent`, panicking if `source` is invalid.
     pub fn new(
         payload: serde_json::Value,
         source: impl Into<String>,
         observed_at_seq: u64,
     ) -> Self {
         Self::try_new(payload, source, observed_at_seq)
-            .expect("Invalid parameters in BackgroundEvent::new")
+            .unwrap_or_else(|e| panic!("Failed to construct BackgroundEvent: {e}"))
     }
 }
 
@@ -79,6 +66,9 @@ pub trait EventSource: Send + Sync {
         false
     }
 }
+
+/// Maximum capacity for pending background telemetry events queue before dropping or rejecting.
+pub const MAX_PENDING_EVENTS_CAPACITY: usize = 10_000;
 
 /// Concrete `EventSource` that periodically polls `Collection` storage sequence numbers,
 /// using `scan_prefix_at` for snapshot delta calculation to emit document changes.
@@ -153,7 +143,6 @@ impl<S: StorageEngine> EventSource for PollingDocumentEventSource<S> {
                         tracing::warn!("PollingDocumentEventSource: Pending events queue capacity limit ({}) reached, dropping remaining events", MAX_EVENT_SOURCE_CAPACITY);
                         break;
                     }
-
                     let payload = serde_json::from_slice(&val).unwrap_or_else(|_| {
                         serde_json::json!({
                             "raw": String::from_utf8_lossy(&val),

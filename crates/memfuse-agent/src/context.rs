@@ -92,12 +92,21 @@ impl AgentContext {
         db: Arc<MemFuse>,
         state_collection: Arc<Collection<LsmStorage>>,
         budget: TokenBudget,
-    ) -> Result<Self> {
+    ) -> memfuse_core::Result<Self> {
         let task_id_str = task_id.into();
         let start_node_str = start_node.into();
 
-        validate_task_id(&task_id_str)?;
-        validate_node_id(&start_node_str)?;
+        if task_id_str.trim().is_empty() {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "AgentContext task_id must not be empty".to_string(),
+            ));
+        }
+
+        if start_node_str.trim().is_empty() {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "AgentContext start_node must not be empty".to_string(),
+            ));
+        }
 
         Ok(Self {
             task_id: task_id_str,

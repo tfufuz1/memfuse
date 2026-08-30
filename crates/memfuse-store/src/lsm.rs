@@ -175,24 +175,7 @@ impl LsmStorage {
             .map_err(|e| MemFuseError::Storage(format!("Failed to create dir: {}", e)))?;
 
         // 🛡️ SICHERUNG: Directory FSync (FIND-STO-004)
-        if let Some(parent) = config.path.parent() {
-            // fsync propagiert korrekt (behoben 2026-08-24)
-            let parent = if parent.as_os_str().is_empty() {
-                std::path::Path::new(".")
-            } else {
-                parent
-            };
-            let dir = tokio::fs::File::open(parent).await.map_err(|e| {
-                MemFuseError::Storage(format!(
-                    "Verzeichnis für fsync konnte nicht geöffnet werden: {e}"
-                ))
-            })?;
-            dir.sync_all().await.map_err(|e| {
-                MemFuseError::Storage(format!(
-                    "Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}"
-                ))
-            })?;
-        }
+        crate::util::fsync_parent_dir(&config.path).await?;
 
         // Persistent Salt Management (FIND-CRY-001)
         let salt_path = config.path.join("SALT");
@@ -305,7 +288,7 @@ impl LsmStorage {
 
         let tx_buffer = TxBuffer::new_with_config(16, config.tx_timeout);
 
-        // Load existing SSTables and clean up temporary compaction files (*.tmp)
+        // Load existing SSTables and sort by filename (which includes seq_no)
         let mut sst_files = Vec::new();
         if let Ok(mut entries) = tokio::fs::read_dir(&config.path).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
@@ -493,7 +476,7 @@ impl LsmStorage {
                 let new_sst_path =
                     self.config
                         .path
-                        .join(format!("sst-{:020}-{:06}.sst", seq, count % 1000000));
+                        .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000));
 
                 let mut builder = SstableBuilder::create_with_key_manager(
                     &new_sst_path,
@@ -802,7 +785,6 @@ impl StorageEngine for LsmStorage {
         }
 
         // ANCHOR[ALG-FIX:D6-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
-        // ANCHOR[ALG-FIX:D6-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
         // FIX: Commit-Mutex serialisiert fetch_add + memtable.put.
         // Ohne Mutex könnte seq=11 vor seq=10 fertig sein → Reader seq=11 sieht Lücke bei 10.
         let _commit_lock = self.commit_mutex.lock().await;
@@ -978,7 +960,6 @@ impl StorageEngine for LsmStorage {
         state.immutable_memtables.push(old_memtable.clone());
 
         // ANCHOR[ALG-FIX:D1-011] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Stale WAL-Dateien löschen nach Flush
-        // ANCHOR[ALG-FIX:D1-011] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Stale WAL-Dateien löschen nach Flush
         // Ohne Cleanup wächst die Disk-Usage unbegrenzt (eine WAL pro Flush).
         let old_wal_path = old_wal.path().to_path_buf();
         drop(old_wal);
@@ -990,7 +971,7 @@ impl StorageEngine for LsmStorage {
             let seq = self.next_seq_no.load(Ordering::Relaxed);
             self.config
                 .path
-                .join(format!("sst-{:020}-{:06}.sst", seq, count % 1000000))
+                .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000))
         };
         let mut builder =
             SstableBuilder::create_with_key_manager(&sst_path, self.key_manager.clone()).await?;

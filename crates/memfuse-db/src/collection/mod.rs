@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// ZWECK: Sammlung/Collection-Namespace Verwaltung und gemeinsame Hilfsfunktionen.
+// INVARIANTEN: Strikte Isolation durch Präfixe; doc_keys (key_type=1) halten nur Metadaten (keine Vektoren).
+// NICHT-OFFENSICHTLICH: insert_lock schützt Mutationen zur Vermeidung von TOCTOU-Kollisionsrassen.
+// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+
 //! Logically isolated Collections inside the MemFuse database.
 // INVARIANT: Logische Isolation (Namespaces).
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
@@ -173,6 +179,16 @@ pub(super) fn extract_text(metadata: &Option<serde_json::Value>) -> Option<Strin
     }
 }
 
+/// # Concurrency & Lock Hierarchy
+///
+/// Lock acquisition within `Collection` follows strict ordering to prevent deadlocks:
+///
+/// 1. `Collection::insert_lock` (`tokio::sync::Mutex`):
+///    Serializes mutations (`insert`, `update`, `delete`, `relate`, `repair`, `drop_collection`) and prevents
+///    TOCTOU races during `check_doc_id_collision`.
+/// 2. `Collection::embedder` (`parking_lot::RwLock`):
+///    Read/write lock for the configured `TextEmbeddingEngine`. Never acquired before `insert_lock` if both are needed.
+///
 /// A logically isolated collection of documents (namespace).
 ///
 /// Each collection provides its own vector index and inverted text index,
@@ -375,7 +391,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         };
 
         let entries = self.storage.scan_prefix(&scan_prefix).await?;
-        let tx = self.next_tx()?;
+        let tx = self.allocate_tx()?;
         for (k, v) in entries {
             if self.name == "default" && k.starts_with(b"__") {
                 continue;
@@ -408,7 +424,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
         let entries = self.storage.scan_prefix(&prefix).await?;
         let mut migrated_count = 0;
-        let tx = self.next_tx()?;
+        let tx = self.allocate_tx()?;
 
         for (k, v) in entries {
             // Try parsing as full document first (which indicates it needs migration)

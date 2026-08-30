@@ -186,6 +186,7 @@ async fn test_hybrid_search_with_ppr_strategy() {
         damping_factor: 0.85,
         max_iterations: 100,
         convergence_epsilon: 1e-6,
+        warn_on_non_convergence: true,
     });
 
     let results = col

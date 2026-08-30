@@ -958,6 +958,30 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn test_diskann_non_power_of_two_sector_size_rejected() {
+        let bad_config = DiskAnnConfig {
+            sector_size: 4000, // not a power of 2
+            ..DiskAnnConfig::default()
+        };
+        let res = DiskAnnIndex::try_new(bad_config);
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[tokio::test]
+    async fn test_diskann_read_only_mutations_return_error() {
+        let index = DiskAnnIndex::try_new(DiskAnnConfig::default()).expect("valid config");
+        let tx = TxId::new(1);
+        let doc_id = DocId::from(100);
+        let vec = vec![1.0f32; 128];
+
+        let insert_res = index.insert(tx, doc_id, &vec).await;
+        assert!(matches!(insert_res, Err(MemFuseError::InvalidInput(_))));
+
+        let delete_res = index.delete(tx, doc_id).await;
+        assert!(matches!(delete_res, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[tokio::test]
     async fn test_diskann_config_validation() {
         let valid_config = DiskAnnConfig {
             index_path: PathBuf::from("dummy.idx"),
