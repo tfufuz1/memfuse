@@ -10,14 +10,14 @@ jobs:
 
       - name: "Gate 1: Keine ungelösten kritischen AI-TAGs"
         run: |
-          COUNT=$(grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ \
+          COUNT=$(grep -rE "AI-TAG\[[^]]+\]\[(CRITICAL|BLOCKER)\]" crates/ \
             --include="*.rs" | grep -vc "RESOLVED" || true)
           if [ "$COUNT" -gt 0 ]; then
-            echo "❌ $COUNT ungelöste AI-TAG[SMELL][CRITICAL] gefunden"
-            grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v "RESOLVED"
+            echo "❌ $COUNT ungelöste AI-TAG[CRITICAL|BLOCKER] gefunden"
+            grep -rE "AI-TAG\[[^]]+\]\[(CRITICAL|BLOCKER)\]" crates/ --include="*.rs" | grep -v "RESOLVED"
             exit 1
           fi
-          echo "✅ Keine offenen kritischen Tags"
+          echo "✅ Keine offenen kritischen/blockierenden Tags"
 
       - name: "Gate 2: Kein .expect() in Produktionscode"
         run: |
