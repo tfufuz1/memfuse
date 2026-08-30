@@ -56,6 +56,8 @@ pub enum WalVersion {
 /// 3. After successful replay and LSM compaction into SSTables, old WAL files using `LEGACY_INTEGRITY_KEY` are superseded and truncated/removed.
 ///
 /// ANCHOR[MIGRATION:WAL-HMAC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z)
+// REVIEW-PASS[1/2] STATUS:PASS (ID: MIGRATION:WAL-HMAC-001) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
+// REVIEW-PASS[2/2] STATUS:PASS (ID: MIGRATION:WAL-HMAC-001) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
 pub const LEGACY_INTEGRITY_KEY: [u8; 32] = *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0";
 
 /// A single entry in the Write-Ahead Log.

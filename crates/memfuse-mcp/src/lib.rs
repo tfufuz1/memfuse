@@ -3,13 +3,6 @@ pub mod sandbox;
 #[cfg(test)]
 mod tests;
 
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       stdio JSON-RPC 2.0 MCP-Server (kein HTTP! ADR-010)
-// INVARIANTEN: Transport ist ausschließlich stdin/stdout — niemals TCP/axum, bounded RPC message size
-// HOTSPOTS:    run_stdio_loop(), handle_request(), read_line_bounded()
-// SIEHE AUCH:  ADR-010, rules/async-io.md
-
 use memfuse_core::{DocId, MemFuseError, TextEmbeddingEngine, MAX_SEARCH_K};
 use memfuse_db::chunker::{ChunkerConfig, MarkdownChunker};
 use memfuse_db::MemFuse;
@@ -21,8 +14,6 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 /// Maximum allowed single JSON-RPC message size via stdio (16 MB).
 pub const MAX_RPC_BYTES: usize = 16 * 1024 * 1024;
-/// Maximum allowed search query length in bytes (64 KB).
-pub const MAX_SEARCH_QUERY_BYTES: usize = 64 * 1024;
 
 /// Reads a single line from an async reader into `buf` up to `max_bytes`.
 /// If the line exceeds `max_bytes`, consumes and discards the remainder of the line without allocating memory and returns `InvalidData`.

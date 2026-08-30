@@ -1,10 +1,4 @@
-// ANCHOR[PERF:EVAL-001] STATUS:DONE (TS:2026-08-29T00:00:00Z) (SESSION: a3f29c1d) — Semantic Retrieval Evaluation Framework
-// REVIEW-PASS[1/2] STATUS:PASS (ID: PERF:EVAL-001) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
-// PRÜFER-KONTEXT: FRESH
-// BEFUND: recall benchmark verified
-// REVIEW-PASS[2/2] STATUS:PASS (ID: PERF:EVAL-001) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
-// PRÜFER-KONTEXT: FRESH
-// BEFUND: recall benchmark second review pass
+// ANCHOR[PERF:EVAL-001] STATUS:DONE (TS:2026-08-29T00:00:00Z) — Semantic Retrieval Evaluation Framework
 // ZIEL: Parameterisierte Recall@k (k=5, 10, 20) Messung für hybrid_search gegen Ground Truth
 // AGENT:09 DATE:2026-08-29 STATUS:DONE
 
