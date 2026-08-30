@@ -110,7 +110,8 @@ impl SessionBranchTree {
     ) -> Result<NodeIdx> {
         if !self.nodes.read().contains_key(&parent_node) {
             return Err(MemFuseError::InvalidInput(format!(
-                "SessionDAG: node {parent_node} nicht gefunden"
+                "SessionDAG: node {} nicht gefunden",
+                parent_node
             )));
         }
 
@@ -147,7 +148,8 @@ impl SessionBranchTree {
             Ok(())
         } else {
             Err(MemFuseError::InvalidInput(format!(
-                "SessionDAG: node {node_idx} nicht gefunden"
+                "SessionDAG: node {} nicht gefunden",
+                node_idx
             )))
         }
     }
@@ -535,7 +537,7 @@ mod tests {
     #[allow(non_snake_case)]
     fn new_CASE_empty_and_unicode_strings() {
         // Empty strings
-        let empty_dag = SessionBranchTree::new(String::new(), String::new());
+        let empty_dag = SessionBranchTree::new("".into(), "".into());
         assert_eq!(empty_dag.node_count(), 1);
         let root = empty_dag.get_node(0).unwrap(); // unwrap allowed
         assert_eq!(root.prompt, "");
@@ -568,7 +570,8 @@ mod tests {
         let err = result.err().unwrap(); // unwrap allowed
         assert!(
             matches!(err, MemFuseError::NotFound(_)),
-            "Expected MemFuseError::NotFound, got {err:?}"
+            "Expected MemFuseError::NotFound, got {:?}",
+            err
         );
     }
 
@@ -597,7 +600,8 @@ mod tests {
         let err = result.err().unwrap(); // unwrap allowed
         assert!(
             matches!(err, MemFuseError::Serialization(_)),
-            "Expected MemFuseError::Serialization on corrupt payload, got {err:?}"
+            "Expected MemFuseError::Serialization on corrupt payload, got {:?}",
+            err
         );
     }
 

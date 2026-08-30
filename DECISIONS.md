@@ -314,11 +314,10 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-037 (ehem. ADR-020 Wiederherstellung): Wiederherstellung von `memfuse-agent` aus dem Archiv
+## ADR-020 (Wiederherstellung): Wiederherstellung von `memfuse-agent` aus dem Archiv
 
 - **Datum**: 2026-08-27
 - **Status**: ✅ Final
-- **Hinweis**: Renummeriert von ADR-020 zu ADR-037 in R-08 zur Behebung des ADR-020-Duplikats. (Reserved Gaps: ADR-038, ADR-039).
 - **Entscheidung**: Kernkomponenten aus `memfuse-saos-agent` (gelöscht in Commit 55a3464)
   werden als `memfuse-agent` wiederhergestellt: `AgentTool` Trait, `OrchestratorEngine`,
   `StateGraph`, `AuditLog`.
@@ -621,28 +620,6 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
     - Additiv, keine Breaking Changes an bestehenden `insert()`-Aufrufern.
     - `trigger_reaper()` nutzt die typspezifische Decay-Function für einen aktiven TxId-basierten Sweep (siehe zugehörige Reaper-Härtung).
     - Zukünftige Retrieval-Strategien können nach `MemoryType` filtern oder gewichten (noch nicht implementiert, aber durch additive Enum-Erweiterung vorbereitet).
-
----
-
-## ADR-042: MCP Server Write Authorization & Read-Only Default Policy
-
-*   **Datum**: 2026-08-30
-*   **Status**: ✅ Final
-*   **Kontext**:
-    In `memfuse-mcp` existierte keine Autorisierungsprüfung vor der Ausführung von Tool-Calls auf Storage- und Collection-Ebene. Ein MCP-Client mit Lesezugriff auf den stdio-Server-Endpoint konnte schreibende Operationen (`insert`, `delete`, `relate`, etc.) ohne jegliche Freigabe ausführen.
-*   **Entscheidung**:
-    1. Der MCP-Server setzt standardmäßig auf einen sicheren Read-Only-Modus (`allow_db_writes = false`).
-    2. Alle schreibenden Tools (`memfuse_insert`, `memfuse_delete`, `memfuse_upsert`, `memfuse_relate`, `memfuse_create_collection`, `memfuse_drop_collection`) werden zentral an einer Stelle vor dem Dispatch über `McpSandbox::validate_tool_call` abgefangen. Bei deaktiviertem Schreibzugriff geben sie einen verständlichen MCP-Fehler zurück (kein panic, kein silent no-op).
-    3. Schreibrechte können explizit aktiviert werden via CLI-Flag `--allow-write` (bzw. erzwingbar aus via `--read-only`), via Umgebungsvariable `MEMFUSE_MCP_ALLOW_WRITE=1` (oder `true`), oder programmatisch über `McpServer::with_write_permission(db, embedder, allow_write)`.
-    4. Gemäß ADR-010 (stdio JSON-RPC 2.0) werden keine neuen Netzwerk- / axum-Dependencies hinzugefügt; Gate 4 in `context-gates.yml` bleibt unberührt.
-*   **Alternativen**:
-    - Netzwerk-basiertes Auth-Server / OAuth2-Token: Verworfen, da dies axum/Netzwerk-Listener erfordern und ADR-010 verletzen würde.
-    - Duplizierter Guard in jedem einzelnen Tool-Handler: Verworfen zugunsten eines zentralen, DRY Sandbox-Guards (`McpSandbox::validate_tool_call`).
-*   **Begründung**:
-    Beseitigt die offene Sicherheitslücke ohne Breaking Changes am stdio-Protokoll oder DAG-Constraint und wahrt das Least-Privilege-Prinzip by default.
-*   **Konsequenzen**:
-    - `McpServer::new` startet standardmäßig im Read-Only-Modus (sofern `MEMFUSE_MCP_ALLOW_WRITE` nicht gesetzt ist).
-    - Test-Fixtures für schreibende Tests nutzen `McpServer::with_write_permission(..., true)`.
 
 ---
 

@@ -78,42 +78,6 @@ fn is_suspicious_tx_id(tx: TxId) -> bool {
     (WALLCLOCK_TX_HEURISTIC_MIN..TxId::INTERNAL_BASE).contains(&v)
 }
 
-/// Helper function to log a structured warning when a transaction ID falls into the suspicious wall-clock range.
-#[inline]
-fn warn_if_suspicious_tx_id(tx: TxId, op: &str) {
-    if is_suspicious_tx_id(tx) {
-        tracing::warn!(
-            tx_id = tx.inner(),
-            hint = "Wall-Clock-ns-Bereich",
-            "AGT-GRAPH-001: Verdächtiger TxId in {op} (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
-             möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
-             Rollback-Korrelation kann verletzt sein."
-        );
-    }
-}
-
-/// Constructs the storage byte key for a persisted entity.
-#[inline]
-fn make_entity_key(id: &EntityId) -> Vec<u8> {
-    let mut key = Vec::with_capacity(GRAPH_ENTITY_PREFIX.len() + id.as_bytes().len());
-    key.extend_from_slice(GRAPH_ENTITY_PREFIX);
-    key.extend_from_slice(id.as_bytes().as_slice());
-    key
-}
-
-/// Constructs the storage byte key for a persisted edge (`__graph:edge:{from}:{to}`).
-#[inline]
-fn make_edge_key(from: &EntityId, to: &EntityId) -> Vec<u8> {
-    let mut key = Vec::with_capacity(
-        GRAPH_EDGE_PREFIX.len() + from.as_bytes().len() + 1 + to.as_bytes().len(),
-    );
-    key.extend_from_slice(GRAPH_EDGE_PREFIX);
-    key.extend_from_slice(from.as_bytes().as_slice());
-    key.push(b':');
-    key.extend_from_slice(to.as_bytes().as_slice());
-    key
-}
-
 /// Prüft ob eine Kante zum Zeitpunkt `as_of` sichtbar ist (bi-temporale Filterung).
 #[inline]
 pub(crate) fn is_edge_visible(
@@ -207,12 +171,6 @@ impl GraphInner {
             pending_edge_count: 0,
             is_dirty: false,
         }
-    }
-
-    /// Checks if a node at internal index `idx` exists and contains a committed entity.
-    #[inline]
-    pub(crate) fn is_entity_committed(&self, idx: InternalIndex) -> bool {
-        self.entities.get(idx).is_some_and(Option::is_some)
     }
 
     fn get_or_create_index(&mut self, id: EntityId) -> InternalIndex {
@@ -372,7 +330,6 @@ impl CsrGraph {
             inner.entities.resize(idx + 1, None);
         }
         inner.entities[idx] = Some(entity);
-        drop(inner);
         Ok(())
     }
 
@@ -457,7 +414,7 @@ impl CsrGraph {
         tx: TxId,
         entity: &Entity,
     ) -> Result<()> {
-        let key = make_entity_key(&entity.id);
+        let key = [GRAPH_ENTITY_PREFIX, entity.id.as_bytes().as_slice()].concat();
         let value = bincode::serialize(entity)
             .map_err(|e| MemFuseError::Internal(format!("graph entity serialize: {e}")))?;
         storage.put(tx, &key, &value).await
@@ -472,7 +429,13 @@ impl CsrGraph {
         to: &EntityId,
         payload: &PersistedEdgePayload,
     ) -> Result<()> {
-        let key = make_edge_key(from, to);
+        let key = [
+            GRAPH_EDGE_PREFIX,
+            from.as_bytes().as_slice(),
+            b":",
+            to.as_bytes().as_slice(),
+        ]
+        .concat();
         let value = bincode::serialize(payload)
             .map_err(|e| MemFuseError::Internal(format!("graph edge serialize: {e}")))?;
         storage.put(tx, &key, &value).await
@@ -486,7 +449,13 @@ impl CsrGraph {
         from: &EntityId,
         to: &EntityId,
     ) -> Result<()> {
-        let key = make_edge_key(from, to);
+        let key = [
+            GRAPH_EDGE_PREFIX,
+            from.as_bytes().as_slice(),
+            b":",
+            to.as_bytes().as_slice(),
+        ]
+        .concat();
         storage.delete(tx, &key).await
     }
 
@@ -523,7 +492,7 @@ impl CsrGraph {
             // Key-Format: "__graph:edge:{from_id}:{to_id}"
             let key_payload = raw_key
                 .get(GRAPH_EDGE_PREFIX.len()..)
-                .ok_or_else(|| MemFuseError::Internal("graph edge key too short".into()))?;
+                .ok_or_else(|| MemFuseError::Internal("graph edge key zu kurz".into()))?;
 
             let key_str = std::str::from_utf8(key_payload)
                 .map_err(|e| MemFuseError::Internal(format!("graph edge key UTF-8: {e}")))?;
@@ -610,7 +579,7 @@ impl CsrGraph {
             None => return Ok(Vec::new()),
         };
 
-        if !inner.is_entity_committed(start_idx) {
+        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
             return Ok(Vec::new());
         }
 
@@ -623,7 +592,10 @@ impl CsrGraph {
             for edge_idx in start_edge..end_edge {
                 let neighbor_idx = inner.targets[edge_idx];
                 if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
-                    && inner.is_entity_committed(neighbor_idx)
+                    && inner
+                        .entities
+                        .get(neighbor_idx)
+                        .is_some_and(|e| e.is_some())
                 {
                     if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
                         if !neighbors.contains(&id) {
@@ -639,7 +611,10 @@ impl CsrGraph {
             for edge in pending {
                 let neighbor_idx = edge.target;
                 if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
-                    && inner.is_entity_committed(neighbor_idx)
+                    && inner
+                        .entities
+                        .get(neighbor_idx)
+                        .is_some_and(|e| e.is_some())
                 {
                     if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
                         if !neighbors.contains(&id) {
@@ -721,7 +696,7 @@ impl CsrGraph {
 
         let mut result = HashMap::new();
         for (idx, &rank) in ranks.iter().enumerate() {
-            if inner.is_entity_committed(idx) {
+            if inner.entities.get(idx).is_some_and(|e| e.is_some()) {
                 if let Some(&id) = inner.reverse_map.get(idx) {
                     result.insert(id, rank);
                 }
@@ -739,7 +714,7 @@ impl CsrGraph {
     pub fn entity_exists(&self, id: EntityId) -> bool {
         let inner = self.inner.read();
         if let Some(&idx) = inner.id_map.get(&id) {
-            inner.is_entity_committed(idx)
+            inner.entities.get(idx).is_some_and(|e| e.is_some())
         } else {
             false
         }
@@ -772,7 +747,16 @@ impl GraphIndex for CsrGraph {
             "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
             tx
         );
-        warn_if_suspicious_tx_id(tx, "add_entity");
+        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
+        if is_suspicious_tx_id(tx) {
+            tracing::warn!(
+                tx_id = tx.inner(),
+                hint = "Wall-Clock-ns-Bereich",
+                "AGT-GRAPH-001: Verdächtiger TxId in add_entity (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
+                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
+                 Rollback-Korrelation kann verletzt sein."
+            );
+        }
         let mut inner = self.inner.write();
         inner
             .staged_entities
@@ -788,7 +772,16 @@ impl GraphIndex for CsrGraph {
             "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
             tx
         );
-        warn_if_suspicious_tx_id(tx, "add_edge");
+        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
+        if is_suspicious_tx_id(tx) {
+            tracing::warn!(
+                tx_id = tx.inner(),
+                hint = "Wall-Clock-ns-Bereich",
+                "AGT-GRAPH-001: Verdächtiger TxId in add_edge (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
+                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
+                 Rollback-Korrelation kann verletzt sein."
+            );
+        }
         let mut inner = self.inner.write();
         let from_idx = inner.get_or_create_index(edge.from);
         let to_idx = inner.get_or_create_index(edge.to);
@@ -842,7 +835,7 @@ impl GraphIndex for CsrGraph {
             None => return Ok(Vec::new()),
         };
 
-        if !inner.is_entity_committed(start_idx) {
+        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
             return Ok(Vec::new());
         }
 
@@ -884,7 +877,10 @@ impl GraphIndex for CsrGraph {
 
                         if (!visited.contains_key(&neighbor_idx)
                             || visited[&neighbor_idx] < next_score)
-                            && inner.is_entity_committed(neighbor_idx)
+                            && inner
+                                .entities
+                                .get(neighbor_idx)
+                                .is_some_and(|e| e.is_some())
                         {
                             queue.push_back((neighbor_idx, hop + 1, next_score));
                         }
@@ -905,7 +901,10 @@ impl GraphIndex for CsrGraph {
 
                         if (!visited.contains_key(&neighbor_idx)
                             || visited[&neighbor_idx] < next_score)
-                            && inner.is_entity_committed(neighbor_idx)
+                            && inner
+                                .entities
+                                .get(neighbor_idx)
+                                .is_some_and(|e| e.is_some())
                         {
                             queue.push_back((neighbor_idx, hop + 1, next_score));
                         }
@@ -936,7 +935,7 @@ impl GraphIndex for CsrGraph {
         };
 
         // If the start node itself is not committed, we shouldn't start traversal from it
-        if !inner.is_entity_committed(start_idx) {
+        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
             return Ok(Vec::new());
         }
 
@@ -977,7 +976,11 @@ impl GraphIndex for CsrGraph {
                             || visited[&neighbor_idx] < next_score
                         {
                             // Only visit nodes that have a committed entity (FIND-GRA-001)
-                            if inner.is_entity_committed(neighbor_idx) {
+                            if inner
+                                .entities
+                                .get(neighbor_idx)
+                                .is_some_and(|e| e.is_some())
+                            {
                                 queue.push_back((neighbor_idx, hop + 1, next_score));
                             }
                         }
@@ -995,7 +998,10 @@ impl GraphIndex for CsrGraph {
 
                         if (!visited.contains_key(&neighbor_idx)
                             || visited[&neighbor_idx] < next_score)
-                            && inner.is_entity_committed(neighbor_idx)
+                            && inner
+                                .entities
+                                .get(neighbor_idx)
+                                .is_some_and(|e| e.is_some())
                         {
                             queue.push_back((neighbor_idx, hop + 1, next_score));
                         }
@@ -1024,7 +1030,16 @@ impl GraphIndex for CsrGraph {
             "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
             tx
         );
-        warn_if_suspicious_tx_id(tx, "commit");
+        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
+        if is_suspicious_tx_id(tx) {
+            tracing::warn!(
+                tx_id = tx.inner(),
+                hint = "Wall-Clock-ns-Bereich",
+                "AGT-GRAPH-001: Verdächtiger TxId in commit (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
+                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
+                 Rollback-Korrelation kann verletzt sein."
+            );
+        }
         let (entities_to_commit, edges_to_commit, removals_to_commit) = {
             let inner = self.inner.read();
             let entities = inner.staged_entities.get(&tx).cloned();
@@ -1133,7 +1148,14 @@ impl GraphIndex for CsrGraph {
     }
 
     async fn remove_edge(&self, tx: TxId, from: EntityId, to: EntityId) -> Result<()> {
-        warn_if_suspicious_tx_id(tx, "remove_edge");
+        if is_suspicious_tx_id(tx) {
+            tracing::warn!(
+                tx_id = tx.inner(),
+                hint = "Wall-Clock-ns-Bereich",
+                "AGT-GRAPH-001: Verdächtiger TxId in remove_edge (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
+                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet."
+            );
+        }
         let mut inner = self.inner.write();
         let from_idx = inner.id_map.get(&from).copied();
         let to_idx = inner.id_map.get(&to).copied();
@@ -1223,7 +1245,7 @@ mod tests {
             graph
                 .add_entity(
                     tx,
-                    Entity::new(EntityId::new(id), format!("P{id}"), "Person"),
+                    Entity::new(EntityId::new(id), format!("P{}", id), "Person"),
                 )
                 .await
                 .expect("valid setup"); // expect
@@ -1550,7 +1572,6 @@ mod tests {
             + (inner.offsets.len() * std::mem::size_of::<usize>())
             + (inner.targets.len() * std::mem::size_of::<usize>())
             + (inner.weights.len() * std::mem::size_of::<f32>());
-        drop(inner);
 
         assert_eq!(stats.memory_usage_bytes, expected_mem);
     }
@@ -1580,7 +1601,8 @@ mod tests {
         // Should find committed edge (2) but NOT uncommitted edge (5)
         assert!(
             targets.contains(&2),
-            "Expected Entity 2 in results, got {targets:?}"
+            "Expected Entity 2 in results, got {:?}",
+            targets
         );
     }
 
@@ -1616,9 +1638,7 @@ mod tests {
         let inner = graph.inner.read();
         let idx = inner.id_map.get(&EntityId::new(10)).unwrap(); // unwrap
         let entity = inner.entities[*idx].as_ref().unwrap(); // unwrap
-        let name = entity.name.clone();
-        drop(inner);
-        assert_eq!(name, "EntityFromB");
+        assert_eq!(entity.name, "EntityFromB");
     }
 
     #[tokio::test]
@@ -2306,18 +2326,17 @@ mod tests {
                         let num_nodes = inner.reverse_map.len();
                         for i in 0..num_nodes {
                             if let Some(&id) = inner.reverse_map.get(i) {
-                                if inner.is_entity_committed(i) {
+                                if inner.entities.get(i).is_some_and(|e| e.is_some()) {
                                     entities.insert(id.inner());
                                 }
                             }
-                        }
 
                             let old_start = if i < inner.offsets.len() - 1 { inner.offsets[i] } else { 0 };
                             let old_end = if i < inner.offsets.len() - 1 { inner.offsets[i + 1] } else { 0 };
                             for j in old_start..old_end {
                                 let target_idx = inner.targets[j];
                                 let vf = inner.valid_froms.get(j).copied().flatten().unwrap_or(TxId::new(0)).inner();
-                                let vt = inner.valid_tos.get(j).copied().flatten().map(TxId::inner);
+                                let vt = inner.valid_tos.get(j).copied().flatten().map(|t| t.inner());
 
                                 if vf <= target_seq && vt.is_none_or(|t| target_seq < t) {
                                     if let (Some(&f), Some(&t)) = (inner.reverse_map.get(i), inner.reverse_map.get(target_idx)) {
@@ -2327,12 +2346,11 @@ mod tests {
                                     }
                                 }
                             }
-                        }
 
                             if let Some(pending) = inner.pending_edges.get(&i) {
                                 for edge in pending {
                                     let vf = edge.valid_from.unwrap_or(TxId::new(0)).inner();
-                                    let vt = edge.valid_to.map(TxId::inner);
+                                    let vt = edge.valid_to.map(|t| t.inner());
                                     if vf <= target_seq && vt.is_none_or(|t| target_seq < t) {
                                         if let (Some(&f), Some(&t)) = (inner.reverse_map.get(i), inner.reverse_map.get(edge.target)) {
                                             if !inner.tombstoned_edges.contains(&(i, edge.target)) {
@@ -2343,8 +2361,8 @@ mod tests {
                                 }
                             }
                         }
-                    }
-                    drop(inner);
+                        (entities, active_edges)
+                    };
 
                     // Check traverse_at for each active node
                     for &start in &entities {
@@ -2363,5 +2381,274 @@ mod tests {
                 Ok(())
             }).unwrap();
         });
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn compact_async_CASE_dirty_and_clean_states() {
+        let graph = Arc::new(CsrGraph::new());
+        let tx = TxId::new(1);
+
+        // Stage and commit an edge to mark graph dirty
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(1), "A", "T"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_entity(tx, Entity::new(EntityId::new(2), "B", "T"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "rel"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph.commit(tx).await.unwrap(); // unwrap allowed
+
+        assert!(graph.inner.read().is_dirty);
+
+        // compact_async on dirty graph
+        graph.compact_async().await.unwrap(); // unwrap allowed
+
+        assert!(!graph.inner.read().is_dirty);
+        assert_eq!(graph.inner.read().targets.len(), 1);
+
+        // compact_async no-op on clean graph
+        graph.compact_async().await.unwrap(); // unwrap allowed
+        assert!(!graph.inner.read().is_dirty);
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn set_storage_and_with_config_and_storage_CASE_initialization() {
+        use memfuse_store::{LsmConfig, LsmStorage};
+
+        let dir = tempfile::tempdir().unwrap(); // unwrap allowed
+        let storage: Arc<dyn StorageEngine> = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(), // unwrap allowed
+        );
+
+        let config = CsrGraphConfig {
+            rebuild_threshold: 50,
+        };
+        let mut graph = CsrGraph::with_config_and_storage(config, storage.clone());
+        assert!(graph.storage.is_some());
+
+        // Replace storage via set_storage
+        let dir2 = tempfile::tempdir().unwrap(); // unwrap allowed
+        let storage2: Arc<dyn StorageEngine> = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir2.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(), // unwrap allowed
+        );
+
+        graph.set_storage(storage2);
+        assert!(graph.storage.is_some());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn insert_entity_direct_and_edge_direct_CASE_and_boundaries() {
+        let graph = CsrGraph::new();
+
+        let id1 = EntityId::new(10);
+        let id2 = EntityId::new(20);
+
+        graph
+            .insert_entity_direct(Entity::new(id1, "Direct1", "Type"))
+            .unwrap(); // unwrap allowed
+        graph
+            .insert_entity_direct(Entity::new(id2, "Direct2", "Type"))
+            .unwrap(); // unwrap allowed
+
+        assert_eq!(graph.entity_count(), 2);
+        assert!(graph.entity_exists(id1));
+        assert!(graph.entity_exists(id2));
+        assert!(!graph.entity_exists(EntityId::new(999)));
+
+        graph
+            .insert_edge_direct_with_validity(
+                id1,
+                id2,
+                1.5,
+                Some(TxId::new(5)),
+                Some(TxId::new(50)),
+            )
+            .unwrap(); // unwrap allowed
+
+        assert_eq!(graph.edge_count(), 1);
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn persist_entity_edge_delete_persistence_CASE_direct_calls() {
+        use memfuse_store::{LsmConfig, LsmStorage};
+
+        let dir = tempfile::tempdir().unwrap(); // unwrap allowed
+        let storage = LsmStorage::new(LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(); // unwrap allowed
+
+        let graph = CsrGraph::new();
+        let tx = TxId::new(10);
+        let id1 = EntityId::new(1);
+        let id2 = EntityId::new(2);
+        let entity = Entity::new(id1, "P1", "Person");
+        let payload = PersistedEdgePayload {
+            weight: 0.9,
+            valid_from: Some(TxId::new(1)),
+            valid_to: None,
+        };
+
+        // Persist entity & edge directly
+        graph.persist_entity(&storage, tx, &entity).await.unwrap(); // unwrap allowed
+        graph
+            .persist_edge(&storage, tx, &id1, &id2, &payload)
+            .await
+            .unwrap(); // unwrap allowed
+        storage.commit(tx).await.unwrap(); // unwrap allowed
+
+        // Delete edge persistence
+        let tx2 = TxId::new(11);
+        graph
+            .delete_edge_persistence(&storage, tx2, &id1, &id2)
+            .await
+            .unwrap(); // unwrap allowed
+        storage.commit(tx2).await.unwrap(); // unwrap allowed
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn load_from_storage_CASE_legacy_f32_weight_and_invalid_key() {
+        use memfuse_store::{LsmConfig, LsmStorage};
+
+        let dir = tempfile::tempdir().unwrap(); // unwrap allowed
+        let storage = LsmStorage::new(LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(); // unwrap allowed
+
+        let tx = TxId::new(1);
+
+        // Put legacy f32 edge payload
+        let legacy_key = b"__graph:edge:1:2";
+        let legacy_val = bincode::serialize(&0.75f32).unwrap(); // unwrap allowed
+        storage.put(tx, legacy_key, &legacy_val).await.unwrap(); // unwrap allowed
+
+        // Put invalid key (missing colon delimiter)
+        let invalid_key = b"__graph:edge:invalidkeywithoutcolon";
+        let payload = PersistedEdgePayload {
+            weight: 1.0,
+            valid_from: None,
+            valid_to: None,
+        };
+        let payload_val = bincode::serialize(&payload).unwrap(); // unwrap allowed
+        storage.put(tx, invalid_key, &payload_val).await.unwrap(); // unwrap allowed
+
+        storage.commit(tx).await.unwrap(); // unwrap allowed
+
+        let loaded_graph = CsrGraph::load_from_storage(&storage).await.unwrap(); // unwrap allowed
+        assert_eq!(loaded_graph.edge_count(), 1);
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn traverse_at_time_CASE_saturating_max_hops() {
+        let graph = setup_test_graph().await;
+
+        // Traverse with max_hops 255 (should saturate safely to MAX_TRAVERSAL_HOPS=3 without panic/OOM)
+        let results = graph
+            .traverse_at_time(EntityId::new(1), 255, TxId::new(100))
+            .await
+            .unwrap(); // unwrap allowed
+
+        assert!(!results.is_empty());
+        assert!(results.len() <= 4);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn pagerank_CASE_empty_graph_and_isolated_node() {
+        let empty_graph = CsrGraph::new();
+        let ranks_empty = empty_graph.pagerank(0.85, 100, 1e-6);
+        assert!(ranks_empty.is_empty());
+
+        let iso_graph = CsrGraph::new();
+        iso_graph
+            .insert_entity_direct(Entity::new(EntityId::new(1), "Iso", "Type"))
+            .unwrap(); // unwrap allowed
+
+        let ranks_iso = iso_graph.pagerank(0.85, 100, 1e-6);
+        assert_eq!(ranks_iso.len(), 1);
+        let rank = ranks_iso[&EntityId::new(1)];
+        assert!((rank - 1.0).abs() < 1e-4);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn serialization_roundtrip_CASE_persisted_edge_payload() {
+        let payload = PersistedEdgePayload {
+            weight: 0.825,
+            valid_from: Some(TxId::new(10)),
+            valid_to: Some(TxId::new(20)),
+        };
+
+        let serialized = bincode::serialize(&payload).unwrap(); // unwrap allowed
+        let deserialized: PersistedEdgePayload = bincode::deserialize(&serialized).unwrap(); // unwrap allowed
+
+        assert!((payload.weight - deserialized.weight).abs() < f32::EPSILON);
+        assert_eq!(payload.valid_from, deserialized.valid_from);
+        assert_eq!(payload.valid_to, deserialized.valid_to);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn prop_csr_offset_array_structural_consistency(
+            node_count in 1..=30usize,
+            edge_pairs in proptest::collection::vec((0..30usize, 0..30usize, 0.1f32..2.0f32), 1..100)
+        ) {
+            let graph = CsrGraph::new();
+            for i in 0..node_count {
+                graph.insert_entity_direct(Entity::new(EntityId::new(i as u64 + 1), format!("N{i}"), "Type")).unwrap();
+            }
+
+            for (src, dst, w) in edge_pairs {
+                let src_id = EntityId::new((src % node_count) as u64 + 1);
+                let dst_id = EntityId::new((dst % node_count) as u64 + 1);
+                graph.insert_edge_direct(src_id, dst_id, w).unwrap();
+            }
+
+            graph.compact();
+
+            let inner = graph.inner.read();
+
+            // Invariant 1: offsets length must equal reverse_map length + 1 after compaction
+            proptest::prop_assert_eq!(inner.offsets.len(), inner.reverse_map.len() + 1);
+
+            // Invariant 2: offsets must be monotonically non-decreasing
+            for window in inner.offsets.windows(2) {
+                proptest::prop_assert!(window[0] <= window[1]);
+            }
+
+            // Invariant 3: final offset must match targets length
+            proptest::prop_assert_eq!(*inner.offsets.last().unwrap(), inner.targets.len());
+
+            // Invariant 4: parallel arrays (targets, weights, valid_froms, valid_tos) must have equal lengths
+            proptest::prop_assert_eq!(inner.targets.len(), inner.weights.len());
+            proptest::prop_assert_eq!(inner.targets.len(), inner.valid_froms.len());
+            proptest::prop_assert_eq!(inner.targets.len(), inner.valid_tos.len());
+        }
     }
 }

@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// ZWECK: Kontextkompaktierung und Zusammenfassung langer Gesprächs- und Dokumentverläufe.
+// INVARIANTEN: Provenance-Erhalt via Token-Budgeting; Rückfall auf Truncate/Summarize bei LLM-Ausfall.
+// NICHT-OFFENSICHTLICH: StatusToken ermöglicht feingranulare Verfolgung des Kompaktierungszustands.
+// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+
 // memfuse-db/src/context_compaction.rs
 // Context Compaction Engine (Grok Pattern)
 
@@ -373,16 +379,5 @@ mod tests {
         let empty_ctx = empty_res.unwrap(); // unwrap allowed (in test)
         assert!(empty_ctx.retained_chunks.is_empty());
         assert!(empty_ctx.source_doc_ids.is_empty());
-    }
-
-    #[test]
-    fn test_compact_empty_chunks_returns_empty_compacted_context() {
-        let budget = TokenBudget::new(100, 0);
-        let compactor = ContextCompactor::new(budget, CompactionStrategy::Truncate);
-        let result = compactor.compact(vec![]);
-        assert!(result.retained_chunks.is_empty());
-        assert!(result.status_tokens.is_empty());
-        assert_eq!(result.tokens_used, 0);
-        assert!(result.source_doc_ids.is_empty());
     }
 }

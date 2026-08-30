@@ -23,27 +23,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let embed_model = std::env::var("MEMFUSE_EMBED_MODEL")
         .unwrap_or_else(|_| memfuse_ollama::DEFAULT_EMBED_MODEL.to_string());
 
-    let allow_write = if args.iter().any(|a| a == "--read-only") {
-        false
-    } else if args.iter().any(|a| a == "--allow-write") {
-        true
-    } else {
-        memfuse_mcp::is_write_allowed_by_env()
-    };
-
     let db = Arc::new(MemFuse::open(&db_path).await?);
     let embedder = Arc::new(OllamaEmbedder::new(&ollama_url, &embed_model));
-    let server = Arc::new(McpServer::with_write_permission(
-        db,
-        embedder,
-        allow_write,
-    )?);
+    let server = Arc::new(McpServer::new(db, embedder)?);
 
-    tracing::info!(
-        db_path,
-        allow_write,
-        "MemFuse MCP-Server gestartet (stdio transport)"
-    );
+    tracing::info!(db_path, "MemFuse MCP-Server gestartet (stdio transport)");
     server.run_stdio().await?;
     Ok(())
 }
