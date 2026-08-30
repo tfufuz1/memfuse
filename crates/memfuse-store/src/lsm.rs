@@ -289,12 +289,19 @@ impl LsmStorage {
 
         let tx_buffer = TxBuffer::new_with_config(16, config.tx_timeout);
 
-        // Load existing SSTables and sort by filename (which includes seq_no)
+        // Load existing SSTables and clean up temporary compaction files (*.tmp)
         let mut sst_files = Vec::new();
         if let Ok(mut entries) = tokio::fs::read_dir(&config.path).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
-                if entry.path().extension().is_some_and(|ext| ext == "sst") {
-                    sst_files.push(entry.path());
+                let path = entry.path();
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if file_name.ends_with(".tmp") || path.extension().is_some_and(|ext| ext == "tmp") {
+                    tracing::warn!("Removing leftover un-renamed compaction temp file: {:?}", path);
+                    if let Err(e) = tokio::fs::remove_file(&path).await {
+                        tracing::warn!("Failed to remove leftover temp file {:?}: {}", path, e);
+                    }
+                } else if path.extension().is_some_and(|ext| ext == "sst") {
+                    sst_files.push(path);
                 }
             }
         }
@@ -2443,5 +2450,32 @@ mod tests {
         assert_eq!(storage.get(b"key1").await.unwrap(), None);
         assert_eq!(storage.get(b"key2").await.unwrap(), None);
         assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn test_recovery_scan_ignores_and_removes_tmp_files() {
+        let tmp = tempfile::TempDir::new().unwrap(); // unwrap #[cfg(test)]
+        let corrupt_tmp_path = tmp.path().join("sst-compact-corrupt.sst.tmp");
+        tokio::fs::write(&corrupt_tmp_path, b"invalid sst data from crash")
+            .await
+            .unwrap(); // unwrap #[cfg(test)]
+
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 64,
+            tx_timeout: std::time::Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+
+        let storage = LsmStorage::new(config).await.expect("LsmStorage startup must succeed");
+        assert_eq!(storage.sstables.read().await.len(), 0);
+
+        // Assert corrupt .tmp file was removed from data directory during recovery
+        assert!(
+            !corrupt_tmp_path.exists(),
+            "Leftover .tmp file must be removed during startup recovery scan"
+        );
     }
 }
