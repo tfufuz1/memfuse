@@ -645,6 +645,7 @@ async fn test_doc_id_collision_rejected() {
 }
 
 #[tokio::test]
+#[allow(deprecated)]
 async fn test_collection_next_tx_sequence() {
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;

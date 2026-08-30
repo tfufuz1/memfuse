@@ -746,11 +746,12 @@ pub fn run_sync_docs(check_only: bool) -> bool {
     let full_ws = generate_full_working_state(&tags, &crates);
     let mut success = true;
 
+    let current_ws = fs::read_to_string("WORKING_STATE.md").unwrap_or_default();
+    let re = Regex::new(r"\| LAST_SYNC \| `[^`]+` \|").unwrap();
+    let norm_current = re.replace_all(current_ws.trim(), "| LAST_SYNC | `NORMALIZED` |");
+    let norm_full = re.replace_all(full_ws.trim(), "| LAST_SYNC | `NORMALIZED` |");
+
     if check_only {
-        let current_ws = fs::read_to_string("WORKING_STATE.md").unwrap_or_default();
-        let re = Regex::new(r"\| LAST_SYNC \| `[^`]+` \|").unwrap();
-        let norm_current = re.replace_all(current_ws.trim(), "| LAST_SYNC | `NORMALIZED` |");
-        let norm_full = re.replace_all(full_ws.trim(), "| LAST_SYNC | `NORMALIZED` |");
         if norm_current != norm_full {
             eprintln!("❌ WORKING_STATE.md is out of sync!");
             success = false;
@@ -758,20 +759,29 @@ pub fn run_sync_docs(check_only: bool) -> bool {
             println!("✅ WORKING_STATE.md is in sync.");
         }
     } else {
-        if let Err(e) = fs::write("WORKING_STATE.md", &full_ws) {
-            eprintln!("❌ Failed to write WORKING_STATE.md: {}", e);
-            success = false;
+        if norm_current != norm_full {
+            if let Err(e) = fs::write("WORKING_STATE.md", &full_ws) {
+                eprintln!("❌ Failed to write WORKING_STATE.md: {}", e);
+                success = false;
+            } else {
+                println!("Successfully regenerated WORKING_STATE.md.");
+            }
         } else {
-            println!("Successfully regenerated WORKING_STATE.md.");
+            println!("WORKING_STATE.md is already up to date.");
         }
     }
 
     // Source of truth update
     let mut crate_inv = String::new();
     for c in &crates {
+        let desc = if c.description.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", c.description)
+        };
         crate_inv.push_str(&format!(
-            "| `{}` | Layer {} | {} | {}\n",
-            c.name, c.layer, c.status, c.description
+            "| `{}` | Layer {} | {} |{}\n",
+            c.name, c.layer, c.status, desc
         ));
     }
     match update_markdown_section(

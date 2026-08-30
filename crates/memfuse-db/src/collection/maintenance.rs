@@ -33,7 +33,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         // 1. Scan for pending transaction intents (2-Phase Commit Recovery — FIND-DB-005)
         let intent_prefix = self.namespaced_key(&[], 3);
         let intents = self.storage.scan_prefix(&intent_prefix).await?;
-        let recovery_tx = self.next_tx()?;
+        let recovery_tx = self.allocate_tx()?;
         let mut recovered_any = false;
         let mut recovered_text = false;
         let mut recovered_graph = false;
@@ -135,7 +135,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         }
 
         // 2. Fallback: Full scan for documents missing from index (FIND-DB-004: Parallel Batching)
-        let fallback_tx = self.next_tx()?;
+        let fallback_tx = self.allocate_tx()?;
         let mut fallback_any = false;
         let mut fallback_text = false;
 
@@ -514,7 +514,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             self.prefix.clone()
         };
 
-        let tx = self.next_tx()?;
+        let tx = self.allocate_tx()?;
 
         // 1. Clean collection data (user keys, docs, rels, intents)
         self.storage.delete_prefix(tx, &prefix).await?;
