@@ -1,13 +1,5 @@
 //! Personalized PageRank (PPR) power iteration implementation for `CsrGraph`.
 
-// FILE-CONTEXT
-// STAND:       2026-08-30T14:35:05Z (SESSION: ab88edae)
-// ZWECK:       Personalized PageRank für GraphRAG Community Detection
-// INVARIANTEN: CsrGraph inner state must be compacted before compute_ppr(), deterministic power iteration termination
-// HOTSPOTS:    compute_ppr(), power iteration loop
-// AGENT-NOTIZ: Option closure hygiene
-// SIEHE AUCH:  ADR-031
-
 use crate::csr::GraphInner;
 use memfuse_core::{EntityId, PprConfig};
 use std::collections::HashSet;
@@ -40,10 +32,7 @@ pub(crate) fn compute_ppr(
 
     for &seed in seed_nodes {
         if let Some(&idx) = inner.id_map.get(&seed) {
-            if idx < n
-                && inner.entities.get(idx).is_some_and(Option::is_some)
-                && seen_seeds.insert(idx)
-            {
+            if idx < n && inner.is_entity_committed(idx) && seen_seeds.insert(idx) {
                 valid_seeds.push(idx);
             }
         }
@@ -72,7 +61,7 @@ pub(crate) fn compute_ppr(
     let mut out_weight_sums = vec![0.0f32; n];
 
     for i in 0..n {
-        if !inner.entities.get(i).is_some_and(Option::is_some) {
+        if !inner.is_entity_committed(i) {
             continue;
         }
 
@@ -94,7 +83,7 @@ pub(crate) fn compute_ppr(
             let target = inner.targets[edge_idx];
             let weight = inner.weights[edge_idx];
 
-            if inner.entities.get(target).is_some_and(Option::is_some) && weight > 0.0 {
+            if inner.is_entity_committed(target) && weight > 0.0 {
                 sum += weight;
                 edges.push(OutgoingEdge { target, weight });
             }
@@ -132,7 +121,7 @@ pub(crate) fn compute_ppr(
         // Rank mass accumulated at dead-end (dangling) nodes
         let mut dangling_sum = 0.0f32;
         for i in 0..n {
-            if inner.entities.get(i).is_some_and(Option::is_some) && out_weight_sums[i] == 0.0 {
+            if inner.is_entity_committed(i) && out_weight_sums[i] == 0.0 {
                 dangling_sum += ranks[i];
             }
         }
@@ -170,7 +159,7 @@ pub(crate) fn compute_ppr(
         }
     }
 
-    if !converged && config.warn_on_non_convergence {
+    if !converged {
         tracing::warn!(
             max_iterations = max_iters,
             last_diff = last_diff,
@@ -182,7 +171,7 @@ pub(crate) fn compute_ppr(
     // 5. Build and sort result vector
     let mut results = Vec::new();
     for (idx, &rank) in ranks.iter().enumerate() {
-        if rank > 0.0 && inner.entities.get(idx).is_some_and(Option::is_some) {
+        if rank > 0.0 && inner.is_entity_committed(idx) {
             if let Some(&id) = inner.reverse_map.get(idx) {
                 results.push((id, rank));
             }
@@ -244,7 +233,6 @@ mod tests {
             damping_factor: 0.85,
             max_iterations: 100,
             convergence_epsilon: 1e-6,
-            warn_on_non_convergence: true,
         };
 
         let seed = EntityId::new(1);
@@ -638,10 +626,14 @@ mod tests {
             .map(|(_, r)| *r)
             .unwrap();
 
-        assert_eq!(
-            rank_10, rank_20,
-            "Symmetric nodes must have identical PPR scores"
-        );
+        // Symmetric nodes MUST produce bit-identical exact scores in deterministic power iteration
+        #[allow(clippy::float_cmp)]
+        {
+            assert_eq!(
+                rank_10, rank_20,
+                "Symmetric nodes must have identical PPR scores"
+            );
+        }
 
         // Results order must sort tie by EntityId ascending (10 before 20)
         let idx_10 = results
@@ -694,7 +686,6 @@ mod tests {
                     damping_factor: damping,
                     max_iterations: max_iters,
                     convergence_epsilon: 1e-7,
-                    warn_on_non_convergence: true,
                 };
 
                 let results = graph
@@ -740,47 +731,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ppr_warn_on_non_convergence_suppressible() {
-        let graph = CsrGraph::new();
-        let tx = TxId::new(1);
-
-        for i in 1..=5 {
-            graph
-                .add_entity(tx, Entity::new(EntityId::new(i), format!("N{i}"), "Node"))
-                .await
-                .unwrap();
-        }
-
-        for i in 1..=5 {
-            let next = if i == 5 { 1 } else { i + 1 };
-            graph
-                .add_edge(tx, Edge::new(EntityId::new(i), EntityId::new(next), "next"))
-                .await
-                .unwrap();
-        }
-        graph.commit(tx).await.unwrap();
-
-        // Config with max_iterations: 1 and warn_on_non_convergence: false
-        let config = PprConfig {
-            damping_factor: 0.85,
-            max_iterations: 1,
-            convergence_epsilon: 1e-12,
-            warn_on_non_convergence: false,
-        };
-
-        let seed = EntityId::new(1);
-        let results = graph
-            .personalized_page_rank(&[seed], &config)
-            .await
-            .unwrap();
-
-        assert!(
-            !results.is_empty(),
-            "Calculation must return best-effort result without error or panic when warn_on_non_convergence is false"
-        );
-    }
-
-    #[tokio::test]
     async fn test_ppr_non_convergence_logs_warning_and_returns_best_effort() {
         use tracing_subscriber::layer::SubscriberExt;
 
@@ -815,7 +765,6 @@ mod tests {
             damping_factor: 0.85,
             max_iterations: 2,
             convergence_epsilon: 1e-12,
-            warn_on_non_convergence: true,
         };
 
         let seed = EntityId::new(1);
@@ -836,10 +785,12 @@ mod tests {
                 && msg.contains("convergence_epsilon=")
         });
 
+        let captured_logs = captured.clone();
+        drop(captured);
+
         assert!(
             warning_found,
-            "Expected structured warning log on PPR non-convergence, got logs: {:?}",
-            *captured
+            "Expected structured warning log on PPR non-convergence, got logs: {captured_logs:?}"
         );
     }
 
@@ -874,7 +825,6 @@ mod tests {
             damping_factor: 0.85,
             max_iterations: 5,          // Capped to 5 iterations
             convergence_epsilon: 1e-15, // Unreachable tolerance forces iter cap
-            warn_on_non_convergence: true,
         };
 
         let start_time = std::time::Instant::now();

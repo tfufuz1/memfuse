@@ -11,13 +11,6 @@
 
 // INVARIANT: Sharded Transaction Buffer für lock-freie Concurrency.
 
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       Transaktion-Staging-Buffer zwischen Writes und WAL-Commit
-// INVARIANTEN: Bounded capacity enforced (AGT-CORE-001), single shard lock acquired sequentially in index order
-// HOTSPOTS:    TxBuffer::stage_insert(), TxBuffer::commit_tx(), reap_orphans()
-// SIEHE AUCH:  crates/memfuse-core/AGENTS.md
-
 use crate::error::{MemFuseError, Result};
 use crate::types::{DocId, TxId};
 use ahash::AHashMap;
