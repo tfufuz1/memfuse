@@ -2434,6 +2434,7 @@ mod tests {
                             if inner.entities.get(i).is_some_and(|e| e.is_some()) {
                                 entities.insert(id.inner());
                             }
+                        }
 
                         let old_start = if i < inner.offsets.len() - 1 { inner.offsets[i] } else { 0 };
                         let old_end = if i < inner.offsets.len() - 1 { inner.offsets[i + 1] } else { 0 };
@@ -2449,6 +2450,7 @@ mod tests {
                                     }
                                 }
                             }
+                        }
 
                         if let Some(pending) = inner.pending_edges.get(&i) {
                             for edge in pending {
@@ -2463,8 +2465,7 @@ mod tests {
                                 }
                             }
                         }
-                        (entities, active_edges)
-                    };
+                    }
 
                     // Check traverse_at for each active node
                     for &start in &entities {

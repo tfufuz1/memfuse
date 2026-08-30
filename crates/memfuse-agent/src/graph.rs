@@ -48,7 +48,7 @@ impl StateGraph {
     }
 
     /// Tries to insert a new node into the state graph after validating bounds.
-    // AI-TAG[HARDENING][CRITICAL]: Validates non-empty Node ID and description for graph nodes. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045)
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty Node ID and description for graph nodes. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045)
     pub fn try_add_node(
         &mut self,
         id: &str,
@@ -91,7 +91,7 @@ impl StateGraph {
     }
 
     /// Tries to insert a new edge between nodes in the state graph after validating bounds.
-    // AI-TAG[HARDENING][CRITICAL]: Validates non-empty from/to endpoints for workflow edges. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045)
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty from/to endpoints for workflow edges. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045)
     pub fn try_add_edge(
         &mut self,
         from: &str,

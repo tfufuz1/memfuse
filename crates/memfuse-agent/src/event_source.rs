@@ -20,7 +20,7 @@ pub struct BackgroundEvent {
 
 impl BackgroundEvent {
     /// Constructs a `BackgroundEvent` with input validation on the source identifier.
-    // AI-TAG[HARDENING][CRITICAL]: Validates non-empty event source to prevent silent telemetry attribution loss. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045)
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty event source to prevent silent telemetry attribution loss. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045)
     pub fn try_new(
         payload: serde_json::Value,
         source: impl Into<String>,
@@ -82,7 +82,7 @@ impl<S: StorageEngine> PollingDocumentEventSource<S> {
     }
 
     /// Creates a new `PollingDocumentEventSource` with specified maximum queue capacity bound.
-    // AI-TAG[HARDENING][CRITICAL]: Enforces bounded event queue capacity to guard against unbounded memory growth. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045)
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Enforces bounded event queue capacity to guard against unbounded memory growth. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045)
     pub fn with_capacity(
         collection: Arc<Collection<S>>,
         poll_interval: Duration,

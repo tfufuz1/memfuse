@@ -208,9 +208,6 @@ impl<S: StorageEngine> InvertedIndex<S> {
         k
     }
 
-    /// Maximum allowed raw text size per document (10 MiB) to prevent resource exhaustion.
-    pub const MAX_TEXT_BYTES: usize = 10 * 1024 * 1024;
-
     #[tracing::instrument(skip(self, text))]
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
         if text.len() > Self::MAX_TEXT_BYTES {

@@ -15,6 +15,9 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 /// Maximum allowed single JSON-RPC message size via stdio (16 MB).
 pub const MAX_RPC_BYTES: usize = 16 * 1024 * 1024;
 
+/// Maximum allowed search query size in bytes (64 KB).
+pub const MAX_SEARCH_QUERY_BYTES: usize = 64 * 1024;
+
 /// Reads a single line from an async reader into `buf` up to `max_bytes`.
 /// If the line exceeds `max_bytes`, consumes and discards the remainder of the line without allocating memory and returns `InvalidData`.
 pub async fn read_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(

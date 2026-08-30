@@ -35,7 +35,7 @@ pub struct AgentContext {
 
 impl AgentContext {
     /// Tries to construct a new [`AgentContext`], performing input validation on task ID and start node.
-    // AI-TAG[HARDENING][CRITICAL]: Validates non-empty input parameters for agent workflow context initialization. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045)
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty input parameters for agent workflow context initialization. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045)
     pub fn try_new(
         task_id: impl Into<String>,
         start_node: impl Into<String>,
