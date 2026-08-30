@@ -1028,4 +1028,208 @@ mod tests {
         let res = CheckpointManifest::new(meta, vec!["   ".to_string()]);
         assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
     }
+
+    #[allow(non_snake_case)]
+    #[tokio::test]
+    async fn create_checkpoint_CASE_unicode_and_multibyte_name() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
+
+        let unicode_name = "Prüfpunkt_1_🚀_日本語";
+        let collection_id = "Sammlung_äöü_123";
+
+        store
+            .create_checkpoint(
+                unicode_name,
+                collection_id,
+                10,
+                TxId::new(101),
+                serde_json::json!({"tag": "überprüfen"}),
+            )
+            .await
+            .expect("// expect #[cfg(test)]");
+
+        let fetched = store
+            .get_checkpoint(unicode_name)
+            .await
+            .expect("// expect #[cfg(test)]")
+            .expect("// expect #[cfg(test)]");
+
+        assert_eq!(fetched.name, "Prüfpunkt_1_🚀_日本語");
+        assert_eq!(fetched.collection_id, "Sammlung_äöü_123");
+        assert_eq!(fetched.seq_no, 10);
+        assert_eq!(fetched.tx_id, TxId::new(101));
+        assert_eq!(fetched.metadata["tag"], "überprüfen");
+    }
+
+    #[allow(non_snake_case)]
+    #[tokio::test]
+    async fn create_checkpoint_CASE_exact_max_len_256() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
+
+        let max_name = "a".repeat(256);
+        let res = store
+            .create_checkpoint(&max_name, "col1", 1, TxId::new(1), serde_json::json!({}))
+            .await;
+        assert!(res.is_ok(), "256 characters name must be allowed");
+
+        let fetched = store
+            .get_checkpoint(&max_name)
+            .await
+            .expect("// expect #[cfg(test)]");
+        assert!(fetched.is_some());
+    }
+
+    #[allow(non_snake_case)]
+    #[tokio::test]
+    async fn drop_checkpoint_CASE_nonexistent_returns_ok() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
+
+        let res = store.drop_checkpoint("nonexistent_checkpoint").await;
+        assert!(
+            res.is_ok(),
+            "Dropping a non-existent checkpoint should be idempotent and return Ok(())"
+        );
+    }
+
+    #[allow(non_snake_case)]
+    #[tokio::test]
+    async fn checkpoint_guard_CASE_uncommitted_guard_holds_state() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage, "test");
+
+        let guard = store
+            .create_guard(TxId::new(500))
+            .expect("// expect #[cfg(test)]");
+        let cp = guard.checkpoint().expect("// expect #[cfg(test)]").clone();
+        assert_eq!(cp.tx_id, TxId::new(500));
+
+        // Commit takes ownership of self and consumes the state checkpoint
+        let committed_cp = guard.commit().expect("// expect #[cfg(test)]");
+        assert_eq!(committed_cp.tx_id, TxId::new(500));
+    }
+
+    #[allow(non_snake_case)]
+    #[tokio::test]
+    async fn checkpoint_guard_CASE_commit_moves_ownership() {
+        let storage = Arc::new(MockStorage::new());
+        let guard = CheckpointGuard::new(
+            StateCheckpoint {
+                tx_id: TxId::new(777),
+                timestamp_ms: 12345,
+            },
+            storage,
+        );
+
+        assert!(guard.checkpoint().is_ok());
+
+        let cp = guard.commit().expect("// expect #[cfg(test)]");
+        assert_eq!(cp.tx_id, TxId::new(777));
+        assert_eq!(cp.timestamp_ms, 12345);
+    }
+
+    #[allow(non_snake_case)]
+    #[tokio::test]
+    async fn restore_checkpoint_CASE_not_found_returns_err() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage, "test");
+
+        let res = store.restore_checkpoint("missing_cp").await;
+        assert!(matches!(res, Err(MemFuseError::CheckpointNotFound)));
+    }
+
+    #[allow(non_snake_case)]
+    #[tokio::test]
+    async fn list_checkpoints_CASE_corrupted_storage_data_propagates_err() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
+
+        // Put invalid JSON payload into storage under checkpoint namespace format (namespace:checkpoint:name)
+        let corrupt_key = b"test:checkpoint:corrupt_cp";
+        storage
+            .put(TxId::new(1), corrupt_key, b"invalid json bytes{{{")
+            .await
+            .expect("// expect #[cfg(test)]");
+
+        let res = store.list_checkpoints().await;
+        assert!(matches!(res, Err(MemFuseError::Serialization(_))));
+    }
+
+    #[allow(non_snake_case)]
+    #[test]
+    fn checkpoint_meta_CASE_serialization_roundtrip() {
+        let meta = CheckpointMeta {
+            name: "cp_test".to_string(),
+            collection_id: "col_test".to_string(),
+            seq_no: 99,
+            tx_id: TxId::new(1001),
+            metadata: serde_json::json!({"step": 42, "env": "prod"}),
+            created_at: 1690000000,
+        };
+
+        let json = serde_json::to_string(&meta).expect("// expect #[cfg(test)]");
+        let deserialized: CheckpointMeta =
+            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
+
+        // Independent evaluation without referencing meta in comparison construction
+        assert_eq!(deserialized.name, "cp_test");
+        assert_eq!(deserialized.collection_id, "col_test");
+        assert_eq!(deserialized.seq_no, 99);
+        assert_eq!(deserialized.tx_id, TxId::new(1001));
+        assert_eq!(deserialized.metadata["step"], 42);
+        assert_eq!(deserialized.created_at, 1690000000);
+    }
+
+    #[allow(non_snake_case)]
+    #[test]
+    fn state_checkpoint_CASE_serialization_roundtrip() {
+        let cp = StateCheckpoint {
+            tx_id: TxId::new(888),
+            timestamp_ms: 1700000000123,
+        };
+
+        let json = serde_json::to_string(&cp).expect("// expect #[cfg(test)]");
+        let deserialized: StateCheckpoint =
+            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
+
+        assert_eq!(deserialized.tx_id, TxId::new(888));
+        assert_eq!(deserialized.timestamp_ms, 1700000000123);
+    }
+
+    #[allow(non_snake_case)]
+    #[test]
+    fn into_workflow_state_CASE_valid_conversion() {
+        let meta = CheckpointMeta {
+            name: "wf_cp".to_string(),
+            collection_id: "wf_col".to_string(),
+            seq_no: 15,
+            tx_id: TxId::new(2026),
+            metadata: serde_json::json!({"agent_phase": "reasoning"}),
+            created_at: 5000,
+        };
+
+        let state = meta.into_workflow_state();
+
+        // Independent expected value assertions
+        assert_eq!(state.tx, TxId::new(2026));
+        assert!(!state.graph_hash.is_empty());
+    }
+
+    #[allow(non_snake_case)]
+    #[test]
+    fn allocate_tx_CASE_parity_with_deprecated_next_tx() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage, "test");
+
+        let tx1 = store.allocate_tx().expect("// expect #[cfg(test)]");
+        #[allow(deprecated)]
+        let tx2 = store.next_tx().expect("// expect #[cfg(test)]");
+        let tx3 = store.allocate_tx().expect("// expect #[cfg(test)]");
+
+        assert_eq!(tx1, TxId::new(TxId::INTERNAL_BASE));
+        assert_eq!(tx2, TxId::new(TxId::INTERNAL_BASE + 1));
+        assert_eq!(tx3, TxId::new(TxId::INTERNAL_BASE + 2));
+    }
 }

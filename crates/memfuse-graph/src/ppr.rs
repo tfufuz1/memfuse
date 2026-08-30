@@ -169,7 +169,7 @@ pub(crate) fn compute_ppr(
         }
     }
 
-    if !converged {
+    if !converged && config.warn_on_non_convergence {
         tracing::warn!(
             max_iterations = max_iters,
             last_diff = last_diff,
@@ -243,6 +243,7 @@ mod tests {
             damping_factor: 0.85,
             max_iterations: 100,
             convergence_epsilon: 1e-6,
+            warn_on_non_convergence: true,
         };
 
         let seed = EntityId::new(1);
@@ -276,6 +277,49 @@ mod tests {
         assert!(rank_map[&EntityId::new(2)] > rank_map[&EntityId::new(3)]);
         assert!(rank_map[&EntityId::new(3)] > rank_map[&EntityId::new(4)]);
         assert!(rank_map[&EntityId::new(4)] > rank_map[&EntityId::new(5)]);
+    }
+
+    #[tokio::test]
+    async fn test_ppr_handles_sink_node_correctly() {
+        // Graph: A (1) -> B (2), B has NO outgoing edge (Sink), C (3) -> A (1)
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+
+        let id_a = EntityId::new(1);
+        let id_b = EntityId::new(2);
+        let id_c = EntityId::new(3);
+
+        graph.add_entity(tx, Entity::new(id_a, "Node A", "Node")).await.unwrap();
+        graph.add_entity(tx, Entity::new(id_b, "Node B (Sink)", "Node")).await.unwrap();
+        graph.add_entity(tx, Entity::new(id_c, "Node C", "Node")).await.unwrap();
+
+        // A -> B
+        graph.add_edge(tx, Edge::new(id_a, id_b, "link")).await.unwrap();
+        // C -> A
+        graph.add_edge(tx, Edge::new(id_c, id_a, "link")).await.unwrap();
+        graph.commit(tx).await.unwrap();
+
+        let config = PprConfig::default();
+        let results = graph
+            .personalized_page_rank(&[id_a], &config)
+            .await
+            .unwrap();
+
+        let total_mass: f32 = results.iter().map(|(_, score)| score).sum();
+        assert!(
+            (total_mass - 1.0).abs() < 1e-4,
+            "PPR mass must conserve to 1.0 when graph contains sink node B, got {total_mass}"
+        );
+
+        let rank_map: std::collections::HashMap<EntityId, f32> = results.into_iter().collect();
+        assert!(
+            rank_map.contains_key(&id_b),
+            "Sink node B must receive rank mass from A"
+        );
+        assert!(
+            rank_map[&id_b] > 0.0,
+            "Sink node B score must be positive"
+        );
     }
 
     #[tokio::test]
@@ -637,6 +681,7 @@ mod tests {
                     damping_factor: damping,
                     max_iterations: max_iters,
                     convergence_epsilon: 1e-7,
+                    warn_on_non_convergence: true,
                 };
 
                 let results = graph
@@ -682,6 +727,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ppr_warn_on_non_convergence_suppressible() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+
+        for i in 1..=5 {
+            graph
+                .add_entity(tx, Entity::new(EntityId::new(i), format!("N{i}"), "Node"))
+                .await
+                .unwrap();
+        }
+
+        for i in 1..=5 {
+            let next = if i == 5 { 1 } else { i + 1 };
+            graph
+                .add_edge(tx, Edge::new(EntityId::new(i), EntityId::new(next), "next"))
+                .await
+                .unwrap();
+        }
+        graph.commit(tx).await.unwrap();
+
+        // Config with max_iterations: 1 and warn_on_non_convergence: false
+        let config = PprConfig {
+            damping_factor: 0.85,
+            max_iterations: 1,
+            convergence_epsilon: 1e-12,
+            warn_on_non_convergence: false,
+        };
+
+        let seed = EntityId::new(1);
+        let results = graph
+            .personalized_page_rank(&[seed], &config)
+            .await
+            .unwrap();
+
+        assert!(
+            !results.is_empty(),
+            "Calculation must return best-effort result without error or panic when warn_on_non_convergence is false"
+        );
+    }
+
+    #[tokio::test]
     async fn test_ppr_non_convergence_logs_warning_and_returns_best_effort() {
         use tracing_subscriber::layer::SubscriberExt;
 
@@ -716,6 +802,7 @@ mod tests {
             damping_factor: 0.85,
             max_iterations: 2,
             convergence_epsilon: 1e-12,
+            warn_on_non_convergence: true,
         };
 
         let seed = EntityId::new(1);
@@ -774,6 +861,7 @@ mod tests {
             damping_factor: 0.85,
             max_iterations: 5,          // Capped to 5 iterations
             convergence_epsilon: 1e-15, // Unreachable tolerance forces iter cap
+            warn_on_non_convergence: true,
         };
 
         let start_time = std::time::Instant::now();
