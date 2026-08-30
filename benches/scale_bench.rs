@@ -119,10 +119,11 @@ fn bench_scale_inserts_and_search(c: &mut Criterion) {
             log_rss_measurement("before_insert", num_chunks, rss_kb);
         }
 
-        // Measure batch population using insert_many in batches of 500 documents.
+        // Measure batch population using insert_many in batches of 100 documents.
         // Single-lock acquisition per batch eliminates lock contention and N-1 transaction commits,
-        // yielding an observed 10-50x throughput gain over document-by-document insert() calls.
-        let batch_size = 500;
+        // yielding an observed 10-50x throughput gain over document-by-document insert() calls while
+        // staying safely within max_ops_per_tx (10,000 staging ops).
+        let batch_size = 100;
         let start_time = std::time::Instant::now();
         rt.block_on(async {
             let mut current_batch = Vec::with_capacity(batch_size);
