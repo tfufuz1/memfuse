@@ -1,8 +1,9 @@
 // FILE-CONTEXT
-// STAND: 2026-08-30T14:38:30Z (SESSION: 45595f71)
+// STAND: 2026-08-30T18:54:25Z (SESSION: f3a48824)
 // ZWECK: Hybrid vector and BM25 search Tauri IPC command.
 // INVARIANTEN: Parameter k must be bounded (1 <= k <= 1,000); query length limited to MAX_QUERY_LEN.
 // NICHT-OFFENSICHTLICH: Search converts results to SearchResultDto with truncated text previews.
+// HOTSPOTS: hybrid_search (lines 40-90)
 // SIEHE AUCH: crates/memfuse-db/src/collection.rs
 
 use crate::commands::collections::validate_collection_name;
