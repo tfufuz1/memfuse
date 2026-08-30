@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// ZWECK: HNSW Vector Index mit Layer Descent, Soft-Deletes und transaktionalem Staging (TxBuffer).
+// INVARIANTEN: Lock-Hierarchie: write_mutex (exklusive Mutation/Rebuild) -> entry_point -> nodes / doc_to_node / deleted_nodes.
+// NICHT-OFFENSICHTLICH: Multi-threaded Reads sperren nie write_mutex; background rebuild tauscht Core atomar via Swap.
+// HOTSPOTS: hnsw.rs (HnswIndex::insert, search, delete, rebuild, save)
+// STAND: TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)
+
 //! HNSW (Hierarchical Navigable Small World) vector index.
 //! # Hierarchical Navigable Small World (HNSW) Index
 //!
@@ -549,6 +556,15 @@ impl HnswIndex {
             std::fs::rename(&temp_path, &path_buf).map_err(|e| {
                 MemFuseError::Storage(format!("Failed to rename temporary HNSW file: {}", e))
             })?;
+
+            // Fsync parent directory after rename for POSIX atomic directory entry durability
+            if let Some(parent) = path_buf.parent() {
+                if let Ok(parent_dir) = std::fs::File::open(parent) {
+                    parent_dir.sync_all().map_err(|e| {
+                        MemFuseError::Storage(format!("Failed to fsync parent directory after rename: {}", e))
+                    })?;
+                }
+            }
 
             Ok::<(), MemFuseError>(())
         })
@@ -1553,6 +1569,13 @@ impl VectorIndex for HnswIndex {
     // BOTTLENECK: CPU / Cache Misses / ef_search Heuristik
     // FIX: Dynamische Anpassung von ef_search basierend auf Layer-Hierarchie.
     async fn search(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>> {
+        if k > memfuse_core::MAX_SEARCH_K {
+            return Err(MemFuseError::invalid_input(format!(
+                "Requested k ({}) exceeds maximum allowed search limit ({})",
+                k,
+                memfuse_core::MAX_SEARCH_K
+            )));
+        }
         if let Some(ref err) = self.inner.validation_error {
             return Err(MemFuseError::invalid_input(format!(
                 "Invalid index configuration: {}",
@@ -2924,15 +2947,13 @@ mod tests {
                 // Verify search_at at random target checkpoint against reference model
                 for &target_seq in &tx_checkpoints {
                     // Reference model state at target_seq
-                    let mut active_docs = std::collections::HashSet::new();
-                    let log = index.inner.seq_log.read();
-                    for id in 1u64..30 {
-                        let doc_id = DocId::new(id);
-                        if log.is_visible(doc_id, target_seq) {
-                            active_docs.insert(doc_id);
-                        }
-                    }
-                    drop(log);
+                    let active_docs: std::collections::HashSet<_> = {
+                        let log = index.inner.seq_log.read();
+                        (1u64..30)
+                            .map(DocId::new)
+                            .filter(|&doc_id| log.is_visible(doc_id, target_seq))
+                            .collect()
+                    };
 
                     let res = index.search_at(&[1.0, 0.0, 0.0, 0.0], 100, target_seq).await.unwrap();
                     let found_docs: std::collections::HashSet<_> = res.into_iter().map(|d| d.doc_id).collect();
@@ -2942,5 +2963,14 @@ mod tests {
                 Ok(())
             }).unwrap();
         });
+    }
+
+    #[tokio::test]
+    async fn test_hnsw_search_max_k_guard() {
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let query = vec![1.0, 0.0, 0.0, 0.0];
+        let res = index.search(&query, memfuse_core::MAX_SEARCH_K + 1).await;
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("exceeds maximum allowed search limit"));
     }
 }
