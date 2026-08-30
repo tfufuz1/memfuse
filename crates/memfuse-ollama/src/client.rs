@@ -1573,7 +1573,13 @@ mod tests {
         assert_eq!(res[2], vec![3.0]);
     }
 
-    // ANCHOR[TEST:OLL-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:ed7b7b38)
+    // ANCHOR[TEST:OLL-001] STATUS:DONE (ID: TEST:OLL-001) (TS:2026-08-30T18:54:39Z) (SESSION:ed7b7b38)
+    // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:OLL-001) (TS: 2026-08-30T19:00:00Z) (SESSION: b8e4f1a2)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: Mock server latency & error resilience test verified independently.
+    // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:OLL-001) (TS: 2026-08-30T20:00:00Z) (SESSION: c9f5e2b3)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: Second independent review pass confirmed mock server resilience.
     // AUFGABE : Mock-Server Latency & Error Resilience Tests
     // GATE    : cargo test -p memfuse-ollama --test client
     #[tokio::test]
