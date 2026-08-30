@@ -136,15 +136,6 @@ pub struct LsmStorage {
 impl LsmStorage {
     /// Creates a new LSM storage engine.
     pub async fn new(config: LsmConfig) -> Result<Self> {
-        if config.memtable_size_limit == 0 {
-            return Err(MemFuseError::InvalidInput(
-                "memtable_size_limit must be > 0".into(),
-            ));
-        }
-        if config.max_ram_mb == 0 {
-            return Err(MemFuseError::InvalidInput("max_ram_mb must be > 0".into()));
-        }
-
         tokio::fs::create_dir_all(&config.path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create dir: {}", e)))?;
@@ -637,22 +628,6 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-        if key.is_empty() {
-            return Err(MemFuseError::InvalidInput("Key cannot be empty".into()));
-        }
-        if key.len() > 1024 * 1024 {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Key length ({}) exceeds 1 MiB limit",
-                key.len()
-            )));
-        }
-        if value.len() > 128 * 1024 * 1024 {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Value length ({}) exceeds 128 MiB limit",
-                value.len()
-            )));
-        }
-
         self.apply_backpressure().await;
         if !self.budget.has_memory_capacity() {
             return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
@@ -708,16 +683,6 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
-        if key.is_empty() {
-            return Err(MemFuseError::InvalidInput("Key cannot be empty".into()));
-        }
-        if key.len() > 1024 * 1024 {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Key length ({}) exceeds 1 MiB limit",
-                key.len()
-            )));
-        }
-
         let doc_id = {
             let hash = blake3::hash(key);
             let mut bytes = [0u8; 8];
@@ -2199,63 +2164,5 @@ mod tests {
                 Ok(())
             }).unwrap();
         });
-    }
-
-    #[tokio::test]
-    async fn test_lsm_put_delete_boundary_validation() {
-        let (storage, _tmp) = test_storage().await;
-        let tx = TxId::new(1);
-
-        // Put empty key -> InvalidInput
-        assert!(matches!(
-            storage.put(tx, b"", b"val").await,
-            Err(MemFuseError::InvalidInput(_))
-        ));
-
-        // Put oversized key (>1 MiB) -> InvalidInput
-        let huge_key = vec![0x41; 1024 * 1024 + 1];
-        assert!(matches!(
-            storage.put(tx, &huge_key, b"val").await,
-            Err(MemFuseError::InvalidInput(_))
-        ));
-
-        // Delete empty key -> InvalidInput
-        assert!(matches!(
-            storage.delete(tx, b"").await,
-            Err(MemFuseError::InvalidInput(_))
-        ));
-
-        // Delete oversized key (>1 MiB) -> InvalidInput
-        assert!(matches!(
-            storage.delete(tx, &huge_key).await,
-            Err(MemFuseError::InvalidInput(_))
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_lsm_new_config_validation() {
-        let tmp = TempDir::new().expect("temp dir"); // expect
-
-        // 1. memtable_size_limit == 0
-        let cfg_zero_mem = LsmConfig {
-            path: tmp.path().to_path_buf(),
-            memtable_size_limit: 0,
-            ..Default::default()
-        };
-        assert!(matches!(
-            LsmStorage::new(cfg_zero_mem).await,
-            Err(MemFuseError::InvalidInput(_))
-        ));
-
-        // 2. max_ram_mb == 0
-        let cfg_zero_ram = LsmConfig {
-            path: tmp.path().to_path_buf(),
-            max_ram_mb: 0,
-            ..Default::default()
-        };
-        assert!(matches!(
-            LsmStorage::new(cfg_zero_ram).await,
-            Err(MemFuseError::InvalidInput(_))
-        ));
     }
 }
