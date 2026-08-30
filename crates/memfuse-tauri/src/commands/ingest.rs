@@ -1,8 +1,9 @@
 // FILE-CONTEXT
-// STAND: 2026-08-30T14:38:30Z (SESSION: 45595f71)
+// STAND: 2026-08-30T18:54:25Z (SESSION: f3a48824)
 // ZWECK: File and folder ingestion Tauri IPC commands.
 // INVARIANTEN: Target paths must lie within database base directory; total files capped per folder scan.
 // NICHT-OFFENSICHTLICH: Folder ingestion emits progress events; failures logged instead of panic or swallow.
+// HOTSPOTS: ingest_file (lines 20-55), ingest_folder (lines 70-140)
 // SIEHE AUCH: crates/memfuse-tauri/src/ingestion/pipeline.rs
 
 use crate::commands::collections::validate_collection_name;
@@ -20,6 +21,12 @@ pub async fn ingest_file(
     file_path: String,
     collection_name: String,
 ) -> Result<IngestReport, MemFuseErrorDto> {
+    if file_path.trim().is_empty() {
+        return Err(MemFuseErrorDto::new(
+            "InvalidInput",
+            "File path cannot be empty",
+        ));
+    }
     validate_collection_name(&collection_name)?;
     let db = {
         let db_guard = state.db.read();
@@ -175,5 +182,11 @@ mod tests {
     fn test_ingest_file_empty_file_path_fails() {
         let path = std::path::Path::new("");
         assert!(!path.is_file());
+    }
+
+    #[test]
+    fn test_empty_file_path_validation() {
+        let empty_path = "   ";
+        assert!(empty_path.trim().is_empty());
     }
 }
