@@ -403,12 +403,12 @@ pub fn scan_tags<P: AsRef<Path>>(root: P) -> Vec<TagItem> {
                             "".to_string()
                         };
 
-                        let mut id = if let Some(id_idx) = trimmed.find("(ID:") {
-                            let rest = &trimmed[id_idx + 4..];
-                            rest.find(')').map(|end| rest[..end].trim().to_string())
-                        } else if let Some(start) = trimmed.find("ANCHOR[") {
+                        let mut id = if let Some(start) = trimmed.find("ANCHOR[") {
                             let rest = &trimmed[start + 7..];
                             rest.find(']').map(|end| rest[..end].to_string())
+                        } else if let Some(id_idx) = trimmed.find("(ID:") {
+                            let rest = &trimmed[id_idx + 4..];
+                            rest.find(')').map(|end| rest[..end].trim().to_string())
                         } else {
                             None
                         };
@@ -832,6 +832,11 @@ pub fn run_sync_docs(check_only: bool) -> bool {
     success
 }
 
+pub fn is_pre_cutoff(ts: &str) -> bool {
+    let date_part = if ts.len() >= 10 { &ts[..10] } else { ts };
+    date_part < "2026-08-29"
+}
+
 pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
     // Bestandsschutz: Only enforce multi-session review coverage for anchors created/resolved
     // on or after 2026-08-29 (Prompt 06 / ADR-028 decentralized review rule cutoff).
@@ -840,8 +845,7 @@ pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
         .filter(|t| {
             t.tag_type == "ANCHOR"
                 && t.is_resolved
-                && t.raw.contains("(ID:")
-                && t.id.as_deref().is_some_and(|id| id.starts_with("AGT-"))
+                && !is_pre_cutoff(&t.timestamp)
         })
         .collect();
 
@@ -1719,5 +1723,145 @@ mod tests {
     fn test_audit_verify_and_review() {
         assert!(run_audit_verify("AUDIT-TEST-001", Some("Cargo.toml"), Some(1)).is_ok());
         assert!(run_audit_review("AUDIT-TEST-001", "pass", Some("Tested successfully")).is_ok());
+    }
+
+    #[test]
+    fn test_review_coverage_flags_anchor_with_bracket_format_no_id_field() {
+        let tags = vec![TagItem {
+            file_path: "crates/memfuse-db/src/multistep.rs".to_string(),
+            line_num: 45,
+            tag_type: "ANCHOR".to_string(),
+            raw: "// ANCHOR[MULTISTEP:QUERY-REWRITER] STATUS:DONE (TS:2026-08-30T10:00:00Z)".to_string(),
+            timestamp: "2026-08-30T10:00:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some("MULTISTEP:QUERY-REWRITER".to_string()),
+            session: None,
+            status: Some("DONE".to_string()),
+            description: "Query rewriter anchor".to_string(),
+            is_resolved: true,
+            audit_id: None,
+            befund: None,
+            risiko: None,
+            empfehlung: None,
+        }];
+
+        // Post-cutoff anchor using standard bracket format without (ID: AGT-...) must be checked and fail if 0 review passes.
+        assert!(!run_check_review_coverage(&tags));
+    }
+
+    #[test]
+    fn test_review_coverage_ignores_pre_cutoff_anchors() {
+        let tags = vec![TagItem {
+            file_path: "crates/memfuse-db/src/multistep.rs".to_string(),
+            line_num: 45,
+            tag_type: "ANCHOR".to_string(),
+            raw: "// ANCHOR[MULTISTEP:QUERY-REWRITER] STATUS:DONE (TS:2026-06-01T00:00:00Z)".to_string(),
+            timestamp: "2026-06-01T00:00:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some("MULTISTEP:QUERY-REWRITER".to_string()),
+            session: None,
+            status: Some("DONE".to_string()),
+            description: "Legacy pre-cutoff anchor".to_string(),
+            is_resolved: true,
+            audit_id: None,
+            befund: None,
+            risiko: None,
+            empfehlung: None,
+        }];
+
+        // Pre-cutoff anchor (TS before 2026-08-29) must be ignored due to Bestandsschutz and pass.
+        assert!(run_check_review_coverage(&tags));
+    }
+
+    #[test]
+    fn test_review_coverage_requires_two_unique_sessions_post_cutoff() {
+        let anchor_id = "MULTISTEP:QUERY-REWRITER";
+        let anchor = TagItem {
+            file_path: "crates/memfuse-db/src/multistep.rs".to_string(),
+            line_num: 45,
+            tag_type: "ANCHOR".to_string(),
+            raw: "// ANCHOR[MULTISTEP:QUERY-REWRITER] STATUS:DONE (TS:2026-08-30T10:00:00Z)".to_string(),
+            timestamp: "2026-08-30T10:00:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some(anchor_id.to_string()),
+            session: Some("sess_author".to_string()),
+            status: Some("DONE".to_string()),
+            description: "Post-cutoff anchor requiring reviews".to_string(),
+            is_resolved: true,
+            audit_id: None,
+            befund: None,
+            risiko: None,
+            empfehlung: None,
+        };
+
+        let pass_1 = TagItem {
+            file_path: "crates/memfuse-db/src/multistep.rs".to_string(),
+            line_num: 46,
+            tag_type: "REVIEW-PASS".to_string(),
+            raw: "// REVIEW-PASS[1/2] STATUS:PASS (ID: MULTISTEP:QUERY-REWRITER) (TS:2026-08-30T11:00:00Z) (SESSION: sess_rev1)".to_string(),
+            timestamp: "2026-08-30T11:00:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some(anchor_id.to_string()),
+            session: Some("sess_rev1".to_string()),
+            status: Some("PASS".to_string()),
+            description: "Pass 1".to_string(),
+            is_resolved: false,
+            audit_id: None,
+            befund: None,
+            risiko: None,
+            empfehlung: None,
+        };
+
+        // Single pass post-cutoff -> should fail
+        let tags_1_pass = vec![anchor.clone(), pass_1.clone()];
+        assert!(!run_check_review_coverage(&tags_1_pass));
+
+        // Duplicate session pass -> should fail
+        let pass_1_dup = TagItem {
+            file_path: "crates/memfuse-db/src/multistep.rs".to_string(),
+            line_num: 47,
+            tag_type: "REVIEW-PASS".to_string(),
+            raw: "// REVIEW-PASS[2/2] STATUS:PASS (ID: MULTISTEP:QUERY-REWRITER) (TS:2026-08-30T12:00:00Z) (SESSION: sess_rev1)".to_string(),
+            timestamp: "2026-08-30T12:00:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some(anchor_id.to_string()),
+            session: Some("sess_rev1".to_string()),
+            status: Some("PASS".to_string()),
+            description: "Pass 1 duplicate session".to_string(),
+            is_resolved: false,
+            audit_id: None,
+            befund: None,
+            risiko: None,
+            empfehlung: None,
+        };
+        let tags_dup_session = vec![anchor.clone(), pass_1.clone(), pass_1_dup];
+        assert!(!run_check_review_coverage(&tags_dup_session));
+
+        // Two unique session passes post-cutoff -> should pass
+        let pass_2 = TagItem {
+            file_path: "crates/memfuse-db/src/multistep.rs".to_string(),
+            line_num: 48,
+            tag_type: "REVIEW-PASS".to_string(),
+            raw: "// REVIEW-PASS[2/2] STATUS:PASS (ID: MULTISTEP:QUERY-REWRITER) (TS:2026-08-30T12:00:00Z) (SESSION: sess_rev2)".to_string(),
+            timestamp: "2026-08-30T12:00:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some(anchor_id.to_string()),
+            session: Some("sess_rev2".to_string()),
+            status: Some("PASS".to_string()),
+            description: "Pass 2 independent session".to_string(),
+            is_resolved: false,
+            audit_id: None,
+            befund: None,
+            risiko: None,
+            empfehlung: None,
+        };
+        let tags_valid_coverage = vec![anchor, pass_1, pass_2];
+        assert!(run_check_review_coverage(&tags_valid_coverage));
     }
 }
