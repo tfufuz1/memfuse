@@ -167,6 +167,14 @@ mod tests {
     }
 
     #[test]
+    fn german_morph_tokenizer_case_default_constructor() {
+        let tokenizer = GermanMorphTokenizer::default();
+        let tokens = tokenizer.tokenize("Datenschutzrichtlinie");
+        assert!(!tokens.is_empty());
+        assert!(tokens.contains(&"datenschutzrichtlinie".to_string()));
+    }
+
+    #[test]
     fn test_tokenizers_panic_free_edge_cases() {
         let long_string = "a".repeat(100_000);
         let edge_cases = ["", " ", ".", "🦀", long_string.as_str()];
