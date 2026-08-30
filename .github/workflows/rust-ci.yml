@@ -29,7 +29,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets --workspace --exclude memfuse-tauri -- -D warnings
+      - run: cargo clippy --locked --all-targets --workspace --exclude memfuse-tauri -- -D warnings
 
   feature-matrix:
     name: Feature Matrix Checks (memfuse-embed)
@@ -39,9 +39,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Check memfuse-embed --no-default-features
-        run: cargo check -p memfuse-embed --no-default-features
+        run: cargo check --locked -p memfuse-embed --no-default-features
       - name: Check memfuse-embed --all-features
-        run: cargo check -p memfuse-embed --all-features
+        run: cargo check --locked -p memfuse-embed --all-features
 
   test:
     name: Test Suite (Triple-Run Flaky-Detection)
@@ -51,11 +51,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Run 1
-        run: cargo test --workspace --exclude memfuse-tauri
+        run: cargo test --locked --workspace --exclude memfuse-tauri
       - name: Run 2 (Flaky-Check)
-        run: cargo test --workspace --exclude memfuse-tauri
+        run: cargo test --locked --workspace --exclude memfuse-tauri
       - name: Run 3 (Flaky-Check Final)
-        run: cargo test --workspace --exclude memfuse-tauri
+        run: cargo test --locked --workspace --exclude memfuse-tauri
 
   # KONSOLIDIERUNGS-HINWEIS: Der redundante context-gates Job wurde hier entfernt.
   # Die Kanonische Quelle für Context Integrity Gates ist .github/workflows/context-gates.yml,
