@@ -794,6 +794,8 @@ pub fn run_sync_docs(check_only: bool) -> bool {
         Err(e) => {
             eprintln!("Error: {}", e);
             success = false;
+        } else {
+            println!("Successfully regenerated docs/CHANGELOG.md.");
         }
     }
 
@@ -1162,8 +1164,6 @@ pub fn run_context_crate(crate_name: &str, format: &str) -> Result<(), String> {
         }
         other => return Err(format!("Unsupported format: {}", other)),
     }
-
-    Ok(())
 }
 
 pub fn run_audit_verify(

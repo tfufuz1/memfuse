@@ -55,7 +55,6 @@
 | `2026-08-29T08:06:29Z` | `crates/memfuse-checkpoint/src/lib.rs` | `AI-TAG` | `AGT-CKPT-f3a1b2c4` | `a3f29c1d` | `RESOLVED` | `0` | /// AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z) (SESSION: a3f29c1d) |
 | `2026-08-29T08:06:29Z` | `crates/memfuse-store/src/wal.rs` | `AI-TAG` | `-` | `a3f29c1d` | `RESOLVED` | `-` | // AI-TAG[SECURITY][CRITICAL] RESOLVED: Atomic WAL integrity key creation (TS:2026-08-29T08:06:29Z) (SESSION: a3f29c1d) |
 | `2026-08-29T05:41:20Z (SESSION: f7999509)` | `crates/memfuse-db/src/fusion.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Reciprocal Rank Fusion (RRF) — vereint HNSW, BM25 und Graph-Ränge |
-| `2026-08-29T05:41:20Z (SESSION: f7999509)` | `crates/memfuse-graph/src/csr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion) |
 | `2026-08-29T05:41:20Z (SESSION: f7999509)` | `crates/memfuse-index/src/distance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SIMD-beschleunigte Distanzmetriken (Cosinus, L2) für HNSW-Index |
 | `2026-08-29T00:00:00Z` | `crates/memfuse-db/tests/semantic_recall.rs` | `ANCHOR` | `PERF:EVAL-001` | `a3f29c1d` | `DONE` | `2` | // ANCHOR[PERF:EVAL-001] STATUS:DONE (TS:2026-08-29T00:00:00Z) (SESSION: a3f29c1d) — Semantic Retrieval Evaluation Framework |
 | `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/collection/relate.rs` | `AI-TAG` | `AGT-DB-005` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-DB-005 — relate() rollback race behoben, siehe ADR-023 (TS:2026-08-28T00:00:00Z) |

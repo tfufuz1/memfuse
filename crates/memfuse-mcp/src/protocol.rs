@@ -124,6 +124,7 @@ impl From<memfuse_core::MemFuseError> for McpError {
                     None => Self::internal_error(msg),
                 }
             }
+            other => Self::internal_error(other.to_string()),
         }
     }
 }
