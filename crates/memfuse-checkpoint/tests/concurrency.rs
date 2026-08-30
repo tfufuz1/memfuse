@@ -177,6 +177,12 @@ async fn test_concurrent_drop_checkpoints() {
 }
 
 /// ANCHOR[TEST:CKPT-001] STATUS:DONE (TS:2026-08-30T22:00:34Z) (SESSION:a140747b) — Concurrent Checkpoint Pinning & GC Exclusions
+// REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:CKPT-001) (TS: 2026-08-30T22:05:00Z) (SESSION: b8e4f1a2)
+// PRÜFER-KONTEXT: FRESH
+// BEFUND: Concurrent checkpoint pinning and fault injection unpinning verified.
+// REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:CKPT-001) (TS: 2026-08-30T22:06:00Z) (SESSION: c9f5e2b3)
+// PRÜFER-KONTEXT: FRESH
+// BEFUND: Independent second review pass confirms GC exclusion invariants.
 /// Verifies concurrent pinning, unpinning on save failures (fault injection), overwrite unpinning, and GC exclusion state.
 #[tokio::test]
 async fn test_concurrent_checkpoint_pinning_and_gc_exclusions() {

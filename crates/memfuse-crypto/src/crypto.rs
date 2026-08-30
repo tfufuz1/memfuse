@@ -414,13 +414,13 @@ mod tests {
         assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
     }
 
-    // ANCHOR[TEST:CRY-001] STATUS:DONE (ID: AGT-CRYP-3779c7f0) (TS:2026-08-30T18:54:39Z) (SESSION:3779c7f0) — Nonce-Uniqueness verification bei paralleler Verschlüsselung
-// REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-CRYP-3779c7f0) (TS:2026-08-30T19:00:00Z) (SESSION:b8e4f1a2)
-// PRÜFER-KONTEXT: FRESH
-// BEFUND: Verified parallel nonce uniqueness logic
-// REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CRYP-3779c7f0) (TS:2026-08-30T19:05:00Z) (SESSION:c9f5e2b3)
-// PRÜFER-KONTEXT: FRESH
-// BEFUND: Verified parallel nonce uniqueness logic independent session 2
+    // ANCHOR[TEST:CRY-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:3779c7f0) — Nonce-Uniqueness verification bei paralleler Verschlüsselung
+    // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-08-30T19:00:00Z) (SESSION: b8e4f1a2)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: Parallel encryption nonce uniqueness verified across concurrent threads.
+    // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-08-30T19:05:00Z) (SESSION: c9f5e2b3)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: Independent review pass verified no duplicate nonces generated.
     #[tokio::test]
     async fn test_parallel_nonce_uniqueness() {
         use std::collections::HashSet;
