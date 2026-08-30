@@ -1992,7 +1992,10 @@ mod tests {
                 let snapshot_tx = s_reader.last_tx_id().await.unwrap().inner(); // unwrap allowed
                 let snapshot_seq = s_reader.last_seq_no().await.unwrap(); // unwrap allowed
 
-                let get_val = s_reader.get_at_seq(b"snap:key", snapshot_seq).await.unwrap(); // unwrap allowed
+                let get_val = s_reader
+                    .get_at_seq(b"snap:key", snapshot_seq)
+                    .await
+                    .unwrap(); // unwrap allowed
                 if let Some(bytes) = get_val {
                     let val_str = String::from_utf8(bytes).unwrap(); // unwrap allowed
                     let tx_num: u64 = val_str.strip_prefix("v_").unwrap().parse().unwrap(); // unwrap allowed
@@ -2004,7 +2007,10 @@ mod tests {
                     );
                 }
 
-                let scan_res = s_reader.scan_prefix_at(b"snap:", snapshot_seq).await.unwrap(); // unwrap allowed
+                let scan_res = s_reader
+                    .scan_prefix_at(b"snap:", snapshot_seq)
+                    .await
+                    .unwrap(); // unwrap allowed
                 assert!(!scan_res.is_empty());
                 let val_str = String::from_utf8(scan_res[0].1.clone()).unwrap(); // unwrap allowed
                 let tx_num: u64 = val_str.strip_prefix("v_").unwrap().parse().unwrap(); // unwrap allowed

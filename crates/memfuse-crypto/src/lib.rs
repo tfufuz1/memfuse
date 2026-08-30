@@ -3,7 +3,7 @@
 // INVARIANTEN: Cryptographic primitives strictly isolated to this crate. All key operations zeroized on drop. Lock-free & I/O-free in src/.
 // NICHT-OFFENSICHTLICH: KeyManager uses AES-256-GCM-SIV with OsRng 8-byte random suffix + 4-byte prefix to prevent nonce-reuse key leakage.
 // HOTSPOTS: [1-25]
-// STAND: TS:2026-08-30T22:01:36Z (SESSION: e8b9a102)
+// STAND: TS:2026-08-30T18:52:02Z (SESSION: 20260830)
 
 #![cfg_attr(not(test), forbid(unsafe_code))]
 

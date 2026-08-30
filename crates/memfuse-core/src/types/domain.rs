@@ -1111,7 +1111,7 @@ mod tests {
         }
     }
 
-    // ANCHOR[TEST:CORE-001] STATUS:DONE (TS:2026-08-30T21:51:46Z) (SESSION: a43b7682)
+    // ANCHOR[TEST:CORE-001] STATUS:OPEN (TS:2026-08-30T21:51:46Z) (SESSION: a43b7682)
     // Benchmark & Collision Test suite for DocId::from_key 64-bit BLAKE3 hash truncation
     #[test]
     fn test_doc_id_from_key_collisions_and_distribution() {

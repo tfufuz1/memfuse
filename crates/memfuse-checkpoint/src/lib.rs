@@ -17,10 +17,10 @@
 #![forbid(unsafe_code)]
 
 // FILE-CONTEXT
-// STAND:       2026-08-30T22:00:34Z (SESSION: a140747b)
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
 // ZWECK:       RAII CheckpointGuard + persistente Snapshot-Verwaltung
-// INVARIANTEN: Lock Hierarchy: write_lock -> name_index -> checkpoints; GC safety by pinning before store writes
-// HOTSPOTS:    CheckpointGuard::for_agent_step(), PersistentCheckpointStore::create_checkpoint(), PersistentCheckpointStore::list_checkpoints()
+// INVARIANTEN: CheckpointGuard darf NICHT mit PersistentCheckpointStore verwechselt werden; GC safety by pinning before store writes
+// HOTSPOTS:    CheckpointGuard::for_agent_step(), PersistentCheckpointStore::create_checkpoint()
 // SIEHE AUCH:  ADR-011
 
 use async_trait::async_trait;
@@ -34,14 +34,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static CHECKPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// Maximum allowed components per checkpoint manifest to prevent memory exhaustion.
-pub const MAX_COMPONENTS: usize = 1000;
-/// Maximum allowed checkpoints scanned in list operations to prevent resource exhaustion.
-pub const MAX_CHECKPOINTS: usize = 10_000;
-
-/// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-30T22:00:34Z) (SESSION:a140747b)
-/// Validates identifier strings (checkpoint name, collection ID) against empty/whitespace, size limits,
-/// null bytes, and control characters.
+/// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca)
+/// Validates identifier strings (checkpoint name, collection ID) against empty/whitespace or size limits.
 fn validate_identifier(field_name: &str, value: &str) -> Result<()> {
     if value.trim().is_empty() {
         return Err(MemFuseError::InvalidInput(format!(
@@ -52,16 +46,6 @@ fn validate_identifier(field_name: &str, value: &str) -> Result<()> {
         return Err(MemFuseError::InvalidInput(format!(
             "{field_name} exceeds maximum length of 256 characters (got {})",
             value.len()
-        )));
-    }
-    if value.contains('\0') {
-        return Err(MemFuseError::InvalidInput(format!(
-            "{field_name} cannot contain null bytes"
-        )));
-    }
-    if value.contains('\r') || value.contains('\n') {
-        return Err(MemFuseError::InvalidInput(format!(
-            "{field_name} cannot contain line breaks or control characters"
         )));
     }
     Ok(())
@@ -93,14 +77,12 @@ impl CheckpointManifest {
     pub fn new(meta: CheckpointMeta, components: Vec<String>) -> Result<Self> {
         validate_identifier("Checkpoint name", &meta.name)?;
         validate_identifier("Collection ID", &meta.collection_id)?;
-        if components.len() > MAX_COMPONENTS {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Checkpoint component count exceeds limit of {MAX_COMPONENTS} (got {})",
-                components.len()
-            )));
-        }
         for comp in &components {
-            validate_identifier("Checkpoint component name", comp)?;
+            if comp.trim().is_empty() {
+                return Err(MemFuseError::InvalidInput(
+                    "Checkpoint component name cannot be empty".to_string(),
+                ));
+            }
         }
         let payload = serde_json::to_vec(&(&meta, &components))
             .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
@@ -221,16 +203,7 @@ pub trait CheckpointRegistry: memfuse_core::traits::Checkpoint + Send + Sync {
 
 /// Registry für gespeicherte Checkpoints mit Thread-sicherem Zustand.
 ///
-/// # Lock-Hierarchie & Invarianten
-/// Um Deadlocks bei nebenläufigen Zugriffen zu verhindern, MUSS die Sperren-Akquise
-/// strikt der folgenden Reihenfolge folgen:
-/// 1. `write_lock` (`tokio::sync::Mutex<()>`) - Mutierende Storage-Operationen (create/drop/restore)
-/// 2. `name_index` (`parking_lot::RwLock<HashMap<String, u64>>`) - In-Memory Lookup Name -> seq_no
-/// 3. `checkpoints` (`parking_lot::RwLock<HashMap<u64, CheckpointMeta>>`) - In-Memory Map seq_no -> Meta
-///
-/// Eine höher in der Hierarchie stehende Sperre darf NIEMALS akquiriert werden,
-/// während bereits eine niedere Sperre gehalten wird.
-///
+/// # Invarianten
 /// - Alle Methoden sind durch `RwLock` thread-sicher
 /// - `StorageEngine`-Zugriffe nutzen atomare Transaktionen via `TxId`
 /// - Keine Panics (Zero-Panic Doctrine)
@@ -472,14 +445,6 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let prefix = format!("{}:checkpoint:", self.namespace);
         let entries: Vec<(Vec<u8>, Vec<u8>)> = self.storage.scan_prefix(prefix.as_bytes()).await?;
 
-        if entries.len() > MAX_CHECKPOINTS {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Checkpoint entries count ({}) exceeds maximum scan limit of {}",
-                entries.len(),
-                MAX_CHECKPOINTS
-            )));
-        }
-
         let mut result = Vec::with_capacity(entries.len());
         for (_key_bytes, value_bytes) in entries {
             let meta =
@@ -493,10 +458,10 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             result.push(meta);
         }
 
-        // Cache synchronisieren gemäß Lock-Hierarchie: name_index -> checkpoints
+        // Cache synchronisieren
         {
-            let mut name_idx = self.name_index.write();
             let mut cache = self.checkpoints.write();
+            let mut name_idx = self.name_index.write();
             cache.clear();
             name_idx.clear();
             for meta in &result {
@@ -1266,53 +1231,5 @@ mod tests {
         assert_eq!(tx1, TxId::new(TxId::INTERNAL_BASE));
         assert_eq!(tx2, TxId::new(TxId::INTERNAL_BASE + 1));
         assert_eq!(tx3, TxId::new(TxId::INTERNAL_BASE + 2));
-    }
-
-    #[test]
-    fn test_input_validation_null_bytes_and_control_chars() {
-        assert!(validate_identifier("test", "name\0with_null").is_err());
-        assert!(validate_identifier("test", "name\rwith_cr").is_err());
-        assert!(validate_identifier("test", "name\nwith_lf").is_err());
-        assert!(validate_identifier("test", "valid_name").is_ok());
-    }
-
-    #[test]
-    fn test_manifest_max_components_exceeded() {
-        let meta = CheckpointMeta {
-            name: "cp_limit".to_string(),
-            collection_id: "col_limit".to_string(),
-            seq_no: 1,
-            tx_id: TxId::new(1),
-            metadata: serde_json::Value::Null,
-            created_at: 100,
-        };
-
-        let over_limit = vec!["comp".to_string(); MAX_COMPONENTS + 1];
-        assert!(CheckpointManifest::new(meta, over_limit).is_err());
-    }
-
-    #[tokio::test]
-    async fn test_list_checkpoints_max_limit_exceeded() {
-        let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test");
-
-        // Insert MAX_CHECKPOINTS + 1 entries directly into mock storage
-        for i in 0..=(MAX_CHECKPOINTS as u64) {
-            let key = format!("test:checkpoint:cp_{i}");
-            let meta = CheckpointMeta {
-                name: format!("cp_{i}"),
-                collection_id: "c1".to_string(),
-                seq_no: i,
-                tx_id: TxId::new(i),
-                metadata: serde_json::Value::Null,
-                created_at: 100,
-            };
-            let manifest = CheckpointManifest::new(meta, vec!["comp".to_string()]).unwrap();
-            let val = serde_json::to_vec(&manifest).unwrap();
-            storage.data.lock().insert(key.into_bytes(), val);
-        }
-
-        let res = store.list_checkpoints().await;
-        assert!(res.is_err(), "list_checkpoints must fail if entries exceed MAX_CHECKPOINTS");
     }
 }

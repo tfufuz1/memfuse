@@ -189,7 +189,7 @@ Hier sind die präzisen Commits der Entwicklungshistorie (chronologisch von den 
 - `bbdf3f2` | **google-labs-jules[bot]** | `fix(lsm): mask TOMBSTONE_BIT in rollback_to_tx`
   *Korrektes Maskieren des Tombstone-Bits bei Transaktions-Rollbacks im LSM-Tree.*
 - `bdb3518` | **google-labs-jules[bot]** | `Fix SSTable compaction crash safety via Write-Temp-Then-Rename`
-  *Crash-sichere Compaction: Schreiben in `.sst.tmp` Datei und atomares `tokio::fs::rename` nach `file.sync_all()` (ADR-042).*
+  *Crash-sichere Compaction: Schreiben in `.sst.tmp` Datei und atomares `tokio::fs::rename` nach `file.sync_all()` (ADR-044).*
 - `2ff1fa4` | **google-labs-jules[bot]** | `perf(index): move NaN query check to entry point`
   *Vorzeitiger Abbruch bei NaN-Eingabevektoren am Einstiegspunkt der HNSW-Suche.*
 - `6a40bca` | **google-labs-jules[bot]** | `fix(mcp): harden memfuse-mcp protocol and input validation`
@@ -256,7 +256,7 @@ Das Repository ist als modularer Workspace aufgebaut. Die Historie spiegelt die 
 - Transaktionaler Staging-Puffer (`TxBuffer`) mit strikter Kapazitätsdeckelung (`max_ops_per_tx = 10_000`) zum Schutz vor OOM.
 
 ### Layer 1: Storage & Spezialisierte Indizes
-- **`memfuse-store`**: Implementierung des WAL V3 Formats mit HMAC-SHA256 Transaktionsbindung. Crash-sichere Compaction via `.sst.tmp` Schreiben und atomares Rename (ADR-042). AHash-basiertes Sharding für MemTables.
+- **`memfuse-store`**: Implementierung des WAL V3 Formats mit HMAC-SHA256 Transaktionsbindung. Crash-sichere Compaction via `.sst.tmp` Schreiben und atomares Rename (ADR-044). AHash-basiertes Sharding für MemTables.
 - **`memfuse-index`**: HNSW Vektorindex mit SIMD-beschleunigten Metriken (Cosine, L2, Dot Product). DiskANN Out-of-Core Graphindex mit In-Memory Cache und POSIX Atomic Rename für Indexdateien. Skalare 8-Bit Quantisierung (SQ8).
 - **`memfuse-text`**: Invertierter Index für BM25 mit deutscher Morphologie (Umlaut-Normalisierung, Komposita-Zerlegung) und Tombstone-Update-Semantik.
 - **`memfuse-crypto`**: Authentifizierte AES-256-GCM-SIV Verschlüsselung, `OsRng` Nonce-Garantie, `Zeroize`-Disziplin für flüchtige Schlüssel und konstanter WAL-HMAC-Verifier.
