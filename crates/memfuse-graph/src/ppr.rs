@@ -1,5 +1,12 @@
 //! Personalized PageRank (PPR) power iteration implementation for `CsrGraph`.
 
+// FILE-CONTEXT
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// ZWECK:       Personalized PageRank für GraphRAG Community Detection
+// INVARIANTEN: CsrGraph inner state must be compacted before compute_ppr(), deterministic power iteration termination
+// HOTSPOTS:    compute_ppr(), power iteration loop
+// SIEHE AUCH:  ADR-031
+
 use crate::csr::GraphInner;
 use memfuse_core::{EntityId, PprConfig};
 use std::collections::HashSet;
@@ -162,7 +169,7 @@ pub(crate) fn compute_ppr(
         }
     }
 
-    if !converged {
+    if !converged && config.warn_on_non_convergence {
         tracing::warn!(
             max_iterations = max_iters,
             last_diff = last_diff,
@@ -236,6 +243,7 @@ mod tests {
             damping_factor: 0.85,
             max_iterations: 100,
             convergence_epsilon: 1e-6,
+            warn_on_non_convergence: true,
         };
 
         let seed = EntityId::new(1);
@@ -630,6 +638,7 @@ mod tests {
                     damping_factor: damping,
                     max_iterations: max_iters,
                     convergence_epsilon: 1e-7,
+                    warn_on_non_convergence: true,
                 };
 
                 let results = graph
@@ -675,6 +684,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ppr_warn_on_non_convergence_suppressible() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+
+        for i in 1..=5 {
+            graph
+                .add_entity(tx, Entity::new(EntityId::new(i), format!("N{i}"), "Node"))
+                .await
+                .unwrap();
+        }
+
+        for i in 1..=5 {
+            let next = if i == 5 { 1 } else { i + 1 };
+            graph
+                .add_edge(tx, Edge::new(EntityId::new(i), EntityId::new(next), "next"))
+                .await
+                .unwrap();
+        }
+        graph.commit(tx).await.unwrap();
+
+        // Config with max_iterations: 1 and warn_on_non_convergence: false
+        let config = PprConfig {
+            damping_factor: 0.85,
+            max_iterations: 1,
+            convergence_epsilon: 1e-12,
+            warn_on_non_convergence: false,
+        };
+
+        let seed = EntityId::new(1);
+        let results = graph
+            .personalized_page_rank(&[seed], &config)
+            .await
+            .unwrap();
+
+        assert!(
+            !results.is_empty(),
+            "Calculation must return best-effort result without error or panic when warn_on_non_convergence is false"
+        );
+    }
+
+    #[tokio::test]
     async fn test_ppr_non_convergence_logs_warning_and_returns_best_effort() {
         use tracing_subscriber::layer::SubscriberExt;
 
@@ -709,6 +759,7 @@ mod tests {
             damping_factor: 0.85,
             max_iterations: 2,
             convergence_epsilon: 1e-12,
+            warn_on_non_convergence: true,
         };
 
         let seed = EntityId::new(1);
@@ -767,6 +818,7 @@ mod tests {
             damping_factor: 0.85,
             max_iterations: 5,          // Capped to 5 iterations
             convergence_epsilon: 1e-15, // Unreachable tolerance forces iter cap
+            warn_on_non_convergence: true,
         };
 
         let start_time = std::time::Instant::now();

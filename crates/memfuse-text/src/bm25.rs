@@ -166,6 +166,52 @@ mod tests {
         assert_eq!(default_bm25.b, 0.75);
     }
 
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_bm25_score_term_finite_and_non_negative(
+            tf in 0..10_000u32,
+            doc_len in 0..10_000u32,
+            avg_doc_len in 0.0..10_000.0f32,
+            df in 0..10_000u32,
+            n in 0..10_000u32,
+        ) {
+            let score = score_term(tf, doc_len, avg_doc_len, df, n);
+            prop_assert!(score.is_finite(), "Score must be finite");
+            prop_assert!(score >= 0.0, "Score must be non-negative");
+        }
+    }
+
+    #[test]
+    fn score_term_case_exact_anti_mirroring_value() {
+        // Independent mathematical calculation:
+        // tf = 1, doc_len = 10, avg_doc_len = 10.0, df = 1, n = 10, k1 = 1.5, b = 0.75
+        // idf_arg = (10 - 1 + 0.5) / (1 + 0.5) = 9.5 / 1.5 = 6.333333333...
+        // idf = ln(19/3) = 1.8458268
+        // norm_doc_len = 10 / 10 = 1.0
+        // tf_num = 1 * 2.5 = 2.5
+        // tf_den = 1 + 1.5 * (0.25 + 0.75) = 2.5
+        // tf_factor = 2.5 / 2.5 = 1.0
+        // expected score = 1.8458268
+        let score = score_term(1, 10, 10.0, 1, 10);
+        let expected = 1.845_826_8;
+        assert!(
+            (score - expected).abs() < 1e-6,
+            "Expected score close to {}, got {}",
+            expected,
+            score
+        );
+    }
+
+    #[test]
+    fn bm25_struct_score_term_case_matches_standalone_function() {
+        let bm25 = BM25::new(1.5, 0.75).expect("valid parameters");
+        let struct_score = bm25.score_term(2, 50, 50.0, 5, 100);
+        let fn_score = score_term(2, 50, 50.0, 5, 100);
+        assert_eq!(struct_score, fn_score);
+    }
+
     #[test]
     fn test_bm25_score() {
         let score = score_term(2, 100, 150.0, 10, 1000);

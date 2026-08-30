@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// ZWECK: Unit-Tests für Collection-CRUD, Indizierung, Repair und Grenzwerte.
+// INVARIANTEN: Keine Tautologien; Anti-Mirroring gewahrt; Unabhängig berechnete Erwartungswerte.
+// NICHT-OFFENSICHTLICH: Tests laufen isoliert in temporären Verzeichnissen.
+// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+
 #[tokio::test]
 async fn test_insert_with_ttl_and_reap_expired_documents() {
     use memfuse_graph::CsrGraph;
@@ -546,6 +552,7 @@ async fn test_doc_id_collision_rejected() {
 }
 
 #[tokio::test]
+#[allow(deprecated)]
 async fn test_collection_next_tx_sequence() {
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
@@ -1253,7 +1260,7 @@ fn test_importance_metadata_integration_and_filtering() {
     );
     meta1.as_mut().unwrap().as_object_mut().unwrap().insert(
         "importance".to_string(),
-        serde_json::to_value(&imp1).unwrap(),
+        serde_json::to_value(imp1).unwrap(),
     );
 
     // Effective score at now_tx (2 half-lives elapsed) -> 0.9 * 0.25 = 0.225
@@ -1264,7 +1271,7 @@ fn test_importance_metadata_integration_and_filtering() {
     let imp2 = MemoryImportance::new(ImportanceScore::new(1.0), DecayFunction::None, created_tx);
     meta2.as_mut().unwrap().as_object_mut().unwrap().insert(
         "importance".to_string(),
-        serde_json::to_value(&imp2).unwrap(),
+        serde_json::to_value(imp2).unwrap(),
     );
 
     let results = vec![
