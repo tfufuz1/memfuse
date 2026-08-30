@@ -608,14 +608,16 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-041: TOMBSTONE_BIT-Disziplin in Sequenznummer-Berechnungen und rollback_to_tx
+## ADR-041: TOMBSTONE_BIT-Disziplin in rollback_to_tx
 *   **Datum**: 2026-08-29
 *   **Status**: ✅ Final
-*   **Entscheidung**: In allen Pfaden der LSM-Storage-Engine (`rollback_to_tx`, WAL-Replay, SSTable-Recovery), in denen maximale Sequenznummern (`max_seq`) ermittelt werden, MUSS das `TOMBSTONE_BIT` (Bit 63, `1 << 63`) strikt maskiert werden (`seq & !TOMBSTONE_BIT`), bevor Vergleiche, Zuweisungen oder Hochzählungen für `next_seq_no` stattfinden.
+*   **Entscheidung**: In `LsmStorage::rollback_to_tx` wird das `TOMBSTONE_BIT` (Bit 63, `1 << 63`) vor jedem Vergleich und jeder Zuweisung an `max_seq` strikt maskiert (`& !TOMBSTONE_BIT`), um zu verhindern, dass Bit 63 in `next_seq_no` gerät.
 *   **Alternativen**:
-    - Unmaskierte Übernahme in `max_seq`: Verworfen, da Bit 63 in `next_seq_no` wandert und nachfolgende reguläre Inserts fälschlich als gelöscht (Tombstone) markiert.
-    - Maskierung beim Schreiben der SSTable-Metadaten verändern: Verworfen, um bestehende Metadatenformate und Disk-Layouts nicht zu verändern.
-*   **Begründung**: Bit 63 signalisiert ausschließlich das Lösch-Tombstone-Flag in Datenzeilen. Es stellt keinen numerischen Wertanteil der Sequenznummer dar. Maskierung an den Lesestellen schützt die Invariante "Bit 63 darf niemals in `next_seq_no` einfließen" vollständig vor stillem Datenverlust nach Rollbacks auf Delete-Operationen.
+    - Maskierung direkt beim Schreiben der SSTable-Metadaten. Verworfen, da Metadaten unmaskiert eingehen und eine Änderung dort das SSTable-Format oder Leselogik an anderen Stellen beeinflussen könnte.
+*   **Begründung**: Wenn die höchste beobachtete Sequenznummer in einer SSTable oder einem WAL-Eintrag zu einem Delete-Tombstone gehört, ist Bit 63 in dieser `seq_no` gesetzt. Ohne Maskierung wanderte dieses Bit bisher in `max_seq` und anschließend in `next_seq_no`. Jede nachfolgende Schreiboperation erbte fälschlich Bit 63 und wurde vom System als gelöscht behandelt. Die strikte Maskierung wahrt die Invariante "Bit 63 darf niemals in next_seq_no einfließen" und schützt vor stillem Datenverlust.
+*   **Konsequenzen**:
+    - `rollback_to_tx` maskiert `sst.metadata().max_seq & !TOMBSTONE_BIT` und `(seq & !TOMBSTONE_BIT)` aus WAL-Einträgen.
+    - Neue Regressionstests in `lsm.rs` sichern das Verhalten ab.
 
 ---
 
