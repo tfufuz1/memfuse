@@ -1,3 +1,10 @@
+// FILE-CONTEXT: Layer 1 text search integration facade (memfuse-text).
+// ZWECK: Exportiert Bm25Scorer, InvertedIndex, Morphologie-Tools und BM25-Modelle für DB-Hybrid-Suche.
+// INVARIANTEN: #![forbid(unsafe_code)], TextIndex-Trait Implementierung ist fully async & transaction-aware.
+// NICHT-OFFENSICHTLICH: Scorer delegiert direkt an InvertedIndex; MVCC & Lock-Free Storage durch StorageEngine.
+// HOTSPOTS: Bm25Scorer::search, Bm25Scorer::insert
+// STAND: TS:2026-08-30T18:51:48Z (SESSION: 872b1087)
+
 //! Hybrid Search Engine & BM25 Scoring (WP-2.1)
 //!
 //! Evaluates Inverse Document Frequencies integrating natively into the
@@ -91,19 +98,19 @@ mod tests {
     #[async_trait::async_trait]
     impl StorageEngine for MockStorage {
         async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            Ok(self.data.lock().unwrap().get(key).cloned())
+            Ok(self.data.lock().unwrap().get(key).cloned()) // unwrap allowed
         }
 
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
             self.data
                 .lock()
-                .unwrap()
+                .unwrap() // unwrap allowed
                 .insert(key.to_vec(), value.to_vec());
             Ok(())
         }
 
         async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
-            self.data.lock().unwrap().remove(key);
+            self.data.lock().unwrap().remove(key); // unwrap allowed
             Ok(())
         }
 
@@ -160,7 +167,7 @@ mod tests {
         }
 
         async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            let data = self.data.lock().unwrap();
+            let data = self.data.lock().unwrap(); // unwrap allowed
             let mut res = Vec::new();
             for (k, v) in data.iter() {
                 if k.starts_with(prefix) {
