@@ -6,13 +6,6 @@
 // INVARIANT: Trait-Contracts sind das API-Rückgrat des Workspace.
 // REGEL: Neue Methoden MÜSSEN Default-Impl haben (backward compat).
 
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       Zentrale Trait-Definitionen (VectorIndex, GraphIndex, TextIndex, etc.)
-// INVARIANTEN: Trait default implementations required for new trait methods (backward compatibility)
-// HOTSPOTS:    VectorIndex::search_at, GraphIndex::traverse_at Default-Impls
-// SIEHE AUCH:  docs/TYPE_REGISTRY.md, ADR-035
-
 use crate::types::*;
 use crate::Result;
 use async_trait::async_trait;
@@ -124,21 +117,37 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Deletes a key as part of a transaction.
     async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()>;
 
-    /// Deletes all key-value pairs whose key starts with `prefix` as part of a transaction.
+    /// Deletes multiple keys as a single logical batch operation.
     ///
-    /// Returns the number of keys staged for deletion.
-    ///
-    /// Default O(n) implementation: scan all matching keys, then delete each individually.
-    /// Concrete implementors should override this with a batch operation (e.g. `stage_many`)
-    /// to avoid per-key lock overhead.
-    async fn delete_prefix(&self, tx_id: TxId, prefix: &[u8]) -> Result<u64> {
-        let matching_keys = self.scan_prefix(prefix).await?;
+    /// # Performance
+    /// Default implementation delegates to sequential `delete()` calls.
+    /// Implementors handling large batches (e.g. from `delete_prefix()`)
+    /// SHOULD override this with a true batch operation (single lock
+    /// acquisition) to avoid per-key lock contention.
+    async fn delete_many(&self, tx_id: TxId, keys: Vec<Vec<u8>>) -> Result<u64> {
         let mut deleted = 0u64;
-        for (key, _) in matching_keys {
+        for key in keys {
             self.delete(tx_id, &key).await?;
             deleted += 1;
         }
         Ok(deleted)
+    }
+
+    /// Deletes all key-value pairs whose key starts with `prefix` as part of a transaction.
+    ///
+    /// Returns the number of keys staged for deletion.
+    ///
+    /// Default implementation scans all matching keys, then delegates to [`delete_many`][Self::delete_many].
+    /// Concrete implementors handling batch mutations should override `delete_many()` or `delete_prefix()`
+    /// with a true batch operation to avoid per-key lock overhead.
+    async fn delete_prefix(&self, tx_id: TxId, prefix: &[u8]) -> Result<u64> {
+        let matching_keys: Vec<Vec<u8>> = self
+            .scan_prefix(prefix)
+            .await?
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+        self.delete_many(tx_id, matching_keys).await
     }
 
     /// Commits a transaction — makes writes visible.
@@ -181,19 +190,13 @@ pub trait StorageEngine: Send + Sync + 'static {
     ///
     /// # Contract
     /// Must respect MVCC snapshot isolation.
-    ///
-    /// # Errors
-    /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
-    /// with capability `"snapshot_read_at"` if snapshot-isolated prefix scan is not implemented.
-    /// Tested via `capability_coverage` test module.
     async fn scan_prefix_at(
         &self,
         _prefix: &[u8],
         _seq_no: u64,
     ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        Err(crate::error::MemFuseError::capability_unsupported(
-            "snapshot_read_at",
-            "Storage-level snapshot-isolated prefix scan (scan_prefix_at) is not supported by default — implementors must override this method to guarantee MVCC snapshot isolation.",
+        Err(crate::error::MemFuseError::PolicyViolation(
+            "scan_prefix_at must be explicitly implemented to guarantee snapshot isolation".into(),
         ))
     }
 
@@ -879,76 +882,6 @@ mod capability_coverage {
             "search_at returned CapabilityUnsupported"
         );
     }
-
-    /// Verifies that calling default scan_prefix_at on a StorageEngine implementation
-    /// returns CapabilityUnsupported with capability "snapshot_read_at".
-    #[tokio::test]
-    async fn test_storage_scan_prefix_at_capability() {
-        struct StorageEnginePlaceholder;
-        #[async_trait]
-        impl StorageEngine for StorageEnginePlaceholder {
-            async fn get(&self, _: &[u8]) -> Result<Option<Vec<u8>>> {
-                Ok(None)
-            }
-            async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> {
-                Ok(None)
-            }
-            async fn put(&self, _: TxId, _: &[u8], _: &[u8]) -> Result<()> {
-                Ok(())
-            }
-            async fn delete(&self, _: TxId, _: &[u8]) -> Result<()> {
-                Ok(())
-            }
-            async fn commit(&self, _: TxId) -> Result<()> {
-                Ok(())
-            }
-            async fn rollback(&self, _: TxId) -> Result<()> {
-                Ok(())
-            }
-            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
-                Ok(())
-            }
-            async fn flush(&self) -> Result<()> {
-                Ok(())
-            }
-            async fn stats(&self) -> Result<StorageStats> {
-                Ok(StorageStats {
-                    num_segments: 0,
-                    total_size_bytes: 0,
-                    memtable_size_bytes: 0,
-                })
-            }
-            async fn last_seq_no(&self) -> Result<u64> {
-                Ok(0)
-            }
-            async fn last_tx_id(&self) -> Result<TxId> {
-                Ok(TxId(0))
-            }
-            async fn pin_checkpoint(&self, _: u64) -> Result<()> {
-                Ok(())
-            }
-            async fn unpin_checkpoint(&self, _: u64) -> Result<()> {
-                Ok(())
-            }
-            async fn scan_prefix(&self, _: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-                Ok(vec![])
-            }
-            async fn scan(
-                &self,
-                _: std::ops::Bound<&[u8]>,
-                _: std::ops::Bound<&[u8]>,
-            ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-                Ok(vec![])
-            }
-        }
-
-        let placeholder = StorageEnginePlaceholder;
-        let result = placeholder.scan_prefix_at(b"prefix", 0).await;
-        assert!(matches!(
-            result,
-            Err(crate::MemFuseError::CapabilityUnsupported { ref capability, .. }) if capability == "snapshot_read_at"
-        ));
-    }
 }
 
 #[cfg(test)]
@@ -1058,12 +991,107 @@ mod tests {
 
         // Test scan_prefix_at default error
         let res = store.scan_prefix_at(b"pre", 1).await;
-        match res {
-            Err(crate::error::MemFuseError::CapabilityUnsupported { capability, .. }) => {
-                assert_eq!(capability, "snapshot_read_at");
-            }
-            _ => panic!("Expected CapabilityUnsupported for scan_prefix_at"),
+        assert!(matches!(
+            res,
+            Err(crate::error::MemFuseError::PolicyViolation(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_delete_many_default_impl_deletes_all_keys() {
+        struct MockStorage {
+            data: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<Vec<u8>, Vec<u8>>>>,
+            delete_call_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
         }
+
+        #[async_trait::async_trait]
+        impl StorageEngine for MockStorage {
+            async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+                Ok(self.data.lock().unwrap().get(key).cloned())
+            }
+            async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> {
+                Ok(None)
+            }
+            async fn put(&self, _: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+                self.data
+                    .lock()
+                    .unwrap()
+                    .insert(key.to_vec(), value.to_vec());
+                Ok(())
+            }
+            async fn delete(&self, _: TxId, key: &[u8]) -> Result<()> {
+                self.delete_call_count
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                self.data.lock().unwrap().remove(key);
+                Ok(())
+            }
+            async fn commit(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn flush(&self) -> Result<()> {
+                Ok(())
+            }
+            async fn stats(&self) -> Result<StorageStats> {
+                Ok(StorageStats {
+                    num_segments: 0,
+                    total_size_bytes: 0,
+                    memtable_size_bytes: 0,
+                })
+            }
+            async fn last_seq_no(&self) -> Result<u64> {
+                Ok(0)
+            }
+            async fn last_tx_id(&self) -> Result<TxId> {
+                Ok(TxId(0))
+            }
+            async fn pin_checkpoint(&self, _: u64) -> Result<()> {
+                Ok(())
+            }
+            async fn unpin_checkpoint(&self, _: u64) -> Result<()> {
+                Ok(())
+            }
+            async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+                let map = self.data.lock().unwrap();
+                let mut res = Vec::new();
+                for (k, v) in map.iter() {
+                    if k.starts_with(prefix) {
+                        res.push((k.clone(), v.clone()));
+                    }
+                }
+                Ok(res)
+            }
+            async fn scan(
+                &self,
+                _: std::ops::Bound<&[u8]>,
+                _: std::ops::Bound<&[u8]>,
+            ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+                Ok(vec![])
+            }
+        }
+
+        let map = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+        let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let store = MockStorage {
+            data: map.clone(),
+            delete_call_count: count.clone(),
+        };
+
+        store.put(TxId(1), b"pref:1", b"v1").await.unwrap();
+        store.put(TxId(1), b"pref:2", b"v2").await.unwrap();
+        store.put(TxId(1), b"other:1", b"v3").await.unwrap();
+
+        let deleted = store.delete_prefix(TxId(2), b"pref:").await.unwrap();
+        assert_eq!(deleted, 2);
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert!(store.get(b"pref:1").await.unwrap().is_none());
+        assert!(store.get(b"pref:2").await.unwrap().is_none());
+        assert_eq!(store.get(b"other:1").await.unwrap().unwrap(), b"v3");
     }
 
     #[tokio::test]

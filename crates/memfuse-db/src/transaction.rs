@@ -1,9 +1,3 @@
-// FILE-CONTEXT
-// ZWECK: Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen.
-// INVARIANTEN: [INV-DB-3] Keine verschluckten Fehler bei Rollbacks; Kompensierende Transaktionen bei HNSW/BM25/Graph Ausfällen.
-// NICHT-OFFENSICHTLICH: Multi-Attempt LSM-Kompensation mit Split-Brain Tracing-Warnungen bei anhaltenden Fehlern.
-// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
-
 //! # Database Transactions
 //!
 //! This module provides `DbTransaction`, an orchestrator for atomic multi-index commits
@@ -286,12 +280,12 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
 
         // Execute staged text and graph staging before prepare/commit
         if let Err(e) = self.commit_text_staged().await {
-            self.rollback_internal().await;
+            let _ = self.rollback_internal().await;
             return Err(e);
         }
 
         if let Err(e) = self.commit_graph_staged().await {
-            self.rollback_internal().await;
+            let _ = self.rollback_internal().await;
             return Err(e);
         }
 
@@ -312,7 +306,7 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
 
         // 2. Commit Storage (LSM)
         if let Err(storage_err) = self.collection.storage.commit(self.tx_id).await {
-            self.rollback_internal().await;
+            let _ = self.rollback_internal().await;
             return Err(MemFuseError::Transaction(storage_err.to_string()));
         }
 
@@ -578,5 +572,81 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
         index_res?;
         storage_res?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    async fn create_test_collection() -> Collection<LsmStorage, HnswIndex> {
+        let dir = tempdir().unwrap();
+        let lsm_config = memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let graph = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(AtomicU64::new(1));
+
+        Collection::new(
+            "tx_test".to_string(),
+            storage,
+            index,
+            graph,
+            next_tx,
+            4,
+            memfuse_text::Language::English,
+        )
+    }
+
+    #[tokio::test]
+    async fn test_db_transaction_staging_and_commit() {
+        use memfuse_core::{Edge, Entity, EntityId};
+
+        let col = create_test_collection().await;
+        let tx_id = col.allocate_tx().unwrap();
+        let tx = DbTransaction::new(col.clone(), tx_id);
+
+        let doc_id = DocId::new(100);
+        tx.record_keys(vec![1, 2, 3], vec![3, 2, 1], doc_id);
+        tx.stage_text_insert(doc_id, "hello transaction world".to_string());
+        tx.stage_graph_entity(Entity::new(EntityId(1), "NodeA", "Concept"));
+        tx.stage_graph_edge(Edge::new(EntityId(1), EntityId(2), "relates_to"));
+
+        // Commit should succeed without errors
+        let commit_res = tx.commit().await;
+        assert!(commit_res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_db_transaction_staging_and_rollback() {
+        use memfuse_core::EntityId;
+
+        let col = create_test_collection().await;
+        let tx_id = col.allocate_tx().unwrap();
+        let tx = DbTransaction::new(col.clone(), tx_id);
+
+        let doc_id = DocId::new(200);
+        tx.stage_text_insert(doc_id, "staged text for rollback".to_string());
+        tx.stage_text_delete(doc_id);
+        tx.stage_graph_entity_delete(EntityId(10));
+        tx.stage_graph_edge_delete(EntityId(10), EntityId(20));
+
+        let rollback_res = tx.rollback().await;
+        assert!(rollback_res.is_ok());
     }
 }

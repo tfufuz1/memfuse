@@ -6,7 +6,7 @@ fn main() {
     let out_dir = "src/ipc";
 
     if Path::new(schema_path).exists() {
-        println!("cargo:rerun-if-changed={schema_path}");
+        println!("cargo:rerun-if-changed={}", schema_path);
 
         let output_file = Path::new(out_dir).join("memfuse_generated.rs");
 
@@ -23,7 +23,9 @@ fn main() {
                 .status()
                 .expect("Failed to execute flatc");
 
-            assert!(status.success(), "flatc failed to generate code");
+            if !status.success() {
+                panic!("flatc failed to generate code");
+            }
         } else if !output_file.exists() {
             panic!("flatc not found and generated code does not exist. Please install flatbuffers compiler.");
         } else {

@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T14:38:30Z (SESSION: 45595f71)
+// ZWECK: Tauri IPC commands for RAG chat and Ollama model management.
+// INVARIANTEN: All inputs (message length, collection name) validated before hybrid search and LLM streaming.
+// NICHT-OFFENSICHTLICH: App state locks cloned in scoped block before async vector search and LLM calls.
+// SIEHE AUCH: crates/memfuse-tauri/src/ollama.rs, crates/memfuse-db/src/context.rs
+
 use crate::commands::collections::validate_collection_name;
 use crate::ollama::OllamaBridge;
 use crate::state::AppState;
