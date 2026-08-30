@@ -2225,6 +2225,64 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_hnsw_config_builder_and_validation() {
+        // Fluent builder Happy Path
+        let config = HnswConfigBuilder::new(128)
+            .max_elements(1000)
+            .m(32)
+            .ef_construction(128)
+            .ef_search(64)
+            .distance_metric(DistanceMetric::Cosine)
+            .quantize(true)
+            .quantizer_recalibration_sample_size(500)
+            .build()
+            .expect("valid builder config");
+
+        assert_eq!(config.dimension, 128);
+        assert_eq!(config.max_elements, 1000);
+        assert_eq!(config.m, 32);
+        assert_eq!(config.ef_construction, 128);
+        assert_eq!(config.ef_search, 64);
+        assert_eq!(config.distance_metric, DistanceMetric::Cosine);
+        assert!(config.quantize);
+        assert_eq!(config.quantizer_recalibration_sample_size, 500);
+
+        // Validation Error Case: ef_construction < m
+        let res_ef_c = HnswConfig {
+            m: 16,
+            ef_construction: 8,
+            ..Default::default()
+        }
+        .validate();
+        assert!(matches!(res_ef_c, Err(MemFuseError::InvalidInput(_))));
+
+        let res_builder_err = HnswConfigBuilder::new(128).m(16).ef_construction(8).build();
+        assert!(matches!(
+            res_builder_err,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_compact_seq_log() {
+        let config = HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let index = HnswIndex::try_new(config).expect("valid config");
+        let tx = TxId::new(1);
+        let doc_id = DocId::from(1);
+        let vec = vec![1.0, 2.0, 3.0, 4.0];
+
+        index.insert(tx, doc_id, &vec).await.expect("insert");
+        index.commit(tx).await.expect("commit");
+
+        // Compact sequence log below min_active_seqno
+        index.compact_seq_log(10);
+        assert_eq!(index.len().await, 1);
+    }
+
     #[tokio::test]
     async fn test_invalid_config_error() {
         let config = HnswConfig {
@@ -2878,6 +2936,9 @@ mod tests {
             10..100,
         );
 
+        // ANCHOR[TEST:AGT-INDEX-006] STATUS:OPEN (TS:2026-08-30T14:11:21Z) (SESSION: 10569099)
+        // FLAKINESS: In-memory HNSW node deletion marks nodes as deleted in-place, causing historical snapshot queries
+        // (search_at at target_seq < current_seq) to omit nodes that were deleted at higher sequence numbers.
         proptest!(ProptestConfig::with_cases(20), |(ops in op_strategy)| {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -2914,15 +2975,17 @@ mod tests {
                 // Verify search_at at random target checkpoint against reference model
                 for &target_seq in &tx_checkpoints {
                     // Reference model state at target_seq
-                    let mut active_docs = std::collections::HashSet::new();
-                    let log = index.inner.seq_log.read();
-                    for id in 1u64..30 {
-                        let doc_id = DocId::new(id);
-                        if log.is_visible(doc_id, target_seq) {
-                            active_docs.insert(doc_id);
+                    let active_docs = {
+                        let mut set = std::collections::HashSet::new();
+                        let log = index.inner.seq_log.read();
+                        for id in 1u64..30 {
+                            let doc_id = DocId::new(id);
+                            if log.is_visible(doc_id, target_seq) {
+                                set.insert(doc_id);
+                            }
                         }
-                    }
-                    drop(log);
+                        set
+                    };
 
                     let res = index.search_at(&[1.0, 0.0, 0.0, 0.0], 100, target_seq).await.unwrap();
                     let found_docs: std::collections::HashSet<_> = res.into_iter().map(|d| d.doc_id).collect();
