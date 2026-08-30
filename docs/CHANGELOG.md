@@ -4,11 +4,6 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
-| `TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)` | `crates/memfuse-text/src/bm25.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Berechnet mathematisch BM25 Term-Scores und validiert Hyperparameter (k1, b). |
-| `TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)` | `crates/memfuse-text/src/inverted.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Speichert Postings-Listen, Dokumentlängen und BM25-Statistiken transaktional im StorageEngine. |
-| `TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)` | `crates/memfuse-text/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Exportiert Bm25Scorer, InvertedIndex, Morphologie-Tools und BM25-Modelle für DB-Hybrid-Suche. |
-| `TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)` | `crates/memfuse-text/src/morphology.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Umlaut-Normalisierung (ä->ae, ö->oe, ü->ue, ß->ss) und Zerlegung deutscher Zusammensetzungen. |
-| `TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)` | `crates/memfuse-text/src/tokenizer.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Zerschneidet Eingabetexte in normalisierte Wort-Tokens mit optionaler deutscher Morphologie. |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/diskann.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | DiskANN-Graphindex für Out-of-Core Approximate Nearest Neighbor Search (WP-4.3). |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/distance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SIMD-beschleunigte und Skalar-Distanzberechnungen (Cosine, Euclidean, Dot Product). |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/hnsw.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | HNSW Vector Index mit Layer Descent, Soft-Deletes und transaktionalem Staging (TxBuffer). |
@@ -20,6 +15,11 @@
 | `TS:2026-08-30T18:52:02Z (SESSION: 20260830)` | `crates/memfuse-crypto/src/crypto.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Key Management and AES-256-GCM-SIV authenticated encryption for MemFuse data structures. |
 | `TS:2026-08-30T18:52:02Z (SESSION: 20260830)` | `crates/memfuse-crypto/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MemFuse cryptographic kernel - Layer 1 crate for AEAD block encryption, HKDF key derivation, and WAL integrity. |
 | `TS:2026-08-30T18:52:02Z (SESSION: 20260830)` | `crates/memfuse-crypto/src/wal_crypto.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Transparent encrypted WAL chunk provider and constant-time HMAC-SHA256 integrity verifier. |
+| `TS:2026-08-30T18:51:48Z (SESSION: 872b1087)` | `crates/memfuse-text/src/bm25.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Berechnet mathematisch BM25 Term-Scores und validiert Hyperparameter (k1, b). |
+| `TS:2026-08-30T18:51:48Z (SESSION: 872b1087)` | `crates/memfuse-text/src/inverted.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Speichert Postings-Listen, Dokumentlängen und BM25-Statistiken transaktional im StorageEngine. |
+| `TS:2026-08-30T18:51:48Z (SESSION: 872b1087)` | `crates/memfuse-text/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Exportiert Bm25Scorer, InvertedIndex, Morphologie-Tools und BM25-Modelle für DB-Hybrid-Suche. |
+| `TS:2026-08-30T18:51:48Z (SESSION: 872b1087)` | `crates/memfuse-text/src/morphology.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Umlaut-Normalisierung (ä->ae, ö->oe, ü->ue, ß->ss) und Zerlegung deutscher Zusammensetzungen. |
+| `TS:2026-08-30T18:51:48Z (SESSION: 872b1087)` | `crates/memfuse-text/src/tokenizer.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Zerschneidet Eingabetexte in normalisierte Wort-Tokens mit optionaler deutscher Morphologie. |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/chunker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Markdown-basierte semantische Textzerlegung (WP-7.1) und UTF-8-sicheres Chunken. |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/crud.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | CRUD-Operationen (Insert, Upsert, Update, Delete, Get) für Collection. |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/maintenance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Wartungs-, Reparatur- und Bereinigungsoperationen (Index repair, Expiry reaper, Community detection). |
@@ -33,14 +33,17 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/reaper.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Hintergrund-Reaper-Tasks zur TTL-Löschung und Bereinigung verwaister Transaktionen (Orphan Reaper). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
-| `2026-08-30T22:01:55Z SESSION:cf1f75c6` | `crates/memfuse-text/src/morphology.rs` | `ANCHOR` | `TEST:TXT-001` | `-` | `DONE` | `0` | // ANCHOR[TEST:TXT-001] STATUS:DONE — Recall-Evaluation für deutsche Zusammensetzungen (TS:2026-08-30T22:01:55Z SESSION:cf1f75c6) |
+| `2026-08-30T19:05:00Z` | `crates/memfuse-crypto/src/crypto.rs` | `REVIEW-PASS` | `AGT-CRYP-3779c7f0` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CRYP-3779c7f0) (TS:2026-08-30T19:05:00Z) (SESSION:c9f5e2b3) |
+| `2026-08-30T19:05:00Z` | `crates/memfuse-ollama/src/client.rs` | `REVIEW-PASS` | `AGT-OLLA-ed7b7b38` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-OLLA-ed7b7b38) (TS:2026-08-30T19:05:00Z) (SESSION:c9f5e2b3) |
+| `2026-08-30T19:00:00Z` | `crates/memfuse-crypto/src/crypto.rs` | `REVIEW-PASS` | `AGT-CRYP-3779c7f0` | `b8e4f1a2` | `PASS` | `1` | // REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-CRYP-3779c7f0) (TS:2026-08-30T19:00:00Z) (SESSION:b8e4f1a2) |
+| `2026-08-30T19:00:00Z` | `crates/memfuse-ollama/src/client.rs` | `REVIEW-PASS` | `AGT-OLLA-ed7b7b38` | `b8e4f1a2` | `PASS` | `1` | // REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-OLLA-ed7b7b38) (TS:2026-08-30T19:00:00Z) (SESSION:b8e4f1a2) |
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/client.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | HTTP-Client für lokale Ollama LLM/Embedding API mit Retry/Timeout/Streaming-Semantik |
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/context_prefixer.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Anthropic Contextual Retrieval — LLM-basierte Präfix-Generierung für Chunks |
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/embedding.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | `TextEmbeddingEngine`-Implementierung für Ollama Embedding API |
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/importance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | LLM-basierte Wichtigkeits-Bewertung (ImportanceScore 0.0-1.0) für Memory Chunks |
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/model_info.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Modell-Inspektion (/api/show) und Statisches Mapping bekannter Embedding-Dimensionen |
-| `2026-08-30T18:54:39Z` | `crates/memfuse-crypto/src/crypto.rs` | `ANCHOR` | `TEST:CRY-001` | `3779c7f0` | `DONE` | `0` | // ANCHOR[TEST:CRY-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:3779c7f0) — Nonce-Uniqueness verification bei paralleler Verschlüsselung |
-| `2026-08-30T18:54:39Z` | `crates/memfuse-ollama/src/client.rs` | `ANCHOR` | `TEST:OLL-001` | `ed7b7b38` | `DONE` | `0` | // ANCHOR[TEST:OLL-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:ed7b7b38) |
+| `2026-08-30T18:54:39Z` | `crates/memfuse-crypto/src/crypto.rs` | `ANCHOR` | `AGT-CRYP-3779c7f0` | `3779c7f0` | `DONE` | `2` | // ANCHOR[TEST:CRY-001] STATUS:DONE (ID: AGT-CRYP-3779c7f0) (TS:2026-08-30T18:54:39Z) (SESSION:3779c7f0) — Nonce-Uniqueness verification bei paralleler Verschlüsselung |
+| `2026-08-30T18:54:39Z` | `crates/memfuse-ollama/src/client.rs` | `ANCHOR` | `AGT-OLLA-ed7b7b38` | `ed7b7b38` | `DONE` | `2` | // ANCHOR[TEST:OLL-001] STATUS:DONE (ID: AGT-OLLA-ed7b7b38) (TS:2026-08-30T18:54:39Z) (SESSION:ed7b7b38) |
 | `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/community.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Community-Erkennung via Label Propagation für GraphRAG |
 | `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/csr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion) |
 | `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/ppr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Personalized PageRank Power Iteration über CSR Graph |
@@ -81,6 +84,7 @@
 | `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-py/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PyO3 FFI-Grenzschicht — Rust-Fehler müssen in Python-Exceptions konvertiert werden |
 | `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-store/src/compaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | STCS-Compaction-Engine (Size-Tiered Compaction Strategy) |
 | `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-store/src/sstable.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Persistente, immutable SSTable-Dateien (Sorted String Table) |
+| `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-text/src/inverted.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | BM25-Invertierter Index mit Tombstone-Update-Semantik |
 | `2026-08-29T12:00:00Z` | `crates/memfuse-core/build.rs` | `AI-TAG` | `-` | `a3f29c1d` | `RESOLVED` | `-` | // AI-TAG[SPEC-DRIFT][MINOR] RESOLVED: flatc binary missing in environment, falling back to pre-generated ipc/memfuse_generated.rs (TS:2026-08-29T12:00:00Z) (SESSION: a3f29c1d) |
 | `2026-08-29T12:00:00Z` | `crates/memfuse-core/src/tx_buffer.rs` | `AI-TAG` | `AGT-CORE-001` | `a3f29c1d` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR] RESOLVED: AGT-CORE-001 — Bounded staging capacity enforced (TS:2026-08-29T12:00:00Z) (SESSION: a3f29c1d) |
 | `2026-08-29T11:00:00Z` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `AGT-CORE-a3f29c1d` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3) |

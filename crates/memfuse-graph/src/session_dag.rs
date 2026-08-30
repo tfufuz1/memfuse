@@ -20,7 +20,7 @@ use std::sync::Arc;
 pub type NodeIdx = u64;
 
 /// State of an agent step in the conversation DAG.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentStateNode {
     pub step_id: NodeIdx,
     /// LLM prompt of this step.
@@ -36,7 +36,7 @@ pub struct AgentStateNode {
 }
 
 /// Directed edge in the DAG: parent -> child.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DagEdge {
     pub parent: NodeIdx,
     pub child: NodeIdx,
@@ -126,8 +126,7 @@ impl SessionBranchTree {
 
         if !self.nodes.read().contains_key(&parent_node) {
             return Err(MemFuseError::InvalidInput(format!(
-                "SessionDAG: node {} nicht gefunden",
-                parent_node
+                "SessionDAG: node {parent_node} nicht gefunden"
             )));
         }
 
@@ -164,29 +163,31 @@ impl SessionBranchTree {
             Ok(())
         } else {
             Err(MemFuseError::InvalidInput(format!(
-                "SessionDAG: node {} nicht gefunden",
-                node_idx
+                "SessionDAG: node {node_idx} nicht gefunden"
             )))
         }
     }
 
     /// Reconstructs the linear conversation path from root to current active head.
     pub fn path_to_head(&self) -> Vec<AgentStateNode> {
-        let nodes = self.nodes.read();
-        let edges = self.edges.read();
         let head = *self.active_head.read();
 
         let mut path = Vec::new();
         let mut current = head;
 
-        loop {
-            if let Some(node) = nodes.get(&current) {
-                path.push(node.clone());
-            }
-            if let Some(edge) = edges.iter().rev().find(|e| e.child == current) {
-                current = edge.parent;
-            } else {
-                break;
+        {
+            let nodes = self.nodes.read();
+            let edges = self.edges.read();
+
+            loop {
+                if let Some(node) = nodes.get(&current) {
+                    path.push(node.clone());
+                }
+                if let Some(edge) = edges.iter().rev().find(|e| e.child == current) {
+                    current = edge.parent;
+                } else {
+                    break;
+                }
             }
         }
 
@@ -238,6 +239,7 @@ impl SessionBranchTree {
                 })?;
                 items.push((key, val));
             }
+            drop(nodes);
             items
         };
 

@@ -1,6 +1,11 @@
-//! Declarative StateGraph definition for Agent Workflows.
+// FILE-CONTEXT Header (Format v3)
+// ZWECK: Declarative StateGraph definition routing workflow step transitions.
+// INVARIANTEN: Distinct from memfuse-graph::csr; validates node IDs, handler names, descriptions, and edge conditions.
+// NICHT-OFFENSICHTLICH: try_add_node validates handler when present; add_node/add_edge marked #[deprecated].
+// HOTSPOTS: try_add_node (ll. 60-110), try_add_edge (ll. 130-160).
+// STAND: TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)
 
-// INVARIANT: Deklarativer StateGraph.
+//! Declarative StateGraph definition for Agent Workflows.
 
 use crate::context::{validate_node_id, MAX_ID_LEN};
 use memfuse_core::{MemFuseError, Result};
@@ -81,6 +86,26 @@ impl StateGraph {
             ));
         }
 
+        if let Some(h) = handler {
+            if h.trim().is_empty() {
+                return Err(MemFuseError::InvalidInput(
+                    "Node handler cannot be empty when provided".to_string(),
+                ));
+            }
+            if h.len() > MAX_ID_LEN {
+                return Err(MemFuseError::InvalidInput(format!(
+                    "Node handler length {} exceeds maximum allowed length of {}",
+                    h.len(),
+                    MAX_ID_LEN
+                )));
+            }
+            if h.contains('\0') {
+                return Err(MemFuseError::InvalidInput(
+                    "Node handler cannot contain null bytes".to_string(),
+                ));
+            }
+        }
+
         self.nodes.insert(
             id.to_string(),
             AgentNode {
@@ -94,6 +119,7 @@ impl StateGraph {
     }
 
     /// Adds a node to the graph, panicking if validation fails.
+    #[deprecated(note = "Use try_add_node instead to handle validation errors without panicking")]
     pub fn add_node(
         &mut self,
         id: &str,
@@ -142,6 +168,7 @@ impl StateGraph {
     }
 
     /// Adds an edge to the graph, panicking if validation fails.
+    #[deprecated(note = "Use try_add_edge instead to handle validation errors without panicking")]
     pub fn add_edge(&mut self, from: &str, to: &str, condition: Option<&str>, priority: u8) {
         self.try_add_edge(from, to, condition, priority)
             .unwrap_or_else(|e| panic!("Failed to add WorkflowEdge: {e}"));

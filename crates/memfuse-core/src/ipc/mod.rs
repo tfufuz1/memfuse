@@ -1,6 +1,6 @@
-//! Inter-Process Communication (IPC) protocol definitions for MemFuse.
+//! Inter-Process Communication (IPC) protocol definitions for `MemFuse`.
 //!
-//! # FlatBuffers Code Generation
+//! # `FlatBuffers` Code Generation
 //! The Rust code in [`memfuse_generated`] is **auto-generated** from the FlatBuffers schema
 //! located at `schemas/memfuse.fbs`.
 //!
