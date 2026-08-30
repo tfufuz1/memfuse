@@ -58,7 +58,7 @@ jobs:
           fi
           echo "✅ Alle TODOs nutzen AI-TAG Syntax"
 
-      - name: "Gate 7: TS UND SESSION Pflichtfelder auf allen neuen Tags"
+      - name: "Gate 7: Alle Tags haben TS:-Zeitstempel"
         run: |
           # Prüfe TS-Feld auf allen Tags
           MISSING_TS=$(grep -rEn "AI-TAG\[|ANCHOR\[" crates/ --include="*.rs" \

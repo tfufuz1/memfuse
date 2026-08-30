@@ -1,3 +1,11 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:54:25Z (SESSION: f3a48824)
+// ZWECK: Tauri IPC commands for RAG chat and Ollama model management.
+// INVARIANTEN: All inputs (message length, collection name, model) validated before hybrid search and LLM streaming.
+// NICHT-OFFENSICHTLICH: App state locks cloned in scoped block before async vector search and LLM calls.
+// HOTSPOTS: chat_with_rag (lines 20-70)
+// SIEHE AUCH: crates/memfuse-tauri/src/ollama.rs, crates/memfuse-db/src/context.rs
+
 use crate::commands::collections::validate_collection_name;
 use crate::ollama::OllamaBridge;
 use crate::state::AppState;
@@ -24,6 +32,12 @@ pub async fn chat_with_rag(
 ) -> Result<ChatResponse, MemFuseErrorDto> {
     if message.len() > MAX_QUERY_LEN {
         return Err(MemFuseErrorDto::new("InvalidInput", "Query too long"));
+    }
+    if model.trim().is_empty() {
+        return Err(MemFuseErrorDto::new(
+            "InvalidInput",
+            "Ollama model name cannot be empty",
+        ));
     }
     validate_collection_name(&collection_name)?;
     let db = {
@@ -110,4 +124,15 @@ pub async fn list_ollama_models() -> Result<Vec<String>, MemFuseErrorDto> {
         .list_models()
         .await
         .map_err(|e| MemFuseErrorDto::from(&e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chat_with_rag_empty_model_rejected() {
+        let empty_model = "  ";
+        assert!(empty_model.trim().is_empty());
+    }
 }

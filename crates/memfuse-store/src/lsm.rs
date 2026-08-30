@@ -98,7 +98,6 @@ fn validate_key(key: &[u8]) -> Result<()> {
     Ok(())
 }
 
-#[expect(dead_code)]
 fn validate_value(value: &[u8]) -> Result<()> {
     if value.len() > MAX_VALUE_SIZE {
         return Err(MemFuseError::InvalidInput(format!(
@@ -176,7 +175,24 @@ impl LsmStorage {
             .map_err(|e| MemFuseError::Storage(format!("Failed to create dir: {}", e)))?;
 
         // 🛡️ SICHERUNG: Directory FSync (FIND-STO-004)
-        crate::util::fsync_parent_dir(&config.path).await?;
+        if let Some(parent) = config.path.parent() {
+            // fsync propagiert korrekt (behoben 2026-08-24)
+            let parent = if parent.as_os_str().is_empty() {
+                std::path::Path::new(".")
+            } else {
+                parent
+            };
+            let dir = tokio::fs::File::open(parent).await.map_err(|e| {
+                MemFuseError::Storage(format!(
+                    "Verzeichnis für fsync konnte nicht geöffnet werden: {e}"
+                ))
+            })?;
+            dir.sync_all().await.map_err(|e| {
+                MemFuseError::Storage(format!(
+                    "Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}"
+                ))
+            })?;
+        }
 
         // Persistent Salt Management (FIND-CRY-001)
         let salt_path = config.path.join("SALT");
@@ -289,12 +305,22 @@ impl LsmStorage {
 
         let tx_buffer = TxBuffer::new_with_config(16, config.tx_timeout);
 
-        // Load existing SSTables and sort by filename (which includes seq_no)
+        // Load existing SSTables and clean up temporary compaction files (*.tmp)
         let mut sst_files = Vec::new();
         if let Ok(mut entries) = tokio::fs::read_dir(&config.path).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
-                if entry.path().extension().is_some_and(|ext| ext == "sst") {
-                    sst_files.push(entry.path());
+                let path = entry.path();
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if file_name.ends_with(".tmp") || path.extension().is_some_and(|ext| ext == "tmp") {
+                    tracing::warn!(
+                        "Removing leftover un-renamed compaction temp file: {:?}",
+                        path
+                    );
+                    if let Err(e) = tokio::fs::remove_file(&path).await {
+                        tracing::warn!("Failed to remove leftover temp file {:?}: {}", path, e);
+                    }
+                } else if path.extension().is_some_and(|ext| ext == "sst") {
+                    sst_files.push(path);
                 }
             }
         }
@@ -470,7 +496,7 @@ impl LsmStorage {
                 let new_sst_path =
                     self.config
                         .path
-                        .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000));
+                        .join(format!("sst-{:020}-{:06}.sst", seq, count % 1000000));
 
                 let mut builder = SstableBuilder::create_with_key_manager(
                     &new_sst_path,
@@ -779,6 +805,7 @@ impl StorageEngine for LsmStorage {
         }
 
         // ANCHOR[ALG-FIX:D6-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
+        // ANCHOR[ALG-FIX:D6-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
         // FIX: Commit-Mutex serialisiert fetch_add + memtable.put.
         // Ohne Mutex könnte seq=11 vor seq=10 fertig sein → Reader seq=11 sieht Lücke bei 10.
         let _commit_lock = self.commit_mutex.lock().await;
@@ -954,6 +981,7 @@ impl StorageEngine for LsmStorage {
         state.immutable_memtables.push(old_memtable.clone());
 
         // ANCHOR[ALG-FIX:D1-011] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Stale WAL-Dateien löschen nach Flush
+        // ANCHOR[ALG-FIX:D1-011] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Stale WAL-Dateien löschen nach Flush
         // Ohne Cleanup wächst die Disk-Usage unbegrenzt (eine WAL pro Flush).
         let old_wal_path = old_wal.path().to_path_buf();
         drop(old_wal);
@@ -965,7 +993,7 @@ impl StorageEngine for LsmStorage {
             let seq = self.next_seq_no.load(Ordering::Relaxed);
             self.config
                 .path
-                .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000))
+                .join(format!("sst-{:020}-{:06}.sst", seq, count % 1000000))
         };
         let mut builder =
             SstableBuilder::create_with_key_manager(&sst_path, self.key_manager.clone()).await?;
@@ -994,11 +1022,8 @@ impl StorageEngine for LsmStorage {
             .immutable_memtables
             .retain(|mt| !Arc::ptr_eq(mt, &old_memtable));
 
-        // Update last_committed_tx if the SSTable contains newer committed transactions
-        // FIX: Extract max_tx_id before move to satisfy borrow checker.
+        // last_committed_tx MUSS vor sstables.push() aktualisiert werden — sonst Race-Fenster für parallele Reader, siehe DECISIONS.md ADR-042.
         let sst_max_tx = reader.metadata().max_tx_id;
-        sstables.push(Arc::new(reader));
-
         if sst_max_tx < TxId::INTERNAL_BASE {
             let mut current = self.last_committed_tx.load(Ordering::Acquire);
             while sst_max_tx > current {
@@ -1013,6 +1038,8 @@ impl StorageEngine for LsmStorage {
                 }
             }
         }
+
+        sstables.push(Arc::new(reader));
 
         drop(sstables);
         drop(state);
@@ -1862,6 +1889,98 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_flush_during_read_transaction_snapshot_isolation() {
+        let (storage, _tmp) = test_storage().await;
+
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key_flush", b"v1").await.expect("put t1"); // expect
+        storage.commit(tx1).await.expect("commit t1"); // expect
+        let seq1 = storage.last_seq_no().await.expect("seq1"); // expect
+
+        // Read snapshot taken after tx1
+        let snap_tx1 = storage.last_tx_id().await.expect("last tx1"); // expect
+
+        // Flush tx1 to SSTable
+        storage.flush().await.expect("flush tx1"); // expect
+
+        // Commit tx2 and trigger flush while read transaction was established
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"key_flush", b"v2").await.expect("put t2"); // expect
+        storage.commit(tx2).await.expect("commit t2"); // expect
+
+        storage.flush().await.expect("flush tx2"); // expect
+
+        // get_at_seq with seq1 must observe v1 and exclude v2 even after flushes
+        let val = storage
+            .get_at_seq(b"key_flush", seq1)
+            .await
+            .expect("get_at_seq"); // expect
+        assert_eq!(val, Some(b"v1".to_vec()));
+        assert_eq!(snap_tx1, TxId::new(1));
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_flush_and_get_at_seq_isolation() {
+        let (storage, _tmp) = test_storage().await;
+        let storage = Arc::new(storage);
+
+        // Pre-populate with base transaction
+        let tx_base = TxId::new(1);
+        storage.put(tx_base, b"key_race", b"val_base").await.expect("put base"); // expect
+        storage.commit(tx_base).await.expect("commit base"); // expect
+
+        let mut handles = Vec::new();
+
+        // Writer / Flusher task
+        let s_writer = Arc::clone(&storage);
+        handles.push(tokio::spawn(async move {
+            for i in 2..=1000u64 {
+                let tx = TxId::new(i);
+                let val = format!("val_{i}").into_bytes();
+                s_writer.put(tx, b"key_race", &val).await.expect("put loop"); // expect
+                s_writer.commit(tx).await.expect("commit loop"); // expect
+                if i % 10 == 0 {
+                    s_writer.flush().await.expect("flush loop"); // expect
+                }
+            }
+        }));
+
+        // Reader task: repeatedly calling get_at_seq and validating snapshot isolation invariant
+        let s_reader = Arc::clone(&storage);
+        handles.push(tokio::spawn(async move {
+            for _ in 0..1000 {
+                let last_tx = s_reader.last_tx_id().await.expect("last_tx").inner(); // expect
+                let last_seq = s_reader.last_seq_no().await.expect("last_seq"); // expect
+
+                let res = s_reader
+                    .get_at_seq(b"key_race", last_seq)
+                    .await
+                    .expect("get_at_seq"); // expect
+
+                if let Some(val_bytes) = res {
+                    let val_str = String::from_utf8(val_bytes).expect("utf8"); // expect
+                    if let Some(num_str) = val_str.strip_prefix("val_") {
+                        if num_str != "base" {
+                            let tx_num: u64 = num_str.parse().expect("parse tx num"); // expect
+                            assert!(
+                                tx_num <= last_tx,
+                                "MVCC Invariant Violation: Read tx {} higher than snapshot_tx {}",
+                                tx_num,
+                                last_tx
+                            );
+                        }
+                    }
+                }
+                tokio::task::yield_now().await;
+            }
+        }));
+
+        for h in handles {
+            h.await.expect("task join"); // expect
+        }
+    }
+
+    #[tokio::test]
     async fn test_compaction_roundtrip() {
         let tmp = TempDir::new().expect("temp dir"); // expect
         let config = LsmConfig {
@@ -2443,5 +2562,34 @@ mod tests {
         assert_eq!(storage.get(b"key1").await.unwrap(), None);
         assert_eq!(storage.get(b"key2").await.unwrap(), None);
         assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn test_recovery_scan_ignores_and_removes_tmp_files() {
+        let tmp = tempfile::TempDir::new().unwrap(); // unwrap #[cfg(test)]
+        let corrupt_tmp_path = tmp.path().join("sst-compact-corrupt.sst.tmp");
+        tokio::fs::write(&corrupt_tmp_path, b"invalid sst data from crash")
+            .await
+            .unwrap(); // unwrap #[cfg(test)]
+
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 64,
+            tx_timeout: std::time::Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+
+        let storage = LsmStorage::new(config)
+            .await
+            .expect("LsmStorage startup must succeed");
+        assert_eq!(storage.sstables.read().await.len(), 0);
+
+        // Assert corrupt .tmp file was removed from data directory during recovery
+        assert!(
+            !corrupt_tmp_path.exists(),
+            "Leftover .tmp file must be removed during startup recovery scan"
+        );
     }
 }

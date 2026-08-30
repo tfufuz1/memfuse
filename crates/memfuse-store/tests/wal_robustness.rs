@@ -127,7 +127,7 @@ async fn test_v2_to_v3_migration() -> Result<()> {
     {
         let integrity_key = *b"test-integrity-key-32-bytes-long";
         let key_path = dir.path().join(".wal_integrity_key");
-        std::fs::write(&key_path, integrity_key).unwrap();
+        std::fs::write(&key_path, &integrity_key).unwrap();
 
         let op1 = WalOp::Put {
             tx_id: TxId::new(10),

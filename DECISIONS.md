@@ -318,6 +318,7 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 - **Datum**: 2026-08-27
 - **Status**: ✅ Final
+- **Hinweis**: Renummeriert von ADR-020 zu ADR-037 in R-08 zur Behebung des ADR-020-Duplikats. (Reserved Gaps: ADR-038, ADR-039).
 - **Entscheidung**: Kernkomponenten aus `memfuse-saos-agent` (gelöscht in Commit 55a3464)
   werden als `memfuse-agent` wiederhergestellt: `AgentTool` Trait, `OrchestratorEngine`,
   `StateGraph`, `AuditLog`.
@@ -658,6 +659,16 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
     - Unmaskierte Übernahme in `max_seq`: Verworfen, da Bit 63 in `next_seq_no` wandert und nachfolgende reguläre Inserts fälschlich als gelöscht (Tombstone) markiert.
     - Maskierung beim Schreiben der SSTable-Metadaten verändern: Verworfen, um bestehende Metadatenformate und Disk-Layouts nicht zu verändern.
 *   **Begründung**: Bit 63 signalisiert ausschließlich das Lösch-Tombstone-Flag in Datenzeilen. Es stellt keinen numerischen Wertanteil der Sequenznummer dar. Maskierung an den Lesestellen schützt die Invariante "Bit 63 darf niemals in `next_seq_no` einfließen" vollständig vor stillem Datenverlust nach Rollbacks auf Delete-Operationen.
+
+---
+
+## ADR-042: Write-Temp-Then-Rename Pattern für SSTable-Kompaktierung & Recovery Cleanup
+*   **Datum**: 2026-08-30
+*   **Status**: ✅ Final
+*   **Entscheidung**: Die SSTable-Kompaktierung in `CompactionEngine::maybe_compact` (`crates/memfuse-store/src/compaction.rs`) schreibt das Ergebnis eines Merges zuerst in eine temporäre Datei mit dem Suffix `.sst.tmp`. Erst nach erfolgreichem `builder.finish()` wird die Datei über ein atomares `tokio::fs::rename(&temp_path, &final_path)` auf ihren finalen `.sst`-Namen verschoben. Bei Fehlern während des Merging oder des Renamings wird die Temp-Datei umgehend gelöscht. Zusätzlich ignoriert und bereinigt `LsmStorage::new()` (`crates/memfuse-store/src/lsm.rs`) beim Startup-Scan automatisch alle Restdateien mit `.tmp`-Suffix.
+*   **Alternativen**:
+    - Schreiben direkt auf den Zielpfad und Versuchen des Löschens der unvollständigen Datei im Absturz-/Error-Handler. Verworfen, da bei Prozessabsturz (SIGKILL, Stromausfall) unvollständige Dateien verbleiben und beim Neustart fälschlicherweise als gültige SSTables eingelesen würden.
+*   **Begründung**: Garantiert POSIX-Atomarität für komprimierte/kompaktierte SSTables. Eine SSTable existiert im Datenverzeichnis unter ihrem finalen Namen entweder vollständig oder gar nicht, wodurch Korruption bei Abstürzen während des Kompaktierungsvorgangs ausgeschlossen wird.
 
 ---
 

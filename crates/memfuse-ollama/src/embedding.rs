@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:54:39Z (SESSION: ed7b7b38)
+// ZWECK: `TextEmbeddingEngine`-Implementierung für Ollama Embedding API
+// INVARIANTEN: Validiert Embedding-Dimensionen gegen `known_dimension`; `embed_batch` delegiert an native Ollama batch /api/embed
+// NICHT-OFFENSICHTLICH: Mismatch bei Embedding-Dimensionen liefert `MemFuseError::Index` um Re-Indexing zu fordern
+// HOTSPOTS: embed, embed_batch
+
 use crate::client::{OllamaClient, OllamaConfig, DEFAULT_BASE_URL, DEFAULT_EMBED_MODEL};
 use crate::model_info::known_dimension;
 use async_trait::async_trait;
