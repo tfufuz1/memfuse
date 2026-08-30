@@ -44,15 +44,6 @@ pub enum MemFuseError {
     #[error("Policy violation: {0}")]
     PolicyViolation(String),
 
-    /// Multi-tenant or collection namespace violation.
-    ///
-    /// Emitted by the collection orchestration layer (`collection.rs` / `memfuse-db`)
-    /// when cross-tenant or unauthorized collection key access is attempted.
-    /// API callers handling this error should return an HTTP 403 Forbidden
-    /// response rather than an HTTP 500 internal server error.
-    #[error("Namespace violation: {0}")]
-    NamespaceViolation(String),
-
     // ═══ Storage Engine ═══
     /// Storage layer failure.
     #[error("Storage error: {0}")]
@@ -232,7 +223,6 @@ mod tests {
             MemFuseError::NotFound("test".into()),
             MemFuseError::Storage("test".into()),
             MemFuseError::PolicyViolation("test".into()),
-            MemFuseError::NamespaceViolation("test".into()),
             MemFuseError::WalCorruption {
                 offset: 10,
                 reason: "test".into(),

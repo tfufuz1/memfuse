@@ -102,11 +102,6 @@ impl From<&MemFuseError> for MemFuseErrorDto {
                 message: msg.clone(),
                 details: None,
             },
-            MemFuseError::NamespaceViolation(msg) => Self {
-                kind: "NamespaceViolation".to_string(),
-                message: msg.clone(),
-                details: None,
-            },
             MemFuseError::Storage(msg) => Self {
                 kind: "Storage".to_string(),
                 message: msg.clone(),
@@ -258,10 +253,6 @@ mod tests {
             (
                 MemFuseError::PolicyViolation("test".into()),
                 "PolicyViolation",
-            ),
-            (
-                MemFuseError::NamespaceViolation("test".into()),
-                "NamespaceViolation",
             ),
             (MemFuseError::Storage("test".into()), "Storage"),
             (
