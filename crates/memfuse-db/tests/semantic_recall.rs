@@ -1,4 +1,4 @@
-// ANCHOR[PERF:EVAL-001] STATUS:DONE (TS:2026-08-29T00:00:00Z) (SESSION: a3f29c1d) — Semantic Retrieval Evaluation Framework
+// ANCHOR[PERF:EVAL-001] STATUS:DONE (TS:2026-08-29T00:00:00Z) — Semantic Retrieval Evaluation Framework
 // ZIEL: Parameterisierte Recall@k (k=5, 10, 20) Messung für hybrid_search gegen Ground Truth
 // AGENT:09 DATE:2026-08-29 STATUS:DONE
 

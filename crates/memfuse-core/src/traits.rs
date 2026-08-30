@@ -117,37 +117,21 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Deletes a key as part of a transaction.
     async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()>;
 
-    /// Deletes multiple keys as a single logical batch operation.
-    ///
-    /// # Performance
-    /// Default implementation delegates to sequential `delete()` calls.
-    /// Implementors handling large batches (e.g. from `delete_prefix()`)
-    /// SHOULD override this with a true batch operation (single lock
-    /// acquisition) to avoid per-key lock contention.
-    async fn delete_many(&self, tx_id: TxId, keys: Vec<Vec<u8>>) -> Result<u64> {
-        let mut deleted = 0u64;
-        for key in keys {
-            self.delete(tx_id, &key).await?;
-            deleted += 1;
-        }
-        Ok(deleted)
-    }
-
     /// Deletes all key-value pairs whose key starts with `prefix` as part of a transaction.
     ///
     /// Returns the number of keys staged for deletion.
     ///
-    /// Default implementation scans all matching keys, then delegates to [`delete_many`][Self::delete_many].
-    /// Concrete implementors handling batch mutations should override `delete_many()` or `delete_prefix()`
-    /// with a true batch operation to avoid per-key lock overhead.
+    /// Default O(n) implementation: scan all matching keys, then delete each individually.
+    /// Concrete implementors should override this with a batch operation (e.g. `stage_many`)
+    /// to avoid per-key lock overhead.
     async fn delete_prefix(&self, tx_id: TxId, prefix: &[u8]) -> Result<u64> {
-        let matching_keys: Vec<Vec<u8>> = self
-            .scan_prefix(prefix)
-            .await?
-            .into_iter()
-            .map(|(key, _)| key)
-            .collect();
-        self.delete_many(tx_id, matching_keys).await
+        let matching_keys = self.scan_prefix(prefix).await?;
+        let mut deleted = 0u64;
+        for (key, _) in matching_keys {
+            self.delete(tx_id, &key).await?;
+            deleted += 1;
+        }
+        Ok(deleted)
     }
 
     /// Commits a transaction — makes writes visible.

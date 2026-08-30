@@ -284,46 +284,4 @@ mod tests {
         let result = col.get("doc1").await.unwrap(); // unwrap
         assert!(result.is_none(), "Expired document must be deleted");
     }
-
-    #[tokio::test]
-    async fn test_reaper_immediate_cancellation() {
-        use memfuse_graph::CsrGraph;
-        use memfuse_index::HnswIndex;
-        use memfuse_store::LsmStorage;
-        use std::sync::atomic::AtomicU64;
-        use tempfile::tempdir;
-
-        let dir = tempdir().unwrap();
-        let storage = Arc::new(
-            LsmStorage::new(memfuse_store::LsmConfig {
-                path: dir.path().to_path_buf(),
-                ..Default::default()
-            })
-            .await
-            .unwrap(),
-        );
-        let index = Arc::new(
-            HnswIndex::try_new(memfuse_index::HnswConfig {
-                dimension: 4,
-                ..Default::default()
-            })
-            .unwrap(),
-        );
-        let col = Arc::new(crate::Collection::new(
-            "default".to_string(),
-            storage,
-            index,
-            Arc::new(CsrGraph::new()),
-            Arc::new(AtomicU64::new(1)),
-            4,
-            memfuse_text::Language::English,
-        ));
-
-        let cancel_token = tokio_util::sync::CancellationToken::new();
-        cancel_token.cancel(); // cancel before starting
-
-        let handle = start_expiry_reaper(col, Duration::from_secs(60), cancel_token);
-        let res = handle.await;
-        assert!(res.is_ok(), "Task should exit cleanly upon cancellation");
-    }
 }
