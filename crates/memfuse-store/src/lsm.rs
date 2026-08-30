@@ -674,16 +674,15 @@ impl StorageEngine for LsmStorage {
         Ok(())
     }
 
-    async fn delete_prefix(&self, tx_id: TxId, prefix: &[u8]) -> Result<u64> {
-        let matching_keys = self.scan_prefix(prefix).await?;
-        let count = matching_keys.len() as u64;
+    async fn delete_many(&self, tx_id: TxId, keys: Vec<Vec<u8>>) -> Result<u64> {
+        let count = keys.len() as u64;
         if count == 0 {
             return Ok(0);
         }
 
-        let ops: Vec<IndexOp<(Vec<u8>, Vec<u8>)>> = matching_keys
+        let ops: Vec<IndexOp<(Vec<u8>, Vec<u8>)>> = keys
             .into_iter()
-            .map(|(key, _value)| {
+            .map(|key| {
                 let hash = blake3::hash(&key);
                 let mut bytes = [0u8; 8];
                 bytes.copy_from_slice(&hash.as_bytes()[..8]);
@@ -697,6 +696,16 @@ impl StorageEngine for LsmStorage {
 
         self.tx_buffer.stage_many(tx_id, ops)?;
         Ok(count)
+    }
+
+    async fn delete_prefix(&self, tx_id: TxId, prefix: &[u8]) -> Result<u64> {
+        let matching_keys: Vec<Vec<u8>> = self
+            .scan_prefix(prefix)
+            .await?
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+        self.delete_many(tx_id, matching_keys).await
     }
 
     /// # ACID-Garantie
@@ -1301,6 +1310,37 @@ mod tests {
         storage.commit(tx2).await.unwrap(); // unwrap
         let remaining = storage.scan_prefix(b"pfx:").await.unwrap(); // unwrap
         assert!(remaining.is_empty(), "All prefixed keys must be deleted");
+    }
+
+    #[tokio::test]
+    async fn test_lsm_storage_delete_many_uses_single_batch() {
+        let (storage, _tmp) = test_storage().await;
+        let tx1 = TxId::new(1);
+
+        let keys_to_delete: Vec<Vec<u8>> = (0..50)
+            .map(|i| format!("batch_key_{i}").into_bytes())
+            .collect();
+
+        for key in &keys_to_delete {
+            storage.put(tx1, key, b"value").await.unwrap();
+        }
+        storage.commit(tx1).await.unwrap();
+
+        let tx2 = TxId::new(2);
+        let count = storage
+            .delete_many(tx2, keys_to_delete.clone())
+            .await
+            .unwrap();
+        assert_eq!(count, 50);
+
+        // Verify that stage_many inserted all 50 delete operations into tx_buffer for tx2 atomically
+        let staged_ops = storage.tx_buffer.get_ops(tx2).expect("ops staged");
+        assert_eq!(staged_ops.len(), 50);
+
+        storage.commit(tx2).await.unwrap();
+        for key in &keys_to_delete {
+            assert_eq!(storage.get(key).await.unwrap(), None);
+        }
     }
 
     #[tokio::test]
