@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-08-30T15:00:19Z (SESSION: 283abf0f)
+// STAND: 2026-08-30T21:49:55Z (SESSION: 283abf0f)
 // ZWECK: Crate-internes MVCC Snapshot-Pinning und TxId-skopierte Rollbacks.
 // INVARIANTEN: Crate-intern (pub(crate)) — öffentliche Checkpoints nur via memfuse-checkpoint (ADR-011).
 // NICHT-OFFENSICHTLICH: Drop von CheckpointGuard ohne Commit löst automatisches Rollback aus.
@@ -96,10 +96,10 @@ impl Checkpointer {
         let timestamp_ms = u64::try_from(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| MemFuseError::Storage(format!("System clock error: {}", e)))?
+                .map_err(|e| MemFuseError::Storage(format!("System clock error: {e}")))?
                 .as_millis(),
         )
-        .map_err(|e| MemFuseError::Storage(format!("Timestamp overflow: {}", e)))?;
+        .map_err(|e| MemFuseError::Storage(format!("Timestamp overflow: {e}")))?;
         let cp = StateCheckpoint {
             tx_id,
             timestamp_ms,
