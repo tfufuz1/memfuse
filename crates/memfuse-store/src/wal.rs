@@ -85,6 +85,26 @@ impl WalEntry {
         integrity_key: &[u8],
         prev_hmac: [u8; 32],
     ) -> Result<Self> {
+        let (k_len, v_len) = match &op {
+            WalOp::Put { key, value, .. } => (key.len(), value.len()),
+            WalOp::Delete { key, .. } => (key.len(), 0),
+        };
+        if k_len == 0 {
+            return Err(MemFuseError::InvalidInput("WAL key cannot be empty".into()));
+        }
+        if k_len > 1024 * 1024 {
+            return Err(MemFuseError::InvalidInput(format!(
+                "WAL key length ({}) exceeds 1 MiB limit",
+                k_len
+            )));
+        }
+        if v_len > 128 * 1024 * 1024 {
+            return Err(MemFuseError::InvalidInput(format!(
+                "WAL value length ({}) exceeds 128 MiB limit",
+                v_len
+            )));
+        }
+
         let checksum = Self::compute_checksum_v3(&op, seq_no, integrity_key, prev_hmac)?;
         Ok(Self {
             op,
@@ -279,7 +299,9 @@ impl WalEntry {
                         MemFuseError::Serialization("Invalid key_len format".into())
                     })?) as usize;
                     if key_len > 1024 * 1024 {
-                        return Err(MemFuseError::Serialization("key_len exceeds 1 MiB limit".into()));
+                        return Err(MemFuseError::Serialization(
+                            "key_len exceeds 1 MiB limit".into(),
+                        ));
                     }
                     if remaining.len() < 12 + key_len + 4 {
                         return Err(MemFuseError::Serialization(
@@ -293,7 +315,9 @@ impl WalEntry {
                             |_| MemFuseError::Serialization("Invalid val_len format".into()),
                         )?) as usize;
                     if val_len > 128 * 1024 * 1024 {
-                        return Err(MemFuseError::Serialization("val_len exceeds 128 MiB limit".into()));
+                        return Err(MemFuseError::Serialization(
+                            "val_len exceeds 128 MiB limit".into(),
+                        ));
                     }
                     if remaining.len() < val_start + 4 + val_len {
                         return Err(MemFuseError::Serialization(
@@ -315,7 +339,9 @@ impl WalEntry {
                         MemFuseError::Serialization("Invalid key_len format".into())
                     })?) as usize;
                     if key_len > 1024 * 1024 {
-                        return Err(MemFuseError::Serialization("key_len exceeds 1 MiB limit".into()));
+                        return Err(MemFuseError::Serialization(
+                            "key_len exceeds 1 MiB limit".into(),
+                        ));
                     }
                     if remaining.len() < 12 + key_len {
                         return Err(MemFuseError::Serialization(
@@ -516,7 +542,13 @@ impl Wal {
                 let name = entry.file_name();
                 if let Some(name_str) = name.to_str() {
                     if name_str.starts_with(".wal_integrity_key.tmp.") {
-                        let _ = tokio::fs::remove_file(entry.path()).await;
+                        if let Err(e) = tokio::fs::remove_file(entry.path()).await {
+                            tracing::debug!(
+                                "Failed to remove orphan WAL key tmp file {:?}: {}",
+                                entry.path(),
+                                e
+                            );
+                        }
                     }
                 }
             }
@@ -560,14 +592,18 @@ impl Wal {
             };
 
             if let Err(e) = file.write_all(&key).await {
-                let _ = tokio::fs::remove_file(&tmp_path).await;
+                if let Err(rm_err) = tokio::fs::remove_file(&tmp_path).await {
+                    tracing::debug!("Failed to remove tmp key file {:?}: {}", tmp_path, rm_err);
+                }
                 return Err(MemFuseError::Storage(format!(
                     "Failed to write WAL integrity key: {}",
                     e
                 )));
             }
             if let Err(e) = file.sync_all().await {
-                let _ = tokio::fs::remove_file(&tmp_path).await;
+                if let Err(rm_err) = tokio::fs::remove_file(&tmp_path).await {
+                    tracing::debug!("Failed to remove tmp key file {:?}: {}", tmp_path, rm_err);
+                }
                 return Err(MemFuseError::Storage(format!(
                     "Failed to sync WAL integrity key file: {}",
                     e
@@ -577,7 +613,9 @@ impl Wal {
 
             // Atomically link tmp_path to key_path. Fails if key_path already exists (O_EXCL semantics).
             let link_res = tokio::fs::hard_link(&tmp_path, &key_path).await;
-            let _ = tokio::fs::remove_file(&tmp_path).await;
+            if let Err(rm_err) = tokio::fs::remove_file(&tmp_path).await {
+                tracing::debug!("Failed to remove tmp key file {:?}: {}", tmp_path, rm_err);
+            }
 
             match link_res {
                 Ok(()) => {
@@ -911,11 +949,11 @@ impl Wal {
             let chunk_start_pos = pos;
             pos += (4 + len) as u64;
 
-            if matches!(version, WalVersion::V2 | WalVersion::V3)
-                && self.key_manager.is_some()
+            if let Some(km) = self
+                .key_manager
+                .as_ref()
+                .filter(|_| matches!(version, WalVersion::V2 | WalVersion::V3))
             {
-                // SAFETY: Checked self.key_manager.is_some() in the if condition above
-                let km = self.key_manager.as_ref().unwrap();
                 if entry_data_raw.len() < 12 {
                     if pos >= file_size {
                         tracing::warn!("WAL truncated during read at offset {}", chunk_start_pos);
@@ -946,7 +984,7 @@ impl Wal {
                     }
                 };
 
-                let slice = decrypted_data.as_slice();
+                let mut slice = decrypted_data.as_slice();
                 while !slice.is_empty() {
                     if slice.len() < 4 {
                         if pos >= file_size {
@@ -2304,5 +2342,32 @@ mod tests {
         } else {
             panic!("Expected Serialization error for key_len limit");
         }
+    }
+
+    #[test]
+    fn test_wal_entry_try_new_boundary_validation() {
+        let dummy_key = b"test-integrity-key-32-bytes-long!";
+
+        // 1. Empty key reject
+        let op_empty = WalOp::Put {
+            tx_id: TxId::new(1),
+            key: vec![],
+            value: b"v".to_vec(),
+        };
+        assert!(matches!(
+            WalEntry::try_new(op_empty, 1, dummy_key, [0u8; 32]),
+            Err(MemFuseError::InvalidInput(_))
+        ));
+
+        // 2. Oversized key (>1 MiB) reject
+        let op_huge_key = WalOp::Put {
+            tx_id: TxId::new(1),
+            key: vec![0u8; 1024 * 1024 + 1],
+            value: b"v".to_vec(),
+        };
+        assert!(matches!(
+            WalEntry::try_new(op_huge_key, 1, dummy_key, [0u8; 32]),
+            Err(MemFuseError::InvalidInput(_))
+        ));
     }
 }

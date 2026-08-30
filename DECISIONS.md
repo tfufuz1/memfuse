@@ -314,11 +314,10 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-037 (ehem. ADR-020 Wiederherstellung): Wiederherstellung von `memfuse-agent` aus dem Archiv
+## ADR-020 (Wiederherstellung): Wiederherstellung von `memfuse-agent` aus dem Archiv
 
 - **Datum**: 2026-08-27
 - **Status**: ✅ Final
-- **Hinweis**: Renummeriert von ADR-020 zu ADR-037 in R-08 zur Behebung des ADR-020-Duplikats. (Reserved Gaps: ADR-038, ADR-039).
 - **Entscheidung**: Kernkomponenten aus `memfuse-saos-agent` (gelöscht in Commit 55a3464)
   werden als `memfuse-agent` wiederhergestellt: `AgentTool` Trait, `OrchestratorEngine`,
   `StateGraph`, `AuditLog`.
@@ -606,43 +605,6 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 *   **Entscheidung**: `collection.rs` wird in Submodule unter `crates/memfuse-db/src/collection/` aufgeteilt.
 *   **Alternativen**: Belassen von `collection.rs` als monolithischer ~2.900 LOC Crate-Teil.
 *   **Begründung**: Beseitigt AUD-08 ("God Object") und verbessert Lesbarkeit sowie Wartbarkeit. Öffentliche API und alle Typnamen bleiben exakt unverändert. Alle Re-Exports werden über `crates/memfuse-db/src/collection/mod.rs` bereitgestellt (identische öffentliche Oberfläche wie bisher).
-
----
-
-## ADR-041: Kognitive Gedächtnistypen-Klassifikation (MemoryType)
-
-*   **Datum**: 2026-08-29 (Implementierung) / 2026-08-30 (Dokumentation nachgetragen)
-*   **Status**: ✅ Final
-*   **Kontext**: Die strategische Roadmap (Phase 2) forderte eine explizite Klassifikation gespeicherter Einträge nach kognitivem Gedächtnistyp (Vorbilder: MemOS/MemCube, Mem0, A-MEM): episodisch (Ereignisse), semantisch (Fakten), prozedural (Workflows) und operativ (Working Memory, Session-Kontext). Bisher wurden alle Dokumente uniform behandelt, ohne dass Retrieval-Strategie oder Lifecycle (Decay, TTL) von der Art des Inhalts abhingen.
-*   **Entscheidung**: Ein neuer `#[non_exhaustive]` Enum `MemoryType` in `memfuse-core` mit vier Varianten (Episodic, Semantic [Default], Procedural, Working). Jede Variante liefert über `default_decay()` eine passende `DecayFunction` (Episodic: Exponential mit 10.000 TX Halbwertszeit; Semantic: keine Decay; Procedural: StepFloor, verstärkt durch Nutzung; Working: sehr schnelle Exponential-Decay mit 500 TX Halbwertszeit) und über `default_ttl_tx()` eine optionale TTL (nur Working Memory: 50.000 TX). Der Typ wird additiv über `Collection::insert_typed()` gesetzt und als `"memory_type"`-Feld in den Dokument-Metadaten persistiert — bestehende Dokumente ohne dieses Feld werden rückwärtskompatibel als `Semantic` interpretiert (`extract_memory_type()`).
-*   **Alternativen**: Freitext-Tag statt Enum: verworfen, da keine Typsicherheit und keine automatische Decay-/TTL-Kopplung möglich gewesen wäre.
-*   **Begründung**: Ermöglicht typspezifische Abkling- (Decay) und Lebensdauer-Steuerung (TTL) sowie künftige differenzierte Retrieval-Gewichtungen ohne Breaking Changes für bestehende Schnittstellen.
-*   **Konsequenzen**:
-    - Additiv, keine Breaking Changes an bestehenden `insert()`-Aufrufern.
-    - `trigger_reaper()` nutzt die typspezifische Decay-Function für einen aktiven TxId-basierten Sweep (siehe zugehörige Reaper-Härtung).
-    - Zukünftige Retrieval-Strategien können nach `MemoryType` filtern oder gewichten (noch nicht implementiert, aber durch additive Enum-Erweiterung vorbereitet).
-
----
-
-## ADR-042: MCP Server Write Authorization & Read-Only Default Policy
-
-*   **Datum**: 2026-08-30
-*   **Status**: ✅ Final
-*   **Kontext**:
-    In `memfuse-mcp` existierte keine Autorisierungsprüfung vor der Ausführung von Tool-Calls auf Storage- und Collection-Ebene. Ein MCP-Client mit Lesezugriff auf den stdio-Server-Endpoint konnte schreibende Operationen (`insert`, `delete`, `relate`, etc.) ohne jegliche Freigabe ausführen.
-*   **Entscheidung**:
-    1. Der MCP-Server setzt standardmäßig auf einen sicheren Read-Only-Modus (`allow_db_writes = false`).
-    2. Alle schreibenden Tools (`memfuse_insert`, `memfuse_delete`, `memfuse_upsert`, `memfuse_relate`, `memfuse_create_collection`, `memfuse_drop_collection`) werden zentral an einer Stelle vor dem Dispatch über `McpSandbox::validate_tool_call` abgefangen. Bei deaktiviertem Schreibzugriff geben sie einen verständlichen MCP-Fehler zurück (kein panic, kein silent no-op).
-    3. Schreibrechte können explizit aktiviert werden via CLI-Flag `--allow-write` (bzw. erzwingbar aus via `--read-only`), via Umgebungsvariable `MEMFUSE_MCP_ALLOW_WRITE=1` (oder `true`), oder programmatisch über `McpServer::with_write_permission(db, embedder, allow_write)`.
-    4. Gemäß ADR-010 (stdio JSON-RPC 2.0) werden keine neuen Netzwerk- / axum-Dependencies hinzugefügt; Gate 4 in `context-gates.yml` bleibt unberührt.
-*   **Alternativen**:
-    - Netzwerk-basiertes Auth-Server / OAuth2-Token: Verworfen, da dies axum/Netzwerk-Listener erfordern und ADR-010 verletzen würde.
-    - Duplizierter Guard in jedem einzelnen Tool-Handler: Verworfen zugunsten eines zentralen, DRY Sandbox-Guards (`McpSandbox::validate_tool_call`).
-*   **Begründung**:
-    Beseitigt die offene Sicherheitslücke ohne Breaking Changes am stdio-Protokoll oder DAG-Constraint und wahrt das Least-Privilege-Prinzip by default.
-*   **Konsequenzen**:
-    - `McpServer::new` startet standardmäßig im Read-Only-Modus (sofern `MEMFUSE_MCP_ALLOW_WRITE` nicht gesetzt ist).
-    - Test-Fixtures für schreibende Tests nutzen `McpServer::with_write_permission(..., true)`.
 
 ---
 

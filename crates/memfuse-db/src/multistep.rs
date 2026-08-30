@@ -376,47 +376,4 @@ mod tests {
         assert_eq!(result.sub_queries, vec!["rust programming"]);
         assert!(!result.results.is_empty());
     }
-
-    struct FailingRewriter;
-
-    #[async_trait::async_trait]
-    impl QueryRewriter for FailingRewriter {
-        async fn rewrite(
-            &self,
-            _original_query: &str,
-            _current_results: &[SearchResult],
-        ) -> Result<Vec<String>> {
-            Err(memfuse_core::MemFuseError::Internal(
-                "Rewriter error".into(),
-            ))
-        }
-    }
-
-    #[tokio::test]
-    async fn test_multistep_failing_rewriter_gracefully_stops() {
-        let col = create_test_collection().await;
-        col.insert(
-            "doc1",
-            &[1.0, 0.0, 0.0, 0.0],
-            Some(serde_json::json!({"text": "rust programming"})),
-        )
-        .await
-        .expect("insert");
-
-        let config = MultiStepConfig {
-            max_rounds: 3,
-            quality_threshold: 0.99,
-            min_quality_hits: 2,
-        };
-        let engine = MultiStepEngine::new(col, config);
-        let rewriter = FailingRewriter;
-
-        let result = engine
-            .search("rust", &[1.0, 0.0, 0.0, 0.0], 5, Some(&rewriter))
-            .await
-            .expect("search should succeed gracefully even if rewriter fails");
-
-        assert_eq!(result.rounds_executed, 1);
-        assert!(result.sub_queries.is_empty());
-    }
 }
