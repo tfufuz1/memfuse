@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// ZWECK: Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern).
+// INVARIANTEN: RRF-Fusion über alle Runden; Abbruch bei Erreichen des Qualitätsschwellenwerts.
+// NICHT-OFFENSICHTLICH: Sub-Queries nutzen BM25-only (leerer Vektor), da sie textuelle Umformulierungen darstellen.
+// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+
 // memfuse-db/src/multistep.rs
 // Multi-Step Iterative Retrieval Engine (OpenAI o-series Pattern)
 

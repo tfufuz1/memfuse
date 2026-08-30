@@ -75,6 +75,40 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
+/// Maximum key size allowed for LSM operations (1MB).
+pub const MAX_KEY_SIZE: usize = 1_048_576;
+
+/// Maximum value size allowed for LSM operations (128MB).
+pub const MAX_VALUE_SIZE: usize = 134_217_728;
+
+/// Maximum batch size for `delete_many` operations (10,000 items).
+pub const MAX_BATCH_SIZE: usize = 10_000;
+
+fn validate_key(key: &[u8]) -> Result<()> {
+    if key.is_empty() {
+        return Err(MemFuseError::InvalidInput("Key cannot be empty".into()));
+    }
+    if key.len() > MAX_KEY_SIZE {
+        return Err(MemFuseError::InvalidInput(format!(
+            "Key length ({} bytes) exceeds limit of {} bytes",
+            key.len(),
+            MAX_KEY_SIZE
+        )));
+    }
+    Ok(())
+}
+
+fn validate_value(value: &[u8]) -> Result<()> {
+    if value.len() > MAX_VALUE_SIZE {
+        return Err(MemFuseError::InvalidInput(format!(
+            "Value length ({} bytes) exceeds limit of {} bytes",
+            value.len(),
+            MAX_VALUE_SIZE
+        )));
+    }
+    Ok(())
+}
+
 /// LSM storage configuration.
 // SEC-001 — Erweitere LsmConfig um `encryption_passphrase` und AES-256.
 // TEST: cargo test -p memfuse-store test_encrypted_db_unreadable_without_key
@@ -150,24 +184,7 @@ impl LsmStorage {
             .map_err(|e| MemFuseError::Storage(format!("Failed to create dir: {}", e)))?;
 
         // 🛡️ SICHERUNG: Directory FSync (FIND-STO-004)
-        if let Some(parent) = config.path.parent() {
-            // fsync propagiert korrekt (behoben 2026-08-24)
-            let parent = if parent.as_os_str().is_empty() {
-                std::path::Path::new(".")
-            } else {
-                parent
-            };
-            let dir = tokio::fs::File::open(parent).await.map_err(|e| {
-                MemFuseError::Storage(format!(
-                    "Verzeichnis für fsync konnte nicht geöffnet werden: {e}"
-                ))
-            })?;
-            dir.sync_all().await.map_err(|e| {
-                MemFuseError::Storage(format!(
-                    "Verzeichnis-fsync fehlgeschlagen (WAL-Durabilität verletzt): {e}"
-                ))
-            })?;
-        }
+        crate::util::fsync_parent_dir(&config.path).await?;
 
         // Persistent Salt Management (FIND-CRY-001)
         let salt_path = config.path.join("SALT");
@@ -459,7 +476,7 @@ impl LsmStorage {
                 let new_sst_path =
                     self.config
                         .path
-                        .join(format!("sst-{:020}-{:06}.sst", seq, count % 1000000));
+                        .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000));
 
                 let mut builder = SstableBuilder::create_with_key_manager(
                     &new_sst_path,
@@ -568,6 +585,7 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        validate_key(key)?;
         let current_max_seq = self.next_seq_no.load(Ordering::Acquire);
         let res = self.get_at_seq(key, current_max_seq).await?;
         tracing::debug!(
@@ -588,6 +606,7 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn get_at_seq(&self, key: &[u8], seq_no: u64) -> Result<Option<Vec<u8>>> {
+        validate_key(key)?;
         // Genau EINMAL laden — Snapshot-Konsistenz über die gesamte Methode (INVARIANT-2)
         let snapshot_tx = self.last_committed_tx.load(Ordering::Acquire);
         let state = self.state.read().await;
@@ -768,7 +787,6 @@ impl StorageEngine for LsmStorage {
         }
 
         // ANCHOR[ALG-FIX:D6-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
-        // ANCHOR[ALG-FIX:D6-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
         // FIX: Commit-Mutex serialisiert fetch_add + memtable.put.
         // Ohne Mutex könnte seq=11 vor seq=10 fertig sein → Reader seq=11 sieht Lücke bei 10.
         let _commit_lock = self.commit_mutex.lock().await;
@@ -944,7 +962,6 @@ impl StorageEngine for LsmStorage {
         state.immutable_memtables.push(old_memtable.clone());
 
         // ANCHOR[ALG-FIX:D1-011] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Stale WAL-Dateien löschen nach Flush
-        // ANCHOR[ALG-FIX:D1-011] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Stale WAL-Dateien löschen nach Flush
         // Ohne Cleanup wächst die Disk-Usage unbegrenzt (eine WAL pro Flush).
         let old_wal_path = old_wal.path().to_path_buf();
         drop(old_wal);
@@ -956,7 +973,7 @@ impl StorageEngine for LsmStorage {
             let seq = self.next_seq_no.load(Ordering::Relaxed);
             self.config
                 .path
-                .join(format!("sst-{:020}-{:06}.sst", seq, count % 1000000))
+                .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000))
         };
         let mut builder =
             SstableBuilder::create_with_key_manager(&sst_path, self.key_manager.clone()).await?;

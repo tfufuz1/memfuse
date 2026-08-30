@@ -294,6 +294,103 @@ impl MmapIndex {
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_hnsw_header_roundtrip_and_errors() {
+        let header = HnswHeader {
+            magic: HNSW_MAGIC,
+            version: HNSW_VERSION,
+            dimension: 128,
+            m: 16,
+            metric: 1,
+            quantized: 0,
+            q_min: -1.0,
+            q_max: 1.0,
+            node_count: 100,
+            entry_point: 5,
+            nodes_offset: 64,
+            connections_offset: 256,
+            last_tx_id: 42,
+        };
+
+        let bytes = header.to_bytes();
+        assert_eq!(bytes.len(), HnswHeader::SIZE);
+        let parsed = HnswHeader::try_from_bytes(&bytes).expect("parse bytes");
+        assert_eq!(header, parsed);
+
+        // Error path 1: header bytes too small
+        let small_bytes = vec![0u8; 10];
+        let err_small = HnswHeader::try_from_bytes(&small_bytes);
+        assert!(matches!(err_small, Err(MemFuseError::Storage(_))));
+
+        // Error path 2: bad magic
+        let mut bad_magic_bytes = bytes;
+        bad_magic_bytes[0..4].copy_from_slice(&0xDEADBEEFu32.to_le_bytes());
+        let err_magic = HnswHeader::try_from_bytes(&bad_magic_bytes);
+        assert!(matches!(err_magic, Err(MemFuseError::Storage(_))));
+    }
+
+    #[test]
+    fn test_node_record_roundtrip_and_errors() {
+        let record = NodeRecord {
+            doc_id: 12345,
+            max_layer: 3,
+            vector_offset: 500,
+            connections_offset: 1500,
+        };
+
+        let bytes = record.to_bytes();
+        assert_eq!(bytes.len(), NodeRecord::SIZE);
+        let parsed = NodeRecord::from_bytes(&bytes).expect("parse bytes");
+        assert_eq!(record.doc_id, parsed.doc_id);
+        assert_eq!(record.max_layer, parsed.max_layer);
+        assert_eq!(record.vector_offset, parsed.vector_offset);
+        assert_eq!(record.connections_offset, parsed.connections_offset);
+
+        // Error path: bytes too small
+        let small_bytes = vec![0u8; 10];
+        let err = NodeRecord::from_bytes(&small_bytes);
+        assert!(matches!(err, Err(MemFuseError::Storage(_))));
+    }
+
+    #[tokio::test]
+    async fn test_mmap_index_boundary_checks() -> memfuse_core::Result<()> {
+        use crate::hnsw::{HnswConfig, HnswIndex};
+        use memfuse_core::{DistanceMetric, DocId, TxId, VectorIndex};
+
+        let temp_dir = tempfile::tempdir().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let path = temp_dir.path().join("bounds_test.hnsw");
+
+        let config = HnswConfig {
+            dimension: 4,
+            m: 16,
+            distance_metric: DistanceMetric::Euclidean,
+            ..Default::default()
+        };
+        let index = HnswIndex::try_new(config.clone())?;
+        let tx = TxId::new(1);
+        index
+            .insert(tx, DocId::new(1), &[1.0, 2.0, 3.0, 4.0])
+            .await?;
+        index.commit(tx).await?;
+        index.save(&path).await?;
+
+        let mmap_index = MmapIndex::open(&path)?;
+
+        // Out of bounds node index -> Err
+        assert!(mmap_index.get_node_record(99999).is_err());
+
+        // Out of bounds connection layer -> empty vector (not error)
+        let rec = mmap_index.get_node_record(0)?;
+        let connections = mmap_index.get_connections(&rec, 100)?;
+        assert!(connections.is_empty());
+
+        // Valid vector retrieval
+        let vec_bytes = mmap_index.get_vector(&rec)?;
+        assert_eq!(vec_bytes.len(), 4 * 4); // 4 f32s = 16 bytes
+
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_mmap_open_async() -> memfuse_core::Result<()> {
         use crate::hnsw::{HnswConfig, HnswIndex};
