@@ -1,12 +1,5 @@
 //! Personalized PageRank (PPR) power iteration implementation for `CsrGraph`.
 
-// FILE-CONTEXT
-// STAND: 2026-08-30T18:53:58Z (SESSION: b1234567)
-// ZWECK: Personalized PageRank Power Iteration über CSR Graph
-// INVARIANTEN: inner MUSS vor Aufruf kompaktiert sein; bitidentischer Determinismus.
-// HOTSPOTS: L30-L90 (Power Iteration Matrix-Vector Vector Multiplication)
-// SIEHE AUCH: crates/memfuse-graph/src/csr.rs
-
 use crate::csr::GraphInner;
 use memfuse_core::{EntityId, PprConfig};
 use std::collections::HashSet;

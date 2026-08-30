@@ -1,10 +1,3 @@
-// FILE-CONTEXT: BM25 Scoring & Parameter Struct.
-// ZWECK: Berechnet mathematisch BM25 Term-Scores und validiert Hyperparameter (k1, b).
-// INVARIANTEN: k1 >= 0.0 (non-NaN, finite), 0.0 <= b <= 1.0 (non-NaN, finite).
-// NICHT-OFFENSICHTLICH: Log-IDF ist mit Robertson-Spärck-Jones Glättung implementiert (ln(1 + (N - df + 0.5) / (df + 0.5))).
-// HOTSPOTS: score_term, score_term_with_params
-// STAND: TS:2026-08-30T18:51:48Z (SESSION: 872b1087)
-
 //! Pure BM25 scoring functions and parameter structure.
 
 use memfuse_core::{MemFuseError, Result};

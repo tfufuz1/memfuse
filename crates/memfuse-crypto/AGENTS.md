@@ -12,4 +12,4 @@
 - `rules/wal_crypto.md` — HMAC Chaining & Derivation Regeln
 
 ## Offene Pflicht-Tests (ANCHOR-Status)
-- ANCHOR[TEST:CRY-001] STATUS:DONE — Nonce-Uniqueness verification bei paralleler Verschlüsselung (TS: 2026-08-30T18:52:02Z) (SESSION: 20260830)
+- ANCHOR[TEST:CRY-001] STATUS:OPEN — Nonce-Uniqueness verification bei paralleler Verschlüsselung
