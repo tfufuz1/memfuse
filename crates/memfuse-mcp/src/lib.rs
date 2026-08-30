@@ -4,7 +4,7 @@ pub mod sandbox;
 mod tests;
 
 // FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// STAND:       2026-08-30T18:51:25Z (SESSION: 846802ab)
 // ZWECK:       stdio JSON-RPC 2.0 MCP-Server (kein HTTP! ADR-010)
 // INVARIANTEN: Transport ist ausschließlich stdin/stdout — niemals TCP/axum, bounded RPC message size
 // HOTSPOTS:    run_stdio_loop(), handle_request(), read_line_bounded()
@@ -23,6 +23,10 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 pub const MAX_RPC_BYTES: usize = 16 * 1024 * 1024;
 /// Maximum allowed search query length in bytes (64 KB).
 pub const MAX_SEARCH_QUERY_BYTES: usize = 64 * 1024;
+/// Maximum allowed metadata keys per insert payload.
+pub const MAX_METADATA_KEYS: usize = 100;
+/// Maximum allowed chunks per insert payload.
+pub const MAX_INSERT_CHUNKS: usize = 1000;
 
 /// Reads a single line from an async reader into `buf` up to `max_bytes`.
 /// If the line exceeds `max_bytes`, consumes and discards the remainder of the line without allocating memory and returns `InvalidData`.
@@ -409,6 +413,17 @@ impl McpServer {
                     }
                 };
 
+                if query.trim().is_empty() {
+                    return Err(McpError::invalid_params("query cannot be empty"));
+                }
+                if query.len() > MAX_SEARCH_QUERY_BYTES {
+                    return Err(McpError::invalid_params(format!(
+                        "query size exceeds limit: {} > {} limit",
+                        query.len(),
+                        MAX_SEARCH_QUERY_BYTES
+                    )));
+                }
+
                 let col_name = if let Some(col_val) = args.get("collection") {
                     let s = col_val.as_str().ok_or_else(|| {
                         McpError::invalid_params("Invalid params: 'collection' must be a string")
@@ -506,6 +521,11 @@ impl McpServer {
                         if s.is_empty() {
                             return Err(McpError::invalid_params("id cannot be empty"));
                         }
+                        if s.len() > 256 {
+                            return Err(McpError::invalid_params(
+                                "id length exceeds limit (max 256 bytes)",
+                            ));
+                        }
                         s
                     }
                     None => {
@@ -525,6 +545,9 @@ impl McpServer {
                             "Invalid params: 'vector' must be an array of numbers",
                         )
                     })?;
+                    if arr.is_empty() {
+                        return Err(McpError::invalid_params("vector cannot be empty"));
+                    }
                     let mut vec = Vec::with_capacity(arr.len());
                     for elem in arr {
                         let num = elem.as_f64().ok_or_else(|| {
@@ -532,7 +555,13 @@ impl McpServer {
                                 "Invalid params: 'vector' must contain numbers",
                             )
                         })?;
-                        vec.push(num as f32);
+                        let val = num as f32;
+                        if !val.is_finite() {
+                            return Err(McpError::invalid_params(
+                                "vector contains NaN or Inf value",
+                            ));
+                        }
+                        vec.push(val);
                     }
                     Some(vec)
                 } else {
@@ -695,6 +724,11 @@ impl McpServer {
                         })?;
                         if s.is_empty() {
                             return Err(McpError::invalid_params("id cannot be empty"));
+                        }
+                        if s.len() > 256 {
+                            return Err(McpError::invalid_params(
+                                "id length exceeds limit (max 256 bytes)",
+                            ));
                         }
                         s
                     }
