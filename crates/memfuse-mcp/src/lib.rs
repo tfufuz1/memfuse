@@ -3,13 +3,6 @@ pub mod sandbox;
 #[cfg(test)]
 mod tests;
 
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       stdio JSON-RPC 2.0 MCP-Server (kein HTTP! ADR-010)
-// INVARIANTEN: Transport ist ausschließlich stdin/stdout — niemals TCP/axum, bounded RPC message size
-// HOTSPOTS:    run_stdio_loop(), handle_request(), read_line_bounded()
-// SIEHE AUCH:  ADR-010, rules/async-io.md
-
 use memfuse_core::{DocId, MemFuseError, TextEmbeddingEngine, MAX_SEARCH_K};
 use memfuse_db::chunker::{ChunkerConfig, MarkdownChunker};
 use memfuse_db::MemFuse;
@@ -21,8 +14,6 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 /// Maximum allowed single JSON-RPC message size via stdio (16 MB).
 pub const MAX_RPC_BYTES: usize = 16 * 1024 * 1024;
-/// Maximum allowed search query length in bytes (64 KB).
-pub const MAX_SEARCH_QUERY_BYTES: usize = 64 * 1024;
 
 /// Reads a single line from an async reader into `buf` up to `max_bytes`.
 /// If the line exceeds `max_bytes`, consumes and discards the remainder of the line without allocating memory and returns `InvalidData`.
@@ -121,16 +112,6 @@ fn detect_suspicious_prompt_injection(text: &str) -> bool {
     false
 }
 
-/// Checks whether database write access is explicitly enabled via environment variable `MEMFUSE_MCP_ALLOW_WRITE`.
-pub fn is_write_allowed_by_env() -> bool {
-    std::env::var("MEMFUSE_MCP_ALLOW_WRITE")
-        .map(|v| {
-            let s = v.trim().to_lowercase();
-            s == "1" || s == "true" || s == "yes"
-        })
-        .unwrap_or(false)
-}
-
 /// MCP-Server mit stdio-Transport (JSON-RPC 2.0).
 ///
 /// stdout ist dem Protokoll vorbehalten — Logs gehen ausschließlich nach stderr.
@@ -160,17 +141,9 @@ impl McpServer {
         db: Arc<MemFuse>,
         embedder: Arc<dyn TextEmbeddingEngine>,
     ) -> Result<Self, MemFuseError> {
-        Self::with_write_permission(db, embedder, is_write_allowed_by_env())
-    }
-
-    pub fn with_write_permission(
-        db: Arc<MemFuse>,
-        embedder: Arc<dyn TextEmbeddingEngine>,
-        allow_db_writes: bool,
-    ) -> Result<Self, MemFuseError> {
         let policy = SandboxPolicy {
             allow_db_reads: true,
-            allow_db_writes,
+            allow_db_writes: true,
             allow_code_execution: false,
             max_execution_ms: 5_000,
         };

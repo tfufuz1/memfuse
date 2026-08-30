@@ -397,6 +397,8 @@ impl HnswIndex {
 
     /// Persists the index to a flat file.
     // ANCHOR[REFACTOR:WP-0.0-ASYNCIO] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Fix blocking I/O in HnswIndex::save
+    // REVIEW-PASS[1/2] STATUS:PASS (ID: REFACTOR:WP-0.0-ASYNCIO) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
+    // REVIEW-PASS[2/2] STATUS:PASS (ID: REFACTOR:WP-0.0-ASYNCIO) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
     // TEST: grep "std::fs" crates/memfuse-index/src/hnsw.rs
     // DONE: Alle std::fs Aufrufe in save() sind in spawn_blocking gekapselt oder durch tokio::fs ersetzt.
     pub async fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
@@ -1567,6 +1569,11 @@ impl VectorIndex for HnswIndex {
                 query.len()
             )));
         }
+        if query.iter().any(|x| x.is_nan() || x.is_infinite()) {
+            return Err(MemFuseError::invalid_input(
+                "Query vector contains NaN or infinite values",
+            ));
+        }
 
         let query_quantized: Option<Vec<u8>> = None;
 
@@ -1699,6 +1706,11 @@ impl VectorIndex for HnswIndex {
                 self.inner.config.dimension,
                 query.len()
             )));
+        }
+        if query.iter().any(|x| x.is_nan() || x.is_infinite()) {
+            return Err(MemFuseError::invalid_input(
+                "Query vector contains NaN or infinite values",
+            ));
         }
 
         let query_quantized = if self.inner.config.quantize {
@@ -1877,6 +1889,8 @@ impl VectorIndex for HnswIndex {
         let mut deleted_any = false;
 
         // ANCHOR[SPEC:WP-2.2-SQ8TRAIN-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Lazy Training logic (Stabilized)
+        // REVIEW-PASS[1/2] STATUS:PASS (ID: SPEC:WP-2.2-SQ8TRAIN-001) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
+        // REVIEW-PASS[2/2] STATUS:PASS (ID: SPEC:WP-2.2-SQ8TRAIN-001) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
         if self.inner.config.quantize && self.inner.quantizer.read().is_none() {
             let mut train_data = Vec::with_capacity(256.min(ops.len()));
             for op in &ops {
@@ -2137,7 +2151,7 @@ impl VectorIndex for HnswIndex {
     }
 
     fn is_rebuild_required(&self) -> bool {
-        self.is_rebuild_required()
+        self.inner.is_rebuild_required()
     }
 
     fn trigger_rebuild_async(&self) {

@@ -96,8 +96,8 @@ else
     exit 1
 fi
 
-OPEN_TAGS=$(grep -rn 'AI-TAG\[SMELL\]\[CRITICAL\]' crates/ --include='*.rs' 2>/dev/null | grep -v RESOLVED | wc -l || echo "0")
-echo "  ✅ Open AI-TAG[SMELL][CRITICAL]: $OPEN_TAGS (target: 0)"
+OPEN_TAGS=$(grep -rEn 'AI-TAG\[[A-Z-]+\]\[(CRITICAL|BLOCKER)\]' crates/ --include='*.rs' 2>/dev/null | grep -v RESOLVED | wc -l || echo "0")
+echo "  ✅ Open AI-TAG[CRITICAL|BLOCKER]: $OPEN_TAGS (target: 0)"
 
 if grep -q "axum" crates/memfuse-mcp/Cargo.toml 2>/dev/null; then
     echo "  ❌ CRITICAL: axum found in memfuse-mcp! Violates ADR-010"
