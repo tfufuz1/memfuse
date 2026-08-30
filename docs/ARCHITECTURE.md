@@ -1,6 +1,6 @@
 # MemFuse Architektur — Kurzreferenz
 
-## Architektur-Update: Desktop-Applikation & 15 Workspace Crates
+## Architektur-Update: Desktop-Applikation & 13 Workspace Crates
 
 MemFuse ist in ein 5-Schichten-Modell (Layer 0–4) gegliedert. Sämtliche Workspace-Crates halten sich an den strikten gerichteten azyklischen Graphen (DAG).
 

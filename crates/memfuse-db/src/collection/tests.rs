@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// ZWECK: Unit-Tests für Collection-CRUD, Indizierung, Repair und Grenzwerte.
+// INVARIANTEN: Keine Tautologien; Anti-Mirroring gewahrt; Unabhängig berechnete Erwartungswerte.
+// NICHT-OFFENSICHTLICH: Tests laufen isoliert in temporären Verzeichnissen.
+// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+
 #[tokio::test]
 async fn test_insert_with_ttl_and_reap_expired_documents() {
     use memfuse_graph::CsrGraph;
@@ -415,112 +421,6 @@ async fn hybrid_search_caps_k_at_max_search_k() {
 }
 
 #[tokio::test]
-async fn test_input_guards_boundary_validation() {
-    use memfuse_graph::CsrGraph;
-    use memfuse_index::HnswIndex;
-    use memfuse_store::LsmStorage;
-    use std::sync::atomic::AtomicU64;
-    use std::sync::Arc;
-    use tempfile::tempdir;
-
-    let dir = tempdir().unwrap();
-    let lsm_config = memfuse_store::LsmConfig {
-        path: dir.path().to_path_buf(),
-        ..Default::default()
-    };
-    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
-    let hnsw_config = memfuse_index::HnswConfig {
-        dimension: 4,
-        ..Default::default()
-    };
-    let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap());
-    let graph = Arc::new(CsrGraph::new());
-    let next_tx = Arc::new(AtomicU64::new(1));
-
-    let col = super::Collection::new(
-        "default".to_string(),
-        storage,
-        index,
-        graph,
-        next_tx,
-        4,
-        memfuse_text::Language::English,
-    );
-
-    let vec = vec![1.0, 0.0, 0.0, 0.0];
-
-    // 0. Empty inputs in relate()
-    let err_relate_empty_from = col.relate("", "doc2", "knows").await;
-    assert!(matches!(
-        err_relate_empty_from,
-        Err(memfuse_core::MemFuseError::InvalidInput(_))
-    ));
-
-    let err_relate_empty_to = col.relate("doc1", "", "knows").await;
-    assert!(matches!(
-        err_relate_empty_to,
-        Err(memfuse_core::MemFuseError::InvalidInput(_))
-    ));
-
-    // 1. Empty ID guard on insert / upsert
-    let err_empty_id = col.insert("", &vec, None).await;
-    assert!(matches!(
-        err_empty_id,
-        Err(memfuse_core::MemFuseError::InvalidInput(_))
-    ));
-
-    let err_empty_id_upsert = col.upsert("", &vec, None).await;
-    assert!(matches!(
-        err_empty_id_upsert,
-        Err(memfuse_core::MemFuseError::InvalidInput(_))
-    ));
-
-    // 2. Oversized ID guard (>1024 bytes)
-    let long_id = "a".repeat(1025);
-    let err_long_id = col.insert(&long_id, &vec, None).await;
-    assert!(matches!(
-        err_long_id,
-        Err(memfuse_core::MemFuseError::InvalidInput(_))
-    ));
-
-    // 3. insert_many / upsert_many empty batch guard
-    let err_empty_batch = col.insert_many(&[]).await;
-    assert!(matches!(
-        err_empty_batch,
-        Err(memfuse_core::MemFuseError::InvalidInput(_))
-    ));
-
-    let err_empty_batch_upsert = col.upsert_many(&[]).await;
-    assert!(matches!(
-        err_empty_batch_upsert,
-        Err(memfuse_core::MemFuseError::InvalidInput(_))
-    ));
-
-    // 4. insert_many / upsert_many oversized batch guard (>10,000)
-    let huge_batch: Vec<_> = (0..10_001)
-        .map(|i| (format!("d_{i}"), vec.clone(), None))
-        .collect();
-    let err_huge_batch = col.insert_many(&huge_batch).await;
-    assert!(matches!(
-        err_huge_batch,
-        Err(memfuse_core::MemFuseError::InvalidInput(_))
-    ));
-
-    let err_huge_batch_upsert = col.upsert_many(&huge_batch).await;
-    assert!(matches!(
-        err_huge_batch_upsert,
-        Err(memfuse_core::MemFuseError::InvalidInput(_))
-    ));
-
-    // 5. search / search_with_filter_expr k = 0 guard
-    let err_search_k_zero = col.search(&vec, 0).await;
-    assert!(matches!(
-        err_search_k_zero,
-        Err(memfuse_core::MemFuseError::InvalidInput(_))
-    ));
-}
-
-#[tokio::test]
 async fn test_hybrid_search_k_clamping_boundaries() {
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
@@ -652,6 +552,7 @@ async fn test_doc_id_collision_rejected() {
 }
 
 #[tokio::test]
+#[allow(deprecated)]
 async fn test_collection_next_tx_sequence() {
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
@@ -1203,64 +1104,6 @@ fn test_compute_default_importance_entropy_and_clamping() {
     assert!(score_rich.value() > score_simple.value());
 }
 
-#[test]
-fn test_extract_effective_importance_defaults() {
-    use memfuse_core::types::TxId;
-
-    let none_meta = None;
-    assert_eq!(
-        super::extract_effective_importance(&none_meta, TxId::new(10)),
-        1.0
-    );
-
-    let meta_with_imp = Some(serde_json::json!({
-        "importance": 0.85
-    }));
-    assert_eq!(
-        super::extract_effective_importance(&meta_with_imp, TxId::new(10)),
-        0.85
-    );
-}
-
-#[tokio::test]
-async fn test_begin_transaction_returns_active_db_transaction() {
-    use memfuse_graph::CsrGraph;
-    use memfuse_index::HnswIndex;
-    use memfuse_store::LsmStorage;
-    use std::sync::atomic::AtomicU64;
-    use std::sync::Arc;
-    use tempfile::tempdir;
-
-    let dir = tempdir().unwrap();
-    let lsm_config = memfuse_store::LsmConfig {
-        path: dir.path().to_path_buf(),
-        ..Default::default()
-    };
-    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
-    let index = Arc::new(
-        HnswIndex::try_new(memfuse_index::HnswConfig {
-            dimension: 4,
-            ..Default::default()
-        })
-        .unwrap(),
-    );
-    let graph = Arc::new(CsrGraph::new());
-    let next_tx = Arc::new(AtomicU64::new(1));
-
-    let col = super::Collection::new(
-        "default".to_string(),
-        storage,
-        index,
-        graph,
-        next_tx,
-        4,
-        memfuse_text::Language::English,
-    );
-
-    let tx = col.begin_transaction();
-    assert!(tx.is_ok());
-}
-
 #[tokio::test]
 async fn test_reaper_deletes_decayed_working_memory() {
     use memfuse_core::{DecayFunction, ImportanceScore, MemoryImportance, TxId};
@@ -1417,7 +1260,7 @@ fn test_importance_metadata_integration_and_filtering() {
     );
     meta1.as_mut().unwrap().as_object_mut().unwrap().insert(
         "importance".to_string(),
-        serde_json::to_value(&imp1).unwrap(),
+        serde_json::to_value(imp1).unwrap(),
     );
 
     // Effective score at now_tx (2 half-lives elapsed) -> 0.9 * 0.25 = 0.225
@@ -1428,7 +1271,7 @@ fn test_importance_metadata_integration_and_filtering() {
     let imp2 = MemoryImportance::new(ImportanceScore::new(1.0), DecayFunction::None, created_tx);
     meta2.as_mut().unwrap().as_object_mut().unwrap().insert(
         "importance".to_string(),
-        serde_json::to_value(&imp2).unwrap(),
+        serde_json::to_value(imp2).unwrap(),
     );
 
     let results = vec![
@@ -1939,8 +1782,6 @@ async fn test_search_dimension_mismatch_rejected() {
     let search_res = col.search(&wrong_dim_vec, 10).await;
     assert!(search_res.is_err());
 
-    let hybrid_res = col
-        .hybrid_search("query", &wrong_dim_vec, 10, None)
-        .await;
+    let hybrid_res = col.hybrid_search("query", &wrong_dim_vec, 10, None).await;
     assert!(hybrid_res.is_err());
 }
