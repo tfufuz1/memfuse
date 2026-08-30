@@ -8,7 +8,7 @@
 
 Stand letzter Prüfung: 2026-08-27
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **1 offene Tags**
+Ergebnis: **2 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
