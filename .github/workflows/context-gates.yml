@@ -19,17 +19,22 @@ jobs:
           fi
           echo "✅ Keine offenen kritischen Tags"
 
-      - name: "Gate 2: Kein .expect() in Produktionscode"
+      - name: "Gate 2: Keine neuen .unwrap()/.expect() in Produktionscode"
         run: |
-          # Nur in src/, nicht in tests/ und nicht in SAFETY-approved Stellen
-          FOUND=$(grep -rn "\.expect(" crates/*/src/ --include="*.rs" \
-            | grep -v "// SAFETY-approved expect" \
-            | grep -v "SessionPool" || true)  # SessionPool noch in Sprint 2
-          # Warnung, kein Fehler (Sprint 2 behebt dies)
-          if [ -n "$FOUND" ]; then
-            echo "⚠️ .expect() Aufrufe in Produktionscode (Sprint-2-Tasks):"
-            echo "$FOUND"
+          if [ ! -f .unwrap-baseline.txt ]; then
+            echo "❌ .unwrap-baseline.txt fehlt!"
+            exit 1
           fi
+
+          CURRENT=$(grep -rn "\.unwrap()\|\.expect(" crates/*/src/ --include="*.rs" || true)
+          NEW_FINDINGS=$(echo "$CURRENT" | grep -F -x -v -f .unwrap-baseline.txt || true)
+
+          if [ -n "$NEW_FINDINGS" ]; then
+            echo "❌ Neue .unwrap()/.expect() Aufrufe in Produktionscode gefunden (nicht in Baseline):"
+            echo "$NEW_FINDINGS"
+            exit 1
+          fi
+          echo "✅ Keine neuen .unwrap()/.expect() Aufrufe in Produktionscode"
 
       - name: "Gate 3: Kein silent let _ für IO-Operationen"
         run: |
