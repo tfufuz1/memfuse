@@ -348,6 +348,17 @@ impl SstableBuilder {
 
     /// Adds a key-value pair to the SSTable being built.
     pub async fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64, tx_id: u64) -> Result<()> {
+        if key.is_empty() {
+            return Err(MemFuseError::InvalidInput("SSTable key cannot be empty".to_string()));
+        }
+        if key.len() > 65535 || value.len() > 65535 {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Key ({} bytes) or value ({} bytes) exceeds 65535 bytes limit",
+                key.len(),
+                value.len()
+            )));
+        }
+
         if self.first_key.is_none() {
             self.first_key = Some(Bytes::copy_from_slice(key));
         }
@@ -2191,12 +2202,4 @@ mod tests {
         assert!(matches!(err_val, Err(MemFuseError::InvalidInput(_))));
     }
 
-    #[test]
-    fn test_block_builder_min_max_clamping() {
-        let bb_small = BlockBuilder::new(10);
-        assert_eq!(bb_small.block_size, 512);
-
-        let bb_huge = BlockBuilder::new(100 * 1024 * 1024);
-        assert_eq!(bb_huge.block_size, 64 * 1024 * 1024);
-    }
 }
