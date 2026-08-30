@@ -104,7 +104,7 @@ pub async fn detect_communities(
 
         let mut valid_nodes = Vec::new();
         for idx in 0..num_nodes {
-            if inner.entities.get(idx).is_some_and(|e| e.is_some()) {
+            if inner.is_entity_committed(idx) {
                 valid_nodes.push(idx);
             }
         }
@@ -121,9 +121,7 @@ pub async fn detect_communities(
                 let end = inner.offsets[u + 1];
                 for edge_idx in start..end {
                     let v = inner.targets[edge_idx];
-                    if !inner.tombstoned_edges.contains(&(u, v))
-                        && inner.entities.get(v).is_some_and(|e| e.is_some())
-                    {
+                    if !inner.tombstoned_edges.contains(&(u, v)) && inner.is_entity_committed(v) {
                         let w = inner.weights[edge_idx];
                         adj.entry(u).or_default().push((v, w));
                         adj.entry(v).or_default().push((u, w));
@@ -415,7 +413,7 @@ mod tests {
                 let config = CommunityDetectionConfig { max_iterations, seed };
                 let result = detect_communities(&graph, &config).await;
 
-                proptest::prop_assert!(result.is_ok() || matches!(result, Err(_)));
+                proptest::prop_assert!(result.is_ok() || result.is_err());
                 if let Ok(assignments) = result {
                     proptest::prop_assert_eq!(assignments.len(), node_count);
                 }
@@ -517,10 +515,12 @@ mod tests {
                 && msg.contains("unstable_nodes=")
         });
 
+        let captured_logs = captured.clone();
+        drop(captured);
+
         assert!(
             warning_found,
-            "Expected structured warning log on community detection non-convergence, got logs: {:?}",
-            *captured
+            "Expected structured warning log on community detection non-convergence, got logs: {captured_logs:?}"
         );
     }
 
