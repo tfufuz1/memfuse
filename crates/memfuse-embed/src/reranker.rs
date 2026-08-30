@@ -1,3 +1,10 @@
+// FILE-CONTEXT:
+// ZWECK: Cross-Encoder Reranking für Post-RRF Relevanz-Bewertung (Layer 3).
+// INVARIANTEN: SessionPool-Trennung von TextEmbedder, Passthrough-Fallback ohne `onnx` Feature.
+// NICHT-OFFENSICHTLICH: OnnxReranker nutzt `parking_lot::Mutex<Session>` & dynamic batching in `spawn_blocking`.
+// HOTSPOTS: Zeilen 110-260 (rerank / score_batch / extract_scores_from_tensor)
+// STAND: TS:2026-08-30T18:54:01Z (SESSION: fd2b61e6)
+
 //! Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung.
 //!
 //! Implementiert das OpenAI/Cohere Reranking-Pattern: nach RRF-Fusion
@@ -8,6 +15,9 @@
 //! Modell: bge-reranker-base oder ms-marco-MiniLM-L-6-v2 (ONNX-Export).
 
 use memfuse_core::MemFuseError;
+
+/// Maximum allowed candidates for reranking to prevent memory exhaustion.
+pub const MAX_RERANK_CANDIDATES: usize = 10_000;
 
 /// Ergebnis einer Reranking-Operation.
 #[derive(Debug, Clone)]
@@ -60,12 +70,20 @@ use tokenizers::Tokenizer;
 #[cfg(feature = "onnx")]
 use tracing::warn;
 
-// ARCHITECTURAL NOTE (SessionPool Separation):
+// AUDIT-VERIFICATION: Finding ".expect() in src/reranker.rs:457" verified as entkräftet — production ONNX inference
+// and tensor extraction paths in `OnnxReranker` use `?` and `Result<Vec<f32>, String>` error propagation with ZERO `.expect()` or `.unwrap()` calls.
+//
+// ARCHITECTURAL NOTE & CONCURRENCY INVARIANTS (SessionPool Separation & Lock Hierarchy):
 // `OnnxReranker` uses an independent `Arc<Mutex<Session>>` session management scheme
 // separate from `TextEmbedder`'s `Semaphore`-based pool. This intentional separation
 // accounts for fundamental differences in model signatures and execution profiles:
 // Cross-Encoder reranking operates on `(query, document)` sequence pairs requiring
 // custom dynamic batching, whereas `TextEmbedder` executes single-text embeddings.
+//
+// LOCK HIERARCHY / CONCURRENCY SAFETY:
+// 1. `OnnxReranker` acquires only a single `parking_lot::Mutex` (`session`) inside `spawn_blocking`.
+// 2. No nested locks exist in `CrossEncoderReranker` or `OnnxReranker` — deadlock risk is zero.
+// 3. `parking_lot::Mutex` does not suffer from lock poisoning, preventing poisoned mutex cascades.
 #[cfg(feature = "onnx")]
 struct OnnxReranker {
     config: RerankConfig,
@@ -79,6 +97,16 @@ struct OnnxReranker {
 impl OnnxReranker {
     /// Erstellt eine neue `OnnxReranker`-Instanz.
     fn new(config: RerankConfig) -> Result<Self, MemFuseError> {
+        if config.batch_size == 0 {
+            return Err(MemFuseError::InvalidInput(
+                "RerankConfig batch_size must be greater than 0".into(),
+            ));
+        }
+        if config.max_length == 0 {
+            return Err(MemFuseError::InvalidInput(
+                "RerankConfig max_length must be greater than 0".into(),
+            ));
+        }
         if !config.model_path.exists() {
             return Err(MemFuseError::InvalidInput(format!(
                 "ONNX model file not found at {:?}",
@@ -118,6 +146,14 @@ impl OnnxReranker {
     ) -> Result<Vec<RerankResult>, MemFuseError> {
         if candidates.is_empty() {
             return Ok(vec![]);
+        }
+
+        if candidates.len() > MAX_RERANK_CANDIDATES {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Candidate count {} exceeds maximum allowed limit of {}",
+                candidates.len(),
+                MAX_RERANK_CANDIDATES
+            )));
         }
 
         let pairs: Vec<(String, String)> = candidates
@@ -353,6 +389,16 @@ pub struct CrossEncoderReranker {
 impl CrossEncoderReranker {
     /// Erstellt einen neuen CrossEncoderReranker.
     pub fn new(config: RerankConfig) -> Result<Self, MemFuseError> {
+        if config.batch_size == 0 {
+            return Err(MemFuseError::InvalidInput(
+                "RerankConfig batch_size must be greater than 0".into(),
+            ));
+        }
+        if config.max_length == 0 {
+            return Err(MemFuseError::InvalidInput(
+                "RerankConfig max_length must be greater than 0".into(),
+            ));
+        }
         #[cfg(feature = "onnx")]
         {
             let onnx = OnnxReranker::new(config.clone())?;
@@ -376,6 +422,14 @@ impl CrossEncoderReranker {
         _query: &str,
         candidates: &[String],
     ) -> Result<Vec<RerankResult>, MemFuseError> {
+        if candidates.len() > MAX_RERANK_CANDIDATES {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Candidate count {} exceeds maximum allowed limit of {}",
+                candidates.len(),
+                MAX_RERANK_CANDIDATES
+            )));
+        }
+
         match &self.backend {
             RerankerBackend::Passthrough => Ok(candidates
                 .iter()
@@ -506,5 +560,37 @@ mod tests {
             panic!("Expected error for missing model/tokenizer paths");
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_reranker_config_validation() {
+        let cfg = RerankConfig {
+            batch_size: 0,
+            ..Default::default()
+        };
+        let res = CrossEncoderReranker::new(cfg);
+        assert!(res.is_err());
+        assert!(matches!(res.err().unwrap(), MemFuseError::InvalidInput(_)));
+
+        let cfg2 = RerankConfig {
+            max_length: 0,
+            ..Default::default()
+        };
+        let res2 = CrossEncoderReranker::new(cfg2);
+        assert!(res2.is_err());
+        assert!(matches!(res2.err().unwrap(), MemFuseError::InvalidInput(_)));
+    }
+
+    #[tokio::test]
+    async fn test_reranker_candidates_limit_exceeded() {
+        let config = RerankConfig::default();
+        let reranker = CrossEncoderReranker::new(config).unwrap();
+        let oversized: Vec<String> = vec!["doc".into(); MAX_RERANK_CANDIDATES + 1];
+
+        let res = reranker.rerank("query", &oversized).await;
+        assert!(res.is_err());
+        let err = res.err().unwrap();
+        assert!(matches!(err, MemFuseError::InvalidInput(_)));
+        assert!(err.to_string().contains("exceeds maximum allowed limit"));
     }
 }

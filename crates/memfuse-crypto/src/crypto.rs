@@ -414,7 +414,7 @@ mod tests {
         assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
     }
 
-    // ANCHOR[TEST:CRY-001] STATUS:DONE — Nonce-Uniqueness verification bei paralleler Verschlüsselung (TS:2026-08-30T18:52:02Z) (SESSION: 20260830)
+    // ANCHOR[TEST:CRY-001] STATUS:DONE — Nonce-Uniqueness verification bei paralleler Verschlüsselung
     #[tokio::test]
     async fn test_parallel_nonce_uniqueness() {
         use std::collections::HashSet;

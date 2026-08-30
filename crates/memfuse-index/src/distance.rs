@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// ZWECK: SIMD-beschleunigte und Skalar-Distanzberechnungen (Cosine, Euclidean, Dot Product).
+// INVARIANTEN: Äquivalenz zwischen SIMD- und Skalar-Pfad bis auf Float-Toleranz (±1e-6); Caller garantiert Längenanpassung.
+// NICHT-OFFENSICHTLICH: Jeder unsafe-Block für SIMD Intrinsics enthält konkrete 4-Punkt SAFETY-Dokumentation (ADR-017).
+// HOTSPOTS: distance.rs (compute_distance, euclidean_distance_avx2, cosine_distance_avx2)
+// STAND: TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)
+
 // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-001 — Module documentation added (TS:2026-08-25T00:00:00Z)
 // SAFETY: Dokumentierte unsafe-Blöcke in SIMD-Zone
 // GEFUNDEN: 81 unsafe-Blöcke. Aktueller Zustand: 147 SAFETY:-Kommentare.
@@ -1497,7 +1504,10 @@ mod tests {
         let a = vec![1.0f32, f32::NAN, 3.0];
         let b = vec![1.0f32, 2.0, 3.0];
         let res = compute_distance(&a, &b, DistanceMetric::Cosine);
-        assert!(res.is_ok(), "compute_distance should not fail with InvalidInput when NaN is passed directly");
+        assert!(
+            res.is_ok(),
+            "compute_distance should not fail with InvalidInput when NaN is passed directly"
+        );
     }
 
     #[test]

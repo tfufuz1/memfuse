@@ -279,13 +279,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         docs: &[(String, Vec<f32>, Option<serde_json::Value>)],
     ) -> Result<()> {
         if docs.is_empty() {
-            return Err(memfuse_core::MemFuseError::InvalidInput(
-                "Batch cannot be empty".to_string(),
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "insert_many requires at least one document",
             ));
         }
         if docs.len() > 10_000 {
-            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
-                "Batch size {} exceeds maximum permitted limit of 10000 documents",
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Batch size {} exceeds maximum allowed limit 10000",
                 docs.len()
             )));
         }
@@ -346,13 +346,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         docs: &[(String, Vec<f32>, Option<serde_json::Value>)],
     ) -> Result<()> {
         if docs.is_empty() {
-            return Err(memfuse_core::MemFuseError::InvalidInput(
-                "Batch cannot be empty".to_string(),
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "upsert_many requires at least one document",
             ));
         }
         if docs.len() > 10_000 {
-            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
-                "Batch size {} exceeds maximum permitted limit of 10000 documents",
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Batch size {} exceeds maximum allowed limit 10000",
                 docs.len()
             )));
         }

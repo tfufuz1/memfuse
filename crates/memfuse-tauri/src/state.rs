@@ -1,8 +1,9 @@
 // FILE-CONTEXT
-// STAND: 2026-08-30T14:38:30Z (SESSION: 45595f71)
+// STAND: 2026-08-30T18:54:25Z (SESSION: f3a48824)
 // ZWECK: Holds global application state (database handles, path, semaphores).
 // INVARIANTEN: RwLock guards must be scoped and dropped before any .await point. Lock order: db -> db_path.
 // NICHT-OFFENSICHTLICH: Semaphore permits protect Tokio blocking pool from regex workload exhaustion.
+// HOTSPOTS: AppState (lines 35-50)
 // SIEHE AUCH: crates/memfuse-tauri/src/commands/transform.rs, rules/async-io.md
 
 //! AppState definition and concurrency invariants.
@@ -98,7 +99,7 @@ mod tests {
                 permit.is_ok(),
                 "Permit allocation should succeed within limit"
             );
-            permits.push(permit.unwrap()); // unwrap
+            permits.push(permit.expect("Permit acquisition failed within limit"));
         }
 
         assert_eq!(state.regex_semaphore.available_permits(), 0);

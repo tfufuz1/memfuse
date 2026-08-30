@@ -1,3 +1,11 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:51:50Z (SESSION: c9c33dfb)
+// ZWECK: Unveränderbarer Append-Only Audit-Trail für Agenten-Workflow-Ausführungen.
+// INVARIANTEN: Keine Update/Delete-Pfade; Replay ist deterministisch nach step_count sortiert.
+// NICHT-OFFENSICHTLICH: Nutzt Zero-Vector-Pattern für Metadaten-Speicherung in Collection.
+// HOTSPOTS: AuditLog::append, AuditLog::replay_task
+// SIEHE AUCH: rules/tag_taxonomy.md, AGENTS.md
+
 //! Immutable audit trail for agent workflow executions.
 //!
 //! Provides append-only logging of every step an agent takes.
