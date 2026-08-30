@@ -14,9 +14,10 @@
 //! - **Snapshots**: MVCC read isolation via [`SnapshotRegistry`]
 
 // FILE-CONTEXT
-// STAND: 2026-08-29T09:14:07Z (SESSION: a3f29c1d)
+// STAND: 2026-08-30T18:51:56Z (SESSION: e459bd5f)
 // ZWECK: Core types, traits, and error handling for MemFuse.
 // INVARIANTEN: Triebwerk-Fundament: Alle anderen Crates hängen von memfuse-core ab. Kein I/O, kein async, kein Netzwerk in types.
+// HOTSPOTS: 1-45
 // NICHT-OFFENSICHTLICH: TxId allocation base ranges separate system and collection transactions.
 // SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md (ADR-028)
 // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar.

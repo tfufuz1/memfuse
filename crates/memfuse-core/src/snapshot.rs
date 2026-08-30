@@ -3,6 +3,14 @@
 //! Manages active read snapshots and computes the minimum active
 //! sequence number to prevent premature tombstone GC.
 
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:51:56Z (SESSION: e459bd5f)
+// ZWECK: SnapshotRegistry für MVCC-sichere Reads und minimal aktive Sequenznummern.
+// INVARIANTEN: Solange SnapshotGuard lebt -> keine Tombstone-GC für seq >= guard.seq_no.
+// HOTSPOTS: 40-110
+// NICHT-OFFENSICHTLICH: Lock-freie Reads von min_active_seqno() via AtomicU64 (Acquire/Release).
+// SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md (ADR-024)
+
 // INVARIANT: Snapshot-Registry schützt Reads vor Compaction-GC.
 // INVARIANTE: Solange SnapshotGuard lebt → keine Tombstone-GC für seq >= guard.seq_no.
 // RAII-PATTERN: Drop deregistriert automatisch. unwrap_or(u64::MAX) ist KORREKT.

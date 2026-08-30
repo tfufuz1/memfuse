@@ -1,5 +1,13 @@
 //! Serializable DTO representation of MemFuseError for IPC and FFI boundaries (ADR-028).
 
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:51:56Z (SESSION: e459bd5f)
+// ZWECK: Serialisierbares Error-DTO für IPC/FFI-Schichten ohne Typverlust (ADR-028).
+// INVARIANTEN: Behält error kind, message und strukturierte JSON details verlustfrei über FFI.
+// HOTSPOTS: 20-80
+// NICHT-OFFENSICHTLICH: DTO erlaubt die Rekonstruktion strukturierter Fehler in memfuse-tauri und python.
+// SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md (ADR-028)
+
 use crate::error::MemFuseError;
 use serde::{Deserialize, Serialize};
 

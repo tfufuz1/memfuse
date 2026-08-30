@@ -1,5 +1,13 @@
 //! Resource budget management for MemFuse.
-//!
+
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:51:56Z (SESSION: e459bd5f)
+// ZWECK: Token- und Resource-Budget-Management mit atomarem Tracking & Memory Backpressure.
+// INVARIANTEN: Atomares Memory Tracking; MemoryBudgetExceeded bei >95% Kapazität.
+// HOTSPOTS: 40-220
+// NICHT-OFFENSICHTLICH: TokenBudget reserviert Puffer für System-Prompts & Antworten in ContextManager.
+// SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md
+
 //! # Architektur
 //! Implementiert den `ResourceTracker`, der den Speicherverbrauch überwacht
 //! und Backpressure-Signale an die Storage-Engines sendet.

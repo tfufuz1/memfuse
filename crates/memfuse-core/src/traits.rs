@@ -3,6 +3,14 @@
 //! These traits define the abstract interfaces that concrete implementations
 //! must fulfill, enabling modularity and testability.
 
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:51:56Z (SESSION: e459bd5f)
+// ZWECK: Kern-Trait-Hierarchien (StorageEngine, VectorIndex, TextIndex, GraphIndex) für Layer 0.
+// INVARIANTEN: Downward-only Trait interfaces; neue Trait-Methoden brauchen Default-Impls (Abwärtskompatibilität).
+// HOTSPOTS: 30-500
+// NICHT-OFFENSICHTLICH: Default-Impls für nicht unterstützte Subsystem-Features werfen standardisiertes CapabilityUnsupported.
+// SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md (ADR-024)
+
 // INVARIANT: Trait-Contracts sind das API-Rückgrat des Workspace.
 // REGEL: Neue Methoden MÜSSEN Default-Impl haben (backward compat).
 
@@ -998,7 +1006,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delete_many_default_impl_deletes_all_keys() {
+    async fn test_delete_many_default_impl_deletes_specified_keys() {
         struct MockStorage {
             data: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<Vec<u8>, Vec<u8>>>>,
             delete_call_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,

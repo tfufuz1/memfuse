@@ -1,5 +1,13 @@
 //! Shared versioned sequence log for snapshot-isolated index searches (`_at` family).
 
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:51:56Z (SESSION: e459bd5f)
+// ZWECK: Shared Versioned Sequence Log für Snapshot-isolierte Index-Suchen (_at Familie).
+// INVARIANTEN: Sichtbarkeitsprüfung: insert_seq <= as_of && (delete_seq.is_none() || delete_seq > as_of).
+// HOTSPOTS: 20-75
+// NICHT-OFFENSICHTLICH: Compaction prunt Einträge erst wenn delete_seq < min_active_seqno.
+// SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md (ADR-024)
+
 use crate::types::DocId;
 
 /// Versioned sequence log entry for snapshot isolation (`_at` family).

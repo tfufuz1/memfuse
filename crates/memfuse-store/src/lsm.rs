@@ -313,7 +313,10 @@ impl LsmStorage {
                 let path = entry.path();
                 let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 if file_name.ends_with(".tmp") || path.extension().is_some_and(|ext| ext == "tmp") {
-                    tracing::warn!("Removing leftover un-renamed compaction temp file: {:?}", path);
+                    tracing::warn!(
+                        "Removing leftover un-renamed compaction temp file: {:?}",
+                        path
+                    );
                     if let Err(e) = tokio::fs::remove_file(&path).await {
                         tracing::warn!("Failed to remove leftover temp file {:?}: {}", path, e);
                     }
@@ -2488,7 +2491,9 @@ mod tests {
             encryption_passphrase: None,
         };
 
-        let storage = LsmStorage::new(config).await.expect("LsmStorage startup must succeed");
+        let storage = LsmStorage::new(config)
+            .await
+            .expect("LsmStorage startup must succeed");
         assert_eq!(storage.sstables.read().await.len(), 0);
 
         // Assert corrupt .tmp file was removed from data directory during recovery

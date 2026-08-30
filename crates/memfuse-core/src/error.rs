@@ -1,5 +1,13 @@
 //! Error types for MemFuse.
 
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:51:56Z (SESSION: e459bd5f)
+// ZWECK: Kanonische unified MemFuseError Enum für den gesamten Workspace.
+// INVARIANTEN: Zero-Panic via ? propagation; #[non_exhaustive] für binäre Abwärtskompatibilität.
+// HOTSPOTS: 20-180
+// NICHT-OFFENSICHTLICH: Neue Fehler-Varianten NUR unten anhängen; Downstream-Crates brauchen Wildcard-Match arm.
+// SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md
+
 // INVARIANT: Einzige Error-Enum für den gesamten Workspace.
 // Neue Varianten nur ANHÄNGEN (niemals umsortieren) → binäre Kompatibilität.
 // DOWNSTREAM: memfuse-store, memfuse-index, memfuse-db konvertieren via `?` und `From`.
