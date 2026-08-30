@@ -487,7 +487,154 @@ impl Wal {
     pub fn integrity_key_for_test(&self) -> Result<[u8; 32]> {
         self.get_integrity_key()
     }
+}
 
+/// Configures restrictive Windows file ACL permissions for `.wal_integrity_key`.
+///
+/// Disables inherited ACLs from parent directories and grants full control (`GENERIC_ALL`)
+/// strictly to the current process owner SID.
+///
+/// # Safety
+/// This function calls Win32 security APIs (`OpenProcessToken`, `GetTokenInformation`,
+/// `InitializeAcl`, `AddAccessAllowedAce`, `SetNamedSecurityInfoW`).
+/// All raw pointers derived from heap buffers or Win32 structures are checked for non-nullness,
+/// handles are freed with `CloseHandle`, and Win32 return codes are mapped to `MemFuseError::Storage`.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn set_restrictive_file_acl(path: &Path) -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr::null_mut;
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, ERROR_SUCCESS, GetLastError, GENERIC_ALL, HANDLE,
+    };
+    use windows_sys::Win32::Security::Authorization::{
+        SetNamedSecurityInfoW, SE_FILE_OBJECT,
+    };
+    use windows_sys::Win32::Security::{
+        AddAccessAllowedAce, GetLengthSid, GetTokenInformation, InitializeAcl,
+        TokenUser, ACCESS_ALLOWED_ACE, ACL, ACL_REVISION,
+        DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
+        TOKEN_QUERY, TOKEN_USER,
+    };
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    let mut token_handle: HANDLE = std::ptr::null_mut();
+    // SAFETY: GetCurrentProcess returns a pseudo-handle for the current process. OpenProcessToken initializes token_handle if successful.
+    let res = unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token_handle) };
+    if res == 0 {
+        let err = unsafe { GetLastError() };
+        return Err(MemFuseError::Storage(format!(
+            "Failed to open process token for ACL restriction: Win32 error {}",
+            err
+        )));
+    }
+
+    struct TokenGuard(HANDLE);
+    impl Drop for TokenGuard {
+        fn drop(&mut self) {
+            if !self.0.is_null() {
+                unsafe { CloseHandle(self.0) };
+            }
+        }
+    }
+    let _guard = TokenGuard(token_handle);
+
+    let mut len = 0u32;
+    // SAFETY: First call to GetTokenInformation determines required buffer size.
+    unsafe {
+        GetTokenInformation(token_handle, TokenUser, null_mut(), 0, &mut len);
+    }
+
+    if len == 0 {
+        return Err(MemFuseError::Storage(
+            "GetTokenInformation returned 0 buffer length for TokenUser".into(),
+        ));
+    }
+
+    let mut buffer = vec![0u8; len as usize];
+    // SAFETY: Passing allocated buffer of size `len` to receive TOKEN_USER struct and SID data.
+    let res = unsafe {
+        GetTokenInformation(
+            token_handle,
+            TokenUser,
+            buffer.as_mut_ptr().cast(),
+            len,
+            &mut len,
+        )
+    };
+    if res == 0 {
+        let err = unsafe { GetLastError() };
+        return Err(MemFuseError::Storage(format!(
+            "Failed to retrieve process owner SID: Win32 error {}",
+            err
+        )));
+    }
+
+    let token_user = buffer.as_ptr() as *const TOKEN_USER;
+    let owner_sid = unsafe { (*token_user).User.Sid };
+    if owner_sid.is_null() {
+        return Err(MemFuseError::Storage(
+            "Retrieved null owner SID from process token".into(),
+        ));
+    }
+
+    let sid_len = unsafe { GetLengthSid(owner_sid) };
+    let acl_size = std::mem::size_of::<ACL>()
+        + std::mem::size_of::<ACCESS_ALLOWED_ACE>()
+        + sid_len as usize;
+
+    let mut acl_buf = vec![0u8; acl_size];
+    let p_acl = acl_buf.as_mut_ptr() as *mut ACL;
+
+    // SAFETY: Initializing ACL structure with valid allocated buffer size.
+    if unsafe { InitializeAcl(p_acl, acl_size as u32, ACL_REVISION) } == 0 {
+        let err = unsafe { GetLastError() };
+        return Err(MemFuseError::Storage(format!(
+            "Failed to initialize ACL: Win32 error {}",
+            err
+        )));
+    }
+
+    // SAFETY: Adding Access-Allowed ACE for the validated process owner SID with GENERIC_ALL permissions.
+    if unsafe { AddAccessAllowedAce(p_acl, ACL_REVISION, GENERIC_ALL, owner_sid) } == 0 {
+        let err = unsafe { GetLastError() };
+        return Err(MemFuseError::Storage(format!(
+            "Failed to add ACE to ACL: Win32 error {}",
+            err
+        )));
+    }
+
+    let path_wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    // SAFETY: SetNamedSecurityInfoW sets explicit DACL and disables inheritance (PROTECTED_DACL_SECURITY_INFORMATION).
+    let status = unsafe {
+        SetNamedSecurityInfoW(
+            path_wide.as_ptr() as *mut _,
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            null_mut(),
+            null_mut(),
+            p_acl,
+            null_mut(),
+        )
+    };
+
+    if status != ERROR_SUCCESS {
+        return Err(MemFuseError::Storage(format!(
+            "SetNamedSecurityInfoW failed for {} with Win32 error code {}",
+            path.display(),
+            status
+        )));
+    }
+
+    Ok(())
+}
+
+impl Wal {
     /// Loads or generates a persistent, random 32-byte integrity key in `.wal_integrity_key`
     /// located in the same parent directory as the WAL file.
     async fn load_or_create_integrity_key(wal_path: &Path) -> Result<[u8; 32]> {
@@ -575,6 +722,12 @@ impl Wal {
                 )));
             }
             drop(file);
+
+            #[cfg(windows)]
+            if let Err(e) = set_restrictive_file_acl(&tmp_path) {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                return Err(e);
+            }
 
             // Atomically link tmp_path to key_path. Fails if key_path already exists (O_EXCL semantics).
             let link_res = tokio::fs::hard_link(&tmp_path, &key_path).await;
@@ -2244,6 +2397,148 @@ mod tests {
             );
         }
         assert_eq!(key1.len(), 32);
+    }
+
+    /// Windows ACL verification test.
+    /// Note: This test executes only on Windows platforms (e.g. `windows-latest` CI runner).
+    #[cfg(windows)]
+    #[test]
+    #[allow(unsafe_code)]
+    fn test_windows_wal_integrity_key_acl() {
+        use std::os::windows::ffi::OsStrExt;
+        use std::ptr::null_mut;
+        use windows_sys::Win32::Foundation::{CloseHandle, ERROR_SUCCESS, GetLastError, HANDLE};
+        use windows_sys::Win32::Security::Authorization::{
+            GetNamedSecurityInfoW, SE_FILE_OBJECT,
+        };
+        use windows_sys::Win32::Security::{
+            GetAce, GetTokenInformation, EqualSid, TokenUser, ACCESS_ALLOWED_ACE,
+            ACL, DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, SE_DACL_PROTECTED,
+            SECURITY_DESCRIPTOR_CONTROL, TOKEN_QUERY, TOKEN_USER,
+        };
+        use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let wal_path = temp.path().join("test_acl.wal");
+
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let key = rt
+            .block_on(Wal::load_or_create_integrity_key(&wal_path))
+            .expect("load_or_create_integrity_key");
+        assert_eq!(key.len(), 32);
+
+        let key_path = temp.path().join(".wal_integrity_key");
+        assert!(key_path.exists(), "Key file must exist");
+
+        let path_wide: Vec<u16> = key_path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        let mut p_sec_desc: PSECURITY_DESCRIPTOR = null_mut();
+        let mut p_dacl: *mut ACL = null_mut();
+        let mut control: SECURITY_DESCRIPTOR_CONTROL = 0;
+        let mut revision = 0u32;
+
+        // Query file's DACL and Control bits
+        let status = unsafe {
+            GetNamedSecurityInfoW(
+                path_wide.as_ptr() as *mut _,
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                null_mut(),
+                null_mut(),
+                &mut p_dacl,
+                null_mut(),
+                &mut p_sec_desc,
+            )
+        };
+        assert_eq!(
+            status, ERROR_SUCCESS,
+            "GetNamedSecurityInfoW failed with error {}",
+            status
+        );
+
+        struct SecDescGuard(PSECURITY_DESCRIPTOR);
+        impl Drop for SecDescGuard {
+            fn drop(&mut self) {
+                if !self.0.is_null() {
+                    unsafe {
+                        windows_sys::Win32::Foundation::LocalFree(self.0 as _);
+                    }
+                }
+            }
+        }
+        let _guard = SecDescGuard(p_sec_desc);
+
+        // Verify DACL is present
+        assert!(!p_dacl.is_null(), "DACL should not be null");
+
+        // Verify control bits to check that DACL inheritance is protected/disabled
+        let status = unsafe {
+            windows_sys::Win32::Security::GetSecurityDescriptorControl(
+                p_sec_desc,
+                &mut control,
+                &mut revision,
+            )
+        };
+        assert_ne!(
+            status, 0,
+            "GetSecurityDescriptorControl failed with error {}",
+            unsafe { GetLastError() }
+        );
+        assert_ne!(
+            control & SE_DACL_PROTECTED,
+            0,
+            "DACL inheritance must be disabled (SE_DACL_PROTECTED bit set)"
+        );
+
+        // Query process token user SID
+        let mut token_handle: HANDLE = null_mut();
+        let res = unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token_handle) };
+        assert_ne!(res, 0, "OpenProcessToken failed");
+
+        let mut len = 0u32;
+        unsafe {
+            GetTokenInformation(token_handle, TokenUser, null_mut(), 0, &mut len);
+        }
+        let mut buffer = vec![0u8; len as usize];
+        let res = unsafe {
+            GetTokenInformation(
+                token_handle,
+                TokenUser,
+                buffer.as_mut_ptr().cast(),
+                len,
+                &mut len,
+            )
+        };
+        assert_ne!(res, 0, "GetTokenInformation failed");
+        unsafe { CloseHandle(token_handle) };
+
+        let token_user = buffer.as_ptr() as *const TOKEN_USER;
+        let owner_sid = unsafe { (*token_user).User.Sid };
+        assert!(!owner_sid.is_null());
+
+        // Inspect ACE count and verify ACE matches process owner SID
+        let ace_count = unsafe { (*p_dacl).AceCount };
+        assert_eq!(
+            ace_count, 1,
+            "DACL must contain exactly 1 ACE (owner only)"
+        );
+
+        let mut p_ace: *mut std::ffi::c_void = null_mut();
+        let res = unsafe { GetAce(p_dacl, 0, &mut p_ace) };
+        assert_ne!(res, 0, "GetAce failed");
+
+        let ace = p_ace as *const ACCESS_ALLOWED_ACE;
+        let ace_sid = unsafe { &(*ace).SidStart as *const u32 as *mut std::ffi::c_void };
+
+        let same_sid = unsafe { EqualSid(owner_sid, ace_sid) };
+        assert_ne!(
+            same_sid, 0,
+            "ACE SID must match the process owner SID"
+        );
     }
 
     #[test]

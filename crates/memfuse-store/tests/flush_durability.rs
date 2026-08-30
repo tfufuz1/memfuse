@@ -1,6 +1,8 @@
 use memfuse_core::{Result, StorageEngine, TxId};
 use memfuse_store::lsm::{LsmConfig, LsmStorage};
+#[cfg(unix)]
 use std::fs::Permissions;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use tempfile::tempdir;
 
@@ -36,23 +38,32 @@ async fn test_flush_durability_on_failure() -> Result<()> {
 
     assert!(wal_path.exists(), "WAL file must exist before flush");
 
-    // 3. Make directory read-only to force SstableBuilder::create to fail
-    // We give read and execute (to list), but NO write.
-    std::fs::set_permissions(dir.path(), Permissions::from_mode(0o555)).unwrap();
+    #[cfg(unix)]
+    {
+        // 3. Make directory read-only to force SstableBuilder::create to fail
+        // We give read and execute (to list), but NO write.
+        std::fs::set_permissions(dir.path(), Permissions::from_mode(0o555)).unwrap();
+    }
 
-    // 4. Trigger flush. It should fail because it cannot create the SSTable file.
+    // 4. Trigger flush.
     let flush_result = storage.force_flush().await;
+    #[cfg(unix)]
     assert!(
         flush_result.is_err(),
         "Flush must fail when directory is read-only"
     );
+    #[cfg(not(unix))]
+    let _ = flush_result;
 
     // 5. CRITICAL CHECK: Does the WAL file still exist?
     // In the BROKEN version, it was deleted before the SSTable was created.
     let wal_exists = wal_path.exists();
 
-    // Restore permissions so tempdir can cleanup
-    let _ = std::fs::set_permissions(dir.path(), Permissions::from_mode(0o755));
+    #[cfg(unix)]
+    {
+        // Restore permissions so tempdir can cleanup
+        let _ = std::fs::set_permissions(dir.path(), Permissions::from_mode(0o755));
+    }
 
     assert!(
         wal_exists,

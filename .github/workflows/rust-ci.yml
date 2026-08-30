@@ -57,6 +57,16 @@ jobs:
       - name: Run 3 (Flaky-Check Final)
         run: cargo test --workspace --exclude memfuse-tauri
 
+  test-windows:
+    name: Windows Test Suite (ACL Verification)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run memfuse-store tests on Windows
+        run: cargo test -p memfuse-store
+
   # KONSOLIDIERUNGS-HINWEIS: Der redundante context-gates Job wurde hier entfernt.
   # Die Kanonische Quelle für Context Integrity Gates ist .github/workflows/context-gates.yml,
   # welcher als dedizierter Workflow parallel auf push/pull_request läuft.
