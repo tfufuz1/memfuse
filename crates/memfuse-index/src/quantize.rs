@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// ZWECK: 8-Bit Skalare Quantisierung (SQ8) mit pro-Dimension Min/Max Skalierung.
+// INVARIANTEN: Dividieren durch 0 geschützt (EPSILON Padding); Keine Panics bei unpassenden Eingaben.
+// NICHT-OFFENSICHTLICH: try_train prüft Vektor-Dimensionen vor Rekalibrierung der Min/Max-Grenzen.
+// HOTSPOTS: quantize.rs (ScalarQuantizer::try_train, quantize, dequantize)
+// STAND: TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)
+
 //! Scalar Quantization (SQ8) for HNSW Index.
 
 use crate::distance::euclidean_distance_sq_f32_u8;
@@ -44,12 +51,31 @@ impl ScalarQuantizer {
     /// quantizer (e.g., during index rebuilds) using a representative sample of active vectors.
     /// Without recalibration, new vectors that fall outside the initial range will be clamped,
     /// leading to degraded quantization accuracy.
-    pub fn train(batch: &[&[f32]], dimension: usize) -> Self {
+    /// Safely creates a new ScalarQuantizer trained on a batch of vectors.
+    /// Returns `MemFuseError::InvalidInput` if dimension is 0 or any vector dimension mismatches.
+    pub fn try_train(batch: &[&[f32]], dimension: usize) -> memfuse_core::Result<Self> {
+        if dimension == 0 {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Quantizer dimension must be greater than 0",
+            ));
+        }
+
+        for (idx, vec) in batch.iter().enumerate() {
+            if vec.len() != dimension {
+                return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                    "Vector at index {} has dimension {}, expected {}",
+                    idx,
+                    vec.len(),
+                    dimension
+                )));
+            }
+        }
+
         let mut mins = vec![f32::MAX; dimension];
         let mut maxes = vec![f32::MIN; dimension];
 
         if batch.is_empty() {
-            return Self {
+            return Ok(Self {
                 mins: vec![0.0; dimension],
                 maxes: vec![1.0; dimension],
                 scales: vec![255.0; dimension],
@@ -57,7 +83,7 @@ impl ScalarQuantizer {
                 dimension,
                 total_queries: AtomicU64::new(0),
                 out_of_range_queries: AtomicU64::new(0),
-            };
+            });
         }
 
         for vec in batch {
@@ -84,7 +110,7 @@ impl ScalarQuantizer {
             inv_scales.push(range / 255.0);
         }
 
-        Self {
+        Ok(Self {
             mins,
             maxes,
             scales,
@@ -92,7 +118,25 @@ impl ScalarQuantizer {
             dimension,
             total_queries: AtomicU64::new(0),
             out_of_range_queries: AtomicU64::new(0),
-        }
+        })
+    }
+
+    /// Creates a new ScalarQuantizer trained on a batch of vectors to find per-dimension min/max.
+    ///
+    /// For long-lived or growing collections, callers should periodically recalibrate the
+    /// quantizer (e.g., during index rebuilds) using a representative sample of active vectors.
+    /// Without recalibration, new vectors that fall outside the initial range will be clamped,
+    /// leading to degraded quantization accuracy.
+    pub fn train(batch: &[&[f32]], dimension: usize) -> Self {
+        Self::try_train(batch, dimension).unwrap_or_else(|_| Self {
+            mins: vec![0.0; dimension],
+            maxes: vec![1.0; dimension],
+            scales: vec![255.0; dimension],
+            inv_scales: vec![1.0 / 255.0; dimension],
+            dimension,
+            total_queries: AtomicU64::new(0),
+            out_of_range_queries: AtomicU64::new(0),
+        })
     }
 
     /// Calculates quantization drift as the fraction of dimensions falling outside \[mins\[i\], maxes\[i\]\].
@@ -550,5 +594,21 @@ mod tests {
                 avg_per_dim_mse, avg_global_mse
             );
         }
+    }
+
+    #[test]
+    fn test_quantizer_try_train_guards() {
+        // Zero dimension guard
+        let res_zero = ScalarQuantizer::try_train(&[], 0);
+        assert!(res_zero.is_err());
+        assert!(res_zero.unwrap_err().to_string().contains("dimension must be greater than 0"));
+
+        // Mismatched vector length guard
+        let v1 = vec![1.0, 2.0, 3.0];
+        let v2 = vec![1.0, 2.0];
+        let batch: Vec<&[f32]> = vec![&v1, &v2];
+        let res_mismatch = ScalarQuantizer::try_train(&batch, 3);
+        assert!(res_mismatch.is_err());
+        assert!(res_mismatch.unwrap_err().to_string().contains("expected 3"));
     }
 }
