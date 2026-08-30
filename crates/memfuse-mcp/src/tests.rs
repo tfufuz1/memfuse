@@ -356,7 +356,7 @@ async fn test_insert_validates_oversized_chunk_count() {
     let section_body = "word ".repeat(400); // ~2000 chars
     for i in 0..1_005 {
         use std::fmt::Write;
-        let _ = writeln!(huge_text, "# Section {i}\n\n{section_body}\n");
+        writeln!(huge_text, "# Section {i}\n\n{section_body}\n").expect("fmt write");
     }
 
     let req = make_request(

@@ -33,11 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let db = Arc::new(MemFuse::open(&db_path).await?);
     let embedder = Arc::new(OllamaEmbedder::new(&ollama_url, &embed_model));
-    let server = Arc::new(McpServer::with_write_permission(
-        db,
-        embedder,
-        allow_write,
-    )?);
+    let server = Arc::new(McpServer::with_write_permission(db, embedder, allow_write)?);
 
     tracing::info!(
         db_path,

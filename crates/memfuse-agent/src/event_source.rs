@@ -23,6 +23,7 @@ pub struct BackgroundEvent {
 }
 
 impl BackgroundEvent {
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: AGT-AGENT-e0571b01 — Fallible BackgroundEvent::try_new enforces non-empty, length-bounded, null-free source strings. (TS: 2026-08-30T15:36:46Z) (SESSION: 761f1346)
     /// Attempts to construct a `BackgroundEvent` with boundary validation on `source`.
     pub fn try_new(
         payload: serde_json::Value,
@@ -174,6 +175,7 @@ pub struct VecEventSource {
 }
 
 impl VecEventSource {
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: AGT-AGENT-f4c28e99 — Fallible VecEventSource::try_new caps buffer capacity to MAX_EVENT_SOURCE_CAPACITY preventing OOM. (TS: 2026-08-30T15:36:46Z) (SESSION: 761f1346)
     /// Attempts to construct a `VecEventSource` with a capacity check.
     pub fn try_new(events: Vec<BackgroundEvent>) -> Result<Self> {
         if events.len() > MAX_EVENT_SOURCE_CAPACITY {

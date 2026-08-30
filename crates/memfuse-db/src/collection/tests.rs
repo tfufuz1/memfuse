@@ -1939,8 +1939,6 @@ async fn test_search_dimension_mismatch_rejected() {
     let search_res = col.search(&wrong_dim_vec, 10).await;
     assert!(search_res.is_err());
 
-    let hybrid_res = col
-        .hybrid_search("query", &wrong_dim_vec, 10, None)
-        .await;
+    let hybrid_res = col.hybrid_search("query", &wrong_dim_vec, 10, None).await;
     assert!(hybrid_res.is_err());
 }
