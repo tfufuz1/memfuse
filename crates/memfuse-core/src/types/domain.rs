@@ -604,6 +604,16 @@ pub struct PprConfig {
     pub max_iterations: u32,
     /// L1 norm threshold for early termination convergence check. Default: 1e-6.
     pub convergence_epsilon: f32,
+    /// Gibt eine nicht-konvergierte Warnung (tracing::warn!) aus, wenn
+    /// max_iterations erreicht wird, bevor convergence_epsilon
+    /// unterschritten wurde. Kein Fehler — die Berechnung liefert das
+    /// beste bisher erreichte Ergebnis zurück. Default: true.
+    #[serde(default = "default_warn_on_non_convergence")]
+    pub warn_on_non_convergence: bool,
+}
+
+fn default_warn_on_non_convergence() -> bool {
+    true
 }
 
 impl Default for PprConfig {
@@ -612,6 +622,7 @@ impl Default for PprConfig {
             damping_factor: 0.85,
             max_iterations: 100,
             convergence_epsilon: 1e-6,
+            warn_on_non_convergence: true,
         }
     }
 }
