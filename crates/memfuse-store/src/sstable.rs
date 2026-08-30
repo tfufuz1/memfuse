@@ -349,7 +349,9 @@ impl SstableBuilder {
     /// Adds a key-value pair to the SSTable being built.
     pub async fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64, tx_id: u64) -> Result<()> {
         if key.is_empty() {
-            return Err(MemFuseError::InvalidInput("SSTable key cannot be empty".to_string()));
+            return Err(MemFuseError::InvalidInput(
+                "SSTable key cannot be empty".to_string(),
+            ));
         }
         if key.len() > 65535 || value.len() > 65535 {
             return Err(MemFuseError::InvalidInput(format!(
@@ -2201,5 +2203,4 @@ mod tests {
         let err_val = builder.add(b"valid_key", &oversized_val, 1, 1).await;
         assert!(matches!(err_val, Err(MemFuseError::InvalidInput(_))));
     }
-
 }
