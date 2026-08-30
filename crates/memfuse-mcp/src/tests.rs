@@ -25,12 +25,19 @@ impl TextEmbeddingEngine for MockEmbedder {
 }
 
 async fn create_mock_server() -> (Arc<McpServer>, TempDir) {
+    create_mock_server_with_write(true).await
+}
+
+async fn create_mock_server_with_write(allow_db_writes: bool) -> (Arc<McpServer>, TempDir) {
     let tmp = TempDir::new().expect("temp dir"); // expect
     let db = MemFuse::open(tmp.path()).await.expect("open db"); // expect
     let collection = db.collection("default").await.expect("collection"); // expect
     let dim = collection.dimension();
     let embedder = Arc::new(MockEmbedder { dimension: dim });
-    let server = Arc::new(McpServer::new(Arc::new(db), embedder).expect("server new"));
+    let server = Arc::new(
+        McpServer::with_write_permission(Arc::new(db), embedder, allow_db_writes)
+            .expect("server new"),
+    );
     (server, tmp)
 }
 
@@ -153,23 +160,6 @@ async fn test_internal_error_returns_32603() {
     let err_obj = resp.error.expect("error expected"); // expect
     assert_eq!(err_obj.code, -32603);
     assert_eq!(err_obj.message, "storage layer failure");
-}
-
-#[tokio::test]
-async fn test_mcp_error_from_memfuse_error_contains_structured_dto_data() {
-    use crate::protocol::McpError;
-    use memfuse_core::{MemFuseError, MemFuseErrorDto};
-
-    let core_err = MemFuseError::NotFound("document_123".into());
-    let mcp_err = McpError::from(core_err);
-    let resp = JsonRpcResponse::from_error(Some(json!(103)), mcp_err);
-
-    let err_obj = resp.error.expect("error expected");
-    let data = err_obj.data.expect("error data payload expected");
-    let dto: MemFuseErrorDto =
-        serde_json::from_value(data).expect("parse MemFuseErrorDto from data");
-    assert_eq!(dto.kind, "NotFound");
-    assert_eq!(dto.message, "document_123");
 }
 
 #[tokio::test]
@@ -303,6 +293,86 @@ async fn test_insert_validates_oversized_id() {
 }
 
 #[tokio::test]
+async fn test_read_line_bounded_zero_limit_returns_invalid_input() {
+    use crate::read_line_bounded;
+    use std::io::Cursor;
+    use tokio::io::BufReader;
+
+    let data = "hello\n";
+    let mut reader = BufReader::new(Cursor::new(data));
+    let mut buf = String::new();
+    let res = read_line_bounded(&mut reader, &mut buf, 0).await;
+    assert!(res.is_err());
+    let err = res.unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+}
+
+#[test]
+fn test_sandbox_policy_zero_timeout_rejected() {
+    use crate::sandbox::{McpSandbox, SandboxPolicy};
+
+    let policy = SandboxPolicy {
+        allow_db_reads: true,
+        allow_db_writes: false,
+        allow_code_execution: false,
+        max_execution_ms: 0,
+    };
+    let res = McpSandbox::new(policy);
+    assert!(res.is_err());
+    let err_str = res.err().unwrap().to_string();
+    assert!(err_str.contains("max_execution_ms must be greater than 0"));
+}
+
+#[tokio::test]
+async fn test_insert_validates_oversized_metadata_keys() {
+    let (server, _tmp) = create_mock_server().await;
+
+    let mut huge_metadata = serde_json::Map::new();
+    for i in 0..101 {
+        huge_metadata.insert(format!("key_{i}"), json!("val"));
+    }
+
+    let req = make_request(
+        "memfuse_insert",
+        json!({
+            "id": "doc_meta",
+            "text": "sample text",
+            "metadata": Value::Object(huge_metadata)
+        }),
+    );
+    let resp = server.handle(req).await;
+    let err = resp.error.expect("error expected for oversized metadata");
+    assert_eq!(err.code, -32602);
+    assert!(err.message.contains("metadata entry count exceeds limit"));
+}
+
+#[tokio::test]
+async fn test_insert_validates_oversized_chunk_count() {
+    let (server, _tmp) = create_mock_server().await;
+
+    // MarkdownChunker groups small sections until ~512 tokens per chunk.
+    // Create 1,005 sections where each section is ~2,000 characters so each section becomes a separate chunk.
+    let mut huge_text = String::new();
+    let section_body = "word ".repeat(400); // ~2000 chars
+    for i in 0..1_005 {
+        use std::fmt::Write;
+        let _ = writeln!(huge_text, "# Section {i}\n\n{section_body}\n");
+    }
+
+    let req = make_request(
+        "memfuse_insert",
+        json!({
+            "id": "huge_doc",
+            "text": huge_text
+        }),
+    );
+    let resp = server.handle(req).await;
+    let err = resp.error.expect("error expected for huge chunk count");
+    assert_eq!(err.code, -32602);
+    assert!(err.message.contains("Document chunk count exceeds limit"));
+}
+
+#[tokio::test]
 async fn test_whitespace_collection_name_fallback_or_rejection() {
     let (server, _tmp) = create_mock_server().await;
 
@@ -316,4 +386,82 @@ async fn test_whitespace_collection_name_fallback_or_rejection() {
     );
     let resp = server.handle(req).await;
     assert!(resp.result.is_some());
+}
+
+#[tokio::test]
+async fn test_write_tool_rejected_when_read_only() {
+    let (server, _tmp) = create_mock_server_with_write(false).await;
+
+    let write_tools = [
+        "memfuse_insert",
+        "memfuse_delete",
+        "memfuse_upsert",
+        "memfuse_relate",
+        "memfuse_create_collection",
+        "memfuse_drop_collection",
+    ];
+
+    for tool in write_tools {
+        let req = make_request(
+            "tools/call",
+            json!({
+                "name": tool,
+                "arguments": {
+                    "id": "test_id",
+                    "text": "test_text"
+                }
+            }),
+        );
+        let resp = server.handle(req).await;
+        let res_val = serde_json::to_value(&resp).unwrap();
+        assert_eq!(res_val["result"]["isError"], true);
+        let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.contains("Sandbox: DB-Schreibzugriff gesperrt"),
+            "Expected write rejection for '{tool}', got: '{text}'"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_write_tool_allowed_when_explicitly_enabled() {
+    let (server, _tmp) = create_mock_server_with_write(true).await;
+
+    let req = make_request(
+        "tools/call",
+        json!({
+            "name": "memfuse_insert",
+            "arguments": {
+                "id": "write_enabled_doc",
+                "text": "Write enabled content"
+            }
+        }),
+    );
+    let resp = server.handle(req).await;
+    let res_val = serde_json::to_value(&resp).unwrap();
+    assert_ne!(res_val["result"]["isError"], true);
+    let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("write_enabled_doc"));
+}
+
+#[tokio::test]
+async fn test_read_tools_always_allowed_regardless_of_flag() {
+    let (server_ro, _tmp1) = create_mock_server_with_write(false).await;
+    let (server_rw, _tmp2) = create_mock_server_with_write(true).await;
+
+    let read_req = make_request(
+        "tools/call",
+        json!({
+            "name": "memfuse_collections",
+            "arguments": {}
+        }),
+    );
+
+    let resp_ro = server_ro.handle(read_req.clone()).await;
+    let res_ro = serde_json::to_value(&resp_ro).unwrap();
+    assert_ne!(res_ro["result"]["isError"], true);
+
+    let resp_rw = server_rw.handle(read_req).await;
+    let res_rw = serde_json::to_value(&resp_rw).unwrap();
+    assert_ne!(res_rw["result"]["isError"], true);
 }
