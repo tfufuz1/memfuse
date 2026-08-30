@@ -1,6 +1,6 @@
-//! `MemFuse` Core — Types, traits, and error handling.
+//! MemFuse Core — Types, traits, and error handling.
 //!
-//! This crate provides the foundational building blocks for the `MemFuse`
+//! This crate provides the foundational building blocks for the MemFuse
 //! embedded hybrid-search library.
 //!
 //! # Architecture Role (Triebwerk — Layer 0)
@@ -10,7 +10,7 @@
 //! - **Type IDs**: [`DocId`], [`EntityId`], [`TxId`] — all `#[repr(transparent)]` u64 newtypes
 //! - **Traits**: [`StorageEngine`], [`VectorIndex`] — async interfaces for subsystems
 //! - **Error**: [`MemFuseError`] — unified error enum, zero-panic via `?` propagation
-//! - **`TxBuffer`**: Sharded transaction staging with orphan reaper
+//! - **TxBuffer**: Sharded transaction staging with orphan reaper
 //! - **Snapshots**: MVCC read isolation via [`SnapshotRegistry`]
 
 // FILE-CONTEXT
