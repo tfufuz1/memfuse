@@ -1,3 +1,10 @@
+// FILE-CONTEXT: BM25 Scoring & Parameter Struct.
+// ZWECK: Berechnet mathematisch BM25 Term-Scores und validiert Hyperparameter (k1, b).
+// INVARIANTEN: k1 >= 0.0 (non-NaN, finite), 0.0 <= b <= 1.0 (non-NaN, finite).
+// NICHT-OFFENSICHTLICH: Log-IDF ist mit Robertson-Spärck-Jones Glättung implementiert (ln(1 + (N - df + 0.5) / (df + 0.5))).
+// HOTSPOTS: score_term, score_term_with_params
+// STAND: TS:2026-08-30T18:51:48Z (SESSION: 872b1087)
+
 //! Pure BM25 scoring functions and parameter structure.
 
 use memfuse_core::{MemFuseError, Result};
@@ -164,6 +171,52 @@ mod tests {
         let default_bm25 = BM25::default();
         assert_eq!(default_bm25.k1, 1.5);
         assert_eq!(default_bm25.b, 0.75);
+    }
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_bm25_score_term_finite_and_non_negative(
+            tf in 0..10_000u32,
+            doc_len in 0..10_000u32,
+            avg_doc_len in 0.0..10_000.0f32,
+            df in 0..10_000u32,
+            n in 0..10_000u32,
+        ) {
+            let score = score_term(tf, doc_len, avg_doc_len, df, n);
+            prop_assert!(score.is_finite(), "Score must be finite");
+            prop_assert!(score >= 0.0, "Score must be non-negative");
+        }
+    }
+
+    #[test]
+    fn score_term_case_exact_anti_mirroring_value() {
+        // Independent mathematical calculation:
+        // tf = 1, doc_len = 10, avg_doc_len = 10.0, df = 1, n = 10, k1 = 1.5, b = 0.75
+        // idf_arg = (10 - 1 + 0.5) / (1 + 0.5) = 9.5 / 1.5 = 6.333333333...
+        // idf = ln(19/3) = 1.8458268
+        // norm_doc_len = 10 / 10 = 1.0
+        // tf_num = 1 * 2.5 = 2.5
+        // tf_den = 1 + 1.5 * (0.25 + 0.75) = 2.5
+        // tf_factor = 2.5 / 2.5 = 1.0
+        // expected score = 1.8458268
+        let score = score_term(1, 10, 10.0, 1, 10);
+        let expected = 1.845_826_8;
+        assert!(
+            (score - expected).abs() < 1e-6,
+            "Expected score close to {}, got {}",
+            expected,
+            score
+        );
+    }
+
+    #[test]
+    fn bm25_struct_score_term_case_matches_standalone_function() {
+        let bm25 = BM25::new(1.5, 0.75).expect("valid parameters");
+        let struct_score = bm25.score_term(2, 50, 50.0, 5, 100);
+        let fn_score = score_term(2, 50, 50.0, 5, 100);
+        assert_eq!(struct_score, fn_score);
     }
 
     #[test]

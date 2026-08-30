@@ -28,20 +28,20 @@ use std::sync::Arc;
 
 /// Represents a Point-in-Time snapshot of the agent's memory state.
 #[derive(Debug, Clone)]
-pub(crate) struct StateCheckpoint {
-    pub(crate) tx_id: TxId,
-    pub(crate) timestamp_ms: u64,
+pub struct StateCheckpoint {
+    pub tx_id: TxId,
+    pub timestamp_ms: u64,
 }
 
 /// RAII Guard that rolls back a checkpoint if not explicitly committed.
 /// Prevents transaction leaks if the process panics or drops early.
-pub(crate) struct CheckpointGuard {
+pub struct CheckpointGuard {
     checkpoint: Option<StateCheckpoint>,
     storage: Arc<LsmStorage>,
 }
 
 impl CheckpointGuard {
-    pub(crate) fn new(checkpoint: StateCheckpoint, storage: Arc<LsmStorage>) -> Self {
+    pub const fn new(checkpoint: StateCheckpoint, storage: Arc<LsmStorage>) -> Self {
         Self {
             checkpoint: Some(checkpoint),
             storage,
@@ -79,24 +79,27 @@ impl Drop for CheckpointGuard {
 }
 
 /// The Checkpointer manages WAL replay bounds for deterministic time-travel.
-pub(crate) struct Checkpointer {
+pub struct Checkpointer {
     storage: Arc<LsmStorage>,
 }
 
 impl Checkpointer {
     /// Creates a new Checkpointer.
-    pub(crate) fn new(storage: Arc<LsmStorage>) -> Self {
+    pub const fn new(storage: Arc<LsmStorage>) -> Self {
         Self { storage }
     }
 
     /// Records a new checkpoint at the current transaction ID marking an agent step.
     /// Returns a RAII guard that will rollback the state if dropped without commit.
     // DECISION-REF: AGT-STORE-001 resolved — SystemTime error propagated via Result instead of unwrap_or_default()
-    pub(crate) fn create_checkpoint(&self, tx_id: TxId) -> Result<CheckpointGuard> {
-        let timestamp_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| MemFuseError::Storage(format!("System clock error: {}", e)))?
-            .as_millis() as u64;
+    pub fn create_checkpoint(&self, tx_id: TxId) -> Result<CheckpointGuard> {
+        let timestamp_ms = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| MemFuseError::Storage(format!("System clock error: {}", e)))?
+                .as_millis(),
+        )
+        .map_err(|e| MemFuseError::Storage(format!("Timestamp overflow: {}", e)))?;
         let cp = StateCheckpoint {
             tx_id,
             timestamp_ms,

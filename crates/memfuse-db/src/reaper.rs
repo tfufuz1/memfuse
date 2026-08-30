@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// ZWECK: Hintergrund-Reaper-Tasks zur TTL-Löschung und Bereinigung verwaister Transaktionen (Orphan Reaper).
+// INVARIANTEN: Geordnete Abschaltung via CancellationToken; Beschränkung der pro Tick verarbeiteten Elemente.
+// NICHT-OFFENSICHTLICH: Orphan Reaper triggert bei HNSW-Indextrennung automatischen Rebuild mit Timeout.
+// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+
 use crate::collection::Collection;
 use memfuse_core::traits::StorageEngine;
 use memfuse_core::tx_buffer::TxBuffer;

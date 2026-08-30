@@ -380,6 +380,33 @@ mod tests {
     }
 
     #[test]
+    fn test_token_budget_edge_cases() {
+        let mut budget = TokenBudget::new(100, 20);
+        assert_eq!(budget.effective_limit(), 100);
+        assert_eq!(budget.available(), 80);
+
+        // Consume more than available limit -> available saturates at 0
+        budget.consume(90);
+        assert_eq!(budget.consumed(), 90);
+        assert_eq!(budget.available(), 0);
+
+        // Consume with overflow attempt saturates at usize::MAX
+        budget.consume(usize::MAX - 10);
+        assert_eq!(budget.consumed(), usize::MAX);
+        assert_eq!(budget.available(), 0);
+
+        // Default TokenBudget
+        let default_b = TokenBudget::default();
+        assert_eq!(default_b.limit, 8192);
+        assert_eq!(default_b.reserved, 512);
+        assert_eq!(default_b.consumed, 0);
+
+        // Unknown model string falls back to 8192
+        let unknown_b = TokenBudget::for_model("custom-llm-v1");
+        assert_eq!(unknown_b.limit, 8192);
+    }
+
+    #[test]
     fn test_token_budget_strategies() {
         let b = TokenBudget {
             limit: 10_000,

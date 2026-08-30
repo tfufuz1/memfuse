@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// ZWECK: Key Management and AES-256-GCM-SIV authenticated encryption for MemFuse data structures.
+// INVARIANTEN: Nonce prefix (4 bytes) + OsRng random suffix (8 bytes) per encrypt_auto_nonce call. HKDF-Expand per file_id.
+// NICHT-OFFENSICHTLICH: AES-256-GCM-SIV provides nonce-misuse resistance (RFC 8452). Keys zeroized on drop. Lock-free & I/O-free.
+// HOTSPOTS: [50-150]
+// STAND: TS:2026-08-30T18:52:02Z (SESSION: 20260830)
+
 //! Encryption utilities for MemFuse.
 //!
 //! Implements AES-256-GCM-SIV encryption and HKDF-SHA256 key derivation.
@@ -52,6 +59,22 @@ impl std::fmt::Debug for KeyManager {
 impl KeyManager {
     /// Creates a new KeyManager by deriving a key from a passphrase.
     pub fn try_new(passphrase: &str, salt: &[u8]) -> Result<Self> {
+        if passphrase.is_empty() {
+            return Err(MemFuseError::InvalidInput(
+                "Passphrase cannot be empty".to_string(),
+            ));
+        }
+        if salt.is_empty() {
+            return Err(MemFuseError::InvalidInput(
+                "Salt cannot be empty".to_string(),
+            ));
+        }
+        if salt.len() > 10_000 {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Salt length {} exceeds maximum allowed bound of 10000 bytes",
+                salt.len()
+            )));
+        }
         let hk = Hkdf::<Sha256>::new(Some(salt), passphrase.as_bytes());
         let mut key_raw = [0u8; 32];
         hk.expand(b"memfuse-aes-256-gcm-key", &mut key_raw)
@@ -77,6 +100,17 @@ impl KeyManager {
     /// Derives a sub-key for a specific file or logical stream.
     /// This prevents nonce-reuse when multiple files use the same master key.
     pub fn derive_file_key(&self, file_id: &[u8]) -> Result<Self> {
+        if file_id.is_empty() {
+            return Err(MemFuseError::InvalidInput(
+                "file_id cannot be empty".to_string(),
+            ));
+        }
+        if file_id.len() > 10_000 {
+            return Err(MemFuseError::InvalidInput(format!(
+                "file_id length {} exceeds maximum allowed bound of 10000 bytes",
+                file_id.len()
+            )));
+        }
         // Since self.key is already derived via HKDF in try_new, it is a high-entropy PRK.
         // We use HKDF-Expand with a domain-separating prefix to derive a per-file key.
         let hk = Hkdf::<Sha256>::from_prk(self.key.as_bytes())
@@ -343,6 +377,79 @@ mod tests {
             sub1.inspect_key_bytes_for_test(),
             sub2.inspect_key_bytes_for_test(),
             "Different file_ids MUST yield different sub-keys"
+        );
+    }
+
+    #[test]
+    fn test_try_new_empty_passphrase() {
+        let res = KeyManager::try_new("", b"salt");
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn test_try_new_empty_salt() {
+        let res = KeyManager::try_new("pass", b"");
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn test_try_new_oversized_salt() {
+        let salt = vec![0u8; 10_001];
+        let res = KeyManager::try_new("pass", &salt);
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn test_derive_file_key_empty_id() {
+        let km = KeyManager::try_new("pass", b"salt").expect("km");
+        let res = km.derive_file_key(b"");
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn test_derive_file_key_oversized_id() {
+        let km = KeyManager::try_new("pass", b"salt").expect("km");
+        let file_id = vec![0u8; 10_001];
+        let res = km.derive_file_key(&file_id);
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    // ANCHOR[TEST:CRY-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:3779c7f0) — Nonce-Uniqueness verification bei paralleler Verschlüsselung
+    #[tokio::test]
+    async fn test_parallel_nonce_uniqueness() {
+        use std::collections::HashSet;
+        use std::sync::{Arc, Mutex};
+
+        let km = Arc::new(
+            KeyManager::try_new("parallel-secret-passphrase", b"salt-parallel-1234").expect("km"),
+        );
+        let nonces = Arc::new(Mutex::new(HashSet::with_capacity(100_000)));
+
+        let mut handles = Vec::new();
+        for _ in 0..10 {
+            let km_clone = Arc::clone(&km);
+            let nonces_clone = Arc::clone(&nonces);
+            handles.push(tokio::spawn(async move {
+                let data = b"parallel payload data block";
+                for _ in 0..10_000 {
+                    let (_, nonce) = km_clone.encrypt_auto_nonce(data).expect("encrypt");
+                    let mut guard = nonces_clone.lock().expect("lock nonces");
+                    assert!(
+                        guard.insert(nonce),
+                        "Nonce reuse detected in parallel execution!"
+                    );
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle.await.expect("task handle joined");
+        }
+
+        let final_count = nonces.lock().expect("lock nonces").len();
+        assert_eq!(
+            final_count, 100_000,
+            "All 100,000 nonces generated in parallel MUST be distinct"
         );
     }
 }

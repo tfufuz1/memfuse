@@ -1,10 +1,11 @@
-//! DiskANN Out-of-Core Vector Search (WP-4.3).
 // FILE-CONTEXT
-// STAND: 2026-08-27T14:32:00Z
-// ZWECK: DiskANN-Graphindex für Approximate Nearest Neighbor Search
-// INVARIANTEN: unsafe nur hier erlaubt (ADR-017); Graph-Invarianten nach jedem Insert prüfen
-// NICHT-OFFENSICHTLICH: SAFETY-Kommentar VOR jedem unsafe-Block Pflicht (llm_comment_system.md §LEVEL-6)
-// SIEHE AUCH: distance.rs, DECISIONS.md ADR-017
+// ZWECK: DiskANN-Graphindex für Out-of-Core Approximate Nearest Neighbor Search (WP-4.3).
+// INVARIANTEN: Lock-Hierarchie: header -> mmap -> cache / quantizer / doc_ids; atomic rename + parent dir sync bei file persistence.
+// NICHT-OFFENSICHTLICH: Mmap für Vektor- & Graphlesezugriffe, unsafe Block benötigt 4-Punkt SAFETY-Kommentar.
+// HOTSPOTS: diskann.rs (DiskAnnIndex::search_internal, write_to_file, load_node)
+// STAND: TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)
+
+//! DiskANN Out-of-Core Vector Search (WP-4.3).
 
 #![doc(hidden)]
 
@@ -492,6 +493,14 @@ impl DiskAnnIndex {
         tokio::fs::rename(&tmp_path, &self.inner.config.index_path)
             .await
             .map_err(MemFuseError::Io)?;
+
+        // Fsync parent directory after rename for POSIX atomic directory entry durability
+        if let Some(parent) = self.inner.config.index_path.parent() {
+            let parent_dir = tokio::fs::File::open(parent)
+                .await
+                .map_err(MemFuseError::Io)?;
+            parent_dir.sync_all().await.map_err(MemFuseError::Io)?;
+        }
         Ok(())
     }
 
@@ -748,6 +757,13 @@ impl DiskAnnIndex {
     }
 
     pub async fn search_internal(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>> {
+        if k > memfuse_core::MAX_SEARCH_K {
+            return Err(MemFuseError::invalid_input(format!(
+                "Requested k ({}) exceeds maximum allowed search limit ({})",
+                k,
+                memfuse_core::MAX_SEARCH_K
+            )));
+        }
         let header = {
             let guard = self.inner.header.read();
             *guard
@@ -940,6 +956,30 @@ impl Ord for SearchCandidate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_diskann_non_power_of_two_sector_size_rejected() {
+        let bad_config = DiskAnnConfig {
+            sector_size: 4000, // not a power of 2
+            ..DiskAnnConfig::default()
+        };
+        let res = DiskAnnIndex::try_new(bad_config);
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[tokio::test]
+    async fn test_diskann_read_only_mutations_return_error() {
+        let index = DiskAnnIndex::try_new(DiskAnnConfig::default()).expect("valid config");
+        let tx = TxId::new(1);
+        let doc_id = DocId::from(100);
+        let vec = vec![1.0f32; 128];
+
+        let insert_res = index.insert(tx, doc_id, &vec).await;
+        assert!(matches!(insert_res, Err(MemFuseError::InvalidInput(_))));
+
+        let delete_res = index.delete(tx, doc_id).await;
+        assert!(matches!(delete_res, Err(MemFuseError::InvalidInput(_))));
+    }
 
     #[tokio::test]
     async fn test_diskann_config_validation() {
