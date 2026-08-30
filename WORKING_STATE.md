@@ -27,21 +27,21 @@
 ## Crate Inventory & Status Summary
 | Crate | Layer | LOC | Status | Description |
 |-------|-------|-----|--------|-------------|
-| `memfuse-core` | L0 | 7157 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-core` | L0 | 7254 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-checkpoint` | L1 | 1166 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | L1 | 1144 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-graph` | L1 | 4506 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-index` | L1 | 7305 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | L1 | 10313 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-graph` | L1 | 4640 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-index` | L1 | 7315 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-store` | L1 | 10337 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | L1 | 3562 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | L2 | 12137 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-agent` | L3 | 2849 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-db` | L2 | 12149 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-agent` | L3 | 2429 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | L3 | 1022 | 🧊 Optional |  |
 | `memfuse-ollama` | L3 | 2369 | 🟢 Clean |  |
 | `memfuse-py` | L3 | 987 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | L3 | 510 | 🟢 Clean |  |
 | `memfuse-mcp` | L4 | 2198 | 🟢 Clean |  |
-| `memfuse-tauri` | L4 | 2610 | 🟢 Clean |  |
+| `memfuse-tauri` | L4 | 2827 | 🟢 Clean |  |
 
 > **Hinweis**: Diese Datei ist zu 100 % autogeneriert durch `cargo xtask sync-docs` aus Inline-Code-Tags. Keinen Text manuell editieren. Bei Git-Merge-Konflikten stets `just sync-docs` ausführen.
 
