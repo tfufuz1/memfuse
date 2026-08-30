@@ -221,6 +221,9 @@ pub fn scan_tags<P: AsRef<Path>>(root: P) -> Vec<TagItem> {
                         } else if let Some(start) = trimmed.find("ANCHOR[") {
                             let rest = &trimmed[start + 7..];
                             rest.find(']').map(|end| rest[..end].to_string())
+                        } else if let Some(id_idx) = trimmed.find("(ID:") {
+                            let rest = &trimmed[id_idx + 4..];
+                            rest.find(')').map(|end| rest[..end].trim().to_string())
                         } else {
                             None
                         };
@@ -810,6 +813,11 @@ pub fn run_validate_tags(tags: &[TagItem]) -> bool {
     success
 }
 
+pub fn is_pre_cutoff(ts: &str) -> bool {
+    let date_part = if ts.len() >= 10 { &ts[..10] } else { ts };
+    date_part < "2026-08-29"
+}
+
 pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
     // Bestandsschutz: Only enforce multi-session review coverage for anchors created/resolved
     // on or after 2026-08-29 (Prompt 06 / ADR-028 decentralized review rule cutoff).
@@ -818,8 +826,7 @@ pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
         .filter(|t| {
             t.tag_type == "ANCHOR"
                 && t.is_resolved
-                && t.raw.contains("(ID:")
-                && t.id.as_deref().is_some_and(|id| id.starts_with("AGT-"))
+                && !is_pre_cutoff(&t.timestamp)
         })
         .collect();
 
