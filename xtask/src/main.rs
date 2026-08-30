@@ -745,6 +745,71 @@ fn run_sync_docs(check_only: bool) -> bool {
     }
 }
 
+pub fn run_validate_tags(tags: &[TagItem]) -> bool {
+    let mut success = true;
+    let cutoff_date = "2026-08-29";
+
+    let mut missing_ts = Vec::new();
+    let mut missing_session = Vec::new();
+
+    for tag in tags {
+        if tag.tag_type != "AI-TAG" && tag.tag_type != "ANCHOR" && tag.tag_type != "REVIEW-PASS" {
+            continue;
+        }
+
+        let ts = tag.timestamp.trim();
+        let valid_ts = if ts.len() >= 10 {
+            let date_part = &ts[..10];
+            let parts: Vec<&str> = date_part.split('-').collect();
+            parts.len() == 3
+                && parts[0].len() == 4
+                && parts[0].chars().all(|c| c.is_ascii_digit())
+                && parts[1].len() == 2
+                && parts[1].chars().all(|c| c.is_ascii_digit())
+                && parts[2].len() == 2
+                && parts[2].chars().all(|c| c.is_ascii_digit())
+        } else {
+            false
+        };
+
+        if !valid_ts {
+            missing_ts.push(tag);
+        } else {
+            let date_part = &ts[..10];
+            if date_part >= cutoff_date {
+                let session_opt = tag.session.as_deref().unwrap_or("").trim();
+                let has_session = !session_opt.is_empty() || tag.raw.contains("SESSION:");
+                if !has_session {
+                    missing_session.push(tag);
+                }
+            }
+        }
+    }
+
+    if !missing_ts.is_empty() {
+        eprintln!("❌ Tags without valid TS: timestamp:");
+        for tag in &missing_ts {
+            eprintln!("  {}:{} - {}", tag.file_path, tag.line_num, tag.raw);
+        }
+        success = false;
+    }
+
+    if !missing_session.is_empty() {
+        eprintln!("❌ New tags (>= {}) missing SESSION: field:", cutoff_date);
+        for tag in &missing_session {
+            eprintln!("  {}:{} - {}", tag.file_path, tag.line_num, tag.raw);
+        }
+        eprintln!("Füge SESSION: <8-hex> zu diesen Tags hinzu.");
+        success = false;
+    }
+
+    if success {
+        println!("✅ All tags have valid TS: and required SESSION: fields");
+    }
+
+    success
+}
+
 pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
     // Bestandsschutz: Only enforce multi-session review coverage for anchors created/resolved
     // on or after 2026-08-29 (Prompt 06 / ADR-028 decentralized review rule cutoff).
@@ -944,6 +1009,11 @@ enum Commands {
     SyncDocs {
         #[arg(long)]
         check: bool,
+    },
+    /// Validate AI-TAG and ANCHOR tags for TS and SESSION fields
+    ValidateTags {
+        #[arg(long)]
+        strict: bool,
     },
     /// Check multi-session review coverage for completed anchors
     CheckReviewCoverage,
