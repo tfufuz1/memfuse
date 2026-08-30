@@ -314,10 +314,11 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-020 (Wiederherstellung): Wiederherstellung von `memfuse-agent` aus dem Archiv
+## ADR-037 (ehem. ADR-020 Wiederherstellung): Wiederherstellung von `memfuse-agent` aus dem Archiv
 
 - **Datum**: 2026-08-27
 - **Status**: ✅ Final
+- **Hinweis**: Renummeriert von ADR-020 zu ADR-037 in R-08 zur Behebung des ADR-020-Duplikats. (Reserved Gaps: ADR-038, ADR-039).
 - **Entscheidung**: Kernkomponenten aus `memfuse-saos-agent` (gelöscht in Commit 55a3464)
   werden als `memfuse-agent` wiederhergestellt: `AgentTool` Trait, `OrchestratorEngine`,
   `StateGraph`, `AuditLog`.

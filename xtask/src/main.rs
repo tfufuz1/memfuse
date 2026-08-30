@@ -291,8 +291,32 @@ pub fn calculate_crate_loc<P: AsRef<Path>>(dir: P) -> usize {
     loc
 }
 
+pub fn get_workspace_root() -> PathBuf {
+    let mut current_dir = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut cargo_path = current_dir.join("Cargo.toml");
+
+    loop {
+        if cargo_path.exists() {
+            if let Ok(content) = fs::read_to_string(&cargo_path) {
+                if content.contains("[workspace]") {
+                    return current_dir;
+                }
+            }
+        }
+        if let Some(parent) = current_dir.parent() {
+            current_dir = parent.to_path_buf();
+            cargo_path = current_dir.join("Cargo.toml");
+        } else {
+            break;
+        }
+    }
+    PathBuf::from(".")
+}
+
 pub fn get_workspace_crates() -> Vec<CrateInfo> {
-    let root_cargo = fs::read_to_string("Cargo.toml").unwrap_or_default();
+    let root_dir = get_workspace_root();
+    let cargo_path = root_dir.join("Cargo.toml");
+    let root_cargo = fs::read_to_string(&cargo_path).unwrap_or_default();
     let toml_val: toml::Value =
         toml::from_str(&root_cargo).expect("Failed to parse root Cargo.toml");
 
@@ -310,7 +334,7 @@ pub fn get_workspace_crates() -> Vec<CrateInfo> {
             continue;
         }
 
-        let crate_cargo_path = PathBuf::from(path_str).join("Cargo.toml");
+        let crate_cargo_path = root_dir.join(path_str).join("Cargo.toml");
         if !crate_cargo_path.exists() {
             continue;
         }
