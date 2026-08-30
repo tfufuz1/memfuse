@@ -45,6 +45,8 @@ const MAX_TRAVERSAL_HOPS: u8 = 3;
 const GRAPH_ENTITY_PREFIX: &[u8] = b"__graph:entity:";
 /// LSM-Key-Prefix für alle Graph-Edges.
 const GRAPH_EDGE_PREFIX: &[u8] = b"__graph:edge:";
+/// LSM-Key-Prefix für alle Community-Assignments.
+const GRAPH_COMMUNITY_PREFIX: &[u8] = b"__graph:community:";
 
 /// Untere Schranke für Wall-Clock-abgeleitete TxId-Heuristik.
 ///
@@ -124,6 +126,10 @@ pub(crate) struct GraphInner {
     pub(crate) reverse_map: Vec<EntityId>,
     /// Entity metadata stored contiguously.
     pub(crate) entities: Vec<Option<Entity>>,
+    /// Community assignments mapping EntityId -> community_id.
+    pub(crate) communities: HashMap<EntityId, u64>,
+    /// Flag indicating whether communities have been loaded from storage or set in memory.
+    pub(crate) communities_loaded: bool,
 
     /// CSR offsets array: offsets[i] is the start index in `targets` for node `i`.
     /// Length is nodes + 1.
@@ -159,6 +165,8 @@ impl GraphInner {
             id_map: HashMap::new(),
             reverse_map: Vec::new(),
             entities: Vec::new(),
+            communities: HashMap::new(),
+            communities_loaded: false,
             offsets: vec![0],
             targets: Vec::new(),
             weights: Vec::new(),
@@ -517,9 +525,29 @@ impl CsrGraph {
                 .fetch_max(last_tx.inner(), Ordering::SeqCst);
         }
 
+        // 3. Communities laden
+        let community_entries = storage.scan_prefix(GRAPH_COMMUNITY_PREFIX).await?;
+        let mut community_count = 0usize;
+        {
+            let mut inner = graph.inner.write();
+            inner.communities_loaded = true;
+            for (raw_key, raw_value) in community_entries {
+                if let Some(key_payload) = raw_key.get(GRAPH_COMMUNITY_PREFIX.len()..) {
+                    if let Ok(key_str) = std::str::from_utf8(key_payload) {
+                        let eid = EntityId::from(key_str);
+                        if let Ok(comm_id) = serde_json::from_slice::<u64>(&raw_value) {
+                            inner.communities.insert(eid, comm_id);
+                            community_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+
         tracing::info!(
             entities = entity_count,
             edges = edge_count,
+            communities = community_count,
             last_tx = graph.last_tx_id.load(Ordering::SeqCst),
             "Graph aus Storage geladen und kompaktiert"
         );
@@ -570,6 +598,58 @@ impl CsrGraph {
         .map_err(|e| MemFuseError::Internal(format!("Graph compact panicked: {e}")))?;
 
         Ok(())
+    }
+
+    /// Sets community assignments in batch for in-memory graph index lookups.
+    pub fn set_communities_batch(&self, assignments: &[crate::CommunityAssignment]) {
+        let mut inner = self.inner.write();
+        for a in assignments {
+            inner.communities.insert(a.entity_id, a.community_id);
+        }
+        inner.communities_loaded = true;
+    }
+
+    /// Retrieves community assignments for a batch of entity IDs in a single operation.
+    pub async fn get_communities_batch(
+        &self,
+        entity_ids: &[EntityId],
+    ) -> Result<HashMap<EntityId, u64>> {
+        let inner = self.inner.read();
+        let mut map = HashMap::with_capacity(entity_ids.len());
+        for &eid in entity_ids {
+            if let Some(&comm_id) = inner.communities.get(&eid) {
+                map.insert(eid, comm_id);
+            }
+        }
+        if inner.communities_loaded || self.storage.is_none() || entity_ids.is_empty() {
+            return Ok(map);
+        }
+        drop(inner);
+
+        if let Some(ref storage) = self.storage {
+            let entries = storage.scan_prefix(GRAPH_COMMUNITY_PREFIX).await?;
+            let mut inner = self.inner.write();
+            inner.communities_loaded = true;
+            for (raw_key, raw_val) in entries {
+                if let Some(key_payload) = raw_key.get(GRAPH_COMMUNITY_PREFIX.len()..) {
+                    if let Ok(key_str) = std::str::from_utf8(key_payload) {
+                        let eid = EntityId::from(key_str);
+                        if let Ok(comm_id) = serde_json::from_slice::<u64>(&raw_val) {
+                            inner.communities.insert(eid, comm_id);
+                        }
+                    }
+                }
+            }
+            let mut map = HashMap::with_capacity(entity_ids.len());
+            for &eid in entity_ids {
+                if let Some(&comm_id) = inner.communities.get(&eid) {
+                    map.insert(eid, comm_id);
+                }
+            }
+            Ok(map)
+        } else {
+            Ok(HashMap::new())
+        }
     }
 
     /// Returns direct 1-hop outgoing neighbors of `start`.
@@ -1669,6 +1749,33 @@ mod tests {
                 Entity::new(EntityId::new(100), "WallClockEntity", "Type"),
             )
             .await;
+    }
+
+    #[tokio::test]
+    async fn test_get_communities_batch_api() {
+        let graph = CsrGraph::new();
+        let assignments = vec![
+            crate::CommunityAssignment {
+                entity_id: EntityId::new(1),
+                community_id: 100,
+            },
+            crate::CommunityAssignment {
+                entity_id: EntityId::new(2),
+                community_id: 200,
+            },
+        ];
+
+        graph.set_communities_batch(&assignments);
+
+        let map = graph
+            .get_communities_batch(&[EntityId::new(1), EntityId::new(2), EntityId::new(3)])
+            .await
+            .unwrap();
+
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get(&EntityId::new(1)), Some(&100));
+        assert_eq!(map.get(&EntityId::new(2)), Some(&200));
+        assert_eq!(map.get(&EntityId::new(3)), None);
     }
 
     #[tokio::test]

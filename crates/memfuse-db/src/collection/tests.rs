@@ -1949,3 +1949,270 @@ async fn test_search_dimension_mismatch_rejected() {
     let hybrid_res = col.hybrid_search("query", &wrong_dim_vec, 10, None).await;
     assert!(hybrid_res.is_err());
 }
+
+#[tokio::test]
+async fn test_community_lookup_batch_performance_regression() {
+    use async_trait::async_trait;
+    use memfuse_core::{EntityId, Result, StorageEngine, StorageStats, TxId};
+    use memfuse_graph::csr::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::{LsmConfig, LsmStorage};
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    struct CountingStorageEngine {
+        inner: LsmStorage,
+        get_count: AtomicUsize,
+        scan_count: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl StorageEngine for CountingStorageEngine {
+        async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+            self.get_count.fetch_add(1, Ordering::SeqCst);
+            self.inner.get(key).await
+        }
+        async fn get_at_seq(&self, key: &[u8], seq: u64) -> Result<Option<Vec<u8>>> {
+            self.inner.get_at_seq(key, seq).await
+        }
+        async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+            self.inner.put(tx_id, key, value).await
+        }
+        async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
+            self.inner.delete(tx_id, key).await
+        }
+        async fn commit(&self, tx_id: TxId) -> Result<()> {
+            self.inner.commit(tx_id).await
+        }
+        async fn rollback(&self, tx_id: TxId) -> Result<()> {
+            self.inner.rollback(tx_id).await
+        }
+        async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
+            self.inner.rollback_to_tx(tx_id).await
+        }
+        async fn flush(&self) -> Result<()> {
+            self.inner.flush().await
+        }
+        async fn stats(&self) -> Result<StorageStats> {
+            self.inner.stats().await
+        }
+        async fn last_seq_no(&self) -> Result<u64> {
+            self.inner.last_seq_no().await
+        }
+        async fn last_tx_id(&self) -> Result<TxId> {
+            self.inner.last_tx_id().await
+        }
+        async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
+            self.inner.pin_checkpoint(seq_no).await
+        }
+        async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
+            self.inner.unpin_checkpoint(seq_no).await
+        }
+        async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+            self.scan_count.fetch_add(1, Ordering::SeqCst);
+            self.inner.scan_prefix(prefix).await
+        }
+        async fn scan_prefix_at(
+            &self,
+            prefix: &[u8],
+            seq_no: u64,
+        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+            self.scan_count.fetch_add(1, Ordering::SeqCst);
+            self.inner.scan_prefix_at(prefix, seq_no).await
+        }
+        async fn scan(
+            &self,
+            start: std::ops::Bound<&[u8]>,
+            end: std::ops::Bound<&[u8]>,
+        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+            self.inner.scan(start, end).await
+        }
+    }
+
+    let dir = tempdir().unwrap();
+    let inner_lsm = LsmStorage::new(LsmConfig {
+        path: dir.path().to_path_buf(),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+
+    let storage = Arc::new(CountingStorageEngine {
+        inner: inner_lsm,
+        get_count: AtomicUsize::new(0),
+        scan_count: AtomicUsize::new(0),
+    });
+
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let graph = Arc::new(CsrGraph::new());
+    let next_tx = Arc::new(AtomicU64::new(1));
+
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage.clone(),
+        index,
+        graph,
+        next_tx,
+        4,
+        memfuse_text::Language::English,
+    );
+
+    // Insert 120 documents
+    for i in 1..=120 {
+        let id = format!("doc_{i}");
+        col.insert(
+            &id,
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(serde_json::json!({"text": format!("content_{i}")})),
+        )
+        .await
+        .unwrap();
+    }
+
+    // Connect documents to form graph structure
+    for i in 1..120 {
+        col.relate(&format!("doc_{i}"), &format!("doc_{}", i + 1), "link")
+            .await
+            .unwrap();
+    }
+
+    // Run community detection to assign communities
+    col.run_community_detection().await.unwrap();
+
+    let target_eid = EntityId::from_key("doc_1").unwrap();
+
+    // Reset storage counter before hybrid search
+    storage.get_count.store(0, Ordering::SeqCst);
+    storage.scan_count.store(0, Ordering::SeqCst);
+
+    // Perform hybrid search with community filter over >100 candidates
+    let results = col
+        .hybrid_search_with_strategy(
+            "content",
+            &[1.0, 0.0, 0.0, 0.0],
+            100,
+            None,
+            None,
+            None,
+            Some(target_eid),
+        )
+        .await
+        .unwrap();
+
+    assert!(!results.is_empty(), "Results must not be empty");
+
+    // With batch lookup: candidate community lookups are done in-memory via CsrGraph or single batch lookup,
+    // requiring 0 individual `get` calls per candidate (only 1 get call for target_community_id itself).
+    let get_calls = storage.get_count.load(Ordering::SeqCst);
+    assert!(
+        get_calls <= 1,
+        "Expected at most 1 storage `get` call for target_community_id, got {get_calls} (proves batch lookup instead of N=100+ serial gets)"
+    );
+}
+
+#[tokio::test]
+async fn test_community_lookup_correctness_regression_large_candidate_set() {
+    use memfuse_core::EntityId;
+    use memfuse_graph::csr::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(),
+    );
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let graph = Arc::new(CsrGraph::new());
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage,
+        index,
+        graph,
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    // Insert 150 documents into 2 clusters
+    for i in 1..=150 {
+        let id = format!("cand_{i}");
+        col.insert(
+            &id,
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(serde_json::json!({"text": format!("topic candidate {}", i)})),
+        )
+        .await
+        .unwrap();
+    }
+
+    // Connect Cluster 1 (cand_1..cand_75)
+    for i in 1..75 {
+        col.relate(&format!("cand_{i}"), &format!("cand_{}", i + 1), "cluster1")
+            .await
+            .unwrap();
+    }
+
+    // Connect Cluster 2 (cand_76..cand_150)
+    for i in 76..150 {
+        col.relate(&format!("cand_{i}"), &format!("cand_{}", i + 1), "cluster2")
+            .await
+            .unwrap();
+    }
+
+    // Run community detection
+    col.run_community_detection().await.unwrap();
+
+    let target_eid = EntityId::from_key("cand_1").unwrap();
+
+    let query_res = col
+        .hybrid_search_with_strategy(
+            "candidate",
+            &[1.0, 0.0, 0.0, 0.0],
+            100,
+            None,
+            None,
+            None,
+            Some(target_eid),
+        )
+        .await
+        .unwrap();
+
+    assert!(!query_res.is_empty(), "Query result must not be empty");
+
+    let target_comm = col.get_community(target_eid).await.unwrap().unwrap();
+
+    // Verify all returned results belong to the target community
+    for res in &query_res {
+        let eid = EntityId::from_key(&res.id).unwrap();
+        let comm = col.get_community(eid).await.unwrap();
+        assert_eq!(
+            comm,
+            Some(target_comm),
+            "Document {} in community {:?} must match target community {}",
+            res.id,
+            comm,
+            target_comm
+        );
+    }
+}
