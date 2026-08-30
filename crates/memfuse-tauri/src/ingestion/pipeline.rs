@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T14:38:30Z (SESSION: 45595f71)
+// ZWECK: Ingestion pipeline orchestrating document parsing, chunking, embedding, and graph indexing.
+// INVARIANTEN: Enforces MAX_INGEST_FILE_SIZE_BYTES limit (100 MB); uses MarkdownChunker for document splitting.
+// NICHT-OFFENSICHTLICH: Document processing catches unwinds to report file-level errors without pipeline crash.
+// SIEHE AUCH: crates/memfuse-db/src/chunker.rs, crates/memfuse-tauri/src/commands/ingest.rs
+
 use memfuse_core::{
     ContextChunk, DocId, Edge, Entity, EntityId, GraphIndex, MemFuseError, Result,
     TextEmbeddingEngine,

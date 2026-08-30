@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T14:38:30Z (SESSION: 45595f71)
+// ZWECK: Hybrid vector and BM25 search Tauri IPC command.
+// INVARIANTEN: Parameter k must be bounded (1 <= k <= 1,000); query length limited to MAX_QUERY_LEN.
+// NICHT-OFFENSICHTLICH: Search converts results to SearchResultDto with truncated text previews.
+// SIEHE AUCH: crates/memfuse-db/src/collection.rs
+
 use crate::commands::collections::validate_collection_name;
 use crate::ollama::OllamaBridge;
 use crate::state::AppState;
@@ -5,7 +12,7 @@ use memfuse_core::{MemFuseErrorDto, TextEmbeddingEngine};
 use serde::Serialize;
 use tauri::State;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct SearchResultDto {
     pub id: String,
     pub score: f32,
@@ -15,6 +22,21 @@ pub struct SearchResultDto {
 
 const MAX_QUERY_LEN: usize = 65_536; // 64 KiB
 
+pub const MAX_SEARCH_K: usize = 1_000;
+
+pub fn validate_search_params(query: &str, k: usize) -> Result<(), MemFuseErrorDto> {
+    if query.len() > MAX_QUERY_LEN {
+        return Err(MemFuseErrorDto::new("InvalidInput", "Query too long"));
+    }
+    if k == 0 || k > MAX_SEARCH_K {
+        return Err(MemFuseErrorDto::new(
+            "InvalidInput",
+            format!("Parameter k must be between 1 and {MAX_SEARCH_K}"),
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn hybrid_search(
     state: State<'_, AppState>,
@@ -22,9 +44,7 @@ pub async fn hybrid_search(
     collection_name: String,
     k: usize,
 ) -> Result<Vec<SearchResultDto>, MemFuseErrorDto> {
-    if query.len() > MAX_QUERY_LEN {
-        return Err(MemFuseErrorDto::new("InvalidInput", "Query too long"));
-    }
+    validate_search_params(&query, k)?;
     validate_collection_name(&collection_name)?;
     let db = {
         let db_guard = state.db.read();
@@ -98,5 +118,25 @@ mod tests {
             res.unwrap_err().message,
             "No database is open. Please open or create a database first."
         );
+    }
+
+    #[test]
+    fn test_validate_search_params_k_bounds() {
+        let res_zero = validate_search_params("query", 0);
+        assert!(res_zero.is_err());
+        assert_eq!(
+            res_zero.unwrap_err().message,
+            "Parameter k must be between 1 and 1000"
+        );
+
+        let res_too_large = validate_search_params("query", 1001);
+        assert!(res_too_large.is_err());
+        assert_eq!(
+            res_too_large.unwrap_err().message,
+            "Parameter k must be between 1 and 1000"
+        );
+
+        let res_valid = validate_search_params("query", 10);
+        assert!(res_valid.is_ok());
     }
 }

@@ -7,13 +7,6 @@
 //! # Invarianten
 //! - `DocId` und `TxId` sind Wrapper um primitive Typen mit deterministischer Hash-Generierung.
 
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       Domain-Types (TxId, DocId, CollectionId) — Newtype-Wrapper für Typ-Sicherheit
-// INVARIANTEN: TxId ist u64-Newtype, NIEMALS direkt aus SystemTime erzeugen (AGENTS.md §4)
-// HOTSPOTS:    TxId, DocId, CollectionId, TOMBSTONE_BIT
-// SIEHE AUCH:  AGENTS.md §4
-
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -92,7 +85,16 @@ impl DocId {
                 "Key cannot be empty".to_string(),
             ));
         }
-        Ok(Self(hash_key_u64(key)))
+        let hash = blake3::hash(key.as_bytes());
+        let bytes = hash
+            .as_bytes()
+            .get(..8)
+            .ok_or_else(|| MemFuseError::Internal("Blake3 hash too short".to_string()))?;
+
+        let buf: [u8; 8] = bytes.try_into().map_err(|_| {
+            MemFuseError::Internal("Failed to convert hash slice to array".to_string())
+        })?;
+        Ok(Self(u64::from_le_bytes(buf)))
     }
 }
 
@@ -155,14 +157,6 @@ impl From<u64> for EntityId {
     }
 }
 
-#[inline]
-fn hash_key_u64(s: &str) -> u64 {
-    let hash = blake3::hash(s.as_bytes());
-    let mut buf = [0u8; 8];
-    buf.copy_from_slice(&hash.as_bytes()[..8]);
-    u64::from_le_bytes(buf)
-}
-
 impl From<&str> for EntityId {
     /// Infallible conversion: parses as `u64` first, then falls back to BLAKE3 hash.
     /// For consistent error handling at API boundaries, prefer `EntityId::from_key`.
@@ -170,7 +164,10 @@ impl From<&str> for EntityId {
         if let Ok(val) = s.parse::<u64>() {
             Self(val)
         } else {
-            Self(hash_key_u64(s))
+            let hash = blake3::hash(s.as_bytes());
+            let mut buf = [0u8; 8];
+            buf.copy_from_slice(&hash.as_bytes()[..8]);
+            Self(u64::from_le_bytes(buf))
         }
     }
 }
