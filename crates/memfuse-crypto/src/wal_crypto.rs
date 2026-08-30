@@ -3,7 +3,7 @@
 // INVARIANTEN: EncryptedWal prepends 12-byte nonce to ciphertext. IntegrityVerifier checks sequence HMAC chain in constant time.
 // NICHT-OFFENSICHTLICH: Subtle constant-time byte comparisons prevent timing attacks. All operations lock-free & I/O-free.
 // HOTSPOTS: [35-180]
-// STAND: TS:2026-08-30T18:52:02Z (SESSION: 20260830)
+// STAND: TS:2026-08-30T22:01:36Z (SESSION: e8b9a102)
 
 //! Encryption at Rest layer for LSM/WAL components (WP-3.2)
 //!
@@ -64,6 +64,14 @@ impl EncryptedWal {
     /// Wraps the internal WAL chunk in AES-256-GCM stream.
     /// Prepends the 12-byte nonce to the encrypted ciphertext.
     pub fn encrypt_chunk(&self, payload: &[u8]) -> Result<Vec<u8>> {
+        const MAX_PAYLOAD_SIZE: usize = 100 * 1024 * 1024; // 100 MB
+        if payload.len() > MAX_PAYLOAD_SIZE {
+            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+                "Payload size {} exceeds maximum permitted limit of {} bytes",
+                payload.len(),
+                MAX_PAYLOAD_SIZE
+            )));
+        }
         let (ciphertext, nonce) = self.key_manager.encrypt_auto_nonce(payload)?;
         let mut out = Vec::with_capacity(12 + ciphertext.len());
         out.extend_from_slice(&nonce);
@@ -187,6 +195,23 @@ impl IntegrityVerifier {
 
     /// Verifies a V3 entry (with tx_id and length prefixes) and updates the chain state.
     pub fn verify_and_update_v3(&mut self, entry: &WalEntrySnapshot, offset: u64) -> Result<()> {
+        const MAX_KEY_SIZE: usize = 64 * 1024; // 64 KB
+        const MAX_VALUE_SIZE: usize = 100 * 1024 * 1024; // 100 MB
+        if entry.key.len() > MAX_KEY_SIZE {
+            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+                "WAL entry key length {} exceeds limit of {} bytes",
+                entry.key.len(),
+                MAX_KEY_SIZE
+            )));
+        }
+        if entry.value.len() > MAX_VALUE_SIZE {
+            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+                "WAL entry value length {} exceeds limit of {} bytes",
+                entry.value.len(),
+                MAX_VALUE_SIZE
+            )));
+        }
+
         let mut mac = WalHmac::new(&self.integrity_key)?;
         mac.update(&self.last_hmac);
         mac.update(&entry.seq_no.to_le_bytes());
@@ -225,6 +250,23 @@ impl IntegrityVerifier {
 
     /// Verifies a V2 entry (legacy without tx_id and without length prefixes) and updates the chain state.
     pub fn verify_and_update_v2(&mut self, entry: &WalEntrySnapshot, offset: u64) -> Result<()> {
+        const MAX_KEY_SIZE: usize = 64 * 1024; // 64 KB
+        const MAX_VALUE_SIZE: usize = 100 * 1024 * 1024; // 100 MB
+        if entry.key.len() > MAX_KEY_SIZE {
+            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+                "WAL entry key length {} exceeds limit of {} bytes",
+                entry.key.len(),
+                MAX_KEY_SIZE
+            )));
+        }
+        if entry.value.len() > MAX_VALUE_SIZE {
+            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+                "WAL entry value length {} exceeds limit of {} bytes",
+                entry.value.len(),
+                MAX_VALUE_SIZE
+            )));
+        }
+
         let mut mac = WalHmac::new(&self.integrity_key)?;
         mac.update(&self.last_hmac);
         mac.update(&entry.seq_no.to_le_bytes());
@@ -500,6 +542,60 @@ mod tests {
         let res = WalHmac::new(b"");
         assert!(matches!(
             res,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn test_encrypt_chunk_oversized() {
+        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
+        let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
+        let data = vec![0u8; 100 * 1024 * 1024 + 1];
+        let res = wal.encrypt_chunk(&data);
+        assert!(matches!(
+            res,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn test_verifier_oversized_key_or_value() {
+        let key = b"integrity-key-32-bytes-long-----";
+        let mut verifier = IntegrityVerifier::new(key);
+
+        let oversized_key_entry = WalEntrySnapshot {
+            tx_id: TxId::new(1),
+            seq_no: 1,
+            op_type: 0,
+            key: vec![0u8; 64 * 1024 + 1],
+            value: vec![0u8; 10],
+            checksum: [0u8; 32],
+            prev_hmac: [0u8; 32],
+        };
+        assert!(matches!(
+            verifier.verify_and_update_v3(&oversized_key_entry, 0),
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            verifier.verify_and_update_v2(&oversized_key_entry, 0),
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+
+        let oversized_val_entry = WalEntrySnapshot {
+            tx_id: TxId::new(1),
+            seq_no: 1,
+            op_type: 0,
+            key: vec![0u8; 10],
+            value: vec![0u8; 100 * 1024 * 1024 + 1],
+            checksum: [0u8; 32],
+            prev_hmac: [0u8; 32],
+        };
+        assert!(matches!(
+            verifier.verify_and_update_v3(&oversized_val_entry, 0),
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            verifier.verify_and_update_v2(&oversized_val_entry, 0),
             Err(memfuse_core::MemFuseError::InvalidInput(_))
         ));
     }
