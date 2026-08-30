@@ -113,7 +113,13 @@ let results = col.hybrid_search("meine Anfrage", &query_embedding, 5, None).awai
 Der `memfuse-mcp`-Server stellt MCP-Tools über stdio JSON-RPC 2.0 bereit (ADR-010) (`memfuse_search`, `memfuse_insert`, `memfuse_get`, `memfuse_collections`):
 
 ```bash
+# Standardmäßig im Read-Only-Modus (Schreibzugriff gesperrt):
 cargo run -p memfuse-mcp --bin memfuse-mcp-server -- --db-path ./firma_daten
+
+# Explicit mit Schreibzugriff starten via Flag oder Env:
+cargo run -p memfuse-mcp --bin memfuse-mcp-server -- --db-path ./firma_daten --allow-write
+# oder:
+MEMFUSE_MCP_ALLOW_WRITE=1 cargo run -p memfuse-mcp --bin memfuse-mcp-server -- --db-path ./firma_daten
 ```
 
 ## Roadmap — Cognitive Operating System

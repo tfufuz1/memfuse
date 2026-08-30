@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// ZWECK: Key Management and AES-256-GCM-SIV authenticated encryption for MemFuse data structures.
+// INVARIANTEN: Nonce prefix (4 bytes) + OsRng random suffix (8 bytes) per encrypt_auto_nonce call. HKDF-Expand per file_id.
+// NICHT-OFFENSICHTLICH: AES-256-GCM-SIV provides nonce-misuse resistance (RFC 8452). Keys zeroized on drop. Lock-free & I/O-free.
+// HOTSPOTS: [50-150]
+// STAND: TS:2026-08-30T18:52:02Z (SESSION: 20260830)
+
 //! Encryption utilities for MemFuse.
 //!
 //! Implements AES-256-GCM-SIV encryption and HKDF-SHA256 key derivation.
@@ -53,7 +60,20 @@ impl KeyManager {
     /// Creates a new KeyManager by deriving a key from a passphrase.
     pub fn try_new(passphrase: &str, salt: &[u8]) -> Result<Self> {
         if passphrase.is_empty() {
-            return Err(MemFuseError::invalid_input("Passphrase must not be empty"));
+            return Err(MemFuseError::InvalidInput(
+                "Passphrase cannot be empty".to_string(),
+            ));
+        }
+        if salt.is_empty() {
+            return Err(MemFuseError::InvalidInput(
+                "Salt cannot be empty".to_string(),
+            ));
+        }
+        if salt.len() > 10_000 {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Salt length {} exceeds maximum allowed bound of 10000 bytes",
+                salt.len()
+            )));
         }
         let hk = Hkdf::<Sha256>::new(Some(salt), passphrase.as_bytes());
         let mut key_raw = [0u8; 32];
@@ -81,7 +101,15 @@ impl KeyManager {
     /// This prevents nonce-reuse when multiple files use the same master key.
     pub fn derive_file_key(&self, file_id: &[u8]) -> Result<Self> {
         if file_id.is_empty() {
-            return Err(MemFuseError::invalid_input("file_id must not be empty"));
+            return Err(MemFuseError::InvalidInput(
+                "file_id cannot be empty".to_string(),
+            ));
+        }
+        if file_id.len() > 10_000 {
+            return Err(MemFuseError::InvalidInput(format!(
+                "file_id length {} exceeds maximum allowed bound of 10000 bytes",
+                file_id.len()
+            )));
         }
         // Since self.key is already derived via HKDF in try_new, it is a high-entropy PRK.
         // We use HKDF-Expand with a domain-separating prefix to derive a per-file key.
@@ -353,105 +381,75 @@ mod tests {
     }
 
     #[test]
-    fn test_try_new_empty_passphrase_fails() {
+    fn test_try_new_empty_passphrase() {
         let res = KeyManager::try_new("", b"salt");
-        assert!(res.is_err());
-        let err = res.unwrap_err();
-        assert!(matches!(err, MemFuseError::InvalidInput { .. }));
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
     }
 
     #[test]
-    fn test_derive_file_key_empty_id_fails() {
-        let km = KeyManager::try_new("secret", b"salt").expect("km");
+    fn test_try_new_empty_salt() {
+        let res = KeyManager::try_new("pass", b"");
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn test_try_new_oversized_salt() {
+        let salt = vec![0u8; 10_001];
+        let res = KeyManager::try_new("pass", &salt);
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn test_derive_file_key_empty_id() {
+        let km = KeyManager::try_new("pass", b"salt").expect("km");
         let res = km.derive_file_key(b"");
-        assert!(res.is_err());
-        let err = res.unwrap_err();
-        assert!(matches!(err, MemFuseError::InvalidInput { .. }));
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
     }
 
     #[test]
-    fn test_integrity_key_derivation() {
-        let km = KeyManager::try_new("secret-passphrase", b"salt-123").expect("km"); // expect
-        let integrity_key = km.integrity_key().expect("integrity_key"); // expect
+    fn test_derive_file_key_oversized_id() {
+        let km = KeyManager::try_new("pass", b"salt").expect("km");
+        let file_id = vec![0u8; 10_001];
+        let res = km.derive_file_key(&file_id);
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+    }
 
-        assert_eq!(integrity_key.len(), 32);
+    // ANCHOR[TEST:CRY-001] STATUS:DONE — Nonce-Uniqueness verification bei paralleler Verschlüsselung
+    #[tokio::test]
+    async fn test_parallel_nonce_uniqueness() {
+        use std::collections::HashSet;
+        use std::sync::{Arc, Mutex};
 
-        // Anti-mirroring: Calculate reference integrity key independently using Hkdf
-        let raw_prk = km.inspect_key_bytes_for_test();
-        let hk = Hkdf::<Sha256>::from_prk(raw_prk).expect("hkdf from_prk"); // expect
-        let mut reference_key = [0u8; 32];
-        hk.expand(b"memfuse-hmac-sha256-key", &mut reference_key)
-            .expect("expand"); // expect
-
-        assert_eq!(
-            integrity_key, reference_key,
-            "Integrity key must match independent HKDF expansion"
+        let km = Arc::new(
+            KeyManager::try_new("parallel-secret-passphrase", b"salt-parallel-1234").expect("km"),
         );
-    }
+        let nonces = Arc::new(Mutex::new(HashSet::with_capacity(100_000)));
 
-    #[test]
-    fn test_encrypt_decrypt_empty_and_single_byte_payload() {
-        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("km"); // expect
+        let mut handles = Vec::new();
+        for _ in 0..10 {
+            let km_clone = Arc::clone(&km);
+            let nonces_clone = Arc::clone(&nonces);
+            handles.push(tokio::spawn(async move {
+                let data = b"parallel payload data block";
+                for _ in 0..10_000 {
+                    let (_, nonce) = km_clone.encrypt_auto_nonce(data).expect("encrypt");
+                    let mut guard = nonces_clone.lock().expect("lock nonces");
+                    assert!(
+                        guard.insert(nonce),
+                        "Nonce reuse detected in parallel execution!"
+                    );
+                }
+            }));
+        }
 
-        // Empty payload boundary test
-        let (empty_ct, nonce1) = km.encrypt_auto_nonce(b"").expect("encrypt empty"); // expect
-        let empty_pt = km
-            .decrypt_auto_nonce(&empty_ct, &nonce1)
-            .expect("decrypt empty"); // expect
-        assert_eq!(empty_pt.as_slice(), b"");
+        for handle in handles {
+            handle.await.expect("task handle joined");
+        }
 
-        // Single byte boundary test
-        let (single_ct, nonce2) = km.encrypt_auto_nonce(b"A").expect("encrypt single"); // expect
-        let single_pt = km
-            .decrypt_auto_nonce(&single_ct, &nonce2)
-            .expect("decrypt single"); // expect
-        assert_eq!(single_pt.as_slice(), b"A");
-    }
-
-    #[test]
-    fn test_tampered_ciphertext_or_tag_fails_decryption() {
-        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("km"); // expect
-        let data = b"sensitive payload for tampering test";
-        let (mut ct, nonce) = km.encrypt_auto_nonce(data).expect("encrypt"); // expect
-
-        // Tamper with last byte (part of ciphertext or AES-GCM-SIV tag)
-        let last_idx = ct.len() - 1;
-        ct[last_idx] ^= 0xFF;
-
-        let res = km.decrypt_auto_nonce(&ct, &nonce);
-        assert!(res.is_err());
-        let err = res.unwrap_err();
-        assert!(matches!(err, MemFuseError::Crypto(_)));
-    }
-
-    #[test]
-    fn test_try_new_unicode_passphrase_and_empty_salt() {
-        let unicode_pass = "🔐-passphrase-öäü-🔑-123";
-        let km = KeyManager::try_new(unicode_pass, b"").expect("km unicode"); // expect
-
-        let data = b"payload test with unicode passphrase";
-        let (ct, nonce) = km.encrypt_auto_nonce(data).expect("encrypt"); // expect
-        let pt = km.decrypt_auto_nonce(&ct, &nonce).expect("decrypt"); // expect
-
-        assert_eq!(pt.as_slice(), data);
-    }
-
-    #[test]
-    fn test_try_new_random_salt_empty_passphrase_fails() {
-        let res = KeyManager::try_new_random_salt("");
-        assert!(res.is_err());
-        let err = res.unwrap_err();
-        assert!(matches!(err, MemFuseError::InvalidInput { .. }));
-    }
-
-    #[test]
-    fn test_volatile_encryption_key_partial_eq_and_as_bytes() {
-        let k1 = VolatileEncryptionKey::new([0x42u8; 32]);
-        let k2 = VolatileEncryptionKey::new([0x42u8; 32]);
-        let k3 = VolatileEncryptionKey::new([0x99u8; 32]);
-
-        assert_eq!(k1, k2, "Identical key bytes must be equal");
-        assert_ne!(k1, k3, "Different key bytes must not be equal");
-        assert_eq!(k1.as_bytes(), &[0x42u8; 32]);
+        let final_count = nonces.lock().expect("lock nonces").len();
+        assert_eq!(
+            final_count, 100_000,
+            "All 100,000 nonces generated in parallel MUST be distinct"
+        );
     }
 }

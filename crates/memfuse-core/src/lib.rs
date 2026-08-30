@@ -1,6 +1,6 @@
-//! `MemFuse` Core — Types, traits, and error handling.
+//! MemFuse Core — Types, traits, and error handling.
 //!
-//! This crate provides the foundational building blocks for the `MemFuse`
+//! This crate provides the foundational building blocks for the MemFuse
 //! embedded hybrid-search library.
 //!
 //! # Architecture Role (Triebwerk — Layer 0)
@@ -10,7 +10,7 @@
 //! - **Type IDs**: [`DocId`], [`EntityId`], [`TxId`] — all `#[repr(transparent)]` u64 newtypes
 //! - **Traits**: [`StorageEngine`], [`VectorIndex`] — async interfaces for subsystems
 //! - **Error**: [`MemFuseError`] — unified error enum, zero-panic via `?` propagation
-//! - **`TxBuffer`**: Sharded transaction staging with orphan reaper
+//! - **TxBuffer**: Sharded transaction staging with orphan reaper
 //! - **Snapshots**: MVCC read isolation via [`SnapshotRegistry`]
 
 // FILE-CONTEXT
@@ -24,12 +24,6 @@
 // ANCHOR[DEBT:CORE-INLINE-001] STATUS:DONE (ID: AGT-CORE-a3f29c1d) (TS:2026-08-29T09:14:07Z) (SESSION: a3f29c1d)
 // AUFGABE : Inline-Kontextsystem demonstrieren und absichern
 // GATE    : cargo test -p memfuse-core
-// REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
-// PRÜFER-KONTEXT: FRESH
-// BEFUND: Tag-Grammatik und SESSION-Identität verifiziert.
-// REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
-// PRÜFER-KONTEXT: FRESH
-// BEFUND: Unabhängiges Zweit-Review auf frischem Kontextschnitt durchgeführt.
 
 #![deny(unsafe_code)]
 #![warn(missing_docs)]

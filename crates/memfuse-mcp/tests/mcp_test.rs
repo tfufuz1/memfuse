@@ -32,7 +32,8 @@ async fn setup_app() -> (McpServer, TempDir) {
     let collection = db.collection("my_docs").await.expect("collection");
     let dim = collection.dimension();
     let embedder = Arc::new(MockEmbedder { dimension: dim });
-    let server = McpServer::new(Arc::new(db), embedder).expect("server new");
+    let server =
+        McpServer::with_write_permission(Arc::new(db), embedder, true).expect("server new");
     (server, tmp)
 }
 
@@ -230,7 +231,7 @@ async fn test_missing_arguments() {
     assert!(text.contains("id fehlt") || text.contains("text fehlt"));
 }
 
-// ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS (TS:2026-08-25T00:00:00Z) — Error-Path Coverage
+// ANCHOR[TEST:MCP-002] STATUS:DONE (TS:2026-08-30T18:51:25Z) (SESSION: 846802ab) — Error-Path Coverage
 #[tokio::test]
 async fn test_malformed_request_returns_error() {
     // TESTZWECK: Fehlende Pflichtparameter müssen Fehlermeldung erzeugen

@@ -1,8 +1,16 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:51:50Z (SESSION: c9c33dfb)
+// ZWECK: Deterministische, persistente Workflow-Engine für Agenten.
+// INVARIANTEN: Checkpoint VOR jeder Ausführung via CheckpointGuard; Atomarer LSM-Commit & Audit nach jedem Schritt.
+// NICHT-OFFENSICHTLICH: Drop von CheckpointGuard ohne guard.commit() führt zu automatischem Tx-Rollback.
+// HOTSPOTS: OrchestratorEngine::run_internal, OrchestratorEngine::run_event_loop, OrchestratorEngine::replay_from
+// SIEHE AUCH: rules/tag_taxonomy.md, AGENTS.md
+
 //! Deterministic, persistent graph-walker engine for agent workflows.
 //!
 //! Implements the core execution loop: checkpoint → execute → commit → audit → resolve-next.
 
-use crate::context::AgentContext;
+use crate::context::{validate_node_id, AgentContext, MAX_ID_LEN};
 use crate::graph::{AgentNode, NodeType, StateGraph};
 use crate::step::{AgentTool, StepResult};
 use memfuse_checkpoint::{
@@ -20,6 +28,9 @@ pub enum EventLoopExitReason {
     Shutdown,
     SourceExhausted,
 }
+
+/// Maximum allowed registered tools per OrchestratorEngine instance.
+pub const MAX_REGISTERED_TOOLS: usize = 1_000;
 
 /// Async executor engine applying nodes in Sequence.
 pub struct OrchestratorEngine {
@@ -40,8 +51,43 @@ impl OrchestratorEngine {
         Self::new(db.inner_storage())
     }
 
+    /// Attempts to register an agent tool with boundary validation on the tool name and tool registry capacity.
+    pub fn try_register_tool(&mut self, tool: Box<dyn AgentTool>) -> Result<()> {
+        let name = tool.name();
+        if self.tools.len() >= MAX_REGISTERED_TOOLS && !self.tools.contains_key(name) {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Registered tool limit of {} reached",
+                MAX_REGISTERED_TOOLS
+            )));
+        }
+        if name.is_empty() {
+            return Err(MemFuseError::InvalidInput(
+                "Tool name cannot be empty".to_string(),
+            ));
+        }
+        if name.len() > MAX_ID_LEN {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Tool name length {} exceeds maximum allowed length of {}",
+                name.len(),
+                MAX_ID_LEN
+            )));
+        }
+        if name.contains('\0') {
+            return Err(MemFuseError::InvalidInput(
+                "Tool name cannot contain null bytes".to_string(),
+            ));
+        }
+        self.tools.insert(name.to_string(), tool);
+        Ok(())
+    }
+
+    /// Registers an agent tool, panicking if validation fails.
+    ///
+    /// # Panics
+    /// Panics if tool name is invalid or tool limit (`MAX_REGISTERED_TOOLS`) is exceeded.
     pub fn register_tool(&mut self, tool: Box<dyn AgentTool>) {
-        self.tools.insert(tool.name().to_string(), tool);
+        self.try_register_tool(tool)
+            .expect("Invalid tool name in register_tool");
     }
 
     pub async fn run(&self, ctx: &mut AgentContext, graph: &StateGraph) -> Result<()> {
@@ -165,6 +211,8 @@ impl OrchestratorEngine {
 
     /// Setzt den AgentContext auf einen früheren Checkpoint zurück (AC-2).
     pub async fn replay_from(&self, ctx: &mut AgentContext, identifier: &str) -> Result<()> {
+        validate_node_id(identifier)?;
+
         let checkpoints = self.checkpoint_store.list_checkpoints().await?;
 
         let checkpoint = checkpoints
@@ -405,5 +453,94 @@ impl OrchestratorEngine {
             .max_by_key(|e| e.priority)
             .ok_or_else(|| MemFuseError::Internal("No edges found".to_string()))?;
         Ok(edge.to.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestTool;
+
+    #[async_trait::async_trait]
+    impl AgentTool for TestTool {
+        fn name(&self) -> &str {
+            "test_tool"
+        }
+        async fn execute(
+            &self,
+            _ctx: &AgentContext,
+            _input: serde_json::Value,
+        ) -> Result<StepResult> {
+            Ok(StepResult {
+                node_id: "test".to_string(),
+                output: serde_json::Value::Null,
+                tokens_consumed: 1,
+                next_edge: None,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn test_orchestrator_tool_capacity_limit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db =
+            memfuse_db::MemFuse::open_with_config(tmp.path(), memfuse_db::MemFuseConfig::default())
+                .await
+                .unwrap();
+        let mut engine = OrchestratorEngine::from_db(&db);
+
+        for i in 0..MAX_REGISTERED_TOOLS {
+            struct DummyTool(String);
+            #[async_trait::async_trait]
+            impl AgentTool for DummyTool {
+                fn name(&self) -> &str {
+                    &self.0
+                }
+                async fn execute(
+                    &self,
+                    _ctx: &AgentContext,
+                    _input: serde_json::Value,
+                ) -> Result<StepResult> {
+                    Ok(StepResult {
+                        node_id: "dummy".to_string(),
+                        output: serde_json::Value::Null,
+                        tokens_consumed: 0,
+                        next_edge: None,
+                    })
+                }
+            }
+            assert!(engine
+                .try_register_tool(Box::new(DummyTool(format!("t{i}"))))
+                .is_ok());
+        }
+
+        // Updating existing tool name works
+        struct DummyTool0;
+        #[async_trait::async_trait]
+        impl AgentTool for DummyTool0 {
+            fn name(&self) -> &str {
+                "t0"
+            }
+            async fn execute(
+                &self,
+                _ctx: &AgentContext,
+                _input: serde_json::Value,
+            ) -> Result<StepResult> {
+                Ok(StepResult {
+                    node_id: "dummy".to_string(),
+                    output: serde_json::Value::Null,
+                    tokens_consumed: 0,
+                    next_edge: None,
+                })
+            }
+        }
+        assert!(engine.try_register_tool(Box::new(DummyTool0)).is_ok());
+
+        // Overflowing tool registry fails
+        assert!(matches!(
+            engine.try_register_tool(Box::new(TestTool)),
+            Err(MemFuseError::InvalidInput(_))
+        ));
     }
 }

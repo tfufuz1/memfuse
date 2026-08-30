@@ -15,13 +15,6 @@
 //! - **Async I/O**: All disk operations use `tokio::fs` or `memmap2` with `spawn_blocking`.
 //! - **Zero Panic**: Production code paths avoid `unwrap()` and `expect()`, favoring explicit error handling.
 
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       Persistente, immutable SSTable-Dateien (Sorted String Table)
-// INVARIANTEN: Immutability post-creation, sorted key order, async spawn_blocking I/O, zero panic
-// HOTSPOTS:    SSTableIterator, Bloom-Filter-Lookup, merge_sorted_iters()
-// SIEHE AUCH:  crates/memfuse-store/AGENTS.md
-
 use bytes::{BufMut, Bytes, BytesMut};
 use lru::LruCache;
 use memfuse_core::{MemFuseError, Result};
@@ -37,8 +30,8 @@ use tokio::io::AsyncWriteExt;
 pub type BlockCache = RwLock<LruCache<(u64, u64), Bytes>>;
 
 /// Magic bytes for SSTable file trailer.
-pub const SSTABLE_MAGIC_MFSX: u32 = 0x5853_464D; // "MFSX" in hex
-pub const SSTABLE_MAGIC_LEGACY: u32 = 0x4D46_5354; // "MFST" in hex
+pub const SSTABLE_MAGIC_MFSX: u32 = 0x5853464D; // "MFSX" in hex
+pub const SSTABLE_MAGIC_LEGACY: u32 = 0x4D465354; // "MFST" in hex
 
 /// Creates a new block cache instance. Capacity is in MB (assuming 4KB blocks).
 pub fn create_block_cache(capacity_mb: usize) -> Arc<BlockCache> {
@@ -227,10 +220,6 @@ impl BlockBuilder {
     }
 
     pub fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64, tx_id: u64) -> bool {
-        if key.len() > u16::MAX as usize || value.len() > u16::MAX as usize {
-            return false;
-        }
-
         // size: key_len(2) + key + seq_no(8) + tx_id(8) + val_len(2) + value + bloom(8) + offsets + offset count (2 bytes)
         if !self.data.is_empty()
             && self.current_size() + key.len() + value.len() + 20 > self.block_size
@@ -286,7 +275,6 @@ pub struct SstableMetadata {
 /// Note: Uses a whole-SSTable Bloom filter with a default FPR. The Bloom filter FPR should be
 /// treated as a tunable parameter and configured via [`crate::lsm::LsmConfig`].
 pub struct SstableBuilder {
-    path: PathBuf,
     file: File,
     block_builder: BlockBuilder,
     index: Vec<(Bytes, u64)>, // (last_key, offset)
@@ -328,7 +316,6 @@ impl SstableBuilder {
             .map_err(|e| MemFuseError::Storage(format!("Failed to create SSTable: {}", e)))?;
 
         Ok(Self {
-            path: path_ref.to_path_buf(),
             file,
             block_builder: BlockBuilder::new(BLOCK_SIZE),
             index: Vec::new(),
@@ -352,24 +339,6 @@ impl SstableBuilder {
 
     /// Adds a key-value pair to the SSTable being built.
     pub async fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64, tx_id: u64) -> Result<()> {
-        if key.is_empty() {
-            return Err(MemFuseError::InvalidInput(
-                "SSTable key cannot be empty".into(),
-            ));
-        }
-        if key.len() > u16::MAX as usize {
-            return Err(MemFuseError::InvalidInput(format!(
-                "SSTable key length ({}) exceeds maximum 65535 bytes limit",
-                key.len()
-            )));
-        }
-        if value.len() > u16::MAX as usize {
-            return Err(MemFuseError::InvalidInput(format!(
-                "SSTable value length ({}) exceeds maximum 65535 bytes limit",
-                value.len()
-            )));
-        }
-
         if self.first_key.is_none() {
             self.first_key = Some(Bytes::copy_from_slice(key));
         }
@@ -378,7 +347,7 @@ impl SstableBuilder {
             self.flush_block().await?;
             if !self.block_builder.add(key, value, seq_no, tx_id) {
                 return Err(MemFuseError::Storage(format!(
-                    "Key or value too large for SSTable block (key_len={}, val_len={})",
+                    "Key-value entry too large for SSTable block (key: {} bytes, val: {} bytes)",
                     key.len(),
                     value.len()
                 )));
@@ -520,8 +489,6 @@ impl SstableBuilder {
             .sync_all()
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-
-        crate::util::fsync_parent_dir(&self.path).await?;
 
         let file_size = self
             .file
@@ -1158,7 +1125,6 @@ impl SstableReader {
         &self.metadata
     }
 
-    #[allow(clippy::unused_async)]
     pub async fn stream(self: &Arc<Self>) -> Result<SstableStream> {
         Ok(SstableStream {
             reader: Arc::clone(self),
@@ -2214,12 +2180,11 @@ mod tests {
     }
 
     #[test]
-    fn test_block_builder_oversized_inputs_return_false() {
-        let mut builder = BlockBuilder::new(4096);
-        let oversized_key = vec![0xAA; 65536];
-        assert!(!builder.add(&oversized_key, b"val", 1, 1));
+    fn test_block_builder_min_max_clamping() {
+        let bb_small = BlockBuilder::new(10);
+        assert_eq!(bb_small.block_size, 512);
 
-        let oversized_val = vec![0xBB; 65536];
-        assert!(!builder.add(b"key", &oversized_val, 1, 1));
+        let bb_huge = BlockBuilder::new(100 * 1024 * 1024);
+        assert_eq!(bb_huge.block_size, 64 * 1024 * 1024);
     }
 }

@@ -87,18 +87,15 @@ fn test_key_derivation_deterministic_for_same_input() {
     );
 }
 
-/// Edge case: empty file_id must be rejected with defined InvalidInput error.
+/// Edge case: empty file_id is rejected by derive_file_key guard.
 #[test]
-fn test_empty_file_id_fails_validation() {
+fn test_empty_file_id_is_rejected() {
     let master = KeyManager::try_new("master-secret", b"salt").expect("master");
     let res = master.derive_file_key(b"");
-    assert!(res.is_err());
-    if let Err(err) = res {
-        assert!(matches!(
-            err,
-            memfuse_core::MemFuseError::InvalidInput { .. }
-        ));
-    }
+    assert!(
+        res.is_err(),
+        "Empty file_id must be rejected with InvalidInput"
+    );
 }
 
 /// Different master keys with the same file_id must produce different

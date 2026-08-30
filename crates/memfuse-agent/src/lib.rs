@@ -1,3 +1,11 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:51:50Z (SESSION: c9c33dfb)
+// ZWECK: MemFuse Agent Crate-Einstiegspunkt und Architektur-Dokumentation.
+// INVARIANTEN: Strikt verhaltensneutral, Zero-Panic in Prod-Pfaden, Layer-3 DAG-Integrität.
+// NICHT-OFFENSICHTLICH: Kein petgraph, pure Rust Sovereignty.
+// HOTSPOTS: OrchestratorEngine, AgentContext, StateGraph, AuditLog
+// SIEHE AUCH: rules/tag_taxonomy.md, AGENTS.md
+
 //! MemFuse Agent — Persistent workflow engine for multi-step agent execution.
 //!
 //! Implements the deterministic `checkpoint → execute → commit → audit` loop.
@@ -56,7 +64,7 @@
 //! 3. **Immutable audit trail**: Appends step records to state collection under `audit:{task_id}:step:{n}`.
 //! 4. **Token budget limit**: Enforces token budget consumption on each step.
 //!
-//! ADR-020: Re-integration from archived `memfuse-saos-agent` (Commit ddc4c77).
+//! ADR-042: Re-integration from archived `memfuse-saos-agent` (Commit ddc4c77).
 // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-AGENT-001 — Re-extracted workflow engine crate requires integration verification. (TS:2026-08-27T00:00:00Z)
 
 #![forbid(unsafe_code)]

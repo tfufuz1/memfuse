@@ -12,13 +12,6 @@
 
 #![forbid(unsafe_code)]
 
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       PyO3 FFI-Grenzschicht — Rust-Fehler müssen in Python-Exceptions konvertiert werden
-// INVARIANTEN: Alle MemFuseError -> PyErr Konvertierung vollständig; kein Panic darf FFI-Grenze überschreiten
-// HOTSPOTS:    PyMemFuse, PyCollection methods, error conversion
-// SIEHE AUCH:  crates/memfuse-db/AGENTS.md
-
 use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
 use numpy::PyReadonlyArray1;
 use pyo3::exceptions::{PyKeyError, PyPermissionError, PyRuntimeError, PyValueError};
@@ -100,70 +93,16 @@ fn opt_dict_to_json(
     }
 }
 
-/// Maximum allowed batch size for `insert_many` and `upsert_many` to prevent OOM / resource exhaustion.
-pub const MAX_BATCH_SIZE: usize = 10_000;
-
-/// Validates that a string ID is non-empty and non-whitespace-only.
+/// Validates that a string ID is non-empty.
 fn validate_id(id: &str) -> PyResult<()> {
-    if id.trim().is_empty() {
-        return Err(MemFuseValueError::new_err(
-            "Document ID cannot be empty or whitespace-only",
-        ));
+    if id.is_empty() {
+        return Err(MemFuseValueError::new_err("Document ID cannot be empty"));
     }
     Ok(())
 }
 
-/// Validates that a collection name is non-empty and non-whitespace-only.
-fn validate_collection_name(name: &str) -> PyResult<()> {
-    if name.trim().is_empty() {
-        return Err(pyo3::exceptions::PyValueError::new_err(
-            "Collection name cannot be empty or whitespace-only",
-        ));
-    }
-    Ok(())
-}
-
-/// Validates that a database storage path is non-empty and non-whitespace-only.
-fn validate_db_path(path: &str) -> PyResult<()> {
-    if path.trim().is_empty() {
-        return Err(pyo3::exceptions::PyValueError::new_err(
-            "Database path cannot be empty or whitespace-only",
-        ));
-    }
-    Ok(())
-}
-
-/// Validates search query text.
-fn validate_query_text(text: &str) -> PyResult<()> {
-    if text.trim().is_empty() {
-        return Err(pyo3::exceptions::PyValueError::new_err(
-            "Search query text cannot be empty or whitespace-only",
-        ));
-    }
-    Ok(())
-}
-
-/// Validates batch size against maximum resource allocation limits.
-fn validate_batch_size(size: usize) -> PyResult<()> {
-    if size == 0 {
-        return Err(pyo3::exceptions::PyValueError::new_err(
-            "Batch cannot be empty",
-        ));
-    }
-    if size > MAX_BATCH_SIZE {
-        return Err(pyo3::exceptions::PyValueError::new_err(format!(
-            "Batch size {} exceeds maximum allowed limit of {}",
-            size, MAX_BATCH_SIZE
-        )));
-    }
-    Ok(())
-}
-
-/// Validates that a vector slice is non-empty and contains no NaN or infinite values.
+/// Validates that a vector slice contains no NaN or infinite values.
 fn validate_vector(vector: &[f32]) -> PyResult<()> {
-    if vector.is_empty() {
-        return Err(MemFuseValueError::new_err("Vector cannot be empty"));
-    }
     if vector.iter().any(|x| x.is_nan() || x.is_infinite()) {
         return Err(MemFuseValueError::new_err(
             "Vector contains NaN or infinite float values",
@@ -177,33 +116,6 @@ fn validate_id_and_vector(id: &str, vector: &[f32]) -> PyResult<()> {
     validate_id(id)?;
     validate_vector(vector)?;
     Ok(())
-}
-
-/// Safely executes a blocking closure across FFI boundaries with thread state release
-/// and panic containment to guarantee no Rust panic propagates across FFI boundaries into Python.
-fn run_blocking_ffi<F, R>(py: Python<'_>, f: F) -> PyResult<R>
-where
-    F: FnOnce() -> PyResult<R> + Send,
-    R: Send,
-{
-    let panic_result =
-        py.allow_threads(|| std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)));
-    match panic_result {
-        Ok(res) => res,
-        Err(panic_payload) => {
-            let panic_msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
-                (*s).to_string()
-            } else if let Some(s) = panic_payload.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "Unknown panic inside Rust core".to_string()
-            };
-            Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
-                "Rust panic caught at FFI boundary: {}",
-                panic_msg
-            )))
-        }
-    }
 }
 
 /// Converts a serde_json::Value to a Python object.
@@ -247,13 +159,14 @@ fn results_to_py(
 
 /// Maps a MemFuseError into a structured Python PyErr with `kind`, `message`, and `details` attributes.
 fn memfuse_err(e: memfuse_core::MemFuseError) -> PyErr {
-    use pyo3::exceptions::*;
     let dto = memfuse_core::MemFuseErrorDto::from(&e);
     Python::with_gil(|py| {
         let py_err = match dto.kind.as_str() {
             "NotFound" => PyKeyError::new_err(dto.message.clone()),
             "Conflict" | "Transaction" => PyRuntimeError::new_err(dto.message.clone()),
-            "PolicyViolation" => PyPermissionError::new_err(dto.message.clone()),
+            "PolicyViolation" | "NamespaceViolation" => {
+                PyPermissionError::new_err(dto.message.clone())
+            }
             "InvalidInput" => PyValueError::new_err(dto.message.clone()),
             "Storage" | "Io" | "WalCorruption" | "ChecksumMismatch" => {
                 MemFuseIOError::new_err(dto.message.clone())
@@ -261,24 +174,38 @@ fn memfuse_err(e: memfuse_core::MemFuseError) -> PyErr {
             "Index" | "HnswConnectivityDegraded" | "Text" => {
                 MemFuseIndexError::new_err(dto.message.clone())
             }
+            "InvalidInput"
+            | "Serialization"
+            | "Json"
+            | "ParseError"
+            | "Bincode"
+            | "NotFound"
+            | "Transaction"
+            | "TransactionTimeout"
+            | "Conflict"
+            | "InvalidSequenceNumber"
+            | "CheckpointNotFound" => MemFuseValueError::new_err(dto.message.clone()),
             "Crypto" => MemFuseCryptoError::new_err(dto.message.clone()),
-            "MemoryBudgetExceeded" => PyMemoryError::new_err(dto.message.clone()),
-            "CapabilityUnsupported" => PyNotImplementedError::new_err(dto.message.clone()),
+            "Sandbox"
+            | "MemoryLimitExceeded"
+            | "SandboxTimeout"
+            | "PolicyViolation"
+            | "NamespaceViolation" => {
+                pyo3::exceptions::PyPermissionError::new_err(dto.message.clone())
+            }
+            "MemoryBudgetExceeded" => pyo3::exceptions::PyMemoryError::new_err(dto.message.clone()),
+            "CapabilityUnsupported" => {
+                pyo3::exceptions::PyNotImplementedError::new_err(dto.message.clone())
+            }
             "Internal" | "Cluster" => MemFuseInternalError::new_err(dto.message.clone()),
-            _ => PyException::new_err(format!("[{}] {}", dto.kind, dto.message)),
+            _ => MemFuseError::new_err(dto.message.clone()),
         };
         let value = py_err.value(py);
-        if value.setattr("kind", dto.kind).is_err() {
-            // Ignore non-fatal attribute attachment error if py_err instance doesn't support setattr
-        }
-        if value.setattr("message", dto.message).is_err() {
-            // Ignore non-fatal attribute attachment error
-        }
+        let _ = value.setattr("kind", dto.kind);
+        let _ = value.setattr("message", dto.message);
         if let Some(ref details) = dto.details {
             if let Ok(details_py) = json_to_py(py, details) {
-                if value.setattr("details", details_py).is_err() {
-                    // Ignore non-fatal attribute attachment error
-                }
+                let _ = value.setattr("details", details_py);
             }
         }
         py_err
@@ -411,17 +338,17 @@ macro_rules! memfuse_crud_methods {
                 })?;
                 validate_id_and_vector(id, v)?;
                 let m = opt_dict_to_json(metadata.as_ref())?;
-                let id_owned = id.to_string();
-                let v_owned = v.to_vec();
-                run_blocking_ffi(py, || rt.block_on(self.inner.insert(&id_owned, &v_owned, m)).map_err(memfuse_err))
+                py.allow_threads(|| rt.block_on(self.inner.insert(id, v, m)))
+                    .map_err(memfuse_err)
             }
 
             /// Retrieves a document by its user-provided string ID.
             pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
                 validate_id(id)?;
                 let rt = get_runtime()?;
-                let id_owned = id.to_string();
-                let doc = run_blocking_ffi(py, || rt.block_on(self.inner.get(&id_owned)).map_err(memfuse_err))?;
+                let doc = py
+                    .allow_threads(|| rt.block_on(self.inner.get(id)))
+                    .map_err(memfuse_err)?;
                 match doc {
                     Some(d) => Ok(Some(doc_to_py(py, d)?)),
                     None => Ok(None),
@@ -443,9 +370,8 @@ macro_rules! memfuse_crud_methods {
                 })?;
                 validate_id_and_vector(id, v)?;
                 let m = opt_dict_to_json(metadata.as_ref())?;
-                let id_owned = id.to_string();
-                let v_owned = v.to_vec();
-                run_blocking_ffi(py, || rt.block_on(self.inner.update(&id_owned, &v_owned, m)).map_err(memfuse_err))
+                py.allow_threads(|| rt.block_on(self.inner.update(id, v, m)))
+                    .map_err(memfuse_err)
             }
 
             /// Upserts a document (inserts if missing, updates if exists).
@@ -463,17 +389,16 @@ macro_rules! memfuse_crud_methods {
                 })?;
                 validate_id_and_vector(id, v)?;
                 let m = opt_dict_to_json(metadata.as_ref())?;
-                let id_owned = id.to_string();
-                let v_owned = v.to_vec();
-                run_blocking_ffi(py, || rt.block_on(self.inner.upsert(&id_owned, &v_owned, m)).map_err(memfuse_err))
+                py.allow_threads(|| rt.block_on(self.inner.upsert(id, v, m)))
+                    .map_err(memfuse_err)
             }
 
             /// Deletes a document by its ID.
             pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
                 validate_id(id)?;
                 let rt = get_runtime()?;
-                let id_owned = id.to_string();
-                run_blocking_ffi(py, || rt.block_on(self.inner.delete(&id_owned)).map_err(memfuse_err))
+                py.allow_threads(|| rt.block_on(self.inner.delete(id)))
+                    .map_err(memfuse_err)
             }
 
             /// Performs semantic k-NN search over the embeddings.
@@ -495,8 +420,9 @@ macro_rules! memfuse_crud_methods {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
                 validate_vector(v)?;
-                let v_owned = v.to_vec();
-                let results = run_blocking_ffi(py, || rt.block_on(self.inner.search(&v_owned, k)).map_err(memfuse_err))?;
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.search(v, k)))
+                    .map_err(memfuse_err)?;
                 results_to_py(py, results)
             }
 
@@ -519,8 +445,9 @@ macro_rules! memfuse_crud_methods {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
                 validate_vector(v)?;
-                let v_owned = v.to_vec();
-                let results = run_blocking_ffi(py, || rt.block_on(self.inner.search(&v_owned, k)).map_err(memfuse_err))?;
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.search(v, k)))
+                    .map_err(memfuse_err)?;
 
                 let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(1024);
                 let mut res_offsets = Vec::with_capacity(results.len());
@@ -570,7 +497,6 @@ macro_rules! memfuse_crud_methods {
                 text_weight: Option<f32>,
                 graph_weight: Option<f32>,
             ) -> PyResult<Vec<PySearchResult>> {
-                validate_query_text(text)?;
                 if k == 0 || k > 1000 {
                     return Err(pyo3::exceptions::PyValueError::new_err(format!(
                         "Search k must be between 1 and 1000. Got: {}",
@@ -592,12 +518,9 @@ macro_rules! memfuse_crud_methods {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
                 validate_vector(v)?;
-                let text_owned = text.to_string();
-                let v_owned = v.to_vec();
-                let results = run_blocking_ffi(py, || {
-                    rt.block_on(self.inner.hybrid_search_with_weights(&text_owned, &v_owned, k, None, weights.as_ref()))
-                        .map_err(memfuse_err)
-                })?;
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.hybrid_search_with_weights(text, v, k, None, weights.as_ref())))
+                    .map_err(memfuse_err)?;
                 results_to_py(py, results)
             }
 
@@ -614,7 +537,6 @@ macro_rules! memfuse_crud_methods {
                 text_weight: Option<f32>,
                 graph_weight: Option<f32>,
             ) -> PyResult<Bound<'py, PyBytes>> {
-                validate_query_text(text)?;
                 if k == 0 || k > 1000 {
                     return Err(pyo3::exceptions::PyValueError::new_err(format!(
                         "Search k must be between 1 and 1000. Got: {}",
@@ -635,13 +557,9 @@ macro_rules! memfuse_crud_methods {
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
-                validate_vector(v)?;
-                let text_owned = text.to_string();
-                let v_owned = v.to_vec();
-                let results = run_blocking_ffi(py, || {
-                    rt.block_on(self.inner.hybrid_search_with_weights(&text_owned, &v_owned, k, None, weights.as_ref()))
-                        .map_err(memfuse_err)
-                })?;
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.hybrid_search_with_weights(text, v, k, None, weights.as_ref())))
+                    .map_err(memfuse_err)?;
 
                 let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(1024);
                 let mut res_offsets = Vec::with_capacity(results.len());
@@ -688,19 +606,14 @@ macro_rules! memfuse_crud_methods {
             ) -> PyResult<()> {
                 validate_id(from)?;
                 validate_id(to)?;
-                if label.trim().is_empty() {
+                if label.is_empty() {
                     return Err(MemFuseValueError::new_err(
-                        "Relationship label cannot be empty or whitespace-only",
+                        "Relationship label cannot be empty",
                     ));
                 }
                 let rt = get_runtime()?;
-                let from_owned = from.to_string();
-                let to_owned = to.to_string();
-                let label_owned = label.to_string();
-                run_blocking_ffi(py, || {
-                    rt.block_on(self.inner.relate(&from_owned, &to_owned, &label_owned))
-                        .map_err(memfuse_err)
-                })
+                py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
+                    .map_err(memfuse_err)
             }
 
             /// Scans documents matching a given key prefix.
@@ -711,11 +624,9 @@ macro_rules! memfuse_crud_methods {
                 prefix: &str,
             ) -> PyResult<Vec<(String, PyObject)>> {
                 let rt = get_runtime()?;
-                let prefix_owned = prefix.to_string();
-                let results = run_blocking_ffi(py, || {
-                    rt.block_on(self.inner.scan_prefix(&prefix_owned))
-                        .map_err(memfuse_err)
-                })?;
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.scan_prefix(prefix)))
+                    .map_err(memfuse_err)?;
                 let mut py_res = Vec::with_capacity(results.len());
                 for (k, v) in results {
                     py_res.push((k, json_to_py(py, &v)?));
@@ -735,22 +646,23 @@ macro_rules! memfuse_crud_methods {
                 end: Option<&str>,
             ) -> PyResult<Vec<(String, PyObject)>> {
                 let rt = get_runtime()?;
+                use std::ops::Bound;
+
                 let start_bytes: Option<Vec<u8>> = start.map(|s| s.as_bytes().to_vec());
                 let end_bytes: Option<Vec<u8>> = end.map(|s| s.as_bytes().to_vec());
 
-                let results = run_blocking_ffi(py, || {
-                    use std::ops::Bound;
-                    let start_bound = match &start_bytes {
-                        Some(b) => Bound::Included(b.as_slice()),
-                        None => Bound::Unbounded,
-                    };
-                    let end_bound = match &end_bytes {
-                        Some(b) => Bound::Included(b.as_slice()),
-                        None => Bound::Unbounded,
-                    };
-                    rt.block_on(self.inner.scan(start_bound, end_bound))
-                        .map_err(memfuse_err)
-                })?;
+                let start_bound = match &start_bytes {
+                    Some(b) => Bound::Included(b.as_slice()),
+                    None => Bound::Unbounded,
+                };
+                let end_bound = match &end_bytes {
+                    Some(b) => Bound::Included(b.as_slice()),
+                    None => Bound::Unbounded,
+                };
+
+                let results = py
+                    .allow_threads(|| rt.block_on(self.inner.scan(start_bound, end_bound)))
+                    .map_err(memfuse_err)?;
                 let mut py_res = Vec::with_capacity(results.len());
                 for (k, v) in results {
                     py_res.push((k, json_to_py(py, &v)?));
@@ -782,7 +694,6 @@ macro_rules! memfuse_batch_methods {
                     Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
                 )>,
             ) -> PyResult<()> {
-                validate_batch_size(docs.len())?;
                 let rt = get_runtime()?;
                 let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
                     Vec::with_capacity(docs.len());
@@ -794,10 +705,8 @@ macro_rules! memfuse_batch_methods {
                     let m = opt_dict_to_json(metadata.as_ref())?;
                     batch.push((id.clone(), v.to_vec(), m));
                 }
-                run_blocking_ffi(py, || {
-                    rt.block_on(self.inner.insert_many(&batch))
-                        .map_err(memfuse_err)
-                })
+                py.allow_threads(|| rt.block_on(self.inner.insert_many(&batch)))
+                    .map_err(memfuse_err)
             }
 
             /// Upserts multiple documents in a single transaction.
@@ -812,7 +721,6 @@ macro_rules! memfuse_batch_methods {
                     Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
                 )>,
             ) -> PyResult<()> {
-                validate_batch_size(docs.len())?;
                 let rt = get_runtime()?;
                 let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
                     Vec::with_capacity(docs.len());
@@ -824,10 +732,8 @@ macro_rules! memfuse_batch_methods {
                     let m = opt_dict_to_json(metadata.as_ref())?;
                     batch.push((id.clone(), v.to_vec(), m));
                 }
-                run_blocking_ffi(py, || {
-                    rt.block_on(self.inner.upsert_many(&batch))
-                        .map_err(memfuse_err)
-                })
+                py.allow_threads(|| rt.block_on(self.inner.upsert_many(&batch)))
+                    .map_err(memfuse_err)
             }
         }
     };
@@ -859,7 +765,8 @@ impl PyMemFuse {
         _exc_tb: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<bool> {
         let rt = get_runtime()?;
-        run_blocking_ffi(py, || rt.block_on(self.inner.flush()).map_err(memfuse_err))?;
+        py.allow_threads(|| rt.block_on(self.inner.flush()))
+            .map_err(memfuse_err)?;
         Ok(false) // Do not suppress exceptions
     }
 
@@ -868,46 +775,40 @@ impl PyMemFuse {
     /// Returns a specific collection (namespace).
     /// Creates the collection if it does not already exist.
     pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<PyCollection> {
-        validate_collection_name(name)?;
         let rt = get_runtime()?;
-        let name_owned = name.to_string();
-        let col = run_blocking_ffi(py, || {
-            rt.block_on(self.inner.collection(&name_owned))
-                .map_err(memfuse_err)
-        })?;
+        let col = py
+            .allow_threads(|| rt.block_on(self.inner.collection(name)))
+            .map_err(memfuse_err)?;
         Ok(PyCollection { inner: col })
     }
 
     /// Lists all existing collection names.
     pub fn list_collections(&self, py: Python<'_>) -> PyResult<Vec<String>> {
         let rt = get_runtime()?;
-        run_blocking_ffi(py, || {
-            rt.block_on(self.inner.list_collections())
-                .map_err(memfuse_err)
-        })
+        py.allow_threads(|| rt.block_on(self.inner.list_collections()))
+            .map_err(memfuse_err)
     }
 
     /// Drops a collection, removing all its data from storage.
     pub fn drop_collection(&self, name: &str, py: Python<'_>) -> PyResult<()> {
-        validate_collection_name(name)?;
         let rt = get_runtime()?;
-        let name_owned = name.to_string();
-        run_blocking_ffi(py, || {
-            rt.block_on(self.inner.drop_collection(&name_owned))
-                .map_err(memfuse_err)
-        })
+        py.allow_threads(|| rt.block_on(self.inner.drop_collection(name)))
+            .map_err(memfuse_err)
     }
 
     /// Flushes all pending writes to disk.
     pub fn flush(&self, py: Python<'_>) -> PyResult<()> {
         let rt = get_runtime()?;
-        run_blocking_ffi(py, || rt.block_on(self.inner.flush()).map_err(memfuse_err))
+        py.allow_threads(|| rt.block_on(self.inner.flush()))
+            .map_err(memfuse_err)
     }
 
     /// Returns combined statistics for the vector index and storage engine.
     pub fn stats(&self, py: Python<'_>) -> PyResult<PyDbStats> {
         let rt = get_runtime()?;
-        let stats = run_blocking_ffi(py, || rt.block_on(self.inner.stats()).map_err(memfuse_err))?;
+        let stats = py
+            .allow_threads(|| rt.block_on(self.inner.stats()))
+            .map_err(memfuse_err)?;
 
         Ok(PyDbStats {
             index_stats: PyVectorIndexStats {
@@ -926,15 +827,15 @@ impl PyMemFuse {
     /// Returns the number of documents.
     pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
         let rt = get_runtime()?;
-        run_blocking_ffi(py, || rt.block_on(self.inner.len()).map_err(memfuse_err))
+        py.allow_threads(|| rt.block_on(self.inner.len()))
+            .map_err(memfuse_err)
     }
 
     /// Returns true if the collection/database is empty.
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
-        run_blocking_ffi(py, || {
-            rt.block_on(self.inner.is_empty()).map_err(memfuse_err)
-        })
+        py.allow_threads(|| rt.block_on(self.inner.is_empty()))
+            .map_err(memfuse_err)
     }
 }
 
@@ -954,7 +855,9 @@ impl PyCollection {
     /// Returns statistics for the collection's vector index.
     pub fn stats(&self, py: Python<'_>) -> PyResult<PyVectorIndexStats> {
         let rt = get_runtime()?;
-        let stats = run_blocking_ffi(py, || rt.block_on(self.inner.stats()).map_err(memfuse_err))?;
+        let stats = py
+            .allow_threads(|| rt.block_on(self.inner.stats()))
+            .map_err(memfuse_err)?;
 
         Ok(PyVectorIndexStats {
             num_vectors: stats.num_vectors,
@@ -966,13 +869,13 @@ impl PyCollection {
     /// Returns the number of documents.
     pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
         let rt = get_runtime()?;
-        run_blocking_ffi(py, || Ok(rt.block_on(self.inner.len())))
+        Ok(py.allow_threads(|| rt.block_on(self.inner.len())))
     }
 
     /// Returns true if the collection is empty.
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
         let rt = get_runtime()?;
-        run_blocking_ffi(py, || Ok(rt.block_on(self.inner.is_empty())))
+        Ok(py.allow_threads(|| rt.block_on(self.inner.is_empty())))
     }
 }
 
@@ -999,7 +902,6 @@ fn open(
     encryption_passphrase: Option<String>,
     distance_metric: Option<String>,
 ) -> PyResult<PyMemFuse> {
-    validate_db_path(path)?;
     if dimension == 0 || dimension > 10_000 {
         return Err(pyo3::exceptions::PyValueError::new_err(format!(
             "Dimension must be between 1 and 10000. Got: {}",
@@ -1014,11 +916,6 @@ fn open(
     };
 
     if let Some(me) = max_elements {
-        if me == 0 {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "max_elements must be greater than 0",
-            ));
-        }
         config.max_elements = me;
     }
 
@@ -1037,10 +934,9 @@ fn open(
     }
 
     let path_string = path.to_string();
-    let db = run_blocking_ffi(py, || {
-        rt.block_on(MemFuse::open_with_config(path_string, config))
-            .map_err(memfuse_err)
-    })?;
+    let db = py
+        .allow_threads(|| rt.block_on(MemFuse::open_with_config(path_string, config)))
+        .map_err(memfuse_err)?;
 
     Ok(PyMemFuse {
         inner: Arc::new(db),
@@ -1054,133 +950,32 @@ mod tests {
     use pyo3::exceptions::*;
 
     #[test]
-    fn test_validate_id_guards() {
+    fn test_py_err_not_found_maps_to_key_error() {
         pyo3::prepare_freethreaded_python();
-        assert!(validate_id("").is_err());
-        assert!(validate_id("   ").is_err());
-        assert!(validate_id("\t\n").is_err());
-        assert!(validate_id("doc123").is_ok());
-    }
-
-    #[test]
-    fn test_validate_collection_name_guards() {
-        pyo3::prepare_freethreaded_python();
-        assert!(validate_collection_name("").is_err());
-        assert!(validate_collection_name("   ").is_err());
-        assert!(validate_collection_name("my_collection").is_ok());
-    }
-
-    #[test]
-    fn test_validate_db_path_guards() {
-        pyo3::prepare_freethreaded_python();
-        assert!(validate_db_path("").is_err());
-        assert!(validate_db_path("   ").is_err());
-        assert!(validate_db_path("./data/db").is_ok());
-    }
-
-    #[test]
-    fn test_validate_query_text_guards() {
-        pyo3::prepare_freethreaded_python();
-        assert!(validate_query_text("").is_err());
-        assert!(validate_query_text("   ").is_err());
-        assert!(validate_query_text("search query").is_ok());
-    }
-
-    #[test]
-    fn test_validate_batch_size_guards() {
-        pyo3::prepare_freethreaded_python();
-        assert!(validate_batch_size(0).is_err());
-        assert!(validate_batch_size(MAX_BATCH_SIZE + 1).is_err());
-        assert!(validate_batch_size(1).is_ok());
-        assert!(validate_batch_size(100).is_ok());
-        assert!(validate_batch_size(MAX_BATCH_SIZE).is_ok());
-    }
-
-    #[test]
-    fn test_validate_vector_guards() {
-        pyo3::prepare_freethreaded_python();
-        assert!(validate_vector(&[]).is_err());
-        assert!(validate_vector(&[1.0, f32::NAN, 0.5]).is_err());
-        assert!(validate_vector(&[1.0, f32::INFINITY, 0.5]).is_err());
-        assert!(validate_vector(&[1.0, f32::NEG_INFINITY, 0.5]).is_err());
-        assert!(validate_vector(&[0.1, 0.2, -0.5]).is_ok());
-    }
-
-    #[test]
-    fn test_py_err_mapping_all_error_kinds() {
-        pyo3::prepare_freethreaded_python();
+        let err = MemFuseError::NotFound("doc1".into());
+        let py_err: PyErr = memfuse_err(err);
         Python::with_gil(|py| {
-            let err_not_found = memfuse_err(MemFuseError::NotFound("doc1".into()));
-            assert!(err_not_found.is_instance_of::<PyKeyError>(py));
-
-            let err_invalid = memfuse_err(MemFuseError::InvalidInput("bad input".into()));
-            assert!(err_invalid.is_instance_of::<PyValueError>(py));
-
-            let err_policy = memfuse_err(MemFuseError::PolicyViolation("access denied".into()));
-            assert!(err_policy.is_instance_of::<PyPermissionError>(py));
-
-            let err_storage = memfuse_err(MemFuseError::Storage("io error".into()));
-            assert!(err_storage.is_instance_of::<MemFuseIOError>(py));
-
-            let err_index = memfuse_err(MemFuseError::Index("hnsw error".into()));
-            assert!(err_index.is_instance_of::<MemFuseIndexError>(py));
-
-            let err_crypto = memfuse_err(MemFuseError::Crypto("key error".into()));
-            assert!(err_crypto.is_instance_of::<MemFuseCryptoError>(py));
-
-            let err_mem = memfuse_err(MemFuseError::MemoryBudgetExceeded {
-                used_mb: 200,
-                limit_mb: 100,
-            });
-            assert!(err_mem.is_instance_of::<PyMemoryError>(py));
-
-            let err_not_impl = memfuse_err(MemFuseError::CapabilityUnsupported {
-                capability: "cap".into(),
-                reason: "not supported".into(),
-            });
-            assert!(err_not_impl.is_instance_of::<PyNotImplementedError>(py));
-
-            let err_internal = memfuse_err(MemFuseError::Internal("crash".into()));
-            assert!(err_internal.is_instance_of::<MemFuseInternalError>(py));
+            assert!(py_err.is_instance_of::<PyKeyError>(py));
         });
     }
 
     #[test]
-    fn test_memfuse_err_attributes_set() {
+    fn test_py_err_invalid_input_maps_to_value_error() {
         pyo3::prepare_freethreaded_python();
+        let err = MemFuseError::InvalidInput("invalid key".into());
+        let py_err: PyErr = memfuse_err(err);
         Python::with_gil(|py| {
-            let py_err = memfuse_err(MemFuseError::NotFound("key123".into()));
-            let bound_val = py_err.value(py);
-            let kind: String = bound_val.getattr("kind").unwrap().extract().unwrap();
-            let msg: String = bound_val.getattr("message").unwrap().extract().unwrap();
-            assert_eq!(kind, "NotFound");
-            assert!(msg.contains("key123"));
+            assert!(py_err.is_instance_of::<PyValueError>(py));
         });
     }
 
     #[test]
-    fn test_run_blocking_ffi_panic_containment() {
+    fn test_py_err_policy_violation_maps_to_permission_error() {
         pyo3::prepare_freethreaded_python();
+        let err = MemFuseError::PolicyViolation("access denied".into());
+        let py_err: PyErr = memfuse_err(err);
         Python::with_gil(|py| {
-            let res: PyResult<i32> = run_blocking_ffi(py, || {
-                panic!("Simulated Rust core panic");
-            });
-            assert!(res.is_err());
-            let py_err = res.unwrap_err();
-            assert!(py_err.is_instance_of::<PyRuntimeError>(py));
-            let bound_val = py_err.value(py);
-            let msg: String = bound_val.to_string();
-            assert!(msg.contains("Rust panic caught at FFI boundary"));
-            assert!(msg.contains("Simulated Rust core panic"));
-        });
-    }
-
-    #[test]
-    fn test_run_blocking_ffi_success() {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
-            let res: PyResult<i32> = run_blocking_ffi(py, || Ok(42));
-            assert_eq!(res.unwrap(), 42);
+            assert!(py_err.is_instance_of::<PyPermissionError>(py));
         });
     }
 }

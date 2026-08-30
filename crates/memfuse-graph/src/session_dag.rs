@@ -3,14 +3,6 @@
 //! Native DAG implementation based on standard library maps and RwLock,
 //! keeping memfuse-graph pure-Rust and zero-external-graph-dependency (ADR-004).
 
-// FILE-CONTEXT
-// STAND:       2026-08-30T14:35:05Z (SESSION: ab88edae)
-// ZWECK:       Session-DAG für Gesprächsverzweigung & Agent-State-Tracking (Grok-Muster)
-// INVARIANTEN: Monoton steigende NodeIdx; active_head verweist stets auf existierenden Knoten.
-// HOTSPOTS:    branch_from(), save(), load()
-// AGENT-NOTIZ: pedantic doc & error hygiene
-// SIEHE AUCH:  ADR-004
-
 use memfuse_core::{MemFuseError, Result, StorageEngine, TxId};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -118,8 +110,7 @@ impl SessionBranchTree {
     ) -> Result<NodeIdx> {
         if !self.nodes.read().contains_key(&parent_node) {
             return Err(MemFuseError::InvalidInput(format!(
-                "SessionDAG: node {} nicht gefunden",
-                parent_node
+                "SessionDAG: node {parent_node} nicht gefunden"
             )));
         }
 
@@ -156,8 +147,7 @@ impl SessionBranchTree {
             Ok(())
         } else {
             Err(MemFuseError::InvalidInput(format!(
-                "SessionDAG: node {} nicht gefunden",
-                node_idx
+                "SessionDAG: node {node_idx} nicht gefunden"
             )))
         }
     }
@@ -211,10 +201,7 @@ impl SessionBranchTree {
         self.nodes.read().get(&node_idx).cloned()
     }
 
-    /// Persists all nodes, edges, active head, and `next_id` of the Session-DAG to the storage engine under the given namespace prefix.
-    ///
-    /// # Errors
-    /// Returns `Err(MemFuseError::Serialization)` if serialization fails, or `Err(MemFuseError::Storage)` on storage I/O errors.
+    /// Persists all nodes, edges, active head, and next_id of the Session-DAG to the storage engine under the given namespace prefix.
     pub async fn save<S: StorageEngine + ?Sized>(
         &self,
         storage: &S,
@@ -261,9 +248,6 @@ impl SessionBranchTree {
     }
 
     /// Loads and reconstructs a `SessionBranchTree` from storage for the specified namespace.
-    ///
-    /// # Errors
-    /// Returns `Err(MemFuseError::NotFound)` if the namespace is missing, or `Err(MemFuseError::Serialization)` on corrupt payload deserialization.
     pub async fn load<S: StorageEngine + ?Sized>(storage: &S, namespace: &str) -> Result<Self> {
         let prefix_str = format!("__session_dag:{namespace}:");
         let prefix_bytes = prefix_str.as_bytes();
@@ -510,5 +494,139 @@ mod tests {
 
         let children = loaded_dag.children_of(step1);
         assert_eq!(children, vec![branch1]);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn get_node_CASE_existent_and_nonexistent() {
+        let dag = SessionBranchTree::new("Root Prompt".into(), "Root Resp".into());
+
+        // Step 0 exists
+        let root_node = dag.get_node(0);
+        assert!(root_node.is_some());
+        let node = root_node.unwrap(); // unwrap allowed
+        assert_eq!(node.step_id, 0);
+        assert_eq!(node.prompt, "Root Prompt");
+        assert_eq!(node.response, "Root Resp");
+
+        // Step 999 does not exist
+        assert!(dag.get_node(999).is_none());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn children_of_CASE_leaf_node_returns_empty() {
+        let dag = SessionBranchTree::new("Root".into(), "Resp".into());
+        let leaf_id = dag
+            .append_step(
+                "Leaf Prompt".into(),
+                "Leaf Resp".into(),
+                None,
+                vec![],
+                "main",
+            )
+            .unwrap(); // unwrap allowed
+
+        let children = dag.children_of(leaf_id);
+        assert!(children.is_empty(), "Leaf node must have zero children");
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn new_CASE_empty_and_unicode_strings() {
+        // Empty strings
+        let empty_dag = SessionBranchTree::new("".into(), "".into());
+        assert_eq!(empty_dag.node_count(), 1);
+        let root = empty_dag.get_node(0).unwrap(); // unwrap allowed
+        assert_eq!(root.prompt, "");
+        assert_eq!(root.response, "");
+
+        // Multi-byte Unicode (Emoji, CJK, German Umlauts)
+        let unicode_prompt = "Frage: 🚀 Graph-Traversal & 日本語 / 💡 ML-Spezifikation";
+        let unicode_response = "Antwort: Überprüfung & 🤖 KI-Modell 漢字";
+        let unicode_dag = SessionBranchTree::new(unicode_prompt.into(), unicode_response.into());
+        let unicode_root = unicode_dag.get_node(0).unwrap(); // unwrap allowed
+        assert_eq!(unicode_root.prompt, unicode_prompt);
+        assert_eq!(unicode_root.response, unicode_response);
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn load_CASE_non_existent_namespace_returns_not_found() {
+        use memfuse_store::{LsmConfig, LsmStorage};
+
+        let dir = tempfile::tempdir().unwrap(); // unwrap allowed
+        let storage = LsmStorage::new(LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(); // unwrap allowed
+
+        let result = SessionBranchTree::load(&storage, "non_existent_ns").await;
+        assert!(result.is_err());
+        let err = result.err().unwrap(); // unwrap allowed
+        assert!(
+            matches!(err, MemFuseError::NotFound(_)),
+            "Expected MemFuseError::NotFound, got {:?}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn load_CASE_corrupt_data_returns_serialization_error() {
+        use memfuse_store::{LsmConfig, LsmStorage};
+
+        let dir = tempfile::tempdir().unwrap(); // unwrap allowed
+        let storage = LsmStorage::new(LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(); // unwrap allowed
+
+        let tx = TxId::new(1);
+        // Put invalid corrupt bytes under edges key
+        let corrupt_key = b"__session_dag:corrupt_ns:edges";
+        let corrupt_val = b"invalid bincode bytes";
+        storage.put(tx, corrupt_key, corrupt_val).await.unwrap(); // unwrap allowed
+        storage.commit(tx).await.unwrap(); // unwrap allowed
+
+        let result = SessionBranchTree::load(&storage, "corrupt_ns").await;
+        assert!(result.is_err());
+        let err = result.err().unwrap(); // unwrap allowed
+        assert!(
+            matches!(err, MemFuseError::Serialization(_)),
+            "Expected MemFuseError::Serialization on corrupt payload, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn serialization_roundtrip_CASE_agent_state_node_and_dag_edge() {
+        let node = AgentStateNode {
+            step_id: 42,
+            prompt: "Test prompt 🔥".into(),
+            response: "Test response ⚡".into(),
+            snapshot_tx_id: Some(TxId::new(1001)),
+            tool_outputs: vec!["tool1_out".into(), "tool2_out".into()],
+            compacted: true,
+        };
+
+        let serialized_node = bincode::serialize(&node).unwrap(); // unwrap allowed
+        let deserialized_node: AgentStateNode = bincode::deserialize(&serialized_node).unwrap(); // unwrap allowed
+        assert_eq!(node, deserialized_node);
+
+        let edge = DagEdge {
+            parent: 10,
+            child: 42,
+            label: "explore_branch".into(),
+        };
+
+        let serialized_edge = bincode::serialize(&edge).unwrap(); // unwrap allowed
+        let deserialized_edge: DagEdge = bincode::deserialize(&serialized_edge).unwrap(); // unwrap allowed
+        assert_eq!(edge, deserialized_edge);
     }
 }

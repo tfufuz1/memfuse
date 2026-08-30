@@ -314,10 +314,11 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-020 (Wiederherstellung): Wiederherstellung von `memfuse-agent` aus dem Archiv
+## ADR-042: Wiederherstellung von `memfuse-agent` aus dem Archiv
 
 - **Datum**: 2026-08-27
 - **Status**: ✅ Final
+- **Hinweis**: Renummeriert von ADR-020 zu ADR-037 in R-08 zur Behebung des ADR-020-Duplikats. (Reserved Gaps: ADR-038, ADR-039).
 - **Entscheidung**: Kernkomponenten aus `memfuse-saos-agent` (gelöscht in Commit 55a3464)
   werden als `memfuse-agent` wiederhergestellt: `AgentTool` Trait, `OrchestratorEngine`,
   `StateGraph`, `AuditLog`.
@@ -599,6 +600,48 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
+## ADR-037: VectorIndex-Generalisierung in Collection<S, V>
+
+*   **Datum**: 2026-08-29
+*   **Status**: 🟡 Proposed
+*   **Entscheidung**: Die Datenstruktur `Collection<S: StorageEngine = LsmStorage>` in `crates/memfuse-db/src/collection.rs` wird generisch über den `VectorIndex`-Trait-Implementor erweitert: `Collection<S: StorageEngine = LsmStorage, V: VectorIndex = HnswIndex>`. Dadurch wird die starre Kopplung an `Arc<HnswIndex>` aufgehoben und die Nutzung alternativer Vektor-Indizes (wie z. B. `DiskAnnIndex` aus `memfuse-index`) ermöglicht.
+*   **Alternativen**:
+    - **Option A (Dynamischer Trait-Object Trait-Dispatch `Arc<dyn VectorIndex>)`**: Verworfen, da `VectorIndex` in manchen Pfaden dynamischen Trait-Funktions-Dispatch mit Performance-Overhead auf dem Hot-Path verbindet und die Typensicherheit bei konkreter Vektorindex-Instanziierung einbüßt.
+    - **Option B (Status Quo belassen)**: Verworfen, da `DiskAnnIndex` als out-of-core Vektorindex vollständig implementiert ist, aber wegen der harten `Arc<HnswIndex>`-Typisierung in `Collection` ungenutzte technische Schuld darstellte.
+*   **Begründung**: Die Verwendung eines generischen Typparameters mit Standard-Typ `V = HnswIndex` garantiert 100%ige Abwärtskompatibilität für alle bestehenden Aufrufer und Typ-Signaturen (wie `Collection<LsmStorage>`). Gleichzeitig wird die Entkopplung von der konkreten HNSW-Implementierung im `memfuse-db`-Crate vollzogen.
+*   **Konsequenzen**:
+    - `Collection` kann jetzt auch mit `DiskAnnIndex` instanziiert und betrieben werden (`Collection<LsmStorage, DiskAnnIndex>`).
+    - `Collection::new` nimmt `index: Arc<V>` als Parameter auf; die Convenience-Funktion `Collection::with_hnsw` kapselt die bisherige HNSW-Konstruktion.
+
+---
+
+## ADR-038: Zettelkasten Memory Links (A-MEM) & Supersedes Displacement Logic
+*   **Datum**: 2026-08-29
+*   **Status**: ✅ Final
+*   **Entscheidung**:
+    1. Erweiterung von `ContextChunk` (`memfuse-core`) um `links: Vec<MemoryLink>` mit `#[serde(default)]`.
+    2. Einführung von `LinkRelation` (`Elaborates`, `Contradicts`, `Supersedes`, `References`) und `MemoryLink` (`target: DocId`, `relation: LinkRelation`, `created_at_tx: TxId`).
+    3. Implementierung der Methode `Collection::link_memories` (idempotent, interne `TxId` via `allocate_tx()`) und `Collection::traverse_links` (iterativer BFS mit `VecDeque`, zyklen-sicher, max `MAX_SEARCH_K`).
+    4. Implementierung der Supersedes-Verdrängungslogik in `hybrid_search_with_query()`: Wenn `include_superseded = false` (Default), werden Chunks verdrängt, auf die ein anderes Treffer-Dokument einen `MemoryLink` der Relation `Supersedes` trägt.
+*   **Alternativen**:
+    - **Entity-to-Entity Verlinkung**: Verworfen, da CSR-Graph-Terrain (EntityId-zu-EntityId). Zettelkasten A-MEM operiert rein auf DocId-zu-DocId Ebene für ContextChunks.
+*   **Begründung**:
+    - Schafft explizite, benannte Querverweise zwischen ContextChunks zur Repräsentation geordneter Wissensnetze.
+    - Automatisches Ausfiltern veralteter/ersetzter Chunks erhöht die Präzision des RAG-Retrievals, ohne Historie aus dem Speicher zu löschen.
+
+---
+
+## ADR-039: reqwest als Workspace-Dependency für memfuse-router
+*   **Datum**: 2026-08-29
+*   **Status**: ✅ Final
+*   **Entscheidung**: `reqwest` wird als zentrale Workspace-Dependency in `[workspace.dependencies]` im Root-`Cargo.toml` aufgenommen und für `memfuse-router` explizit freigegeben.
+*   **Alternativen**: Ersetzung durch `memfuse-ollama`.
+*   **Begründung**: `memfuse-router` nutzt `reqwest` in `dispatch_to_slm` für generische HTTP JSON-RPC 2.0 Aufrufe (`slm_process_context`) an frei konfigurierbare MCP-Endpunkte von Small Language Models (SLMs). `memfuse-ollama` deckt ausschließlich Ollama REST-API-Endpunkte ab und kann diese generische JSON-RPC-MCP-Dispatch-Funktionalität nicht bereitstellen.
+*   **Sicherheitsbewertung**: Nutzung mit `default-features = false` und `rustls-tls` (kein `native-tls` / OpenSSL C-Dependency-Overhead, vollständig konform mit der Sovereign Core Policy aus ADR-004).
+*   **Konsequenz**: `reqwest` ist fortan eine explizit genehmigte Workspace-Dependency ohne Version Drift zwischen Crates.
+
+---
+
 ## ADR-040: collection.rs Modularisierung (God Object Auflösung)
 *   **Datum**: 2026-08-29
 *   **Status**: ✅ Final
@@ -608,16 +651,24 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-041: TOMBSTONE_BIT-Disziplin in rollback_to_tx
+## ADR-041: TOMBSTONE_BIT-Disziplin in Sequenznummer-Berechnungen und rollback_to_tx
 *   **Datum**: 2026-08-29
 *   **Status**: ✅ Final
-*   **Entscheidung**: In `LsmStorage::rollback_to_tx` wird das `TOMBSTONE_BIT` (Bit 63, `1 << 63`) vor jedem Vergleich und jeder Zuweisung an `max_seq` strikt maskiert (`& !TOMBSTONE_BIT`), um zu verhindern, dass Bit 63 in `next_seq_no` gerät.
+*   **Entscheidung**: In allen Pfaden der LSM-Storage-Engine (`rollback_to_tx`, WAL-Replay, SSTable-Recovery), in denen maximale Sequenznummern (`max_seq`) ermittelt werden, MUSS das `TOMBSTONE_BIT` (Bit 63, `1 << 63`) strikt maskiert werden (`seq & !TOMBSTONE_BIT`), bevor Vergleiche, Zuweisungen oder Hochzählungen für `next_seq_no` stattfinden.
 *   **Alternativen**:
-    - Maskierung direkt beim Schreiben der SSTable-Metadaten. Verworfen, da Metadaten unmaskiert eingehen und eine Änderung dort das SSTable-Format oder Leselogik an anderen Stellen beeinflussen könnte.
-*   **Begründung**: Wenn die höchste beobachtete Sequenznummer in einer SSTable oder einem WAL-Eintrag zu einem Delete-Tombstone gehört, ist Bit 63 in dieser `seq_no` gesetzt. Ohne Maskierung wanderte dieses Bit bisher in `max_seq` und anschließend in `next_seq_no`. Jede nachfolgende Schreiboperation erbte fälschlich Bit 63 und wurde vom System als gelöscht behandelt. Die strikte Maskierung wahrt die Invariante "Bit 63 darf niemals in next_seq_no einfließen" und schützt vor stillem Datenverlust.
-*   **Konsequenzen**:
-    - `rollback_to_tx` maskiert `sst.metadata().max_seq & !TOMBSTONE_BIT` und `(seq & !TOMBSTONE_BIT)` aus WAL-Einträgen.
-    - Neue Regressionstests in `lsm.rs` sichern das Verhalten ab.
+    - Unmaskierte Übernahme in `max_seq`: Verworfen, da Bit 63 in `next_seq_no` wandert und nachfolgende reguläre Inserts fälschlich als gelöscht (Tombstone) markiert.
+    - Maskierung beim Schreiben der SSTable-Metadaten verändern: Verworfen, um bestehende Metadatenformate und Disk-Layouts nicht zu verändern.
+*   **Begründung**: Bit 63 signalisiert ausschließlich das Lösch-Tombstone-Flag in Datenzeilen. Es stellt keinen numerischen Wertanteil der Sequenznummer dar. Maskierung an den Lesestellen schützt die Invariante "Bit 63 darf niemals in `next_seq_no` einfließen" vollständig vor stillem Datenverlust nach Rollbacks auf Delete-Operationen.
+
+---
+
+## ADR-042: Write-Temp-Then-Rename Pattern für SSTable-Kompaktierung & Recovery Cleanup
+*   **Datum**: 2026-08-30
+*   **Status**: ✅ Final
+*   **Entscheidung**: Die SSTable-Kompaktierung in `CompactionEngine::maybe_compact` (`crates/memfuse-store/src/compaction.rs`) schreibt das Ergebnis eines Merges zuerst in eine temporäre Datei mit dem Suffix `.sst.tmp`. Erst nach erfolgreichem `builder.finish()` wird die Datei über ein atomares `tokio::fs::rename(&temp_path, &final_path)` auf ihren finalen `.sst`-Namen verschoben. Bei Fehlern während des Merging oder des Renamings wird die Temp-Datei umgehend gelöscht. Zusätzlich ignoriert und bereinigt `LsmStorage::new()` (`crates/memfuse-store/src/lsm.rs`) beim Startup-Scan automatisch alle Restdateien mit `.tmp`-Suffix.
+*   **Alternativen**:
+    - Schreiben direkt auf den Zielpfad und Versuchen des Löschens der unvollständigen Datei im Absturz-/Error-Handler. Verworfen, da bei Prozessabsturz (SIGKILL, Stromausfall) unvollständige Dateien verbleiben und beim Neustart fälschlicherweise als gültige SSTables eingelesen würden.
+*   **Begründung**: Garantiert POSIX-Atomarität für komprimierte/kompaktierte SSTables. Eine SSTable existiert im Datenverzeichnis unter ihrem finalen Namen entweder vollständig oder gar nicht, wodurch Korruption bei Abstürzen während des Kompaktierungsvorgangs ausgeschlossen wird.
 
 ---
 
