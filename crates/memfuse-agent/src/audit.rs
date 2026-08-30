@@ -3,7 +3,6 @@
 //! Provides append-only logging of every step an agent takes.
 //! Entries are stored via [`Collection`] and keyed `audit:{task_id}:step:{n}`.
 
-use crate::context::{validate_node_id, validate_task_id};
 use memfuse_core::{Result, StorageEngine};
 use memfuse_db::Collection;
 use memfuse_store::LsmStorage;
@@ -34,9 +33,6 @@ impl<S: StorageEngine> AuditLog<S> {
 
     /// Appends an immutable audit entry. No delete/update path exists by design (AC-3).
     pub async fn append(&self, entry: &AuditEntry) -> Result<()> {
-        validate_task_id(&entry.task_id)?;
-        validate_node_id(&entry.node_id)?;
-
         let audit_id = format!("audit:{}:step:{}", entry.task_id, entry.step_count);
         let payload = serde_json::to_value(entry)
             .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
@@ -49,8 +45,6 @@ impl<S: StorageEngine> AuditLog<S> {
 
     /// Replays all audit entries for a given task via scan_prefix.
     pub async fn replay_task(&self, task_id: &str) -> Result<Vec<AuditEntry>> {
-        validate_task_id(task_id)?;
-
         let prefix = format!("audit:{}:step:", task_id);
         let raw = self.collection.scan_prefix(&prefix).await?;
 
@@ -60,13 +54,13 @@ impl<S: StorageEngine> AuditLog<S> {
                 let entry_val = meta.get("metadata").cloned().unwrap_or(meta);
                 serde_json::from_value::<AuditEntry>(entry_val)
                     .map_err(|e| {
-                        tracing::warn!("AuditLog: Deserialization error: {e}");
+                        tracing::warn!("AuditLog: Deserialisierungsfehler: {e}");
                     })
                     .ok()
             })
             .collect();
 
-        // Sort by step_count for deterministic replay
+        // Sortiere nach step_count für deterministisches Replay
         entries.sort_by_key(|e| e.step_count);
         Ok(entries)
     }

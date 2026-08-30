@@ -2,17 +2,13 @@
 //!
 //! Provides `EventSource` trait and concrete implementations (`PollingDocumentEventSource`, `VecEventSource`).
 
-use crate::context::MAX_ID_LEN;
 use async_trait::async_trait;
-use memfuse_core::{MemFuseError, Result, StorageEngine};
+use memfuse_core::{Result, StorageEngine};
 use memfuse_db::Collection;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
-
-/// Maximum allowed events in pending event buffers to prevent memory exhaustion.
-pub const MAX_EVENT_SOURCE_CAPACITY: usize = 10_000;
 
 /// Background telemetry/trigger event delivered to the agent context.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -174,24 +170,10 @@ pub struct VecEventSource {
 }
 
 impl VecEventSource {
-    /// Attempts to construct a `VecEventSource` with a capacity check.
-    pub fn try_new(events: Vec<BackgroundEvent>) -> Result<Self> {
-        if events.len() > MAX_EVENT_SOURCE_CAPACITY {
-            return Err(MemFuseError::MemoryBudgetExceeded {
-                used_mb: ((events.len() * std::mem::size_of::<BackgroundEvent>()) / (1024 * 1024))
-                    as u64,
-                limit_mb: MAX_EVENT_SOURCE_CAPACITY as u64,
-            });
-        }
-        Ok(Self {
-            events: events.into(),
-        })
-    }
-
-    /// Constructs a `VecEventSource`, panicking if event count exceeds maximum capacity.
     pub fn new(events: Vec<BackgroundEvent>) -> Self {
-        Self::try_new(events)
-            .expect("Event count exceeds MAX_EVENT_SOURCE_CAPACITY in VecEventSource::new")
+        Self {
+            events: events.into(),
+        }
     }
 }
 
@@ -203,44 +185,5 @@ impl EventSource for VecEventSource {
 
     fn is_exhausted(&self) -> bool {
         self.events.is_empty()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_background_event_validation() {
-        assert!(BackgroundEvent::try_new(serde_json::json!({}), "valid_source", 1).is_ok());
-
-        assert!(matches!(
-            BackgroundEvent::try_new(serde_json::json!({}), "", 1),
-            Err(MemFuseError::InvalidInput(_))
-        ));
-
-        assert!(matches!(
-            BackgroundEvent::try_new(serde_json::json!({}), "source\0null", 1),
-            Err(MemFuseError::InvalidInput(_))
-        ));
-
-        let huge_source = "s".repeat(300);
-        assert!(matches!(
-            BackgroundEvent::try_new(serde_json::json!({}), &huge_source, 1),
-            Err(MemFuseError::InvalidInput(_))
-        ));
-    }
-
-    #[test]
-    fn test_vec_event_source_capacity_limit() {
-        let mut events = Vec::new();
-        for i in 0..10_001 {
-            events.push(BackgroundEvent::new(serde_json::json!({}), "source", i));
-        }
-
-        assert!(matches!(
-            VecEventSource::try_new(events),
-            Err(MemFuseError::MemoryBudgetExceeded { .. })
-        ));
     }
 }

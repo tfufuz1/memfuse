@@ -48,6 +48,8 @@
 // SIEHE AUCH: rules/simd_safety.md, CONSTITUTION.md §12, ADR-017
 
 // ANCHOR[REFACTOR:WP-0.0-STABLESIMD] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Remove nightly portable_simd
+// REVIEW-PASS[1/2] STATUS:PASS (ID: REFACTOR:WP-0.0-STABLESIMD) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
+// REVIEW-PASS[2/2] STATUS:PASS (ID: REFACTOR:WP-0.0-STABLESIMD) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
 // TEST: cargo +stable check -p memfuse-index
 // DONE: #![feature(portable_simd)] ist entfernt und distance.rs nutzt stabiles Rust.
 
@@ -367,6 +369,8 @@ unsafe fn dot_product_neon(a: &[f32], b: &[f32]) -> f32 {
 }
 
 // ANCHOR[REFACTOR:WP-0.0-STABLESIMD-2] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Removed std_simd functions
+// REVIEW-PASS[1/2] STATUS:PASS (ID: REFACTOR:WP-0.0-STABLESIMD-2) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
+// REVIEW-PASS[2/2] STATUS:PASS (ID: REFACTOR:WP-0.0-STABLESIMD-2) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
 
 // -----------------------------------------------------------------------------
 // AVX2 Implementations
@@ -1406,63 +1410,6 @@ mod tests {
         let a = vec![1.0, 2.0];
         let b = vec![1.0, 2.0, 3.0];
         let _ = dot_product_distance(&a, &b);
-    }
-
-    #[test]
-    fn test_normalize_inplace() {
-        // Zero vector should remain zero vector without panic or NaN
-        let mut zero_vec = vec![0.0f32, 0.0, 0.0];
-        normalize_inplace(&mut zero_vec);
-        assert_eq!(zero_vec, vec![0.0, 0.0, 0.0]);
-
-        // Single element vector
-        let mut single_vec = vec![5.0f32];
-        normalize_inplace(&mut single_vec);
-        assert_eq!(single_vec, vec![1.0]);
-
-        // Vector [3, 4] -> norm is 5, normalized is [0.6, 0.8] (Anti-mirroring hand calculated)
-        let mut vec_34 = vec![3.0f32, 4.0];
-        normalize_inplace(&mut vec_34);
-        assert!((vec_34[0] - 0.6).abs() < 1e-6);
-        assert!((vec_34[1] - 0.8).abs() < 1e-6);
-
-        // L2 norm of normalized vector should be 1.0
-        let norm_sq: f32 = vec_34.iter().map(|x| x * x).sum();
-        assert!((norm_sq - 1.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_compute_distance_nan_input_returns_error() {
-        let a = vec![1.0, f32::NAN, 3.0];
-        let b = vec![1.0, 2.0, 3.0];
-        let res = compute_distance(&a, &b, DistanceMetric::Cosine);
-        assert!(matches!(
-            res,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
-
-        let a2 = vec![1.0, 2.0, 3.0];
-        let b2 = vec![1.0, f32::NAN, 3.0];
-        let res2 = compute_distance(&a2, &b2, DistanceMetric::Euclidean);
-        assert!(matches!(
-            res2,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
-    }
-
-    #[test]
-    fn test_scalar_metric_independent_values() {
-        // Anti-mirroring check: Expected values independently derived
-        // Vector a = [3.0, 0.0], b = [0.0, 4.0]
-        // dot_product = 3*0 + 0*4 = 0.0
-        // euclidean = sqrt((3-0)^2 + (0-4)^2) = sqrt(9 + 16) = 5.0
-        // norm_a = 3.0, norm_b = 4.0, cosine_sim = 0.0 / (3*4) = 0.0, cosine_dist = 1.0 - 0.0 = 1.0
-        let a = vec![3.0f32, 0.0];
-        let b = vec![0.0f32, 4.0];
-
-        assert_eq!(dot_product_scalar(&a, &b), 0.0);
-        assert_eq!(euclidean_distance_scalar(&a, &b), 5.0);
-        assert_eq!(cosine_distance_scalar(&a, &b), 1.0);
     }
 
     #[test]

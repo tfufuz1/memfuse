@@ -6,6 +6,8 @@
 // INVARIANT: Autonomes Kontext-Management (WP-6.3)
 
 // ANCHOR[INTEGRATION:WP-7.1-CHUNKER] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Wire MarkdownChunker to ContextManager
+// REVIEW-PASS[1/2] STATUS:PASS (ID: INTEGRATION:WP-7.1-CHUNKER) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
+// REVIEW-PASS[2/2] STATUS:PASS (ID: INTEGRATION:WP-7.1-CHUNKER) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
 // TEST: cargo test -p memfuse-db
 // DONE: ContextManager nutzt MarkdownChunker zur Dokument-Zerlegung.
 

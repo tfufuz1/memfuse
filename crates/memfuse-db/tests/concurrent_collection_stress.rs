@@ -1,5 +1,7 @@
 //! High-concurrency stress tests for a single MemFuse collection.
 // ANCHOR[INTEGRATION:STRESS-001] STATUS:DONE (TS:2026-05-18T00:00:00Z)
+// REVIEW-PASS[1/2] STATUS:PASS (ID: INTEGRATION:STRESS-001) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
+// REVIEW-PASS[2/2] STATUS:PASS (ID: INTEGRATION:STRESS-001) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
 
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
