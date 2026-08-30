@@ -1210,15 +1210,12 @@ mod tests {
     }
 
     #[test]
-    fn test_check_consistency_detects_current_adr_042_duplicate() {
+    fn test_check_consistency_passes_on_current_decisions() {
         let root = find_root_dir();
         let decisions_path = root.join("DECISIONS.md");
         let decisions = fs::read_to_string(&decisions_path).unwrap_or_default();
         let pass = check_adr_consistency(&decisions);
-        assert!(
-            !pass,
-            "Should detect duplicate ADR-042 in current DECISIONS.md before P0-3 fix"
-        );
+        assert!(pass, "DECISIONS.md must be clean and free of duplicate ADR numbers");
     }
 
     #[test]
