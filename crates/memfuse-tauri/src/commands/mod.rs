@@ -1,10 +1,3 @@
-// FILE-CONTEXT
-// STAND: 2026-08-30T14:38:30Z (SESSION: 45595f71)
-// ZWECK: Tauri IPC command module definitions and shared path traversal validation logic.
-// INVARIANTEN: validate_path_within_base must reject any path outside allowed base directory.
-// NICHT-OFFENSICHTLICH: Shared path validation canonicalizes both base and target paths.
-// SIEHE AUCH: crates/memfuse-tauri/src/commands/ingest.rs
-
 mod chat;
 mod collections;
 mod ingest;

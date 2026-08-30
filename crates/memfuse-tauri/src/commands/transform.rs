@@ -1,10 +1,3 @@
-// FILE-CONTEXT
-// STAND: 2026-08-30T14:38:30Z (SESSION: 45595f71)
-// ZWECK: Regex transformation & validation Tauri IPC commands.
-// INVARIANTEN: Regex operations capped via Semaphore; inputs bounded by size & complexity limits.
-// NICHT-OFFENSICHTLICH: Uses regex crate without backtracking (NFA/DFA); ReDoS is structurally impossible.
-// SIEHE AUCH: crates/memfuse-tauri/src/state.rs, DECISION-REF: ADR-014
-
 //! Regex-Transformations-Commands für den Tauri-Frontend.
 //!
 //! # Engine-Garantien & ReDoS-Analyse (DECISION-REF: ADR-014)
@@ -50,20 +43,6 @@ use std::time::Duration;
 use tauri::State;
 
 // ─── Konstanten ──────────────────────────────────────────────────────────────
-
-/// Maximale Anzahl von Snippets für eine Bulk-Regex-Transformation.
-pub const MAX_BULK_REGEX_INPUTS: usize = 1_000;
-
-/// Validiert die Eingabeliste für Bulk-Regex-Transformationen.
-pub fn validate_bulk_transform_inputs(inputs: &[String]) -> Result<(), MemFuseErrorDto> {
-    if inputs.len() > MAX_BULK_REGEX_INPUTS {
-        return Err(MemFuseErrorDto::new(
-            "InvalidInput",
-            format!("Bulk regex transformation exceeds limit of {MAX_BULK_REGEX_INPUTS} inputs (got {})", inputs.len()),
-        ));
-    }
-    Ok(())
-}
 
 /// Maximale Eingabelänge für Patterns, die als strukturell normal eingestuft werden.
 /// Bei linearem Matching und ~50 MB/s Worst-Case-Durchsatz: 1 MB → max. ~20 ms.
@@ -285,8 +264,6 @@ pub async fn run_bulk_regex_transform(
     replacement: String,
     inputs: Vec<String>,
 ) -> Result<Vec<Result<RegexTransformResult, MemFuseErrorDto>>, MemFuseErrorDto> {
-    validate_bulk_transform_inputs(&inputs)?;
-
     let mut results = Vec::with_capacity(inputs.len());
 
     for input in inputs {
@@ -546,19 +523,5 @@ mod tests {
             "Oversized pattern size_limit violation should be returned as error: {}",
             err.message
         );
-    }
-
-    #[test]
-    fn test_bulk_transform_limit_exceeded() {
-        let inputs = vec!["test".to_string(); MAX_BULK_REGEX_INPUTS + 1];
-
-        let res = validate_bulk_transform_inputs(&inputs);
-        assert!(res.is_err());
-        let err = res.unwrap_err();
-        assert_eq!(err.kind, "InvalidInput");
-        assert!(err.message.contains("exceeds limit"));
-
-        let valid_inputs = vec!["test".to_string(); 5];
-        assert!(validate_bulk_transform_inputs(&valid_inputs).is_ok());
     }
 }
