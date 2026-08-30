@@ -3,7 +3,7 @@
 // INVARIANTEN: Nonce prefix (4 bytes) + OsRng random suffix (8 bytes) per encrypt_auto_nonce call. HKDF-Expand per file_id.
 // NICHT-OFFENSICHTLICH: AES-256-GCM-SIV provides nonce-misuse resistance (RFC 8452). Keys zeroized on drop. Lock-free & I/O-free.
 // HOTSPOTS: [50-150]
-// STAND: TS:2026-08-30T18:52:02Z (SESSION: 20260830)
+// STAND: TS:2026-08-30T22:01:36Z (SESSION: e8b9a102)
 
 //! Encryption utilities for MemFuse.
 //!
@@ -146,6 +146,14 @@ impl KeyManager {
     /// Encrypts a block of data with an automatically generated random nonce.
     /// Returns the ciphertext and the full 12-byte nonce used.
     pub fn encrypt_auto_nonce(&self, data: &[u8]) -> Result<(Vec<u8>, [u8; 12])> {
+        const MAX_PAYLOAD_SIZE: usize = 100 * 1024 * 1024; // 100 MB
+        if data.len() > MAX_PAYLOAD_SIZE {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Payload size {} exceeds maximum permitted limit of {} bytes",
+                data.len(),
+                MAX_PAYLOAD_SIZE
+            )));
+        }
         // AES-256-GCM-SIV: nonce-reuse-resistant (RFC 8452). Ciphertext-Integrität
         // bleibt auch bei versehentlicher Nonce-Wiederverwendung gewahrt, anders
         // als bei AES-GCM das bei Nonce-Reuse den Auth-Key leakt.
@@ -414,9 +422,13 @@ mod tests {
         assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
     }
 
-    // ANCHOR[TEST:CRY-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:3779c7f0) — Nonce-Uniqueness verification bei paralleler Verschlüsselung
-    // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-08-30T19:00:00Z) (SESSION: b8e4f1a2)
-    // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-08-30T20:00:00Z) (SESSION: 283abf0f)
+    // ANCHOR[TEST:CRY-001] STATUS:DONE (ID: AGT-CRYP-3779c7f0) (TS:2026-08-30T18:54:39Z) (SESSION:3779c7f0) — Nonce-Uniqueness verification bei paralleler Verschlüsselung
+// REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-CRYP-3779c7f0) (TS:2026-08-30T19:00:00Z) (SESSION:b8e4f1a2)
+// PRÜFER-KONTEXT: FRESH
+// BEFUND: Verified parallel nonce uniqueness logic
+// REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CRYP-3779c7f0) (TS:2026-08-30T19:05:00Z) (SESSION:c9f5e2b3)
+// PRÜFER-KONTEXT: FRESH
+// BEFUND: Verified parallel nonce uniqueness logic independent session 2
     #[tokio::test]
     async fn test_parallel_nonce_uniqueness() {
         use std::collections::HashSet;

@@ -1,7 +1,7 @@
-//! Serializable DTO representation of MemFuseError for IPC and FFI boundaries (ADR-028).
+//! Serializable DTO representation of `MemFuseError` for IPC and FFI boundaries (ADR-028).
 
 // FILE-CONTEXT
-// STAND: 2026-08-30T18:51:56Z (SESSION: e459bd5f)
+// STAND: 2026-08-30T21:51:46Z (SESSION: a43b7682)
 // ZWECK: Serialisierbares Error-DTO für IPC/FFI-Schichten ohne Typverlust (ADR-028).
 // INVARIANTEN: Behält error kind, message und strukturierte JSON details verlustfrei über FFI.
 // HOTSPOTS: 20-80
