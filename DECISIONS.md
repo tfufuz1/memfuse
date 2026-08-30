@@ -608,21 +608,6 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-041: Kognitive Gedächtnistypen-Klassifikation (MemoryType)
-
-*   **Datum**: 2026-08-29 (Implementierung) / 2026-08-30 (Dokumentation nachgetragen)
-*   **Status**: ✅ Final
-*   **Kontext**: Die strategische Roadmap (Phase 2) forderte eine explizite Klassifikation gespeicherter Einträge nach kognitivem Gedächtnistyp (Vorbilder: MemOS/MemCube, Mem0, A-MEM): episodisch (Ereignisse), semantisch (Fakten), prozedural (Workflows) und operativ (Working Memory, Session-Kontext). Bisher wurden alle Dokumente uniform behandelt, ohne dass Retrieval-Strategie oder Lifecycle (Decay, TTL) von der Art des Inhalts abhingen.
-*   **Entscheidung**: Ein neuer `#[non_exhaustive]` Enum `MemoryType` in `memfuse-core` mit vier Varianten (Episodic, Semantic [Default], Procedural, Working). Jede Variante liefert über `default_decay()` eine passende `DecayFunction` (Episodic: Exponential mit 10.000 TX Halbwertszeit; Semantic: keine Decay; Procedural: StepFloor, verstärkt durch Nutzung; Working: sehr schnelle Exponential-Decay mit 500 TX Halbwertszeit) und über `default_ttl_tx()` eine optionale TTL (nur Working Memory: 50.000 TX). Der Typ wird additiv über `Collection::insert_typed()` gesetzt und als `"memory_type"`-Feld in den Dokument-Metadaten persistiert — bestehende Dokumente ohne dieses Feld werden rückwärtskompatibel als `Semantic` interpretiert (`extract_memory_type()`).
-*   **Alternativen**: Freitext-Tag statt Enum: verworfen, da keine Typsicherheit und keine automatische Decay-/TTL-Kopplung möglich gewesen wäre.
-*   **Begründung**: Ermöglicht typspezifische Abkling- (Decay) und Lebensdauer-Steuerung (TTL) sowie künftige differenzierte Retrieval-Gewichtungen ohne Breaking Changes für bestehende Schnittstellen.
-*   **Konsequenzen**:
-    - Additiv, keine Breaking Changes an bestehenden `insert()`-Aufrufern.
-    - `trigger_reaper()` nutzt die typspezifische Decay-Function für einen aktiven TxId-basierten Sweep (siehe zugehörige Reaper-Härtung).
-    - Zukünftige Retrieval-Strategien können nach `MemoryType` filtern oder gewichten (noch nicht implementiert, aber durch additive Enum-Erweiterung vorbereitet).
-
----
-
 ## Vorlage für neue ADRs
 ```markdown
 ## ADR-NNN: <Titel>

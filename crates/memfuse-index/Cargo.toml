@@ -29,7 +29,6 @@ tokio = { workspace = true, features = ["full", "test-util"] }
 criterion = "0.5"
 tempfile = "3"
 proptest = "1.4"
-bincode = { workspace = true }
 
 [[bench]]
 name = "distance_bench"

@@ -1,9 +1,34 @@
 # Context Engineering System für Google-Jules im MemFuse Projekt
 **Professionelles Framework für LLM-gesteuerte Softwareentwicklung mit autonomen Agenten**
 
-Version: 2.0 · Status: PRODUCTIONSREIF
+Version: 2.0 · Status: ZIELBILD — Teilweise implementiert
 Autoren: Context Engineering Team · Zielgruppe: Google-Jules, Globale Weltkonzerne
-Datum: 2026-08-29 · Umfang: 15 Crates, 2.000+ Dateien, 100%+ LLM-Autonomie
+Datum: 2026-08-29 (Verifiziert IST: 2026-08-30) · Umfang: 15 Crates, 2.000+ Dateien, 100%+ LLM-Autonomie
+
+---
+
+## IMPLEMENTIERUNGSSTATUS (IST VS. SOLL)
+
+> **Verifizierter Ist-Zustand (2026-08-30)**: Dieses Dokument beschreibt ein Zielbild. Die real im Workspace (`xtask/src/main.rs`) implementierten Befehle weichen von einigen hier beschriebenen Entwürfen ab.
+
+| Befehl / Komponente in diesem Dokument | Status im Codebase (`xtask` / `justfile`) | Reale Alternative / Anmerkung |
+|---|---|---|
+| `sync-docs` / `sync-docs --check` | 🟢 **Implementiert** | Autogenerierung & Check von `WORKING_STATE.md`, `ARCHITECTURE.md`, `SOURCE_OF_TRUTH.md` |
+| `check-review-coverage` | 🟢 **Implementiert** | Multi-Session REVIEW-PASS Pflichtprüfung für ANCHORs |
+| `check-consistency` | 🟢 **Implementiert** | Konsistenzprüfung für AGENTS.md / README.md Crate-Anzahlen |
+| `run-community-detection` | 🟢 **Implementiert** | Batch-Community-Detection via GraphRAG |
+| `context-digest` | 🟢 **Teilweise implementiert** | `cargo xtask context-digest` ex. ohne `--parallel` Flag |
+| `context-tags` | 🟢 **Implementiert** | `cargo xtask context-tags` mit Filter-Optionen |
+| `context-file` | 🟢 **Implementiert** | `cargo xtask context-file` |
+| `context-crate` | 🟢 **Implementiert** | `cargo xtask context-crate` |
+| `audit-verify` | 🟢 **Implementiert** | `cargo xtask audit-verify <FINDING_ID>` |
+| `audit-review` | 🟢 **Implementiert** | `cargo xtask audit-review <FINDING_ID>` |
+| `context-cli` | 🟡 **[GEPLANT, NOCH NICHT IMPLEMENTIERT]** | Eigenständiges Shell-Binary existiert nicht; real wird `cargo xtask ...` / `just session-context` genutzt |
+| `cargo xtask audit-export` | 🟡 **[GEPLANT, NOCH NICHT IMPLEMENTIERT]** | Export-Subcommand in `xtask` nicht vorhanden |
+| `cargo xtask compliance-report` | 🟡 **[GEPLANT, NOCH NICHT IMPLEMENTIERT]** | Report-Subcommand in `xtask` nicht vorhanden |
+| `cargo xtask context-build-index` | 🟡 **[GEPLANT, NOCH NICHT IMPLEMENTIERT]** | SQLite-Index für Context Tags nicht vorhanden |
+| `cargo xtask validate-tags --strict` | 🟡 **[GEPLANT, NOCH NICHT IMPLEMENTIERT]** | Subcommand existiert als `ValidateTags`, Flag `--strict` noch nicht evaluiert |
+| `cargo xtask context-digest --parallel 4` | 🟡 **[GEPLANT, NOCH NICHT IMPLEMENTIERT]** | `ContextDigest` Struct besitzt kein `--parallel`-Flag |
 
 ---
 
@@ -371,13 +396,15 @@ cargo xtask context-crate memfuse-db --format json
 }
 ```
 
-### 4.2 Shell-Wrapper für Jules VM
+### 4.2 Shell-Wrapper für Jules VM `[GEPLANT, NOCH NICHT IMPLEMENTIERT]`
+
+> **Hinweis [GEPLANT, NOCH NICHT IMPLEMENTIERT]**: Standardmäßig existiert kein `context-cli`-Binary in der VM / Repository. Stattdessen wird `cargo xtask <command>` oder das recipe `just session-context` ausgeführt.
 
 Erstelle `/app/scripts/context-cli.sh` für sofortige Nutzung:
 
 ```bash
 #!/usr/bin/env bash
-# Context CLI — Maschinenoptimierte Kontext-Extraktion für Jules
+# Context CLI — Maschinenoptimierte Kontext-Extraktion für Jules [GEPLANT, NOCH NICHT IMPLEMENTIERT]
 set -euo pipefail
 
 # ═══════════════════════════════════════════════════════════════════
@@ -589,7 +616,7 @@ EVERY PR from Jules MUST include:
 |------|---------|------|
 | `cargo xtask context-digest` | Load session context | Session start |
 | `cargo xtask context-file <path>` | Get file-level context | Before editing file |
-| `context-cli blockers` | Show critical issues | Every 30 min during session |
+| `context-cli blockers` `[GEPLANT, NOCH NICHT IMPLEMENTIERT]` | Show critical issues | Every 30 min during session |
 | `cargo xtask audit-verify <id>` | Validate external findings | Before implementing audit fix |
 | `cargo xtask review-audit <id>` | Log review completion | After audit fix validation |
 
@@ -658,7 +685,7 @@ b8e4f1a2 - Feat: MarkdownChunker integration (2026-08-28)
 - [ ] `cargo xtask context-digest` (Rust)
 - [ ] `cargo xtask context-tags` (Rust)
 - [ ] `cargo xtask context-file` (Rust)
-- [ ] Shell wrapper: `context-cli.sh`
+- [ ] Shell wrapper: `context-cli.sh` `[GEPLANT, NOCH NICHT IMPLEMENTIERT]`
 - [ ] Update `.bashrc` with aliases
 
 ### Phase 2: Integration (Week 2)
@@ -706,7 +733,7 @@ Realistische Szenario: Externe Sicherheits-Audit findet Race Condition.
 source ~/.bashrc
 
 # Schnelle Diagnose
-context-cli blockers
+context-cli blockers `[GEPLANT, NOCH NICHT IMPLEMENTIERT]`
 blocker-tags | head -10
 
 # Finding validieren
@@ -825,14 +852,14 @@ Alle AI-TAGs tragen unveränderliche Audit-Trail:
 // REVIEWER: SESSION:<hash>            ← Review-Trail
 ```
 
-Extraktion für Compliance-Report:
+Extraktion für Compliance-Report `[GEPLANT, NOCH NICHT IMPLEMENTIERT]`:
 
 ```bash
 cargo xtask audit-export \
   --from "2026-08-01" \
   --to "2026-08-31" \
   --format "csv|json|pdf" \
-  --output compliance-report-2026-08.pdf
+  --output compliance-report-2026-08.pdf  # [GEPLANT, NOCH NICHT IMPLEMENTIERT]
 ```
 
 ---
@@ -854,10 +881,10 @@ cargo xtask audit-export \
 Bei Skalierung auf große Monorepos:
 
 ```rust
-// Optimize with Rayon for parallel scanning
+// Optimize with Rayon for parallel scanning [GEPLANT, NOCH NICHT IMPLEMENTIERT]
 cargo xtask context-digest --parallel 4
 
-// Index AI-TAGs in SQLite für schnelle Abfragen (future)
+// Index AI-TAGs in SQLite für schnelle Abfragen (future) [GEPLANT, NOCH NICHT IMPLEMENTIERT]
 cargo xtask context-build-index
 ```
 
@@ -881,14 +908,14 @@ function jules-start() {
   # 2. Show critical blockers
   echo ""
   echo "🚨 CRITICAL BLOCKERS (must fix):"
-  context-cli blockers | jq '.[] | select(.severity=="CRITICAL")'
+  context-cli blockers | jq '.[] | select(.severity=="CRITICAL")' # [GEPLANT, NOCH NICHT IMPLEMENTIERT]
 
   # 3. Set session ID
   SESSION_ID=$(date -u +%s | sha256sum | cut -c1-8)
   export JULIUS_SESSION_ID=$SESSION_ID
   echo ""
   echo "✅ Session ID: $SESSION_ID"
-  echo "✅ Ready to code. Run 'context-cli help' for CLI info."
+  echo "✅ Ready to code. Run 'context-cli help' for CLI info." # [GEPLANT, NOCH NICHT IMPLEMENTIERT]
 }
 
 # Usage:
@@ -922,7 +949,7 @@ For each open AI-TAG in code:
   □ Convert timestamp to ISO-8601-UTC if needed
   □ Verify ID format (AGT-<CRATE>-<8hex>)
 
-# Validate:
+# Validate [GEPLANT, NOCH NICHT IMPLEMENTIERT]:
 cargo xtask validate-tags --strict
 ```
 
@@ -931,13 +958,13 @@ cargo xtask validate-tags --strict
 ## APPENDIX B: RECOMMENDED MONITORING
 
 ```bash
-# Daily:
+# Daily [GEPLANT, NOCH NICHT IMPLEMENTIERT]:
 context-cli blockers | wc -l  # Should be ~0
 
 # Weekly:
 cargo xtask audit-status | grep OPEN  # Should be ~0
 
-# Monthly:
+# Monthly [GEPLANT, NOCH NICHT IMPLEMENTIERT]:
 cargo xtask compliance-report --month "$(date -u +%Y-%m)"
 ```
 

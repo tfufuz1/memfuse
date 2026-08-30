@@ -50,11 +50,7 @@ check-review-coverage:
 check-consistency:
     nix develop -c cargo xtask check-consistency || cargo xtask check-consistency
 
-# Zeigt alle Context-Tags als NDJSON (filterbar nach Crate, Severity, Status)
-context-tags *ARGS:
-    cargo xtask context-tags {{ARGS}}
-
-# Zeigt den Session-Kontext-Digest manuell an (Fallback, falls Environment-Setup nicht griff)
+# Zeigt den Session-Kontext-Digest manuell an (aktuell primärer Pfad, siehe Pfad-A-Hinweis in CONTEXT_ENGINEERING_SYSTEM.md)
 session-context:
     #!/usr/bin/env bash
     echo "OFFENE KRITISCHE TAGS:"

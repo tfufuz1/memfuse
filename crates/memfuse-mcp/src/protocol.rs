@@ -120,7 +120,8 @@ impl From<memfuse_core::MemFuseError> for McpError {
         let data_val = serde_json::to_value(&dto).ok();
         match err {
             memfuse_core::MemFuseError::InvalidInput(msg)
-            | memfuse_core::MemFuseError::NotFound(msg) => match data_val {
+            | memfuse_core::MemFuseError::NotFound(msg)
+            | memfuse_core::MemFuseError::NamespaceViolation(msg) => match data_val {
                 Some(d) => Self::invalid_params_with_data(msg, d),
                 None => Self::invalid_params(msg),
             },
