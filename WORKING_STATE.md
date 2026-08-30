@@ -7,7 +7,7 @@
 | Field | Value |
 |-------|-------|
 | SESSION | `unknown` |
-| LAST_SYNC | `2026-08-30T13:44:44Z` |
+| LAST_SYNC | `2026-08-30T14:48:51Z` |
 
 ## Critical Blockers (MUST FIX THIS SESSION)
 | ID | Category | Severity | File & Line | Befund |
@@ -27,14 +27,14 @@
 ## Crate Inventory & Status Summary
 | Crate | Layer | LOC | Status | Description |
 |-------|-------|-----|--------|-------------|
-| `memfuse-core` | L0 | 7248 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-checkpoint` | L1 | 1264 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-crypto` | L1 | 1186 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-graph` | L1 | 4674 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-index` | L1 | 7305 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-core` | L0 | 7496 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-checkpoint` | L1 | 1468 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
+| `memfuse-crypto` | L1 | 1411 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
+| `memfuse-graph` | L1 | 5129 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-index` | L1 | 7608 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | L1 | 10393 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-text` | L1 | 3631 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | L2 | 12410 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-text` | L1 | 3979 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-db` | L2 | 12418 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | L3 | 2515 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | L3 | 1113 | 🧊 Optional |  |
 | `memfuse-ollama` | L3 | 2375 | 🟢 Clean |  |

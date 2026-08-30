@@ -39,10 +39,7 @@ pub(crate) fn compute_ppr(
 
     for &seed in seed_nodes {
         if let Some(&idx) = inner.id_map.get(&seed) {
-            if idx < n
-                && inner.entities.get(idx).is_some_and(|e| e.is_some())
-                && seen_seeds.insert(idx)
-            {
+            if idx < n && inner.is_entity_committed(idx) && seen_seeds.insert(idx) {
                 valid_seeds.push(idx);
             }
         }
@@ -71,7 +68,7 @@ pub(crate) fn compute_ppr(
     let mut out_weight_sums = vec![0.0f32; n];
 
     for i in 0..n {
-        if !inner.entities.get(i).is_some_and(|e| e.is_some()) {
+        if !inner.is_entity_committed(i) {
             continue;
         }
 
@@ -93,7 +90,7 @@ pub(crate) fn compute_ppr(
             let target = inner.targets[edge_idx];
             let weight = inner.weights[edge_idx];
 
-            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {
+            if inner.is_entity_committed(target) && weight > 0.0 {
                 sum += weight;
                 edges.push(OutgoingEdge { target, weight });
             }
@@ -131,7 +128,7 @@ pub(crate) fn compute_ppr(
         // Rank mass accumulated at dead-end (dangling) nodes
         let mut dangling_sum = 0.0f32;
         for i in 0..n {
-            if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {
+            if inner.is_entity_committed(i) && out_weight_sums[i] == 0.0 {
                 dangling_sum += ranks[i];
             }
         }
@@ -181,7 +178,7 @@ pub(crate) fn compute_ppr(
     // 5. Build and sort result vector
     let mut results = Vec::new();
     for (idx, &rank) in ranks.iter().enumerate() {
-        if rank > 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {
+        if rank > 0.0 && inner.is_entity_committed(idx) {
             if let Some(&id) = inner.reverse_map.get(idx) {
                 results.push((id, rank));
             }
@@ -289,14 +286,29 @@ mod tests {
         let id_b = EntityId::new(2);
         let id_c = EntityId::new(3);
 
-        graph.add_entity(tx, Entity::new(id_a, "Node A", "Node")).await.unwrap();
-        graph.add_entity(tx, Entity::new(id_b, "Node B (Sink)", "Node")).await.unwrap();
-        graph.add_entity(tx, Entity::new(id_c, "Node C", "Node")).await.unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_a, "Node A", "Node"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_b, "Node B (Sink)", "Node"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_c, "Node C", "Node"))
+            .await
+            .unwrap();
 
         // A -> B
-        graph.add_edge(tx, Edge::new(id_a, id_b, "link")).await.unwrap();
+        graph
+            .add_edge(tx, Edge::new(id_a, id_b, "link"))
+            .await
+            .unwrap();
         // C -> A
-        graph.add_edge(tx, Edge::new(id_c, id_a, "link")).await.unwrap();
+        graph
+            .add_edge(tx, Edge::new(id_c, id_a, "link"))
+            .await
+            .unwrap();
         graph.commit(tx).await.unwrap();
 
         let config = PprConfig::default();
@@ -316,10 +328,7 @@ mod tests {
             rank_map.contains_key(&id_b),
             "Sink node B must receive rank mass from A"
         );
-        assert!(
-            rank_map[&id_b] > 0.0,
-            "Sink node B score must be positive"
-        );
+        assert!(rank_map[&id_b] > 0.0, "Sink node B score must be positive");
     }
 
     #[tokio::test]
@@ -625,10 +634,14 @@ mod tests {
             .map(|(_, r)| *r)
             .unwrap();
 
-        assert_eq!(
-            rank_10, rank_20,
-            "Symmetric nodes must have identical PPR scores"
-        );
+        // Symmetric nodes MUST produce bit-identical exact scores in deterministic power iteration
+        #[allow(clippy::float_cmp)]
+        {
+            assert_eq!(
+                rank_10, rank_20,
+                "Symmetric nodes must have identical PPR scores"
+            );
+        }
 
         // Results order must sort tie by EntityId ascending (10 before 20)
         let idx_10 = results
@@ -823,10 +836,12 @@ mod tests {
                 && msg.contains("convergence_epsilon=")
         });
 
+        let captured_logs = captured.clone();
+        drop(captured);
+
         assert!(
             warning_found,
-            "Expected structured warning log on PPR non-convergence, got logs: {:?}",
-            *captured
+            "Expected structured warning log on PPR non-convergence, got logs: {captured_logs:?}"
         );
     }
 
