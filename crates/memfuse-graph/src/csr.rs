@@ -78,6 +78,42 @@ fn is_suspicious_tx_id(tx: TxId) -> bool {
     (WALLCLOCK_TX_HEURISTIC_MIN..TxId::INTERNAL_BASE).contains(&v)
 }
 
+/// Helper function to log a structured warning when a transaction ID falls into the suspicious wall-clock range.
+#[inline]
+fn warn_if_suspicious_tx_id(tx: TxId, op: &str) {
+    if is_suspicious_tx_id(tx) {
+        tracing::warn!(
+            tx_id = tx.inner(),
+            hint = "Wall-Clock-ns-Bereich",
+            "AGT-GRAPH-001: Verdächtiger TxId in {op} (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
+             möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
+             Rollback-Korrelation kann verletzt sein."
+        );
+    }
+}
+
+/// Constructs the storage byte key for a persisted entity.
+#[inline]
+fn make_entity_key(id: &EntityId) -> Vec<u8> {
+    let mut key = Vec::with_capacity(GRAPH_ENTITY_PREFIX.len() + id.as_bytes().len());
+    key.extend_from_slice(GRAPH_ENTITY_PREFIX);
+    key.extend_from_slice(id.as_bytes().as_slice());
+    key
+}
+
+/// Constructs the storage byte key for a persisted edge (`__graph:edge:{from}:{to}`).
+#[inline]
+fn make_edge_key(from: &EntityId, to: &EntityId) -> Vec<u8> {
+    let mut key = Vec::with_capacity(
+        GRAPH_EDGE_PREFIX.len() + from.as_bytes().len() + 1 + to.as_bytes().len(),
+    );
+    key.extend_from_slice(GRAPH_EDGE_PREFIX);
+    key.extend_from_slice(from.as_bytes().as_slice());
+    key.push(b':');
+    key.extend_from_slice(to.as_bytes().as_slice());
+    key
+}
+
 /// Prüft ob eine Kante zum Zeitpunkt `as_of` sichtbar ist (bi-temporale Filterung).
 #[inline]
 pub(crate) fn is_edge_visible(
@@ -171,6 +207,12 @@ impl GraphInner {
             pending_edge_count: 0,
             is_dirty: false,
         }
+    }
+
+    /// Checks if a node at internal index `idx` exists and contains a committed entity.
+    #[inline]
+    pub(crate) fn is_entity_committed(&self, idx: InternalIndex) -> bool {
+        self.entities.get(idx).is_some_and(Option::is_some)
     }
 
     fn get_or_create_index(&mut self, id: EntityId) -> InternalIndex {
@@ -330,6 +372,7 @@ impl CsrGraph {
             inner.entities.resize(idx + 1, None);
         }
         inner.entities[idx] = Some(entity);
+        drop(inner);
         Ok(())
     }
 
@@ -414,7 +457,7 @@ impl CsrGraph {
         tx: TxId,
         entity: &Entity,
     ) -> Result<()> {
-        let key = [GRAPH_ENTITY_PREFIX, entity.id.as_bytes().as_slice()].concat();
+        let key = make_entity_key(&entity.id);
         let value = bincode::serialize(entity)
             .map_err(|e| MemFuseError::Internal(format!("graph entity serialize: {e}")))?;
         storage.put(tx, &key, &value).await
@@ -429,13 +472,7 @@ impl CsrGraph {
         to: &EntityId,
         payload: &PersistedEdgePayload,
     ) -> Result<()> {
-        let key = [
-            GRAPH_EDGE_PREFIX,
-            from.as_bytes().as_slice(),
-            b":",
-            to.as_bytes().as_slice(),
-        ]
-        .concat();
+        let key = make_edge_key(from, to);
         let value = bincode::serialize(payload)
             .map_err(|e| MemFuseError::Internal(format!("graph edge serialize: {e}")))?;
         storage.put(tx, &key, &value).await
@@ -449,13 +486,7 @@ impl CsrGraph {
         from: &EntityId,
         to: &EntityId,
     ) -> Result<()> {
-        let key = [
-            GRAPH_EDGE_PREFIX,
-            from.as_bytes().as_slice(),
-            b":",
-            to.as_bytes().as_slice(),
-        ]
-        .concat();
+        let key = make_edge_key(from, to);
         storage.delete(tx, &key).await
     }
 
@@ -492,7 +523,7 @@ impl CsrGraph {
             // Key-Format: "__graph:edge:{from_id}:{to_id}"
             let key_payload = raw_key
                 .get(GRAPH_EDGE_PREFIX.len()..)
-                .ok_or_else(|| MemFuseError::Internal("graph edge key zu kurz".into()))?;
+                .ok_or_else(|| MemFuseError::Internal("graph edge key too short".into()))?;
 
             let key_str = std::str::from_utf8(key_payload)
                 .map_err(|e| MemFuseError::Internal(format!("graph edge key UTF-8: {e}")))?;
@@ -579,7 +610,7 @@ impl CsrGraph {
             None => return Ok(Vec::new()),
         };
 
-        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
+        if !inner.is_entity_committed(start_idx) {
             return Ok(Vec::new());
         }
 
@@ -592,10 +623,7 @@ impl CsrGraph {
             for edge_idx in start_edge..end_edge {
                 let neighbor_idx = inner.targets[edge_idx];
                 if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
-                    && inner
-                        .entities
-                        .get(neighbor_idx)
-                        .is_some_and(|e| e.is_some())
+                    && inner.is_entity_committed(neighbor_idx)
                 {
                     if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
                         if !neighbors.contains(&id) {
@@ -611,10 +639,7 @@ impl CsrGraph {
             for edge in pending {
                 let neighbor_idx = edge.target;
                 if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
-                    && inner
-                        .entities
-                        .get(neighbor_idx)
-                        .is_some_and(|e| e.is_some())
+                    && inner.is_entity_committed(neighbor_idx)
                 {
                     if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
                         if !neighbors.contains(&id) {
@@ -696,7 +721,7 @@ impl CsrGraph {
 
         let mut result = HashMap::new();
         for (idx, &rank) in ranks.iter().enumerate() {
-            if inner.entities.get(idx).is_some_and(|e| e.is_some()) {
+            if inner.is_entity_committed(idx) {
                 if let Some(&id) = inner.reverse_map.get(idx) {
                     result.insert(id, rank);
                 }
@@ -714,7 +739,7 @@ impl CsrGraph {
     pub fn entity_exists(&self, id: EntityId) -> bool {
         let inner = self.inner.read();
         if let Some(&idx) = inner.id_map.get(&id) {
-            inner.entities.get(idx).is_some_and(|e| e.is_some())
+            inner.is_entity_committed(idx)
         } else {
             false
         }
@@ -747,16 +772,7 @@ impl GraphIndex for CsrGraph {
             "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
             tx
         );
-        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
-        if is_suspicious_tx_id(tx) {
-            tracing::warn!(
-                tx_id = tx.inner(),
-                hint = "Wall-Clock-ns-Bereich",
-                "AGT-GRAPH-001: Verdächtiger TxId in add_entity (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
-                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
-                 Rollback-Korrelation kann verletzt sein."
-            );
-        }
+        warn_if_suspicious_tx_id(tx, "add_entity");
         let mut inner = self.inner.write();
         inner
             .staged_entities
@@ -772,16 +788,7 @@ impl GraphIndex for CsrGraph {
             "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
             tx
         );
-        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
-        if is_suspicious_tx_id(tx) {
-            tracing::warn!(
-                tx_id = tx.inner(),
-                hint = "Wall-Clock-ns-Bereich",
-                "AGT-GRAPH-001: Verdächtiger TxId in add_edge (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
-                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
-                 Rollback-Korrelation kann verletzt sein."
-            );
-        }
+        warn_if_suspicious_tx_id(tx, "add_edge");
         let mut inner = self.inner.write();
         let from_idx = inner.get_or_create_index(edge.from);
         let to_idx = inner.get_or_create_index(edge.to);
@@ -835,7 +842,7 @@ impl GraphIndex for CsrGraph {
             None => return Ok(Vec::new()),
         };
 
-        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
+        if !inner.is_entity_committed(start_idx) {
             return Ok(Vec::new());
         }
 
@@ -877,10 +884,7 @@ impl GraphIndex for CsrGraph {
 
                         if (!visited.contains_key(&neighbor_idx)
                             || visited[&neighbor_idx] < next_score)
-                            && inner
-                                .entities
-                                .get(neighbor_idx)
-                                .is_some_and(|e| e.is_some())
+                            && inner.is_entity_committed(neighbor_idx)
                         {
                             queue.push_back((neighbor_idx, hop + 1, next_score));
                         }
@@ -901,10 +905,7 @@ impl GraphIndex for CsrGraph {
 
                         if (!visited.contains_key(&neighbor_idx)
                             || visited[&neighbor_idx] < next_score)
-                            && inner
-                                .entities
-                                .get(neighbor_idx)
-                                .is_some_and(|e| e.is_some())
+                            && inner.is_entity_committed(neighbor_idx)
                         {
                             queue.push_back((neighbor_idx, hop + 1, next_score));
                         }
@@ -935,7 +936,7 @@ impl GraphIndex for CsrGraph {
         };
 
         // If the start node itself is not committed, we shouldn't start traversal from it
-        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
+        if !inner.is_entity_committed(start_idx) {
             return Ok(Vec::new());
         }
 
@@ -976,11 +977,7 @@ impl GraphIndex for CsrGraph {
                             || visited[&neighbor_idx] < next_score
                         {
                             // Only visit nodes that have a committed entity (FIND-GRA-001)
-                            if inner
-                                .entities
-                                .get(neighbor_idx)
-                                .is_some_and(|e| e.is_some())
-                            {
+                            if inner.is_entity_committed(neighbor_idx) {
                                 queue.push_back((neighbor_idx, hop + 1, next_score));
                             }
                         }
@@ -998,10 +995,7 @@ impl GraphIndex for CsrGraph {
 
                         if (!visited.contains_key(&neighbor_idx)
                             || visited[&neighbor_idx] < next_score)
-                            && inner
-                                .entities
-                                .get(neighbor_idx)
-                                .is_some_and(|e| e.is_some())
+                            && inner.is_entity_committed(neighbor_idx)
                         {
                             queue.push_back((neighbor_idx, hop + 1, next_score));
                         }
@@ -1030,16 +1024,7 @@ impl GraphIndex for CsrGraph {
             "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
             tx
         );
-        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
-        if is_suspicious_tx_id(tx) {
-            tracing::warn!(
-                tx_id = tx.inner(),
-                hint = "Wall-Clock-ns-Bereich",
-                "AGT-GRAPH-001: Verdächtiger TxId in commit (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
-                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
-                 Rollback-Korrelation kann verletzt sein."
-            );
-        }
+        warn_if_suspicious_tx_id(tx, "commit");
         let (entities_to_commit, edges_to_commit, removals_to_commit) = {
             let inner = self.inner.read();
             let entities = inner.staged_entities.get(&tx).cloned();
@@ -1148,14 +1133,7 @@ impl GraphIndex for CsrGraph {
     }
 
     async fn remove_edge(&self, tx: TxId, from: EntityId, to: EntityId) -> Result<()> {
-        if is_suspicious_tx_id(tx) {
-            tracing::warn!(
-                tx_id = tx.inner(),
-                hint = "Wall-Clock-ns-Bereich",
-                "AGT-GRAPH-001: Verdächtiger TxId in remove_edge (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
-                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet."
-            );
-        }
+        warn_if_suspicious_tx_id(tx, "remove_edge");
         let mut inner = self.inner.write();
         let from_idx = inner.id_map.get(&from).copied();
         let to_idx = inner.id_map.get(&to).copied();
@@ -1245,7 +1223,7 @@ mod tests {
             graph
                 .add_entity(
                     tx,
-                    Entity::new(EntityId::new(id), format!("P{}", id), "Person"),
+                    Entity::new(EntityId::new(id), format!("P{id}"), "Person"),
                 )
                 .await
                 .expect("valid setup"); // expect
@@ -1572,6 +1550,7 @@ mod tests {
             + (inner.offsets.len() * std::mem::size_of::<usize>())
             + (inner.targets.len() * std::mem::size_of::<usize>())
             + (inner.weights.len() * std::mem::size_of::<f32>());
+        drop(inner);
 
         assert_eq!(stats.memory_usage_bytes, expected_mem);
     }
@@ -1601,8 +1580,7 @@ mod tests {
         // Should find committed edge (2) but NOT uncommitted edge (5)
         assert!(
             targets.contains(&2),
-            "Expected Entity 2 in results, got {:?}",
-            targets
+            "Expected Entity 2 in results, got {targets:?}"
         );
     }
 
@@ -1638,7 +1616,9 @@ mod tests {
         let inner = graph.inner.read();
         let idx = inner.id_map.get(&EntityId::new(10)).unwrap(); // unwrap
         let entity = inner.entities[*idx].as_ref().unwrap(); // unwrap
-        assert_eq!(entity.name, "EntityFromB");
+        let name = entity.name.clone();
+        drop(inner);
+        assert_eq!(name, "EntityFromB");
     }
 
     #[tokio::test]

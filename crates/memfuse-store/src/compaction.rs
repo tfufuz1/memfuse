@@ -19,13 +19,6 @@
 //! Tombstones are garbage-collected during merge when no active snapshot
 //! references them.
 
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       STCS-Compaction-Engine (Size-Tiered Compaction Strategy)
-// INVARIANTEN: Compaction must not block concurrent reads, tombstone GC safe with active snapshot min_seqno, atomic SSTable swap
-// HOTSPOTS:    compact_sstables(), merge_sorted_iters()
-// SIEHE AUCH:  crates/memfuse-store/AGENTS.md
-
 use crate::sstable::{BlockCache, SstableBuilder, SstableReader};
 use memfuse_core::{Result, SnapshotRegistry, TOMBSTONE_BIT};
 use memfuse_crypto::crypto::KeyManager;

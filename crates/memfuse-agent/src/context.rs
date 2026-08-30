@@ -92,21 +92,12 @@ impl AgentContext {
         db: Arc<MemFuse>,
         state_collection: Arc<Collection<LsmStorage>>,
         budget: TokenBudget,
-    ) -> memfuse_core::Result<Self> {
+    ) -> Result<Self> {
         let task_id_str = task_id.into();
         let start_node_str = start_node.into();
 
-        if task_id_str.trim().is_empty() {
-            return Err(memfuse_core::MemFuseError::InvalidInput(
-                "AgentContext task_id must not be empty".to_string(),
-            ));
-        }
-
-        if start_node_str.trim().is_empty() {
-            return Err(memfuse_core::MemFuseError::InvalidInput(
-                "AgentContext start_node must not be empty".to_string(),
-            ));
-        }
+        validate_task_id(&task_id_str)?;
+        validate_node_id(&start_node_str)?;
 
         Ok(Self {
             task_id: task_id_str,
@@ -121,6 +112,7 @@ impl AgentContext {
         })
     }
 
+    /// Constructs an `AgentContext`, panicking if `task_id` or `start_node` is invalid.
     pub fn new(
         task_id: impl Into<String>,
         start_node: impl Into<String>,
@@ -129,7 +121,7 @@ impl AgentContext {
         budget: TokenBudget,
     ) -> Self {
         Self::try_new(task_id, start_node, db, state_collection, budget)
-            .unwrap_or_else(|e| panic!("Failed to initialize AgentContext: {e}"))
+            .expect("Invalid task_id or start_node in AgentContext::new")
     }
 
     /// Integrates a background telemetry event into the agent context memory and history.

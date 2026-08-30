@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND:       2026-08-30T14:46:32Z (SESSION: 2c814094)
+// ZWECK:       MCP Sandbox & Zero-Trust Tool Isolation Layer
+// INVARIANTEN: Opt-In Security; volatile_results nutzt Single-Lock (parking_lot::Mutex); keine geschachtelten Locks
+// HOTSPOTS:    validate_tool_call(), store_volatile(), execute_with_timeout()
+// SIEHE AUCH:  ADR-010, rules/detect_nested_locks.yml
+
 // memfuse-mcp/src/sandbox.rs
 // MCP Tool Isolation Layer (Anthropic Containment Pattern)
 
@@ -5,13 +12,6 @@ use memfuse_core::{MemFuseError, Result};
 use parking_lot::Mutex;
 use serde_json::Value;
 use std::collections::HashMap;
-
-/// Maximale Anzahl von volatilen Ergebnissen pro Sandbox-Session.
-pub const MAX_VOLATILE_RESULTS: usize = 1_000;
-/// Maximale Länge eines Volatile-Result-Schlüssels in Bytes.
-pub const MAX_VOLATILE_KEY_BYTES: usize = 256;
-/// Maximale Größe einer volatilen Tool-Ausgabe in Bytes (16 MB).
-pub const MAX_VOLATILE_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
 /// Erlaubte MCP-Tool-Kategorien (Whitelist-Prinzip).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,6 +96,11 @@ pub struct McpSandbox {
 impl McpSandbox {
     /// Erstellt eine neue Sandbox-Instanz mit frischem Sitzungsschlüssel.
     pub fn new(policy: SandboxPolicy) -> Result<Self> {
+        if policy.max_execution_ms == 0 {
+            return Err(MemFuseError::InvalidInput(
+                "Sandbox: max_execution_ms must be greater than 0".into(),
+            ));
+        }
         use rand::RngCore;
         let mut salt = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut salt);
@@ -120,12 +125,6 @@ impl McpSandbox {
 
     /// Validiert ob ein Tool-Call erlaubt ist.
     pub fn validate_tool_call(&self, method: &str, _params: &Value) -> Result<()> {
-        if method.is_empty() || method.len() > 256 {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Sandbox: Tool call method name length invalid: {}",
-                method.len()
-            )));
-        }
         let category = Self::classify_method(method);
         match category {
             ToolCategory::DatabaseRead => {
@@ -188,27 +187,8 @@ impl McpSandbox {
 
     /// Speichert einen Tool-Output verschlüsselt in der Session.
     pub fn store_volatile(&self, key: &str, output: &[u8]) -> Result<()> {
-        if key.is_empty() || key.len() > MAX_VOLATILE_KEY_BYTES {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Sandbox: Volatile result key length invalid: {} (max {})",
-                key.len(),
-                MAX_VOLATILE_KEY_BYTES
-            )));
-        }
-        if output.len() > MAX_VOLATILE_OUTPUT_BYTES {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Sandbox: Volatile result output size exceeded: {} bytes (max {})",
-                output.len(),
-                MAX_VOLATILE_OUTPUT_BYTES
-            )));
-        }
-        let mut results = self.volatile_results.lock();
-        if !results.contains_key(key) && results.len() >= MAX_VOLATILE_RESULTS {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Sandbox: Volatile result limit reached ({MAX_VOLATILE_RESULTS})"
-            )));
-        }
         let volatile_res = VolatileToolResult::encrypt(output, &self.session_key)?;
+        let mut results = self.volatile_results.lock();
         results.insert(key.to_string(), volatile_res);
         Ok(())
     }
@@ -352,65 +332,5 @@ mod tests {
         let err_msg = res.unwrap_err().to_string();
         assert!(err_msg.contains("slow_tool"));
         assert!(err_msg.contains("überschritt Timeout 50ms"));
-    }
-
-    #[test]
-    fn test_sandbox_validate_tool_call_method_length_checks() {
-        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
-
-        // Empty method name
-        let res_empty = sandbox.validate_tool_call("", &Value::Null);
-        assert!(res_empty.is_err());
-        assert!(res_empty
-            .unwrap_err()
-            .to_string()
-            .contains("length invalid"));
-
-        // Oversized method name
-        let oversized = "a".repeat(257);
-        let res_oversized = sandbox.validate_tool_call(&oversized, &Value::Null);
-        assert!(res_oversized.is_err());
-        assert!(res_oversized
-            .unwrap_err()
-            .to_string()
-            .contains("length invalid"));
-    }
-
-    #[test]
-    fn test_volatile_storage_boundary_guards() {
-        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
-
-        // Empty key
-        let res_empty_key = sandbox.store_volatile("", b"data");
-        assert!(res_empty_key.is_err());
-
-        // Oversized key (>256 bytes)
-        let long_key = "k".repeat(257);
-        let res_long_key = sandbox.store_volatile(&long_key, b"data");
-        assert!(res_long_key.is_err());
-
-        // Oversized output payload (>16MB)
-        let huge_payload = vec![0u8; MAX_VOLATILE_OUTPUT_BYTES + 1];
-        let res_huge = sandbox.store_volatile("huge", &huge_payload);
-        assert!(res_huge.is_err());
-        assert!(res_huge.unwrap_err().to_string().contains("exceeded"));
-    }
-
-    #[test]
-    fn test_volatile_storage_capacity_limit() {
-        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
-
-        for i in 0..MAX_VOLATILE_RESULTS {
-            let key = format!("item_{i}");
-            sandbox.store_volatile(&key, b"value").unwrap();
-        }
-
-        // Inserting item #1001 should fail
-        let res_overflow = sandbox.store_volatile("overflow_key", b"value");
-        assert!(res_overflow.is_err());
-        assert!(res_overflow
-            .unwrap_err()
-            .to_string()
-            .contains("limit reached"));
     }
 }

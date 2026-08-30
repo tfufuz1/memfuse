@@ -31,9 +31,21 @@ impl BackgroundEvent {
         observed_at_seq: u64,
     ) -> Result<Self> {
         let source_str = source.into();
-        if source_str.trim().is_empty() {
-            return Err(memfuse_core::MemFuseError::InvalidInput(
-                "BackgroundEvent source must not be empty".to_string(),
+        if source_str.is_empty() {
+            return Err(MemFuseError::InvalidInput(
+                "Event source cannot be empty".to_string(),
+            ));
+        }
+        if source_str.len() > MAX_ID_LEN {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Event source length {} exceeds maximum allowed length of {}",
+                source_str.len(),
+                MAX_ID_LEN
+            )));
+        }
+        if source_str.contains('\0') {
+            return Err(MemFuseError::InvalidInput(
+                "Event source cannot contain null bytes".to_string(),
             ));
         }
         Ok(Self {
@@ -43,13 +55,14 @@ impl BackgroundEvent {
         })
     }
 
+    /// Constructs a `BackgroundEvent`, panicking if `source` is invalid.
     pub fn new(
         payload: serde_json::Value,
         source: impl Into<String>,
         observed_at_seq: u64,
     ) -> Self {
         Self::try_new(payload, source, observed_at_seq)
-            .unwrap_or_else(|e| panic!("Failed to construct BackgroundEvent: {e}"))
+            .expect("Invalid parameters in BackgroundEvent::new")
     }
 }
 
@@ -67,9 +80,6 @@ pub trait EventSource: Send + Sync {
     }
 }
 
-/// Maximum capacity for pending background telemetry events queue before dropping or rejecting.
-pub const MAX_PENDING_EVENTS_CAPACITY: usize = 10_000;
-
 /// Concrete `EventSource` that periodically polls `Collection` storage sequence numbers,
 /// using `scan_prefix_at` for snapshot delta calculation to emit document changes.
 pub struct PollingDocumentEventSource<S: StorageEngine> {
@@ -77,7 +87,6 @@ pub struct PollingDocumentEventSource<S: StorageEngine> {
     last_seen_seq: u64,
     poll_interval: Duration,
     pending_events: VecDeque<BackgroundEvent>,
-    max_pending_capacity: usize,
 }
 
 impl<S: StorageEngine> PollingDocumentEventSource<S> {
@@ -97,7 +106,6 @@ impl<S: StorageEngine> PollingDocumentEventSource<S> {
             last_seen_seq: 0,
             poll_interval,
             pending_events: VecDeque::new(),
-            max_pending_capacity,
         }
     }
 
@@ -141,14 +149,11 @@ impl<S: StorageEngine> EventSource for PollingDocumentEventSource<S> {
 
             for (key, val) in current_entries {
                 if previous_entries.get(&key) != Some(&val) {
-                    if self.pending_events.len() >= self.max_pending_capacity {
-                        tracing::warn!(
-                            "PollingDocumentEventSource: Pending events queue at capacity ({}), dropping event for key {}",
-                            self.max_pending_capacity,
-                            String::from_utf8_lossy(&key)
-                        );
+                    if self.pending_events.len() >= MAX_EVENT_SOURCE_CAPACITY {
+                        tracing::warn!("PollingDocumentEventSource: Pending events queue capacity limit ({}) reached, dropping remaining events", MAX_EVENT_SOURCE_CAPACITY);
                         break;
                     }
+
                     let payload = serde_json::from_slice(&val).unwrap_or_else(|_| {
                         serde_json::json!({
                             "raw": String::from_utf8_lossy(&val),

@@ -110,8 +110,7 @@ impl SessionBranchTree {
     ) -> Result<NodeIdx> {
         if !self.nodes.read().contains_key(&parent_node) {
             return Err(MemFuseError::InvalidInput(format!(
-                "SessionDAG: node {} nicht gefunden",
-                parent_node
+                "SessionDAG: node {parent_node} nicht gefunden"
             )));
         }
 
@@ -148,8 +147,7 @@ impl SessionBranchTree {
             Ok(())
         } else {
             Err(MemFuseError::InvalidInput(format!(
-                "SessionDAG: node {} nicht gefunden",
-                node_idx
+                "SessionDAG: node {node_idx} nicht gefunden"
             )))
         }
     }
