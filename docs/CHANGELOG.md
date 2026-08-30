@@ -4,19 +4,37 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
+| `2026-08-30T14:46:32Z (SESSION: 2c814094)` | `crates/memfuse-mcp/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | stdio JSON-RPC 2.0 MCP-Server (kein HTTP! ADR-010) |
+| `2026-08-30T14:46:32Z (SESSION: 2c814094)` | `crates/memfuse-mcp/src/protocol.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP JSON-RPC 2.0 Protokoll-Typen & DTO-Abbildung für MemFuse |
+| `2026-08-30T14:46:32Z (SESSION: 2c814094)` | `crates/memfuse-mcp/src/sandbox.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP Sandbox & Zero-Trust Tool Isolation Layer |
+| `2026-08-30T14:38:30Z (SESSION: 45595f71)` | `crates/memfuse-tauri/src/commands/chat.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Tauri IPC commands for RAG chat and Ollama model management. |
+| `2026-08-30T14:38:30Z (SESSION: 45595f71)` | `crates/memfuse-tauri/src/commands/collections.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Database opening and collection management Tauri IPC commands. |
+| `2026-08-30T14:38:30Z (SESSION: 45595f71)` | `crates/memfuse-tauri/src/commands/ingest.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | File and folder ingestion Tauri IPC commands. |
+| `2026-08-30T14:38:30Z (SESSION: 45595f71)` | `crates/memfuse-tauri/src/commands/mod.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Tauri IPC command module definitions and shared path traversal validation logic. |
+| `2026-08-30T14:38:30Z (SESSION: 45595f71)` | `crates/memfuse-tauri/src/commands/search.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Hybrid vector and BM25 search Tauri IPC command. |
+| `2026-08-30T14:38:30Z (SESSION: 45595f71)` | `crates/memfuse-tauri/src/commands/transform.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Regex transformation & validation Tauri IPC commands. |
+| `2026-08-30T14:38:30Z (SESSION: 45595f71)` | `crates/memfuse-tauri/src/ingestion/docx.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | DOCX document text extraction. |
+| `2026-08-30T14:38:30Z (SESSION: 45595f71)` | `crates/memfuse-tauri/src/ingestion/email.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | EML / MIME email content and metadata extraction. |
+| `2026-08-30T14:38:30Z (SESSION: 45595f71)` | `crates/memfuse-tauri/src/ingestion/entities.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Heuristic named entity extraction for knowledge graph linking during document ingestion. |
+| `2026-08-30T14:38:30Z (SESSION: 45595f71)` | `crates/memfuse-tauri/src/ingestion/pdf.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PDF document text extraction. |
+| `2026-08-30T14:38:30Z (SESSION: 45595f71)` | `crates/memfuse-tauri/src/ingestion/pipeline.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Ingestion pipeline orchestrating document parsing, chunking, embedding, and graph indexing. |
+| `2026-08-30T14:38:30Z (SESSION: 45595f71)` | `crates/memfuse-tauri/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Tauri Desktop application entry point & plugin initialization. |
+| `2026-08-30T14:38:30Z (SESSION: 45595f71)` | `crates/memfuse-tauri/src/ollama.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Bridge connector to local Ollama instance for embeddings & streaming RAG chat. |
+| `2026-08-30T14:38:30Z (SESSION: 45595f71)` | `crates/memfuse-tauri/src/state.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Holds global application state (database handles, path, semaphores). |
+| `2026-08-30T14:35:05Z (SESSION: ab88edae)` | `crates/memfuse-graph/src/community.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Label Propagation Community Detection für GraphRAG |
+| `2026-08-30T14:35:05Z (SESSION: ab88edae)` | `crates/memfuse-graph/src/csr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion) |
+| `2026-08-30T14:35:05Z (SESSION: ab88edae)` | `crates/memfuse-graph/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Crate-Root & Öffentliche Graph API Re-Exports |
+| `2026-08-30T14:35:05Z (SESSION: ab88edae)` | `crates/memfuse-graph/src/session_dag.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Session-DAG für Gesprächsverzweigung & Agent-State-Tracking (Grok-Muster) |
 | `2026-08-29T12:00:00Z` | `crates/memfuse-core/build.rs` | `AI-TAG` | `-` | `a3f29c1d` | `RESOLVED` | `-` | // AI-TAG[SPEC-DRIFT][MINOR] RESOLVED: flatc binary missing in environment, falling back to pre-generated ipc/memfuse_generated.rs (TS:2026-08-29T12:00:00Z) (SESSION: a3f29c1d) |
 | `2026-08-29T12:00:00Z` | `crates/memfuse-core/src/tx_buffer.rs` | `AI-TAG` | `AGT-CORE-001` | `a3f29c1d` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR] RESOLVED: AGT-CORE-001 — Bounded staging capacity enforced (TS:2026-08-29T12:00:00Z) (SESSION: a3f29c1d) |
-| `2026-08-29T11:00:00Z` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `AGT-CORE-a3f29c1d` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3) |
 | `2026-08-29T10:18:55Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-005` | `a3f29c1d` | `RESOLVED` | `0` | // AI-TAG[SECURITY][CRITICAL] RESOLVED: AGT-INDEX-005 — assert_eq! preconditions in cosine_distance, euclidean_distance, dot_product_distance added (ADR-034). Testbeweis: test_cosine_distance_mismatch_panics etc. (TS:2026-08-29T10:18:55Z) (SESSION: a3f29c1d) |
-| `2026-08-29T10:00:00Z` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `AGT-CORE-a3f29c1d` | `b8e4f1a2` | `PASS` | `1` | // REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2) |
 | `2026-08-29T09:14:07Z (SESSION: a3f29c1d)` | `crates/memfuse-core/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Core types, traits, and error handling for MemFuse. |
-| `2026-08-29T09:14:07Z` | `crates/memfuse-core/src/lib.rs` | `ANCHOR` | `AGT-CORE-a3f29c1d` | `a3f29c1d` | `DONE` | `2` | // ANCHOR[DEBT:CORE-INLINE-001] STATUS:DONE (ID: AGT-CORE-a3f29c1d) (TS:2026-08-29T09:14:07Z) (SESSION: a3f29c1d) |
+| `2026-08-29T09:14:07Z` | `crates/memfuse-core/src/lib.rs` | `ANCHOR` | `AGT-CORE-a3f29c1d` | `a3f29c1d` | `DONE` | `0` | // ANCHOR[DEBT:CORE-INLINE-001] STATUS:DONE (ID: AGT-CORE-a3f29c1d) (TS:2026-08-29T09:14:07Z) (SESSION: a3f29c1d) |
 | `2026-08-29T08:06:29Z` | `crates/memfuse-checkpoint/src/lib.rs` | `AI-TAG` | `AGT-CKPT-f3a1b2c4` | `-` | `RESOLVED` | `0` | /// AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z) |
 | `2026-08-29T08:06:29Z` | `crates/memfuse-store/src/wal.rs` | `AI-TAG` | `-` | `-` | `RESOLVED` | `-` | // AI-TAG[SECURITY][CRITICAL] RESOLVED: Atomic WAL integrity key creation (TS:2026-08-29T08:06:29Z) |
 | `2026-08-29T05:41:20Z (SESSION: f7999509)` | `crates/memfuse-db/src/fusion.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Reciprocal Rank Fusion (RRF) — vereint HNSW, BM25 und Graph-Ränge |
-| `2026-08-29T05:41:20Z (SESSION: f7999509)` | `crates/memfuse-graph/src/csr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion) |
 | `2026-08-29T05:41:20Z (SESSION: f7999509)` | `crates/memfuse-index/src/distance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SIMD-beschleunigte Distanzmetriken (Cosinus, L2) für HNSW-Index |
-| `2026-08-29T00:00:00Z` | `crates/memfuse-db/tests/semantic_recall.rs` | `ANCHOR` | `PERF:EVAL-001` | `-` | `DONE` | `0` | // ANCHOR[PERF:EVAL-001] STATUS:DONE (TS:2026-08-29T00:00:00Z) — Semantic Retrieval Evaluation Framework |
+| `2026-08-29T00:00:00Z` | `crates/memfuse-db/tests/semantic_recall.rs` | `ANCHOR` | `PERF:EVAL-001` | `a3f29c1d` | `DONE` | `0` | // ANCHOR[PERF:EVAL-001] STATUS:DONE (TS:2026-08-29T00:00:00Z) (SESSION: a3f29c1d) — Semantic Retrieval Evaluation Framework |
 | `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/collection/relate.rs` | `AI-TAG` | `AGT-DB-005` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-DB-005 — relate() rollback race behoben, siehe ADR-023 (TS:2026-08-28T00:00:00Z) |
 | `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/context_compaction.rs` | `AI-TAG` | `AGT-DB-004` | `-` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR][RESOLVED] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-28T00:00:00Z) |
 | `2026-08-27T14:32:00Z` | `crates/memfuse-index/src/diskann.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | DiskANN-Graphindex für Approximate Nearest Neighbor Search |

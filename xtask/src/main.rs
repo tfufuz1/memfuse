@@ -1,5 +1,3 @@
-use chrono::Utc;
-use clap::{Parser, Subcommand};
 use regex::Regex;
 use std::collections::BTreeMap;
 use std::env;
@@ -648,10 +646,11 @@ fn run_sync_docs(check_only: bool) -> bool {
     let changelog_content = generate_changelog(&tags);
 
     if check_only {
+        let mut drift = false;
         let current_ws = fs::read_to_string("WORKING_STATE.md").unwrap_or_default();
         let re = Regex::new(r"\| LAST_SYNC \| `[^`]+` \|").unwrap();
         let norm_current = re.replace_all(current_ws.trim(), "| LAST_SYNC | `NORMALIZED` |");
-        let norm_full = re.replace_all(full_ws.trim(), "| LAST_SYNC | `NORMALIZED` |");
+        let norm_full = re.replace_all(full_working_state.trim(), "| LAST_SYNC | `NORMALIZED` |");
         if norm_current != norm_full {
             eprintln!("❌ WORKING_STATE.md is out of sync!");
             drift = true;
@@ -702,31 +701,19 @@ fn run_sync_docs(check_only: bool) -> bool {
             true
         }
     } else {
-        if let Err(e) = fs::write("WORKING_STATE.md", &full_ws) {
+        let mut success = true;
+        if let Err(e) = fs::write("WORKING_STATE.md", &full_working_state) {
             eprintln!("❌ Failed to write WORKING_STATE.md: {}", e);
             success = false;
         } else {
             println!("Successfully regenerated WORKING_STATE.md.");
         }
 
-    // Source of truth update
-    let mut crate_inv = String::new();
-    for c in &crates {
-        crate_inv.push_str(&format!(
-            "| `{}` | Layer {} | {} | {}\n",
-            c.name, c.layer, c.status, c.description
-        ));
-    }
-    match update_markdown_section(
-        "docs/SOURCE_OF_TRUTH.md",
-        "CRATE_INVENTORY",
-        &crate_inv,
-        check_only,
-    ) {
-        Ok(res) => success = success && res,
-        Err(e) => {
-            eprintln!("Error: {}", e);
+        if let Err(e) = fs::write("docs/CHANGELOG.md", &changelog_content) {
+            eprintln!("❌ Failed to write docs/CHANGELOG.md: {}", e);
             success = false;
+        } else {
+            println!("Successfully regenerated docs/CHANGELOG.md.");
         }
 
         if let Err(e) = update_markdown_section(
@@ -735,6 +722,7 @@ fn run_sync_docs(check_only: bool) -> bool {
             &dag_topology_content,
         ) {
             eprintln!("Warning: Failed to update docs/ARCHITECTURE.md: {}", e);
+            success = false;
         } else {
             println!("Successfully updated docs/ARCHITECTURE.md (DAG_TOPOLOGY section).");
         }
@@ -745,12 +733,13 @@ fn run_sync_docs(check_only: bool) -> bool {
             &crate_inventory_content,
         ) {
             eprintln!("Warning: Failed to update docs/SOURCE_OF_TRUTH.md: {}", e);
+            success = false;
         } else {
             println!("Successfully updated docs/SOURCE_OF_TRUTH.md (CRATE_INVENTORY section).");
         }
 
         println!("=== xtask sync-docs complete ===");
-        true
+        success
     }
 }
 
@@ -824,17 +813,8 @@ pub fn is_pre_cutoff(ts: &str) -> bool {
     date_part < "2026-08-29"
 }
 
-pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
-    let completed_anchors: Vec<_> = tags
-        .iter()
-        .filter(|t| {
-            t.tag_type == "ANCHOR"
-                && t.is_resolved
-                && !is_pre_cutoff(&t.timestamp)
-        })
-        .collect();
-
-    let mut success = true;
+pub fn run_check_consistency() -> bool {
+    let mut failed = false;
 
     let crates = get_workspace_crates();
     let actual_count = crates.len();
@@ -1001,96 +981,8 @@ pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
         println!("=== xtask check-review-coverage PASSED ===");
         true
     }
-
-    Ok(())
 }
 
-// --- CLI ROUTER USING CLAP ---
-
-#[derive(Parser, Debug)]
-#[command(name = "xtask", about = "MemFuse xtask automation & context tools")]
-struct Cli {
-    #[command(subcommand)]
-    command: Option<Commands>,
-}
-
-#[derive(Subcommand, Debug)]
-enum Commands {
-    /// Synchronize documentation with code tags and workspace crates
-    SyncDocs {
-        #[arg(long)]
-        check: bool,
-    },
-    /// Validate AI-TAG and ANCHOR tags for TS and SESSION fields
-    ValidateTags {
-        #[arg(long)]
-        strict: bool,
-    },
-    /// Check multi-session review coverage for completed anchors
-    CheckReviewCoverage,
-    /// Check documentation consistency
-    CheckConsistency,
-    /// Run community detection batch job
-    RunCommunityDetection,
-    /// Extract and display context digest
-    ContextDigest {
-        #[arg(long, short = 'c')]
-        crate_name: Option<String>,
-        #[arg(long, short = 'f', default_value = "json")]
-        format: String,
-    },
-    /// Filter and extract tags
-    ContextTags {
-        #[arg(long, short = 'c')]
-        crate_name: Option<String>,
-        #[arg(long, short = 's')]
-        severity: Option<String>,
-        #[arg(long)]
-        status: Option<String>,
-        #[arg(long, short = 't')]
-        tag_type: Option<String>,
-        #[arg(long)]
-        file: Option<String>,
-        #[arg(long)]
-        session: Option<String>,
-        #[arg(long, short = 'f', default_value = "ndjson")]
-        format: String,
-    },
-    /// Show context for a specific file
-    ContextFile {
-        #[arg(long, short = 'p')]
-        path: Option<String>,
-        #[arg(value_name = "FILE_PATH")]
-        positional_path: Option<String>,
-    },
-    /// Show context for a specific crate
-    ContextCrate {
-        #[arg(long, short = 'c')]
-        crate_name: Option<String>,
-        #[arg(value_name = "CRATE_NAME")]
-        positional_crate: Option<String>,
-        #[arg(long, short = 'f', default_value = "json")]
-        format: String,
-    },
-    /// Verify audit finding validity against current code
-    AuditVerify {
-        #[arg(value_name = "FINDING_ID")]
-        finding_id: String,
-        #[arg(long)]
-        file: Option<String>,
-        #[arg(long)]
-        line: Option<usize>,
-    },
-    /// Log audit review status
-    AuditReview {
-        #[arg(value_name = "FINDING_ID")]
-        finding_id: String,
-        #[arg(long, short)]
-        status: String,
-        #[arg(long)]
-        note: Option<String>,
-    },
-}
 
 fn main() {
     let args: Vec<String> = env::args().collect();

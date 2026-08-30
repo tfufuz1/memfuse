@@ -405,9 +405,22 @@ impl McpServer {
         match name {
             "memfuse_search" => {
                 let query = match args.get("query") {
-                    Some(v) => v.as_str().ok_or_else(|| {
-                        McpError::invalid_params("Invalid params: 'query' must be a string")
-                    })?,
+                    Some(v) => {
+                        let s = v.as_str().ok_or_else(|| {
+                            McpError::invalid_params("Invalid params: 'query' must be a string")
+                        })?;
+                        if s.trim().is_empty() {
+                            return Err(McpError::invalid_params("query cannot be empty"));
+                        }
+                        if s.len() > MAX_SEARCH_QUERY_BYTES {
+                            return Err(McpError::invalid_params(format!(
+                                "query size exceeds limit: {} > {} limit",
+                                s.len(),
+                                MAX_SEARCH_QUERY_BYTES
+                            )));
+                        }
+                        s
+                    }
                     None => {
                         return Err(McpError::invalid_params("missing required field: 'query'"));
                     }
@@ -510,6 +523,9 @@ impl McpServer {
                         if s.is_empty() {
                             return Err(McpError::invalid_params("id cannot be empty"));
                         }
+                        if s.len() > 256 {
+                            return Err(McpError::invalid_params("id length exceeds limit: > 256 chars"));
+                        }
                         s
                     }
                     None => {
@@ -529,6 +545,9 @@ impl McpServer {
                             "Invalid params: 'vector' must be an array of numbers",
                         )
                     })?;
+                    if arr.is_empty() {
+                        return Err(McpError::invalid_params("vector cannot be empty"));
+                    }
                     let mut vec = Vec::with_capacity(arr.len());
                     for elem in arr {
                         let num = elem.as_f64().ok_or_else(|| {
@@ -536,7 +555,11 @@ impl McpServer {
                                 "Invalid params: 'vector' must contain numbers",
                             )
                         })?;
-                        vec.push(num as f32);
+                        let f = num as f32;
+                        if f.is_nan() || f.is_infinite() {
+                            return Err(McpError::invalid_params("vector contains NaN or Inf"));
+                        }
+                        vec.push(f);
                     }
                     Some(vec)
                 } else {

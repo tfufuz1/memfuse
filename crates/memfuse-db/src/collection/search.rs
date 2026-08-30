@@ -12,6 +12,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         query_embedding: &[f32],
         k: usize,
     ) -> Result<Vec<crate::SearchResult>> {
+        if k == 0 {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "k must be greater than 0",
+            ));
+        }
         let k = k.min(memfuse_core::MAX_SEARCH_K);
         self.search_with_filter_expr(query_embedding, k, None).await
     }
@@ -44,6 +49,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         k: usize,
         filter: Option<FilterExpr>,
     ) -> Result<Vec<crate::SearchResult>> {
+        if k == 0 {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "k must be greater than 0",
+            ));
+        }
         if query.len() != self.dimension {
             return Err(memfuse_core::MemFuseError::invalid_input(format!(
                 "Dimension mismatch: expected {}, got {}",
