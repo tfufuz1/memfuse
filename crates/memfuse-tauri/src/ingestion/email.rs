@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T14:38:30Z (SESSION: 45595f71)
+// ZWECK: EML / MIME email content and metadata extraction.
+// INVARIANTEN: Extract subject, sender, and text body safely returning MemFuseError on parse failures.
+// NICHT-OFFENSICHTLICH: Prefers plain text parts over HTML; strips HTML tags when fallback is needed.
+// SIEHE AUCH: crates/memfuse-tauri/src/ingestion/pipeline.rs
+
 use mailparse::MailHeaderMap;
 use memfuse_core::{MemFuseError, Result};
 use std::path::Path;

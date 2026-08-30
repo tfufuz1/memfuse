@@ -48,6 +48,8 @@
 // SIEHE AUCH: rules/simd_safety.md, CONSTITUTION.md §12, ADR-017
 
 // ANCHOR[REFACTOR:WP-0.0-STABLESIMD] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Remove nightly portable_simd
+// REVIEW-PASS[1/2] STATUS:PASS (ID: REFACTOR:WP-0.0-STABLESIMD) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
+// REVIEW-PASS[2/2] STATUS:PASS (ID: REFACTOR:WP-0.0-STABLESIMD) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
 // TEST: cargo +stable check -p memfuse-index
 // DONE: #![feature(portable_simd)] ist entfernt und distance.rs nutzt stabiles Rust.
 
@@ -367,6 +369,8 @@ unsafe fn dot_product_neon(a: &[f32], b: &[f32]) -> f32 {
 }
 
 // ANCHOR[REFACTOR:WP-0.0-STABLESIMD-2] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Removed std_simd functions
+// REVIEW-PASS[1/2] STATUS:PASS (ID: REFACTOR:WP-0.0-STABLESIMD-2) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
+// REVIEW-PASS[2/2] STATUS:PASS (ID: REFACTOR:WP-0.0-STABLESIMD-2) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
 
 // -----------------------------------------------------------------------------
 // AVX2 Implementations

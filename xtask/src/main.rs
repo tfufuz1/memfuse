@@ -1,13 +1,5 @@
 use chrono::Utc;
 use clap::{Parser, Subcommand};
-
-#[allow(dead_code)]
-fn chrono_or_today() -> String {
-    chrono::Utc::now().format("%Y-%m-%d").to_string()
-}
-// ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
-// AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
-// GATE:    grep -v "2026-08-27" WORKING_STATE.md
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -743,15 +735,17 @@ pub fn run_sync_docs(check_only: bool) -> bool {
     let crates = get_workspace_crates();
     println!("Parsed {} workspace crates.", crates.len());
 
-    let full_ws = generate_full_working_state(&tags, &crates);
-    let mut success = true;
+    let dag_topology_content = generate_dag_topology_section(&crates);
+    let crate_inventory_content = generate_crate_inventory_section(&crates);
 
-    let current_ws = fs::read_to_string("WORKING_STATE.md").unwrap_or_default();
-    let re = Regex::new(r"\| LAST_SYNC \| `[^`]+` \|").unwrap();
-    let norm_current = re.replace_all(current_ws.trim(), "| LAST_SYNC | `NORMALIZED` |");
-    let norm_full = re.replace_all(full_ws.trim(), "| LAST_SYNC | `NORMALIZED` |");
+    let full_working_state = generate_full_working_state(&tags, &crates);
+    let changelog_content = generate_changelog(&tags);
 
     if check_only {
+        let current_ws = fs::read_to_string("WORKING_STATE.md").unwrap_or_default();
+        let re = Regex::new(r"\| LAST_SYNC \| `[^`]+` \|").unwrap();
+        let norm_current = re.replace_all(current_ws.trim(), "| LAST_SYNC | `NORMALIZED` |");
+        let norm_full = re.replace_all(full_ws.trim(), "| LAST_SYNC | `NORMALIZED` |");
         if norm_current != norm_full {
             eprintln!("❌ WORKING_STATE.md is out of sync!");
             success = false;
@@ -759,29 +753,20 @@ pub fn run_sync_docs(check_only: bool) -> bool {
             println!("✅ WORKING_STATE.md is in sync.");
         }
     } else {
-        if norm_current != norm_full {
-            if let Err(e) = fs::write("WORKING_STATE.md", &full_ws) {
-                eprintln!("❌ Failed to write WORKING_STATE.md: {}", e);
-                success = false;
-            } else {
-                println!("Successfully regenerated WORKING_STATE.md.");
-            }
+        if let Err(e) = fs::write("WORKING_STATE.md", &full_ws) {
+            eprintln!("❌ Failed to write WORKING_STATE.md: {}", e);
+            success = false;
         } else {
-            println!("WORKING_STATE.md is already up to date.");
+            println!("Successfully regenerated WORKING_STATE.md.");
         }
     }
 
     // Source of truth update
     let mut crate_inv = String::new();
     for c in &crates {
-        let desc = if c.description.is_empty() {
-            String::new()
-        } else {
-            format!(" {}", c.description)
-        };
         crate_inv.push_str(&format!(
-            "| `{}` | Layer {} | {} |{}\n",
-            c.name, c.layer, c.status, desc
+            "| `{}` | Layer {} | {} | {}\n",
+            c.name, c.layer, c.status, c.description
         ));
     }
     match update_markdown_section(
@@ -833,16 +818,9 @@ pub fn run_sync_docs(check_only: bool) -> bool {
 }
 
 pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
-    // Bestandsschutz: Only enforce multi-session review coverage for anchors created/resolved
-    // on or after 2026-08-29 (Prompt 06 / ADR-028 decentralized review rule cutoff).
     let completed_anchors: Vec<_> = tags
         .iter()
-        .filter(|t| {
-            t.tag_type == "ANCHOR"
-                && t.is_resolved
-                && t.raw.contains("(ID:")
-                && t.id.as_deref().is_some_and(|id| id.starts_with("AGT-"))
-        })
+        .filter(|t| t.tag_type == "ANCHOR" && t.is_resolved)
         .collect();
 
     let mut success = true;
@@ -891,52 +869,8 @@ pub fn run_check_consistency() -> bool {
     true
 }
 
-// --- NEW CONTEXT & AUDIT COMMAND IMPLEMENTATIONS ---
-
-fn severity_weight(sev: Option<&str>) -> usize {
-    match sev.unwrap_or("").to_uppercase().as_str() {
-        "BLOCKER" => 4,
-        "CRITICAL" => 3,
-        "MAJOR" => 2,
-        "MINOR" => 1,
-        _ => 0,
-    }
-}
-
-pub fn run_context_digest(crate_filter: Option<String>, format: &str) -> Result<(), String> {
-    let all_tags = scan_tags("crates");
-
-    let filtered_tags: Vec<_> = if let Some(ref cf) = crate_filter {
-        all_tags
-            .into_iter()
-            .filter(|t| t.file_path.contains(cf))
-            .collect()
-    } else {
-        all_tags
-    };
-
-    let mut crate_stats: BTreeMap<String, CrateStats> = BTreeMap::new();
-
-    for t in &filtered_tags {
-        if let Some(cname) = extract_crate_name(&t.file_path) {
-            let entry = crate_stats.entry(cname).or_insert(CrateStats {
-                blockers: 0,
-                criticals: 0,
-                anchors: 0,
-            });
-            if t.tag_type == "ANCHOR" && !t.is_resolved {
-                entry.anchors += 1;
-            } else if t.tag_type == "AI-TAG" && !t.is_resolved {
-                match t.severity.as_deref().unwrap_or("") {
-                    "BLOCKER" => entry.blockers += 1,
-                    "CRITICAL" => entry.criticals += 1,
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    let blockers: Vec<_> = filtered_tags
+pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
+    let completed_anchors: Vec<_> = tags
         .iter()
         .filter(|t| {
             !t.is_resolved && severity_weight(t.severity.as_deref()) >= 3 && t.tag_type == "AI-TAG"
@@ -1383,7 +1317,7 @@ enum Commands {
     },
     /// Filter and extract tags
     ContextTags {
-        #[arg(long, short = 'c', alias = "crate")]
+        #[arg(long, short = 'c')]
         crate_name: Option<String>,
         #[arg(long, short = 's')]
         severity: Option<String>,

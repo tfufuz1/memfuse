@@ -10,7 +10,13 @@
 //! Peer to `memfuse-store` and `memfuse-index`. Provides the `GraphIndex`
 //! trait implementation via [`CsrGraph`] and conversation branching via [`SessionBranchTree`].
 
-// INVARIANT: CSR-Graph für 4-Signal Fusion (WP-6.1)
+// FILE-CONTEXT
+// STAND:       2026-08-30T14:35:05Z (SESSION: ab88edae)
+// ZWECK:       Crate-Root & Öffentliche Graph API Re-Exports
+// INVARIANTEN: CSR-Graph für 4-Signal Fusion (WP-6.1); Layer 1 isolation; #![forbid(unsafe_code)]
+// HOTSPOTS:    CsrGraph re-export, SessionBranchTree re-export
+// AGENT-NOTIZ: Layer 1 Modulgrenzen gewahrt
+// SIEHE AUCH:  ADR-004
 
 #![forbid(unsafe_code)]
 
