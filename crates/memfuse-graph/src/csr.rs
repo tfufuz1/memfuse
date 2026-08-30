@@ -4,11 +4,12 @@
 //! Datenstruktur für cache-effizienten Graph-Traversal.
 
 // FILE-CONTEXT
-// STAND: 2026-08-29T05:41:20Z (SESSION: f7999509)
+// STAND: 2026-08-30T18:53:58Z (SESSION: b1234567)
 // ZWECK: CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion)
 // INVARIANTEN: Graph-Zustand wird in LSM-Store persistiert unter Präfixen
 //              `__graph:entity:` und `__graph:edge:`. Änderungen müssen
 //              BEIDE Strukturen konsistent halten (In-Memory CSR + LSM).
+// HOTSPOTS: L500-L620 (GraphInner compact & pending edges buffer merge), L830-L980 (BFS Traversal)
 // NICHT-OFFENSICHTLICH: KEINE petgraph-Abhängigkeit (Pure-Rust CSR, ADR-004).
 //                       `relate()` MUSS sowohl LSM-Write als auch graph_index.add_edge()
 //                       aufrufen — nur eines zu tun bricht Graph-Traversal (crates/memfuse-db/AGENTS.md).
@@ -836,6 +837,11 @@ impl GraphIndex for CsrGraph {
         max_hops: usize,
         as_of: TxId,
     ) -> Result<Vec<(EntityId, f32)>> {
+        if max_hops > 100 {
+            return Err(MemFuseError::InvalidInput(format!(
+                "max_hops {max_hops} exceeds upper safety limit of 100"
+            )));
+        }
         let inner = self.inner.read();
         let start_idx = match inner.id_map.get(&start) {
             Some(&idx) => idx,
@@ -927,6 +933,12 @@ impl GraphIndex for CsrGraph {
     }
 
     async fn traverse(&self, start: EntityId, max_hops: usize) -> Result<Vec<(EntityId, f32)>> {
+        if max_hops > 100 {
+            return Err(MemFuseError::InvalidInput(format!(
+                "max_hops {max_hops} exceeds upper safety limit of 100"
+            )));
+        }
+
         // Merge-read: read directly from both compacted CSR arrays AND uncompacted pending_edges delta buffer.
         // No full compact() call is required before traversal.
         let inner = self.inner.read();
@@ -2549,14 +2561,29 @@ mod tests {
     async fn traverse_at_time_CASE_saturating_max_hops() {
         let graph = setup_test_graph().await;
 
-        // Traverse with max_hops 255 (should saturate safely to MAX_TRAVERSAL_HOPS=3 without panic/OOM)
+        // Traverse with max_hops 100 (should saturate safely to MAX_TRAVERSAL_HOPS=3 without panic/OOM)
         let results = graph
-            .traverse_at_time(EntityId::new(1), 255, TxId::new(100))
+            .traverse_at_time(EntityId::new(1), 100, TxId::new(100))
             .await
             .unwrap(); // unwrap allowed
 
         assert!(!results.is_empty());
         assert!(results.len() <= 4);
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn traverse_CASE_exceeds_max_hops_returns_invalid_input() {
+        let graph = setup_test_graph().await;
+
+        let err = graph.traverse(EntityId::new(1), 101).await.unwrap_err();
+        assert!(matches!(err, MemFuseError::InvalidInput(_)));
+
+        let err_time = graph
+            .traverse_at_time(EntityId::new(1), 101, TxId::new(100))
+            .await
+            .unwrap_err();
+        assert!(matches!(err_time, MemFuseError::InvalidInput(_)));
     }
 
     #[test]
