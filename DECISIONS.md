@@ -672,17 +672,16 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-044: Write-Temp-Then-Rename Pattern für SSTable-Kompaktierung & Recovery Cleanup
+## ADR-044: MCP Write-Authorization & Sandbox Policy (Default Read-Only)
 *   **Datum**: 2026-08-30
 *   **Status**: ✅ Final
-*   **Entscheidung**: Die SSTable-Kompaktierung in `CompactionEngine::maybe_compact` (`crates/memfuse-store/src/compaction.rs`) schreibt das Ergebnis eines Merges zuerst in eine temporäre Datei mit dem Suffix `.sst.tmp`. Erst nach erfolgreichem `builder.finish()` wird die Datei über ein atomares `tokio::fs::rename(&temp_path, &final_path)` auf ihren finalen `.sst`-Namen verschoben. Bei Fehlern während des Merging oder des Renamings wird die Temp-Datei umgehend gelöscht. Zusätzlich ignoriert und bereinigt `LsmStorage::new()` (`crates/memfuse-store/src/lsm.rs`) beim Startup-Scan automatisch alle Restdateien mit `.tmp`-Suffix.
+*   **Entscheidung**: `memfuse-mcp` erzwingt eine strikte Sandbox-Policy für alle MCP Tool-Aufrufe. Datenbank-Schreibzugriffe (`DatabaseWrite` Tools wie `memfuse_insert`, `memfuse_delete`, `memfuse_upsert`, `memfuse_relate`, `memfuse_create_collection`, `memfuse_drop_collection`) sind standardmäßig GESPERRT (`allow_db_writes = false`). Schreibberechtigungen können ausschließlich explizit per Aufruf-Parameter/Server-Initialisierung (`McpServer::with_write_permission()`) bzw. Umgebungsvariable `MEMFUSE_MCP_ALLOW_WRITE=true` aktiviert werden. Vor jedem Tool-Dispatch prüft `call_tool` zentral `McpSandbox::validate_tool_call()`.
 *   **Alternativen**:
-    - Schreiben direkt auf den Zielpfad und Versuchen des Löschens der unvollständigen Datei im Absturz-/Error-Handler. Verworfen, da bei Prozessabsturz (SIGKILL, Stromausfall) unvollständige Dateien verbleiben und beim Neustart fälschlicherweise als gültige SSTables eingelesen würden.
-*   **Begründung**: Garantiert POSIX-Atomarität für komprimierte/kompaktierte SSTables. Eine SSTable existiert im Datenverzeichnis unter ihrem finalen Namen entweder vollständig oder gar nicht, wodurch Korruption bei Abstürzen während des Kompaktierungsvorgangs ausgeschlossen wird.
+    - Uneingeschränkter Schreibzugriff im Default: Verworfen aus Sicherheitsgründen (Zero-Trust/Least-Privilege Prinzipsschutz für LLM-MCP-Integrationen).
+    - Einzelne Tool-Gefahrenstufen ohne zentrale Sandbox-Validierung: Verworfen, da dezentrale Prüfungen fehleranfällig und schwer zu auditieren sind.
+*   **Begründung**: Schutz der lokalen Knowledge Base vor unbeabsichtigten oder böswilligen Schreib- und Löschoperationen durch extern gesteuerte MCP-Clients (R-01 Containment Protection).
 
 ---
-
-> **WICHTIG (Prozessregel zur Nummernvergabe)**: Vor Vergabe einer neuen ADR-Nummer IMMER `grep -oP '(?<=^## ADR-)\d+' DECISIONS.md | sort -n | tail -1` live ausführen, NIEMALS eine Nummer aus einem älteren Prompt oder einer älteren Analyse übernehmen — dies hat bereits zweimal (ADR-020, ADR-042) zu Duplikaten durch parallele Sessions geführt.
 
 ## Vorlage für neue ADRs
 ```markdown
