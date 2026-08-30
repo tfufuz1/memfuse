@@ -1313,6 +1313,9 @@ mod tests {
         }
 
         let res = store.list_checkpoints().await;
-        assert!(res.is_err(), "list_checkpoints must fail if entries exceed MAX_CHECKPOINTS");
+        assert!(
+            res.is_err(),
+            "list_checkpoints must fail if entries exceed MAX_CHECKPOINTS"
+        );
     }
 }

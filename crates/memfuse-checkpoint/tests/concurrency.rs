@@ -26,7 +26,9 @@ impl StorageEngine for MockStorage {
         Ok(self.data.lock().get(key).cloned())
     }
     async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-        if let Ok(manifest) = serde_json::from_slice::<memfuse_checkpoint::CheckpointManifest>(value) {
+        if let Ok(manifest) =
+            serde_json::from_slice::<memfuse_checkpoint::CheckpointManifest>(value)
+        {
             if self.fail_on_put_seq.lock().contains(&manifest.meta.seq_no) {
                 return Err(memfuse_core::MemFuseError::Internal(
                     "Fault injected storage save failure".to_string(),
@@ -176,7 +178,7 @@ async fn test_concurrent_drop_checkpoints() {
     );
 }
 
-/// ANCHOR[TEST:CKPT-001] STATUS:DONE (TS:2026-08-30T22:00:34Z) (SESSION:a140747b) — Concurrent Checkpoint Pinning & GC Exclusions
+/// ANCHOR[TEST:CKPT-001] STATUS:OPEN (TS:2026-08-30T22:00:34Z) (SESSION:a140747b) — Concurrent Checkpoint Pinning & GC Exclusions
 /// Verifies concurrent pinning, unpinning on save failures (fault injection), overwrite unpinning, and GC exclusion state.
 #[tokio::test]
 async fn test_concurrent_checkpoint_pinning_and_gc_exclusions() {
@@ -214,7 +216,10 @@ async fn test_concurrent_checkpoint_pinning_and_gc_exclusions() {
     }
 
     assert_eq!(success_count, 17, "Expected 17 successful checkpoints");
-    assert_eq!(failure_count, 3, "Expected 3 failed checkpoints due to fault injection");
+    assert_eq!(
+        failure_count, 3,
+        "Expected 3 failed checkpoints due to fault injection"
+    );
 
     let pinned = storage.pinned.lock().clone();
     // Verify all 17 successful checkpoints are pinned
@@ -234,7 +239,13 @@ async fn test_concurrent_checkpoint_pinning_and_gc_exclusions() {
 
     // Overwrite cp_1 with new seq_no 100
     store
-        .create_checkpoint("cp_1", "coll_test", 100, TxId::new(100), serde_json::json!({}))
+        .create_checkpoint(
+            "cp_1",
+            "coll_test",
+            100,
+            TxId::new(100),
+            serde_json::json!({}),
+        )
         .await
         .unwrap();
 
