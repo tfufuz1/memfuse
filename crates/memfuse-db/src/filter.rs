@@ -1,9 +1,3 @@
-// FILE-CONTEXT
-// ZWECK: Metadaten-Filterung und Extraktion von Kognitiven MemoryTypes (Episodic, Semantic, Working).
-// INVARIANTEN: Keine Panics bei Typ-Mismatches im Filter-Evaluation-Pfad; Rückfall auf MemoryType::Semantic.
-// NICHT-OFFENSICHTLICH: Deprecated MetadataFilter wandelt via TryFrom verlustfrei in memfuse_core::FilterExpr um.
-// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

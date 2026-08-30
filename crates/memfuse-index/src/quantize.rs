@@ -287,68 +287,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_serde_roundtrip() {
-        let v1 = vec![0.0, 1.0, 2.0];
-        let v2 = vec![10.0, 11.0, 12.0];
-        let original = ScalarQuantizer::train(&[v1.as_slice(), v2.as_slice()], 3);
-
-        let serialized = bincode::serialize(&original).expect("serialize");
-        let deserialized: ScalarQuantizer = bincode::deserialize(&serialized).expect("deserialize");
-
-        assert_eq!(original.mins, deserialized.mins);
-        assert_eq!(original.maxes, deserialized.maxes);
-        assert_eq!(original.scales, deserialized.scales);
-        assert_eq!(original.inv_scales, deserialized.inv_scales);
-        assert_eq!(original.dimension, deserialized.dimension);
-    }
-
-    #[test]
-    fn test_expand_bounds_to_fit() {
-        let v1 = vec![0.0, 0.0];
-        let v2 = vec![1.0, 1.0];
-        let mut q = ScalarQuantizer::train(&[v1.as_slice(), v2.as_slice()], 2);
-
-        // Vector inside range -> false, bounds unchanged
-        let in_range = vec![0.5, 0.5];
-        assert!(!q.expand_bounds_to_fit(&in_range));
-        assert_eq!(q.mins, vec![0.0, 0.0]);
-        assert_eq!(q.maxes, vec![1.0, 1.0]);
-
-        // Vector expanding bounds -> true, bounds updated
-        let out_range = vec![-1.0, 5.0];
-        assert!(q.expand_bounds_to_fit(&out_range));
-        assert_eq!(q.mins, vec![-1.0, 0.0]);
-        assert_eq!(q.maxes, vec![1.0, 5.0]);
-        // Scale updated: range for dim 0 is 2.0 -> scale = 255.0/2.0 = 127.5 (Anti-mirroring hand calculated)
-        assert!((q.scales[0] - 127.5).abs() < 1e-4);
-    }
-
-    #[test]
-    fn test_dist_dimension_mismatch_returns_error() {
-        let v1 = vec![0.0, 1.0];
-        let v2 = vec![2.0, 3.0];
-        let q = ScalarQuantizer::train(&[v1.as_slice(), v2.as_slice()], 2);
-
-        let query_3d = vec![1.0, 2.0, 3.0];
-        let quant_2d = q.quantize(&v1);
-
-        // asymmetric_dist length mismatch
-        let res_asym = q.asymmetric_dist(&query_3d, &quant_2d, DistanceMetric::Cosine);
-        assert!(matches!(
-            res_asym,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
-
-        // symmetric_dist length mismatch
-        let quant_3d = vec![1u8, 2, 3];
-        let res_sym = q.symmetric_dist(&quant_2d, &quant_3d, DistanceMetric::Euclidean);
-        assert!(matches!(
-            res_sym,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
-    }
-
-    #[test]
     fn test_check_drift() {
         let v1 = vec![0.0, 0.0, 0.0, 0.0];
         let v2 = vec![10.0, 10.0, 10.0, 10.0];

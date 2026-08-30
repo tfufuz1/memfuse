@@ -52,24 +52,47 @@ impl StateGraph {
         Self::default()
     }
 
-    /// Tries to insert a new node into the state graph after validating bounds.
-    // AI-TAG[HARDENING][CRITICAL]: Validates non-empty Node ID and description for graph nodes. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045)
+    /// Attempts to add a node to the graph with boundary validation.
     pub fn try_add_node(
         &mut self,
         id: &str,
         description: &str,
         node_type: NodeType,
         handler: Option<&str>,
-    ) -> memfuse_core::Result<()> {
-        if id.trim().is_empty() {
-            return Err(memfuse_core::MemFuseError::InvalidInput(
-                "StateGraph node id must not be empty".to_string(),
+    ) -> Result<()> {
+        validate_node_id(id)?;
+
+        if description.len() > MAX_TEXT_LEN {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Node description length {} exceeds maximum allowed length of {}",
+                description.len(),
+                MAX_TEXT_LEN
+            )));
+        }
+        if description.contains('\0') {
+            return Err(MemFuseError::InvalidInput(
+                "Node description cannot contain null bytes".to_string(),
             ));
         }
-        if description.trim().is_empty() {
-            return Err(memfuse_core::MemFuseError::InvalidInput(
-                "StateGraph node description must not be empty".to_string(),
-            ));
+
+        if let Some(h) = handler {
+            if h.is_empty() {
+                return Err(MemFuseError::InvalidInput(
+                    "Handler name cannot be empty".to_string(),
+                ));
+            }
+            if h.len() > MAX_ID_LEN {
+                return Err(MemFuseError::InvalidInput(format!(
+                    "Handler name length {} exceeds maximum allowed length of {}",
+                    h.len(),
+                    MAX_ID_LEN
+                )));
+            }
+            if h.contains('\0') {
+                return Err(MemFuseError::InvalidInput(
+                    "Handler name cannot contain null bytes".to_string(),
+                ));
+            }
         }
 
         self.nodes.insert(
@@ -84,6 +107,7 @@ impl StateGraph {
         Ok(())
     }
 
+    /// Adds a node to the graph, panicking if validation fails.
     pub fn add_node(
         &mut self,
         id: &str,
@@ -92,22 +116,33 @@ impl StateGraph {
         handler: Option<&str>,
     ) {
         self.try_add_node(id, description, node_type, handler)
-            .unwrap_or_else(|e| panic!("Failed to add StateGraph node: {e}"));
+            .expect("Invalid parameters for add_node");
     }
 
-    /// Tries to insert a new edge between nodes in the state graph after validating bounds.
-    // AI-TAG[HARDENING][CRITICAL]: Validates non-empty from/to endpoints for workflow edges. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045)
+    /// Attempts to add a directed edge between two nodes with boundary validation.
     pub fn try_add_edge(
         &mut self,
         from: &str,
         to: &str,
         condition: Option<&str>,
         priority: u8,
-    ) -> memfuse_core::Result<()> {
-        if from.trim().is_empty() || to.trim().is_empty() {
-            return Err(memfuse_core::MemFuseError::InvalidInput(
-                "WorkflowEdge endpoints 'from' and 'to' must not be empty".to_string(),
-            ));
+    ) -> Result<()> {
+        validate_node_id(from)?;
+        validate_node_id(to)?;
+
+        if let Some(cond) = condition {
+            if cond.len() > MAX_TEXT_LEN {
+                return Err(MemFuseError::InvalidInput(format!(
+                    "Edge condition length {} exceeds maximum allowed length of {}",
+                    cond.len(),
+                    MAX_TEXT_LEN
+                )));
+            }
+            if cond.contains('\0') {
+                return Err(MemFuseError::InvalidInput(
+                    "Edge condition cannot contain null bytes".to_string(),
+                ));
+            }
         }
 
         self.edges.push(WorkflowEdge {
@@ -119,9 +154,10 @@ impl StateGraph {
         Ok(())
     }
 
+    /// Adds an edge to the graph, panicking if validation fails.
     pub fn add_edge(&mut self, from: &str, to: &str, condition: Option<&str>, priority: u8) {
         self.try_add_edge(from, to, condition, priority)
-            .unwrap_or_else(|e| panic!("Failed to add WorkflowEdge: {e}"));
+            .expect("Invalid parameters for add_edge");
     }
 
     pub fn get_node(&self, id: &str) -> Option<&AgentNode> {

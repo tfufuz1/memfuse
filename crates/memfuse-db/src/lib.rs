@@ -1,9 +1,3 @@
-// FILE-CONTEXT
-// ZWECK: MemFuse Database Orchestrator & Facade (Layer 2).
-// INVARIANTEN: Monoton steigende TxId-Allokation; Reparaturgarantie beim Öffnen (repair_on_open); Strikte Isolation von Namespaces.
-// NICHT-OFFENSICHTLICH: Lock-Hierarchie: collections (RwLock) -> insert_lock (Mutex) -> embedder (RwLock).
-// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
-
 // INVARIANT: Orchestrator Facade (Getriebe — Layer 2).
 //! # MemFuse — Embedded Hybrid-Search for AI Agents
 //!
@@ -52,13 +46,6 @@
 //! ```
 
 #![forbid(unsafe_code)]
-
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       Orchestrator-Facade (Layer 2) — öffentliche API der Collection
-// INVARIANTEN: Unified transaction semantics across HNSW, LSM, Graph and Text indexes; thread-safe concurrent collection access
-// HOTSPOTS:    hybrid_search(), insert(), relate()
-// SIEHE AUCH:  crates/memfuse-db/AGENTS.md
 
 pub use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{DocId, Result, StorageEngine, TxId};
@@ -164,21 +151,6 @@ impl Default for MemFuseConfig {
     }
 }
 
-/// # Concurrency & Lock Acquisition Hierarchy
-///
-/// To prevent deadlocks across concurrent database operations, all lock acquisitions must adhere strictly
-/// to the following top-down hierarchy:
-///
-/// 1. `MemFuse::collections` (`tokio::sync::RwLock`):
-///    Registry for active collection instances.
-/// 2. `Collection::insert_lock` (`tokio::sync::Mutex`):
-///    Mutex serializing mutation paths (`insert`, `update`, `delete`, `relate`, `repair`, `drop_collection`) per collection.
-/// 3. `Collection::embedder` / `MemFuse::embedder` (`parking_lot::RwLock`):
-///    Synchronous lock guarding configured text embedding engines.
-///
-/// **Rule**: Higher-level locks MUST always be acquired BEFORE lower-level locks. Never acquire `collections`
-/// while holding `insert_lock` or `embedder`.
-///
 /// MemFuse — Embedded hybrid-search database for AI agents.
 ///
 /// This is the primary entry point for all operations. It provides
@@ -495,9 +467,7 @@ impl MemFuse {
             self.cancel_token.clone(),
         );
         self.task_tracker.spawn(async move {
-            if let Err(e) = reaper_handle.await {
-                tracing::warn!(error = %e, "Reaper handle task failed or was cancelled");
-            }
+            let _ = reaper_handle.await;
         });
 
         Ok(col_arc)
@@ -901,9 +871,7 @@ impl MemFuse {
     pub async fn close(self) -> Result<()> {
         #[cfg(feature = "cluster")]
         if let Some(raft) = self.raft.get() {
-            if let Err(e) = raft.shutdown().await {
-                tracing::warn!(error = %e, "Raft shutdown failed during MemFuse close");
-            }
+            let _ = raft.shutdown().await;
         }
         self.wait_shutdown().await;
         self.storage.close().await?;

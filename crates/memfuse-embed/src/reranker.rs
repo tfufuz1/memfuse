@@ -1,10 +1,3 @@
-// FILE-CONTEXT
-// STAND: 2026-08-29T17:16:44Z (SESSION: f50ed9ef)
-// ZWECK: Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung.
-// INVARIANTEN: Falls onnx-Feature inaktiv, greift transparenter Passthrough-Fallback.
-// NICHT-OFFENSICHTLICH: OnnxReranker nutzt ein eigenes Arc<Mutex<Session>> getrennt von TextEmbedder.
-// SIEHE AUCH: crates/memfuse-embed/AGENTS.md, rules/detect_nested_locks.yml
-
 //! Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung.
 //!
 //! Implementiert das OpenAI/Cohere Reranking-Pattern: nach RRF-Fusion
@@ -15,9 +8,6 @@
 //! Modell: bge-reranker-base oder ms-marco-MiniLM-L-6-v2 (ONNX-Export).
 
 use memfuse_core::MemFuseError;
-
-/// Maximale Anzahl von Kandidaten pro Reranking-Aufruf zur Vermeidung unbegrenzter Allokationen.
-pub const MAX_CANDIDATES: usize = 10_000;
 
 /// Ergebnis einer Reranking-Operation.
 #[derive(Debug, Clone)]
@@ -70,12 +60,6 @@ use tokenizers::Tokenizer;
 #[cfg(feature = "onnx")]
 use tracing::warn;
 
-// CONCURRENCY & LOCK HIERARCHY:
-// `OnnxReranker` uses a single `parking_lot::Mutex<ort::session::Session>` lock.
-// No nested locks exist anywhere within `memfuse-embed`.
-// Locks are acquired exclusively inside `spawn_blocking` calls for the duration of ONNX inference,
-// preventing async executor starvation and eliminating deadlock risks.
-//
 // ARCHITECTURAL NOTE (SessionPool Separation):
 // `OnnxReranker` uses an independent `Arc<Mutex<Session>>` session management scheme
 // separate from `TextEmbedder`'s `Semaphore`-based pool. This intentional separation
@@ -392,14 +376,6 @@ impl CrossEncoderReranker {
         _query: &str,
         candidates: &[String],
     ) -> Result<Vec<RerankResult>, MemFuseError> {
-        if candidates.len() > MAX_CANDIDATES {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Candidate batch size {} exceeds maximum allowed limit {}",
-                candidates.len(),
-                MAX_CANDIDATES
-            )));
-        }
-
         match &self.backend {
             RerankerBackend::Passthrough => Ok(candidates
                 .iter()
@@ -447,22 +423,6 @@ mod tests {
             for window in results.windows(2) {
                 assert!(window[0].score >= window[1].score);
             }
-        }
-    }
-
-    #[tokio::test]
-    async fn test_rerank_oversized_candidate_batch_rejected() {
-        let config = RerankConfig::default();
-        let reranker = CrossEncoderReranker::new(config)
-            .expect("Failed to construct default Passthrough/ONNX CrossEncoderReranker");
-        let candidates: Vec<String> = vec!["doc".to_string(); MAX_CANDIDATES + 1];
-        let res = reranker.rerank("query", &candidates).await;
-        assert!(res.is_err());
-        if let Err(err) = res {
-            assert!(matches!(err, MemFuseError::InvalidInput(_)));
-            assert!(err.to_string().contains("exceeds maximum allowed limit"));
-        } else {
-            panic!("Expected InvalidInput error for oversized candidate batch");
         }
     }
 

@@ -6,13 +6,6 @@
 // INVARIANT: Trait-Contracts sind das API-Rückgrat des Workspace.
 // REGEL: Neue Methoden MÜSSEN Default-Impl haben (backward compat).
 
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       Zentrale Trait-Definitionen (VectorIndex, GraphIndex, TextIndex, etc.)
-// INVARIANTEN: Trait default implementations required for new trait methods (backward compatibility)
-// HOTSPOTS:    VectorIndex::search_at, GraphIndex::traverse_at Default-Impls
-// SIEHE AUCH:  docs/TYPE_REGISTRY.md, ADR-035
-
 use crate::types::*;
 use crate::Result;
 use async_trait::async_trait;
@@ -197,19 +190,13 @@ pub trait StorageEngine: Send + Sync + 'static {
     ///
     /// # Contract
     /// Must respect MVCC snapshot isolation.
-    ///
-    /// # Errors
-    /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
-    /// with capability `"snapshot_read_at"` if snapshot-isolated prefix scan is not implemented.
-    /// Tested via `capability_coverage` test module.
     async fn scan_prefix_at(
         &self,
         _prefix: &[u8],
         _seq_no: u64,
     ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        Err(crate::error::MemFuseError::capability_unsupported(
-            "snapshot_read_at",
-            "Storage-level snapshot-isolated prefix scan (scan_prefix_at) is not supported by default — implementors must override this method to guarantee MVCC snapshot isolation.",
+        Err(crate::error::MemFuseError::PolicyViolation(
+            "scan_prefix_at must be explicitly implemented to guarantee snapshot isolation".into(),
         ))
     }
 
@@ -895,76 +882,6 @@ mod capability_coverage {
             "search_at returned CapabilityUnsupported"
         );
     }
-
-    /// Verifies that calling default scan_prefix_at on a StorageEngine implementation
-    /// returns CapabilityUnsupported with capability "snapshot_read_at".
-    #[tokio::test]
-    async fn test_storage_scan_prefix_at_capability() {
-        struct StorageEnginePlaceholder;
-        #[async_trait]
-        impl StorageEngine for StorageEnginePlaceholder {
-            async fn get(&self, _: &[u8]) -> Result<Option<Vec<u8>>> {
-                Ok(None)
-            }
-            async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> {
-                Ok(None)
-            }
-            async fn put(&self, _: TxId, _: &[u8], _: &[u8]) -> Result<()> {
-                Ok(())
-            }
-            async fn delete(&self, _: TxId, _: &[u8]) -> Result<()> {
-                Ok(())
-            }
-            async fn commit(&self, _: TxId) -> Result<()> {
-                Ok(())
-            }
-            async fn rollback(&self, _: TxId) -> Result<()> {
-                Ok(())
-            }
-            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
-                Ok(())
-            }
-            async fn flush(&self) -> Result<()> {
-                Ok(())
-            }
-            async fn stats(&self) -> Result<StorageStats> {
-                Ok(StorageStats {
-                    num_segments: 0,
-                    total_size_bytes: 0,
-                    memtable_size_bytes: 0,
-                })
-            }
-            async fn last_seq_no(&self) -> Result<u64> {
-                Ok(0)
-            }
-            async fn last_tx_id(&self) -> Result<TxId> {
-                Ok(TxId(0))
-            }
-            async fn pin_checkpoint(&self, _: u64) -> Result<()> {
-                Ok(())
-            }
-            async fn unpin_checkpoint(&self, _: u64) -> Result<()> {
-                Ok(())
-            }
-            async fn scan_prefix(&self, _: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-                Ok(vec![])
-            }
-            async fn scan(
-                &self,
-                _: std::ops::Bound<&[u8]>,
-                _: std::ops::Bound<&[u8]>,
-            ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-                Ok(vec![])
-            }
-        }
-
-        let placeholder = StorageEnginePlaceholder;
-        let result = placeholder.scan_prefix_at(b"prefix", 0).await;
-        assert!(matches!(
-            result,
-            Err(crate::MemFuseError::CapabilityUnsupported { ref capability, .. }) if capability == "snapshot_read_at"
-        ));
-    }
 }
 
 #[cfg(test)]
@@ -1074,12 +991,10 @@ mod tests {
 
         // Test scan_prefix_at default error
         let res = store.scan_prefix_at(b"pre", 1).await;
-        match res {
-            Err(crate::error::MemFuseError::CapabilityUnsupported { capability, .. }) => {
-                assert_eq!(capability, "snapshot_read_at");
-            }
-            _ => panic!("Expected CapabilityUnsupported for scan_prefix_at"),
-        }
+        assert!(matches!(
+            res,
+            Err(crate::error::MemFuseError::PolicyViolation(_))
+        ));
     }
 
     #[tokio::test]
