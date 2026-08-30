@@ -52,9 +52,6 @@ impl std::fmt::Debug for KeyManager {
 impl KeyManager {
     /// Creates a new KeyManager by deriving a key from a passphrase.
     pub fn try_new(passphrase: &str, salt: &[u8]) -> Result<Self> {
-        if passphrase.is_empty() {
-            return Err(MemFuseError::invalid_input("Passphrase must not be empty"));
-        }
         let hk = Hkdf::<Sha256>::new(Some(salt), passphrase.as_bytes());
         let mut key_raw = [0u8; 32];
         hk.expand(b"memfuse-aes-256-gcm-key", &mut key_raw)
@@ -80,9 +77,6 @@ impl KeyManager {
     /// Derives a sub-key for a specific file or logical stream.
     /// This prevents nonce-reuse when multiple files use the same master key.
     pub fn derive_file_key(&self, file_id: &[u8]) -> Result<Self> {
-        if file_id.is_empty() {
-            return Err(MemFuseError::invalid_input("file_id must not be empty"));
-        }
         // Since self.key is already derived via HKDF in try_new, it is a high-entropy PRK.
         // We use HKDF-Expand with a domain-separating prefix to derive a per-file key.
         let hk = Hkdf::<Sha256>::from_prk(self.key.as_bytes())

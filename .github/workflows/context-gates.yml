@@ -60,25 +60,7 @@ jobs:
 
       - name: "Gate 7: TS UND SESSION Pflichtfelder auf allen neuen Tags"
         run: |
-          # Prüfe TS-Feld auf allen Tags
-          MISSING_TS=$(grep -rEn "AI-TAG\[|ANCHOR\[" crates/ --include="*.rs" \
-            | grep -vE "TS:[0-9]{4}-[0-9]{2}-[0-9]{2}T" || true)
-          if [ -n "$MISSING_TS" ]; then
-            echo "❌ Tags ohne gültigen TS:-Zeitstempel:"
-            echo "$MISSING_TS"
-            exit 1
-          fi
-
-          # Prüfe SESSION-Feld auf NEUEN Tags (Datum >= 2026-08-29)
-          MISSING_SESSION=$(grep -rEn "AI-TAG\[|ANCHOR\[" crates/ --include="*.rs" \
-            | grep -E "TS:2026-08-(29|30|31)T|TS:2026-09-|TS:202[7-9]-" \
-            | grep -v "SESSION:" || true)
-          if [ -n "$MISSING_SESSION" ]; then
-            echo "❌ Neue Tags (>= 2026-08-29) ohne SESSION:-Feld:"
-            echo "$MISSING_SESSION"
-            echo "Füge SESSION: <8-hex> zu diesen Tags hinzu."
-            exit 1
-          fi
+          cargo run -p xtask -- validate-tags
           echo "✅ Alle Tags haben TS: und neue Tags haben SESSION: Felder"
 
       - name: "Gate 5: Dokumentation ist synchron mit Inline-Tags (kein Drift)"
