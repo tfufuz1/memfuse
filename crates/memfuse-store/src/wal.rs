@@ -958,7 +958,7 @@ impl Wal {
                     }
                 };
 
-                let mut slice = decrypted_data.as_slice();
+                let slice = decrypted_data.as_slice();
                 while !slice.is_empty() {
                     if slice.len() < 4 {
                         if pos >= file_size {
@@ -1014,7 +1014,6 @@ impl Wal {
                                     format!("Decryption failed: {}", e),
                                 ));
                             }
-                            break;
                         }
                     };
 
@@ -1180,7 +1179,9 @@ impl Wal {
                 let entry = match WalEntry::from_bytes(entry_data) {
                     Ok(e) => e,
                     Err(e) => {
-                        if let Some(err) = Self::handle_wal_entry_parse_error(e, chunk_start_pos, pos, file_size) {
+                        if let Some(err) =
+                            Self::handle_wal_entry_parse_error(e, chunk_start_pos, pos, file_size)
+                        {
                             return Err(err);
                         }
                         break;
