@@ -833,15 +833,12 @@ pub fn run_sync_docs(check_only: bool) -> bool {
 }
 
 pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
-    // Bestandsschutz: Only enforce multi-session review coverage for anchors created/resolved
-    // on or after 2026-08-29 (Prompt 06 / ADR-028 decentralized review rule cutoff).
     let completed_anchors: Vec<_> = tags
         .iter()
         .filter(|t| {
             t.tag_type == "ANCHOR"
                 && t.is_resolved
-                && t.raw.contains("(ID:")
-                && t.id.as_deref().is_some_and(|id| id.starts_with("AGT-"))
+                && (t.session.is_some() || t.timestamp.as_str() >= "2026-08-29")
         })
         .collect();
 
