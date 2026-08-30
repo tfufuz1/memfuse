@@ -1,9 +1,3 @@
-// FILE-CONTEXT
-// ZWECK: Kontextfenster-Verwaltung und Token-Budgetierung für RAG-Prompts.
-// INVARIANTEN: Strikte Einhaltung des TokenBudgets; Dokument-Truncation bei Budgetüberschreitung.
-// NICHT-OFFENSICHTLICH: Token-Schätzung nutzt CJK/Code-Aware Heuristiken ohne schwere Tokenizer-Crate Dependency.
-// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
-
 //! Autonomous Context Management (WP-6.3).
 //!
 //! Proactively injects the most relevant context into the LLM working memory
@@ -412,5 +406,86 @@ mod token_tests {
     fn test_estimate_tokens_never_zero_for_nonempty() {
         assert!(ContextManager::estimate_tokens("a") >= 1);
         assert!(ContextManager::estimate_tokens("   spaces   ") >= 1);
+    }
+
+    #[test]
+    fn test_context_chunk_try_from_search_result_invalid_id() {
+        let sr = crate::SearchResult {
+            id: "".to_string(),
+            score: 0.9,
+            metadata: None,
+            matched_signals: vec![],
+        };
+        let res = ContextChunk::try_from(sr);
+        assert!(matches!(
+            res,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn test_context_chunk_try_from_search_result_valid_id() {
+        let valid_key = "doc_123_sample";
+        let expected_doc_id = DocId::from_key(valid_key).unwrap();
+        let sr = crate::SearchResult {
+            id: valid_key.to_string(),
+            score: 0.85,
+            metadata: Some(serde_json::json!({"text": "sample text content"})),
+            matched_signals: vec!["vector".into()],
+        };
+        let chunk = ContextChunk::try_from(sr).expect("valid context chunk");
+        assert_eq!(chunk.doc_id, expected_doc_id);
+        assert_eq!(chunk.content, "sample text content");
+        assert_eq!(chunk.relevance, 0.85);
+    }
+
+    #[test]
+    fn test_spatial_fence_matching_and_non_matching() {
+        let fence = SpatialFence::new("EU");
+        let chunk_match = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "a".into(),
+            relevance: 1.0,
+            token_count: 1,
+            metadata: Some(serde_json::json!({"geo_region": "EU"})),
+            contextual_prefix: None,
+        };
+        let chunk_mismatch = ContextChunk {
+            doc_id: DocId::new(2),
+            content: "b".into(),
+            relevance: 1.0,
+            token_count: 1,
+            metadata: Some(serde_json::json!({"geo_region": "US"})),
+            contextual_prefix: None,
+        };
+        let chunk_no_meta = ContextChunk {
+            doc_id: DocId::new(3),
+            content: "c".into(),
+            relevance: 1.0,
+            token_count: 1,
+            metadata: None,
+            contextual_prefix: None,
+        };
+
+        assert!(fence.matches(&chunk_match));
+        assert!(!fence.matches(&chunk_mismatch));
+        assert!(!fence.matches(&chunk_no_meta));
+    }
+
+    #[test]
+    fn test_context_manager_relevance_threshold_setter_getter() {
+        let mut mgr = ContextManager::with_defaults();
+        assert_eq!(mgr.relevance_threshold(), 0.1);
+        mgr.set_relevance_threshold(0.75);
+        assert_eq!(mgr.relevance_threshold(), 0.75);
+    }
+
+    #[test]
+    fn test_context_manager_prepare_context_empty_chunks() {
+        let mgr = ContextManager::with_defaults();
+        let window = mgr.prepare_context(vec![]).expect("empty context window");
+        assert!(window.chunks.is_empty());
+        assert_eq!(window.total_tokens, 0);
+        assert!(!window.truncated);
     }
 }

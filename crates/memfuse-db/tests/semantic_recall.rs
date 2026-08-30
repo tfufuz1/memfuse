@@ -1,10 +1,4 @@
 // ANCHOR[PERF:EVAL-001] STATUS:DONE (TS:2026-08-29T00:00:00Z) (SESSION: a3f29c1d) — Semantic Retrieval Evaluation Framework
-// REVIEW-PASS[1/2] STATUS:PASS (ID: PERF:EVAL-001) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
-// PRÜFER-KONTEXT: FRESH
-// BEFUND: recall benchmark verified
-// REVIEW-PASS[2/2] STATUS:PASS (ID: PERF:EVAL-001) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
-// PRÜFER-KONTEXT: FRESH
-// BEFUND: recall benchmark second review pass
 // ZIEL: Parameterisierte Recall@k (k=5, 10, 20) Messung für hybrid_search gegen Ground Truth
 // AGENT:09 DATE:2026-08-29 STATUS:DONE
 
@@ -246,12 +240,12 @@ fn get_cluster_topics() -> Vec<ClusterTopic> {
 fn generate_cluster_vector(cluster_id: usize, doc_within_cluster: usize) -> Vec<f32> {
     let mut vec = vec![0.0f32; EMBED_DIM];
     // Base direction per cluster using orthogonal-ish phase
-    for (i, slot) in vec.iter_mut().enumerate().take(EMBED_DIM) {
+    for i in 0..EMBED_DIM {
         let angle = (cluster_id as f32 + 1.0) * (i as f32 + 1.0) * 0.01;
         let base_signal = angle.sin();
         // Controlled noise for document variant
         let noise = ((doc_within_cluster * 13 + i * 7) % 100) as f32 / 500.0;
-        *slot = base_signal + noise;
+        vec[i] = base_signal + noise;
     }
     // Normalize vector
     let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -266,11 +260,11 @@ fn generate_cluster_vector(cluster_id: usize, doc_within_cluster: usize) -> Vec<
 /// Generates a query vector for a cluster
 fn generate_query_vector(cluster_id: usize, query_idx: usize) -> Vec<f32> {
     let mut vec = vec![0.0f32; EMBED_DIM];
-    for (i, slot) in vec.iter_mut().enumerate().take(EMBED_DIM) {
+    for i in 0..EMBED_DIM {
         let angle = (cluster_id as f32 + 1.0) * (i as f32 + 1.0) * 0.01;
         let base_signal = angle.sin();
         let noise = ((query_idx * 19 + i * 3) % 100) as f32 / 1000.0;
-        *slot = base_signal + noise;
+        vec[i] = base_signal + noise;
     }
     let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
     if norm > 0.0 {
