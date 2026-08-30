@@ -587,12 +587,13 @@ fn generate_dag_topology_section(crates: &[CrateInfo]) -> String {
     out
 }
 
+#[allow(dead_code)]
 fn format_loc(loc: usize) -> String {
     let s = loc.to_string();
     let mut result = String::new();
     let len = s.len();
     for (i, c) in s.chars().enumerate() {
-        if i > 0 && (len - i) % 3 == 0 {
+        if i > 0 && (len - i).is_multiple_of(3) {
             result.push('.');
         }
         result.push(c);
@@ -778,7 +779,10 @@ pub fn check_crate_agents(crates: &[CrateInfo], root_dir: &Path) -> bool {
     for c in crates {
         let agents_md_path = root_dir.join(&c.path).join("AGENTS.md");
         if !agents_md_path.exists() {
-            eprintln!("❌ Consistency error: Crate '{}' hat keine AGENTS.md!", c.name);
+            eprintln!(
+                "❌ Consistency error: Crate '{}' hat keine AGENTS.md!",
+                c.name
+            );
             failed = true;
         }
     }
@@ -801,7 +805,10 @@ pub fn check_adr_consistency(decisions: &str) -> bool {
     let mut seen = std::collections::HashSet::new();
     for &num in &adr_numbers {
         if !seen.insert(num) {
-            eprintln!("❌ Consistency error: ADR-{:03} ist mehrfach vergeben!", num);
+            eprintln!(
+                "❌ Consistency error: ADR-{:03} ist mehrfach vergeben!",
+                num
+            );
             failed = true;
         }
     }
