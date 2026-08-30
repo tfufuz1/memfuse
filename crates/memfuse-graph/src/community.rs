@@ -390,6 +390,79 @@ mod tests {
         }
     }
 
+    proptest::proptest! {
+        #[test]
+        fn prop_community_detection_never_panics(
+            node_count in 1usize..50,
+            edge_specs in proptest::collection::vec((0..50usize, 0..50usize), 0..150),
+            max_iterations in 1u32..50,
+            seed in proptest::num::u64::ANY,
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+            let res: std::result::Result<(), proptest::test_runner::TestCaseError> = rt.block_on(async {
+                let graph = CsrGraph::new();
+                let tx = TxId::new(1);
+                for i in 0..node_count {
+                    graph.add_entity(tx, Entity::new(EntityId::new(i as u64 + 1), format!("N{i}"), "Node")).await.unwrap();
+                }
+                for (src, dst) in edge_specs {
+                    let src_id = EntityId::new((src % node_count) as u64 + 1);
+                    let dst_id = EntityId::new((dst % node_count) as u64 + 1);
+                    let _ = graph.add_edge(tx, Edge::new(src_id, dst_id, "link")).await;
+                }
+                graph.commit(tx).await.unwrap();
+
+                let config = CommunityDetectionConfig { max_iterations, seed };
+                let result = detect_communities(&graph, &config).await;
+
+                proptest::prop_assert!(result.is_ok() || matches!(result, Err(_)));
+                if let Ok(assignments) = result {
+                    proptest::prop_assert_eq!(assignments.len(), node_count);
+                }
+                Ok(())
+            });
+            res?;
+        }
+
+        #[test]
+        fn prop_community_detection_every_node_assigned(
+            node_count in 1usize..30,
+            edge_specs in proptest::collection::vec((0..30usize, 0..30usize), 0..60),
+            seed in proptest::num::u64::ANY,
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+            let res: std::result::Result<(), proptest::test_runner::TestCaseError> = rt.block_on(async {
+                let graph = CsrGraph::new();
+                let tx = TxId::new(1);
+                let expected_ids: std::collections::HashSet<_> = (0..node_count)
+                    .map(|i| EntityId::new(i as u64 + 1))
+                    .collect();
+
+                for &id in &expected_ids {
+                    graph.add_entity(tx, Entity::new(id, format!("Node{}", id.inner()), "Node")).await.unwrap();
+                }
+                for (src, dst) in edge_specs {
+                    let src_id = EntityId::new((src % node_count) as u64 + 1);
+                    let dst_id = EntityId::new((dst % node_count) as u64 + 1);
+                    let _ = graph.add_edge(tx, Edge::new(src_id, dst_id, "link")).await;
+                }
+                graph.commit(tx).await.unwrap();
+
+                let config = CommunityDetectionConfig { max_iterations: 20, seed };
+                let assignments = detect_communities(&graph, &config).await.unwrap();
+
+                proptest::prop_assert_eq!(assignments.len(), node_count);
+                let assigned_ids: std::collections::HashSet<_> = assignments
+                    .into_iter()
+                    .map(|a| a.entity_id)
+                    .collect();
+                proptest::prop_assert_eq!(assigned_ids, expected_ids);
+                Ok(())
+            });
+            res?;
+        }
+    }
+
     #[tokio::test]
     async fn test_community_detection_non_convergence_logs_warning_and_returns_best_effort() {
         use tracing_subscriber::layer::SubscriberExt;
@@ -449,5 +522,64 @@ mod tests {
             "Expected structured warning log on community detection non-convergence, got logs: {:?}",
             *captured
         );
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn detect_communities_CASE_empty_graph() {
+        let graph = CsrGraph::new();
+        let config = CommunityDetectionConfig::default();
+
+        let assignments = detect_communities(&graph, &config).await.unwrap(); // unwrap allowed
+        assert!(
+            assignments.is_empty(),
+            "Community detection on empty graph must return empty assignments"
+        );
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn detect_communities_CASE_single_node() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+        let id = EntityId::new(42);
+
+        graph
+            .add_entity(tx, Entity::new(id, "SingleNode", "Type"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph.commit(tx).await.unwrap(); // unwrap allowed
+
+        let config = CommunityDetectionConfig::default();
+        let assignments = detect_communities(&graph, &config).await.unwrap(); // unwrap allowed
+
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(assignments[0].entity_id, id);
+        assert_eq!(assignments[0].community_id, id.inner());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn serialization_roundtrip_CASE_community_config_and_assignment() {
+        let config = CommunityDetectionConfig {
+            max_iterations: 150,
+            seed: 987654321,
+        };
+
+        let serialized_config = bincode::serialize(&config).unwrap(); // unwrap allowed
+        let deserialized_config: CommunityDetectionConfig =
+            bincode::deserialize(&serialized_config).unwrap(); // unwrap allowed
+        assert_eq!(config.max_iterations, deserialized_config.max_iterations);
+        assert_eq!(config.seed, deserialized_config.seed);
+
+        let assignment = CommunityAssignment {
+            entity_id: EntityId::new(100),
+            community_id: 100,
+        };
+
+        let serialized_assignment = bincode::serialize(&assignment).unwrap(); // unwrap allowed
+        let deserialized_assignment: CommunityAssignment =
+            bincode::deserialize(&serialized_assignment).unwrap(); // unwrap allowed
+        assert_eq!(assignment, deserialized_assignment);
     }
 }
