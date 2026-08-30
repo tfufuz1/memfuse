@@ -31,7 +31,7 @@
 | `memfuse-crypto` | L1 | 1186 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | L1 | 4674 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | L1 | 7305 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | L1 | 10391 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | L1 | 10393 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | L1 | 3631 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-db` | L2 | 12410 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | L3 | 2515 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |

@@ -831,6 +831,79 @@ mod tests {
     }
 
     #[test]
+    fn test_doc_id_multibyte_unicode_keys() {
+        let unicode_keys = vec![
+            "🦀_crab_key",
+            "äöü_german_key",
+            "日本語_japanese_key",
+            "🚀✨🔥",
+        ];
+        for key in unicode_keys {
+            let doc_id = DocId::from_key(key).expect("multibyte unicode key should derive doc_id"); // expect #[cfg(test)]
+            assert!(doc_id.inner() > 0);
+            let entity_id =
+                EntityId::from_key(key).expect("multibyte unicode key should derive entity_id"); // expect #[cfg(test)]
+            assert_eq!(entity_id.inner(), doc_id.inner());
+        }
+    }
+
+    #[test]
+    fn test_entity_id_methods() {
+        let entity_id = EntityId::new(12345);
+        assert_eq!(entity_id.inner(), 12345);
+        assert_eq!(entity_id.as_bytes(), b"12345");
+
+        let doc_id = DocId::new(998877);
+        let derived_entity = EntityId::from_doc_id(doc_id);
+        assert_eq!(derived_entity.inner(), 998877);
+
+        // String / &str conversions
+        let parsed_num: EntityId = "12345".into();
+        assert_eq!(parsed_num.inner(), 12345);
+
+        let hashed_str: EntityId = "not_a_number".into();
+        assert!(hashed_str.inner() > 0);
+
+        let from_string: EntityId = String::from("9999").into();
+        assert_eq!(from_string.inner(), 9999);
+    }
+
+    #[test]
+    fn test_distance_metrics_empty_and_single_element() {
+        let empty_a: [f32; 0] = [];
+        let empty_b: [f32; 0] = [];
+
+        // 0-dim vectors
+        assert_eq!(
+            DistanceMetric::Cosine.compute(&empty_a, &empty_b).unwrap(),
+            1.0
+        ); // unwrap
+        assert_eq!(
+            DistanceMetric::Euclidean
+                .compute(&empty_a, &empty_b)
+                .unwrap(),
+            0.0
+        ); // unwrap
+        assert_eq!(
+            DistanceMetric::DotProduct
+                .compute(&empty_a, &empty_b)
+                .unwrap(),
+            0.0
+        ); // unwrap
+
+        // 1-dim vectors
+        let a1 = [3.0f32];
+        let b1 = [4.0f32];
+        // Cosine: angle is 0 between positive 1D values -> distance 0.0
+        assert!((DistanceMetric::Cosine.compute(&a1, &b1).unwrap() - 0.0).abs() < 1e-6); // unwrap
+                                                                                         // Euclidean: |3 - 4| = 1.0
+        assert_eq!(DistanceMetric::Euclidean.compute(&a1, &b1).unwrap(), 1.0); // unwrap
+                                                                               // DotProduct: -(3 * 4) = -12.0
+        assert_eq!(DistanceMetric::DotProduct.compute(&a1, &b1).unwrap(), -12.0);
+        // unwrap
+    }
+
+    #[test]
     fn doc_id_valid_key_is_ok() {
         let id = DocId::from_key("valid-key-123").unwrap(); // unwrap
         assert!(id.inner() > 0);
