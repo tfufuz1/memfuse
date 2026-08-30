@@ -743,7 +743,6 @@ pub fn run_sync_docs(check_only: bool) -> bool {
     }
 }
 
-// ANCHOR[BUILD:XTASK-001] STATUS:DONE (ID: AGT-XTASK-P01) (TS:2026-08-30T00:00:00Z) (SESSION:jules-p01) - xtask compilation blocker fixed (P0-1)
 pub fn run_check_consistency() -> bool {
     println!("=== xtask check-consistency ===");
     let mut failed = false;
