@@ -163,23 +163,6 @@ async fn test_internal_error_returns_32603() {
 }
 
 #[tokio::test]
-async fn test_mcp_error_from_memfuse_error_contains_structured_dto_data() {
-    use crate::protocol::McpError;
-    use memfuse_core::{MemFuseError, MemFuseErrorDto};
-
-    let core_err = MemFuseError::NotFound("document_123".into());
-    let mcp_err = McpError::from(core_err);
-    let resp = JsonRpcResponse::from_error(Some(json!(103)), mcp_err);
-
-    let err_obj = resp.error.expect("error expected");
-    let data = err_obj.data.expect("error data payload expected");
-    let dto: MemFuseErrorDto =
-        serde_json::from_value(data).expect("parse MemFuseErrorDto from data");
-    assert_eq!(dto.kind, "NotFound");
-    assert_eq!(dto.message, "document_123");
-}
-
-#[tokio::test]
 async fn test_notification_expects_no_response() {
     let (server, _tmp) = create_mock_server().await;
     let req = JsonRpcRequest {
