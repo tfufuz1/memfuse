@@ -1,12 +1,6 @@
-// FILE-CONTEXT
-// STAND: 2026-08-30T18:51:50Z (SESSION: c9c33dfb)
-// ZWECK: Deklarative StateGraph-Definition für Agenten-Workflows.
-// INVARIANTEN: Node- und Edge-Anzahl hart begrenzt (MAX_GRAPH_NODES / MAX_GRAPH_EDGES).
-// NICHT-OFFENSICHTLICH: Keine externen Graph-Bibliotheken (kein petgraph); pure Rust sovereign graph representation.
-// HOTSPOTS: StateGraph::try_add_node, StateGraph::try_add_edge
-// SIEHE AUCH: rules/tag_taxonomy.md, AGENTS.md
-
 //! Declarative StateGraph definition for Agent Workflows.
+
+// INVARIANT: Deklarativer StateGraph.
 
 use crate::context::{validate_node_id, MAX_ID_LEN};
 use memfuse_core::{MemFuseError, Result};
@@ -17,12 +11,6 @@ pub type NodeId = String;
 
 /// Maximum allowed length in bytes for descriptions and conditions.
 pub const MAX_TEXT_LEN: usize = 65_536;
-
-/// Maximum allowed nodes in a single StateGraph.
-pub const MAX_GRAPH_NODES: usize = 10_000;
-
-/// Maximum allowed edges in a single StateGraph.
-pub const MAX_GRAPH_EDGES: usize = 50_000;
 
 /// Type of node within the declarative agent state graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,8 +52,8 @@ impl StateGraph {
         Self::default()
     }
 
-    /// Tries to insert a new node into the state graph after validating bounds and graph capacity.
-    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty Node ID and description for graph nodes. (TS:2026-08-30T18:51:50Z) (SESSION: c9c33dfb)
+    /// Tries to insert a new node into the state graph after validating bounds.
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty Node ID and description for graph nodes. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f)
     pub fn try_add_node(
         &mut self,
         id: &str,
@@ -74,13 +62,6 @@ impl StateGraph {
         handler: Option<&str>,
     ) -> Result<()> {
         validate_node_id(id)?;
-
-        if self.nodes.len() >= MAX_GRAPH_NODES && !self.nodes.contains_key(id) {
-            return Err(MemFuseError::InvalidInput(format!(
-                "StateGraph node limit of {} reached",
-                MAX_GRAPH_NODES
-            )));
-        }
 
         if description.len() > MAX_TEXT_LEN {
             return Err(MemFuseError::InvalidInput(format!(
@@ -128,9 +109,6 @@ impl StateGraph {
     }
 
     /// Adds a node to the graph, panicking if validation fails.
-    ///
-    /// # Panics
-    /// Panics if input parameters are invalid or if node limit (`MAX_GRAPH_NODES`) is exceeded.
     pub fn add_node(
         &mut self,
         id: &str,
@@ -142,8 +120,8 @@ impl StateGraph {
             .expect("Invalid parameters for add_node");
     }
 
-    /// Tries to insert a new edge between nodes in the state graph after validating bounds and edge capacity.
-    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty from/to endpoints for workflow edges. (TS:2026-08-30T18:51:50Z) (SESSION: c9c33dfb)
+    /// Tries to insert a new edge between nodes in the state graph after validating bounds.
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty from/to endpoints for workflow edges. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f)
     pub fn try_add_edge(
         &mut self,
         from: &str,
@@ -153,13 +131,6 @@ impl StateGraph {
     ) -> Result<()> {
         validate_node_id(from)?;
         validate_node_id(to)?;
-
-        if self.edges.len() >= MAX_GRAPH_EDGES {
-            return Err(MemFuseError::InvalidInput(format!(
-                "StateGraph edge limit of {} reached",
-                MAX_GRAPH_EDGES
-            )));
-        }
 
         if let Some(cond) = condition {
             if cond.len() > MAX_TEXT_LEN {
@@ -186,9 +157,6 @@ impl StateGraph {
     }
 
     /// Adds an edge to the graph, panicking if validation fails.
-    ///
-    /// # Panics
-    /// Panics if input endpoints/conditions are invalid or if edge limit (`MAX_GRAPH_EDGES`) is exceeded.
     pub fn add_edge(&mut self, from: &str, to: &str, condition: Option<&str>, priority: u8) {
         self.try_add_edge(from, to, condition, priority)
             .expect("Invalid parameters for add_edge");
@@ -245,42 +213,6 @@ mod tests {
         let huge_cond = "c".repeat(MAX_TEXT_LEN + 1);
         assert!(matches!(
             graph.try_add_edge("start", "end", Some(&huge_cond), 1),
-            Err(MemFuseError::InvalidInput(_))
-        ));
-    }
-
-    #[test]
-    fn test_graph_node_and_edge_capacity_limits() {
-        let mut graph = StateGraph::new();
-
-        // Fill up nodes to limit
-        for i in 0..MAX_GRAPH_NODES {
-            assert!(graph
-                .try_add_node(&format!("n{i}"), "node", NodeType::Task, None)
-                .is_ok());
-        }
-
-        // Updating existing node should succeed
-        assert!(graph
-            .try_add_node("n0", "updated", NodeType::Task, None)
-            .is_ok());
-
-        // Adding one more new node should fail with InvalidInput
-        assert!(matches!(
-            graph.try_add_node("overflow_node", "overflow", NodeType::Task, None),
-            Err(MemFuseError::InvalidInput(_))
-        ));
-
-        // Fill up edges to limit
-        for i in 0..MAX_GRAPH_EDGES {
-            let from = format!("n{}", i % MAX_GRAPH_NODES);
-            let to = format!("n{}", (i + 1) % MAX_GRAPH_NODES);
-            assert!(graph.try_add_edge(&from, &to, None, 1).is_ok());
-        }
-
-        // Adding one more edge should fail with InvalidInput
-        assert!(matches!(
-            graph.try_add_edge("n0", "n1", None, 1),
             Err(MemFuseError::InvalidInput(_))
         ));
     }

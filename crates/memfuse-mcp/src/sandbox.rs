@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND:       2026-08-30T18:51:25Z (SESSION: 846802ab)
+// STAND:       2026-08-30T14:46:32Z (SESSION: 2c814094)
 // ZWECK:       MCP Sandbox & Zero-Trust Tool Isolation Layer
 // INVARIANTEN: Opt-In Security; volatile_results nutzt Single-Lock (parking_lot::Mutex); keine geschachtelten Locks
 // HOTSPOTS:    validate_tool_call(), store_volatile(), execute_with_timeout()
