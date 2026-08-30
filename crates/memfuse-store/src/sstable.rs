@@ -206,7 +206,7 @@ impl BlockBuilder {
         Self {
             data: BytesMut::new(),
             offsets: Vec::new(),
-            block_size: block_size.max(1024),
+            block_size: block_size.clamp(512, 64 * 1024 * 1024),
             bloom: 0,
         }
     }
@@ -2179,7 +2179,16 @@ mod tests {
     #[test]
     fn test_block_builder_min_size() {
         let builder = BlockBuilder::new(10);
-        assert_eq!(builder.block_size, 1024);
+        assert_eq!(builder.block_size, 512);
+    }
+
+    #[test]
+    fn test_block_builder_min_max_clamping() {
+        let bb_small = BlockBuilder::new(10);
+        assert_eq!(bb_small.block_size, 512);
+
+        let bb_huge = BlockBuilder::new(100 * 1024 * 1024);
+        assert_eq!(bb_huge.block_size, 64 * 1024 * 1024);
     }
 
     #[tokio::test]

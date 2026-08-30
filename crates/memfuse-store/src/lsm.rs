@@ -75,6 +75,40 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
+/// Maximum key size allowed for LSM operations (1MB).
+pub const MAX_KEY_SIZE: usize = 1_048_576;
+
+/// Maximum value size allowed for LSM operations (128MB).
+pub const MAX_VALUE_SIZE: usize = 134_217_728;
+
+/// Maximum batch size for `delete_many` operations (10,000 items).
+pub const MAX_BATCH_SIZE: usize = 10_000;
+
+fn validate_key(key: &[u8]) -> Result<()> {
+    if key.is_empty() {
+        return Err(MemFuseError::InvalidInput("Key cannot be empty".into()));
+    }
+    if key.len() > MAX_KEY_SIZE {
+        return Err(MemFuseError::InvalidInput(format!(
+            "Key length ({} bytes) exceeds limit of {} bytes",
+            key.len(),
+            MAX_KEY_SIZE
+        )));
+    }
+    Ok(())
+}
+
+fn validate_value(value: &[u8]) -> Result<()> {
+    if value.len() > MAX_VALUE_SIZE {
+        return Err(MemFuseError::InvalidInput(format!(
+            "Value length ({} bytes) exceeds limit of {} bytes",
+            value.len(),
+            MAX_VALUE_SIZE
+        )));
+    }
+    Ok(())
+}
+
 /// LSM storage configuration.
 // SEC-001 — Erweitere LsmConfig um `encryption_passphrase` und AES-256.
 // TEST: cargo test -p memfuse-store test_encrypted_db_unreadable_without_key
@@ -551,6 +585,7 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        validate_key(key)?;
         let current_max_seq = self.next_seq_no.load(Ordering::Acquire);
         let res = self.get_at_seq(key, current_max_seq).await?;
         tracing::debug!(
@@ -571,6 +606,7 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn get_at_seq(&self, key: &[u8], seq_no: u64) -> Result<Option<Vec<u8>>> {
+        validate_key(key)?;
         // Genau EINMAL laden — Snapshot-Konsistenz über die gesamte Methode (INVARIANT-2)
         let snapshot_tx = self.last_committed_tx.load(Ordering::Acquire);
         let state = self.state.read().await;

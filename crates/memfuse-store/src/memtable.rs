@@ -1,3 +1,11 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T15:00:19Z (SESSION: 283abf0f)
+// ZWECK: In-Memory BTreeMap MemTable-Sharding mit MVCC Snapshot-Isolation.
+// INVARIANTEN: Sharding per BLAKE3-Hash modulo SHARD_COUNT; tombstone via TOMBSTONE_BIT in seq_no.
+// NICHT-OFFENSICHTLICH: Rollback(tx_id) entfernt alle Einträge der Transaktion atomar aus allen Shards.
+// HOTSPOTS: MemTable::put, MemTable::get_at_seq, MemTable::rollback
+// SIEHE AUCH: crates/memfuse-store/AGENTS.md, DECISIONS.md
+
 //! In-memory sorted MemTable for the LSM-Tree with MVCC support.
 //!
 //! Entries are sharded across `SHARD_COUNT` independent `BTreeMap` partitions,

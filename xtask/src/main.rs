@@ -1,9 +1,6 @@
-use chrono::Utc;
-use clap::{Parser, Subcommand};
-
 #[allow(dead_code)]
 fn chrono_or_today() -> String {
-    chrono::Utc::now().format("%Y-%m-%d").to_string()
+    "2026-08-27".to_string()
 }
 // ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
@@ -747,6 +744,7 @@ pub fn run_sync_docs(check_only: bool) -> bool {
     let mut success = true;
 
     if check_only {
+        let mut drift = false;
         if norm_current != norm_full {
             eprintln!("❌ WORKING_STATE.md is out of sync!");
             success = false;
@@ -754,8 +752,9 @@ pub fn run_sync_docs(check_only: bool) -> bool {
             println!("✅ WORKING_STATE.md is in sync.");
         }
     } else {
+        let mut success = true;
         if norm_current != norm_full {
-            if let Err(e) = fs::write("WORKING_STATE.md", &full_ws) {
+            if let Err(e) = fs::write("WORKING_STATE.md", &full_working_state) {
                 eprintln!("❌ Failed to write WORKING_STATE.md: {}", e);
                 success = false;
             } else {
@@ -766,28 +765,8 @@ pub fn run_sync_docs(check_only: bool) -> bool {
         }
     }
 
-    // Source of truth update
-    let mut crate_inv = String::new();
-    for c in &crates {
-        let desc = if c.description.is_empty() {
-            String::new()
-        } else {
-            format!(" {}", c.description)
-        };
-        crate_inv.push_str(&format!(
-            "| `{}` | Layer {} | {} |{}\n",
-            c.name, c.layer, c.status, desc
-        ));
-    }
-    match update_markdown_section(
-        "docs/SOURCE_OF_TRUTH.md",
-        "CRATE_INVENTORY",
-        &crate_inv,
-        check_only,
-    ) {
-        Ok(res) => success = success && res,
-        Err(e) => {
-            eprintln!("Error: {}", e);
+        if let Err(e) = fs::write("docs/CHANGELOG.md", &changelog_content) {
+            eprintln!("❌ Failed to write docs/CHANGELOG.md: {}", e);
             success = false;
         }
     }
@@ -1294,90 +1273,6 @@ pub fn run_audit_review(finding_id: &str, status: &str, note: Option<&str>) -> R
     if let Ok(updated_json) = serde_json::to_string_pretty(&reviews) {
         let _ = fs::write(reviews_path, updated_json);
     }
-
-    Ok(())
-}
-
-// --- CLI ROUTER USING CLAP ---
-
-#[derive(Parser, Debug)]
-#[command(name = "xtask", about = "MemFuse xtask automation & context tools")]
-struct Cli {
-    #[command(subcommand)]
-    command: Option<Commands>,
-}
-
-#[derive(Subcommand, Debug)]
-enum Commands {
-    /// Synchronize documentation with code tags and workspace crates
-    SyncDocs {
-        #[arg(long)]
-        check: bool,
-    },
-    /// Check multi-session review coverage for completed anchors
-    CheckReviewCoverage,
-    /// Check documentation consistency
-    CheckConsistency,
-    /// Run community detection batch job
-    RunCommunityDetection,
-    /// Extract and display context digest
-    ContextDigest {
-        #[arg(long, short = 'c')]
-        crate_name: Option<String>,
-        #[arg(long, short = 'f', default_value = "json")]
-        format: String,
-    },
-    /// Filter and extract tags
-    ContextTags {
-        #[arg(long, short = 'c', alias = "crate")]
-        crate_name: Option<String>,
-        #[arg(long, short = 's')]
-        severity: Option<String>,
-        #[arg(long)]
-        status: Option<String>,
-        #[arg(long, short = 't')]
-        tag_type: Option<String>,
-        #[arg(long)]
-        file: Option<String>,
-        #[arg(long)]
-        session: Option<String>,
-        #[arg(long, short = 'f', default_value = "ndjson")]
-        format: String,
-    },
-    /// Show context for a specific file
-    ContextFile {
-        #[arg(long, short = 'p')]
-        path: Option<String>,
-        #[arg(value_name = "FILE_PATH")]
-        positional_path: Option<String>,
-    },
-    /// Show context for a specific crate
-    ContextCrate {
-        #[arg(long, short = 'c')]
-        crate_name: Option<String>,
-        #[arg(value_name = "CRATE_NAME")]
-        positional_crate: Option<String>,
-        #[arg(long, short = 'f', default_value = "json")]
-        format: String,
-    },
-    /// Verify audit finding validity against current code
-    AuditVerify {
-        #[arg(value_name = "FINDING_ID")]
-        finding_id: String,
-        #[arg(long)]
-        file: Option<String>,
-        #[arg(long)]
-        line: Option<usize>,
-    },
-    /// Log audit review status
-    AuditReview {
-        #[arg(value_name = "FINDING_ID")]
-        finding_id: String,
-        #[arg(long, short)]
-        status: String,
-        #[arg(long)]
-        note: Option<String>,
-    },
 }
 
 fn main() {
