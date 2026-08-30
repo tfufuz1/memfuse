@@ -11,5 +11,5 @@
 ## Relevante rules/*.md
 - `rules/test_quality.md` — Deterministic Search Recall Verification
 
-## Offene Pflicht-Tests (ANCHOR-Status)
-- ANCHOR[TEST:TXT-001] STATUS:OPEN — Recall-Evaluation für deutsche Zusammensetzungen
+## Pflicht-Tests (ANCHOR-Status)
+- ANCHOR[TEST:TXT-001] STATUS:DONE — Recall-Evaluation für deutsche Zusammensetzungen (TS:2026-08-30T22:01:55Z SESSION:cf1f75c6)

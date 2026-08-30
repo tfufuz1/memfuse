@@ -30,7 +30,7 @@ fn test_stategraph_boundary_validation() {
     let node_res = graph.try_add_node("", "Invalid empty node", NodeType::Task, None);
     assert!(node_res.is_err());
     if let Err(memfuse_core::MemFuseError::InvalidInput(msg)) = node_res {
-        assert!(msg.contains("StateGraph node id must not be empty"));
+        assert!(msg.contains("node_id cannot be empty"));
     } else {
         panic!("Expected InvalidInput error");
     }
