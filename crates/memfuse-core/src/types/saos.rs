@@ -383,6 +383,21 @@ mod tests {
     }
 
     #[test]
+    fn test_fusion_weights_negative_or_infinite() {
+        let res_neg = FusionWeights::new(-0.1, 0.6, 0.5);
+        assert!(res_neg.is_err());
+        if let Err(MemFuseError::InvalidInput(msg)) = res_neg {
+            assert_eq!(msg, "Fusion weights must be non-negative");
+        }
+
+        let res_inf = FusionWeights::new(f32::INFINITY, 0.5, 0.5);
+        assert!(res_inf.is_err());
+        if let Err(MemFuseError::InvalidInput(msg)) = res_inf {
+            assert_eq!(msg, "Fusion weights must be finite numbers");
+        }
+    }
+
+    #[test]
     fn test_fusion_weights_nan() {
         let res = FusionWeights::new(f32::NAN, 0.5, 0.5);
         assert!(res.is_err());

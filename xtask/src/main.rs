@@ -606,10 +606,9 @@ fn generate_crate_inventory_section(crates: &[CrateInfo]) -> String {
     out.push_str("| :--- | :---: | :---: | :--- | :--- |\n");
 
     for c in crates {
-        let loc_formatted = format_loc(c.loc);
         out.push_str(&format!(
             "| `{}` | {} | {} | {} | {} |\n",
-            c.name, c.layer, loc_formatted, c.status, c.description
+            c.name, c.layer, c.loc, c.status, c.description
         ));
     }
 

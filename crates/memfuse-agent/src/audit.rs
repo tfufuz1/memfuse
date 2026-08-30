@@ -1,11 +1,3 @@
-// FILE-CONTEXT
-// STAND: 2026-08-30T18:51:50Z (SESSION: c9c33dfb)
-// ZWECK: Unveränderbarer Append-Only Audit-Trail für Agenten-Workflow-Ausführungen.
-// INVARIANTEN: Keine Update/Delete-Pfade; Replay ist deterministisch nach step_count sortiert.
-// NICHT-OFFENSICHTLICH: Nutzt Zero-Vector-Pattern für Metadaten-Speicherung in Collection.
-// HOTSPOTS: AuditLog::append, AuditLog::replay_task
-// SIEHE AUCH: rules/tag_taxonomy.md, AGENTS.md
-
 //! Immutable audit trail for agent workflow executions.
 //!
 //! Provides append-only logging of every step an agent takes.
@@ -159,7 +151,7 @@ impl StorageEngine for InMemoryStorageEngine {
         let guard = self
             .data
             .lock()
-            .map_err(|_| memfuse_core::MemFuseError::Internal("Mutex poisoned".to_string()))?;
+            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
         Ok(guard.get(key).cloned())
     }
 
@@ -171,7 +163,7 @@ impl StorageEngine for InMemoryStorageEngine {
         let mut guard = self
             .data
             .lock()
-            .map_err(|_| memfuse_core::MemFuseError::Internal("Mutex poisoned".to_string()))?;
+            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
         guard.insert(key.to_vec(), value.to_vec());
         Ok(())
     }
@@ -180,7 +172,7 @@ impl StorageEngine for InMemoryStorageEngine {
         let mut guard = self
             .data
             .lock()
-            .map_err(|_| memfuse_core::MemFuseError::Internal("Mutex poisoned".to_string()))?;
+            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
         guard.remove(key);
         Ok(())
     }
@@ -229,7 +221,7 @@ impl StorageEngine for InMemoryStorageEngine {
         let guard = self
             .data
             .lock()
-            .map_err(|_| memfuse_core::MemFuseError::Internal("Mutex poisoned".to_string()))?;
+            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
         let entries = guard
             .iter()
             .filter(|(k, _)| k.starts_with(prefix))
@@ -246,7 +238,7 @@ impl StorageEngine for InMemoryStorageEngine {
         let guard = self
             .data
             .lock()
-            .map_err(|_| memfuse_core::MemFuseError::Internal("Mutex poisoned".to_string()))?;
+            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
         let mut entries: Vec<(Vec<u8>, Vec<u8>)> = guard
             .iter()
             .filter(|(k, _)| {

@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// ZWECK: Markdown-basierte semantische Textzerlegung (WP-7.1) und UTF-8-sicheres Chunken.
+// INVARIANTEN: Aufteilung respektiert Überschriften-Hierarchien; UTF-8-Grenzen bleiben gewahrt.
+// NICHT-OFFENSICHTLICH: Brotbrösel (Breadcrumbs) werden als Metadaten an Chunks angehängt.
+// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+
 //! Markdown Semantic Chunker (WP-7.1)
 //!
 //! Deterministically splits Markdown documents into ContextChunks based on
