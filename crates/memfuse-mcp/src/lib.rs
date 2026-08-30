@@ -28,6 +28,9 @@ pub const MAX_METADATA_KEYS: usize = 100;
 /// Maximum allowed chunks per insert payload.
 pub const MAX_INSERT_CHUNKS: usize = 1000;
 
+/// Maximum allowed search query size in bytes (64 KB).
+pub const MAX_SEARCH_QUERY_BYTES: usize = 64 * 1024;
+
 /// Reads a single line from an async reader into `buf` up to `max_bytes`.
 /// If the line exceeds `max_bytes`, consumes and discards the remainder of the line without allocating memory and returns `InvalidData`.
 pub async fn read_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(
