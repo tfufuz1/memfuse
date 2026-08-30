@@ -2168,4 +2168,35 @@ mod tests {
         let bb_huge = BlockBuilder::new(100 * 1024 * 1024);
         assert_eq!(bb_huge.block_size, 64 * 1024 * 1024);
     }
+
+    #[tokio::test]
+    async fn test_sstable_builder_rejects_empty_and_oversized_inputs() {
+        let tmp = TempDir::new().expect("temp dir"); // expect
+        let path = tmp.path().join("boundary_test.sst");
+
+        let mut builder = SstableBuilder::create(&path).await.expect("create"); // expect
+
+        // 1. Empty key reject
+        let err_empty = builder.add(b"", b"val", 1, 1).await;
+        assert!(matches!(err_empty, Err(MemFuseError::InvalidInput(_))));
+
+        // 2. Oversized key (>65535) reject
+        let oversized_key = vec![0xAA; 65536];
+        let err_key = builder.add(&oversized_key, b"val", 1, 1).await;
+        assert!(matches!(err_key, Err(MemFuseError::InvalidInput(_))));
+
+        // 3. Oversized value (>65535) reject
+        let oversized_val = vec![0xBB; 65536];
+        let err_val = builder.add(b"valid_key", &oversized_val, 1, 1).await;
+        assert!(matches!(err_val, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn test_block_builder_min_max_clamping() {
+        let bb_small = BlockBuilder::new(10);
+        assert_eq!(bb_small.block_size, 512);
+
+        let bb_huge = BlockBuilder::new(100 * 1024 * 1024);
+        assert_eq!(bb_huge.block_size, 64 * 1024 * 1024);
+    }
 }

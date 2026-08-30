@@ -98,6 +98,7 @@ fn validate_key(key: &[u8]) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn validate_value(value: &[u8]) -> Result<()> {
     if value.len() > MAX_VALUE_SIZE {
         return Err(MemFuseError::InvalidInput(format!(
@@ -463,7 +464,7 @@ impl LsmStorage {
             if !surviving_entries.is_empty() {
                 static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
                 let count = COUNTER.fetch_add(1, Ordering::Relaxed);
-                let seq = self.next_seq_no.load(Ordering::Relaxed);
+                let seq = self.next_seq_no.load(Ordering::Relaxed) & !TOMBSTONE_BIT;
                 let new_sst_path =
                     self.config
                         .path
@@ -493,13 +494,14 @@ impl LsmStorage {
             sst_to_remove.push(spanning.file_path().to_path_buf());
         }
 
-        sstables_lock.sort_by_key(|sst| sst.metadata().max_seq);
+        sstables_lock.sort_by_key(|sst| sst.metadata().max_seq & !TOMBSTONE_BIT);
 
         // 4. Update next_seq_no and last_committed_tx
         // Find max_seq from kept SSTables to avoid regressing next_seq_no
+        // TOMBSTONE_BIT-Disziplin (DECISIONS.md): Bit 63 darf niemals in next_seq_no einfließen.
         let mut max_seq = 0;
         for sst in sstables_lock.iter() {
-            max_seq = max_seq.max(sst.metadata().max_seq);
+            max_seq = max_seq.max(sst.metadata().max_seq & !TOMBSTONE_BIT);
         }
         drop(sstables_lock);
 
@@ -517,9 +519,10 @@ impl LsmStorage {
 
         // 5. Re-populate memtable from truncated WAL
         let entries = state.wal.replay().await?;
+        // TOMBSTONE_BIT-Disziplin (DECISIONS.md): Bit 63 darf niemals in next_seq_no einfließen.
         for (seq, entry, _offset) in entries {
-            if seq > max_seq {
-                max_seq = seq;
+            if (seq & !TOMBSTONE_BIT) > max_seq {
+                max_seq = seq & !TOMBSTONE_BIT;
             }
             match entry.op {
                 WalOp::Put { key, value, tx_id } => {
@@ -2304,5 +2307,145 @@ mod tests {
             storage.delete_many(tx, too_many_keys).await,
             Err(MemFuseError::InvalidInput(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn test_rollback_tombstone_in_wal() {
+        let (storage, _tmp) = test_storage().await;
+
+        // a. Inserts committen (tx1)
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key1", b"val1").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx1).await.unwrap(); // unwrap #[cfg(test)]
+
+        // b. Delete als LETZTE Operation in target_tx (tx2) in WAL
+        let tx2 = TxId::new(2);
+        storage.delete(tx2, b"key1").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx2).await.unwrap(); // unwrap #[cfg(test)]
+
+        // Post-target tx3 to be rolled back
+        let tx3 = TxId::new(3);
+        storage.put(tx3, b"key2", b"val2").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx3).await.unwrap(); // unwrap #[cfg(test)]
+
+        // c. rollback_to_tx(tx2)
+        storage.rollback_to_tx(tx2).await.unwrap(); // unwrap #[cfg(test)]
+
+        // d. NEUER Insert in tx4
+        let tx4 = TxId::new(4);
+        storage.put(tx4, b"new_key", b"new_val").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx4).await.unwrap(); // unwrap #[cfg(test)]
+
+        // e. Assert: new_key is readable, seq_no has TOMBSTONE_BIT NOT set
+        let val = storage.get(b"new_key").await.unwrap(); // unwrap #[cfg(test)]
+        assert_eq!(val, Some(b"new_val".to_vec()));
+
+        let last_seq = storage.last_seq_no().await.unwrap(); // unwrap #[cfg(test)]
+        assert_eq!(
+            last_seq & TOMBSTONE_BIT,
+            0,
+            "next_seq_no must NOT carry TOMBSTONE_BIT after rollback over WAL tombstone"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rollback_tombstone_in_sstable() {
+        let (storage, _tmp) = test_storage().await;
+
+        // a. Inserts committen (tx1)
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key1", b"val1").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx1).await.unwrap(); // unwrap #[cfg(test)]
+
+        // b. Delete als LETZTE Operation in target_tx (tx2)
+        let tx2 = TxId::new(2);
+        storage.delete(tx2, b"key1").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx2).await.unwrap(); // unwrap #[cfg(test)]
+
+        // Force flush so tombstone is written as max_seq in SSTable
+        storage.force_flush().await.unwrap(); // unwrap #[cfg(test)]
+
+        // Post-target tx3 to be rolled back
+        let tx3 = TxId::new(3);
+        storage.put(tx3, b"key2", b"val2").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx3).await.unwrap(); // unwrap #[cfg(test)]
+
+        // c. rollback_to_tx(tx2)
+        storage.rollback_to_tx(tx2).await.unwrap(); // unwrap #[cfg(test)]
+
+        // d. NEUER Insert in tx4
+        let tx4 = TxId::new(4);
+        storage.put(tx4, b"new_key", b"new_val").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx4).await.unwrap(); // unwrap #[cfg(test)]
+
+        // e. Assert: new_key is readable, seq_no has TOMBSTONE_BIT NOT set
+        let val = storage.get(b"new_key").await.unwrap(); // unwrap #[cfg(test)]
+        assert_eq!(val, Some(b"new_val".to_vec()));
+
+        let last_seq = storage.last_seq_no().await.unwrap(); // unwrap #[cfg(test)]
+        assert_eq!(
+            last_seq & TOMBSTONE_BIT,
+            0,
+            "next_seq_no must NOT carry TOMBSTONE_BIT after rollback over SSTable tombstone"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rollback_tombstone_multiple_ops_sequence() {
+        let (storage, _tmp) = test_storage().await;
+
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"k1", b"v1").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx1).await.unwrap(); // unwrap #[cfg(test)]
+
+        let tx2 = TxId::new(2);
+        storage.delete(tx2, b"k1").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx2).await.unwrap(); // unwrap #[cfg(test)]
+
+        let tx3 = TxId::new(3);
+        storage.put(tx3, b"k2", b"v2").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx3).await.unwrap(); // unwrap #[cfg(test)]
+
+        // Rollback to tx2 (which ends on tombstone)
+        storage.rollback_to_tx(tx2).await.unwrap(); // unwrap #[cfg(test)]
+
+        // Multiple alternating puts and deletes in sequence after rollback
+        let tx4 = TxId::new(4);
+        storage.put(tx4, b"a", b"val_a").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx4).await.unwrap(); // unwrap #[cfg(test)]
+
+        let tx5 = TxId::new(5);
+        storage.delete(tx5, b"a").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx5).await.unwrap(); // unwrap #[cfg(test)]
+
+        let tx6 = TxId::new(6);
+        storage.put(tx6, b"b", b"val_b").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx6).await.unwrap(); // unwrap #[cfg(test)]
+
+        let tx7 = TxId::new(7);
+        storage.put(tx7, b"c", b"val_c").await.unwrap(); // unwrap #[cfg(test)]
+        storage.commit(tx7).await.unwrap(); // unwrap #[cfg(test)]
+
+        // Assert: k1 is deleted, a is deleted, b and c are readable
+        assert_eq!(storage.get(b"k1").await.unwrap(), None); // unwrap #[cfg(test)]
+        assert_eq!(storage.get(b"a").await.unwrap(), None); // unwrap #[cfg(test)]
+        assert_eq!(
+            storage.get(b"b").await.unwrap(), // unwrap #[cfg(test)]
+            Some(b"val_b".to_vec())
+        );
+        assert_eq!(
+            storage.get(b"c").await.unwrap(), // unwrap #[cfg(test)]
+            Some(b"val_c".to_vec())
+        );
+
+        let val_b = storage.get_at_seq(b"b", 100).await.unwrap(); // unwrap #[cfg(test)]
+        assert_eq!(val_b, Some(b"val_b".to_vec()));
+
+        let last_seq = storage.last_seq_no().await.unwrap(); // unwrap #[cfg(test)]
+        assert_eq!(
+            last_seq & TOMBSTONE_BIT,
+            0,
+            "Sequence numbers must remain clean without bit leaks"
+        );
     }
 }

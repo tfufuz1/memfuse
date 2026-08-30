@@ -83,7 +83,7 @@ impl MemTable {
         }
     }
 
-    /// Deterministic shard selector based on a BLAKE3 hash of the entire key.
+    /// Deterministic shard selector based on AHash (`AHasher`) of the entire key.
     #[inline]
     fn shard_for(key: &[u8]) -> usize {
         // Hash the FULL key, not just the first byte. Namespaced keys share

@@ -99,6 +99,9 @@ impl<S: StorageEngine> Clone for InvertedIndex<S> {
 }
 
 impl<S: StorageEngine> InvertedIndex<S> {
+    /// Maximum allowed document text size in bytes (10 MB).
+    pub const MAX_TEXT_BYTES: usize = 10 * 1024 * 1024;
+
     /// Creates a new InvertedIndex with explicit language configuration.
     ///
     /// # Language Selection

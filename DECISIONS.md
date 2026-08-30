@@ -608,40 +608,16 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-041: Kognitive Gedächtnistypen-Klassifikation (MemoryType)
-
-*   **Datum**: 2026-08-29 (Implementierung) / 2026-08-30 (Dokumentation nachgetragen)
+## ADR-041: TOMBSTONE_BIT-Disziplin in rollback_to_tx
+*   **Datum**: 2026-08-29
 *   **Status**: ✅ Final
-*   **Kontext**: Die strategische Roadmap (Phase 2) forderte eine explizite Klassifikation gespeicherter Einträge nach kognitivem Gedächtnistyp (Vorbilder: MemOS/MemCube, Mem0, A-MEM): episodisch (Ereignisse), semantisch (Fakten), prozedural (Workflows) und operativ (Working Memory, Session-Kontext). Bisher wurden alle Dokumente uniform behandelt, ohne dass Retrieval-Strategie oder Lifecycle (Decay, TTL) von der Art des Inhalts abhingen.
-*   **Entscheidung**: Ein neuer `#[non_exhaustive]` Enum `MemoryType` in `memfuse-core` mit vier Varianten (Episodic, Semantic [Default], Procedural, Working). Jede Variante liefert über `default_decay()` eine passende `DecayFunction` (Episodic: Exponential mit 10.000 TX Halbwertszeit; Semantic: keine Decay; Procedural: StepFloor, verstärkt durch Nutzung; Working: sehr schnelle Exponential-Decay mit 500 TX Halbwertszeit) und über `default_ttl_tx()` eine optionale TTL (nur Working Memory: 50.000 TX). Der Typ wird additiv über `Collection::insert_typed()` gesetzt und als `"memory_type"`-Feld in den Dokument-Metadaten persistiert — bestehende Dokumente ohne dieses Feld werden rückwärtskompatibel als `Semantic` interpretiert (`extract_memory_type()`).
-*   **Alternativen**: Freitext-Tag statt Enum: verworfen, da keine Typsicherheit und keine automatische Decay-/TTL-Kopplung möglich gewesen wäre.
-*   **Begründung**: Ermöglicht typspezifische Abkling- (Decay) und Lebensdauer-Steuerung (TTL) sowie künftige differenzierte Retrieval-Gewichtungen ohne Breaking Changes für bestehende Schnittstellen.
-*   **Konsequenzen**:
-    - Additiv, keine Breaking Changes an bestehenden `insert()`-Aufrufern.
-    - `trigger_reaper()` nutzt die typspezifische Decay-Function für einen aktiven TxId-basierten Sweep (siehe zugehörige Reaper-Härtung).
-    - Zukünftige Retrieval-Strategien können nach `MemoryType` filtern oder gewichten (noch nicht implementiert, aber durch additive Enum-Erweiterung vorbereitet).
-
----
-
-## ADR-042: MCP Server Write Authorization & Read-Only Default Policy
-
-*   **Datum**: 2026-08-30
-*   **Status**: ✅ Final
-*   **Kontext**:
-    In `memfuse-mcp` existierte keine Autorisierungsprüfung vor der Ausführung von Tool-Calls auf Storage- und Collection-Ebene. Ein MCP-Client mit Lesezugriff auf den stdio-Server-Endpoint konnte schreibende Operationen (`insert`, `delete`, `relate`, etc.) ohne jegliche Freigabe ausführen.
-*   **Entscheidung**:
-    1. Der MCP-Server setzt standardmäßig auf einen sicheren Read-Only-Modus (`allow_db_writes = false`).
-    2. Alle schreibenden Tools (`memfuse_insert`, `memfuse_delete`, `memfuse_upsert`, `memfuse_relate`, `memfuse_create_collection`, `memfuse_drop_collection`) werden zentral an einer Stelle vor dem Dispatch über `McpSandbox::validate_tool_call` abgefangen. Bei deaktiviertem Schreibzugriff geben sie einen verständlichen MCP-Fehler zurück (kein panic, kein silent no-op).
-    3. Schreibrechte können explizit aktiviert werden via CLI-Flag `--allow-write` (bzw. erzwingbar aus via `--read-only`), via Umgebungsvariable `MEMFUSE_MCP_ALLOW_WRITE=1` (oder `true`), oder programmatisch über `McpServer::with_write_permission(db, embedder, allow_write)`.
-    4. Gemäß ADR-010 (stdio JSON-RPC 2.0) werden keine neuen Netzwerk- / axum-Dependencies hinzugefügt; Gate 4 in `context-gates.yml` bleibt unberührt.
+*   **Entscheidung**: In `LsmStorage::rollback_to_tx` wird das `TOMBSTONE_BIT` (Bit 63, `1 << 63`) vor jedem Vergleich und jeder Zuweisung an `max_seq` strikt maskiert (`& !TOMBSTONE_BIT`), um zu verhindern, dass Bit 63 in `next_seq_no` gerät.
 *   **Alternativen**:
-    - Netzwerk-basiertes Auth-Server / OAuth2-Token: Verworfen, da dies axum/Netzwerk-Listener erfordern und ADR-010 verletzen würde.
-    - Duplizierter Guard in jedem einzelnen Tool-Handler: Verworfen zugunsten eines zentralen, DRY Sandbox-Guards (`McpSandbox::validate_tool_call`).
-*   **Begründung**:
-    Beseitigt die offene Sicherheitslücke ohne Breaking Changes am stdio-Protokoll oder DAG-Constraint und wahrt das Least-Privilege-Prinzip by default.
+    - Maskierung direkt beim Schreiben der SSTable-Metadaten. Verworfen, da Metadaten unmaskiert eingehen und eine Änderung dort das SSTable-Format oder Leselogik an anderen Stellen beeinflussen könnte.
+*   **Begründung**: Wenn die höchste beobachtete Sequenznummer in einer SSTable oder einem WAL-Eintrag zu einem Delete-Tombstone gehört, ist Bit 63 in dieser `seq_no` gesetzt. Ohne Maskierung wanderte dieses Bit bisher in `max_seq` und anschließend in `next_seq_no`. Jede nachfolgende Schreiboperation erbte fälschlich Bit 63 und wurde vom System als gelöscht behandelt. Die strikte Maskierung wahrt die Invariante "Bit 63 darf niemals in next_seq_no einfließen" und schützt vor stillem Datenverlust.
 *   **Konsequenzen**:
-    - `McpServer::new` startet standardmäßig im Read-Only-Modus (sofern `MEMFUSE_MCP_ALLOW_WRITE` nicht gesetzt ist).
-    - Test-Fixtures für schreibende Tests nutzen `McpServer::with_write_permission(..., true)`.
+    - `rollback_to_tx` maskiert `sst.metadata().max_seq & !TOMBSTONE_BIT` und `(seq & !TOMBSTONE_BIT)` aus WAL-Einträgen.
+    - Neue Regressionstests in `lsm.rs` sichern das Verhalten ab.
 
 ---
 
