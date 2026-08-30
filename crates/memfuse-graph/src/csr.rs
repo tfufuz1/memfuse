@@ -4,15 +4,14 @@
 //! Datenstruktur für cache-effizienten Graph-Traversal.
 
 // FILE-CONTEXT
-// STAND: 2026-08-29T05:41:20Z (SESSION: f7999509)
-// ZWECK: CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion)
+// STAND:       2026-08-30T14:35:05Z (SESSION: ab88edae)
+// ZWECK:       CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion)
 // INVARIANTEN: Graph-Zustand wird in LSM-Store persistiert unter Präfixen
 //              `__graph:entity:` und `__graph:edge:`. Änderungen müssen
 //              BEIDE Strukturen konsistent halten (In-Memory CSR + LSM).
-// NICHT-OFFENSICHTLICH: KEINE petgraph-Abhängigkeit (Pure-Rust CSR, ADR-004).
-//                       `relate()` MUSS sowohl LSM-Write als auch graph_index.add_edge()
-//                       aufrufen — nur eines zu tun bricht Graph-Traversal (crates/memfuse-db/AGENTS.md).
-// SIEHE AUCH: DECISIONS.md ADR-004, crates/memfuse-db/AGENTS.md §relate()
+// HOTSPOTS:    bfs_traverse(), compact(), GraphInner, GraphIndex impl
+// AGENT-NOTIZ: Extrahierte BFS-Traversal & Storage-Key Helper zur Eliminierung von Duplikation
+// SIEHE AUCH:  DECISIONS.md ADR-004, crates/memfuse-db/AGENTS.md §relate()
 
 use async_trait::async_trait;
 use memfuse_core::{
@@ -76,6 +75,43 @@ const WALLCLOCK_TX_HEURISTIC_MIN: u64 = 1_400_000_000_000_000_000;
 fn is_suspicious_tx_id(tx: TxId) -> bool {
     let v = tx.inner();
     (WALLCLOCK_TX_HEURISTIC_MIN..TxId::INTERNAL_BASE).contains(&v)
+}
+
+/// Prüft TxId-Origin-Invariante (AGT-GRAPH-001) und loggt Warnung bei verdächtigen TxIds.
+#[inline]
+fn check_tx_id_origin(tx: TxId, op_name: &str) {
+    debug_assert!(
+        tx.is_valid_origin(),
+        "TxId {tx} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung"
+    );
+    if is_suspicious_tx_id(tx) {
+        tracing::warn!(
+            tx_id = tx.inner(),
+            op = op_name,
+            hint = "Wall-Clock-ns-Bereich",
+            "AGT-GRAPH-001: Verdächtiger TxId in {op_name} (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
+             möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
+             Rollback-Korrelation kann verletzt sein."
+        );
+    }
+}
+
+/// Helper für LSM-Storage-Key einer Entity.
+#[inline]
+fn entity_storage_key(id: &EntityId) -> Vec<u8> {
+    [GRAPH_ENTITY_PREFIX, id.as_bytes().as_slice()].concat()
+}
+
+/// Helper für LSM-Storage-Key einer Edge.
+#[inline]
+fn edge_storage_key(from: &EntityId, to: &EntityId) -> Vec<u8> {
+    [
+        GRAPH_EDGE_PREFIX,
+        from.as_bytes().as_slice(),
+        b":",
+        to.as_bytes().as_slice(),
+    ]
+    .concat()
 }
 
 /// Prüft ob eine Kante zum Zeitpunkt `as_of` sichtbar ist (bi-temporale Filterung).
@@ -368,6 +404,113 @@ impl CsrGraph {
         Ok(())
     }
 
+    /// Internal BFS graph traversal implementation with optional temporal filtering.
+    fn bfs_traverse(
+        &self,
+        start: EntityId,
+        max_hops: usize,
+        as_of: Option<TxId>,
+    ) -> Result<Vec<(EntityId, f32)>> {
+        let inner = self.inner.read();
+        let start_idx = match inner.id_map.get(&start) {
+            Some(&idx) => idx,
+            None => return Ok(Vec::new()),
+        };
+
+        if !inner.entities.get(start_idx).is_some_and(Option::is_some) {
+            return Ok(Vec::new());
+        }
+
+        let effective_max = (max_hops as u8).min(MAX_TRAVERSAL_HOPS);
+
+        let mut visited: HashMap<InternalIndex, f32> = HashMap::new();
+        let mut queue: VecDeque<(InternalIndex, u8, f32)> = VecDeque::new();
+
+        queue.push_back((start_idx, 0, 1.0));
+
+        while let Some((node_idx, hop, current_score)) = queue.pop_front() {
+            if hop > effective_max {
+                continue;
+            }
+
+            let existing = visited.entry(node_idx).or_insert(0.0);
+            if current_score > *existing {
+                *existing = current_score;
+            }
+
+            if hop < effective_max {
+                // 1. CSR traversal (compacted edges)
+                if node_idx < inner.offsets.len() - 1 {
+                    let start_edge = inner.offsets[node_idx];
+                    let end_edge = inner.offsets[node_idx + 1];
+
+                    for edge_idx in start_edge..end_edge {
+                        let neighbor_idx = inner.targets[edge_idx];
+                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
+                            continue;
+                        }
+                        if let Some(time) = as_of {
+                            let valid_from = inner.valid_froms.get(edge_idx).copied().flatten();
+                            let valid_to = inner.valid_tos.get(edge_idx).copied().flatten();
+                            if !is_edge_visible(valid_from, valid_to, time) {
+                                continue;
+                            }
+                        }
+                        let weight = inner.weights[edge_idx];
+                        let next_score = current_score * SCORE_DECAY * weight;
+
+                        if (!visited.contains_key(&neighbor_idx)
+                            || visited[&neighbor_idx] < next_score)
+                            && inner
+                                .entities
+                                .get(neighbor_idx)
+                                .is_some_and(Option::is_some)
+                        {
+                            queue.push_back((neighbor_idx, hop + 1, next_score));
+                        }
+                    }
+                }
+
+                // 2. Delta buffer traversal (uncompacted committed edges)
+                if let Some(pending) = inner.pending_edges.get(&node_idx) {
+                    for edge in pending {
+                        let neighbor_idx = edge.target;
+                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
+                            continue;
+                        }
+                        if let Some(time) = as_of {
+                            if !is_edge_visible(edge.valid_from, edge.valid_to, time) {
+                                continue;
+                            }
+                        }
+                        let next_score = current_score * SCORE_DECAY * edge.weight;
+
+                        if (!visited.contains_key(&neighbor_idx)
+                            || visited[&neighbor_idx] < next_score)
+                            && inner
+                                .entities
+                                .get(neighbor_idx)
+                                .is_some_and(Option::is_some)
+                        {
+                            queue.push_back((neighbor_idx, hop + 1, next_score));
+                        }
+                    }
+                }
+            }
+        }
+
+        visited.remove(&start_idx);
+
+        let mut results: Vec<(EntityId, f32)> = visited
+            .into_iter()
+            .filter_map(|(idx, score)| inner.reverse_map.get(idx).map(|&id| (id, score)))
+            .collect();
+
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        Ok(results)
+    }
+
     /// Fügt eine Entity direkt ein (für load_from_storage).
     fn load_entity_direct(&self, entity: Entity) -> Result<()> {
         let mut inner = self.inner.write();
@@ -414,7 +557,7 @@ impl CsrGraph {
         tx: TxId,
         entity: &Entity,
     ) -> Result<()> {
-        let key = [GRAPH_ENTITY_PREFIX, entity.id.as_bytes().as_slice()].concat();
+        let key = entity_storage_key(&entity.id);
         let value = bincode::serialize(entity)
             .map_err(|e| MemFuseError::Internal(format!("graph entity serialize: {e}")))?;
         storage.put(tx, &key, &value).await
@@ -429,13 +572,7 @@ impl CsrGraph {
         to: &EntityId,
         payload: &PersistedEdgePayload,
     ) -> Result<()> {
-        let key = [
-            GRAPH_EDGE_PREFIX,
-            from.as_bytes().as_slice(),
-            b":",
-            to.as_bytes().as_slice(),
-        ]
-        .concat();
+        let key = edge_storage_key(from, to);
         let value = bincode::serialize(payload)
             .map_err(|e| MemFuseError::Internal(format!("graph edge serialize: {e}")))?;
         storage.put(tx, &key, &value).await
@@ -449,13 +586,7 @@ impl CsrGraph {
         from: &EntityId,
         to: &EntityId,
     ) -> Result<()> {
-        let key = [
-            GRAPH_EDGE_PREFIX,
-            from.as_bytes().as_slice(),
-            b":",
-            to.as_bytes().as_slice(),
-        ]
-        .concat();
+        let key = edge_storage_key(from, to);
         storage.delete(tx, &key).await
     }
 
@@ -579,7 +710,7 @@ impl CsrGraph {
             None => return Ok(Vec::new()),
         };
 
-        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
+        if !inner.entities.get(start_idx).is_some_and(Option::is_some) {
             return Ok(Vec::new());
         }
 
@@ -595,7 +726,7 @@ impl CsrGraph {
                     && inner
                         .entities
                         .get(neighbor_idx)
-                        .is_some_and(|e| e.is_some())
+                        .is_some_and(Option::is_some)
                 {
                     if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
                         if !neighbors.contains(&id) {
@@ -614,7 +745,7 @@ impl CsrGraph {
                     && inner
                         .entities
                         .get(neighbor_idx)
-                        .is_some_and(|e| e.is_some())
+                        .is_some_and(Option::is_some)
                 {
                     if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
                         if !neighbors.contains(&id) {
@@ -696,7 +827,7 @@ impl CsrGraph {
 
         let mut result = HashMap::new();
         for (idx, &rank) in ranks.iter().enumerate() {
-            if inner.entities.get(idx).is_some_and(|e| e.is_some()) {
+            if inner.entities.get(idx).is_some_and(Option::is_some) {
                 if let Some(&id) = inner.reverse_map.get(idx) {
                     result.insert(id, rank);
                 }
@@ -714,7 +845,7 @@ impl CsrGraph {
     pub fn entity_exists(&self, id: EntityId) -> bool {
         let inner = self.inner.read();
         if let Some(&idx) = inner.id_map.get(&id) {
-            inner.entities.get(idx).is_some_and(|e| e.is_some())
+            inner.entities.get(idx).is_some_and(Option::is_some)
         } else {
             false
         }
@@ -742,21 +873,7 @@ impl Default for CsrGraph {
 #[async_trait]
 impl GraphIndex for CsrGraph {
     async fn add_entity(&self, tx: TxId, entity: Entity) -> Result<()> {
-        debug_assert!(
-            tx.is_valid_origin(),
-            "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
-            tx
-        );
-        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
-        if is_suspicious_tx_id(tx) {
-            tracing::warn!(
-                tx_id = tx.inner(),
-                hint = "Wall-Clock-ns-Bereich",
-                "AGT-GRAPH-001: Verdächtiger TxId in add_entity (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
-                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
-                 Rollback-Korrelation kann verletzt sein."
-            );
-        }
+        check_tx_id_origin(tx, "add_entity");
         let mut inner = self.inner.write();
         inner
             .staged_entities
@@ -767,21 +884,7 @@ impl GraphIndex for CsrGraph {
     }
 
     async fn add_edge(&self, tx: TxId, edge: Edge) -> Result<()> {
-        debug_assert!(
-            tx.is_valid_origin(),
-            "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
-            tx
-        );
-        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
-        if is_suspicious_tx_id(tx) {
-            tracing::warn!(
-                tx_id = tx.inner(),
-                hint = "Wall-Clock-ns-Bereich",
-                "AGT-GRAPH-001: Verdächtiger TxId in add_edge (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
-                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
-                 Rollback-Korrelation kann verletzt sein."
-            );
-        }
+        check_tx_id_origin(tx, "add_edge");
         let mut inner = self.inner.write();
         let from_idx = inner.get_or_create_index(edge.from);
         let to_idx = inner.get_or_create_index(edge.to);
@@ -829,217 +932,15 @@ impl GraphIndex for CsrGraph {
         max_hops: usize,
         as_of: TxId,
     ) -> Result<Vec<(EntityId, f32)>> {
-        let inner = self.inner.read();
-        let start_idx = match inner.id_map.get(&start) {
-            Some(&idx) => idx,
-            None => return Ok(Vec::new()),
-        };
-
-        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
-            return Ok(Vec::new());
-        }
-
-        let effective_max = (max_hops as u8).min(MAX_TRAVERSAL_HOPS);
-
-        let mut visited: HashMap<InternalIndex, f32> = HashMap::new();
-        let mut queue: VecDeque<(InternalIndex, u8, f32)> = VecDeque::new();
-
-        queue.push_back((start_idx, 0, 1.0));
-
-        while let Some((node_idx, hop, current_score)) = queue.pop_front() {
-            if hop > effective_max {
-                continue;
-            }
-
-            let existing = visited.entry(node_idx).or_insert(0.0);
-            if current_score > *existing {
-                *existing = current_score;
-            }
-
-            if hop < effective_max {
-                // 1. CSR traversal (compacted edges)
-                if node_idx < inner.offsets.len() - 1 {
-                    let start_edge = inner.offsets[node_idx];
-                    let end_edge = inner.offsets[node_idx + 1];
-
-                    for edge_idx in start_edge..end_edge {
-                        let neighbor_idx = inner.targets[edge_idx];
-                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
-                            continue;
-                        }
-                        let valid_from = inner.valid_froms.get(edge_idx).copied().flatten();
-                        let valid_to = inner.valid_tos.get(edge_idx).copied().flatten();
-                        if !is_edge_visible(valid_from, valid_to, as_of) {
-                            continue;
-                        }
-                        let weight = inner.weights[edge_idx];
-                        let next_score = current_score * SCORE_DECAY * weight;
-
-                        if (!visited.contains_key(&neighbor_idx)
-                            || visited[&neighbor_idx] < next_score)
-                            && inner
-                                .entities
-                                .get(neighbor_idx)
-                                .is_some_and(|e| e.is_some())
-                        {
-                            queue.push_back((neighbor_idx, hop + 1, next_score));
-                        }
-                    }
-                }
-
-                // 2. Delta buffer traversal (uncompacted committed edges)
-                if let Some(pending) = inner.pending_edges.get(&node_idx) {
-                    for edge in pending {
-                        let neighbor_idx = edge.target;
-                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
-                            continue;
-                        }
-                        if !is_edge_visible(edge.valid_from, edge.valid_to, as_of) {
-                            continue;
-                        }
-                        let next_score = current_score * SCORE_DECAY * edge.weight;
-
-                        if (!visited.contains_key(&neighbor_idx)
-                            || visited[&neighbor_idx] < next_score)
-                            && inner
-                                .entities
-                                .get(neighbor_idx)
-                                .is_some_and(|e| e.is_some())
-                        {
-                            queue.push_back((neighbor_idx, hop + 1, next_score));
-                        }
-                    }
-                }
-            }
-        }
-
-        visited.remove(&start_idx);
-
-        let mut results: Vec<(EntityId, f32)> = visited
-            .into_iter()
-            .filter_map(|(idx, score)| inner.reverse_map.get(idx).map(|&id| (id, score)))
-            .collect();
-
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        Ok(results)
+        self.bfs_traverse(start, max_hops, Some(as_of))
     }
 
     async fn traverse(&self, start: EntityId, max_hops: usize) -> Result<Vec<(EntityId, f32)>> {
-        // Merge-read: read directly from both compacted CSR arrays AND uncompacted pending_edges delta buffer.
-        // No full compact() call is required before traversal.
-        let inner = self.inner.read();
-        let start_idx = match inner.id_map.get(&start) {
-            Some(&idx) => idx,
-            None => return Ok(Vec::new()), // Start node not in graph
-        };
-
-        // If the start node itself is not committed, we shouldn't start traversal from it
-        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
-            return Ok(Vec::new());
-        }
-
-        let effective_max = (max_hops as u8).min(MAX_TRAVERSAL_HOPS);
-
-        // BFS with score decay
-        let mut visited: HashMap<InternalIndex, f32> = HashMap::new();
-        let mut queue: VecDeque<(InternalIndex, u8, f32)> = VecDeque::new();
-
-        queue.push_back((start_idx, 0, 1.0));
-
-        while let Some((node_idx, hop, current_score)) = queue.pop_front() {
-            if hop > effective_max {
-                continue;
-            }
-
-            // Only keep the best score per node
-            let existing = visited.entry(node_idx).or_insert(0.0);
-            if current_score > *existing {
-                *existing = current_score;
-            }
-
-            if hop < effective_max {
-                // 1. CSR traversal (compacted edges)
-                if node_idx < inner.offsets.len() - 1 {
-                    let start_edge = inner.offsets[node_idx];
-                    let end_edge = inner.offsets[node_idx + 1];
-
-                    for edge_idx in start_edge..end_edge {
-                        let neighbor_idx = inner.targets[edge_idx];
-                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
-                            continue;
-                        }
-                        let weight = inner.weights[edge_idx];
-                        let next_score = current_score * SCORE_DECAY * weight;
-
-                        if !visited.contains_key(&neighbor_idx)
-                            || visited[&neighbor_idx] < next_score
-                        {
-                            // Only visit nodes that have a committed entity (FIND-GRA-001)
-                            if inner
-                                .entities
-                                .get(neighbor_idx)
-                                .is_some_and(|e| e.is_some())
-                            {
-                                queue.push_back((neighbor_idx, hop + 1, next_score));
-                            }
-                        }
-                    }
-                }
-
-                // 2. Delta buffer traversal (uncompacted committed edges)
-                if let Some(pending) = inner.pending_edges.get(&node_idx) {
-                    for edge in pending {
-                        let neighbor_idx = edge.target;
-                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
-                            continue;
-                        }
-                        let next_score = current_score * SCORE_DECAY * edge.weight;
-
-                        if (!visited.contains_key(&neighbor_idx)
-                            || visited[&neighbor_idx] < next_score)
-                            && inner
-                                .entities
-                                .get(neighbor_idx)
-                                .is_some_and(|e| e.is_some())
-                        {
-                            queue.push_back((neighbor_idx, hop + 1, next_score));
-                        }
-                    }
-                }
-            }
-        }
-
-        // Remove the start node from results
-        visited.remove(&start_idx);
-
-        let mut results: Vec<(EntityId, f32)> = visited
-            .into_iter()
-            .filter_map(|(idx, score)| inner.reverse_map.get(idx).map(|&id| (id, score)))
-            .collect();
-
-        // Sort by score descending
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        Ok(results)
+        self.bfs_traverse(start, max_hops, None)
     }
 
     async fn commit(&self, tx: TxId) -> Result<()> {
-        debug_assert!(
-            tx.is_valid_origin(),
-            "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
-            tx
-        );
-        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
-        if is_suspicious_tx_id(tx) {
-            tracing::warn!(
-                tx_id = tx.inner(),
-                hint = "Wall-Clock-ns-Bereich",
-                "AGT-GRAPH-001: Verdächtiger TxId in commit (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
-                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
-                 Rollback-Korrelation kann verletzt sein."
-            );
-        }
+        check_tx_id_origin(tx, "commit");
         let (entities_to_commit, edges_to_commit, removals_to_commit) = {
             let inner = self.inner.read();
             let entities = inner.staged_entities.get(&tx).cloned();
@@ -1148,14 +1049,7 @@ impl GraphIndex for CsrGraph {
     }
 
     async fn remove_edge(&self, tx: TxId, from: EntityId, to: EntityId) -> Result<()> {
-        if is_suspicious_tx_id(tx) {
-            tracing::warn!(
-                tx_id = tx.inner(),
-                hint = "Wall-Clock-ns-Bereich",
-                "AGT-GRAPH-001: Verdächtiger TxId in remove_edge (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
-                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet."
-            );
-        }
+        check_tx_id_origin(tx, "remove_edge");
         let mut inner = self.inner.write();
         let from_idx = inner.id_map.get(&from).copied();
         let to_idx = inner.id_map.get(&to).copied();
@@ -1245,7 +1139,7 @@ mod tests {
             graph
                 .add_entity(
                     tx,
-                    Entity::new(EntityId::new(id), format!("P{}", id), "Person"),
+                    Entity::new(EntityId::new(id), format!("P{id}"), "Person"),
                 )
                 .await
                 .expect("valid setup"); // expect
@@ -2326,7 +2220,7 @@ mod tests {
                         let num_nodes = inner.reverse_map.len();
                         for i in 0..num_nodes {
                             if let Some(&id) = inner.reverse_map.get(i) {
-                                if inner.entities.get(i).is_some_and(|e| e.is_some()) {
+                                if inner.entities.get(i).is_some_and(Option::is_some) {
                                     entities.insert(id.inner());
                                 }
                             }
@@ -2336,7 +2230,7 @@ mod tests {
                             for j in old_start..old_end {
                                 let target_idx = inner.targets[j];
                                 let vf = inner.valid_froms.get(j).copied().flatten().unwrap_or(TxId::new(0)).inner();
-                                let vt = inner.valid_tos.get(j).copied().flatten().map(|t| t.inner());
+                                let vt = inner.valid_tos.get(j).copied().flatten().map(TxId::inner);
 
                                 if vf <= target_seq && vt.is_none_or(|t| target_seq < t) {
                                     if let (Some(&f), Some(&t)) = (inner.reverse_map.get(i), inner.reverse_map.get(target_idx)) {
@@ -2350,7 +2244,7 @@ mod tests {
                             if let Some(pending) = inner.pending_edges.get(&i) {
                                 for edge in pending {
                                     let vf = edge.valid_from.unwrap_or(TxId::new(0)).inner();
-                                    let vt = edge.valid_to.map(|t| t.inner());
+                                    let vt = edge.valid_to.map(TxId::inner);
                                     if vf <= target_seq && vt.is_none_or(|t| target_seq < t) {
                                         if let (Some(&f), Some(&t)) = (inner.reverse_map.get(i), inner.reverse_map.get(edge.target)) {
                                             if !inner.tombstoned_edges.contains(&(i, edge.target)) {

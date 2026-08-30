@@ -1614,7 +1614,9 @@ mod tests {
 
         let tx = TxId::new(1);
         let doc_id = DocId::new(10);
-        morph_index.insert(tx, doc_id, "test morphological index").await?;
+        morph_index
+            .insert(tx, doc_id, "test morphological index")
+            .await?;
         morph_index.commit(tx).await?;
 
         assert_eq!(morph_index.len().await, 1);
@@ -1652,7 +1654,9 @@ mod tests {
 
         let doc_id2 = DocId::new(6);
         // Insert unicode text
-        index.insert(tx, doc_id2, "Ärger über Ölpreise in Düsseldorf").await?;
+        index
+            .insert(tx, doc_id2, "Ärger über Ölpreise in Düsseldorf")
+            .await?;
         index.commit(tx).await?;
         assert_eq!(index.len().await, 2);
 

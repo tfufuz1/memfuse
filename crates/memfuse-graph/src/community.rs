@@ -3,6 +3,14 @@
 //! Provides deterministic, offline graph clustering to assign entities to
 //! semantic communities for GraphRAG retrieval.
 
+// FILE-CONTEXT
+// STAND:       2026-08-30T14:35:05Z (SESSION: ab88edae)
+// ZWECK:       Label Propagation Community Detection für GraphRAG
+// INVARIANTEN: Determinismus via PRNG-Seed; Vor-Kompaktierung des CsrGraph
+// HOTSPOTS:    detect_communities(), Label Propagation Iteration
+// AGENT-NOTIZ: clippy hygiene & unreadable literal format
+// SIEHE AUCH:  ADR-031
+
 use crate::CsrGraph;
 use memfuse_core::{EntityId, Result};
 use serde::{Deserialize, Serialize};
@@ -104,7 +112,7 @@ pub async fn detect_communities(
 
         let mut valid_nodes = Vec::new();
         for idx in 0..num_nodes {
-            if inner.entities.get(idx).is_some_and(|e| e.is_some()) {
+            if inner.entities.get(idx).is_some_and(Option::is_some) {
                 valid_nodes.push(idx);
             }
         }
@@ -122,7 +130,7 @@ pub async fn detect_communities(
                 for edge_idx in start..end {
                     let v = inner.targets[edge_idx];
                     if !inner.tombstoned_edges.contains(&(u, v))
-                        && inner.entities.get(v).is_some_and(|e| e.is_some())
+                        && inner.entities.get(v).is_some_and(Option::is_some)
                     {
                         let w = inner.weights[edge_idx];
                         adj.entry(u).or_default().push((v, w));
@@ -415,7 +423,7 @@ mod tests {
                 let config = CommunityDetectionConfig { max_iterations, seed };
                 let result = detect_communities(&graph, &config).await;
 
-                proptest::prop_assert!(result.is_ok() || matches!(result, Err(_)));
+                proptest::prop_assert!(result.is_ok() || result.is_err());
                 if let Ok(assignments) = result {
                     proptest::prop_assert_eq!(assignments.len(), node_count);
                 }
@@ -563,7 +571,7 @@ mod tests {
     fn serialization_roundtrip_CASE_community_config_and_assignment() {
         let config = CommunityDetectionConfig {
             max_iterations: 150,
-            seed: 987654321,
+            seed: 987_654_321,
         };
 
         let serialized_config = bincode::serialize(&config).unwrap(); // unwrap allowed
