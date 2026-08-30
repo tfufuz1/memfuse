@@ -1497,7 +1497,10 @@ mod tests {
         let a = vec![1.0f32, f32::NAN, 3.0];
         let b = vec![1.0f32, 2.0, 3.0];
         let res = compute_distance(&a, &b, DistanceMetric::Cosine);
-        assert!(res.is_ok(), "compute_distance should not fail with InvalidInput when NaN is passed directly");
+        assert!(
+            res.is_ok(),
+            "compute_distance should not fail with InvalidInput when NaN is passed directly"
+        );
     }
 
     #[test]
