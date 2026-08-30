@@ -105,7 +105,7 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
     Ok(dist)
 }
 
-// AI-TAG[SECURITY][CRITICAL] RESOLVED: AGT-INDEX-005 — Dimension check in cosine_distance, euclidean_distance, dot_product_distance returns MemFuseError::EmbeddingDimensionMismatch (ADR-034). Testbeweis: test_cosine_distance_mismatch_returns_error etc. (TS:2026-08-31T00:00:00Z)
+// AI-TAG[SECURITY][CRITICAL] RESOLVED: AGT-INDEX-005 — Dimension check in cosine_distance, euclidean_distance, dot_product_distance returns MemFuseError::EmbeddingDimensionMismatch (ADR-034). Testbeweis: test_cosine_distance_mismatch_returns_error etc. (TS:2026-08-31T00:00:00Z) (SESSION: a3f29c1d)
 // DECISION-REF: ADR-034 — Option 1: Return Result<f32, MemFuseError> to prevent panics and SIMD buffer overreads.
 
 /// Computes cosine distance (1 - similarity).
