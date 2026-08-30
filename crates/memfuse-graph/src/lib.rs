@@ -9,6 +9,17 @@
 //!
 //! Peer to `memfuse-store` and `memfuse-index`. Provides the `GraphIndex`
 //! trait implementation via [`CsrGraph`] and conversation branching via [`SessionBranchTree`].
+//!
+//! # Concurrency and Lock Discipline
+//!
+//! - Lock Hierarchy in [`CsrGraph`]: Locks are managed internally via `parking_lot::RwLock`.
+//!   `inner` holds graph topology (offsets, targets, weights, maps, pending edges). Lock scopes
+//!   are minimal and strictly contained within single methods without holding locks across
+//!   `.await` points.
+//! - Lock Hierarchy in [`SessionBranchTree`]: Synchronizes `nodes`, `edges`, and `active_head`
+//!   independently using `parking_lot::RwLock`. When acquiring multiple locks concurrently,
+//!   `nodes` MUST be acquired before `edges` or `active_head` to prevent deadlocks. No locks are
+//!   held across `.await` storage calls.
 
 // INVARIANT: CSR-Graph für 4-Signal Fusion (WP-6.1)
 

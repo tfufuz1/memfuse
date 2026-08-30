@@ -1,3 +1,10 @@
+// FILE-CONTEXT: Tokenisierung & Stopword-Filterung.
+// ZWECK: Zerschneidet Eingabetexte in normalisierte Wort-Tokens mit optionaler deutscher Morphologie.
+// INVARIANTEN: Tokenisierung muss deterministisch zwischen Indexierung und Query-Pfad identisch sein.
+// NICHT-OFFENSICHTLICH: Stoppwörter werden per OnceLock geladen; DefaultTokenizer filtert Alphatoken + Stoppwörter.
+// HOTSPOTS: tokenize, DefaultTokenizer::tokenize, GermanMorphTokenizer::tokenize
+// STAND: TS:2026-08-30T18:51:48Z (SESSION: 872b1087)
+
 //! Tokenizer using `unicode-segmentation`.
 
 use std::collections::HashSet;

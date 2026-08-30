@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:54:39Z (SESSION: ed7b7b38)
+// ZWECK: HTTP-Client für lokale Ollama LLM/Embedding API mit Retry/Timeout/Streaming-Semantik
+// INVARIANTEN: Explicite Timeouts für jeden HTTP-Request; Retry nur bei transienten Net-Errors/5xx; Thread-safe Client via reqwest Arc-Pool
+// NICHT-OFFENSICHTLICH: Client-Fehler 4xx (400, 404) niemals retrien; Automatischer Fallback auf sequentielles Embedding falls /api/embed fehlt
+// HOTSPOTS: embed, try_embed_batch, generate_text, chat_with_rag_streaming
+
 use futures_util::StreamExt;
 use memfuse_core::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
@@ -9,6 +16,10 @@ pub const DEFAULT_BASE_URL: &str = "http://localhost:11434";
 pub const DEFAULT_EMBED_MODEL: &str = "nomic-embed-text";
 /// Default maximum retry attempts for transient errors
 pub const MAX_RETRIES: u32 = 3;
+/// Maximum allowed batch size for batch operations to prevent memory exhaustion
+pub const MAX_BATCH_SIZE: usize = 10_000;
+/// Maximum allowed text length in bytes (10 MB) to prevent OOM or DoS
+pub const MAX_TEXT_BYTES: usize = 10_000_000;
 
 /// Configuration options for the Ollama HTTP client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,6 +162,27 @@ pub fn sanitize_prompt_input(text: &str) -> String {
     sanitized
 }
 
+/// Validates that input text length does not exceed `MAX_TEXT_BYTES`.
+pub fn validate_text_length(text: &str, field_name: &str) -> Result<()> {
+    if text.len() > MAX_TEXT_BYTES {
+        return Err(MemFuseError::InvalidInput(format!(
+            "Input field '{field_name}' size ({} bytes) exceeds maximum allowed limit of {MAX_TEXT_BYTES} bytes",
+            text.len()
+        )));
+    }
+    Ok(())
+}
+
+/// Validates that batch size does not exceed `MAX_BATCH_SIZE`.
+pub fn validate_batch_size(count: usize) -> Result<()> {
+    if count > MAX_BATCH_SIZE {
+        return Err(MemFuseError::InvalidInput(format!(
+            "Batch size ({count}) exceeds maximum allowed limit of {MAX_BATCH_SIZE}"
+        )));
+    }
+    Ok(())
+}
+
 /// Validates that model name does not contain invalid path traversal or whitespace control characters.
 pub fn validate_model_name(name: &str) -> Result<()> {
     if name.is_empty() {
@@ -276,8 +308,12 @@ impl OllamaClient {
     /// Batch-Endpunkt nicht verfügbar ist (404 oder Connection Error).
     pub async fn embed_batch(&self, model: &str, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
         validate_model_name(model)?;
+        validate_batch_size(texts.len())?;
         if texts.is_empty() {
             return Ok(Vec::new());
+        }
+        for (i, t) in texts.iter().enumerate() {
+            validate_text_length(t, &format!("texts[{i}]"))?;
         }
 
         // Versuche Batch-Endpunkt zuerst
@@ -311,6 +347,10 @@ impl OllamaClient {
 
     pub async fn try_embed_batch(&self, model: &str, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
         validate_model_name(model)?;
+        validate_batch_size(texts.len())?;
+        for (i, t) in texts.iter().enumerate() {
+            validate_text_length(t, &format!("texts[{i}]"))?;
+        }
         let sanitized_texts: Vec<String> = texts.iter().map(|t| sanitize_prompt_input(t)).collect();
         let sanitized_refs: Vec<&str> = sanitized_texts.iter().map(|s| s.as_str()).collect();
 
@@ -455,6 +495,7 @@ impl OllamaClient {
     /// - `MemFuseError::InvalidInput` für leere/invalide Inputs
     pub async fn generate_text(&self, model: &str, prompt: &str) -> Result<String> {
         validate_model_name(model)?;
+        validate_text_length(prompt, "prompt")?;
         let mut last_err = None;
         let max_retries = self.config.max_retries;
 
@@ -491,6 +532,7 @@ impl OllamaClient {
     /// Single generate_text attempt via POST /api/chat.
     pub async fn try_generate_text(&self, model: &str, prompt: &str) -> Result<String> {
         validate_model_name(model)?;
+        validate_text_length(prompt, "prompt")?;
         let sanitized = sanitize_prompt_input(prompt);
         if sanitized.trim().is_empty() {
             return Err(MemFuseError::InvalidInput(
@@ -565,6 +607,7 @@ impl OllamaClient {
     /// Generates non-streaming text completion via POST /api/generate.
     pub async fn generate(&self, model: &str, prompt: &str) -> Result<String> {
         validate_model_name(model)?;
+        validate_text_length(prompt, "prompt")?;
         let mut last_err = None;
         let max_retries = self.config.max_retries;
 
@@ -601,6 +644,7 @@ impl OllamaClient {
     /// Single generate attempt via POST /api/generate (no retry).
     pub async fn try_generate(&self, model: &str, prompt: &str) -> Result<String> {
         validate_model_name(model)?;
+        validate_text_length(prompt, "prompt")?;
         let sanitized_prompt = sanitize_prompt_input(prompt);
         let url = format!("{}/api/generate", self.base_url());
         let request = GenerateRequest {
@@ -691,6 +735,7 @@ impl OllamaClient {
     /// Client errors (4xx) are returned immediately without retry.
     pub async fn embed(&self, model: &str, text: &str) -> Result<Vec<f32>> {
         validate_model_name(model)?;
+        validate_text_length(text, "text")?;
         let mut last_err = None;
         let max_retries = self.config.max_retries;
 
@@ -729,6 +774,7 @@ impl OllamaClient {
     /// Single embed attempt via POST /api/embeddings (no retry).
     pub async fn try_embed(&self, model: &str, text: &str) -> Result<Vec<f32>> {
         validate_model_name(model)?;
+        validate_text_length(text, "text")?;
         let sanitized_text = sanitize_prompt_input(text);
         let url = format!("{}/api/embeddings", self.base_url());
         let request = EmbedRequest {
@@ -808,6 +854,8 @@ impl OllamaClient {
         mut on_token: impl FnMut(String) + Send,
     ) -> Result<String> {
         validate_model_name(model)?;
+        validate_text_length(user_query, "user_query")?;
+        validate_text_length(context, "context")?;
         let sanitized_query = sanitize_prompt_input(user_query);
         let sanitized_context = sanitize_prompt_input(context);
 
@@ -1013,6 +1061,23 @@ mod tests {
         let res = client.embed("nomic-embed-text", "hello").await.unwrap(); // unwrap
         assert_eq!(res, vec![0.1, 0.2]);
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn test_validate_batch_size_and_text_length() {
+        assert!(validate_batch_size(100).is_ok());
+        assert!(validate_batch_size(MAX_BATCH_SIZE).is_ok());
+        assert!(matches!(
+            validate_batch_size(MAX_BATCH_SIZE + 1),
+            Err(MemFuseError::InvalidInput(_))
+        ));
+
+        assert!(validate_text_length("hello", "field").is_ok());
+        let huge_text = "a".repeat(MAX_TEXT_BYTES + 1);
+        assert!(matches!(
+            validate_text_length(&huge_text, "field"),
+            Err(MemFuseError::InvalidInput(_))
+        ));
     }
 
     #[test]
@@ -1506,6 +1571,67 @@ mod tests {
         assert_eq!(res[0], vec![1.0]);
         assert_eq!(res[1], vec![2.0]);
         assert_eq!(res[2], vec![3.0]);
+    }
+
+    // ANCHOR[TEST:OLL-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:ed7b7b38)
+    // AUFGABE : Mock-Server Latency & Error Resilience Tests
+    // GATE    : cargo test -p memfuse-ollama --test client
+    #[tokio::test]
+    async fn test_mock_server_latency_timeout_resilience() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                // Sleep for 200ms before responding to simulate high network latency
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                let body = serde_json::json!({ "embedding": [0.42] }).to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        // Config with a very short timeout (50ms) -> should fail with timeout error
+        let config = OllamaConfig {
+            base_url: server_url.clone(),
+            request_timeout: Duration::from_millis(50),
+            max_retries: 1,
+            ..Default::default()
+        };
+        let client_fast_timeout = OllamaClient::with_config(config);
+        let res = client_fast_timeout.embed("nomic-embed-text", "hello").await;
+        assert!(res.is_err());
+        assert!(is_transient_error(&res.unwrap_err()));
+
+        // Config with sufficient timeout (1000ms) -> should succeed despite 200ms latency
+        let config_long = OllamaConfig {
+            base_url: server_url,
+            request_timeout: Duration::from_millis(1000),
+            max_retries: 1,
+            ..Default::default()
+        };
+        let client_sufficient_timeout = OllamaClient::with_config(config_long);
+        let res_ok = client_sufficient_timeout.embed("nomic-embed-text", "hello").await;
+        assert!(res_ok.is_ok());
+        assert_eq!(res_ok.unwrap(), vec![0.42]);
+    }
+
+    #[tokio::test]
+    async fn test_mock_server_connection_refused_error_classification() {
+        let dead_client = OllamaClient::new("http://127.0.0.1:1");
+        let res = dead_client.try_embed("nomic-embed-text", "test").await;
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(is_transient_error(&err));
+        assert!(matches!(err, MemFuseError::Io(_)));
     }
 
     #[tokio::test]
