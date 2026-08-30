@@ -1573,7 +1573,7 @@ mod tests {
         assert_eq!(res[2], vec![3.0]);
     }
 
-    // ANCHOR[TEST:OLL-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:ed7b7b38)
+    // ANCHOR[TEST:OLL-001] STATUS:READY (TS:2026-08-30T18:54:39Z) (SESSION:ed7b7b38)
     // AUFGABE : Mock-Server Latency & Error Resilience Tests
     // GATE    : cargo test -p memfuse-ollama --test client
     #[tokio::test]
