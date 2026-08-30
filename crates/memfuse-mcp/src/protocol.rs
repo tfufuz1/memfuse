@@ -83,7 +83,7 @@ impl From<&str> for McpError {
 }
 
 /// Eingehende JSON-RPC 2.0 Nachricht (Request oder Notification).
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {
     /// Immer "2.0".
     pub jsonrpc: String,
