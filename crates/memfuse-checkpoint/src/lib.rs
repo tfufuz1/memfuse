@@ -38,7 +38,7 @@ fn monotonic_timestamp_ms() -> u64 {
         .max(wall_ms)
 }
 
-/// AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z)
+/// AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z) (SESSION: 14348074)
 /// (SESSION:14348074) — Fault-Injection-Tests in
 /// tests/manifest_fault_injection.rs beweisen atomare Schreib-Semantik
 /// und Tamper-Erkennung via Blake3-Checksum.
