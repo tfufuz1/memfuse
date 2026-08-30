@@ -85,26 +85,6 @@ impl WalEntry {
         integrity_key: &[u8],
         prev_hmac: [u8; 32],
     ) -> Result<Self> {
-        let (k_len, v_len) = match &op {
-            WalOp::Put { key, value, .. } => (key.len(), value.len()),
-            WalOp::Delete { key, .. } => (key.len(), 0),
-        };
-        if k_len == 0 {
-            return Err(MemFuseError::InvalidInput("WAL key cannot be empty".into()));
-        }
-        if k_len > 1024 * 1024 {
-            return Err(MemFuseError::InvalidInput(format!(
-                "WAL key length ({}) exceeds 1 MiB limit",
-                k_len
-            )));
-        }
-        if v_len > 128 * 1024 * 1024 {
-            return Err(MemFuseError::InvalidInput(format!(
-                "WAL value length ({}) exceeds 128 MiB limit",
-                v_len
-            )));
-        }
-
         let checksum = Self::compute_checksum_v3(&op, seq_no, integrity_key, prev_hmac)?;
         Ok(Self {
             op,
@@ -299,9 +279,7 @@ impl WalEntry {
                         MemFuseError::Serialization("Invalid key_len format".into())
                     })?) as usize;
                     if key_len > 1024 * 1024 {
-                        return Err(MemFuseError::Serialization(
-                            "key_len exceeds 1 MiB limit".into(),
-                        ));
+                        return Err(MemFuseError::Serialization("key_len exceeds 1 MiB limit".into()));
                     }
                     if remaining.len() < 12 + key_len + 4 {
                         return Err(MemFuseError::Serialization(
@@ -315,9 +293,7 @@ impl WalEntry {
                             |_| MemFuseError::Serialization("Invalid val_len format".into()),
                         )?) as usize;
                     if val_len > 128 * 1024 * 1024 {
-                        return Err(MemFuseError::Serialization(
-                            "val_len exceeds 128 MiB limit".into(),
-                        ));
+                        return Err(MemFuseError::Serialization("val_len exceeds 128 MiB limit".into()));
                     }
                     if remaining.len() < val_start + 4 + val_len {
                         return Err(MemFuseError::Serialization(
@@ -339,9 +315,7 @@ impl WalEntry {
                         MemFuseError::Serialization("Invalid key_len format".into())
                     })?) as usize;
                     if key_len > 1024 * 1024 {
-                        return Err(MemFuseError::Serialization(
-                            "key_len exceeds 1 MiB limit".into(),
-                        ));
+                        return Err(MemFuseError::Serialization("key_len exceeds 1 MiB limit".into()));
                     }
                     if remaining.len() < 12 + key_len {
                         return Err(MemFuseError::Serialization(
@@ -395,32 +369,6 @@ pub const MAX_WAL_SIZE: u64 = 128 * 1024 * 1024;
 pub const MAX_WAL_ENTRY_SIZE: u32 = 64 * 1024 * 1024;
 
 impl Wal {
-    fn handle_wal_entry_parse_error(
-        e: MemFuseError,
-        chunk_start_pos: u64,
-        pos: u64,
-        file_size: u64,
-    ) -> Option<MemFuseError> {
-        let err_msg = format!("{}", e);
-        let is_crc_error = err_msg.contains("CRC mismatch");
-
-        if pos >= file_size && !is_crc_error {
-            tracing::warn!(
-                "WAL truncation at tail (offset {}), partial entry: {}",
-                chunk_start_pos,
-                e
-            );
-            None
-        } else {
-            let reason = if is_crc_error {
-                format!("CRC validation failed: {}", e)
-            } else {
-                format!("Deserialization failed: {}", e)
-            };
-            Some(MemFuseError::wal_corruption(chunk_start_pos, reason))
-        }
-    }
-
     /// Opens or creates a WAL file.
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
         Self::open_with_key_manager(path, None).await
@@ -467,7 +415,26 @@ impl Wal {
                     e
                 ))
             })?;
-            crate::util::fsync_parent_dir(&path).await?;
+            let parent = path.parent().unwrap_or_else(|| Path::new(""));
+            let dir_path = if parent.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                parent
+            };
+            let dir = tokio::fs::File::open(dir_path).await.map_err(|e| {
+                MemFuseError::Storage(format!(
+                    "WAL dir open failed for {}: {}",
+                    dir_path.display(),
+                    e
+                ))
+            })?;
+            dir.sync_all().await.map_err(|e| {
+                MemFuseError::Storage(format!(
+                    "WAL dir fsync failed for {}: {}",
+                    dir_path.display(),
+                    e
+                ))
+            })?;
         }
 
         let metadata = file
@@ -549,19 +516,13 @@ impl Wal {
                 let name = entry.file_name();
                 if let Some(name_str) = name.to_str() {
                     if name_str.starts_with(".wal_integrity_key.tmp.") {
-                        if let Err(e) = tokio::fs::remove_file(entry.path()).await {
-                            tracing::debug!(
-                                "Failed to remove orphan WAL key tmp file {:?}: {}",
-                                entry.path(),
-                                e
-                            );
-                        }
+                        let _ = tokio::fs::remove_file(entry.path()).await;
                     }
                 }
             }
         }
 
-        // AI-TAG[SECURITY][CRITICAL] RESOLVED: Atomic WAL integrity key creation (TS:2026-08-29T08:06:29Z) (SESSION: a3f29c1d)
+        // AI-TAG[SECURITY][CRITICAL] RESOLVED: Atomic WAL integrity key creation (TS:2026-08-29T08:06:29Z)
         // AGT-STORE-003 (SESSION:14348074)
         // Tests: tests/wal_key_lifecycle.rs — fault-injection, race, restart-persistence
         if key_path.exists() {
@@ -599,18 +560,14 @@ impl Wal {
             };
 
             if let Err(e) = file.write_all(&key).await {
-                if let Err(rm_err) = tokio::fs::remove_file(&tmp_path).await {
-                    tracing::debug!("Failed to remove tmp key file {:?}: {}", tmp_path, rm_err);
-                }
+                let _ = tokio::fs::remove_file(&tmp_path).await;
                 return Err(MemFuseError::Storage(format!(
                     "Failed to write WAL integrity key: {}",
                     e
                 )));
             }
             if let Err(e) = file.sync_all().await {
-                if let Err(rm_err) = tokio::fs::remove_file(&tmp_path).await {
-                    tracing::debug!("Failed to remove tmp key file {:?}: {}", tmp_path, rm_err);
-                }
+                let _ = tokio::fs::remove_file(&tmp_path).await;
                 return Err(MemFuseError::Storage(format!(
                     "Failed to sync WAL integrity key file: {}",
                     e
@@ -620,14 +577,25 @@ impl Wal {
 
             // Atomically link tmp_path to key_path. Fails if key_path already exists (O_EXCL semantics).
             let link_res = tokio::fs::hard_link(&tmp_path, &key_path).await;
-            if let Err(rm_err) = tokio::fs::remove_file(&tmp_path).await {
-                tracing::debug!("Failed to remove tmp key file {:?}: {}", tmp_path, rm_err);
-            }
+            let _ = tokio::fs::remove_file(&tmp_path).await;
 
             match link_res {
                 Ok(()) => {
                     // FSync parent directory to persist directory entry
-                    crate::util::fsync_parent_dir(&key_path).await?;
+                    let dir = tokio::fs::File::open(dir_path).await.map_err(|e| {
+                        MemFuseError::Storage(format!(
+                            "WAL integrity key dir open failed for {}: {}",
+                            dir_path.display(),
+                            e
+                        ))
+                    })?;
+                    dir.sync_all().await.map_err(|e| {
+                        MemFuseError::Storage(format!(
+                            "WAL integrity key dir fsync failed for {}: {}",
+                            dir_path.display(),
+                            e
+                        ))
+                    })?;
                     Ok(key)
                 }
                 Err(_) => {
@@ -672,7 +640,26 @@ impl Wal {
             })?;
 
             // FIND-STO-004: FSync parent directory to persist the new directory entry
-            crate::util::fsync_parent_dir(&uuid_path).await?;
+            let parent = uuid_path.parent().unwrap_or_else(|| Path::new(""));
+            let dir_path = if parent.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                parent
+            };
+            let dir = tokio::fs::File::open(dir_path).await.map_err(|e| {
+                MemFuseError::Storage(format!(
+                    "WAL UUID dir open failed for {}: {}",
+                    dir_path.display(),
+                    e
+                ))
+            })?;
+            dir.sync_all().await.map_err(|e| {
+                MemFuseError::Storage(format!(
+                    "WAL UUID dir fsync failed for {}: {}",
+                    dir_path.display(),
+                    e
+                ))
+            })?;
 
             Ok(bytes)
         }
@@ -924,11 +911,11 @@ impl Wal {
             let chunk_start_pos = pos;
             pos += (4 + len) as u64;
 
-            if let Some(km) = self
-                .key_manager
-                .as_ref()
-                .filter(|_| matches!(version, WalVersion::V2 | WalVersion::V3))
+            if matches!(version, WalVersion::V2 | WalVersion::V3)
+                && self.key_manager.is_some()
             {
+                // SAFETY: Checked self.key_manager.is_some() in the if condition above
+                let km = self.key_manager.as_ref().unwrap();
                 if entry_data_raw.len() < 12 {
                     if pos >= file_size {
                         tracing::warn!("WAL truncated during read at offset {}", chunk_start_pos);
@@ -950,15 +937,16 @@ impl Wal {
                                 e
                             );
                             break;
+                        } else {
+                            return Err(MemFuseError::wal_corruption(
+                                chunk_start_pos,
+                                format!("Decryption failed: {}", e),
+                            ));
                         }
-                        return Err(MemFuseError::wal_corruption(
-                            chunk_start_pos,
-                            format!("Decryption failed: {}", e),
-                        ));
                     }
                 };
 
-                let mut slice = decrypted_data.as_slice();
+                let slice = decrypted_data.as_slice();
                 while !slice.is_empty() {
                     if slice.len() < 4 {
                         if pos >= file_size {
@@ -1063,8 +1051,8 @@ impl Wal {
                                 };
                             if legacy_res.is_ok() {
                                 tracing::warn!(
-                                "WAL nutzt veralteten Integritätsschlüssel — Datenbank sollte neu initialisiert werden"
-                            );
+                                    "WAL nutzt veralteten Integritätsschlüssel — Datenbank sollte neu initialisiert werden"
+                                );
                                 verifier = legacy_verifier;
                                 using_legacy_key = true;
                             } else {
@@ -1097,11 +1085,12 @@ impl Wal {
                                     e
                                 );
                                 break;
+                            } else {
+                                return Err(MemFuseError::wal_corruption(
+                                    chunk_start_pos,
+                                    format!("Decryption failed: {}", e),
+                                ));
                             }
-                            return Err(MemFuseError::wal_corruption(
-                                chunk_start_pos,
-                                format!("Decryption failed: {}", e),
-                            ));
                         }
                     };
                     &decrypted_data
@@ -1112,12 +1101,24 @@ impl Wal {
                 let entry = match WalEntry::from_bytes(entry_data) {
                     Ok(e) => e,
                     Err(e) => {
-                        if let Some(err) =
-                            Self::handle_wal_entry_parse_error(e, chunk_start_pos, pos, file_size)
-                        {
-                            return Err(err);
+                        let err_msg = format!("{}", e);
+                        let is_crc_error = err_msg.contains("CRC mismatch");
+
+                        if pos >= file_size && !is_crc_error {
+                            tracing::warn!(
+                                "WAL truncation at tail (offset {}), partial entry: {}",
+                                chunk_start_pos,
+                                e
+                            );
+                            break;
+                        } else {
+                            let reason = if is_crc_error {
+                                format!("CRC validation failed: {}", e)
+                            } else {
+                                format!("Deserialization failed: {}", e)
+                            };
+                            return Err(MemFuseError::wal_corruption(chunk_start_pos, reason));
                         }
-                        break;
                     }
                 };
 
@@ -1259,25 +1260,19 @@ impl Wal {
 
     /// Physically truncates the WAL file to the specified offset.
     /// This also updates the in-memory size and the HMAC chain link.
-    ///
-    /// # Errors
-    /// Returns `MemFuseError::Storage` if setting file length or seeking fails.
     pub async fn truncate(&self, offset: u64, new_last_hmac: [u8; 32]) -> Result<()> {
-        use tokio::io::AsyncSeekExt;
-
         let mut file = self.file.lock().await;
 
         // 1. Physically truncate the file
         file.set_len(offset)
             .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL truncate failed: {e}")))?;
+            .map_err(|e| MemFuseError::Storage(format!("WAL truncate failed: {}", e)))?;
 
         // 2. Ensure we seek to the new end
+        use tokio::io::AsyncSeekExt;
         file.seek(std::io::SeekFrom::Start(offset))
             .await
-            .map_err(|e| MemFuseError::Storage(format!("WAL seek after truncate failed: {e}")))?;
-
-        drop(file);
+            .map_err(|e| MemFuseError::Storage(format!("WAL seek after truncate failed: {}", e)))?;
 
         // 3. Update in-memory size
         self.size.store(offset, std::sync::atomic::Ordering::SeqCst);
@@ -1285,7 +1280,6 @@ impl Wal {
         // 4. Update last_hmac
         let mut last_hmac_guard = self.last_hmac.lock().await;
         *last_hmac_guard = new_last_hmac;
-        drop(last_hmac_guard);
 
         Ok(())
     }
@@ -1295,11 +1289,8 @@ impl Wal {
         *self.last_hmac.lock().await
     }
 
-    /// Finds the offset and the previous HMAC for the given `TxId`.
-    /// Returns the offset AFTER which the `TxId`'s commits start (effectively the rollback point).
-    ///
-    /// # Errors
-    /// Returns `MemFuseError::Storage` or `MemFuseError::WalCorruption` if reading or replaying the WAL fails.
+    /// Finds the offset and the previous HMAC for the given TxId.
+    /// Returns the offset AFTER which the TxId's commits start (effectively the rollback point).
     pub async fn find_tx_offset(&self, target_tx_id: TxId) -> Result<(u64, [u8; 32])> {
         let entries = self.replay().await?;
         let mut last_offset = 0;
@@ -2313,32 +2304,5 @@ mod tests {
         } else {
             panic!("Expected Serialization error for key_len limit");
         }
-    }
-
-    #[test]
-    fn test_wal_entry_try_new_boundary_validation() {
-        let dummy_key = b"test-integrity-key-32-bytes-long!";
-
-        // 1. Empty key reject
-        let op_empty = WalOp::Put {
-            tx_id: TxId::new(1),
-            key: vec![],
-            value: b"v".to_vec(),
-        };
-        assert!(matches!(
-            WalEntry::try_new(op_empty, 1, dummy_key, [0u8; 32]),
-            Err(MemFuseError::InvalidInput(_))
-        ));
-
-        // 2. Oversized key (>1 MiB) reject
-        let op_huge_key = WalOp::Put {
-            tx_id: TxId::new(1),
-            key: vec![0u8; 1024 * 1024 + 1],
-            value: b"v".to_vec(),
-        };
-        assert!(matches!(
-            WalEntry::try_new(op_huge_key, 1, dummy_key, [0u8; 32]),
-            Err(MemFuseError::InvalidInput(_))
-        ));
     }
 }

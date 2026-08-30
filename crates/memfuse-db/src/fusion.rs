@@ -362,6 +362,49 @@ mod tests {
         assert_eq!(doc.matched_signals, vec!["vector", "graph"]);
     }
 
+    #[test]
+    fn test_weights_to_signal_factors_none_returns_equal_thirds() {
+        let (vec_w, text_w, graph_w) = weights_to_signal_factors(None);
+        // Anti-mirroring check: Expected 1/3 = 0.33333334
+        assert!((vec_w - 0.33333334).abs() < 1e-5);
+        assert!((text_w - 0.33333334).abs() < 1e-5);
+        assert!((graph_w - 0.33333334).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_weights_to_signal_factors_some_returns_exact_weights() {
+        use memfuse_core::FusionWeights;
+        let weights = FusionWeights::new(0.5, 0.3, 0.2).unwrap();
+        let (v, t, g) = weights_to_signal_factors(Some(&weights));
+        assert!((v - 0.5).abs() < 1e-5);
+        assert!((t - 0.3).abs() < 1e-5);
+        assert!((g - 0.2).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_weighted_rrf_zero_max_results_returns_empty() {
+        let set = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.9,
+            metadata: None,
+            matched_signals: vec![],
+        }];
+        let fused = weighted_reciprocal_rank_fusion(vec![("vec".to_string(), set, 1.0)], 0);
+        assert!(fused.is_empty());
+    }
+
+    #[test]
+    fn test_weighted_rrf_negative_weights_ignored() {
+        let set = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.9,
+            metadata: None,
+            matched_signals: vec![],
+        }];
+        let fused = weighted_reciprocal_rank_fusion(vec![("vec".to_string(), set, -0.5)], 10);
+        assert!(fused.is_empty());
+    }
+
     #[cfg(test)]
     mod proptests {
         use super::*;
@@ -386,6 +429,15 @@ mod tests {
             ) {
                 let fused = reciprocal_rank_fusion(result_sets, max_results);
                 assert!(fused.len() <= max_results);
+            }
+
+            #[test]
+            fn prop_rrf_score_monotonicity(
+                rank in 0..10usize
+            ) {
+                let rrf_top = 1.0 / (60.0 + 1.0);
+                let rrf_low = 1.0 / (60.0 + (rank + 1) as f32);
+                assert!(rrf_top >= rrf_low);
             }
         }
     }

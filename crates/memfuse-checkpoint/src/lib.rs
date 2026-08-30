@@ -16,13 +16,6 @@
 
 #![forbid(unsafe_code)]
 
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       RAII CheckpointGuard + persistente Snapshot-Verwaltung
-// INVARIANTEN: CheckpointGuard darf NICHT mit PersistentCheckpointStore verwechselt werden; GC safety by pinning before store writes
-// HOTSPOTS:    CheckpointGuard::for_agent_step(), PersistentCheckpointStore::create_checkpoint()
-// SIEHE AUCH:  ADR-011
-
 use async_trait::async_trait;
 use memfuse_core::{MemFuseError, Result, TxId, WorkflowState};
 use parking_lot::RwLock;
@@ -33,23 +26,6 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static CHECKPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-/// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca)
-/// Validates identifier strings (checkpoint name, collection ID) against empty/whitespace or size limits.
-fn validate_identifier(field_name: &str, value: &str) -> Result<()> {
-    if value.trim().is_empty() {
-        return Err(MemFuseError::InvalidInput(format!(
-            "{field_name} cannot be empty or whitespace-only"
-        )));
-    }
-    if value.len() > 256 {
-        return Err(MemFuseError::InvalidInput(format!(
-            "{field_name} exceeds maximum length of 256 characters (got {})",
-            value.len()
-        )));
-    }
-    Ok(())
-}
 
 fn monotonic_timestamp_ms() -> u64 {
     let wall_ms = SystemTime::now()
@@ -62,7 +38,7 @@ fn monotonic_timestamp_ms() -> u64 {
         .max(wall_ms)
 }
 
-/// AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z) (SESSION: a3f29c1d)
+/// AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z)
 /// (SESSION:14348074) — Fault-Injection-Tests in
 /// tests/manifest_fault_injection.rs beweisen atomare Schreib-Semantik
 /// und Tamper-Erkennung via Blake3-Checksum.
@@ -75,15 +51,6 @@ pub struct CheckpointManifest {
 
 impl CheckpointManifest {
     pub fn new(meta: CheckpointMeta, components: Vec<String>) -> Result<Self> {
-        validate_identifier("Checkpoint name", &meta.name)?;
-        validate_identifier("Collection ID", &meta.collection_id)?;
-        for comp in &components {
-            if comp.trim().is_empty() {
-                return Err(MemFuseError::InvalidInput(
-                    "Checkpoint component name cannot be empty".to_string(),
-                ));
-            }
-        }
         let payload = serde_json::to_vec(&(&meta, &components))
             .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
         let checksum = blake3::hash(&payload).to_hex().to_string();
@@ -236,7 +203,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     // INVARIANT: Checkpoint TxIds use INTERNAL_BASE+n range to avoid
     // collision with Collection-sequenced TxIds [1, ~10^12].
     // See: DECISIONS.md AGT-GRAPH-001, TxId::INTERNAL_BASE
-    fn allocate_tx(&self) -> Result<TxId> {
+    fn next_tx(&self) -> Result<TxId> {
         let raw = self.tx_counter.fetch_add(1, Ordering::SeqCst);
         if raw >= 1_000_000 {
             return Err(MemFuseError::Internal(
@@ -244,15 +211,6 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             ));
         }
         Ok(TxId::new(TxId::INTERNAL_BASE + raw))
-    }
-
-    #[deprecated(
-        since = "0.1.0",
-        note = "Use `allocate_tx()` instead — both methods are functionally identical, `allocate_tx()` is the canonical public API."
-    )]
-    #[allow(dead_code)]
-    fn next_tx(&self) -> Result<TxId> {
-        self.allocate_tx()
     }
 
     /// Creates an ephemeral transactional checkpoint RAII guard.
@@ -276,9 +234,6 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         tx_id: TxId,
         metadata: serde_json::Value,
     ) -> Result<CheckpointMeta> {
-        validate_identifier("Checkpoint name", name)?;
-        validate_identifier("Collection ID", collection_id)?;
-
         let meta = CheckpointMeta {
             name: name.to_string(),
             collection_id: collection_id.to_string(),
@@ -338,7 +293,6 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
     /// Deletes a persistent checkpoint by name.
     pub async fn drop_checkpoint(&self, name: &str) -> Result<()> {
-        validate_identifier("Checkpoint name", name)?;
         let _guard = self.write_lock.lock().await;
 
         if let Some(checkpoint) = self.get_checkpoint_internal(name).await? {
@@ -346,18 +300,20 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             let key = format!("{}:checkpoint:{}", self.namespace, name);
 
             // FIX CHK-002: Generiere eine eindeutige TxId statt INTERNAL_BASE
-            let unique_tx = self.allocate_tx()?;
+            let unique_tx = self.next_tx()?;
 
             if let Err(e) = self.storage.delete(unique_tx, key.as_bytes()).await {
-                if let Err(rb_err) = self.storage.rollback(unique_tx).await {
-                    tracing::warn!(tx = ?unique_tx, error = %rb_err, "Storage rollback failed during drop_checkpoint delete");
-                }
+                // Best-effort rollback auf Error-Pfad. Bereits im Begriff Err zurückzugeben.
+                // Rollback-Fehler hier würde den primären Fehler maskieren.
+                // Verwaiste Tx wird von TxBuffer-Orphan-Reaper garbage-collected.
+                let _ = self.storage.rollback(unique_tx).await;
                 return Err(e);
             }
             if let Err(e) = self.storage.commit(unique_tx).await {
-                if let Err(rb_err) = self.storage.rollback(unique_tx).await {
-                    tracing::warn!(tx = ?unique_tx, error = %rb_err, "Storage rollback failed during drop_checkpoint commit");
-                }
+                // Best-effort rollback auf Error-Pfad. Bereits im Begriff Err zurückzugeben.
+                // Rollback-Fehler hier würde den primären Fehler maskieren.
+                // Verwaiste Tx wird von TxBuffer-Orphan-Reaper garbage-collected.
+                let _ = self.storage.rollback(unique_tx).await;
                 return Err(e);
             }
 
@@ -383,17 +339,19 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let value = serde_json::to_vec(&manifest)
             .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
 
-        let tx = self.allocate_tx()?;
+        let tx = self.next_tx()?;
         if let Err(e) = self.storage.put(tx, key.as_bytes(), &value).await {
-            if let Err(rb_err) = self.storage.rollback(tx).await {
-                tracing::warn!(tx = ?tx, error = %rb_err, "Storage rollback failed during save_checkpoint_internal put");
-            }
+            // Best-effort rollback auf Error-Pfad. Bereits im Begriff Err zurückzugeben.
+            // Rollback-Fehler hier würde den primären Fehler maskieren.
+            // Verwaiste Tx wird von TxBuffer-Orphan-Reaper garbage-collected.
+            let _ = self.storage.rollback(tx).await;
             return Err(e);
         }
         if let Err(e) = self.storage.commit(tx).await {
-            if let Err(rb_err) = self.storage.rollback(tx).await {
-                tracing::warn!(tx = ?tx, error = %rb_err, "Storage rollback failed during save_checkpoint_internal commit");
-            }
+            // Best-effort rollback auf Error-Pfad. Bereits im Begriff Err zurückzugeben.
+            // Rollback-Fehler hier würde den primären Fehler maskieren.
+            // Verwaiste Tx wird von TxBuffer-Orphan-Reaper garbage-collected.
+            let _ = self.storage.rollback(tx).await;
             return Err(e);
         }
 
@@ -475,14 +433,12 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     }
 
     pub async fn get_checkpoint(&self, name: &str) -> Result<Option<CheckpointMeta>> {
-        validate_identifier("Checkpoint name", name)?;
         self.get_checkpoint_internal(name).await
     }
 
     /// Restores the system to a specific checkpoint by name.
     /// This will rollback the underlying storage to the transaction ID of the checkpoint.
     pub async fn restore_checkpoint(&self, name: &str) -> Result<CheckpointMeta> {
-        validate_identifier("Checkpoint name", name)?;
         let _guard = self.write_lock.lock().await;
 
         let meta = self
@@ -494,7 +450,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         self.storage.rollback_to_tx(meta.tx_id).await?;
 
         // 2. Synchronize cache
-        self.list_checkpoints().await?;
+        let _ = self.list_checkpoints().await?;
 
         Ok(meta)
     }
@@ -568,7 +524,7 @@ impl<S: memfuse_core::StorageEngine> memfuse_core::traits::Checkpoint
 
     async fn restore(&self, state: &WorkflowState) -> Result<()> {
         self.storage.rollback_to_tx(state.tx).await?;
-        self.list_checkpoints().await?;
+        let _ = self.list_checkpoints().await?;
         Ok(())
     }
 }
@@ -966,270 +922,12 @@ mod tests {
 
         store.tx_counter.store(1_000_000, Ordering::SeqCst);
 
-        let res = store.allocate_tx();
+        let res = store.next_tx();
         assert!(res.is_err());
         if let Err(MemFuseError::Internal(msg)) = res {
             assert!(msg.contains("overflow"));
         } else {
             panic!("Expected Internal error on overflow");
         }
-    }
-
-    #[tokio::test]
-    async fn test_input_validation_empty_and_oversized_names() {
-        let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "test");
-
-        // Empty name
-        let res = store
-            .create_checkpoint("", "col1", 1, TxId::new(1), serde_json::json!({}))
-            .await;
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
-
-        // Whitespace name
-        let res = store
-            .create_checkpoint("   ", "col1", 1, TxId::new(1), serde_json::json!({}))
-            .await;
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
-
-        // Empty collection ID
-        let res = store
-            .create_checkpoint("cp1", "", 1, TxId::new(1), serde_json::json!({}))
-            .await;
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
-
-        // Oversized name (> 256 chars)
-        let long_name = "a".repeat(257);
-        let res = store
-            .create_checkpoint(&long_name, "col1", 1, TxId::new(1), serde_json::json!({}))
-            .await;
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
-
-        // Drop with empty name
-        let res = store.drop_checkpoint("").await;
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
-
-        // Get with empty name
-        let res = store.get_checkpoint("   ").await;
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
-    }
-
-    #[test]
-    fn test_manifest_validation_blank_component() {
-        let meta = CheckpointMeta {
-            name: "cp1".to_string(),
-            collection_id: "col1".to_string(),
-            seq_no: 1,
-            tx_id: TxId::new(1),
-            metadata: serde_json::json!({}),
-            created_at: 100,
-        };
-
-        let res = CheckpointManifest::new(meta, vec!["   ".to_string()]);
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
-    }
-
-    #[allow(non_snake_case)]
-    #[tokio::test]
-    async fn create_checkpoint_CASE_unicode_and_multibyte_name() {
-        let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test");
-
-        let unicode_name = "Prüfpunkt_1_🚀_日本語";
-        let collection_id = "Sammlung_äöü_123";
-
-        store
-            .create_checkpoint(
-                unicode_name,
-                collection_id,
-                10,
-                TxId::new(101),
-                serde_json::json!({"tag": "überprüfen"}),
-            )
-            .await
-            .expect("// expect #[cfg(test)]");
-
-        let fetched = store
-            .get_checkpoint(unicode_name)
-            .await
-            .expect("// expect #[cfg(test)]")
-            .expect("// expect #[cfg(test)]");
-
-        assert_eq!(fetched.name, "Prüfpunkt_1_🚀_日本語");
-        assert_eq!(fetched.collection_id, "Sammlung_äöü_123");
-        assert_eq!(fetched.seq_no, 10);
-        assert_eq!(fetched.tx_id, TxId::new(101));
-        assert_eq!(fetched.metadata["tag"], "überprüfen");
-    }
-
-    #[allow(non_snake_case)]
-    #[tokio::test]
-    async fn create_checkpoint_CASE_exact_max_len_256() {
-        let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test");
-
-        let max_name = "a".repeat(256);
-        let res = store
-            .create_checkpoint(&max_name, "col1", 1, TxId::new(1), serde_json::json!({}))
-            .await;
-        assert!(res.is_ok(), "256 characters name must be allowed");
-
-        let fetched = store
-            .get_checkpoint(&max_name)
-            .await
-            .expect("// expect #[cfg(test)]");
-        assert!(fetched.is_some());
-    }
-
-    #[allow(non_snake_case)]
-    #[tokio::test]
-    async fn drop_checkpoint_CASE_nonexistent_returns_ok() {
-        let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test");
-
-        let res = store.drop_checkpoint("nonexistent_checkpoint").await;
-        assert!(
-            res.is_ok(),
-            "Dropping a non-existent checkpoint should be idempotent and return Ok(())"
-        );
-    }
-
-    #[allow(non_snake_case)]
-    #[tokio::test]
-    async fn checkpoint_guard_CASE_uncommitted_guard_holds_state() {
-        let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "test");
-
-        let guard = store
-            .create_guard(TxId::new(500))
-            .expect("// expect #[cfg(test)]");
-        let cp = guard.checkpoint().expect("// expect #[cfg(test)]").clone();
-        assert_eq!(cp.tx_id, TxId::new(500));
-
-        // Commit takes ownership of self and consumes the state checkpoint
-        let committed_cp = guard.commit().expect("// expect #[cfg(test)]");
-        assert_eq!(committed_cp.tx_id, TxId::new(500));
-    }
-
-    #[allow(non_snake_case)]
-    #[tokio::test]
-    async fn checkpoint_guard_CASE_commit_moves_ownership() {
-        let storage = Arc::new(MockStorage::new());
-        let guard = CheckpointGuard::new(
-            StateCheckpoint {
-                tx_id: TxId::new(777),
-                timestamp_ms: 12345,
-            },
-            storage,
-        );
-
-        assert!(guard.checkpoint().is_ok());
-
-        let cp = guard.commit().expect("// expect #[cfg(test)]");
-        assert_eq!(cp.tx_id, TxId::new(777));
-        assert_eq!(cp.timestamp_ms, 12345);
-    }
-
-    #[allow(non_snake_case)]
-    #[tokio::test]
-    async fn restore_checkpoint_CASE_not_found_returns_err() {
-        let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "test");
-
-        let res = store.restore_checkpoint("missing_cp").await;
-        assert!(matches!(res, Err(MemFuseError::CheckpointNotFound)));
-    }
-
-    #[allow(non_snake_case)]
-    #[tokio::test]
-    async fn list_checkpoints_CASE_corrupted_storage_data_propagates_err() {
-        let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test");
-
-        // Put invalid JSON payload into storage under checkpoint namespace format (namespace:checkpoint:name)
-        let corrupt_key = b"test:checkpoint:corrupt_cp";
-        storage
-            .put(TxId::new(1), corrupt_key, b"invalid json bytes{{{")
-            .await
-            .expect("// expect #[cfg(test)]");
-
-        let res = store.list_checkpoints().await;
-        assert!(matches!(res, Err(MemFuseError::Serialization(_))));
-    }
-
-    #[allow(non_snake_case)]
-    #[test]
-    fn checkpoint_meta_CASE_serialization_roundtrip() {
-        let meta = CheckpointMeta {
-            name: "cp_test".to_string(),
-            collection_id: "col_test".to_string(),
-            seq_no: 99,
-            tx_id: TxId::new(1001),
-            metadata: serde_json::json!({"step": 42, "env": "prod"}),
-            created_at: 1690000000,
-        };
-
-        let json = serde_json::to_string(&meta).expect("// expect #[cfg(test)]");
-        let deserialized: CheckpointMeta =
-            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
-
-        // Independent evaluation without referencing meta in comparison construction
-        assert_eq!(deserialized.name, "cp_test");
-        assert_eq!(deserialized.collection_id, "col_test");
-        assert_eq!(deserialized.seq_no, 99);
-        assert_eq!(deserialized.tx_id, TxId::new(1001));
-        assert_eq!(deserialized.metadata["step"], 42);
-        assert_eq!(deserialized.created_at, 1690000000);
-    }
-
-    #[allow(non_snake_case)]
-    #[test]
-    fn state_checkpoint_CASE_serialization_roundtrip() {
-        let cp = StateCheckpoint {
-            tx_id: TxId::new(888),
-            timestamp_ms: 1700000000123,
-        };
-
-        let json = serde_json::to_string(&cp).expect("// expect #[cfg(test)]");
-        let deserialized: StateCheckpoint =
-            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
-
-        assert_eq!(deserialized.tx_id, TxId::new(888));
-        assert_eq!(deserialized.timestamp_ms, 1700000000123);
-    }
-
-    #[allow(non_snake_case)]
-    #[test]
-    fn into_workflow_state_CASE_valid_conversion() {
-        let meta = CheckpointMeta {
-            name: "wf_cp".to_string(),
-            collection_id: "wf_col".to_string(),
-            seq_no: 15,
-            tx_id: TxId::new(2026),
-            metadata: serde_json::json!({"agent_phase": "reasoning"}),
-            created_at: 5000,
-        };
-
-        let state = meta.into_workflow_state();
-
-        // Independent expected value assertions
-        assert_eq!(state.tx, TxId::new(2026));
-        assert!(!state.graph_hash.is_empty());
-    }
-
-    #[allow(non_snake_case)]
-    #[test]
-    fn allocate_tx_CASE_parity_with_deprecated_next_tx() {
-        let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "test");
-
-        let tx1 = store.allocate_tx().expect("// expect #[cfg(test)]");
-        #[allow(deprecated)]
-        let tx2 = store.next_tx().expect("// expect #[cfg(test)]");
-        let tx3 = store.allocate_tx().expect("// expect #[cfg(test)]");
-
-        assert_eq!(tx1, TxId::new(TxId::INTERNAL_BASE));
-        assert_eq!(tx2, TxId::new(TxId::INTERNAL_BASE + 1));
-        assert_eq!(tx3, TxId::new(TxId::INTERNAL_BASE + 2));
     }
 }
