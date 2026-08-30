@@ -105,7 +105,7 @@ fn bench_concurrent_puts(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("new_full_key_blake3_sharding", |b| {
+    group.bench_function("new_full_key_ahash_sharding", |b| {
         b.iter(|| {
             let mt = Arc::new(MemTable::new());
             let handles: Vec<_> = (0..num_threads)

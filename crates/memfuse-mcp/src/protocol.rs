@@ -1,69 +1,119 @@
-// FILE-CONTEXT
-// STAND:       2026-08-30T14:46:32Z (SESSION: 2c814094)
-// ZWECK:       MCP JSON-RPC 2.0 Protokoll-Typen & DTO-Abbildung für MemFuse
-// INVARIANTEN: DTO-Konvertierung aus MemFuseError muss saubere JSON-RPC 2.0 Codes und Error-Data tragen
-// HOTSPOTS:    McpError::from(MemFuseError), JsonRpcResponse::from_error
-// SIEHE AUCH:  ADR-010, memfuse-core/src/error_dto.rs
-
 //! MCP JSON-RPC 2.0 Protokoll-Typen (Model Context Protocol Spec v2024-11-05)
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+use memfuse_core::MemFuseErrorDto;
+
 /// MCP Error representation matching standard JSON-RPC 2.0 error codes.
 #[derive(Debug, Error)]
 pub enum McpError {
-    #[error("{0}")]
-    ParseError(String),
-    #[error("{0}")]
-    InvalidRequest(String),
-    #[error("{0}")]
-    MethodNotFound(String),
-    #[error("{0}")]
-    InvalidParams(String),
-    #[error("{0}")]
-    InternalError(String),
+    #[error("{message}")]
+    ParseError {
+        message: String,
+        data: Option<Value>,
+    },
+    #[error("{message}")]
+    InvalidRequest {
+        message: String,
+        data: Option<Value>,
+    },
+    #[error("{message}")]
+    MethodNotFound {
+        message: String,
+        data: Option<Value>,
+    },
+    #[error("{message}")]
+    InvalidParams {
+        message: String,
+        data: Option<Value>,
+    },
+    #[error("{message}")]
+    InternalError {
+        message: String,
+        data: Option<Value>,
+    },
 }
 
 impl McpError {
     pub fn parse_error(msg: impl Into<String>) -> Self {
-        Self::ParseError(msg.into())
+        Self::ParseError {
+            message: msg.into(),
+            data: None,
+        }
     }
 
     pub fn invalid_request(msg: impl Into<String>) -> Self {
-        Self::InvalidRequest(msg.into())
+        Self::InvalidRequest {
+            message: msg.into(),
+            data: None,
+        }
     }
 
     pub fn method_not_found(msg: impl Into<String>) -> Self {
-        Self::MethodNotFound(msg.into())
+        Self::MethodNotFound {
+            message: msg.into(),
+            data: None,
+        }
     }
 
     pub fn invalid_params(msg: impl Into<String>) -> Self {
-        Self::InvalidParams(msg.into())
+        Self::InvalidParams {
+            message: msg.into(),
+            data: None,
+        }
+    }
+
+    pub fn invalid_params_with_data(msg: impl Into<String>, data: Value) -> Self {
+        Self::InvalidParams {
+            message: msg.into(),
+            data: Some(data),
+        }
     }
 
     pub fn internal_error(msg: impl Into<String>) -> Self {
-        Self::InternalError(msg.into())
+        Self::InternalError {
+            message: msg.into(),
+            data: None,
+        }
+    }
+
+    pub fn internal_error_with_data(msg: impl Into<String>, data: Value) -> Self {
+        Self::InternalError {
+            message: msg.into(),
+            data: Some(data),
+        }
     }
 
     pub fn code(&self) -> i32 {
         match self {
-            Self::ParseError(_) => -32700,
-            Self::InvalidRequest(_) => -32600,
-            Self::MethodNotFound(_) => -32601,
-            Self::InvalidParams(_) => -32602,
-            Self::InternalError(_) => -32603,
+            Self::ParseError { .. } => -32700,
+            Self::InvalidRequest { .. } => -32600,
+            Self::MethodNotFound { .. } => -32601,
+            Self::InvalidParams { .. } => -32602,
+            Self::InternalError { .. } => -32603,
+        }
+    }
+
+    pub fn data(&self) -> Option<&Value> {
+        match self {
+            Self::ParseError { data, .. }
+            | Self::InvalidRequest { data, .. }
+            | Self::MethodNotFound { data, .. }
+            | Self::InvalidParams { data, .. }
+            | Self::InternalError { data, .. } => data.as_ref(),
         }
     }
 }
 
 impl From<memfuse_core::MemFuseError> for McpError {
     fn from(err: memfuse_core::MemFuseError) -> Self {
+        let dto = MemFuseErrorDto::from(&err);
+        let data_val = serde_json::to_value(&dto).ok();
         match err {
             memfuse_core::MemFuseError::InvalidInput(msg)
-            | memfuse_core::MemFuseError::NotFound(msg)
-            | memfuse_core::MemFuseError::NamespaceViolation(msg) => match data_val {
+            | memfuse_core::MemFuseError::NotFound(msg) => match data_val {
                 Some(d) => Self::invalid_params_with_data(msg, d),
                 None => Self::invalid_params(msg),
             },
@@ -91,7 +141,7 @@ impl From<&str> for McpError {
 }
 
 /// Eingehende JSON-RPC 2.0 Nachricht (Request oder Notification).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct JsonRpcRequest {
     /// Immer "2.0".
     pub jsonrpc: String,
@@ -147,8 +197,27 @@ impl JsonRpcResponse {
         }
     }
 
+    /// Fehlerantwort mit data Payload gemäß JSON-RPC 2.0.
+    pub fn err_with_data(
+        id: Option<Value>,
+        code: i32,
+        message: impl Into<String>,
+        data: Option<Value>,
+    ) -> Self {
+        Self {
+            jsonrpc: "2.0".into(),
+            id,
+            result: None,
+            error: Some(JsonRpcError {
+                code,
+                message: message.into(),
+                data,
+            }),
+        }
+    }
+
     /// Convert an McpError directly into a JsonRpcResponse.
     pub fn from_error(id: Option<Value>, err: McpError) -> Self {
-        Self::err(id, err.code(), err.to_string())
+        Self::err_with_data(id, err.code(), err.to_string(), err.data().cloned())
     }
 }

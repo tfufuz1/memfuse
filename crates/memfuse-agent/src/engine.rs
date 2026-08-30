@@ -2,7 +2,7 @@
 //!
 //! Implements the core execution loop: checkpoint → execute → commit → audit → resolve-next.
 
-use crate::context::{validate_node_id, AgentContext, MAX_ID_LEN};
+use crate::context::AgentContext;
 use crate::graph::{AgentNode, NodeType, StateGraph};
 use crate::step::{AgentTool, StepResult};
 use memfuse_checkpoint::{
@@ -40,34 +40,8 @@ impl OrchestratorEngine {
         Self::new(db.inner_storage())
     }
 
-    /// Attempts to register an agent tool with boundary validation on the tool name.
-    pub fn try_register_tool(&mut self, tool: Box<dyn AgentTool>) -> Result<()> {
-        let name = tool.name();
-        if name.is_empty() {
-            return Err(MemFuseError::InvalidInput(
-                "Tool name cannot be empty".to_string(),
-            ));
-        }
-        if name.len() > MAX_ID_LEN {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Tool name length {} exceeds maximum allowed length of {}",
-                name.len(),
-                MAX_ID_LEN
-            )));
-        }
-        if name.contains('\0') {
-            return Err(MemFuseError::InvalidInput(
-                "Tool name cannot contain null bytes".to_string(),
-            ));
-        }
-        self.tools.insert(name.to_string(), tool);
-        Ok(())
-    }
-
-    /// Registers an agent tool, panicking if validation fails.
     pub fn register_tool(&mut self, tool: Box<dyn AgentTool>) {
-        self.try_register_tool(tool)
-            .expect("Invalid tool name in register_tool");
+        self.tools.insert(tool.name().to_string(), tool);
     }
 
     pub async fn run(&self, ctx: &mut AgentContext, graph: &StateGraph) -> Result<()> {
@@ -191,8 +165,6 @@ impl OrchestratorEngine {
 
     /// Setzt den AgentContext auf einen früheren Checkpoint zurück (AC-2).
     pub async fn replay_from(&self, ctx: &mut AgentContext, identifier: &str) -> Result<()> {
-        validate_node_id(identifier)?;
-
         let checkpoints = self.checkpoint_store.list_checkpoints().await?;
 
         let checkpoint = checkpoints
