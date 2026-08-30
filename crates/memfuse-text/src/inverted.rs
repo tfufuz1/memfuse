@@ -1,9 +1,9 @@
 // FILE-CONTEXT: LSM-backed Inverted Index & Transactional Storage.
 // ZWECK: Speichert Postings-Listen, Dokumentlängen und BM25-Statistiken transaktional im StorageEngine.
-// INVARIANTEN: upsert_document und search_bm25_at beachten MAX_TEXT_BYTES; Lock-Hierarchie: commit_lock (tokio::sync::Mutex) > staged_stats (parking_lot::Mutex).
+// INVARIANTEN: upsert_document und search_bm25_at beachten MAX_TEXT_BYTES; Lock-Hierarchie: commit_lock (tokio::sync::Mutex) > staged_stats (parking_lot::Mutex); k <= MAX_SEARCH_K.
 // NICHT-OFFENSICHTLICH: Key-Prefixes: "i:" (Inverted), "f:" (Forward), "dl:" (Doc Length), "fw:" (Forward Words), "meta:stats".
 // HOTSPOTS: upsert_document, search_bm25_at, commit_stats
-// STAND: TS:2026-08-30T18:51:48Z (SESSION: 872b1087)
+// STAND: TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)
 
 //! LSM-backed Inverted Index.
 // CONSTRAINT: Inverted Index Key-Gen & Cache
@@ -13,17 +13,11 @@
 // BOTTLENECK: Heap-Allokationen (format!, Vec::new)
 // OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
 
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       BM25-Invertierter Index mit Tombstone-Update-Semantik
-// INVARIANTEN: Tombstone update semantics preserve doc counts without eager deletion; tokenization symmetric across index/search
-// HOTSPOTS:    insert(), delete() (Tombstone-Logik), query()
-// SIEHE AUCH:  crates/memfuse-text/AGENTS.md
-
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use async_trait::async_trait;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
+    MAX_SEARCH_K,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -114,6 +108,9 @@ impl<S: StorageEngine> Clone for InvertedIndex<S> {
 impl<S: StorageEngine> InvertedIndex<S> {
     /// Maximum allowed document text size in bytes (10 MB).
     pub const MAX_TEXT_BYTES: usize = 10 * 1024 * 1024;
+
+    /// Maximum allowed staged uncommitted transaction statistics changes (10,000).
+    pub const MAX_STAGED_TRANSACTIONS: usize = 10_000;
 
     /// Creates a new InvertedIndex with explicit language configuration.
     ///
@@ -285,7 +282,7 @@ impl<S: StorageEngine> InvertedIndex<S> {
             change.docs_delta = 1;
             change.tokens_delta = new_len as i64;
         }
-        self.stage_stats_change(tx, change);
+        self.stage_stats_change(tx, change)?;
 
         for (term, tf) in tfs_vec {
             let pl_doc_key = self.key_with_term_doc(&term, doc_id);
@@ -398,16 +395,23 @@ impl<S: StorageEngine> InvertedIndex<S> {
             docs_delta: -1,
             tokens_delta: -(doc_len as i64),
         };
-        self.stage_stats_change(tx, change);
+        self.stage_stats_change(tx, change)?;
 
         Ok(())
     }
 
-    fn stage_stats_change(&self, tx: TxId, change: StagedStatsChange) {
+    fn stage_stats_change(&self, tx: TxId, change: StagedStatsChange) -> Result<()> {
         let mut guard = self.staged_stats.lock();
+        if guard.len() >= Self::MAX_STAGED_TRANSACTIONS && !guard.contains_key(&tx) {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Staged stats limit ({}) exceeded for uncommitted transactions",
+                Self::MAX_STAGED_TRANSACTIONS
+            )));
+        }
         let entry = guard.entry(tx).or_default();
         entry.docs_delta += change.docs_delta;
         entry.tokens_delta += change.tokens_delta;
+        Ok(())
     }
 
     #[allow(dead_code)]
@@ -490,6 +494,8 @@ impl<S: StorageEngine> InvertedIndex<S> {
         if query.is_empty() || k == 0 {
             return Ok(Vec::new());
         }
+
+        let k = k.min(MAX_SEARCH_K);
 
         if query.len() > Self::MAX_TEXT_BYTES {
             return Err(MemFuseError::InvalidInput(format!(
@@ -1702,6 +1708,47 @@ mod tests {
         let oversized_q = "q".repeat(InvertedIndex::<MockStorage>::MAX_TEXT_BYTES + 1);
         let err = index.search(&oversized_q, 10).await.unwrap_err(); // unwrap allowed
         assert!(matches!(err, MemFuseError::InvalidInput(_)));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_staged_stats_limit_exceeded() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage, "limit_ns");
+
+        // Fill staged_stats up to MAX_STAGED_TRANSACTIONS
+        for i in 1..=InvertedIndex::<MockStorage>::MAX_STAGED_TRANSACTIONS {
+            let tx = TxId::new(i as u64);
+            let doc_id = DocId::new(i as u64);
+            index.upsert_document(tx, doc_id, "test document").await?;
+        }
+
+        // The (MAX_STAGED_TRANSACTIONS + 1)-th transaction should fail with InvalidInput
+        let overflow_tx =
+            TxId::new((InvertedIndex::<MockStorage>::MAX_STAGED_TRANSACTIONS + 1) as u64);
+        let overflow_doc = DocId::new(999_999);
+        let err = index
+            .upsert_document(overflow_tx, overflow_doc, "overflow text")
+            .await
+            .unwrap_err(); // unwrap allowed
+        assert!(matches!(err, MemFuseError::InvalidInput(_)));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_search_bm25_at_clamped_k() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage, "clamp_k_ns");
+
+        let tx = TxId::new(1);
+        index.insert(tx, DocId::new(1), "keyword alpha").await?;
+        index.commit(tx).await?;
+
+        // Search with k = usize::MAX should be clamped to MAX_SEARCH_K without panic or error
+        let results = index.search("keyword", usize::MAX).await?;
+        assert_eq!(results.len(), 1);
 
         Ok(())
     }

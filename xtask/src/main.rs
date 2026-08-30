@@ -587,12 +587,13 @@ fn generate_dag_topology_section(crates: &[CrateInfo]) -> String {
     out
 }
 
+#[allow(dead_code)]
 fn format_loc(loc: usize) -> String {
     let s = loc.to_string();
     let mut result = String::new();
     let len = s.len();
     for (i, c) in s.chars().enumerate() {
-        if i > 0 && (len - i) % 3 == 0 {
+        if i > 0 && (len - i).is_multiple_of(3) {
             result.push('.');
         }
         result.push(c);
@@ -743,9 +744,104 @@ pub fn run_sync_docs(check_only: bool) -> bool {
     }
 }
 
+pub fn find_root_dir() -> PathBuf {
+    if Path::new("Cargo.toml").exists()
+        && fs::read_to_string("Cargo.toml")
+            .unwrap_or_default()
+            .contains("[workspace]")
+    {
+        PathBuf::from(".")
+    } else if Path::new("../Cargo.toml").exists() {
+        PathBuf::from("..")
+    } else {
+        PathBuf::from(".")
+    }
+}
+
+pub fn check_readme_crate_count(actual_count: usize, readme_content: &str) -> bool {
+    let re = Regex::new(r"Workspace Crates\s*\(\s*(\d+)").unwrap();
+    if let Some(caps) = re.captures(readme_content) {
+        if let Ok(documented_count) = caps[1].parse::<usize>() {
+            if actual_count != documented_count {
+                eprintln!(
+                    "❌ Consistency error: Crate-Anzahl im Code ({}) stimmt nicht mit README.md ({}) überein!",
+                    actual_count, documented_count
+                );
+                return false;
+            }
+        }
+    }
+    true
+}
+
+pub fn check_crate_agents(crates: &[CrateInfo], root_dir: &Path) -> bool {
+    let mut failed = false;
+    for c in crates {
+        let agents_md_path = root_dir.join(&c.path).join("AGENTS.md");
+        if !agents_md_path.exists() {
+            eprintln!(
+                "❌ Consistency error: Crate '{}' hat keine AGENTS.md!",
+                c.name
+            );
+            failed = true;
+        }
+    }
+    !failed
+}
+
+pub fn check_adr_consistency(decisions: &str) -> bool {
+    let mut failed = false;
+
+    // Prüfe ADR-Eindeutigkeit
+    let adr_numbers: Vec<u32> = decisions
+        .lines()
+        .filter_map(|l| {
+            l.strip_prefix("## ADR-")
+                .and_then(|rest| rest.split(|c: char| !c.is_ascii_digit()).next())
+                .and_then(|num_str| num_str.parse::<u32>().ok())
+        })
+        .collect();
+
+    let mut seen = std::collections::HashSet::new();
+    for &num in &adr_numbers {
+        if !seen.insert(num) {
+            eprintln!(
+                "❌ Consistency error: ADR-{:03} ist mehrfach vergeben!",
+                num
+            );
+            failed = true;
+        }
+    }
+
+    // Lücken-Erkennung
+    let mut sorted_numbers = adr_numbers.clone();
+    sorted_numbers.sort_unstable();
+    sorted_numbers.dedup();
+    for window in sorted_numbers.windows(2) {
+        if window[1] - window[0] > 1 {
+            // Lücke gefunden zwischen window[0] und window[1]
+            // Prüfe, ob ein expliziter Platzhalter-Eintrag für die
+            // fehlenden Nummern existiert (Text wie "Nicht vergeben")
+            for missing in (window[0] + 1)..window[1] {
+                let placeholder_pattern = format!("ADR-{:03}", missing);
+                if !decisions.contains(&placeholder_pattern) {
+                    eprintln!(
+                        "❌ Consistency error: Lücke bei ADR-{:03} ohne dokumentierte Begründung!",
+                        missing
+                    );
+                    failed = true;
+                }
+            }
+        }
+    }
+
+    !failed
+}
+
 pub fn run_check_consistency() -> bool {
     println!("=== xtask check-consistency ===");
     let mut failed = false;
+    let root_dir = find_root_dir();
 
     let crates = get_workspace_crates();
     let actual_count = crates.len();
@@ -760,6 +856,25 @@ pub fn run_check_consistency() -> bool {
             );
             failed = true;
         }
+    }
+
+    // (a) README crate count check
+    let readme_path = root_dir.join("README.md");
+    let readme_content = fs::read_to_string(&readme_path).unwrap_or_default();
+    if !check_readme_crate_count(actual_count, &readme_content) {
+        failed = true;
+    }
+
+    // (b) Per-crate AGENTS.md check
+    if !check_crate_agents(&crates, &root_dir) {
+        failed = true;
+    }
+
+    // (c) & (d) ADR uniqueness & gap detection
+    let decisions_path = root_dir.join("DECISIONS.md");
+    let decisions = fs::read_to_string(&decisions_path).unwrap_or_default();
+    if !check_adr_consistency(&decisions) {
+        failed = true;
     }
 
     if failed {
@@ -1033,6 +1148,74 @@ mod tests {
             is_resolved: false,
         });
         assert!(run_check_review_coverage(&tags_diff_sessions));
+    }
+
+    #[test]
+    fn test_check_consistency_fails_on_duplicate_adr_number() {
+        let decisions_fixture = r#"
+## ADR-001: First Decision
+## ADR-020: Second Decision
+## ADR-020: Duplicate Decision
+"#;
+        assert!(!check_adr_consistency(decisions_fixture));
+    }
+
+    #[test]
+    fn test_check_consistency_fails_on_crate_missing_agents_md() {
+        let dir = tempfile::tempdir().unwrap();
+        let crate_dir = dir.path().join("crates/memfuse-fake");
+        fs::create_dir_all(&crate_dir).unwrap();
+
+        let crates = vec![CrateInfo {
+            name: "memfuse-fake".to_string(),
+            path: "crates/memfuse-fake".to_string(),
+            layer: 1,
+            loc: 10,
+            status: "Clean".to_string(),
+            description: "Fake Crate".to_string(),
+            dependencies: vec![],
+        }];
+
+        assert!(!check_crate_agents(&crates, dir.path()));
+    }
+
+    #[test]
+    fn test_check_consistency_passes_on_clean_fixture() {
+        let decisions_fixture = r#"
+## ADR-001: First Decision
+## ADR-002: Second Decision
+## ADR-003: Third Decision
+"#;
+        assert!(check_adr_consistency(decisions_fixture));
+
+        let readme_fixture = "## Workspace Crates (1 Active Crates)";
+        assert!(check_readme_crate_count(1, readme_fixture));
+
+        let dir = tempfile::tempdir().unwrap();
+        let crate_dir = dir.path().join("crates/memfuse-fake");
+        fs::create_dir_all(&crate_dir).unwrap();
+        fs::write(crate_dir.join("AGENTS.md"), "# AGENTS").unwrap();
+
+        let crates = vec![CrateInfo {
+            name: "memfuse-fake".to_string(),
+            path: "crates/memfuse-fake".to_string(),
+            layer: 1,
+            loc: 10,
+            status: "Clean".to_string(),
+            description: "Fake Crate".to_string(),
+            dependencies: vec![],
+        }];
+
+        assert!(check_crate_agents(&crates, dir.path()));
+    }
+
+    #[test]
+    fn test_check_consistency_passes_on_current_decisions() {
+        let root = find_root_dir();
+        let decisions_path = root.join("DECISIONS.md");
+        let decisions = fs::read_to_string(&decisions_path).unwrap_or_default();
+        let pass = check_adr_consistency(&decisions);
+        assert!(pass, "DECISIONS.md must be clean and free of duplicate ADR numbers");
     }
 
     #[test]

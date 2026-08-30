@@ -1,3 +1,10 @@
+// FILE-CONTEXT Header (Format v3)
+// ZWECK: Continuous event stream abstractions delivering telemetry/trigger events to agents.
+// INVARIANTEN: Enforces MAX_EVENT_SOURCE_CAPACITY (10,000) on pending queue and event list; validates event source string.
+// NICHT-OFFENSICHTLICH: PollingDocumentEventSource performs delta scanning via scan_prefix_at; drops over-capacity events gracefully.
+// HOTSPOTS: BackgroundEvent::try_new (ll. 30-60), PollingDocumentEventSource::next_event (ll. 120-175).
+// STAND: TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)
+
 //! Continuous event source abstractions for background telemetry and triggers.
 //!
 //! Provides `EventSource` trait and concrete implementations (`PollingDocumentEventSource`, `VecEventSource`).
@@ -36,6 +43,18 @@ impl BackgroundEvent {
                 "BackgroundEvent source must not be empty".to_string(),
             ));
         }
+        if source_str.len() > MAX_ID_LEN {
+            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+                "BackgroundEvent source length {} exceeds maximum allowed length of {}",
+                source_str.len(),
+                MAX_ID_LEN
+            )));
+        }
+        if source_str.contains('\0') {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "BackgroundEvent source cannot contain null bytes".to_string(),
+            ));
+        }
         Ok(Self {
             payload,
             source: source_str,
@@ -43,6 +62,7 @@ impl BackgroundEvent {
         })
     }
 
+    #[deprecated(note = "Use try_new instead to handle validation errors without panicking")]
     pub fn new(
         payload: serde_json::Value,
         source: impl Into<String>,
@@ -89,7 +109,7 @@ impl<S: StorageEngine> PollingDocumentEventSource<S> {
     pub fn with_capacity(
         collection: Arc<Collection<S>>,
         poll_interval: Duration,
-        max_pending_capacity: usize,
+        _max_pending_capacity: usize,
     ) -> Self {
         Self {
             collection,
@@ -189,6 +209,7 @@ impl VecEventSource {
     }
 
     /// Constructs a `VecEventSource`, panicking if event count exceeds maximum capacity.
+    #[deprecated(note = "Use try_new instead to handle capacity limits without panicking")]
     pub fn new(events: Vec<BackgroundEvent>) -> Self {
         Self::try_new(events)
             .expect("Event count exceeds MAX_EVENT_SOURCE_CAPACITY in VecEventSource::new")

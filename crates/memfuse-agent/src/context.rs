@@ -1,3 +1,10 @@
+// FILE-CONTEXT Header (Format v3)
+// ZWECK: Workflow execution state context carrying task ID, budget, and memory.
+// INVARIANTEN: Task ID & node ID must be non-empty, <=256 bytes, null-byte free; event history capped at 10,000 items.
+// NICHT-OFFENSICHTLICH: attach_event evicts oldest event to strictly limit memory growth.
+// HOTSPOTS: validate_task_id/validate_node_id (ll. 20-55), attach_event (ll. 140-155).
+// STAND: TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)
+
 //! Operational context for an agent workflow execution.
 //!
 //! Carries task identity, graph position, token budget, DB references, and
@@ -17,7 +24,7 @@ pub const MAX_TELEMETRY_EVENTS: usize = 10_000;
 
 /// Validates a task identifier to ensure it is non-empty, <= 256 bytes, and contains no null bytes.
 pub fn validate_task_id(task_id: &str) -> Result<()> {
-    if task_id.is_empty() {
+    if task_id.trim().is_empty() {
         return Err(MemFuseError::InvalidInput(
             "task_id cannot be empty".to_string(),
         ));
@@ -39,7 +46,7 @@ pub fn validate_task_id(task_id: &str) -> Result<()> {
 
 /// Validates a node identifier to ensure it is non-empty, <= 256 bytes, and contains no null bytes.
 pub fn validate_node_id(node_id: &str) -> Result<()> {
-    if node_id.is_empty() {
+    if node_id.trim().is_empty() {
         return Err(MemFuseError::InvalidInput(
             "node_id cannot be empty".to_string(),
         ));
@@ -122,6 +129,7 @@ impl AgentContext {
     }
 
     /// Constructs an `AgentContext`, panicking if `task_id` or `start_node` is invalid.
+    #[deprecated(note = "Use try_new instead to handle validation errors without panicking")]
     pub fn new(
         task_id: impl Into<String>,
         start_node: impl Into<String>,

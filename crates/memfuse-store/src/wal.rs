@@ -1,6 +1,6 @@
 //! Write-Ahead Log (WAL) for durability and crash recovery with HMAC chaining.
 // FILE-CONTEXT
-// STAND: 2026-08-27T14:32:00Z
+// STAND: 2026-08-30T21:49:55Z (SESSION: 283abf0f)
 // ZWECK: Write-Ahead-Log mit HMAC-Chaining für crash-sichere WAL-Operationen
 // INVARIANTEN: fsync NACH jedem Schreibvorgang (ADR-002); WAL VOR MemTable schreiben
 // NICHT-OFFENSICHTLICH: sync_all() auf dem Verzeichnis-FD nötig, nicht nur auf der Datei
@@ -970,9 +970,9 @@ impl Wal {
                                 break;
                             } else {
                                 let reason = if is_crc_error {
-                                    format!("CRC validation failed: {}", e)
+                                    format!("CRC validation failed: {e}")
                                 } else {
-                                    format!("Deserialization failed: {}", e)
+                                    format!("Deserialization failed: {e}")
                                 };
                                 return Err(MemFuseError::wal_corruption(chunk_start_pos, reason));
                             }
