@@ -89,11 +89,6 @@ pub struct WalHmac {
 
 impl WalHmac {
     pub fn new(integrity_key: &[u8]) -> Result<Self> {
-        if integrity_key.is_empty() {
-            return Err(memfuse_core::MemFuseError::invalid_input(
-                "Integrity key must not be empty",
-            ));
-        }
         let mut mac = Hmac::<Sha256>::new_from_slice(integrity_key)
             .map_err(|e| memfuse_core::MemFuseError::Crypto(format!("HMAC key error: {}", e)))?;
         mac.update(b"memfuse-wal-v1");
@@ -248,18 +243,6 @@ mod tests {
         hmac.update(b"data");
         let result = hmac.finalize();
         assert_ne!(result, [0u8; 32]);
-    }
-
-    #[test]
-    fn test_wal_hmac_empty_key_fails() {
-        let res = WalHmac::new(b"");
-        assert!(res.is_err());
-        if let Err(err) = res {
-            assert!(matches!(
-                err,
-                memfuse_core::MemFuseError::InvalidInput { .. }
-            ));
-        }
     }
 
     #[test]

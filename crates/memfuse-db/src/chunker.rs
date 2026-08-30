@@ -432,6 +432,30 @@ mod tests {
     }
 
     #[test]
+    fn test_chunk_text_empty_string_returns_empty() {
+        assert!(chunk_text("", 10).is_empty());
+    }
+
+    #[test]
+    fn test_chunk_text_emoji_multibyte_boundary() {
+        let text = "🦀🚀🔥⭐🎉";
+        let chunks = chunk_text(text, 2);
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0], "🦀🚀");
+        assert_eq!(chunks[1], "🔥⭐");
+        assert_eq!(chunks[2], "🎉");
+    }
+
+    #[test]
+    fn test_chunk_text_exact_chunk_size_multiple() {
+        let text = "abcdefghij"; // 10 chars
+        let chunks = chunk_text(text, 5);
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0], "abcde");
+        assert_eq!(chunks[1], "fghij");
+    }
+
+    #[test]
     fn test_chunker_zero_max_tokens_handled_safely() {
         let config = ChunkerConfig {
             max_tokens: 0,
@@ -440,5 +464,32 @@ mod tests {
         let chunker = MarkdownChunker::new(config);
         let chunks = chunker.chunk(DocId::new(10), "Line 1\nLine 2");
         assert!(!chunks.is_empty());
+    }
+
+    #[test]
+    fn test_chunker_single_line_no_headings() {
+        let chunker = MarkdownChunker::with_defaults();
+        let chunks = chunker.chunk(DocId::new(5), "Plain single line document.");
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].content, "Plain single line document.");
+        let meta = chunks[0].metadata.as_ref().unwrap();
+        assert_eq!(meta["breadcrumb"], "");
+        assert_eq!(meta["heading_level"], 0);
+    }
+
+    #[test]
+    fn test_chunker_unsplit_heading_level_ignored() {
+        let config = ChunkerConfig {
+            split_levels: vec![1, 2], // H3 (###) ignored
+            min_tokens: 0,
+            ..Default::default()
+        };
+        let chunker = MarkdownChunker::new(config);
+        let markdown = "# Level 1\nText 1\n### Level 3\nText 3";
+        let chunks = chunker.chunk(DocId::new(6), markdown);
+        // Level 3 heading should NOT split into a new section
+        assert_eq!(chunks.len(), 1);
+        let meta = chunks[0].metadata.as_ref().unwrap();
+        assert_eq!(meta["breadcrumb"], "# Level 1");
     }
 }

@@ -236,5 +236,85 @@ mod tests {
 
         let meta_episodic = Some(json!({"memory_type": "Episodic"}));
         assert_eq!(extract_memory_type(&meta_episodic), MemoryType::Episodic);
+
+        let meta_invalid_type = Some(json!({"memory_type": 12345}));
+        assert_eq!(
+            extract_memory_type(&meta_invalid_type),
+            MemoryType::Semantic
+        );
+
+        let meta_working = Some(json!({"memory_type": "Working"}));
+        assert_eq!(extract_memory_type(&meta_working), MemoryType::Working);
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn test_try_from_empty_and_or_returns_invalid_input_error() {
+        let empty_and = MetadataFilter::And(vec![]);
+        let err_and = FilterExpr::try_from(empty_and);
+        assert!(matches!(
+            err_and,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+
+        let empty_or = MetadataFilter::Or(vec![]);
+        let err_or = FilterExpr::try_from(empty_or);
+        assert!(matches!(
+            err_or,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn test_try_from_all_filter_ops() {
+        let cond_eq = MetadataFilter::Condition {
+            field: "a".into(),
+            op: FilterOp::Eq,
+            value: json!(1),
+        };
+        assert!(FilterExpr::try_from(cond_eq).is_ok());
+
+        let cond_ne = MetadataFilter::Condition {
+            field: "a".into(),
+            op: FilterOp::Ne,
+            value: json!(1),
+        };
+        assert!(FilterExpr::try_from(cond_ne).is_ok());
+
+        let cond_gt = MetadataFilter::Condition {
+            field: "a".into(),
+            op: FilterOp::Gt,
+            value: json!(1),
+        };
+        assert!(FilterExpr::try_from(cond_gt).is_ok());
+
+        let cond_gte = MetadataFilter::Condition {
+            field: "a".into(),
+            op: FilterOp::Gte,
+            value: json!(1),
+        };
+        assert!(FilterExpr::try_from(cond_gte).is_ok());
+
+        let cond_lt = MetadataFilter::Condition {
+            field: "a".into(),
+            op: FilterOp::Lt,
+            value: json!(1),
+        };
+        assert!(FilterExpr::try_from(cond_lt).is_ok());
+
+        let cond_lte = MetadataFilter::Condition {
+            field: "a".into(),
+            op: FilterOp::Lte,
+            value: json!(1),
+        };
+        assert!(FilterExpr::try_from(cond_lte).is_ok());
+
+        let cond_not = MetadataFilter::Not(Box::new(MetadataFilter::Condition {
+            field: "a".into(),
+            op: FilterOp::Eq,
+            value: json!(1),
+        }));
+        assert!(FilterExpr::try_from(cond_not).is_ok());
     }
 }

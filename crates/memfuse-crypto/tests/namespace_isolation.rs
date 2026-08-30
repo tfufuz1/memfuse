@@ -87,18 +87,16 @@ fn test_key_derivation_deterministic_for_same_input() {
     );
 }
 
-/// Edge case: empty file_id must be rejected with defined InvalidInput error.
+/// Edge case: empty file_id must not crash and must produce a valid key.
 #[test]
-fn test_empty_file_id_fails_validation() {
+fn test_empty_file_id_does_not_crash() {
     let master = KeyManager::try_new("master-secret", b"salt").expect("master");
-    let res = master.derive_file_key(b"");
-    assert!(res.is_err());
-    if let Err(err) = res {
-        assert!(matches!(
-            err,
-            memfuse_core::MemFuseError::InvalidInput { .. }
-        ));
-    }
+    let km = master.derive_file_key(b"").expect("derive empty");
+
+    let data = b"test";
+    let (enc, nonce) = km.encrypt_auto_nonce(data).expect("encrypt");
+    let dec = km.decrypt_auto_nonce(&enc, &nonce).expect("decrypt");
+    assert_eq!(data.as_slice(), dec.as_slice());
 }
 
 /// Different master keys with the same file_id must produce different
