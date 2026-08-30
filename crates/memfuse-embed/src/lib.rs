@@ -1,3 +1,10 @@
+// FILE-CONTEXT:
+// ZWECK: In-process Embeddings via ONNX Runtime & Tokenizer Abstraktion (Layer 3).
+// INVARIANTEN: Feature-gated `onnx`, Default-Build ist pure-Rust-kompatibel ohne ONNX-Deps.
+// NICHT-OFFENSICHTLICH: `embed_async` nutzt `spawn_blocking` + Semaphore zur Tokio-Runtime-Schonung.
+// HOTSPOTS: Zeilen 130-250 (embed_async / run_inference)
+// STAND: TS:2026-08-30T18:54:01Z (SESSION: fd2b61e6)
+
 //! memfuse-embed — In-process text embeddings using ONNX Runtime.
 //!
 //! This crate provides a high-level API for generating vector embeddings from text
@@ -53,6 +60,20 @@ impl Default for TextEmbedderConfig {
     }
 }
 
+/// Maximum allowed batch size for `embed_batch` to prevent memory exhaustion.
+pub const MAX_EMBED_BATCH_SIZE: usize = 10_000;
+
+/// Validates that an embedding batch size does not exceed `MAX_EMBED_BATCH_SIZE`.
+pub fn validate_embed_batch_size(batch_size: usize) -> Result<(), memfuse_core::MemFuseError> {
+    if batch_size > MAX_EMBED_BATCH_SIZE {
+        return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+            "Batch size {} exceeds maximum allowed limit of {}",
+            batch_size, MAX_EMBED_BATCH_SIZE
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(feature = "onnx")]
 pub type OnnxEmbedder = TextEmbedder;
 
@@ -61,6 +82,10 @@ pub type OnnxEmbedder = TextEmbedder;
 /// Uses `tokio::task::spawn_blocking` to offload ONNX inference to a blocking
 /// thread pool, preventing Tokio runtime starvation. A [`tokio::sync::Semaphore`]
 /// limits the number of concurrent inference operations.
+///
+/// CONCURRENCY SAFETY & LOCK HIERARCHY:
+/// `TextEmbedder` holds no std/parking_lot Mutex or RwLock. Async concurrency is regulated solely
+/// via `tokio::sync::Semaphore`. Thread blocking occurs safely within `tokio::task::spawn_blocking`.
 #[cfg(feature = "onnx")]
 #[derive(Debug, Clone)]
 pub struct TextEmbedder {
@@ -84,6 +109,11 @@ impl TextEmbeddingEngine for TextEmbedder {
     }
 
     async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+        validate_embed_batch_size(texts.len())?;
+
         let mut handles = Vec::with_capacity(texts.len());
         for text in texts {
             let text_owned = text.to_string();
@@ -138,6 +168,17 @@ impl TextEmbedder {
         model_dir: impl AsRef<Path>,
         config: TextEmbedderConfig,
     ) -> Result<Self> {
+        if config.pool_size == 0 {
+            return Err(MemFuseError::InvalidInput(
+                "TextEmbedderConfig pool_size must be greater than 0".into(),
+            ));
+        }
+        if config.max_sequence_length == 0 {
+            return Err(MemFuseError::InvalidInput(
+                "TextEmbedderConfig max_sequence_length must be greater than 0".into(),
+            ));
+        }
+
         let path = model_dir.as_ref();
         if !path.join("tokenizer.json").exists() {
             return Err(MemFuseError::InvalidInput(
@@ -464,5 +505,39 @@ mod tests {
         assert!(err_msg.contains("Failed on b"));
 
         Ok(())
+    }
+
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn test_text_embedder_config_validation() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
+        let dir = tempdir()?;
+
+        let mut invalid_cfg = TextEmbedderConfig::default();
+        invalid_cfg.pool_size = 0;
+        let res = TextEmbedder::load_with_config(dir.path(), invalid_cfg);
+        assert!(res.is_err());
+        assert!(matches!(res.err().unwrap(), MemFuseError::InvalidInput(_)));
+
+        let mut invalid_cfg2 = TextEmbedderConfig::default();
+        invalid_cfg2.max_sequence_length = 0;
+        let res2 = TextEmbedder::load_with_config(dir.path(), invalid_cfg2);
+        assert!(res2.is_err());
+        assert!(matches!(res2.err().unwrap(), MemFuseError::InvalidInput(_)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_embed_batch_size() {
+        use super::{validate_embed_batch_size, MAX_EMBED_BATCH_SIZE};
+        use memfuse_core::MemFuseError;
+
+        assert!(validate_embed_batch_size(MAX_EMBED_BATCH_SIZE).is_ok());
+        let res = validate_embed_batch_size(MAX_EMBED_BATCH_SIZE + 1);
+        assert!(res.is_err());
+        let err = res.err().unwrap();
+        assert!(matches!(err, MemFuseError::InvalidInput(_)));
+        assert!(err.to_string().contains("exceeds maximum allowed limit"));
     }
 }
