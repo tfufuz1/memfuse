@@ -1,3 +1,10 @@
+// FILE-CONTEXT:
+// ZWECK: PyO3 FFI bindings bridging MemFuse embedded vector DB functionality to Python.
+// INVARIANTEN: Zero Rust panics cross FFI boundary; GIL released during block_on async calls.
+// NICHT-OFFENSICHTLICH: Uses OnceLock multi-thread Tokio runtime shared across Python worker threads.
+// HOTSPOTS: [160-205] memfuse_err mapping, [270-650] CRUD & search methods FFI boundary validation.
+// STAND: TS:2026-08-30T18:52:02Z (SESSION: 846802ab)
+
 //! # MemFuse Python Bindings
 //!
 //! This crate provides the Python bridge for the MemFuse embedded hybrid-search database.
@@ -14,7 +21,7 @@
 
 use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
 use numpy::PyReadonlyArray1;
-use pyo3::exceptions::{PyKeyError, PyPermissionError, PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyKeyError, PyPermissionError, PyRuntimeError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pythonize::{depythonize, pythonize};
@@ -93,10 +100,24 @@ fn opt_dict_to_json(
     }
 }
 
-/// Validates that a string ID is non-empty.
+/// Maximum allowed length for document string IDs (1024 characters).
+const MAX_ID_LENGTH: usize = 1024;
+/// Maximum allowed length for relationship labels (256 characters).
+const MAX_LABEL_LENGTH: usize = 256;
+/// Maximum batch size for batch insertion/upsertion (10,000 items).
+const MAX_BATCH_SIZE: usize = 10_000;
+
+/// Validates that a string ID is non-empty and does not exceed maximum length.
 fn validate_id(id: &str) -> PyResult<()> {
     if id.is_empty() {
         return Err(MemFuseValueError::new_err("Document ID cannot be empty"));
+    }
+    if id.len() > MAX_ID_LENGTH {
+        return Err(MemFuseValueError::new_err(format!(
+            "Document ID exceeds maximum length of {} bytes. Got: {}",
+            MAX_ID_LENGTH,
+            id.len()
+        )));
     }
     Ok(())
 }
@@ -163,36 +184,28 @@ fn memfuse_err(e: memfuse_core::MemFuseError) -> PyErr {
     Python::with_gil(|py| {
         let py_err = match dto.kind.as_str() {
             "NotFound" => PyKeyError::new_err(dto.message.clone()),
-            "Conflict" | "Transaction" => PyRuntimeError::new_err(dto.message.clone()),
-            "PolicyViolation" | "NamespaceViolation" => {
-                PyPermissionError::new_err(dto.message.clone())
+            "Conflict" | "Transaction" | "TransactionTimeout" => {
+                PyRuntimeError::new_err(dto.message.clone())
             }
-            "InvalidInput" => PyValueError::new_err(dto.message.clone()),
+            "PolicyViolation"
+            | "NamespaceViolation"
+            | "Sandbox"
+            | "MemoryLimitExceeded"
+            | "SandboxTimeout" => PyPermissionError::new_err(dto.message.clone()),
+            "InvalidInput"
+            | "Serialization"
+            | "Json"
+            | "ParseError"
+            | "Bincode"
+            | "InvalidSequenceNumber"
+            | "CheckpointNotFound" => MemFuseValueError::new_err(dto.message.clone()),
             "Storage" | "Io" | "WalCorruption" | "ChecksumMismatch" => {
                 MemFuseIOError::new_err(dto.message.clone())
             }
             "Index" | "HnswConnectivityDegraded" | "Text" => {
                 MemFuseIndexError::new_err(dto.message.clone())
             }
-            "InvalidInput"
-            | "Serialization"
-            | "Json"
-            | "ParseError"
-            | "Bincode"
-            | "NotFound"
-            | "Transaction"
-            | "TransactionTimeout"
-            | "Conflict"
-            | "InvalidSequenceNumber"
-            | "CheckpointNotFound" => MemFuseValueError::new_err(dto.message.clone()),
             "Crypto" => MemFuseCryptoError::new_err(dto.message.clone()),
-            "Sandbox"
-            | "MemoryLimitExceeded"
-            | "SandboxTimeout"
-            | "PolicyViolation"
-            | "NamespaceViolation" => {
-                pyo3::exceptions::PyPermissionError::new_err(dto.message.clone())
-            }
             "MemoryBudgetExceeded" => pyo3::exceptions::PyMemoryError::new_err(dto.message.clone()),
             "CapabilityUnsupported" => {
                 pyo3::exceptions::PyNotImplementedError::new_err(dto.message.clone())
@@ -611,6 +624,13 @@ macro_rules! memfuse_crud_methods {
                         "Relationship label cannot be empty",
                     ));
                 }
+                if label.len() > MAX_LABEL_LENGTH {
+                    return Err(MemFuseValueError::new_err(format!(
+                        "Relationship label exceeds maximum length of {} bytes. Got: {}",
+                        MAX_LABEL_LENGTH,
+                        label.len()
+                    )));
+                }
                 let rt = get_runtime()?;
                 py.allow_threads(|| rt.block_on(self.inner.relate(from, to, label)))
                     .map_err(memfuse_err)
@@ -694,6 +714,13 @@ macro_rules! memfuse_batch_methods {
                     Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
                 )>,
             ) -> PyResult<()> {
+                if docs.len() > MAX_BATCH_SIZE {
+                    return Err(MemFuseValueError::new_err(format!(
+                        "Batch size exceeds maximum limit of {} items. Got: {}",
+                        MAX_BATCH_SIZE,
+                        docs.len()
+                    )));
+                }
                 let rt = get_runtime()?;
                 let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
                     Vec::with_capacity(docs.len());
@@ -721,6 +748,13 @@ macro_rules! memfuse_batch_methods {
                     Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
                 )>,
             ) -> PyResult<()> {
+                if docs.len() > MAX_BATCH_SIZE {
+                    return Err(MemFuseValueError::new_err(format!(
+                        "Batch size exceeds maximum limit of {} items. Got: {}",
+                        MAX_BATCH_SIZE,
+                        docs.len()
+                    )));
+                }
                 let rt = get_runtime()?;
                 let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
                     Vec::with_capacity(docs.len());
@@ -976,6 +1010,42 @@ mod tests {
         let py_err: PyErr = memfuse_err(err);
         Python::with_gil(|py| {
             assert!(py_err.is_instance_of::<PyPermissionError>(py));
+        });
+    }
+
+    #[test]
+    fn test_validate_id_length_and_empty() {
+        assert!(validate_id("").is_err());
+        assert!(validate_id("valid_id").is_ok());
+
+        let long_id = "a".repeat(MAX_ID_LENGTH + 1);
+        assert!(validate_id(&long_id).is_err());
+
+        let max_id = "a".repeat(MAX_ID_LENGTH);
+        assert!(validate_id(&max_id).is_ok());
+    }
+
+    #[test]
+    fn test_validate_vector_nan_inf() {
+        assert!(validate_vector(&[1.0, 2.0, 3.0]).is_ok());
+        assert!(validate_vector(&[1.0, f32::NAN, 3.0]).is_err());
+        assert!(validate_vector(&[1.0, f32::INFINITY, 3.0]).is_err());
+        assert!(validate_vector(&[1.0, f32::NEG_INFINITY, 3.0]).is_err());
+    }
+
+    #[test]
+    fn test_py_err_io_and_index_mappings() {
+        pyo3::prepare_freethreaded_python();
+        let io_err = MemFuseError::Io(std::io::Error::other("disk error"));
+        let py_io_err: PyErr = memfuse_err(io_err);
+        Python::with_gil(|py| {
+            assert!(py_io_err.is_instance_of::<MemFuseIOError>(py));
+        });
+
+        let idx_err = MemFuseError::Index("hnsw broken".into());
+        let py_idx_err: PyErr = memfuse_err(idx_err);
+        Python::with_gil(|py| {
+            assert!(py_idx_err.is_instance_of::<MemFuseIndexError>(py));
         });
     }
 }
