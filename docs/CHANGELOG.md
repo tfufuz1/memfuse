@@ -4,6 +4,26 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
+| `TS:2026-08-30T18:52:02Z (SESSION: 20260830)` | `crates/memfuse-crypto/src/anti_tamper.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cold-boot protection and explicit Zeroize discipline for volatile encryption keys. |
+| `TS:2026-08-30T18:52:02Z (SESSION: 20260830)` | `crates/memfuse-crypto/src/crypto.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Key Management and AES-256-GCM-SIV authenticated encryption for MemFuse data structures. |
+| `TS:2026-08-30T18:52:02Z (SESSION: 20260830)` | `crates/memfuse-crypto/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MemFuse cryptographic kernel - Layer 1 crate for AEAD block encryption, HKDF key derivation, and WAL integrity. |
+| `TS:2026-08-30T18:52:02Z (SESSION: 20260830)` | `crates/memfuse-crypto/src/wal_crypto.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Transparent encrypted WAL chunk provider and constant-time HMAC-SHA256 integrity verifier. |
+| `TS:2026-08-30T18:51:48Z (SESSION: 872b1087)` | `crates/memfuse-text/src/bm25.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Berechnet mathematisch BM25 Term-Scores und validiert Hyperparameter (k1, b). |
+| `TS:2026-08-30T18:51:48Z (SESSION: 872b1087)` | `crates/memfuse-text/src/inverted.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Speichert Postings-Listen, Dokumentlängen und BM25-Statistiken transaktional im StorageEngine. |
+| `TS:2026-08-30T18:51:48Z (SESSION: 872b1087)` | `crates/memfuse-text/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Exportiert Bm25Scorer, InvertedIndex, Morphologie-Tools und BM25-Modelle für DB-Hybrid-Suche. |
+| `TS:2026-08-30T18:51:48Z (SESSION: 872b1087)` | `crates/memfuse-text/src/morphology.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Umlaut-Normalisierung (ä->ae, ö->oe, ü->ue, ß->ss) und Zerlegung deutscher Zusammensetzungen. |
+| `TS:2026-08-30T18:51:48Z (SESSION: 872b1087)` | `crates/memfuse-text/src/tokenizer.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Zerschneidet Eingabetexte in normalisierte Wort-Tokens mit optionaler deutscher Morphologie. |
+| `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/client.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | HTTP-Client für lokale Ollama LLM/Embedding API mit Retry/Timeout/Streaming-Semantik |
+| `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/context_prefixer.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Anthropic Contextual Retrieval — LLM-basierte Präfix-Generierung für Chunks |
+| `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/embedding.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | `TextEmbeddingEngine`-Implementierung für Ollama Embedding API |
+| `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/importance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | LLM-basierte Wichtigkeits-Bewertung (ImportanceScore 0.0-1.0) für Memory Chunks |
+| `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/model_info.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Modell-Inspektion (/api/show) und Statisches Mapping bekannter Embedding-Dimensionen |
+| `2026-08-30T18:54:39Z` | `crates/memfuse-crypto/src/crypto.rs` | `ANCHOR` | `TEST:CRY-001` | `3779c7f0` | `DONE` | `0` | // ANCHOR[TEST:CRY-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:3779c7f0) — Nonce-Uniqueness verification bei paralleler Verschlüsselung |
+| `2026-08-30T18:54:39Z` | `crates/memfuse-ollama/src/client.rs` | `ANCHOR` | `TEST:OLL-001` | `ed7b7b38` | `DONE` | `0` | // ANCHOR[TEST:OLL-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:ed7b7b38) |
+| `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/community.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Community-Erkennung via Label Propagation für GraphRAG |
+| `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/csr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion) |
+| `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/ppr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Personalized PageRank Power Iteration über CSR Graph |
+| `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/session_dag.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Session-DAG für Grok-Style Agent State Branching |
 | `2026-08-30T18:51:50Z (SESSION: c9c33dfb)` | `crates/memfuse-agent/src/audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Unveränderbarer Append-Only Audit-Trail für Agenten-Workflow-Ausführungen. |
 | `2026-08-30T18:51:50Z (SESSION: c9c33dfb)` | `crates/memfuse-agent/src/context.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Operativer Kontext für Agenten-Workflow-Ausführungen. |
 | `2026-08-30T18:51:50Z (SESSION: c9c33dfb)` | `crates/memfuse-agent/src/engine.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Deterministische, persistente Workflow-Engine für Agenten. |
@@ -42,10 +62,9 @@
 | `2026-08-29T10:00:00Z` | `crates/memfuse-db/tests/semantic_recall.rs` | `REVIEW-PASS` | `PERF:EVAL-001` | `b8e4f1a2` | `PASS` | `1` | // REVIEW-PASS[1/2] STATUS:PASS (ID: PERF:EVAL-001) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2) |
 | `2026-08-29T09:14:07Z (SESSION: a3f29c1d)` | `crates/memfuse-core/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Core types, traits, and error handling for MemFuse. |
 | `2026-08-29T09:14:07Z` | `crates/memfuse-core/src/lib.rs` | `ANCHOR` | `AGT-CORE-a3f29c1d` | `a3f29c1d` | `DONE` | `0` | // ANCHOR[DEBT:CORE-INLINE-001] STATUS:DONE (ID: AGT-CORE-a3f29c1d) (TS:2026-08-29T09:14:07Z) (SESSION: a3f29c1d) |
-| `2026-08-29T08:06:29Z` | `crates/memfuse-checkpoint/src/lib.rs` | `AI-TAG` | `AGT-CKPT-f3a1b2c4` | `-` | `RESOLVED` | `0` | /// AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z) |
+| `2026-08-29T08:06:29Z` | `crates/memfuse-checkpoint/src/lib.rs` | `AI-TAG` | `AGT-CKPT-f3a1b2c4` | `14348074` | `RESOLVED` | `0` | /// AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z) (SESSION:14348074) |
 | `2026-08-29T08:06:29Z` | `crates/memfuse-store/src/wal.rs` | `AI-TAG` | `-` | `a3f29c1d` | `RESOLVED` | `-` | // AI-TAG[SECURITY][CRITICAL] RESOLVED: Atomic WAL integrity key creation (TS:2026-08-29T08:06:29Z) (SESSION: a3f29c1d) |
 | `2026-08-29T05:41:20Z (SESSION: f7999509)` | `crates/memfuse-db/src/fusion.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Reciprocal Rank Fusion (RRF) — vereint HNSW, BM25 und Graph-Ränge |
-| `2026-08-29T05:41:20Z (SESSION: f7999509)` | `crates/memfuse-graph/src/csr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion) |
 | `2026-08-29T05:41:20Z (SESSION: f7999509)` | `crates/memfuse-index/src/distance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SIMD-beschleunigte Distanzmetriken (Cosinus, L2) für HNSW-Index |
 | `2026-08-29T00:00:00Z` | `crates/memfuse-db/tests/semantic_recall.rs` | `ANCHOR` | `PERF:EVAL-001` | `a3f29c1d` | `DONE` | `2` | // ANCHOR[PERF:EVAL-001] STATUS:DONE (TS:2026-08-29T00:00:00Z) (SESSION: a3f29c1d) — Semantic Retrieval Evaluation Framework |
 | `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/collection/relate.rs` | `AI-TAG` | `AGT-DB-005` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-DB-005 — relate() rollback race behoben, siehe ADR-023 (TS:2026-08-28T00:00:00Z) |

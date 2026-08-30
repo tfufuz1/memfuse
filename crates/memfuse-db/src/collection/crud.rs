@@ -278,6 +278,15 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         &self,
         docs: &[(String, Vec<f32>, Option<serde_json::Value>)],
     ) -> Result<()> {
+        if docs.is_empty() {
+            return Err(memfuse_core::MemFuseError::invalid_input("Batch cannot be empty"));
+        }
+        if docs.len() > 10_000 {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Batch size {} exceeds maximum allowed limit of 10,000",
+                docs.len()
+            )));
+        }
         let _guard = self.insert_lock.lock().await;
         let db_tx = self.begin_transaction()?;
         for (id, embedding, metadata) in docs {
@@ -334,6 +343,15 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         &self,
         docs: &[(String, Vec<f32>, Option<serde_json::Value>)],
     ) -> Result<()> {
+        if docs.is_empty() {
+            return Err(memfuse_core::MemFuseError::invalid_input("Batch cannot be empty"));
+        }
+        if docs.len() > 10_000 {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Batch size {} exceeds maximum allowed limit of 10,000",
+                docs.len()
+            )));
+        }
         let _guard = self.insert_lock.lock().await;
         let db_tx = self.begin_transaction()?;
         for (id, embedding, metadata) in docs {
