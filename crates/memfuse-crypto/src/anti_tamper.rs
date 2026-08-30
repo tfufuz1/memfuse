@@ -3,7 +3,7 @@
 // INVARIANTEN: Key bytes held in Zeroizing<[u8; 32]>. emergency_wipe explicitly zeroizes memory.
 // NICHT-OFFENSICHTLICH: Debug implementation redacts secret bytes. Constant-time equality comparison.
 // HOTSPOTS: [10-60]
-// STAND: TS:2026-08-30T22:01:36Z (SESSION: e8b9a102)
+// STAND: TS:2026-08-30T18:52:02Z (SESSION: 20260830)
 
 #![cfg_attr(not(test), forbid(unsafe_code))]
 
@@ -56,12 +56,11 @@ impl std::fmt::Debug for VolatileEncryptionKey {
 
 impl PartialEq for VolatileEncryptionKey {
     fn eq(&self, other: &Self) -> bool {
-        use subtle::ConstantTimeEq;
-        self.key_bytes
-            .as_slice()
-            .ct_eq(other.key_bytes.as_slice())
-            .unwrap_u8()
-            == 1
+        let mut diff = 0u8;
+        for (a, b) in self.key_bytes.iter().zip(other.key_bytes.iter()) {
+            diff |= a ^ b;
+        }
+        diff == 0
     }
 }
 
