@@ -415,6 +415,8 @@ mod tests {
     }
 
     // ANCHOR[TEST:CRY-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:3779c7f0) — Nonce-Uniqueness verification bei paralleler Verschlüsselung
+    // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:CRY-001) (TS:2026-08-30T19:00:00Z) (SESSION: b8e4f1a2)
+    // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:CRY-001) (TS:2026-08-30T20:00:00Z) (SESSION: c9f5e2b3)
     #[tokio::test]
     async fn test_parallel_nonce_uniqueness() {
         use std::collections::HashSet;
