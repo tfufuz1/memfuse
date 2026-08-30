@@ -958,7 +958,7 @@ impl Wal {
                     }
                 };
 
-                let mut slice = decrypted_data.as_slice();
+                let slice = decrypted_data.as_slice();
                 while !slice.is_empty() {
                     if slice.len() < 4 {
                         if pos >= file_size {
@@ -1014,7 +1014,6 @@ impl Wal {
                                     format!("Decryption failed: {}", e),
                                 ));
                             }
-                            break;
                         }
                     };
 
