@@ -1003,7 +1003,7 @@ impl StorageEngine for LsmStorage {
             .immutable_memtables
             .retain(|mt| !Arc::ptr_eq(mt, &old_memtable));
 
-        // last_committed_tx MUSS vor sstables.push() aktualisiert werden — sonst Race-Fenster für parallele Reader, siehe DECISIONS.md ADR-042.
+        // last_committed_tx MUSS vor sstables.push() aktualisiert werden — sonst Race-Fenster für parallele Reader, siehe DECISIONS.md ADR-043.
         let sst_max_tx = reader.metadata().max_tx_id;
         if sst_max_tx < TxId::INTERNAL_BASE {
             let mut current = self.last_committed_tx.load(Ordering::Acquire);
@@ -1959,6 +1959,66 @@ mod tests {
         for h in handles {
             h.await.expect("task join"); // expect
         }
+    }
+
+    #[tokio::test]
+    async fn test_flush_during_active_snapshot_isolation_stress() {
+        let (storage, _tmp) = test_storage().await;
+        let storage = Arc::new(storage);
+
+        // Pre-populate with base transaction
+        let tx_base = TxId::new(1);
+        storage.put(tx_base, b"snap:key", b"v_1").await.unwrap(); // unwrap allowed
+        storage.commit(tx_base).await.unwrap(); // unwrap allowed
+
+        let s_writer = Arc::clone(&storage);
+        let writer_handle = tokio::spawn(async move {
+            for i in 2..=1000u64 {
+                let tx = TxId::new(i);
+                let val = format!("v_{i}").into_bytes();
+                s_writer.put(tx, b"snap:key", &val).await.unwrap(); // unwrap allowed
+                s_writer.commit(tx).await.unwrap(); // unwrap allowed
+                if i % 5 == 0 {
+                    s_writer.flush().await.unwrap(); // unwrap allowed
+                }
+            }
+        });
+
+        let s_reader = Arc::clone(&storage);
+        let reader_handle = tokio::spawn(async move {
+            for _ in 0..1000 {
+                let snapshot_tx = s_reader.last_tx_id().await.unwrap().inner(); // unwrap allowed
+                let snapshot_seq = s_reader.last_seq_no().await.unwrap(); // unwrap allowed
+
+                let get_val = s_reader.get_at_seq(b"snap:key", snapshot_seq).await.unwrap(); // unwrap allowed
+                if let Some(bytes) = get_val {
+                    let val_str = String::from_utf8(bytes).unwrap(); // unwrap allowed
+                    let tx_num: u64 = val_str.strip_prefix("v_").unwrap().parse().unwrap(); // unwrap allowed
+                    assert!(
+                        tx_num <= snapshot_tx,
+                        "MVCC Invariant Violation during flush: read tx {} exceeds snapshot_tx {}",
+                        tx_num,
+                        snapshot_tx
+                    );
+                }
+
+                let scan_res = s_reader.scan_prefix_at(b"snap:", snapshot_seq).await.unwrap(); // unwrap allowed
+                assert!(!scan_res.is_empty());
+                let val_str = String::from_utf8(scan_res[0].1.clone()).unwrap(); // unwrap allowed
+                let tx_num: u64 = val_str.strip_prefix("v_").unwrap().parse().unwrap(); // unwrap allowed
+                assert!(
+                    tx_num <= snapshot_tx,
+                    "MVCC Invariant Violation in scan_prefix_at during flush: read tx {} exceeds snapshot_tx {}",
+                    tx_num,
+                    snapshot_tx
+                );
+
+                tokio::task::yield_now().await;
+            }
+        });
+
+        writer_handle.await.unwrap(); // unwrap allowed
+        reader_handle.await.unwrap(); // unwrap allowed
     }
 
     #[tokio::test]
