@@ -3,7 +3,7 @@
 // INVARIANTEN: #![forbid(unsafe_code)], TextIndex-Trait Implementierung ist fully async & transaction-aware.
 // NICHT-OFFENSICHTLICH: Scorer delegiert direkt an InvertedIndex; MVCC & Lock-Free Storage durch StorageEngine.
 // HOTSPOTS: Bm25Scorer::search, Bm25Scorer::insert
-// STAND: TS:2026-08-30T18:51:48Z (SESSION: 872b1087)
+// STAND: TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)
 
 //! Hybrid Search Engine & BM25 Scoring (WP-2.1)
 //!

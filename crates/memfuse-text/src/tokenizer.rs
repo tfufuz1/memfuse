@@ -3,7 +3,7 @@
 // INVARIANTEN: Tokenisierung muss deterministisch zwischen Indexierung und Query-Pfad identisch sein.
 // NICHT-OFFENSICHTLICH: Stoppwörter werden per OnceLock geladen; DefaultTokenizer filtert Alphatoken + Stoppwörter.
 // HOTSPOTS: tokenize, DefaultTokenizer::tokenize, GermanMorphTokenizer::tokenize
-// STAND: TS:2026-08-30T18:51:48Z (SESSION: 872b1087)
+// STAND: TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)
 
 //! Tokenizer using `unicode-segmentation`.
 
