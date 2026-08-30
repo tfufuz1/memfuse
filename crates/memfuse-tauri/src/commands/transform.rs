@@ -1,8 +1,9 @@
 // FILE-CONTEXT
-// STAND: 2026-08-30T14:38:30Z (SESSION: 45595f71)
+// STAND: 2026-08-30T18:54:25Z (SESSION: f3a48824)
 // ZWECK: Regex transformation & validation Tauri IPC commands.
 // INVARIANTEN: Regex operations capped via Semaphore; inputs bounded by size & complexity limits.
 // NICHT-OFFENSICHTLICH: Uses regex crate without backtracking (NFA/DFA); ReDoS is structurally impossible.
+// HOTSPOTS: run_regex_transformation (lines 140-230)
 // SIEHE AUCH: crates/memfuse-tauri/src/state.rs, DECISION-REF: ADR-014
 
 //! Regex-Transformations-Commands für den Tauri-Frontend.
@@ -344,21 +345,21 @@ mod tests {
     macro_rules! transform {
         ($pattern:expr, $flags:expr, $repl:expr, $input:expr) => {
             tokio::runtime::Runtime::new()
-                .unwrap() // unwrap
+                .expect("Failed to create tokio runtime for test")
                 .block_on(run_regex_transformation($pattern, $flags, $repl, $input))
         };
     }
 
     #[test]
     fn test_transform_valid_regex() {
-        let result = transform!(r"\b\w+\b", "g", "X", "hello world").unwrap(); // unwrap
+        let result = transform!(r"\b\w+\b", "g", "X", "hello world").expect("Valid transformation failed");
         assert_eq!(result.output, "X X");
         assert_eq!(result.replacements_made, 2);
     }
 
     #[test]
     fn test_simple_replacement() {
-        let result = transform!("foo", "", "bar", "foo baz foo").unwrap(); // unwrap
+        let result = transform!("foo", "", "bar", "foo baz foo").expect("Simple replacement failed");
         assert_eq!(
             result.output, "bar baz foo",
             "Ohne 'g'-Flag nur erste Ersetzung"
@@ -368,7 +369,7 @@ mod tests {
 
     #[test]
     fn test_global_flag_replaces_all() {
-        let result = transform!("foo", "g", "bar", "foo baz foo").unwrap(); // unwrap
+        let result = transform!("foo", "g", "bar", "foo baz foo").expect("Global replacement failed");
         assert_eq!(
             result.output, "bar baz bar",
             "Mit 'g'-Flag alle Vorkommen ersetzen"
@@ -378,7 +379,7 @@ mod tests {
 
     #[test]
     fn test_no_match_returns_original() {
-        let result = transform!("xyz", "g", "bar", "foo baz foo").unwrap(); // unwrap
+        let result = transform!("xyz", "g", "bar", "foo baz foo").expect("No match transformation failed");
         assert_eq!(
             result.output, "foo baz foo",
             "Keine Ersetzung bei keinem Match"
@@ -388,13 +389,13 @@ mod tests {
 
     #[test]
     fn test_capture_group_replacement() {
-        let result = transform!(r"(\w+)\s(\w+)", "", "$2 $1", "hello world").unwrap(); // unwrap
+        let result = transform!(r"(\w+)\s(\w+)", "", "$2 $1", "hello world").expect("Capture group replacement failed");
         assert_eq!(result.output, "world hello");
     }
 
     #[test]
     fn test_invalid_pattern_returns_error_not_panic() {
-        let err = transform!("[invalid", "", "", "input").unwrap_err();
+        let err = transform!("[invalid", "", "", "input").expect_err("Invalid pattern must return error");
         assert_eq!(err.kind, "InvalidInput");
         assert!(
             err.message.contains("Ungültiges Regex-Pattern"),
@@ -405,7 +406,7 @@ mod tests {
 
     #[test]
     fn test_backreference_rejected_at_compile_time() {
-        let err = transform!(r"(a)\1", "", "", "aa").unwrap_err();
+        let err = transform!(r"(a)\1", "", "", "aa").expect_err("Backreference pattern must return error");
         assert_eq!(err.kind, "InvalidInput");
         assert!(
             err.message.contains("Ungültiges Regex-Pattern"),
@@ -417,7 +418,7 @@ mod tests {
     #[test]
     fn test_input_too_large_normal_pattern() {
         let large_input = "a".repeat(MAX_REGEX_INPUT_BYTES + 1);
-        let err = transform!("a", "g", "b", &large_input).unwrap_err();
+        let err = transform!("a", "g", "b", &large_input).expect_err("Oversized input must return error");
         assert_eq!(err.kind, "MemoryLimitExceeded");
         assert!(
             err.message.contains("Eingabe zu groß"),
@@ -434,7 +435,7 @@ mod tests {
     fn test_input_too_large_complex_pattern() {
         let complex_pattern = "(a)(b)(c)(d)(e)(f)(g)(h)(i)";
         let large_input = "a".repeat(MAX_REGEX_INPUT_BYTES_COMPLEX + 1);
-        let err = transform!(complex_pattern, "g", "x", &large_input).unwrap_err();
+        let err = transform!(complex_pattern, "g", "x", &large_input).expect_err("Oversized complex input must return error");
         assert_eq!(err.kind, "MemoryLimitExceeded");
         assert!(
             err.message.contains("Eingabe zu groß"),
@@ -516,7 +517,7 @@ mod tests {
         // Bei einer backtracking-Engine würde "aaaaaaaab" auf "(a+)+" exponentiell laufen.
         // Die regex-Crate verarbeitet es in linearer Zeit.
         let input = "a".repeat(1000) + "b";
-        let result = transform!("(a+)+b", "g", "MATCH", &input).unwrap(); // unwrap
+        let result = transform!("(a+)+b", "g", "MATCH", &input).expect("Nested quantifier transformation failed");
         assert_eq!(
             result.output, "MATCH",
             "Pattern (a+)+b soll den gesamten String matchen und ersetzen"
@@ -527,7 +528,7 @@ mod tests {
     /// Stellt sicher, dass die Engine-Grenze korrekt greift.
     #[test]
     fn test_lookahead_rejected() {
-        let err = transform!(r"foo(?=bar)", "", "baz", "foobar").unwrap_err();
+        let err = transform!(r"foo(?=bar)", "", "baz", "foobar").expect_err("Lookahead must return error");
         assert_eq!(err.kind, "InvalidInput");
         assert!(
             err.message.contains("Ungültiges Regex-Pattern"),

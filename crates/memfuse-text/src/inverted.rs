@@ -1,3 +1,10 @@
+// FILE-CONTEXT: LSM-backed Inverted Index & Transactional Storage.
+// ZWECK: Speichert Postings-Listen, Dokumentlängen und BM25-Statistiken transaktional im StorageEngine.
+// INVARIANTEN: upsert_document und search_bm25_at beachten MAX_TEXT_BYTES; Lock-Hierarchie: commit_lock (tokio::sync::Mutex) > staged_stats (parking_lot::Mutex).
+// NICHT-OFFENSICHTLICH: Key-Prefixes: "i:" (Inverted), "f:" (Forward), "dl:" (Doc Length), "fw:" (Forward Words), "meta:stats".
+// HOTSPOTS: upsert_document, search_bm25_at, commit_stats
+// STAND: TS:2026-08-30T18:51:48Z (SESSION: 872b1087)
+
 //! LSM-backed Inverted Index.
 // CONSTRAINT: Inverted Index Key-Gen & Cache
 // TARGET: < 20µs für upsert_document
@@ -65,6 +72,12 @@ pub(crate) struct StagedStatsChange {
 
 /// An inverted index stored in the LSM engine.
 /// An inverted index tied to a specific collection namespace.
+///
+/// # Concurrency & Lock Hierarchy:
+/// 1. `commit_lock` (`tokio::sync::Mutex`): Ensures single-writer serialization during transactional stats commits.
+/// 2. `staged_stats` (`parking_lot::Mutex`): Synchronous, short-lived spinlock guarding in-memory uncommitted transaction statistics.
+///
+/// **Rule**: `commit_lock` must ALWAYS be acquired BEFORE acquiring `staged_stats`. Never hold `staged_stats` lock across `.await` points.
 pub struct InvertedIndex<S: StorageEngine> {
     storage: Arc<S>,
     prefix: Vec<u8>,
@@ -203,6 +216,14 @@ impl<S: StorageEngine> InvertedIndex<S> {
 
     #[tracing::instrument(skip(self, text))]
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
+        if text.len() > Self::MAX_TEXT_BYTES {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Text length {} exceeds maximum allowed size {}",
+                text.len(),
+                Self::MAX_TEXT_BYTES
+            )));
+        }
+
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
 
@@ -459,6 +480,18 @@ impl<S: StorageEngine> InvertedIndex<S> {
         k: usize,
         max_seq: Option<u64>,
     ) -> Result<Vec<(DocId, f32)>> {
+        if query.is_empty() || k == 0 {
+            return Ok(Vec::new());
+        }
+
+        if query.len() > Self::MAX_TEXT_BYTES {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Query length {} exceeds maximum allowed size {}",
+                query.len(),
+                Self::MAX_TEXT_BYTES
+            )));
+        }
+
         let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
             return Ok(Vec::new());
@@ -1550,9 +1583,9 @@ mod tests {
             total_tokens: 1337,
             avg_doc_len_x1000: 31833,
         };
-        let bytes = bincode::serialize(&meta).expect("serialization succeeds");
+        let bytes = bincode::serialize(&meta).expect("serialization succeeds"); // unwrap allowed
         let deserialized: TextIndexMetadata =
-            bincode::deserialize(&bytes).expect("deserialization succeeds");
+            bincode::deserialize(&bytes).expect("deserialization succeeds"); // unwrap allowed
         assert_eq!(meta.total_docs, deserialized.total_docs);
         assert_eq!(meta.total_tokens, deserialized.total_tokens);
         assert_eq!(meta.avg_doc_len_x1000, deserialized.avg_doc_len_x1000);
@@ -1637,10 +1670,19 @@ mod tests {
         let empty_res = index.search("", 10).await?;
         assert!(empty_res.is_empty());
 
+        // Search k=0
+        let k0_res = index.search("ölpreise", 0).await?;
+        assert!(k0_res.is_empty());
+
         // Search unicode query
         let unicode_res = index.search("ölpreise", 10).await?;
         assert_eq!(unicode_res.len(), 1);
         assert_eq!(unicode_res[0].doc_id, doc_id2);
+
+        // Search oversized query returns error
+        let oversized_q = "q".repeat(InvertedIndex::<MockStorage>::MAX_TEXT_BYTES + 1);
+        let err = index.search(&oversized_q, 10).await.unwrap_err(); // unwrap allowed
+        assert!(matches!(err, MemFuseError::InvalidInput(_)));
 
         Ok(())
     }

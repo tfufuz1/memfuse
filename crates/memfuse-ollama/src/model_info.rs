@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:54:39Z (SESSION: ed7b7b38)
+// ZWECK: Modell-Inspektion (/api/show) und Statisches Mapping bekannter Embedding-Dimensionen
+// INVARIANTEN: Modellnamen-Validierung vor API-Aufruf; Tag-Stripping bei Dimension-Lookup
+// NICHT-OFFENSICHTLICH: known_dimension liefert None für unbekannte Modelle, wodurch validation dynamic wird
+// HOTSPOTS: show_model, known_dimension
+
 //! Bekannte Ollama-Modell-Dimensionen für Embedding-Modelle.
 
 use crate::client::OllamaClient;
