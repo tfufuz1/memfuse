@@ -3,7 +3,7 @@
 // INVARIANTEN: Decompose arbeitet ausschließlich auf Kleinbuchstaben und prüft Mindestkomponentenlänge.
 // NICHT-OFFENSICHTLICH: KMU-Wörterbuch aus data/german_words.txt via include_str! geladen.
 // HOTSPOTS: GermanCompoundSplitter::decompose, normalize_umlauts
-// STAND: TS:2026-08-30T18:51:48Z (SESSION: 872b1087)
+// STAND: TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)
 
 use std::collections::HashSet;
 
@@ -560,6 +560,7 @@ mod tests {
         interfix_type: &'static str,
     }
 
+    // ANCHOR[TEST:TXT-001] STATUS:DONE — Recall-Evaluation für deutsche Zusammensetzungen (TS:2026-08-30T22:01:55Z SESSION:cf1f75c6)
     #[test]
     fn test_kmu_55_compounds_suite() {
         let splitter = GermanCompoundSplitter::new();
