@@ -835,7 +835,12 @@ pub fn run_sync_docs(check_only: bool) -> bool {
 pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
     let completed_anchors: Vec<_> = tags
         .iter()
-        .filter(|t| t.tag_type == "ANCHOR" && t.is_resolved)
+        .filter(|t| {
+            t.tag_type == "ANCHOR"
+                && t.is_resolved
+                && t.raw.contains("(ID:")
+                && t.id.as_deref().is_some_and(|id| id.starts_with("AGT-"))
+        })
         .collect();
 
     let mut success = true;
