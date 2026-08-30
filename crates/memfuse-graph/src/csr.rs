@@ -4,15 +4,14 @@
 //! Datenstruktur für cache-effizienten Graph-Traversal.
 
 // FILE-CONTEXT
-// STAND: 2026-08-29T05:41:20Z (SESSION: f7999509)
-// ZWECK: CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion)
+// STAND:       2026-08-30T14:35:05Z (SESSION: ab88edae)
+// ZWECK:       CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion)
 // INVARIANTEN: Graph-Zustand wird in LSM-Store persistiert unter Präfixen
 //              `__graph:entity:` und `__graph:edge:`. Änderungen müssen
 //              BEIDE Strukturen konsistent halten (In-Memory CSR + LSM).
-// NICHT-OFFENSICHTLICH: KEINE petgraph-Abhängigkeit (Pure-Rust CSR, ADR-004).
-//                       `relate()` MUSS sowohl LSM-Write als auch graph_index.add_edge()
-//                       aufrufen — nur eines zu tun bricht Graph-Traversal (crates/memfuse-db/AGENTS.md).
-// SIEHE AUCH: DECISIONS.md ADR-004, crates/memfuse-db/AGENTS.md §relate()
+// HOTSPOTS:    bfs_traverse(), compact(), GraphInner, GraphIndex impl
+// AGENT-NOTIZ: Extrahierte BFS-Traversal & Storage-Key Helper zur Eliminierung von Duplikation
+// SIEHE AUCH:  DECISIONS.md ADR-004, crates/memfuse-db/AGENTS.md §relate()
 
 use async_trait::async_trait;
 use memfuse_core::{
@@ -409,6 +408,113 @@ impl CsrGraph {
             inner.compact();
         }
         Ok(())
+    }
+
+    /// Internal BFS graph traversal implementation with optional temporal filtering.
+    fn bfs_traverse(
+        &self,
+        start: EntityId,
+        max_hops: usize,
+        as_of: Option<TxId>,
+    ) -> Result<Vec<(EntityId, f32)>> {
+        let inner = self.inner.read();
+        let start_idx = match inner.id_map.get(&start) {
+            Some(&idx) => idx,
+            None => return Ok(Vec::new()),
+        };
+
+        if !inner.entities.get(start_idx).is_some_and(Option::is_some) {
+            return Ok(Vec::new());
+        }
+
+        let effective_max = (max_hops as u8).min(MAX_TRAVERSAL_HOPS);
+
+        let mut visited: HashMap<InternalIndex, f32> = HashMap::new();
+        let mut queue: VecDeque<(InternalIndex, u8, f32)> = VecDeque::new();
+
+        queue.push_back((start_idx, 0, 1.0));
+
+        while let Some((node_idx, hop, current_score)) = queue.pop_front() {
+            if hop > effective_max {
+                continue;
+            }
+
+            let existing = visited.entry(node_idx).or_insert(0.0);
+            if current_score > *existing {
+                *existing = current_score;
+            }
+
+            if hop < effective_max {
+                // 1. CSR traversal (compacted edges)
+                if node_idx < inner.offsets.len() - 1 {
+                    let start_edge = inner.offsets[node_idx];
+                    let end_edge = inner.offsets[node_idx + 1];
+
+                    for edge_idx in start_edge..end_edge {
+                        let neighbor_idx = inner.targets[edge_idx];
+                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
+                            continue;
+                        }
+                        if let Some(time) = as_of {
+                            let valid_from = inner.valid_froms.get(edge_idx).copied().flatten();
+                            let valid_to = inner.valid_tos.get(edge_idx).copied().flatten();
+                            if !is_edge_visible(valid_from, valid_to, time) {
+                                continue;
+                            }
+                        }
+                        let weight = inner.weights[edge_idx];
+                        let next_score = current_score * SCORE_DECAY * weight;
+
+                        if (!visited.contains_key(&neighbor_idx)
+                            || visited[&neighbor_idx] < next_score)
+                            && inner
+                                .entities
+                                .get(neighbor_idx)
+                                .is_some_and(Option::is_some)
+                        {
+                            queue.push_back((neighbor_idx, hop + 1, next_score));
+                        }
+                    }
+                }
+
+                // 2. Delta buffer traversal (uncompacted committed edges)
+                if let Some(pending) = inner.pending_edges.get(&node_idx) {
+                    for edge in pending {
+                        let neighbor_idx = edge.target;
+                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
+                            continue;
+                        }
+                        if let Some(time) = as_of {
+                            if !is_edge_visible(edge.valid_from, edge.valid_to, time) {
+                                continue;
+                            }
+                        }
+                        let next_score = current_score * SCORE_DECAY * edge.weight;
+
+                        if (!visited.contains_key(&neighbor_idx)
+                            || visited[&neighbor_idx] < next_score)
+                            && inner
+                                .entities
+                                .get(neighbor_idx)
+                                .is_some_and(Option::is_some)
+                        {
+                            queue.push_back((neighbor_idx, hop + 1, next_score));
+                        }
+                    }
+                }
+            }
+        }
+
+        visited.remove(&start_idx);
+
+        let mut results: Vec<(EntityId, f32)> = visited
+            .into_iter()
+            .filter_map(|(idx, score)| inner.reverse_map.get(idx).map(|&id| (id, score)))
+            .collect();
+
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        Ok(results)
     }
 
     /// Fügt eine Entity direkt ein (für load_from_storage).

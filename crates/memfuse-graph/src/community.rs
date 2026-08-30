@@ -3,6 +3,14 @@
 //! Provides deterministic, offline graph clustering to assign entities to
 //! semantic communities for GraphRAG retrieval.
 
+// FILE-CONTEXT
+// STAND:       2026-08-30T14:35:05Z (SESSION: ab88edae)
+// ZWECK:       Label Propagation Community Detection für GraphRAG
+// INVARIANTEN: Determinismus via PRNG-Seed; Vor-Kompaktierung des CsrGraph
+// HOTSPOTS:    detect_communities(), Label Propagation Iteration
+// AGENT-NOTIZ: clippy hygiene & unreadable literal format
+// SIEHE AUCH:  ADR-031
+
 use crate::CsrGraph;
 use memfuse_core::{EntityId, Result};
 use serde::{Deserialize, Serialize};
