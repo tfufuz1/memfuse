@@ -469,6 +469,26 @@ mod tests {
     }
 
     #[test]
+    fn test_ahash_shard_distribution_with_common_prefixes() {
+        let mut counts = [0usize; SHARD_COUNT];
+        for i in 0..10_000 {
+            let key = format!("__col:hr:doc-{i:08}");
+            counts[MemTable::shard_for(key.as_bytes())] += 1;
+        }
+        let mean = 10_000.0 / SHARD_COUNT as f64;
+        let variance: f64 = counts
+            .iter()
+            .map(|&c| (c as f64 - mean).powi(2))
+            .sum::<f64>()
+            / SHARD_COUNT as f64;
+        let std_dev = variance.sqrt();
+        assert!(
+            std_dev < mean * 0.15,
+            "Shard distribution too skewed: std_dev={std_dev}, mean={mean}"
+        );
+    }
+
+    #[test]
     fn test_shard_distribution_for_realistic_collection_keys() {
         // Simulates the actual key shapes produced during ingestion into ONE
         // named collection ("hr") — the primary workload this sharding
