@@ -314,7 +314,7 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-020 (Wiederherstellung): Wiederherstellung von `memfuse-agent` aus dem Archiv
+## ADR-042: Wiederherstellung von `memfuse-agent` aus dem Archiv
 
 - **Datum**: 2026-08-27
 - **Status**: ✅ Final
@@ -596,6 +596,48 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 *   **Status**: ✅ Final
 *   **Entscheidung**: AGENTS.md §4 wird um den test-only unsafe-Ausnahmefall in `memfuse-crypto/src/anti_tamper.rs` ergänzt (Zeroize-Drop-Semantik-Verifikation). Im Produktionsbuild bleibt `memfuse-crypto` vollständig unsafe-frei (`#![cfg_attr(not(test), forbid(unsafe_code))]`).
 *   **Begründung**: AUD-01 aus Audit 2026-08-28 dokumentierte Doku-Drift zwischen tatsächlichem Code und AGENTS.md. Governance-Dokumente müssen Realität abbilden, nicht verbergen.
+
+---
+
+## ADR-037: VectorIndex-Generalisierung in Collection<S, V>
+
+*   **Datum**: 2026-08-29
+*   **Status**: 🟡 Proposed
+*   **Entscheidung**: Die Datenstruktur `Collection<S: StorageEngine = LsmStorage>` in `crates/memfuse-db/src/collection.rs` wird generisch über den `VectorIndex`-Trait-Implementor erweitert: `Collection<S: StorageEngine = LsmStorage, V: VectorIndex = HnswIndex>`. Dadurch wird die starre Kopplung an `Arc<HnswIndex>` aufgehoben und die Nutzung alternativer Vektor-Indizes (wie z. B. `DiskAnnIndex` aus `memfuse-index`) ermöglicht.
+*   **Alternativen**:
+    - **Option A (Dynamischer Trait-Object Trait-Dispatch `Arc<dyn VectorIndex>)`**: Verworfen, da `VectorIndex` in manchen Pfaden dynamischen Trait-Funktions-Dispatch mit Performance-Overhead auf dem Hot-Path verbindet und die Typensicherheit bei konkreter Vektorindex-Instanziierung einbüßt.
+    - **Option B (Status Quo belassen)**: Verworfen, da `DiskAnnIndex` als out-of-core Vektorindex vollständig implementiert ist, aber wegen der harten `Arc<HnswIndex>`-Typisierung in `Collection` ungenutzte technische Schuld darstellte.
+*   **Begründung**: Die Verwendung eines generischen Typparameters mit Standard-Typ `V = HnswIndex` garantiert 100%ige Abwärtskompatibilität für alle bestehenden Aufrufer und Typ-Signaturen (wie `Collection<LsmStorage>`). Gleichzeitig wird die Entkopplung von der konkreten HNSW-Implementierung im `memfuse-db`-Crate vollzogen.
+*   **Konsequenzen**:
+    - `Collection` kann jetzt auch mit `DiskAnnIndex` instanziiert und betrieben werden (`Collection<LsmStorage, DiskAnnIndex>`).
+    - `Collection::new` nimmt `index: Arc<V>` als Parameter auf; die Convenience-Funktion `Collection::with_hnsw` kapselt die bisherige HNSW-Konstruktion.
+
+---
+
+## ADR-038: Zettelkasten Memory Links (A-MEM) & Supersedes Displacement Logic
+*   **Datum**: 2026-08-29
+*   **Status**: ✅ Final
+*   **Entscheidung**:
+    1. Erweiterung von `ContextChunk` (`memfuse-core`) um `links: Vec<MemoryLink>` mit `#[serde(default)]`.
+    2. Einführung von `LinkRelation` (`Elaborates`, `Contradicts`, `Supersedes`, `References`) und `MemoryLink` (`target: DocId`, `relation: LinkRelation`, `created_at_tx: TxId`).
+    3. Implementierung der Methode `Collection::link_memories` (idempotent, interne `TxId` via `allocate_tx()`) und `Collection::traverse_links` (iterativer BFS mit `VecDeque`, zyklen-sicher, max `MAX_SEARCH_K`).
+    4. Implementierung der Supersedes-Verdrängungslogik in `hybrid_search_with_query()`: Wenn `include_superseded = false` (Default), werden Chunks verdrängt, auf die ein anderes Treffer-Dokument einen `MemoryLink` der Relation `Supersedes` trägt.
+*   **Alternativen**:
+    - **Entity-to-Entity Verlinkung**: Verworfen, da CSR-Graph-Terrain (EntityId-zu-EntityId). Zettelkasten A-MEM operiert rein auf DocId-zu-DocId Ebene für ContextChunks.
+*   **Begründung**:
+    - Schafft explizite, benannte Querverweise zwischen ContextChunks zur Repräsentation geordneter Wissensnetze.
+    - Automatisches Ausfiltern veralteter/ersetzter Chunks erhöht die Präzision des RAG-Retrievals, ohne Historie aus dem Speicher zu löschen.
+
+---
+
+## ADR-039: reqwest als Workspace-Dependency für memfuse-router
+*   **Datum**: 2026-08-29
+*   **Status**: ✅ Final
+*   **Entscheidung**: `reqwest` wird als zentrale Workspace-Dependency in `[workspace.dependencies]` im Root-`Cargo.toml` aufgenommen und für `memfuse-router` explizit freigegeben.
+*   **Alternativen**: Ersetzung durch `memfuse-ollama`.
+*   **Begründung**: `memfuse-router` nutzt `reqwest` in `dispatch_to_slm` für generische HTTP JSON-RPC 2.0 Aufrufe (`slm_process_context`) an frei konfigurierbare MCP-Endpunkte von Small Language Models (SLMs). `memfuse-ollama` deckt ausschließlich Ollama REST-API-Endpunkte ab und kann diese generische JSON-RPC-MCP-Dispatch-Funktionalität nicht bereitstellen.
+*   **Sicherheitsbewertung**: Nutzung mit `default-features = false` und `rustls-tls` (kein `native-tls` / OpenSSL C-Dependency-Overhead, vollständig konform mit der Sovereign Core Policy aus ADR-004).
+*   **Konsequenz**: `reqwest` ist fortan eine explizit genehmigte Workspace-Dependency ohne Version Drift zwischen Crates.
 
 ---
 
