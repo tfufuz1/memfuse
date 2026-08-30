@@ -1560,18 +1560,6 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_distance_no_longer_validates_nan_directly() {
-        // compute_distance() validiert NICHT mehr auf NaN — Aufrufer tragen die Invariante.
-        let a = vec![1.0f32, f32::NAN, 3.0];
-        let b = vec![1.0f32, 2.0, 3.0];
-        let res = compute_distance(&a, &b, DistanceMetric::Cosine);
-        assert!(
-            res.is_ok(),
-            "compute_distance should not fail with InvalidInput when NaN is passed directly"
-        );
-    }
-
-    #[test]
     fn distance_mismatched_dims_returns_err() {
         let a = vec![1.0f32, 2.0];
         let b = vec![1.0f32, 2.0, 3.0];

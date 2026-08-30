@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 66fce891d57be5edc256b608c267ade480547e765aa4c39df3b37ec65a853668 # shrinks to ops = [Insert(27), Insert(19), Delete(1), Delete(27), Delete(1), Insert(20), Delete(20), Delete(19), Insert(1), Insert(1)]
+cc bcf7a9b7b8c166c268eb7fa245e96a116994e38c779b480969a488f592a85e9e # shrinks to ops = [Insert(20), Delete(20), Insert(1), Delete(9), Delete(5), Insert(8), Insert(4), Delete(11), Insert(23), Delete(13), Delete(19), Delete(14), Delete(5), Insert(19), Insert(17), Insert(11), Delete(9), Insert(8), Insert(28), Delete(17), Delete(22), Delete(1), Insert(21), Insert(28), Delete(13), Insert(15), Insert(7), Insert(9), Insert(1), Insert(27), Delete(17), Insert(6), Delete(4), Insert(9), Insert(8), Delete(3), Insert(4), Delete(4), Insert(27), Delete(29), Delete(16), Delete(28), Delete(13), Insert(27), Delete(10), Insert(14), Insert(11), Delete(14)]

@@ -663,7 +663,10 @@ mod tests {
         // Zero dimension guard
         let res_zero = ScalarQuantizer::try_train(&[], 0);
         assert!(res_zero.is_err());
-        assert!(res_zero.unwrap_err().to_string().contains("dimension must be greater than 0"));
+        assert!(res_zero
+            .unwrap_err()
+            .to_string()
+            .contains("dimension must be greater than 0"));
 
         // Mismatched vector length guard
         let v1 = vec![1.0, 2.0, 3.0];
