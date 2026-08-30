@@ -1111,7 +1111,9 @@ mod tests {
         }
     }
 
-    // ANCHOR[TEST:CORE-001] STATUS:DONE (TS:2026-08-30T21:51:46Z) (SESSION: a43b7682)
+    // ANCHOR[TEST:CORE-001] STATUS:DONE (ID: AGT-CORE-d81e4b92) (TS:2026-08-30T21:51:46Z) (SESSION: a43b7682)
+    // REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-CORE-d81e4b92) (TS:2026-08-30T22:30:00Z) (SESSION:b8e4f1a2)
+    // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CORE-d81e4b92) (TS:2026-08-30T22:35:00Z) (SESSION:c9f5e2b3)
     // Benchmark & Collision Test suite for DocId::from_key 64-bit BLAKE3 hash truncation
     #[test]
     fn test_doc_id_from_key_collisions_and_distribution() {
