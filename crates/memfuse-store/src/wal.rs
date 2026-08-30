@@ -1180,9 +1180,7 @@ impl Wal {
                 let entry = match WalEntry::from_bytes(entry_data) {
                     Ok(e) => e,
                     Err(e) => {
-                        if let Some(err) =
-                            Self::handle_wal_entry_parse_error(e, chunk_start_pos, pos, file_size)
-                        {
+                        if let Some(err) = Self::handle_wal_entry_parse_error(e, chunk_start_pos, pos, file_size) {
                             return Err(err);
                         }
                         break;
