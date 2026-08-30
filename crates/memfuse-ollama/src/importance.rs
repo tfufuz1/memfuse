@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:54:39Z (SESSION: ed7b7b38)
+// ZWECK: LLM-basierte Wichtigkeits-Bewertung (ImportanceScore 0.0-1.0) für Memory Chunks
+// INVARIANTEN: Parst Floats via OnceLock-Regex; Sanitisiert Input vor Prompt-Bau; Returnt `MemFuseError::Internal` bei Parse-Fehler
+// NICHT-OFFENSICHTLICH: Regex parst erste valide 0.0-1.0 Float-Zahl aus LLM Few-Shot Antwort
+// HOTSPOTS: score_importance
+
 //! LLM-based Memory Importance scoring using Ollama generate_text.
 
 use crate::client::sanitize_prompt_input;
@@ -9,6 +16,7 @@ use std::sync::OnceLock;
 static SCORE_REGEX: OnceLock<Regex> = OnceLock::new();
 
 fn get_score_regex() -> &'static Regex {
+    // SAFETY: The regex string is a compile-time constant valid regular expression pattern.
     SCORE_REGEX.get_or_init(|| {
         Regex::new(r"(?:0(?:\.\d+)?|1(?:\.0+)?)").expect("Invalid score regex pattern")
     })

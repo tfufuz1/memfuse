@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:54:39Z (SESSION: ed7b7b38)
+// ZWECK: Anthropic Contextual Retrieval — LLM-basierte Präfix-Generierung für Chunks
+// INVARIANTEN: Prompt-Injection-Sanitization vor Prompt-Bau; Truncation wahrt Unicode-Codepoint- & Wortgrenzen
+// NICHT-OFFENSICHTLICH: Document-Exzerpt wird vor Prefix-Erzeugung hard auf max_document_chars gekürzt
+// HOTSPOTS: generate_prefix, truncate_prefix, truncate_chars
+
 //! Anthropic Contextual Retrieval: LLM-generierte Kontext-Präfixe für Chunks.
 //!
 //! Implementiert das Contextual Retrieval Pattern von Anthropic (2024):
@@ -118,6 +125,9 @@ impl ContextPrefixEngine {
         full_document: &str,
         chunks: &[&str],
     ) -> Vec<Result<String, MemFuseError>> {
+        if let Err(e) = crate::client::validate_batch_size(chunks.len()) {
+            return vec![Err(e)];
+        }
         let mut results = Vec::with_capacity(chunks.len());
         for chunk in chunks {
             results.push(self.generate_prefix(full_document, chunk).await);

@@ -1,3 +1,10 @@
+// FILE-CONTEXT: Deutsche Morphologie & Komposita-Zerlegung.
+// ZWECK: Umlaut-Normalisierung (ä->ae, ö->oe, ü->ue, ß->ss) und Zerlegung deutscher Zusammensetzungen.
+// INVARIANTEN: Decompose arbeitet ausschließlich auf Kleinbuchstaben und prüft Mindestkomponentenlänge.
+// NICHT-OFFENSICHTLICH: KMU-Wörterbuch aus data/german_words.txt via include_str! geladen.
+// HOTSPOTS: GermanCompoundSplitter::decompose, normalize_umlauts
+// STAND: TS:2026-08-30T18:51:48Z (SESSION: 872b1087)
+
 use std::collections::HashSet;
 
 /// KMU-Fachvokabular und allgemeiner deutscher Wortschatz.

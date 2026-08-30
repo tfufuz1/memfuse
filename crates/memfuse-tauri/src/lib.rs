@@ -1,8 +1,9 @@
 // FILE-CONTEXT
-// STAND: 2026-08-30T14:38:30Z (SESSION: 45595f71)
+// STAND: 2026-08-30T18:54:25Z (SESSION: f3a48824)
 // ZWECK: Tauri Desktop application entry point & plugin initialization.
 // INVARIANTEN: Desktop UI app must never crash from backend panics; commands return Result<T, MemFuseErrorDto>.
 // NICHT-OFFENSICHTLICH: Background async tasks must log/trace unhandled errors instead of swallowing silent failures.
+// HOTSPOTS: run (lines 15-55)
 // SIEHE AUCH: crates/memfuse-tauri/AGENTS.md, rules/async-io.md
 
 pub mod commands;

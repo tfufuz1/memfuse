@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// ZWECK: Persistenz-Schicht für HNSW-Dateiserialisierung (`.hnsw`) und mmap-basiertes Lesen.
+// INVARIANTEN: Zero-Panic bei Deserialisierung; mmap-Reads überleben POSIX file replace.
+// NICHT-OFFENSICHTLICH: MmapIndex hält read-only FD; Schreibvorgänge laufen atomar über .tmp und Rename.
+// HOTSPOTS: persistence.rs (HnswHeader::try_from_bytes, MmapIndex::open)
+// STAND: TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)
+
 // ANCHOR[DEBT:WP-0.0-ZEROPANIC] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Eradicate .unwrap() in persistence.rs
 // TEST: grep -c ".unwrap()" crates/memfuse-index/src/persistence.rs
 // DONE: Alle .unwrap() Aufrufe auf try_into() sind durch ? ersetzt.

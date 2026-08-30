@@ -280,13 +280,14 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     ) -> Result<()> {
         if docs.is_empty() {
             return Err(memfuse_core::MemFuseError::invalid_input(
-                "insert_many: batch cannot be empty",
+                "insert_many requires at least one document",
             ));
         }
         if docs.len() > 10_000 {
-            return Err(memfuse_core::MemFuseError::invalid_input(
-                "insert_many: batch size exceeds maximum limit of 10,000",
-            ));
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Batch size {} exceeds maximum allowed limit 10000",
+                docs.len()
+            )));
         }
         let _guard = self.insert_lock.lock().await;
         let db_tx = self.begin_transaction()?;
@@ -346,13 +347,14 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     ) -> Result<()> {
         if docs.is_empty() {
             return Err(memfuse_core::MemFuseError::invalid_input(
-                "upsert_many: batch cannot be empty",
+                "upsert_many requires at least one document",
             ));
         }
         if docs.len() > 10_000 {
-            return Err(memfuse_core::MemFuseError::invalid_input(
-                "upsert_many: batch size exceeds maximum limit of 10,000",
-            ));
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Batch size {} exceeds maximum allowed limit 10000",
+                docs.len()
+            )));
         }
         let _guard = self.insert_lock.lock().await;
         let db_tx = self.begin_transaction()?;
