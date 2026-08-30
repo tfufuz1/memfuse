@@ -98,6 +98,7 @@ fn validate_key(key: &[u8]) -> Result<()> {
     Ok(())
 }
 
+#[expect(dead_code)]
 fn validate_value(value: &[u8]) -> Result<()> {
     if value.len() > MAX_VALUE_SIZE {
         return Err(MemFuseError::InvalidInput(format!(
@@ -243,8 +244,9 @@ impl LsmStorage {
             let wal_entries = wal.replay().await?;
 
             for (lsn, entry, _offset) in &wal_entries {
-                if *lsn > max_seq {
-                    max_seq = *lsn;
+                let raw_lsn = *lsn & !TOMBSTONE_BIT;
+                if raw_lsn > max_seq {
+                    max_seq = raw_lsn;
                 }
                 if entry.tx_id().inner() > max_tx && entry.tx_id().inner() < TxId::INTERNAL_BASE {
                     max_tx = entry.tx_id().inner();
@@ -319,8 +321,9 @@ impl LsmStorage {
             .await?;
 
             // Recover max_seq and max_tx from SSTables
-            if reader.metadata().max_seq > max_seq {
-                max_seq = reader.metadata().max_seq;
+            let raw_sst_max_seq = reader.metadata().max_seq & !TOMBSTONE_BIT;
+            if raw_sst_max_seq > max_seq {
+                max_seq = raw_sst_max_seq;
             }
             if reader.metadata().max_tx_id > max_tx {
                 // Ignore internal TxIds during recovery
@@ -332,7 +335,7 @@ impl LsmStorage {
             sstables.push(Arc::new(reader));
         }
         // Explicitly sort SSTables by metadata().max_seq for guaranteed read-path ordering
-        sstables.sort_by_key(|sst| sst.metadata().max_seq);
+        sstables.sort_by_key(|sst| sst.metadata().max_seq & !TOMBSTONE_BIT);
         let sstables = Arc::new(RwLock::new(sstables));
         let snapshot_registry = Arc::new(SnapshotRegistry::new());
 
@@ -502,13 +505,14 @@ impl LsmStorage {
             sst_to_remove.push(spanning.file_path().to_path_buf());
         }
 
-        sstables_lock.sort_by_key(|sst| sst.metadata().max_seq);
+        sstables_lock.sort_by_key(|sst| sst.metadata().max_seq & !TOMBSTONE_BIT);
 
         // 4. Update next_seq_no and last_committed_tx
         // Find max_seq from kept SSTables to avoid regressing next_seq_no
+        // TOMBSTONE_BIT-Disziplin (DECISIONS.md): Bit 63 darf niemals in next_seq_no einfließen.
         let mut max_seq = 0;
         for sst in sstables_lock.iter() {
-            max_seq = max_seq.max(sst.metadata().max_seq);
+            max_seq = max_seq.max(sst.metadata().max_seq & !TOMBSTONE_BIT);
         }
         drop(sstables_lock);
 
@@ -526,9 +530,10 @@ impl LsmStorage {
 
         // 5. Re-populate memtable from truncated WAL
         let entries = state.wal.replay().await?;
+        // TOMBSTONE_BIT-Disziplin (DECISIONS.md): Bit 63 darf niemals in next_seq_no einfließen.
         for (seq, entry, _offset) in entries {
-            if seq > max_seq {
-                max_seq = seq;
+            if (seq & !TOMBSTONE_BIT) > max_seq {
+                max_seq = seq & !TOMBSTONE_BIT;
             }
             match entry.op {
                 WalOp::Put { key, value, tx_id } => {
@@ -2293,5 +2298,139 @@ mod tests {
             LsmStorage::new(cfg_zero_ram).await,
             Err(MemFuseError::InvalidInput(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn test_rollback_tombstone_sstable() {
+        let (storage, _tmp) = test_storage().await;
+
+        // a. Inserts committen
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key1", b"val1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"key2", b"val2").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+
+        // b. Delete (Tombstone) als letzte Op vor Target committen und flushen
+        let tx3 = TxId::new(3);
+        storage.delete(tx3, b"key2").await.unwrap();
+        storage.commit(tx3).await.unwrap();
+        storage.force_flush().await.unwrap();
+
+        // c. Rollback auf target_tx (tx3)
+        storage.rollback_to_tx(tx3).await.unwrap();
+
+        // d. Neuen Insert mit neuem Key committen
+        let tx4 = TxId::new(4);
+        storage.put(tx4, b"key3", b"val3").await.unwrap();
+        storage.commit(tx4).await.unwrap();
+
+        // e. Assert: Der neue Key ist lesbar und TOMBSTONE_BIT ist NICHT gesetzt
+        let current_max_seq = storage.next_seq_no.load(Ordering::Acquire);
+        let val = storage.get_at_seq(b"key3", current_max_seq).await.unwrap();
+        assert_eq!(val, Some(b"val3".to_vec()));
+
+        let last_seq = storage.last_seq_no().await.unwrap();
+        assert_eq!(
+            last_seq & TOMBSTONE_BIT,
+            0,
+            "Sequence number of new insert must not have TOMBSTONE_BIT set"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rollback_tombstone_wal() {
+        let (storage, _tmp) = test_storage().await;
+
+        // a. Inserts committen
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"k1", b"v1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"k2", b"v2").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+
+        // b. Delete (Tombstone) im WAL als letzte Op vor Target committen (unflushed)
+        let tx3 = TxId::new(3);
+        storage.delete(tx3, b"k2").await.unwrap();
+        storage.commit(tx3).await.unwrap();
+
+        // c. Rollback auf target_tx (tx3)
+        storage.rollback_to_tx(tx3).await.unwrap();
+
+        // d. Neuen Insert mit neuem Key committen
+        let tx4 = TxId::new(4);
+        storage.put(tx4, b"k3", b"v3").await.unwrap();
+        storage.commit(tx4).await.unwrap();
+
+        // e. Assert: Der neue Key ist lesbar und TOMBSTONE_BIT ist NICHT gesetzt
+        let current_max_seq = storage.next_seq_no.load(Ordering::Acquire);
+        let val = storage.get_at_seq(b"k3", current_max_seq).await.unwrap();
+        assert_eq!(val, Some(b"v3".to_vec()));
+
+        let last_seq = storage.last_seq_no().await.unwrap();
+        assert_eq!(
+            last_seq & TOMBSTONE_BIT,
+            0,
+            "Sequence number of new insert must not have TOMBSTONE_BIT set"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rollback_tombstone_subsequent_ops() {
+        let (storage, _tmp) = test_storage().await;
+
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key1", b"val1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        let tx2 = TxId::new(2);
+        storage.delete(tx2, b"key1").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+
+        // Rollback auf tx2
+        storage.rollback_to_tx(tx2).await.unwrap();
+
+        // Abfolge von weiteren Inserts und Deletes in Folge
+        let tx3 = TxId::new(3);
+        storage.put(tx3, b"key2", b"val2").await.unwrap();
+        storage.commit(tx3).await.unwrap();
+
+        let tx4 = TxId::new(4);
+        storage.delete(tx4, b"key2").await.unwrap();
+        storage.commit(tx4).await.unwrap();
+
+        let tx5 = TxId::new(5);
+        storage.put(tx5, b"key3", b"val3").await.unwrap();
+        storage.commit(tx5).await.unwrap();
+
+        // Prüfe direkt im MemTable, dass der neueste Zustand jedes Keys das korrekte TOMBSTONE_BIT trägt
+        let state = storage.state.read().await;
+        for (k, _v, seq, _tx) in state.memtable.iter_latest() {
+            if k.as_ref() == b"key1" || k.as_ref() == b"key2" {
+                assert_ne!(
+                    seq & TOMBSTONE_BIT,
+                    0,
+                    "Latest entry for deleted key {:?} must have TOMBSTONE_BIT set",
+                    String::from_utf8_lossy(&k)
+                );
+            } else if k.as_ref() == b"key3" {
+                assert_eq!(
+                    seq & TOMBSTONE_BIT,
+                    0,
+                    "Latest entry for inserted key {:?} must NOT have TOMBSTONE_BIT set",
+                    String::from_utf8_lossy(&k)
+                );
+            }
+        }
+        drop(state);
+
+        // Verify final state via read path
+        assert_eq!(storage.get(b"key1").await.unwrap(), None);
+        assert_eq!(storage.get(b"key2").await.unwrap(), None);
+        assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec()));
     }
 }
