@@ -32,7 +32,8 @@ async fn setup_app() -> (McpServer, TempDir) {
     let collection = db.collection("my_docs").await.expect("collection");
     let dim = collection.dimension();
     let embedder = Arc::new(MockEmbedder { dimension: dim });
-    let server = McpServer::new(Arc::new(db), embedder).expect("server new");
+    let server =
+        McpServer::with_write_permission(Arc::new(db), embedder, true).expect("server new");
     (server, tmp)
 }
 

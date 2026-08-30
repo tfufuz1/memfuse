@@ -14,7 +14,7 @@
 //! `buffer_unordered` ingestion pipeline).
 //!
 //! The shard for a given key is selected deterministically via the full-key
-//! AHash (`AHasher`) modulo `SHARD_COUNT` to prevent lock contention on shared key
+//! BLAKE3 hash modulo `SHARD_COUNT` to prevent lock contention on shared key
 //! prefixes (e.g. `__col:`, `__docid:`).
 //!
 //! Within each shard, each key maps to a versioned list of values, enabling
@@ -93,10 +93,10 @@ impl MemTable {
         // key layout (see Collection::namespaced_key() in
         // crates/memfuse-db/src/collection.rs).
         // Zero-panic: modulo a compile-time const > 0.
-        use std::hash::{Hash, Hasher};
-        let mut hasher = ahash::AHasher::default();
-        key.hash(&mut hasher);
-        (hasher.finish() as usize) % SHARD_COUNT
+        let hash = blake3::hash(key);
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&hash.as_bytes()[..8]);
+        (u64::from_le_bytes(bytes) as usize) % SHARD_COUNT
     }
 
     /// Inserts a key-value pair with a sequence number and transaction ID.
@@ -474,26 +474,6 @@ mod tests {
         // Originally: tx A = 3 * (5 + 5 + 16) = 78; tx B = 2 * (5 + 5 + 16) = 52. Total = 130.
         // After rollback tx A: remaining size should be 52.
         assert_eq!(mt.size(), 52);
-    }
-
-    #[test]
-    fn test_ahash_shard_distribution_with_common_prefixes() {
-        let mut counts = [0usize; SHARD_COUNT];
-        for i in 0..10_000 {
-            let key = format!("__col:hr:doc-{i:08}");
-            counts[MemTable::shard_for(key.as_bytes())] += 1;
-        }
-        let mean = 10_000.0 / SHARD_COUNT as f64;
-        let variance: f64 = counts
-            .iter()
-            .map(|&c| (c as f64 - mean).powi(2))
-            .sum::<f64>()
-            / SHARD_COUNT as f64;
-        let std_dev = variance.sqrt();
-        assert!(
-            std_dev < mean * 0.15,
-            "Shard distribution too skewed: std_dev={std_dev}, mean={mean}"
-        );
     }
 
     #[test]

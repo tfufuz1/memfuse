@@ -1,6 +1,4 @@
 // ANCHOR[DEBT:WP-0.0-ZEROPANIC] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Eradicate .unwrap() in persistence.rs
-// REVIEW-PASS[1/2] STATUS:PASS (ID: DEBT:WP-0.0-ZEROPANIC) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
-// REVIEW-PASS[2/2] STATUS:PASS (ID: DEBT:WP-0.0-ZEROPANIC) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
 // TEST: grep -c ".unwrap()" crates/memfuse-index/src/persistence.rs
 // DONE: Alle .unwrap() Aufrufe auf try_into() sind durch ? ersetzt.
 //! HNSW Persistence Layer — Serialisierung und mmap-Mapping für Vektor-Indizes.

@@ -14,8 +14,6 @@
 // DATEN-PFAD: Client → TxBuffer → WAL → MemTable → SSTable → Compaction
 // INVARIANTE: tokio::fs für Metadaten/Lifecycle, std::fs::File ausschließlich innerhalb spawn_blocking für Block-Level Random-Access.
 // ANCHOR[INTEGRATION:STO-001] STATUS:RESOLVED (TS:2026-08-24T00:00:00Z)
-// REVIEW-PASS[1/2] STATUS:PASS (ID: INTEGRATION:STO-001) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
-// REVIEW-PASS[2/2] STATUS:PASS (ID: INTEGRATION:STO-001) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
 // MODUL-HIERARCHIE: lsm.rs orchestriert, memtable/wal/sstable sind Bausteine.
 
 // INTENT: strictly forbid unsafe_code

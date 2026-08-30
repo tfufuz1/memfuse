@@ -227,10 +227,6 @@ impl BlockBuilder {
     }
 
     pub fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64, tx_id: u64) -> bool {
-        if key.len() > u16::MAX as usize || value.len() > u16::MAX as usize {
-            return false;
-        }
-
         // size: key_len(2) + key + seq_no(8) + tx_id(8) + val_len(2) + value + bloom(8) + offsets + offset count (2 bytes)
         if !self.data.is_empty()
             && self.current_size() + key.len() + value.len() + 20 > self.block_size
@@ -352,24 +348,6 @@ impl SstableBuilder {
 
     /// Adds a key-value pair to the SSTable being built.
     pub async fn add(&mut self, key: &[u8], value: &[u8], seq_no: u64, tx_id: u64) -> Result<()> {
-        if key.is_empty() {
-            return Err(MemFuseError::InvalidInput(
-                "SSTable key cannot be empty".into(),
-            ));
-        }
-        if key.len() > u16::MAX as usize {
-            return Err(MemFuseError::InvalidInput(format!(
-                "SSTable key length ({}) exceeds maximum 65535 bytes limit",
-                key.len()
-            )));
-        }
-        if value.len() > u16::MAX as usize {
-            return Err(MemFuseError::InvalidInput(format!(
-                "SSTable value length ({}) exceeds maximum 65535 bytes limit",
-                value.len()
-            )));
-        }
-
         if self.first_key.is_none() {
             self.first_key = Some(Bytes::copy_from_slice(key));
         }
@@ -378,7 +356,7 @@ impl SstableBuilder {
             self.flush_block().await?;
             if !self.block_builder.add(key, value, seq_no, tx_id) {
                 return Err(MemFuseError::Storage(format!(
-                    "Key or value too large for SSTable block (key_len={}, val_len={})",
+                    "Key-value entry too large for SSTable block (key: {} bytes, val: {} bytes)",
                     key.len(),
                     value.len()
                 )));
@@ -2214,12 +2192,11 @@ mod tests {
     }
 
     #[test]
-    fn test_block_builder_oversized_inputs_return_false() {
-        let mut builder = BlockBuilder::new(4096);
-        let oversized_key = vec![0xAA; 65536];
-        assert!(!builder.add(&oversized_key, b"val", 1, 1));
+    fn test_block_builder_min_max_clamping() {
+        let bb_small = BlockBuilder::new(10);
+        assert_eq!(bb_small.block_size, 512);
 
-        let oversized_val = vec![0xBB; 65536];
-        assert!(!builder.add(b"key", &oversized_val, 1, 1));
+        let bb_huge = BlockBuilder::new(100 * 1024 * 1024);
+        assert_eq!(bb_huge.block_size, 64 * 1024 * 1024);
     }
 }

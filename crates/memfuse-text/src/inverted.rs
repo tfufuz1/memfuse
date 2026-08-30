@@ -1548,4 +1548,130 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_upsert_document_oversized_text_returns_error() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "oversized_test");
+        let tx = TxId::new(1);
+        let doc_id = DocId::new(1);
+
+        // Construct oversized string (> 10 MiB)
+        let oversized = "a".repeat(InvertedIndex::<MockStorage>::MAX_TEXT_BYTES + 1);
+        let err = index
+            .upsert_document(tx, doc_id, &oversized)
+            .await
+            .unwrap_err();
+
+        match err {
+            MemFuseError::InvalidInput(msg) => {
+                assert!(msg.contains("exceeds maximum allowed size"));
+            }
+            _ => panic!("Expected MemFuseError::InvalidInput, got {:?}", err),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn text_index_metadata_bincode_roundtrip() {
+        let meta = TextIndexMetadata {
+            total_docs: 42,
+            total_tokens: 1337,
+            avg_doc_len_x1000: 31833,
+        };
+        let bytes = bincode::serialize(&meta).expect("serialization succeeds");
+        let deserialized: TextIndexMetadata =
+            bincode::deserialize(&bytes).expect("deserialization succeeds");
+        assert_eq!(meta.total_docs, deserialized.total_docs);
+        assert_eq!(meta.total_tokens, deserialized.total_tokens);
+        assert_eq!(meta.avg_doc_len_x1000, deserialized.avg_doc_len_x1000);
+    }
+
+    #[test]
+    fn language_from_iso_case_iso_codes_and_fallback() {
+        assert_eq!(Language::from_iso("de"), Language::German);
+        assert_eq!(Language::from_iso("DE"), Language::German);
+        assert_eq!(Language::from_iso("de-DE"), Language::German);
+
+        assert_eq!(Language::from_iso("en"), Language::English);
+        assert_eq!(Language::from_iso("EN"), Language::English);
+        assert_eq!(Language::from_iso("en-US"), Language::English);
+
+        // Unknown ISO falls back to English
+        assert_eq!(Language::from_iso("fr"), Language::English);
+        assert_eq!(Language::from_iso("es"), Language::English);
+        assert_eq!(Language::from_iso(""), Language::English);
+    }
+
+    #[tokio::test]
+    async fn bm25_morph_index_case_full_lifecycle() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let morph_index = BM25MorphIndex::new(
+            storage,
+            "morph_ns",
+            Arc::new(crate::morphology::PassthroughTokenizer::new("de")),
+        );
+
+        assert_eq!(morph_index.tokenizer().language(), "de");
+
+        let tx = TxId::new(1);
+        let doc_id = DocId::new(10);
+        morph_index
+            .insert(tx, doc_id, "test morphological index")
+            .await?;
+        morph_index.commit(tx).await?;
+
+        assert_eq!(morph_index.len().await, 1);
+        let results = morph_index.search("morphological", 5).await?;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].doc_id, doc_id);
+
+        let stats = morph_index.stats().await?;
+        assert_eq!(stats.num_documents, 1);
+
+        morph_index.delete(tx, doc_id).await?;
+        morph_index.commit(tx).await?;
+        assert_eq!(morph_index.len().await, 0);
+
+        morph_index.rollback(tx).await?;
+        morph_index.rollback_to_tx(tx).await?;
+        assert_eq!(morph_index.last_tx_id().await?, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn inverted_index_case_empty_and_unicode_inputs() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let mut index = InvertedIndex::new(storage, "edge_ns");
+        index = index.with_tokenizer(Arc::new(crate::tokenizer::DefaultTokenizer));
+
+        let tx = TxId::new(1);
+        let doc_id = DocId::new(5);
+
+        // Insert empty string (doc is registered in doc_count, but 0 tokens indexed)
+        index.insert(tx, doc_id, "").await?;
+        index.commit(tx).await?;
+        assert_eq!(index.len().await, 1);
+
+        let doc_id2 = DocId::new(6);
+        // Insert unicode text
+        index
+            .insert(tx, doc_id2, "Ärger über Ölpreise in Düsseldorf")
+            .await?;
+        index.commit(tx).await?;
+        assert_eq!(index.len().await, 2);
+
+        // Search empty query
+        let empty_res = index.search("", 10).await?;
+        assert!(empty_res.is_empty());
+
+        // Search unicode query
+        let unicode_res = index.search("ölpreise", 10).await?;
+        assert_eq!(unicode_res.len(), 1);
+        assert_eq!(unicode_res[0].doc_id, doc_id2);
+
+        Ok(())
+    }
 }

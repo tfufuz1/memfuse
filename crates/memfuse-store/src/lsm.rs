@@ -171,15 +171,6 @@ pub struct LsmStorage {
 impl LsmStorage {
     /// Creates a new LSM storage engine.
     pub async fn new(config: LsmConfig) -> Result<Self> {
-        if config.memtable_size_limit == 0 {
-            return Err(MemFuseError::InvalidInput(
-                "memtable_size_limit must be > 0".into(),
-            ));
-        }
-        if config.max_ram_mb == 0 {
-            return Err(MemFuseError::InvalidInput("max_ram_mb must be > 0".into()));
-        }
-
         tokio::fs::create_dir_all(&config.path)
             .await
             .map_err(|e| MemFuseError::Storage(format!("Failed to create dir: {}", e)))?;
@@ -676,22 +667,8 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-        if key.is_empty() {
-            return Err(MemFuseError::InvalidInput("Key cannot be empty".into()));
-        }
-        if key.len() > 1024 * 1024 {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Key length ({}) exceeds 1 MiB limit",
-                key.len()
-            )));
-        }
-        if value.len() > 128 * 1024 * 1024 {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Value length ({}) exceeds 128 MiB limit",
-                value.len()
-            )));
-        }
-
+        validate_key(key)?;
+        validate_value(value)?;
         self.apply_backpressure().await;
         if !self.budget.has_memory_capacity() {
             return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
@@ -713,16 +690,25 @@ impl StorageEngine for LsmStorage {
         Ok(())
     }
 
-    async fn delete_prefix(&self, tx_id: TxId, prefix: &[u8]) -> Result<u64> {
-        let matching_keys = self.scan_prefix(prefix).await?;
-        let count = matching_keys.len() as u64;
+    async fn delete_many(&self, tx_id: TxId, keys: Vec<Vec<u8>>) -> Result<u64> {
+        if keys.len() > MAX_BATCH_SIZE {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Batch size ({} items) exceeds limit of {} items",
+                keys.len(),
+                MAX_BATCH_SIZE
+            )));
+        }
+        for key in &keys {
+            validate_key(key)?;
+        }
+        let count = keys.len() as u64;
         if count == 0 {
             return Ok(0);
         }
 
-        let ops: Vec<IndexOp<(Vec<u8>, Vec<u8>)>> = matching_keys
+        let ops: Vec<IndexOp<(Vec<u8>, Vec<u8>)>> = keys
             .into_iter()
-            .map(|(key, _value)| {
+            .map(|key| {
                 let hash = blake3::hash(&key);
                 let mut bytes = [0u8; 8];
                 bytes.copy_from_slice(&hash.as_bytes()[..8]);
@@ -738,6 +724,16 @@ impl StorageEngine for LsmStorage {
         Ok(count)
     }
 
+    async fn delete_prefix(&self, tx_id: TxId, prefix: &[u8]) -> Result<u64> {
+        let matching_keys: Vec<Vec<u8>> = self
+            .scan_prefix(prefix)
+            .await?
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+        self.delete_many(tx_id, matching_keys).await
+    }
+
     /// # ACID-Garantie
     /// Staged einen Tombstone im TxBuffer. Erst nach `commit()` wirksam.
     ///
@@ -747,16 +743,7 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
-        if key.is_empty() {
-            return Err(MemFuseError::InvalidInput("Key cannot be empty".into()));
-        }
-        if key.len() > 1024 * 1024 {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Key length ({}) exceeds 1 MiB limit",
-                key.len()
-            )));
-        }
-
+        validate_key(key)?;
         let doc_id = {
             let hash = blake3::hash(key);
             let mut bytes = [0u8; 8];
@@ -1340,6 +1327,37 @@ mod tests {
         storage.commit(tx2).await.unwrap(); // unwrap
         let remaining = storage.scan_prefix(b"pfx:").await.unwrap(); // unwrap
         assert!(remaining.is_empty(), "All prefixed keys must be deleted");
+    }
+
+    #[tokio::test]
+    async fn test_lsm_storage_delete_many_uses_single_batch() {
+        let (storage, _tmp) = test_storage().await;
+        let tx1 = TxId::new(1);
+
+        let keys_to_delete: Vec<Vec<u8>> = (0..50)
+            .map(|i| format!("batch_key_{i}").into_bytes())
+            .collect();
+
+        for key in &keys_to_delete {
+            storage.put(tx1, key, b"value").await.unwrap();
+        }
+        storage.commit(tx1).await.unwrap();
+
+        let tx2 = TxId::new(2);
+        let count = storage
+            .delete_many(tx2, keys_to_delete.clone())
+            .await
+            .unwrap();
+        assert_eq!(count, 50);
+
+        // Verify that stage_many inserted all 50 delete operations into tx_buffer for tx2 atomically
+        let staged_ops = storage.tx_buffer.get_ops(tx2).expect("ops staged");
+        assert_eq!(staged_ops.len(), 50);
+
+        storage.commit(tx2).await.unwrap();
+        for key in &keys_to_delete {
+            assert_eq!(storage.get(key).await.unwrap(), None);
+        }
     }
 
     #[tokio::test]
@@ -2241,59 +2259,52 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_lsm_put_delete_boundary_validation() {
-        let (storage, _tmp) = test_storage().await;
+    async fn test_input_boundary_guards() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = LsmStorage::new(config).await.expect("create storage");
         let tx = TxId::new(1);
 
-        // Put empty key -> InvalidInput
+        // 1. Empty key check
         assert!(matches!(
             storage.put(tx, b"", b"val").await,
             Err(MemFuseError::InvalidInput(_))
         ));
-
-        // Put oversized key (>1 MiB) -> InvalidInput
-        let huge_key = vec![0x41; 1024 * 1024 + 1];
-        assert!(matches!(
-            storage.put(tx, &huge_key, b"val").await,
-            Err(MemFuseError::InvalidInput(_))
-        ));
-
-        // Delete empty key -> InvalidInput
         assert!(matches!(
             storage.delete(tx, b"").await,
             Err(MemFuseError::InvalidInput(_))
         ));
+        assert!(matches!(
+            storage.get(b"").await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            storage.get_at_seq(b"", 10).await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
 
-        // Delete oversized key (>1 MiB) -> InvalidInput
+        // 2. Oversized key check (> 1MB)
+        let huge_key = vec![b'a'; MAX_KEY_SIZE + 1];
+        assert!(matches!(
+            storage.put(tx, &huge_key, b"val").await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
         assert!(matches!(
             storage.delete(tx, &huge_key).await,
             Err(MemFuseError::InvalidInput(_))
         ));
-    }
-
-    #[tokio::test]
-    async fn test_lsm_new_config_validation() {
-        let tmp = TempDir::new().expect("temp dir"); // expect
-
-        // 1. memtable_size_limit == 0
-        let cfg_zero_mem = LsmConfig {
-            path: tmp.path().to_path_buf(),
-            memtable_size_limit: 0,
-            ..Default::default()
-        };
         assert!(matches!(
-            LsmStorage::new(cfg_zero_mem).await,
+            storage.get(&huge_key).await,
             Err(MemFuseError::InvalidInput(_))
         ));
 
-        // 2. max_ram_mb == 0
-        let cfg_zero_ram = LsmConfig {
-            path: tmp.path().to_path_buf(),
-            max_ram_mb: 0,
-            ..Default::default()
-        };
+        // 3. Oversized delete_many batch (> 10,000 items)
+        let too_many_keys = vec![b"key".to_vec(); MAX_BATCH_SIZE + 1];
         assert!(matches!(
-            LsmStorage::new(cfg_zero_ram).await,
+            storage.delete_many(tx, too_many_keys).await,
             Err(MemFuseError::InvalidInput(_))
         ));
     }

@@ -6,8 +6,6 @@ use tempfile::TempDir;
 use tokio::task::JoinHandle;
 
 // ANCHOR[INTEGRATION:CHECKPOINT-STRESS] STATUS:DONE (TS:2026-06-20T00:00:00Z)
-// REVIEW-PASS[1/2] STATUS:PASS (ID: INTEGRATION:CHECKPOINT-STRESS) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
-// REVIEW-PASS[2/2] STATUS:PASS (ID: INTEGRATION:CHECKPOINT-STRESS) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
 // Stress test for concurrent checkpoint creation and deletion during active writes.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_checkpoint_concurrency_stress() {
