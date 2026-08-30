@@ -61,6 +61,13 @@ use memfuse_core::DistanceMetric;
 use std::arch::x86_64::*;
 
 /// Computes distance between two vectors using the specified metric.
+///
+/// # Invariant
+/// Callers MUST guarantee that `a` and `b` contain no NaN or infinite
+/// values before calling this function. This is enforced at trust
+/// boundaries (vector insert, query entry point) rather than here,
+/// to avoid O(dimension) redundant validation on every pairwise
+/// distance computation in hot search loops.
 #[inline]
 // AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-25T00:00:00Z)
 // Standardize SIMD distance metrics on Stable Rust, preventing panic in hardware fallbacks.
@@ -70,17 +77,6 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
         return Err(memfuse_core::MemFuseError::invalid_input(
             "Vector dimensions must match",
         ));
-    }
-
-    // SAFETY: Ensure no NaN enters the distance metrics
-    // INVARIANTE: Distance functions must never return NaN unless inputs are corrupted.
-    // Early validation prevents NaN poisoning in HNSW search/insert loops.
-    for val in a.iter().chain(b.iter()) {
-        if val.is_nan() {
-            return Err(memfuse_core::MemFuseError::invalid_input(
-                "Input vector contains NaN values",
-            ));
-        }
     }
 
     let dist = match metric {
@@ -1493,6 +1489,15 @@ mod tests {
         let v = vec![1.0f32, 0.5, -1.0, 2.0];
         let d = compute_distance(&v, &v, DistanceMetric::Euclidean).unwrap(); // unwrap
         assert!(d.abs() < 1e-6, "euclidean(v, v) must be ~0, got {d}");
+    }
+
+    #[test]
+    fn test_compute_distance_no_longer_validates_nan_directly() {
+        // compute_distance() validiert NICHT mehr auf NaN — Aufrufer tragen die Invariante.
+        let a = vec![1.0f32, f32::NAN, 3.0];
+        let b = vec![1.0f32, 2.0, 3.0];
+        let res = compute_distance(&a, &b, DistanceMetric::Cosine);
+        assert!(res.is_ok(), "compute_distance should not fail with InvalidInput when NaN is passed directly");
     }
 
     #[test]

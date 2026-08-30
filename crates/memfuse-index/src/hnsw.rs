@@ -1566,6 +1566,11 @@ impl VectorIndex for HnswIndex {
                 query.len()
             )));
         }
+        if query.iter().any(|x| x.is_nan() || x.is_infinite()) {
+            return Err(MemFuseError::invalid_input(
+                "Query vector contains NaN or infinite values",
+            ));
+        }
 
         let query_quantized: Option<Vec<u8>> = None;
 
@@ -1698,6 +1703,11 @@ impl VectorIndex for HnswIndex {
                 self.inner.config.dimension,
                 query.len()
             )));
+        }
+        if query.iter().any(|x| x.is_nan() || x.is_infinite()) {
+            return Err(MemFuseError::invalid_input(
+                "Query vector contains NaN or infinite values",
+            ));
         }
 
         let query_quantized = if self.inner.config.quantize {
