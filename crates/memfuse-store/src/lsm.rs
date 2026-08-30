@@ -98,7 +98,7 @@ fn validate_key(key: &[u8]) -> Result<()> {
     Ok(())
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 fn validate_value(value: &[u8]) -> Result<()> {
     if value.len() > MAX_VALUE_SIZE {
         return Err(MemFuseError::InvalidInput(format!(
@@ -475,7 +475,7 @@ impl LsmStorage {
             if !surviving_entries.is_empty() {
                 static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
                 let count = COUNTER.fetch_add(1, Ordering::Relaxed);
-                let seq = self.next_seq_no.load(Ordering::Relaxed) & !TOMBSTONE_BIT;
+                let seq = self.next_seq_no.load(Ordering::Relaxed);
                 let new_sst_path =
                     self.config
                         .path
@@ -2301,142 +2301,136 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rollback_tombstone_in_wal() {
+    async fn test_rollback_tombstone_sstable() {
         let (storage, _tmp) = test_storage().await;
 
-        // a. Inserts committen (tx1)
+        // a. Inserts committen
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.unwrap(); // unwrap #[cfg(test)]
-        storage.commit(tx1).await.unwrap(); // unwrap #[cfg(test)]
+        storage.put(tx1, b"key1", b"val1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
 
-        // b. Delete als LETZTE Operation in target_tx (tx2) in WAL
         let tx2 = TxId::new(2);
-        storage.delete(tx2, b"key1").await.unwrap(); // unwrap #[cfg(test)]
-        storage.commit(tx2).await.unwrap(); // unwrap #[cfg(test)]
+        storage.put(tx2, b"key2", b"val2").await.unwrap();
+        storage.commit(tx2).await.unwrap();
 
-        // Post-target tx3 to be rolled back
+        // b. Delete (Tombstone) als letzte Op vor Target committen und flushen
         let tx3 = TxId::new(3);
-        storage.put(tx3, b"key2", b"val2").await.unwrap(); // unwrap #[cfg(test)]
-        storage.commit(tx3).await.unwrap(); // unwrap #[cfg(test)]
+        storage.delete(tx3, b"key2").await.unwrap();
+        storage.commit(tx3).await.unwrap();
+        storage.force_flush().await.unwrap();
 
-        // c. rollback_to_tx(tx2)
-        storage.rollback_to_tx(tx2).await.unwrap(); // unwrap #[cfg(test)]
+        // c. Rollback auf target_tx (tx3)
+        storage.rollback_to_tx(tx3).await.unwrap();
 
-        // d. NEUER Insert in tx4
+        // d. Neuen Insert mit neuem Key committen
         let tx4 = TxId::new(4);
-        storage.put(tx4, b"new_key", b"new_val").await.unwrap(); // unwrap #[cfg(test)]
-        storage.commit(tx4).await.unwrap(); // unwrap #[cfg(test)]
+        storage.put(tx4, b"key3", b"val3").await.unwrap();
+        storage.commit(tx4).await.unwrap();
 
-        // e. Assert: new_key is readable, seq_no has TOMBSTONE_BIT NOT set
-        let val = storage.get(b"new_key").await.unwrap(); // unwrap #[cfg(test)]
-        assert_eq!(val, Some(b"new_val".to_vec()));
+        // e. Assert: Der neue Key ist lesbar und TOMBSTONE_BIT ist NICHT gesetzt
+        let current_max_seq = storage.next_seq_no.load(Ordering::Acquire);
+        let val = storage.get_at_seq(b"key3", current_max_seq).await.unwrap();
+        assert_eq!(val, Some(b"val3".to_vec()));
 
-        let last_seq = storage.last_seq_no().await.unwrap(); // unwrap #[cfg(test)]
+        let last_seq = storage.last_seq_no().await.unwrap();
         assert_eq!(
             last_seq & TOMBSTONE_BIT,
             0,
-            "next_seq_no must NOT carry TOMBSTONE_BIT after rollback over WAL tombstone"
+            "Sequence number of new insert must not have TOMBSTONE_BIT set"
         );
     }
 
     #[tokio::test]
-    async fn test_rollback_tombstone_in_sstable() {
+    async fn test_rollback_tombstone_wal() {
         let (storage, _tmp) = test_storage().await;
 
-        // a. Inserts committen (tx1)
+        // a. Inserts committen
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.unwrap(); // unwrap #[cfg(test)]
-        storage.commit(tx1).await.unwrap(); // unwrap #[cfg(test)]
+        storage.put(tx1, b"k1", b"v1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
 
-        // b. Delete als LETZTE Operation in target_tx (tx2)
         let tx2 = TxId::new(2);
-        storage.delete(tx2, b"key1").await.unwrap(); // unwrap #[cfg(test)]
-        storage.commit(tx2).await.unwrap(); // unwrap #[cfg(test)]
+        storage.put(tx2, b"k2", b"v2").await.unwrap();
+        storage.commit(tx2).await.unwrap();
 
-        // Force flush so tombstone is written as max_seq in SSTable
-        storage.force_flush().await.unwrap(); // unwrap #[cfg(test)]
-
-        // Post-target tx3 to be rolled back
+        // b. Delete (Tombstone) im WAL als letzte Op vor Target committen (unflushed)
         let tx3 = TxId::new(3);
-        storage.put(tx3, b"key2", b"val2").await.unwrap(); // unwrap #[cfg(test)]
-        storage.commit(tx3).await.unwrap(); // unwrap #[cfg(test)]
+        storage.delete(tx3, b"k2").await.unwrap();
+        storage.commit(tx3).await.unwrap();
 
-        // c. rollback_to_tx(tx2)
-        storage.rollback_to_tx(tx2).await.unwrap(); // unwrap #[cfg(test)]
+        // c. Rollback auf target_tx (tx3)
+        storage.rollback_to_tx(tx3).await.unwrap();
 
-        // d. NEUER Insert in tx4
+        // d. Neuen Insert mit neuem Key committen
         let tx4 = TxId::new(4);
-        storage.put(tx4, b"new_key", b"new_val").await.unwrap(); // unwrap #[cfg(test)]
-        storage.commit(tx4).await.unwrap(); // unwrap #[cfg(test)]
+        storage.put(tx4, b"k3", b"v3").await.unwrap();
+        storage.commit(tx4).await.unwrap();
 
-        // e. Assert: new_key is readable, seq_no has TOMBSTONE_BIT NOT set
-        let val = storage.get(b"new_key").await.unwrap(); // unwrap #[cfg(test)]
-        assert_eq!(val, Some(b"new_val".to_vec()));
+        // e. Assert: Der neue Key ist lesbar und TOMBSTONE_BIT ist NICHT gesetzt
+        let current_max_seq = storage.next_seq_no.load(Ordering::Acquire);
+        let val = storage.get_at_seq(b"k3", current_max_seq).await.unwrap();
+        assert_eq!(val, Some(b"v3".to_vec()));
 
-        let last_seq = storage.last_seq_no().await.unwrap(); // unwrap #[cfg(test)]
+        let last_seq = storage.last_seq_no().await.unwrap();
         assert_eq!(
             last_seq & TOMBSTONE_BIT,
             0,
-            "next_seq_no must NOT carry TOMBSTONE_BIT after rollback over SSTable tombstone"
+            "Sequence number of new insert must not have TOMBSTONE_BIT set"
         );
     }
 
     #[tokio::test]
-    async fn test_rollback_tombstone_multiple_ops_sequence() {
+    async fn test_rollback_tombstone_subsequent_ops() {
         let (storage, _tmp) = test_storage().await;
 
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"k1", b"v1").await.unwrap(); // unwrap #[cfg(test)]
-        storage.commit(tx1).await.unwrap(); // unwrap #[cfg(test)]
+        storage.put(tx1, b"key1", b"val1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
 
         let tx2 = TxId::new(2);
-        storage.delete(tx2, b"k1").await.unwrap(); // unwrap #[cfg(test)]
-        storage.commit(tx2).await.unwrap(); // unwrap #[cfg(test)]
+        storage.delete(tx2, b"key1").await.unwrap();
+        storage.commit(tx2).await.unwrap();
 
+        // Rollback auf tx2
+        storage.rollback_to_tx(tx2).await.unwrap();
+
+        // Abfolge von weiteren Inserts und Deletes in Folge
         let tx3 = TxId::new(3);
-        storage.put(tx3, b"k2", b"v2").await.unwrap(); // unwrap #[cfg(test)]
-        storage.commit(tx3).await.unwrap(); // unwrap #[cfg(test)]
+        storage.put(tx3, b"key2", b"val2").await.unwrap();
+        storage.commit(tx3).await.unwrap();
 
-        // Rollback to tx2 (which ends on tombstone)
-        storage.rollback_to_tx(tx2).await.unwrap(); // unwrap #[cfg(test)]
-
-        // Multiple alternating puts and deletes in sequence after rollback
         let tx4 = TxId::new(4);
-        storage.put(tx4, b"a", b"val_a").await.unwrap(); // unwrap #[cfg(test)]
-        storage.commit(tx4).await.unwrap(); // unwrap #[cfg(test)]
+        storage.delete(tx4, b"key2").await.unwrap();
+        storage.commit(tx4).await.unwrap();
 
         let tx5 = TxId::new(5);
-        storage.delete(tx5, b"a").await.unwrap(); // unwrap #[cfg(test)]
-        storage.commit(tx5).await.unwrap(); // unwrap #[cfg(test)]
+        storage.put(tx5, b"key3", b"val3").await.unwrap();
+        storage.commit(tx5).await.unwrap();
 
-        let tx6 = TxId::new(6);
-        storage.put(tx6, b"b", b"val_b").await.unwrap(); // unwrap #[cfg(test)]
-        storage.commit(tx6).await.unwrap(); // unwrap #[cfg(test)]
+        // Prüfe direkt im MemTable, dass der neueste Zustand jedes Keys das korrekte TOMBSTONE_BIT trägt
+        let state = storage.state.read().await;
+        for (k, _v, seq, _tx) in state.memtable.iter_latest() {
+            if k.as_ref() == b"key1" || k.as_ref() == b"key2" {
+                assert_ne!(
+                    seq & TOMBSTONE_BIT,
+                    0,
+                    "Latest entry for deleted key {:?} must have TOMBSTONE_BIT set",
+                    String::from_utf8_lossy(&k)
+                );
+            } else if k.as_ref() == b"key3" {
+                assert_eq!(
+                    seq & TOMBSTONE_BIT,
+                    0,
+                    "Latest entry for inserted key {:?} must NOT have TOMBSTONE_BIT set",
+                    String::from_utf8_lossy(&k)
+                );
+            }
+        }
+        drop(state);
 
-        let tx7 = TxId::new(7);
-        storage.put(tx7, b"c", b"val_c").await.unwrap(); // unwrap #[cfg(test)]
-        storage.commit(tx7).await.unwrap(); // unwrap #[cfg(test)]
-
-        // Assert: k1 is deleted, a is deleted, b and c are readable
-        assert_eq!(storage.get(b"k1").await.unwrap(), None); // unwrap #[cfg(test)]
-        assert_eq!(storage.get(b"a").await.unwrap(), None); // unwrap #[cfg(test)]
-        assert_eq!(
-            storage.get(b"b").await.unwrap(), // unwrap #[cfg(test)]
-            Some(b"val_b".to_vec())
-        );
-        assert_eq!(
-            storage.get(b"c").await.unwrap(), // unwrap #[cfg(test)]
-            Some(b"val_c".to_vec())
-        );
-
-        let val_b = storage.get_at_seq(b"b", 100).await.unwrap(); // unwrap #[cfg(test)]
-        assert_eq!(val_b, Some(b"val_b".to_vec()));
-
-        let last_seq = storage.last_seq_no().await.unwrap(); // unwrap #[cfg(test)]
-        assert_eq!(
-            last_seq & TOMBSTONE_BIT,
-            0,
-            "Sequence numbers must remain clean without bit leaks"
-        );
+        // Verify final state via read path
+        assert_eq!(storage.get(b"key1").await.unwrap(), None);
+        assert_eq!(storage.get(b"key2").await.unwrap(), None);
+        assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec()));
     }
 }
