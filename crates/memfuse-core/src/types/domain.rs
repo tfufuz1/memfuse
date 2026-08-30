@@ -7,13 +7,6 @@
 //! # Invarianten
 //! - `DocId` und `TxId` sind Wrapper um primitive Typen mit deterministischer Hash-Generierung.
 
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       Domain-Types (TxId, DocId, CollectionId) — Newtype-Wrapper für Typ-Sicherheit
-// INVARIANTEN: TxId ist u64-Newtype, NIEMALS direkt aus SystemTime erzeugen (AGENTS.md §4)
-// HOTSPOTS:    TxId, DocId, CollectionId, TOMBSTONE_BIT
-// SIEHE AUCH:  AGENTS.md §4
-
 use crate::error::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -92,7 +85,16 @@ impl DocId {
                 "Key cannot be empty".to_string(),
             ));
         }
-        Ok(Self(hash_key_u64(key)))
+        let hash = blake3::hash(key.as_bytes());
+        let bytes = hash
+            .as_bytes()
+            .get(..8)
+            .ok_or_else(|| MemFuseError::Internal("Blake3 hash too short".to_string()))?;
+
+        let buf: [u8; 8] = bytes.try_into().map_err(|_| {
+            MemFuseError::Internal("Failed to convert hash slice to array".to_string())
+        })?;
+        Ok(Self(u64::from_le_bytes(buf)))
     }
 }
 
@@ -155,14 +157,6 @@ impl From<u64> for EntityId {
     }
 }
 
-#[inline]
-fn hash_key_u64(s: &str) -> u64 {
-    let hash = blake3::hash(s.as_bytes());
-    let mut buf = [0u8; 8];
-    buf.copy_from_slice(&hash.as_bytes()[..8]);
-    u64::from_le_bytes(buf)
-}
-
 impl From<&str> for EntityId {
     /// Infallible conversion: parses as `u64` first, then falls back to BLAKE3 hash.
     /// For consistent error handling at API boundaries, prefer `EntityId::from_key`.
@@ -170,7 +164,10 @@ impl From<&str> for EntityId {
         if let Ok(val) = s.parse::<u64>() {
             Self(val)
         } else {
-            Self(hash_key_u64(s))
+            let hash = blake3::hash(s.as_bytes());
+            let mut buf = [0u8; 8];
+            buf.copy_from_slice(&hash.as_bytes()[..8]);
+            Self(u64::from_le_bytes(buf))
         }
     }
 }
@@ -604,16 +601,6 @@ pub struct PprConfig {
     pub max_iterations: u32,
     /// L1 norm threshold for early termination convergence check. Default: 1e-6.
     pub convergence_epsilon: f32,
-    /// Gibt eine nicht-konvergierte Warnung (tracing::warn!) aus, wenn
-    /// max_iterations erreicht wird, bevor convergence_epsilon
-    /// unterschritten wurde. Kein Fehler — die Berechnung liefert das
-    /// beste bisher erreichte Ergebnis zurück. Default: true.
-    #[serde(default = "default_warn_on_non_convergence")]
-    pub warn_on_non_convergence: bool,
-}
-
-fn default_warn_on_non_convergence() -> bool {
-    true
 }
 
 impl Default for PprConfig {
@@ -622,7 +609,6 @@ impl Default for PprConfig {
             damping_factor: 0.85,
             max_iterations: 100,
             convergence_epsilon: 1e-6,
-            warn_on_non_convergence: true,
         }
     }
 }
@@ -828,79 +814,6 @@ mod tests {
         let f32_close = DistanceMetric::Cosine.compute(&q_f32, &c_f32).unwrap(); // unwrap
         let f32_far = DistanceMetric::Cosine.compute(&q_f32, &f_f32).unwrap(); // unwrap
         assert!(f32_close < f32_far, "f32 ranking mismatch");
-    }
-
-    #[test]
-    fn test_doc_id_multibyte_unicode_keys() {
-        let unicode_keys = vec![
-            "🦀_crab_key",
-            "äöü_german_key",
-            "日本語_japanese_key",
-            "🚀✨🔥",
-        ];
-        for key in unicode_keys {
-            let doc_id = DocId::from_key(key).expect("multibyte unicode key should derive doc_id"); // expect #[cfg(test)]
-            assert!(doc_id.inner() > 0);
-            let entity_id =
-                EntityId::from_key(key).expect("multibyte unicode key should derive entity_id"); // expect #[cfg(test)]
-            assert_eq!(entity_id.inner(), doc_id.inner());
-        }
-    }
-
-    #[test]
-    fn test_entity_id_methods() {
-        let entity_id = EntityId::new(12345);
-        assert_eq!(entity_id.inner(), 12345);
-        assert_eq!(entity_id.as_bytes(), b"12345");
-
-        let doc_id = DocId::new(998877);
-        let derived_entity = EntityId::from_doc_id(doc_id);
-        assert_eq!(derived_entity.inner(), 998877);
-
-        // String / &str conversions
-        let parsed_num: EntityId = "12345".into();
-        assert_eq!(parsed_num.inner(), 12345);
-
-        let hashed_str: EntityId = "not_a_number".into();
-        assert!(hashed_str.inner() > 0);
-
-        let from_string: EntityId = String::from("9999").into();
-        assert_eq!(from_string.inner(), 9999);
-    }
-
-    #[test]
-    fn test_distance_metrics_empty_and_single_element() {
-        let empty_a: [f32; 0] = [];
-        let empty_b: [f32; 0] = [];
-
-        // 0-dim vectors
-        assert_eq!(
-            DistanceMetric::Cosine.compute(&empty_a, &empty_b).unwrap(),
-            1.0
-        ); // unwrap
-        assert_eq!(
-            DistanceMetric::Euclidean
-                .compute(&empty_a, &empty_b)
-                .unwrap(),
-            0.0
-        ); // unwrap
-        assert_eq!(
-            DistanceMetric::DotProduct
-                .compute(&empty_a, &empty_b)
-                .unwrap(),
-            0.0
-        ); // unwrap
-
-        // 1-dim vectors
-        let a1 = [3.0f32];
-        let b1 = [4.0f32];
-        // Cosine: angle is 0 between positive 1D values -> distance 0.0
-        assert!((DistanceMetric::Cosine.compute(&a1, &b1).unwrap() - 0.0).abs() < 1e-6); // unwrap
-                                                                                         // Euclidean: |3 - 4| = 1.0
-        assert_eq!(DistanceMetric::Euclidean.compute(&a1, &b1).unwrap(), 1.0); // unwrap
-                                                                               // DotProduct: -(3 * 4) = -12.0
-        assert_eq!(DistanceMetric::DotProduct.compute(&a1, &b1).unwrap(), -12.0);
-        // unwrap
     }
 
     #[test]

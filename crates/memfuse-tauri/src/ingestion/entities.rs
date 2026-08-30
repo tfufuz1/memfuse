@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T14:38:30Z (SESSION: 45595f71)
+// ZWECK: Heuristic named entity extraction for knowledge graph linking during document ingestion.
+// INVARIANTEN: Rule-based zero-dependency extraction (no ML models); deduplicates entity names.
+// NICHT-OFFENSICHTLICH: Filters out German sentence starter capitalization patterns to avoid false positives.
+// SIEHE AUCH: crates/memfuse-graph/src/lib.rs
+
 use memfuse_core::EntityId;
 use std::collections::HashSet;
 

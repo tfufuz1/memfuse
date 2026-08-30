@@ -3,6 +3,13 @@ pub mod sandbox;
 #[cfg(test)]
 mod tests;
 
+// FILE-CONTEXT
+// STAND:       2026-08-30T14:46:32Z (SESSION: 2c814094)
+// ZWECK:       stdio JSON-RPC 2.0 MCP-Server (kein HTTP! ADR-010)
+// INVARIANTEN: Transport ist ausschließlich stdin/stdout — niemals TCP/axum, bounded RPC message size, chunk/meta bounds
+// HOTSPOTS:    run_stdio_loop(), handle_request(), read_line_bounded()
+// SIEHE AUCH:  ADR-010, rules/async-io.md
+
 use memfuse_core::{DocId, MemFuseError, TextEmbeddingEngine, MAX_SEARCH_K};
 use memfuse_db::chunker::{ChunkerConfig, MarkdownChunker};
 use memfuse_db::MemFuse;
@@ -14,6 +21,12 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 /// Maximum allowed single JSON-RPC message size via stdio (16 MB).
 pub const MAX_RPC_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum allowed search query length in bytes (64 KB).
+pub const MAX_SEARCH_QUERY_BYTES: usize = 64 * 1024;
+/// Maximum allowed document chunks per insert (1,000).
+pub const MAX_INSERT_CHUNKS: usize = 1_000;
+/// Maximum allowed metadata keys per document (100).
+pub const MAX_METADATA_KEYS: usize = 100;
 
 /// Reads a single line from an async reader into `buf` up to `max_bytes`.
 /// If the line exceeds `max_bytes`, consumes and discards the remainder of the line without allocating memory and returns `InvalidData`.
@@ -22,6 +35,12 @@ pub async fn read_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(
     buf: &mut String,
     max_bytes: usize,
 ) -> std::io::Result<usize> {
+    if max_bytes == 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "max_bytes limit must be greater than 0",
+        ));
+    }
     buf.clear();
     let mut raw_bytes = Vec::new();
 
@@ -112,11 +131,21 @@ fn detect_suspicious_prompt_injection(text: &str) -> bool {
     false
 }
 
+/// Checks whether database write access is explicitly enabled via environment variable `MEMFUSE_MCP_ALLOW_WRITE`.
+pub fn is_write_allowed_by_env() -> bool {
+    std::env::var("MEMFUSE_MCP_ALLOW_WRITE")
+        .map(|v| {
+            let s = v.trim().to_lowercase();
+            s == "1" || s == "true" || s == "yes"
+        })
+        .unwrap_or(false)
+}
+
 /// MCP-Server mit stdio-Transport (JSON-RPC 2.0).
 ///
 /// stdout ist dem Protokoll vorbehalten — Logs gehen ausschließlich nach stderr.
 fn validate_collection_name(name: &str) -> Result<(), McpError> {
-    if name.trim().is_empty() || name.len() > 256 {
+    if name.is_empty() || name.len() > 256 {
         return Err(McpError::invalid_params(format!(
             "Invalid collection name length: {}",
             name.len()
@@ -141,9 +170,17 @@ impl McpServer {
         db: Arc<MemFuse>,
         embedder: Arc<dyn TextEmbeddingEngine>,
     ) -> Result<Self, MemFuseError> {
+        Self::with_write_permission(db, embedder, is_write_allowed_by_env())
+    }
+
+    pub fn with_write_permission(
+        db: Arc<MemFuse>,
+        embedder: Arc<dyn TextEmbeddingEngine>,
+        allow_db_writes: bool,
+    ) -> Result<Self, MemFuseError> {
         let policy = SandboxPolicy {
             allow_db_reads: true,
-            allow_db_writes: true,
+            allow_db_writes,
             allow_code_execution: false,
             max_execution_ms: 5_000,
         };
@@ -190,16 +227,7 @@ impl McpServer {
                             match serde_json::from_value::<JsonRpcRequest>(val) {
                                 Ok(req) => {
                                     if req.id.is_none() || req.id == Some(Value::Null) {
-                                        let method = req.method.clone();
-                                        let resp = self.handle(req).await;
-                                        if let Some(err) = resp.error {
-                                            tracing::warn!(
-                                                method = %method,
-                                                code = err.code,
-                                                error = %err.message,
-                                                "MCP notification handling returned error"
-                                            );
-                                        }
+                                        let _ = self.handle(req).await;
                                         continue; // notification: no response required
                                     }
                                     self.handle(req).await
@@ -377,22 +405,9 @@ impl McpServer {
         match name {
             "memfuse_search" => {
                 let query = match args.get("query") {
-                    Some(v) => {
-                        let s = v.as_str().ok_or_else(|| {
-                            McpError::invalid_params("Invalid params: 'query' must be a string")
-                        })?;
-                        if s.trim().is_empty() {
-                            return Err(McpError::invalid_params("query cannot be empty"));
-                        }
-                        if s.len() > MAX_SEARCH_QUERY_BYTES {
-                            return Err(McpError::invalid_params(format!(
-                                "query size exceeds limit: {} bytes > {} limit",
-                                s.len(),
-                                MAX_SEARCH_QUERY_BYTES
-                            )));
-                        }
-                        s
-                    }
+                    Some(v) => v.as_str().ok_or_else(|| {
+                        McpError::invalid_params("Invalid params: 'query' must be a string")
+                    })?,
                     None => {
                         return Err(McpError::invalid_params("missing required field: 'query'"));
                     }
@@ -440,32 +455,32 @@ impl McpServer {
                     .await
                     .map_err(McpError::from)?;
 
-                let mut enriched_results = Vec::with_capacity(results.len());
-                for res in results {
-                    let mut val = serde_json::to_value(&res).map_err(|e| {
-                        McpError::internal_error(format!("Result serialization error: {e}"))
-                    })?;
-                    if let Some(obj) = val.as_object_mut() {
-                        obj.insert(
-                            "content_provenance".to_string(),
-                            json!("retrieved_untrusted_data"),
-                        );
-                        let text_to_check = res
-                            .metadata
-                            .as_ref()
-                            .and_then(|m| m.get("text"))
-                            .and_then(|t| t.as_str())
-                            .unwrap_or("");
-                        if detect_suspicious_prompt_injection(text_to_check) {
-                            obj.insert("suspicious_injection_detected".to_string(), json!(true));
+                let enriched_results: Vec<Value> = results
+                    .into_iter()
+                    .map(|res| {
+                        let mut val = serde_json::to_value(&res).unwrap_or_default();
+                        if let Some(obj) = val.as_object_mut() {
                             obj.insert(
-                                "injection_warning".to_string(),
-                                json!("Text contains patterns mimicking system prompts or instruction overrides."),
+                                "content_provenance".to_string(),
+                                json!("retrieved_untrusted_data"),
                             );
+                            let text_to_check = res
+                                .metadata
+                                .as_ref()
+                                .and_then(|m| m.get("text"))
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("");
+                            if detect_suspicious_prompt_injection(text_to_check) {
+                                obj.insert("suspicious_injection_detected".to_string(), json!(true));
+                                obj.insert(
+                                    "injection_warning".to_string(),
+                                    json!("Text contains patterns mimicking system prompts or instruction overrides."),
+                                );
+                            }
                         }
-                    }
-                    enriched_results.push(val);
-                }
+                        val
+                    })
+                    .collect();
 
                 Ok(json!(enriched_results))
             }
@@ -492,14 +507,8 @@ impl McpServer {
                         let s = v.as_str().ok_or_else(|| {
                             McpError::invalid_params("Invalid params: 'id' must be a string")
                         })?;
-                        if s.trim().is_empty() {
+                        if s.is_empty() {
                             return Err(McpError::invalid_params("id cannot be empty"));
-                        }
-                        if s.len() > 256 {
-                            return Err(McpError::invalid_params(format!(
-                                "id length exceeds limit: {} bytes > 256 limit",
-                                s.len()
-                            )));
                         }
                         s
                     }
@@ -520,15 +529,6 @@ impl McpServer {
                             "Invalid params: 'vector' must be an array of numbers",
                         )
                     })?;
-                    if arr.is_empty() {
-                        return Err(McpError::invalid_params("vector cannot be empty"));
-                    }
-                    if arr.len() > 10_000 {
-                        return Err(McpError::invalid_params(format!(
-                            "vector dimension exceeds 10000: got {}",
-                            arr.len()
-                        )));
-                    }
                     let mut vec = Vec::with_capacity(arr.len());
                     for elem in arr {
                         let num = elem.as_f64().ok_or_else(|| {
@@ -536,13 +536,7 @@ impl McpServer {
                                 "Invalid params: 'vector' must contain numbers",
                             )
                         })?;
-                        let val_f32 = num as f32;
-                        if val_f32.is_nan() || val_f32.is_infinite() {
-                            return Err(McpError::invalid_params(
-                                "vector contains NaN or Inf values",
-                            ));
-                        }
-                        vec.push(val_f32);
+                        vec.push(num as f32);
                     }
                     Some(vec)
                 } else {
@@ -553,7 +547,7 @@ impl McpServer {
                     let s = t.as_str().ok_or_else(|| {
                         McpError::invalid_params("Invalid params: 'text' must be a string")
                     })?;
-                    if s.trim().is_empty() {
+                    if s.is_empty() {
                         return Err(McpError::invalid_params("text cannot be empty"));
                     }
                     const MAX_INSERT_TEXT_BYTES: usize = 10 * 1024 * 1024; // 10MB
@@ -579,6 +573,14 @@ impl McpServer {
                     .and_then(|v| v.as_object())
                     .cloned()
                     .unwrap_or_default();
+
+                if base_metadata.len() > MAX_METADATA_KEYS {
+                    return Err(McpError::invalid_params(format!(
+                        "metadata entry count exceeds limit: {} > {} limit",
+                        base_metadata.len(),
+                        MAX_METADATA_KEYS
+                    )));
+                }
 
                 let col = self.db.collection(col_name).await.map_err(McpError::from)?;
 
@@ -627,6 +629,14 @@ impl McpServer {
                         "ok": false,
                         "error": "Text konnte nicht in Chunks aufgeteilt werden (leer?)"
                     }));
+                }
+
+                if chunks.len() > MAX_INSERT_CHUNKS {
+                    return Err(McpError::invalid_params(format!(
+                        "Document chunk count exceeds limit: {} > {} limit",
+                        chunks.len(),
+                        MAX_INSERT_CHUNKS
+                    )));
                 }
 
                 let total = chunks.len();
@@ -687,14 +697,8 @@ impl McpServer {
                         let s = v.as_str().ok_or_else(|| {
                             McpError::invalid_params("Invalid params: 'id' must be a string")
                         })?;
-                        if s.trim().is_empty() {
+                        if s.is_empty() {
                             return Err(McpError::invalid_params("id cannot be empty"));
-                        }
-                        if s.len() > 256 {
-                            return Err(McpError::invalid_params(format!(
-                                "id length exceeds limit: {} bytes > 256 limit",
-                                s.len()
-                            )));
                         }
                         s
                     }
