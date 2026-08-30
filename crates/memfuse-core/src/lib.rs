@@ -37,6 +37,7 @@
 
 pub mod error;
 pub mod error_dto;
+// ANCHOR[BUILD:XTASK-001] STATUS:DONE (ID: AGT-XTASK-P01) (TS:2026-08-30T00:00:00Z) (SESSION:jules-p01) - xtask compilation blocker fixed (P0-1)
 pub mod ipc;
 pub mod seq_log;
 pub mod snapshot;
