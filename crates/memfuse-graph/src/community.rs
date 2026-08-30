@@ -3,14 +3,6 @@
 //! Provides deterministic, offline graph clustering to assign entities to
 //! semantic communities for GraphRAG retrieval.
 
-// FILE-CONTEXT
-// STAND:       2026-08-30T14:35:05Z (SESSION: ab88edae)
-// ZWECK:       Label Propagation Community Detection für GraphRAG
-// INVARIANTEN: Determinismus via PRNG-Seed; Vor-Kompaktierung des CsrGraph
-// HOTSPOTS:    detect_communities(), Label Propagation Iteration
-// AGENT-NOTIZ: clippy hygiene & unreadable literal format
-// SIEHE AUCH:  ADR-031
-
 use crate::CsrGraph;
 use memfuse_core::{EntityId, Result};
 use serde::{Deserialize, Serialize};
@@ -421,7 +413,7 @@ mod tests {
                 let config = CommunityDetectionConfig { max_iterations, seed };
                 let result = detect_communities(&graph, &config).await;
 
-                proptest::prop_assert!(result.is_ok() || result.is_err());
+                proptest::prop_assert!(result.is_ok() || matches!(result, Err(_)));
                 if let Ok(assignments) = result {
                     proptest::prop_assert_eq!(assignments.len(), node_count);
                 }
@@ -529,6 +521,19 @@ mod tests {
         assert!(
             warning_found,
             "Expected structured warning log on community detection non-convergence, got logs: {captured_logs:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn detect_communities_CASE_empty_graph() {
+        let graph = CsrGraph::new();
+        let config = CommunityDetectionConfig::default();
+
+        let assignments = detect_communities(&graph, &config).await.unwrap(); // unwrap allowed
+        assert!(
+            assignments.is_empty(),
+            "Community detection on empty graph must return empty assignments"
         );
     }
 

@@ -314,7 +314,7 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-037 (ehem. ADR-020 Wiederherstellung): Wiederherstellung von `memfuse-agent` aus dem Archiv
+## ADR-042: Wiederherstellung von `memfuse-agent` aus dem Archiv
 
 - **Datum**: 2026-08-27
 - **Status**: ✅ Final
@@ -600,6 +600,48 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
+## ADR-037: VectorIndex-Generalisierung in Collection<S, V>
+
+*   **Datum**: 2026-08-29
+*   **Status**: 🟡 Proposed
+*   **Entscheidung**: Die Datenstruktur `Collection<S: StorageEngine = LsmStorage>` in `crates/memfuse-db/src/collection.rs` wird generisch über den `VectorIndex`-Trait-Implementor erweitert: `Collection<S: StorageEngine = LsmStorage, V: VectorIndex = HnswIndex>`. Dadurch wird die starre Kopplung an `Arc<HnswIndex>` aufgehoben und die Nutzung alternativer Vektor-Indizes (wie z. B. `DiskAnnIndex` aus `memfuse-index`) ermöglicht.
+*   **Alternativen**:
+    - **Option A (Dynamischer Trait-Object Trait-Dispatch `Arc<dyn VectorIndex>)`**: Verworfen, da `VectorIndex` in manchen Pfaden dynamischen Trait-Funktions-Dispatch mit Performance-Overhead auf dem Hot-Path verbindet und die Typensicherheit bei konkreter Vektorindex-Instanziierung einbüßt.
+    - **Option B (Status Quo belassen)**: Verworfen, da `DiskAnnIndex` als out-of-core Vektorindex vollständig implementiert ist, aber wegen der harten `Arc<HnswIndex>`-Typisierung in `Collection` ungenutzte technische Schuld darstellte.
+*   **Begründung**: Die Verwendung eines generischen Typparameters mit Standard-Typ `V = HnswIndex` garantiert 100%ige Abwärtskompatibilität für alle bestehenden Aufrufer und Typ-Signaturen (wie `Collection<LsmStorage>`). Gleichzeitig wird die Entkopplung von der konkreten HNSW-Implementierung im `memfuse-db`-Crate vollzogen.
+*   **Konsequenzen**:
+    - `Collection` kann jetzt auch mit `DiskAnnIndex` instanziiert und betrieben werden (`Collection<LsmStorage, DiskAnnIndex>`).
+    - `Collection::new` nimmt `index: Arc<V>` als Parameter auf; die Convenience-Funktion `Collection::with_hnsw` kapselt die bisherige HNSW-Konstruktion.
+
+---
+
+## ADR-038: Zettelkasten Memory Links (A-MEM) & Supersedes Displacement Logic
+*   **Datum**: 2026-08-29
+*   **Status**: ✅ Final
+*   **Entscheidung**:
+    1. Erweiterung von `ContextChunk` (`memfuse-core`) um `links: Vec<MemoryLink>` mit `#[serde(default)]`.
+    2. Einführung von `LinkRelation` (`Elaborates`, `Contradicts`, `Supersedes`, `References`) und `MemoryLink` (`target: DocId`, `relation: LinkRelation`, `created_at_tx: TxId`).
+    3. Implementierung der Methode `Collection::link_memories` (idempotent, interne `TxId` via `allocate_tx()`) und `Collection::traverse_links` (iterativer BFS mit `VecDeque`, zyklen-sicher, max `MAX_SEARCH_K`).
+    4. Implementierung der Supersedes-Verdrängungslogik in `hybrid_search_with_query()`: Wenn `include_superseded = false` (Default), werden Chunks verdrängt, auf die ein anderes Treffer-Dokument einen `MemoryLink` der Relation `Supersedes` trägt.
+*   **Alternativen**:
+    - **Entity-to-Entity Verlinkung**: Verworfen, da CSR-Graph-Terrain (EntityId-zu-EntityId). Zettelkasten A-MEM operiert rein auf DocId-zu-DocId Ebene für ContextChunks.
+*   **Begründung**:
+    - Schafft explizite, benannte Querverweise zwischen ContextChunks zur Repräsentation geordneter Wissensnetze.
+    - Automatisches Ausfiltern veralteter/ersetzter Chunks erhöht die Präzision des RAG-Retrievals, ohne Historie aus dem Speicher zu löschen.
+
+---
+
+## ADR-039: reqwest als Workspace-Dependency für memfuse-router
+*   **Datum**: 2026-08-29
+*   **Status**: ✅ Final
+*   **Entscheidung**: `reqwest` wird als zentrale Workspace-Dependency in `[workspace.dependencies]` im Root-`Cargo.toml` aufgenommen und für `memfuse-router` explizit freigegeben.
+*   **Alternativen**: Ersetzung durch `memfuse-ollama`.
+*   **Begründung**: `memfuse-router` nutzt `reqwest` in `dispatch_to_slm` für generische HTTP JSON-RPC 2.0 Aufrufe (`slm_process_context`) an frei konfigurierbare MCP-Endpunkte von Small Language Models (SLMs). `memfuse-ollama` deckt ausschließlich Ollama REST-API-Endpunkte ab und kann diese generische JSON-RPC-MCP-Dispatch-Funktionalität nicht bereitstellen.
+*   **Sicherheitsbewertung**: Nutzung mit `default-features = false` und `rustls-tls` (kein `native-tls` / OpenSSL C-Dependency-Overhead, vollständig konform mit der Sovereign Core Policy aus ADR-004).
+*   **Konsequenz**: `reqwest` ist fortan eine explizit genehmigte Workspace-Dependency ohne Version Drift zwischen Crates.
+
+---
+
 ## ADR-040: collection.rs Modularisierung (God Object Auflösung)
 *   **Datum**: 2026-08-29
 *   **Status**: ✅ Final
@@ -609,40 +651,24 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-041: Kognitive Gedächtnistypen-Klassifikation (MemoryType)
-
-*   **Datum**: 2026-08-29 (Implementierung) / 2026-08-30 (Dokumentation nachgetragen)
+## ADR-041: TOMBSTONE_BIT-Disziplin in Sequenznummer-Berechnungen und rollback_to_tx
+*   **Datum**: 2026-08-29
 *   **Status**: ✅ Final
-*   **Kontext**: Die strategische Roadmap (Phase 2) forderte eine explizite Klassifikation gespeicherter Einträge nach kognitivem Gedächtnistyp (Vorbilder: MemOS/MemCube, Mem0, A-MEM): episodisch (Ereignisse), semantisch (Fakten), prozedural (Workflows) und operativ (Working Memory, Session-Kontext). Bisher wurden alle Dokumente uniform behandelt, ohne dass Retrieval-Strategie oder Lifecycle (Decay, TTL) von der Art des Inhalts abhingen.
-*   **Entscheidung**: Ein neuer `#[non_exhaustive]` Enum `MemoryType` in `memfuse-core` mit vier Varianten (Episodic, Semantic [Default], Procedural, Working). Jede Variante liefert über `default_decay()` eine passende `DecayFunction` (Episodic: Exponential mit 10.000 TX Halbwertszeit; Semantic: keine Decay; Procedural: StepFloor, verstärkt durch Nutzung; Working: sehr schnelle Exponential-Decay mit 500 TX Halbwertszeit) und über `default_ttl_tx()` eine optionale TTL (nur Working Memory: 50.000 TX). Der Typ wird additiv über `Collection::insert_typed()` gesetzt und als `"memory_type"`-Feld in den Dokument-Metadaten persistiert — bestehende Dokumente ohne dieses Feld werden rückwärtskompatibel als `Semantic` interpretiert (`extract_memory_type()`).
-*   **Alternativen**: Freitext-Tag statt Enum: verworfen, da keine Typsicherheit und keine automatische Decay-/TTL-Kopplung möglich gewesen wäre.
-*   **Begründung**: Ermöglicht typspezifische Abkling- (Decay) und Lebensdauer-Steuerung (TTL) sowie künftige differenzierte Retrieval-Gewichtungen ohne Breaking Changes für bestehende Schnittstellen.
-*   **Konsequenzen**:
-    - Additiv, keine Breaking Changes an bestehenden `insert()`-Aufrufern.
-    - `trigger_reaper()` nutzt die typspezifische Decay-Function für einen aktiven TxId-basierten Sweep (siehe zugehörige Reaper-Härtung).
-    - Zukünftige Retrieval-Strategien können nach `MemoryType` filtern oder gewichten (noch nicht implementiert, aber durch additive Enum-Erweiterung vorbereitet).
+*   **Entscheidung**: In allen Pfaden der LSM-Storage-Engine (`rollback_to_tx`, WAL-Replay, SSTable-Recovery), in denen maximale Sequenznummern (`max_seq`) ermittelt werden, MUSS das `TOMBSTONE_BIT` (Bit 63, `1 << 63`) strikt maskiert werden (`seq & !TOMBSTONE_BIT`), bevor Vergleiche, Zuweisungen oder Hochzählungen für `next_seq_no` stattfinden.
+*   **Alternativen**:
+    - Unmaskierte Übernahme in `max_seq`: Verworfen, da Bit 63 in `next_seq_no` wandert und nachfolgende reguläre Inserts fälschlich als gelöscht (Tombstone) markiert.
+    - Maskierung beim Schreiben der SSTable-Metadaten verändern: Verworfen, um bestehende Metadatenformate und Disk-Layouts nicht zu verändern.
+*   **Begründung**: Bit 63 signalisiert ausschließlich das Lösch-Tombstone-Flag in Datenzeilen. Es stellt keinen numerischen Wertanteil der Sequenznummer dar. Maskierung an den Lesestellen schützt die Invariante "Bit 63 darf niemals in `next_seq_no` einfließen" vollständig vor stillem Datenverlust nach Rollbacks auf Delete-Operationen.
 
 ---
 
-## ADR-042: MCP Server Write Authorization & Read-Only Default Policy
-
+## ADR-042: Write-Temp-Then-Rename Pattern für SSTable-Kompaktierung & Recovery Cleanup
 *   **Datum**: 2026-08-30
 *   **Status**: ✅ Final
-*   **Kontext**:
-    In `memfuse-mcp` existierte keine Autorisierungsprüfung vor der Ausführung von Tool-Calls auf Storage- und Collection-Ebene. Ein MCP-Client mit Lesezugriff auf den stdio-Server-Endpoint konnte schreibende Operationen (`insert`, `delete`, `relate`, etc.) ohne jegliche Freigabe ausführen.
-*   **Entscheidung**:
-    1. Der MCP-Server setzt standardmäßig auf einen sicheren Read-Only-Modus (`allow_db_writes = false`).
-    2. Alle schreibenden Tools (`memfuse_insert`, `memfuse_delete`, `memfuse_upsert`, `memfuse_relate`, `memfuse_create_collection`, `memfuse_drop_collection`) werden zentral an einer Stelle vor dem Dispatch über `McpSandbox::validate_tool_call` abgefangen. Bei deaktiviertem Schreibzugriff geben sie einen verständlichen MCP-Fehler zurück (kein panic, kein silent no-op).
-    3. Schreibrechte können explizit aktiviert werden via CLI-Flag `--allow-write` (bzw. erzwingbar aus via `--read-only`), via Umgebungsvariable `MEMFUSE_MCP_ALLOW_WRITE=1` (oder `true`), oder programmatisch über `McpServer::with_write_permission(db, embedder, allow_write)`.
-    4. Gemäß ADR-010 (stdio JSON-RPC 2.0) werden keine neuen Netzwerk- / axum-Dependencies hinzugefügt; Gate 4 in `context-gates.yml` bleibt unberührt.
+*   **Entscheidung**: Die SSTable-Kompaktierung in `CompactionEngine::maybe_compact` (`crates/memfuse-store/src/compaction.rs`) schreibt das Ergebnis eines Merges zuerst in eine temporäre Datei mit dem Suffix `.sst.tmp`. Erst nach erfolgreichem `builder.finish()` wird die Datei über ein atomares `tokio::fs::rename(&temp_path, &final_path)` auf ihren finalen `.sst`-Namen verschoben. Bei Fehlern während des Merging oder des Renamings wird die Temp-Datei umgehend gelöscht. Zusätzlich ignoriert und bereinigt `LsmStorage::new()` (`crates/memfuse-store/src/lsm.rs`) beim Startup-Scan automatisch alle Restdateien mit `.tmp`-Suffix.
 *   **Alternativen**:
-    - Netzwerk-basiertes Auth-Server / OAuth2-Token: Verworfen, da dies axum/Netzwerk-Listener erfordern und ADR-010 verletzen würde.
-    - Duplizierter Guard in jedem einzelnen Tool-Handler: Verworfen zugunsten eines zentralen, DRY Sandbox-Guards (`McpSandbox::validate_tool_call`).
-*   **Begründung**:
-    Beseitigt die offene Sicherheitslücke ohne Breaking Changes am stdio-Protokoll oder DAG-Constraint und wahrt das Least-Privilege-Prinzip by default.
-*   **Konsequenzen**:
-    - `McpServer::new` startet standardmäßig im Read-Only-Modus (sofern `MEMFUSE_MCP_ALLOW_WRITE` nicht gesetzt ist).
-    - Test-Fixtures für schreibende Tests nutzen `McpServer::with_write_permission(..., true)`.
+    - Schreiben direkt auf den Zielpfad und Versuchen des Löschens der unvollständigen Datei im Absturz-/Error-Handler. Verworfen, da bei Prozessabsturz (SIGKILL, Stromausfall) unvollständige Dateien verbleiben und beim Neustart fälschlicherweise als gültige SSTables eingelesen würden.
+*   **Begründung**: Garantiert POSIX-Atomarität für komprimierte/kompaktierte SSTables. Eine SSTable existiert im Datenverzeichnis unter ihrem finalen Namen entweder vollständig oder gar nicht, wodurch Korruption bei Abstürzen während des Kompaktierungsvorgangs ausgeschlossen wird.
 
 ---
 

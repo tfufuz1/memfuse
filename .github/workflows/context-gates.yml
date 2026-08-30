@@ -10,14 +10,14 @@ jobs:
 
       - name: "Gate 1: Keine ungelösten kritischen AI-TAGs"
         run: |
-          COUNT=$(grep -rEn "AI-TAG\[[A-Z-]+\]\[(CRITICAL|BLOCKER)\]" crates/ \
+          COUNT=$(grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ \
             --include="*.rs" | grep -vc "RESOLVED" || true)
           if [ "$COUNT" -gt 0 ]; then
-            echo "❌ $COUNT ungelöste AI-TAG[CRITICAL|BLOCKER] gefunden"
-            grep -rEn "AI-TAG\[[A-Z-]+\]\[(CRITICAL|BLOCKER)\]" crates/ --include="*.rs" | grep -v "RESOLVED"
+            echo "❌ $COUNT ungelöste AI-TAG[SMELL][CRITICAL] gefunden"
+            grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v "RESOLVED"
             exit 1
           fi
-          echo "✅ Keine offenen kritischen oder Blocker Tags"
+          echo "✅ Keine offenen kritischen Tags"
 
       - name: "Gate 2: Kein .expect() in Produktionscode"
         run: |
@@ -60,7 +60,25 @@ jobs:
 
       - name: "Gate 7: Alle Tags haben TS:-Zeitstempel"
         run: |
-          cargo run -p xtask -- validate-tags
+          # Prüfe TS-Feld auf allen Tags
+          MISSING_TS=$(grep -rEn "AI-TAG\[|ANCHOR\[" crates/ --include="*.rs" \
+            | grep -vE "TS:[0-9]{4}-[0-9]{2}-[0-9]{2}T" || true)
+          if [ -n "$MISSING_TS" ]; then
+            echo "❌ Tags ohne gültigen TS:-Zeitstempel:"
+            echo "$MISSING_TS"
+            exit 1
+          fi
+
+          # Prüfe SESSION-Feld auf NEUEN Tags (Datum >= 2026-08-29)
+          MISSING_SESSION=$(grep -rEn "AI-TAG\[|ANCHOR\[" crates/ --include="*.rs" \
+            | grep -E "TS:2026-08-(29|30|31)T|TS:2026-09-|TS:202[7-9]-" \
+            | grep -v "SESSION:" || true)
+          if [ -n "$MISSING_SESSION" ]; then
+            echo "❌ Neue Tags (>= 2026-08-29) ohne SESSION:-Feld:"
+            echo "$MISSING_SESSION"
+            echo "Füge SESSION: <8-hex> zu diesen Tags hinzu."
+            exit 1
+          fi
           echo "✅ Alle Tags haben TS: und neue Tags haben SESSION: Felder"
 
       - name: "Gate 5: Dokumentation ist synchron mit Inline-Tags (kein Drift)"

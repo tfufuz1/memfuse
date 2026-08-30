@@ -1,3 +1,11 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T15:00:19Z (SESSION: 283abf0f)
+// ZWECK: Crate-internes MVCC Snapshot-Pinning und TxId-skopierte Rollbacks.
+// INVARIANTEN: Crate-intern (pub(crate)) — öffentliche Checkpoints nur via memfuse-checkpoint (ADR-011).
+// NICHT-OFFENSICHTLICH: Drop von CheckpointGuard ohne Commit löst automatisches Rollback aus.
+// HOTSPOTS: CheckpointGuard::drop, Checkpointer::create_checkpoint
+// SIEHE AUCH: DECISIONS.md ADR-011, ADR-015
+
 //! Native State Checkpointing (Crate-internal MVCC Snapshot-Pinning).
 //!
 //! # Architektur & Sichtbarkeit

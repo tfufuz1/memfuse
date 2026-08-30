@@ -20,20 +20,75 @@
 ## Crate Inventory & Status Summary
 | Crate | Layer | LOC | Status | Description |
 |-------|-------|-----|--------|-------------|
-| `memfuse-core` | L0 | 7264 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-core` | L0 | 7254 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-checkpoint` | L1 | 1166 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | L1 | 1144 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-graph` | L1 | 5211 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-index` | L1 | 7305 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | L1 | 10139 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-text` | L1 | 3830 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | L2 | 12737 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-agent` | L3 | 2854 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-graph` | L1 | 4640 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-index` | L1 | 7315 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-store` | L1 | 10337 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-text` | L1 | 3562 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-db` | L2 | 12149 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-agent` | L3 | 2429 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | L3 | 1022 | 🧊 Optional |  |
 | `memfuse-ollama` | L3 | 2369 | 🟢 Clean |  |
 | `memfuse-py` | L3 | 1006 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | L3 | 510 | 🟢 Clean |  |
-| `memfuse-mcp` | L4 | 2444 | 🟢 Clean |  |
-| `memfuse-tauri` | L4 | 2826 | 🟢 Clean |  |
+| `memfuse-mcp` | L4 | 2198 | 🟢 Clean |  |
+| `memfuse-tauri` | L4 | 2827 | 🟢 Clean |  |
 
+> **Hinweis**: Diese Datei ist zu 100 % autogeneriert durch `cargo xtask sync-docs` aus Inline-Code-Tags. Keinen Text manuell editieren. Bei Git-Merge-Konflikten stets `just sync-docs` ausführen.
+
+## Offene AI-TAGs & ANCHORs
+
+Stand letzter Prüfung: 2026-08-27
+Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
+Ergebnis: **1 offene Tags**
+
+| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
+|---|---|---|---|---|---|---|
+| `crates/memfuse-index/src/distance.rs` | 65 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `2026-08-25T00:00:00Z` | // AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-25T00:00:00Z) |
+
+
+## Crate-Inventar & Status
+
+| Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
+| :--- | :---: | :---: | :--- | :--- |
+| `memfuse-core` | 0 | 7.264 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-checkpoint` | 1 | 1.166 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
+| `memfuse-crypto` | 1 | 1.144 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
+| `memfuse-graph` | 1 | 5.211 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-index` | 1 | 7.305 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-store` | 1 | 10.155 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-text` | 1 | 3.830 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-db` | 2 | 12.739 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-agent` | 3 | 2.849 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-embed` | 3 | 1.022 | 🧊 Optional |  |
+| `memfuse-ollama` | 3 | 2.369 | 🟢 Clean |  |
+| `memfuse-py` | 3 | 1.007 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
+| `memfuse-router` | 3 | 510 | 🟢 Clean |  |
+| `memfuse-mcp` | 4 | 2.463 | 🟢 Clean |  |
+| `memfuse-tauri` | 4 | 2.826 | 🟢 Clean |  |
+
+
+## DAG-Topologie
+
+```
+Layer 0:  memfuse-core — Core types, traits, and error handling for MemFuse
+Layer 1:  memfuse-checkpoint — Backup and snapshot management for MemFuse storage (deps: memfuse-core)
+          memfuse-crypto — Encryption at Rest utilities for MemFuse (deps: memfuse-core)
+          memfuse-graph — CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) (deps: memfuse-core)
+          memfuse-index — HNSW vector index with SIMD distance computation for MemFuse (deps: memfuse-core, memfuse-graph)
+          memfuse-store — LSM-Tree storage engine for MemFuse (deps: memfuse-core, memfuse-crypto)
+          memfuse-text — MemFuse — Text processing and BM25 search for Hybrid Search (deps: memfuse-core)
+Layer 2:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-checkpoint, memfuse-core, memfuse-embed, memfuse-graph, memfuse-index, memfuse-ollama, memfuse-store, memfuse-text)
+Layer 3:  memfuse-agent — Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop (deps: memfuse-checkpoint, memfuse-core, memfuse-db, memfuse-graph, memfuse-store)
+          memfuse-embed —  (deps: memfuse-core)
+          memfuse-ollama —  (deps: memfuse-core)
+          memfuse-py — Python bindings for MemFuse using PyO3 (deps: memfuse-core, memfuse-db)
+          memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-mcp, memfuse-ollama, memfuse-store)
+Layer 4:  memfuse-mcp —  (deps: memfuse-agent, memfuse-core, memfuse-crypto, memfuse-db, memfuse-ollama)
+          memfuse-tauri —  (deps: memfuse-core, memfuse-db, memfuse-graph, memfuse-ollama)
+```
+
+**Aktiver Workspace-Build**: 15 Workspace Crates (14 Kern-Crates + 1 optionales Crate `memfuse-embed`).
 <!-- AUTOGENERATED:END:FULL -->

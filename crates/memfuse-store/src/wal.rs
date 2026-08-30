@@ -516,19 +516,7 @@ impl Wal {
             Ok(arr)
         }
 
-        // Clean up any stale orphan .tmp files from previous crashed creation attempts
-        if let Ok(mut entries) = tokio::fs::read_dir(dir_path).await {
-            while let Ok(Some(entry)) = entries.next_entry().await {
-                let name = entry.file_name();
-                if let Some(name_str) = name.to_str() {
-                    if name_str.starts_with(".wal_integrity_key.tmp.") {
-                        let _ = tokio::fs::remove_file(entry.path()).await;
-                    }
-                }
-            }
-        }
-
-        // AI-TAG[SECURITY][CRITICAL] RESOLVED: Atomic WAL integrity key creation (TS:2026-08-29T08:06:29Z)
+        // AI-TAG[SECURITY][CRITICAL] RESOLVED: Atomic WAL integrity key creation (TS:2026-08-29T08:06:29Z) (SESSION: a3f29c1d)
         // AGT-STORE-003 (SESSION:14348074)
         // Tests: tests/wal_key_lifecycle.rs — fault-injection, race, restart-persistence
         if key_path.exists() {
@@ -918,8 +906,10 @@ impl Wal {
             pos += (4 + len) as u64;
 
             if matches!(version, WalVersion::V2 | WalVersion::V3) && self.key_manager.is_some() {
-                // SAFETY: Checked self.key_manager.is_some() in the if condition above
-                let km = self.key_manager.as_ref().unwrap();
+                let km = match self.key_manager.as_ref() {
+                    Some(km) => km,
+                    None => unreachable!(),
+                };
                 if entry_data_raw.len() < 12 {
                     if pos >= file_size {
                         tracing::warn!("WAL truncated during read at offset {}", chunk_start_pos);

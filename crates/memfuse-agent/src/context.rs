@@ -15,7 +15,6 @@ pub const MAX_ID_LEN: usize = 256;
 /// Maximum allowed telemetry events stored in memory history.
 pub const MAX_TELEMETRY_EVENTS: usize = 10_000;
 
-// AI-TAG[HARDENING][CRITICAL] RESOLVED: AGT-AGENT-a19c3b84 — validate_task_id and validate_node_id enforce strict input length and null-byte safety bounds. (TS:2026-08-30T15:36:46Z) (SESSION:761f1346)
 /// Validates a task identifier to ensure it is non-empty, <= 256 bytes, and contains no null bytes.
 pub fn validate_task_id(task_id: &str) -> Result<()> {
     if task_id.is_empty() {
@@ -85,7 +84,8 @@ pub struct AgentContext {
 }
 
 impl AgentContext {
-    /// Attempts to construct an `AgentContext` with boundary validation on `task_id` and `start_node`.
+    /// Tries to construct a new [`AgentContext`], performing input validation on task ID and start node.
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty input parameters for agent workflow context initialization. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f)
     pub fn try_new(
         task_id: impl Into<String>,
         start_node: impl Into<String>,

@@ -23,8 +23,8 @@ pub struct BackgroundEvent {
 }
 
 impl BackgroundEvent {
-    // AI-TAG[HARDENING][CRITICAL] RESOLVED: AGT-AGENT-e0571b01 — Fallible BackgroundEvent::try_new enforces non-empty, length-bounded, null-free source strings. (TS:2026-08-30T15:36:46Z) (SESSION:761f1346)
-    /// Attempts to construct a `BackgroundEvent` with boundary validation on `source`.
+    /// Constructs a `BackgroundEvent` with input validation on the source identifier.
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty event source to prevent silent telemetry attribution loss. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f)
     pub fn try_new(
         payload: serde_json::Value,
         source: impl Into<String>,
@@ -91,6 +91,16 @@ pub struct PollingDocumentEventSource<S: StorageEngine> {
 
 impl<S: StorageEngine> PollingDocumentEventSource<S> {
     pub fn new(collection: Arc<Collection<S>>, poll_interval: Duration) -> Self {
+        Self::with_capacity(collection, poll_interval, MAX_PENDING_EVENTS_CAPACITY)
+    }
+
+    /// Creates a new `PollingDocumentEventSource` with specified maximum queue capacity bound.
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Enforces bounded event queue capacity to guard against unbounded memory growth. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f)
+    pub fn with_capacity(
+        collection: Arc<Collection<S>>,
+        poll_interval: Duration,
+        max_pending_capacity: usize,
+    ) -> Self {
         Self {
             collection,
             last_seen_seq: 0,
@@ -175,7 +185,6 @@ pub struct VecEventSource {
 }
 
 impl VecEventSource {
-    // AI-TAG[HARDENING][CRITICAL] RESOLVED: AGT-AGENT-f4c28e99 — Fallible VecEventSource::try_new caps buffer capacity to MAX_EVENT_SOURCE_CAPACITY preventing OOM. (TS:2026-08-30T15:36:46Z) (SESSION:761f1346)
     /// Attempts to construct a `VecEventSource` with a capacity check.
     pub fn try_new(events: Vec<BackgroundEvent>) -> Result<Self> {
         if events.len() > MAX_EVENT_SOURCE_CAPACITY {

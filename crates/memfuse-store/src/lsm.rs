@@ -75,6 +75,41 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
+/// Maximum key size allowed for LSM operations (1MB).
+pub const MAX_KEY_SIZE: usize = 1_048_576;
+
+/// Maximum value size allowed for LSM operations (128MB).
+pub const MAX_VALUE_SIZE: usize = 134_217_728;
+
+/// Maximum batch size for `delete_many` operations (10,000 items).
+pub const MAX_BATCH_SIZE: usize = 10_000;
+
+fn validate_key(key: &[u8]) -> Result<()> {
+    if key.is_empty() {
+        return Err(MemFuseError::InvalidInput("Key cannot be empty".into()));
+    }
+    if key.len() > MAX_KEY_SIZE {
+        return Err(MemFuseError::InvalidInput(format!(
+            "Key length ({} bytes) exceeds limit of {} bytes",
+            key.len(),
+            MAX_KEY_SIZE
+        )));
+    }
+    Ok(())
+}
+
+#[expect(dead_code)]
+fn validate_value(value: &[u8]) -> Result<()> {
+    if value.len() > MAX_VALUE_SIZE {
+        return Err(MemFuseError::InvalidInput(format!(
+            "Value length ({} bytes) exceeds limit of {} bytes",
+            value.len(),
+            MAX_VALUE_SIZE
+        )));
+    }
+    Ok(())
+}
+
 /// LSM storage configuration.
 // SEC-001 — Erweitere LsmConfig um `encryption_passphrase` und AES-256.
 // TEST: cargo test -p memfuse-store test_encrypted_db_unreadable_without_key
@@ -217,8 +252,9 @@ impl LsmStorage {
             let wal_entries = wal.replay().await?;
 
             for (lsn, entry, _offset) in &wal_entries {
-                if *lsn > max_seq {
-                    max_seq = *lsn;
+                let raw_lsn = *lsn & !TOMBSTONE_BIT;
+                if raw_lsn > max_seq {
+                    max_seq = raw_lsn;
                 }
                 if entry.tx_id().inner() > max_tx && entry.tx_id().inner() < TxId::INTERNAL_BASE {
                     max_tx = entry.tx_id().inner();
@@ -270,12 +306,19 @@ impl LsmStorage {
 
         let tx_buffer = TxBuffer::new_with_config(16, config.tx_timeout);
 
-        // Load existing SSTables and sort by filename (which includes seq_no)
+        // Load existing SSTables and clean up temporary compaction files (*.tmp)
         let mut sst_files = Vec::new();
         if let Ok(mut entries) = tokio::fs::read_dir(&config.path).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
-                if entry.path().extension().is_some_and(|ext| ext == "sst") {
-                    sst_files.push(entry.path());
+                let path = entry.path();
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if file_name.ends_with(".tmp") || path.extension().is_some_and(|ext| ext == "tmp") {
+                    tracing::warn!("Removing leftover un-renamed compaction temp file: {:?}", path);
+                    if let Err(e) = tokio::fs::remove_file(&path).await {
+                        tracing::warn!("Failed to remove leftover temp file {:?}: {}", path, e);
+                    }
+                } else if path.extension().is_some_and(|ext| ext == "sst") {
+                    sst_files.push(path);
                 }
             }
         }
@@ -293,8 +336,9 @@ impl LsmStorage {
             .await?;
 
             // Recover max_seq and max_tx from SSTables
-            if reader.metadata().max_seq > max_seq {
-                max_seq = reader.metadata().max_seq;
+            let raw_sst_max_seq = reader.metadata().max_seq & !TOMBSTONE_BIT;
+            if raw_sst_max_seq > max_seq {
+                max_seq = raw_sst_max_seq;
             }
             if reader.metadata().max_tx_id > max_tx {
                 // Ignore internal TxIds during recovery
@@ -306,7 +350,7 @@ impl LsmStorage {
             sstables.push(Arc::new(reader));
         }
         // Explicitly sort SSTables by metadata().max_seq for guaranteed read-path ordering
-        sstables.sort_by_key(|sst| sst.metadata().max_seq);
+        sstables.sort_by_key(|sst| sst.metadata().max_seq & !TOMBSTONE_BIT);
         let sstables = Arc::new(RwLock::new(sstables));
         let snapshot_registry = Arc::new(SnapshotRegistry::new());
 
@@ -476,13 +520,14 @@ impl LsmStorage {
             sst_to_remove.push(spanning.file_path().to_path_buf());
         }
 
-        sstables_lock.sort_by_key(|sst| sst.metadata().max_seq);
+        sstables_lock.sort_by_key(|sst| sst.metadata().max_seq & !TOMBSTONE_BIT);
 
         // 4. Update next_seq_no and last_committed_tx
         // Find max_seq from kept SSTables to avoid regressing next_seq_no
+        // TOMBSTONE_BIT-Disziplin (DECISIONS.md): Bit 63 darf niemals in next_seq_no einfließen.
         let mut max_seq = 0;
         for sst in sstables_lock.iter() {
-            max_seq = max_seq.max(sst.metadata().max_seq);
+            max_seq = max_seq.max(sst.metadata().max_seq & !TOMBSTONE_BIT);
         }
         drop(sstables_lock);
 
@@ -500,9 +545,10 @@ impl LsmStorage {
 
         // 5. Re-populate memtable from truncated WAL
         let entries = state.wal.replay().await?;
+        // TOMBSTONE_BIT-Disziplin (DECISIONS.md): Bit 63 darf niemals in next_seq_no einfließen.
         for (seq, entry, _offset) in entries {
-            if seq > max_seq {
-                max_seq = seq;
+            if (seq & !TOMBSTONE_BIT) > max_seq {
+                max_seq = seq & !TOMBSTONE_BIT;
             }
             match entry.op {
                 WalOp::Put { key, value, tx_id } => {
@@ -559,6 +605,7 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        validate_key(key)?;
         let current_max_seq = self.next_seq_no.load(Ordering::Acquire);
         let res = self.get_at_seq(key, current_max_seq).await?;
         tracing::debug!(
@@ -579,6 +626,7 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn get_at_seq(&self, key: &[u8], seq_no: u64) -> Result<Option<Vec<u8>>> {
+        validate_key(key)?;
         // Genau EINMAL laden — Snapshot-Konsistenz über die gesamte Methode (INVARIANT-2)
         let snapshot_tx = self.last_committed_tx.load(Ordering::Acquire);
         let state = self.state.read().await;
@@ -645,6 +693,8 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+        validate_key(key)?;
+        validate_value(value)?;
         self.apply_backpressure().await;
         if !self.budget.has_memory_capacity() {
             return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
@@ -667,6 +717,16 @@ impl StorageEngine for LsmStorage {
     }
 
     async fn delete_many(&self, tx_id: TxId, keys: Vec<Vec<u8>>) -> Result<u64> {
+        if keys.len() > MAX_BATCH_SIZE {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Batch size ({} items) exceeds limit of {} items",
+                keys.len(),
+                MAX_BATCH_SIZE
+            )));
+        }
+        for key in &keys {
+            validate_key(key)?;
+        }
         let count = keys.len() as u64;
         if count == 0 {
             return Ok(0);
@@ -709,6 +769,7 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
+        validate_key(key)?;
         let doc_id = {
             let hash = blake3::hash(key);
             let mut bytes = [0u8; 8];
@@ -2223,5 +2284,217 @@ mod tests {
                 Ok(())
             }).unwrap();
         });
+    }
+
+    #[tokio::test]
+    async fn test_input_boundary_guards() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = LsmStorage::new(config).await.expect("create storage");
+        let tx = TxId::new(1);
+
+        // 1. Empty key check
+        assert!(matches!(
+            storage.put(tx, b"", b"val").await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            storage.delete(tx, b"").await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            storage.get(b"").await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            storage.get_at_seq(b"", 10).await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+
+        // 2. Oversized key check (> 1MB)
+        let huge_key = vec![b'a'; MAX_KEY_SIZE + 1];
+        assert!(matches!(
+            storage.put(tx, &huge_key, b"val").await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            storage.delete(tx, &huge_key).await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            storage.get(&huge_key).await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+
+        // 3. Oversized delete_many batch (> 10,000 items)
+        let too_many_keys = vec![b"key".to_vec(); MAX_BATCH_SIZE + 1];
+        assert!(matches!(
+            storage.delete_many(tx, too_many_keys).await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_rollback_tombstone_sstable() {
+        let (storage, _tmp) = test_storage().await;
+
+        // a. Inserts committen
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key1", b"val1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"key2", b"val2").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+
+        // b. Delete (Tombstone) als letzte Op vor Target committen und flushen
+        let tx3 = TxId::new(3);
+        storage.delete(tx3, b"key2").await.unwrap();
+        storage.commit(tx3).await.unwrap();
+        storage.force_flush().await.unwrap();
+
+        // c. Rollback auf target_tx (tx3)
+        storage.rollback_to_tx(tx3).await.unwrap();
+
+        // d. Neuen Insert mit neuem Key committen
+        let tx4 = TxId::new(4);
+        storage.put(tx4, b"key3", b"val3").await.unwrap();
+        storage.commit(tx4).await.unwrap();
+
+        // e. Assert: Der neue Key ist lesbar und TOMBSTONE_BIT ist NICHT gesetzt
+        let current_max_seq = storage.next_seq_no.load(Ordering::Acquire);
+        let val = storage.get_at_seq(b"key3", current_max_seq).await.unwrap();
+        assert_eq!(val, Some(b"val3".to_vec()));
+
+        let last_seq = storage.last_seq_no().await.unwrap();
+        assert_eq!(
+            last_seq & TOMBSTONE_BIT,
+            0,
+            "Sequence number of new insert must not have TOMBSTONE_BIT set"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rollback_tombstone_wal() {
+        let (storage, _tmp) = test_storage().await;
+
+        // a. Inserts committen
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"k1", b"v1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"k2", b"v2").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+
+        // b. Delete (Tombstone) im WAL als letzte Op vor Target committen (unflushed)
+        let tx3 = TxId::new(3);
+        storage.delete(tx3, b"k2").await.unwrap();
+        storage.commit(tx3).await.unwrap();
+
+        // c. Rollback auf target_tx (tx3)
+        storage.rollback_to_tx(tx3).await.unwrap();
+
+        // d. Neuen Insert mit neuem Key committen
+        let tx4 = TxId::new(4);
+        storage.put(tx4, b"k3", b"v3").await.unwrap();
+        storage.commit(tx4).await.unwrap();
+
+        // e. Assert: Der neue Key ist lesbar und TOMBSTONE_BIT ist NICHT gesetzt
+        let current_max_seq = storage.next_seq_no.load(Ordering::Acquire);
+        let val = storage.get_at_seq(b"k3", current_max_seq).await.unwrap();
+        assert_eq!(val, Some(b"v3".to_vec()));
+
+        let last_seq = storage.last_seq_no().await.unwrap();
+        assert_eq!(
+            last_seq & TOMBSTONE_BIT,
+            0,
+            "Sequence number of new insert must not have TOMBSTONE_BIT set"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rollback_tombstone_subsequent_ops() {
+        let (storage, _tmp) = test_storage().await;
+
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key1", b"val1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        let tx2 = TxId::new(2);
+        storage.delete(tx2, b"key1").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+
+        // Rollback auf tx2
+        storage.rollback_to_tx(tx2).await.unwrap();
+
+        // Abfolge von weiteren Inserts und Deletes in Folge
+        let tx3 = TxId::new(3);
+        storage.put(tx3, b"key2", b"val2").await.unwrap();
+        storage.commit(tx3).await.unwrap();
+
+        let tx4 = TxId::new(4);
+        storage.delete(tx4, b"key2").await.unwrap();
+        storage.commit(tx4).await.unwrap();
+
+        let tx5 = TxId::new(5);
+        storage.put(tx5, b"key3", b"val3").await.unwrap();
+        storage.commit(tx5).await.unwrap();
+
+        // Prüfe direkt im MemTable, dass der neueste Zustand jedes Keys das korrekte TOMBSTONE_BIT trägt
+        let state = storage.state.read().await;
+        for (k, _v, seq, _tx) in state.memtable.iter_latest() {
+            if k.as_ref() == b"key1" || k.as_ref() == b"key2" {
+                assert_ne!(
+                    seq & TOMBSTONE_BIT,
+                    0,
+                    "Latest entry for deleted key {:?} must have TOMBSTONE_BIT set",
+                    String::from_utf8_lossy(&k)
+                );
+            } else if k.as_ref() == b"key3" {
+                assert_eq!(
+                    seq & TOMBSTONE_BIT,
+                    0,
+                    "Latest entry for inserted key {:?} must NOT have TOMBSTONE_BIT set",
+                    String::from_utf8_lossy(&k)
+                );
+            }
+        }
+        drop(state);
+
+        // Verify final state via read path
+        assert_eq!(storage.get(b"key1").await.unwrap(), None);
+        assert_eq!(storage.get(b"key2").await.unwrap(), None);
+        assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn test_recovery_scan_ignores_and_removes_tmp_files() {
+        let tmp = tempfile::TempDir::new().unwrap(); // unwrap #[cfg(test)]
+        let corrupt_tmp_path = tmp.path().join("sst-compact-corrupt.sst.tmp");
+        tokio::fs::write(&corrupt_tmp_path, b"invalid sst data from crash")
+            .await
+            .unwrap(); // unwrap #[cfg(test)]
+
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 64,
+            tx_timeout: std::time::Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+
+        let storage = LsmStorage::new(config).await.expect("LsmStorage startup must succeed");
+        assert_eq!(storage.sstables.read().await.len(), 0);
+
+        // Assert corrupt .tmp file was removed from data directory during recovery
+        assert!(
+            !corrupt_tmp_path.exists(),
+            "Leftover .tmp file must be removed during startup recovery scan"
+        );
     }
 }

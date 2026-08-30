@@ -56,7 +56,7 @@
 //! 3. **Immutable audit trail**: Appends step records to state collection under `audit:{task_id}:step:{n}`.
 //! 4. **Token budget limit**: Enforces token budget consumption on each step.
 //!
-//! ADR-020: Re-integration from archived `memfuse-saos-agent` (Commit ddc4c77).
+//! ADR-042: Re-integration from archived `memfuse-saos-agent` (Commit ddc4c77).
 // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-AGENT-001 — Re-extracted workflow engine crate requires integration verification. (TS:2026-08-27T00:00:00Z)
 
 #![forbid(unsafe_code)]

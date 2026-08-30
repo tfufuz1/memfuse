@@ -52,8 +52,8 @@ impl StateGraph {
         Self::default()
     }
 
-    // AI-TAG[HARDENING][CRITICAL] RESOLVED: AGT-AGENT-c71d9a20 — StateGraph::try_add_node validates ID, description, and handler parameters against bounds and null bytes. (TS:2026-08-30T15:36:46Z) (SESSION:761f1346)
-    /// Attempts to add a node to the graph with boundary validation.
+    /// Tries to insert a new node into the state graph after validating bounds.
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty Node ID and description for graph nodes. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f)
     pub fn try_add_node(
         &mut self,
         id: &str,
@@ -120,8 +120,8 @@ impl StateGraph {
             .expect("Invalid parameters for add_node");
     }
 
-    // AI-TAG[HARDENING][CRITICAL] RESOLVED: AGT-AGENT-b82f4e17 — StateGraph::try_add_edge validates endpoint IDs and edge condition lengths against bounds and null bytes. (TS:2026-08-30T15:36:46Z) (SESSION:761f1346)
-    /// Attempts to add a directed edge between two nodes with boundary validation.
+    /// Tries to insert a new edge between nodes in the state graph after validating bounds.
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty from/to endpoints for workflow edges. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f)
     pub fn try_add_edge(
         &mut self,
         from: &str,
