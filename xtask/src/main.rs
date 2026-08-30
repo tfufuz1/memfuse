@@ -150,7 +150,7 @@ pub fn scan_tags<P: AsRef<Path>>(root: P) -> Vec<TagItem> {
                     let line_num = idx + 1;
                     let trimmed = line.trim();
 
-                    if trimmed.contains("REVIEW-PASS") {
+                    if trimmed.contains("REVIEW-PASS[") {
                         let status = if let Some(s_idx) = trimmed.find("STATUS:") {
                             let rest = &trimmed[s_idx + 7..];
                             let end = rest
@@ -832,6 +832,71 @@ pub fn run_sync_docs(check_only: bool) -> bool {
     success
 }
 
+pub fn run_validate_tags(tags: &[TagItem]) -> bool {
+    let mut success = true;
+    let cutoff_date = "2026-08-29";
+
+    let mut missing_ts = Vec::new();
+    let mut missing_session = Vec::new();
+
+    for tag in tags {
+        if tag.tag_type != "AI-TAG" && tag.tag_type != "ANCHOR" && tag.tag_type != "REVIEW-PASS" {
+            continue;
+        }
+
+        let ts = tag.timestamp.trim();
+        let valid_ts = if ts.len() >= 10 {
+            let date_part = &ts[..10];
+            let parts: Vec<&str> = date_part.split('-').collect();
+            parts.len() == 3
+                && parts[0].len() == 4
+                && parts[0].chars().all(|c| c.is_ascii_digit())
+                && parts[1].len() == 2
+                && parts[1].chars().all(|c| c.is_ascii_digit())
+                && parts[2].len() == 2
+                && parts[2].chars().all(|c| c.is_ascii_digit())
+        } else {
+            false
+        };
+
+        if !valid_ts {
+            missing_ts.push(tag);
+        } else {
+            let date_part = &ts[..10];
+            if date_part >= cutoff_date {
+                let session_opt = tag.session.as_deref().unwrap_or("").trim();
+                let has_session = !session_opt.is_empty() || tag.raw.contains("SESSION:");
+                if !has_session {
+                    missing_session.push(tag);
+                }
+            }
+        }
+    }
+
+    if !missing_ts.is_empty() {
+        eprintln!("❌ Tags without valid TS: timestamp:");
+        for tag in &missing_ts {
+            eprintln!("  {}:{} - {}", tag.file_path, tag.line_num, tag.raw);
+        }
+        success = false;
+    }
+
+    if !missing_session.is_empty() {
+        eprintln!("❌ New tags (>= {}) missing SESSION: field:", cutoff_date);
+        for tag in &missing_session {
+            eprintln!("  {}:{} - {}", tag.file_path, tag.line_num, tag.raw);
+        }
+        eprintln!("Füge SESSION: <8-hex> zu diesen Tags hinzu.");
+        success = false;
+    }
+
+    if success {
+        println!("✅ All tags have valid TS: and required SESSION: fields");
+    }
+
+    success
+}
+
 pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
     // Bestandsschutz: Only enforce multi-session review coverage for anchors created/resolved
     // on or after 2026-08-29 (Prompt 06 / ADR-028 decentralized review rule cutoff).
@@ -1368,6 +1433,11 @@ enum Commands {
         #[arg(long)]
         check: bool,
     },
+    /// Validate AI-TAG and ANCHOR tags for TS and SESSION fields
+    ValidateTags {
+        #[arg(long)]
+        strict: bool,
+    },
     /// Check multi-session review coverage for completed anchors
     CheckReviewCoverage,
     /// Check documentation consistency
@@ -1442,6 +1512,13 @@ fn main() {
     match cmd {
         Commands::SyncDocs { check } => {
             let success = run_sync_docs(check);
+            if !success {
+                process::exit(1);
+            }
+        }
+        Commands::ValidateTags { strict: _ } => {
+            let tags = scan_tags("crates");
+            let success = run_validate_tags(&tags);
             if !success {
                 process::exit(1);
             }
@@ -1719,5 +1796,72 @@ mod tests {
     fn test_audit_verify_and_review() {
         assert!(run_audit_verify("AUDIT-TEST-001", Some("Cargo.toml"), Some(1)).is_ok());
         assert!(run_audit_review("AUDIT-TEST-001", "pass", Some("Tested successfully")).is_ok());
+    }
+
+    #[test]
+    fn test_validate_tags_fixtures() {
+        let base_tag = TagItem {
+            file_path: "crates/memfuse-core/src/lib.rs".to_string(),
+            line_num: 10,
+            tag_type: "AI-TAG".to_string(),
+            raw: "".to_string(),
+            timestamp: "".to_string(),
+            category: Some("TEST".to_string()),
+            severity: Some("MINOR".to_string()),
+            id: Some("AGT-CORE-12345678".to_string()),
+            session: None,
+            status: Some("OPEN".to_string()),
+            description: "Test tag".to_string(),
+            is_resolved: false,
+            audit_id: None,
+            befund: None,
+            risiko: None,
+            empfehlung: None,
+        };
+
+        // 1. Tag in Oct 2026 without SESSION -> must FAIL
+        let tag_oct_2026_no_session = TagItem {
+            timestamp: "2026-10-15T12:00:00Z".to_string(),
+            raw: "// AI-TAG[TEST][MINOR] Test (ID: AGT-CORE-12345678) (TS:2026-10-15T12:00:00Z)".to_string(),
+            session: None,
+            ..base_tag.clone()
+        };
+        assert!(!run_validate_tags(&[tag_oct_2026_no_session]), "Oct 2026 tag without SESSION must fail");
+
+        // 2. Tag in 2030+ without SESSION -> must FAIL
+        let tag_2030_no_session = TagItem {
+            timestamp: "2030-01-01T00:00:00Z".to_string(),
+            raw: "// AI-TAG[TEST][MINOR] Test (ID: AGT-CORE-12345678) (TS:2030-01-01T00:00:00Z)".to_string(),
+            session: None,
+            ..base_tag.clone()
+        };
+        assert!(!run_validate_tags(&[tag_2030_no_session]), "2030+ tag without SESSION must fail");
+
+        // 3. Tag before cutoff (2026-08-28) without SESSION -> must PASS (grandfathered)
+        let tag_before_cutoff = TagItem {
+            timestamp: "2026-08-28T12:00:00Z".to_string(),
+            raw: "// AI-TAG[TEST][MINOR] Test (ID: AGT-CORE-12345678) (TS:2026-08-28T12:00:00Z)".to_string(),
+            session: None,
+            ..base_tag.clone()
+        };
+        assert!(run_validate_tags(&[tag_before_cutoff]), "Pre-cutoff tag without SESSION must pass");
+
+        // 4. Tag in Oct 2026 with SESSION -> must PASS
+        let tag_oct_2026_with_session = TagItem {
+            timestamp: "2026-10-15T12:00:00Z".to_string(),
+            raw: "// AI-TAG[TEST][MINOR] Test (ID: AGT-CORE-12345678) (TS:2026-10-15T12:00:00Z) (SESSION:12345678)".to_string(),
+            session: Some("12345678".to_string()),
+            ..base_tag.clone()
+        };
+        assert!(run_validate_tags(&[tag_oct_2026_with_session]), "Oct 2026 tag with SESSION must pass");
+
+        // 5. Tag in 2030+ with SESSION -> must PASS
+        let tag_2030_with_session = TagItem {
+            timestamp: "2030-05-20T14:30:00Z".to_string(),
+            raw: "// AI-TAG[TEST][MINOR] Test (ID: AGT-CORE-12345678) (TS:2030-05-20T14:30:00Z) (SESSION:87654321)".to_string(),
+            session: Some("87654321".to_string()),
+            ..base_tag.clone()
+        };
+        assert!(run_validate_tags(&[tag_2030_with_session]), "2030+ tag with SESSION must pass");
     }
 }
