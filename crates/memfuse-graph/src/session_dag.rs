@@ -3,6 +3,14 @@
 //! Native DAG implementation based on standard library maps and RwLock,
 //! keeping memfuse-graph pure-Rust and zero-external-graph-dependency (ADR-004).
 
+// FILE-CONTEXT
+// STAND:       2026-08-30T14:35:05Z (SESSION: ab88edae)
+// ZWECK:       Session-DAG für Gesprächsverzweigung & Agent-State-Tracking (Grok-Muster)
+// INVARIANTEN: Monoton steigende NodeIdx; active_head verweist stets auf existierenden Knoten.
+// HOTSPOTS:    branch_from(), save(), load()
+// AGENT-NOTIZ: pedantic doc & error hygiene
+// SIEHE AUCH:  ADR-004
+
 use memfuse_core::{MemFuseError, Result, StorageEngine, TxId};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -110,8 +118,7 @@ impl SessionBranchTree {
     ) -> Result<NodeIdx> {
         if !self.nodes.read().contains_key(&parent_node) {
             return Err(MemFuseError::InvalidInput(format!(
-                "SessionDAG: node {} nicht gefunden",
-                parent_node
+                "SessionDAG: node {parent_node} nicht gefunden"
             )));
         }
 
@@ -148,8 +155,7 @@ impl SessionBranchTree {
             Ok(())
         } else {
             Err(MemFuseError::InvalidInput(format!(
-                "SessionDAG: node {} nicht gefunden",
-                node_idx
+                "SessionDAG: node {node_idx} nicht gefunden"
             )))
         }
     }
@@ -203,7 +209,10 @@ impl SessionBranchTree {
         self.nodes.read().get(&node_idx).cloned()
     }
 
-    /// Persists all nodes, edges, active head, and next_id of the Session-DAG to the storage engine under the given namespace prefix.
+    /// Persists all nodes, edges, active head, and `next_id` of the Session-DAG to the storage engine under the given namespace prefix.
+    ///
+    /// # Errors
+    /// Returns `Err(MemFuseError::Serialization)` if serialization fails, or `Err(MemFuseError::Storage)` on storage I/O errors.
     pub async fn save<S: StorageEngine + ?Sized>(
         &self,
         storage: &S,
@@ -250,6 +259,9 @@ impl SessionBranchTree {
     }
 
     /// Loads and reconstructs a `SessionBranchTree` from storage for the specified namespace.
+    ///
+    /// # Errors
+    /// Returns `Err(MemFuseError::NotFound)` if the namespace is missing, or `Err(MemFuseError::Serialization)` on corrupt payload deserialization.
     pub async fn load<S: StorageEngine + ?Sized>(storage: &S, namespace: &str) -> Result<Self> {
         let prefix_str = format!("__session_dag:{namespace}:");
         let prefix_bytes = prefix_str.as_bytes();
@@ -537,7 +549,7 @@ mod tests {
     #[allow(non_snake_case)]
     fn new_CASE_empty_and_unicode_strings() {
         // Empty strings
-        let empty_dag = SessionBranchTree::new("".into(), "".into());
+        let empty_dag = SessionBranchTree::new(String::new(), String::new());
         assert_eq!(empty_dag.node_count(), 1);
         let root = empty_dag.get_node(0).unwrap(); // unwrap allowed
         assert_eq!(root.prompt, "");
@@ -570,8 +582,7 @@ mod tests {
         let err = result.err().unwrap(); // unwrap allowed
         assert!(
             matches!(err, MemFuseError::NotFound(_)),
-            "Expected MemFuseError::NotFound, got {:?}",
-            err
+            "Expected MemFuseError::NotFound, got {err:?}"
         );
     }
 
@@ -600,8 +611,7 @@ mod tests {
         let err = result.err().unwrap(); // unwrap allowed
         assert!(
             matches!(err, MemFuseError::Serialization(_)),
-            "Expected MemFuseError::Serialization on corrupt payload, got {:?}",
-            err
+            "Expected MemFuseError::Serialization on corrupt payload, got {err:?}"
         );
     }
 

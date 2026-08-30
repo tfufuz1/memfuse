@@ -1,9 +1,3 @@
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       HTTP-Client für lokale Ollama-Instanz (Embedding + Chat)
-// INVARIANTEN: Connection timeouts and bounded retry logic enforced
-// HOTSPOTS:    embed(), chat_completion() — Timeouts und Retry-Logik
-
 use futures_util::StreamExt;
 use memfuse_core::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};

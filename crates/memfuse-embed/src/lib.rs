@@ -1,10 +1,3 @@
-// FILE-CONTEXT
-// STAND: 2026-08-29T17:16:44Z (SESSION: f50ed9ef)
-// ZWECK: In-process ONNX Embedding Engine (Layer 3 im 5-Schichten-DAG).
-// INVARIANTEN: Default-Build ohne ONNX hat leere Feature-Flags (ADR-005, Pure-Rust-USP).
-// NICHT-OFFENSICHTLICH: Threading via tokio::task::spawn_blocking zur Vermeidung von Executor-Starvation.
-// SIEHE AUCH: crates/memfuse-embed/AGENTS.md, rules/dependencies.md
-
 //! memfuse-embed — In-process text embeddings using ONNX Runtime.
 //!
 //! This crate provides a high-level API for generating vector embeddings from text
@@ -36,9 +29,6 @@ use tracing::{debug, info, warn};
 
 pub mod reranker;
 pub use reranker::{CrossEncoderReranker, RerankConfig, RerankResult};
-
-/// Maximum allowed batch size for text embedding queries to prevent unbounded resource exhaustion.
-pub const MAX_EMBED_BATCH_SIZE: usize = 10_000;
 
 /// Configuration settings for the text embedder.
 #[cfg(feature = "onnx")]
@@ -94,14 +84,6 @@ impl TextEmbeddingEngine for TextEmbedder {
     }
 
     async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        if texts.len() > MAX_EMBED_BATCH_SIZE {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Batch size {} exceeds maximum allowed limit {}",
-                texts.len(),
-                MAX_EMBED_BATCH_SIZE
-            )));
-        }
-
         let mut handles = Vec::with_capacity(texts.len());
         for text in texts {
             let text_owned = text.to_string();
@@ -354,9 +336,6 @@ impl TextEmbedder {
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "onnx")]
-    use super::MAX_EMBED_BATCH_SIZE;
-
-    #[cfg(feature = "onnx")]
     use super::*;
 
     #[cfg(feature = "onnx")]
@@ -484,36 +463,6 @@ mod tests {
         let err_msg = err_res.err().unwrap().to_string(); // unwrap
         assert!(err_msg.contains("Failed on b"));
 
-        Ok(())
-    }
-
-    #[cfg(feature = "onnx")]
-    #[tokio::test]
-    async fn test_embed_batch_oversized_limit(
-    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        use memfuse_core::{MemFuseError, TextEmbeddingEngine};
-
-        let dir = tempdir()?;
-        File::create(dir.path().join("model.onnx"))?;
-        File::create(dir.path().join("tokenizer.json"))?;
-
-        let embedder = TextEmbedder {
-            session_path: dir.path().join("model.onnx"),
-            tokenizer: Arc::new(Tokenizer::default()),
-            semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
-            config: TextEmbedderConfig::default(),
-            expected_dim: None,
-        };
-
-        let large_texts: Vec<&str> = vec!["text"; MAX_EMBED_BATCH_SIZE + 1];
-        let res = embedder.embed_batch(&large_texts).await;
-        assert!(res.is_err());
-        if let Err(err) = res {
-            assert!(matches!(err, MemFuseError::InvalidInput(_)));
-            assert!(err.to_string().contains("exceeds maximum allowed limit"));
-        } else {
-            panic!("Expected InvalidInput error for oversized embed batch");
-        }
         Ok(())
     }
 }

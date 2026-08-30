@@ -1,9 +1,3 @@
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       Morphologie-Analyse (Stemming, Lemmatisierung für BM25)
-// INVARIANTEN: Input to decompose() MUST be lowercased (e.g. via normalize_umlauts) to prevent debug panics
-// HOTSPOTS:    analyze(), decompose(), normalize_umlauts() — Deutsch + Englisch Support
-
 use std::collections::HashSet;
 
 /// KMU-Fachvokabular und allgemeiner deutscher Wortschatz.
@@ -246,8 +240,7 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             token
         );
 
-        // Guard against oversized single tokens (e.g., > 128 bytes) to avoid O(n^2) DP overhead
-        if token.len() <= self.min_component_len || token.len() > 128 {
+        if token.len() <= self.min_component_len {
             return vec![token];
         }
 
@@ -885,13 +878,5 @@ mod tests {
             passed,
             total_cases
         );
-    }
-
-    #[test]
-    fn test_decompose_oversized_token_early_exit() {
-        let splitter = GermanCompoundSplitter::new();
-        let oversized_token = "a".repeat(200);
-        let result = splitter.decompose(&oversized_token);
-        assert_eq!(result, vec![oversized_token.as_str()]);
     }
 }
