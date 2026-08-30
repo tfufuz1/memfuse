@@ -508,8 +508,32 @@ pub fn calculate_crate_loc<P: AsRef<Path>>(dir: P) -> usize {
     loc
 }
 
+pub fn get_workspace_root() -> PathBuf {
+    let mut current_dir = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut cargo_path = current_dir.join("Cargo.toml");
+
+    loop {
+        if cargo_path.exists() {
+            if let Ok(content) = fs::read_to_string(&cargo_path) {
+                if content.contains("[workspace]") {
+                    return current_dir;
+                }
+            }
+        }
+        if let Some(parent) = current_dir.parent() {
+            current_dir = parent.to_path_buf();
+            cargo_path = current_dir.join("Cargo.toml");
+        } else {
+            break;
+        }
+    }
+    PathBuf::from(".")
+}
+
 pub fn get_workspace_crates() -> Vec<CrateInfo> {
-    let root_cargo = fs::read_to_string("Cargo.toml").unwrap_or_default();
+    let root_dir = get_workspace_root();
+    let cargo_path = root_dir.join("Cargo.toml");
+    let root_cargo = fs::read_to_string(&cargo_path).unwrap_or_default();
     let toml_val: toml::Value =
         toml::from_str(&root_cargo).expect("Failed to parse root Cargo.toml");
 
@@ -527,7 +551,7 @@ pub fn get_workspace_crates() -> Vec<CrateInfo> {
             continue;
         }
 
-        let crate_cargo_path = PathBuf::from(path_str).join("Cargo.toml");
+        let crate_cargo_path = root_dir.join(path_str).join("Cargo.toml");
         if !crate_cargo_path.exists() {
             continue;
         }
@@ -882,13 +906,155 @@ pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
     success
 }
 
+pub fn check_crate_count_consistency(crates: &[CrateInfo]) -> bool {
+    let root_dir = get_workspace_root();
+    let mut success = true;
+    let expected_count = crates.len();
+
+    let arch_path = root_dir.join("docs/ARCHITECTURE.md");
+    if let Ok(arch_content) = fs::read_to_string(&arch_path) {
+        let re = Regex::new(r"(\d+)\s+Workspace Crates").unwrap();
+        for line in arch_content.lines() {
+            if let Some(caps) = re.captures(line) {
+                if let Ok(num) = caps[1].parse::<usize>() {
+                    if num != expected_count {
+                        eprintln!(
+                            "❌ Crate count mismatch in docs/ARCHITECTURE.md: expected {}, documented header count is {}",
+                            expected_count, num
+                        );
+                        success = false;
+                    }
+                }
+            }
+        }
+    } else {
+        eprintln!(
+            "❌ Unable to read {} for consistency check",
+            arch_path.display()
+        );
+        success = false;
+    }
+
+    let ws_path = root_dir.join("WORKING_STATE.md");
+    if let Ok(ws_content) = fs::read_to_string(&ws_path) {
+        let re = Regex::new(r"(\d+)\s+Workspace Crates").unwrap();
+        for line in ws_content.lines() {
+            if let Some(caps) = re.captures(line) {
+                if let Ok(num) = caps[1].parse::<usize>() {
+                    if num != expected_count {
+                        eprintln!(
+                            "❌ Crate count mismatch in WORKING_STATE.md: expected {}, documented header count is {}",
+                            expected_count, num
+                        );
+                        success = false;
+                    }
+                }
+            }
+        }
+    }
+
+    success
+}
+
+pub fn check_crate_agents_md_consistency(crates: &[CrateInfo]) -> bool {
+    let root_dir = get_workspace_root();
+    let mut success = true;
+    for c in crates {
+        let agents_path = root_dir.join(&c.path).join("AGENTS.md");
+        if !agents_path.exists() {
+            eprintln!(
+                "❌ Missing AGENTS.md for workspace crate '{}' at path '{}'",
+                c.name, c.path
+            );
+            success = false;
+        }
+    }
+    success
+}
+
+pub fn check_adr_consistency_in_content(decisions_content: &str) -> bool {
+    let mut success = true;
+    let adr_re = Regex::new(r"^##\s+ADR-(\d+)").unwrap();
+
+    let mut seen_adrs = std::collections::HashMap::new();
+    let mut max_adr = 0;
+
+    for (idx, line) in decisions_content.lines().enumerate() {
+        let line_num = idx + 1;
+        if let Some(caps) = adr_re.captures(line.trim()) {
+            if let Ok(num) = caps[1].parse::<usize>() {
+                if let Some(prev_line) = seen_adrs.insert(num, line_num) {
+                    eprintln!(
+                        "❌ Duplicate ADR number found in DECISIONS.md: ADR-{:03} defined at line {} and line {}",
+                        num, prev_line, line_num
+                    );
+                    success = false;
+                }
+                if num > max_adr {
+                    max_adr = num;
+                }
+            }
+        }
+    }
+
+    for num in 1..=max_adr {
+        if !seen_adrs.contains_key(&num) {
+            let adr_str = format!("ADR-{:03}", num);
+            let adr_short_str = format!("ADR-{}", num);
+
+            let is_mentioned = decisions_content.contains(&adr_str) || decisions_content.contains(&adr_short_str);
+
+            if !is_mentioned {
+                eprintln!(
+                    "❌ Undocumented gap in ADR numbering in DECISIONS.md: ADR-{:03} is missing and has no documented explanation",
+                    num
+                );
+                success = false;
+            }
+        }
+    }
+
+    success
+}
+
+pub fn check_adr_consistency() -> bool {
+    let decisions_path = get_workspace_root().join("DECISIONS.md");
+    match fs::read_to_string(&decisions_path) {
+        Ok(content) => check_adr_consistency_in_content(&content),
+        Err(e) => {
+            eprintln!("❌ Unable to read {}: {}", decisions_path.display(), e);
+            false
+        }
+    }
+}
+
 pub fn run_check_consistency() -> bool {
     println!("=== xtask check-consistency ===");
     let crates = get_workspace_crates();
     let count = crates.len();
     println!("Verified workspace crate count: {}", count);
-    println!("=== xtask check-consistency PASSED ===");
-    true
+
+    let mut success = true;
+
+    if !check_crate_count_consistency(&crates) {
+        success = false;
+    }
+
+    if !check_crate_agents_md_consistency(&crates) {
+        success = false;
+    }
+
+    if !check_adr_consistency() {
+        success = false;
+    }
+
+    if success {
+        println!("=== xtask check-consistency PASSED ===");
+    } else {
+        eprintln!("=== xtask check-consistency FAILED ===");
+    }
+
+    success
 }
 
 // --- NEW CONTEXT & AUDIT COMMAND IMPLEMENTATIONS ---
@@ -1719,5 +1885,55 @@ mod tests {
     fn test_audit_verify_and_review() {
         assert!(run_audit_verify("AUDIT-TEST-001", Some("Cargo.toml"), Some(1)).is_ok());
         assert!(run_audit_review("AUDIT-TEST-001", "pass", Some("Tested successfully")).is_ok());
+    }
+
+    #[test]
+    fn test_check_consistency_fails_on_duplicate_adr_number() {
+        let content_with_duplicate = r#"
+## ADR-001: First ADR
+Some text.
+
+## ADR-002: Second ADR
+Some text.
+
+## ADR-001: Duplicate ADR
+Some text.
+"#;
+        assert!(!check_adr_consistency_in_content(content_with_duplicate));
+    }
+
+    #[test]
+    fn test_check_consistency_fails_on_crate_missing_agents_md() {
+        let fake_crates = vec![CrateInfo {
+            name: "non-existent-crate".to_string(),
+            path: "crates/non-existent-crate".to_string(),
+            layer: 1,
+            loc: 100,
+            status: "🟢 Clean".to_string(),
+            description: "Test crate".to_string(),
+            dependencies: vec![],
+        }];
+        assert!(!check_crate_agents_md_consistency(&fake_crates));
+    }
+
+    #[test]
+    fn test_check_consistency_passes_on_clean_fixture() {
+        let clean_adr_content = r#"
+## ADR-001: First ADR
+Details.
+
+## ADR-002: Second ADR
+Details.
+
+## ADR-003: Third ADR (Gaps explained: ADR-004 is skipped due to legacy refactor)
+Details.
+
+## ADR-005: Fifth ADR
+Details.
+"#;
+        assert!(check_adr_consistency_in_content(clean_adr_content));
+
+        let real_crates = get_workspace_crates();
+        assert!(check_crate_agents_md_consistency(&real_crates));
     }
 }
