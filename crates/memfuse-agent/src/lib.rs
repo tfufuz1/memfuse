@@ -1,3 +1,10 @@
+// FILE-CONTEXT Header (Format v3)
+// ZWECK: Crate entry point exposing audit, context, engine, event_source, graph, and step submodules.
+// INVARIANTEN: Re-exports core workflow primitives; Layer 3 orchestrator integration for MemFuse.
+// NICHT-OFFENSICHTLICH: Preserves public API boundaries for persistent checkpoint-execute-commit-audit loops.
+// HOTSPOTS: Module re-exports (ll. 75-85).
+// STAND: TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)
+
 //! MemFuse Agent — Persistent workflow engine for multi-step agent execution.
 //!
 //! Implements the deterministic `checkpoint → execute → commit → audit` loop.

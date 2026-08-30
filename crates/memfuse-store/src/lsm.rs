@@ -1907,7 +1907,10 @@ mod tests {
 
         // Pre-populate with base transaction
         let tx_base = TxId::new(1);
-        storage.put(tx_base, b"key_race", b"val_base").await.expect("put base"); // expect
+        storage
+            .put(tx_base, b"key_race", b"val_base")
+            .await
+            .expect("put base"); // expect
         storage.commit(tx_base).await.expect("commit base"); // expect
 
         let mut handles = Vec::new();

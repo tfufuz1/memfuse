@@ -1619,7 +1619,9 @@ mod tests {
             ..Default::default()
         };
         let client_sufficient_timeout = OllamaClient::with_config(config_long);
-        let res_ok = client_sufficient_timeout.embed("nomic-embed-text", "hello").await;
+        let res_ok = client_sufficient_timeout
+            .embed("nomic-embed-text", "hello")
+            .await;
         assert!(res_ok.is_ok());
         assert_eq!(res_ok.unwrap(), vec![0.42]);
     }
