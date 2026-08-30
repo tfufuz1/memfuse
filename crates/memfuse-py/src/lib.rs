@@ -121,6 +121,13 @@ fn validate_id(id: &str) -> PyResult<()> {
             "Document ID cannot be empty or whitespace-only",
         ));
     }
+    if id.len() > MAX_ID_LENGTH {
+        return Err(MemFuseValueError::new_err(format!(
+            "Document ID exceeds maximum length of {} bytes. Got: {}",
+            MAX_ID_LENGTH,
+            id.len()
+        )));
+    }
     Ok(())
 }
 
@@ -150,13 +157,6 @@ fn validate_query_text(text: &str) -> PyResult<()> {
         return Err(pyo3::exceptions::PyValueError::new_err(
             "Search query text cannot be empty or whitespace-only",
         ));
-    }
-    if id.len() > MAX_ID_LENGTH {
-        return Err(MemFuseValueError::new_err(format!(
-            "Document ID exceeds maximum length of {} bytes. Got: {}",
-            MAX_ID_LENGTH,
-            id.len()
-        )));
     }
     Ok(())
 }

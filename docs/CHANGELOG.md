@@ -33,18 +33,17 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/reaper.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Hintergrund-Reaper-Tasks zur TTL-Löschung und Bereinigung verwaister Transaktionen (Orphan Reaper). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
-| `2026-08-30T21:56:10Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `TEST:AGT-INDEX-006` | `a140747b` | `OPEN` | `0` | // ANCHOR[TEST:AGT-INDEX-006] STATUS:OPEN (TS:2026-08-30T21:56:10Z) (SESSION: a140747b) |
-| `2026-08-30T20:00:00Z` | `crates/memfuse-crypto/src/crypto.rs` | `REVIEW-PASS` | `TEST:CRY-001` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:CRY-001) (TS:2026-08-30T20:00:00Z) (SESSION: c9f5e2b3) |
-| `2026-08-30T20:00:00Z` | `crates/memfuse-ollama/src/client.rs` | `REVIEW-PASS` | `TEST:OLL-001` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:OLL-001) (TS:2026-08-30T20:00:00Z) (SESSION: c9f5e2b3) |
-| `2026-08-30T19:00:00Z` | `crates/memfuse-crypto/src/crypto.rs` | `REVIEW-PASS` | `TEST:CRY-001` | `b8e4f1a2` | `PASS` | `1` | // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:CRY-001) (TS:2026-08-30T19:00:00Z) (SESSION: b8e4f1a2) |
-| `2026-08-30T19:00:00Z` | `crates/memfuse-ollama/src/client.rs` | `REVIEW-PASS` | `TEST:OLL-001` | `b8e4f1a2` | `PASS` | `1` | // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:OLL-001) (TS:2026-08-30T19:00:00Z) (SESSION: b8e4f1a2) |
+| `2026-08-30T19:05:00Z` | `crates/memfuse-crypto/src/crypto.rs` | `REVIEW-PASS` | `AGT-CRYP-3779c7f0` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CRYP-3779c7f0) (TS:2026-08-30T19:05:00Z) (SESSION:c9f5e2b3) |
+| `2026-08-30T19:05:00Z` | `crates/memfuse-ollama/src/client.rs` | `REVIEW-PASS` | `AGT-OLLA-ed7b7b38` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-OLLA-ed7b7b38) (TS:2026-08-30T19:05:00Z) (SESSION:c9f5e2b3) |
+| `2026-08-30T19:00:00Z` | `crates/memfuse-crypto/src/crypto.rs` | `REVIEW-PASS` | `AGT-CRYP-3779c7f0` | `b8e4f1a2` | `PASS` | `1` | // REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-CRYP-3779c7f0) (TS:2026-08-30T19:00:00Z) (SESSION:b8e4f1a2) |
+| `2026-08-30T19:00:00Z` | `crates/memfuse-ollama/src/client.rs` | `REVIEW-PASS` | `AGT-OLLA-ed7b7b38` | `b8e4f1a2` | `PASS` | `1` | // REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-OLLA-ed7b7b38) (TS:2026-08-30T19:00:00Z) (SESSION:b8e4f1a2) |
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/client.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | HTTP-Client für lokale Ollama LLM/Embedding API mit Retry/Timeout/Streaming-Semantik |
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/context_prefixer.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Anthropic Contextual Retrieval — LLM-basierte Präfix-Generierung für Chunks |
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/embedding.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | `TextEmbeddingEngine`-Implementierung für Ollama Embedding API |
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/importance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | LLM-basierte Wichtigkeits-Bewertung (ImportanceScore 0.0-1.0) für Memory Chunks |
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/model_info.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Modell-Inspektion (/api/show) und Statisches Mapping bekannter Embedding-Dimensionen |
-| `2026-08-30T18:54:39Z` | `crates/memfuse-crypto/src/crypto.rs` | `ANCHOR` | `TEST:CRY-001` | `3779c7f0` | `DONE` | `2` | // ANCHOR[TEST:CRY-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:3779c7f0) — Nonce-Uniqueness verification bei paralleler Verschlüsselung |
-| `2026-08-30T18:54:39Z` | `crates/memfuse-ollama/src/client.rs` | `ANCHOR` | `TEST:OLL-001` | `ed7b7b38` | `DONE` | `2` | // ANCHOR[TEST:OLL-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:ed7b7b38) |
+| `2026-08-30T18:54:39Z` | `crates/memfuse-crypto/src/crypto.rs` | `ANCHOR` | `AGT-CRYP-3779c7f0` | `3779c7f0` | `DONE` | `2` | // ANCHOR[TEST:CRY-001] STATUS:DONE (ID: AGT-CRYP-3779c7f0) (TS:2026-08-30T18:54:39Z) (SESSION:3779c7f0) — Nonce-Uniqueness verification bei paralleler Verschlüsselung |
+| `2026-08-30T18:54:39Z` | `crates/memfuse-ollama/src/client.rs` | `ANCHOR` | `AGT-OLLA-ed7b7b38` | `ed7b7b38` | `DONE` | `2` | // ANCHOR[TEST:OLL-001] STATUS:DONE (ID: AGT-OLLA-ed7b7b38) (TS:2026-08-30T18:54:39Z) (SESSION:ed7b7b38) |
 | `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/community.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Community-Erkennung via Label Propagation für GraphRAG |
 | `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/csr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion) |
 | `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/ppr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Personalized PageRank Power Iteration über CSR Graph |
@@ -70,6 +69,7 @@
 | `2026-08-30T15:00:19Z` | `crates/memfuse-agent/src/graph.rs` | `AI-TAG` | `-` | `283abf0f` | `RESOLVED` | `-` | // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty from/to endpoints for workflow edges. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f) |
 | `2026-08-30T14:46:32Z (SESSION: 2c814094)` | `crates/memfuse-mcp/src/protocol.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP JSON-RPC 2.0 Protokoll-Typen & DTO-Abbildung für MemFuse |
 | `2026-08-30T14:46:32Z (SESSION: 2c814094)` | `crates/memfuse-mcp/src/sandbox.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP Sandbox & Zero-Trust Tool Isolation Layer |
+| `2026-08-30T14:11:21Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `TEST:AGT-INDEX-006` | `10569099` | `OPEN` | `0` | // ANCHOR[TEST:AGT-INDEX-006] STATUS:OPEN (TS:2026-08-30T14:11:21Z) (SESSION: 10569099) |
 | `2026-08-29T17:21:26Z` | `crates/memfuse-checkpoint/src/lib.rs` | `AI-TAG` | `AGT-CKPT-001` | `e6e9abca` | `OPEN` | `0` | /// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca) |
 | `2026-08-29T17:16:44Z (SESSION: f50ed9ef)` | `crates/memfuse-embed/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | In-process ONNX Embedding Engine (Layer 3 im 5-Schichten-DAG). |
 | `2026-08-29T17:16:44Z (SESSION: f50ed9ef)` | `crates/memfuse-embed/src/reranker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung. |
@@ -135,5 +135,4 @@
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/concurrent_collection_stress.rs` | `ANCHOR` | `INTEGRATION:STRESS-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:STRESS-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/full_stack_e2e.rs` | `ANCHOR` | `INTEGRATION:E2E-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:E2E-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
 | `` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `-` | `-` | `-` | `-` | // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar. |
-| `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
 | `` | `crates/memfuse-store/src/util.rs` | `FILE-CONTEXT` | `-` | `8f882f1f` | `-` | `-` |  |

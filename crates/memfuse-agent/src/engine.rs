@@ -1,3 +1,10 @@
+// FILE-CONTEXT Header (Format v3)
+// ZWECK: Deterministic graph-walker orchestrator engine for autonomous agent workflows.
+// INVARIANTEN: Enforces Checkpoint -> Execute -> Commit -> Audit loop per step; atomic commit & RAII guard protection.
+// NICHT-OFFENSICHTLICH: Persists final state to LSM before final checkpoint; replay_from reconstructs state from checkpoint registry.
+// HOTSPOTS: run_internal (ll. 90-180), replay_from (ll. 185-230).
+// STAND: TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)
+
 //! Deterministic, persistent graph-walker engine for agent workflows.
 //!
 //! Implements the core execution loop: checkpoint → execute → commit → audit → resolve-next.
@@ -65,6 +72,9 @@ impl OrchestratorEngine {
     }
 
     /// Registers an agent tool, panicking if validation fails.
+    #[deprecated(
+        note = "Use try_register_tool instead to handle validation errors without panicking"
+    )]
     pub fn register_tool(&mut self, tool: Box<dyn AgentTool>) {
         self.try_register_tool(tool)
             .expect("Invalid tool name in register_tool");

@@ -40,7 +40,7 @@ pub(crate) fn compute_ppr(
     for &seed in seed_nodes {
         if let Some(&idx) = inner.id_map.get(&seed) {
             if idx < n
-                && inner.entities.get(idx).is_some_and(|e| e.is_some())
+                && inner.entities.get(idx).is_some_and(Option::is_some)
                 && seen_seeds.insert(idx)
             {
                 valid_seeds.push(idx);
@@ -71,7 +71,7 @@ pub(crate) fn compute_ppr(
     let mut out_weight_sums = vec![0.0f32; n];
 
     for i in 0..n {
-        if !inner.entities.get(i).is_some_and(|e| e.is_some()) {
+        if !inner.entities.get(i).is_some_and(Option::is_some) {
             continue;
         }
 
@@ -93,7 +93,7 @@ pub(crate) fn compute_ppr(
             let target = inner.targets[edge_idx];
             let weight = inner.weights[edge_idx];
 
-            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {
+            if inner.entities.get(target).is_some_and(Option::is_some) && weight > 0.0 {
                 sum += weight;
                 edges.push(OutgoingEdge { target, weight });
             }
@@ -131,7 +131,7 @@ pub(crate) fn compute_ppr(
         // Rank mass accumulated at dead-end (dangling) nodes
         let mut dangling_sum = 0.0f32;
         for i in 0..n {
-            if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {
+            if inner.entities.get(i).is_some_and(Option::is_some) && out_weight_sums[i] == 0.0 {
                 dangling_sum += ranks[i];
             }
         }
@@ -181,7 +181,7 @@ pub(crate) fn compute_ppr(
     // 5. Build and sort result vector
     let mut results = Vec::new();
     for (idx, &rank) in ranks.iter().enumerate() {
-        if rank > 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {
+        if rank > 0.0 && inner.entities.get(idx).is_some_and(Option::is_some) {
             if let Some(&id) = inner.reverse_map.get(idx) {
                 results.push((id, rank));
             }
