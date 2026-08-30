@@ -15,6 +15,13 @@
 //! - **Async I/O**: All disk operations use `tokio::fs` or `memmap2` with `spawn_blocking`.
 //! - **Zero Panic**: Production code paths avoid `unwrap()` and `expect()`, favoring explicit error handling.
 
+// FILE-CONTEXT
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// ZWECK:       Persistente, immutable SSTable-Dateien (Sorted String Table)
+// INVARIANTEN: Immutability post-creation, sorted key order, async spawn_blocking I/O, zero panic
+// HOTSPOTS:    SSTableIterator, Bloom-Filter-Lookup, merge_sorted_iters()
+// SIEHE AUCH:  crates/memfuse-store/AGENTS.md
+
 use bytes::{BufMut, Bytes, BytesMut};
 use lru::LruCache;
 use memfuse_core::{MemFuseError, Result};
@@ -279,6 +286,7 @@ pub struct SstableMetadata {
 /// Note: Uses a whole-SSTable Bloom filter with a default FPR. The Bloom filter FPR should be
 /// treated as a tunable parameter and configured via [`crate::lsm::LsmConfig`].
 pub struct SstableBuilder {
+    path: PathBuf,
     file: File,
     block_builder: BlockBuilder,
     index: Vec<(Bytes, u64)>, // (last_key, offset)
@@ -320,6 +328,7 @@ impl SstableBuilder {
             .map_err(|e| MemFuseError::Storage(format!("Failed to create SSTable: {}", e)))?;
 
         Ok(Self {
+            path: path_ref.to_path_buf(),
             file,
             block_builder: BlockBuilder::new(BLOCK_SIZE),
             index: Vec::new(),
@@ -511,6 +520,8 @@ impl SstableBuilder {
             .sync_all()
             .await
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        crate::util::fsync_parent_dir(&self.path).await?;
 
         let file_size = self
             .file
@@ -1147,6 +1158,7 @@ impl SstableReader {
         &self.metadata
     }
 
+    #[allow(clippy::unused_async)]
     pub async fn stream(self: &Arc<Self>) -> Result<SstableStream> {
         Ok(SstableStream {
             reader: Arc::clone(self),

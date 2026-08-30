@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Used across IPC and API boundaries (e.g. Tauri frontend IPC) to preserve structured
 /// error kinds and optional JSON detail fields without losing error typing.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemFuseErrorDto {
     /// Stable string identifier for the error variant (e.g. `"NotFound"`, `"PolicyViolation"`).
     pub kind: String,

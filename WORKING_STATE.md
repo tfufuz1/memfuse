@@ -10,7 +10,13 @@
 | LAST_SYNC | `2026-08-29T18:03:38Z` |
 
 ## Critical Blockers (MUST FIX THIS SESSION)
-*(No critical blockers)*
+| ID | Category | Severity | File & Line | Befund |
+|----|----------|----------|-------------|--------|
+| `N/A` | HARDENING | `CRITICAL` | `crates/memfuse-agent/src/context.rs:38` | // AI-TAG[HARDENING][CRITICAL]: Validates non-empty input parameters for agent workflow context initialization. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045) |
+| `N/A` | HARDENING | `CRITICAL` | `crates/memfuse-agent/src/event_source.rs:23` | // AI-TAG[HARDENING][CRITICAL]: Validates non-empty event source to prevent silent telemetry attribution loss. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045) |
+| `N/A` | HARDENING | `CRITICAL` | `crates/memfuse-agent/src/event_source.rs:85` | // AI-TAG[HARDENING][CRITICAL]: Enforces bounded event queue capacity to guard against unbounded memory growth. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045) |
+| `N/A` | HARDENING | `CRITICAL` | `crates/memfuse-agent/src/graph.rs:51` | // AI-TAG[HARDENING][CRITICAL]: Validates non-empty Node ID and description for graph nodes. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045) |
+| `N/A` | HARDENING | `CRITICAL` | `crates/memfuse-agent/src/graph.rs:94` | // AI-TAG[HARDENING][CRITICAL]: Validates non-empty from/to endpoints for workflow edges. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045) |
 
 ## Open Anchors (IN-PROGRESS)
 | ID | Status | File & Line | Description |

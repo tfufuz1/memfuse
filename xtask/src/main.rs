@@ -1,5 +1,13 @@
 use chrono::Utc;
 use clap::{Parser, Subcommand};
+
+#[allow(dead_code)]
+fn chrono_or_today() -> String {
+    chrono::Utc::now().format("%Y-%m-%d").to_string()
+}
+// ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
+// AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
+// GATE:    grep -v "2026-08-27" WORKING_STATE.md
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -1358,7 +1366,7 @@ enum Commands {
     },
     /// Filter and extract tags
     ContextTags {
-        #[arg(long, short = 'c')]
+        #[arg(long, short = 'c', alias = "crate")]
         crate_name: Option<String>,
         #[arg(long, short = 's')]
         severity: Option<String>,

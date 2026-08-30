@@ -25,6 +25,7 @@ pub mod compaction;
 pub mod lsm;
 pub mod memtable;
 pub mod sstable;
+pub(crate) mod util;
 pub mod wal;
 
 pub use compaction::{CompactionConfig, CompactionEngine};
