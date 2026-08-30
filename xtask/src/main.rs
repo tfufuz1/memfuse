@@ -840,11 +840,8 @@ pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
         .filter(|t| {
             t.tag_type == "ANCHOR"
                 && t.is_resolved
-                && (t.timestamp.starts_with("2026-08-29")
-                    || t.timestamp.starts_with("2026-08-30")
-                    || t.timestamp.starts_with("2026-08-31")
-                    || t.timestamp.starts_with("2026-09")
-                    || t.timestamp.as_str() >= "2026-08-29")
+                && t.raw.contains("(ID:")
+                && t.id.as_deref().is_some_and(|id| id.starts_with("AGT-"))
         })
         .collect();
 
