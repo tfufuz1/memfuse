@@ -9,6 +9,14 @@
 //! In multi-shard sweeps, `reap_orphans()` acquires all shards sequentially in ascending index
 //! order (index 0 to N-1), acquiring and releasing each shard lock one at a time via `try_write()`.
 
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:51:56Z (SESSION: e459bd5f)
+// ZWECK: Shard-basierter Transaktionsbuffer für das Staging von 2-Phase-Commit Index-Operationen.
+// INVARIANTEN: Shard-Isolation per TxId; Niemals zwei Shards gleichzeitig sperren (Deadlock-Prävention).
+// HOTSPOTS: 110-380
+// NICHT-OFFENSICHTLICH: Orphan Reaper führt getrennte try_write Locks pro Sharding-Index 0..N-1 durch.
+// SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md
+
 // INVARIANT: Sharded Transaction Buffer für lock-freie Concurrency.
 
 // FILE-CONTEXT

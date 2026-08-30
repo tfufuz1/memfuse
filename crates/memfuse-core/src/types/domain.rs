@@ -1,5 +1,13 @@
 //! Domain types for MemFuse.
-//!
+
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:51:56Z (SESSION: e459bd5f)
+// ZWECK: Kanonische Domain-Typen (DocId, EntityId, TxId, Embedding, DistanceMetric, Edge, Entity).
+// INVARIANTEN: TxId Base Ranges trennen System- (>= INTERNAL_BASE) von Collection-TxIds.
+// HOTSPOTS: 80-600
+// NICHT-OFFENSICHTLICH: DocId::from_key nutzt BLAKE3 8-Byte Präfix für deterministisches Slicing.
+// SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md (ADR-016, ADR-025, ADR-041)
+
 //! # Architektur
 //! Enthält die zentralen Domänen-Modelle wie `DocId`, `TxId` und `WorkflowState`.
 //! Diese Typen sind die "Lingua Franca" zwischen allen Crates.
@@ -474,6 +482,35 @@ impl Entity {
             attributes: Default::default(),
         }
     }
+
+    /// Creates a new `Entity`, validating that `name` and `entity_type` are non-empty.
+    ///
+    /// # Errors
+    /// Returns `MemFuseError::InvalidInput` if `name` or `entity_type` is empty or whitespace-only.
+    pub fn try_new(
+        id: EntityId,
+        name: impl Into<String>,
+        entity_type: impl Into<String>,
+    ) -> Result<Self> {
+        let name_str = name.into();
+        let type_str = entity_type.into();
+        if name_str.trim().is_empty() {
+            return Err(MemFuseError::InvalidInput(
+                "Entity name cannot be empty".to_string(),
+            ));
+        }
+        if type_str.trim().is_empty() {
+            return Err(MemFuseError::InvalidInput(
+                "Entity type cannot be empty".to_string(),
+            ));
+        }
+        Ok(Self {
+            id,
+            name: name_str,
+            entity_type: type_str,
+            attributes: Default::default(),
+        })
+    }
 }
 
 /// Graph directed edge representation.
@@ -506,6 +543,37 @@ impl Edge {
             valid_from: None,
             valid_to: None,
         }
+    }
+
+    /// Creates a new `Edge`, validating non-empty label and finite non-negative weight.
+    ///
+    /// # Errors
+    /// Returns `MemFuseError::InvalidInput` if `label` is empty or `weight` is NaN/infinite/negative.
+    pub fn try_new(
+        from: EntityId,
+        to: EntityId,
+        label: impl Into<String>,
+        weight: f32,
+    ) -> Result<Self> {
+        let label_str = label.into();
+        if label_str.trim().is_empty() {
+            return Err(MemFuseError::InvalidInput(
+                "Edge label cannot be empty".to_string(),
+            ));
+        }
+        if !weight.is_finite() || weight < 0.0 {
+            return Err(MemFuseError::InvalidInput(
+                "Edge weight must be finite and non-negative".to_string(),
+            ));
+        }
+        Ok(Self {
+            from,
+            to,
+            label: label_str,
+            weight,
+            valid_from: None,
+            valid_to: None,
+        })
     }
 
     /// Sets a custom weight on the edge.
@@ -980,6 +1048,20 @@ mod tests {
         let deser_edge: Edge = serde_json::from_str(json_old).unwrap(); // unwrap
         assert_eq!(deser_edge.valid_from, None);
         assert_eq!(deser_edge.valid_to, None);
+    }
+
+    #[test]
+    fn test_entity_and_edge_try_new_validation() {
+        assert!(Entity::try_new(EntityId::new(1), "", "Person").is_err());
+        assert!(Entity::try_new(EntityId::new(1), "Alice", "   ").is_err());
+        let valid_ent = Entity::try_new(EntityId::new(1), "Alice", "Person").unwrap();
+        assert_eq!(valid_ent.name, "Alice");
+
+        assert!(Edge::try_new(EntityId::new(1), EntityId::new(2), "", 1.0).is_err());
+        assert!(Edge::try_new(EntityId::new(1), EntityId::new(2), "KNOWS", f32::NAN).is_err());
+        assert!(Edge::try_new(EntityId::new(1), EntityId::new(2), "KNOWS", -0.5).is_err());
+        let valid_edge = Edge::try_new(EntityId::new(1), EntityId::new(2), "KNOWS", 0.8).unwrap();
+        assert_eq!(valid_edge.weight, 0.8);
     }
 
     #[test]

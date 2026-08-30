@@ -1,5 +1,13 @@
 //! Memory Importance scoring and Recency-Decay functionality.
-//!
+
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:51:56Z (SESSION: e459bd5f)
+// ZWECK: Memory Importance Scoring und Recency-Decay Berechnungen (ADR-025).
+// INVARIANTEN: ImportanceScore ist garantiert [0.0, 1.0] geclampt; NaN wird zu 0.0 (Zero-Panic).
+// HOTSPOTS: 15-120
+// NICHT-OFFENSICHTLICH: Recency Decay basiert auf TxId-Distanz (nicht Wall-Clock Time).
+// SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md (ADR-025)
+
 //! # Invarianten
 //! - `ImportanceScore` ist garantiert im Bereich `[0.0, 1.0]`. NaN wird zu `0.0`.
 //! - `decay_factor` und `effective_score` sind reine, nicht-fehlschlagende Funktionen (Zero-Panic).

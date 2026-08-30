@@ -1,3 +1,13 @@
+//! SAOS (Synthesized Agent Operating System) types and query abstractions.
+
+// FILE-CONTEXT
+// STAND: 2026-08-30T18:51:56Z (SESSION: e459bd5f)
+// ZWECK: Multi-Signal HybridQuery, FusionWeights, ContextWindow und ContextChunk Repräsentation.
+// INVARIANTEN: FusionWeights::new garantiert normalisierte Summe == 1.0 (Summe in [0.999, 1.001]).
+// HOTSPOTS: 30-320
+// NICHT-OFFENSICHTLICH: metadata signal weight ist in FusionWeights reserviert und liefert via pub fn metadata() 0.0 zurück.
+// SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md (ADR-021)
+
 use super::domain::{DocId, EntityId, MemoryType, PprConfig};
 use super::filter::FilterExpr;
 use crate::error::{MemFuseError, Result};
