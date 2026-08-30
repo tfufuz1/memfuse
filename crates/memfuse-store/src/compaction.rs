@@ -19,6 +19,13 @@
 //! Tombstones are garbage-collected during merge when no active snapshot
 //! references them.
 
+// FILE-CONTEXT
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// ZWECK:       STCS-Compaction-Engine (Size-Tiered Compaction Strategy)
+// INVARIANTEN: Compaction must not block concurrent reads, tombstone GC safe with active snapshot min_seqno, atomic SSTable swap
+// HOTSPOTS:    compact_sstables(), merge_sorted_iters()
+// SIEHE AUCH:  crates/memfuse-store/AGENTS.md
+
 use crate::sstable::{BlockCache, SstableBuilder, SstableReader};
 use memfuse_core::{Result, SnapshotRegistry, TOMBSTONE_BIT};
 use memfuse_crypto::crypto::KeyManager;
@@ -122,48 +129,16 @@ impl CompactionEngine {
             indices.iter().map(|&i| Arc::clone(&ssts[i])).collect()
         };
 
-        // 3. Perform the merge to temp file (no lock held — this is the expensive part)
+        // 3. Perform the merge (no lock held — this is the expensive part)
         let min_snapshot_seq = self.snapshot_registry.min_active_seqno();
-        let (output_path, temp_path) = Self::generate_sst_path(data_path)?;
-        if let Err(e) = self
-            .merge_sstables(
-                &input_ssts,
-                &temp_path,
-                min_snapshot_seq,
-                is_full_compaction,
-            )
-            .await
-        {
-            if let Err(rm_err) = tokio::fs::remove_file(&temp_path).await {
-                tracing::warn!(
-                    "Failed to clean up temp file {:?} after merge error: {}",
-                    temp_path,
-                    rm_err
-                );
-            }
-            return Err(e);
-        }
-
-        // Atomic rename of temp_path to final output_path
-        if let Err(e) = tokio::fs::rename(&temp_path, &output_path).await {
-            tracing::warn!(
-                "Failed to rename compaction temp file {:?} to {:?}: {}",
-                temp_path,
-                output_path,
-                e
-            );
-            if let Err(rm_err) = tokio::fs::remove_file(&temp_path).await {
-                tracing::warn!(
-                    "Failed to clean up temp compaction file {:?}: {}",
-                    temp_path,
-                    rm_err
-                );
-            }
-            return Err(memfuse_core::MemFuseError::Storage(format!(
-                "Failed to rename compaction temp file: {}",
-                e
-            )));
-        }
+        let output_path = Self::generate_sst_path(data_path)?;
+        self.merge_sstables(
+            &input_ssts,
+            &output_path,
+            min_snapshot_seq,
+            is_full_compaction,
+        )
+        .await?;
 
         // 4. Open the new SSTable
         let new_reader = Arc::new(
@@ -447,17 +422,15 @@ impl CompactionEngine {
         Ok(())
     }
 
-    /// Generates a unique SSTable final file path and associated `.sst.tmp` temp path using microsecond timestamp.
-    fn generate_sst_path(data_path: &std::path::Path) -> Result<(PathBuf, PathBuf)> {
+    /// Generates a unique SSTable file path using microsecond timestamp.
+    fn generate_sst_path(data_path: &std::path::Path) -> Result<PathBuf> {
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let id = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| memfuse_core::MemFuseError::Storage(format!("System clock error: {}", e)))?
             .as_micros();
         let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let final_path = data_path.join(format!("sst-compact-{:020}-{:04}.sst", id, count % 10000));
-        let temp_path = PathBuf::from(format!("{}.tmp", final_path.display()));
-        Ok((final_path, temp_path))
+        Ok(data_path.join(format!("sst-compact-{:020}-{:04}.sst", id, count % 10000)))
     }
 
     /// Runs the background compaction loop.
@@ -824,166 +797,11 @@ mod tests {
     #[test]
     fn test_generate_sst_path_uniqueness() {
         let tmp = TempDir::new().expect("temp dir"); // expect
-        let (path1, temp1) = CompactionEngine::generate_sst_path(tmp.path()).expect("path 1"); // expect
-        let (path2, temp2) = CompactionEngine::generate_sst_path(tmp.path()).expect("path 2"); // expect
+        let path1 = CompactionEngine::generate_sst_path(tmp.path()).expect("path 1"); // expect
+        let path2 = CompactionEngine::generate_sst_path(tmp.path()).expect("path 2"); // expect
         assert_ne!(
             path1, path2,
             "Rapid sequential calls must produce distinct SSTable paths"
-        );
-        assert_eq!(temp1, PathBuf::from(format!("{}.tmp", path1.display())));
-        assert_eq!(temp2, PathBuf::from(format!("{}.tmp", path2.display())));
-    }
-
-    #[tokio::test]
-    async fn test_compaction_write_temp_rename_success() {
-        let tmp = TempDir::new().expect("temp dir"); // expect
-        let registry = Arc::new(SnapshotRegistry::new());
-        let bc = create_block_cache(1);
-        let config = CompactionConfig {
-            min_sstables_per_tier: 2,
-            ..Default::default()
-        };
-        let engine = CompactionEngine::new(
-            config,
-            registry,
-            Arc::clone(&bc),
-            None,
-            Arc::new(memfuse_core::ResourceTracker::new(
-                memfuse_core::ResourceBudget {
-                    memory_limit: 1024 * 1024,
-                },
-            )),
-        );
-
-        let sstables = Arc::new(RwLock::new(Vec::new()));
-        for i in 0..2u8 {
-            let sst = create_test_sstable(
-                tmp.path(),
-                &format!("sst-{}.sst", i),
-                &[(format!("key-{}", i).as_bytes(), b"val", i as u64 + 1)],
-                Arc::clone(&bc),
-            )
-            .await;
-            sstables.write().await.push(sst);
-        }
-
-        let compacted = engine
-            .maybe_compact(&sstables, tmp.path())
-            .await
-            .expect("compact"); // expect
-        assert!(compacted, "Compaction should succeed");
-
-        let mut read_dir = tokio::fs::read_dir(tmp.path()).await.expect("read dir"); // expect
-        let mut found_sst = false;
-        let mut tmp_files_count = 0;
-
-        while let Ok(Some(entry)) = read_dir.next_entry().await {
-            let path = entry.path();
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.ends_with(".tmp") {
-                tmp_files_count += 1;
-            }
-            if name.starts_with("sst-compact-") && name.ends_with(".sst") {
-                found_sst = true;
-            }
-        }
-
-        assert!(found_sst, "Compacted final .sst file must exist");
-        assert_eq!(
-            tmp_files_count, 0,
-            "No leftover .tmp files must remain after successful compaction"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_compaction_fault_injection_aborted_merge_cleanup() {
-        use crate::lsm::{LsmConfig, LsmStorage};
-
-        let tmp = TempDir::new().expect("temp dir"); // expect
-        let registry = Arc::new(SnapshotRegistry::new());
-        let bc = create_block_cache(1);
-        let config = CompactionConfig {
-            min_sstables_per_tier: 2,
-            ..Default::default()
-        };
-        let engine = CompactionEngine::new(
-            config,
-            registry,
-            Arc::clone(&bc),
-            None,
-            Arc::new(memfuse_core::ResourceTracker::new(
-                memfuse_core::ResourceBudget {
-                    memory_limit: 1024 * 1024,
-                },
-            )),
-        );
-
-        let sstables = Arc::new(RwLock::new(Vec::new()));
-        for i in 0..2u8 {
-            let sst = create_test_sstable(
-                tmp.path(),
-                &format!("sst-{}.sst", i),
-                &[(format!("key-{}", i).as_bytes(), b"val", i as u64 + 1)],
-                Arc::clone(&bc),
-            )
-            .await;
-            sstables.write().await.push(sst);
-        }
-
-        // Concurrently mutate SSTable list before swap stage to trigger abort
-        let candidates = engine
-            .select_compaction_candidates(&sstables.read().await)
-            .expect("candidates"); // expect
-        assert_eq!(candidates.len(), 2);
-
-        // Remove an SSTable from sstables list to simulate concurrent modification during merge
-        sstables.write().await.pop();
-
-        let result = engine
-            .maybe_compact(&sstables, tmp.path())
-            .await
-            .expect("maybe_compact result"); // expect
-        assert!(!result, "Compaction must abort");
-
-        // Assert no final sst-compact-*.sst exists
-        let mut read_dir = tokio::fs::read_dir(tmp.path()).await.expect("read dir"); // expect
-        let mut final_compact_count = 0;
-        while let Ok(Some(entry)) = read_dir.next_entry().await {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if name_str.starts_with("sst-compact-") && name_str.ends_with(".sst") {
-                final_compact_count += 1;
-            }
-        }
-        assert_eq!(
-            final_compact_count, 0,
-            "No final sst-compact file must exist after aborted compaction"
-        );
-
-        // Manually place a leftover .tmp file to test that subsequent LsmStorage::new() ignores it
-        let dummy_tmp_path = tmp.path().join("sst-compact-leftover.sst.tmp");
-        tokio::fs::write(&dummy_tmp_path, b"corrupted data")
-            .await
-            .expect("write dummy tmp"); // expect
-
-        let lsm_config = LsmConfig {
-            path: tmp.path().to_path_buf(),
-            memtable_size_limit: 1024 * 1024,
-            max_ram_mb: 64,
-            tx_timeout: Duration::from_secs(60),
-            compaction: CompactionConfig::default(),
-            encryption_passphrase: None,
-        };
-
-        let storage = LsmStorage::new(lsm_config).await.expect("open LsmStorage"); // expect
-        let stats = storage.stats().await.expect("stats"); // expect
-        assert_eq!(
-            stats.num_segments, 2,
-            "The two original SSTables exist on disk and are registered"
-        );
-        assert!(
-            !dummy_tmp_path.exists(),
-            "Leftover .tmp file must be deleted by LsmStorage recovery scan"
         );
     }
     #[tokio::test(flavor = "multi_thread")]

@@ -1,11 +1,3 @@
-// FILE-CONTEXT
-// STAND: 2026-08-30T18:51:50Z (SESSION: c9c33dfb)
-// ZWECK: MemFuse Agent Crate-Einstiegspunkt und Architektur-Dokumentation.
-// INVARIANTEN: Strikt verhaltensneutral, Zero-Panic in Prod-Pfaden, Layer-3 DAG-Integrität.
-// NICHT-OFFENSICHTLICH: Kein petgraph, pure Rust Sovereignty.
-// HOTSPOTS: OrchestratorEngine, AgentContext, StateGraph, AuditLog
-// SIEHE AUCH: rules/tag_taxonomy.md, AGENTS.md
-
 //! MemFuse Agent — Persistent workflow engine for multi-step agent execution.
 //!
 //! Implements the deterministic `checkpoint → execute → commit → audit` loop.

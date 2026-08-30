@@ -1,10 +1,3 @@
-// FILE-CONTEXT: Tokenisierung & Stopword-Filterung.
-// ZWECK: Zerschneidet Eingabetexte in normalisierte Wort-Tokens mit optionaler deutscher Morphologie.
-// INVARIANTEN: Tokenisierung muss deterministisch zwischen Indexierung und Query-Pfad identisch sein.
-// NICHT-OFFENSICHTLICH: Stoppwörter werden per OnceLock geladen; DefaultTokenizer filtert Alphatoken + Stoppwörter.
-// HOTSPOTS: tokenize, DefaultTokenizer::tokenize, GermanMorphTokenizer::tokenize
-// STAND: TS:2026-08-30T18:51:48Z (SESSION: 872b1087)
-
 //! Tokenizer using `unicode-segmentation`.
 
 use std::collections::HashSet;
@@ -171,6 +164,14 @@ mod tests {
         // "Das" is stopword
         assert!(tokens.contains(&"bundesverfassungsgericht".to_string()));
         assert!(tokens.contains(&"gericht".to_string()));
+    }
+
+    #[test]
+    fn german_morph_tokenizer_case_default_constructor() {
+        let tokenizer = GermanMorphTokenizer::default();
+        let tokens = tokenizer.tokenize("Datenschutzrichtlinie");
+        assert!(!tokens.is_empty());
+        assert!(tokens.contains(&"datenschutzrichtlinie".to_string()));
     }
 
     #[test]

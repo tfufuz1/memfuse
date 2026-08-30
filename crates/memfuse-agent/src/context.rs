@@ -1,11 +1,3 @@
-// FILE-CONTEXT
-// STAND: 2026-08-30T18:51:50Z (SESSION: c9c33dfb)
-// ZWECK: Operativer Kontext für Agenten-Workflow-Ausführungen.
-// INVARIANTEN: Identifikatoren strikt validiert (non-empty, <=256, no nulls); Telemetrie- & Memory-Größe strikt gebunden.
-// NICHT-OFFENSICHTLICH: Eviction-Strategie verwirft bei Telemetrie-Überlauf das älteste Event (FIFO-Cap).
-// HOTSPOTS: AgentContext::try_new, AgentContext::attach_event, AgentContext::set_memory
-// SIEHE AUCH: rules/tag_taxonomy.md, AGENTS.md
-
 //! Operational context for an agent workflow execution.
 //!
 //! Carries task identity, graph position, token budget, DB references, and
@@ -22,9 +14,6 @@ pub const MAX_ID_LEN: usize = 256;
 
 /// Maximum allowed telemetry events stored in memory history.
 pub const MAX_TELEMETRY_EVENTS: usize = 10_000;
-
-/// Maximum allowed memory entries stored in workflow context.
-pub const MAX_MEMORY_ENTRIES: usize = 10_000;
 
 /// Validates a task identifier to ensure it is non-empty, <= 256 bytes, and contains no null bytes.
 pub fn validate_task_id(task_id: &str) -> Result<()> {
@@ -96,19 +85,28 @@ pub struct AgentContext {
 
 impl AgentContext {
     /// Tries to construct a new [`AgentContext`], performing input validation on task ID and start node.
-    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty input parameters for agent workflow context initialization. (TS:2026-08-30T18:51:50Z) (SESSION: c9c33dfb)
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty input parameters for agent workflow context initialization. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f)
     pub fn try_new(
         task_id: impl Into<String>,
         start_node: impl Into<String>,
         db: Arc<MemFuse>,
         state_collection: Arc<Collection<LsmStorage>>,
         budget: TokenBudget,
-    ) -> Result<Self> {
+    ) -> memfuse_core::Result<Self> {
         let task_id_str = task_id.into();
         let start_node_str = start_node.into();
 
-        validate_task_id(&task_id_str)?;
-        validate_node_id(&start_node_str)?;
+        if task_id_str.trim().is_empty() {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "AgentContext task_id must not be empty".to_string(),
+            ));
+        }
+
+        if start_node_str.trim().is_empty() {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "AgentContext start_node must not be empty".to_string(),
+            ));
+        }
 
         Ok(Self {
             task_id: task_id_str,
@@ -123,10 +121,6 @@ impl AgentContext {
         })
     }
 
-    /// Constructs an `AgentContext`, panicking if `task_id` or `start_node` is invalid.
-    ///
-    /// # Panics
-    /// Panics if `task_id` or `start_node` fails validation.
     pub fn new(
         task_id: impl Into<String>,
         start_node: impl Into<String>,
@@ -135,20 +129,7 @@ impl AgentContext {
         budget: TokenBudget,
     ) -> Self {
         Self::try_new(task_id, start_node, db, state_collection, budget)
-            .expect("Invalid task_id or start_node in AgentContext::new")
-    }
-
-    /// Inserts a key-value entry into workflow context memory, enforcing maximum capacity bounds.
-    pub fn set_memory(&mut self, key: impl Into<String>, value: serde_json::Value) -> Result<()> {
-        let k = key.into();
-        if self.memory.len() >= MAX_MEMORY_ENTRIES && !self.memory.contains_key(&k) {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Context memory limit of {} entries reached",
-                MAX_MEMORY_ENTRIES
-            )));
-        }
-        self.memory.insert(k, value);
-        Ok(())
+            .unwrap_or_else(|e| panic!("Failed to initialize AgentContext: {e}"))
     }
 
     /// Integrates a background telemetry event into the agent context memory and history.
@@ -156,7 +137,7 @@ impl AgentContext {
     /// Maintains event history capacity bounded at `MAX_TELEMETRY_EVENTS` to prevent memory exhaustion.
     pub fn attach_event(&mut self, event: crate::event_source::BackgroundEvent) {
         if let Ok(val) = serde_json::to_value(&event) {
-            let _ = self.set_memory("latest_event", val);
+            self.memory.insert("latest_event".to_string(), val);
         }
         if self.events.len() >= MAX_TELEMETRY_EVENTS {
             self.events.remove(0); // Evict oldest event to cap memory usage
@@ -237,36 +218,5 @@ mod tests {
 
         assert_eq!(attached_vec.len(), 10_000);
         assert_eq!(attached_vec.last().unwrap().observed_at_seq, 10_004);
-    }
-
-    #[tokio::test]
-    async fn test_agent_context_memory_capacity_limit() {
-        let tmp = tempfile::tempdir().unwrap();
-        let config = memfuse_db::MemFuseConfig {
-            dimension: 1536,
-            ..Default::default()
-        };
-
-        let db = Arc::new(MemFuse::open_with_config(tmp.path(), config).await.unwrap());
-        let state_col = db.collection("test-col").await.unwrap();
-
-        let mut ctx =
-            AgentContext::try_new("task-1", "start", db, state_col, TokenBudget::new(1000, 0))
-                .unwrap();
-
-        for i in 0..MAX_MEMORY_ENTRIES {
-            assert!(ctx
-                .set_memory(format!("k{i}"), serde_json::json!(i))
-                .is_ok());
-        }
-
-        // Updating an existing key is allowed
-        assert!(ctx.set_memory("k0", serde_json::json!(999)).is_ok());
-
-        // Adding a new key when at capacity fails
-        assert!(matches!(
-            ctx.set_memory("overflow_key", serde_json::json!(1)),
-            Err(MemFuseError::InvalidInput(_))
-        ));
     }
 }

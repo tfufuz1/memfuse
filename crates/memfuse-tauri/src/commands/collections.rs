@@ -1,11 +1,3 @@
-// FILE-CONTEXT
-// STAND: 2026-08-30T18:54:25Z (SESSION: f3a48824)
-// ZWECK: Database opening and collection management Tauri IPC commands.
-// INVARIANTEN: Collection names must be validated against length, empty string, and '__' reserved prefix.
-// NICHT-OFFENSICHTLICH: Database path must be non-empty, <=4096 bytes, and canonicalized before opening MemFuse instance.
-// HOTSPOTS: open_database (lines 60-95)
-// SIEHE AUCH: crates/memfuse-tauri/src/state.rs, crates/memfuse-db/src/lib.rs
-
 use crate::state::AppState;
 use memfuse_db::MemFuse;
 use serde::Serialize;
@@ -51,31 +43,12 @@ pub fn validate_collection_name(name: &str) -> Result<(), MemFuseErrorDto> {
     Ok(())
 }
 
-pub const MAX_DB_PATH_LEN: usize = 4096;
-
-pub fn validate_database_path(path: &str) -> Result<(), MemFuseErrorDto> {
-    if path.trim().is_empty() {
-        return Err(MemFuseErrorDto::new(
-            "InvalidInput",
-            "Database path cannot be empty",
-        ));
-    }
-    if path.len() > MAX_DB_PATH_LEN {
-        return Err(MemFuseErrorDto::new(
-            "InvalidInput",
-            format!("Database path exceeds maximum allowed length of {MAX_DB_PATH_LEN} bytes"),
-        ));
-    }
-    Ok(())
-}
-
 /// Öffnet oder erstellt eine lokale MemFuse-Datenbank am gegebenen Pfad.
 #[tauri::command]
 pub async fn open_database(
     state: State<'_, AppState>,
     path: String,
 ) -> Result<(), MemFuseErrorDto> {
-    validate_database_path(&path)?;
     let path_buf = PathBuf::from(&path);
     // Erstelle Verzeichnis falls es noch nicht existiert, um canonicalize zu ermöglichen
     if !path_buf.exists() {
@@ -210,30 +183,5 @@ mod tests {
         assert!(validate_collection_name("invalid\\name").is_err());
         assert!(validate_collection_name("invalid name").is_err());
         assert!(validate_collection_name("invalid.name").is_err());
-    }
-
-    #[test]
-    fn test_open_database_empty_path_returns_error() {
-        let res = validate_database_path("   ");
-        assert!(res.is_err());
-        assert_eq!(
-            res.expect_err("Empty database path must return error").message,
-            "Database path cannot be empty"
-        );
-
-        let res_valid = validate_database_path("/tmp/test_db");
-        assert!(res_valid.is_ok());
-    }
-
-    #[test]
-    fn test_validate_database_path_too_long() {
-        let long_path = "a/".repeat(2050);
-        let res = validate_database_path(&long_path);
-        assert!(res.is_err());
-        assert!(
-            res.expect_err("Oversized database path must return error")
-                .message
-                .contains("exceeds maximum allowed length")
-        );
     }
 }

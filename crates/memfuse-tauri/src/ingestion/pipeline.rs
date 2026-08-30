@@ -1,11 +1,3 @@
-// FILE-CONTEXT
-// STAND: 2026-08-30T18:54:25Z (SESSION: f3a48824)
-// ZWECK: Ingestion pipeline orchestrating document parsing, chunking, embedding, and graph indexing.
-// INVARIANTEN: Enforces MAX_INGEST_FILE_SIZE_BYTES limit (100 MB); uses MarkdownChunker for document splitting.
-// NICHT-OFFENSICHTLICH: Document processing catches unwinds to report file-level errors without pipeline crash.
-// HOTSPOTS: ingest_file (lines 110-330)
-// SIEHE AUCH: crates/memfuse-db/src/chunker.rs, crates/memfuse-tauri/src/commands/ingest.rs
-
 use memfuse_core::{
     ContextChunk, DocId, Edge, Entity, EntityId, GraphIndex, MemFuseError, Result,
     TextEmbeddingEngine,
@@ -387,14 +379,14 @@ mod tests {
     fn pipeline_empty_pdf_no_panic() {
         let result = ingest_bytes(b"", "test.pdf");
         assert!(result.is_ok());
-        assert!(result.expect("Empty pdf ingestion failed").is_empty());
+        assert!(result.unwrap().is_empty()); // unwrap
     }
 
     #[test]
     fn test_command_ingest_unsupported_format() {
         let result = ingest_bytes(b"some content", "document.xyz");
         assert!(result.is_err());
-        let err_msg = result.expect_err("Unsupported format must fail").to_string();
+        let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("Unsupported file type: .xyz"),
             "Error message was: {err_msg}"
@@ -405,7 +397,7 @@ mod tests {
     fn test_command_ingest_no_extension() {
         let result = extract_text_from_bytes(b"some content", "");
         assert!(result.is_err());
-        let err_msg = result.expect_err("No extension must fail").to_string();
+        let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("File has no extension"),
             "Error message was: {err_msg}"
@@ -416,7 +408,7 @@ mod tests {
     fn test_ingest_corrupted_pdf_returns_error() {
         let result = extract_text_from_bytes(b"not a real pdf content", "pdf");
         assert!(result.is_err());
-        let err_msg = result.expect_err("Corrupted pdf must fail").to_string();
+        let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("PDF extraction failed") || err_msg.contains("panicked"),
             "Error message was: {err_msg}"
@@ -428,7 +420,7 @@ mod tests {
         let oversized = vec![0u8; MAX_INGEST_FILE_SIZE_BYTES as usize + 1];
         let result = extract_text_from_bytes(&oversized, "txt");
         assert!(result.is_err());
-        let err_msg = result.expect_err("Oversized file must fail").to_string();
+        let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("File size exceeds maximum allowed size of 100 MB"),
             "Error message was: {err_msg}"
@@ -452,9 +444,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_panic_recovery() {
-        let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+        let temp_dir = tempfile::tempdir().unwrap();
         let file_path = temp_dir.path().join("malformed.pdf");
-        std::fs::write(&file_path, b"not a real pdf content").expect("Failed to write malformed pdf");
+        std::fs::write(&file_path, b"not a real pdf content").unwrap();
 
         let embedder = Arc::new(MockEmbedder {
             fail_on_even: false,
@@ -462,10 +454,10 @@ mod tests {
         let pipeline = IngestionPipeline::new(embedder);
 
         // Standard MemFuse DB setup in memory or temp dir
-        let db = memfuse_db::MemFuse::open(temp_dir.path()).await.expect("Failed to open memfuse db");
-        let collection = db.collection("test_col").await.expect("Failed to get collection");
+        let db = memfuse_db::MemFuse::open(temp_dir.path()).await.unwrap();
+        let collection = db.collection("test_col").await.unwrap();
 
-        let report = pipeline.ingest_file(&file_path, &collection).await.expect("Ingest file failed");
+        let report = pipeline.ingest_file(&file_path, &collection).await.unwrap();
         assert_eq!(report.chunks_created, 0);
         assert!(!report.errors.is_empty());
         assert!(
@@ -476,22 +468,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_partial_failure_error_aggregation() {
-        let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+        let temp_dir = tempfile::tempdir().unwrap();
         let file_path = temp_dir.path().join("test_partial.md");
         // Create 3 long sections with distinct headings so MarkdownChunker creates 3 separate chunks (>50 tokens each)
         let chunk1 = format!("# Section 1\n{}\nChunk Odd 1\n\n", "word ".repeat(60));
         let chunk2 = format!("# Section 2\n{}\nChunk Even 2\n\n", "word ".repeat(60));
         let chunk3 = format!("# Section 3\n{}\nChunk Odd 3\n\n", "word ".repeat(60));
         let content = format!("{chunk1}{chunk2}{chunk3}");
-        std::fs::write(&file_path, content).expect("Failed to write partial md");
+        std::fs::write(&file_path, content).unwrap();
 
         let embedder = Arc::new(MockEmbedder { fail_on_even: true });
         let pipeline = IngestionPipeline::new(embedder);
 
-        let db = memfuse_db::MemFuse::open(temp_dir.path()).await.expect("Failed to open db");
-        let collection = db.collection("test_col").await.expect("Failed to get collection");
+        let db = memfuse_db::MemFuse::open(temp_dir.path()).await.unwrap();
+        let collection = db.collection("test_col").await.unwrap();
 
-        let report = pipeline.ingest_file(&file_path, &collection).await.expect("Ingest file failed");
+        let report = pipeline.ingest_file(&file_path, &collection).await.unwrap();
         assert_eq!(report.chunks_created, 2);
         assert_eq!(report.errors.len(), 1);
         assert!(report.errors[0].contains("Embedding fehlgeschlagen"));

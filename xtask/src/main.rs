@@ -593,10 +593,9 @@ fn generate_crate_inventory_section(crates: &[CrateInfo]) -> String {
     out.push_str("| :--- | :---: | :---: | :--- | :--- |\n");
 
     for c in crates {
-        let loc_formatted = format_loc(c.loc);
         out.push_str(&format!(
             "| `{}` | {} | {} | {} | {} |\n",
-            c.name, c.layer, loc_formatted, c.status, c.description
+            c.name, c.layer, c.loc, c.status, c.description
         ));
     }
 
@@ -618,7 +617,6 @@ pub fn run_sync_docs(check_only: bool) -> bool {
         "=== Running xtask sync-docs (check_only={}) ===",
         check_only
     );
-    let mut success = true;
     let tags = scan_tags("crates");
     println!("Found {} code tags across crates/.", tags.len());
 
@@ -635,11 +633,6 @@ pub fn run_sync_docs(check_only: bool) -> bool {
     let re = Regex::new(r"\| LAST_SYNC \| `[^`]+` \|").unwrap();
     let norm_current = re.replace_all(current_ws.trim(), "| LAST_SYNC | `NORMALIZED` |");
     let norm_full = re.replace_all(full_working_state.trim(), "| LAST_SYNC | `NORMALIZED` |");
-
-    let current_ws = fs::read_to_string("WORKING_STATE.md").unwrap_or_default();
-    let re = Regex::new(r"\| LAST_SYNC \| `[^`]+` \|").unwrap();
-    let norm_current = re.replace_all(current_ws.trim(), "| LAST_SYNC | `NORMALIZED` |");
-    let norm_full = re.replace_all(full_ws.trim(), "| LAST_SYNC | `NORMALIZED` |");
 
     if check_only {
         let mut drift = false;
@@ -755,121 +748,15 @@ pub fn run_check_consistency() -> bool {
         }
     }
 
-    if success {
-        println!("✅ All completed anchors have required independent review coverage.");
-    }
-    success
-}
-
-pub fn run_check_consistency() -> bool {
-    println!("=== xtask check-consistency ===");
-    let crates = get_workspace_crates();
-    let count = crates.len();
-    println!("Verified workspace crate count: {}", count);
-    println!("=== xtask check-consistency PASSED ===");
-    true
-}
-
-// --- NEW CONTEXT & AUDIT COMMAND IMPLEMENTATIONS ---
-
-fn severity_weight(sev: Option<&str>) -> usize {
-    match sev.unwrap_or("").to_uppercase().as_str() {
-        "BLOCKER" => 4,
-        "CRITICAL" => 3,
-        "MAJOR" => 2,
-        "MINOR" => 1,
-        _ => 0,
-    }
-}
-
-pub fn run_context_digest(crate_filter: Option<String>, format: &str) -> Result<(), String> {
-    let all_tags = scan_tags("crates");
-
-    let filtered_tags: Vec<_> = if let Some(ref cf) = crate_filter {
-        all_tags
-            .into_iter()
-            .filter(|t| t.file_path.contains(cf))
-            .collect()
-    } else {
-        all_tags
-    };
-
-    let mut crate_stats: BTreeMap<String, CrateStats> = BTreeMap::new();
-
-    for t in &filtered_tags {
-        if let Some(cname) = extract_crate_name(&t.file_path) {
-            let entry = crate_stats.entry(cname).or_insert(CrateStats {
-                blockers: 0,
-                criticals: 0,
-                anchors: 0,
-            });
-            if t.tag_type == "ANCHOR" && !t.is_resolved {
-                entry.anchors += 1;
-            } else if t.tag_type == "AI-TAG" && !t.is_resolved {
-                match t.severity.as_deref().unwrap_or("") {
-                    "BLOCKER" => entry.blockers += 1,
-                    "CRITICAL" => entry.criticals += 1,
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    let blockers: Vec<_> = filtered_tags
-        .iter()
-        .filter(|t| {
-            !t.is_resolved && severity_weight(t.severity.as_deref()) >= 3 && t.tag_type == "AI-TAG"
-        })
-        .cloned()
-        .collect();
-
-    let open_anchors: Vec<_> = filtered_tags
-        .iter()
-        .filter(|t| !t.is_resolved && t.tag_type == "ANCHOR")
-        .cloned()
-        .collect();
-
-    let crates = get_workspace_crates();
-    let mut crate_stats = BTreeMap::new();
-    for c in &crates {
-        let crate_tags: Vec<_> = filtered_tags.iter().filter(|t| t.file_path.contains(&c.path)).collect();
-        let b_count = crate_tags.iter().filter(|t| !t.is_resolved && t.severity.as_deref() == Some("BLOCKER")).count();
-        let c_count = crate_tags.iter().filter(|t| !t.is_resolved && t.severity.as_deref() == Some("CRITICAL")).count();
-        let a_count = crate_tags.iter().filter(|t| !t.is_resolved && t.tag_type == "ANCHOR").count();
-        crate_stats.insert(c.name.clone(), CrateStats {
-            blockers: b_count,
-            criticals: c_count,
-            anchors: a_count,
-        });
-    }
-
-    let digest = ContextDigest {
-        timestamp: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-        session: env::var("JULIUS_SESSION_ID").unwrap_or_else(|_| "unknown".to_string()),
-        blockers,
-        open_anchors,
-        crate_stats,
-    };
-
-    match format {
-        "json" => {
-            let json = serde_json::to_string_pretty(&digest)
-                .map_err(|e| format!("Serialization error: {}", e))?;
-            println!("{}", json);
-        }
-        "text" => {
-            println!("=== CONTEXT DIGEST ===");
-            println!("Timestamp: {}", digest.timestamp);
-            println!("Session:   {}", digest.session);
-            println!("\n🚨 CRITICAL BLOCKERS ({})", digest.blockers.len());
-            for b in &digest.blockers {
-                println!(
-                    "  [{}] {} ({}) - {}:{}",
-                    b.id.as_deref().unwrap_or("N/A"),
-                    b.category.as_deref().unwrap_or("GENERIC"),
-                    b.severity.as_deref().unwrap_or("CRITICAL"),
-                    b.file_path,
-                    b.line_num
+    // 2. Check AGENTS.md crate count claim
+    if let Ok(agents_content) = fs::read_to_string("AGENTS.md") {
+        let re_agents = Regex::new(r"Workspace Inventory \((\d+) Crates\)").unwrap();
+        if let Some(caps) = re_agents.captures(&agents_content) {
+            let claimed_count: usize = caps[1].parse().unwrap_or(0);
+            if claimed_count != actual_count {
+                eprintln!(
+                    "❌ Consistency error: AGENTS.md claims {} crates, but Cargo.toml has {} workspace crates!",
+                    claimed_count, actual_count
                 );
                 failed = true;
             } else {
@@ -949,10 +836,11 @@ pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
                 failed = true;
                 continue;
             }
-        }
-        other => return Err(format!("Unsupported format: {}", other)),
-    }
-}
+        };
+
+        let is_sensitive = anchor.category.as_deref() == Some("CRITICAL")
+            || anchor.severity.as_deref() == Some("CRITICAL")
+            || anchor.raw.contains("CRITICAL");
 
         let required_passes = if is_sensitive { 3 } else { 2 };
 

@@ -1,10 +1,3 @@
-// FILE-CONTEXT
-// ZWECK: Cold-boot protection and explicit Zeroize discipline for volatile encryption keys.
-// INVARIANTEN: Key bytes held in Zeroizing<[u8; 32]>. emergency_wipe explicitly zeroizes memory.
-// NICHT-OFFENSICHTLICH: Debug implementation redacts secret bytes. Constant-time equality comparison.
-// HOTSPOTS: [10-60]
-// STAND: TS:2026-08-30T18:52:02Z (SESSION: 20260830)
-
 #![cfg_attr(not(test), forbid(unsafe_code))]
 
 use zeroize::{Zeroize, Zeroizing};

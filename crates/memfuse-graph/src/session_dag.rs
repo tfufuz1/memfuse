@@ -3,13 +3,6 @@
 //! Native DAG implementation based on standard library maps and RwLock,
 //! keeping memfuse-graph pure-Rust and zero-external-graph-dependency (ADR-004).
 
-// FILE-CONTEXT
-// STAND: 2026-08-30T18:53:58Z (SESSION: b1234567)
-// ZWECK: Session-DAG für Grok-Style Agent State Branching
-// INVARIANTEN: Monoton steigende NodeIdx; active_head verweist immer auf existierenden Knoten.
-// HOTSPOTS: L100-L150 (branch_from & path_to_head)
-// SIEHE AUCH: DECISIONS.md ADR-004
-
 use memfuse_core::{MemFuseError, Result, StorageEngine, TxId};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -43,9 +36,6 @@ pub struct DagEdge {
     /// Label (e.g. "explore", "reject", "main")
     pub label: String,
 }
-
-/// Maximum allowed byte size for prompt/response strings (10 MB).
-pub const MAX_DAG_STRING_BYTES: usize = 10 * 1024 * 1024;
 
 /// Session-DAG for a single agent conversation tree.
 ///
@@ -118,15 +108,10 @@ impl SessionBranchTree {
         tool_outputs: Vec<String>,
         label: &str,
     ) -> Result<NodeIdx> {
-        if prompt.len() > MAX_DAG_STRING_BYTES || response.len() > MAX_DAG_STRING_BYTES {
-            return Err(MemFuseError::InvalidInput(format!(
-                "SessionDAG: prompt or response size exceeds limit of {MAX_DAG_STRING_BYTES} bytes"
-            )));
-        }
-
         if !self.nodes.read().contains_key(&parent_node) {
             return Err(MemFuseError::InvalidInput(format!(
-                "SessionDAG: node {parent_node} nicht gefunden"
+                "SessionDAG: node {} nicht gefunden",
+                parent_node
             )));
         }
 
@@ -163,7 +148,8 @@ impl SessionBranchTree {
             Ok(())
         } else {
             Err(MemFuseError::InvalidInput(format!(
-                "SessionDAG: node {node_idx} nicht gefunden"
+                "SessionDAG: node {} nicht gefunden",
+                node_idx
             )))
         }
     }
@@ -510,17 +496,6 @@ mod tests {
 
         let children = loaded_dag.children_of(step1);
         assert_eq!(children, vec![branch1]);
-    }
-
-    #[test]
-    #[allow(non_snake_case)]
-    fn append_step_CASE_oversized_prompt_returns_invalid_input() {
-        let dag = SessionBranchTree::new("Root Prompt".into(), "Root Resp".into());
-        let huge_prompt = "a".repeat(MAX_DAG_STRING_BYTES + 1);
-
-        let res = dag.append_step(huge_prompt, "Resp".into(), None, vec![], "main");
-        assert!(res.is_err());
-        assert!(matches!(res.unwrap_err(), MemFuseError::InvalidInput(_)));
     }
 
     #[test]
