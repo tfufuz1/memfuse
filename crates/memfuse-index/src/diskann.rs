@@ -1,10 +1,11 @@
-//! DiskANN Out-of-Core Vector Search (WP-4.3).
 // FILE-CONTEXT
-// STAND: 2026-08-27T14:32:00Z
-// ZWECK: DiskANN-Graphindex für Approximate Nearest Neighbor Search
-// INVARIANTEN: unsafe nur hier erlaubt (ADR-017); Graph-Invarianten nach jedem Insert prüfen
-// NICHT-OFFENSICHTLICH: SAFETY-Kommentar VOR jedem unsafe-Block Pflicht (llm_comment_system.md §LEVEL-6)
-// SIEHE AUCH: distance.rs, DECISIONS.md ADR-017
+// ZWECK: DiskANN-Graphindex für Out-of-Core Approximate Nearest Neighbor Search (WP-4.3).
+// INVARIANTEN: Lock-Hierarchie: header -> mmap -> cache / quantizer / doc_ids; atomic rename + parent dir sync bei file persistence.
+// NICHT-OFFENSICHTLICH: Mmap für Vektor- & Graphlesezugriffe, unsafe Block benötigt 4-Punkt SAFETY-Kommentar.
+// HOTSPOTS: diskann.rs (DiskAnnIndex::search_internal, write_to_file, load_node)
+// STAND: TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)
+
+//! DiskANN Out-of-Core Vector Search (WP-4.3).
 
 #![doc(hidden)]
 
@@ -492,6 +493,14 @@ impl DiskAnnIndex {
         tokio::fs::rename(&tmp_path, &self.inner.config.index_path)
             .await
             .map_err(MemFuseError::Io)?;
+
+        // Fsync parent directory after rename for POSIX atomic directory entry durability
+        if let Some(parent) = self.inner.config.index_path.parent() {
+            let parent_dir = tokio::fs::File::open(parent)
+                .await
+                .map_err(MemFuseError::Io)?;
+            parent_dir.sync_all().await.map_err(MemFuseError::Io)?;
+        }
         Ok(())
     }
 
@@ -748,6 +757,13 @@ impl DiskAnnIndex {
     }
 
     pub async fn search_internal(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>> {
+        if k > memfuse_core::MAX_SEARCH_K {
+            return Err(MemFuseError::invalid_input(format!(
+                "Requested k ({}) exceeds maximum allowed search limit ({})",
+                k,
+                memfuse_core::MAX_SEARCH_K
+            )));
+        }
         let header = {
             let guard = self.inner.header.read();
             *guard

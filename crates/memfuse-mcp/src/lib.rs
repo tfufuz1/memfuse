@@ -522,12 +522,6 @@ impl McpServer {
                         if s.trim().is_empty() {
                             return Err(McpError::invalid_params("id cannot be empty"));
                         }
-                        if s.len() > 256 {
-                            return Err(McpError::invalid_params(format!(
-                                "id length exceeds limit: {} bytes > 256 limit",
-                                s.len()
-                            )));
-                        }
                         s
                     }
                     None => {
@@ -547,15 +541,6 @@ impl McpServer {
                             "Invalid params: 'vector' must be an array of numbers",
                         )
                     })?;
-                    if arr.is_empty() {
-                        return Err(McpError::invalid_params("vector cannot be empty"));
-                    }
-                    if arr.len() > 10_000 {
-                        return Err(McpError::invalid_params(format!(
-                            "vector dimension exceeds 10000: got {}",
-                            arr.len()
-                        )));
-                    }
                     let mut vec = Vec::with_capacity(arr.len());
                     for elem in arr {
                         let num = elem.as_f64().ok_or_else(|| {
@@ -563,13 +548,7 @@ impl McpServer {
                                 "Invalid params: 'vector' must contain numbers",
                             )
                         })?;
-                        let val_f32 = num as f32;
-                        if val_f32.is_nan() || val_f32.is_infinite() {
-                            return Err(McpError::invalid_params(
-                                "vector contains NaN or Inf values",
-                            ));
-                        }
-                        vec.push(val_f32);
+                        vec.push(num as f32);
                     }
                     Some(vec)
                 } else {
@@ -716,12 +695,6 @@ impl McpServer {
                         })?;
                         if s.trim().is_empty() {
                             return Err(McpError::invalid_params("id cannot be empty"));
-                        }
-                        if s.len() > 256 {
-                            return Err(McpError::invalid_params(format!(
-                                "id length exceeds limit: {} bytes > 256 limit",
-                                s.len()
-                            )));
                         }
                         s
                     }

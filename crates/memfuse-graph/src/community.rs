@@ -539,6 +539,19 @@ mod tests {
 
     #[tokio::test]
     #[allow(non_snake_case)]
+    async fn detect_communities_CASE_empty_graph() {
+        let graph = CsrGraph::new();
+        let config = CommunityDetectionConfig::default();
+
+        let assignments = detect_communities(&graph, &config).await.unwrap(); // unwrap allowed
+        assert!(
+            assignments.is_empty(),
+            "Community detection on empty graph must return empty assignments"
+        );
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
     async fn detect_communities_CASE_single_node() {
         let graph = CsrGraph::new();
         let tx = TxId::new(1);

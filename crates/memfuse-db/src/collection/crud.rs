@@ -296,12 +296,12 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     ) -> Result<()> {
         if docs.is_empty() {
             return Err(memfuse_core::MemFuseError::invalid_input(
-                "insert_many called with empty docs batch",
+                "insert_many requires at least one document",
             ));
         }
         if docs.len() > 10_000 {
             return Err(memfuse_core::MemFuseError::invalid_input(format!(
-                "insert_many batch size {} exceeds maximum allowed limit of 10000",
+                "Batch size {} exceeds maximum allowed limit 10000",
                 docs.len()
             )));
         }
@@ -373,12 +373,12 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     ) -> Result<()> {
         if docs.is_empty() {
             return Err(memfuse_core::MemFuseError::invalid_input(
-                "upsert_many called with empty docs batch",
+                "upsert_many requires at least one document",
             ));
         }
         if docs.len() > 10_000 {
             return Err(memfuse_core::MemFuseError::invalid_input(format!(
-                "upsert_many batch size {} exceeds maximum allowed limit of 10000",
+                "Batch size {} exceeds maximum allowed limit 10000",
                 docs.len()
             )));
         }

@@ -1,9 +1,3 @@
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       Morphologie-Analyse (Stemming, Lemmatisierung für BM25)
-// INVARIANTEN: Input to decompose() MUST be lowercased (e.g. via normalize_umlauts) to prevent debug panics
-// HOTSPOTS:    analyze(), decompose(), normalize_umlauts() — Deutsch + Englisch Support
-
 use std::collections::HashSet;
 
 /// KMU-Fachvokabular und allgemeiner deutscher Wortschatz.

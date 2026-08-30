@@ -77,7 +77,6 @@ pub struct PollingDocumentEventSource<S: StorageEngine> {
     last_seen_seq: u64,
     poll_interval: Duration,
     pending_events: VecDeque<BackgroundEvent>,
-    max_pending_capacity: usize,
 }
 
 impl<S: StorageEngine> PollingDocumentEventSource<S> {
@@ -97,7 +96,6 @@ impl<S: StorageEngine> PollingDocumentEventSource<S> {
             last_seen_seq: 0,
             poll_interval,
             pending_events: VecDeque::new(),
-            max_pending_capacity,
         }
     }
 
@@ -141,12 +139,8 @@ impl<S: StorageEngine> EventSource for PollingDocumentEventSource<S> {
 
             for (key, val) in current_entries {
                 if previous_entries.get(&key) != Some(&val) {
-                    if self.pending_events.len() >= self.max_pending_capacity {
-                        tracing::warn!(
-                            "PollingDocumentEventSource: Pending events queue at capacity ({}), dropping event for key {}",
-                            self.max_pending_capacity,
-                            String::from_utf8_lossy(&key)
-                        );
+                    if self.pending_events.len() >= MAX_EVENT_SOURCE_CAPACITY {
+                        tracing::warn!("PollingDocumentEventSource: Pending events queue capacity limit ({}) reached, dropping remaining events", MAX_EVENT_SOURCE_CAPACITY);
                         break;
                     }
                     let payload = serde_json::from_slice(&val).unwrap_or_else(|_| {

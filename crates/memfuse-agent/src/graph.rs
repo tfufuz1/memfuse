@@ -60,10 +60,19 @@ impl StateGraph {
         description: &str,
         node_type: NodeType,
         handler: Option<&str>,
-    ) -> memfuse_core::Result<()> {
-        if id.trim().is_empty() {
-            return Err(memfuse_core::MemFuseError::InvalidInput(
-                "StateGraph node id must not be empty".to_string(),
+    ) -> Result<()> {
+        validate_node_id(id)?;
+
+        if description.len() > MAX_TEXT_LEN {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Node description length {} exceeds maximum allowed length of {}",
+                description.len(),
+                MAX_TEXT_LEN
+            )));
+        }
+        if description.contains('\0') {
+            return Err(MemFuseError::InvalidInput(
+                "Node description cannot contain null bytes".to_string(),
             ));
         }
         if description.trim().is_empty() {
@@ -84,6 +93,7 @@ impl StateGraph {
         Ok(())
     }
 
+    /// Adds a node to the graph, panicking if validation fails.
     pub fn add_node(
         &mut self,
         id: &str,
@@ -103,11 +113,23 @@ impl StateGraph {
         to: &str,
         condition: Option<&str>,
         priority: u8,
-    ) -> memfuse_core::Result<()> {
-        if from.trim().is_empty() || to.trim().is_empty() {
-            return Err(memfuse_core::MemFuseError::InvalidInput(
-                "WorkflowEdge endpoints 'from' and 'to' must not be empty".to_string(),
-            ));
+    ) -> Result<()> {
+        validate_node_id(from)?;
+        validate_node_id(to)?;
+
+        if let Some(cond) = condition {
+            if cond.len() > MAX_TEXT_LEN {
+                return Err(MemFuseError::InvalidInput(format!(
+                    "Edge condition length {} exceeds maximum allowed length of {}",
+                    cond.len(),
+                    MAX_TEXT_LEN
+                )));
+            }
+            if cond.contains('\0') {
+                return Err(MemFuseError::InvalidInput(
+                    "Edge condition cannot contain null bytes".to_string(),
+                ));
+            }
         }
 
         self.edges.push(WorkflowEdge {
@@ -119,6 +141,7 @@ impl StateGraph {
         Ok(())
     }
 
+    /// Adds an edge to the graph, panicking if validation fails.
     pub fn add_edge(&mut self, from: &str, to: &str, condition: Option<&str>, priority: u8) {
         self.try_add_edge(from, to, condition, priority)
             .unwrap_or_else(|e| panic!("Failed to add WorkflowEdge: {e}"));

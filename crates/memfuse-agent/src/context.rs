@@ -121,6 +121,7 @@ impl AgentContext {
         })
     }
 
+    /// Constructs an `AgentContext`, panicking if `task_id` or `start_node` is invalid.
     pub fn new(
         task_id: impl Into<String>,
         start_node: impl Into<String>,
@@ -129,7 +130,7 @@ impl AgentContext {
         budget: TokenBudget,
     ) -> Self {
         Self::try_new(task_id, start_node, db, state_collection, budget)
-            .unwrap_or_else(|e| panic!("Failed to initialize AgentContext: {e}"))
+            .expect("Invalid task_id or start_node in AgentContext::new")
     }
 
     /// Integrates a background telemetry event into the agent context memory and history.

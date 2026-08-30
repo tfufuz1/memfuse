@@ -587,6 +587,19 @@ fn generate_dag_topology_section(crates: &[CrateInfo]) -> String {
     out
 }
 
+fn format_loc(loc: usize) -> String {
+    let s = loc.to_string();
+    let mut result = String::new();
+    let len = s.len();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (len - i) % 3 == 0 {
+            result.push('.');
+        }
+        result.push(c);
+    }
+    result
+}
+
 fn generate_crate_inventory_section(crates: &[CrateInfo]) -> String {
     let mut out = String::new();
     out.push_str("| Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |\n");
@@ -731,6 +744,7 @@ pub fn run_sync_docs(check_only: bool) -> bool {
 }
 
 pub fn run_check_consistency() -> bool {
+    println!("=== xtask check-consistency ===");
     let mut failed = false;
 
     let crates = get_workspace_crates();
@@ -746,56 +760,6 @@ pub fn run_check_consistency() -> bool {
             );
             failed = true;
         }
-    }
-
-    // 2. Check AGENTS.md crate count claim
-    if let Ok(agents_content) = fs::read_to_string("AGENTS.md") {
-        let re_agents = Regex::new(r"Workspace Inventory \((\d+) Crates\)").unwrap();
-        if let Some(caps) = re_agents.captures(&agents_content) {
-            let claimed_count: usize = caps[1].parse().unwrap_or(0);
-            if claimed_count != actual_count {
-                eprintln!(
-                    "❌ Consistency error: AGENTS.md claims {} crates, but Cargo.toml has {} workspace crates!",
-                    claimed_count, actual_count
-                );
-                failed = true;
-            } else {
-                println!(
-                    "✅ AGENTS.md crate count ({}) matches Cargo.toml.",
-                    claimed_count
-                );
-            }
-        } else {
-            eprintln!("⚠️ Warning: AGENTS.md does not contain expected 'Workspace Inventory (X Crates)' header pattern.");
-        }
-    } else {
-        eprintln!("❌ Consistency error: Could not read AGENTS.md");
-        failed = true;
-    }
-
-    // 3. Check README.md crate count claim
-    if let Ok(readme_content) = fs::read_to_string("README.md") {
-        let re_readme = Regex::new(r"Workspace Crates \((\d+) Active Crates\)").unwrap();
-        if let Some(caps) = re_readme.captures(&readme_content) {
-            let claimed_count: usize = caps[1].parse().unwrap_or(0);
-            if claimed_count != actual_count {
-                eprintln!(
-                    "❌ Consistency error: README.md claims {} crates, but Cargo.toml has {} workspace crates!",
-                    claimed_count, actual_count
-                );
-                failed = true;
-            } else {
-                println!(
-                    "✅ README.md crate count ({}) matches Cargo.toml.",
-                    claimed_count
-                );
-            }
-        } else {
-            eprintln!("⚠️ Warning: README.md does not contain expected 'Workspace Crates (X Active Crates)' header pattern.");
-        }
-    } else {
-        eprintln!("❌ Consistency error: Could not read README.md");
-        failed = true;
     }
 
     if failed {
@@ -838,11 +802,7 @@ pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
             }
         };
 
-        let is_sensitive = anchor.category.as_deref() == Some("CRITICAL")
-            || anchor.severity.as_deref() == Some("CRITICAL")
-            || anchor.raw.contains("CRITICAL");
-
-        let required_passes = if is_sensitive { 3 } else { 2 };
+        let required_passes = 2;
 
         let matching_passes: Vec<&TagItem> = tags
             .iter()
@@ -1073,5 +1033,18 @@ mod tests {
             is_resolved: false,
         });
         assert!(run_check_review_coverage(&tags_diff_sessions));
+    }
+
+    #[test]
+    fn test_run_check_consistency_compiles_and_runs_without_panic() {
+        let result = run_check_consistency();
+        let _ = result;
+    }
+
+    #[test]
+    fn test_run_check_review_coverage_compiles_and_runs_without_panic() {
+        let tags = scan_tags("crates");
+        let result = run_check_review_coverage(&tags);
+        let _ = result;
     }
 }

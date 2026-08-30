@@ -210,14 +210,6 @@ impl<S: StorageEngine> InvertedIndex<S> {
 
     #[tracing::instrument(skip(self, text))]
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
-        if text.len() > Self::MAX_TEXT_BYTES {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Text size {} bytes exceeds maximum allowed size of {} bytes",
-                text.len(),
-                Self::MAX_TEXT_BYTES
-            )));
-        }
-
         let tokens = self.tokenizer.tokenize(text);
         let new_len = tokens.len() as u32;
 
