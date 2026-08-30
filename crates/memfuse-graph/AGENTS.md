@@ -12,4 +12,4 @@
 - `rules/llm_protocol.md` — State-Transition Validation
 
 ## Offene Pflicht-Tests (ANCHOR-Status)
-- ANCHOR[TEST:GRP-001] STATUS:DONE — Multi-hop Traversal Speed Test unter hoher Kanten-Dichte (implemented in tests/csr_benchmark.rs)
+- ANCHOR[TEST:GRP-001] STATUS:OPEN — Multi-hop Traversal Speed Test unter hoher Kanten-Dichte

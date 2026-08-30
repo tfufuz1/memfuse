@@ -121,13 +121,6 @@ fn validate_id(id: &str) -> PyResult<()> {
             "Document ID cannot be empty or whitespace-only",
         ));
     }
-    if id.len() > MAX_ID_LENGTH {
-        return Err(MemFuseValueError::new_err(format!(
-            "Document ID exceeds maximum length of {} bytes. Got: {}",
-            MAX_ID_LENGTH,
-            id.len()
-        )));
-    }
     Ok(())
 }
 
