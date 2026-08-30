@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// ZWECK: Transparent encrypted WAL chunk provider and constant-time HMAC-SHA256 integrity verifier.
+// INVARIANTEN: EncryptedWal prepends 12-byte nonce to ciphertext. IntegrityVerifier checks sequence HMAC chain in constant time.
+// NICHT-OFFENSICHTLICH: Subtle constant-time byte comparisons prevent timing attacks. All operations lock-free & I/O-free.
+// HOTSPOTS: [35-180]
+// STAND: TS:2026-08-30T18:52:02Z (SESSION: 20260830)
+
 //! Encryption at Rest layer for LSM/WAL components (WP-3.2)
 //!
 //! Secures blocks of data transparently via ChaCha20Poly1305 / AES-GCM-SIV.
@@ -37,6 +44,17 @@ impl EncryptedWal {
     /// Creates a new EncryptedWal with per-file key derivation to prevent nonce-reuse.
     /// `file_id` (e.g., filename) is used to derive a unique sub-key for this stream.
     pub fn new(key_manager: KeyManager, file_id: &[u8]) -> Result<Self> {
+        if file_id.is_empty() {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "file_id cannot be empty".to_string(),
+            ));
+        }
+        if file_id.len() > 10_000 {
+            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+                "file_id length {} exceeds maximum allowed bound of 10000 bytes",
+                file_id.len()
+            )));
+        }
         let sub_km = key_manager.derive_file_key(file_id)?;
         Ok(Self {
             key_manager: sub_km,
@@ -56,9 +74,17 @@ impl EncryptedWal {
     /// Decrypts the WAL chunk by extracting the prepended 12-byte nonce from the data.
     pub fn decrypt_chunk(&self, data: &[u8]) -> Result<Vec<u8>> {
         if data.len() < 12 {
-            return Err(memfuse_core::MemFuseError::Crypto(
+            return Err(memfuse_core::MemFuseError::InvalidInput(
                 "Encrypted WAL chunk too short for 12-byte nonce".into(),
             ));
+        }
+        const MAX_CHUNK_SIZE: usize = 100 * 1024 * 1024; // 100 MB
+        if data.len() > MAX_CHUNK_SIZE {
+            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+                "Encrypted chunk size {} exceeds maximum permitted limit of {} bytes",
+                data.len(),
+                MAX_CHUNK_SIZE
+            )));
         }
         let mut nonce = [0u8; 12];
         nonce.copy_from_slice(&data[0..12]);
@@ -89,6 +115,11 @@ pub struct WalHmac {
 
 impl WalHmac {
     pub fn new(integrity_key: &[u8]) -> Result<Self> {
+        if integrity_key.is_empty() {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "Key cannot be empty".to_string(),
+            ));
+        }
         let mut mac = Hmac::<Sha256>::new_from_slice(integrity_key)
             .map_err(|e| memfuse_core::MemFuseError::Crypto(format!("HMAC key error: {}", e)))?;
         mac.update(b"memfuse-wal-v1");
@@ -429,5 +460,47 @@ mod tests {
         } else {
             panic!("Expected WalCorruption error");
         }
+    }
+
+    #[test]
+    fn test_encrypted_wal_new_empty_id() {
+        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
+        let res = EncryptedWal::new(km, b"");
+        assert!(matches!(
+            res,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn test_decrypt_chunk_too_short() {
+        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
+        let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
+        let res = wal.decrypt_chunk(&[0u8; 11]);
+        assert!(matches!(
+            res,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn test_decrypt_chunk_oversized() {
+        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
+        let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
+        let data = vec![0u8; 100 * 1024 * 1024 + 1];
+        let res = wal.decrypt_chunk(&data);
+        assert!(matches!(
+            res,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn test_wal_hmac_empty_key() {
+        let res = WalHmac::new(b"");
+        assert!(matches!(
+            res,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
     }
 }
