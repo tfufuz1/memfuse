@@ -252,9 +252,7 @@ fn memfuse_err(e: memfuse_core::MemFuseError) -> PyErr {
         let py_err = match dto.kind.as_str() {
             "NotFound" => PyKeyError::new_err(dto.message.clone()),
             "Conflict" | "Transaction" => PyRuntimeError::new_err(dto.message.clone()),
-            "PolicyViolation" | "NamespaceViolation" => {
-                PyPermissionError::new_err(dto.message.clone())
-            }
+            "PolicyViolation" => PyPermissionError::new_err(dto.message.clone()),
             "InvalidInput" => PyValueError::new_err(dto.message.clone()),
             "Storage" | "Io" | "WalCorruption" | "ChecksumMismatch" => {
                 MemFuseIOError::new_err(dto.message.clone())

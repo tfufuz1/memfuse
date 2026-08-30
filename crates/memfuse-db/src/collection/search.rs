@@ -57,6 +57,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 query.len()
             )));
         }
+        if k == 0 {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Search k must be greater than 0",
+            ));
+        }
         let k = k.min(memfuse_core::MAX_SEARCH_K);
         // 🛡️ SICHERUNG: Snapshot-Isolation (FIND-DB-003)
         // Wir pinnen den Snapshot für die gesamte Dauer der gefilterten Suche,
@@ -223,6 +228,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 self.dimension,
                 query.len()
             )));
+        }
+        if k == 0 {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Search k must be greater than 0",
+            ));
         }
         let k = k.min(memfuse_core::MAX_SEARCH_K);
         let scored_docs = self.index.search_filtered(query, k, filter).await?;
