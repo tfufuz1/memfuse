@@ -2136,7 +2136,7 @@ impl VectorIndex for HnswIndex {
     }
 
     fn is_rebuild_required(&self) -> bool {
-        self.is_rebuild_required()
+        self.inner.is_rebuild_required()
     }
 
     fn trigger_rebuild_async(&self) {
