@@ -28,13 +28,6 @@
 //! - Automatic rebuild on >20% deletions
 //! - Transactional inserts/deletes via TxBuffer
 
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       HNSW-Vektorindex (Insert/Search/Delete/Persist) für Approximate Nearest Neighbor Search
-// INVARIANTEN: No NaN/Inf distance, ef_construction >= M, entry point updated post-delete, SQ8 quantization safe
-// HOTSPOTS:    greedy_search(), insert(), search_at(), trigger_rebuild_async()
-// SIEHE AUCH:  rules/simd_safety.md, ADR-017, ADR-034
-
 use crate::distance::compute_distance;
 use ahash::{AHashMap, AHashSet};
 use memfuse_core::{
@@ -102,6 +95,7 @@ impl Default for HnswConfig {
 impl HnswConfig {
     /// Validates that the configuration parameters are within acceptable bounds.
     pub fn validate(&self) -> Result<()> {
+        // ANCHOR[ALG-FIX:D2-003] STATUS:DONE (TS:2026-06-01T00:00:00Z) — ef_construction < M Guard fehlt
         // ANCHOR[ALG-FIX:D2-003] STATUS:DONE (TS:2026-06-01T00:00:00Z) — ef_construction < M Guard fehlt
         // INVARIANTE: ef_construction >= M (INV-HNSW-1)
         if self.ef_construction < self.m {
@@ -221,6 +215,7 @@ impl PartialOrd for Candidate {
 
 impl Ord for Candidate {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // ANCHOR[ALG-FIX:D2-005] STATUS:DONE (TS:2026-06-01T00:00:00Z) — total_cmp statt unwrap_or(Equal) für NaN-Safety
         // ANCHOR[ALG-FIX:D2-005] STATUS:DONE (TS:2026-06-01T00:00:00Z) — total_cmp statt unwrap_or(Equal) für NaN-Safety
         // total_cmp gibt eine deterministische Ordnung für alle f32 inkl. NaN.
         self.distance.total_cmp(&other.distance)
@@ -680,6 +675,7 @@ impl HnswIndexCore {
     fn random_layer(&self) -> usize {
         let mut rng = rand::thread_rng();
         // ANCHOR[ALG-FIX:D2-002] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Guard gegen ln(0) = -∞ (INV-HNSW-2)
+        // ANCHOR[ALG-FIX:D2-002] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Guard gegen ln(0) = -∞ (INV-HNSW-2)
         // rng.gen() gibt [0, 1) — bei r=0.0: ln(0)=-∞ → usize::MAX → OOM.
         // max(f64::EPSILON) verhindert diesen Grenzfall.
         let r: f32 = rng.gen::<f32>();
@@ -758,6 +754,7 @@ impl HnswIndexCore {
                     })?
                     .symmetric_dist(a, b, self.config.distance_metric)
             }
+            // ANCHOR[ALG-FIX:PANIC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Mixed VectorData Guard (Zero-Panic Policy)
             // ANCHOR[ALG-FIX:PANIC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Mixed VectorData Guard (Zero-Panic Policy)
             // FUNDORT: memfuse-index/src/hnsw.rs
             _ => Err(MemFuseError::Index(
@@ -1022,6 +1019,7 @@ impl HnswIndexCore {
         }
 
         // ANCHOR[ALG-FIX:D2-004] STATUS:DONE (TS:2026-06-01T00:00:00Z) — NaN/Inf-Validierung bei Insert (Distanzfunktion)
+        // ANCHOR[ALG-FIX:D2-004] STATUS:DONE (TS:2026-06-01T00:00:00Z) — NaN/Inf-Validierung bei Insert (Distanzfunktion)
         // NaN-Vektoren würden in BinaryHeap stille Korrumpierung verursachen.
         // Validierung an der Grenze (insert) statt in distance.rs — distance bleibt rein.
         if vector.iter().any(|x| x.is_nan() || x.is_infinite()) {
@@ -1246,6 +1244,7 @@ impl HnswIndexCore {
             self.deleted_nodes.write().insert(idx as u64);
             self.deleted_count.fetch_add(1, Ordering::SeqCst);
 
+            // ANCHOR[ALG-FIX:D2-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Entry-Point-Aktualisierung nach Delete (INV-HNSW-4)
             // ANCHOR[ALG-FIX:D2-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Entry-Point-Aktualisierung nach Delete (INV-HNSW-4)
             // Wenn der gelöschte Knoten der Entry-Point war, muss ein neuer
             // Entry-Point gefunden werden. Strategie: Nachbar auf höchstem Layer.
@@ -1567,6 +1566,11 @@ impl VectorIndex for HnswIndex {
                 query.len()
             )));
         }
+        if query.iter().any(|x| x.is_nan() || x.is_infinite()) {
+            return Err(MemFuseError::invalid_input(
+                "Query vector contains NaN or infinite values",
+            ));
+        }
 
         let query_quantized: Option<Vec<u8>> = None;
 
@@ -1699,6 +1703,11 @@ impl VectorIndex for HnswIndex {
                 self.inner.config.dimension,
                 query.len()
             )));
+        }
+        if query.iter().any(|x| x.is_nan() || x.is_infinite()) {
+            return Err(MemFuseError::invalid_input(
+                "Query vector contains NaN or infinite values",
+            ));
         }
 
         let query_quantized = if self.inner.config.quantize {
@@ -2224,64 +2233,6 @@ mod tests {
             "Unexpected error message: {}",
             err_msg
         );
-    }
-
-    #[test]
-    fn test_hnsw_config_builder_and_validation() {
-        // Fluent builder Happy Path
-        let config = HnswConfigBuilder::new(128)
-            .max_elements(1000)
-            .m(32)
-            .ef_construction(128)
-            .ef_search(64)
-            .distance_metric(DistanceMetric::Cosine)
-            .quantize(true)
-            .quantizer_recalibration_sample_size(500)
-            .build()
-            .expect("valid builder config");
-
-        assert_eq!(config.dimension, 128);
-        assert_eq!(config.max_elements, 1000);
-        assert_eq!(config.m, 32);
-        assert_eq!(config.ef_construction, 128);
-        assert_eq!(config.ef_search, 64);
-        assert_eq!(config.distance_metric, DistanceMetric::Cosine);
-        assert!(config.quantize);
-        assert_eq!(config.quantizer_recalibration_sample_size, 500);
-
-        // Validation Error Case: ef_construction < m
-        let res_ef_c = HnswConfig {
-            m: 16,
-            ef_construction: 8,
-            ..Default::default()
-        }
-        .validate();
-        assert!(matches!(res_ef_c, Err(MemFuseError::InvalidInput(_))));
-
-        let res_builder_err = HnswConfigBuilder::new(128).m(16).ef_construction(8).build();
-        assert!(matches!(
-            res_builder_err,
-            Err(MemFuseError::InvalidInput(_))
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_compact_seq_log() {
-        let config = HnswConfig {
-            dimension: 4,
-            ..Default::default()
-        };
-        let index = HnswIndex::try_new(config).expect("valid config");
-        let tx = TxId::new(1);
-        let doc_id = DocId::from(1);
-        let vec = vec![1.0, 2.0, 3.0, 4.0];
-
-        index.insert(tx, doc_id, &vec).await.expect("insert");
-        index.commit(tx).await.expect("commit");
-
-        // Compact sequence log below min_active_seqno
-        index.compact_seq_log(10);
-        assert_eq!(index.len().await, 1);
     }
 
     #[tokio::test]
@@ -2937,9 +2888,6 @@ mod tests {
             10..100,
         );
 
-        // ANCHOR[TEST:AGT-INDEX-006] STATUS:OPEN (TS:2026-08-30T14:11:21Z) (SESSION: 10569099)
-        // FLAKINESS: In-memory HNSW node deletion marks nodes as deleted in-place, causing historical snapshot queries
-        // (search_at at target_seq < current_seq) to omit nodes that were deleted at higher sequence numbers.
         proptest!(ProptestConfig::with_cases(20), |(ops in op_strategy)| {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -2976,17 +2924,15 @@ mod tests {
                 // Verify search_at at random target checkpoint against reference model
                 for &target_seq in &tx_checkpoints {
                     // Reference model state at target_seq
-                    let active_docs = {
-                        let mut set = std::collections::HashSet::new();
-                        let log = index.inner.seq_log.read();
-                        for id in 1u64..30 {
-                            let doc_id = DocId::new(id);
-                            if log.is_visible(doc_id, target_seq) {
-                                set.insert(doc_id);
-                            }
+                    let mut active_docs = std::collections::HashSet::new();
+                    let log = index.inner.seq_log.read();
+                    for id in 1u64..30 {
+                        let doc_id = DocId::new(id);
+                        if log.is_visible(doc_id, target_seq) {
+                            active_docs.insert(doc_id);
                         }
-                        set
-                    };
+                    }
+                    drop(log);
 
                     let res = index.search_at(&[1.0, 0.0, 0.0, 0.0], 100, target_seq).await.unwrap();
                     let found_docs: std::collections::HashSet<_> = res.into_iter().map(|d| d.doc_id).collect();

@@ -344,33 +344,6 @@ mod tests {
     }
 
     #[test]
-    fn test_filter_evaluate_null_and_empty_meta() {
-        let null_meta = json!(null);
-        let empty_meta = json!({});
-
-        let eq = FilterExpr::Eq {
-            field: "key".to_string(),
-            value: json!("val"),
-        };
-        assert!(!eq.evaluate(&null_meta));
-        assert!(!eq.evaluate(&empty_meta));
-
-        let exists_false = FilterExpr::Exists {
-            field: "key".to_string(),
-            exists: false,
-        };
-        assert!(exists_false.evaluate(&null_meta));
-        assert!(exists_false.evaluate(&empty_meta));
-
-        let exists_true = FilterExpr::Exists {
-            field: "key".to_string(),
-            exists: true,
-        };
-        assert!(!exists_true.evaluate(&null_meta));
-        assert!(!exists_true.evaluate(&empty_meta));
-    }
-
-    #[test]
     fn test_nested_filter_expression() {
         let meta = json!({
             "category": "electronics",

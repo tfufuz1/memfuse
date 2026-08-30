@@ -1,3 +1,10 @@
+// FILE-CONTEXT: LSM-backed Inverted Index & Transactional Storage.
+// ZWECK: Speichert Postings-Listen, Dokumentlängen und BM25-Statistiken transaktional im StorageEngine.
+// INVARIANTEN: upsert_document und search_bm25_at beachten MAX_TEXT_BYTES; Lock-Hierarchie: commit_lock (tokio::sync::Mutex) > staged_stats (parking_lot::Mutex).
+// NICHT-OFFENSICHTLICH: Key-Prefixes: "i:" (Inverted), "f:" (Forward), "dl:" (Doc Length), "fw:" (Forward Words), "meta:stats".
+// HOTSPOTS: upsert_document, search_bm25_at, commit_stats
+// STAND: TS:2026-08-30T18:51:48Z (SESSION: 872b1087)
+
 //! LSM-backed Inverted Index.
 // CONSTRAINT: Inverted Index Key-Gen & Cache
 // TARGET: < 20µs für upsert_document
@@ -5,13 +12,6 @@
 // VORHER: 24.6 µs → NACHHER: 18.6 µs (~24% gain)
 // BOTTLENECK: Heap-Allokationen (format!, Vec::new)
 // OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
-
-// FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
-// ZWECK:       BM25-Invertierter Index mit Tombstone-Update-Semantik
-// INVARIANTEN: Tombstone update semantics preserve doc counts without eager deletion; tokenization symmetric across index/search
-// HOTSPOTS:    insert(), delete() (Tombstone-Logik), query()
-// SIEHE AUCH:  crates/memfuse-text/AGENTS.md
 
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use async_trait::async_trait;
@@ -72,6 +72,12 @@ pub(crate) struct StagedStatsChange {
 
 /// An inverted index stored in the LSM engine.
 /// An inverted index tied to a specific collection namespace.
+///
+/// # Concurrency & Lock Hierarchy:
+/// 1. `commit_lock` (`tokio::sync::Mutex`): Ensures single-writer serialization during transactional stats commits.
+/// 2. `staged_stats` (`parking_lot::Mutex`): Synchronous, short-lived spinlock guarding in-memory uncommitted transaction statistics.
+///
+/// **Rule**: `commit_lock` must ALWAYS be acquired BEFORE acquiring `staged_stats`. Never hold `staged_stats` lock across `.await` points.
 pub struct InvertedIndex<S: StorageEngine> {
     storage: Arc<S>,
     prefix: Vec<u8>,
@@ -208,14 +214,11 @@ impl<S: StorageEngine> InvertedIndex<S> {
         k
     }
 
-    /// Maximum allowed raw text size per document (10 MiB) to prevent resource exhaustion.
-    pub const MAX_TEXT_BYTES: usize = 10 * 1024 * 1024;
-
     #[tracing::instrument(skip(self, text))]
     pub async fn upsert_document(&self, tx: TxId, doc_id: DocId, text: &str) -> Result<()> {
         if text.len() > Self::MAX_TEXT_BYTES {
             return Err(MemFuseError::InvalidInput(format!(
-                "Text size {} bytes exceeds maximum allowed size of {} bytes",
+                "Text length {} exceeds maximum allowed size {}",
                 text.len(),
                 Self::MAX_TEXT_BYTES
             )));
@@ -477,6 +480,18 @@ impl<S: StorageEngine> InvertedIndex<S> {
         k: usize,
         max_seq: Option<u64>,
     ) -> Result<Vec<(DocId, f32)>> {
+        if query.is_empty() || k == 0 {
+            return Ok(Vec::new());
+        }
+
+        if query.len() > Self::MAX_TEXT_BYTES {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Query length {} exceeds maximum allowed size {}",
+                query.len(),
+                Self::MAX_TEXT_BYTES
+            )));
+        }
+
         let tokens = self.tokenizer.tokenize(query);
         if tokens.is_empty() {
             return Ok(Vec::new());
@@ -1439,11 +1454,7 @@ mod tests {
         // Search for "rust" when N=2, df=2
         let search_before = index.search_bm25("rust", 10, None).await?;
         assert_eq!(search_before.len(), 2);
-        let score_before_d2 = search_before
-            .iter()
-            .find(|(id, _)| *id == d2)
-            .ok_or_else(|| MemFuseError::InvalidInput("d2 not found in search_before".into()))?
-            .1;
+        let score_before_d2 = search_before.iter().find(|(id, _)| *id == d2).unwrap().1; // unwrap
 
         // Delete doc1
         let tx3 = TxId::new(3);
@@ -1486,11 +1497,7 @@ mod tests {
 
         // Score for "rare" in d2 when N=10, df=2
         let search_before = index.search_bm25("rare", 10, None).await?;
-        let score_before = search_before
-            .iter()
-            .find(|(id, _)| *id == d2)
-            .ok_or_else(|| MemFuseError::InvalidInput("d2 not found in search_before".into()))?
-            .1;
+        let score_before = search_before.iter().find(|(id, _)| *id == d2).unwrap().1; // unwrap
 
         // Delete d1 -> N=9, df=1 for "rare"
         let tx_del = TxId::new(2);
@@ -1499,11 +1506,7 @@ mod tests {
 
         // Score for "rare" in d2 when N=9, df=1
         let search_after = index.search_bm25("rare", 10, None).await?;
-        let score_after = search_after
-            .iter()
-            .find(|(id, _)| *id == d2)
-            .ok_or_else(|| MemFuseError::InvalidInput("d2 not found in search_after".into()))?
-            .1;
+        let score_after = search_after.iter().find(|(id, _)| *id == d2).unwrap().1; // unwrap
 
         // With N=10, df=2: idf_arg = (10 - 2 + 0.5)/(2 + 0.5) = 8.5 / 2.5 = 3.4 -> ln(3.4) ~= 1.2237
         // With N=9, df=1: idf_arg = (9 - 1 + 0.5)/(1 + 0.5) = 8.5 / 1.5 = 5.6667 -> ln(5.6667) ~= 1.7346
@@ -1580,9 +1583,9 @@ mod tests {
             total_tokens: 1337,
             avg_doc_len_x1000: 31833,
         };
-        let bytes = bincode::serialize(&meta).expect("serialization succeeds");
+        let bytes = bincode::serialize(&meta).expect("serialization succeeds"); // unwrap allowed
         let deserialized: TextIndexMetadata =
-            bincode::deserialize(&bytes).expect("deserialization succeeds");
+            bincode::deserialize(&bytes).expect("deserialization succeeds"); // unwrap allowed
         assert_eq!(meta.total_docs, deserialized.total_docs);
         assert_eq!(meta.total_tokens, deserialized.total_tokens);
         assert_eq!(meta.avg_doc_len_x1000, deserialized.avg_doc_len_x1000);
@@ -1667,10 +1670,19 @@ mod tests {
         let empty_res = index.search("", 10).await?;
         assert!(empty_res.is_empty());
 
+        // Search k=0
+        let k0_res = index.search("ölpreise", 0).await?;
+        assert!(k0_res.is_empty());
+
         // Search unicode query
         let unicode_res = index.search("ölpreise", 10).await?;
         assert_eq!(unicode_res.len(), 1);
         assert_eq!(unicode_res[0].doc_id, doc_id2);
+
+        // Search oversized query returns error
+        let oversized_q = "q".repeat(InvertedIndex::<MockStorage>::MAX_TEXT_BYTES + 1);
+        let err = index.search(&oversized_q, 10).await.unwrap_err(); // unwrap allowed
+        assert!(matches!(err, MemFuseError::InvalidInput(_)));
 
         Ok(())
     }

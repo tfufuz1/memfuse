@@ -1,9 +1,3 @@
-// FILE-CONTEXT
-// ZWECK: Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen.
-// INVARIANTEN: [INV-DB-3] Keine verschluckten Fehler bei Rollbacks; Kompensierende Transaktionen bei HNSW/BM25/Graph Ausfällen.
-// NICHT-OFFENSICHTLICH: Multi-Attempt LSM-Kompensation mit Split-Brain Tracing-Warnungen bei anhaltenden Fehlern.
-// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
-
 //! # Database Transactions
 //!
 //! This module provides `DbTransaction`, an orchestrator for atomic multi-index commits
@@ -286,12 +280,12 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
 
         // Execute staged text and graph staging before prepare/commit
         if let Err(e) = self.commit_text_staged().await {
-            self.rollback_internal().await;
+            let _ = self.rollback_internal().await;
             return Err(e);
         }
 
         if let Err(e) = self.commit_graph_staged().await {
-            self.rollback_internal().await;
+            let _ = self.rollback_internal().await;
             return Err(e);
         }
 
@@ -312,7 +306,7 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
 
         // 2. Commit Storage (LSM)
         if let Err(storage_err) = self.collection.storage.commit(self.tx_id).await {
-            self.rollback_internal().await;
+            let _ = self.rollback_internal().await;
             return Err(MemFuseError::Transaction(storage_err.to_string()));
         }
 

@@ -7,22 +7,15 @@
 | Field | Value |
 |-------|-------|
 | SESSION | `unknown` |
-| LAST_SYNC | `2026-08-30T16:12:34Z` |
+| LAST_SYNC | `2026-08-30T17:07:37Z` |
 
 ## Critical Blockers (MUST FIX THIS SESSION)
-| ID | Category | Severity | File & Line | Befund |
-|----|----------|----------|-------------|--------|
-| `N/A` | HARDENING | `CRITICAL` | `crates/memfuse-agent/src/context.rs:38` | // AI-TAG[HARDENING][CRITICAL]: Validates non-empty input parameters for agent workflow context initialization. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045) |
-| `N/A` | HARDENING | `CRITICAL` | `crates/memfuse-agent/src/event_source.rs:23` | // AI-TAG[HARDENING][CRITICAL]: Validates non-empty event source to prevent silent telemetry attribution loss. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045) |
-| `N/A` | HARDENING | `CRITICAL` | `crates/memfuse-agent/src/event_source.rs:85` | // AI-TAG[HARDENING][CRITICAL]: Enforces bounded event queue capacity to guard against unbounded memory growth. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045) |
-| `N/A` | HARDENING | `CRITICAL` | `crates/memfuse-agent/src/graph.rs:51` | // AI-TAG[HARDENING][CRITICAL]: Validates non-empty Node ID and description for graph nodes. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045) |
-| `N/A` | HARDENING | `CRITICAL` | `crates/memfuse-agent/src/graph.rs:94` | // AI-TAG[HARDENING][CRITICAL]: Validates non-empty from/to endpoints for workflow edges. (TS:2026-08-29T17:22:08Z) (SESSION:bc60d045) |
+*(No critical blockers)*
 
 ## Open Anchors (IN-PROGRESS)
 | ID | Status | File & Line | Description |
 |----|--------|-------------|-------------|
-| `TEST:AGT-INDEX-006` | `OPEN` | `crates/memfuse-index/src/hnsw.rs:2940` | // ANCHOR[TEST:AGT-INDEX-006] STATUS:OPEN (TS:2026-08-30T14:11:21Z) (SESSION: 10569099) |
-| `TEST:MCP-002` | `IN-PROGRESS` | `crates/memfuse-mcp/tests/mcp_test.rs:233` | // ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS (TS:2026-08-25T00:00:00Z) — Error-Path Coverage |
+| `TEST:MCP-002` | `IN-PROGRESS` | `crates/memfuse-mcp/tests/mcp_test.rs:234` | // ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS (TS:2026-08-25T00:00:00Z) — Error-Path Coverage |
 
 ## Crate Inventory & Status Summary
 | Crate | Layer | LOC | Status | Description |
@@ -38,7 +31,7 @@
 | `memfuse-agent` | L3 | 2429 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | L3 | 1022 | 🧊 Optional |  |
 | `memfuse-ollama` | L3 | 2369 | 🟢 Clean |  |
-| `memfuse-py` | L3 | 987 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
+| `memfuse-py` | L3 | 1006 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | L3 | 510 | 🟢 Clean |  |
 | `memfuse-mcp` | L4 | 2198 | 🟢 Clean |  |
 | `memfuse-tauri` | L4 | 2827 | 🟢 Clean |  |

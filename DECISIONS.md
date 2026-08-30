@@ -318,6 +318,7 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 - **Datum**: 2026-08-27
 - **Status**: ✅ Final
+- **Hinweis**: Renummeriert von ADR-020 zu ADR-037 in R-08 zur Behebung des ADR-020-Duplikats. (Reserved Gaps: ADR-038, ADR-039).
 - **Entscheidung**: Kernkomponenten aus `memfuse-saos-agent` (gelöscht in Commit 55a3464)
   werden als `memfuse-agent` wiederhergestellt: `AgentTool` Trait, `OrchestratorEngine`,
   `StateGraph`, `AuditLog`.
@@ -661,14 +662,13 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-042: Aktualisierung von `last_committed_tx` vor der Sichtbarmachung von SSTables in `LsmStorage::flush`
-*   **Datum**: 2026-08-29
+## ADR-042: Write-Temp-Then-Rename Pattern für SSTable-Kompaktierung & Recovery Cleanup
+*   **Datum**: 2026-08-30
 *   **Status**: ✅ Final
-*   **Entscheidung**: In `LsmStorage::flush()` MUSS `last_committed_tx` aktualisiert werden, BEVOR die neu erstellte SSTable über den `sstables`-Vektor für Lesepfade (z. B. `get_at_seq`, `scan_prefix_at`) sichtbar gemacht wird (`last_committed_tx vor Datensichtbarkeit aktualisieren`).
+*   **Entscheidung**: Die SSTable-Kompaktierung in `CompactionEngine::maybe_compact` (`crates/memfuse-store/src/compaction.rs`) schreibt das Ergebnis eines Merges zuerst in eine temporäre Datei mit dem Suffix `.sst.tmp`. Erst nach erfolgreichem `builder.finish()` wird die Datei über ein atomares `tokio::fs::rename(&temp_path, &final_path)` auf ihren finalen `.sst`-Namen verschoben. Bei Fehlern während des Merging oder des Renamings wird die Temp-Datei umgehend gelöscht. Zusätzlich ignoriert und bereinigt `LsmStorage::new()` (`crates/memfuse-store/src/lsm.rs`) beim Startup-Scan automatisch alle Restdateien mit `.tmp`-Suffix.
 *   **Alternativen**:
-    - Beibehalten der bisherigen Reihenfolge (`sstables.push` vor `last_committed_tx` update): Verworfen, da hierbei ein Race-Fenster entsteht, in dem ein paralleler Reader die neue SSTable bereits im `sstables`-Vektor sieht, sein `snapshot_tx` aber noch vor der Erhöhung von `last_committed_tx` liest und dadurch Daten sieht, die jenseits seines Snapshots liegen.
-    - Vollständige Umstellung auf exklusiven Schreib-Lock über den gesamten Reader-Öffnungs-Pfad: Verworfen, um I/O-Operationen (SSTable öffnen) nicht unter Lock zu halten.
-*   **Begründung**: MVCC-Snapshot-Isolation erfordert, dass transaktionale Sichtbarkeit atomar oder streng monoton vor der Datensichtbarkeit fortschreitet. Die Aktualisierung von `last_committed_tx` vor `sstables.push()` eliminiert das Race-Fenster für parallele Reader vollständig, ohne Lock-Kontention durch I/O zu erhöhen.
+    - Schreiben direkt auf den Zielpfad und Versuchen des Löschens der unvollständigen Datei im Absturz-/Error-Handler. Verworfen, da bei Prozessabsturz (SIGKILL, Stromausfall) unvollständige Dateien verbleiben und beim Neustart fälschlicherweise als gültige SSTables eingelesen würden.
+*   **Begründung**: Garantiert POSIX-Atomarität für komprimierte/kompaktierte SSTables. Eine SSTable existiert im Datenverzeichnis unter ihrem finalen Namen entweder vollständig oder gar nicht, wodurch Korruption bei Abstürzen während des Kompaktierungsvorgangs ausgeschlossen wird.
 
 ---
 
