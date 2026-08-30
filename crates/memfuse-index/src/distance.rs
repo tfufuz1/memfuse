@@ -61,7 +61,7 @@
 #![allow(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use memfuse_core::DistanceMetric;
+use memfuse_core::{DistanceMetric, MemFuseError};
 // use std::simd::prelude::*; // Removed for stable Rust stabilization
 
 #[cfg(target_arch = "x86_64")]
@@ -74,9 +74,10 @@ use std::arch::x86_64::*;
 // Fallbacks MUST be verified to prevent Zero-Panic violations.
 pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse_core::Result<f32> {
     if a.len() != b.len() {
-        return Err(memfuse_core::MemFuseError::invalid_input(
-            "Vector dimensions must match",
-        ));
+        return Err(MemFuseError::EmbeddingDimensionMismatch {
+            expected: a.len(),
+            got: b.len(),
+        });
     }
 
     // SAFETY: Ensure no NaN enters the distance metrics
@@ -84,18 +85,18 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
     // Early validation prevents NaN poisoning in HNSW search/insert loops.
     for val in a.iter().chain(b.iter()) {
         if val.is_nan() {
-            return Err(memfuse_core::MemFuseError::invalid_input(
+            return Err(MemFuseError::invalid_input(
                 "Input vector contains NaN values",
             ));
         }
     }
 
     let dist = match metric {
-        DistanceMetric::Cosine => cosine_distance(a, b),
-        DistanceMetric::Euclidean => euclidean_distance(a, b),
-        DistanceMetric::DotProduct => dot_product_distance(a, b),
+        DistanceMetric::Cosine => cosine_distance(a, b)?,
+        DistanceMetric::Euclidean => euclidean_distance(a, b)?,
+        DistanceMetric::DotProduct => dot_product_distance(a, b)?,
         other => {
-            return Err(memfuse_core::MemFuseError::Index(format!(
+            return Err(MemFuseError::Index(format!(
                 "Unsupported DistanceMetric variant: {other:?} — \
                  add a match arm here when extending the enum"
             )));
@@ -104,115 +105,118 @@ pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse
     Ok(dist)
 }
 
-// AI-TAG[SECURITY][CRITICAL] RESOLVED: AGT-INDEX-005 — assert_eq! preconditions in cosine_distance, euclidean_distance, dot_product_distance added (ADR-034). Testbeweis: test_cosine_distance_mismatch_panics etc. (TS:2026-08-29T10:18:55Z) (SESSION: a3f29c1d)
-// DECISION-REF: ADR-034 — Option 1: Release-active runtime assertion (assert_eq!) prevents SIMD buffer overreads.
+// AI-TAG[SECURITY][CRITICAL] RESOLVED: AGT-INDEX-005 — Dimension check in cosine_distance, euclidean_distance, dot_product_distance returns MemFuseError::EmbeddingDimensionMismatch (ADR-034). Testbeweis: test_cosine_distance_mismatch_returns_error etc. (TS:2026-08-31T00:00:00Z)
+// DECISION-REF: ADR-034 — Option 1: Return Result<f32, MemFuseError> to prevent panics and SIMD buffer overreads.
 
 /// Computes cosine distance (1 - similarity).
 ///
-/// # Panics
-/// Panics if `a.len() != b.len()` to prevent out-of-bounds access in low-level SIMD intrinsics (ADR-034).
+/// # Errors
+/// Returns [`MemFuseError::EmbeddingDimensionMismatch`] if `a.len() != b.len()`.
 #[inline]
 #[allow(unsafe_code)]
-pub fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
-    assert_eq!(
-        a.len(),
-        b.len(),
-        "Vector lengths must match for cosine_distance"
-    );
+pub fn cosine_distance(a: &[f32], b: &[f32]) -> Result<f32, MemFuseError> {
+    if a.len() != b.len() {
+        return Err(MemFuseError::EmbeddingDimensionMismatch {
+            expected: a.len(),
+            got: b.len(),
+        });
+    }
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         // Try AVX-512 first for maximum performance
         if is_x86_feature_detected!("avx512f") {
-            // SAFETY: a.len() == b.len() was checked by assert_eq! in cosine_distance; AVX-512F CPU feature confirmed via is_x86_feature_detected!.
-            return unsafe { cosine_distance_avx512(a, b) };
+            // SAFETY: a.len() == b.len() was checked by if condition in cosine_distance; AVX-512F CPU feature confirmed via is_x86_feature_detected!.
+            return Ok(unsafe { cosine_distance_avx512(a, b) });
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // SAFETY: a.len() == b.len() was checked by assert_eq! in cosine_distance; AVX2+FMA CPU features confirmed via is_x86_feature_detected!.
-            return unsafe { cosine_distance_avx2(a, b) };
+            // SAFETY: a.len() == b.len() was checked by if condition in cosine_distance; AVX2+FMA CPU features confirmed via is_x86_feature_detected!.
+            return Ok(unsafe { cosine_distance_avx2(a, b) });
         }
     }
     #[cfg(target_arch = "aarch64")]
     {
         if std::arch::is_aarch64_feature_detected!("neon") {
-            // SAFETY: a.len() == b.len() was checked by assert_eq! in cosine_distance; NEON CPU feature confirmed via is_aarch64_feature_detected!.
-            return unsafe { cosine_distance_neon(a, b) };
+            // SAFETY: a.len() == b.len() was checked by if condition in cosine_distance; NEON CPU feature confirmed via is_aarch64_feature_detected!.
+            return Ok(unsafe { cosine_distance_neon(a, b) });
         }
     }
     // Stable fallback (autovectorizable by compiler)
-    cosine_distance_scalar(a, b)
+    Ok(cosine_distance_scalar(a, b))
 }
 
 /// Computes Euclidean (L2) distance.
 ///
-/// # Panics
-/// Panics if `a.len() != b.len()` to prevent out-of-bounds access in low-level SIMD intrinsics (ADR-034).
+/// # Errors
+/// Returns [`MemFuseError::EmbeddingDimensionMismatch`] if `a.len() != b.len()`.
 #[inline]
 #[allow(unsafe_code)]
-pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
-    assert_eq!(
-        a.len(),
-        b.len(),
-        "Vector lengths must match for euclidean_distance"
-    );
+pub fn euclidean_distance(a: &[f32], b: &[f32]) -> Result<f32, MemFuseError> {
+    if a.len() != b.len() {
+        return Err(MemFuseError::EmbeddingDimensionMismatch {
+            expected: a.len(),
+            got: b.len(),
+        });
+    }
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         // Try AVX-512
         if is_x86_feature_detected!("avx512f") {
-            // SAFETY: a.len() == b.len() was checked by assert_eq! in euclidean_distance; AVX-512F CPU feature confirmed via is_x86_feature_detected!.
-            return unsafe { euclidean_distance_avx512(a, b) };
+            // SAFETY: a.len() == b.len() was checked by if condition in euclidean_distance; AVX-512F CPU feature confirmed via is_x86_feature_detected!.
+            return Ok(unsafe { euclidean_distance_avx512(a, b) });
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // SAFETY: a.len() == b.len() was checked by assert_eq! in euclidean_distance; AVX2+FMA CPU features confirmed via is_x86_feature_detected!.
-            return unsafe { euclidean_distance_avx2(a, b) };
+            // SAFETY: a.len() == b.len() was checked by if condition in euclidean_distance; AVX2+FMA CPU features confirmed via is_x86_feature_detected!.
+            return Ok(unsafe { euclidean_distance_avx2(a, b) });
         }
     }
     #[cfg(target_arch = "aarch64")]
     {
         if std::arch::is_aarch64_feature_detected!("neon") {
-            // SAFETY: a.len() == b.len() was checked by assert_eq! in euclidean_distance; NEON CPU feature confirmed via is_aarch64_feature_detected!.
-            return unsafe { euclidean_distance_neon(a, b) };
+            // SAFETY: a.len() == b.len() was checked by if condition in euclidean_distance; NEON CPU feature confirmed via is_aarch64_feature_detected!.
+            return Ok(unsafe { euclidean_distance_neon(a, b) });
         }
     }
     // Stable fallback (autovectorizable by compiler)
-    euclidean_distance_scalar(a, b)
+    Ok(euclidean_distance_scalar(a, b))
 }
 
 /// Computes negative dot product.
 ///
-/// # Panics
-/// Panics if `a.len() != b.len()` to prevent out-of-bounds access in low-level SIMD intrinsics (ADR-034).
+/// # Errors
+/// Returns [`MemFuseError::EmbeddingDimensionMismatch`] if `a.len() != b.len()`.
 #[inline]
 #[allow(unsafe_code)]
-pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
-    assert_eq!(
-        a.len(),
-        b.len(),
-        "Vector lengths must match for dot_product_distance"
-    );
+pub fn dot_product_distance(a: &[f32], b: &[f32]) -> Result<f32, MemFuseError> {
+    if a.len() != b.len() {
+        return Err(MemFuseError::EmbeddingDimensionMismatch {
+            expected: a.len(),
+            got: b.len(),
+        });
+    }
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         // Try AVX-512
         if is_x86_feature_detected!("avx512f") {
-            // SAFETY: a.len() == b.len() was checked by assert_eq! in dot_product_distance; AVX-512F CPU feature confirmed via is_x86_feature_detected!.
-            return unsafe { -dot_product_avx512(a, b) };
+            // SAFETY: a.len() == b.len() was checked by if condition in dot_product_distance; AVX-512F CPU feature confirmed via is_x86_feature_detected!.
+            return Ok(unsafe { -dot_product_avx512(a, b) });
         }
         // Then AVX2
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            // SAFETY: a.len() == b.len() was checked by assert_eq! in dot_product_distance; AVX2+FMA CPU features confirmed via is_x86_feature_detected!.
-            return unsafe { -dot_product_avx2(a, b) };
+            // SAFETY: a.len() == b.len() was checked by if condition in dot_product_distance; AVX2+FMA CPU features confirmed via is_x86_feature_detected!.
+            return Ok(unsafe { -dot_product_avx2(a, b) });
         }
     }
     #[cfg(target_arch = "aarch64")]
     {
         if std::arch::is_aarch64_feature_detected!("neon") {
-            // SAFETY: a.len() == b.len() was checked by assert_eq! in dot_product_distance; NEON CPU feature confirmed via is_aarch64_feature_detected!.
-            return unsafe { -dot_product_neon(a, b) };
+            // SAFETY: a.len() == b.len() was checked by if condition in dot_product_distance; NEON CPU feature confirmed via is_aarch64_feature_detected!.
+            return Ok(unsafe { -dot_product_neon(a, b) });
         }
     }
     // Stable fallback (autovectorizable by compiler)
-    -dot_product_scalar(a, b)
+    Ok(-dot_product_scalar(a, b))
 }
 
 /// Scalar implementation of cosine distance.
@@ -1388,31 +1392,55 @@ mod tests {
         let a = vec![1.0, 2.0];
         let b = vec![1.0, 2.0, 3.0];
         let res = compute_distance(&a, &b, DistanceMetric::Cosine);
-        assert!(res.is_err());
+        assert!(matches!(
+            res,
+            Err(MemFuseError::EmbeddingDimensionMismatch {
+                expected: 2,
+                got: 3
+            })
+        ));
     }
 
     #[test]
-    #[should_panic(expected = "Vector lengths must match for cosine_distance")]
-    fn test_cosine_distance_mismatch_panics() {
+    fn test_cosine_distance_mismatch_returns_error() {
         let a = vec![1.0, 2.0];
         let b = vec![1.0, 2.0, 3.0];
-        let _ = cosine_distance(&a, &b);
+        let res = cosine_distance(&a, &b);
+        assert!(matches!(
+            res,
+            Err(MemFuseError::EmbeddingDimensionMismatch {
+                expected: 2,
+                got: 3
+            })
+        ));
     }
 
     #[test]
-    #[should_panic(expected = "Vector lengths must match for euclidean_distance")]
-    fn test_euclidean_distance_mismatch_panics() {
+    fn test_euclidean_distance_mismatch_returns_error() {
         let a = vec![1.0, 2.0];
         let b = vec![1.0, 2.0, 3.0];
-        let _ = euclidean_distance(&a, &b);
+        let res = euclidean_distance(&a, &b);
+        assert!(matches!(
+            res,
+            Err(MemFuseError::EmbeddingDimensionMismatch {
+                expected: 2,
+                got: 3
+            })
+        ));
     }
 
     #[test]
-    #[should_panic(expected = "Vector lengths must match for dot_product_distance")]
-    fn test_dot_product_distance_mismatch_panics() {
+    fn test_dot_product_distance_mismatch_returns_error() {
         let a = vec![1.0, 2.0];
         let b = vec![1.0, 2.0, 3.0];
-        let _ = dot_product_distance(&a, &b);
+        let res = dot_product_distance(&a, &b);
+        assert!(matches!(
+            res,
+            Err(MemFuseError::EmbeddingDimensionMismatch {
+                expected: 2,
+                got: 3
+            })
+        ));
     }
 
     #[test]

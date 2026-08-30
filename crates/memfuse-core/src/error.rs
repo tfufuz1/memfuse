@@ -102,6 +102,15 @@ pub enum MemFuseError {
     #[error("Index error: {0}")]
     Index(String),
 
+    /// Vector or embedding dimension mismatch.
+    #[error("Embedding dimension mismatch: expected {expected}, got {got}")]
+    EmbeddingDimensionMismatch {
+        /// Expected vector dimension.
+        expected: usize,
+        /// Actual vector dimension.
+        got: usize,
+    },
+
     /// HNSW graph degradation warning threshold reached.
     #[error("HNSW graph connectivity degraded: {deleted_ratio:.1}% deleted nodes")]
     HnswConnectivityDegraded {
@@ -241,6 +250,10 @@ mod tests {
             MemFuseError::Conflict("test".into()),
             MemFuseError::InvalidSequenceNumber(1),
             MemFuseError::Index("test".into()),
+            MemFuseError::EmbeddingDimensionMismatch {
+                expected: 1536,
+                got: 768,
+            },
             MemFuseError::HnswConnectivityDegraded { deleted_ratio: 0.1 },
             MemFuseError::Text("test".into()),
             MemFuseError::MemoryBudgetExceeded {
@@ -370,6 +383,14 @@ mod tests {
         assert_eq!(
             MemFuseError::Index("test".into()).to_string(),
             "Index error: test"
+        );
+        assert_eq!(
+            MemFuseError::EmbeddingDimensionMismatch {
+                expected: 1536,
+                got: 768
+            }
+            .to_string(),
+            "Embedding dimension mismatch: expected 1536, got 768"
         );
         assert_eq!(
             MemFuseError::HnswConnectivityDegraded {
