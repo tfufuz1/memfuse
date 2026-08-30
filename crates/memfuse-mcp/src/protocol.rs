@@ -54,10 +54,18 @@ impl McpError {
 impl From<memfuse_core::MemFuseError> for McpError {
     fn from(err: memfuse_core::MemFuseError) -> Self {
         match err {
-            memfuse_core::MemFuseError::InvalidInput(msg) => Self::invalid_params(msg),
-            memfuse_core::MemFuseError::NotFound(msg) => Self::invalid_params(msg),
-            memfuse_core::MemFuseError::NamespaceViolation(msg) => Self::invalid_params(msg),
-            other => Self::internal_error(other.to_string()),
+            memfuse_core::MemFuseError::InvalidInput(msg)
+            | memfuse_core::MemFuseError::NotFound(msg) => match data_val {
+                Some(d) => Self::invalid_params_with_data(msg, d),
+                None => Self::invalid_params(msg),
+            },
+            other => {
+                let msg = other.to_string();
+                match data_val {
+                    Some(d) => Self::internal_error_with_data(msg, d),
+                    None => Self::internal_error(msg),
+                }
+            }
         }
     }
 }
