@@ -3,7 +3,7 @@
 // INVARIANTEN: Nonce prefix (4 bytes) + OsRng random suffix (8 bytes) per encrypt_auto_nonce call. HKDF-Expand per file_id.
 // NICHT-OFFENSICHTLICH: AES-256-GCM-SIV provides nonce-misuse resistance (RFC 8452). Keys zeroized on drop. Lock-free & I/O-free.
 // HOTSPOTS: [50-150]
-// STAND: TS:2026-08-30T22:01:36Z (SESSION: e8b9a102)
+// STAND: TS:2026-08-30T18:52:02Z (SESSION: 20260830)
 
 //! Encryption utilities for MemFuse.
 //!
@@ -146,14 +146,6 @@ impl KeyManager {
     /// Encrypts a block of data with an automatically generated random nonce.
     /// Returns the ciphertext and the full 12-byte nonce used.
     pub fn encrypt_auto_nonce(&self, data: &[u8]) -> Result<(Vec<u8>, [u8; 12])> {
-        const MAX_PAYLOAD_SIZE: usize = 100 * 1024 * 1024; // 100 MB
-        if data.len() > MAX_PAYLOAD_SIZE {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Payload size {} exceeds maximum permitted limit of {} bytes",
-                data.len(),
-                MAX_PAYLOAD_SIZE
-            )));
-        }
         // AES-256-GCM-SIV: nonce-reuse-resistant (RFC 8452). Ciphertext-Integrität
         // bleibt auch bei versehentlicher Nonce-Wiederverwendung gewahrt, anders
         // als bei AES-GCM das bei Nonce-Reuse den Auth-Key leakt.
