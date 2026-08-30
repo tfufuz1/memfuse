@@ -450,4 +450,63 @@ mod tests {
             *captured
         );
     }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn detect_communities_CASE_empty_graph() {
+        let graph = CsrGraph::new();
+        let config = CommunityDetectionConfig::default();
+
+        let assignments = detect_communities(&graph, &config).await.unwrap(); // unwrap allowed
+        assert!(
+            assignments.is_empty(),
+            "Community detection on empty graph must return empty assignments"
+        );
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn detect_communities_CASE_single_node() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+        let id = EntityId::new(42);
+
+        graph
+            .add_entity(tx, Entity::new(id, "SingleNode", "Type"))
+            .await
+            .unwrap(); // unwrap allowed
+        graph.commit(tx).await.unwrap(); // unwrap allowed
+
+        let config = CommunityDetectionConfig::default();
+        let assignments = detect_communities(&graph, &config).await.unwrap(); // unwrap allowed
+
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(assignments[0].entity_id, id);
+        assert_eq!(assignments[0].community_id, id.inner());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn serialization_roundtrip_CASE_community_config_and_assignment() {
+        let config = CommunityDetectionConfig {
+            max_iterations: 150,
+            seed: 987654321,
+        };
+
+        let serialized_config = bincode::serialize(&config).unwrap(); // unwrap allowed
+        let deserialized_config: CommunityDetectionConfig =
+            bincode::deserialize(&serialized_config).unwrap(); // unwrap allowed
+        assert_eq!(config.max_iterations, deserialized_config.max_iterations);
+        assert_eq!(config.seed, deserialized_config.seed);
+
+        let assignment = CommunityAssignment {
+            entity_id: EntityId::new(100),
+            community_id: 100,
+        };
+
+        let serialized_assignment = bincode::serialize(&assignment).unwrap(); // unwrap allowed
+        let deserialized_assignment: CommunityAssignment =
+            bincode::deserialize(&serialized_assignment).unwrap(); // unwrap allowed
+        assert_eq!(assignment, deserialized_assignment);
+    }
 }
