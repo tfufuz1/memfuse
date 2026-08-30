@@ -53,7 +53,7 @@ async fn test_flush_durability_on_failure() -> Result<()> {
         "Flush must fail when directory is read-only"
     );
     #[cfg(not(unix))]
-    let _ = flush_result;
+    drop(flush_result);
 
     // 5. CRITICAL CHECK: Does the WAL file still exist?
     // In the BROKEN version, it was deleted before the SSTable was created.
