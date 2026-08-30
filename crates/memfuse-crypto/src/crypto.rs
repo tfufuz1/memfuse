@@ -414,6 +414,8 @@ mod tests {
         assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
     }
 
+    // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-08-30T21:00:00Z) (SESSION: c9f5e2b3)
+    // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-08-30T22:00:00Z) (SESSION: d0a6f3c4)
     // ANCHOR[TEST:CRY-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:3779c7f0) — Nonce-Uniqueness verification bei paralleler Verschlüsselung
     #[tokio::test]
     async fn test_parallel_nonce_uniqueness() {
