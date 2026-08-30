@@ -1,7 +1,7 @@
-//! MemFuse Store — LSM-Tree based storage engine.
+//! `MemFuse` Store — LSM-Tree based storage engine.
 //!
-//! Provides persistent key-value storage with WAL, MemTable,
-//! SSTable, and background compaction.
+//! Provides persistent key-value storage with WAL, `MemTable`,
+//! `SSTable`, and background compaction.
 //!
 //! # Checkpoint-Architektur
 //! `memfuse-store` enthält ein lokales, crate-internes Checkpointing (`pub(crate) mod checkpoint`).
