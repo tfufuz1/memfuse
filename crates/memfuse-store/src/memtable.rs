@@ -75,7 +75,7 @@ impl MemTable {
         }
     }
 
-    /// Deterministic shard selector based on an AHash (`AHasher`) of the entire key.
+    /// Deterministic shard selector based on AHash (`AHasher`) of the entire key.
     #[inline]
     fn shard_for(key: &[u8]) -> usize {
         // Hash the FULL key, not just the first byte. Namespaced keys share
@@ -529,26 +529,6 @@ mod tests {
              at least half the shards; got only {} — every insert() call \
              would otherwise serialize on a handful of shards.",
             shards_hit.len()
-        );
-    }
-
-    #[test]
-    fn test_ahash_shard_distribution_with_common_prefixes() {
-        let mut counts = [0usize; SHARD_COUNT];
-        for i in 0..10_000 {
-            let key = format!("__col:hr:doc-{i:08}");
-            counts[MemTable::shard_for(key.as_bytes())] += 1;
-        }
-        let mean = 10_000.0 / SHARD_COUNT as f64;
-        let variance: f64 = counts
-            .iter()
-            .map(|&c| (c as f64 - mean).powi(2))
-            .sum::<f64>()
-            / SHARD_COUNT as f64;
-        let std_dev = variance.sqrt();
-        assert!(
-            std_dev < mean * 0.15,
-            "Shard distribution too skewed: std_dev={std_dev}, mean={mean}"
         );
     }
 

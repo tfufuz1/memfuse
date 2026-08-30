@@ -8,7 +8,6 @@ description = "LSM-Tree storage engine for MemFuse"
 
 [dependencies]
 memfuse-core = { workspace = true }
-ahash = { workspace = true }
 bytes = { workspace = true }
 ahash = { workspace = true }
 blake3 = { workspace = true }

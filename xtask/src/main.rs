@@ -501,7 +501,19 @@ pub fn calculate_crate_loc<P: AsRef<Path>>(dir: P) -> usize {
 }
 
 pub fn get_workspace_crates() -> Vec<CrateInfo> {
-    let root_cargo = fs::read_to_string("Cargo.toml").unwrap_or_default();
+    let cargo_path = if Path::new("Cargo.toml").exists()
+        && fs::read_to_string("Cargo.toml")
+            .unwrap_or_default()
+            .contains("[workspace]")
+    {
+        PathBuf::from("Cargo.toml")
+    } else if Path::new("../Cargo.toml").exists() {
+        PathBuf::from("../Cargo.toml")
+    } else {
+        PathBuf::from("Cargo.toml")
+    };
+    let root_dir = cargo_path.parent().unwrap_or_else(|| Path::new("."));
+    let root_cargo = fs::read_to_string(&cargo_path).unwrap_or_default();
     let toml_val: toml::Value =
         toml::from_str(&root_cargo).expect("Failed to parse root Cargo.toml");
 
@@ -519,7 +531,7 @@ pub fn get_workspace_crates() -> Vec<CrateInfo> {
             continue;
         }
 
-        let crate_cargo_path = PathBuf::from(path_str).join("Cargo.toml");
+        let crate_cargo_path = root_dir.join(path_str).join("Cargo.toml");
         if !crate_cargo_path.exists() {
             continue;
         }
@@ -568,7 +580,8 @@ pub fn get_workspace_crates() -> Vec<CrateInfo> {
             _ => 99,
         };
 
-        let loc = calculate_crate_loc(path_str);
+        let crate_dir = root_dir.join(path_str);
+        let loc = calculate_crate_loc(&crate_dir);
 
         let status = if name == "memfuse-embed" {
             "🧊 Optional".to_string()
@@ -724,22 +737,29 @@ pub fn generate_full_working_state(tags: &[TagItem], crates: &[CrateInfo]) -> St
     out
 }
 
+pub fn severity_weight(sev: Option<&str>) -> usize {
+    match sev.map(|s| s.to_uppercase()).as_deref() {
+        Some("BLOCKER") => 4,
+        Some("CRITICAL") => 3,
+        Some("WARN") | Some("WARNING") => 2,
+        Some("INFO") => 1,
+        _ => 0,
+    }
+}
+
 pub fn run_sync_docs(check_only: bool) -> bool {
     println!(
         "=== Running xtask sync-docs (check_only={}) ===",
         check_only
     );
+    let mut success = true;
     let tags = scan_tags("crates");
     println!("Found {} code tags across crates/.", tags.len());
 
     let crates = get_workspace_crates();
     println!("Parsed {} workspace crates.", crates.len());
 
-    let dag_topology_content = generate_dag_topology_section(&crates);
-    let crate_inventory_content = generate_crate_inventory_section(&crates);
-
-    let full_working_state = generate_full_working_state(&tags, &crates);
-    let changelog_content = generate_changelog(&tags);
+    let full_ws = generate_full_working_state(&tags, &crates);
 
     if check_only {
         let current_ws = fs::read_to_string("WORKING_STATE.md").unwrap_or_default();
@@ -869,8 +889,15 @@ pub fn run_check_consistency() -> bool {
     true
 }
 
-pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
-    let completed_anchors: Vec<_> = tags
+pub fn run_context_digest(crate_name: Option<String>, format: &str) -> Result<(), String> {
+    let all_tags = scan_tags("crates");
+    let filtered_tags: Vec<_> = if let Some(ref c) = crate_name {
+        all_tags.into_iter().filter(|t| t.file_path.contains(c)).collect()
+    } else {
+        all_tags
+    };
+
+    let blockers: Vec<_> = filtered_tags
         .iter()
         .filter(|t| {
             !t.is_resolved && severity_weight(t.severity.as_deref()) >= 3 && t.tag_type == "AI-TAG"
@@ -883,6 +910,20 @@ pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
         .filter(|t| !t.is_resolved && t.tag_type == "ANCHOR")
         .cloned()
         .collect();
+
+    let crates = get_workspace_crates();
+    let mut crate_stats = BTreeMap::new();
+    for c in &crates {
+        let crate_tags: Vec<_> = filtered_tags.iter().filter(|t| t.file_path.contains(&c.path)).collect();
+        let b_count = crate_tags.iter().filter(|t| !t.is_resolved && t.severity.as_deref() == Some("BLOCKER")).count();
+        let c_count = crate_tags.iter().filter(|t| !t.is_resolved && t.severity.as_deref() == Some("CRITICAL")).count();
+        let a_count = crate_tags.iter().filter(|t| !t.is_resolved && t.tag_type == "ANCHOR").count();
+        crate_stats.insert(c.name.clone(), CrateStats {
+            blockers: b_count,
+            criticals: c_count,
+            anchors: a_count,
+        });
+    }
 
     let digest = ContextDigest {
         timestamp: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
