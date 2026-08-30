@@ -1,3 +1,11 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T15:00:19Z (SESSION: 283abf0f)
+// ZWECK: In-Memory BTreeMap MemTable-Sharding mit MVCC Snapshot-Isolation.
+// INVARIANTEN: Sharding per BLAKE3-Hash modulo SHARD_COUNT; tombstone via TOMBSTONE_BIT in seq_no.
+// NICHT-OFFENSICHTLICH: Rollback(tx_id) entfernt alle Einträge der Transaktion atomar aus allen Shards.
+// HOTSPOTS: MemTable::put, MemTable::get_at_seq, MemTable::rollback
+// SIEHE AUCH: crates/memfuse-store/AGENTS.md, DECISIONS.md
+
 //! In-memory sorted MemTable for the LSM-Tree with MVCC support.
 //!
 //! Entries are sharded across `SHARD_COUNT` independent `BTreeMap` partitions,
@@ -466,6 +474,26 @@ mod tests {
         // Originally: tx A = 3 * (5 + 5 + 16) = 78; tx B = 2 * (5 + 5 + 16) = 52. Total = 130.
         // After rollback tx A: remaining size should be 52.
         assert_eq!(mt.size(), 52);
+    }
+
+    #[test]
+    fn test_ahash_shard_distribution_with_common_prefixes() {
+        let mut counts = [0usize; SHARD_COUNT];
+        for i in 0..10_000 {
+            let key = format!("__col:hr:doc-{i:08}");
+            counts[MemTable::shard_for(key.as_bytes())] += 1;
+        }
+        let mean = 10_000.0 / SHARD_COUNT as f64;
+        let variance: f64 = counts
+            .iter()
+            .map(|&c| (c as f64 - mean).powi(2))
+            .sum::<f64>()
+            / SHARD_COUNT as f64;
+        let std_dev = variance.sqrt();
+        assert!(
+            std_dev < mean * 0.15,
+            "Shard distribution too skewed: std_dev={std_dev}, mean={mean}"
+        );
     }
 
     #[test]

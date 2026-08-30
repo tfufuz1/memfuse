@@ -1,10 +1,3 @@
-// FILE-CONTEXT
-// STAND: 2026-08-30T14:38:30Z (SESSION: 45595f71)
-// ZWECK: Bridge connector to local Ollama instance for embeddings & streaming RAG chat.
-// INVARIANTEN: All errors must map to MemFuseError; zero panics on connection failure.
-// NICHT-OFFENSICHTLICH: Implements TextEmbeddingEngine trait for Ollama embedding model.
-// SIEHE AUCH: crates/memfuse-ollama, crates/memfuse-core/src/traits.rs
-
 use memfuse_core::Result;
 use memfuse_ollama::OllamaClient;
 

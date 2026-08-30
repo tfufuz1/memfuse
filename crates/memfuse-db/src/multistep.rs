@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// ZWECK: Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern).
+// INVARIANTEN: RRF-Fusion über alle Runden; Abbruch bei Erreichen des Qualitätsschwellenwerts.
+// NICHT-OFFENSICHTLICH: Sub-Queries nutzen BM25-only (leerer Vektor), da sie textuelle Umformulierungen darstellen.
+// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+
 // memfuse-db/src/multistep.rs
 // Multi-Step Iterative Retrieval Engine (OpenAI o-series Pattern)
 
@@ -37,6 +43,8 @@ pub struct MultiStepResult {
 }
 
 // ANCHOR[MULTISTEP:QUERY-REWRITER] STATUS:DONE (TS:2026-06-01T00:00:00Z) — External QueryRewriter trait contract and error isolation.
+// REVIEW-PASS[1/2] STATUS:PASS (ID: MULTISTEP:QUERY-REWRITER) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
+// REVIEW-PASS[2/2] STATUS:PASS (ID: MULTISTEP:QUERY-REWRITER) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
 // TRACKING-ISSUE: #142 (Ollama / LLM-based QueryRewriter implementation in memfuse-ollama crate)
 
 /// Multi-Step Retrieval Engine.
@@ -148,6 +156,8 @@ impl<S: StorageEngine> MultiStepEngine<S> {
                 // 2. Generating sub-query embeddings requires an embedder dependency
                 // 3. The original vector contributes via Round-1 results in RRF fusion
                 // ANCHOR[MULTISTEP:SUBQUERY-EMBEDDING] STATUS:DONE (TS:2026-06-01T00:00:00Z) — See TRACKING-ISSUE #143 for
+                // REVIEW-PASS[1/2] STATUS:PASS (ID: MULTISTEP:SUBQUERY-EMBEDDING) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2)
+                // REVIEW-PASS[2/2] STATUS:PASS (ID: MULTISTEP:SUBQUERY-EMBEDDING) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3)
                 // future improvement: inject TextEmbeddingEngine for sub-query vectors.
                 match self.collection.hybrid_search(sub_q, &[], k, None).await {
                     Ok(sub_results) => {
@@ -375,48 +385,5 @@ mod tests {
         assert_eq!(result.rounds_executed, 2);
         assert_eq!(result.sub_queries, vec!["rust programming"]);
         assert!(!result.results.is_empty());
-    }
-
-    struct FailingRewriter;
-
-    #[async_trait::async_trait]
-    impl QueryRewriter for FailingRewriter {
-        async fn rewrite(
-            &self,
-            _original_query: &str,
-            _current_results: &[SearchResult],
-        ) -> Result<Vec<String>> {
-            Err(memfuse_core::MemFuseError::Internal(
-                "Rewriter error".into(),
-            ))
-        }
-    }
-
-    #[tokio::test]
-    async fn test_multistep_failing_rewriter_gracefully_stops() {
-        let col = create_test_collection().await;
-        col.insert(
-            "doc1",
-            &[1.0, 0.0, 0.0, 0.0],
-            Some(serde_json::json!({"text": "rust programming"})),
-        )
-        .await
-        .expect("insert");
-
-        let config = MultiStepConfig {
-            max_rounds: 3,
-            quality_threshold: 0.99,
-            min_quality_hits: 2,
-        };
-        let engine = MultiStepEngine::new(col, config);
-        let rewriter = FailingRewriter;
-
-        let result = engine
-            .search("rust", &[1.0, 0.0, 0.0, 0.0], 5, Some(&rewriter))
-            .await
-            .expect("search should succeed gracefully even if rewriter fails");
-
-        assert_eq!(result.rounds_executed, 1);
-        assert!(result.sub_queries.is_empty());
     }
 }

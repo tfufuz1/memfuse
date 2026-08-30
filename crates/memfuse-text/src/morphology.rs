@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// ZWECK:       Morphologie-Analyse (Stemming, Lemmatisierung für BM25)
+// INVARIANTEN: Input to decompose() MUST be lowercased (e.g. via normalize_umlauts) to prevent debug panics
+// HOTSPOTS:    analyze(), decompose(), normalize_umlauts() — Deutsch + Englisch Support
+
 use std::collections::HashSet;
 
 /// KMU-Fachvokabular und allgemeiner deutscher Wortschatz.
@@ -240,7 +246,8 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
             token
         );
 
-        if token.len() <= self.min_component_len {
+        // Guard against oversized single tokens (e.g., > 128 bytes) to avoid O(n^2) DP overhead
+        if token.len() <= self.min_component_len || token.len() > 128 {
             return vec![token];
         }
 
@@ -878,5 +885,63 @@ mod tests {
             passed,
             total_cases
         );
+    }
+
+    #[test]
+    fn test_decompose_oversized_token_early_exit() {
+        let splitter = GermanCompoundSplitter::new();
+        let oversized_token = "a".repeat(200);
+        let result = splitter.decompose(&oversized_token);
+        assert_eq!(result, vec![oversized_token.as_str()]);
+    }
+
+    #[test]
+    fn trie_case_empty_single_and_multibyte() {
+        let mut trie = Trie::new();
+        assert!(!trie.contains("a"));
+        assert!(!trie.starts_with("a"));
+        assert!(trie.starts_with("")); // empty string is prefix of empty trie root
+
+        trie.insert("a");
+        assert!(trie.contains("a"));
+        assert!(trie.starts_with("a"));
+
+        trie.insert("über");
+        assert!(trie.contains("über"));
+        assert!(trie.starts_with("üb"));
+        assert!(!trie.contains("üb"));
+    }
+
+    #[test]
+    fn german_compound_splitter_case_constructors() {
+        let default_splitter = GermanCompoundSplitter::new();
+        assert_eq!(default_splitter.min_component_len(), 3);
+
+        let custom_min = GermanCompoundSplitter::with_min_length(4);
+        assert_eq!(custom_min.min_component_len(), 4);
+
+        let mut custom_words = HashSet::new();
+        custom_words.insert("super".to_string());
+        custom_words.insert("kauf".to_string());
+
+        let dict_splitter = GermanCompoundSplitter::with_dictionary(3, custom_words);
+        assert_eq!(dict_splitter.min_component_len(), 3);
+        let parts = dict_splitter.decompose("superkauf");
+        assert_eq!(parts, vec!["super", "kauf"]);
+    }
+
+    #[test]
+    fn passthrough_tokenizer_case_methods() {
+        let tok = PassthroughTokenizer::new("en");
+        assert_eq!(tok.language(), "en");
+        let decl = tok.decompose("hello");
+        assert_eq!(decl, vec!["hello"]);
+    }
+
+    #[test]
+    fn normalize_umlauts_case_edge_inputs() {
+        assert_eq!(normalize_umlauts(""), "");
+        assert_eq!(normalize_umlauts("ÄÖÜß"), "aeoeuess");
+        assert_eq!(normalize_umlauts("Grüße aus Köln!"), "gruesse aus koeln!");
     }
 }
