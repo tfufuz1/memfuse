@@ -7,7 +7,7 @@
 | Field | Value |
 |-------|-------|
 | SESSION | `unknown` |
-| LAST_SYNC | `2026-08-30T14:23:23Z` |
+| LAST_SYNC | `2026-08-30T14:39:31Z` |
 
 ## Critical Blockers (MUST FIX THIS SESSION)
 | ID | Category | Severity | File & Line | Befund |
@@ -21,19 +21,20 @@
 ## Open Anchors (IN-PROGRESS)
 | ID | Status | File & Line | Description |
 |----|--------|-------------|-------------|
+| `TEST:AGT-INDEX-006` | `OPEN` | `crates/memfuse-index/src/hnsw.rs:2940` | // ANCHOR[TEST:AGT-INDEX-006] STATUS:OPEN (TS:2026-08-30T14:11:21Z) (SESSION: 10569099) |
 | `TEST:MCP-002` | `IN-PROGRESS` | `crates/memfuse-mcp/tests/mcp_test.rs:233` | // ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS (TS:2026-08-25T00:00:00Z) — Error-Path Coverage |
 
 ## Crate Inventory & Status Summary
 | Crate | Layer | LOC | Status | Description |
 |-------|-------|-----|--------|-------------|
-| `memfuse-core` | L0 | 7237 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-checkpoint` | L1 | 1264 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-crypto` | L1 | 1186 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-graph` | L1 | 4513 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-core` | L0 | 7609 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-checkpoint` | L1 | 1468 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
+| `memfuse-crypto` | L1 | 1411 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
+| `memfuse-graph` | L1 | 4674 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | L1 | 7305 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | L1 | 10393 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-text` | L1 | 3631 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | L2 | 12918 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-store` | L1 | 10433 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-text` | L1 | 3972 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-db` | L2 | 12418 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | L3 | 2515 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | L3 | 1113 | 🧊 Optional |  |
 | `memfuse-ollama` | L3 | 2375 | 🟢 Clean |  |
