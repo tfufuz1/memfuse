@@ -251,6 +251,7 @@ mod hex {
 mod tests {
     use super::*;
 
+    /// Deckt R-01 ab: Schreibzugriff ist im Default gesperrt (Read-Only Safety Policy).
     #[test]
     fn test_sandbox_default_policy() {
         let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
@@ -276,6 +277,7 @@ mod tests {
             .is_err());
     }
 
+    /// Deckt R-01 ab: Schreibzugriff ist erlaubt, wenn `allow_db_writes` explizit aktiviert ist.
     #[test]
     fn test_sandbox_permitting_policy() {
         let policy = SandboxPolicy {
@@ -291,6 +293,9 @@ mod tests {
             .is_ok());
         assert!(sandbox
             .validate_tool_call("memfuse_insert", &Value::Null)
+            .is_ok());
+        assert!(sandbox
+            .validate_tool_call("memfuse_delete", &Value::Null)
             .is_ok());
         assert!(sandbox
             .validate_tool_call("some_custom_tool", &Value::Null)
