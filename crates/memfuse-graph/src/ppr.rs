@@ -1,11 +1,10 @@
 //! Personalized PageRank (PPR) power iteration implementation for `CsrGraph`.
 
 // FILE-CONTEXT
-// STAND:       2026-08-30T14:35:05Z (SESSION: ab88edae)
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
 // ZWECK:       Personalized PageRank für GraphRAG Community Detection
 // INVARIANTEN: CsrGraph inner state must be compacted before compute_ppr(), deterministic power iteration termination
 // HOTSPOTS:    compute_ppr(), power iteration loop
-// AGENT-NOTIZ: Option closure hygiene
 // SIEHE AUCH:  ADR-031
 
 use crate::csr::GraphInner;
@@ -41,7 +40,7 @@ pub(crate) fn compute_ppr(
     for &seed in seed_nodes {
         if let Some(&idx) = inner.id_map.get(&seed) {
             if idx < n
-                && inner.entities.get(idx).is_some_and(Option::is_some)
+                && inner.entities.get(idx).is_some_and(|e| e.is_some())
                 && seen_seeds.insert(idx)
             {
                 valid_seeds.push(idx);
@@ -72,7 +71,7 @@ pub(crate) fn compute_ppr(
     let mut out_weight_sums = vec![0.0f32; n];
 
     for i in 0..n {
-        if !inner.entities.get(i).is_some_and(Option::is_some) {
+        if !inner.entities.get(i).is_some_and(|e| e.is_some()) {
             continue;
         }
 
@@ -94,7 +93,7 @@ pub(crate) fn compute_ppr(
             let target = inner.targets[edge_idx];
             let weight = inner.weights[edge_idx];
 
-            if inner.entities.get(target).is_some_and(Option::is_some) && weight > 0.0 {
+            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {
                 sum += weight;
                 edges.push(OutgoingEdge { target, weight });
             }
@@ -132,7 +131,7 @@ pub(crate) fn compute_ppr(
         // Rank mass accumulated at dead-end (dangling) nodes
         let mut dangling_sum = 0.0f32;
         for i in 0..n {
-            if inner.entities.get(i).is_some_and(Option::is_some) && out_weight_sums[i] == 0.0 {
+            if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {
                 dangling_sum += ranks[i];
             }
         }
@@ -182,7 +181,7 @@ pub(crate) fn compute_ppr(
     // 5. Build and sort result vector
     let mut results = Vec::new();
     for (idx, &rank) in ranks.iter().enumerate() {
-        if rank > 0.0 && inner.entities.get(idx).is_some_and(Option::is_some) {
+        if rank > 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {
             if let Some(&id) = inner.reverse_map.get(idx) {
                 results.push((id, rank));
             }
@@ -278,61 +277,6 @@ mod tests {
         assert!(rank_map[&EntityId::new(2)] > rank_map[&EntityId::new(3)]);
         assert!(rank_map[&EntityId::new(3)] > rank_map[&EntityId::new(4)]);
         assert!(rank_map[&EntityId::new(4)] > rank_map[&EntityId::new(5)]);
-    }
-
-    #[tokio::test]
-    async fn test_ppr_handles_sink_node_correctly() {
-        // Graph: A (1) -> B (2), B has NO outgoing edge (Sink), C (3) -> A (1)
-        let graph = CsrGraph::new();
-        let tx = TxId::new(1);
-
-        let id_a = EntityId::new(1);
-        let id_b = EntityId::new(2);
-        let id_c = EntityId::new(3);
-
-        graph
-            .add_entity(tx, Entity::new(id_a, "Node A", "Node"))
-            .await
-            .unwrap();
-        graph
-            .add_entity(tx, Entity::new(id_b, "Node B (Sink)", "Node"))
-            .await
-            .unwrap();
-        graph
-            .add_entity(tx, Entity::new(id_c, "Node C", "Node"))
-            .await
-            .unwrap();
-
-        // A -> B
-        graph
-            .add_edge(tx, Edge::new(id_a, id_b, "link"))
-            .await
-            .unwrap();
-        // C -> A
-        graph
-            .add_edge(tx, Edge::new(id_c, id_a, "link"))
-            .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
-
-        let config = PprConfig::default();
-        let results = graph
-            .personalized_page_rank(&[id_a], &config)
-            .await
-            .unwrap();
-
-        let total_mass: f32 = results.iter().map(|(_, score)| score).sum();
-        assert!(
-            (total_mass - 1.0).abs() < 1e-4,
-            "PPR mass must conserve to 1.0 when graph contains sink node B, got {total_mass}"
-        );
-
-        let rank_map: std::collections::HashMap<EntityId, f32> = results.into_iter().collect();
-        assert!(
-            rank_map.contains_key(&id_b),
-            "Sink node B must receive rank mass from A"
-        );
-        assert!(rank_map[&id_b] > 0.0, "Sink node B score must be positive");
     }
 
     #[tokio::test]

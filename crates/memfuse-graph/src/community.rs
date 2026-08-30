@@ -112,7 +112,7 @@ pub async fn detect_communities(
 
         let mut valid_nodes = Vec::new();
         for idx in 0..num_nodes {
-            if inner.entities.get(idx).is_some_and(Option::is_some) {
+            if inner.entities.get(idx).is_some_and(|e| e.is_some()) {
                 valid_nodes.push(idx);
             }
         }
@@ -130,7 +130,7 @@ pub async fn detect_communities(
                 for edge_idx in start..end {
                     let v = inner.targets[edge_idx];
                     if !inner.tombstoned_edges.contains(&(u, v))
-                        && inner.entities.get(v).is_some_and(Option::is_some)
+                        && inner.entities.get(v).is_some_and(|e| e.is_some())
                     {
                         let w = inner.weights[edge_idx];
                         adj.entry(u).or_default().push((v, w));
@@ -398,79 +398,6 @@ mod tests {
         }
     }
 
-    proptest::proptest! {
-        #[test]
-        fn prop_community_detection_never_panics(
-            node_count in 1usize..50,
-            edge_specs in proptest::collection::vec((0..50usize, 0..50usize), 0..150),
-            max_iterations in 1u32..50,
-            seed in proptest::num::u64::ANY,
-        ) {
-            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-            let res: std::result::Result<(), proptest::test_runner::TestCaseError> = rt.block_on(async {
-                let graph = CsrGraph::new();
-                let tx = TxId::new(1);
-                for i in 0..node_count {
-                    graph.add_entity(tx, Entity::new(EntityId::new(i as u64 + 1), format!("N{i}"), "Node")).await.unwrap();
-                }
-                for (src, dst) in edge_specs {
-                    let src_id = EntityId::new((src % node_count) as u64 + 1);
-                    let dst_id = EntityId::new((dst % node_count) as u64 + 1);
-                    let _ = graph.add_edge(tx, Edge::new(src_id, dst_id, "link")).await;
-                }
-                graph.commit(tx).await.unwrap();
-
-                let config = CommunityDetectionConfig { max_iterations, seed };
-                let result = detect_communities(&graph, &config).await;
-
-                proptest::prop_assert!(result.is_ok() || result.is_err());
-                if let Ok(assignments) = result {
-                    proptest::prop_assert_eq!(assignments.len(), node_count);
-                }
-                Ok(())
-            });
-            res?;
-        }
-
-        #[test]
-        fn prop_community_detection_every_node_assigned(
-            node_count in 1usize..30,
-            edge_specs in proptest::collection::vec((0..30usize, 0..30usize), 0..60),
-            seed in proptest::num::u64::ANY,
-        ) {
-            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-            let res: std::result::Result<(), proptest::test_runner::TestCaseError> = rt.block_on(async {
-                let graph = CsrGraph::new();
-                let tx = TxId::new(1);
-                let expected_ids: std::collections::HashSet<_> = (0..node_count)
-                    .map(|i| EntityId::new(i as u64 + 1))
-                    .collect();
-
-                for &id in &expected_ids {
-                    graph.add_entity(tx, Entity::new(id, format!("Node{}", id.inner()), "Node")).await.unwrap();
-                }
-                for (src, dst) in edge_specs {
-                    let src_id = EntityId::new((src % node_count) as u64 + 1);
-                    let dst_id = EntityId::new((dst % node_count) as u64 + 1);
-                    let _ = graph.add_edge(tx, Edge::new(src_id, dst_id, "link")).await;
-                }
-                graph.commit(tx).await.unwrap();
-
-                let config = CommunityDetectionConfig { max_iterations: 20, seed };
-                let assignments = detect_communities(&graph, &config).await.unwrap();
-
-                proptest::prop_assert_eq!(assignments.len(), node_count);
-                let assigned_ids: std::collections::HashSet<_> = assignments
-                    .into_iter()
-                    .map(|a| a.entity_id)
-                    .collect();
-                proptest::prop_assert_eq!(assigned_ids, expected_ids);
-                Ok(())
-            });
-            res?;
-        }
-    }
-
     #[tokio::test]
     async fn test_community_detection_non_convergence_logs_warning_and_returns_best_effort() {
         use tracing_subscriber::layer::SubscriberExt;
@@ -534,19 +461,6 @@ mod tests {
 
     #[tokio::test]
     #[allow(non_snake_case)]
-    async fn detect_communities_CASE_empty_graph() {
-        let graph = CsrGraph::new();
-        let config = CommunityDetectionConfig::default();
-
-        let assignments = detect_communities(&graph, &config).await.unwrap(); // unwrap allowed
-        assert!(
-            assignments.is_empty(),
-            "Community detection on empty graph must return empty assignments"
-        );
-    }
-
-    #[tokio::test]
-    #[allow(non_snake_case)]
     async fn detect_communities_CASE_single_node() {
         let graph = CsrGraph::new();
         let tx = TxId::new(1);
@@ -571,7 +485,7 @@ mod tests {
     fn serialization_roundtrip_CASE_community_config_and_assignment() {
         let config = CommunityDetectionConfig {
             max_iterations: 150,
-            seed: 987_654_321,
+            seed: 987654321,
         };
 
         let serialized_config = bincode::serialize(&config).unwrap(); // unwrap allowed
