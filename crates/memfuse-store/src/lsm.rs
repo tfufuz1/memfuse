@@ -1,6 +1,6 @@
 //! LSM-Tree (Log-Structured Merge-Tree) storage engine.
 // FILE-CONTEXT
-// STAND: 2026-08-27T14:32:00Z
+// STAND: 2026-08-30T21:49:55Z (SESSION: 283abf0f)
 // ZWECK: LSM-Tree-Implementierung (MemTable + SSTable + Compaction)
 // INVARIANTEN: Compaction darf keine Daten verlieren; WAL-Replay vor MemTable-Aufbau
 // NICHT-OFFENSICHTLICH: Compaction-Lock muss VOR MemTable-Lock genommen werden (Deadlock-Gefahr)
@@ -660,9 +660,8 @@ impl StorageEngine for LsmStorage {
                     }
                     tracing::debug!("LsmStorage::get_at_seq MATCH found in SSTable");
                     return Ok(Some(val.to_vec()));
-                } else {
-                    tracing::debug!("LsmStorage::get_at_seq SKIPPED entry due to seq/tx filter");
                 }
+                tracing::debug!("LsmStorage::get_at_seq SKIPPED entry due to seq/tx filter");
             }
         }
 
