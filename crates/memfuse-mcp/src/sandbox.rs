@@ -169,12 +169,7 @@ impl McpSandbox {
     pub fn classify_method(method: &str) -> ToolCategory {
         match method {
             "memfuse_search" | "memfuse_get" | "memfuse_collections" => ToolCategory::DatabaseRead,
-            "memfuse_insert"
-            | "memfuse_delete"
-            | "memfuse_upsert"
-            | "memfuse_relate"
-            | "memfuse_create_collection"
-            | "memfuse_drop_collection" => ToolCategory::DatabaseWrite,
+            "memfuse_insert" | "memfuse_delete" | "memfuse_upsert" => ToolCategory::DatabaseWrite,
             _ => ToolCategory::CodeExecution,
         }
     }

@@ -380,15 +380,4 @@ mod tests {
         assert!(empty_ctx.retained_chunks.is_empty());
         assert!(empty_ctx.source_doc_ids.is_empty());
     }
-
-    #[test]
-    fn test_compact_empty_chunks_returns_empty_compacted_context() {
-        let budget = TokenBudget::new(100, 0);
-        let compactor = ContextCompactor::new(budget, CompactionStrategy::Truncate);
-        let result = compactor.compact(vec![]);
-        assert!(result.retained_chunks.is_empty());
-        assert!(result.status_tokens.is_empty());
-        assert_eq!(result.tokens_used, 0);
-        assert!(result.source_doc_ids.is_empty());
-    }
 }

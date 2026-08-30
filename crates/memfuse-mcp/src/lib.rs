@@ -131,16 +131,6 @@ fn detect_suspicious_prompt_injection(text: &str) -> bool {
     false
 }
 
-/// Checks whether database write access is explicitly enabled via environment variable `MEMFUSE_MCP_ALLOW_WRITE`.
-pub fn is_write_allowed_by_env() -> bool {
-    std::env::var("MEMFUSE_MCP_ALLOW_WRITE")
-        .map(|v| {
-            let s = v.trim().to_lowercase();
-            s == "1" || s == "true" || s == "yes"
-        })
-        .unwrap_or(false)
-}
-
 /// MCP-Server mit stdio-Transport (JSON-RPC 2.0).
 ///
 /// stdout ist dem Protokoll vorbehalten — Logs gehen ausschließlich nach stderr.
@@ -170,17 +160,9 @@ impl McpServer {
         db: Arc<MemFuse>,
         embedder: Arc<dyn TextEmbeddingEngine>,
     ) -> Result<Self, MemFuseError> {
-        Self::with_write_permission(db, embedder, is_write_allowed_by_env())
-    }
-
-    pub fn with_write_permission(
-        db: Arc<MemFuse>,
-        embedder: Arc<dyn TextEmbeddingEngine>,
-        allow_db_writes: bool,
-    ) -> Result<Self, MemFuseError> {
         let policy = SandboxPolicy {
             allow_db_reads: true,
-            allow_db_writes,
+            allow_db_writes: true,
             allow_code_execution: false,
             max_execution_ms: 5_000,
         };

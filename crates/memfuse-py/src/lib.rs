@@ -246,6 +246,7 @@ fn results_to_py(
 
 /// Maps a MemFuseError into a structured Python PyErr with `kind`, `message`, and `details` attributes.
 fn memfuse_err(e: memfuse_core::MemFuseError) -> PyErr {
+    use pyo3::exceptions::*;
     let dto = memfuse_core::MemFuseErrorDto::from(&e);
     Python::with_gil(|py| {
         let py_err = match dto.kind.as_str() {
@@ -259,31 +260,11 @@ fn memfuse_err(e: memfuse_core::MemFuseError) -> PyErr {
             "Index" | "HnswConnectivityDegraded" | "Text" => {
                 MemFuseIndexError::new_err(dto.message.clone())
             }
-            "InvalidInput"
-            | "Serialization"
-            | "Json"
-            | "ParseError"
-            | "Bincode"
-            | "NotFound"
-            | "Transaction"
-            | "TransactionTimeout"
-            | "Conflict"
-            | "InvalidSequenceNumber"
-            | "CheckpointNotFound" => MemFuseValueError::new_err(dto.message.clone()),
             "Crypto" => MemFuseCryptoError::new_err(dto.message.clone()),
-            "Sandbox"
-            | "MemoryLimitExceeded"
-            | "SandboxTimeout"
-            | "PolicyViolation"
-            | "NamespaceViolation" => {
-                pyo3::exceptions::PyPermissionError::new_err(dto.message.clone())
-            }
-            "MemoryBudgetExceeded" => pyo3::exceptions::PyMemoryError::new_err(dto.message.clone()),
-            "CapabilityUnsupported" => {
-                pyo3::exceptions::PyNotImplementedError::new_err(dto.message.clone())
-            }
+            "MemoryBudgetExceeded" => PyMemoryError::new_err(dto.message.clone()),
+            "CapabilityUnsupported" => PyNotImplementedError::new_err(dto.message.clone()),
             "Internal" | "Cluster" => MemFuseInternalError::new_err(dto.message.clone()),
-            _ => MemFuseError::new_err(dto.message.clone()),
+            _ => PyException::new_err(format!("[{}] {}", dto.kind, dto.message)),
         };
         let value = py_err.value(py);
         if value.setattr("kind", dto.kind).is_err() {
