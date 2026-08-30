@@ -104,7 +104,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                                 if let Ok(eid) = EntityId::from_key(&stored.id) {
                                     let entity =
                                         memfuse_core::Entity::new(eid, &stored.id, "Document");
-                                    if let Err(e) = self.graph_index.add_entity(recovery_tx, entity).await {
+                                    if let Err(e) =
+                                        self.graph_index.add_entity(recovery_tx, entity).await
+                                    {
                                         tracing::warn!(
                                             doc_id = %stored.id,
                                             error = %e,
