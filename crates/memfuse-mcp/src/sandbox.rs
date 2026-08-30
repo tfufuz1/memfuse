@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND:       2026-08-30T14:46:32Z (SESSION: 2c814094)
+// ZWECK:       MCP Sandbox & Zero-Trust Tool Isolation Layer
+// INVARIANTEN: Opt-In Security; volatile_results nutzt Single-Lock (parking_lot::Mutex); keine geschachtelten Locks
+// HOTSPOTS:    validate_tool_call(), store_volatile(), execute_with_timeout()
+// SIEHE AUCH:  ADR-010, rules/detect_nested_locks.yml
+
 // memfuse-mcp/src/sandbox.rs
 // MCP Tool Isolation Layer (Anthropic Containment Pattern)
 
@@ -96,6 +103,11 @@ pub struct McpSandbox {
 impl McpSandbox {
     /// Erstellt eine neue Sandbox-Instanz mit frischem Sitzungsschlüssel.
     pub fn new(policy: SandboxPolicy) -> Result<Self> {
+        if policy.max_execution_ms == 0 {
+            return Err(MemFuseError::InvalidInput(
+                "Sandbox: max_execution_ms must be greater than 0".into(),
+            ));
+        }
         use rand::RngCore;
         let mut salt = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut salt);
@@ -157,7 +169,12 @@ impl McpSandbox {
     pub fn classify_method(method: &str) -> ToolCategory {
         match method {
             "memfuse_search" | "memfuse_get" | "memfuse_collections" => ToolCategory::DatabaseRead,
-            "memfuse_insert" | "memfuse_delete" | "memfuse_upsert" => ToolCategory::DatabaseWrite,
+            "memfuse_insert"
+            | "memfuse_delete"
+            | "memfuse_upsert"
+            | "memfuse_relate"
+            | "memfuse_create_collection"
+            | "memfuse_drop_collection" => ToolCategory::DatabaseWrite,
             _ => ToolCategory::CodeExecution,
         }
     }
