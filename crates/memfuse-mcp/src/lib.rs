@@ -4,9 +4,9 @@ pub mod sandbox;
 mod tests;
 
 // FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// STAND:       2026-08-30T14:46:32Z (SESSION: 2c814094)
 // ZWECK:       stdio JSON-RPC 2.0 MCP-Server (kein HTTP! ADR-010)
-// INVARIANTEN: Transport ist ausschließlich stdin/stdout — niemals TCP/axum, bounded RPC message size
+// INVARIANTEN: Transport ist ausschließlich stdin/stdout — niemals TCP/axum, bounded RPC message size, chunk/meta bounds
 // HOTSPOTS:    run_stdio_loop(), handle_request(), read_line_bounded()
 // SIEHE AUCH:  ADR-010, rules/async-io.md
 
@@ -23,6 +23,10 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 pub const MAX_RPC_BYTES: usize = 16 * 1024 * 1024;
 /// Maximum allowed search query length in bytes (64 KB).
 pub const MAX_SEARCH_QUERY_BYTES: usize = 64 * 1024;
+/// Maximum allowed document chunks per insert (1,000).
+pub const MAX_INSERT_CHUNKS: usize = 1_000;
+/// Maximum allowed metadata keys per document (100).
+pub const MAX_METADATA_KEYS: usize = 100;
 
 /// Reads a single line from an async reader into `buf` up to `max_bytes`.
 /// If the line exceeds `max_bytes`, consumes and discards the remainder of the line without allocating memory and returns `InvalidData`.
@@ -31,6 +35,12 @@ pub async fn read_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(
     buf: &mut String,
     max_bytes: usize,
 ) -> std::io::Result<usize> {
+    if max_bytes == 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "max_bytes limit must be greater than 0",
+        ));
+    }
     buf.clear();
     let mut raw_bytes = Vec::new();
 
@@ -589,6 +599,14 @@ impl McpServer {
                     .cloned()
                     .unwrap_or_default();
 
+                if base_metadata.len() > MAX_METADATA_KEYS {
+                    return Err(McpError::invalid_params(format!(
+                        "metadata entry count exceeds limit: {} > {} limit",
+                        base_metadata.len(),
+                        MAX_METADATA_KEYS
+                    )));
+                }
+
                 let col = self.db.collection(col_name).await.map_err(McpError::from)?;
 
                 if let Some(vector) = vector_opt {
@@ -636,6 +654,14 @@ impl McpServer {
                         "ok": false,
                         "error": "Text konnte nicht in Chunks aufgeteilt werden (leer?)"
                     }));
+                }
+
+                if chunks.len() > MAX_INSERT_CHUNKS {
+                    return Err(McpError::invalid_params(format!(
+                        "Document chunk count exceeds limit: {} > {} limit",
+                        chunks.len(),
+                        MAX_INSERT_CHUNKS
+                    )));
                 }
 
                 let total = chunks.len();

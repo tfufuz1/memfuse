@@ -303,6 +303,86 @@ async fn test_insert_validates_oversized_id() {
 }
 
 #[tokio::test]
+async fn test_read_line_bounded_zero_limit_returns_invalid_input() {
+    use crate::read_line_bounded;
+    use std::io::Cursor;
+    use tokio::io::BufReader;
+
+    let data = "hello\n";
+    let mut reader = BufReader::new(Cursor::new(data));
+    let mut buf = String::new();
+    let res = read_line_bounded(&mut reader, &mut buf, 0).await;
+    assert!(res.is_err());
+    let err = res.unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+}
+
+#[test]
+fn test_sandbox_policy_zero_timeout_rejected() {
+    use crate::sandbox::{McpSandbox, SandboxPolicy};
+
+    let policy = SandboxPolicy {
+        allow_db_reads: true,
+        allow_db_writes: false,
+        allow_code_execution: false,
+        max_execution_ms: 0,
+    };
+    let res = McpSandbox::new(policy);
+    assert!(res.is_err());
+    let err_str = res.err().unwrap().to_string();
+    assert!(err_str.contains("max_execution_ms must be greater than 0"));
+}
+
+#[tokio::test]
+async fn test_insert_validates_oversized_metadata_keys() {
+    let (server, _tmp) = create_mock_server().await;
+
+    let mut huge_metadata = serde_json::Map::new();
+    for i in 0..101 {
+        huge_metadata.insert(format!("key_{i}"), json!("val"));
+    }
+
+    let req = make_request(
+        "memfuse_insert",
+        json!({
+            "id": "doc_meta",
+            "text": "sample text",
+            "metadata": Value::Object(huge_metadata)
+        }),
+    );
+    let resp = server.handle(req).await;
+    let err = resp.error.expect("error expected for oversized metadata");
+    assert_eq!(err.code, -32602);
+    assert!(err.message.contains("metadata entry count exceeds limit"));
+}
+
+#[tokio::test]
+async fn test_insert_validates_oversized_chunk_count() {
+    let (server, _tmp) = create_mock_server().await;
+
+    // MarkdownChunker groups small sections until ~512 tokens per chunk.
+    // Create 1,005 sections where each section is ~2,000 characters so each section becomes a separate chunk.
+    let mut huge_text = String::new();
+    let section_body = "word ".repeat(400); // ~2000 chars
+    for i in 0..1_005 {
+        use std::fmt::Write;
+        let _ = writeln!(huge_text, "# Section {i}\n\n{section_body}\n");
+    }
+
+    let req = make_request(
+        "memfuse_insert",
+        json!({
+            "id": "huge_doc",
+            "text": huge_text
+        }),
+    );
+    let resp = server.handle(req).await;
+    let err = resp.error.expect("error expected for huge chunk count");
+    assert_eq!(err.code, -32602);
+    assert!(err.message.contains("Document chunk count exceeds limit"));
+}
+
+#[tokio::test]
 async fn test_whitespace_collection_name_fallback_or_rejection() {
     let (server, _tmp) = create_mock_server().await;
 

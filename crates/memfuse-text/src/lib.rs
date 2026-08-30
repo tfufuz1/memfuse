@@ -72,9 +72,9 @@ impl<S: memfuse_core::StorageEngine> TextIndex for Bm25Scorer<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use memfuse_core::{StorageEngine, StorageStats};
     use std::collections::HashMap;
     use std::sync::Mutex;
-    use memfuse_core::{StorageEngine, StorageStats};
 
     struct MockStorage {
         data: Mutex<HashMap<Vec<u8>, Vec<u8>>>,
@@ -95,7 +95,10 @@ mod tests {
         }
 
         async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-            self.data.lock().unwrap().insert(key.to_vec(), value.to_vec());
+            self.data
+                .lock()
+                .unwrap()
+                .insert(key.to_vec(), value.to_vec());
             Ok(())
         }
 

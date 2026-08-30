@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND:       2026-08-30T14:46:32Z (SESSION: 2c814094)
+// ZWECK:       MCP JSON-RPC 2.0 Protokoll-Typen & DTO-Abbildung für MemFuse
+// INVARIANTEN: DTO-Konvertierung aus MemFuseError muss saubere JSON-RPC 2.0 Codes und Error-Data tragen
+// HOTSPOTS:    McpError::from(MemFuseError), JsonRpcResponse::from_error
+// SIEHE AUCH:  ADR-010, memfuse-core/src/error_dto.rs
+
 //! MCP JSON-RPC 2.0 Protokoll-Typen (Model Context Protocol Spec v2024-11-05)
 
 use serde::{Deserialize, Serialize};
