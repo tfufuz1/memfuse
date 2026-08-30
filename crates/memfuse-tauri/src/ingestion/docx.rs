@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-08-30T14:38:30Z (SESSION: 45595f71)
+// ZWECK: DOCX document text extraction.
+// INVARIANTEN: Zero panic policy on corrupted or malformed DOCX byte inputs (uses catch_unwind).
+// NICHT-OFFENSICHTLICH: Empty input returns Ok(empty string) without calling parser library.
+// SIEHE AUCH: crates/memfuse-tauri/src/ingestion/pipeline.rs
+
 use memfuse_core::{MemFuseError, Result};
 use std::path::Path;
 

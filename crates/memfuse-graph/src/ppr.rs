@@ -289,14 +289,29 @@ mod tests {
         let id_b = EntityId::new(2);
         let id_c = EntityId::new(3);
 
-        graph.add_entity(tx, Entity::new(id_a, "Node A", "Node")).await.unwrap();
-        graph.add_entity(tx, Entity::new(id_b, "Node B (Sink)", "Node")).await.unwrap();
-        graph.add_entity(tx, Entity::new(id_c, "Node C", "Node")).await.unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_a, "Node A", "Node"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_b, "Node B (Sink)", "Node"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_c, "Node C", "Node"))
+            .await
+            .unwrap();
 
         // A -> B
-        graph.add_edge(tx, Edge::new(id_a, id_b, "link")).await.unwrap();
+        graph
+            .add_edge(tx, Edge::new(id_a, id_b, "link"))
+            .await
+            .unwrap();
         // C -> A
-        graph.add_edge(tx, Edge::new(id_c, id_a, "link")).await.unwrap();
+        graph
+            .add_edge(tx, Edge::new(id_c, id_a, "link"))
+            .await
+            .unwrap();
         graph.commit(tx).await.unwrap();
 
         let config = PprConfig::default();
@@ -316,10 +331,7 @@ mod tests {
             rank_map.contains_key(&id_b),
             "Sink node B must receive rank mass from A"
         );
-        assert!(
-            rank_map[&id_b] > 0.0,
-            "Sink node B score must be positive"
-        );
+        assert!(rank_map[&id_b] > 0.0, "Sink node B score must be positive");
     }
 
     #[tokio::test]
