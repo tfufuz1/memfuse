@@ -735,8 +735,11 @@ pub fn run_sync_docs(check_only: bool) -> bool {
     let crates = get_workspace_crates();
     println!("Parsed {} workspace crates.", crates.len());
 
-    let full_ws = generate_full_working_state(&tags, &crates);
-    let mut success = true;
+    let dag_topology_content = generate_dag_topology_section(&crates);
+    let crate_inventory_content = generate_crate_inventory_section(&crates);
+
+    let full_working_state = generate_full_working_state(&tags, &crates);
+    let changelog_content = generate_changelog(&tags);
 
     if check_only {
         let current_ws = fs::read_to_string("WORKING_STATE.md").unwrap_or_default();
@@ -866,52 +869,8 @@ pub fn run_check_consistency() -> bool {
     true
 }
 
-// --- NEW CONTEXT & AUDIT COMMAND IMPLEMENTATIONS ---
-
-fn severity_weight(sev: Option<&str>) -> usize {
-    match sev.unwrap_or("").to_uppercase().as_str() {
-        "BLOCKER" => 4,
-        "CRITICAL" => 3,
-        "MAJOR" => 2,
-        "MINOR" => 1,
-        _ => 0,
-    }
-}
-
-pub fn run_context_digest(crate_filter: Option<String>, format: &str) -> Result<(), String> {
-    let all_tags = scan_tags("crates");
-
-    let filtered_tags: Vec<_> = if let Some(ref cf) = crate_filter {
-        all_tags
-            .into_iter()
-            .filter(|t| t.file_path.contains(cf))
-            .collect()
-    } else {
-        all_tags
-    };
-
-    let mut crate_stats: BTreeMap<String, CrateStats> = BTreeMap::new();
-
-    for t in &filtered_tags {
-        if let Some(cname) = extract_crate_name(&t.file_path) {
-            let entry = crate_stats.entry(cname).or_insert(CrateStats {
-                blockers: 0,
-                criticals: 0,
-                anchors: 0,
-            });
-            if t.tag_type == "ANCHOR" && !t.is_resolved {
-                entry.anchors += 1;
-            } else if t.tag_type == "AI-TAG" && !t.is_resolved {
-                match t.severity.as_deref().unwrap_or("") {
-                    "BLOCKER" => entry.blockers += 1,
-                    "CRITICAL" => entry.criticals += 1,
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    let blockers: Vec<_> = filtered_tags
+pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
+    let completed_anchors: Vec<_> = tags
         .iter()
         .filter(|t| {
             !t.is_resolved && severity_weight(t.severity.as_deref()) >= 3 && t.tag_type == "AI-TAG"

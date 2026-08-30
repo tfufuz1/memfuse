@@ -982,6 +982,103 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_delete_many_default_impl_deletes_all_keys() {
+        struct MockStorage {
+            data: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<Vec<u8>, Vec<u8>>>>,
+            delete_call_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        }
+
+        #[async_trait::async_trait]
+        impl StorageEngine for MockStorage {
+            async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+                Ok(self.data.lock().unwrap().get(key).cloned())
+            }
+            async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> {
+                Ok(None)
+            }
+            async fn put(&self, _: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+                self.data
+                    .lock()
+                    .unwrap()
+                    .insert(key.to_vec(), value.to_vec());
+                Ok(())
+            }
+            async fn delete(&self, _: TxId, key: &[u8]) -> Result<()> {
+                self.delete_call_count
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                self.data.lock().unwrap().remove(key);
+                Ok(())
+            }
+            async fn commit(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
+                Ok(())
+            }
+            async fn flush(&self) -> Result<()> {
+                Ok(())
+            }
+            async fn stats(&self) -> Result<StorageStats> {
+                Ok(StorageStats {
+                    num_segments: 0,
+                    total_size_bytes: 0,
+                    memtable_size_bytes: 0,
+                })
+            }
+            async fn last_seq_no(&self) -> Result<u64> {
+                Ok(0)
+            }
+            async fn last_tx_id(&self) -> Result<TxId> {
+                Ok(TxId(0))
+            }
+            async fn pin_checkpoint(&self, _: u64) -> Result<()> {
+                Ok(())
+            }
+            async fn unpin_checkpoint(&self, _: u64) -> Result<()> {
+                Ok(())
+            }
+            async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+                let map = self.data.lock().unwrap();
+                let mut res = Vec::new();
+                for (k, v) in map.iter() {
+                    if k.starts_with(prefix) {
+                        res.push((k.clone(), v.clone()));
+                    }
+                }
+                Ok(res)
+            }
+            async fn scan(
+                &self,
+                _: std::ops::Bound<&[u8]>,
+                _: std::ops::Bound<&[u8]>,
+            ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+                Ok(vec![])
+            }
+        }
+
+        let map = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+        let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let store = MockStorage {
+            data: map.clone(),
+            delete_call_count: count.clone(),
+        };
+
+        store.put(TxId(1), b"pref:1", b"v1").await.unwrap();
+        store.put(TxId(1), b"pref:2", b"v2").await.unwrap();
+        store.put(TxId(1), b"other:1", b"v3").await.unwrap();
+
+        let deleted = store.delete_prefix(TxId(2), b"pref:").await.unwrap();
+        assert_eq!(deleted, 2);
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert!(store.get(b"pref:1").await.unwrap().is_none());
+        assert!(store.get(b"pref:2").await.unwrap().is_none());
+        assert_eq!(store.get(b"other:1").await.unwrap().unwrap(), b"v3");
+    }
+
+    #[tokio::test]
     async fn test_vector_index_defaults() {
         struct MockIndex(std::sync::atomic::AtomicUsize);
         #[async_trait::async_trait]
