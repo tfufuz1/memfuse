@@ -21,6 +21,7 @@
 ## Open Anchors (IN-PROGRESS)
 | ID | Status | File & Line | Description |
 |----|--------|-------------|-------------|
+| `TEST:AGT-INDEX-006` | `OPEN` | `crates/memfuse-index/src/hnsw.rs:2940` | // ANCHOR[TEST:AGT-INDEX-006] STATUS:OPEN (TS:2026-08-30T14:11:21Z) (SESSION: 10569099) |
 | `TEST:MCP-002` | `IN-PROGRESS` | `crates/memfuse-mcp/tests/mcp_test.rs:233` | // ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS (TS:2026-08-25T00:00:00Z) — Error-Path Coverage |
 
 ## Crate Inventory & Status Summary
