@@ -236,7 +236,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     // INVARIANT: Checkpoint TxIds use INTERNAL_BASE+n range to avoid
     // collision with Collection-sequenced TxIds [1, ~10^12].
     // See: DECISIONS.md AGT-GRAPH-001, TxId::INTERNAL_BASE
-    fn next_tx(&self) -> Result<TxId> {
+    fn allocate_tx(&self) -> Result<TxId> {
         let raw = self.tx_counter.fetch_add(1, Ordering::SeqCst);
         if raw >= 1_000_000 {
             return Err(MemFuseError::Internal(
@@ -244,6 +244,15 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             ));
         }
         Ok(TxId::new(TxId::INTERNAL_BASE + raw))
+    }
+
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use `allocate_tx()` instead — both methods are functionally identical, `allocate_tx()` is the canonical public API."
+    )]
+    #[allow(dead_code)]
+    fn next_tx(&self) -> Result<TxId> {
+        self.allocate_tx()
     }
 
     /// Creates an ephemeral transactional checkpoint RAII guard.
@@ -337,7 +346,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             let key = format!("{}:checkpoint:{}", self.namespace, name);
 
             // FIX CHK-002: Generiere eine eindeutige TxId statt INTERNAL_BASE
-            let unique_tx = self.next_tx()?;
+            let unique_tx = self.allocate_tx()?;
 
             if let Err(e) = self.storage.delete(unique_tx, key.as_bytes()).await {
                 if let Err(rb_err) = self.storage.rollback(unique_tx).await {
@@ -374,7 +383,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let value = serde_json::to_vec(&manifest)
             .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
 
-        let tx = self.next_tx()?;
+        let tx = self.allocate_tx()?;
         if let Err(e) = self.storage.put(tx, key.as_bytes(), &value).await {
             if let Err(rb_err) = self.storage.rollback(tx).await {
                 tracing::warn!(tx = ?tx, error = %rb_err, "Storage rollback failed during save_checkpoint_internal put");
@@ -957,7 +966,7 @@ mod tests {
 
         store.tx_counter.store(1_000_000, Ordering::SeqCst);
 
-        let res = store.next_tx();
+        let res = store.allocate_tx();
         assert!(res.is_err());
         if let Err(MemFuseError::Internal(msg)) = res {
             assert!(msg.contains("overflow"));

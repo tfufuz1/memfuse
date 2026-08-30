@@ -391,7 +391,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         };
 
         let entries = self.storage.scan_prefix(&scan_prefix).await?;
-        let tx = self.next_tx()?;
+        let tx = self.allocate_tx()?;
         for (k, v) in entries {
             if self.name == "default" && k.starts_with(b"__") {
                 continue;
@@ -424,7 +424,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
         let entries = self.storage.scan_prefix(&prefix).await?;
         let mut migrated_count = 0;
-        let tx = self.next_tx()?;
+        let tx = self.allocate_tx()?;
 
         for (k, v) in entries {
             // Try parsing as full document first (which indicates it needs migration)
