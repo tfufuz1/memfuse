@@ -621,6 +621,16 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
+## ADR-042: Write-Temp-Then-Rename Pattern für SSTable-Kompaktierung & Recovery Cleanup
+*   **Datum**: 2026-08-30
+*   **Status**: ✅ Final
+*   **Entscheidung**: Die SSTable-Kompaktierung in `CompactionEngine::maybe_compact` (`crates/memfuse-store/src/compaction.rs`) schreibt das Ergebnis eines Merges zuerst in eine temporäre Datei mit dem Suffix `.sst.tmp`. Erst nach erfolgreichem `builder.finish()` wird die Datei über ein atomares `tokio::fs::rename(&temp_path, &final_path)` auf ihren finalen `.sst`-Namen verschoben. Bei Fehlern während des Merging oder des Renamings wird die Temp-Datei umgehend gelöscht. Zusätzlich ignoriert und bereinigt `LsmStorage::new()` (`crates/memfuse-store/src/lsm.rs`) beim Startup-Scan automatisch alle Restdateien mit `.tmp`-Suffix.
+*   **Alternativen**:
+    - Schreiben direkt auf den Zielpfad und Versuchen des Löschens der unvollständigen Datei im Absturz-/Error-Handler. Verworfen, da bei Prozessabsturz (SIGKILL, Stromausfall) unvollständige Dateien verbleiben und beim Neustart fälschlicherweise als gültige SSTables eingelesen würden.
+*   **Begründung**: Garantiert POSIX-Atomarität für komprimierte/kompaktierte SSTables. Eine SSTable existiert im Datenverzeichnis unter ihrem finalen Namen entweder vollständig oder gar nicht, wodurch Korruption bei Abstürzen während des Kompaktierungsvorgangs ausgeschlossen wird.
+
+---
+
 ## Vorlage für neue ADRs
 ```markdown
 ## ADR-NNN: <Titel>
