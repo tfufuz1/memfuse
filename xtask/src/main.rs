@@ -735,11 +735,8 @@ pub fn run_sync_docs(check_only: bool) -> bool {
     let crates = get_workspace_crates();
     println!("Parsed {} workspace crates.", crates.len());
 
-    let dag_topology_content = generate_dag_topology_section(&crates);
-    let crate_inventory_content = generate_crate_inventory_section(&crates);
-
-    let full_working_state = generate_full_working_state(&tags, &crates);
-    let changelog_content = generate_changelog(&tags);
+    let full_ws = generate_full_working_state(&tags, &crates);
+    let mut success = true;
 
     if check_only {
         let current_ws = fs::read_to_string("WORKING_STATE.md").unwrap_or_default();

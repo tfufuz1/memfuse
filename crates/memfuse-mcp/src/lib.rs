@@ -22,6 +22,12 @@ pub async fn read_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(
     buf: &mut String,
     max_bytes: usize,
 ) -> std::io::Result<usize> {
+    if max_bytes == 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "max_bytes limit must be greater than 0",
+        ));
+    }
     buf.clear();
     let mut raw_bytes = Vec::new();
 
@@ -537,6 +543,14 @@ impl McpServer {
                     .cloned()
                     .unwrap_or_default();
 
+                if base_metadata.len() > MAX_METADATA_KEYS {
+                    return Err(McpError::invalid_params(format!(
+                        "metadata entry count exceeds limit: {} > {} limit",
+                        base_metadata.len(),
+                        MAX_METADATA_KEYS
+                    )));
+                }
+
                 let col = self.db.collection(col_name).await.map_err(McpError::from)?;
 
                 if let Some(vector) = vector_opt {
@@ -584,6 +598,14 @@ impl McpServer {
                         "ok": false,
                         "error": "Text konnte nicht in Chunks aufgeteilt werden (leer?)"
                     }));
+                }
+
+                if chunks.len() > MAX_INSERT_CHUNKS {
+                    return Err(McpError::invalid_params(format!(
+                        "Document chunk count exceeds limit: {} > {} limit",
+                        chunks.len(),
+                        MAX_INSERT_CHUNKS
+                    )));
                 }
 
                 let total = chunks.len();
