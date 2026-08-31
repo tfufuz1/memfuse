@@ -22,6 +22,8 @@ crates/memfuse-checkpoint/src/lib.rs:1205:            serde_json::from_str(&json
 crates/memfuse-checkpoint/src/lib.rs:1236:        let tx1 = store.allocate_tx().expect("// expect #[cfg(test)]");
 crates/memfuse-checkpoint/src/lib.rs:1238:        let tx2 = store.next_tx().expect("// expect #[cfg(test)]");
 crates/memfuse-checkpoint/src/lib.rs:1239:        let tx3 = store.allocate_tx().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1273:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1344:                let manifest = manifest.expect("// expect #[cfg(test)]");
 crates/memfuse-checkpoint/src/lib.rs:690:            .unwrap(); // unwrap
 crates/memfuse-checkpoint/src/lib.rs:691:        let loaded = store.load_checkpoint(1).await.unwrap().unwrap(); // unwrap
 crates/memfuse-checkpoint/src/lib.rs:702:            .unwrap(); // unwrap

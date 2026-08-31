@@ -91,7 +91,6 @@
 | `2026-08-29T17:21:26Z` | `crates/memfuse-checkpoint/src/lib.rs` | `AI-TAG` | `AGT-CKPT-001` | `e6e9abca` | `OPEN` | `0` | /// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca) |
 | `2026-08-29T17:16:44Z (SESSION: f50ed9ef)` | `crates/memfuse-embed/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | In-process ONNX Embedding Engine (Layer 3 im 5-Schichten-DAG). |
 | `2026-08-29T17:16:44Z (SESSION: f50ed9ef)` | `crates/memfuse-embed/src/reranker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung. |
-| `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-checkpoint/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | RAII CheckpointGuard + persistente Snapshot-Verwaltung |
 | `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-core/src/tx_buffer.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Transaktion-Staging-Buffer zwischen Writes und WAL-Commit |
 | `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-db/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrator-Facade (Layer 2) — öffentliche API der Collection |
 | `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-index/src/hnsw.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | HNSW-Vektorindex (Insert/Search/Delete/Persist) für Approximate Nearest Neighbor Search |
