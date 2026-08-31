@@ -50,6 +50,8 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/reaper.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Hintergrund-Reaper-Tasks zur TTL-Löschung und Bereinigung verwaister Transaktionen (Orphan Reaper). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
+| `2026-08-31T21:15:25Z (SESSION: a8f9c1d2)` | `crates/memfuse-embed/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | In-process ONNX Embedding Engine (Layer 3 im 5-Schichten-DAG). |
+| `2026-08-31T21:15:25Z (SESSION: a8f9c1d2)` | `crates/memfuse-embed/src/reranker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung. |
 | `2026-08-31T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-005` | `a3f29c1d` | `RESOLVED` | `0` | // AI-TAG[SECURITY][CRITICAL] RESOLVED: AGT-INDEX-005 — Dimension check in cosine_distance, euclidean_distance, dot_product_distance returns MemFuseError::EmbeddingDimensionMismatch (ADR-034). Testbeweis: test_cosine_distance_mismatch_returns_error etc. (TS:2026-08-31T00:00:00Z) (SESSION: a3f29c1d) |
 | `2026-08-30T22:01:55Z` | `crates/memfuse-text/src/morphology.rs` | `ANCHOR` | `TEST:TXT-001` | `cf1f75c6` | `OPEN` | `0` | // ANCHOR[TEST:TXT-001] STATUS:OPEN — Recall-Evaluation für deutsche Zusammensetzungen (TS:2026-08-30T22:01:55Z) (SESSION:cf1f75c6) |
 | `2026-08-30T21:56:10Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `TEST:AGT-INDEX-006` | `a140747b` | `OPEN` | `0` | // ANCHOR[TEST:AGT-INDEX-006] STATUS:OPEN (TS:2026-08-30T21:56:10Z) (SESSION: a140747b) |
@@ -96,8 +98,6 @@
 | `2026-08-30T14:46:32Z (SESSION: 2c814094)` | `crates/memfuse-mcp/src/protocol.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP JSON-RPC 2.0 Protokoll-Typen & DTO-Abbildung für MemFuse |
 | `2026-08-30T14:46:32Z (SESSION: 2c814094)` | `crates/memfuse-mcp/src/sandbox.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP Sandbox & Zero-Trust Tool Isolation Layer |
 | `2026-08-29T17:21:26Z` | `crates/memfuse-checkpoint/src/lib.rs` | `AI-TAG` | `AGT-CKPT-001` | `e6e9abca` | `OPEN` | `0` | /// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca) |
-| `2026-08-29T17:16:44Z (SESSION: f50ed9ef)` | `crates/memfuse-embed/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | In-process ONNX Embedding Engine (Layer 3 im 5-Schichten-DAG). |
-| `2026-08-29T17:16:44Z (SESSION: f50ed9ef)` | `crates/memfuse-embed/src/reranker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung. |
 | `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-checkpoint/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | RAII CheckpointGuard + persistente Snapshot-Verwaltung |
 | `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-core/src/tx_buffer.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Transaktion-Staging-Buffer zwischen Writes und WAL-Commit |
 | `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-db/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrator-Facade (Layer 2) — öffentliche API der Collection |
@@ -152,8 +152,3 @@
 | `` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `-` | `-` | `-` | `-` | // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
 | `` | `crates/memfuse-store/src/util.rs` | `FILE-CONTEXT` | `-` | `8f882f1f` | `-` | `-` |  |
-| `` | `crates/memfuse-text/benches/text_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Quantifiziert Durchsatz (Words/sec), Latencies p50/p95/p99 für Tokenisierungen, Morphologie & BM25-Suche. |
-| `` | `crates/memfuse-text/tests/bm25_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert BM25 Scoring gegen handberechnete mathematische Werte. |
-| `` | `crates/memfuse-text/tests/inverted_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert CRUD-Semantik, MVCC Snapshot Isolation und Nebenläufigkeits-Konsistenz. |
-| `` | `crates/memfuse-text/tests/morphology_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert Kompositazerlegung, Umlautnormalisierung, False-Positive-Rate & End-to-End Tokenisierung. |
-| `` | `crates/memfuse-text/tests/tokenizer_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert Fuzz-Robustheit (0 Panics), BM25-Score-Monotonie und Tokenisierungs-Grenzfälle. |
