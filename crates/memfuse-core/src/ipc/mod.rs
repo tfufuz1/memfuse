@@ -21,8 +21,12 @@
 #[allow(missing_docs)]
 #[allow(unused_imports)]
 #[allow(unsafe_code)]
+pub mod jsonrpc;
+#[allow(unsafe_code)]
 pub mod memfuse_generated;
 
+pub use jsonrpc::*;
+#[allow(unsafe_code)]
 pub use memfuse_generated::mem_fuse::ipc::*;
 
 #[cfg(test)]
