@@ -484,6 +484,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         }
 
         self.storage.commit(tx).await?;
+        self.graph_index.set_communities_batch(&assignments);
         Ok(assignments)
     }
 
@@ -502,6 +503,45 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         } else {
             Ok(None)
         }
+    }
+
+    /// Retrieves community assignments for a batch of entity IDs in a single operation.
+    #[tracing::instrument(level = "trace", skip(self, entity_ids))]
+    pub async fn get_communities_batch(
+        &self,
+        entity_ids: &[EntityId],
+    ) -> Result<std::collections::HashMap<EntityId, u64>> {
+        if entity_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        // 1. First try graph_index in-memory batch lookup
+        let graph_map = self.graph_index.get_communities_batch(entity_ids).await?;
+        if !graph_map.is_empty() {
+            return Ok(graph_map);
+        }
+
+        // 2. Fallback: single batch scan over collection's community prefix in storage
+        let prefix = self.namespaced_key(b"__graph:community:", 4);
+        let entries = self.storage.scan_prefix(&prefix).await?;
+        let target_set: std::collections::HashSet<&EntityId> = entity_ids.iter().collect();
+        let mut map = std::collections::HashMap::new();
+
+        for (k, v) in entries {
+            let id_bytes = match k.strip_prefix(prefix.as_slice()) {
+                Some(b) => b,
+                None => continue,
+            };
+            if let Ok(id_str) = std::str::from_utf8(id_bytes) {
+                let eid = EntityId::from(id_str);
+                if target_set.contains(&eid) {
+                    if let Ok(comm_id) = serde_json::from_slice::<u64>(&v) {
+                        map.insert(eid, comm_id);
+                    }
+                }
+            }
+        }
+        Ok(map)
     }
 
     /// Removes all data belonging to this collection from storage.

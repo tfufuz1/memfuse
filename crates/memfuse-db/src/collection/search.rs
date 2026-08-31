@@ -1,8 +1,13 @@
 // FILE-CONTEXT
 // ZWECK: Suchoperationen (Vector-, Text-, Graph- & Hybrid-Retrieval) für Collection.
 // INVARIANTEN: Snapshot-Pinning garantiert Isolation während gefilterter Suche; MAX_SEARCH_K Obergrenze.
-// NICHT-OFFENSICHTLICH: Multi-Signal RRF vereint Ergebnisse ohne inkompatible Score-Skalen.
-// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+// NICHT-OFFENSICHTLICH: Multi-Signal RRF vereint Ergebnisse ohne inkompatible Score-Skalen. Collection::query() ist der empfohlene Einstiegspunkt.
+// STAND: TS:2026-08-30T21:15:00Z (SESSION: 0dcb9f3b)
+
+//! Search operations for `Collection`.
+//!
+//! **Empfohlener Einstiegspunkt**: [`Collection::query()`] liefert einen [`HybridQueryBuilder`](crate::HybridQueryBuilder)
+//! als Fluent-API für Vektor-, Text-, Graph- und Hybrid-Suchen. Die direkten `search_*`-Methoden sind deprecated.
 
 use super::{extract_effective_importance, Collection, StoredDocument, StoredDocumentMeta};
 #[allow(deprecated)]
@@ -12,6 +17,9 @@ use memfuse_core::{
 };
 
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
+    /// Performs semantic k-NN search over stored embeddings.
+    #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, query_embedding))]
     pub async fn search(
         &self,
@@ -28,10 +36,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Performs semantic search with an advanced metadata filter.
-    #[deprecated(
-        since = "0.1.0",
-        note = "Use search_with_filter_expr with memfuse_core::FilterExpr directly"
-    )]
+    #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
     #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, query, filter))]
     pub async fn search_with_filter(
@@ -48,6 +53,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Performs semantic search with an advanced metadata filter expression (`FilterExpr`).
+    #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, query, filter))]
     pub async fn search_with_filter_expr(
         &self,
@@ -154,6 +161,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Performs semantic search using a raw text query (automatically embedded).
+    #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, query_text))]
     pub async fn search_text(
         &self,
@@ -213,6 +222,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Performs filtered semantic vector search in the collection.
+    #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, query, filter))]
     pub async fn search_filtered(
         &self,
@@ -225,6 +236,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         self.search_filtered_at(query, k, filter, seq).await
     }
 
+    /// Performs filtered semantic vector search at a specific MVCC sequence number.
+    #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
     pub async fn search_filtered_at(
         &self,
         query: &[f32],
@@ -316,6 +329,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Performs hybrid search combining BM25, vector search, and graph traversal results via RRF.
+    #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, text, vector))]
     pub async fn hybrid_search(
         &self,
@@ -330,6 +345,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
     /// Performs hybrid search combining BM25, vector search, and graph traversal, followed by optional Cross-Encoder reranking.
     #[cfg(feature = "reranking")]
+    #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, text, vector, reranker, anchor_entities))]
     pub async fn hybrid_search_reranked(
         &self,
@@ -389,6 +406,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
     /// Performs hybrid search with custom fusion weights for vector, text, and graph signals,
     /// and optional community filtering/boosting.
+    #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, text, vector))]
     pub async fn hybrid_search_with_weights(
         &self,
@@ -403,6 +422,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Performs hybrid search with custom signal fusion weights and graph traversal strategy.
+    #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, text, vector, strategy))]
     #[allow(clippy::too_many_arguments)]
     pub async fn hybrid_search_with_strategy(
@@ -508,12 +529,23 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             None
         };
 
-        let filter_or_boost = |list: Vec<crate::SearchResult>| async {
-            if let Some(target_comm) = target_community_id {
-                let mut filtered = Vec::new();
+        let (vector_results, text_results, graph_results) = if let Some(target_comm) = target_community_id {
+            let mut candidate_eids = Vec::with_capacity(
+                vector_results.len() + text_results.len() + graph_results.len(),
+            );
+            for res in vector_results.iter().chain(text_results.iter()).chain(graph_results.iter()) {
+                if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
+                    candidate_eids.push(eid);
+                }
+            }
+
+            let community_map = self.get_communities_batch(&candidate_eids).await?;
+
+            let filter_or_boost = |list: Vec<crate::SearchResult>| {
+                let mut filtered = Vec::with_capacity(list.len());
                 for mut res in list {
                     if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
-                        if let Ok(Some(comm)) = self.get_community(eid).await {
+                        if let Some(&comm) = community_map.get(&eid) {
                             if comm == target_comm {
                                 // Candidate is in the same community: boost score
                                 res.score *= 1.2;
@@ -523,14 +555,16 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     }
                 }
                 filtered
-            } else {
-                list
-            }
-        };
+            };
 
-        let vector_results = filter_or_boost(vector_results).await;
-        let text_results = filter_or_boost(text_results).await;
-        let graph_results = filter_or_boost(graph_results).await;
+            (
+                filter_or_boost(vector_results),
+                filter_or_boost(text_results),
+                filter_or_boost(graph_results),
+            )
+        } else {
+            (vector_results, text_results, graph_results)
+        };
 
         let mut signal_sets = Vec::new();
         if !vector_results.is_empty() {
@@ -553,6 +587,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     ///
     /// Applies `memory_type_filter` and metadata `FilterExpr` as Pre-RRF filters to preserve
     /// Reciprocal Rank Fusion properties (ADR-024).
+    #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, query))]
     pub async fn hybrid_search_with_query(
         &self,
@@ -646,7 +682,21 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 None
             };
 
-        let filter_and_boost = |list: Vec<crate::SearchResult>| async {
+        let community_map = if target_community_id.is_some() {
+            let mut candidate_eids = Vec::with_capacity(
+                vector_results.len() + text_results.len() + graph_results.len(),
+            );
+            for res in vector_results.iter().chain(text_results.iter()).chain(graph_results.iter()) {
+                if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
+                    candidate_eids.push(eid);
+                }
+            }
+            self.get_communities_batch(&candidate_eids).await?
+        } else {
+            std::collections::HashMap::new()
+        };
+
+        let filter_and_boost = |list: Vec<crate::SearchResult>| {
             let mut filtered = Vec::with_capacity(list.len());
             for mut res in list {
                 if let Some(ref filter_expr) = query.filter {
@@ -665,7 +715,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
                 if let Some(target_comm) = target_community_id {
                     if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
-                        if let Ok(Some(comm)) = self.get_community(eid).await {
+                        if let Some(&comm) = community_map.get(&eid) {
                             if comm == target_comm {
                                 res.score *= 1.2;
                             }
@@ -678,9 +728,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             filtered
         };
 
-        let vector_results = filter_and_boost(vector_results).await;
-        let text_results = filter_and_boost(text_results).await;
-        let graph_results = filter_and_boost(graph_results).await;
+        let vector_results = filter_and_boost(vector_results);
+        let text_results = filter_and_boost(text_results);
+        let graph_results = filter_and_boost(graph_results);
 
         let mut signal_sets = Vec::new();
         if !vector_results.is_empty() {

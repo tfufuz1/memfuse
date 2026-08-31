@@ -10,6 +10,7 @@
 
 pub mod crud;
 pub mod maintenance;
+pub mod query_builder;
 pub mod relate;
 pub mod search;
 pub mod tx;

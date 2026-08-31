@@ -6,6 +6,14 @@ license.workspace = true
 rust-version.workspace = true
 description = "LSM-Tree storage engine for MemFuse"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Threading",
+] }
+
 [dependencies]
 memfuse-core = { workspace = true }
 bytes = { workspace = true }

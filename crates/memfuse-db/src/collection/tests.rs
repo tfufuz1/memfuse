@@ -1949,3 +1949,108 @@ async fn test_search_dimension_mismatch_rejected() {
     let hybrid_res = col.hybrid_search("query", &wrong_dim_vec, 10, None).await;
     assert!(hybrid_res.is_err());
 }
+
+#[tokio::test]
+async fn test_concurrent_insert_many_collision_safety() {
+    use memfuse_core::{DocId, MemFuseError, StorageEngine, TxId};
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let lsm_config = memfuse_store::LsmConfig {
+        path: dir.path().to_path_buf(),
+        ..Default::default()
+    };
+    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+    let hnsw_config = memfuse_index::HnswConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+    let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap());
+    let graph = Arc::new(CsrGraph::new());
+    let next_tx = Arc::new(AtomicU64::new(1));
+
+    let col = Arc::new(super::Collection::new(
+        "default".to_string(),
+        storage.clone(),
+        index,
+        graph,
+        next_tx.clone(),
+        4,
+        memfuse_text::Language::English,
+    ));
+
+    // 1. Parallel insert_many calls with overlapping document keys across tasks
+    let mut tasks = Vec::new();
+    for task_idx in 0..8 {
+        let col_clone = col.clone();
+        tasks.push(tokio::spawn(async move {
+            let docs: Vec<(String, Vec<f32>, Option<serde_json::Value>)> = (0..20)
+                .map(|i| {
+                    let key = format!("batch_doc_{i}");
+                    let val = (task_idx * 100 + i) as f32;
+                    (
+                        key,
+                        vec![val, 0.0, 0.0, 0.0],
+                        Some(serde_json::json!({ "task": task_idx, "i": i })),
+                    )
+                })
+                .collect();
+            col_clone.insert_many(&docs).await.unwrap();
+        }));
+    }
+
+    for task in tasks {
+        task.await.unwrap();
+    }
+
+    // All 20 document keys must exist and be valid
+    for i in 0..20 {
+        let key = format!("batch_doc_{i}");
+        let doc = col.get(&key).await.unwrap();
+        assert!(doc.is_some(), "Document {key} must exist after concurrent insert_many");
+    }
+
+    // 2. Synthetically test DocId collision rejection within insert_many
+    // Seed an initial document key "existing_key"
+    col.insert("existing_key", &[1.0, 0.0, 0.0, 0.0], None)
+        .await
+        .unwrap();
+
+    // Map fixed synthetic DocId (e.g. 999) to "existing_key"
+    let synthetic_doc_id = DocId::from_key("colliding_target_key").unwrap();
+    let tx = TxId::new(next_tx.fetch_add(1, Ordering::SeqCst));
+    let doc_key = col.namespaced_key(&synthetic_doc_id.inner().to_le_bytes(), 1);
+    let existing_meta = super::StoredDocumentMeta {
+        id: "existing_key".to_string(),
+        metadata: None,
+    };
+    let meta_bytes = serde_json::to_vec(&existing_meta).unwrap();
+    storage.put(tx, &doc_key, &meta_bytes).await.unwrap();
+    storage.commit(tx).await.unwrap();
+
+    // Attempt insert_many with a batch containing "colliding_target_key"
+    let batch_with_collision = vec![
+        ("safe_doc_1".to_string(), vec![1.0, 0.0, 0.0, 0.0], None),
+        ("colliding_target_key".to_string(), vec![2.0, 0.0, 0.0, 0.0], None),
+        ("safe_doc_2".to_string(), vec![3.0, 0.0, 0.0, 0.0], None),
+    ];
+
+    let err_res = col.insert_many(&batch_with_collision).await;
+    assert!(err_res.is_err(), "insert_many must fail when DocId collision is detected");
+    assert!(matches!(err_res, Err(MemFuseError::Internal(_))));
+
+    // Verify all-or-nothing rollback (Option a): safe_doc_1 and safe_doc_2 must NOT exist
+    assert!(
+        col.get("safe_doc_1").await.unwrap().is_none(),
+        "safe_doc_1 must be rolled back on collision error in insert_many"
+    );
+    assert!(
+        col.get("safe_doc_2").await.unwrap().is_none(),
+        "safe_doc_2 must be rolled back on collision error in insert_many"
+    );
+}
